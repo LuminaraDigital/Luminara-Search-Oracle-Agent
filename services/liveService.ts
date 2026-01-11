@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Modality, Blob, LiveServerMessage } from '@google/genai';
 
 function decode(base64: string) {
@@ -54,7 +53,7 @@ export class OracleLiveService {
     onTranscription: (text: string, isUser: boolean) => void,
     onStateChange: (active: boolean) => void
   ) {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     this.onTranscription = onTranscription;
     this.onStateChange = onStateChange;
   }
@@ -68,7 +67,7 @@ export class OracleLiveService {
     let currentOutputTranscription = '';
 
     this.sessionPromise = this.ai.live.connect({
-      model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+      model: 'gemini-2.5-flash-native-audio-preview-12-2025',
       callbacks: {
         onopen: () => {
           this.onStateChange(true);

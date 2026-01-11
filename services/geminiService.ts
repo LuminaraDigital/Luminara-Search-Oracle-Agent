@@ -11,7 +11,7 @@ export class GeminiService {
   private ai: GoogleGenAI;
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
   async *streamQuery(prompt: string, mode: OracleMode): AsyncGenerator<StreamChunk, void, unknown> {
