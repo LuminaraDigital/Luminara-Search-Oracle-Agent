@@ -24,6 +24,7 @@ export interface StreamQueryOptions {
 
 import { shouldSearch, toSearchQuery } from './search/searchIntent';
 import { planSearch } from './search/searchPlanner';
+import { selectAuditPlaybooks, selectChatPlaybooks, playbookContext, inferLenses, type AuditLens } from './skills/seoPlaybooks';
 import { toChatHistory } from './chat/messages';
 export { shouldSearch, toChatHistory };
 
@@ -155,7 +156,8 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
       console.warn('Search grounding fallback', e);
     }
 
-    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${tavilyContext ? tavilyContext + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
+    const chatPlaybooks = opts.skipSearch ? '' : playbookContext(selectChatPlaybooks(prompt), 9000);
+    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${chatPlaybooks ? chatPlaybooks + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${tavilyContext ? tavilyContext + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama Local & Cloud
     // With automatic native engine discovery, searching, and instant auto-failover
@@ -353,9 +355,12 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
   async generateAuditReport(
     websiteUrl: string,
     focus: ReportFocus = 'SEO',
-    dna?: BusinessDNA | null
+    dna?: BusinessDNA | null,
+    lenses: AuditLens[] = []
   ): Promise<{ text: string; sources: Array<{ uri: string; title: string }> }> {
     const dnaContext = this.getDNAContext(dna);
+    const allLenses = [...new Set([...lenses, ...inferLenses(dna)])];
+    const methodology = playbookContext(selectAuditPlaybooks(focus, allLenses), 26000);
     const displayUrl = websiteUrl.replace(/^https?:\/\//i, '');
     let mainTopic = '';
     let reportTitle = '';
@@ -423,16 +428,22 @@ ${scrapeRes.markdown.slice(0, 3000)}
 
     const prompt = `
 ${dnaContext}
+${methodology}
 ${scrapedContent}
 ${searchGrounding}
-You are Oracle Agent, the elite AEO and Search Architect for Luminara Search.
-Generate an authoritative, data-backed Strategic Intelligence Brief in Markdown for: "${websiteUrl}".
+You are Oracle Agent, the search and AI-visibility analyst for Luminara Suite.
+Generate an evidence-based audit in Markdown for: "${websiteUrl}".
 Focus: ${mainTopic}.
 ${focusIntro}
+Follow the methodology playbooks above: use their criteria and thresholds, respect every deprecation rule
+(never recommend HowTo schema; FAQPage earns no Google rich result; use INP, never FID), and grade only what
+the scraped page and search evidence support. Anything you could not observe is "not measured".
+The reader is a business owner: lead with what to do, explain a term the first time it appears, short sentences.
 
 Strict Formatting Guidelines:
 1. Title: Must begin with: "# ${reportTitle}"
-2. Introduction: An executive introductory paragraph immediately following the title.
+2. Introduction: An executive introductory paragraph immediately following the title, ending with a line
+   "**Health Score: NN/100**" computed with the playbook weights (state which categories were not measured).
 3. Structure: Organize using these exact H2 headers:
    ## Executive Summary
    ## Key Findings
@@ -442,6 +453,9 @@ Strict Formatting Guidelines:
    ## ROI & Measurement Strategy
    ## Competitive Snapshot
    ## Next Steps
+   Under "## Key Findings" group issues as "### Critical", "### High", "### Medium", "### Low" using the
+   playbook priority definitions. Each finding names the evidence it rests on (page element, search result, or
+   "not measured").
 4. AI & Search Visibility Radar: Create a Markdown table with strictly these columns:
    | Query | Intent | Brand Cited (Yes/No) | Key Competitors | Est. Organic Rank | Rich Results | AI Overview Status | Visibility Score (0-100) |
    Include 3 high-intent queries (informational, commercial, comparative).
@@ -449,10 +463,12 @@ Strict Formatting Guidelines:
    | Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) | Trust Signal Strength (Low/Med/High) |
    Include the target brand and 3-4 actual competitors found via search.
 6. Recommendations Table: Create a Markdown table with columns:
-   | Action | Benefit | Priority |
+   | Action | Benefit | Priority | How we'd know it failed | Leading indicator |
+   "How we'd know it failed" is a concrete check the owner can run; "Leading indicator" is a metric visible
+   before rankings move (e.g. indexed pages, AI citations for 5 tracked questions, review velocity).
 7. Competitive Snapshot Table: Include target brand and competitors comparing: ${competitiveMetrics}.
 8. Code Block: Under "## Key Findings", include a practical JSON-LD or schema code block example.
-9. Tone: Authoritative, executive, revenue-driven.
+9. Tone: direct, evidence-first, no hype. Label every estimate "(estimate)".
 `;
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama with auto-failover

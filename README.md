@@ -83,6 +83,28 @@ Luminara never needs your keys on its servers. In the browser build every provid
 
 On luminarasuite.com, hosted keys exist for convenience. They are only used when a request carries a valid Telegram sign-in, are metered per user (25 free requests per day by default), and are unlimited on a paid plan. Nobody can consume the hosted keys anonymously.
 
+## SEO methodology (playbooks)
+
+Audits and answers follow a published methodology rather than whatever the model improvises. The
+[claude-seo](https://github.com/AgriciDaniel/claude-seo) skill set (MIT, by AgriciDaniel and contributors)
+is vendored under `.claude/skills/` so Claude Code users of this repo get the full `/seo` skills, and
+`scripts/build-playbooks.mjs` compiles the methodology into `services/skills/playbooks.generated.json`
+for the app:
+
+| Audit focus | Playbooks injected |
+|---|---|
+| SEO | scoring rules, technical SEO (9 categories), content quality / E-E-A-T, Schema.org status |
+| AEO | scoring rules, AI search (AI Overviews, ChatGPT, Perplexity), Schema.org |
+| GEO | scoring rules, AI search, content quality |
+| Lenses (optional) | Local business, Online store, Content quality, Structured data, Search experience |
+
+Reports carry a Health Score (0-100) with the playbook weights, Critical / High / Medium / Low findings,
+and for every recommendation a "how we'd know it failed" check and a leading indicator. Deprecation rules
+(no HowTo schema, FAQPage earns no rich result, INP not FID) are enforced in the prompt. Anything not
+observable from the scrape and search evidence is reported as "not measured".
+
+Edit the skill files, run `npm run playbooks`, commit the JSON. Attribution: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Architecture
 
 ```

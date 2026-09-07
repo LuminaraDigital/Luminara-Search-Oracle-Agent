@@ -41,7 +41,9 @@ dist-ssr
 docs/internal/
 
 # Local tooling
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/agents/
 .dev.vars
 .wrangler/
 *.log

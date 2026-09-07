@@ -1,6 +1,7 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { ReportFocus, BusinessDNA } from '../../types';
 import { geminiService } from '../../services/geminiService';
+import { AUDIT_LENSES, inferLenses, type AuditLens } from '../../services/skills/seoPlaybooks';
 import { contextGraphService } from '../../services/contextGraph/contextGraphService';
 import { ICONS } from '../../constants';
 import { ReportDisplay } from './ReportDisplay';
@@ -13,6 +14,8 @@ interface InstantAuditViewProps {
 export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavigateDNA }) => {
   const [url, setUrl] = useState('');
   const [focus, setFocus] = useState<ReportFocus>('SEO');
+  const [lenses, setLenses] = useState<AuditLens[]>(() => inferLenses(dna));
+  const toggleLens = (id: AuditLens) => setLenses(prev => (prev.includes(id) ? prev.filter(l => l !== id) : [...prev, id]));
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState('');
   const [report, setReport] = useState<{ text: string; sources: Array<{ uri: string; title: string }> } | null>(null);
@@ -46,7 +49,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
 
     try {
       const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
-      const result = await geminiService.generateAuditReport(formattedUrl, targetFocus, dna);
+      const result = await geminiService.generateAuditReport(formattedUrl, targetFocus, dna, lenses);
       clearInterval(interval);
       setReport(result);
 
@@ -171,6 +174,32 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                 {focus === 'AEO' && 'AEO: whether AI answers mention you'}
                 {focus === 'GEO' && 'GEO: whether AI summaries quote your content'}
               </span>
+            </div>
+
+            <div className="pt-4 border-t border-white/5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Also check:</span>
+                <span className="text-[10px] text-gray-600">Optional. Each adds a specialist checklist to the report.</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {AUDIT_LENSES.map(l => {
+                  const on = lenses.includes(l.id);
+                  return (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => toggleLens(l.id)}
+                      title={l.hint}
+                      aria-pressed={on}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all border ${
+                        on ? 'bg-[#BF953F]/20 border-[#BF953F]/60 text-[#FCF6BA]' : 'border-white/10 text-gray-400 hover:text-white hover:border-white/30'
+                      }`}
+                    >
+                      {on ? '✓ ' : ''}{l.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

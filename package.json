@@ -13,7 +13,10 @@
     "tg:setup": "node scripts/telegram-setup.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "cli": "node --experimental-strip-types services/harness/standaloneCli.ts"
+    "cli": "node --experimental-strip-types services/harness/standaloneCli.ts",
+    "playbooks": "node scripts/build-playbooks.mjs",
+    "prebuild": "node scripts/build-playbooks.mjs",
+    "pretest": "node scripts/build-playbooks.mjs"
   },
   "dependencies": {
     "@google/genai": "1.34.0",
