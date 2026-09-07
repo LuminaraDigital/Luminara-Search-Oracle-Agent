@@ -25,13 +25,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
     if (!targetUrl.trim() || loading) return;
     setError(null);
     setLoading(true);
-    setProgressStage('Initializing Real-Time SERP Scanner...');
+    setProgressStage('Reading your website…');
 
     const stages = [
-      'Scanning URL & Core Web Vitals...',
-      'Grounding Entity Footprint on Google...',
-      'Benchmarking Competitor AI Perception...',
-      'Synthesizing Visibility Radar & ROI Models...'
+      'Checking live search results…',
+      'Looking at your competitors…',
+      'Writing your report…',
+      'Almost done…'
     ];
 
     let sIdx = 0;
@@ -89,13 +89,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#BF953F]/10 border border-[#BF953F]/30 mb-4">
           <ICONS.Radar className="w-4 h-4 text-[#FCF6BA]" />
-          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#FCF6BA]">Autonomous SERP Intelligence</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#FCF6BA]">Website audit</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-bold gold-text tracking-tight mb-3">
-          Instant Strategic Audit
+          How does your site show up?
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
-          Uncover search footprint, competitor citations, and AI Overviews with Oracle Agent’s grounded intelligence engine.
+          Paste your website address. In about a minute you get a report on Google rankings, AI answers, competitors and what to fix first.
         </p>
       </div>
 
@@ -104,7 +104,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-emerald-500/30 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="text-gray-300">Strategic Context Linked: <strong className="text-white">{dna.name}</strong></span>
+            <span className="text-gray-300">Tailored to <strong className="text-white">{dna.name}</strong></span>
           </div>
           <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-wider">USP Reinforced</span>
         </div>
@@ -112,7 +112,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-white/5 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-[#BF953F]"></span>
-            <span className="text-gray-400">Want deeper brand personalization? Link your Strategic Business DNA.</span>
+            <span className="text-gray-400">Add your business profile and the report will be tailored to what you sell and who you compete with.</span>
           </div>
           {onNavigateDNA && (
             <button onClick={onNavigateDNA} className="text-[10px] font-bold uppercase tracking-wider text-[#FCF6BA] hover:underline">
@@ -151,7 +151,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-white/5">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Optimization Vector:</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Report type:</span>
                 {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                   <button
                     key={f}
@@ -167,9 +167,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                 ))}
               </div>
               <span className="text-[10px] text-gray-500 font-mono">
-                {focus === 'SEO' && 'Organic SERP, Core Web Vitals & Backlinks'}
-                {focus === 'AEO' && 'AI Overviews, Rich Snippets & Assistant Visibility'}
-                {focus === 'GEO' && 'Generative Summaries & Citation Probabilities'}
+                {focus === 'SEO' && 'SEO: how you rank in Google'}
+                {focus === 'AEO' && 'AEO: whether AI answers mention you'}
+                {focus === 'GEO' && 'GEO: whether AI summaries quote your content'}
               </span>
             </div>
           </div>

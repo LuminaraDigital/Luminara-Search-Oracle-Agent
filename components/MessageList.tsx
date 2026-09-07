@@ -38,10 +38,10 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
           </div>
           <div className="space-y-6">
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight gold-text pb-2">
-              Oracle Agent Neural Core
+              Ask Luminara
             </h1>
             <p className="text-gray-400 text-lg max-w-2xl mx-auto leading-relaxed px-4">
-              Your always-on AEO & Search Architect. Eliminate agency retainers with revenue-linked agentic simulations.
+              Ask anything about how your business shows up in Google and AI answers. Paste your website address to start with an audit.
             </p>
           </div>
           
@@ -111,16 +111,16 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                       <button
                         onClick={() => onSimplify(msg.content)}
                         className="p-1.5 rounded-lg border border-white/5 bg-white/5 text-gray-500 hover:text-[#BF953F] hover:border-[#BF953F]/20 transition-all flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold"
-                        title="Simplify Reading Level"
+                        title="Rewrite this in plain English"
                       >
                         <ICONS.FileText />
-                        <span>Simplify</span>
+                        <span>Plain English</span>
                       </button>
                     )}
                     <button
                       onClick={() => handleCopy(msg.content, msg.id)}
                       className="p-1.5 rounded-lg border border-white/5 bg-white/5 text-gray-500 hover:text-[#BF953F] hover:border-[#BF953F]/20 transition-all"
-                      title="Copy Strategy"
+                      title="Copy"
                     >
                       {copiedId === msg.id ? <ICONS.Check /> : <ICONS.Copy />}
                     </button>
@@ -134,18 +134,18 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                           <div key={i} className="rounded-2xl overflow-hidden border border-[#BF953F]/20 bg-black/60 shadow-inner">
                             <div className="bg-[#BF953F]/5 px-6 py-3 flex items-center justify-between border-b border-[#BF953F]/10">
                               <div className="flex items-center gap-4">
-                                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-[#BF953F]">Tool activity</span>
+                                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-[#BF953F]">What I checked</span>
                               </div>
                               <button 
                                 onClick={() => handleCopy(exec.output, execId)}
                                 className="text-[9px] font-bold uppercase tracking-widest px-4 py-1.5 rounded-lg border border-[#BF953F]/20 bg-[#BF953F]/5 text-[#BF953F]/60 hover:text-[#BF953F] hover:border-[#BF953F]/50 transition-all"
                               >
-                                {copiedId === execId ? 'Captured' : 'Extract Output'}
+                                {copiedId === execId ? 'Copied' : 'Copy'}
                               </button>
                             </div>
                             <div className="p-6 font-mono text-[12px] space-y-4">
                               <div className="text-blue-400/60 bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">
-                                <span className="text-gray-600 mr-3">&gt;&gt;</span>{exec.code ?? (exec.tool ? `${exec.tool}(${exec.args?.query ?? ''})` : '')}
+                                <span className="text-gray-600 mr-3">&gt;&gt;</span>{exec.code ?? (Array.isArray(exec.args?.queries) ? `Searched: ${exec.args.queries.map((q: string) => `"${q}"`).join(', ')}` : exec.tool ? `${exec.tool}(${exec.args?.query ?? ''})` : '')}
                               </div>
                               <div className="text-gray-400 pt-3 whitespace-pre leading-relaxed border-t border-white/5">
                                 {exec.output}
@@ -183,7 +183,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                     <div className="mt-8 flex flex-col gap-4">
                       <div className="flex items-center gap-4">
                         <span className="streaming-cursor" />
-                        <span className="text-[11px] text-[#BF953F] uppercase tracking-[0.4em] font-black animate-pulse">Architecting Strategic Intelligence...</span>
+                        <span className="text-[11px] text-[#BF953F] uppercase tracking-[0.4em] font-black animate-pulse">Working on it…</span>
                       </div>
                       <div className="w-48 h-[1px] bg-gradient-to-r from-[#BF953F]/40 via-transparent to-transparent"></div>
                     </div>
@@ -193,8 +193,8 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                     <div className="mt-16 pt-12 border-t border-[#BF953F]/10 space-y-8">
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
-                          <p className="text-[11px] font-black text-[#BF953F] uppercase tracking-[0.4em]">Strategic Appendix</p>
-                          <p className="text-[9px] text-gray-600 uppercase tracking-widest">Grounding Dataset & Validation Matrix</p>
+                          <p className="text-[11px] font-black text-[#BF953F] uppercase tracking-[0.4em]">Sources</p>
+                          <p className="text-[9px] text-gray-600 uppercase tracking-widest">Live pages this answer drew on</p>
                         </div>
                         <div className="w-12 h-1px bg-[#BF953F]/30"></div>
                       </div>
@@ -209,7 +209,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                             className="group p-5 rounded-2xl bg-white/5 hover:bg-[#BF953F]/10 border border-white/5 hover:border-[#BF953F]/30 transition-all flex flex-col gap-2"
                           >
                             <div className="flex items-center justify-between">
-                              <span className="text-[9px] text-[#BF953F] font-bold">SOURCE [0{idx + 1}]</span>
+                              <span className="text-[9px] text-[#BF953F] font-bold">[{idx + 1}]</span>
                               <div className="w-2 h-2 rounded-full bg-[#BF953F]/20 group-hover:bg-[#BF953F] transition-colors"></div>
                             </div>
                             <span className="text-[13px] font-medium text-gray-300 group-hover:text-[#FCF6BA] transition-colors line-clamp-1">

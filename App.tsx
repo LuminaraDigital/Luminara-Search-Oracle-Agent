@@ -109,6 +109,14 @@ const App: React.FC = () => {
   const [headerSearch, setHeaderSearch] = useState('');
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [showSuiteMenu, setShowSuiteMenu] = useState(false);
+  const [advancedUi, setAdvancedUi] = useState<boolean>(() => {
+    try { return localStorage.getItem('luminara_advanced_ui') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    const onChange = () => { try { setAdvancedUi(localStorage.getItem('luminara_advanced_ui') === '1'); } catch { /* noop */ } };
+    window.addEventListener('luminara-advanced-ui', onChange);
+    return () => window.removeEventListener('luminara-advanced-ui', onChange);
+  }, []);
 
   // Harness & Theming states
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
@@ -258,7 +266,7 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, userMsg]);
     setIsThinking(true);
     setProgress(10);
-    setAgentStep(opts.skipSearch ? 'Oracle Agent: Rewriting' : 'Oracle Agent: Preparing');
+    setAgentStep(opts.skipSearch ? 'Rewriting in plain English' : 'Getting ready');
 
     const modelId = (Date.now() + 1).toString();
     const modelMsg: Message = {
@@ -277,7 +285,7 @@ const App: React.FC = () => {
     try {
       if (!opts.skipSearch) {
         setIsSearching(true);
-        setActiveTool({ name: 'search_web', stage: 'Grounding with live search results' });
+        setActiveTool({ name: 'Live search', stage: 'Checking what search engines say right now' });
       }
 
       let fullText = '';
@@ -291,7 +299,7 @@ const App: React.FC = () => {
         if (chunk.toolExecution) {
           toolExecutions.push(chunk.toolExecution);
           setProgress(35);
-          setActiveTool({ name: 'search_web', stage: chunk.toolExecution.output });
+          setActiveTool({ name: 'Live search', stage: chunk.toolExecution.output });
         }
         if (chunk.groundingUrls) {
           const existingUris = new Set(allUrls.map(u => u.uri));
@@ -304,7 +312,7 @@ const App: React.FC = () => {
             firstToken = false;
             setIsSearching(false);
             setActiveTool(null);
-            setAgentStep(mode === OracleMode.DEEP_THINK ? 'Deep Think: Streaming analysis' : 'Flash: Streaming answer');
+            setAgentStep('Writing your answer');
             setProgress(60);
           }
           fullText += chunk.text;
@@ -322,7 +330,7 @@ const App: React.FC = () => {
       console.error('Luminara Search Error:', error);
       const reason = error?.message || 'Unknown error';
       setMessages(prev => prev.map(m => m.id === modelId
-        ? { ...m, isStreaming: false, isError: true, content: `**Oracle Agent could not answer.** ${reason}\n\nOpen Settings (gear icon) to check your API keys, then try again.` }
+        ? { ...m, isStreaming: false, isError: true, content: `**I couldn't answer that.** ${reason}\n\nOpen Settings (the gear icon, top right) to check your AI key, then try again.` }
         : m));
     } finally {
       abortRef.current = null;
@@ -369,15 +377,15 @@ const App: React.FC = () => {
   const handleSimplify = useCallback(async (content: string) => {
     handleSendMessage(
       `Execute [Plain English Protocol] to simplify this strategic analysis for an 8th-grade reading level. Use short, punchy sentences and remove marketing jargon: \n\n${content}`,
-      { displayContent: 'Rewrite the last report in plain English (8th-grade reading level).', skipSearch: true }
+      { displayContent: 'Say that again in plain English.', skipSearch: true }
     );
   }, [handleSendMessage]);
 
   const quickActions = [
-    { label: "Triple-Vector Audit", query: "Execute a full triple-vector (SEO, AEO, GEO) audit on my website and produce a Strategic Intelligence Report." },
-    { label: "Competitor Reality Map", query: "Build a Competitor Reality Map comparing our brand's AI search perception against top industry alternatives." },
-    { label: "Visibility Radar", query: "Generate a 5-axis dynamic AI & Search Visibility Radar across informational, commercial, and comparative search intents." },
-    { label: "Schema.org Diagnostic", query: "Analyze our site for JSON-LD schema gaps, missing entities, and AI Overview quotation opportunities." }
+    { label: "Audit my website", query: "Run a full SEO, AEO and GEO audit of my website and give me a prioritised action plan in plain English." },
+    { label: "Compare me with competitors", query: "Compare how my brand shows up in AI answers and search against my main competitors, and tell me where I lose." },
+    { label: "Where do I show up in AI answers?", query: "Check whether my brand is cited in AI Overviews, ChatGPT and Perplexity for the questions my customers ask, and what to change." },
+    { label: "What's missing on my site?", query: "Check my site for missing schema markup, unclear entity information and content gaps that stop AI engines from quoting it." }
   ];
 
   if (view === AppView.PRIVACY || view === AppView.TERMS) {
@@ -487,7 +495,7 @@ const App: React.FC = () => {
               LUMINARA SUITE
             </h2>
             <span className="text-[7px] text-gray-500 uppercase tracking-[0.4em] font-mono block mt-1">
-              ARCHY HARNESS ACTIVE
+              AI search visibility
             </span>
           </div>
         </div>
@@ -500,7 +508,7 @@ const App: React.FC = () => {
               view === AppView.ORACLE_AGENT ? 'bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/40' : 'text-gray-400 hover:text-white'
             }`}
           >
-            Oracle Agent
+            Ask
           </button>
 
           <button
@@ -509,7 +517,7 @@ const App: React.FC = () => {
               view === AppView.INSTANT_AUDIT ? 'bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/40' : 'text-gray-400 hover:text-white'
             }`}
           >
-            Instant Audit
+            Audit my site
           </button>
 
           {/* Command Suite Dropdown */}
@@ -522,7 +530,7 @@ const App: React.FC = () => {
                   : 'text-gray-400 hover:text-white'
               }`}
             >
-              <span>Command Suite</span>
+              <span>More tools</span>
               <ICONS.ChevronDown className="w-3 h-3 text-[#BF953F]" />
             </button>
 
@@ -536,16 +544,17 @@ const App: React.FC = () => {
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
                 >
                   <ICONS.Shield className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>Executive Dashboard</span>
+                  <span>Home</span>
                 </button>
+                {advancedUi && (<>
                 <button
                   onClick={() => { setView(AppView.HARNESS); setShowSuiteMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-[#FCF6BA] hover:text-white hover:bg-[#BF953F]/20 transition-colors flex items-center gap-2 bg-[#BF953F]/15 border border-[#BF953F]/40 my-0.5"
                 >
                   <ICONS.Terminal className="w-3.5 h-3.5 text-[#FCF6BA]" />
                   <div className="flex items-center justify-between flex-1">
-                    <span className="font-bold">Luminara Archy Harness</span>
-                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-[#BF953F]/30 text-[#FCF6BA] font-bold">CORE</span>
+                    <span className="font-bold">Developer harness</span>
+                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">LAB</span>
                   </div>
                 </button>
                 <button
@@ -553,56 +562,57 @@ const App: React.FC = () => {
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
                 >
                   <ICONS.Brain className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>OracleMind SLM Studio</span>
+                  <span>OracleMind SLM Studio <span className="text-[8px] text-amber-300 font-mono">LAB</span></span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.TIMESFM_FORECAST); setShowSuiteMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
                 >
                   <ICONS.TimeSeries className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>TimesFM Forecaster</span>
+                  <span>TimesFM Forecaster <span className="text-[8px] text-amber-300 font-mono">LAB</span></span>
                 </button>
+                </>)}
                 <button
                   onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
                 >
                   <ICONS.DNA className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>Strategic Business DNA</span>
+                  <span>My business profile</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.STRESS_TEST); setShowSuiteMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
                 >
                   <ICONS.Stress className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>Red Team Stress Test</span>
+                  <span>Poke holes in my plan</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.DATA_ANALYST); setShowSuiteMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
                 >
                   <ICONS.Analyst className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>Deep Data Analyst</span>
+                  <span>Analyse my data</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.ORGANIZER); setShowSuiteMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
                 >
                   <ICONS.Organizer className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>Thought Organizer</span>
+                  <span>Turn notes into a plan</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.RESEARCH); setShowSuiteMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
                 >
                   <ICONS.Research className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>Global Grounding (Maps & Web)</span>
+                  <span>Research the market</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.VISION); setShowSuiteMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2"
                 >
                   <ICONS.Sparkle className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>Autonomy Manifesto</span>
+                  <span>How Luminara works</span>
                 </button>
               </div>
             )}
@@ -615,7 +625,7 @@ const App: React.FC = () => {
             title="Open Omnibar (Cmd+K)"
           >
             <ICONS.Search className="w-3.5 h-3.5 text-[#BF953F]" />
-            <span className="truncate">Search & Commands</span>
+            <span className="truncate">Jump to a tool</span>
             <kbd className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300 ml-auto">⌘K</kbd>
           </button>
         </div>
@@ -623,27 +633,27 @@ const App: React.FC = () => {
         {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Exit */}
         <div className="flex items-center justify-end gap-2 sm:gap-3">
           {/* Native Trinity (Groq, NVIDIA NIM, Ollama) Engine Status & Priority */}
-          <NativeEngineHUD />
+          {advancedUi && <NativeEngineHUD />}
 
           {/* Default Agent Badge */}
-          <button
+          {advancedUi && <button
             onClick={() => setView(AppView.HARNESS)}
             className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono text-gray-300 hover:border-[#BF953F]/50 hover:text-[#FCF6BA] transition-all"
             title="Active Default Agent (Click to open Archy Harness)"
           >
             <span className="text-[#BF953F]">⚡</span>
             <span className="truncate max-w-[90px]">{defaultAgentName}</span>
-          </button>
+          </button>}
 
           {/* Theme Quick Cycle Button */}
-          <button
+          {advancedUi && <button
             onClick={() => themingService.cycleTheme()}
             className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono text-gray-300 hover:border-[#BF953F]/50 hover:text-[#FCF6BA] transition-all"
             title={`Active Theme: ${currentTheme.name} (Click to cycle)`}
           >
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: currentTheme.palette.primaryGold }} />
             <span className="truncate max-w-[80px]">{currentTheme.name}</span>
-          </button>
+          </button>}
 
           {/* Reminders Count Indicator */}
           {activeRemindersCount > 0 && (
@@ -668,14 +678,14 @@ const App: React.FC = () => {
             title="Strategic Business DNA Context"
           >
             <span className={`w-1.5 h-1.5 rounded-full ${dna ? 'bg-emerald-400 shadow-[0_0_8px_#10B981]' : 'bg-[#BF953F]'}`}></span>
-            <span className="truncate max-w-[90px]">{dna ? dna.name : 'Link DNA'}</span>
+            <span className="truncate max-w-[90px]">{dna ? dna.name : 'Add my business'}</span>
           </button>
 
           {/* API Key Modal Button */}
           <button
             onClick={() => setIsKeyModalOpen(true)}
             className="p-2 rounded-xl glass-morphism border border-white/10 text-gray-400 hover:text-[#FCF6BA] hover:border-[#BF953F]/40 transition-all"
-            title="Configure Gemini API Key"
+            title="Settings and AI keys"
           >
             <ICONS.Settings className="w-4 h-4" />
           </button>
@@ -688,7 +698,7 @@ const App: React.FC = () => {
                 mode === OracleMode.FLASH ? 'bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black shadow-md' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
-              Flash
+              Quick
             </button>
             <button
               onClick={() => setMode(OracleMode.DEEP_THINK)}
@@ -696,7 +706,7 @@ const App: React.FC = () => {
                 mode === OracleMode.DEEP_THINK ? 'bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black shadow-md' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
-              Deep
+              Thorough
             </button>
           </div>
 
@@ -813,15 +823,15 @@ const App: React.FC = () => {
           isVoiceActive ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-12">
               <div className="space-y-4">
-                <h3 className="text-4xl font-semibold gold-text tracking-tight">Oracle Agent Live Audio...</h3>
-                <p className="text-gray-500 max-w-md mx-auto text-sm">Transcribing low-latency audio query for real-time agentic simulation.</p>
+                <h3 className="text-4xl font-semibold gold-text tracking-tight">Listening…</h3>
+                <p className="text-gray-500 max-w-md mx-auto text-sm">Talk normally. Your words and the answer appear in the chat when you stop.</p>
               </div>
               <Waveform active={isVoiceActive} />
               <button
                 onClick={toggleVoice}
                 className="px-12 py-5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-500/20 transition-all shadow-xl"
               >
-                Deactivate Voice Core
+                Stop listening
               </button>
             </div>
           ) : (

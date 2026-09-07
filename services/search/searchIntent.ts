@@ -3,7 +3,7 @@
  * Kept dependency-free so they can be unit-tested and reused by the Worker later.
  */
 
-const SEARCH_INTENT = /https?:\/\/|\bwww\.|\.[a-z]{2,6}(\/|\b)|\b(audit|rank|ranking|serp|seo|aeo|geo|competitor|competitors|visibility|schema|backlink|keyword|keywords|market|trend|trends|latest|news|price|pricing|review|reviews|compare|comparison|benchmark|citation|cited|search|google|chatgpt|perplexity|ai overview|traffic|domain|site|website|brand)\b/i;
+const SEARCH_INTENT = /https?:\/\/|\bwww\.|\.[a-z]{2,6}(\/|\b)|\b(audit|rank|ranking|serp|seo|aeo|geo|competitor|competitors|visibility|schema|backlink|keyword|keywords|market|trend|trends|latest|news|price|pricing|review|reviews|compare|comparison|benchmark|citation|cited|search|google|chatgpt|perplexity|ai overview|ai answer|overview|answer|answers|traffic|domain|site|website|brand)\b/i;
 
 /** Fetch live SERP evidence only for research-style prompts, not small talk or rewrites. */
 export const shouldSearch = (prompt: string): boolean => {

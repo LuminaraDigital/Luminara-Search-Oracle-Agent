@@ -15,16 +15,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
       cards: [
         {
           id: AppView.ORACLE_AGENT,
-          title: 'Oracle Agent Terminal',
-          desc: 'Conversational & autonomous search simulation with Flash and Deep Think modes.',
+          title: 'Ask a question',
+          desc: 'Chat with an analyst that checks live search results and remembers your business.',
           icon: ICONS.Terminal,
           badge: 'Core Engine',
           accent: 'text-[#FCF6BA]'
         },
         {
           id: AppView.INSTANT_AUDIT,
-          title: 'Instant Search & AEO Audit',
-          desc: 'Deep SERP scanner with Visibility Radar, Competitor Reality Map, and ROI arbiter.',
+          title: 'Audit my website',
+          desc: 'See how you show up in Google and AI answers, who beats you, and what to fix first.',
           icon: ICONS.Radar,
           badge: 'SEO / AEO / GEO',
           accent: 'text-[#FCF6BA]'
@@ -32,19 +32,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
       ]
     },
     {
-      label: "Foundation & Strategic DNA",
+      label: "Your business",
       cards: [
         {
           id: AppView.BUSINESS_DNA,
-          title: 'Strategic Business DNA',
-          desc: dna ? `Linked to ${dna.name}. Sequenced genome guiding all reasoning.` : 'Scan business URL to extract mission, USP, and competitive gaps.',
+          title: 'My business profile',
+          desc: dna ? `Set to ${dna.name}. Every audit and answer is tailored to it.` : 'Paste your website once. We learn what you sell, to whom, and who you compete with.',
           icon: ICONS.DNA,
           badge: dna ? 'Active Link' : 'Not Linked',
           accent: dna ? 'text-emerald-400' : 'text-[#BF953F]'
         },
         {
           id: AppView.VISION,
-          title: 'Manifesto of Autonomy',
+          title: 'How Luminara works',
           desc: 'The four-step methodology and architectural principles behind Luminara Search.',
           icon: ICONS.Shield,
           badge: 'Methodology',
@@ -53,7 +53,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
       ]
     },
     {
-      label: "Predictive Intelligence & Foundation Modeling",
+      label: "Labs (technical previews, simulated numbers)",
       cards: [
         {
           id: AppView.ORACLE_MIND,
@@ -73,7 +73,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
         },
         {
           id: AppView.DATA_ANALYST,
-          title: 'Deep Intelligence Analyst',
+          title: 'Analyse my data',
           desc: 'Multi-modal analysis and Python synthesis of private data, metrics, and CSVs.',
           icon: ICONS.Analyst,
           badge: 'Code Execution',
@@ -86,7 +86,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
       cards: [
         {
           id: AppView.STRESS_TEST,
-          title: 'Red Team Stress Test',
+          title: 'Poke holes in my plan',
           desc: 'Adversarial predator simulation testing your business strategy against market forces.',
           icon: ICONS.Stress,
           badge: 'Thinking Budget',
@@ -94,7 +94,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
         },
         {
           id: AppView.RESEARCH,
-          title: 'Global Grounding Engine',
+          title: 'Research the market',
           desc: 'Live multi-source market intelligence with Google Search and Google Maps.',
           icon: ICONS.Research,
           badge: 'Maps & Web',
@@ -102,7 +102,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
         },
         {
           id: AppView.ORGANIZER,
-          title: 'Strategic Structuring',
+          title: 'Turn notes into a plan',
           desc: 'Transform raw notes and concepts into executive Business Plans and Timelines.',
           icon: ICONS.Organizer,
           badge: 'Executive Synthesis',
@@ -111,7 +111,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
       ]
     },
     {
-      label: "Developer Harness & Autonomous OS (Luminara Archy)",
+      label: "Developer tools (Labs)",
       cards: [
         {
           id: AppView.HARNESS,
@@ -149,13 +149,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
         <div>
           <div className="flex items-center gap-3 mb-2">
             <span className="w-8 h-[1px] bg-[#BF953F]"></span>
-            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-[#FCF6BA]">Executive Command Center</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-[#FCF6BA]">Home</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
-            Luminara Search Suite
+            What would you like to do?
           </h1>
           <p className="text-xs text-gray-400 mt-1 max-w-xl leading-relaxed">
-            Unified strategic platform replacing expensive agency retainers with continuous search intelligence and autonomous agentic workflows.
+            Start with an audit of your website, then ask follow-up questions. Add your business profile once and every answer is tailored to you.
           </p>
         </div>
 
@@ -163,7 +163,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
         <div className="glass-morphism rounded-2xl p-4 border border-[#BF953F]/30 flex items-center gap-4 shrink-0 bg-black/60">
           <div className={`w-3 h-3 rounded-full ${dna ? 'bg-emerald-400 shadow-[0_0_12px_#10B981]' : 'bg-[#BF953F] animate-pulse'}`}></div>
           <div>
-            <div className="text-[9px] font-black uppercase tracking-widest text-gray-400">Strategic Genome</div>
+            <div className="text-[9px] font-black uppercase tracking-widest text-gray-400">Business profile</div>
             <div className="text-xs font-bold text-white">
               {dna ? dna.name : 'System Standby'}
             </div>
@@ -172,7 +172,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
             onClick={() => onNavigate(AppView.BUSINESS_DNA)}
             className="px-3 py-1.5 rounded-lg bg-[#BF953F]/10 border border-[#BF953F]/30 text-[9px] font-bold uppercase tracking-wider text-[#FCF6BA] hover:bg-[#BF953F]/20 transition-all"
           >
-            {dna ? 'Inspect' : 'Sequence'}
+            {dna ? 'View' : 'Set up'}
           </button>
         </div>
       </div>

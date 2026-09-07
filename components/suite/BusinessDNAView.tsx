@@ -46,7 +46,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       syncToVfs(extracted);
       setEditing(false);
     } catch (err: any) {
-      setError(err?.message || 'Failed to extract Strategic DNA. Please check your API key.');
+      setError(err?.message || 'Could not build your business profile. Check your AI key in Settings.');
     } finally {
       setLoading(false);
     }
@@ -61,7 +61,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
   };
 
   const handleClear = () => {
-    if (window.confirm('Clear stored Strategic Business DNA?')) {
+    if (window.confirm('Remove your business profile?')) {
       onDNAGenerated(null);
       setFormData(null);
       setInput('');
@@ -73,10 +73,10 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#BF953F]/10 border border-[#BF953F]/30 mb-4">
           <ICONS.DNA className="w-4 h-4 text-[#FCF6BA]" />
-          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#FCF6BA]">Strategic Genome Sequencer</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#FCF6BA]">Your business</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-bold gold-text tracking-tight mb-3">
-          Strategic Business DNA
+          My business profile
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
           Extract and anchor your brand’s core genome—mission, USP, target audience, and competitive gaps—to personalize all audits and simulations.
@@ -94,7 +94,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="e.g., luminaradigital.io or 'Luxury AI marketing boutique in Sydney'"
+              placeholder="Your website, or a sentence about your business (e.g. 'family dental clinic in Austin')"
               onKeyDown={(e) => e.key === 'Enter' && handleExtractDNA()}
               className="flex-1 bg-black/60 border border-white/15 focus:border-[#BF953F] rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none transition-all shadow-inner"
             />
@@ -106,12 +106,12 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                  <span>Sequencing...</span>
+                  <span>Building your profile…</span>
                 </>
               ) : (
                 <>
                   <ICONS.Sparkle className="w-4 h-4" />
-                  <span>Extract Genome</span>
+                  <span>Build my profile</span>
                 </>
               )}
             </button>
@@ -127,7 +127,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_10px_#10B981] animate-pulse"></div>
               <div>
-                <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest">Active Strategic Link</span>
+                <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest">Profile active</span>
                 <h2 className="text-2xl font-bold text-white tracking-tight">{formData.name}</h2>
                 {vfsSyncSuccess && (
                   <span className="text-[10px] font-mono text-emerald-400 block mt-0.5">
@@ -216,7 +216,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-amber-400 mb-1">Identified Strategic Gaps</label>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-amber-400 mb-1">Where you are losing</label>
                 <ul className="space-y-1.5 p-3 bg-black/40 rounded-xl border border-white/5 text-xs text-gray-300">
                   {formData.perceivedGaps.map((gap, gIdx) => (
                     <li key={gIdx} className="flex items-start gap-2">

@@ -119,7 +119,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
               <ICONS.Settings className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold uppercase tracking-widest text-[#FCF6BA]">Executive Integrations & Secrets Hub</h3>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-[#FCF6BA]">Settings</h3>
               <p className="text-[10px] text-gray-400 font-mono">Keys are stored only in this browser. For production, route calls through a server so keys never ship to clients.</p>
             </div>
           </div>
@@ -134,31 +134,31 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
             onClick={() => setActiveTab('overview')}
             className={`pb-2.5 px-2 border-b-2 font-bold transition-all ${activeTab === 'overview' ? 'border-[#BF953F] text-[#FCF6BA]' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
           >
-            Overview & Status ({statuses.filter(s => s.isConfigured).length}/{statuses.length})
+            Overview ({statuses.filter(s => s.isConfigured).length}/{statuses.length} connected)
           </button>
           <button
             onClick={() => setActiveTab('llm')}
             className={`pb-2.5 px-2 border-b-2 font-bold transition-all ${activeTab === 'llm' ? 'border-[#BF953F] text-[#FCF6BA]' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
           >
-            LLM Engines
+            AI keys
           </button>
           <button
             onClick={() => setActiveTab('search')}
             className={`pb-2.5 px-2 border-b-2 font-bold transition-all ${activeTab === 'search' ? 'border-[#BF953F] text-[#FCF6BA]' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
           >
-            Search & SERP
+            Live search
           </button>
           <button
             onClick={() => setActiveTab('scraping')}
             className={`pb-2.5 px-2 border-b-2 font-bold transition-all ${activeTab === 'scraping' ? 'border-[#BF953F] text-[#FCF6BA]' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
           >
-            Web Crawling
+            Website scanning
           </button>
           <button
             onClick={() => setActiveTab('extra')}
             className={`pb-2.5 px-2 border-b-2 font-bold transition-all ${activeTab === 'extra' ? 'border-[#BF953F] text-[#FCF6BA]' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
           >
-            Generative & Runtime
+            Other
           </button>
         </div>
 
@@ -169,8 +169,20 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
             <div className="space-y-3">
               <TelegramAccountPanel compact />
               <p className="text-xs text-gray-400 leading-relaxed">
-                All credentials loaded from <code className="text-[#FCF6BA]">.env</code> or customized via local overrides. The platform automatically falls back across active providers to guarantee zero downtime.
+                Luminara needs one AI key to work (Groq is the easiest to start with). Add a live-search key to ground answers in real search results. Everything you enter stays in this browser.
               </p>
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
+                <span className="text-xs text-gray-300">Show developer tools (engine status, themes, Labs previews)</span>
+                <input
+                  type="checkbox"
+                  defaultChecked={typeof window !== 'undefined' && localStorage.getItem('luminara_advanced_ui') === '1'}
+                  onChange={e => {
+                    localStorage.setItem('luminara_advanced_ui', e.target.checked ? '1' : '0');
+                    window.dispatchEvent(new Event('luminara-advanced-ui'));
+                  }}
+                  className="accent-[#BF953F] w-4 h-4"
+                />
+              </label>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-2">
                 {statuses.map(s => {
@@ -188,19 +200,19 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                             ? s.source === 'env' || s.source === 'server' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                             : 'bg-white/5 text-gray-500 border border-white/10'
                         }`}>
-                          {s.isConfigured ? (s.source === 'server' ? 'Server key' : s.source === 'env' ? 'Active in Env' : 'Local Override') : 'Not Set'}
+                          {s.isConfigured ? (s.source === 'server' ? 'Provided by Luminara' : s.source === 'env' ? 'Connected' : 'Your key') : 'Not connected'}
                         </span>
                       </div>
 
                       <div className="flex items-center justify-between pt-1 text-[10px] font-mono text-gray-400">
-                        <span>{s.isConfigured ? s.maskedKey : 'No key detected'}</span>
+                        <span>{s.isConfigured ? s.maskedKey : 'Add a key in the tabs above'}</span>
                         {(['groq', 'tavily', 'firecrawl', 'exa', 'nvidia'].includes(s.id) && s.isConfigured || s.id === 'ollama') && (
                           <button
                             onClick={() => handleRunPingTest(s.id)}
                             disabled={isTesting}
                             className="text-[9px] px-2 py-0.5 rounded bg-[#BF953F]/10 hover:bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/30 transition-all font-bold"
                           >
-                            {isTesting ? 'Pinging...' : test ? (test.success ? `✓ ${test.latencyMs}ms` : '✗ Failed') : 'Test Ping'}
+                            {isTesting ? 'Testing…' : test ? (test.success ? `✓ Works (${test.latencyMs}ms)` : '✗ Not working') : 'Test'}
                           </button>
                         )}
                       </div>
@@ -451,7 +463,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
 
           {savedSuccess && (
             <div className="text-center text-xs font-bold text-emerald-400 animate-in fade-in py-1">
-              &check; Settings & Overrides Saved Successfully
+              &check; Saved
             </div>
           )}
         </div>
@@ -468,7 +480,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
             }}
             className="text-[10px] uppercase tracking-wider text-red-400 hover:text-red-300 font-bold"
           >
-            Clear Browser Overrides
+            Remove all my keys
           </button>
 
           <div className="flex items-center gap-3">

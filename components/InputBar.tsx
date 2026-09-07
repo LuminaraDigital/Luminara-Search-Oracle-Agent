@@ -59,10 +59,10 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
           disabled={isThinking}
           placeholder={
             isThinking 
-              ? "Oracle Agent is architecting your strategy..." 
+              ? "Working on your answer…" 
               : isVoiceActive 
-                ? "Listening for optimization query..." 
-                : "Ask Oracle Agent or provide a URL for audit & simulation..."
+                ? "Listening…" 
+                : "Ask a question, or paste your website address"
           }
           className={`flex-1 bg-transparent border-none outline-none text-gray-100 py-3.5 px-3 placeholder-gray-600 text-sm tracking-wide transition-all relative z-10 ${
             isThinking ? 'cursor-not-allowed italic text-gray-500' : ''
@@ -90,7 +90,7 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
                     ? 'bg-[#BF953F]/10 text-[#BF953F] border border-[#BF953F]/20' 
                     : 'bg-white/5 text-gray-400 border border-white/10'
                 }`}>
-                  {mode === OracleMode.DEEP_THINK ? 'Deep Strategy' : 'Flash Insight'}
+                  {mode === OracleMode.DEEP_THINK ? 'Thorough' : 'Quick'}
                 </div>
               )}
             </div>
@@ -99,7 +99,7 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
       </form>
       <div className="mt-4 text-center">
         <p className={`text-[10px] uppercase tracking-[0.2em] transition-all duration-500 ${isThinking ? 'text-gray-700' : 'text-gray-600'}`}>
-          Precision Search Intelligence &copy; Luminara Search | Oracle Agent
+          Answers can be wrong. Check important facts before acting. &copy; Luminara Suite
         </p>
       </div>
     </div>

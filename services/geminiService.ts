@@ -23,6 +23,7 @@ export interface StreamQueryOptions {
 }
 
 import { shouldSearch, toSearchQuery } from './search/searchIntent';
+import { planSearch } from './search/searchPlanner';
 import { toChatHistory } from './chat/messages';
 export { shouldSearch, toChatHistory };
 
@@ -30,6 +31,51 @@ const toGeminiContents = (prompt: string, history?: ChatTurn[]) => [
   ...(history ?? []).slice(-20).map(t => ({ role: t.role === 'user' ? 'user' : 'model', parts: [{ text: t.content }] })),
   { role: 'user', parts: [{ text: prompt }] },
 ];
+
+/**
+ * Runs the planned searches in parallel, keeps only well-scored, de-duplicated results and
+ * formats them as evidence the model is told to use *only when relevant*.
+ */
+async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | undefined, maxResults = 6): Promise<{
+  contextText: string;
+  sources: Array<{ uri: string; title: string }>;
+  queries: string[];
+  rationale: string;
+}> {
+  const plan = planSearch(prompt, dna);
+  if (!plan || !configService.getTavilyKey()) return { contextText: '', sources: [], queries: [], rationale: '' };
+
+  const responses = await Promise.all(plan.queries.map(q => tavilyService.search(q, { maxResults: 4, includeAnswer: true }).catch(() => ({ query: q, results: [] as any[], answer: undefined as string | undefined }))));
+  const seen = new Set<string>();
+  const merged: Array<{ title: string; url: string; content: string; score?: number }> = [];
+  for (const r of responses) {
+    for (const item of r.results) {
+      if (seen.has(item.url)) continue;
+      if (typeof item.score === 'number' && item.score < 0.25) continue;
+      seen.add(item.url);
+      merged.push(item);
+    }
+  }
+  merged.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const top = merged.slice(0, maxResults);
+  if (!top.length) return { contextText: '', sources: [], queries: plan.queries, rationale: plan.rationale };
+
+  const answers = responses.map(r => r.answer).filter(Boolean) as string[];
+  const lines = [
+    '[LIVE SEARCH EVIDENCE]',
+    `Queries run: ${plan.queries.map(q => `"${q}"`).join(', ')}`,
+    'Use this evidence only where it is relevant to the user\'s question. Cite sources as [n]. If the evidence does not answer the question, say so plainly rather than guessing.',
+    ...(answers.length ? [`Search engine summary: ${answers[0]}`] : []),
+    ...top.map((r, i) => `[${i + 1}] ${r.title} (${r.url}):\n${r.content.slice(0, 700)}`),
+    '--------------------------------------------------',
+  ];
+  return {
+    contextText: lines.join('\n'),
+    sources: top.map(r => ({ uri: r.url, title: r.title })),
+    queries: plan.queries,
+    rationale: plan.rationale,
+  };
+}
 
 export class ProviderUnavailableError extends Error {
   constructor(message = 'No language model responded. Add a Groq, NVIDIA NIM, Ollama, or Gemini key in Settings.') {
@@ -91,22 +137,22 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     let tavilyContext = '';
     let tavilySources: Array<{ uri: string; title: string }> = [];
     try {
-      if (!opts.skipSearch && shouldSearch(prompt) && configService.getTavilyKey()) {
-        const tavilyRes = await tavilyService.getGroundingContext(toSearchQuery(prompt));
-        if (tavilyRes.contextText) {
-          tavilyContext = `\n${tavilyRes.contextText}\n`;
-          tavilySources = tavilyRes.sources;
+      if (!opts.skipSearch) {
+        const evidence = await gatherSearchEvidence(prompt, dna);
+        if (evidence.contextText) {
+          tavilyContext = `\n${evidence.contextText}\n`;
+          tavilySources = evidence.sources;
           yield {
             toolExecution: {
-              tool: 'tavily_serp_search',
-              args: { query: toSearchQuery(prompt) },
-              output: `Found ${tavilySources.length} live SERP citations`,
+              tool: 'live_search',
+              args: { queries: evidence.queries, focus: evidence.rationale },
+              output: `Checked live search results (${evidence.queries.length} ${evidence.queries.length === 1 ? 'query' : 'queries'}, ${tavilySources.length} sources)`,
             },
           };
         }
       }
     } catch (e) {
-      console.warn('Tavily grounding fallback', e);
+      console.warn('Search grounding fallback', e);
     }
 
     const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${tavilyContext ? tavilyContext + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
@@ -214,20 +260,20 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     let foundUrls: Array<{ uri: string; title: string }> = [];
 
     // Execute live Tavily Search
-    if (!opts.skipSearch && shouldSearch(prompt) && configService.getTavilyKey()) {
+    if (!opts.skipSearch) {
       try {
-        const tavilyRes = await tavilyService.search(toSearchQuery(prompt), { maxResults: 5 });
-        if (tavilyRes.results.length > 0) {
+        const evidence = await gatherSearchEvidence(prompt, dna);
+        if (evidence.contextText) {
           toolExecutions.push({
-            tool: 'tavily_serp_search',
-            args: { query: toSearchQuery(prompt) },
-            output: `Found ${tavilyRes.results.length} live SERP citations`
+            tool: 'live_search',
+            args: { queries: evidence.queries, focus: evidence.rationale },
+            output: `Checked live search results (${evidence.sources.length} sources)`,
           });
-          foundUrls = tavilyRes.results.map(r => ({ uri: r.url, title: r.title }));
-          searchContext = `\n[TAVILY LIVE SERP EVIDENCE]\n` + tavilyRes.results.map((r, i) => `[${i+1}] ${r.title} (${r.url}):\n${r.content}`).join('\n') + '\n';
+          foundUrls = evidence.sources;
+          searchContext = `\n${evidence.contextText}\n`;
         }
       } catch (e) {
-        console.warn('Tavily search execution error', e);
+        console.warn('Search grounding error', e);
       }
     }
 
@@ -364,10 +410,11 @@ ${scrapeRes.markdown.slice(0, 3000)}
     const sources: Array<{ uri: string; title: string }> = [{ uri: websiteUrl, title: `${displayUrl} (Target Domain)` }];
     if (configService.getTavilyKey()) {
       try {
-        const tavilyRes = await tavilyService.getGroundingContext(toSearchQuery(`${displayUrl} search presence competitors ${focus}`));
-        if (tavilyRes.contextText) {
-          searchGrounding = `\n${tavilyRes.contextText}\n`;
-          sources.push(...tavilyRes.sources);
+        const brand = dna?.name || displayUrl.split('.')[0];
+        const evidence = await gatherSearchEvidence(`${brand} ${displayUrl} reviews competitors alternatives ${focus === 'SEO' ? 'ranking' : 'AI Overviews citation'}`, dna, 8);
+        if (evidence.contextText) {
+          searchGrounding = `\n${evidence.contextText}\n`;
+          sources.push(...evidence.sources);
         }
       } catch (e) {
         console.warn('[Audit] Tavily search skipped', e);
@@ -752,9 +799,9 @@ ${thoughts}`;
     let tavilyChunks: any[] = [];
     if (configService.getTavilyKey()) {
       try {
-        const tavilyRes = await tavilyService.search(toSearchQuery(query), { maxResults: 4 });
-        tavilyChunks = tavilyRes.results.map(r => ({ web: { uri: r.url, title: r.title } }));
-        tavilyEvidence = '\n[TAVILY LIVE MARKET EVIDENCE]\n' + tavilyRes.results.map(r => `• ${r.title}: ${r.content}`).join('\n') + '\n';
+        const evidence = await gatherSearchEvidence(query, dna, 8);
+        tavilyChunks = evidence.sources.map(src => ({ web: { uri: src.uri, title: src.title } }));
+        tavilyEvidence = evidence.contextText ? `\n${evidence.contextText}\n` : '';
       } catch (e) {
         console.warn('Tavily research fallback', e);
       }

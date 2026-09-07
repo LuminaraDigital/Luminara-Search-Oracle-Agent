@@ -108,7 +108,7 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder='Type a command (e.g. "kg sync", "vfs query", "audit run", "theme set")...'
+            placeholder='Type where you want to go: audit, ask, profile, research…'
             className="flex-1 bg-transparent text-white placeholder-gray-500 font-mono text-sm focus:outline-none"
           />
           <span className="px-2 py-0.5 rounded bg-white/10 text-gray-400 font-mono text-[10px]">
