@@ -207,7 +207,7 @@ export class NvidiaNimProvider extends BaseAIProvider {
   name = 'NVIDIA NIM Enterprise';
   type: AIProviderType = 'nim';
   config = {
-    model: 'meta/llama-3.1-70b-instruct',
+    model: 'meta/llama-3.2-11b-vision-instruct',
     endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
     temperature: 0.7,
     maxTokens: 4096,
@@ -639,7 +639,7 @@ export class AIProviderService {
       id: 'nim',
       name: 'NVIDIA NIM Enterprise',
       provider: 'NVIDIA',
-      model: 'meta/llama-3.1-70b-instruct',
+      model: 'meta/llama-3.2-11b-vision-instruct',
       isAvailable: Boolean(hasNim),
       isLocal: false,
       endpoint: 'integrate.api.nvidia.com/v1',

@@ -311,6 +311,9 @@ export class ConfigService {
     if (typeof window !== 'undefined') {
       const custom = localStorage.getItem('luminara_nvidia_proxy_endpoint');
       if (custom && custom.trim()) return custom.trim();
+      if ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '3000') {
+        return '/api/nim-proxy';
+      }
     }
     return '';
   }

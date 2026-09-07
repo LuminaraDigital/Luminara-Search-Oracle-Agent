@@ -62,11 +62,11 @@ export const NativeEngineHUD: React.FC = () => {
   const simulateFailover = () => {
     const failedName = activeEngine === 'groq' ? 'Groq Cloud LPU' : 'NVIDIA NIM Enterprise';
     const activeNext = activeEngine === 'groq' ? 'NVIDIA NIM Enterprise' : 'Ollama Sovereign SLM';
-    const nextModel = activeEngine === 'groq' ? 'meta/llama-3.1-70b-instruct' : 'llama3.2 (Local Daemon)';
+    const nextModel = activeEngine === 'groq' ? 'meta/llama-3.2-11b-vision-instruct' : 'llama3.2 (Local Daemon)';
 
     aiProviderService.dispatchFailover({
       failedProvider: failedName,
-      failedModel: activeEngine === 'groq' ? 'openai/gpt-oss-120b' : 'meta/llama-3.1-70b-instruct',
+      failedModel: activeEngine === 'groq' ? 'openai/gpt-oss-120b' : 'meta/llama-3.2-11b-vision-instruct',
       reason: 'HTTP 429 Rate Limit Exceeded (Simulated Test)',
       activatedProvider: activeNext,
       activatedModel: nextModel,

@@ -34,8 +34,8 @@ dist-ssr
 .wrangler/
 
 # Vendored third-party repositories (reference only, each has its own .git)
-open-seo/
-Switchyard/
+/open-seo/
+/Switchyard/
 
 # Internal planning docs (not part of the public release)
 docs/internal/

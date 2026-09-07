@@ -10,6 +10,13 @@ export default defineConfig(() => ({
   server: {
     port: 3000,
     host: '0.0.0.0',
+    proxy: {
+      '/api/nim-proxy': {
+        target: 'https://integrate.api.nvidia.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/nim-proxy/, ''),
+      },
+    },
   },
   plugins: [react()],
   build: {

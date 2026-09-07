@@ -23,7 +23,7 @@ export const NativeFailoverPopup: React.FC = () => {
           failedModel: 'openai/gpt-oss-120b',
           reason: 'HTTP 429 Rate Limit Exceeded (Auto Key Rotation Exhausted)',
           activatedProvider: 'NVIDIA NIM Enterprise',
-          activatedModel: 'meta/llama-3.1-70b-instruct',
+          activatedModel: 'meta/llama-3.2-11b-vision-instruct',
           latencyMs: 142,
           timestamp: Date.now()
         });
