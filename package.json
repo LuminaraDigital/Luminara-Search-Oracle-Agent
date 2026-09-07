@@ -1,23 +1,50 @@
 {
-  "name": "luminara-search---vaticinator-aeo-architect",
+  "name": "luminara-suite",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc && tsc -p worker",
+    "cf:dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "tg:setup": "node scripts/telegram-setup.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "node --experimental-strip-types services/harness/standaloneCli.ts"
   },
   "dependencies": {
-    "react-dom": "^19.2.3",
-    "react": "^19.2.3",
     "@google/genai": "1.34.0",
-    "marked": "12.0.0"
+    "@telegram-apps/sdk-react": "^3.3.9",
+    "@tonconnect/ui-react": "^3.0.2",
+    "dompurify": "^3.4.15",
+    "marked": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260907.1",
+    "@types/dompurify": "^3.0.5",
     "@types/node": "^22.14.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.5.5",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
-  }
+    "vite": "^6.2.0",
+    "vitest": "^3.2.7",
+    "wrangler": "^4.129.0"
+  },
+  "description": "Open-source AI search visibility suite: SEO, AEO and GEO audits grounded in live search results, runs on your own Groq / NVIDIA NIM / Ollama keys. Web + Telegram Mini App on Cloudflare.",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LuminaraDigital/Luminara-Suite.git"
+  },
+  "homepage": "https://luminarasuite.com"
 }

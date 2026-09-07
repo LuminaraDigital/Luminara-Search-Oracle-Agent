@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "luminara-suite",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // The Vite build output is served as static assets; /api/* is handled by the Worker first.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Custom domain. Add luminarasuite.com to your Cloudflare account first; wrangler creates the DNS records.
+  "routes": [
+    { "pattern": "luminarasuite.com", "custom_domain": true },
+    { "pattern": "www.luminarasuite.com", "custom_domain": true }
+  ],
+
+  // Subscriptions and per-user state. Create with: npx wrangler kv namespace create LUMINARA_KV
+  // then paste the returned id below.
+  "kv_namespaces": [
+    { "binding": "LUMINARA_KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+  ],
+
+  // Non-secret config. Secrets are set with `npx wrangler secret put NAME`:
+  //   BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, GROQ_API_KEY, GEMINI_API_KEY, TAVILY_API_KEY,
+  //   FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY
+  "vars": {
+    "WEBAPP_URL": "https://luminarasuite.com/",
+    "ALLOWED_ORIGINS": "https://luminarasuite.com,https://www.luminarasuite.com",
+    // Hosted keys are gated: signed-in Telegram users only, 25 free requests/day, paid plans unlimited.
+    // Users can always bring their own Groq / NVIDIA NIM / Ollama key in Settings (never gated).
+    "REQUIRE_TG_AUTH": "true",
+    "REQUIRE_SUBSCRIPTION": "false",
+    "FREE_DAILY_LIMIT": "25"
+  }
+}

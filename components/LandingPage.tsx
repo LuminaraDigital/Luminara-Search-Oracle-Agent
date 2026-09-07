@@ -3,13 +3,23 @@ import { ICONS } from '../constants';
 
 interface LandingPageProps {
   onEnter: () => void;
+  onNavigateAudit?: () => void;
+  onNavigateSuite?: () => void;
   onNavigateInfrastructure: () => void;
   onNavigateIntelligence: () => void;
   onNavigateWhy: () => void;
   onNavigatePricing: () => void;
 }
 
-const LandingPage: React.FC<LandingPageProps> = ({ onEnter, onNavigateInfrastructure, onNavigateIntelligence, onNavigateWhy, onNavigatePricing }) => {
+const LandingPage: React.FC<LandingPageProps> = ({ 
+  onEnter, 
+  onNavigateAudit, 
+  onNavigateSuite, 
+  onNavigateInfrastructure, 
+  onNavigateIntelligence, 
+  onNavigateWhy, 
+  onNavigatePricing 
+}) => {
   return (
     <div className="min-h-screen bg-black text-white selection:bg-[#BF953F] selection:text-black font-['Outfit'] antialiased">
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -22,12 +32,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnter, onNavigateInfrastruc
         <div className="flex items-center gap-4 group cursor-pointer" onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}>
           <ICONS.LuminaraLogo className="w-8 h-8 group-hover:scale-110 transition-transform duration-700" />
           <div className="flex flex-col leading-none">
-            <span className="text-lg font-bold tracking-[0.4em] uppercase gold-text">LUMINARA SEARCH</span>
-            <span className="text-[7px] text-gray-500 tracking-[0.6em] font-black uppercase mt-1">Grow Your Brand</span>
+            <span className="text-lg font-bold tracking-[0.4em] uppercase gold-text">LUMINARA SUITE</span>
+            <span className="text-[7px] text-gray-500 tracking-[0.6em] font-black uppercase mt-1">Autonomous Search & AEO Suite</span>
           </div>
         </div>
         
-        <div className="flex items-center gap-6 md:gap-10">
+        <div className="flex items-center gap-5 md:gap-8">
+          {onNavigateAudit && (
+            <button onClick={onNavigateAudit} className="hidden lg:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-[#FCF6BA] transition-colors">Instant Audit</button>
+          )}
+          {onNavigateSuite && (
+            <button onClick={onNavigateSuite} className="hidden lg:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-[#FCF6BA] transition-colors">Command Suite</button>
+          )}
           <button onClick={onNavigateInfrastructure} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">How It Works</button>
           <button onClick={onNavigateIntelligence} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Our AI</button>
           <button onClick={onNavigateWhy} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Why Us</button>
@@ -36,38 +52,48 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnter, onNavigateInfrastruc
             onClick={onEnter}
             className="px-6 py-2.5 bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
           >
-            Launch Terminal
+            Launch Oracle Agent
           </button>
         </div>
       </nav>
 
       <section className="relative pt-60 pb-40 px-6 flex flex-col items-center text-center z-10 overflow-hidden">
         <div className="inline-block px-5 py-1.5 rounded-full border border-[#BF953F]/20 bg-[#BF953F]/5 mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
-          <span className="text-[9px] font-black uppercase tracking-[0.7em] gold-text">Build Your Own Success</span>
+          <span className="text-[9px] font-black uppercase tracking-[0.7em] gold-text">Autonomous Search Sovereignty</span>
         </div>
         
-        <h1 className="text-5xl md:text-8xl lg:text-[10rem] font-light tracking-tighter leading-[0.85] mb-12 animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-100">
+        <h1 className="text-5xl md:text-8xl lg:text-[9rem] font-light tracking-tighter leading-[0.85] mb-12 animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-100">
           Search to <br />
-          <span className="gold-text italic animate-title-shimmer bg-size-200 font-medium not-italic tracking-tighter">Win.</span>
+          <span className="gold-text italic animate-title-shimmer bg-size-200 font-medium not-italic tracking-tighter">Dominate.</span>
         </h1>
         
-        <p className="max-w-3xl text-lg md:text-2xl text-gray-400 leading-relaxed font-light mb-20 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200 px-4">
-          Luminara Digital helps you beat other brands. We offer smart AI search tools. Get the best results without paying big fees to agencies every month.
+        <p className="max-w-3xl text-lg md:text-2xl text-gray-400 leading-relaxed font-light mb-16 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200 px-4">
+          Luminara Search and Oracle Agent provide always-on AEO simulation, instant SEO/GEO audits, and strategic intelligence—eliminating expensive agency retainers.
         </p>
 
-        <div className="flex flex-col md:flex-row gap-6 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-300">
-          <button 
-            onClick={() => window.open('https://luminara.digital/', '_blank')}
-            className="px-12 py-6 bg-white text-black font-black uppercase tracking-[0.4em] text-[9px] rounded-xl hover:bg-[#FCF6BA] transition-all hover:-translate-y-1"
-          >
-            Visit Website
-          </button>
+        <div className="flex flex-wrap items-center justify-center gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-300">
           <button 
             onClick={onEnter}
-            className="px-12 py-6 glass-morphism border border-[#BF953F]/30 text-[#FCF6BA] font-black uppercase tracking-[0.4em] text-[9px] rounded-xl hover:bg-[#BF953F]/10 transition-all hover:-translate-y-1"
+            className="px-10 py-5 bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-black uppercase tracking-[0.3em] text-[10px] rounded-xl hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-[#BF953F]/20"
           >
-            Start Oracle AI
+            Launch Oracle Agent
           </button>
+          {onNavigateAudit && (
+            <button 
+              onClick={onNavigateAudit}
+              className="px-10 py-5 glass-morphism border border-[#BF953F]/40 text-[#FCF6BA] font-black uppercase tracking-[0.3em] text-[10px] rounded-xl hover:bg-[#BF953F]/10 hover:border-[#BF953F] transition-all hover:-translate-y-0.5"
+            >
+              Instant Audit Scanner
+            </button>
+          )}
+          {onNavigateSuite && (
+            <button 
+              onClick={onNavigateSuite}
+              className="px-10 py-5 glass-morphism border border-white/10 text-gray-300 font-black uppercase tracking-[0.3em] text-[10px] rounded-xl hover:bg-white/5 hover:text-white transition-all hover:-translate-y-0.5"
+            >
+              Command Suite
+            </button>
+          )}
         </div>
       </section>
 
@@ -84,14 +110,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnter, onNavigateInfrastruc
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
               <div className="space-y-2">
-                <div className="text-2xl font-bold text-white">Up to 45%</div>
-                <div className="text-[10px] text-[#BF953F] uppercase font-black tracking-[0.2em]">More Money Back</div>
-                <div className="text-[11px] text-gray-500">Better results in just 3 months.</div>
+                <div className="text-2xl font-bold text-white">4 engines</div>
+                <div className="text-[10px] text-[#BF953F] uppercase font-black tracking-[0.2em]">Where you show up</div>
+                <div className="text-[11px] text-gray-500">Google, AI Overviews, ChatGPT and Perplexity in one audit.</div>
               </div>
               <div className="space-y-2">
-                <div className="text-2xl font-bold text-white">-41%</div>
-                <div className="text-[10px] text-[#BF953F] uppercase font-black tracking-[0.2em]">Lower Costs</div>
-                <div className="text-[11px] text-gray-500">Stop wasting money on ads that fail.</div>
+                <div className="text-2xl font-bold text-white">Your keys</div>
+                <div className="text-[10px] text-[#BF953F] uppercase font-black tracking-[0.2em]">Your AI account</div>
+                <div className="text-[11px] text-gray-500">Runs on Groq, NVIDIA NIM or Ollama. Open source under AGPL-3.0.</div>
               </div>
             </div>
             <button 
@@ -261,13 +287,17 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnter, onNavigateInfrastruc
           <div className="flex items-center gap-6">
             <ICONS.LuminaraLogo className="w-12 h-12" />
             <div className="flex flex-col">
-              <span className="text-2xl font-bold tracking-[0.5em] uppercase gold-text leading-none">LUMINARA SEARCH</span>
+              <span className="text-2xl font-bold tracking-[0.5em] uppercase gold-text leading-none">LUMINARA SUITE</span>
               <span className="text-[9px] text-gray-700 uppercase tracking-widest mt-2">Grow Your Brand Today</span>
             </div>
           </div>
           <div className="flex flex-wrap justify-center gap-12">
-            {['Privacy', 'Terms', 'Your Growth'].map(link => (
-              <a key={link} href="#" className="text-[9px] text-gray-600 uppercase tracking-widest hover:text-[#BF953F] transition-colors">{link}</a>
+            {[
+              { label: 'Privacy', href: '#privacy' },
+              { label: 'Terms', href: '#terms' },
+              { label: 'GitHub', href: 'https://github.com/LuminaraDigital/Luminara-Suite' },
+            ].map(link => (
+              <a key={link.label} href={link.href} target={link.href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer" className="text-[9px] text-gray-600 uppercase tracking-widest hover:text-[#BF953F] transition-colors">{link.label}</a>
             ))}
           </div>
         </div>

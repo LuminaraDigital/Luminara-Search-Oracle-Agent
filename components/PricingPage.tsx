@@ -1,3 +1,5 @@
+import { isInTelegram } from '../services/telegram/tma';
+import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
 import React, { useEffect } from 'react';
 import { ICONS } from '../constants';
 
@@ -79,7 +81,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
             Get the professional audit tool experts use. US$49 per month for up to 2 sites. Start your free trial today.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-6">
-            <button className="px-12 py-6 bg-[#BF953F] text-black font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl">Start 14-Day Free Trial</button>
+            <button onClick={onTerminal} className="px-12 py-6 bg-[#BF953F] text-black font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl">Start 14-Day Free Trial</button>
             <button onClick={onTerminal} className="px-12 py-6 glass-morphism border border-white/10 text-white font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-white/5 transition-all">Try The App Free</button>
           </div>
         </section>
@@ -113,9 +115,13 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
              </div>
 
              <div className="mt-20">
-                <button className="w-full py-8 rounded-3xl bg-white text-black font-black uppercase tracking-[0.5em] text-[11px] hover:bg-[#FCF6BA] transition-all transform hover:-translate-y-1 shadow-2xl">
+                {isInTelegram() ? (
+                  <TelegramAccountPanel />
+                ) : (
+                <button onClick={onTerminal} className="w-full py-8 rounded-3xl bg-white text-black font-black uppercase tracking-[0.5em] text-[11px] hover:bg-[#FCF6BA] transition-all transform hover:-translate-y-1 shadow-2xl">
                    Start My $49/month Plan
                 </button>
+                )}
                 <p className="text-center text-gray-600 text-[10px] uppercase tracking-widest mt-6">
                   Cancel anytime. Unlimited audits for your sites.
                 </p>

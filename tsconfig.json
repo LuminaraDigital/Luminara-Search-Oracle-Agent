@@ -10,6 +10,8 @@
       "DOM.Iterable"
     ],
     "skipLibCheck": true,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
     "types": [
       "node"
     ],
@@ -25,5 +27,15 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "worker",
+    "tests",
+    "vitest.config.ts",
+    "scripts",
+    "src",
+    "open-seo",
+    "node_modules",
+    "dist"
+  ]
 }

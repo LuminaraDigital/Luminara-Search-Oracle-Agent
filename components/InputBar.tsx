@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { ICONS } from '../constants';
 import { OracleMode } from '../types';
+import { OracleLiveService } from '../services/liveService';
 
 interface InputBarProps {
   onSendMessage: (text: string) => void;
@@ -40,13 +41,13 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
         <button
           type="button"
           onClick={onVoiceToggle}
-          disabled={isThinking}
+          disabled={isThinking || !OracleLiveService.isAvailable()}
+          title={OracleLiveService.isAvailable() ? 'Oracle Agent Live Voice' : 'Live Voice needs a Gemini API key in Settings'}
           className={`p-3.5 rounded-xl transition-all relative z-10 ${
             isVoiceActive 
               ? 'bg-red-500/20 text-red-400 animate-pulse' 
               : 'hover:bg-white/5 text-[#BF953F]'
           } ${isThinking ? 'cursor-not-allowed opacity-30' : ''}`}
-          title="Luminara Vaticinator Live Voice"
         >
           <ICONS.Mic />
         </button>
@@ -58,10 +59,10 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
           disabled={isThinking}
           placeholder={
             isThinking 
-              ? "Vaticinator is architecting your strategy..." 
+              ? "Oracle Agent is architecting your strategy..." 
               : isVoiceActive 
                 ? "Listening for optimization query..." 
-                : "Ask Vaticinator or provide a URL for simulation..."
+                : "Ask Oracle Agent or provide a URL for audit & simulation..."
           }
           className={`flex-1 bg-transparent border-none outline-none text-gray-100 py-3.5 px-3 placeholder-gray-600 text-sm tracking-wide transition-all relative z-10 ${
             isThinking ? 'cursor-not-allowed italic text-gray-500' : ''
@@ -98,7 +99,7 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
       </form>
       <div className="mt-4 text-center">
         <p className={`text-[10px] uppercase tracking-[0.2em] transition-all duration-500 ${isThinking ? 'text-gray-700' : 'text-gray-600'}`}>
-          Precision Search Intelligence &copy; Luminara Search Vaticinator
+          Precision Search Intelligence &copy; Luminara Search | Oracle Agent
         </p>
       </div>
     </div>

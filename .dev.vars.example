@@ -1,0 +1,11 @@
+# Copy to .dev.vars for `wrangler dev` (never commit .dev.vars). Production uses `wrangler secret put`.
+BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+GROQ_API_KEY=
+GEMINI_API_KEY=
+TAVILY_API_KEY=
+FIRECRAWL_API_KEY=
+EXA_API_KEY=
+NVIDIA_API_KEY=
+NVIDIA_ORG_ID=
+OLLAMA_API_KEY=

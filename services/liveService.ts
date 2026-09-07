@@ -1,4 +1,6 @@
 import { GoogleGenAI, Modality, Blob, LiveServerMessage } from '@google/genai';
+import { configService } from './configService';
+const getApiKey = () => configService.getGeminiKey() === 'proxy' ? '' : configService.getGeminiKey();
 
 function decode(base64: string) {
   const binaryString = atob(base64);
@@ -25,9 +27,9 @@ async function decodeAudioData(
   sampleRate: number,
   numChannels: number,
 ): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+  const dataInt16 = new Int16Array(data.buffer, data.byteOffset, Math.floor(data.byteLength / 2));
+  const frameCount = Math.floor(dataInt16.length / numChannels);
+  const buffer = ctx.createBuffer(numChannels, Math.max(frameCount, 1), sampleRate);
 
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
@@ -38,30 +40,62 @@ async function decodeAudioData(
   return buffer;
 }
 
+export class LiveVoiceError extends Error {
+  constructor(message: string, public readonly code: 'NO_KEY' | 'MIC_DENIED' | 'CONNECT_FAILED') {
+    super(message);
+    this.name = 'LiveVoiceError';
+  }
+}
+
 export class OracleLiveService {
-  private ai: GoogleGenAI;
+  private ai: GoogleGenAI | null = null;
   private sessionPromise: Promise<any> | null = null;
   private audioContext: AudioContext | null = null;
   private outputAudioContext: AudioContext | null = null;
   private stream: MediaStream | null = null;
+  private scriptProcessor: ScriptProcessorNode | null = null;
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
   private nextStartTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
   private onTranscription: (text: string, isUser: boolean) => void;
   private onStateChange: (active: boolean) => void;
+  private onError?: (err: Error) => void;
 
   constructor(
     onTranscription: (text: string, isUser: boolean) => void,
-    onStateChange: (active: boolean) => void
+    onStateChange: (active: boolean) => void,
+    onError?: (err: Error) => void
   ) {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     this.onTranscription = onTranscription;
     this.onStateChange = onStateChange;
+    this.onError = onError;
   }
 
-  async start() {
-    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-    this.outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  /** Voice mode is Gemini-only. Callers should gate the mic button on this. */
+  static isAvailable(): boolean {
+    return Boolean(getApiKey());
+  }
+
+  /**
+   * Starts a live session. Rejects with LiveVoiceError when the key is missing,
+   * the mic is denied, or the socket cannot be opened. Callers must catch.
+   */
+  async start(): Promise<void> {
+    const key = getApiKey();
+    if (!key) {
+      throw new LiveVoiceError('Live Voice requires a Google Gemini API key. Add one in Settings.', 'NO_KEY');
+    }
+    this.ai = new GoogleGenAI({ apiKey: key });
+
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e: any) {
+      throw new LiveVoiceError(`Microphone access was denied or unavailable (${e?.name || 'error'}).`, 'MIC_DENIED');
+    }
+
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    this.audioContext = new AudioCtx({ sampleRate: 16000 });
+    this.outputAudioContext = new AudioCtx({ sampleRate: 24000 });
 
     let currentInputTranscription = '';
     let currentOutputTranscription = '';
@@ -71,45 +105,59 @@ export class OracleLiveService {
       callbacks: {
         onopen: () => {
           this.onStateChange(true);
-          const source = this.audioContext!.createMediaStreamSource(this.stream!);
-          const scriptProcessor = this.audioContext!.createScriptProcessor(4096, 1, 1);
-          scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
+          if (!this.audioContext || !this.stream) return;
+          this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
+          this.scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
+          this.scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
             const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
             const pcmBlob = this.createBlob(inputData);
             this.sessionPromise?.then((session) => {
               session.sendRealtimeInput({ media: pcmBlob });
-            });
+            }).catch(() => { /* session already closed */ });
           };
-          source.connect(scriptProcessor);
-          scriptProcessor.connect(this.audioContext!.destination);
+          this.sourceNode.connect(this.scriptProcessor);
+          this.scriptProcessor.connect(this.audioContext.destination);
         },
         onmessage: async (message: LiveServerMessage) => {
-          if (message.serverContent?.outputTranscription) {
-            currentOutputTranscription += message.serverContent.outputTranscription.text;
+          const sc = message.serverContent;
+          if (sc?.outputTranscription?.text) {
+            currentOutputTranscription += sc.outputTranscription.text;
             this.onTranscription(currentOutputTranscription, false);
-          } else if (message.serverContent?.inputTranscription) {
-            currentInputTranscription += message.serverContent.inputTranscription.text;
+          } else if (sc?.inputTranscription?.text) {
+            currentInputTranscription += sc.inputTranscription.text;
             this.onTranscription(currentInputTranscription, true);
           }
 
-          if (message.serverContent?.turnComplete) {
+          if (sc?.turnComplete) {
             currentInputTranscription = '';
             currentOutputTranscription = '';
           }
 
-          const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-          if (base64Audio) {
-            this.playAudio(base64Audio);
+          const parts = sc?.modelTurn?.parts ?? [];
+          for (const part of parts) {
+            const base64Audio = part?.inlineData?.data;
+            if (base64Audio) {
+              try {
+                await this.playAudio(base64Audio);
+              } catch (e) {
+                console.warn('[Live] audio decode failed', e);
+              }
+            }
           }
 
-          if (message.serverContent?.interrupted) {
+          if (sc?.interrupted) {
             this.stopAllAudio();
           }
         },
-        onclose: () => this.onStateChange(false),
-        onerror: (e) => {
-          console.error("Live API Error:", e);
+        onclose: () => {
           this.onStateChange(false);
+          this.releaseAudio();
+        },
+        onerror: (e: any) => {
+          console.error('Live API Error:', e);
+          this.onError?.(new LiveVoiceError(e?.message || 'Live session error', 'CONNECT_FAILED'));
+          this.onStateChange(false);
+          this.releaseAudio();
         }
       },
       config: {
@@ -117,18 +165,25 @@ export class OracleLiveService {
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
         },
-        systemInstruction: 'You are Vaticinator, the AEO Architect for Luminara Search. In Live Voice mode, provide authoritative, expert insights on search optimization and agentic workflows. Be concise, professional, and clear. Avoid filler.',
+        systemInstruction: 'You are Oracle Agent, the elite AEO and Search Architect for Luminara Search. In Live Voice mode, provide authoritative, expert insights on search optimization, generative engines, and agentic workflows. Be concise, professional, and clear. Avoid filler.',
         outputAudioTranscription: {},
         inputAudioTranscription: {},
       },
     });
+
+    try {
+      await this.sessionPromise;
+    } catch (e: any) {
+      this.releaseAudio();
+      throw new LiveVoiceError(e?.message || 'Could not open the live audio session.', 'CONNECT_FAILED');
+    }
   }
 
   private createBlob(data: Float32Array): Blob {
     const l = data.length;
     const int16 = new Int16Array(l);
     for (let i = 0; i < l; i++) {
-      int16[i] = data[i] * 32768;
+      int16[i] = Math.max(-32768, Math.min(32767, Math.round(data[i] * 32767)));
     }
     return {
       data: encode(new Uint8Array(int16.buffer)),
@@ -150,18 +205,47 @@ export class OracleLiveService {
   }
 
   private stopAllAudio() {
-    this.sources.forEach(s => s.stop());
+    this.sources.forEach(s => { try { s.stop(); } catch { /* already stopped */ } });
     this.sources.clear();
     this.nextStartTime = 0;
   }
 
-  async stop() {
-    this.onStateChange(false);
+  private releaseAudio() {
     this.stopAllAudio();
+    if (this.scriptProcessor) {
+      this.scriptProcessor.onaudioprocess = null;
+      try { this.scriptProcessor.disconnect(); } catch { /* noop */ }
+      this.scriptProcessor = null;
+    }
+    if (this.sourceNode) {
+      try { this.sourceNode.disconnect(); } catch { /* noop */ }
+      this.sourceNode = null;
+    }
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
     }
-    const session = await this.sessionPromise;
-    if (session) session.close();
+    if (this.audioContext) {
+      this.audioContext.close().catch(() => {});
+      this.audioContext = null;
+    }
+    if (this.outputAudioContext) {
+      this.outputAudioContext.close().catch(() => {});
+      this.outputAudioContext = null;
+    }
+  }
+
+  async stop() {
+    this.onStateChange(false);
+    this.releaseAudio();
+    const pending = this.sessionPromise;
+    this.sessionPromise = null;
+    if (!pending) return;
+    try {
+      const session = await pending;
+      session?.close?.();
+    } catch {
+      // session never opened; nothing to close
+    }
   }
 }

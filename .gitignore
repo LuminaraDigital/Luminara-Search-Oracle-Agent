@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +25,24 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local backups / scratch
+*.backup
+*.backup2
+*.bak
+.dev.vars
+.wrangler/
+
+# Vendored third-party repositories (reference only, each has its own .git)
+open-seo/
+Switchyard/
+
+# Internal planning docs (not part of the public release)
+docs/internal/
+
+# Local tooling
+.claude/
+.dev.vars
+.wrangler/
+*.log
+coverage/

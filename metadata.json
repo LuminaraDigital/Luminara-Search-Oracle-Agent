@@ -1,6 +1,6 @@
 {
-  "name": "Luminara Search - Vaticinator AEO Architect",
-  "description": "Lumen Quaerere is the premier holographic search simulator and Vaticinator architect, helping you dominate the Answer Box and GenAI responses with a premium Black and Gold aesthetic.",
+  "name": "Luminara Suite",
+  "description": "Open-source AI search visibility suite. SEO, AEO and GEO audits grounded in live search results.",
   "requestFramePermissions": [
     "microphone"
   ]

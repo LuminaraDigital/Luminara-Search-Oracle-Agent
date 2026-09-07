@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Message } from '../types';
 import { ICONS } from '../constants';
-import { marked } from 'marked';
+import { renderMarkdown } from '../utils/markdown';
+import { ReportDisplay } from './audit/ReportDisplay';
 
 interface MessageListProps {
   messages: Message[];
@@ -18,18 +19,13 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isThinking, activeTool]);
 
-  useMemo(() => {
-    marked.setOptions({
-      gfm: true,
-      breaks: true,
-    });
-  }, []);
-
   const handleCopy = (text: string, id: string) => {
     if (!text) return;
     navigator.clipboard.writeText(text).then(() => {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
+    }).catch(() => {
+      // Clipboard is unavailable on insecure origins or when permission is denied.
     });
   };
 
@@ -42,36 +38,36 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
           </div>
           <div className="space-y-6">
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight gold-text pb-2">
-              Economic Sovereignty Protocol
+              Oracle Agent Neural Core
             </h1>
             <p className="text-gray-400 text-lg max-w-2xl mx-auto leading-relaxed px-4">
-              Your always-on AEO consultant. Eliminate agency retainers with revenue-linked agentic simulations.
+              Your always-on AEO & Search Architect. Eliminate agency retainers with revenue-linked agentic simulations.
             </p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full px-4">
             <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
-              <div className="text-3xl font-bold gold-text mb-2">25-45%</div>
-              <div className="text-[9px] text-[#BF953F] font-black uppercase tracking-[0.2em] mb-3">ROI Lift</div>
-              <div className="text-[10px] text-gray-500 leading-relaxed">Typical improvement in marketing ROI within 90 days of implementation.</div>
+              <div className="text-3xl font-bold gold-text mb-2">Live</div>
+              <div className="text-[9px] text-[#BF953F] font-black uppercase tracking-[0.2em] mb-3">SERP Grounding</div>
+              <div className="text-[10px] text-gray-500 leading-relaxed">Every answer is grounded in real search results when a search key is configured.</div>
             </div>
             
             <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
-              <div className="text-3xl font-bold gold-text mb-2">-41%</div>
-              <div className="text-[9px] text-[#BF953F] font-black uppercase tracking-[0.2em] mb-3">Lead Cost</div>
-              <div className="text-[10px] text-gray-500 leading-relaxed">Reduction in cost-per-lead by reallocating budget from waste to high-ROAS nodes.</div>
+              <div className="text-3xl font-bold gold-text mb-2">3</div>
+              <div className="text-[9px] text-[#BF953F] font-black uppercase tracking-[0.2em] mb-3">Audit Lenses</div>
+              <div className="text-[10px] text-gray-500 leading-relaxed">SEO, AEO and GEO audits with visibility radar, competitor map and schema gaps.</div>
             </div>
             
             <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
-              <div className="text-3xl font-bold gold-text mb-2">68%</div>
-              <div className="text-[9px] text-[#BF953F] font-black uppercase tracking-[0.2em] mb-3">Efficiency</div>
-              <div className="text-[10px] text-gray-500 leading-relaxed">Increased content & SEO velocity through agentic target clusters.</div>
+              <div className="text-3xl font-bold gold-text mb-2">DNA</div>
+              <div className="text-[9px] text-[#BF953F] font-black uppercase tracking-[0.2em] mb-3">Brand Memory</div>
+              <div className="text-[10px] text-gray-500 leading-relaxed">Link your Business DNA once and every audit is personalised to your USP and competitors.</div>
             </div>
 
             <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
-              <div className="text-3xl font-bold gold-text mb-2">ZERO</div>
-              <div className="text-[9px] text-[#BF953F] font-black uppercase tracking-[0.2em] mb-3">Retainers</div>
-              <div className="text-[10px] text-gray-500 leading-relaxed">Strategic dominance without the high overhead of agency management.</div>
+              <div className="text-3xl font-bold gold-text mb-2">Plain</div>
+              <div className="text-[9px] text-[#BF953F] font-black uppercase tracking-[0.2em] mb-3">English Mode</div>
+              <div className="text-[10px] text-gray-500 leading-relaxed">One click rewrites any report at an 8th-grade reading level for non-technical stakeholders.</div>
             </div>
           </div>
         </div>
@@ -81,11 +77,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
         const isLastMessage = index === messages.length - 1;
         const showStreamingIndicator = isThinking && isLastMessage && msg.role === 'model';
         
-        const isError = msg.role === 'model' && (
-          msg.content.startsWith('Error:') || 
-          msg.content.startsWith('I encountered an error') ||
-          msg.content.startsWith('Strategic systems')
-        );
+        const isError = msg.role === 'model' && Boolean(msg.isError);
 
         return (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -142,7 +134,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                           <div key={i} className="rounded-2xl overflow-hidden border border-[#BF953F]/20 bg-black/60 shadow-inner">
                             <div className="bg-[#BF953F]/5 px-6 py-3 flex items-center justify-between border-b border-[#BF953F]/10">
                               <div className="flex items-center gap-4">
-                                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-[#BF953F]">Kernel Audit v4.1</span>
+                                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-[#BF953F]">Tool activity</span>
                               </div>
                               <button 
                                 onClick={() => handleCopy(exec.output, execId)}
@@ -153,7 +145,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                             </div>
                             <div className="p-6 font-mono text-[12px] space-y-4">
                               <div className="text-blue-400/60 bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">
-                                <span className="text-gray-600 mr-3">>></span>{exec.code}
+                                <span className="text-gray-600 mr-3">&gt;&gt;</span>{exec.code ?? (exec.tool ? `${exec.tool}(${exec.args?.query ?? ''})` : '')}
                               </div>
                               <div className="text-gray-400 pt-3 whitespace-pre leading-relaxed border-t border-white/5">
                                 {exec.output}
@@ -166,10 +158,23 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                   )}
 
                   {msg.role === 'model' ? (
-                    <div 
-                      className="markdown-content prose prose-invert max-w-none"
-                      dangerouslySetInnerHTML={{ __html: marked.parse(msg.content) }}
-                    />
+                    (() => {
+                      // Only route to the structured report viewer once the stream has finished;
+                      // a half-streamed table would otherwise flicker between renderers.
+                      const isAuditReport = !showStreamingIndicator && msg.content.includes('# ') && 
+                        (msg.content.includes('Visibility Radar') || msg.content.includes('Strategic Intelligence Report') || msg.content.includes('Diagnostic Scan') || msg.content.includes('Competitor Reality Map'));
+
+                      if (isAuditReport) {
+                        return <ReportDisplay markdownText={msg.content} sources={msg.groundingUrls} />;
+                      }
+
+                      return (
+                        <div 
+                          className="markdown-content prose prose-invert max-w-none"
+                          dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                        />
+                      );
+                    })()
                   ) : (
                     msg.content
                   )}
@@ -184,7 +189,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                     </div>
                   )}
 
-                  {msg.groundingUrls && msg.groundingUrls.length > 0 && (
+                  {msg.groundingUrls && msg.groundingUrls.length > 0 && !msg.content.includes('Visibility Radar') && (
                     <div className="mt-16 pt-12 border-t border-[#BF953F]/10 space-y-8">
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
@@ -237,7 +242,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                 <div className="flex items-center gap-4">
                   <span className="text-[12px] font-black text-[#FCF6BA] uppercase tracking-[0.4em]">{activeTool.name}</span>
                   <div className="h-2 w-px bg-white/20"></div>
-                  <span className="text-[9px] text-gray-600 font-mono">TASK_INIT_0x{Math.floor(Math.random() * 9999).toString(16).toUpperCase()}</span>
+                  <span className="text-[9px] text-gray-600 font-mono">{activeTool.name.toUpperCase()}</span>
                 </div>
                 <span className="text-[11px] text-[#BF953F]/80 font-bold uppercase tracking-[0.2em]">{activeTool.stage}</span>
               </div>
@@ -246,7 +251,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
             {activeTool.name === 'execute_python' && activeTool.output && (
               <div className="bg-black/80 border border-[#BF953F]/20 rounded-2xl p-6 font-mono text-[11px] text-gray-500 shadow-3xl animate-in zoom-in-95 border-l-4 border-l-[#BF953F]">
                 <div className="flex items-center gap-3 mb-4 text-[#BF953F]/40 uppercase tracking-[0.3em] font-black text-[9px]">
-                  Vaticinator Kernel Matrix Stream
+                  Oracle Agent Kernel Matrix Stream
                 </div>
                 <div className="whitespace-pre overflow-hidden leading-relaxed opacity-70 border-l border-white/5 pl-4">
                   {activeTool.output}
