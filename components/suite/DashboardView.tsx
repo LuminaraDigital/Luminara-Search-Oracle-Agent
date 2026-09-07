@@ -165,7 +165,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna })
           <div>
             <div className="text-[9px] font-black uppercase tracking-widest text-gray-400">Business profile</div>
             <div className="text-xs font-bold text-white">
-              {dna ? dna.name : 'System Standby'}
+              {dna ? dna.name : 'Not set up yet'}
             </div>
           </div>
           <button

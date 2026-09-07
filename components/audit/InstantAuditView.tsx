@@ -116,7 +116,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
           </div>
           {onNavigateDNA && (
             <button onClick={onNavigateDNA} className="text-[10px] font-bold uppercase tracking-wider text-[#FCF6BA] hover:underline">
-              Link DNA &rarr;
+              Add my business &rarr;
             </button>
           )}
         </div>

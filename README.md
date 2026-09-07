@@ -17,6 +17,10 @@
 
 ---
 
+<p align="center">
+  <img src="docs/screenshots/home.png" alt="Luminara Suite home: Ask a question, Audit my website, My business profile" width="900">
+</p>
+
 ## What it does
 
 Luminara Suite is a web app and Telegram Mini App for **Answer Engine Optimization (AEO)**: the practice of getting your brand cited by AI answers, not just ranked by Google.
@@ -29,6 +33,25 @@ Luminara Suite is a web app and Telegram Mini App for **Answer Engine Optimizati
 - **Telegram Mini App**: the same product inside Telegram, with Stars payments and TON wallet connect.
 
 It runs on **your own AI account**: Groq, NVIDIA NIM or Ollama (local or cloud), with Gemini as an optional fallback. No Luminara account is needed to self-host.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/audit.png" alt="Website audit: paste a domain, choose SEO, AEO or GEO"></td>
+    <td width="50%"><img src="docs/screenshots/ask.png" alt="Ask Luminara: chat grounded in live search results"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Audit my website</sub></td>
+    <td align="center"><sub>Ask a question, with plain-English rewrite and sources</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/profile.png" alt="Business profile: what you sell, to whom, and your competitors"></td>
+    <td width="50%"><img src="docs/screenshots/landing.png" alt="Luminara Suite landing page"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Business profile that personalises every answer</sub></td>
+    <td align="center"><sub>luminarasuite.com</sub></td>
+  </tr>
+</table>
 
 > **Labs.** OracleMind SLM Studio, the TimesFM forecaster and the Archy harness are demonstrations. Their numbers are simulated and the UI says so. They are kept for exploration, not measurement.
 

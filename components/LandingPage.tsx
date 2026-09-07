@@ -42,7 +42,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <button onClick={onNavigateAudit} className="hidden lg:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-[#FCF6BA] transition-colors">Instant Audit</button>
           )}
           {onNavigateSuite && (
-            <button onClick={onNavigateSuite} className="hidden lg:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-[#FCF6BA] transition-colors">Command Suite</button>
+            <button onClick={onNavigateSuite} className="hidden lg:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-[#FCF6BA] transition-colors">All tools</button>
           )}
           <button onClick={onNavigateInfrastructure} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">How It Works</button>
           <button onClick={onNavigateIntelligence} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Our AI</button>
@@ -52,23 +52,23 @@ const LandingPage: React.FC<LandingPageProps> = ({
             onClick={onEnter}
             className="px-6 py-2.5 bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
           >
-            Launch Oracle Agent
+            Open the app
           </button>
         </div>
       </nav>
 
       <section className="relative pt-60 pb-40 px-6 flex flex-col items-center text-center z-10 overflow-hidden">
         <div className="inline-block px-5 py-1.5 rounded-full border border-[#BF953F]/20 bg-[#BF953F]/5 mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
-          <span className="text-[9px] font-black uppercase tracking-[0.7em] gold-text">Autonomous Search Sovereignty</span>
+          <span className="text-[9px] font-black uppercase tracking-[0.7em] gold-text">AI search visibility for your business</span>
         </div>
         
         <h1 className="text-5xl md:text-8xl lg:text-[9rem] font-light tracking-tighter leading-[0.85] mb-12 animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-100">
-          Search to <br />
-          <span className="gold-text italic animate-title-shimmer bg-size-200 font-medium not-italic tracking-tighter">Dominate.</span>
+          Show up where <br />
+          <span className="gold-text italic animate-title-shimmer bg-size-200 font-medium not-italic tracking-tighter">customers ask.</span>
         </h1>
         
         <p className="max-w-3xl text-lg md:text-2xl text-gray-400 leading-relaxed font-light mb-16 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200 px-4">
-          Luminara Search and Oracle Agent provide always-on AEO simulation, instant SEO/GEO audits, and strategic intelligence—eliminating expensive agency retainers.
+          See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a plain-English list of what to fix first. Runs on your own AI account, open source.
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-300">
@@ -76,14 +76,14 @@ const LandingPage: React.FC<LandingPageProps> = ({
             onClick={onEnter}
             className="px-10 py-5 bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-black uppercase tracking-[0.3em] text-[10px] rounded-xl hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-[#BF953F]/20"
           >
-            Launch Oracle Agent
+            Open the app
           </button>
           {onNavigateAudit && (
             <button 
               onClick={onNavigateAudit}
               className="px-10 py-5 glass-morphism border border-[#BF953F]/40 text-[#FCF6BA] font-black uppercase tracking-[0.3em] text-[10px] rounded-xl hover:bg-[#BF953F]/10 hover:border-[#BF953F] transition-all hover:-translate-y-0.5"
             >
-              Instant Audit Scanner
+              Audit my website
             </button>
           )}
           {onNavigateSuite && (
@@ -91,7 +91,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               onClick={onNavigateSuite}
               className="px-10 py-5 glass-morphism border border-white/10 text-gray-300 font-black uppercase tracking-[0.3em] text-[10px] rounded-xl hover:bg-white/5 hover:text-white transition-all hover:-translate-y-0.5"
             >
-              Command Suite
+              See all tools
             </button>
           )}
         </div>
