@@ -109,6 +109,15 @@ export const THEMES: Record<ThemeId, LuminaraTheme> = {
 };
 
 const THEME_STORAGE_KEY = 'luminara_active_theme';
+const ADVANCED_UI_KEY = 'luminara_advanced_ui';
+
+function advancedUiEnabled(): boolean {
+  try {
+    return localStorage.getItem(ADVANCED_UI_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 class ThemingService {
   private currentThemeId: ThemeId = 'liquid-gold';
@@ -116,9 +125,14 @@ class ThemingService {
 
   constructor() {
     try {
-      const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId;
-      if (saved && THEMES[saved]) {
-        this.currentThemeId = saved;
+      // Level 4 product path: Liquid Gold only unless developer tools are on.
+      if (!advancedUiEnabled()) {
+        this.currentThemeId = 'liquid-gold';
+      } else {
+        const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId;
+        if (saved && THEMES[saved]) {
+          this.currentThemeId = saved;
+        }
       }
     } catch {
       this.currentThemeId = 'liquid-gold';
@@ -126,35 +140,46 @@ class ThemingService {
   }
 
   public getTheme(): LuminaraTheme {
-    return THEMES[this.currentThemeId];
+    return THEMES[this.ensureProductTheme()];
   }
 
   public getThemeId(): ThemeId {
-    return this.currentThemeId;
+    return this.ensureProductTheme();
   }
 
   public listThemes(): LuminaraTheme[] {
+    if (!advancedUiEnabled()) return [THEMES['liquid-gold']];
     return Object.values(THEMES);
   }
 
   public setTheme(id: ThemeId): LuminaraTheme {
-    if (!THEMES[id]) return this.getTheme();
-    this.currentThemeId = id;
+    const resolved = !advancedUiEnabled() ? 'liquid-gold' : id;
+    if (!THEMES[resolved]) return this.getTheme();
+    this.currentThemeId = resolved;
     try {
-      localStorage.setItem(THEME_STORAGE_KEY, id);
+      localStorage.setItem(THEME_STORAGE_KEY, resolved);
     } catch {
       // storage disabled
     }
-    this.applyCssVariables(THEMES[id]);
-    this.notifyListeners(THEMES[id]);
-    return THEMES[id];
+    this.applyCssVariables(THEMES[resolved]);
+    this.notifyListeners(THEMES[resolved]);
+    return THEMES[resolved];
   }
 
   public cycleTheme(): LuminaraTheme {
+    if (!advancedUiEnabled()) return this.setTheme('liquid-gold');
     const themeIds: ThemeId[] = ['liquid-gold', 'vantablack', 'tokyo-night', 'rose-pine', 'cyber-emerald'];
     const currentIndex = themeIds.indexOf(this.currentThemeId);
     const nextIndex = (currentIndex + 1) % themeIds.length;
     return this.setTheme(themeIds[nextIndex]);
+  }
+
+  /** Force Liquid Gold whenever advanced UI is off (product craft lock). */
+  public ensureProductTheme(): ThemeId {
+    if (!advancedUiEnabled() && this.currentThemeId !== 'liquid-gold') {
+      this.setTheme('liquid-gold');
+    }
+    return this.currentThemeId;
   }
 
   public applyCssVariables(theme: LuminaraTheme): void {

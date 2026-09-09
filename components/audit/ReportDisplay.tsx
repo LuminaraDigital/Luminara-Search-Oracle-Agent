@@ -13,9 +13,12 @@ import { TrustPackPanel } from './TrustPackPanel';
 import { WritingQualityCard } from './WritingQualityCard';
 import { ResultsTrackingCard } from './ResultsTrackingCard';
 import { VisibilityTrendsCard } from './VisibilityTrendsCard';
+import { splitWikiParts } from '../../services/audit/wikiLinkService';
 import { ShareOfVoiceCard } from './ShareOfVoiceCard';
 import { SourceCitationGraphView } from './SourceCitationGraph';
 import { EnterpriseTrustPanel } from './EnterpriseTrustPanel';
+import { ShipActionGate } from './ShipActionGate';
+import { readShipCommitment, type ShipCommitment } from '../../services/audit/shipCommitmentService';
 import { RemediationPayload } from '../../services/deployment/cmsDeploymentService';
 import { EmpiricalCitationSummary } from '../../services/audit/empiricalCitationService';
 import { EnrichedEntityIntelligence } from '../../services/enrichment/publicApisEnrichmentService';
@@ -50,26 +53,49 @@ interface ReportDisplayProps {
 export const HighlightedText: React.FC<{ text: string }> = ({ text }) => {
   const terms = Object.keys(GLOSSARY);
   const pattern = new RegExp(`\\b(${terms.join('|')})\\b`, 'gi');
-  const parts = text.split(pattern);
 
+  const renderGlossary = (segment: string, keyPrefix: string) => {
+    const parts = segment.split(pattern);
+    return parts.map((part, index) => {
+      const upperPart = part.toUpperCase();
+      const definition = GLOSSARY[upperPart];
+      if (definition) {
+        return (
+          <span key={`${keyPrefix}-${index}`} className="group relative inline-block cursor-help text-gold-light border-b border-dotted border-gold/60 hover:text-white transition-colors">
+            {part}
+            <span className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-300 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 glass-morphism border border-gold/40 text-gray-200 text-xs rounded-xl p-3 shadow-2xl z-50 whitespace-normal pointer-events-none bg-black/95">
+              <strong className="block mb-1 text-gold-light font-bold uppercase tracking-wider text-[10px]">{upperPart}</strong>
+              {definition}
+            </span>
+          </span>
+        );
+      }
+      return <React.Fragment key={`${keyPrefix}-${index}`}>{part}</React.Fragment>;
+    });
+  };
+
+  const wikiParts = splitWikiParts(text);
   return (
     <>
-      {parts.map((part, index) => {
-        const upperPart = part.toUpperCase();
-        const definition = GLOSSARY[upperPart];
-
-        if (definition) {
+      {wikiParts.map((wp, i) => {
+        if (wp.type === 'wiki') {
           return (
-            <span key={index} className="group relative inline-block cursor-help text-gold-light border-b border-dotted border-gold/60 hover:text-white transition-colors">
-              {part}
-              <span className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-300 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 glass-morphism border border-gold/40 text-gray-200 text-xs rounded-xl p-3 shadow-2xl z-50 whitespace-normal pointer-events-none bg-black/95">
-                <strong className="block mb-1 text-gold-light font-bold uppercase tracking-wider text-[10px]">{upperPart}</strong>
-                {definition}
-              </span>
-            </span>
+            <button
+              key={`wiki-${i}`}
+              type="button"
+              title={`Competitor: ${wp.value}`}
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent('luminara-open-brand-memory', { detail: { competitor: wp.value } })
+                );
+              }}
+              className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-md bg-gold/15 border border-gold/40 text-gold-light text-[11px] font-semibold hover:bg-gold/25 transition-colors"
+            >
+              [[{wp.value}]]
+            </button>
           );
         }
-        return part;
+        return <React.Fragment key={`t-${i}`}>{renderGlossary(wp.value, `g-${i}`)}</React.Fragment>;
       })}
     </>
   );
@@ -399,6 +425,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
   const [showWhiteLabelModal, setShowWhiteLabelModal] = useState(false);
+  const [shipCommitment, setShipCommitment] = useState<ShipCommitment | null>(() =>
+    readShipCommitment(targetDomain || 'unknown', markdownText),
+  );
 
   const parsedStructure = useMemo(() => {
     const lines = markdownText.split('\n');
@@ -507,21 +536,39 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   }, [markdownText]);
 
   const validSources = sources?.filter(s => s && s.uri);
+  const sourceCount = validSources?.length || 0;
+  const hasEvidence = Boolean(
+    (empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,
+  );
+  const reportUnlocked = Boolean(shipCommitment);
 
   return (
     <div className="w-full text-gray-200 animate-in fade-in duration-500">
-      {/* Autonomous Action & Enterprise Command Bar */}
-      <div className="mb-6 glass-morphism rounded-2xl border border-gold/40 p-4 sm:p-5 bg-gradient-to-r from-black via-black/90 to-black/80 shadow-2xl">
+      {!reportUnlocked && (
+        <ShipActionGate
+          domain={targetDomain}
+          markdownText={markdownText}
+          hasEvidence={hasEvidence}
+          sourceCount={sourceCount}
+          onCommitted={setShipCommitment}
+          onDeploy={() => setShowDeployModal(true)}
+        />
+      )}
+
+      {reportUnlocked && (
+      <>
+      {/* Action bar after ship commitment */}
+      <div className="mb-6 glass-morphism rounded-2xl border border-gold/40 p-4 sm:p-5 bg-black/80 shadow-2xl">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="w-2 h-2 rounded-full bg-success-400 animate-pulse"></span>
               <span className="text-[10px] font-black uppercase tracking-[0.25em] text-gold-light">
-                Autonomous Action Engine Active
+                Committed: {shipCommitment?.label}
               </span>
             </div>
             <p className="text-xs text-gray-300">
-              Audit diagnosed. Remediated Schema.org entity graph generated and ready for instant deployment.
+              Full report unlocked. Ship the move, then use deploy or export when you need them.
             </p>
           </div>
 
@@ -566,7 +613,25 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           </div>
         </div>
       </div>
+      </>
+      )}
 
+      {/* Evidence is always visible (cite-or-silence), even before unlock */}
+      {empiricalSummary && !reportUnlocked && (
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setShowEvidenceDrawer(true)}
+            className="px-3.5 py-2 rounded-xl glass-morphism border border-success-500/30 text-xs font-mono text-success-200 hover:text-white flex items-center gap-1.5 transition-all"
+          >
+            <ICONS.Radar className="w-4 h-4 text-success-400" />
+            Preview evidence ({empiricalSummary.citationRatePercent}%)
+          </button>
+        </div>
+      )}
+
+      {reportUnlocked && (
+      <>
       {/* Entity Authority & Grounding Provenance (Wikidata, Wayback Machine, HTTP Security) */}
       {enrichedEntity && (
         <div className="mb-6">
@@ -635,8 +700,10 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           </div>
         </div>
       )}
+      </>
+      )}
 
-      {/* Modals & Drawers */}
+      {/* Modals & Drawers (available from gate deploy / evidence preview) */}
       <DiffViewerModal
         isOpen={showDiffModal}
         onClose={() => setShowDiffModal(false)}

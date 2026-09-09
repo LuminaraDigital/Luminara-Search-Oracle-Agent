@@ -9,6 +9,7 @@ import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 export const TON_PRICING: Record<string, { ton: number; nanoTon: string }> = {
   starter: { ton: 15, nanoTon: '15000000000' },
   growth: { ton: 45, nanoTon: '45000000000' },
+  agency: { ton: 120, nanoTon: '120000000000' },
 };
 
 export interface TonOrder {

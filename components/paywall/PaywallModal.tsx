@@ -283,6 +283,49 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                 : 'Pay 45 TON · 30 Days'}
             </button>
           </div>
+
+          {/* Pro / Agency Plan */}
+          <div className="p-5 rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/10 to-transparent flex flex-col justify-between space-y-4 hover:border-gold transition-all relative sm:col-span-2">
+            <div className="absolute -top-2.5 left-4 px-2.5 py-0.5 rounded-full bg-white text-black font-black text-[9px] uppercase tracking-widest">
+              Moat
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-bold text-gold-light">Pro / Agency</span>
+                <span className="text-xs font-mono text-gold font-bold">
+                  {activeTab === 'stars' ? '18,000 ⭐' : '120 TON'}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                25 domains, audit memory timeline, competitor citation deltas, 10 client workspaces, white-label PDF, API access, daily Sentinel.
+              </p>
+              <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] text-gray-300">
+                <li className="flex items-center gap-2">
+                  <span className="text-gold">✓</span> Brand Memory Vault (unlimited depth)
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-gold">✓</span> 10 Agency client workspaces
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-gold">✓</span> Competitor watchlist + deltas
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-gold">✓</span> Scheduled re-audits + API
+                </li>
+              </ul>
+            </div>
+            <button
+              onClick={() => (activeTab === 'stars' ? handleStarsCheckout('agency') : handleTonCheckout('agency'))}
+              disabled={busyPlan !== null}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.2em] text-[10px] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg"
+            >
+              {busyPlan === 'agency'
+                ? 'Processing…'
+                : activeTab === 'stars'
+                ? 'Pay 18,000 Stars · 30 Days'
+                : 'Pay 120 TON · 30 Days'}
+            </button>
+          </div>
         </div>
 
         {/* TON Wallet Connect helper if in TON tab */}

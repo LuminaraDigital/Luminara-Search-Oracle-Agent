@@ -14,13 +14,14 @@ interface InstantAuditViewProps {
 
 export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavigateDNA }) => {
   const [url, setUrl] = useState('');
-  const [focus, setFocus] = useState<ReportFocus>('SEO');
+  const [focus, setFocus] = useState<ReportFocus>('AEO');
   const [lenses, setLenses] = useState<AuditLens[]>(() => inferLenses(dna));
   const toggleLens = (id: AuditLens) => setLenses(prev => (prev.includes(id) ? prev.filter(l => l !== id) : [...prev, id]));
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState('');
   const [report, setReport] = useState<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isFullAudit = Boolean(dna);
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => () => { if (stageTimerRef.current) clearInterval(stageTimerRef.current); }, []);
@@ -29,17 +30,24 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
     if (!targetUrl.trim() || loading) return;
     setError(null);
     setLoading(true);
-    setProgressStage('Reading your website…');
+    setProgressStage(isFullAudit ? 'Reading your website…' : 'Running a quick scout…');
 
-    const stages = [
-      'Reading your website…',
-      'Checking how your pages read…',
-      'Checking live search results…',
-      'Reading your traffic…',
-      'Looking at your competitors…',
-      'Writing your report…',
-      'Almost done…'
-    ];
+    const stages = isFullAudit
+      ? [
+          'Reading your website…',
+          'Checking how your pages read…',
+          'Checking live search results…',
+          'Reading your traffic…',
+          'Looking at your competitors…',
+          'Writing your one-move brief…',
+          'Almost done…',
+        ]
+      : [
+          'Running a quick scout…',
+          'Checking live search results…',
+          'Writing a short verdict…',
+          'Almost done…',
+        ];
 
     let sIdx = 0;
     if (stageTimerRef.current) clearInterval(stageTimerRef.current);
@@ -57,7 +65,6 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
       clearInterval(interval);
       setReport(result);
 
-      // Persist + ingest into Luminara Context Graph (decision provenance)
       try {
         const payload = {
           url: formattedUrl,
@@ -73,7 +80,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
       }
     } catch (err: any) {
       clearInterval(interval);
-      setError(err?.message || 'Failed to complete the audit. Please verify your Gemini API key and try again.');
+      setError(err?.message || 'Failed to complete the audit. Check your AI keys in Settings and try again.');
     } finally {
       if (stageTimerRef.current) {
         clearInterval(stageTimerRef.current);
@@ -111,38 +118,41 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 animate-in fade-in duration-700">
       {confirmModal}
-      {/* Header Banner */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Radar className="w-4 h-4 text-gold-light" />
-          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold-light">Website audit</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold-light">
+            {isFullAudit ? 'Full audit' : 'Quick scout'}
+          </span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-bold gold-text tracking-tight mb-3">
-          How does your site show up?
+          Will AI mention your brand?
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
-          Paste your website address. In about a minute you get a report on Google rankings, AI answers, competitors and what to fix first.
+          Paste your site. Get a plain verdict, evidence chips, and one move to ship this week.
         </p>
       </div>
 
-      {/* DNA Link Alert */}
       {dna ? (
         <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-success-500/30 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-success-400 animate-pulse"></span>
-            <span className="text-gray-300">Tailored to <strong className="text-white">{dna.name}</strong></span>
+            <span className="text-gray-300">Full audit locked to <strong className="text-white">{dna.name}</strong></span>
           </div>
-          <span className="text-[10px] font-mono text-success-400 uppercase tracking-wider">USP Reinforced</span>
+          <span className="text-[10px] font-mono text-success-400 uppercase tracking-wider">Profile linked</span>
         </div>
       ) : (
-        <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-white/5 flex items-center justify-between text-xs">
+        <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-warning-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-gold"></span>
-            <span className="text-gray-400">Add your business profile and the report will be tailored to what you sell and who you compete with.</span>
+            <span className="text-gray-300">
+              No business profile yet. You can still run a <strong className="text-white">Quick scout</strong>.
+              Set your profile to unlock a full, USP-aware audit.
+            </span>
           </div>
           {onNavigateDNA && (
-            <button onClick={onNavigateDNA} className="text-[10px] font-bold uppercase tracking-wider text-gold-light hover:underline">
-              Add my business &rarr;
+            <button type="button" onClick={onNavigateDNA} className="text-[10px] font-bold uppercase tracking-wider text-gold-light hover:underline shrink-0">
+              Set up profile →
             </button>
           )}
         </div>
@@ -170,7 +180,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                   disabled={loading || !url.trim()}
                   className="absolute right-2 top-1/2 -translate-y-1/2 px-5 py-2 rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-30"
                 >
-                  {loading ? 'Scanning...' : 'Run Audit'}
+                  {loading ? 'Scanning...' : isFullAudit ? 'Run full audit' : 'Run quick scout'}
                 </button>
               </div>
             </div>
@@ -233,7 +243,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         <div className="glass-morphism rounded-2xl border border-gold/40 p-8 text-center space-y-6 animate-pulse">
           <div className="w-12 h-12 rounded-full border-2 border-gold/20 border-t-gold animate-spin mx-auto"></div>
           <div>
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider mb-1">Oracle Agent Analyzing Domain</h3>
+            <h3 className="text-lg font-bold text-white uppercase tracking-wider mb-1">
+              {isFullAudit ? 'Clearing the fog…' : 'Quick scout in progress…'}
+            </h3>
             <p className="text-xs text-gold-light font-mono">{progressStage}</p>
           </div>
           <div className="max-w-md mx-auto h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">

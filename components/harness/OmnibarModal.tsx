@@ -23,10 +23,11 @@ interface Destination {
 }
 
 const DESTINATIONS: Destination[] = [
-  { id: 'audit', label: 'Audit my website', description: 'See how you show up in Google and AI answers, and what to fix first.', keywords: 'audit seo aeo geo website report check site', view: AppView.INSTANT_AUDIT, icon: ICONS.Radar, group: 'Start here' },
+  { id: 'audit', label: 'Audit my website', description: 'See whether AI answers mention you, then commit to one fix.', keywords: 'audit seo aeo geo website report check site', view: AppView.INSTANT_AUDIT, icon: ICONS.Radar, group: 'Start here' },
   { id: 'ask', label: 'Ask a question', description: 'Chat with an analyst that checks live search results and remembers your business.', keywords: 'ask chat question oracle agent help', view: AppView.ORACLE_AGENT, icon: ICONS.Sparkle, group: 'Start here' },
-  { id: 'home', label: 'Home', description: 'All tools in one place.', keywords: 'home dashboard start overview', view: AppView.DASHBOARD, icon: ICONS.Shield, group: 'Start here' },
-  { id: 'profile', label: 'My business profile', description: 'What you sell, to whom, and who you compete with. Makes every answer personal.', keywords: 'profile business dna brand competitors company', view: AppView.BUSINESS_DNA, icon: ICONS.DNA, group: 'Your business' },
+  { id: 'memory', label: 'Brand Memory', description: 'What changed since last scan: diffs, watchlist, Sentinel.', keywords: 'memory vault brand timeline diff watchlist sentinel', view: AppView.BRAND_MEMORY, icon: ICONS.Shield, group: 'Start here' },
+  { id: 'home', label: 'Home', description: 'Ask, Audit, and Memory in one place.', keywords: 'home dashboard start overview', view: AppView.DASHBOARD, icon: ICONS.Shield, group: 'Start here' },
+  { id: 'profile', label: 'My business profile', description: 'What you sell, to whom, and who you compete with. Required for a full audit.', keywords: 'profile business dna brand competitors company', view: AppView.BUSINESS_DNA, icon: ICONS.DNA, group: 'Your business' },
   { id: 'stress', label: 'Poke holes in my plan', description: 'A tough second opinion on a strategy or idea before you spend money on it.', keywords: 'stress test red team plan idea risk critique', view: AppView.STRESS_TEST, icon: ICONS.Stress, group: 'Tools' },
   { id: 'research', label: 'Research the market', description: 'Grounded research using live web search and Google Maps.', keywords: 'research market competitors maps local web', view: AppView.RESEARCH, icon: ICONS.Research, group: 'Tools' },
   { id: 'analyse', label: 'Analyse my data', description: 'Paste a spreadsheet or numbers and ask questions about them.', keywords: 'data analyse analyze csv spreadsheet numbers', view: AppView.DATA_ANALYST, icon: ICONS.Analyst, group: 'Tools' },
@@ -62,7 +63,11 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
 
   const destinations = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const pool = DESTINATIONS.filter(d => advanced || d.group !== 'Labs');
+    const pool = DESTINATIONS.filter((d) => {
+      if (!advanced && d.group === 'Labs') return false;
+      if (!advanced && d.group === 'Tools' && d.id !== 'how' && d.id !== 'settings') return false;
+      return true;
+    });
     if (!q) return pool;
     return pool.filter(d => `${d.label} ${d.description} ${d.keywords}`.toLowerCase().includes(q));
   }, [query, advanced]);

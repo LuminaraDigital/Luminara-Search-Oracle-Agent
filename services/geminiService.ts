@@ -38,6 +38,9 @@ import { shareOfVoiceService, type ShareOfVoiceSummary } from './visibility/shar
 import { sourceCitationGraphService, type SourceCitationGraph } from './visibility/sourceCitationGraphService';
 import { enterpriseTrustPackService, type EnterpriseTrustPack } from './trust/enterpriseTrustPackService';
 import { visibilityHistoryService } from './visibility/visibilityHistoryService';
+import { brandMemoryVaultService } from './memory/brandMemoryVaultService';
+import { competitorWatchlistService } from './competitors/competitorWatchlistService';
+import { WIKI_LINK_PROMPT_HINT } from './audit/wikiLinkService';
 
 export interface AuditReportResult {
   text: string;
@@ -453,27 +456,23 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     let mainTopic = '';
     let reportTitle = '';
     let focusIntro = '';
-    let competitiveMetrics = '';
 
     switch (focus) {
       case 'AEO':
         mainTopic = 'Answer Engine Optimization (AEO)';
         reportTitle = `AEO Performance Brief - ${displayUrl}`;
         focusIntro = `Specialized analysis of the brand's visibility in AI Overviews, rich snippets, and conversational assistants (ChatGPT, Gemini, Perplexity).`;
-        competitiveMetrics = `'Featured Snippet Presence', 'Schema Markup Usage', 'LLM Citation Probability'`;
         break;
       case 'GEO':
         mainTopic = 'Generative Engine Optimization (GEO)';
         reportTitle = `GEO Performance Brief - ${displayUrl}`;
         focusIntro = `Specialized analysis of the brand's content suitability for generative engine citations and LLM synthesis.`;
-        competitiveMetrics = `'Content Uniqueness Score', 'Entity Authority', 'Suitability for AI Summaries'`;
         break;
       case 'SEO':
       default:
         mainTopic = 'Search Engine Optimization (SEO)';
         reportTitle = `SEO Performance Brief - ${displayUrl}`;
         focusIntro = `Specialized audit of organic rankings, technical Core Web Vitals, and competitive search footprint.`;
-        competitiveMetrics = `'Estimated Organic Traffic', 'Domain Authority', 'Total Backlinks'`;
         break;
     }
 
@@ -490,7 +489,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
       console.warn('[Audit] Site scrape skipped', e);
     }
 
-    // 1b. Writing check (page copy) + Results tracking (measured traffic) — best-effort, in parallel.
+    // 1b. Writing check (page copy) + Results tracking (measured traffic) - best-effort, in parallel.
     let writingQuality: WritingQualityReport | undefined;
     let trafficImpact: TrafficImpact | undefined;
     let writingText = '';
@@ -619,8 +618,9 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
       console.warn('[Audit] Preliminary trust pack fallback', e);
     }
 
+    const auditMode = dna?.name ? 'Full audit' : 'Quick scout';
     const prompt = `
-${dnaContext}
+${dnaContext || '[MODE: Quick scout - no Business DNA. Keep recommendations general. Label the report Mode: Quick scout.]'}
 ${methodology}
 ${wrapUntrustedContent('SCRAPED_PAGE', scrapedContent)}
 ${wrapUntrustedContent('SEARCH_GROUNDING', searchGrounding)}
@@ -630,43 +630,41 @@ ${wrapUntrustedContent('CITATION_INTEGRITY', integrityText)}
 ${preliminaryTrustText}
 ${writingText}
 ${trafficText}
-You are Oracle Agent, the search and AI-visibility analyst for Luminara Suite.
+You are Oracle Agent for Luminara Suite. Emotional direction: fog clearing at first light.
 Generate an evidence-based audit in Markdown for: "${websiteUrl}".
-Focus: ${mainTopic}.
+Focus: ${mainTopic}. Mode: ${auditMode}.
 ${focusIntro}
-Follow the methodology playbooks above: use their criteria and thresholds, respect every deprecation rule
-(never recommend HowTo schema; FAQPage earns no Google rich result; use INP, never FID), and grade only what
-the scraped page and search evidence support. Anything you could not observe is "not measured".
-When Trust Pack findings are present, reflect Critical/High items in ## Key Findings and ## Recommendations.
+Cite-or-silence: every rank, citation, or percentage without evidence above must say "not verified".
+Plain English default (about grade 8). Lead with one ship-this-week move.
+Follow the methodology playbooks above. Respect deprecation rules (never recommend HowTo schema;
+FAQPage earns no Google rich result; use INP, never FID). Grade only what scraped page and search
+evidence support. Anything unobserved is "not measured".
+When Trust Pack findings are present, reflect Critical/High items in the fix list.
 
 Strict Formatting Guidelines:
-1. Title: Must begin with: "# ${reportTitle}"
-2. Introduction: An executive introductory paragraph immediately following the title.
+1. Title: Must begin with: "# Luminara: Will AI mention ${dna?.name || displayUrl}?"
+2. Subhead line: **Date:** [today] · **Mode:** ${auditMode}
 3. Structure: Organize using these exact H2 headers:
-   ## Executive Summary
-   ## Key Findings
+   ## 1. One move this week
+   ## 2. Plain verdict
+   ## 3. Fix list
    ## AI & Search Visibility Radar
    ## Competitor Reality Map
-   ## Recommendations
-   ## ROI & Measurement Strategy
-   ## Competitive Snapshot
-   ## Next Steps
-4. AI & Search Visibility Radar: Create a Markdown table with strictly these columns:
+   ## 6. Budget notes
+   ## 7. Sources
+4. ## 1. One move this week: one concrete action, why it helps citation odds, how to tell it worked.
+5. ## 3. Fix list: Markdown table with columns:
+   | Task | Plain issue | Impact (1-100) | Priority |
+6. AI & Search Visibility Radar: Markdown table with strictly these columns:
    | Query | Intent | Brand Cited (Yes/No) | Key Competitors | Est. Organic Rank | Rich Results | AI Overview Status | Visibility Score (0-100) |
-   Include 3 high-intent queries (informational, commercial, comparative).
-5. Competitor Reality Map: Create a Markdown table with strictly these columns:
+   Include 3 high-intent queries (informational, commercial, comparative). Use "not verified" when evidence is missing.
+7. Competitor Reality Map: Markdown table with strictly these columns:
    | Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) | Trust Signal Strength (Low/Med/High) |
    Include the target brand and 3-4 actual competitors found via search.
-6. Recommendations Table: Create a Markdown table with columns:
-   | Action | Benefit | Priority | How we'd know it failed | Leading indicator |
-   "How we'd know it failed" is a concrete check the owner can run; "Leading indicator" is a metric visible
-   before rankings move (e.g. indexed pages, AI citations for 5 tracked questions, review velocity).
-7. Competitive Snapshot Table: Include target brand and competitors comparing: ${competitiveMetrics}.
-8. Code Block: Under "## Key Findings", include a practical JSON-LD or schema code block example.
-9. Tone: direct, evidence-first, no hype. Label every estimate "(estimate)".
-10. If measured traffic / AI-referral data is present above, cite it in "## ROI & Measurement Strategy" and
-   "## Key Findings" as measured (not estimate). If writing-quality data is present, include at most two
-   concrete wording fixes under "## Recommendations".
+8. Under "## 1. One move this week" or "## 3. Fix list", include one practical JSON-LD or schema code block when useful.
+9. Tone: direct, calm, no hype, no "neural core" or fake document IDs. Label every estimate "(estimate)".
+10. If measured traffic / AI-referral data is present above, cite it in "## 2. Plain verdict" as measured.
+11. ${WIKI_LINK_PROMPT_HINT}
 `;
 
     const buildReportResult = (text: string): AuditReportResult => {
@@ -735,6 +733,26 @@ Strict Formatting Guidelines:
         console.warn('[VisibilityHistory] record error', histErr);
       }
 
+      let reportText = text;
+      try {
+        const vault = brandMemoryVaultService.ingestAudit({
+          domain: displayUrl,
+          focus: String(focus),
+          reportText: text,
+          title: reportTitle,
+          citationRatePercent: empiricalSummary?.citationRatePercent ?? null,
+          topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
+          dna,
+        });
+        reportText = vault.linkedReport;
+        if (dna?.competitors?.length) {
+          competitorWatchlistService.seedFromDna(dna.competitors, displayUrl);
+        }
+        competitorWatchlistService.evaluate(displayUrl);
+      } catch (memErr) {
+        console.warn('[BrandMemory] ingest error', memErr);
+      }
+
       const remediationPayload: RemediationPayload = {
         domain: displayUrl,
         pageUrl: websiteUrl,
@@ -768,7 +786,7 @@ Strict Formatting Guidelines:
       }
 
       return {
-        text,
+        text: reportText,
         sources,
         empiricalSummary,
         remediationPayload,

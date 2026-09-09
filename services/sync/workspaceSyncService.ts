@@ -12,6 +12,13 @@ const MEMORY_KEYS = [
   'luminara_native_llm_order',
   'luminara_local_serp_enabled',
   'luminara_crawler_provider',
+  'luminara_audit_history_v1',
+  'luminara_brand_memory_events_v1',
+  'luminara_competitor_watchlist_v1',
+  'luminara_competitor_alerts_v1',
+  'luminara_agency_workspaces_v1',
+  'luminara_agency_active_client',
+  'luminara_visibility_history_v1',
 ] as const;
 
 const KEY_BAG_KEYS = [

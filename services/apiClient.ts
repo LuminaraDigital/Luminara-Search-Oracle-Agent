@@ -391,3 +391,43 @@ export async function createStarsInvoice(plan: string): Promise<string> {
   if (!r.ok || !data.ok) throw new Error(data.error || 'Could not create invoice');
   return data.url as string;
 }
+
+export interface SentinelTargetClient {
+  id: string;
+  domain: string;
+  brandName: string;
+  keywords?: string[];
+  lastStatus?: string;
+  reauditCadence?: string;
+  competitorNames?: string[];
+}
+
+export async function registerSentinelTarget(input: {
+  domain: string;
+  brandName?: string;
+  keywords?: string[];
+  competitorNames?: string[];
+  reauditCadence?: string;
+}): Promise<SentinelTargetClient> {
+  const base = apiBase();
+  if (!base) throw new Error('API unavailable');
+  const r = await workerFetchWithAuthRetry(`${base}/api/sentinel/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) {
+    throw new Error(data.error || `Sentinel register failed (${r.status})`);
+  }
+  return data.target as SentinelTargetClient;
+}
+
+export async function fetchSentinelStatus(): Promise<{ ok: boolean; targets: SentinelTargetClient[] }> {
+  const base = apiBase();
+  if (!base) return { ok: false, targets: [] };
+  const r = await workerFetchWithAuthRetry(`${base}/api/sentinel/status`);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) return { ok: false, targets: [] };
+  return { ok: true, targets: (data.targets || []) as SentinelTargetClient[] };
+}

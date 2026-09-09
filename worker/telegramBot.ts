@@ -5,20 +5,81 @@
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 
-export const PLANS: Record<string, { title: string; description: string; stars: number; days: number }> = {
+export type PlanMeta = {
+  title: string;
+  description: string;
+  stars: number;
+  days: number;
+  domainLimit: number;
+  sentinelLimit: number;
+  agencyClientLimit: number;
+  scheduledReaudit: 'none' | 'monthly' | 'weekly' | 'daily';
+  apiAccess: boolean;
+};
+
+export const PLANS: Record<string, PlanMeta> = {
   starter: {
     title: 'Luminara Starter',
-    description: 'Unlock NVIDIA NIM, Sovereign Ollama & OpenRouter. Unlimited AI audits for up to 2 sites, monthly re-check. 30 days.',
+    description: 'Unlock NVIDIA NIM, Sovereign Ollama & OpenRouter. Unlimited AI audits for up to 2 sites, monthly re-check, Brand Memory. 30 days.',
     stars: 2500,
     days: 30,
+    domainLimit: 2,
+    sentinelLimit: 2,
+    agencyClientLimit: 0,
+    scheduledReaudit: 'monthly',
+    apiAccess: false,
   },
   growth: {
     title: 'Luminara Growth',
-    description: 'Full Enterprise AI: NVIDIA, Ollama, OpenRouter. 10 sites, weekly tracking, competitor graphs, 24/7 Sentinel alerts. 30 days.',
+    description: '10 sites, weekly re-audits, competitor watchlist, citation deltas, 24/7 Drift Sentinel. 30 days.',
     stars: 7500,
     days: 30,
+    domainLimit: 10,
+    sentinelLimit: 10,
+    agencyClientLimit: 0,
+    scheduledReaudit: 'weekly',
+    apiAccess: false,
+  },
+  agency: {
+    title: 'Luminara Pro / Agency',
+    description: '25+ domains, audit memory timeline, competitor citation deltas, 10 client workspaces, white-label PDF, API access, daily Sentinel. 30 days.',
+    stars: 18000,
+    days: 30,
+    domainLimit: 25,
+    sentinelLimit: 25,
+    agencyClientLimit: 10,
+    scheduledReaudit: 'daily',
+    apiAccess: true,
   },
 };
+
+/** Free-tier caps when no active subscription. */
+export const FREE_PLAN_CAPS = {
+  domainLimit: 1,
+  sentinelLimit: 0,
+  agencyClientLimit: 0,
+  scheduledReaudit: 'none' as const,
+  apiAccess: false,
+};
+
+export function planCapsFor(planId: string | null | undefined): {
+  domainLimit: number;
+  sentinelLimit: number;
+  agencyClientLimit: number;
+  scheduledReaudit: PlanMeta['scheduledReaudit'] | 'none';
+  apiAccess: boolean;
+} {
+  const id = String(planId || '').toLowerCase();
+  const plan = PLANS[id === 'pro' ? 'agency' : id];
+  if (!plan) return { ...FREE_PLAN_CAPS };
+  return {
+    domainLimit: plan.domainLimit,
+    sentinelLimit: plan.sentinelLimit,
+    agencyClientLimit: plan.agencyClientLimit,
+    scheduledReaudit: plan.scheduledReaudit,
+    apiAccess: plan.apiAccess,
+  };
+}
 
 const api = async (env: Env, method: string, payload: Record<string, unknown>) => {
   const res = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {

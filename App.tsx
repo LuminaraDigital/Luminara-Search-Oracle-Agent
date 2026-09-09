@@ -19,6 +19,7 @@ import WhyLuminaraPage from './components/WhyLuminaraPage';
 import PricingPage from './components/PricingPage';
 import { InstantAuditView } from './components/audit/InstantAuditView';
 import { BusinessDNAView } from './components/suite/BusinessDNAView';
+import { BrandMemoryView } from './components/suite/BrandMemoryView';
 import { DashboardView } from './components/suite/DashboardView';
 import { StressTestView } from './components/suite/StressTestView';
 import { DataAnalystView } from './components/suite/DataAnalystView';
@@ -86,6 +87,7 @@ const App: React.FC = () => {
       if (sp === 'DASHBOARD' || sp === 'HOME') return AppView.DASHBOARD;
       if (sp === 'HARNESS' || sp === 'DEV') return AppView.HARNESS;
       if (sp === 'DNA' || sp === 'PROFILE') return AppView.BUSINESS_DNA;
+      if (sp === 'MEMORY' || sp === 'VAULT' || sp === 'BRAND_MEMORY') return AppView.BRAND_MEMORY;
       return (Object.values(AppView) as string[]).includes(sp) ? (sp as AppView) : AppView.INSTANT_AUDIT;
     }
     return AppView.LANDING;
@@ -212,6 +214,23 @@ const App: React.FC = () => {
     return () => window.removeEventListener('luminara-advanced-ui', onChange);
   }, []);
 
+  // Level 4: keep product path on Liquid Gold; bounce Labs/ops when developer tools are off.
+  useEffect(() => {
+    themingService.ensureProductTheme();
+    const gated = new Set<AppView>([
+      AppView.HARNESS,
+      AppView.ORACLE_MIND,
+      AppView.TIMESFM_FORECAST,
+      AppView.STRESS_TEST,
+      AppView.DATA_ANALYST,
+      AppView.ORGANIZER,
+      AppView.RESEARCH,
+    ]);
+    if (!advancedUi && gated.has(view)) {
+      setView(AppView.DASHBOARD);
+    }
+  }, [advancedUi, view]);
+
   // Keep Firebase ID token cache warm for Worker hosted-key calls.
   useEffect(() => {
     if (!isFirebaseConfigured()) return;
@@ -248,6 +267,13 @@ const App: React.FC = () => {
     const open = () => setIsKeyModalOpen(true);
     window.addEventListener('luminara-open-settings', open);
     return () => window.removeEventListener('luminara-open-settings', open);
+  }, []);
+
+  // Wiki competitor chips and alerts deep-link into Brand Memory Vault.
+  useEffect(() => {
+    const openMemory = () => setView(AppView.BRAND_MEMORY);
+    window.addEventListener('luminara-open-brand-memory', openMemory);
+    return () => window.removeEventListener('luminara-open-brand-memory', openMemory);
   }, []);
 
   // Harness & Theming states
@@ -460,6 +486,18 @@ const App: React.FC = () => {
       setMessages(prev => prev.map(m => m.id === modelId
         ? { ...m, content: fullText || (controller.signal.aborted ? '*Stopped.*' : ''), groundingUrls: allUrls, isStreaming: false, toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined }
         : m));
+      if (fullText && !controller.signal.aborted && !opts.skipSearch) {
+        try {
+          const { brandMemoryVaultService } = await import('./services/memory/brandMemoryVaultService');
+          brandMemoryVaultService.ingestChatInsight({
+            question: content,
+            answerExcerpt: fullText.slice(0, 1500),
+            dna,
+          });
+        } catch {
+          /* memory optional */
+        }
+      }
     } catch (error: any) {
       console.error('Luminara Search Error:', error);
       const reason = error?.message || 'Unknown error';
@@ -708,7 +746,19 @@ const App: React.FC = () => {
               view === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
-            Audit my site
+            Audit
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="none"
+            onClick={() => setView(AppView.BRAND_MEMORY)}
+            aria-pressed={view === AppView.BRAND_MEMORY}
+            className={`px-3 py-1.5 rounded-lg text-[10px] ${
+              view === AppView.BRAND_MEMORY ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
+            }`}
+          >
+            Memory
           </Button>
 
           {/* Command Suite Dropdown */}
@@ -726,7 +776,7 @@ const App: React.FC = () => {
                   : ''
               }`}
             >
-              <span>More tools</span>
+              <span>More</span>
               <ICONS.ChevronDown className="w-3 h-3 text-gold" />
             </Button>
 
@@ -741,6 +791,13 @@ const App: React.FC = () => {
                 >
                   <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
                   <span>Home</span>
+                </button>
+                <button
+                  onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
+                >
+                  <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
+                  <span>My business profile</span>
                 </button>
                 {advancedUi && (<>
                 <button
@@ -766,14 +823,6 @@ const App: React.FC = () => {
                 >
                   <ICONS.TimeSeries className="w-3.5 h-3.5 text-gold-light" />
                   <span>TimesFM Forecaster <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
-                </button>
-                </>)}
-                <button
-                  onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
-                >
-                  <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
-                  <span>My business profile</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.STRESS_TEST); setShowSuiteMenu(false); }}
@@ -803,6 +852,7 @@ const App: React.FC = () => {
                   <ICONS.Research className="w-3.5 h-3.5 text-gold-light" />
                   <span>Research the market</span>
                 </button>
+                </>)}
                 <button
                   onClick={() => { setView(AppView.VISION); setShowSuiteMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2"
@@ -962,7 +1012,7 @@ const App: React.FC = () => {
                 <TelegramAccountPanel compact />
               </div>
             )}
-            <DashboardView onNavigate={(v) => setView(v)} dna={dna} onClearDNA={() => setDna(null)} />
+            <DashboardView onNavigate={(v) => setView(v)} dna={dna} onClearDNA={() => setDna(null)} advancedUi={advancedUi} />
           </>
         )}
 
@@ -982,6 +1032,14 @@ const App: React.FC = () => {
             onDNAGenerated={(newDna) => setDna(newDna)}
             onNavigateToTool={() => setView(AppView.ORACLE_AGENT)}
             onRouteToOracleMind={() => setView(AppView.ORACLE_MIND)}
+          />
+        )}
+
+        {view === AppView.BRAND_MEMORY && (
+          <BrandMemoryView
+            dna={dna}
+            onNavigate={(v) => setView(v)}
+            onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Unlock Pro / Agency for client workspaces and deeper memory' } }))}
           />
         )}
 

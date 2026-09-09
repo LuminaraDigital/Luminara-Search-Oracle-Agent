@@ -14,7 +14,8 @@ Do not open public GitHub issues for security problems.
 
 ## Design notes for reviewers
 
-- Provider API keys entered by users live only in their browser (`localStorage`). They are sent directly to the vendor, or relayed through the Worker with the `x-provider-key` header for vendors that block browser CORS. The Worker never stores relayed keys.
+- Provider API keys entered by users live in the browser (`localStorage`) by default. They are sent directly to the vendor, or relayed through the Worker with the `x-provider-key` header for vendors that block browser CORS. The Worker never stores *relayed* request keys.
+- If the user is signed in and workspace sync runs, browser memory plus an optional BYOK key bag may also be stored in Cloudflare D1/KV under that account (`services/sync/workspaceSyncService.ts`). Treat synced keys as sensitive until at-rest encryption for the key bag ships.
 - Hosted keys are Worker secrets. They require a signed-in identity: Telegram Mini App `initData` (HMAC-SHA256, see `worker/telegramAuth.ts`) and/or a verified Firebase ID token (`worker/firebaseAuth.ts`). Hosted use is metered per user in KV.
 - Every proxied vendor path is allow-listed (`worker/index.ts`, `PROVIDERS[].allow`). Gemini is further limited to `generateContent` / `streamGenerateContent` / `countTokens`.
 - Hosted chat completions clamp `max_tokens` / `max_completion_tokens` (and Gemini `maxOutputTokens`) server-side. Hosted Firecrawl `/crawl` requires an active subscription.

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BusinessDNA } from '../../types';
 import { geminiService } from '../../services/geminiService';
-import { vfsMemoryService } from '../../services/vfs/vfsMemoryService';
+import { brandMemoryVaultService } from '../../services/memory/brandMemoryVaultService';
 import { ICONS } from '../../constants';
 import { useConfirm } from '../ui/ConfirmModal';
 
@@ -28,8 +28,8 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
 
   const syncToVfs = (dna: BusinessDNA) => {
     try {
-      const res = vfsMemoryService.syncFromBusinessDNA(dna);
-      setVfsSyncSuccess(`Synced to Viking VFS (${res.nodesCreated} nodes updated).`);
+      brandMemoryVaultService.syncDna(dna);
+      setVfsSyncSuccess('Synced to Brand Memory Vault + Viking VFS.');
       setTimeout(() => setVfsSyncSuccess(null), 3500);
     } catch (e) {
       console.error('VFS sync error', e);

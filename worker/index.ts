@@ -18,7 +18,7 @@
 
 import { validateInitData } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
-import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, PLANS } from './telegramBot';
+import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, PLANS, planCapsFor } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, TON_PRICING } from './tonPayment';
 import {
   MAX_BODY_BYTES,
@@ -625,18 +625,27 @@ export interface QuotaStatus {
  * Also accepts legacy sub:<loginId> rows written before account linking.
  * Stars, TON, and (later) Stripe all write the same key shape.
  */
-export async function isUserSubscribed(env: Env, user: HostedIdentity | null): Promise<boolean> {
-  if (!user || !env.LUMINARA_KV) return false;
+export type SubRow = { plan?: string; expiresAt?: number; paymentMethod?: string };
+
+export async function getActiveSubscription(
+  env: Env,
+  user: HostedIdentity | null,
+): Promise<SubRow | null> {
+  if (!user || !env.LUMINARA_KV) return null;
   try {
     const accountId = user.accountId || (await resolveAccountId(env, user.id));
     for (const key of [`sub:${accountId}`, `sub:${user.id}`]) {
-      const sub = (await env.LUMINARA_KV.get(key, 'json')) as { expiresAt?: number } | null;
-      if (sub?.expiresAt && sub.expiresAt > Date.now()) return true;
+      const sub = (await env.LUMINARA_KV.get(key, 'json')) as SubRow | null;
+      if (sub?.expiresAt && sub.expiresAt > Date.now()) return sub;
     }
-    return false;
+    return null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export async function isUserSubscribed(env: Env, user: HostedIdentity | null): Promise<boolean> {
+  return !!(await getActiveSubscription(env, user));
 }
 
 /**
@@ -1028,8 +1037,22 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const ownedCount = targets.filter(t => t.ownerId === ownerId).length;
     if (targets.length >= 500) return withCors(json({ error: 'Sentinel is full. Try again later.' }, 503));
 
+    const sub = await getActiveSubscription(env, who.user);
+    const caps = planCapsFor(sub?.plan);
     const existingIdx = targets.findIndex(t => t.domain.toLowerCase() === cleanDomain && t.ownerId === ownerId);
-    if (existingIdx < 0 && ownedCount >= 10) return withCors(json({ error: 'You can watch up to 10 domains.' }, 400));
+    if (existingIdx < 0 && ownedCount >= caps.sentinelLimit) {
+      const msg =
+        caps.sentinelLimit <= 0
+          ? 'Drift Sentinel requires a paid plan. Upgrade to Starter or higher.'
+          : `Your plan allows up to ${caps.sentinelLimit} watched domains. Upgrade for more.`;
+      return withCors(json({ error: msg, code: 'DOMAIN_LIMIT', limit: caps.sentinelLimit, plan: sub?.plan || 'free' }, 402));
+    }
+
+    const bodyExtra = body as { reauditCadence?: string; competitorNames?: string[] };
+    const cadenceRaw = typeof bodyExtra.reauditCadence === 'string' ? bodyExtra.reauditCadence : caps.scheduledReaudit;
+    const reauditCadence =
+      cadenceRaw === 'monthly' || cadenceRaw === 'weekly' || cadenceRaw === 'daily' ? cadenceRaw : 'none';
+
     const newTarget: SentinelTarget = {
       id: existingIdx >= 0 ? targets[existingIdx].id : `sentinel-${Date.now()}-${ownerId}`,
       ownerId,
@@ -1040,6 +1063,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       keywords: keywords.length > 0 ? keywords : [`what is ${cleanDomain}`, `best ${cleanDomain} alternative`],
       lastScanAt: Date.now(),
       lastStatus: 'healthy',
+      reauditCadence,
+      competitorNames: Array.isArray(bodyExtra.competitorNames)
+        ? bodyExtra.competitorNames
+            .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
+            .map(k => k.trim().slice(0, 100))
+            .slice(0, 20)
+        : [],
     };
 
     if (existingIdx >= 0) {
@@ -1280,18 +1310,26 @@ export interface SentinelTarget {
   lastCitationRate?: number;
   lastIntegrityScore?: number;
   lastSecurityTrust?: number;
-  lastStatus?: 'healthy' | 'drift_detected' | 'remediated';
+  lastStatus?: 'healthy' | 'drift_detected' | 'remediated' | 'reaudit_due';
   driftAlertSentAt?: number;
+  /** Scheduled re-audit cadence (Rakazo-style routine jobs). */
+  reauditCadence?: 'none' | 'monthly' | 'weekly' | 'daily';
+  lastReauditNudgeAt?: number;
+  /** Competitors to watch for citation presence in SERP snippets. */
+  competitorNames?: string[];
+  lastCompetitorHits?: Record<string, boolean>;
 }
 
-export async function runSentinelScan(env: Env): Promise<{ scanned: number; alertsSent: number }> {
+export async function runSentinelScan(env: Env): Promise<{ scanned: number; alertsSent: number; reauditNudges: number }> {
   try {
     const raw = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get('sentinel:targets', 'json')) as SentinelTarget[] | null) : null;
     const targets = raw || [];
-    if (targets.length === 0) return { scanned: 0, alertsSent: 0 };
+    if (targets.length === 0) return { scanned: 0, alertsSent: 0, reauditNudges: 0 };
 
     let alertsSent = 0;
+    let reauditNudges = 0;
     const updatedTargets: SentinelTarget[] = [];
+    const dayMs = 24 * 3600 * 1000;
 
     for (const target of targets) {
       // Legacy or tampered records: never probe non-public hosts, never alert a chat the owner doesn't own.
@@ -1299,6 +1337,7 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
       const alertChat = target.ownerId && target.tgChatId !== undefined && String(target.tgChatId) === String(target.ownerId) ? target.tgChatId : undefined;
       const keyword = target.keywords?.[0] || `${target.brandName || target.domain} solutions`;
       let cited = true;
+      let serpBlob = '';
 
       if (env.TAVILY_API_KEY) {
         try {
@@ -1316,6 +1355,7 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
             const data = (await resp.json()) as { results?: Array<{ url: string; content: string }> };
             const cleanDomain = target.domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').toLowerCase();
             cited = (data.results || []).some(r => r.url.toLowerCase().includes(cleanDomain));
+            serpBlob = (data.results || []).map(r => `${r.url} ${r.content || ''}`).join('\n').toLowerCase();
           }
         } catch (e) {
           console.warn('[Sentinel] Tavily search fallback', e);
@@ -1336,11 +1376,22 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
         target.lastSecurityTrust - securityTrust > 20;
 
       const now = Date.now();
-      const needsAlert = !cited || trustRegression;
-      const status = needsAlert ? 'drift_detected' : 'healthy';
+      const competitorHits: Record<string, boolean> = { ...(target.lastCompetitorHits || {}) };
+      const competitorChanges: string[] = [];
+      for (const name of target.competitorNames || []) {
+        const hit = serpBlob.includes(name.toLowerCase());
+        const prev = target.lastCompetitorHits?.[name];
+        if (typeof prev === 'boolean' && prev !== hit) {
+          competitorChanges.push(hit ? `[[${name}]] gained SERP presence` : `[[${name}]] lost SERP presence`);
+        }
+        competitorHits[name] = hit;
+      }
+
+      const needsAlert = !cited || trustRegression || competitorChanges.length > 0;
+      let status: SentinelTarget['lastStatus'] = needsAlert ? 'drift_detected' : 'healthy';
 
       if (needsAlert && alertChat && env.BOT_TOKEN) {
-        const canAlert = !target.driftAlertSentAt || (now - target.driftAlertSentAt > 24 * 3600 * 1000);
+        const canAlert = !target.driftAlertSentAt || (now - target.driftAlertSentAt > dayMs);
         if (canAlert) {
           const reasons: string[] = [];
           if (!cited) reasons.push('Brand citation missing from top AI answers.');
@@ -1349,6 +1400,7 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
               `Trust regression: security trust dropped from ${target.lastSecurityTrust} to ${securityTrust} (>20 point drop).`
             );
           }
+          if (competitorChanges.length) reasons.push(`Competitor deltas: ${competitorChanges.join('; ')}.`);
           const alertMsg = `⚠️ *Luminara 24/7 Drift Sentinel Alert*\n\n` +
             `Your domain *${target.domain}* has detected an AEO citation or trust regression.\n` +
             `• Target query: _${keyword}_\n` +
@@ -1363,21 +1415,44 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
         }
       }
 
+      // Scheduled re-audit nudges (weekly / monthly / daily routines).
+      const cadence = target.reauditCadence || 'none';
+      const cadenceMs =
+        cadence === 'daily' ? dayMs : cadence === 'weekly' ? 7 * dayMs : cadence === 'monthly' ? 30 * dayMs : 0;
+      let lastReauditNudgeAt = target.lastReauditNudgeAt;
+      if (cadenceMs > 0 && alertChat && env.BOT_TOKEN) {
+        const due = !lastReauditNudgeAt || now - lastReauditNudgeAt >= cadenceMs;
+        if (due) {
+          const nudge = `🗓️ *Luminara scheduled re-audit*\n\n` +
+            `It is time for your *${cadence}* AEO check on *${target.domain}*.\n` +
+            `Open the app → Audit my website to refresh Brand Memory and competitor citation deltas.`;
+          const sent = await sendTelegramAlert(env, alertChat, nudge, env.WEBAPP_URL);
+          if (sent) {
+            reauditNudges++;
+            lastReauditNudgeAt = now;
+            status = 'reaudit_due';
+          }
+        }
+      }
+
       updatedTargets.push({
         ...target,
         lastScanAt: now,
         lastStatus: status,
         lastSecurityTrust: securityTrust,
+        lastCompetitorHits: competitorHits,
+        lastReauditNudgeAt,
+        driftAlertSentAt: target.driftAlertSentAt,
       });
     }
 
     if (env.LUMINARA_KV) {
       await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(updatedTargets));
     }
-    return { scanned: targets.length, alertsSent };
+    return { scanned: targets.length, alertsSent, reauditNudges };
   } catch (err) {
     console.error('[Sentinel] Scheduled scan error', err);
-    return { scanned: 0, alertsSent: 0 };
+    return { scanned: 0, alertsSent: 0, reauditNudges: 0 };
   }
 }
 
