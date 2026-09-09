@@ -347,9 +347,121 @@
     .wave-bar {
       animation: pulse-custom 0.8s ease-in-out infinite;
     }
+
+    /* Instant boot splash (before React). Same visual language as the cinematic intro. */
+    #boot-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.25rem;
+      background: #000;
+      color: #f1f1f1;
+      transition: opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.65s;
+    }
+    #boot-splash.boot-splash--exit {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    #boot-splash .boot-glow {
+      position: absolute;
+      width: min(70vw, 420px);
+      height: min(70vw, 420px);
+      border-radius: 9999px;
+      background: radial-gradient(circle, rgba(191,149,63,0.22) 0%, transparent 68%);
+      filter: blur(8px);
+      animation: boot-pulse 2.4s ease-in-out infinite;
+      pointer-events: none;
+    }
+    #boot-splash .boot-mark {
+      position: relative;
+      width: 88px;
+      height: 88px;
+      border-radius: 9999px;
+      overflow: hidden;
+      box-shadow: 0 0 48px rgba(191,149,63,0.28);
+      animation: boot-breathe 2.8s ease-in-out infinite;
+    }
+    #boot-splash .boot-mark img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    #boot-splash .boot-wordmark {
+      position: relative;
+      margin: 0;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.55em;
+      text-transform: uppercase;
+      color: #FCF6BA;
+      opacity: 0.92;
+    }
+    #boot-splash .boot-caption {
+      position: relative;
+      margin: 0;
+      font-size: 11px;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: rgba(241,241,241,0.45);
+    }
+    #boot-splash .boot-track {
+      position: relative;
+      width: min(220px, 46vw);
+      height: 2px;
+      margin-top: 0.35rem;
+      overflow: hidden;
+      border-radius: 9999px;
+      background: rgba(255,255,255,0.08);
+    }
+    #boot-splash .boot-fill {
+      height: 100%;
+      width: 42%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--gold-dark), var(--gold-light), var(--gold));
+      background-size: 200% auto;
+      animation: boot-bar 1.4s ease-in-out infinite;
+    }
+    @keyframes boot-pulse {
+      0%, 100% { opacity: 0.55; transform: scale(0.92); }
+      50% { opacity: 1; transform: scale(1.06); }
+    }
+    @keyframes boot-breathe {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.04); }
+    }
+    @keyframes boot-bar {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(280%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #boot-splash .boot-glow,
+      #boot-splash .boot-mark,
+      #boot-splash .boot-fill {
+        animation: none;
+      }
+      #boot-splash .boot-fill {
+        width: 70%;
+        transform: none;
+      }
+    }
   </style>
 </head>
 <body class="overflow-x-hidden">
+  <div id="boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Loading Luminara Suite">
+    <div class="boot-glow" aria-hidden="true"></div>
+    <div class="boot-mark">
+      <img src="/favicon.png?v=20260909" alt="" width="88" height="88" decoding="async" fetchpriority="high" />
+    </div>
+    <p class="boot-wordmark">Luminara Suite</p>
+    <p class="boot-caption">Preparing your workspace</p>
+    <div class="boot-track" aria-hidden="true"><div class="boot-fill"></div></div>
+  </div>
   <div id="root"></div>
   <script type="module" src="./index.tsx"></script>
 </body>

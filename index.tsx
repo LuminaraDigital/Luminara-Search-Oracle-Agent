@@ -4,6 +4,7 @@ import { TonConnectUIProvider } from '@tonconnect/ui-react';
 import App from './App';
 import { initTelegram } from './services/telegram/tma';
 import { loadServerHealth } from './services/apiClient';
+import { dismissBootSplash } from './services/intro/bootSplash';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -25,6 +26,12 @@ async function bootstrap() {
       </TonConnectUIProvider>
     </React.StrictMode>
   );
+
+  // Let the first paint land under the splash, then fade it so boot → intro/app feels continuous.
+  requestAnimationFrame(() => dismissBootSplash(160));
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('[boot] failed', err);
+  dismissBootSplash(0);
+});

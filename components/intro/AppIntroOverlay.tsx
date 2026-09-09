@@ -1,43 +1,45 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { INTRO_ASSETS, markIntroSeen, prefersReducedMotion } from '../../services/intro/appIntro';
 import { haptic } from '../../services/telegram/tma';
+import { BrandLoader } from './BrandLoader';
 
 type AppIntroOverlayProps = {
   onComplete: () => void;
 };
 
+type Phase = 'buffering' | 'play' | 'exit';
+
 /**
- * Full-viewport cinematic intro. Plays once per session when the product opens.
- * Skip, Escape, reduced-motion, and load failures all exit cleanly into the app.
+ * Full-bleed cinematic intro. Buffers on-brand, plays edge-to-edge, then fades into the app.
  */
 export const AppIntroOverlay: React.FC<AppIntroOverlayProps> = ({ onComplete }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const finishingRef = useRef(false);
-  const [phase, setPhase] = useState<'enter' | 'play' | 'exit'>('enter');
+  const startedRef = useRef(false);
+  const [phase, setPhase] = useState<Phase>('buffering');
   const [progress, setProgress] = useState(0);
   const [showChrome, setShowChrome] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [canContinue, setCanContinue] = useState(false);
   const [reduced] = useState(() => prefersReducedMotion());
 
   const finish = useCallback(() => {
     if (finishingRef.current) return;
     finishingRef.current = true;
     setPhase('exit');
-    haptic('light');
+    setProgress(1);
+    haptic('success');
     markIntroSeen();
-    window.setTimeout(() => {
-      onComplete();
-    }, 720);
+    window.setTimeout(() => onComplete(), 780);
   }, [onComplete]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const chromeTimer = window.setTimeout(() => setShowChrome(true), 900);
-    const enterTimer = window.setTimeout(() => setPhase('play'), 40);
 
+    const chromeTimer = window.setTimeout(() => setShowChrome(true), 700);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         finish();
       }
@@ -47,14 +49,15 @@ export const AppIntroOverlay: React.FC<AppIntroOverlayProps> = ({ onComplete }) 
     return () => {
       document.body.style.overflow = prev;
       window.clearTimeout(chromeTimer);
-      window.clearTimeout(enterTimer);
       window.removeEventListener('keydown', onKey);
     };
   }, [finish]);
 
   useEffect(() => {
     if (reduced) {
-      const t = window.setTimeout(finish, 1400);
+      setPhase('play');
+      setShowChrome(true);
+      const t = window.setTimeout(finish, 1600);
       return () => window.clearTimeout(t);
     }
 
@@ -64,36 +67,54 @@ export const AppIntroOverlay: React.FC<AppIntroOverlayProps> = ({ onComplete }) 
     let raf = 0;
     const tick = () => {
       if (video.duration && Number.isFinite(video.duration) && video.duration > 0) {
-        setProgress(Math.min(1, video.currentTime / video.duration));
+        const p = Math.min(1, video.currentTime / video.duration);
+        setProgress(p);
+        if (p >= 0.78) setCanContinue(true);
       }
       raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
 
-    const tryPlay = async () => {
+    const beginPlayback = async () => {
+      if (startedRef.current || finishingRef.current) return;
+      startedRef.current = true;
+      setPhase('play');
       try {
         video.muted = true;
         setMuted(true);
         await video.play();
+        raf = requestAnimationFrame(tick);
       } catch {
-        // Autoplay blocked: still show poster; allow tap-to-play via unmute control.
+        setShowChrome(true);
+        setCanContinue(true);
       }
     };
-    void tryPlay();
 
+    const onCanPlay = () => { void beginPlayback(); };
     const onEnded = () => finish();
     const onError = () => finish();
+
+    video.addEventListener('canplay', onCanPlay);
     video.addEventListener('ended', onEnded);
     video.addEventListener('error', onError);
 
-    // Hard ceiling so a stalled stream never traps the user.
+    try {
+      video.load();
+    } catch { /* noop */ }
+
+    if (video.readyState >= 3) void beginPlayback();
+
     const failsafe = window.setTimeout(finish, 14000);
+    const bufferFailsafe = window.setTimeout(() => {
+      if (!finishingRef.current) void beginPlayback();
+    }, 3500);
 
     return () => {
       cancelAnimationFrame(raf);
+      video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('error', onError);
       window.clearTimeout(failsafe);
+      window.clearTimeout(bufferFailsafe);
       try { video.pause(); } catch { /* noop */ }
     };
   }, [finish, reduced]);
@@ -110,103 +131,121 @@ export const AppIntroOverlay: React.FC<AppIntroOverlayProps> = ({ onComplete }) 
     haptic('light');
   };
 
+  const exiting = phase === 'exit';
+
   return (
     <div
-      className={`fixed inset-0 z-[12000] flex flex-col items-center justify-center bg-black transition-opacity duration-700 ease-out ${
-        phase === 'exit' ? 'opacity-0 pointer-events-none' : 'opacity-100'
+      className={`fixed inset-0 z-[12000] overflow-hidden bg-black transition-[opacity,transform] duration-700 ease-out ${
+        exiting ? 'opacity-0 scale-[1.015] pointer-events-none' : 'opacity-100 scale-100'
       }`}
       role="dialog"
       aria-modal="true"
       aria-label="Luminara Suite introduction"
     >
-      {/* Atmosphere */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(191,149,63,0.12)_0%,transparent_55%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(0,0,0,0.72)_100%)]" />
-        <div className="absolute inset-0 opacity-[0.12] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+      {/* Full-bleed stage */}
+      <div className="absolute inset-0">
+        {reduced ? (
+          <img
+            src={INTRO_ASSETS.poster}
+            alt=""
+            className="h-full w-full object-cover"
+            draggable={false}
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            className={`h-full w-full object-cover transition-opacity duration-700 ${
+              phase === 'play' ? 'opacity-100' : 'opacity-0'
+            }`}
+            playsInline
+            preload="auto"
+            poster={INTRO_ASSETS.poster}
+            muted={muted}
+            controls={false}
+            aria-hidden="true"
+          >
+            <source src={INTRO_ASSETS.mp4} type="video/mp4" />
+            <source src={INTRO_ASSETS.webm} type="video/webm" />
+          </video>
+        )}
+
+        {/* Cinematic mats */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(0,0,0,0.55)_100%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-black via-black/50 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black via-black/65 to-transparent" />
+        <div className="pointer-events-none absolute inset-0 opacity-[0.1] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
       </div>
 
-      {/* Brand eyebrow */}
+      {/* Buffering / reduced-motion hold */}
       <div
-        className={`absolute top-8 left-0 right-0 flex flex-col items-center gap-2 transition-all duration-700 ${
-          showChrome && phase !== 'exit' ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'
+        className={`absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-500 ${
+          phase === 'buffering' || reduced ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
-        <p className="text-[10px] font-black uppercase tracking-[0.55em] text-gold/90">Luminara Suite</p>
-        <div className="h-px w-16 bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
+        {!reduced && phase === 'buffering' && (
+          <BrandLoader caption="Loading experience" />
+        )}
+        {reduced && (
+          <BrandLoader caption="Welcome" />
+        )}
       </div>
 
-      {/* Stage */}
+      {/* Top brand */}
       <div
-        className={`relative z-10 w-full max-w-5xl px-4 sm:px-8 transition-all duration-700 ease-out ${
-          phase === 'enter' ? 'opacity-0 scale-[1.04]' : ''
-        } ${phase === 'play' ? 'opacity-100 scale-100' : ''} ${
-          phase === 'exit' ? 'opacity-0 scale-[0.985]' : ''
+        className={`absolute top-8 left-0 right-0 z-20 flex flex-col items-center gap-2 transition-all duration-700 ${
+          showChrome && !exiting && phase !== 'buffering' ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'
         }`}
       >
-        <div className="relative overflow-hidden rounded-[1.25rem] border border-white/[0.06] bg-black shadow-[0_0_80px_rgba(191,149,63,0.12)] aspect-video">
-          {reduced ? (
-            <img
-              src={INTRO_ASSETS.poster}
-              alt=""
-              className="h-full w-full object-cover"
-              draggable={false}
-            />
-          ) : (
-            <video
-              ref={videoRef}
-              className="h-full w-full object-cover"
-              playsInline
-              preload="auto"
-              poster={INTRO_ASSETS.poster}
-              muted={muted}
-              controls={false}
-              aria-hidden="true"
-            >
-              <source src={INTRO_ASSETS.mp4} type="video/mp4" />
-              <source src={INTRO_ASSETS.webm} type="video/webm" />
-            </video>
-          )}
-
-          {/* Soft edge mask so the cut never feels raw */}
-          <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/[0.04] rounded-[1.25rem]" />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/50 to-transparent" />
-        </div>
+        <p className="text-[10px] font-black uppercase tracking-[0.55em] text-gold-light/95">Luminara Suite</p>
+        <div className="h-px w-20 bg-gradient-to-r from-transparent via-gold/55 to-transparent" />
       </div>
 
-      {/* Controls */}
+      {/* Bottom chrome */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-20 px-5 sm:px-8 pb-7 pt-10 transition-all duration-500 ${
-          showChrome && phase !== 'exit' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+        className={`absolute inset-x-0 bottom-0 z-20 px-5 sm:px-10 pb-8 pt-16 transition-all duration-500 ${
+          showChrome && !exiting ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
         }`}
       >
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          {!reduced && (
+        <div className="mx-auto flex max-w-3xl flex-col items-center gap-5">
+          {(canContinue || reduced) && (
             <button
               type="button"
-              onClick={toggleMute}
-              className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.28em] text-gray-300 backdrop-blur-md transition hover:border-gold/40 hover:text-gold-light"
-              aria-pressed={!muted}
+              onClick={finish}
+              className="rounded-full bg-gradient-to-br from-gold to-gold-dark px-8 py-3 text-[10px] font-black uppercase tracking-[0.35em] text-black shadow-[0_0_40px_rgba(191,149,63,0.35)] transition hover:scale-[1.03] active:scale-95"
             >
-              {muted ? 'Sound on' : 'Sound off'}
+              Enter the suite
             </button>
           )}
-          {reduced && <span className="text-[10px] uppercase tracking-[0.3em] text-gray-500">Welcome</span>}
 
-          <button
-            type="button"
-            onClick={finish}
-            className="rounded-full border border-gold/30 bg-gold/10 px-5 py-2 text-[10px] font-black uppercase tracking-[0.32em] text-gold-light backdrop-blur-md transition hover:bg-gold/20 hover:border-gold/50"
-          >
-            Skip intro
-          </button>
-        </div>
+          <div className="flex w-full items-center justify-between gap-4">
+            {!reduced ? (
+              <button
+                type="button"
+                onClick={toggleMute}
+                className="rounded-full border border-white/10 bg-black/40 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.28em] text-gray-300 backdrop-blur-md transition hover:border-gold/40 hover:text-gold-light"
+                aria-pressed={!muted}
+              >
+                {muted ? 'Sound on' : 'Sound off'}
+              </button>
+            ) : (
+              <span className="text-[10px] uppercase tracking-[0.28em] text-gray-500">Ready</span>
+            )}
 
-        <div className="mx-auto mt-5 h-[2px] max-w-5xl overflow-hidden rounded-full bg-white/[0.06]">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-gold-dark via-gold-light to-gold transition-[width] duration-150 ease-linear"
-            style={{ width: `${Math.max(reduced ? 100 : progress * 100, phase === 'exit' ? 100 : 0)}%` }}
-          />
+            <button
+              type="button"
+              onClick={finish}
+              className="rounded-full border border-white/10 bg-black/40 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.28em] text-gray-400 backdrop-blur-md transition hover:border-gold/35 hover:text-gold-light"
+            >
+              Skip
+            </button>
+          </div>
+
+          <div className="h-[2px] w-full overflow-hidden rounded-full bg-white/[0.08]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-gold-dark via-gold-light to-gold transition-[width] duration-150 ease-linear"
+              style={{ width: `${Math.max(reduced ? 100 : progress * 100, exiting ? 100 : 0)}%` }}
+            />
+          </div>
         </div>
       </div>
     </div>
