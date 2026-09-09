@@ -142,6 +142,15 @@ Instead of (or in addition to) the config file:
 | `https://www.googleapis.com/auth/indexing` | Indexing API |
 | `https://www.googleapis.com/auth/analytics.readonly` | GA4 (read) |
 
+## Cursor live GA4 (`analytics-mcp`)
+
+Separate from the `claude-seo` audit config above. For interactive GA4 in Cursor chat:
+
+1. Enable **Google Analytics Admin API** and **Google Analytics Data API** in the GCP project.
+2. Ensure Application Default Credentials include `https://www.googleapis.com/auth/analytics.readonly`.
+3. Configure `analytics-mcp` in `~/.cursor/mcp.json` (`pipx run analytics-mcp` + `GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_PROJECT_ID`).
+4. Keep `/seo google ga4` for audit pipelines; do not remove Tier 2 `ga4_property_id` setup.
+
 ## Troubleshooting
 
 | Error | Fix |

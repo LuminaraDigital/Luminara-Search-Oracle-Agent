@@ -1,0 +1,3 @@
+#!/bin/sh
+# Block commits that stage credential-shaped strings or secret filenames.
+node "$(dirname "$0")/../scripts/check-secrets.mjs" --staged || exit 1

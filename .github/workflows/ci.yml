@@ -18,12 +18,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Fail if secrets are present in the tree
+        run: npm run secrets:check
       - run: npm run typecheck
       - run: npm test
       - run: npx vite build
       - name: Fail if a secret-looking string is in the bundle
         run: |
-          if grep -rEq "AIzaSy[A-Za-z0-9_-]{20}|gsk_[A-Za-z0-9]{20}|tvly-[A-Za-z0-9]{10}|nvapi-[A-Za-z0-9_-]{20}|fc-[a-f0-9]{20}" dist/; then
+          if grep -rEq "AIza[0-9A-Za-z_-]{30}|gsk_[A-Za-z0-9]{20}|tvly-[A-Za-z0-9-]{20}|nvapi-[A-Za-z0-9_-]{20}|fc-[a-f0-9]{30}|sk-[A-Za-z0-9_-]{20}|gho_[A-Za-z0-9_]{20}|ghp_[A-Za-z0-9_]{20}|github_pat_[A-Za-z0-9_]{20}|bb_live_[A-Za-z0-9_-]{20}|AKIA[0-9A-Z]{16}" dist/; then
             echo "Key-like string found in dist/"; exit 1; fi
       - name: Worker dry run
         run: npx wrangler deploy --dry-run --outdir /tmp/wrangler-out

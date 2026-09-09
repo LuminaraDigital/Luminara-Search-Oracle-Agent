@@ -29,9 +29,9 @@ export const VisionView: React.FC = () => {
     <div className="max-w-5xl mx-auto px-4 py-8 animate-in fade-in duration-700 pb-20">
       <header className="mb-16 text-center relative pt-8">
         <div className="inline-flex items-center gap-4 mb-6">
-          <div className="w-12 h-[1px] bg-[#BF953F]/40"></div>
-          <span className="text-[#FCF6BA] font-black text-[10px] uppercase tracking-[0.8em]">Manifesto of Strategic Autonomy</span>
-          <div className="w-12 h-[1px] bg-[#BF953F]/40"></div>
+          <div className="w-12 h-[1px] bg-gold/40"></div>
+          <span className="text-gold-light font-black text-[10px] uppercase tracking-[0.8em]">Manifesto of Strategic Autonomy</span>
+          <div className="w-12 h-[1px] bg-gold/40"></div>
         </div>
         <h1 className="text-4xl sm:text-7xl font-light text-white mb-6 tracking-tight leading-tight">
           Intelligence <br />
@@ -44,8 +44,8 @@ export const VisionView: React.FC = () => {
 
       {/* Strategic Pillars */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-20">
-        <article className="glass-morphism rounded-3xl p-8 sm:p-10 space-y-6 border border-[#BF953F]/30 hover:border-[#BF953F] transition-all">
-          <div className="w-12 h-12 rounded-2xl bg-[#BF953F]/10 border border-[#BF953F]/30 flex items-center justify-center text-[#FCF6BA]">
+        <article className="glass-morphism rounded-3xl p-8 sm:p-10 space-y-6 border border-gold/30 hover:border-gold transition-all">
+          <div className="w-12 h-12 rounded-2xl bg-gold/10 border border-gold/30 flex items-center justify-center text-gold-light">
             <ICONS.Shield className="w-6 h-6" />
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">The Red Team Advantage</h2>
@@ -59,15 +59,15 @@ export const VisionView: React.FC = () => {
               "Zero monthly management retainers"
             ].map((item, i) => (
               <li key={i} className="flex items-center gap-3 text-gray-300 text-xs font-bold uppercase tracking-wider">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#BF953F]"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-gold"></div>
                 {item}
               </li>
             ))}
           </ul>
         </article>
 
-        <article className="glass-morphism rounded-3xl p-8 sm:p-10 space-y-6 border border-[#BF953F]/30 hover:border-[#BF953F] transition-all">
-          <div className="w-12 h-12 rounded-2xl bg-[#BF953F]/10 border border-[#BF953F]/30 flex items-center justify-center text-[#FCF6BA]">
+        <article className="glass-morphism rounded-3xl p-8 sm:p-10 space-y-6 border border-gold/30 hover:border-gold transition-all">
+          <div className="w-12 h-12 rounded-2xl bg-gold/10 border border-gold/30 flex items-center justify-center text-gold-light">
             <ICONS.Radar className="w-6 h-6" />
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">Grounded SERP Reality</h2>
@@ -81,7 +81,7 @@ export const VisionView: React.FC = () => {
               "Autonomous schema & JSON-LD architecture"
             ].map((item, i) => (
               <li key={i} className="flex items-center gap-3 text-gray-300 text-xs font-bold uppercase tracking-wider">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#BF953F]"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-gold"></div>
                 {item}
               </li>
             ))}
@@ -92,13 +92,13 @@ export const VisionView: React.FC = () => {
       {/* Methodology Section */}
       <section className="py-12 border-t border-white/10">
         <div className="text-center mb-12">
-          <h3 className="text-[#FCF6BA] font-black text-[10px] uppercase tracking-[0.4em] mb-2">The Luminara Methodology</h3>
+          <h3 className="text-gold-light font-black text-[10px] uppercase tracking-[0.4em] mb-2">The Luminara Methodology</h3>
           <h2 className="text-3xl sm:text-4xl font-bold text-white">Four Steps to Search Sovereignty</h2>
         </div>
 
         <div className="space-y-6">
           {steps.map((item, idx) => (
-            <div key={idx} className="glass-morphism rounded-2xl border border-white/5 hover:border-[#BF953F]/40 p-6 sm:p-8 flex flex-col sm:flex-row gap-6 items-start transition-all">
+            <div key={idx} className="glass-morphism rounded-2xl border border-white/5 hover:border-gold/40 p-6 sm:p-8 flex flex-col sm:flex-row gap-6 items-start transition-all">
               <span className="text-3xl sm:text-4xl font-black font-mono gold-text shrink-0">
                 {item.step}
               </span>

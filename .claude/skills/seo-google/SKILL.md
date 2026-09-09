@@ -55,6 +55,19 @@ If missing, read `references/auth-setup.md` and walk the user through setup.
 
 Always communicate the detected tier before running commands.
 
+### Live GA4 in Cursor vs audit pipelines
+
+Keep both paths. Do not replace one with the other.
+
+| Path | When to use | How |
+|------|-------------|-----|
+| **Cursor MCP `analytics-mcp`** | Interactive GA4 in chat (reports, funnels, realtime, property discovery) | User MCP: `~/.cursor/mcp.json` runs `pipx run analytics-mcp` with ADC + `analytics.readonly` |
+| **`/seo google ga4` / `ga4-pages`** | SEO audit pipelines and structured findings | `claude-seo run ga4_report.py` via this skill (Tier 2 `google-api.json`) |
+
+Audit agents must keep calling `/seo google ga4` (and related scripts). Use `analytics-mcp` only for live chat exploration when the MCP server is available.
+
+ADC for MCP should include scope `https://www.googleapis.com/auth/analytics.readonly` (plus cloud-platform as needed). If GA calls return 403, re-auth Application Default Credentials with that scope, then reload Cursor MCP.
+
 ## Quick Reference
 
 | Command | What it does | Tier |

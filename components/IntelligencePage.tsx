@@ -18,7 +18,7 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
     {
       title: 'Vaticinator Core',
       desc: 'The Main AI Brain',
-      detail: 'This is the power behind our tool. It uses Gemini 3 Pro to reason through complex marketing problems and find fast answers.',
+      detail: 'This is the power behind our tool. It natively harnesses the NVIDIA NIM, Groq LPU, and Ollama Sovereign SLM trinity with instant auto-failover to reason through complex marketing problems.',
       icon: <ICONS.Sparkle />
     },
     {
@@ -42,10 +42,10 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
   ];
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-[#BF953F] selection:text-black font-['Outfit'] antialiased">
+    <div className="min-h-screen bg-black text-white selection:bg-gold selection:text-black font-['Outfit'] antialiased">
       <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-1/4 left-0 w-[60%] h-[60%] bg-[#BF953F]/5 blur-[200px] rounded-full"></div>
-        <div className="absolute bottom-1/4 right-0 w-[40%] h-[40%] bg-[#AA771C]/10 blur-[180px] rounded-full"></div>
+        <div className="absolute top-1/4 left-0 w-[60%] h-[60%] bg-gold/5 blur-[200px] rounded-full"></div>
+        <div className="absolute bottom-1/4 right-0 w-[40%] h-[40%] bg-gold-dark/10 blur-[180px] rounded-full"></div>
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.12] mix-blend-overlay"></div>
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent animate-[pulse_4s_infinite]" />
@@ -68,7 +68,7 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
           <button onClick={onNavigatePricing} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Pricing</button>
           <button 
             onClick={onTerminal}
-            className="px-6 py-2.5 bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
+            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
           >
             Launch Terminal
           </button>
@@ -78,7 +78,7 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
       <main className="relative z-10 pt-40 pb-32 px-6 md:px-20">
         <div className="max-w-7xl mx-auto">
           <header className="mb-48 flex flex-col items-center text-center">
-             <div className="inline-block px-5 py-2 rounded-full border border-[#BF953F]/30 bg-[#BF953F]/10 mb-12">
+             <div className="inline-block px-5 py-2 rounded-full border border-gold/30 bg-gold/10 mb-12">
                <span className="text-[10px] font-black uppercase tracking-[0.8em] gold-text">App Intelligence Engine</span>
              </div>
              <h1 className="text-6xl md:text-9xl font-light tracking-tighter leading-none mb-12">
@@ -96,14 +96,14 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
                 <div className="space-y-12">
                   {agenticNodes.map((node, i) => (
                     <div key={i} className="group flex gap-8 p-8 rounded-[32px] hover:bg-white/[0.02] border border-transparent hover:border-white/[0.05] transition-all duration-700">
-                      <div className="shrink-0 w-16 h-16 rounded-2xl glass-morphism border border-[#BF953F]/20 flex items-center justify-center text-[#BF953F] group-hover:scale-110 transition-transform">
+                      <div className="shrink-0 w-16 h-16 rounded-2xl glass-morphism border border-gold/20 flex items-center justify-center text-gold group-hover:scale-110 transition-transform">
                         {node.icon}
                       </div>
                       <div className="space-y-3">
                         <div className="flex items-center gap-4">
                            <h3 className="text-xl font-bold uppercase tracking-widest">{node.title}</h3>
                         </div>
-                        <p className="text-[10px] text-[#BF953F] font-black uppercase tracking-[0.4em]">{node.desc}</p>
+                        <p className="text-[10px] text-gold font-black uppercase tracking-[0.4em]">{node.desc}</p>
                         <p className="text-gray-400 text-sm font-light leading-relaxed">{node.detail}</p>
                       </div>
                     </div>
@@ -112,7 +112,7 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
              </div>
 
              <div className="relative flex items-center justify-center p-12">
-                <div className="absolute inset-0 bg-[#BF953F]/5 blur-[120px] rounded-full" />
+                <div className="absolute inset-0 bg-gold/5 blur-[120px] rounded-full" />
                 <div className="relative w-full aspect-square glass-morphism rounded-[64px] border border-white/[0.03] flex flex-col items-center justify-center p-12 shadow-3xl overflow-hidden">
                    <div className="absolute inset-0 opacity-20">
                       <div className="absolute top-0 left-0 w-full h-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
@@ -126,8 +126,8 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
              </div>
           </section>
 
-          <section className="py-48 px-12 glass-morphism rounded-[80px] border border-[#BF953F]/10 text-center relative overflow-hidden">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-px bg-gradient-to-r from-transparent via-[#BF953F]/40 to-transparent" />
+          <section className="py-48 px-12 glass-morphism rounded-[80px] border border-gold/10 text-center relative overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
             <div className="max-w-4xl mx-auto space-y-12">
                <h2 className="text-5xl font-light tracking-tight">Software That <br /><span className="gold-text italic">Thinks for You.</span></h2>
                <p className="text-xl text-gray-400 font-light leading-relaxed">
@@ -136,7 +136,7 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
                <div className="pt-8 flex flex-wrap justify-center gap-8">
                   <button 
                     onClick={onTerminal}
-                    className="px-20 py-8 bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl shadow-2xl hover:scale-105 transition-all"
+                    className="px-20 py-8 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl shadow-2xl hover:scale-105 transition-all"
                   >
                     Engage AI Engine
                   </button>

@@ -37,6 +37,7 @@
     "src",
     "open-seo",
     "node_modules",
-    "dist"
+    "dist",
+    "scratch"
   ]
 }

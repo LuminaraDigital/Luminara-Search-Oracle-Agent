@@ -9,7 +9,7 @@ const Waveform: React.FC<{ active: boolean }> = ({ active }) => {
       {[...Array(16)].map((_, i) => (
         <div
           key={i}
-          className="wave-bar w-1.5 bg-gradient-to-t from-[#AA771C] via-[#FCF6BA] to-[#BF953F] rounded-full"
+          className="wave-bar w-1.5 bg-gradient-to-t from-gold-dark via-gold-light to-gold rounded-full"
           style={{
             height: `${20 + Math.random() * 60}%`,
             animationDelay: `${i * 0.05}s`,

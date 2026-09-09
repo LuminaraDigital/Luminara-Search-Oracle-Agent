@@ -30,20 +30,20 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
     return (
       <div className="flex-1 flex items-center justify-center p-8">
-        <div className="max-w-lg w-full glass-morphism border border-red-500/30 rounded-3xl p-8 space-y-4 bg-red-950/10">
-          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-red-400">
+        <div className="max-w-lg w-full glass-morphism border border-danger-500/30 rounded-3xl p-8 space-y-4 bg-danger-950/10">
+          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-danger-400">
             {this.props.scope ? `${this.props.scope} crashed` : 'Something went wrong'}
           </p>
           <p className="text-sm text-gray-300 leading-relaxed">
             This panel hit an unexpected error. Your other work is safe. You can try reloading just this panel.
           </p>
-          <pre className="text-[11px] text-red-300/80 bg-black/60 rounded-xl p-4 overflow-x-auto whitespace-pre-wrap">
+          <pre className="text-[11px] text-danger-300/80 bg-black/60 rounded-xl p-4 overflow-x-auto whitespace-pre-wrap">
             {this.state.error.message}
           </pre>
           <div className="flex gap-3">
             <button
               onClick={() => this.setState({ error: null })}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black text-[10px] uppercase font-black tracking-wider"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black text-[10px] uppercase font-black tracking-wider"
             >
               Reload panel
             </button>

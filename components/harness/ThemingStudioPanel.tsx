@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { themingService, THEMES } from '../../services/harness/themingService';
 import { reminderService } from '../../services/harness/reminderService';
 import { ThemeId, HarnessReminder, LuminaraTheme } from '../../types';
+import { useConfirm } from '../ui/ConfirmModal';
 
 export const ThemingStudioPanel: React.FC = () => {
+  const { requestConfirm, confirmModal } = useConfirm();
   const [currentTheme, setCurrentTheme] = useState<LuminaraTheme>(themingService.getTheme());
   const [reminders, setReminders] = useState<HarnessReminder[]>([]);
   const [reminderLabel, setReminderLabel] = useState('');
@@ -39,10 +41,11 @@ export const ThemingStudioPanel: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
+      {confirmModal}
       {/* Top Banner */}
-      <div className="glass-morphism rounded-2xl border border-[#BF953F]/30 p-6 bg-black/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="glass-morphism rounded-2xl border border-gold/30 p-6 bg-black/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-mono uppercase tracking-[0.3em] px-2.5 py-0.5 rounded-full bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/40 font-black">
+          <span className="text-[10px] font-mono uppercase tracking-[0.3em] px-2.5 py-0.5 rounded-full bg-gold/20 text-gold-light border border-gold/40 font-black">
             OMAKASE THEMING & ALARMS
           </span>
           <h2 className="text-2xl font-bold gold-text tracking-tight mt-2">
@@ -56,11 +59,11 @@ export const ThemingStudioPanel: React.FC = () => {
         <div className="flex items-center gap-3">
           <div className="text-right">
             <div className="text-[10px] font-mono text-gray-400 uppercase">Active Theme</div>
-            <div className="text-sm font-bold text-[#FCF6BA]">{currentTheme.name}</div>
+            <div className="text-sm font-bold text-gold-light">{currentTheme.name}</div>
           </div>
           <button
             onClick={() => themingService.cycleTheme()}
-            className="px-3 py-2 rounded-xl bg-[#BF953F]/20 hover:bg-[#BF953F]/30 border border-[#BF953F]/40 text-xs font-mono text-[#FCF6BA] transition-all"
+            className="px-3 py-2 rounded-xl bg-gold/20 hover:bg-gold/30 border border-gold/40 text-xs font-mono text-gold-light transition-all"
           >
             Cycle Theme ↻
           </button>
@@ -82,15 +85,15 @@ export const ThemingStudioPanel: React.FC = () => {
                 onClick={() => handleSelectTheme(theme.id)}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${
                   isSelected
-                    ? 'bg-[#BF953F]/20 border-[#BF953F] shadow-[0_0_25px_rgba(191,149,63,0.25)] scale-[1.02]'
-                    : 'glass-morphism border-white/10 hover:border-[#BF953F]/40 bg-black/50 hover:scale-[1.01]'
+                    ? 'bg-gold/20 border-gold shadow-[0_0_25px_rgba(191,149,63,0.25)] scale-[1.02]'
+                    : 'glass-morphism border-white/10 hover:border-gold/40 bg-black/50 hover:scale-[1.01]'
                 }`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-bold text-white">{theme.name}</span>
                     {isSelected && (
-                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-[#BF953F] text-black font-bold">
+                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold text-black font-bold">
                         ACTIVE
                       </span>
                     )}
@@ -123,7 +126,7 @@ export const ThemingStudioPanel: React.FC = () => {
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <span>Harness Task Reminders & Alarms</span>
-              <span className="text-xs font-mono text-[#FCF6BA] px-2 py-0.5 rounded bg-[#BF953F]/20 border border-[#BF953F]/30">
+              <span className="text-xs font-mono text-gold-light px-2 py-0.5 rounded bg-gold/20 border border-gold/30">
                 CLI: luminara reminder
               </span>
             </h3>
@@ -134,8 +137,16 @@ export const ThemingStudioPanel: React.FC = () => {
 
           {reminders.length > 0 && (
             <button
-              onClick={() => reminderService.clearAll()}
-              className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-red-400 transition-colors"
+              onClick={() => requestConfirm(
+                {
+                  title: 'Clear all reminders?',
+                  description: `${reminders.length} reminder${reminders.length === 1 ? '' : 's'} will be permanently removed.`,
+                  confirmLabel: 'Clear all',
+                  variant: 'danger',
+                },
+                () => reminderService.clearAll(),
+              )}
+              className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-danger-400 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-danger-400 rounded"
             >
               Clear All Reminders
             </button>
@@ -150,7 +161,7 @@ export const ThemingStudioPanel: React.FC = () => {
               value={reminderLabel}
               onChange={e => setReminderLabel(e.target.value)}
               placeholder='e.g., "Re-crawl Stripe vs Square AEO SERP metrics" or "Export PyTorch model weights"'
-              className="w-full bg-black/60 border border-white/10 rounded-xl p-3 text-xs text-white font-mono focus:outline-none focus:border-[#BF953F]"
+              className="w-full bg-black/60 border border-white/10 rounded-xl p-3 text-xs text-white font-mono focus:outline-none focus:border-gold"
             />
           </div>
 
@@ -158,7 +169,7 @@ export const ThemingStudioPanel: React.FC = () => {
             <select
               value={reminderMinutes}
               onChange={e => setReminderMinutes(Number(e.target.value))}
-              className="w-full bg-black/60 border border-white/10 rounded-xl p-3 text-xs text-white font-mono focus:outline-none focus:border-[#BF953F]"
+              className="w-full bg-black/60 border border-white/10 rounded-xl p-3 text-xs text-white font-mono focus:outline-none focus:border-gold"
             >
               <option value={5}>5 Minutes</option>
               <option value={15}>15 Minutes</option>
@@ -172,7 +183,7 @@ export const ThemingStudioPanel: React.FC = () => {
             <button
               type="submit"
               disabled={!reminderLabel.trim()}
-              className="w-full h-full py-3 rounded-xl bg-[#BF953F] hover:bg-[#AA771C] text-black font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-40"
+              className="w-full h-full py-3 rounded-xl bg-gold hover:bg-gold-dark text-black font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-40"
             >
               Set Timer
             </button>
@@ -202,7 +213,7 @@ export const ThemingStudioPanel: React.FC = () => {
                       <button
                         onClick={() => reminderService.markCompleted(rem.id)}
                         className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
-                          rem.completed ? 'bg-emerald-500 border-emerald-500 text-black text-[10px]' : 'border-gray-500 hover:border-white'
+                          rem.completed ? 'bg-success-500 border-success-500 text-black text-[10px]' : 'border-gray-500 hover:border-white'
                         }`}
                       >
                         {rem.completed && '✓'}
@@ -218,8 +229,17 @@ export const ThemingStudioPanel: React.FC = () => {
                     </div>
 
                     <button
-                      onClick={() => reminderService.deleteReminder(rem.id)}
-                      className="text-gray-500 hover:text-red-400 text-xs px-2 py-1 transition-colors"
+                      onClick={() => requestConfirm(
+                        {
+                          title: 'Delete reminder?',
+                          description: <>The reminder <span className="text-white font-bold">{rem.label}</span> will be removed.</>,
+                          confirmLabel: 'Delete',
+                          variant: 'danger',
+                        },
+                        () => reminderService.deleteReminder(rem.id),
+                      )}
+                      className="text-gray-500 hover:text-danger-400 text-xs px-2 py-1 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-danger-400 rounded"
+                      aria-label={`Delete reminder ${rem.label}`}
                     >
                       ✕
                     </button>

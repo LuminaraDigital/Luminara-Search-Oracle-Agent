@@ -1,0 +1,24 @@
+services:
+  luminara-crawler:
+    build:
+      context: ./crawler
+      dockerfile: Dockerfile
+    container_name: luminara-crawler
+    restart: unless-stopped
+    # Published on loopback only: the crawler drives a real browser and must not be reachable from
+    # the network. To share it, put it behind an HTTPS reverse proxy and set CRAWLER_TOKEN.
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      # Optional shared secret; paste the same value into Settings > Crawler token in the app.
+      - CRAWLER_TOKEN=${CRAWLER_TOKEN:-}
+      # Optional outbound proxy for the headless browser (http://user:pass@host:port).
+      - CRAWLER_PROXY=${CRAWLER_PROXY:-}
+    shm_size: 1gb
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

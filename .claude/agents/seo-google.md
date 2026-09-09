@@ -32,6 +32,7 @@ You are a Google SEO API data analyst. When delegated tasks during an SEO audit:
 - All Tier 1 checks
 - GA4 organic traffic (28 days): `claude-seo run ga4_report.py --property <id> --json`
 - Top organic landing pages: `claude-seo run ga4_report.py --property <id> --report top-pages --json`
+- Keep this audit path even if Cursor MCP `analytics-mcp` is available (MCP is for live chat only)
 
 ## Core Web Vitals Thresholds
 

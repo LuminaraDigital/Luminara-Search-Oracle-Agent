@@ -119,14 +119,14 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-20 px-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
       <div
-        className="w-full max-w-xl glass-morphism rounded-2xl border border-[#BF953F]/40 bg-black/95 shadow-[0_0_80px_rgba(191,149,63,0.3)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+        className="w-full max-w-xl glass-morphism rounded-2xl border border-gold/40 bg-black/95 shadow-[0_0_80px_rgba(191,149,63,0.3)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
         onKeyDown={handleKeyDown}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-label="Jump to a tool"
       >
-        <div className="p-4 border-b border-[#BF953F]/20 flex items-center gap-3">
-          <ICONS.Search className="w-4 h-4 text-[#BF953F]" />
+        <div className="p-4 border-b border-gold/20 flex items-center gap-3">
+          <ICONS.Search className="w-4 h-4 text-gold" />
           <input
             ref={inputRef}
             type="text"
@@ -161,11 +161,11 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
                       onClick={() => go(d)}
                       onMouseEnter={() => setSelectedIndex(idx)}
                       className={`px-3 py-2.5 rounded-xl cursor-pointer flex items-center gap-3 transition-all ${
-                        selected ? 'bg-[#BF953F]/15 border border-[#BF953F]/40' : 'border border-transparent hover:bg-white/5'
+                        selected ? 'bg-gold/15 border border-gold/40' : 'border border-transparent hover:bg-white/5'
                       }`}
                     >
                       <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                        <Icon className="w-4 h-4 text-[#FCF6BA]" />
+                        <Icon className="w-4 h-4 text-gold-light" />
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-white">{d.label}</div>
@@ -181,7 +181,7 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
 
           {devCommands.length > 0 && (
             <div className="mb-2">
-              <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-400">Developer commands</div>
+              <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-warning-400">Developer commands</div>
               {devCommands.map(cmd => {
                 runningIndex += 1;
                 const idx = runningIndex;
@@ -192,7 +192,7 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
                     onClick={() => runDev(cmd)}
                     onMouseEnter={() => setSelectedIndex(idx)}
                     className={`px-3 py-2.5 rounded-xl cursor-pointer flex items-center gap-3 font-mono ${
-                      selected ? 'bg-amber-500/10 border border-amber-500/40' : 'border border-transparent hover:bg-white/5'
+                      selected ? 'bg-warning-500/10 border border-warning-500/40' : 'border border-transparent hover:bg-white/5'
                     }`}
                   >
                     <div className="min-w-0">

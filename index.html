@@ -15,16 +15,24 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --gold: #BF953F;
+      --gold-light: #FCF6BA;
+      --gold-dark: #AA771C;
+      --surface: #000000;
+      --surface-1: #0a0a0a;
+      --ink: #f1f1f1;
+    }
     body {
       font-family: 'Outfit', sans-serif;
       background-color: #000000;
       color: #f1f1f1;
     }
     .luminara-gradient {
-      background: linear-gradient(135deg, #BF953F, #FCF6BA, #B38728, #FBF5B7, #AA771C);
+      background: linear-gradient(135deg, var(--gold), var(--gold-light), #B38728, #FBF5B7, var(--gold-dark));
     }
     .gold-text {
-      background: linear-gradient(135deg, #BF953F, #FCF6BA, #B38728);
+      background: linear-gradient(135deg, var(--gold), var(--gold-light), #B38728);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       padding-bottom: 0.1em;
@@ -47,7 +55,7 @@
       100% { background-position: 200% 0; }
     }
     .animate-title-shimmer {
-      background: linear-gradient(90deg, #BF953F, #FCF6BA, #B38728, #FBF5B7, #AA771C, #FCF6BA, #BF953F);
+      background: linear-gradient(90deg, var(--gold), var(--gold-light), #B38728, #FBF5B7, var(--gold-dark), var(--gold-light), var(--gold));
       background-size: 300% auto;
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -68,7 +76,7 @@
     .markdown-content h1 {
       font-size: 2.25rem;
       font-weight: 600;
-      color: #FCF6BA;
+      color: var(--gold-light);
       margin-top: 0;
       margin-bottom: 1.5rem;
       letter-spacing: -0.02em;
@@ -76,7 +84,7 @@
     .markdown-content h2 {
       font-size: 1.5rem;
       font-weight: 600;
-      color: #BF953F;
+      color: var(--gold);
       margin-top: 2.5rem;
       margin-bottom: 1rem;
       border-bottom: 1px solid rgba(191, 149, 63, 0.15);
@@ -87,7 +95,7 @@
     .markdown-content h3 {
       font-size: 1.2rem;
       font-weight: 600;
-      color: #d4af37;
+      color: var(--gold);
       margin-top: 2rem;
       margin-bottom: 0.75rem;
     }
@@ -109,7 +117,7 @@
       text-align: left;
       padding: 1.25rem 1rem;
       background: rgba(191, 149, 63, 0.1);
-      color: #FCF6BA;
+      color: var(--gold-light);
       font-weight: 600;
       text-transform: uppercase;
       font-size: 0.7rem;
@@ -143,11 +151,11 @@
       top: 0.65rem;
       width: 6px;
       height: 6px;
-      background: #BF953F;
+      background: var(--gold);
       border-radius: 50%;
     }
     .markdown-content blockquote {
-      border-left: 4px solid #BF953F;
+      border-left: 4px solid var(--gold);
       background: rgba(191, 149, 63, 0.05);
       padding: 1.5rem 2rem;
       margin: 2rem 0;
@@ -165,11 +173,11 @@
     /* Audit-Specific Classes */
     .impact-high {
       background: rgba(191, 149, 63, 0.2);
-      color: #FCF6BA;
+      color: var(--gold-light);
       padding: 2px 8px;
       border-radius: 4px;
       font-weight: bold;
-      border: 1px solid #BF953F;
+      border: 1px solid var(--gold);
     }
     .impact-med {
       background: rgba(255, 255, 255, 0.1);
@@ -184,7 +192,7 @@
       padding: 0.2rem 0.4rem;
       border-radius: 4px;
       font-family: 'JetBrains Mono', monospace;
-      color: #FCF6BA;
+      color: var(--gold-light);
       font-size: 0.85em;
     }
     pre {
@@ -243,7 +251,7 @@
 
     @keyframes orbit-glint {
       0%, 100% { opacity: 0.4; stroke-width: 0.7; }
-      50% { opacity: 1; stroke-width: 1.8; filter: brightness(1.8) drop-shadow(0 0 12px #FCF6BA); }
+      50% { opacity: 1; stroke-width: 1.8; filter: brightness(1.8) drop-shadow(0 0 12px var(--gold-light)); }
     }
     
     .logo-core {
@@ -306,7 +314,7 @@
       100% { background-position: 200% 0; }
     }
     .progress-gold {
-      background: linear-gradient(90deg, #AA771C, #FCF6BA, #BF953F, #FCF6BA, #AA771C);
+      background: linear-gradient(90deg, var(--gold-dark), var(--gold-light), var(--gold), var(--gold-light), var(--gold-dark));
       background-size: 200% auto;
       animation: progress-shimmer 2s linear infinite;
     }
@@ -322,7 +330,7 @@
       border-radius: 10px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: #BF953F;
+      background: var(--gold);
     }
     @keyframes pulse-custom {
       0%, 100% { transform: scaleY(1); opacity: 0.5; }

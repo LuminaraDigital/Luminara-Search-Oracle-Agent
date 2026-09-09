@@ -1,0 +1,3 @@
+#!/bin/sh
+# Block pushes when the worktree still contains secret-shaped material.
+node "$(dirname "$0")/../scripts/check-secrets.mjs" --all || exit 1

@@ -97,10 +97,10 @@ export const NativeEngineHUD: React.FC = () => {
       {/* Top Header Pill */}
       <div 
         onClick={() => { setIsModalOpen(true); probeEngines(); }}
-        className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#BF953F]/30 bg-black/60 hover:bg-[#BF953F]/10 hover:border-[#BF953F]/60 cursor-pointer transition-all shadow-[0_0_15px_rgba(191,149,63,0.1)] group"
+        className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full border border-gold/30 bg-black/60 hover:bg-gold/10 hover:border-gold/60 cursor-pointer transition-all shadow-[0_0_15px_rgba(191,149,63,0.1)] group"
         title="Native AI Trinity Status: Groq, NVIDIA NIM, Ollama (Click to configure failover order)"
       >
-        <span className="text-[8px] font-mono font-bold tracking-widest text-[#FCF6BA] uppercase">
+        <span className="text-[8px] font-mono font-bold tracking-widest text-gold-light uppercase">
           NATIVE LLM:
         </span>
 
@@ -112,10 +112,10 @@ export const NativeEngineHUD: React.FC = () => {
               key={id} 
               className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono transition-all ${
                 isCurrent
-                  ? 'bg-[#BF953F]/25 text-[#FCF6BA] border border-[#BF953F]/50 font-bold'
+                  ? 'bg-gold/25 text-gold-light border border-gold/50 font-bold'
                   : badge.isAvail
                   ? 'bg-white/5 text-gray-300 hover:text-white'
-                  : 'bg-red-950/20 text-gray-500 line-through'
+                  : 'bg-danger-950/20 text-gray-500 line-through'
               }`}
             >
               <span>{badge.icon}</span>
@@ -129,11 +129,11 @@ export const NativeEngineHUD: React.FC = () => {
       {/* Modal / Flyout for Topology, Live Search & Failover Configuration */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="relative w-full max-w-2xl rounded-3xl bg-black border border-[#BF953F]/40 shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_40px_rgba(191,149,63,0.2)] p-6 text-[#f1f1f1]">
+          <div className="relative w-full max-w-2xl rounded-3xl bg-black border border-gold/40 shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_40px_rgba(191,149,63,0.2)] p-6 text-ink">
             {/* Header */}
             <div className="flex items-center justify-between pb-4 border-b border-white/10">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#BF953F]/20 border border-[#BF953F]/40 flex items-center justify-center text-xl shadow-[0_0_15px_rgba(191,149,63,0.3)]">
+                <div className="w-10 h-10 rounded-2xl bg-gold/20 border border-gold/40 flex items-center justify-center text-xl shadow-[0_0_15px_rgba(191,149,63,0.3)]">
                   ⚡
                 </div>
                 <div>
@@ -155,10 +155,10 @@ export const NativeEngineHUD: React.FC = () => {
             </div>
 
             {/* Subheader info banner */}
-            <div className="my-4 p-3.5 rounded-2xl bg-[#BF953F]/10 border border-[#BF953F]/20 text-xs text-gray-300 leading-relaxed">
-              <span className="text-[#FCF6BA] font-bold">Autonomous Failover Architecture: </span>
+            <div className="my-4 p-3.5 rounded-2xl bg-gold/10 border border-gold/20 text-xs text-gray-300 leading-relaxed">
+              <span className="text-gold-light font-bold">Autonomous Failover Architecture: </span>
               Luminara Search natively prioritizes this trinity. When any provider hits rate limits (429), timeouts, or errors, the next healthy engine 
-              <span className="text-[#FCF6BA] font-semibold"> automatically pops up with zero loss of query context</span>.
+              <span className="text-gold-light font-semibold"> automatically pops up with zero loss of query context</span>.
             </div>
 
             {/* Providers Status & Priority Order Table */}
@@ -168,7 +168,7 @@ export const NativeEngineHUD: React.FC = () => {
                 <button
                   onClick={probeEngines}
                   disabled={isProbing}
-                  className="flex items-center gap-1 text-[#FCF6BA] hover:underline disabled:opacity-50"
+                  className="flex items-center gap-1 text-gold-light hover:underline disabled:opacity-50"
                 >
                   <span>{isProbing ? 'Probing...' : '↻ Search & Probe Engines'}</span>
                 </button>
@@ -184,14 +184,14 @@ export const NativeEngineHUD: React.FC = () => {
                     key={id}
                     className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-4 ${
                       isCurrent
-                        ? 'bg-[#BF953F]/15 border-[#BF953F]/60 shadow-[0_0_15px_rgba(191,149,63,0.15)]'
+                        ? 'bg-gold/15 border-gold/60 shadow-[0_0_15px_rgba(191,149,63,0.15)]'
                         : isAvail
                         ? 'bg-white/5 border-white/10 hover:border-white/20'
-                        : 'bg-red-950/10 border-red-500/20'
+                        : 'bg-danger-950/10 border-danger-500/20'
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-xl bg-black border border-white/10 flex items-center justify-center text-xs font-mono font-bold text-[#FCF6BA]">
+                      <div className="w-7 h-7 rounded-xl bg-black border border-white/10 flex items-center justify-center text-xs font-mono font-bold text-gold-light">
                         #{index + 1}
                       </div>
 
@@ -203,7 +203,7 @@ export const NativeEngineHUD: React.FC = () => {
                             {id === 'ollama' && (s?.isLocal ? '🦙 Ollama (Local Daemon :11434)' : '🦙 Ollama Cloud Gateway')}
                           </span>
                           {isCurrent && (
-                            <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-[#BF953F]/30 text-[#FCF6BA] font-bold">
+                            <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-gold/30 text-gold-light font-bold">
                               ACTIVE NOW
                             </span>
                           )}
@@ -212,7 +212,7 @@ export const NativeEngineHUD: React.FC = () => {
                         <div className="text-[11px] text-gray-400 font-mono mt-0.5 flex items-center gap-3">
                           <span>Model: <span className="text-gray-200">{s?.model || 'auto'}</span></span>
                           <span>•</span>
-                          <span>Speed: <span className="text-emerald-400 font-semibold">{s?.tokenSpeed || 'Online'}</span></span>
+                          <span>Speed: <span className="text-success-400 font-semibold">{s?.tokenSpeed || 'Online'}</span></span>
                           {s?.latencyMs ? <span>• {s.latencyMs}ms</span> : null}
                         </div>
                       </div>
@@ -222,8 +222,8 @@ export const NativeEngineHUD: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <span className={`text-[10px] font-mono px-2.5 py-1 rounded-full border ${
                         isAvail 
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' 
-                          : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                          ? 'border-success-500/30 bg-success-500/10 text-success-300' 
+                          : 'border-warning-500/30 bg-warning-500/10 text-warning-300'
                       }`}>
                         {isAvail ? 'HEALTHY & SEARCHED' : 'AWAITING KEY / DAEMON'}
                       </span>
@@ -256,7 +256,7 @@ export const NativeEngineHUD: React.FC = () => {
             <div className="pt-4 border-t border-white/10 flex items-center justify-between">
               <button
                 onClick={simulateFailover}
-                className="px-4 py-2 rounded-xl text-xs font-mono font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-amber-200 transition-all flex items-center gap-2"
+                className="px-4 py-2 rounded-xl text-xs font-mono font-bold bg-warning-500/20 hover:bg-warning-500/30 border border-warning-500/40 text-warning-300 hover:text-warning-200 transition-all flex items-center gap-2"
                 title="Test simulated 429 failover to see automatic pop-up"
               >
                 <span>⚡</span>
@@ -265,7 +265,7 @@ export const NativeEngineHUD: React.FC = () => {
 
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-[#BF953F] hover:bg-[#AA771C] text-black font-mono transition-all"
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-gold hover:bg-gold-dark text-black font-mono transition-all"
               >
                 Done
               </button>

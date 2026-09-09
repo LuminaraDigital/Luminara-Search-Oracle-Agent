@@ -29,13 +29,13 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
         onSubmit={handleSubmit}
         className={`glass-morphism rounded-[24px] p-2 flex items-center gap-2 transition-all duration-700 shadow-2xl relative overflow-hidden ${
           isThinking 
-            ? 'opacity-40 grayscale-[40%] cursor-not-allowed pointer-events-none scale-[0.985] border-[#BF953F]/10 ring-1 ring-[#BF953F]/5' 
-            : 'border-[#BF953F]/20 hover:border-[#BF953F]/40'
+            ? 'opacity-40 grayscale-[40%] cursor-not-allowed pointer-events-none scale-[0.985] border-gold/10 ring-1 ring-gold/5' 
+            : 'border-gold/20 hover:border-gold/40'
         }`}
       >
         {/* Subtle background pulse for thinking state */}
         {isThinking && (
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#BF953F]/5 to-transparent animate-[shimmer_2s_infinite] pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-gold/5 to-transparent animate-[shimmer_2s_infinite] pointer-events-none" />
         )}
 
         <button
@@ -43,10 +43,11 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
           onClick={onVoiceToggle}
           disabled={isThinking || !OracleLiveService.isAvailable()}
           title={OracleLiveService.isAvailable() ? 'Oracle Agent Live Voice' : 'Live Voice needs a Gemini API key in Settings'}
-          className={`p-3.5 rounded-xl transition-all relative z-10 ${
-            isVoiceActive 
-              ? 'bg-red-500/20 text-red-400 animate-pulse' 
-              : 'hover:bg-white/5 text-[#BF953F]'
+          aria-pressed={isVoiceActive}
+          className={`p-3.5 rounded-xl transition-all relative z-10 outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent ${
+            isVoiceActive
+              ? 'bg-danger-500/20 text-danger-400 animate-pulse'
+              : 'hover:bg-white/5 text-gold'
           } ${isThinking ? 'cursor-not-allowed opacity-30' : ''}`}
         >
           <ICONS.Mic />
@@ -74,7 +75,8 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
             <button
               type="submit"
               disabled={isThinking}
-              className="p-3.5 bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black rounded-xl hover:opacity-90 transition-all shadow-lg gold-glow"
+              aria-label="Send"
+              className="p-3.5 bg-gradient-to-br from-gold to-gold-dark text-black rounded-xl hover:opacity-90 active:scale-[0.98] transition-all shadow-lg gold-glow outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50"
             >
               <ICONS.Send />
             </button>
@@ -82,12 +84,12 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
             <div className="flex items-center gap-1">
               {isThinking ? (
                 <div className="w-10 h-10 flex items-center justify-center">
-                   <div className="w-5 h-5 border-2 border-[#BF953F]/30 border-t-[#BF953F] rounded-full animate-spin"></div>
+                   <div className="w-5 h-5 border-2 border-gold/30 border-t-gold rounded-full animate-spin"></div>
                 </div>
               ) : (
                 <div className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
                   mode === OracleMode.DEEP_THINK 
-                    ? 'bg-[#BF953F]/10 text-[#BF953F] border border-[#BF953F]/20' 
+                    ? 'bg-gold/10 text-gold border border-gold/20' 
                     : 'bg-white/5 text-gray-400 border border-white/10'
                 }`}>
                   {mode === OracleMode.DEEP_THINK ? 'Thorough' : 'Quick'}

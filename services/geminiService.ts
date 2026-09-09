@@ -4,9 +4,11 @@ import { SYSTEM_INSTRUCTIONS } from "../constants";
 import { vfsRetrievalService } from "./vfs/vfsRetrievalService";
 import { vfsMemoryService } from "./vfs/vfsMemoryService";
 import { configService } from "./configService";
-import { aiProviderService } from "./aiProviderService";
+import { aiProviderService, safeJsonParse } from "./aiProviderService";
 import { tavilyService } from "./search/tavilyService";
+import { localSerpService } from "./search/localSerpService";
 import { firecrawlService } from "./scraping/firecrawlService";
+import { unifiedScraperService } from "./scraping/unifiedScraper";
 import { geminiProxyHttpOptions } from "./apiClient";
 
 export interface StreamChunk {
@@ -20,6 +22,34 @@ export interface StreamQueryOptions {
   history?: ChatTurn[];
   /** Skip the live SERP lookup (e.g. for "simplify this" follow-ups that need no fresh evidence). */
   skipSearch?: boolean;
+}
+
+import { empiricalCitationService, type EmpiricalCitationSummary } from './audit/empiricalCitationService';
+import { cmsDeploymentService, type RemediationPayload } from './deployment/cmsDeploymentService';
+import { aeoCorpusService } from './corpus/aeoCorpusService';
+import { publicApisEnrichmentService, type EnrichedEntityIntelligence } from './enrichment/publicApisEnrichmentService';
+import { writingQualityService, type WritingQualityReport } from './audit/writingQualityService';
+import { trafficInsightsService, type TrafficImpact } from './analytics/trafficInsightsService';
+import { citationIntegrityService, type CitationIntegrityResult } from './audit/citationIntegrityService';
+import { aeoTrustPackService, type TrustPackSummary } from './audit/aeoTrustPackService';
+import { schemaSafetyGate } from './deployment/schemaSafetyGate';
+
+export interface AuditReportResult {
+  text: string;
+  sources: Array<{ uri: string; title: string }>;
+  empiricalSummary?: EmpiricalCitationSummary;
+  remediationPayload?: RemediationPayload;
+  unifiedDiff?: string;
+  plainEnglishBrief?: string;
+  enrichedEntity?: EnrichedEntityIntelligence;
+  /** "Writing check" of the scraped page (grammar/style + readability). Absent when the page had too little text. */
+  writingQuality?: WritingQualityReport;
+  /** "Results tracking": measured traffic and AI/search referrals; check `status` before rendering numbers. */
+  trafficImpact?: TrafficImpact;
+  citationIntegrity?: CitationIntegrityResult;
+  /** Alias for citationIntegrity (UI wiring). */
+  integrity?: CitationIntegrityResult;
+  trustPack?: TrustPackSummary;
 }
 
 import { shouldSearch, toSearchQuery } from './search/searchIntent';
@@ -44,30 +74,79 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
   rationale: string;
 }> {
   const plan = planSearch(prompt, dna);
-  if (!plan || !configService.getTavilyKey()) return { contextText: '', sources: [], queries: [], rationale: '' };
+  if (!plan) return { contextText: '', sources: [], queries: [], rationale: '' };
 
-  const responses = await Promise.all(plan.queries.map(q => tavilyService.search(q, { maxResults: 4, includeAnswer: true }).catch(() => ({ query: q, results: [] as any[], answer: undefined as string | undefined }))));
+  const tavilyKey = configService.getTavilyKey();
+  const localSerpEnabled = configService.isLocalSerpEnabled();
+  if (!tavilyKey && !localSerpEnabled) return { contextText: '', sources: [], queries: [], rationale: '' };
+
   const seen = new Set<string>();
   const merged: Array<{ title: string; url: string; content: string; score?: number }> = [];
-  for (const r of responses) {
-    for (const item of r.results) {
-      if (seen.has(item.url)) continue;
-      if (typeof item.score === 'number' && item.score < 0.25) continue;
-      seen.add(item.url);
-      merged.push(item);
+  let answers: string[] = [];
+  let sourceLabel = 'Tavily Search';
+
+  if (tavilyKey) {
+    const responses = await Promise.all(
+      plan.queries.map(q =>
+        tavilyService.search(q, { maxResults: 4, includeAnswer: true }).catch(() => ({
+          query: q,
+          results: [] as any[],
+          answer: undefined as string | undefined,
+        }))
+      )
+    );
+    for (const r of responses) {
+      for (const item of r.results) {
+        if (seen.has(item.url)) continue;
+        if (typeof item.score === 'number' && item.score < 0.25) continue;
+        seen.add(item.url);
+        merged.push(item);
+      }
+    }
+    answers = responses.map(r => r.answer).filter(Boolean) as string[];
+  }
+
+  // Additive zero-key / quota fallback: Query local SERP scraper if Tavily returned no results
+  if (merged.length === 0 && localSerpEnabled) {
+    const serpResponses = await Promise.all(
+      plan.queries.map(q => localSerpService.search(q, { num: 4 }).catch(() => null))
+    );
+    for (const sr of serpResponses) {
+      if (!sr || !sr.results || !sr.results.length) continue;
+      sourceLabel = `Google Search via Sidecar (${sr.tier || 'Fast'})`;
+      if (sr.featuredSnippet?.snippet) {
+        answers.push(sr.featuredSnippet.snippet);
+      } else if (sr.aiOverview?.text) {
+        answers.push(sr.aiOverview.text);
+      }
+      for (const item of sr.results) {
+        if (seen.has(item.url)) continue;
+        seen.add(item.url);
+        merged.push({
+          title: item.title,
+          url: item.url,
+          content: item.snippet,
+          score: 0.9,
+        });
+      }
     }
   }
-  merged.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-  const top = merged.slice(0, maxResults);
-  if (!top.length) return { contextText: '', sources: [], queries: plan.queries, rationale: plan.rationale };
 
-  const answers = responses.map(r => r.answer).filter(Boolean) as string[];
-  const lines = [
-    '[LIVE SEARCH EVIDENCE]',
-    `Queries run: ${plan.queries.map(q => `"${q}"`).join(', ')}`,
-    'Use this evidence only where it is relevant to the user\'s question. Cite sources as [n]. If the evidence does not answer the question, say so plainly rather than guessing.',
-    ...(answers.length ? [`Search engine summary: ${answers[0]}`] : []),
-    ...top.map((r, i) => `[${i + 1}] ${r.title} (${r.url}):\n${r.content.slice(0, 700)}`),
+  if (merged.length === 0) return { contextText: '', sources: [], queries: [], rationale: '' };
+
+  const top = merged.slice(0, maxResults);
+  const lines: string[] = [
+    `[LIVE EVIDENCE GATHERED VIA ${sourceLabel.toUpperCase()}]`,
+    `Search Intent Rationale: ${plan.rationale}`,
+    `Active Queries Executed: ${plan.queries.map(q => `"${q}"`).join(', ')}`,
+    answers.length > 0 ? `Featured Engine Summary: ${answers[0]}` : '',
+    '--------------------------------------------------',
+    ...top.map((r, i) => `[Source ${i + 1}] ${r.title}\nURL: ${r.url}\nExcerpt: ${r.content}\n`),
+    '--------------------------------------------------',
+    'GROUNDING RULES:',
+    '- Quote or cite these sources when directly answering questions of current fact.',
+    '- If the search results contradict previous assumptions, prioritize the live evidence.',
+    '- If the evidence does not contain the answer, say so honestly rather than inventing facts.',
     '--------------------------------------------------',
   ];
   return {
@@ -79,7 +158,7 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
 }
 
 export class ProviderUnavailableError extends Error {
-  constructor(message = 'No language model responded. Add a Groq, NVIDIA NIM, Ollama, or Gemini key in Settings.') {
+  constructor(message = 'No native LLM responded. Check your NVIDIA NIM, Groq, or Ollama connection in Settings.') {
     super(message);
     this.name = 'ProviderUnavailableError';
   }
@@ -357,7 +436,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     focus: ReportFocus = 'SEO',
     dna?: BusinessDNA | null,
     lenses: AuditLens[] = []
-  ): Promise<{ text: string; sources: Array<{ uri: string; title: string }> }> {
+  ): Promise<AuditReportResult> {
     const dnaContext = this.getDNAContext(dna);
     const allLenses = [...new Set([...lenses, ...inferLenses(dna)])];
     const methodology = playbookContext(selectAuditPlaybooks(focus, allLenses), 26000);
@@ -389,31 +468,46 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
         break;
     }
 
-    // 1. Live site scraping via Firecrawl
+    // 1. Live site scraping via Unified Scraper (Patchright Stealth -> Firecrawl -> Jina Fallback)
     let scrapedContent = '';
-    if (configService.getFirecrawlKey()) {
-      try {
-        const scrapeRes = await firecrawlService.scrapeUrl(websiteUrl);
-        if (scrapeRes.success && scrapeRes.markdown) {
-          const meta = scrapeRes.metadata || {};
-          scrapedContent = `
-[REAL SITE SCRAPE EVIDENCE - FIRECRAWL]
-Page Title: ${meta.title || 'N/A'}
-Meta Description: ${meta.description || 'N/A'}
-Scraped Content Snippet:
-${scrapeRes.markdown.slice(0, 3000)}
---------------------------------------------------
-`;
-        }
-      } catch (e) {
-        console.warn('[Audit] Firecrawl scrape skipped', e);
+    let scrapedText = '';
+    try {
+      const scrapeRes = await unifiedScraperService.scrapeAndDistill(websiteUrl, { maxChars: 8000 });
+      if (scrapeRes.success && scrapeRes.formattedEvidence) {
+        scrapedContent = `\n${scrapeRes.formattedEvidence}\n`;
+        scrapedText = scrapeRes.distilled?.distilledText || '';
       }
+    } catch (e) {
+      console.warn('[Audit] Site scrape skipped', e);
     }
 
-    // 2. Real SERP search via Tavily
+    // 1b. Writing check (page copy) + Results tracking (measured traffic) — best-effort, in parallel.
+    let writingQuality: WritingQualityReport | undefined;
+    let trafficImpact: TrafficImpact | undefined;
+    let writingText = '';
+    let trafficText = '';
+    const hasEnoughCopy = (scrapedText.match(/[A-Za-z0-9À-ÿ'’-]+/g) || []).length >= 40;
+    const [writingSettled, trafficSettled] = await Promise.allSettled([
+      hasEnoughCopy ? writingQualityService.checkText(scrapedText) : Promise.resolve(undefined),
+      trafficInsightsService.getImpact(displayUrl),
+    ]);
+    if (writingSettled.status === 'fulfilled') {
+      writingQuality = writingSettled.value;
+      if (writingQuality) writingText = `\n${writingQualityService.summaryForLlm(writingQuality)}\n`;
+    } else {
+      console.warn('[Audit] Writing check skipped', writingSettled.reason);
+    }
+    if (trafficSettled.status === 'fulfilled') {
+      trafficImpact = trafficSettled.value;
+      if (trafficImpact.status === 'ready') trafficText = `\n${trafficInsightsService.summaryForLlm(trafficImpact)}\n`;
+    } else {
+      console.warn('[Audit] Results tracking skipped', trafficSettled.reason);
+    }
+
+    // 2. Real SERP search via Tavily / Local SERP Sidecar
     let searchGrounding = '';
     const sources: Array<{ uri: string; title: string }> = [{ uri: websiteUrl, title: `${displayUrl} (Target Domain)` }];
-    if (configService.getTavilyKey()) {
+    if (configService.getTavilyKey() || configService.isLocalSerpEnabled()) {
       try {
         const brand = dna?.name || displayUrl.split('.')[0];
         const evidence = await gatherSearchEvidence(`${brand} ${displayUrl} reviews competitors alternatives ${focus === 'SEO' ? 'ranking' : 'AI Overviews citation'}`, dna, 8);
@@ -422,8 +516,98 @@ ${scrapeRes.markdown.slice(0, 3000)}
           sources.push(...evidence.sources);
         }
       } catch (e) {
-        console.warn('[Audit] Tavily search skipped', e);
+        console.warn('[Audit] SERP search skipped', e);
       }
+    }
+
+    // 3. Empirical Multi-LLM & Live SERP Citation Verification
+    let empiricalSummary: EmpiricalCitationSummary | undefined;
+    let empiricalText = '';
+    try {
+      empiricalSummary = await empiricalCitationService.probeDomainCitations(
+        websiteUrl,
+        dna?.name,
+        dna?.competitors || []
+      );
+      if (empiricalSummary.evidenceList.length > 0) {
+        empiricalText = `\n[VERIFIED EMPIRICAL CITATION AUDIT DATA]\nTarget Domain: ${empiricalSummary.targetDomain}\nEmpirical Citation Rate: ${empiricalSummary.citationRatePercent}%\nTop Cited Competitor: ${empiricalSummary.topCitedCompetitor || 'None identified'}\nEvidence Summary:\n` +
+          empiricalSummary.evidenceList.map(e => `- Query "${e.query}" (${e.intent}): ${e.brandCited ? `CITING [Rank #${e.brandRank}]` : `NOT CITED (Competitors: ${e.competitorsCited.join(', ') || 'None'})`} -> Snippet: ${e.snippet}`).join('\n') + '\n';
+      }
+    } catch (e) {
+      console.warn('[Audit] Empirical citation probe fallback', e);
+    }
+
+    // 4. Open Public APIs Enrichment (Wikidata, Internet Archive Wayback, Microlink, Security)
+    let enrichedEntity: EnrichedEntityIntelligence | undefined;
+    let enrichmentText = '';
+    try {
+      enrichedEntity = await publicApisEnrichmentService.enrichAudit(websiteUrl, dna?.name);
+      const parts: string[] = ['\n[VERIFIED PUBLIC APIS & ENTITY INTELLIGENCE]'];
+      if (enrichedEntity.wikidata) {
+        parts.push(`Canonical Wikidata Entity: ${enrichedEntity.wikidata.id} (${enrichedEntity.wikidata.label}) - ${enrichedEntity.wikidata.description || 'Verified'}`);
+        parts.push(`Wikipedia URI: ${enrichedEntity.wikidata.wikipediaUrl}`);
+      }
+      if (enrichedEntity.wayback.hasArchive) {
+        parts.push(`Internet Archive Domain Longevity: Indexed since ${enrichedEntity.wayback.earliestDate} (${enrichedEntity.wayback.archivedYearsAgo} years archived)`);
+      }
+      const sec = enrichedEntity.security;
+      parts.push(
+        `Security Posture: HTTPS ${sec.httpsEnforced ? 'Enforced' : 'Missing'}, HSTS: ${sec.hstsEnabled ? 'Active' : 'Missing'}, CSP: ${sec.cspDetected ? 'Present' : 'Missing'}, security.txt: ${sec.securityTxtPresent ? 'Present' : 'Missing'}, TrustScore: ${sec.trustScore}/100, Measurement: ${sec.measurementConfidence}`
+      );
+      if (enrichedEntity.sameAsUrls.length > 0) {
+        parts.push(`Authoritative sameAs Graph URIs: ${enrichedEntity.sameAsUrls.join(', ')}`);
+      }
+      enrichmentText = parts.join('\n') + '\n';
+    } catch (e) {
+      console.warn('[Audit] Public APIs enrichment fallback', e);
+    }
+
+    // 5. Citation integrity (deterministic; runs before LLM)
+    let citationIntegrity: CitationIntegrityResult | undefined;
+    let integrityText = '';
+    try {
+      if (empiricalSummary) {
+        citationIntegrity = await citationIntegrityService.evaluate(empiricalSummary, {
+          brandName: dna?.name || enrichedEntity?.brandName,
+          domain: enrichedEntity?.domain || displayUrl,
+          sameAsUrls: enrichedEntity?.sameAsUrls,
+        });
+        integrityText =
+          `\n[AEO CITATION INTEGRITY]\nIntegrityScore: ${citationIntegrity.integrityScore}/100\n` +
+          `DeadCitations: ${citationIntegrity.deadCitationCount}\nSpoofRisk: ${citationIntegrity.spoofRisk}\n` +
+          `sameAsConflict: ${citationIntegrity.sameAsConflict}\n`;
+      }
+    } catch (e) {
+      console.warn('[Audit] Citation integrity fallback', e);
+    }
+
+    // Preliminary trust pack (schema not measured yet; use 50 default in prompt cite-worthiness)
+    let preliminaryTrustText = '';
+    try {
+      const prelim = aeoTrustPackService.build({
+        security: enrichedEntity?.security,
+        empirical: empiricalSummary,
+        integrity: citationIntegrity,
+        reportText: `${scrapedContent} ${dna?.industry || ''} ${dna?.name || ''}`,
+        brandName: dna?.name,
+        domain: displayUrl,
+      });
+      const schemaSafetyDefault = 50;
+      const citePrelim = Math.round(
+        0.3 * prelim.securityTrust +
+          0.3 * prelim.citationIntegrity +
+          0.2 * prelim.entityClarity +
+          0.2 * schemaSafetyDefault
+      );
+      preliminaryTrustText =
+        `\n[AEO TRUST PACK]\nciteWorthiness: ${citePrelim}/100 (preliminary; schemaSafety=${schemaSafetyDefault} not_measured)\n` +
+        `ymylTier: ${prelim.ymylTier}\n` +
+        `securityTrust: ${prelim.securityTrust}, citationIntegrity: ${prelim.citationIntegrity}, entityClarity: ${prelim.entityClarity}\n` +
+        `Formula: ${prelim.formula}\nFindings:\n` +
+        prelim.findings.slice(0, 5).map((f) => `- [${f.severity}] ${f.title}: ${f.detail}`).join('\n') +
+        '\n';
+    } catch (e) {
+      console.warn('[Audit] Preliminary trust pack fallback', e);
     }
 
     const prompt = `
@@ -431,6 +615,12 @@ ${dnaContext}
 ${methodology}
 ${scrapedContent}
 ${searchGrounding}
+${empiricalText}
+${enrichmentText}
+${integrityText}
+${preliminaryTrustText}
+${writingText}
+${trafficText}
 You are Oracle Agent, the search and AI-visibility analyst for Luminara Suite.
 Generate an evidence-based audit in Markdown for: "${websiteUrl}".
 Focus: ${mainTopic}.
@@ -438,12 +628,11 @@ ${focusIntro}
 Follow the methodology playbooks above: use their criteria and thresholds, respect every deprecation rule
 (never recommend HowTo schema; FAQPage earns no Google rich result; use INP, never FID), and grade only what
 the scraped page and search evidence support. Anything you could not observe is "not measured".
-The reader is a business owner: lead with what to do, explain a term the first time it appears, short sentences.
+When Trust Pack findings are present, reflect Critical/High items in ## Key Findings and ## Recommendations.
 
 Strict Formatting Guidelines:
 1. Title: Must begin with: "# ${reportTitle}"
-2. Introduction: An executive introductory paragraph immediately following the title, ending with a line
-   "**Health Score: NN/100**" computed with the playbook weights (state which categories were not measured).
+2. Introduction: An executive introductory paragraph immediately following the title.
 3. Structure: Organize using these exact H2 headers:
    ## Executive Summary
    ## Key Findings
@@ -453,9 +642,6 @@ Strict Formatting Guidelines:
    ## ROI & Measurement Strategy
    ## Competitive Snapshot
    ## Next Steps
-   Under "## Key Findings" group issues as "### Critical", "### High", "### Medium", "### Low" using the
-   playbook priority definitions. Each finding names the evidence it rests on (page element, search result, or
-   "not measured").
 4. AI & Search Visibility Radar: Create a Markdown table with strictly these columns:
    | Query | Intent | Brand Cited (Yes/No) | Key Competitors | Est. Organic Rank | Rich Results | AI Overview Status | Visibility Score (0-100) |
    Include 3 high-intent queries (informational, commercial, comparative).
@@ -469,7 +655,90 @@ Strict Formatting Guidelines:
 7. Competitive Snapshot Table: Include target brand and competitors comparing: ${competitiveMetrics}.
 8. Code Block: Under "## Key Findings", include a practical JSON-LD or schema code block example.
 9. Tone: direct, evidence-first, no hype. Label every estimate "(estimate)".
+10. If measured traffic / AI-referral data is present above, cite it in "## ROI & Measurement Strategy" and
+   "## Key Findings" as measured (not estimate). If writing-quality data is present, include at most two
+   concrete wording fixes under "## Recommendations".
 `;
+
+    const buildReportResult = (text: string): AuditReportResult => {
+      const schemaMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"@type"[\s\S]*?\})\s*```/);
+      let schemaJsonLd = schemaMatch ? schemaMatch[1].trim() : JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": dna?.name || displayUrl,
+        "url": websiteUrl
+      }, null, 2);
+
+      // Augment schema with verified sameAs URIs (Wikidata / Wikipedia)
+      if (enrichedEntity?.sameAsUrls && enrichedEntity.sameAsUrls.length > 0) {
+        try {
+          const parsed = JSON.parse(schemaJsonLd);
+          if (!parsed.sameAs) {
+            parsed.sameAs = enrichedEntity.sameAsUrls;
+            schemaJsonLd = JSON.stringify(parsed, null, 2);
+          }
+        } catch {
+          // keep original
+        }
+      }
+
+      const schemaGate = schemaSafetyGate.validate(schemaJsonLd);
+      const trustPack = aeoTrustPackService.build({
+        security: enrichedEntity?.security,
+        empirical: empiricalSummary,
+        integrity: citationIntegrity,
+        schemaSafety: schemaGate,
+        reportText: text,
+        brandName: dna?.name,
+        domain: displayUrl,
+      });
+
+      const remediationPayload: RemediationPayload = {
+        domain: displayUrl,
+        pageUrl: websiteUrl,
+        title: reportTitle,
+        schemaJsonLd,
+      };
+
+      const unifiedDiff = cmsDeploymentService.generateUnifiedDiff(
+        '// [Existing target page lacks structured Schema.org entity disambiguation]',
+        schemaJsonLd,
+        'schema.jsonld'
+      );
+
+      try {
+        aeoCorpusService.ingestAudit(
+          displayUrl,
+          text,
+          empiricalSummary?.citationRatePercent ?? 65,
+          schemaJsonLd,
+          {
+            ymylTier: trustPack.ymylTier,
+            securityTrust: trustPack.securityTrust,
+            integrityScore: trustPack.citationIntegrity,
+            schemaSafety: trustPack.schemaSafety,
+            citeWorthiness: trustPack.citeWorthiness,
+            measurementConfidence: enrichedEntity?.security.measurementConfidence,
+          }
+        );
+      } catch (corpusErr) {
+        console.warn('[Corpus] Ingest error', corpusErr);
+      }
+
+      return {
+        text,
+        sources,
+        empiricalSummary,
+        remediationPayload,
+        unifiedDiff,
+        enrichedEntity,
+        writingQuality,
+        trafficImpact,
+        citationIntegrity,
+        integrity: citationIntegrity,
+        trustPack,
+      };
+    };
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama with auto-failover
     try {
@@ -485,7 +754,7 @@ Strict Formatting Guidelines:
         } catch (e) {
           console.warn('VFS audit ingestion fallback', e);
         }
-        return { text, sources };
+        return buildReportResult(text);
       }
     } catch (e) {
       console.warn('Native Trinity generateAuditReport failed, falling back to secondary...', e);
@@ -520,7 +789,7 @@ Strict Formatting Guidelines:
           console.warn('VFS audit ingestion fallback', e);
         }
 
-        return { text, sources };
+        return buildReportResult(text);
       } catch (error) {
         console.warn("Audit Generation Gemini error:", error);
       }
@@ -535,15 +804,15 @@ Strict Formatting Guidelines:
    */
   async extractBusinessDNA(input: string): Promise<BusinessDNA> {
     let scrapedInfo = '';
-    if (input.includes('.') && configService.getFirecrawlKey()) {
+    if (input.includes('.')) {
       try {
         const targetUrl = input.includes('://') ? input : `https://${input}`;
-        const scrapeRes = await firecrawlService.scrapeUrl(targetUrl);
-        if (scrapeRes.success && scrapeRes.markdown) {
-          scrapedInfo = `\nREAL SITE METADATA: Title: ${scrapeRes.metadata?.title}, Description: ${scrapeRes.metadata?.description}\nCONTENT SNIPPET:\n${scrapeRes.markdown.slice(0, 2000)}\n`;
+        const scrapeRes = await unifiedScraperService.scrapeAndDistill(targetUrl, { maxChars: 6000 });
+        if (scrapeRes.success && scrapeRes.formattedEvidence) {
+          scrapedInfo = `\n${scrapeRes.formattedEvidence}\n`;
         }
       } catch (e) {
-        console.warn('Firecrawl DNA scrape skipped', e);
+        console.warn('[DNA] Scrape skipped', e);
       }
     }
 
@@ -570,14 +839,14 @@ Extract the brand's 'Strategic DNA'. Return strictly a valid JSON object matchin
           systemPrompt: 'You are an expert Strategic Business DNA extractor. Always output valid JSON matching the requested schema.'
         });
 
-        const parsed = JSON.parse(result.text);
+        const parsed = safeJsonParse<any>(result.text, {});
         return {
           name: parsed.name || input,
           mission: parsed.mission || 'Strategic market leadership.',
           usp: parsed.usp || 'High-performance proprietary technology.',
           targetAudience: parsed.targetAudience || 'Enterprise and growth organizations.',
-          competitors: Array.isArray(parsed.competitors) ? parsed.competitors : ['Competitor A', 'Competitor B'],
-          perceivedGaps: Array.isArray(parsed.perceivedGaps) ? parsed.perceivedGaps : ['Brand awareness', 'AEO citation coverage'],
+          competitors: Array.isArray(parsed.competitors) && parsed.competitors.length ? parsed.competitors : ['Competitor A', 'Competitor B'],
+          perceivedGaps: Array.isArray(parsed.perceivedGaps) && parsed.perceivedGaps.length ? parsed.perceivedGaps : ['Brand awareness', 'AEO citation coverage'],
           rawContext: parsed.rawContext || result.text
         };
       }
@@ -755,7 +1024,8 @@ ${thoughts}`;
           temperature: 0.3,
           systemPrompt: 'You are an executive strategic thought organizer. Output valid JSON with sections.'
         });
-        return JSON.parse(result.text) as OrganizerSchema;
+        const parsed = safeJsonParse<OrganizerSchema>(result.text, { sections: [] });
+        return parsed && Array.isArray(parsed.sections) ? parsed : { sections: [] };
       }
     } catch (e) {
       console.warn('Native Trinity organizeThoughts failed, falling back to secondary...', e);
@@ -813,13 +1083,13 @@ ${thoughts}`;
 
     let tavilyEvidence = '';
     let tavilyChunks: any[] = [];
-    if (configService.getTavilyKey()) {
+    if (configService.getTavilyKey() || configService.isLocalSerpEnabled()) {
       try {
         const evidence = await gatherSearchEvidence(query, dna, 8);
         tavilyChunks = evidence.sources.map(src => ({ web: { uri: src.uri, title: src.title } }));
         tavilyEvidence = evidence.contextText ? `\n${evidence.contextText}\n` : '';
       } catch (e) {
-        console.warn('Tavily research fallback', e);
+        console.warn('Search research fallback', e);
       }
     }
 
@@ -1000,3 +1270,5 @@ Provide an executive strategic briefing for founders and C-suite leadership form
 }
 
 export const geminiService = new GeminiService();
+export const oracleLlmService = geminiService;
+export { GeminiService as OracleLlmService };

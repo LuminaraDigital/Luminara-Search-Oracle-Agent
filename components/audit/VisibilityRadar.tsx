@@ -47,18 +47,18 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
     }, [rows]);
 
     return (
-        <div className="my-8 glass-morphism rounded-2xl border border-[#BF953F]/30 overflow-hidden shadow-2xl relative animate-in fade-in duration-700">
+        <div className="my-8 glass-morphism rounded-2xl border border-gold/30 overflow-hidden shadow-2xl relative animate-in fade-in duration-700">
             {scanActive && (
-                <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent via-[#BF953F]/10 to-transparent z-0 animate-pulse"></div>
+                <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent via-gold/10 to-transparent z-0 animate-pulse"></div>
             )}
 
-            <div className="bg-gradient-to-r from-[#BF953F]/20 via-black to-transparent px-6 py-4 border-b border-[#BF953F]/20 flex items-center justify-between relative z-10">
+            <div className="bg-gradient-to-r from-gold/20 via-black to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between relative z-10">
                 <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-[#BF953F]/10 border border-[#BF953F]/30 text-[#FCF6BA] animate-pulse">
+                    <div className="p-2.5 rounded-xl bg-gold/10 border border-gold/30 text-gold-light animate-pulse">
                         <ICONS.Radar className="w-5 h-5" />
                     </div>
                     <div>
-                        <h3 className="text-base font-bold uppercase tracking-widest text-[#FCF6BA]">AI & Search Visibility Radar</h3>
+                        <h3 className="text-base font-bold uppercase tracking-widest text-gold-light">AI & Search Visibility Radar</h3>
                         <p className="text-[11px] font-mono text-gray-400">SCANNING ENGINE: ORACLE_AGENT // AEO_RADAR_CORE</p>
                     </div>
                 </div>
@@ -70,7 +70,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                             {score}/100
                         </div>
                     </div>
-                    <div className="w-12 h-12 rounded-full border border-[#BF953F]/30 relative flex items-center justify-center bg-black/40">
+                    <div className="w-12 h-12 rounded-full border border-gold/30 relative flex items-center justify-center bg-black/40">
                         <svg className="absolute inset-0 -rotate-90 w-full h-full p-1">
                             <circle cx="20" cy="20" r="16" stroke="rgba(255,255,255,0.1)" strokeWidth="3" fill="transparent" />
                             <circle 
@@ -102,18 +102,18 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                     return (
                         <div 
                             key={idx} 
-                            className="glass-morphism rounded-xl border border-white/5 hover:border-[#BF953F]/40 p-4 transition-all duration-300 hover:bg-white/[0.02]"
+                            className="glass-morphism rounded-xl border border-white/5 hover:border-gold/40 p-4 transition-all duration-300 hover:bg-white/[0.02]"
                         >
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
                                 <div className="flex items-center gap-2">
-                                    <span className="px-2.5 py-0.5 rounded-full bg-[#BF953F]/10 border border-[#BF953F]/30 text-[9px] font-black uppercase tracking-widest text-[#FCF6BA]">
+                                    <span className="px-2.5 py-0.5 rounded-full bg-gold/10 border border-gold/30 text-[9px] font-black uppercase tracking-widest text-gold-light">
                                         {intent}
                                     </span>
                                     <span className="text-sm font-semibold text-white tracking-tight">"{query}"</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-mono text-gray-500">Radar Score:</span>
-                                    <span className="text-xs font-mono font-bold text-[#FCF6BA] bg-black/60 px-2 py-0.5 rounded border border-[#BF953F]/20">
+                                    <span className="text-xs font-mono font-bold text-gold-light bg-black/60 px-2 py-0.5 rounded border border-gold/20">
                                         {itemScore}%
                                     </span>
                                 </div>
@@ -122,8 +122,8 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-white/5">
                                 <div>
                                     <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">Brand Quoted</span>
-                                    <span className={`inline-flex items-center gap-1 font-bold ${mentioned ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                        <span className={`w-1.5 h-1.5 rounded-full ${mentioned ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+                                    <span className={`inline-flex items-center gap-1 font-bold ${mentioned ? 'text-success-400' : 'text-warning-400'}`}>
+                                        <span className={`w-1.5 h-1.5 rounded-full ${mentioned ? 'bg-success-400' : 'bg-warning-400'}`}></span>
                                         {mentioned ? 'Verified Cited' : 'Opportunity Gap'}
                                     </span>
                                 </div>
@@ -133,7 +133,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                                 </div>
                                 <div>
                                     <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">AI Engine Status</span>
-                                    <span className={`font-medium ${aiOverview ? 'text-[#FCF6BA]' : 'text-gray-400'}`}>
+                                    <span className={`font-medium ${aiOverview ? 'text-gold-light' : 'text-gray-400'}`}>
                                         {aiOverview ? 'AI Overview Active' : 'Traditional SERP'}
                                     </span>
                                 </div>

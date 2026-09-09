@@ -58,9 +58,9 @@ export const TriagePanel: React.FC = () => {
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Top Banner */}
-      <div className="glass-morphism rounded-2xl border border-[#BF953F]/30 p-6 bg-black/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="glass-morphism rounded-2xl border border-gold/30 p-6 bg-black/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-mono uppercase tracking-[0.3em] px-2.5 py-0.5 rounded-full bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/40 font-black">
+          <span className="text-[10px] font-mono uppercase tracking-[0.3em] px-2.5 py-0.5 rounded-full bg-gold/20 text-gold-light border border-gold/40 font-black">
             AUTONOMOUS TRIAGE
           </span>
           <h2 className="text-2xl font-bold gold-text tracking-tight mt-2">
@@ -83,7 +83,7 @@ export const TriagePanel: React.FC = () => {
         <div className="lg:col-span-4 space-y-4">
           <div className="text-xs font-mono uppercase tracking-wider text-gray-400 px-1 flex items-center justify-between">
             <span>Incident Log</span>
-            <span className="text-[10px] text-[#BF953F]">
+            <span className="text-[10px] text-gold">
               {reports.filter(r => r.status === 'open').length} Open
             </span>
           </div>
@@ -97,8 +97,8 @@ export const TriagePanel: React.FC = () => {
                   onClick={() => setSelectedReportId(rep.id)}
                   className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-[#BF953F]/15 border-[#BF953F] shadow-[0_0_15px_rgba(191,149,63,0.15)]'
-                      : 'glass-morphism border-white/5 hover:border-[#BF953F]/30 bg-black/40'
+                      ? 'bg-gold/15 border-gold shadow-[0_0_15px_rgba(191,149,63,0.15)]'
+                      : 'glass-morphism border-white/5 hover:border-gold/30 bg-black/40'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -106,9 +106,9 @@ export const TriagePanel: React.FC = () => {
                     <span
                       className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded font-bold shrink-0 ${
                         rep.severity === 'critical'
-                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          ? 'bg-danger-500/20 text-danger-400 border border-danger-500/30'
                           : rep.severity === 'high'
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          ? 'bg-warning-500/20 text-warning-400 border border-warning-500/30'
                           : 'bg-white/5 text-gray-400'
                       }`}
                     >
@@ -134,7 +134,7 @@ export const TriagePanel: React.FC = () => {
               value={customErrorTitle}
               onChange={e => setCustomErrorTitle(e.target.value)}
               placeholder="Incident Title (optional)"
-              className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-xs text-white font-mono focus:outline-none focus:border-[#BF953F]"
+              className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-xs text-white font-mono focus:outline-none focus:border-gold"
             />
 
             <textarea
@@ -142,7 +142,7 @@ export const TriagePanel: React.FC = () => {
               onChange={e => setCustomTrace(e.target.value)}
               placeholder="Paste stack trace, CUDA OOM error, JSON parse error, or API response..."
               rows={3}
-              className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-xs text-white font-mono focus:outline-none focus:border-[#BF953F]"
+              className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-xs text-white font-mono focus:outline-none focus:border-gold"
             />
 
             <div className="space-y-1.5">
@@ -153,7 +153,7 @@ export const TriagePanel: React.FC = () => {
                     key={i}
                     type="button"
                     onClick={() => handleLoadSample(s)}
-                    className="px-2 py-0.5 rounded bg-white/5 hover:bg-[#BF953F]/20 text-[9px] font-mono text-gray-400 hover:text-[#FCF6BA] border border-white/5"
+                    className="px-2 py-0.5 rounded bg-white/5 hover:bg-gold/20 text-[9px] font-mono text-gray-400 hover:text-gold-light border border-white/5"
                   >
                     Sample #{i + 1}
                   </button>
@@ -164,7 +164,7 @@ export const TriagePanel: React.FC = () => {
             <button
               type="submit"
               disabled={isAnalyzing || !customTrace.trim()}
-              className="w-full py-2 rounded-lg bg-[#BF953F] hover:bg-[#AA771C] text-black font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-40"
+              className="w-full py-2 rounded-lg bg-gold hover:bg-gold-dark text-black font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-40"
             >
               {isAnalyzing ? 'Analyzing Root Cause...' : 'Diagnose & Generate Patch'}
             </button>
@@ -174,18 +174,18 @@ export const TriagePanel: React.FC = () => {
         {/* Right Column: Deep Diagnostic Inspection */}
         <div className="lg:col-span-8 space-y-4">
           {activeReport ? (
-            <div className="glass-morphism rounded-2xl border border-[#BF953F]/30 p-6 bg-black/80 space-y-6">
+            <div className="glass-morphism rounded-2xl border border-gold/30 p-6 bg-black/80 space-y-6">
               {/* Header */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-lg font-bold text-white">{activeReport.errorTitle}</h3>
-                    <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 uppercase font-bold">
+                    <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-danger-500/20 text-danger-400 border border-danger-500/30 uppercase font-bold">
                       {activeReport.severity}
                     </span>
                   </div>
                   <div className="text-xs font-mono text-gray-400 mt-0.5">
-                    Source: <span className="text-[#FCF6BA]">{activeReport.source}</span> | Timestamp: {new Date(activeReport.timestamp).toLocaleString()}
+                    Source: <span className="text-gold-light">{activeReport.source}</span> | Timestamp: {new Date(activeReport.timestamp).toLocaleString()}
                   </div>
                 </div>
 
@@ -193,12 +193,12 @@ export const TriagePanel: React.FC = () => {
                   {activeReport.status === 'open' ? (
                     <button
                       onClick={() => triageService.resolveReport(activeReport.id)}
-                      className="px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-[10px] font-mono text-emerald-400 uppercase tracking-wider transition-all"
+                      className="px-3 py-1.5 rounded-lg border border-success-500/40 bg-success-500/10 hover:bg-success-500/20 text-[10px] font-mono text-success-400 uppercase tracking-wider transition-all"
                     >
                       Mark Resolved
                     </button>
                   ) : (
-                    <span className="px-3 py-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-[10px] font-mono text-emerald-400 uppercase tracking-wider">
+                    <span className="px-3 py-1.5 rounded-lg border border-success-500/20 bg-success-500/5 text-[10px] font-mono text-success-400 uppercase tracking-wider">
                       ✓ Resolved
                     </span>
                   )}
@@ -206,8 +206,8 @@ export const TriagePanel: React.FC = () => {
               </div>
 
               {/* Plain English Root Cause (8th-Grade Reading Level) */}
-              <div className="p-4 rounded-xl border border-[#BF953F]/30 bg-[#BF953F]/10 space-y-1">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#FCF6BA] font-bold">
+              <div className="p-4 rounded-xl border border-gold/30 bg-gold/10 space-y-1">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-gold-light font-bold">
                   Plain English Summary (8th-Grade Level)
                 </div>
                 <p className="text-xs text-white leading-relaxed">
@@ -230,7 +230,7 @@ export const TriagePanel: React.FC = () => {
                 <div className="text-xs font-mono uppercase tracking-wider text-gray-400">
                   Recommended Architectural Remediation
                 </div>
-                <div className="p-3.5 rounded-xl border border-white/5 bg-white/[0.02] text-xs font-mono text-emerald-300 leading-relaxed">
+                <div className="p-3.5 rounded-xl border border-white/5 bg-white/[0.02] text-xs font-mono text-success-300 leading-relaxed">
                   {activeReport.recommendedFix}
                 </div>
               </div>
@@ -244,7 +244,7 @@ export const TriagePanel: React.FC = () => {
                     </span>
                     <button
                       onClick={handleCopyDiff}
-                      className="px-2.5 py-1 rounded bg-white/5 hover:bg-[#BF953F]/20 border border-white/10 text-[10px] font-mono text-[#FCF6BA] transition-all"
+                      className="px-2.5 py-1 rounded bg-white/5 hover:bg-gold/20 border border-white/10 text-[10px] font-mono text-gold-light transition-all"
                     >
                       {copiedDiff ? 'Copied Diff!' : 'Copy Diff'}
                     </button>

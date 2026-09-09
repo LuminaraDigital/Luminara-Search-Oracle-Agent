@@ -53,17 +53,17 @@ export const NativeFailoverPopup: React.FC = () => {
 
   return (
     <div className="fixed bottom-6 right-6 z-[100] max-w-md w-full animate-in slide-in-from-bottom-5 fade-in duration-300">
-      <div className="relative rounded-2xl p-4 bg-black/95 border border-[#BF953F]/60 shadow-[0_10px_40px_rgba(0,0,0,0.8),0_0_25px_rgba(191,149,63,0.3)] backdrop-blur-xl">
+      <div className="relative rounded-2xl p-4 bg-black/95 border border-gold/60 shadow-[0_10px_40px_rgba(0,0,0,0.8),0_0_25px_rgba(191,149,63,0.3)] backdrop-blur-xl">
         {/* Glowing top line */}
-        <div className="absolute top-0 left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-[#FCF6BA] to-transparent" />
+        <div className="absolute top-0 left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-gold-light to-transparent" />
 
         <div className="flex items-start justify-between gap-3 mb-2.5">
           <div className="flex items-center gap-2">
             <span className="flex h-2.5 w-2.5 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-warning-500"></span>
             </span>
-            <span className="text-[10px] font-mono uppercase tracking-[0.2em] font-bold text-[#FCF6BA]">
+            <span className="text-[10px] font-mono uppercase tracking-[0.2em] font-bold text-gold-light">
               Automatic Failover Activated
             </span>
           </div>
@@ -79,27 +79,27 @@ export const NativeFailoverPopup: React.FC = () => {
 
         {/* Failover Body */}
         <div className="space-y-2 text-xs">
-          <div className="p-2.5 rounded-xl bg-red-950/30 border border-red-500/20 flex items-start gap-2">
-            <span className="text-red-400 font-mono text-sm">⚠</span>
+          <div className="p-2.5 rounded-xl bg-danger-950/30 border border-danger-500/20 flex items-start gap-2">
+            <span className="text-danger-400 font-mono text-sm">⚠</span>
             <div className="flex-1">
-              <div className="text-[10px] text-red-300 font-mono uppercase">Interrupted Engine</div>
+              <div className="text-[10px] text-danger-300 font-mono uppercase">Interrupted Engine</div>
               <div className="text-gray-200 font-semibold">{currentEvent.failedProvider}</div>
-              <div className="text-[10px] text-red-400/80 font-mono truncate">{currentEvent.reason}</div>
+              <div className="text-[10px] text-danger-400/80 font-mono truncate">{currentEvent.reason}</div>
             </div>
           </div>
 
-          <div className="flex justify-center -my-1 text-[#BF953F] font-mono text-xs">
+          <div className="flex justify-center -my-1 text-gold font-mono text-xs">
             <span>↓ Auto Pop-up Handoff ↓</span>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex items-start gap-2">
-            <span className="text-emerald-400 font-mono text-sm">⚡</span>
+          <div className="p-2.5 rounded-xl bg-success-950/30 border border-success-500/30 flex items-start gap-2">
+            <span className="text-success-400 font-mono text-sm">⚡</span>
             <div className="flex-1">
-              <div className="text-[10px] text-emerald-300 font-mono uppercase flex items-center justify-between">
+              <div className="text-[10px] text-success-300 font-mono uppercase flex items-center justify-between">
                 <span>Active Engine Engaged</span>
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">100% ONLINE</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-success-500/20 text-success-300 font-bold">100% ONLINE</span>
               </div>
-              <div className="text-[#FCF6BA] font-bold">{currentEvent.activatedProvider}</div>
+              <div className="text-gold-light font-bold">{currentEvent.activatedProvider}</div>
               <div className="text-[10px] text-gray-400 font-mono">{currentEvent.activatedModel}</div>
             </div>
           </div>
@@ -108,7 +108,7 @@ export const NativeFailoverPopup: React.FC = () => {
         {/* Footer info */}
         <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[10px] text-gray-400 font-mono">
           <span>Seamless transition in {currentEvent.latencyMs}ms</span>
-          <span className="text-[#BF953F] font-semibold">Zero Query Loss</span>
+          <span className="text-gold font-semibold">Zero Query Loss</span>
         </div>
       </div>
     </div>

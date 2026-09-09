@@ -29,15 +29,27 @@ If no sources are configured beyond the always-available tier:
 - Still produce a report using Common Crawl domain metrics
 - Suggest: "Run `/seo backlinks setup` to add free Moz and Bing API keys for richer data"
 
+## Preferred: verify known backlinks
+
+For validating a list of donor pages you already have (bought links, placements, agency reports), use:
+
+```bash
+/seo backlinks verify <target-url> --links <file>
+# or
+claude-seo run verify_backlinks.py --target <url> --links <file> --json
+```
+
+`<file>` is one donor URL per line. This is the supported Luminara path. Do not vendor or remake third-party bash backlink checkers; the verification crawler already covers that job (exists / missing, with JSON for agents).
+
 ## Quick Reference
 
 | Command | Purpose |
 |---------|---------|
+| `/seo backlinks verify <url> --links <file>` | **Preferred** - verify known backlinks still exist |
 | `/seo backlinks <url>` | Full backlink profile analysis (uses all available sources) |
 | `/seo backlinks gap <url1> <url2>` | Competitor backlink gap analysis |
 | `/seo backlinks toxic <url>` | Toxic link detection and disavow recommendations |
 | `/seo backlinks new <url>` | New and lost backlinks (DataForSEO only) |
-| `/seo backlinks verify <url> --links <file>` | Verify known backlinks still exist |
 | `/seo backlinks setup` | Show setup instructions for free backlink APIs |
 
 ## Analysis Framework

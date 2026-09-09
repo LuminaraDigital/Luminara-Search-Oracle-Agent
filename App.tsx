@@ -5,6 +5,8 @@ import { configService } from './services/configService';
 import { geminiService, toChatHistory } from './services/geminiService';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { Button } from './components/ui/Button';
+import { useConfirm } from './components/ui/ConfirmModal';
 import { isInTelegram, useTelegramBackButton, haptic, getStartParam } from './services/telegram/tma';
 import { TelegramAccountPanel } from './components/telegram/TelegramAccountPanel';
 import MessageList from './components/MessageList';
@@ -35,6 +37,7 @@ import { ApiKeyModal } from './components/ApiKeyModal';
 import { NativeEngineHUD } from './components/llm/NativeEngineHUD';
 import { NativeFailoverPopup } from './components/llm/NativeFailoverPopup';
 import { ICONS } from './constants';
+import { startFirebaseAuthListener, isFirebaseConfigured } from './services/auth/firebaseAuthService';
 
 const CHAT_STORAGE_KEY = 'luminara_chat_session';
 
@@ -108,6 +111,7 @@ const App: React.FC = () => {
   const [activeTool, setActiveTool] = useState<{ name: string; stage: string; output?: string } | null>(null);
   const [headerSearch, setHeaderSearch] = useState('');
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const { requestConfirm, confirmModal } = useConfirm();
   const [showSuiteMenu, setShowSuiteMenu] = useState(false);
   const [advancedUi, setAdvancedUi] = useState<boolean>(() => {
     try { return localStorage.getItem('luminara_advanced_ui') === '1'; } catch { return false; }
@@ -116,6 +120,19 @@ const App: React.FC = () => {
     const onChange = () => { try { setAdvancedUi(localStorage.getItem('luminara_advanced_ui') === '1'); } catch { /* noop */ } };
     window.addEventListener('luminara-advanced-ui', onChange);
     return () => window.removeEventListener('luminara-advanced-ui', onChange);
+  }, []);
+
+  // Keep Firebase ID token cache warm for Worker hosted-key calls.
+  useEffect(() => {
+    if (!isFirebaseConfigured()) return;
+    return startFirebaseAuthListener();
+  }, []);
+
+  // Any card can ask for the Settings dialog (e.g. "Set up results tracking") without prop drilling.
+  useEffect(() => {
+    const open = () => setIsKeyModalOpen(true);
+    window.addEventListener('luminara-open-settings', open);
+    return () => window.removeEventListener('luminara-open-settings', open);
   }, []);
 
   // Harness & Theming states
@@ -349,10 +366,16 @@ const App: React.FC = () => {
 
   const handleClearChat = useCallback(() => {
     if (messages.length === 0) return;
-    if (window.confirm('Clear this conversation?')) {
-      setMessages([]);
-    }
-  }, [messages.length]);
+    requestConfirm(
+      {
+        title: 'Clear this conversation?',
+        description: 'All messages in this chat will be removed. This cannot be undone.',
+        confirmLabel: 'Clear chat',
+        variant: 'danger',
+      },
+      () => setMessages([]),
+    );
+  }, [messages.length, requestConfirm]);
 
   const toggleVoice = useCallback(async () => {
     if (!liveServiceRef.current) return;
@@ -472,7 +495,7 @@ const App: React.FC = () => {
   // Main App Shell (Oracle Agent, Instant Audit, Command Suite, Harness)
   return (
     <div
-      className="flex flex-col bg-black text-[#f1f1f1] overflow-hidden relative selection:bg-[#BF953F] selection:text-black font-sans"
+      className="flex flex-col bg-black text-ink overflow-hidden relative selection:bg-gold selection:text-black font-sans"
       style={{
         height: inTelegram ? 'var(--tg-viewport-stable-height, 100vh)' : '100vh',
         paddingTop: inTelegram ? 'var(--tg-viewport-content-safe-area-inset-top, var(--tg-viewport-safe-area-inset-top, 0px))' : undefined,
@@ -480,7 +503,7 @@ const App: React.FC = () => {
       }}
     >
       {/* Universal Top Header */}
-      <header className="flex items-center justify-between px-4 sm:px-8 py-3 glass-morphism z-50 border-b border-[#BF953F]/15 shrink-0 bg-black/80">
+      <header className="flex items-center justify-between px-4 sm:px-8 py-3 glass-morphism z-50 border-b border-gold/15 shrink-0 bg-black/80">
         {/* Left: Brand Identity */}
         <div className="flex items-center gap-4">
           <div className="w-9 h-9 cursor-pointer shrink-0" onClick={() => setView(inTelegram ? AppView.DASHBOARD : AppView.LANDING)}>
@@ -502,116 +525,127 @@ const App: React.FC = () => {
 
         {/* Center: Suite Switcher & Quick Navigation */}
         <div className="flex items-center gap-2 sm:gap-4 max-w-2xl px-2">
-          <button
+          <Button
+            variant="ghost"
+            size="none"
             onClick={() => setView(AppView.ORACLE_AGENT)}
-            className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wider font-bold transition-all ${
-              view === AppView.ORACLE_AGENT ? 'bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/40' : 'text-gray-400 hover:text-white'
+            aria-pressed={view === AppView.ORACLE_AGENT}
+            className={`px-3 py-1.5 rounded-lg text-[10px] ${
+              view === AppView.ORACLE_AGENT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
             Ask
-          </button>
+          </Button>
 
-          <button
+          <Button
+            variant="ghost"
+            size="none"
             onClick={() => setView(AppView.INSTANT_AUDIT)}
-            className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wider font-bold transition-all ${
-              view === AppView.INSTANT_AUDIT ? 'bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/40' : 'text-gray-400 hover:text-white'
+            aria-pressed={view === AppView.INSTANT_AUDIT}
+            className={`px-3 py-1.5 rounded-lg text-[10px] ${
+              view === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
             Audit my site
-          </button>
+          </Button>
 
           {/* Command Suite Dropdown */}
           <div className="relative">
-            <button
+            <Button
+              variant="ghost"
+              size="none"
               onClick={() => setShowSuiteMenu(!showSuiteMenu)}
-              className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wider font-bold transition-all flex items-center gap-1.5 ${
+              aria-haspopup="menu"
+              aria-expanded={showSuiteMenu}
+              aria-pressed={[AppView.DASHBOARD, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)}
+              className={`px-3 py-1.5 rounded-lg text-[10px] ${
                 [AppView.DASHBOARD, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)
-                  ? 'bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/40'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
+                  : ''
               }`}
             >
               <span>More tools</span>
-              <ICONS.ChevronDown className="w-3 h-3 text-[#BF953F]" />
-            </button>
+              <ICONS.ChevronDown className="w-3 h-3 text-gold" />
+            </Button>
 
             {showSuiteMenu && (
               <div 
-                className="absolute top-full left-0 mt-2 w-72 glass-morphism border border-[#BF953F]/30 rounded-2xl p-2 shadow-2xl z-50 bg-black/95 animate-in fade-in zoom-in-95 duration-200"
+                className="absolute top-full left-0 mt-2 w-72 glass-morphism border border-gold/30 rounded-2xl p-2 shadow-2xl z-50 bg-black/95 animate-in fade-in zoom-in-95 duration-200"
                 onMouseLeave={() => setShowSuiteMenu(false)}
               >
                 <button
                   onClick={() => { setView(AppView.DASHBOARD); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
                 >
-                  <ICONS.Shield className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
                   <span>Home</span>
                 </button>
                 {advancedUi && (<>
                 <button
                   onClick={() => { setView(AppView.HARNESS); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-[#FCF6BA] hover:text-white hover:bg-[#BF953F]/20 transition-colors flex items-center gap-2 bg-[#BF953F]/15 border border-[#BF953F]/40 my-0.5"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5"
                 >
-                  <ICONS.Terminal className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.Terminal className="w-3.5 h-3.5 text-gold-light" />
                   <div className="flex items-center justify-between flex-1">
                     <span className="font-bold">Developer harness</span>
-                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">LAB</span>
+                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-warning-500/20 text-warning-300 font-bold">LAB</span>
                   </div>
                 </button>
                 <button
                   onClick={() => { setView(AppView.ORACLE_MIND); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
                 >
-                  <ICONS.Brain className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>OracleMind SLM Studio <span className="text-[8px] text-amber-300 font-mono">LAB</span></span>
+                  <ICONS.Brain className="w-3.5 h-3.5 text-gold-light" />
+                  <span>OracleMind SLM Studio <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.TIMESFM_FORECAST); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
                 >
-                  <ICONS.TimeSeries className="w-3.5 h-3.5 text-[#FCF6BA]" />
-                  <span>TimesFM Forecaster <span className="text-[8px] text-amber-300 font-mono">LAB</span></span>
+                  <ICONS.TimeSeries className="w-3.5 h-3.5 text-gold-light" />
+                  <span>TimesFM Forecaster <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
                 </button>
                 </>)}
                 <button
                   onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
                 >
-                  <ICONS.DNA className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
                   <span>My business profile</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.STRESS_TEST); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
                 >
-                  <ICONS.Stress className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.Stress className="w-3.5 h-3.5 text-gold-light" />
                   <span>Poke holes in my plan</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.DATA_ANALYST); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
                 >
-                  <ICONS.Analyst className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.Analyst className="w-3.5 h-3.5 text-gold-light" />
                   <span>Analyse my data</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.ORGANIZER); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
                 >
-                  <ICONS.Organizer className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
                   <span>Turn notes into a plan</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.RESEARCH); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
                 >
-                  <ICONS.Research className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.Research className="w-3.5 h-3.5 text-gold-light" />
                   <span>Research the market</span>
                 </button>
                 <button
                   onClick={() => { setView(AppView.VISION); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#BF953F]/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2"
                 >
-                  <ICONS.Sparkle className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />
                   <span>How Luminara works</span>
                 </button>
               </div>
@@ -619,15 +653,17 @@ const App: React.FC = () => {
           </div>
 
           {/* Omnibar Fast Search Trigger Button */}
-          <button
+          <Button
+            variant="ghost"
+            size="none"
             onClick={() => setIsOmnibarOpen(true)}
-            className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 hover:bg-[#BF953F]/10 border border-white/10 hover:border-[#BF953F]/40 text-xs font-mono text-gray-400 hover:text-white transition-all max-w-[200px]"
+            className="hidden md:inline-flex gap-2 px-3 py-1.5 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal max-w-[200px]"
             title="Open Omnibar (Cmd+K)"
           >
-            <ICONS.Search className="w-3.5 h-3.5 text-[#BF953F]" />
+            <ICONS.Search className="w-3.5 h-3.5 text-gold" />
             <span className="truncate">Jump to a tool</span>
             <kbd className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300 ml-auto">⌘K</kbd>
-          </button>
+          </Button>
         </div>
 
         {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Exit */}
@@ -636,87 +672,106 @@ const App: React.FC = () => {
           {advancedUi && <NativeEngineHUD />}
 
           {/* Default Agent Badge */}
-          {advancedUi && <button
+          {advancedUi && <Button
+            variant="ghost"
+            size="none"
             onClick={() => setView(AppView.HARNESS)}
-            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono text-gray-300 hover:border-[#BF953F]/50 hover:text-[#FCF6BA] transition-all"
+            className="hidden xl:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5"
             title="Active Default Agent (Click to open Archy Harness)"
           >
-            <span className="text-[#BF953F]">⚡</span>
+            <span className="text-gold">⚡</span>
             <span className="truncate max-w-[90px]">{defaultAgentName}</span>
-          </button>}
+          </Button>}
 
           {/* Theme Quick Cycle Button */}
-          {advancedUi && <button
+          {advancedUi && <Button
+            variant="ghost"
+            size="none"
             onClick={() => themingService.cycleTheme()}
-            className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono text-gray-300 hover:border-[#BF953F]/50 hover:text-[#FCF6BA] transition-all"
+            className="hidden lg:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5"
             title={`Active Theme: ${currentTheme.name} (Click to cycle)`}
           >
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: currentTheme.palette.primaryGold }} />
             <span className="truncate max-w-[80px]">{currentTheme.name}</span>
-          </button>}
+          </Button>}
 
           {/* Reminders Count Indicator */}
           {activeRemindersCount > 0 && (
-            <button
+            <Button
+              variant="ghost"
+              size="none"
               onClick={() => setView(AppView.HARNESS)}
-              className="flex items-center gap-1 px-2 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400 text-[9px] font-mono hover:bg-amber-500/20 transition-all"
+              className="gap-1 px-2 py-1 rounded-full border border-warning-500/30 bg-warning-500/10 text-warning-400 hover:text-warning-300 text-[9px] font-mono font-normal normal-case tracking-normal hover:bg-warning-500/20"
               title="Active Scheduled Reminders"
             >
               <span>⏰</span>
               <span>{activeRemindersCount}</span>
-            </button>
+            </Button>
           )}
 
           {/* DNA Status Pill */}
-          <button
+          <Button
+            variant="ghost"
+            size="none"
             onClick={() => setView(AppView.BUSINESS_DNA)}
-            className={`hidden sm:flex items-center gap-2 px-3 py-1 rounded-full border text-[9px] font-mono uppercase tracking-wider transition-all ${
-              dna 
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20' 
-                : 'bg-white/5 border-white/10 text-gray-400 hover:text-[#FCF6BA]'
+            className={`hidden sm:inline-flex gap-2 px-3 py-1 rounded-full border text-[9px] font-mono font-normal ${
+              dna
+                ? 'bg-success-500/10 border-success-500/30 text-success-400 hover:text-success-300 hover:bg-success-500/20'
+                : 'bg-white/5 border-white/10 hover:text-gold-light hover:bg-white/5'
             }`}
             title="Strategic Business DNA Context"
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${dna ? 'bg-emerald-400 shadow-[0_0_8px_#10B981]' : 'bg-[#BF953F]'}`}></span>
+            <span className={`w-1.5 h-1.5 rounded-full ${dna ? 'bg-success-400 shadow-[0_0_8px_theme(colors.success.500)]' : 'bg-gold'}`}></span>
             <span className="truncate max-w-[90px]">{dna ? dna.name : 'Add my business'}</span>
-          </button>
+          </Button>
 
           {/* API Key Modal Button */}
-          <button
+          <Button
+            variant="ghost"
+            size="none"
             onClick={() => setIsKeyModalOpen(true)}
-            className="p-2 rounded-xl glass-morphism border border-white/10 text-gray-400 hover:text-[#FCF6BA] hover:border-[#BF953F]/40 transition-all"
+            className="p-2 rounded-xl glass-morphism border border-white/10 hover:text-gold-light hover:border-gold/40 hover:bg-transparent"
             title="Settings and AI keys"
+            aria-label="Settings and AI keys"
           >
             <ICONS.Settings className="w-4 h-4" />
-          </button>
+          </Button>
 
           {/* Mode Selector */}
-          <div className="flex items-center bg-[#0a0a0a] rounded-xl p-0.5 border border-white/5">
-            <button
+          <div className="flex items-center bg-surface-1 rounded-xl p-0.5 border border-white/5" role="group" aria-label="Answer mode">
+            <Button
+              variant="ghost"
+              size="none"
               onClick={() => setMode(OracleMode.FLASH)}
-              className={`px-3 py-1 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${
-                mode === OracleMode.FLASH ? 'bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black shadow-md' : 'text-gray-500 hover:text-gray-300'
+              aria-pressed={mode === OracleMode.FLASH}
+              className={`px-3 py-1 rounded-lg text-[9px] tracking-widest ${
+                mode === OracleMode.FLASH ? 'bg-gradient-to-br from-gold to-gold-dark text-black hover:text-black hover:bg-transparent shadow-md' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               Quick
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="none"
               onClick={() => setMode(OracleMode.DEEP_THINK)}
-              className={`px-3 py-1 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all ${
-                mode === OracleMode.DEEP_THINK ? 'bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black shadow-md' : 'text-gray-500 hover:text-gray-300'
+              aria-pressed={mode === OracleMode.DEEP_THINK}
+              className={`px-3 py-1 rounded-lg text-[9px] tracking-widest ${
+                mode === OracleMode.DEEP_THINK ? 'bg-gradient-to-br from-gold to-gold-dark text-black hover:text-black hover:bg-transparent shadow-md' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               Thorough
-            </button>
+            </Button>
           </div>
 
           {!inTelegram && (
-            <button
+            <Button
+              variant="ghost"
+              size="none"
               onClick={() => setView(AppView.LANDING)}
-              className="px-3 py-1.5 glass-morphism border border-white/5 rounded-xl text-[9px] uppercase tracking-widest font-black text-gray-500 hover:text-[#BF953F] transition-all"
+              className="px-3 py-1.5 glass-morphism border border-white/5 rounded-xl text-[9px] tracking-widest font-black text-gray-500 hover:text-gold hover:bg-transparent"
             >
               Exit
-            </button>
+            </Button>
           )}
         </div>
       </header>
@@ -724,7 +779,7 @@ const App: React.FC = () => {
       {/* Main App Container */}
       <main className="flex-1 relative flex flex-col overflow-y-auto">
         {LAB_VIEWS.has(view) && (
-          <div className="shrink-0 px-4 py-2 text-center text-[10px] uppercase tracking-[0.25em] font-bold bg-amber-500/10 border-b border-amber-500/20 text-amber-300">
+          <div className="shrink-0 px-4 py-2 text-center text-[10px] uppercase tracking-[0.25em] font-bold bg-warning-500/10 border-b border-warning-500/20 text-warning-300">
             Labs preview · figures on this screen are simulated for demonstration, not measured
           </div>
         )}
@@ -829,7 +884,7 @@ const App: React.FC = () => {
               <Waveform active={isVoiceActive} />
               <button
                 onClick={toggleVoice}
-                className="px-12 py-5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-500/20 transition-all shadow-xl"
+                className="px-12 py-5 bg-danger-500/10 text-danger-400 border border-danger-500/20 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-danger-500/20 transition-all shadow-xl"
               >
                 Stop listening
               </button>
@@ -838,9 +893,9 @@ const App: React.FC = () => {
             <>
               {voiceError && (
                 <div className="mx-auto mt-4 max-w-2xl w-full px-4">
-                  <div className="glass-morphism rounded-2xl border border-amber-500/30 bg-amber-950/20 px-5 py-3 text-xs text-amber-200 flex items-center justify-between gap-4" role="alert">
+                  <div className="glass-morphism rounded-2xl border border-warning-500/30 bg-warning-950/20 px-5 py-3 text-xs text-warning-200 flex items-center justify-between gap-4" role="alert">
                     <span>{voiceError}</span>
-                    <button onClick={() => setVoiceError(null)} className="text-amber-400 hover:text-white text-[10px] uppercase font-bold tracking-widest">Dismiss</button>
+                    <button onClick={() => setVoiceError(null)} className="text-warning-400 hover:text-white text-[10px] uppercase font-bold tracking-widest">Dismiss</button>
                   </div>
                 </div>
               )}
@@ -848,16 +903,16 @@ const App: React.FC = () => {
               
               {agentStep && (
                 <div className="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-40 w-full max-w-lg px-6">
-                  <div className="w-full flex items-center gap-4 px-6 py-4 glass-morphism rounded-[24px] border border-[#BF953F]/50 shadow-[0_0_60px_rgba(191,149,63,0.25)] animate-in slide-in-from-top-6 duration-700 bg-black/90">
+                  <div className="w-full flex items-center gap-4 px-6 py-4 glass-morphism rounded-[24px] border border-gold/50 shadow-[0_0_60px_rgba(191,149,63,0.25)] animate-in slide-in-from-top-6 duration-700 bg-black/90">
                     <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                      <div className="w-full h-full border-2 border-[#BF953F]/20 border-t-[#BF953F] rounded-full animate-spin"></div>
+                      <div className="w-full h-full border-2 border-gold/20 border-t-gold rounded-full animate-spin"></div>
                     </div>
                     <div className="flex-1 flex flex-col">
                       <div className="flex items-center justify-between mb-2 gap-3">
-                        <span className="text-[11px] text-[#FCF6BA] font-black uppercase tracking-[0.4em] truncate">{agentStep}</span>
+                        <span className="text-[11px] text-gold-light font-black uppercase tracking-[0.4em] truncate">{agentStep}</span>
                         <div className="flex items-center gap-3 shrink-0">
                           <span className="text-[10px] text-gray-500 font-mono font-bold">{progress}%</span>
-                          <button onClick={handleStop} className="text-[9px] uppercase tracking-widest font-black text-red-400 hover:text-red-300 border border-red-500/30 rounded-lg px-2 py-0.5" title="Stop generating">Stop</button>
+                          <button onClick={handleStop} className="text-[9px] uppercase tracking-widest font-black text-danger-400 hover:text-danger-300 border border-danger-500/30 rounded-lg px-2 py-0.5" title="Stop generating">Stop</button>
                         </div>
                       </div>
                       <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
@@ -888,21 +943,23 @@ const App: React.FC = () => {
             }}
           >
             {messages.length > 0 && (
-              <button
+              <Button
+                variant="ghost"
+                size="none"
                 onClick={handleClearChat}
                 disabled={isThinking}
-                className="px-4 py-2.5 rounded-full border border-white/10 text-[10px] font-bold text-gray-500 hover:text-red-300 hover:border-red-500/30 uppercase tracking-[0.2em] transition-all"
+                className="px-4 py-2.5 rounded-full border border-white/10 text-[10px] text-gray-500 hover:text-danger-300 hover:border-danger-500/30 hover:bg-transparent tracking-[0.2em] focus-visible:ring-danger-400 disabled:hover:text-gray-500 disabled:hover:border-white/10"
                 title="Clear conversation"
               >
                 Clear chat
-              </button>
+              </Button>
             )}
             {quickActions.map((action, i) => (
               <button
                 key={i}
                 onClick={() => handleSendMessage(action.query)}
                 disabled={isThinking}
-                className="px-5 py-2.5 rounded-full glass-morphism border border-[#BF953F]/30 hover:border-[#BF953F] text-[10px] font-black text-[#FCF6BA] uppercase tracking-[0.3em] transition-all hover:scale-105 active:scale-95 shadow-xl bg-black/80 backdrop-blur-3xl"
+                className="px-5 py-2.5 rounded-full glass-morphism border border-gold/30 hover:border-gold text-[10px] font-black text-gold-light uppercase tracking-[0.3em] transition-all hover:scale-105 active:scale-95 shadow-xl bg-black/80 backdrop-blur-3xl"
               >
                 {action.label}
               </button>
@@ -935,6 +992,7 @@ const App: React.FC = () => {
 
       {/* Real-time Native LLM Failover Floating Pop-up */}
       <NativeFailoverPopup />
+      {confirmModal}
     </div>
   );
 };

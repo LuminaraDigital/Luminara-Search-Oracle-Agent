@@ -26,10 +26,10 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({ onBack, onTermi
   ];
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-[#BF953F] selection:text-black font-['Outfit'] antialiased">
+    <div className="min-h-screen bg-black text-white selection:bg-gold selection:text-black font-['Outfit'] antialiased">
       <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 right-0 w-[40%] h-[40%] bg-[#BF953F]/10 blur-[150px] rounded-full"></div>
-        <div className="absolute bottom-0 left-0 w-[40%] h-[40%] bg-[#AA771C]/5 blur-[150px] rounded-full"></div>
+        <div className="absolute top-0 right-0 w-[40%] h-[40%] bg-gold/10 blur-[150px] rounded-full"></div>
+        <div className="absolute bottom-0 left-0 w-[40%] h-[40%] bg-gold-dark/5 blur-[150px] rounded-full"></div>
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.1] mix-blend-overlay"></div>
       </div>
 
@@ -48,7 +48,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({ onBack, onTermi
           <button onClick={onNavigatePricing} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Pricing</button>
           <button 
             onClick={onTerminal}
-            className="px-6 py-2.5 bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
+            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
           >
             Launch Terminal
           </button>
@@ -57,7 +57,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({ onBack, onTermi
 
       <main className="relative z-10 pt-40 pb-32 px-6 md:px-20 max-w-7xl mx-auto">
         <header className="mb-32">
-          <div className="inline-block px-4 py-1 rounded-full border border-[#BF953F]/20 bg-[#BF953F]/5 mb-8">
+          <div className="inline-block px-4 py-1 rounded-full border border-gold/20 bg-gold/5 mb-8">
             <span className="text-[8px] font-black uppercase tracking-[0.5em] gold-text">Audit Technology</span>
           </div>
           <h1 className="text-5xl md:text-8xl font-light tracking-tighter leading-none mb-10">
@@ -71,17 +71,17 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({ onBack, onTermi
 
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {pillars.map((p, idx) => (
-            <div key={idx} className="group p-10 glass-morphism rounded-[40px] border border-white/[0.05] hover:border-[#BF953F]/30 transition-all duration-700 hover:-translate-y-2">
+            <div key={idx} className="group p-10 glass-morphism rounded-[40px] border border-white/[0.05] hover:border-gold/30 transition-all duration-700 hover:-translate-y-2">
               <div className="flex justify-between items-start mb-12">
-                <div className="text-[10px] font-black text-[#BF953F]/60 tracking-[0.5em]">MODULE {(idx + 1).toString().padStart(2, '0')}</div>
-                <div className="w-10 h-10 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-center text-[#BF953F] group-hover:scale-110 group-hover:bg-[#BF953F]/10 transition-all duration-500">
+                <div className="text-[10px] font-black text-gold/60 tracking-[0.5em]">MODULE {(idx + 1).toString().padStart(2, '0')}</div>
+                <div className="w-10 h-10 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-center text-gold group-hover:scale-110 group-hover:bg-gold/10 transition-all duration-500">
                   <ICONS.Sparkle />
                 </div>
               </div>
               <h3 className="text-2xl font-bold uppercase tracking-tight mb-4 text-gray-100 group-hover:text-white transition-colors">{p.title}</h3>
               <p className="text-gray-400 text-sm font-light leading-relaxed mb-6">{p.desc}</p>
               <div className="pt-6 border-t border-white/[0.05] opacity-0 group-hover:opacity-100 transition-opacity duration-700">
-                <p className="text-[11px] text-[#BF953F] font-medium leading-relaxed italic">{p.detail}</p>
+                <p className="text-[11px] text-gold font-medium leading-relaxed italic">{p.detail}</p>
               </div>
             </div>
           ))}
@@ -96,7 +96,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({ onBack, onTermi
             <div className="pt-8">
               <button 
                 onClick={onTerminal}
-                className="px-16 py-6 border border-[#BF953F] text-[#FCF6BA] font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-[#BF953F]/10 transition-all"
+                className="px-16 py-6 border border-gold text-gold-light font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-gold/10 transition-all"
               >
                 Run Your First Audit
               </button>

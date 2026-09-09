@@ -38,9 +38,9 @@ export const SkillsHubPanel: React.FC = () => {
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Top Banner */}
-      <div className="glass-morphism rounded-2xl border border-[#BF953F]/30 p-6 bg-black/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="glass-morphism rounded-2xl border border-gold/30 p-6 bg-black/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-mono uppercase tracking-[0.3em] px-2.5 py-0.5 rounded-full bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/40 font-black">
+          <span className="text-[10px] font-mono uppercase tracking-[0.3em] px-2.5 py-0.5 rounded-full bg-gold/20 text-gold-light border border-gold/40 font-black">
             UNIVERSAL SKILLS HUB
           </span>
           <h2 className="text-2xl font-bold gold-text tracking-tight mt-2">
@@ -54,7 +54,7 @@ export const SkillsHubPanel: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={handleDownload}
-            className="px-4 py-2 rounded-xl bg-[#BF953F] hover:bg-[#AA771C] text-black font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5"
+            className="px-4 py-2 rounded-xl bg-gold hover:bg-gold-dark text-black font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5"
           >
             <span>Download .SKILL</span>
             <span>↓</span>
@@ -78,8 +78,8 @@ export const SkillsHubPanel: React.FC = () => {
                 onClick={() => setSelectedSkillId(skill.id)}
                 className={`p-4 rounded-xl border transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-[#BF953F]/15 border-[#BF953F] shadow-[0_0_15px_rgba(191,149,63,0.15)]'
-                    : 'glass-morphism border-white/5 hover:border-[#BF953F]/30 bg-black/40'
+                    ? 'bg-gold/15 border-gold shadow-[0_0_15px_rgba(191,149,63,0.15)]'
+                    : 'glass-morphism border-white/5 hover:border-gold/30 bg-black/40'
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -91,7 +91,7 @@ export const SkillsHubPanel: React.FC = () => {
                 <p className="text-[11px] text-gray-400 mt-1 line-clamp-2">
                   {skill.description}
                 </p>
-                <div className="flex items-center gap-2 mt-3 text-[9px] font-mono text-[#FCF6BA]">
+                <div className="flex items-center gap-2 mt-3 text-[9px] font-mono text-gold-light">
                   <span>Tools: {skill.tools.length}</span>
                   <span>•</span>
                   <span>Category: {skill.category}</span>
@@ -112,7 +112,7 @@ export const SkillsHubPanel: React.FC = () => {
                   onClick={() => setActivePlatform(p.id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-1.5 ${
                     activePlatform === p.id
-                      ? 'bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/50 font-bold'
+                      ? 'bg-gold/20 text-gold-light border border-gold/50 font-bold'
                       : 'text-gray-400 hover:text-white border border-transparent hover:bg-white/5'
                   }`}
                 >
@@ -124,7 +124,7 @@ export const SkillsHubPanel: React.FC = () => {
 
             <button
               onClick={handleCopy}
-              className="px-3 py-1 rounded-lg border border-[#BF953F]/30 bg-[#BF953F]/10 hover:bg-[#BF953F]/20 text-[10px] font-mono uppercase tracking-wider text-[#FCF6BA] transition-all"
+              className="px-3 py-1 rounded-lg border border-gold/30 bg-gold/10 hover:bg-gold/20 text-[10px] font-mono uppercase tracking-wider text-gold-light transition-all"
             >
               {copied ? 'Copied to Clipboard!' : 'Copy Skill Spec'}
             </button>
@@ -133,7 +133,7 @@ export const SkillsHubPanel: React.FC = () => {
           {/* Installation Path Banner */}
           <div className="px-4 py-2 rounded-xl bg-white/[0.02] border border-white/5 text-[11px] font-mono text-gray-400 flex items-center justify-between">
             <span>Target Path:</span>
-            <code className="text-[#FCF6BA]">{installPath}</code>
+            <code className="text-gold-light">{installPath}</code>
           </div>
 
           {/* Markdown Code Preview Box */}

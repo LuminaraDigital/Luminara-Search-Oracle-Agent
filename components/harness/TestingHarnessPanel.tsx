@@ -57,9 +57,9 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Top Banner */}
-      <div className="glass-morphism rounded-2xl border border-[#BF953F]/30 p-6 bg-black/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="glass-morphism rounded-2xl border border-gold/30 p-6 bg-black/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-mono uppercase tracking-[0.3em] px-2.5 py-0.5 rounded-full bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/40 font-black">
+          <span className="text-[10px] font-mono uppercase tracking-[0.3em] px-2.5 py-0.5 rounded-full bg-gold/20 text-gold-light border border-gold/40 font-black">
             ACCEPTANCE TESTBED
           </span>
           <h2 className="text-2xl font-bold gold-text tracking-tight mt-2">
@@ -83,7 +83,7 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
           <button
             onClick={handleRunAll}
             disabled={isRunning}
-            className="px-5 py-2.5 rounded-xl bg-[#BF953F] hover:bg-[#AA771C] text-black font-bold text-xs uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-[#BF953F]/20"
+            className="px-5 py-2.5 rounded-xl bg-gold hover:bg-gold-dark text-black font-bold text-xs uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-gold/20"
           >
             {isRunning ? (
               <>
@@ -110,19 +110,19 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
 
         <div className="glass-morphism rounded-xl border border-white/5 p-4 bg-black/40">
           <div className="text-[10px] font-mono text-gray-400 uppercase">Passed Specs</div>
-          <div className="text-xl font-bold text-emerald-400 font-mono mt-1">{passedTests} Passed</div>
+          <div className="text-xl font-bold text-success-400 font-mono mt-1">{passedTests} Passed</div>
           <div className="text-[10px] text-gray-500 font-mono mt-0.5">100% target pass rate</div>
         </div>
 
         <div className="glass-morphism rounded-xl border border-white/5 p-4 bg-black/40">
           <div className="text-[10px] font-mono text-gray-400 uppercase">Failures</div>
-          <div className="text-xl font-bold text-red-400 font-mono mt-1">{failedTests} Failed</div>
+          <div className="text-xl font-bold text-danger-400 font-mono mt-1">{failedTests} Failed</div>
           <div className="text-[10px] text-gray-500 font-mono mt-0.5">Automated trap detection</div>
         </div>
 
         <div className="glass-morphism rounded-xl border border-white/5 p-4 bg-black/40">
           <div className="text-[10px] font-mono text-gray-400 uppercase">Suite Execution Time</div>
-          <div className="text-xl font-bold text-[#FCF6BA] font-mono mt-1">
+          <div className="text-xl font-bold text-gold-light font-mono mt-1">
             {lastReport ? `${(lastReport.durationMs / 1000).toFixed(2)}s` : '0.00s'}
           </div>
           <div className="text-[10px] text-gray-500 font-mono mt-0.5">Real-time benchmark</div>
@@ -131,14 +131,14 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
 
       {/* Live Progress Bar */}
       {isRunning && (
-        <div className="space-y-1.5 p-4 rounded-xl glass-morphism border border-[#BF953F]/30 bg-black/70">
+        <div className="space-y-1.5 p-4 rounded-xl glass-morphism border border-gold/30 bg-black/70">
           <div className="flex items-center justify-between text-xs font-mono text-gray-300">
             <span>Running Acceptance Verification Pipeline...</span>
-            <span className="text-[#FCF6BA] font-bold">{progressPct.toFixed(0)}%</span>
+            <span className="text-gold-light font-bold">{progressPct.toFixed(0)}%</span>
           </div>
           <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-[#BF953F] to-emerald-400 transition-all duration-300 rounded-full"
+              className="h-full bg-gradient-to-r from-gold to-success-400 transition-all duration-300 rounded-full"
               style={{ width: `${progressPct}%` }}
             />
           </div>
@@ -163,11 +163,11 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
                   <span
                     className={`w-2.5 h-2.5 rounded-full ${
                       suite.status === 'passed'
-                        ? 'bg-emerald-400 shadow-[0_0_8px_#10B981]'
+                        ? 'bg-success-400 shadow-[0_0_8px_#10B981]'
                         : suite.status === 'failed'
-                        ? 'bg-red-400'
+                        ? 'bg-danger-400'
                         : suite.status === 'running'
-                        ? 'bg-amber-400 animate-pulse'
+                        ? 'bg-warning-400 animate-pulse'
                         : 'bg-gray-600'
                     }`}
                   />
@@ -189,11 +189,11 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
                   <span
                     className={`text-[10px] font-mono uppercase px-2.5 py-1 rounded-full font-bold border ${
                       suite.status === 'passed'
-                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                        ? 'bg-success-500/20 text-success-400 border-success-500/30'
                         : suite.status === 'failed'
-                        ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                        ? 'bg-danger-500/20 text-danger-400 border-danger-500/30'
                         : suite.status === 'running'
-                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                        ? 'bg-warning-500/20 text-warning-400 border-warning-500/30'
                         : 'bg-white/5 text-gray-400 border-white/10'
                     }`}
                   >
@@ -215,11 +215,11 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
                           <span
                             className={`w-1.5 h-1.5 rounded-full ${
                               tc.status === 'passed'
-                                ? 'bg-emerald-400'
+                                ? 'bg-success-400'
                                 : tc.status === 'failed'
-                                ? 'bg-red-400'
+                                ? 'bg-danger-400'
                                 : tc.status === 'running'
-                                ? 'bg-amber-400 animate-pulse'
+                                ? 'bg-warning-400 animate-pulse'
                                 : 'bg-gray-600'
                             }`}
                           />
@@ -232,11 +232,11 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
                           <span
                             className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded font-bold ${
                               tc.status === 'passed'
-                                ? 'text-emerald-400 bg-emerald-500/10'
+                                ? 'text-success-400 bg-success-500/10'
                                 : tc.status === 'failed'
-                                ? 'text-red-400 bg-red-500/10'
+                                ? 'text-danger-400 bg-danger-500/10'
                                 : tc.status === 'running'
-                                ? 'text-amber-400 bg-amber-500/10'
+                                ? 'text-warning-400 bg-warning-500/10'
                                 : 'text-gray-500 bg-white/5'
                             }`}
                           >
@@ -253,7 +253,7 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
                         <div className="p-2.5 rounded-lg bg-black/60 border border-white/5 font-mono text-[10px] text-gray-400 space-y-0.5">
                           {tc.logs.map((log, lidx) => (
                             <div key={lidx} className="flex items-start gap-1.5">
-                              <span className="text-[#BF953F]">›</span>
+                              <span className="text-gold">›</span>
                               <span>{log}</span>
                             </div>
                           ))}
@@ -261,7 +261,7 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
                       )}
 
                       {tc.error && (
-                        <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 font-mono text-[10px] text-red-300">
+                        <div className="p-2.5 rounded-lg bg-danger-500/10 border border-danger-500/20 font-mono text-[10px] text-danger-300">
                           Error: {tc.error}
                         </div>
                       )}

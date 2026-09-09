@@ -56,7 +56,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       const userId = Number(userIdRaw) || msg.from?.id;
       if (plan && userId) {
         const now = Date.now();
-        const existing = (await env.LUMINARA_KV.get(`sub:${userId}`, 'json')) as { expiresAt?: number } | null;
+        const existing = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get(`sub:${userId}`, 'json')) as { expiresAt?: number } | null) : null;
         const base = existing?.expiresAt && existing.expiresAt > now ? existing.expiresAt : now;
         const record = {
           plan: planId,
@@ -65,7 +65,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           startedAt: now,
           expiresAt: base + plan.days * 86400_000,
         };
-        await env.LUMINARA_KV.put(`sub:${userId}`, JSON.stringify(record));
+        if (env.LUMINARA_KV) await env.LUMINARA_KV.put(`sub:${userId}`, JSON.stringify(record));
         await api(env, 'sendMessage', {
           chat_id: msg.chat.id,
           text: `✅ ${plan.title} is active until ${new Date(record.expiresAt).toUTCString()}. Open the app to run your first audit.`,
@@ -113,7 +113,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/status')) {
-      const sub = (await env.LUMINARA_KV.get(`sub:${msg.from?.id}`, 'json')) as { plan: string; expiresAt: number } | null;
+      const sub = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get(`sub:${msg.from?.id}`, 'json')) as { plan: string; expiresAt: number } | null) : null;
       const active = sub && sub.expiresAt > Date.now();
       await api(env, 'sendMessage', {
         chat_id: chatId,
@@ -151,3 +151,22 @@ export async function createInvoiceLink(env: Env, userId: number, planId: string
   });
   return r.ok ? { ok: true, url: r.result as string } : { ok: false, error: r.description || 'Telegram refused the invoice' };
 }
+
+export async function sendTelegramAlert(env: Env, chatId: number | string, text: string, buttonUrl?: string): Promise<boolean> {
+  if (!env.BOT_TOKEN) return false;
+  const payload: Record<string, unknown> = {
+    chat_id: chatId,
+    text,
+    parse_mode: 'Markdown',
+  };
+  if (buttonUrl) {
+    payload.reply_markup = {
+      inline_keyboard: [[
+        { text: '⚡ Open 1-Click Remediation', web_app: { url: buttonUrl } }
+      ]]
+    };
+  }
+  const res = await api(env, 'sendMessage', payload);
+  return Boolean(res.ok);
+}
+

@@ -3,6 +3,7 @@ import { BusinessDNA } from '../../types';
 import { geminiService } from '../../services/geminiService';
 import { vfsMemoryService } from '../../services/vfs/vfsMemoryService';
 import { ICONS } from '../../constants';
+import { useConfirm } from '../ui/ConfirmModal';
 
 interface BusinessDNAViewProps {
   currentDNA: BusinessDNA | null;
@@ -60,20 +61,31 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
     }
   };
 
+  const { requestConfirm, confirmModal } = useConfirm();
+
   const handleClear = () => {
-    if (window.confirm('Remove your business profile?')) {
-      onDNAGenerated(null);
-      setFormData(null);
-      setInput('');
-    }
+    requestConfirm(
+      {
+        title: 'Remove your business profile?',
+        description: 'Luminara will stop using this profile to personalise answers and audits. You can create a new one at any time.',
+        confirmLabel: 'Remove profile',
+        variant: 'danger',
+      },
+      () => {
+        onDNAGenerated(null);
+        setFormData(null);
+        setInput('');
+      },
+    );
   };
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 animate-in fade-in duration-700">
+      {confirmModal}
       <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#BF953F]/10 border border-[#BF953F]/30 mb-4">
-          <ICONS.DNA className="w-4 h-4 text-[#FCF6BA]" />
-          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#FCF6BA]">Your business</span>
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
+          <ICONS.DNA className="w-4 h-4 text-gold-light" />
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold-light">Your business</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-bold gold-text tracking-tight mb-3">
           My business profile
@@ -84,7 +96,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       </div>
 
       {/* Input / Scanner Section */}
-      <div className="glass-morphism rounded-2xl border border-[#BF953F]/30 p-6 sm:p-8 mb-8 shadow-2xl">
+      <div className="glass-morphism rounded-2xl border border-gold/30 p-6 sm:p-8 mb-8 shadow-2xl">
         <div className="space-y-4">
           <label className="block text-xs font-bold uppercase tracking-widest text-gray-300">
             Scan Brand URL or Describe Business
@@ -96,12 +108,12 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               onChange={(e) => setInput(e.target.value)}
               placeholder="Your website, or a sentence about your business (e.g. 'family dental clinic in Austin')"
               onKeyDown={(e) => e.key === 'Enter' && handleExtractDNA()}
-              className="flex-1 bg-black/60 border border-white/15 focus:border-[#BF953F] rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none transition-all shadow-inner"
+              className="flex-1 bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none transition-all shadow-inner"
             />
             <button
               onClick={handleExtractDNA}
               disabled={loading || !input.trim()}
-              className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-black uppercase text-xs tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-[#BF953F]/20"
+              className="px-6 py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-gold/20"
             >
               {loading ? (
                 <>
@@ -116,21 +128,21 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               )}
             </button>
           </div>
-          {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+          {error && <p className="text-xs text-danger-400 mt-2">{error}</p>}
         </div>
       </div>
 
       {/* Active DNA Profile Display */}
       {formData && (
-        <div className="glass-morphism rounded-2xl border border-[#BF953F]/40 p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+        <div className="glass-morphism rounded-2xl border border-gold/40 p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/10 pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_10px_#10B981] animate-pulse"></div>
+              <div className="w-3 h-3 rounded-full bg-success-400 shadow-[0_0_10px_#10B981] animate-pulse"></div>
               <div>
-                <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest">Profile active</span>
+                <span className="text-[10px] font-mono text-success-400 uppercase tracking-widest">Profile active</span>
                 <h2 className="text-2xl font-bold text-white tracking-tight">{formData.name}</h2>
                 {vfsSyncSuccess && (
-                  <span className="text-[10px] font-mono text-emerald-400 block mt-0.5">
+                  <span className="text-[10px] font-mono text-success-400 block mt-0.5">
                     ✓ {vfsSyncSuccess}
                   </span>
                 )}
@@ -139,7 +151,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
             <div className="flex items-center gap-2">
               <button
                 onClick={() => syncToVfs(formData)}
-                className="px-3 py-1.5 rounded-lg border border-[#BF953F]/40 bg-[#BF953F]/10 text-xs text-[#FCF6BA] hover:bg-[#BF953F]/20 uppercase font-bold tracking-wider transition-all flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-lg border border-gold/40 bg-gold/10 text-xs text-gold-light hover:bg-gold/20 uppercase font-bold tracking-wider transition-all flex items-center gap-1.5"
                 title="Force sync DNA to Viking VFS .memories/"
               >
                 <span>🧠</span>
@@ -153,7 +165,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               </button>
               <button
                 onClick={handleClear}
-                className="px-4 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-300 hover:text-red-200 uppercase font-bold tracking-wider transition-all hover:bg-red-500/10"
+                className="px-4 py-1.5 rounded-lg border border-danger-500/30 text-xs text-danger-300 hover:text-danger-200 uppercase font-bold tracking-wider transition-all hover:bg-danger-500/10"
               >
                 Clear
               </button>
@@ -163,7 +175,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#FCF6BA] mb-1">Brand Mission</label>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1">Brand Mission</label>
                 {editing ? (
                   <textarea
                     value={formData.mission}
@@ -176,7 +188,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#FCF6BA] mb-1">Unique Selling Proposition (USP)</label>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1">Unique Selling Proposition (USP)</label>
                 {editing ? (
                   <textarea
                     value={formData.usp}
@@ -189,7 +201,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#FCF6BA] mb-1">Target Audience</label>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1">Target Audience</label>
                 {editing ? (
                   <input
                     type="text"
@@ -205,10 +217,10 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
 
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#FCF6BA] mb-1">Primary Market Competitors</label>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1">Primary Market Competitors</label>
                 <div className="flex flex-wrap gap-2 p-3 bg-black/40 rounded-xl border border-white/5">
                   {formData.competitors.map((comp, idx) => (
-                    <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#BF953F]/10 border border-[#BF953F]/30 text-[11px] font-mono text-[#FCF6BA]">
+                    <span key={idx} className="px-2.5 py-1 rounded-lg bg-gold/10 border border-gold/30 text-[11px] font-mono text-gold-light">
                       {comp}
                     </span>
                   ))}
@@ -216,11 +228,11 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-amber-400 mb-1">Where you are losing</label>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-warning-400 mb-1">Where you are losing</label>
                 <ul className="space-y-1.5 p-3 bg-black/40 rounded-xl border border-white/5 text-xs text-gray-300">
                   {formData.perceivedGaps.map((gap, gIdx) => (
                     <li key={gIdx} className="flex items-start gap-2">
-                      <span className="text-amber-400">&bull;</span>
+                      <span className="text-warning-400">&bull;</span>
                       <span>{gap}</span>
                     </li>
                   ))}
@@ -238,7 +250,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
             <div className="pt-4 border-t border-white/10 flex justify-end">
               <button
                 onClick={handleSave}
-                className="px-6 py-2 rounded-xl bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-bold uppercase text-xs tracking-wider"
+                className="px-6 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-bold uppercase text-xs tracking-wider"
               >
                 Save Changes
               </button>
@@ -251,16 +263,16 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               {onRouteToOracleMind && (
                 <button
                   onClick={onRouteToOracleMind}
-                  className="px-3 py-1.5 rounded-lg border border-[#BF953F]/40 bg-[#BF953F]/15 text-xs font-bold text-[#FCF6BA] hover:bg-[#BF953F]/25 uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
+                  className="px-3 py-1.5 rounded-lg border border-gold/40 bg-gold/15 text-xs font-bold text-gold-light hover:bg-gold/25 uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
                 >
-                  <ICONS.Brain className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.Brain className="w-3.5 h-3.5 text-gold-light" />
                   <span>Fine-Tune SLM &rarr;</span>
                 </button>
               )}
               {onNavigateToTool && (
                 <button
                   onClick={onNavigateToTool}
-                  className="text-xs font-bold text-[#FCF6BA] hover:underline uppercase tracking-wider flex items-center gap-1"
+                  className="text-xs font-bold text-gold-light hover:underline uppercase tracking-wider flex items-center gap-1"
                 >
                   Launch Terminal with DNA &rarr;
                 </button>

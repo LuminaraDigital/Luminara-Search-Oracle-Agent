@@ -58,8 +58,8 @@ It runs on **your own AI account**: Groq, NVIDIA NIM or Ollama (local or cloud),
 ## Quick start
 
 ```bash
-git clone https://github.com/LuminaraDigital/Luminara-Suite.git
-cd Luminara-Suite
+git clone https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent.git
+cd Luminara-Search-Oracle-Agent
 npm ci
 npm run dev
 ```
@@ -81,7 +81,7 @@ Keys are stored in your browser only.
 
 Luminara never needs your keys on its servers. In the browser build every provider is called directly from your device. Two exceptions are relayed through the Cloudflare Worker because the vendor blocks browser requests: NVIDIA NIM, and Gemini when you use the hosted key. Relayed requests carry your key in the `x-provider-key` header and the Worker forwards it without storing it.
 
-On luminarasuite.com, hosted keys exist for convenience. They are only used when a request carries a valid Telegram sign-in, are metered per user (25 free requests per day by default), and are unlimited on a paid plan. Nobody can consume the hosted keys anonymously.
+On luminarasuite.com, hosted keys exist for convenience. They are only used when a request carries a valid Telegram Mini App sign-in **or** a verified Firebase Auth ID token, are metered per user (25 free requests per day by default), and are unlimited on a paid plan. Nobody can consume the hosted keys anonymously. Bring-your-own-key in Settings is never gated.
 
 ## SEO methodology (playbooks)
 
@@ -113,6 +113,8 @@ Browser / Telegram Mini App  (React 19, Vite, Tailwind)
    │
    └─ /api/* ─► Cloudflare Worker (worker/)
                  ├─ /api/providers/:id/*   allow-listed proxy: BYOK relay or metered hosted keys
+                 ├─ /api/sidecars/:id/*    relay to self-hosted Writing check / Results tracking
+                 ├─ /api/auth/session      Telegram or Firebase identity for the current request
                  ├─ /api/telegram/auth     validates Mini App initData (HMAC-SHA256)
                  ├─ /api/telegram/invoice  Telegram Stars checkout
                  ├─ /api/telegram/webhook  bot commands, payments → KV
@@ -132,6 +134,10 @@ Key files: [`App.tsx`](App.tsx) (shell and routing), [`services/geminiService.ts
 | `npm run build` | Typecheck + production build |
 | `npm run deploy` | Build and `wrangler deploy` |
 | `npm run tg:setup` | Register webhook, menu button and commands with Telegram |
+| `npm run secrets:check` | Fail if credential-shaped strings or secret files are in the tree |
+| `npm run prepare` | Point git at `.githooks` (secret scan on commit and push) |
+
+Secrets never belong in git. Use `.env` / `.dev.vars` (gitignored) and `wrangler secret put` for production. GitHub secret scanning and push protection are enabled on this repo; local hooks and CI run `secrets:check` as a second line of defense. After clone, run `npm install` once so hooks install.
 
 ## Deploy: Cloudflare + Telegram Mini App
 
@@ -154,9 +160,45 @@ Add your domain to Cloudflare first; `wrangler.jsonc` declares `luminarasuite.co
 BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRET=... WEBAPP_URL=https://your-domain/ npm run tg:setup
 ```
 
-Gating is configured in `wrangler.jsonc` vars: `REQUIRE_TG_AUTH` (hosted keys need Telegram sign-in), `FREE_DAILY_LIMIT`, `REQUIRE_SUBSCRIPTION`. Plans and Stars prices are in [`worker/telegramBot.ts`](worker/telegramBot.ts). Telegram's Mini App policy allows TON assets only; the TON Connect manifest is in `public/`.
+Gating is configured in `wrangler.jsonc` vars: `REQUIRE_TG_AUTH` (hosted keys need Telegram or Firebase sign-in), `FIREBASE_PROJECT_ID` (enables Firebase ID token verification), `FREE_DAILY_LIMIT`, `REQUIRE_SUBSCRIPTION`. Web signup/signin uses Firebase Auth (`VITE_FIREBASE_*` in `.env`); the Worker verifies tokens with Google JWKS (no Admin SDK private key). Plans and Stars prices are in [`worker/telegramBot.ts`](worker/telegramBot.ts). Telegram's Mini App policy allows TON assets only; the TON Connect manifest is in `public/`.
+
+### Firebase Auth setup (web signup / signin)
+
+1. Create a Firebase project and enable **Authentication** → Email/Password (and optionally Google).
+2. Register a Web app; copy the config into `.env` as `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID` (optional: messaging sender id, storage bucket).
+3. Set the same project id on the Worker: `FIREBASE_PROJECT_ID` in `wrangler.jsonc` vars (or `.dev.vars` for local).
+4. Under Authentication → Settings → Authorized domains, add `luminarasuite.com`, `www.luminarasuite.com`, and `localhost`.
+5. Open **Settings** in the app → Overview → Account to sign up or sign in. Hosted Cloudflare keys then accept `Authorization: Bearer <Firebase ID token>`.
 
 A static Docker image (no Worker) is also available: `docker build -t luminara-suite .`
+
+## Writing check and results tracking (self-hosted, free)
+
+Two optional helpers run next to the crawler. **Writing check** grades how clearly a page reads and lists wording fixes in the report. **Results tracking** shows real visitors to the site and how many arrived from AI assistants such as ChatGPT and Perplexity, so a business owner can see whether the fixes worked. Both are free, open-source tools you host yourself; the app only ever reads from them.
+
+Under the hood these are [LanguageTool](https://languagetool.org) (LGPL-2.1) and [Umami](https://umami.is) (MIT). Both are used over HTTP only and are not bundled into the app; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Operator steps:
+
+1. Put a long random string in `.env` as `UMAMI_APP_SECRET`, then start the whole helper stack (crawler on :3001, writing check on :8010, tracking dashboard on :3002):
+   ```bash
+   docker compose up -d
+   ```
+2. Open http://localhost:3002, sign in with the default `admin` / `umami` and change the password right away.
+3. In the dashboard add the website, then paste the tracking snippet it gives you into the site's pages.
+4. Create an API key in the dashboard (Profile, API keys), or plan to use the username and password.
+5. For the hosted app, expose both services behind HTTPS with any reverse proxy, then point the Worker at them:
+   ```bash
+   # wrangler.jsonc vars (public config)
+   #   "LANGUAGETOOL_URL": "https://writing.your-domain",
+   #   "UMAMI_URL": "https://stats.your-domain"      # or https://api.umami.is for Umami Cloud
+   npx wrangler secret put UMAMI_API_KEY            # or UMAMI_USERNAME + UMAMI_PASSWORD
+   npm run deploy
+   ```
+   `/api/health` then reports `sidecars: { languagetool: true, umami: true }` and the app uses the relay at `/api/sidecars/<id>/...`. The relay only forwards the read-only endpoints the report needs, and callers follow the same Telegram sign-in rule as hosted keys (no daily quota).
+6. Local development without the Worker: add `LANGUAGETOOL_URL`, `UMAMI_URL` and `UMAMI_API_KEY` to `.env` (no `VITE_` prefix) and the Vite dev server proxies the same `/api/sidecars/...` paths for you. See `.env.example`.
+
+Users can also enter their own service URL in Settings, in which case the browser calls it directly.
 
 ## Business model and moat
 

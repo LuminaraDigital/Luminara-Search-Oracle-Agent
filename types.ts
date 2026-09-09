@@ -113,6 +113,7 @@ export interface BusinessDNA {
   competitors: string[];
   perceivedGaps: string[];
   rawContext: string; // Condensed summary for LLM context
+  industry?: string;
 }
 
 export interface ToolExecution {

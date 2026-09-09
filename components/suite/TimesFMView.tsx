@@ -375,27 +375,27 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
       <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-white/10 pb-6">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <span className="w-8 h-[1px] bg-[#BF953F]"></span>
-            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-[#FCF6BA]">
+            <span className="w-8 h-[1px] bg-gold"></span>
+            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-gold-light">
               Zero-Shot Time-Series Foundation Model
             </span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight flex items-center gap-3">
             <span>TimesFM Horizon Forecaster</span>
-            <span className="px-2.5 py-0.5 rounded-full bg-[#BF953F]/10 border border-[#BF953F]/40 text-[10px] font-mono text-[#FCF6BA] uppercase tracking-wider font-normal">
+            <span className="px-2.5 py-0.5 rounded-full bg-gold/10 border border-gold/40 text-[10px] font-mono text-gold-light uppercase tracking-wider font-normal">
               Patch Tokenizer • RevIN
             </span>
           </h1>
           <p className="text-xs text-gray-400 mt-1 max-w-2xl leading-relaxed">
-            Proprietary clean-room time-series foundation harness forecasting search traffic, AEO citations, and sovereign economics with multi-quantile probabilistic uncertainty bounds (<code className="text-[#FCF6BA] font-mono">p10..p90</code>).
+            Proprietary clean-room time-series foundation harness forecasting search traffic, AEO citations, and sovereign economics with multi-quantile probabilistic uncertainty bounds (<code className="text-gold-light font-mono">p10..p90</code>).
           </p>
         </div>
 
         {/* Right Status & DNA Link */}
         <div className="flex items-center gap-3 shrink-0">
           {dna && (
-            <div className="glass-morphism rounded-xl px-3.5 py-2 border border-emerald-500/30 flex items-center gap-2.5 bg-emerald-950/20 text-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#10B981]"></span>
+            <div className="glass-morphism rounded-xl px-3.5 py-2 border border-success-500/30 flex items-center gap-2.5 bg-success-950/20 text-xs">
+              <span className="w-2 h-2 rounded-full bg-success-400 shadow-[0_0_8px_#10B981]"></span>
               <span className="text-gray-300">DNA Linked: <strong className="text-white">{dna.name}</strong></span>
             </div>
           )}
@@ -406,7 +406,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
               onClick={() => setExecutionMode('edge')}
               className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
                 executionMode === 'edge'
-                  ? 'bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black shadow-md'
+                  ? 'bg-gradient-to-r from-gold to-gold-dark text-black shadow-md'
                   : 'text-gray-400 hover:text-white'
               }`}
               title="Instant local browser tensor-patch calculation"
@@ -418,7 +418,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
               onClick={() => setExecutionMode('neural')}
               className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
                 executionMode === 'neural'
-                  ? 'bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black shadow-md'
+                  ? 'bg-gradient-to-r from-gold to-gold-dark text-black shadow-md'
                   : 'text-gray-400 hover:text-white'
               }`}
               title="Deep Gemini foundation synthesis with Code Execution"
@@ -439,7 +439,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
             onClick={() => handleSelectBenchmark(b.id)}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-mono transition-all flex items-center gap-2 ${
               selectedBenchmarkId === b.id
-                ? 'bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/50 shadow-lg'
+                ? 'bg-gold/20 text-gold-light border border-gold/50 shadow-lg'
                 : 'bg-black/40 text-gray-400 border border-white/5 hover:border-white/20 hover:text-gray-200'
             }`}
           >
@@ -451,11 +451,11 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
           onClick={() => setIsUploadOpen(true)}
           className={`px-3.5 py-1.5 rounded-xl text-xs font-mono transition-all flex items-center gap-2 ${
             selectedBenchmarkId === 'custom'
-              ? 'bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/50 shadow-lg'
-              : 'bg-white/5 text-gray-300 border border-white/10 hover:border-[#BF953F]/40'
+              ? 'bg-gold/20 text-gold-light border border-gold/50 shadow-lg'
+              : 'bg-white/5 text-gray-300 border border-white/10 hover:border-gold/40'
           }`}
         >
-          <ICONS.FileText className="w-3.5 h-3.5 text-[#FCF6BA]" />
+          <ICONS.FileText className="w-3.5 h-3.5 text-gold-light" />
           <span>Upload CSV / Ingest</span>
         </button>
       </div>
@@ -465,9 +465,9 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
         {/* Left Column: Model Hyperparameters & Covariates (1 col) */}
         <div className="lg:col-span-1 space-y-6">
           {/* Foundation Model Hyperparameters */}
-          <div className="glass-morphism rounded-2xl border border-[#BF953F]/30 p-5 bg-black/60 shadow-xl space-y-5">
+          <div className="glass-morphism rounded-2xl border border-gold/30 p-5 bg-black/60 shadow-xl space-y-5">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#FCF6BA]">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gold-light">
                 <ICONS.Settings className="w-3.5 h-3.5" />
                 <span>Foundation Parameters</span>
               </div>
@@ -480,7 +480,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                 <label className="text-[11px] font-bold uppercase tracking-wider text-gray-300">
                   Forecast Horizon
                 </label>
-                <span className="text-xs font-mono text-[#FCF6BA] font-bold">{horizon} {frequency}</span>
+                <span className="text-xs font-mono text-gold-light font-bold">{horizon} {frequency}</span>
               </div>
               <input
                 type="range"
@@ -489,7 +489,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                 step="1"
                 value={horizon}
                 onChange={(e) => setHorizon(Number(e.target.value))}
-                className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#BF953F]"
+                className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-gold"
               />
               <div className="flex justify-between text-[9px] font-mono text-gray-500 mt-1">
                 <button onClick={() => setHorizon(7)} className="hover:text-white">7d</button>
@@ -513,7 +513,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                     onClick={() => setPatchLength(p)}
                     className={`py-1 rounded-lg text-xs font-mono font-bold transition-all ${
                       patchLength === p
-                        ? 'bg-[#BF953F] text-black'
+                        ? 'bg-gold text-black'
                         : 'bg-white/5 text-gray-400 hover:text-white border border-white/10'
                     }`}
                   >
@@ -532,7 +532,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                   type="checkbox"
                   checked={revin}
                   onChange={(e) => setRevin(e.target.checked)}
-                  className="w-4 h-4 accent-[#BF953F] rounded cursor-pointer"
+                  className="w-4 h-4 accent-gold rounded cursor-pointer"
                 />
               </div>
 
@@ -542,7 +542,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                   type="checkbox"
                   checked={showP10P90}
                   onChange={(e) => setShowP10P90(e.target.checked)}
-                  className="w-4 h-4 accent-[#BF953F] rounded cursor-pointer"
+                  className="w-4 h-4 accent-gold rounded cursor-pointer"
                 />
               </div>
 
@@ -552,7 +552,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                   type="checkbox"
                   checked={showP25P75}
                   onChange={(e) => setShowP25P75(e.target.checked)}
-                  className="w-4 h-4 accent-[#BF953F] rounded cursor-pointer"
+                  className="w-4 h-4 accent-gold rounded cursor-pointer"
                 />
               </div>
             </div>
@@ -561,11 +561,11 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
           {/* Exogenous Covariates & Shocks */}
           <div className="glass-morphism rounded-2xl border border-white/10 p-5 bg-black/60 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#FCF6BA]">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gold-light">
                 <ICONS.Sliders className="w-3.5 h-3.5" />
                 <span>Exogenous Covariates</span>
               </div>
-              <span className="text-[9px] font-mono text-emerald-400 uppercase">Scenario Alpha</span>
+              <span className="text-[9px] font-mono text-success-400 uppercase">Scenario Alpha</span>
             </div>
 
             <div className="space-y-4">
@@ -577,11 +577,11 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                         type="checkbox"
                         checked={cov.active}
                         onChange={() => toggleCovariate(cov.id)}
-                        className="w-3.5 h-3.5 accent-[#BF953F] rounded cursor-pointer"
+                        className="w-3.5 h-3.5 accent-gold rounded cursor-pointer"
                       />
                       <span>{cov.name}</span>
                     </label>
-                    <span className="text-[10px] font-mono text-[#FCF6BA]">
+                    <span className="text-[10px] font-mono text-gold-light">
                       {cov.type === 'multiplier' ? `x${cov.value.toFixed(2)}` : `${(cov.value * 100).toFixed(0)}%`}
                     </span>
                   </div>
@@ -598,7 +598,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                       step="0.05"
                       value={cov.value}
                       onChange={(e) => updateCovariateValue(cov.id, Number(e.target.value))}
-                      className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#BF953F]"
+                      className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-gold"
                     />
                   )}
                 </div>
@@ -610,7 +610,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
         {/* Center/Right Column: Luxury SVG Forecaster Canvas (3 cols) */}
         <div className="lg:col-span-3 space-y-6">
           {/* Main Visualizer Card */}
-          <div className="glass-morphism rounded-2xl border border-[#BF953F]/30 p-6 bg-black/80 shadow-2xl relative overflow-hidden">
+          <div className="glass-morphism rounded-2xl border border-gold/30 p-6 bg-black/80 shadow-2xl relative overflow-hidden">
             {/* Top Chart Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-white/10 pb-4">
               <div>
@@ -624,19 +624,19 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                     <span className="text-gray-400 text-[11px]">Historical Context</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="w-3 h-0.5 bg-[#FCF6BA]"></span>
-                    <span className="text-[#FCF6BA] text-[11px] font-bold">TimesFM p50 Median</span>
+                    <span className="w-3 h-0.5 bg-gold-light"></span>
+                    <span className="text-gold-light text-[11px] font-bold">TimesFM p50 Median</span>
                   </div>
                   {showP10P90 && (
                     <div className="flex items-center gap-1.5">
-                      <span className="w-3 h-2 bg-[#BF953F]/20 border border-[#BF953F]/40 rounded-sm"></span>
+                      <span className="w-3 h-2 bg-gold/20 border border-gold/40 rounded-sm"></span>
                       <span className="text-gray-400 text-[11px]">p10-p90 Cone</span>
                     </div>
                   )}
                   {result && result.anomalies.length > 0 && (
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-red-400"></span>
-                      <span className="text-red-400 text-[11px]">Anomalies ({result.anomalies.length})</span>
+                      <span className="w-2 h-2 rounded-full bg-danger-400"></span>
+                      <span className="text-danger-400 text-[11px]">Anomalies ({result.anomalies.length})</span>
                     </div>
                   )}
                 </div>
@@ -647,17 +647,17 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                 <button
                   onClick={handleExportCSV}
                   disabled={!result}
-                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white transition-all flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white transition-all flex items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/5 disabled:hover:text-gray-300"
                   title="Download CSV of Historical & Quantile Predictions"
                 >
-                  <ICONS.FileText className="w-3 h-3 text-[#FCF6BA]" />
+                  <ICONS.FileText className="w-3 h-3 text-gold-light" />
                   <span>Export CSV</span>
                 </button>
 
                 <button
                   onClick={runForecast}
                   disabled={isExecuting}
-                  className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-bold text-xs uppercase tracking-wider hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-bold text-xs uppercase tracking-wider hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50"
                 >
                   {isExecuting ? (
                     <>
@@ -676,8 +676,8 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
 
             {/* Error banner if any */}
             {error && (
-              <div className="mb-4 p-3 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
-                <ICONS.AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <div className="mb-4 p-3 rounded-xl bg-danger-950/40 border border-danger-500/40 text-danger-300 text-xs flex items-center gap-2">
+                <ICONS.AlertTriangle className="w-4 h-4 text-danger-400 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
@@ -872,9 +872,9 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
 
               {/* Hover Floating Tooltip */}
               {hoverPoint && (
-                <div className="absolute top-3 right-3 glass-morphism rounded-xl border border-[#BF953F]/40 p-3 bg-black/95 text-xs shadow-2xl pointer-events-none animate-in fade-in duration-200">
+                <div className="absolute top-3 right-3 glass-morphism rounded-xl border border-gold/40 p-3 bg-black/95 text-xs shadow-2xl pointer-events-none animate-in fade-in duration-200">
                   <div className="flex items-center justify-between gap-4 mb-1 border-b border-white/10 pb-1">
-                    <span className="font-mono text-[#FCF6BA] font-bold">{hoverPoint.dateStr}</span>
+                    <span className="font-mono text-gold-light font-bold">{hoverPoint.dateStr}</span>
                     <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/10 text-gray-300">
                       {hoverPoint.type === 'history' ? 'Historical' : 'TimesFM Projected'}
                     </span>
@@ -889,7 +889,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                     </div>
                   ) : (
                     <div className="space-y-1 font-mono text-[11px]">
-                      <div className="flex items-center justify-between gap-3 text-[#FCF6BA] font-bold">
+                      <div className="flex items-center justify-between gap-3 text-gold-light font-bold">
                         <span>p50 (Median):</span>
                         <span>{hoverPoint.p50?.toLocaleString()}</span>
                       </div>
@@ -914,9 +914,9 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
                     Horizon Median (p50)
                   </p>
-                  <p className="text-xl font-bold font-mono text-[#FCF6BA] flex items-baseline gap-2">
+                  <p className="text-xl font-bold font-mono text-gold-light flex items-baseline gap-2">
                     <span>{kpis.finalP50.toLocaleString()}</span>
-                    <span className={`text-xs ${kpis.diffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span className={`text-xs ${kpis.diffPct >= 0 ? 'text-success-400' : 'text-danger-400'}`}>
                       {kpis.diffPct >= 0 ? '+' : ''}{kpis.diffPct}%
                     </span>
                   </p>
@@ -938,7 +938,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
                     Directional Fit Score
                   </p>
-                  <p className="text-xl font-bold font-mono text-emerald-400">
+                  <p className="text-xl font-bold font-mono text-success-400">
                     {kpis.directionalAccuracy}%
                   </p>
                   <p className="text-[9px] font-mono text-gray-500 mt-0.5">
@@ -950,7 +950,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
                     Detected Structural Breaks
                   </p>
-                  <p className="text-xl font-bold font-mono text-[#BF953F]">
+                  <p className="text-xl font-bold font-mono text-gold">
                     {kpis.anomalyCount}
                   </p>
                   <p className="text-[9px] font-mono text-gray-500 mt-0.5">
@@ -963,11 +963,11 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
 
           {/* Executive Strategic Takeaways / Synthesis */}
           {result?.executiveSummary && (
-            <div className="glass-morphism rounded-2xl border border-[#BF953F]/40 p-6 sm:p-8 bg-black/90 shadow-2xl animate-in fade-in duration-500">
+            <div className="glass-morphism rounded-2xl border border-gold/40 p-6 sm:p-8 bg-black/90 shadow-2xl animate-in fade-in duration-500">
               <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#BF953F] shadow-[0_0_8px_#BF953F]"></div>
-                  <h3 className="text-base font-bold uppercase tracking-widest text-[#FCF6BA]">
+                  <div className="w-2.5 h-2.5 rounded-full bg-gold shadow-[0_0_8px_#BF953F]"></div>
+                  <h3 className="text-base font-bold uppercase tracking-widest text-gold-light">
                     TimesFM Executive Intelligence Briefing
                   </h3>
                 </div>
@@ -975,7 +975,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                   onClick={handleCopyReport}
                   className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 hover:text-white transition-all flex items-center gap-1.5"
                 >
-                  <ICONS.Share className="w-3.5 h-3.5 text-[#FCF6BA]" />
+                  <ICONS.Share className="w-3.5 h-3.5 text-gold-light" />
                   <span>{copied ? 'Copied!' : 'Copy Briefing'}</span>
                 </button>
               </div>
@@ -992,10 +992,10 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
       {/* CSV / Data Upload Modal */}
       {isUploadOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="glass-morphism border border-[#BF953F]/40 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative bg-black/95">
-            <div className="bg-gradient-to-r from-[#BF953F]/20 to-transparent px-6 py-4 border-b border-[#BF953F]/20 flex items-center justify-between">
+          <div className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative bg-black/95">
+            <div className="bg-gradient-to-r from-gold/20 to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <ICONS.FileText className="w-4 h-4 text-[#FCF6BA]" />
+                <ICONS.FileText className="w-4 h-4 text-gold-light" />
                 <h3 className="text-base font-bold text-white uppercase tracking-wider">Ingest Time-Series Dataset</h3>
               </div>
               <button onClick={() => setIsUploadOpen(false)} className="text-gray-400 hover:text-white">
@@ -1008,8 +1008,8 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                 <label className="block text-xs font-bold uppercase tracking-widest text-gray-300 mb-2">
                   Upload CSV or TSV File
                 </label>
-                <label className="border-2 border-dashed border-white/15 hover:border-[#BF953F]/60 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors group">
-                  <ICONS.FileText className="w-8 h-8 text-[#FCF6BA]/60 group-hover:text-[#FCF6BA] mb-2" />
+                <label className="border-2 border-dashed border-white/15 hover:border-gold/60 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors group">
+                  <ICONS.FileText className="w-8 h-8 text-gold-light/60 group-hover:text-gold-light mb-2" />
                   <span className="text-xs text-gray-300 group-hover:text-white font-medium">Click to browse file (.csv, .tsv, .txt)</span>
                   <span className="text-[10px] text-gray-500 mt-1">Columns: Date/Timestamp, Metric Value</span>
                   <input type="file" accept=".csv,.tsv,.txt" onChange={handleFileUpload} className="hidden" />
@@ -1025,7 +1025,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                   onChange={(e) => setPasteText(e.target.value)}
                   placeholder="2026-01-01, 1420&#10;2026-01-02, 1490&#10;2026-01-03, 1510..."
                   rows={5}
-                  className="w-full bg-black/60 border border-white/15 focus:border-[#BF953F] rounded-xl p-3 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none"
+                  className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl p-3 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none"
                 />
               </div>
 
@@ -1039,7 +1039,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                 <button
                   onClick={handleApplyCustomData}
                   disabled={!pasteText.trim()}
-                  className="px-6 py-2 rounded-xl bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-bold text-xs uppercase tracking-wider disabled:opacity-30"
+                  className="px-6 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-bold text-xs uppercase tracking-wider disabled:opacity-30"
                 >
                   Load & Ingest
                 </button>

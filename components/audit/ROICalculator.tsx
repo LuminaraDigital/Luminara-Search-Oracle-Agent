@@ -123,21 +123,21 @@ export const ROICalculator: React.FC = () => {
     }, [showTimesFMRunway, currentRevenue, uplift, agencyRetainer]);
 
     return (
-        <div className="my-8 glass-morphism rounded-2xl border border-[#BF953F]/30 overflow-hidden shadow-2xl animate-in fade-in duration-700">
-            <div className="bg-gradient-to-r from-[#BF953F]/20 via-[#FCF6BA]/10 to-transparent px-6 py-4 border-b border-[#BF953F]/20 flex items-center justify-between">
+        <div className="my-8 glass-morphism rounded-2xl border border-gold/30 overflow-hidden shadow-2xl animate-in fade-in duration-700">
+            <div className="bg-gradient-to-r from-gold/20 via-gold-light/10 to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-[#BF953F]/10 border border-[#BF953F]/30 text-[#FCF6BA]">
+                    <div className="p-2.5 rounded-xl bg-gold/10 border border-gold/30 text-gold-light">
                         <ICONS.Calculator className="w-5 h-5" />
                     </div>
                     <div>
-                        <h3 className="text-base font-bold uppercase tracking-widest text-[#FCF6BA]">Luminara ROI & Retainer Arbiter</h3>
+                        <h3 className="text-base font-bold uppercase tracking-widest text-gold-light">Luminara ROI & Retainer Arbiter</h3>
                         <p className="text-xs text-gray-400">Link AI-search visibility to quantifiable monthly revenue expansion</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setShowTimesFMRunway(!showTimesFMRunway)}
-                        className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#BF953F]/10 hover:bg-[#BF953F]/20 border border-[#BF953F]/30 text-[10px] font-mono text-[#FCF6BA] uppercase tracking-wider transition-all"
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-gold/10 hover:bg-gold/20 border border-gold/30 text-[10px] font-mono text-gold-light uppercase tracking-wider transition-all"
                     >
                         <ICONS.TimeSeries className="w-3.5 h-3.5" />
                         <span>{showTimesFMRunway ? 'Hide Runway' : 'TimesFM 12M Runway'}</span>
@@ -158,7 +158,7 @@ export const ROICalculator: React.FC = () => {
                                 type="number" 
                                 value={traffic} 
                                 onChange={(e) => setTraffic(Math.max(0, Number(e.target.value)))}
-                                className="w-full bg-black/60 border border-[#BF953F]/30 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-[#BF953F] transition-all"
+                                className="w-full bg-black/60 border border-gold/30 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-gold transition-all"
                             />
                         </div>
                         <div>
@@ -168,7 +168,7 @@ export const ROICalculator: React.FC = () => {
                                 step="0.1" 
                                 value={conversionRate} 
                                 onChange={(e) => setConversionRate(Math.max(0, Number(e.target.value)))}
-                                className="w-full bg-black/60 border border-[#BF953F]/30 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-[#BF953F] transition-all"
+                                className="w-full bg-black/60 border border-gold/30 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-gold transition-all"
                             />
                         </div>
                     </div>
@@ -180,7 +180,7 @@ export const ROICalculator: React.FC = () => {
                                 type="number" 
                                 value={leadValue} 
                                 onChange={(e) => setLeadValue(Math.max(0, Number(e.target.value)))}
-                                className="w-full bg-black/60 border border-[#BF953F]/30 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-[#BF953F] transition-all"
+                                className="w-full bg-black/60 border border-gold/30 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-gold transition-all"
                             />
                         </div>
                         <div>
@@ -189,15 +189,15 @@ export const ROICalculator: React.FC = () => {
                                 type="number" 
                                 value={agencyRetainer} 
                                 onChange={(e) => setAgencyRetainer(Math.max(0, Number(e.target.value)))}
-                                className="w-full bg-black/60 border border-[#BF953F]/30 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-[#BF953F] transition-all"
+                                className="w-full bg-black/60 border border-gold/30 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-gold transition-all"
                             />
                         </div>
                     </div>
 
                     <div>
                         <div className="flex justify-between items-center mb-1.5">
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-[#FCF6BA]">Projected AI & AEO Uplift</label>
-                            <span className="text-xs font-mono font-bold text-[#FCF6BA]">{uplift}%</span>
+                            <label className="text-[11px] font-bold uppercase tracking-wider text-gold-light">Projected AI & AEO Uplift</label>
+                            <span className="text-xs font-mono font-bold text-gold-light">{uplift}%</span>
                         </div>
                         <input 
                             type="range" 
@@ -205,7 +205,7 @@ export const ROICalculator: React.FC = () => {
                             max="100" 
                             value={uplift} 
                             onChange={(e) => setUplift(Number(e.target.value))}
-                            className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#BF953F]"
+                            className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-gold"
                         />
                         <p className="text-[10px] text-gray-500 mt-1">Simulated increase in citations and qualified organic search clicks.</p>
                     </div>
@@ -218,17 +218,17 @@ export const ROICalculator: React.FC = () => {
                             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Baseline Monthly</p>
                             <p className="text-xl font-bold font-mono text-gray-200">{formatCurrency(currentRevenue)}</p>
                         </div>
-                        <div className="glass-morphism rounded-xl p-4 border border-emerald-500/20 bg-emerald-950/10">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 mb-1">Annual Retainer Saved</p>
-                            <p className="text-xl font-bold font-mono text-emerald-300">{formatCurrency(annualSavings)}</p>
+                        <div className="glass-morphism rounded-xl p-4 border border-success-500/20 bg-success-950/10">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-success-400 mb-1">Annual Retainer Saved</p>
+                            <p className="text-xl font-bold font-mono text-success-300">{formatCurrency(annualSavings)}</p>
                         </div>
                     </div>
 
-                    <div className="relative glass-morphism rounded-2xl p-6 border border-[#BF953F]/40 bg-gradient-to-br from-[#BF953F]/15 via-black to-black shadow-xl">
-                        <div className="absolute -top-3 right-4 bg-gradient-to-r from-[#BF953F] to-[#FCF6BA] text-black text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-lg">
+                    <div className="relative glass-morphism rounded-2xl p-6 border border-gold/40 bg-gradient-to-br from-gold/15 via-black to-black shadow-xl">
+                        <div className="absolute -top-3 right-4 bg-gradient-to-r from-gold to-gold-light text-black text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-lg">
                             +{formatCurrency(netIncrease)} / Mo Lift
                         </div>
-                        <p className="text-xs font-bold uppercase tracking-widest text-[#FCF6BA] mb-1">Projected Monthly Revenue</p>
+                        <p className="text-xs font-bold uppercase tracking-widest text-gold-light mb-1">Projected Monthly Revenue</p>
                         <p className="text-3xl sm:text-4xl font-black font-mono text-white mb-2">{formatCurrency(projectedRevenue)}</p>
                         <p className="text-[11px] text-gray-400 leading-relaxed">
                             Includes calculated <strong>{uplift}% citation lift</strong> plus retained capital reallocated from redundant agency overhead.
@@ -239,10 +239,10 @@ export const ROICalculator: React.FC = () => {
 
             {/* TimesFM 12-Month Runway Projection Drawer */}
             {showTimesFMRunway && runwayData && (
-                <div className="border-t border-[#BF953F]/30 bg-black/80 p-6 animate-in slide-in-from-top-4 duration-500">
+                <div className="border-t border-gold/30 bg-black/80 p-6 animate-in slide-in-from-top-4 duration-500">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
                         <div>
-                            <div className="flex items-center gap-2 text-xs font-bold text-[#FCF6BA] uppercase tracking-wider">
+                            <div className="flex items-center gap-2 text-xs font-bold text-gold-light uppercase tracking-wider">
                                 <ICONS.TimeSeries className="w-4 h-4" />
                                 <span>TimesFM 12-Month Probabilistic Runway Projection</span>
                             </div>
@@ -253,11 +253,11 @@ export const ROICalculator: React.FC = () => {
                         <div className="flex items-center gap-4 text-right">
                             <div>
                                 <span className="text-[9px] uppercase font-mono text-gray-500 block">12-Month Net Capital Lift</span>
-                                <span className="text-lg font-bold font-mono text-emerald-400">+{formatCurrency(runwayData.net12MLift)}</span>
+                                <span className="text-lg font-bold font-mono text-success-400">+{formatCurrency(runwayData.net12MLift)}</span>
                             </div>
                             <div>
                                 <span className="text-[9px] uppercase font-mono text-gray-500 block">Month 12 Horizon (p50)</span>
-                                <span className="text-lg font-bold font-mono text-[#FCF6BA]">{formatCurrency(runwayData.finalP50)}</span>
+                                <span className="text-lg font-bold font-mono text-gold-light">{formatCurrency(runwayData.finalP50)}</span>
                             </div>
                         </div>
                     </div>

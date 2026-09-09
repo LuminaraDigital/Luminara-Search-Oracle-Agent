@@ -121,7 +121,7 @@ export const ContextGraphPanel: React.FC = () => {
         <div className="flex flex-wrap gap-2">
           <button
             onClick={handleSyncDna}
-            className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#BF953F]/20 border border-[#BF953F]/50 text-[#FCF6BA] hover:bg-[#BF953F]/30"
+            className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-gold/20 border border-gold/50 text-gold-light hover:bg-gold/30"
           >
             Sync from DNA
           </button>
@@ -139,7 +139,7 @@ export const ContextGraphPanel: React.FC = () => {
           </button>
           <button
             onClick={() => handleExport('jsonld')}
-            className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider glass-morphism border border-emerald-500/40 text-emerald-300"
+            className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider glass-morphism border border-success-500/40 text-success-300"
           >
             Export JSON-LD
           </button>
@@ -147,7 +147,7 @@ export const ContextGraphPanel: React.FC = () => {
       </div>
 
       {status && (
-        <div className="px-4 py-2 rounded-xl border border-[#BF953F]/40 bg-[#BF953F]/10 text-xs text-[#FCF6BA] font-mono">
+        <div className="px-4 py-2 rounded-xl border border-gold/40 bg-gold/10 text-xs text-gold-light font-mono">
           {status}
         </div>
       )}
@@ -187,7 +187,7 @@ export const ContextGraphPanel: React.FC = () => {
             onClick={() => setSubTab(t.id)}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono shrink-0 border ${
               subTab === t.id
-                ? 'bg-[#BF953F]/20 text-[#FCF6BA] border-[#BF953F]/50'
+                ? 'bg-gold/20 text-gold-light border-gold/50'
                 : 'text-gray-400 border-transparent hover:bg-white/5'
             }`}
           >
@@ -218,7 +218,7 @@ export const ContextGraphPanel: React.FC = () => {
                   onClick={() => setSelectedId(n.id)}
                   className={`w-full text-left px-3 py-2 rounded-lg text-xs border ${
                     selectedId === n.id
-                      ? 'border-[#BF953F]/60 bg-[#BF953F]/10 text-[#FCF6BA]'
+                      ? 'border-gold/60 bg-gold/10 text-gold-light'
                       : 'border-white/5 text-gray-300 hover:bg-white/5'
                   }`}
                 >
@@ -237,7 +237,7 @@ export const ContextGraphPanel: React.FC = () => {
               <div className="glass-morphism rounded-xl border border-white/10 p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-[10px] uppercase tracking-widest text-[#BF953F] font-bold">{selected.type}</div>
+                    <div className="text-[10px] uppercase tracking-widest text-gold font-bold">{selected.type}</div>
                     <h3 className="text-lg font-bold text-white">{selected.label}</h3>
                     <div className="text-[10px] font-mono text-gray-500 mt-1">{selected.id}</div>
                   </div>
@@ -254,7 +254,7 @@ export const ContextGraphPanel: React.FC = () => {
                       <button
                         key={n.id}
                         onClick={() => setSelectedId(n.id)}
-                        className="px-2 py-1 rounded-md text-[10px] border border-white/10 text-gray-300 hover:border-[#BF953F]/40"
+                        className="px-2 py-1 rounded-md text-[10px] border border-white/10 text-gray-300 hover:border-gold/40"
                       >
                         {n.type}: {n.label}
                       </button>
@@ -279,7 +279,7 @@ export const ContextGraphPanel: React.FC = () => {
                 />
                 <button
                   onClick={handleQuery}
-                  className="px-4 py-2 rounded-lg bg-[#BF953F]/20 border border-[#BF953F]/50 text-[#FCF6BA] text-xs font-bold"
+                  className="px-4 py-2 rounded-lg bg-gold/20 border border-gold/50 text-gold-light text-xs font-bold"
                 >
                   Query
                 </button>
@@ -291,7 +291,7 @@ export const ContextGraphPanel: React.FC = () => {
                   </div>
                   {queryResult.hits.map(h => (
                     <div key={`${h.kind}_${h.id}`} className="text-xs border border-white/5 rounded-lg p-2">
-                      <div className="text-[#FCF6BA] font-mono text-[10px]">
+                      <div className="text-gold-light font-mono text-[10px]">
                         {h.kind} · {h.score.toFixed(3)}
                       </div>
                       <div className="text-white">{h.title}</div>
@@ -323,7 +323,7 @@ export const ContextGraphPanel: React.FC = () => {
           <div className="flex gap-2">
             <button
               onClick={handleRecordSampleDecision}
-              className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#BF953F]/20 border border-[#BF953F]/50 text-[#FCF6BA]"
+              className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-gold/20 border border-gold/50 text-gold-light"
             >
               Record sample decision
             </button>
@@ -347,7 +347,7 @@ export const ContextGraphPanel: React.FC = () => {
                     <td className="py-2">
                       <button
                         onClick={() => setChainDecisionId(d.id)}
-                        className="text-[#FCF6BA] hover:underline"
+                        className="text-gold-light hover:underline"
                       >
                         Trace
                       </button>
@@ -361,13 +361,13 @@ export const ContextGraphPanel: React.FC = () => {
             )}
           </div>
           {chain && (
-            <div className="glass-morphism rounded-xl border border-[#BF953F]/30 p-4">
-              <div className="text-[10px] uppercase tracking-widest text-[#BF953F] font-bold mb-2">Decision chain</div>
+            <div className="glass-morphism rounded-xl border border-gold/30 p-4">
+              <div className="text-[10px] uppercase tracking-widest text-gold font-bold mb-2">Decision chain</div>
               <div className="space-y-2">
                 {chain.chain.map((d, i) => (
                   <div key={d.id} className="text-xs text-gray-300">
                     {i > 0 && (
-                      <div className="text-[10px] text-[#FCF6BA] font-mono mb-1">
+                      <div className="text-[10px] text-gold-light font-mono mb-1">
                         {chain.edgeTypes[i - 1] || 'CAUSED'} ↓
                       </div>
                     )}
@@ -389,7 +389,7 @@ export const ContextGraphPanel: React.FC = () => {
           )}
           {provenance.map(p => (
             <div key={p.entityId} className="glass-morphism rounded-xl border border-white/10 p-3">
-              <div className="text-[10px] font-mono text-[#FCF6BA]">{p.entityId}</div>
+              <div className="text-[10px] font-mono text-gold-light">{p.entityId}</div>
               {p.entries.slice(0, 3).map((e, i) => (
                 <div key={i} className="text-xs text-gray-400 mt-1">
                   {e.source} · {e.extractor} · conf {(e.confidence * 100).toFixed(0)}%
@@ -406,8 +406,8 @@ export const ContextGraphPanel: React.FC = () => {
             <h3 className="text-sm font-bold text-white mb-2">Detected conflicts</h3>
             {conflicts.length === 0 && <p className="text-xs text-gray-500">No conflicts detected.</p>}
             {conflicts.map((c: ContextGraphConflict) => (
-              <div key={c.id} className="glass-morphism rounded-xl border border-red-500/30 p-3 mb-2">
-                <div className="text-[10px] font-bold uppercase text-red-300">{c.severity} · {c.field}</div>
+              <div key={c.id} className="glass-morphism rounded-xl border border-danger-500/30 p-3 mb-2">
+                <div className="text-[10px] font-bold uppercase text-danger-300">{c.severity} · {c.field}</div>
                 <div className="text-xs text-gray-300 mt-1">{c.message}</div>
                 <div className="text-[10px] font-mono text-gray-500 mt-1">{c.values.join(' | ')}</div>
               </div>
@@ -417,10 +417,10 @@ export const ContextGraphPanel: React.FC = () => {
             <h3 className="text-sm font-bold text-white mb-2">AEO rule findings</h3>
             {ruleFindings.length === 0 && <p className="text-xs text-gray-500">No rule findings.</p>}
             {ruleFindings.map(f => (
-              <div key={`${f.ruleId}_${f.relatedNodeIds[0] || ''}`} className="glass-morphism rounded-xl border border-amber-500/30 p-3 mb-2">
-                <div className="text-[10px] font-bold uppercase text-amber-300">{f.severity} · {f.name}</div>
+              <div key={`${f.ruleId}_${f.relatedNodeIds[0] || ''}`} className="glass-morphism rounded-xl border border-warning-500/30 p-3 mb-2">
+                <div className="text-[10px] font-bold uppercase text-warning-300">{f.severity} · {f.name}</div>
                 <div className="text-xs text-gray-300 mt-1">{f.message}</div>
-                <div className="text-xs text-emerald-300/80 mt-1">{f.recommendation}</div>
+                <div className="text-xs text-success-300/80 mt-1">{f.recommendation}</div>
               </div>
             ))}
           </div>
@@ -442,7 +442,7 @@ export const ContextGraphPanel: React.FC = () => {
             {exportText && (
               <button
                 onClick={() => navigator.clipboard.writeText(exportText)}
-                className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-emerald-500/20 border border-emerald-500/40 text-emerald-300"
+                className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-success-500/20 border border-success-500/40 text-success-300"
               >
                 Copy
               </button>

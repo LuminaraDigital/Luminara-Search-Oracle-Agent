@@ -1,20 +1,28 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "luminara-suite",
+  "account_id": "2373013c66331e9660e47ffa3ae40f5c",
   "main": "worker/index.ts",
   "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // The Vite build output is served as static assets; /api/* is handled by the Worker first.
+  // 24/7 Cloudflare Drift Sentinel Cron Trigger (runs daily at 08:00 UTC)
+  "triggers": {
+    "crons": ["0 8 * * *"]
+  },
+
+  // The Vite build output is served as static assets. Every request goes through the Worker first
+  // so the HTML shell and API responses carry security headers (CSP, HSTS, nosniff, ...).
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": true
   },
 
-  // Custom domain. Add luminarasuite.com to your Cloudflare account first; wrangler creates the DNS records.
+  // Custom domain: luminarasuite.com (Cloudflare Zone ID: 495e6808c92887d826486bde8550f194).
+  // Wrangler creates the DNS records automatically when deployed.
   "routes": [
     { "pattern": "luminarasuite.com", "custom_domain": true },
     { "pattern": "www.luminarasuite.com", "custom_domain": true }
@@ -26,16 +34,31 @@
     { "binding": "LUMINARA_KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
   ],
 
+  // Optional global rate limiting (Cloudflare Rate Limiting API). The Worker already applies a
+  // best-effort per-isolate limit; uncomment to enforce a single limit across all edge locations.
+  // "unsafe": {
+  //   "bindings": [
+  //     { "name": "API_RATE_LIMITER", "type": "ratelimit", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } }
+  //   ]
+  // },
+
   // Non-secret config. Secrets are set with `npx wrangler secret put NAME`:
-  //   BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, GROQ_API_KEY, GEMINI_API_KEY, TAVILY_API_KEY,
-  //   FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY
+  //   BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET (required for the bot webhook), GROQ_API_KEY, GEMINI_API_KEY,
+  //   TAVILY_API_KEY, FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY,
+  //   UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD) for the self-hosted Results tracking relay.
   "vars": {
     "WEBAPP_URL": "https://luminarasuite.com/",
     "ALLOWED_ORIGINS": "https://luminarasuite.com,https://www.luminarasuite.com",
-    // Hosted keys are gated: signed-in Telegram users only, 25 free requests/day, paid plans unlimited.
+    // Hosted keys are gated: signed-in Telegram or Firebase users, 25 free requests/day, paid plans unlimited.
     // Users can always bring their own Groq / NVIDIA NIM / Ollama key in Settings (never gated).
     "REQUIRE_TG_AUTH": "true",
     "REQUIRE_SUBSCRIPTION": "false",
-    "FREE_DAILY_LIMIT": "25"
+    "FREE_DAILY_LIMIT": "25",
+    // Firebase Auth project id (same as VITE_FIREBASE_PROJECT_ID). Empty disables Firebase token checks.
+    "FIREBASE_PROJECT_ID": "",
+    // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
+    // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
+    "LANGUAGETOOL_URL": "",
+    "UMAMI_URL": ""
   }
 }

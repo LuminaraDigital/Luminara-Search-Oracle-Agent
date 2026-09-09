@@ -89,7 +89,7 @@ export const ArchyHarnessView: React.FC<ArchyHarnessViewProps> = ({
               <span>Command Suite</span>
             </button>
             <span className="text-gray-600">•</span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/30 font-bold uppercase">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gold/20 text-gold-light border border-gold/30 font-bold uppercase">
               Luminara Archy v2.4
             </span>
           </div>
@@ -105,7 +105,7 @@ export const ArchyHarnessView: React.FC<ArchyHarnessViewProps> = ({
           {onOpenOmnibar && (
             <button
               onClick={onOpenOmnibar}
-              className="px-4 py-2 rounded-xl glass-morphism border border-[#BF953F]/40 hover:border-[#BF953F] text-xs font-mono text-[#FCF6BA] transition-all flex items-center gap-2"
+              className="px-4 py-2 rounded-xl glass-morphism border border-gold/40 hover:border-gold text-xs font-mono text-gold-light transition-all flex items-center gap-2"
             >
               <span>Omnibar</span>
               <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-[10px]">Cmd+K</kbd>
@@ -123,14 +123,14 @@ export const ArchyHarnessView: React.FC<ArchyHarnessViewProps> = ({
               onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-2 rounded-xl text-xs font-mono transition-all flex items-center gap-2 shrink-0 border ${
                 isActive
-                  ? 'bg-[#BF953F]/20 text-[#FCF6BA] border-[#BF953F]/60 font-bold shadow-[0_0_20px_rgba(191,149,63,0.15)]'
+                  ? 'bg-gold/20 text-gold-light border-gold/60 font-bold shadow-[0_0_20px_rgba(191,149,63,0.15)]'
                   : 'text-gray-400 hover:text-white border-transparent hover:bg-white/5'
               }`}
             >
               <span>{tab.icon}</span>
               <span>{tab.label}</span>
               {tab.badge && (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-success-500/20 text-success-400 font-bold border border-success-500/30">
                   {tab.badge}
                 </span>
               )}

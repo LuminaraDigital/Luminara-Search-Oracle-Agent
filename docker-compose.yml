@@ -1,0 +1,86 @@
+# Luminara Suite - self-hosted helper services (all free / open source)
+#
+#   docker compose up -d
+#
+# Ports on this machine:
+#   3001  luminara-crawler   stealth page crawler (Patchright). Same service as docker-compose.crawler.yml.
+#   8010  languagetool       "Writing check": grammar and style checker (LanguageTool, LGPL-2.1).
+#   3002  umami              "Results tracking": privacy-first visitor analytics dashboard (Umami, MIT).
+#         umami-db           Postgres for Umami; not published on the host.
+#
+# First run of the tracking dashboard: open http://localhost:3002, log in with the default
+# admin / umami and change the password straight away. Then add your website and paste the
+# tracking snippet into your site. Umami needs APP_SECRET: put a long random string in .env as
+# UMAMI_APP_SECRET (it stays on this machine; it is never shipped with the app).
+#
+# To use these from the hosted app, put them behind HTTPS (any reverse proxy) and set the Worker
+# vars LANGUAGETOOL_URL / UMAMI_URL plus the UMAMI_API_KEY (or UMAMI_USERNAME / UMAMI_PASSWORD)
+# secrets. See README "Writing check and results tracking".
+
+services:
+  luminara-crawler:
+    build:
+      context: ./crawler
+      dockerfile: Dockerfile
+    container_name: luminara-crawler
+    restart: unless-stopped
+    # Published on loopback only: the crawler drives a real browser and must not be reachable from
+    # the network. To share it, put it behind an HTTPS reverse proxy and set CRAWLER_TOKEN.
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      # Optional shared secret; paste the same value into Settings > Crawler token in the app.
+      - CRAWLER_TOKEN=${CRAWLER_TOKEN:-}
+      # Optional outbound proxy for the headless browser (http://user:pass@host:port).
+      - CRAWLER_PROXY=${CRAWLER_PROXY:-}
+    shm_size: 1gb
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  languagetool:
+    image: erikvl87/languagetool
+    container_name: luminara-languagetool
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    environment:
+      - Java_Xms=512m
+      - Java_Xmx=1g
+
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    container_name: luminara-umami
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    environment:
+      - DATABASE_URL=postgresql://umami:umami@umami-db:5432/umami
+      - DATABASE_TYPE=postgresql
+      - APP_SECRET=${UMAMI_APP_SECRET:?Set UMAMI_APP_SECRET in .env}
+    depends_on:
+      umami-db:
+        condition: service_healthy
+
+  umami-db:
+    image: postgres:16-alpine
+    container_name: luminara-umami-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=umami
+      - POSTGRES_USER=umami
+      - POSTGRES_PASSWORD=umami
+    volumes:
+      - umami-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  umami-db-data:

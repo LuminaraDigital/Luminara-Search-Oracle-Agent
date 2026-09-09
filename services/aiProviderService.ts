@@ -16,6 +16,47 @@ import { buildChatMessages } from './chat/messages';
 export { buildChatMessages };
 
 /**
+ * Defensive JSON parser for open-weight models (NVIDIA NIM, Groq, Ollama).
+ * Strips markdown code fences (```json ... ```), removes extraneous prose,
+ * and safely extracts structured JSON payloads.
+ */
+export function safeJsonParse<T>(text: string, fallback: T): T {
+  if (!text || typeof text !== 'string') return fallback;
+  const trimmed = text.trim();
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    // 1. Strip markdown code fences (```json ... ``` or ``` ... ```)
+    const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenceMatch && fenceMatch[1]) {
+      try {
+        return JSON.parse(fenceMatch[1].trim()) as T;
+      } catch {}
+    }
+
+    // 2. Extract substring between first '{' and last '}'
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1)) as T;
+      } catch {}
+    }
+
+    // 3. Extract substring between first '[' and last ']'
+    const firstBracket = trimmed.indexOf('[');
+    const lastBracket = trimmed.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket > firstBracket) {
+      try {
+        return JSON.parse(trimmed.slice(firstBracket, lastBracket + 1)) as T;
+      } catch {}
+    }
+
+    return fallback;
+  }
+}
+
+/**
  * Base abstract AI Provider
  */
 export abstract class BaseAIProvider implements AIProvider {
@@ -54,7 +95,7 @@ export class GroqProvider extends BaseAIProvider {
   name = 'Groq Cloud Engine';
   type: AIProviderType = 'groq';
   config = {
-    model: 'openai/gpt-oss-120b',
+    model: 'llama-3.3-70b-versatile',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     temperature: 0.7,
     maxTokens: 4096,
@@ -200,14 +241,14 @@ export class GroqProvider extends BaseAIProvider {
 }
 
 /**
- * NVIDIA NIM Provider (Enterprise Accelerated Foundation Inference: Llama-3.1-70B / DeepSeek-R1)
+ * NVIDIA NIM Provider (Enterprise Accelerated Foundation Inference: Llama-3.3-70B / DeepSeek-R1)
  */
 export class NvidiaNimProvider extends BaseAIProvider {
   id = 'nim';
   name = 'NVIDIA NIM Enterprise';
   type: AIProviderType = 'nim';
   config = {
-    model: 'meta/llama-3.2-11b-vision-instruct',
+    model: 'meta/llama-3.3-70b-instruct',
     endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
     temperature: 0.7,
     maxTokens: 4096,
@@ -568,11 +609,11 @@ export class OllamaNativeProvider extends BaseAIProvider {
 export class AIProviderService {
   private static instance: AIProviderService;
   private providers: Map<string, AIProvider> = new Map();
-  private lastActiveEngine: NativeEngineId = 'groq';
+  private lastActiveEngine: NativeEngineId = 'nim';
 
   private constructor() {
-    this.registerProvider(new GroqProvider());
     this.registerProvider(new NvidiaNimProvider());
+    this.registerProvider(new GroqProvider());
     this.registerProvider(new OllamaNativeProvider());
   }
 
@@ -606,28 +647,7 @@ export class AIProviderService {
   public async searchAndProbeNativeProviders(): Promise<NativeEngineStatus[]> {
     const results: NativeEngineStatus[] = [];
 
-    // 1. Probe Groq
-    const groq = this.getProvider('groq') as GroqProvider;
-    const hasGroq = await groq?.isAvailable();
-    let groqLatency = 0;
-    if (hasGroq) {
-      const ping = await configService.testGroq();
-      groqLatency = ping.latencyMs;
-    }
-    results.push({
-      id: 'groq',
-      name: 'Groq Cloud LPU',
-      provider: 'Groq',
-      model: 'openai/gpt-oss-120b',
-      isAvailable: Boolean(hasGroq),
-      isLocal: false,
-      endpoint: 'api.groq.com/openai/v1',
-      latencyMs: groqLatency,
-      tokenSpeed: '285 tok/s',
-      lastChecked: Date.now(),
-    });
-
-    // 2. Probe NVIDIA NIM
+    // 1. Probe NVIDIA NIM
     const nim = this.getProvider('nim') as NvidiaNimProvider;
     const hasNim = await nim?.isAvailable();
     let nimLatency = 0;
@@ -639,12 +659,33 @@ export class AIProviderService {
       id: 'nim',
       name: 'NVIDIA NIM Enterprise',
       provider: 'NVIDIA',
-      model: 'meta/llama-3.2-11b-vision-instruct',
+      model: 'meta/llama-3.3-70b-instruct',
       isAvailable: Boolean(hasNim),
       isLocal: false,
       endpoint: 'integrate.api.nvidia.com/v1',
       latencyMs: nimLatency,
-      tokenSpeed: '92 tok/s',
+      tokenSpeed: '95 tok/s',
+      lastChecked: Date.now(),
+    });
+
+    // 2. Probe Groq
+    const groq = this.getProvider('groq') as GroqProvider;
+    const hasGroq = await groq?.isAvailable();
+    let groqLatency = 0;
+    if (hasGroq) {
+      const ping = await configService.testGroq();
+      groqLatency = ping.latencyMs;
+    }
+    results.push({
+      id: 'groq',
+      name: 'Groq Cloud LPU',
+      provider: 'Groq',
+      model: 'llama-3.3-70b-versatile',
+      isAvailable: Boolean(hasGroq),
+      isLocal: false,
+      endpoint: 'api.groq.com/openai/v1',
+      latencyMs: groqLatency,
+      tokenSpeed: '285 tok/s',
       lastChecked: Date.now(),
     });
 

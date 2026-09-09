@@ -67,7 +67,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
   if (!inTg && !wallet) {
     return (
       <div className="glass-morphism rounded-2xl border border-white/10 p-5 space-y-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#BF953F]">Telegram &amp; TON</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Telegram &amp; TON</p>
         <p className="text-xs text-gray-400 leading-relaxed">
           Open Luminara inside Telegram to pay with Stars and keep your audits on your account. You can also connect a TON wallet here.
         </p>
@@ -77,13 +77,13 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
   }
 
   return (
-    <div className={`glass-morphism rounded-2xl border border-[#BF953F]/30 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
+    <div className={`glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           {user?.photo_url ? (
-            <img src={user.photo_url} alt="" className="w-9 h-9 rounded-full border border-[#BF953F]/40" />
+            <img src={user.photo_url} alt="" className="w-9 h-9 rounded-full border border-gold/40" />
           ) : (
-            <div className="w-9 h-9 rounded-full bg-[#BF953F]/20 border border-[#BF953F]/40 flex items-center justify-center text-[11px] font-black text-[#FCF6BA]">
+            <div className="w-9 h-9 rounded-full bg-gold/20 border border-gold/40 flex items-center justify-center text-[11px] font-black text-gold-light">
               {(user?.first_name || 'T').slice(0, 1).toUpperCase()}
             </div>
           )}
@@ -94,7 +94,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
             </p>
           </div>
         </div>
-        <span className={`shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${active ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-white/10 text-gray-400'}`}>
+        <span className={`shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${active ? 'bg-success-500/10 border-success-500/30 text-success-400' : 'bg-white/5 border-white/10 text-gray-400'}`}>
           {active ? plans[sub!.plan]?.title || sub!.plan : 'Free'}
         </span>
       </div>
@@ -110,20 +110,20 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
               key={id}
               onClick={() => subscribe(id)}
               disabled={busyPlan !== null}
-              className="text-left p-3 rounded-xl border border-[#BF953F]/30 bg-[#BF953F]/5 hover:bg-[#BF953F]/15 transition-all disabled:opacity-50"
+              className="text-left p-3 rounded-xl border border-gold/30 bg-gold/5 hover:bg-gold/15 transition-all disabled:opacity-50"
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#FCF6BA]">{p.title}</span>
-                <span className="text-[11px] font-mono text-[#BF953F]">{p.stars.toLocaleString()} ⭐</span>
+                <span className="text-xs font-bold text-gold-light">{p.title}</span>
+                <span className="text-[11px] font-mono text-gold">{p.stars.toLocaleString()} ⭐</span>
               </div>
               <p className="text-[10px] text-gray-500 mt-1 leading-snug">{p.description}</p>
-              <p className="text-[9px] uppercase tracking-widest font-black text-[#BF953F] mt-2">{busyPlan === id ? 'Opening checkout…' : `${active && sub!.plan === id ? 'Extend' : 'Subscribe'} · ${p.days} days`}</p>
+              <p className="text-[9px] uppercase tracking-widest font-black text-gold mt-2">{busyPlan === id ? 'Opening checkout…' : `${active && sub!.plan === id ? 'Extend' : 'Subscribe'} · ${p.days} days`}</p>
             </button>
           ))}
         </div>
       )}
 
-      {status && <p className="text-[11px] text-amber-300" role="status">{status}</p>}
+      {status && <p className="text-[11px] text-warning-300" role="status">{status}</p>}
 
       <div className="flex items-center justify-between gap-3 pt-1 border-t border-white/5">
         <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">TON wallet</span>

@@ -12,6 +12,11 @@ Luminara Suite is licensed under AGPL-3.0 (see LICENSE). It includes the followi
 
 Upstream credits individual contributors for several skills (seo-cluster by Lutfiya Miller, seo-sxo by Florian Schmitz, seo-drift by Dan Colta, seo-ecommerce by Matej Marjanovic, seo-content-brief by puneetindersingh); those credits are preserved in the vendored files.
 
+## Self-hosted helper services (not bundled; used over HTTP only)
+
+- **LanguageTool** (https://languagetool.org, https://github.com/languagetool-org/languagetool) — LGPL-2.1. Runs as a separate container (`erikvl87/languagetool`) started by `docker-compose.yml`; the app sends text to its `/v2/check` endpoint for the "Writing check" feature. No LanguageTool code is included in this repository.
+- **Umami** (https://umami.is, https://github.com/umami-software/umami) — MIT. Runs as a separate container (`ghcr.io/umami-software/umami`) started by `docker-compose.yml`; the app reads its website statistics API for the "Results tracking" feature. No Umami code is included in this repository.
+
 ## npm dependencies
 
 See `package.json`; each package carries its own license in `node_modules/<name>/LICENSE`.

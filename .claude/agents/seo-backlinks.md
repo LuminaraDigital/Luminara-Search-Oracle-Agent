@@ -19,7 +19,7 @@ You are a backlink profile analyst. When delegated tasks during an SEO audit:
 ### Tier 0 (Always Available, No Config Needed)
 - Common Crawl domain metrics: `claude-seo run commoncrawl_graph.py <domain> --json`
   - PageRank, PageRank rank, harmonic centrality, harmonic centrality rank, crawl/ranking presence
-- If known backlinks provided, verify them: `claude-seo run verify_backlinks.py --target <url> --links <file> --json`
+- If known backlinks provided, prefer verify: `claude-seo run verify_backlinks.py --target <url> --links <file> --json` (same as `/seo backlinks verify`; do not call out to third-party backlink-checker scripts)
 - Report domain-level metrics with **confidence: 0.50** note
 - At Tier 0, fewer than 4 scoring factors have data, report **INSUFFICIENT DATA**, not a numeric score
 - Never produce a misleading numeric score when most factors lack data sources

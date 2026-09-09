@@ -4,10 +4,36 @@ import { ROICalculator } from './ROICalculator';
 import { VisibilityRadar } from './VisibilityRadar';
 import { CompetitorMap } from './CompetitorMap';
 import { TimesFmMathEngine } from '../../services/timesfm/timesfmEngine';
+import { DiffViewerModal } from './DiffViewerModal';
+import { CmsDeploymentModal } from './CmsDeploymentModal';
+import { EmpiricalEvidenceDrawer } from './EmpiricalEvidenceDrawer';
+import { WhiteLabelExportModal } from './WhiteLabelExportModal';
+import { EntityAuthorityCard } from './EntityAuthorityCard';
+import { TrustPackPanel } from './TrustPackPanel';
+import { WritingQualityCard } from './WritingQualityCard';
+import { ResultsTrackingCard } from './ResultsTrackingCard';
+import { RemediationPayload } from '../../services/deployment/cmsDeploymentService';
+import { EmpiricalCitationSummary } from '../../services/audit/empiricalCitationService';
+import { EnrichedEntityIntelligence } from '../../services/enrichment/publicApisEnrichmentService';
+import type { WritingQualityReport } from '../../services/audit/writingQualityService';
+import type { TrafficImpact } from '../../services/analytics/trafficInsightsService';
+import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
+import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
 
 interface ReportDisplayProps {
   markdownText: string;
   sources?: Array<{ uri: string; title: string }>;
+  empiricalSummary?: EmpiricalCitationSummary;
+  remediationPayload?: RemediationPayload;
+  unifiedDiff?: string;
+  targetDomain?: string;
+  dnaName?: string;
+  enrichedEntity?: EnrichedEntityIntelligence;
+  writingQuality?: WritingQualityReport;
+  trafficImpact?: TrafficImpact;
+  citationIntegrity?: CitationIntegrityResult;
+  integrity?: CitationIntegrityResult;
+  trustPack?: TrustPackSummary;
 }
 
 // Highlighted text component with interactive glossary tooltip
@@ -24,10 +50,10 @@ export const HighlightedText: React.FC<{ text: string }> = ({ text }) => {
 
         if (definition) {
           return (
-            <span key={index} className="group relative inline-block cursor-help text-[#FCF6BA] border-b border-dotted border-[#BF953F]/60 hover:text-white transition-colors">
+            <span key={index} className="group relative inline-block cursor-help text-gold-light border-b border-dotted border-gold/60 hover:text-white transition-colors">
               {part}
-              <span className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-300 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 glass-morphism border border-[#BF953F]/40 text-gray-200 text-xs rounded-xl p-3 shadow-2xl z-50 whitespace-normal pointer-events-none bg-black/95">
-                <strong className="block mb-1 text-[#FCF6BA] font-bold uppercase tracking-wider text-[10px]">{upperPart}</strong>
+              <span className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-300 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 glass-morphism border border-gold/40 text-gray-200 text-xs rounded-xl p-3 shadow-2xl z-50 whitespace-normal pointer-events-none bg-black/95">
+                <strong className="block mb-1 text-gold-light font-bold uppercase tracking-wider text-[10px]">{upperPart}</strong>
                 {definition}
               </span>
             </span>
@@ -51,7 +77,7 @@ export const parseInlineFormatting = (line: string): React.ReactElement => {
           return <em key={index} className="text-gray-300 italic"><HighlightedText text={part.slice(1, -1)} /></em>;
         }
         if (part.startsWith('`') && part.endsWith('`')) {
-          return <code key={index} className="bg-black/60 text-[#FCF6BA] rounded px-1.5 py-0.5 text-xs font-mono border border-white/10">{part.slice(1, -1)}</code>;
+          return <code key={index} className="bg-black/60 text-gold-light rounded px-1.5 py-0.5 text-xs font-mono border border-white/10">{part.slice(1, -1)}</code>;
         }
         return <span key={index}><HighlightedText text={part} /></span>;
       })}
@@ -160,17 +186,17 @@ export const MetricModal: React.FC<{
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="glass-morphism border border-[#BF953F]/40 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative bg-black/95">
+      <div className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative bg-black/95">
         <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
           <ICONS.X className="w-5 h-5" />
         </button>
 
-        <div className="bg-gradient-to-r from-[#BF953F]/20 to-transparent px-6 py-4 border-b border-[#BF953F]/20 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-gold/20 to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-white uppercase tracking-wider">{data.entity}</h3>
-            <p className="text-xs text-[#FCF6BA] font-mono">{data.header}</p>
+            <p className="text-xs text-gold-light font-mono">{data.header}</p>
           </div>
-          <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#BF953F]/10 border border-[#BF953F]/30 text-[9px] font-mono text-[#FCF6BA] uppercase">
+          <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gold/10 border border-gold/30 text-[9px] font-mono text-gold-light uppercase">
             <ICONS.TimeSeries className="w-3 h-3" />
             <span>TimesFM Patch Core</span>
           </span>
@@ -180,12 +206,12 @@ export const MetricModal: React.FC<{
           <div className="flex items-baseline justify-between mb-4">
             <div>
               <span className="text-3xl font-black font-mono gold-text">{data.value}</span>
-              <span className="text-xs text-emerald-400 font-bold uppercase tracking-wider ml-3">Current Score</span>
+              <span className="text-xs text-success-400 font-bold uppercase tracking-wider ml-3">Current Score</span>
             </div>
             {forecastData && (
               <div className="text-right">
                 <span className="text-xs text-gray-400 font-mono">TimesFM +6M Projected:</span>
-                <p className="text-lg font-bold font-mono text-[#FCF6BA]">
+                <p className="text-lg font-bold font-mono text-gold-light">
                   {forecastData.finalP50.toLocaleString()}{' '}
                   <span className="text-[10px] text-gray-500 font-normal">
                     [{forecastData.finalP10} .. {forecastData.finalP90}]
@@ -198,13 +224,13 @@ export const MetricModal: React.FC<{
           <div className="mb-6">
             <div className="flex justify-between items-center mb-2">
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                <ICONS.TrendUp className="w-3 h-3 text-[#FCF6BA]" />
+                <ICONS.TrendUp className="w-3 h-3 text-gold-light" />
                 <span>TimesFM 6-Month Probabilistic Projection</span>
               </p>
               <div className="flex items-center gap-3 text-[9px] font-mono text-gray-400">
                 <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-white"></span>History</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-[#FCF6BA]"></span>p50</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-[#BF953F]/30 border border-[#BF953F]/50"></span>p10-p90</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-gold-light"></span>p50</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-gold/30 border border-gold/50"></span>p10-p90</span>
               </div>
             </div>
 
@@ -243,8 +269,8 @@ export const MetricModal: React.FC<{
             </div>
           </div>
 
-          <div className="glass-morphism rounded-xl p-3 border border-[#BF953F]/20 text-xs text-gray-300 leading-relaxed">
-            <span className="text-[#FCF6BA] font-bold">TimesFM Insight:</span> Zero-shot temporal foundation projection benchmarks <strong>{data.value}</strong> along a <strong>p50 trajectory of {forecastData?.finalP50 || data.value}</strong>. Entity schema saturation and AEO answer readiness expand upside leverage toward the <strong>{forecastData?.finalP90 || data.value}</strong> ceiling.
+          <div className="glass-morphism rounded-xl p-3 border border-gold/20 text-xs text-gray-300 leading-relaxed">
+            <span className="text-gold-light font-bold">TimesFM Insight:</span> Zero-shot temporal foundation projection benchmarks <strong>{data.value}</strong> along a <strong>p50 trajectory of {forecastData?.finalP50 || data.value}</strong>. Entity schema saturation and AEO answer readiness expand upside leverage toward the <strong>{forecastData?.finalP90 || data.value}</strong> ceiling.
           </div>
         </div>
       </div>
@@ -260,7 +286,7 @@ export const InteractiveTable: React.FC<{ headers: string[]; rows: string[][] }>
     <>
       <div className="my-6 glass-morphism rounded-xl border border-white/10 overflow-hidden shadow-2xl">
         <div className="bg-white/[0.02] px-4 py-2 border-b border-white/5 flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-[#FCF6BA] flex items-center gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light flex items-center gap-1.5">
             <ICONS.ChartBar className="w-3.5 h-3.5" /> Interactive Matrix Analysis
           </span>
           <span className="text-[9px] text-gray-500 uppercase tracking-widest">Click cells to inspect trends</span>
@@ -288,7 +314,7 @@ export const InteractiveTable: React.FC<{ headers: string[]; rows: string[][] }>
                           entity: (entityName ?? '').replace(/[*_`]/g, '')
                         })}
                         className={`px-4 py-3 align-top cursor-pointer transition-colors ${
-                          cIdx === 0 ? 'font-bold text-white' : 'text-gray-300 hover:text-[#FCF6BA] hover:bg-white/[0.02]'
+                          cIdx === 0 ? 'font-bold text-white' : 'text-gray-300 hover:text-gold-light hover:bg-white/[0.02]'
                         }`}
                         title="Click to analyze trend"
                       >
@@ -320,15 +346,15 @@ export const CollapsibleSection: React.FC<{
   }
 
   return (
-    <div className="mb-4 glass-morphism rounded-xl border border-white/10 overflow-hidden shadow-lg transition-all duration-300 hover:border-[#BF953F]/40">
+    <div className="mb-4 glass-morphism rounded-xl border border-white/10 overflow-hidden shadow-lg transition-all duration-300 hover:border-gold/40">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-6 py-4 text-left bg-gradient-to-r from-black/60 via-black/40 to-transparent hover:from-[#BF953F]/10 transition-colors focus:outline-none group"
+        className="w-full flex items-center justify-between px-6 py-4 text-left bg-gradient-to-r from-black/60 via-black/40 to-transparent hover:from-gold/10 transition-colors focus:outline-none group"
       >
-        <h2 className="text-base font-bold text-white flex items-center gap-2 group-hover:text-[#FCF6BA] transition-colors uppercase tracking-wider">
+        <h2 className="text-base font-bold text-white flex items-center gap-2 group-hover:text-gold-light transition-colors uppercase tracking-wider">
           {title}
         </h2>
-        <div className={`text-[#BF953F] transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}>
+        <div className={`text-gold transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}>
           <ICONS.ChevronDown className="w-4 h-4" />
         </div>
       </button>
@@ -341,7 +367,26 @@ export const CollapsibleSection: React.FC<{
   );
 };
 
-export const ReportDisplay: React.FC<ReportDisplayProps> = ({ markdownText, sources }) => {
+export const ReportDisplay: React.FC<ReportDisplayProps> = ({
+  markdownText,
+  sources,
+  empiricalSummary,
+  remediationPayload,
+  unifiedDiff,
+  targetDomain,
+  dnaName,
+  enrichedEntity,
+  writingQuality,
+  trafficImpact,
+  citationIntegrity,
+  integrity,
+  trustPack,
+}) => {
+  const [showDiffModal, setShowDiffModal] = useState(false);
+  const [showDeployModal, setShowDeployModal] = useState(false);
+  const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
+  const [showWhiteLabelModal, setShowWhiteLabelModal] = useState(false);
+
   const parsedStructure = useMemo(() => {
     const lines = markdownText.split('\n');
     const sections: { title: React.ReactNode; elements: React.ReactNode[]; id: string; titleText: string }[] = [];
@@ -353,7 +398,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({ markdownText, sour
 
       if (line.startsWith('# ')) {
         currentSection.elements.push(
-          <h1 key={`h1-${i}`} className="text-3xl sm:text-4xl font-bold mb-4 pb-3 border-b border-[#BF953F]/30 gold-text tracking-tight">
+          <h1 key={`h1-${i}`} className="text-3xl sm:text-4xl font-bold mb-4 pb-3 border-b border-gold/30 gold-text tracking-tight">
             {parseInlineFormatting(line.substring(2))}
           </h1>
         );
@@ -380,7 +425,16 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({ markdownText, sour
         currentSection.elements.push(
           <div key={`code-${i}`} className="my-4 rounded-xl overflow-hidden border border-white/10 shadow-inner">
             <div className="bg-black/80 px-4 py-2 border-b border-white/10 flex items-center justify-between">
-              <span className="text-[10px] font-mono text-[#FCF6BA] uppercase tracking-widest">Recommended Schema Implementation</span>
+              <span className="text-[10px] font-mono text-gold-light uppercase tracking-widest">Recommended Schema Implementation</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDeployModal(true)}
+                  className="px-2.5 py-1 rounded bg-gold/20 hover:bg-gold/30 text-gold-light text-[10px] font-mono uppercase tracking-wider transition-colors flex items-center gap-1"
+                >
+                  <ICONS.Zap className="w-3 h-3" /> Deploy
+                </button>
+              </div>
             </div>
             <pre className="bg-black/90 p-4 overflow-x-auto text-xs font-mono text-cyan-300">
               <code>{codeLines.join('\n')}</code>
@@ -394,14 +448,14 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({ markdownText, sour
           listItems.push(<li key={`li-${i}`} className="mb-2">{parseInlineFormatting(lines[i].substring(2))}</li>);
           i++;
         }
-        currentSection.elements.push(<ul key={`ul-${i}`} className="list-disc list-outside space-y-1 my-3 pl-6 marker:text-[#BF953F]">{listItems}</ul>);
+        currentSection.elements.push(<ul key={`ul-${i}`} className="list-disc list-outside space-y-1 my-3 pl-6 marker:text-gold">{listItems}</ul>);
       } else if (line.match(/^\d+\. /)) {
         const listItems: React.ReactElement[] = [];
         while (i < lines.length && lines[i].match(/^\d+\. /)) {
           listItems.push(<li key={`li-${i}`} className="mb-2">{parseInlineFormatting(lines[i].replace(/^\d+\. /, ''))}</li>);
           i++;
         }
-        currentSection.elements.push(<ol key={`ol-${i}`} className="list-decimal list-outside space-y-1 my-3 pl-6 marker:text-[#BF953F]">{listItems}</ol>);
+        currentSection.elements.push(<ol key={`ol-${i}`} className="list-decimal list-outside space-y-1 my-3 pl-6 marker:text-gold">{listItems}</ol>);
       } else if (line.startsWith('|')) {
         const headerLine = lines[i];
         const separatorLine = lines[i + 1];
@@ -443,6 +497,84 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({ markdownText, sour
 
   return (
     <div className="w-full text-gray-200 animate-in fade-in duration-500">
+      {/* Autonomous Action & Enterprise Command Bar */}
+      <div className="mb-6 glass-morphism rounded-2xl border border-gold/40 p-4 sm:p-5 bg-gradient-to-r from-black via-black/90 to-black/80 shadow-2xl">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-2 h-2 rounded-full bg-success-400 animate-pulse"></span>
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-gold-light">
+                Autonomous Action Engine Active
+              </span>
+            </div>
+            <p className="text-xs text-gray-300">
+              Audit diagnosed. Remediated Schema.org entity graph generated and ready for instant deployment.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            <button
+              type="button"
+              onClick={() => setShowDeployModal(true)}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center gap-1.5 shrink-0"
+            >
+              <ICONS.Zap className="w-4 h-4 text-black" />
+              <span>1-Click Deploy</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowDiffModal(true)}
+              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-gold/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0"
+            >
+              <ICONS.Terminal className="w-4 h-4 text-gold" />
+              <span>View Diff</span>
+            </button>
+
+            {empiricalSummary && (
+              <button
+                type="button"
+                onClick={() => setShowEvidenceDrawer(true)}
+                className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-success-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0"
+              >
+                <ICONS.Radar className="w-4 h-4 text-success-400" />
+                <span>Evidence ({empiricalSummary.citationRatePercent}%)</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowWhiteLabelModal(true)}
+              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-cyan-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0"
+            >
+              <ICONS.Download className="w-4 h-4 text-cyan-400" />
+              <span>Agency PDF</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Entity Authority & Grounding Provenance (Wikidata, Wayback Machine, HTTP Security) */}
+      {enrichedEntity && (
+        <div className="mb-6">
+          <EntityAuthorityCard enriched={enrichedEntity} />
+        </div>
+      )}
+
+      {trustPack && (
+        <div className="mb-6">
+          <TrustPackPanel trustPack={trustPack} />
+        </div>
+      )}
+
+      {/* Writing check + Results tracking */}
+      <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {writingQuality && <WritingQualityCard report={writingQuality} />}
+        <div className={writingQuality ? '' : 'lg:col-span-2'}>
+          <ResultsTrackingCard impact={trafficImpact} domain={targetDomain || remediationPayload?.domain || ''} />
+        </div>
+      </div>
+
       {parsedStructure.map((sec, idx) => (
         <CollapsibleSection key={sec.id} title={sec.title} defaultOpen={idx < 4} isMainTitle={idx === 0}>
           {sec.elements}
@@ -454,8 +586,8 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({ markdownText, sour
 
       {validSources && validSources.length > 0 && (
         <div className="mt-8 pt-6 border-t border-white/10">
-          <h3 className="text-sm font-bold uppercase tracking-widest text-[#FCF6BA] mb-4 flex items-center gap-2">
-            <ICONS.Info className="w-4 h-4 text-[#BF953F]" /> Verified Search Grounding Sources
+          <h3 className="text-sm font-bold uppercase tracking-widest text-gold-light mb-4 flex items-center gap-2">
+            <ICONS.Info className="w-4 h-4 text-gold" /> Verified Search Grounding Sources
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {validSources.map((source, sIdx) => (
@@ -464,15 +596,45 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({ markdownText, sour
                 href={source.uri}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="glass-morphism rounded-lg p-3 border border-white/5 hover:border-[#BF953F]/40 flex items-center justify-between text-xs text-gray-300 hover:text-white transition-all group"
+                className="glass-morphism rounded-lg p-3 border border-white/5 hover:border-gold/40 flex items-center justify-between text-xs text-gray-300 hover:text-white transition-all group"
               >
                 <span className="truncate pr-2">{source.title || source.uri}</span>
-                <ICONS.ExternalLink className="w-3.5 h-3.5 text-[#BF953F] shrink-0 opacity-60 group-hover:opacity-100" />
+                <ICONS.ExternalLink className="w-3.5 h-3.5 text-gold shrink-0 opacity-60 group-hover:opacity-100" />
               </a>
             ))}
           </div>
         </div>
       )}
+
+      {/* Modals & Drawers */}
+      <DiffViewerModal
+        isOpen={showDiffModal}
+        onClose={() => setShowDiffModal(false)}
+        unifiedDiff={unifiedDiff}
+        remediationPayload={remediationPayload}
+        onDeployClick={() => setShowDeployModal(true)}
+      />
+
+      <CmsDeploymentModal
+        isOpen={showDeployModal}
+        onClose={() => setShowDeployModal(false)}
+        remediationPayload={remediationPayload}
+      />
+
+      <EmpiricalEvidenceDrawer
+        isOpen={showEvidenceDrawer}
+        onClose={() => setShowEvidenceDrawer(false)}
+        summary={empiricalSummary}
+        integrity={integrity || citationIntegrity}
+      />
+
+      <WhiteLabelExportModal
+        isOpen={showWhiteLabelModal}
+        onClose={() => setShowWhiteLabelModal(false)}
+        markdownText={markdownText}
+        targetDomain={targetDomain || remediationPayload?.domain}
+        dnaName={dnaName}
+      />
     </div>
   );
 };

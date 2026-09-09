@@ -8,6 +8,7 @@ import {
 } from '../../types';
 import { VfsTreeNode } from '../../services/vfs/vfsTypes';
 import { vfsStorageService, distillLayers } from '../../services/vfs/vfsStorageService';
+import { useConfirm } from '../ui/ConfirmModal';
 import { vfsRetrievalService } from '../../services/vfs/vfsRetrievalService';
 import { vfsMemoryService } from '../../services/vfs/vfsMemoryService';
 import { VfsCodeExporter, GeneratedVfsFile } from '../../services/vfs/vfsCodeExporter';
@@ -15,6 +16,7 @@ import { VfsCodeExporter, GeneratedVfsFile } from '../../services/vfs/vfsCodeExp
 type VfsSubTab = 'explorer' | 'layers' | 'drr' | 'memory' | 'python';
 
 export const VfsStudioPanel: React.FC = () => {
+  const { requestConfirm, confirmModal } = useConfirm();
   const [activeTab, setActiveTab] = useState<VfsSubTab>('explorer');
   const [nodesVersion, setNodesVersion] = useState(0);
 
@@ -113,10 +115,19 @@ export const VfsStudioPanel: React.FC = () => {
   // Handle Delete Node
   const handleDeleteSelected = () => {
     if (!selectedNode) return;
-    if (confirm(`Delete node ${selectedNode.uri}?`)) {
-      vfsStorageService.deleteNode(selectedNode.uri, true);
-      setSelectedUri('viking://user/default/.memories');
-    }
+    const uri = selectedNode.uri;
+    requestConfirm(
+      {
+        title: 'Delete node?',
+        description: <>Delete <code className="font-mono text-gold-light">{uri}</code> and everything beneath it? This cannot be undone.</>,
+        confirmLabel: 'Delete node',
+        variant: 'danger',
+      },
+      () => {
+        vfsStorageService.deleteNode(uri, true);
+        setSelectedUri('viking://user/default/.memories');
+      },
+    );
   };
 
   // Handle Export Snapshot
@@ -144,12 +155,12 @@ export const VfsStudioPanel: React.FC = () => {
             style={{ paddingLeft: `${node.depth * 14 + 8}px` }}
             className={`w-full text-left py-1.5 pr-2 rounded-lg text-xs font-mono transition-all flex items-center justify-between group ${
               isSelected 
-                ? 'bg-[#BF953F]/20 text-[#FCF6BA] border border-[#BF953F]/50 font-bold' 
+                ? 'bg-gold/20 text-gold-light border border-gold/50 font-bold' 
                 : 'text-gray-300 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-2 truncate">
-              <span className="text-gray-500 group-hover:text-[#BF953F] shrink-0">
+              <span className="text-gray-500 group-hover:text-gold shrink-0">
                 {node.isDir ? '📁' : node.type === 'memory' ? '🧠' : node.type === 'skill' ? '✦' : '📄'}
               </span>
               <span className="truncate">{node.name}</span>
@@ -168,19 +179,20 @@ export const VfsStudioPanel: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {confirmModal}
       {/* Top Banner & KPI Telemetry */}
       <div className="glass-morphism rounded-2xl border border-white/10 p-6 relative overflow-hidden">
-        <div className="absolute -right-16 -top-16 w-64 h-64 bg-[#BF953F]/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -right-16 -top-16 w-64 h-64 bg-gold/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-6 border-b border-white/5">
           <div>
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-[#BF953F]/20 border border-[#BF953F]/30 text-[10px] font-mono text-[#FCF6BA] font-bold uppercase">
+              <span className="px-2 py-0.5 rounded bg-gold/20 border border-gold/30 text-[10px] font-mono text-gold-light font-bold uppercase">
                 Clean-Room OpenViking Adaptation
               </span>
               <span className="text-gray-500">•</span>
-              <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs font-mono text-success-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-success-400 animate-pulse" />
                 VFS Online (viking:// & oracle://)
               </span>
             </div>
@@ -195,7 +207,7 @@ export const VfsStudioPanel: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleSyncDna}
-              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#BF953F]/20 to-[#AA771C]/20 border border-[#BF953F]/40 hover:border-[#BF953F] text-xs font-mono text-[#FCF6BA] transition-all flex items-center gap-1.5 shadow-sm"
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-gold/20 to-gold-dark/20 border border-gold/40 hover:border-gold text-xs font-mono text-gold-light transition-all flex items-center gap-1.5 shadow-sm"
               title="Synchronize Business DNA into .memories/"
             >
               <span>🧬</span>
@@ -216,12 +228,16 @@ export const VfsStudioPanel: React.FC = () => {
               <span>Export JSON</span>
             </button>
             <button
-              onClick={() => {
-                if (confirm('Reset Viking VFS to default seed filesystem?')) {
-                  vfsStorageService.resetToDefaults();
-                }
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-[11px] font-mono text-rose-400 transition-all"
+              onClick={() => requestConfirm(
+                {
+                  title: 'Reset Viking VFS?',
+                  description: 'The filesystem will be restored to the default seed. All stored memories and custom nodes will be lost.',
+                  confirmLabel: 'Reset VFS',
+                  variant: 'danger',
+                },
+                () => vfsStorageService.resetToDefaults(),
+              )}
+              className="px-2.5 py-1.5 rounded-xl bg-danger-500/10 hover:bg-danger-500/20 border border-danger-500/30 text-[11px] font-mono text-danger-400 transition-all outline-none focus-visible:ring-2 focus-visible:ring-danger-400"
               title="Reset VFS"
             >
               Reset
@@ -230,7 +246,7 @@ export const VfsStudioPanel: React.FC = () => {
         </div>
 
         {syncStatus && (
-          <div className="mt-3 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-mono text-emerald-300 flex items-center gap-2">
+          <div className="mt-3 p-2.5 rounded-xl bg-success-500/10 border border-success-500/30 text-xs font-mono text-success-300 flex items-center gap-2">
             <span>✓</span>
             <span>{syncStatus}</span>
           </div>
@@ -246,13 +262,13 @@ export const VfsStudioPanel: React.FC = () => {
 
           <div className="p-3.5 rounded-xl bg-black/40 border border-white/5">
             <div className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">Token Savings</div>
-            <div className="text-xl font-bold text-emerald-400 mt-1 font-mono">+{summary.overallTokenSavingsPct}%</div>
+            <div className="text-xl font-bold text-success-400 mt-1 font-mono">+{summary.overallTokenSavingsPct}%</div>
             <div className="text-[10px] text-gray-500 font-mono mt-0.5">vs flat L2 full document loads</div>
           </div>
 
           <div className="p-3.5 rounded-xl bg-black/40 border border-white/5">
             <div className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">L0 / L1 / L2 Footprint</div>
-            <div className="text-xs font-bold text-[#FCF6BA] mt-1 font-mono">
+            <div className="text-xs font-bold text-gold-light mt-1 font-mono">
               {summary.totalL0Tokens} / {summary.totalL1Tokens} / {summary.totalL2Tokens}
             </div>
             <div className="text-[10px] text-gray-500 font-mono mt-0.5">Abstract / Overview / Detail tokens</div>
@@ -284,7 +300,7 @@ export const VfsStudioPanel: React.FC = () => {
             onClick={() => setActiveTab(t.id as VfsSubTab)}
             className={`px-4 py-2 rounded-xl text-xs font-mono transition-all flex items-center gap-2 shrink-0 border ${
               activeTab === t.id
-                ? 'bg-[#BF953F]/20 text-[#FCF6BA] border-[#BF953F]/60 font-bold shadow-[0_0_15px_rgba(191,149,63,0.15)]'
+                ? 'bg-gold/20 text-gold-light border-gold/60 font-bold shadow-[0_0_15px_rgba(191,149,63,0.15)]'
                 : 'text-gray-400 hover:text-white border-transparent hover:bg-white/5'
             }`}
           >
@@ -303,7 +319,7 @@ export const VfsStudioPanel: React.FC = () => {
               <span className="text-xs font-mono uppercase text-gray-400 font-bold tracking-wider">
                 Filesystem Hierarchy
               </span>
-              <span className="text-[10px] font-mono text-[#BF953F]">viking://</span>
+              <span className="text-[10px] font-mono text-gold">viking://</span>
             </div>
 
             <div className="relative">
@@ -312,7 +328,7 @@ export const VfsStudioPanel: React.FC = () => {
                 value={searchFilter}
                 onChange={e => setSearchFilter(e.target.value)}
                 placeholder="Filter nodes..."
-                className="w-full px-3 py-1.5 rounded-xl bg-black/40 border border-white/10 text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:border-[#BF953F]/50"
+                className="w-full px-3 py-1.5 rounded-xl bg-black/40 border border-white/10 text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:border-gold/50"
               />
               {searchFilter && (
                 <button
@@ -336,7 +352,7 @@ export const VfsStudioPanel: React.FC = () => {
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-white/5">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded bg-[#BF953F]/20 text-[#FCF6BA] text-[10px] font-mono font-bold uppercase border border-[#BF953F]/30">
+                      <span className="px-2 py-0.5 rounded bg-gold/20 text-gold-light text-[10px] font-mono font-bold uppercase border border-gold/30">
                         {selectedNode.type}
                       </span>
                       {selectedNode.metadata.domainFocus && (
@@ -371,7 +387,7 @@ export const VfsStudioPanel: React.FC = () => {
                     </button>
                     <button
                       onClick={handleDeleteSelected}
-                      className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-xs font-mono text-rose-400 transition-colors"
+                      className="px-2.5 py-1.5 rounded-xl bg-danger-500/10 hover:bg-danger-500/20 text-xs font-mono text-danger-400 transition-colors"
                       title="Delete Node"
                     >
                       Delete
@@ -398,7 +414,7 @@ export const VfsStudioPanel: React.FC = () => {
                               onClick={() => setActiveLayer(layer)}
                               className={`px-3 py-1 rounded-md text-xs font-mono transition-all ${
                                 activeLayer === layer
-                                  ? 'bg-[#BF953F] text-black font-bold shadow-md'
+                                  ? 'bg-gold text-black font-bold shadow-md'
                                   : 'text-gray-400 hover:text-white'
                               }`}
                             >
@@ -410,7 +426,7 @@ export const VfsStudioPanel: React.FC = () => {
 
                       <div className="flex items-center gap-3 text-xs font-mono">
                         <span className="text-gray-400">Tokens:</span>
-                        <span className="text-[#FCF6BA] font-bold">
+                        <span className="text-gold-light font-bold">
                           {activeLayer === 'L0' 
                             ? selectedNode.layers.l0.tokenCount 
                             : activeLayer === 'L1' 
@@ -418,7 +434,7 @@ export const VfsStudioPanel: React.FC = () => {
                             : selectedNode.layers.l2.tokenCount}
                         </span>
                         {activeLayer !== 'L2' && (
-                          <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                          <span className="text-success-400 font-bold bg-success-500/10 px-2 py-0.5 rounded border border-success-500/30">
                             -
                             {activeLayer === 'L0' 
                               ? Math.round(((selectedNode.layers.l2.tokenCount - selectedNode.layers.l0.tokenCount) / selectedNode.layers.l2.tokenCount) * 100)
@@ -434,7 +450,7 @@ export const VfsStudioPanel: React.FC = () => {
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[10px] font-mono text-gray-400 uppercase mr-1">Index Keywords:</span>
                         {selectedNode.layers.l0.keywords.map(kw => (
-                          <span key={kw} className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-mono text-[#FCF6BA]">
+                          <span key={kw} className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-mono text-gold-light">
                             #{kw}
                           </span>
                         ))}
@@ -475,7 +491,7 @@ export const VfsStudioPanel: React.FC = () => {
       {/* MODAL: CREATE NODE */}
       {isCreatingNode && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="glass-morphism rounded-2xl border border-[#BF953F]/40 p-6 max-w-lg w-full space-y-4">
+          <div className="glass-morphism rounded-2xl border border-gold/40 p-6 max-w-lg w-full space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold gold-text font-mono">Create New VFS Node</h3>
               <button
@@ -493,7 +509,7 @@ export const VfsStudioPanel: React.FC = () => {
                   type="text"
                   value={newNodeUri}
                   onChange={e => setNewNodeUri(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-[#BF953F]"
+                  className="w-full mt-1 px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-gold"
                   required
                 />
               </div>
@@ -504,7 +520,7 @@ export const VfsStudioPanel: React.FC = () => {
                   type="text"
                   value={newNodeDesc}
                   onChange={e => setNewNodeDesc(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-[#BF953F]"
+                  className="w-full mt-1 px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-gold"
                 />
               </div>
 
@@ -514,7 +530,7 @@ export const VfsStudioPanel: React.FC = () => {
                   value={newNodeContent}
                   onChange={e => setNewNodeContent(e.target.value)}
                   rows={6}
-                  className="w-full mt-1 px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-[#BF953F]"
+                  className="w-full mt-1 px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-gold"
                 />
                 <p className="text-[10px] text-gray-500 font-mono mt-1">
                   * L0 (Abstract) and L1 (Overview) layers will be automatically distilled from this content.
@@ -531,7 +547,7 @@ export const VfsStudioPanel: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-[#BF953F] hover:bg-[#AA771C] text-xs font-mono text-black font-bold"
+                  className="px-4 py-2 rounded-xl bg-gold hover:bg-gold-dark text-xs font-mono text-black font-bold"
                 >
                   Create & Distill Layers
                 </button>
@@ -555,7 +571,7 @@ export const VfsStudioPanel: React.FC = () => {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30">
+                <span className="text-xs font-mono text-success-400 font-bold bg-success-500/10 px-3 py-1.5 rounded-xl border border-success-500/30">
                   L1 Saves {Math.round(((distilledCustom.l2.tokenCount - distilledCustom.l1.tokenCount) / (distilledCustom.l2.tokenCount || 1)) * 100)}% Tokens
                 </span>
               </div>
@@ -566,7 +582,7 @@ export const VfsStudioPanel: React.FC = () => {
               onChange={e => setCustomText(e.target.value)}
               rows={5}
               placeholder="Paste raw documentation, audit JSON, or article..."
-              className="w-full px-4 py-3 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-gray-200 focus:outline-none focus:border-[#BF953F]"
+              className="w-full px-4 py-3 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-gray-200 focus:outline-none focus:border-gold"
             />
           </div>
 
@@ -575,7 +591,7 @@ export const VfsStudioPanel: React.FC = () => {
             {/* L0 Column */}
             <div className="glass-morphism rounded-2xl border border-white/10 p-5 space-y-3 flex flex-col">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono uppercase text-[#FCF6BA] font-bold">
+                <span className="text-xs font-mono uppercase text-gold-light font-bold">
                   L0: Abstract
                 </span>
                 <span className="text-xs font-mono text-gray-400 bg-white/5 px-2 py-0.5 rounded">
@@ -601,12 +617,12 @@ export const VfsStudioPanel: React.FC = () => {
             </div>
 
             {/* L1 Column */}
-            <div className="glass-morphism rounded-2xl border border-[#BF953F]/40 p-5 space-y-3 flex flex-col shadow-[0_0_20px_rgba(191,149,63,0.1)]">
+            <div className="glass-morphism rounded-2xl border border-gold/40 p-5 space-y-3 flex flex-col shadow-[0_0_20px_rgba(191,149,63,0.1)]">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono uppercase text-[#FCF6BA] font-bold">
+                <span className="text-xs font-mono uppercase text-gold-light font-bold">
                   L1: Overview
                 </span>
-                <span className="text-xs font-mono text-[#FCF6BA] bg-[#BF953F]/20 px-2 py-0.5 rounded font-bold border border-[#BF953F]/30">
+                <span className="text-xs font-mono text-gold-light bg-gold/20 px-2 py-0.5 rounded font-bold border border-gold/30">
                   {distilledCustom.l1.tokenCount} tokens
                 </span>
               </div>
@@ -672,7 +688,7 @@ export const VfsStudioPanel: React.FC = () => {
                   value={drrQuery}
                   onChange={e => setDrrQuery(e.target.value)}
                   placeholder="e.g. Stripe AEO audit, Competitor weaknesses, Schema template..."
-                  className="w-full mt-1 px-4 py-2.5 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-[#BF953F]"
+                  className="w-full mt-1 px-4 py-2.5 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-gold"
                 />
               </div>
 
@@ -685,7 +701,7 @@ export const VfsStudioPanel: React.FC = () => {
                   step="200"
                   value={drrBudget}
                   onChange={e => setDrrBudget(parseInt(e.target.value, 10))}
-                  className="w-full mt-2 accent-[#BF953F]"
+                  className="w-full mt-2 accent-gold"
                 />
               </div>
 
@@ -693,7 +709,8 @@ export const VfsStudioPanel: React.FC = () => {
                 <button
                   onClick={handleRunDrr}
                   disabled={isRetrieving}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#BF953F] to-[#AA771C] text-black font-bold text-xs font-mono hover:opacity-90 transition-all shadow-md flex items-center justify-center gap-1.5"
+                  aria-busy={isRetrieving}
+                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-bold text-xs font-mono hover:opacity-90 transition-all shadow-md flex items-center justify-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50"
                 >
                   {isRetrieving ? (
                     <span className="animate-spin">⚙</span>
@@ -731,7 +748,7 @@ export const VfsStudioPanel: React.FC = () => {
               <div className="lg:col-span-6 glass-morphism rounded-2xl border border-white/10 p-5 space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-white/5">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono uppercase text-[#FCF6BA] font-bold">
+                    <span className="text-xs font-mono uppercase text-gold-light font-bold">
                       Observable Audit Trajectory
                     </span>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-gray-400">
@@ -752,11 +769,11 @@ export const VfsStudioPanel: React.FC = () => {
                         key={step.stepIndex}
                         className={`p-3 rounded-xl border transition-all ${
                           isResolution 
-                            ? 'bg-[#BF953F]/10 border-[#BF953F]/40 text-[#FCF6BA]'
+                            ? 'bg-gold/10 border-gold/40 text-gold-light'
                             : isPrune
-                            ? 'bg-rose-500/5 border-rose-500/20 text-rose-300'
+                            ? 'bg-danger-500/5 border-danger-500/20 text-danger-300'
                             : isAssembly
-                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                            ? 'bg-success-500/10 border-success-500/30 text-success-300'
                             : 'bg-black/40 border-white/5 text-gray-300'
                         }`}
                       >
@@ -775,7 +792,7 @@ export const VfsStudioPanel: React.FC = () => {
                             </span>
                           )}
                           {step.layerSelected && (
-                            <span className="text-[10px] px-2 py-0.2 rounded bg-[#BF953F] text-black font-bold">
+                            <span className="text-[10px] px-2 py-0.2 rounded bg-gold text-black font-bold">
                               {step.layerSelected} Layer
                             </span>
                           )}
@@ -797,14 +814,14 @@ export const VfsStudioPanel: React.FC = () => {
               <div className="lg:col-span-6 glass-morphism rounded-2xl border border-white/10 p-5 space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-white/5">
                   <div>
-                    <span className="text-xs font-mono uppercase text-emerald-400 font-bold">
+                    <span className="text-xs font-mono uppercase text-success-400 font-bold">
                       Assembled Context Output
                     </span>
                     <span className="text-[10px] text-gray-400 font-mono ml-2">
                       ({drrResult.tokensUsed} / {drrResult.tokenBudget} tokens)
                     </span>
                   </div>
-                  <span className="text-xs font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                  <span className="text-xs font-mono text-success-400 font-bold bg-success-500/10 px-2.5 py-0.5 rounded-full border border-success-500/30">
                     +{drrResult.tokenSavingsPct}% Savings vs L2
                   </span>
                 </div>
@@ -848,7 +865,7 @@ export const VfsStudioPanel: React.FC = () => {
               </div>
               <button
                 onClick={handleSyncDna}
-                className="px-3 py-2 rounded-xl bg-[#BF953F]/20 border border-[#BF953F]/50 hover:border-[#BF953F] text-xs font-mono text-[#FCF6BA] transition-all flex items-center gap-2"
+                className="px-3 py-2 rounded-xl bg-gold/20 border border-gold/50 hover:border-gold text-xs font-mono text-gold-light transition-all flex items-center gap-2"
               >
                 <span>🧬</span>
                 <span>Sync from Business DNA</span>
@@ -863,7 +880,7 @@ export const VfsStudioPanel: React.FC = () => {
                   onClick={() => setMemoryFilter(cat)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-mono uppercase transition-all shrink-0 ${
                     memoryFilter === cat
-                      ? 'bg-[#BF953F] text-black font-bold shadow-md'
+                      ? 'bg-gold text-black font-bold shadow-md'
                       : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
                   }`}
                 >
@@ -878,10 +895,10 @@ export const VfsStudioPanel: React.FC = () => {
             {vfsMemoryService.getMemoryItems(memoryFilter === 'all' ? undefined : memoryFilter).map(item => (
               <div
                 key={item.id}
-                className="glass-morphism rounded-2xl border border-white/10 p-5 space-y-3 hover:border-[#BF953F]/40 transition-all"
+                className="glass-morphism rounded-2xl border border-white/10 p-5 space-y-3 hover:border-gold/40 transition-all"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#BF953F]/20 text-[#FCF6BA] uppercase font-bold border border-[#BF953F]/30">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gold/20 text-gold-light uppercase font-bold border border-gold/30">
                     {item.category}
                   </span>
                   <span className="text-[10px] font-mono text-gray-400">
@@ -911,7 +928,7 @@ export const VfsStudioPanel: React.FC = () => {
                       setSelectedUri(item.uri);
                       setActiveTab('explorer');
                     }}
-                    className="text-xs font-mono text-[#BF953F] hover:underline"
+                    className="text-xs font-mono text-gold hover:underline"
                   >
                     Open in VFS →
                   </button>
@@ -932,7 +949,7 @@ export const VfsStudioPanel: React.FC = () => {
                   Standalone Clean-Room Python Package Exporter
                 </h3>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Export the complete Luminara Viking context database to a self-contained Python / FastAPI package (<code className="text-[#FCF6BA]">luminara_viking/</code>) for deployment in microservices, sidecars, or standalone agent harnesses.
+                  Export the complete Luminara Viking context database to a self-contained Python / FastAPI package (<code className="text-gold-light">luminara_viking/</code>) for deployment in microservices, sidecars, or standalone agent harnesses.
                 </p>
               </div>
               <button
@@ -946,7 +963,7 @@ export const VfsStudioPanel: React.FC = () => {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                className="px-4 py-2 rounded-xl bg-[#BF953F] hover:bg-[#AA771C] text-xs font-mono text-black font-bold transition-all shadow-md flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl bg-gold hover:bg-gold-dark text-xs font-mono text-black font-bold transition-all shadow-md flex items-center gap-1.5"
               >
                 <span>⬇ Download Code Manifest</span>
               </button>
@@ -960,7 +977,7 @@ export const VfsStudioPanel: React.FC = () => {
                   onClick={() => setSelectedPyFile(file.filename)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-mono transition-all shrink-0 border ${
                     selectedPyFile === file.filename
-                      ? 'bg-[#BF953F]/20 text-[#FCF6BA] border-[#BF953F]/60 font-bold'
+                      ? 'bg-gold/20 text-gold-light border-gold/60 font-bold'
                       : 'text-gray-400 hover:text-white border-transparent hover:bg-white/5'
                   }`}
                 >

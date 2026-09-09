@@ -45,10 +45,10 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
   ];
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-[#BF953F] selection:text-black font-['Outfit'] antialiased">
+    <div className="min-h-screen bg-black text-white selection:bg-gold selection:text-black font-['Outfit'] antialiased">
       <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 left-0 w-[50%] h-[50%] bg-[#BF953F]/5 blur-[200px] rounded-full"></div>
-        <div className="absolute bottom-0 right-0 w-[50%] h-[50%] bg-[#AA771C]/5 blur-[200px] rounded-full"></div>
+        <div className="absolute top-0 left-0 w-[50%] h-[50%] bg-gold/5 blur-[200px] rounded-full"></div>
+        <div className="absolute bottom-0 right-0 w-[50%] h-[50%] bg-gold-dark/5 blur-[200px] rounded-full"></div>
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.1] mix-blend-overlay"></div>
       </div>
 
@@ -67,7 +67,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
           <button onClick={onNavigatePricing} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Pricing</button>
           <button 
             onClick={onTerminal}
-            className="px-6 py-2.5 bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
+            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
           >
             Start Check
           </button>
@@ -76,7 +76,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
 
       <main className="relative z-10 pt-44 pb-32">
         <section className="px-6 md:px-20 mb-40 max-w-7xl mx-auto text-center">
-          <div className="inline-block px-4 py-1.5 rounded-full border border-[#BF953F]/20 bg-[#BF953F]/5 mb-10">
+          <div className="inline-block px-4 py-1.5 rounded-full border border-gold/20 bg-gold/5 mb-10">
             <span className="text-[9px] font-black uppercase tracking-[0.6em] gold-text">Better Than Manual SEO</span>
           </div>
           <h1 className="text-5xl md:text-8xl font-light tracking-tighter leading-none mb-10">
@@ -87,7 +87,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
             Luminara Search gives you a professional marketing audit in minutes. No more paying thousands for slow human reports. Our AI finds the gaps and shows you how to win.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-6">
-            <button onClick={onTerminal} className="px-12 py-6 bg-[#BF953F] text-black font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl">Audit My Site</button>
+            <button onClick={onTerminal} className="px-12 py-6 bg-gold text-black font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl">Audit My Site</button>
             <button onClick={onNavigatePricing} className="px-12 py-6 glass-morphism border border-white/10 text-white font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-white/5 transition-all">View Pricing</button>
           </div>
         </section>
@@ -108,8 +108,8 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
                </div>
              </div>
              <div className="relative">
-                <div className="absolute inset-0 bg-[#BF953F]/10 blur-[100px] rounded-full"></div>
-                <div className="relative p-12 glass-morphism rounded-[64px] border-[#BF953F]/20 text-center space-y-8">
+                <div className="absolute inset-0 bg-gold/10 blur-[100px] rounded-full"></div>
+                <div className="relative p-12 glass-morphism rounded-[64px] border-gold/20 text-center space-y-8">
                   <ICONS.LuminaraLogo className="w-40 h-40 mx-auto" isThinking={true} />
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-[1em] gold-text mb-4">Software Advantage</div>
@@ -122,16 +122,16 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
 
         <section className="px-6 md:px-20 mb-48 max-w-7xl mx-auto">
           <div className="mb-20">
-             <h3 className="text-3xl font-light uppercase tracking-widest border-l-4 border-[#BF953F] pl-8">Software <span className="gold-text font-black">Benefits.</span></h3>
+             <h3 className="text-3xl font-light uppercase tracking-widest border-l-4 border-gold pl-8">Software <span className="gold-text font-black">Benefits.</span></h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {features.map((f, i) => (
-              <div key={i} className="group p-12 glass-morphism rounded-[40px] border border-white/5 hover:border-[#BF953F]/30 transition-all duration-700">
+              <div key={i} className="group p-12 glass-morphism rounded-[40px] border border-white/5 hover:border-gold/30 transition-all duration-700">
                 <div className="text-[10px] font-black gold-text uppercase tracking-[0.4em] mb-8">APP FEATURE {(i + 1).toString().padStart(2, '0')}</div>
-                <h4 className="text-2xl font-bold uppercase tracking-tight mb-4 group-hover:text-[#FCF6BA] transition-colors">{f.title}</h4>
+                <h4 className="text-2xl font-bold uppercase tracking-tight mb-4 group-hover:text-gold-light transition-colors">{f.title}</h4>
                 <p className="text-gray-400 text-sm font-light leading-relaxed mb-8">{f.desc}</p>
                 <div className="pt-8 border-t border-white/5">
-                  <span className="text-[11px] text-[#BF953F] font-black uppercase tracking-[0.3em]">The Software Win:</span>
+                  <span className="text-[11px] text-gold font-black uppercase tracking-[0.3em]">The Software Win:</span>
                   <p className="text-white text-[13px] font-medium mt-2">{f.benefit}</p>
                 </div>
               </div>
@@ -151,7 +151,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="bg-[#BF953F]/10 border-b border-white/10">
+                  <tr className="bg-gold/10 border-b border-white/10">
                     <th className="p-8 text-[11px] font-black uppercase tracking-[0.3em] gold-text">Metric</th>
                     <th className="p-8 text-[11px] font-black uppercase tracking-[0.3em] text-gray-400">Manual Method</th>
                     <th className="p-8 text-[11px] font-black uppercase tracking-[0.3em] text-white">Luminara App</th>
@@ -163,7 +163,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
                     <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                       <td className="p-8 text-lg font-bold uppercase tracking-tight text-gray-200">{m.metric}</td>
                       <td className="p-8 text-gray-500 font-light">{m.baseline}</td>
-                      <td className="p-8 text-[#FCF6BA] font-bold">{m.luminara}</td>
+                      <td className="p-8 text-gold-light font-bold">{m.luminara}</td>
                       <td className="p-8 text-gray-600 text-xs italic">{m.source}</td>
                     </tr>
                   ))}
@@ -174,8 +174,8 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
         </section>
 
         <section className="px-6 md:px-20 text-center max-w-7xl mx-auto">
-          <div className="p-24 glass-morphism rounded-[80px] border border-[#BF953F]/20 relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#BF953F]/40 to-transparent"></div>
+          <div className="p-24 glass-morphism rounded-[80px] border border-gold/20 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-gold/40 to-transparent"></div>
             <div className="relative z-10 space-y-12">
               <h2 className="text-5xl md:text-7xl font-light italic">Start Your First <br /><span className="gold-text font-bold uppercase not-italic tracking-wider">Software Audit.</span></h2>
               <p className="text-xl text-gray-400 font-light max-w-2xl mx-auto leading-relaxed">
@@ -184,7 +184,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
               <div className="pt-8">
                 <button 
                   onClick={onTerminal}
-                  className="px-20 py-8 bg-gradient-to-br from-[#BF953F] to-[#AA771C] text-black font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl shadow-2xl hover:scale-105 transition-all"
+                  className="px-20 py-8 bg-gradient-to-br from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl shadow-2xl hover:scale-105 transition-all"
                 >
                   Launch App Terminal
                 </button>

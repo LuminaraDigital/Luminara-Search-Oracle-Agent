@@ -3,30 +3,65 @@
  *
  * Serves the built Vite app as static assets and exposes a small API:
  *   GET  /api/health                      which providers are configured server-side
+ *   GET  /api/auth/session                current Telegram or Firebase identity (if signed in)
+ *   GET  /api/enrichment/entity           zero-auth Wikidata & Wayback Machine edge resolution with KV cache
  *   POST /api/providers/:id/<path>        authenticated proxy to LLM / search / scrape vendors
+ *   *    /api/sidecars/:id/<path>         relay to self-hosted helpers: "languagetool" (Writing check)
+ *                                         and "umami" (Results tracking); allow-listed, not metered
  *   POST /api/telegram/webhook            Telegram bot updates (secret-token protected)
  *   POST /api/telegram/auth               validates Mini App initData, returns user + plan
  *   POST /api/telegram/invoice            creates a Telegram Stars invoice link for a plan
  *
  * Provider keys and the bot token live only here (wrangler secrets), never in the client bundle.
+ * Firebase ID tokens are verified with Google JWKS (FIREBASE_PROJECT_ID); no Admin private key needed.
  */
 
-import { validateInitData, type TelegramUser } from './telegramAuth';
-import { handleTelegramUpdate, createInvoiceLink, PLANS } from './telegramBot';
+import { validateInitData } from './telegramAuth';
+import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
+import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, PLANS } from './telegramBot';
+import {
+  MAX_BODY_BYTES,
+  MAX_SMALL_BODY_BYTES,
+  RateLimiter,
+  clientIp,
+  readBody,
+  resolvesToPublicAddress,
+  safePublicHostname,
+  stripUpstreamHeaders,
+  withSecurityHeaders,
+} from './security';
+
+/** Caller identity for hosted-key quota (Telegram numeric id or Firebase uid prefix). */
+export interface HostedIdentity {
+  /** KV key fragment: Telegram uses String(id); Firebase uses `fb:{uid}`. */
+  id: string;
+  source: 'telegram' | 'firebase';
+  email?: string;
+  name?: string;
+}
+
+/** Best-effort per-isolate limits (see security.ts). Authenticated hosted-key use is also metered in KV. */
+const limiter = new RateLimiter();
+const RATE_API_PER_MIN = 120; // any /api/* call, per IP
+const RATE_PROVIDER_PER_MIN = 60; // provider / sidecar relays, per IP
+const RATE_AUTH_PER_MIN = 20; // initData validation endpoints, per IP
+const MAX_PROVIDER_KEY_LEN = 512;
 
 export interface Env {
   ASSETS: Fetcher;
-  LUMINARA_KV: KVNamespace;
+  LUMINARA_KV?: KVNamespace;
   BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
   WEBAPP_URL: string;
   ALLOWED_ORIGINS?: string;
-  /** "true": hosted provider keys need a signed-in Telegram user. */
+  /** "true": hosted provider keys need a signed-in Telegram or Firebase user. */
   REQUIRE_TG_AUTH?: string;
   /** "true": hosted provider keys additionally need an active paid plan. */
   REQUIRE_SUBSCRIPTION?: string;
   /** Requests per user per UTC day on hosted keys without a paid plan (0 = unlimited). */
   FREE_DAILY_LIMIT?: string;
+  /** Firebase / GCP project id used to verify Auth ID tokens (public; not a secret). */
+  FIREBASE_PROJECT_ID?: string;
   GROQ_API_KEY?: string;
   GROQ_API_KEY_FALLBACK?: string;
   NVIDIA_API_KEY?: string;
@@ -36,6 +71,15 @@ export interface Env {
   TAVILY_API_KEY?: string;
   FIRECRAWL_API_KEY?: string;
   EXA_API_KEY?: string;
+  /** Self-hosted LanguageTool server, e.g. https://writing.example.com (no trailing path). */
+  LANGUAGETOOL_URL?: string;
+  /** Self-hosted Umami (https://stats.example.com) or Umami Cloud (https://api.umami.is). */
+  UMAMI_URL?: string;
+  /** Umami API key (secret). Preferred over username/password. */
+  UMAMI_API_KEY?: string;
+  /** Self-hosted Umami login used to mint a bearer token when no API key is set (secrets). */
+  UMAMI_USERNAME?: string;
+  UMAMI_PASSWORD?: string;
 }
 
 interface ProviderSpec {
@@ -152,20 +196,63 @@ function corsHeaders(env: Env, request: Request): Record<string, string> {
     : {};
 }
 
-/** Identifies the caller: a validated Telegram user, or null when auth is optional and absent. */
-async function identify(request: Request, env: Env): Promise<{ user: TelegramUser | null; error?: string }> {
+/** Constant-time string comparison for shared secrets (webhook token). */
+function secretEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Identifies the caller for hosted keys:
+ * 1) Telegram Mini App initData (x-telegram-init-data), or
+ * 2) Firebase Auth ID token (Authorization: Bearer …).
+ * Returns null when auth is optional and absent.
+ */
+async function identify(request: Request, env: Env): Promise<{ user: HostedIdentity | null; error?: string }> {
   const initData = request.headers.get('x-telegram-init-data');
-  if (!initData) {
-    return env.REQUIRE_TG_AUTH === 'true' ? { user: null, error: 'Telegram sign-in required' } : { user: null };
+  if (initData) {
+    if (!env.BOT_TOKEN) return { user: null, error: 'Server has no BOT_TOKEN configured' };
+    const result = await validateInitData(initData, env.BOT_TOKEN);
+    if (!result.ok) return { user: null, error: result.reason };
+    const tg = result.user;
+    return {
+      user: {
+        id: String(tg.id),
+        source: 'telegram',
+        name: [tg.first_name, tg.last_name].filter(Boolean).join(' ') || tg.username,
+      },
+    };
   }
-  if (!env.BOT_TOKEN) return { user: null, error: 'Server has no BOT_TOKEN configured' };
-  const result = await validateInitData(initData, env.BOT_TOKEN);
-  return result.ok ? { user: result.user } : { user: null, error: result.reason };
+
+  const bearer = bearerFromAuthorization(request.headers.get('authorization'));
+  if (bearer && env.FIREBASE_PROJECT_ID) {
+    const result = await verifyFirebaseIdToken(bearer, env.FIREBASE_PROJECT_ID);
+    if (!result.ok) return { user: null, error: result.reason };
+    return {
+      user: {
+        id: `fb:${result.user.uid}`,
+        source: 'firebase',
+        email: result.user.email,
+        name: result.user.name,
+      },
+    };
+  }
+
+  if (env.REQUIRE_TG_AUTH === 'true') {
+    const hint = env.FIREBASE_PROJECT_ID
+      ? 'Sign in with Firebase or Telegram, or add your own API key in Settings.'
+      : 'Telegram sign-in required';
+    return { user: null, error: hint };
+  }
+  return { user: null };
 }
 
 async function proxyProvider(request: Request, env: Env, providerId: string, subPath: string): Promise<Response> {
   const spec = PROVIDERS[providerId];
   if (!spec) return json({ error: `Unknown provider "${providerId}"` }, 404);
+  if (request.method !== 'GET' && request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   if (!isPathAllowed(spec, subPath)) {
     return json({ error: `Path not allowed for ${providerId}: ${subPath}` }, 403);
   }
@@ -173,6 +260,7 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
   // Bring-your-own-key: the caller's credential is forwarded and the hosted key is never touched.
   // This is how browser-blocked vendors (NVIDIA NIM has no CORS headers) work for self-served users.
   const userKey = request.headers.get('x-provider-key')?.trim() || '';
+  if (userKey.length > MAX_PROVIDER_KEY_LEN || /[\r\n]/.test(userKey)) return json({ error: 'Invalid provider key' }, 400);
 
   if (!userKey) {
     const who = await identify(request, env);
@@ -190,7 +278,9 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
 
   let body: unknown = undefined;
   if (request.method !== 'GET') {
-    const text = await request.text();
+    const read = await readBody(request, MAX_BODY_BYTES, false);
+    if (!read.ok) return json({ error: read.error }, read.status);
+    const text = read.text;
     try { body = text ? JSON.parse(text) : {}; } catch { body = text; }
   }
   if (userKey) {
@@ -209,25 +299,189 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
   });
 
   // Stream the upstream body straight through (SSE for chat completions works unchanged).
+  // Vendor CORS headers and cookies are dropped: our own CORS policy is applied by handleApi.
   const out = new Headers(res.headers);
-  out.delete('content-encoding');
-  out.delete('content-length');
+  stripUpstreamHeaders(out);
   return new Response(res.body, { status: res.status, headers: out });
+}
+
+// ---- Sidecars: self-hosted helper services -------------------------------------------------
+//
+// "languagetool" powers the Writing check feature, "umami" powers Results tracking. Both are
+// cheap self-hosted calls, so they follow the same sign-in rule as hosted provider keys but are
+// NOT counted against the daily quota. Credentials never leave the Worker.
+
+type SidecarId = 'languagetool' | 'umami';
+
+const SIDECAR_LABEL: Record<SidecarId, string> = { languagetool: 'Writing check', umami: 'Results tracking' };
+const SIDECAR_TIMEOUT_MS = 15_000;
+const UMAMI_TOKEN_KV_KEY = 'umami:token';
+const UMAMI_TOKEN_TTL_SEC = 12 * 3600;
+
+/** Read-only Umami API surface: the website list and per-website stats/metrics/pageviews/sessions. */
+const UMAMI_PATH_RE = /^\/api\/websites(\/[A-Za-z0-9-]+\/(stats|metrics|pageviews|sessions))?$/;
+
+/** Pure helper (unit-tested): which sidecar routes the relay will forward. `subPath` excludes the query string. */
+export function isSidecarPathAllowed(id: string, method: string, subPath: string): boolean {
+  const m = method.toUpperCase();
+  if (id === 'languagetool') {
+    return (m === 'POST' && subPath === '/v2/check') || (m === 'GET' && subPath === '/v2/languages');
+  }
+  if (id === 'umami') {
+    return m === 'GET' && UMAMI_PATH_RE.test(subPath);
+  }
+  return false;
+}
+
+/**
+ * Pure helper (unit-tested): builds the upstream Umami URL. Self-hosted Umami serves /api/...;
+ * Umami Cloud (api.umami.is) serves the same resources under /v1/....
+ */
+export function umamiUpstreamPath(base: string, subPath: string): string {
+  const root = base.replace(/\/+$/, '');
+  let host = '';
+  try { host = new URL(root).hostname.toLowerCase(); } catch { host = ''; }
+  const path = host === 'api.umami.is' ? subPath.replace(/^\/api(?=\/|\?|$)/, '/v1') : subPath;
+  return root + path;
+}
+
+function sidecarNotConfigured(id: SidecarId): Response {
+  return json({ error: `${SIDECAR_LABEL[id]} is not set up on the server. Add a URL in Settings or ask your admin.` }, 503);
+}
+
+function isSidecarConfigured(env: Env, id: SidecarId): boolean {
+  if (id === 'languagetool') return Boolean(env.LANGUAGETOOL_URL);
+  return Boolean(env.UMAMI_URL && (env.UMAMI_API_KEY || (env.UMAMI_USERNAME && env.UMAMI_PASSWORD)));
+}
+
+async function fetchWithTimeout(input: string, init: RequestInit, ms: number): Promise<Response> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), ms);
+  try {
+    return await fetch(input, { ...init, signal: ac.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isAbortError(e: unknown): boolean {
+  return Boolean(e && typeof e === 'object' && ((e as { name?: string }).name === 'AbortError' || /abort/i.test(String((e as { message?: string }).message || ''))));
+}
+
+/** Copies an upstream response for the browser, dropping headers that no longer apply after re-framing. */
+function relayResponse(res: Response): Response {
+  const out = new Headers(res.headers);
+  stripUpstreamHeaders(out);
+  return new Response(res.body, { status: res.status, headers: out });
+}
+
+/** Logs into self-hosted Umami and caches the bearer token in KV. Returns null on failure. */
+async function umamiLogin(env: Env): Promise<string | null> {
+  if (!env.UMAMI_URL || !env.UMAMI_USERNAME || !env.UMAMI_PASSWORD) return null;
+  try {
+    const res = await fetchWithTimeout(`${env.UMAMI_URL.replace(/\/+$/, '')}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: env.UMAMI_USERNAME, password: env.UMAMI_PASSWORD }),
+    }, SIDECAR_TIMEOUT_MS);
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => ({}))) as { token?: string };
+    if (!data.token) return null;
+    try { if (env.LUMINARA_KV) await env.LUMINARA_KV.put(UMAMI_TOKEN_KV_KEY, data.token, { expirationTtl: UMAMI_TOKEN_TTL_SEC }); } catch { /* KV optional in dev */ }
+    return data.token;
+  } catch {
+    return null;
+  }
+}
+
+async function proxySidecar(request: Request, env: Env, id: SidecarId, subPath: string): Promise<Response> {
+  const url = new URL(request.url);
+  if (!isSidecarPathAllowed(id, request.method, subPath)) {
+    return json({ error: `Path not allowed for ${id}: ${request.method} ${subPath}` }, 403);
+  }
+  if (!isSidecarConfigured(env, id)) return sidecarNotConfigured(id);
+
+  // Same sign-in rule as hosted provider keys, but no daily quota and no bring-your-own-key here.
+  const who = await identify(request, env);
+  if (who.error) return json({ error: who.error }, 401);
+
+  const timeoutMessage = `${SIDECAR_LABEL[id]} took too long to answer. Try again in a moment.`;
+  const unreachableMessage = `${SIDECAR_LABEL[id]} could not be reached. Ask your admin to check the service.`;
+
+  if (id === 'languagetool') {
+    const upstream = env.LANGUAGETOOL_URL!.replace(/\/+$/, '') + subPath + url.search;
+    const headers = new Headers();
+    const ct = request.headers.get('content-type');
+    if (ct) headers.set('content-type', ct);
+    const accept = request.headers.get('accept');
+    if (accept) headers.set('accept', accept);
+    try {
+      const res = await fetchWithTimeout(upstream, {
+        method: request.method,
+        headers,
+        body: request.method === 'GET' ? undefined : await request.text(),
+      }, SIDECAR_TIMEOUT_MS);
+      return relayResponse(res);
+    } catch (e) {
+      return json({ error: isAbortError(e) ? timeoutMessage : unreachableMessage }, isAbortError(e) ? 504 : 502);
+    }
+  }
+
+  // umami
+  const upstream = umamiUpstreamPath(env.UMAMI_URL!, subPath) + url.search;
+  const accept = request.headers.get('accept');
+  const baseHeaders: Record<string, string> = { accept: accept || 'application/json' };
+
+  const send = (token: string) => fetchWithTimeout(upstream, {
+    method: 'GET',
+    // Umami Cloud reads x-umami-api-key; self-hosted Umami reads a bearer token. Each ignores the other.
+    headers: { ...baseHeaders, 'x-umami-api-key': token, authorization: `Bearer ${token}` },
+  }, SIDECAR_TIMEOUT_MS);
+
+  try {
+    if (env.UMAMI_API_KEY) return relayResponse(await send(env.UMAMI_API_KEY));
+
+    let cached: string | null = null;
+    try { cached = env.LUMINARA_KV ? await env.LUMINARA_KV.get(UMAMI_TOKEN_KV_KEY) : null; } catch { cached = null; }
+    let token = cached || (await umamiLogin(env));
+    if (!token) return json({ error: `${SIDECAR_LABEL[id]} sign-in failed on the server. Ask your admin to check the username and password.` }, 502);
+
+    let res = await send(token);
+    if (res.status === 401 && cached) {
+      // The cached token expired or was revoked: log in again once and retry.
+      try { if (env.LUMINARA_KV) await env.LUMINARA_KV.delete(UMAMI_TOKEN_KV_KEY); } catch { /* ignore */ }
+      token = await umamiLogin(env);
+      if (!token) return json({ error: `${SIDECAR_LABEL[id]} sign-in failed on the server. Ask your admin to check the username and password.` }, 502);
+      res = await send(token);
+    }
+    return relayResponse(res);
+  } catch (e) {
+    return json({ error: isAbortError(e) ? timeoutMessage : unreachableMessage }, isAbortError(e) ? 504 : 502);
+  }
 }
 
 /**
  * Hosted keys are a paid resource. Signed-in users get FREE_DAILY_LIMIT requests per day;
  * an active subscription lifts the cap. Anonymous access is allowed only when REQUIRE_TG_AUTH is off.
  */
-async function checkHostedQuota(env: Env, user: TelegramUser | null): Promise<{ ok: true } | { ok: false; error: string }> {
+async function checkHostedQuota(env: Env, user: HostedIdentity | null): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!user) return env.REQUIRE_TG_AUTH === 'true'
-    ? { ok: false, error: 'Sign in through Telegram or add your own API key in Settings.' }
+    ? { ok: false, error: 'Sign in or add your own API key in Settings.' }
     : { ok: true };
+
+  if (!env.LUMINARA_KV) return { ok: true };
 
   const sub = (await env.LUMINARA_KV.get(`sub:${user.id}`, 'json')) as { expiresAt?: number } | null;
   const active = Boolean(sub?.expiresAt && sub.expiresAt > Date.now());
   if (active) return { ok: true };
-  if (env.REQUIRE_SUBSCRIPTION === 'true') return { ok: false, error: 'This feature needs an active plan. Subscribe with Telegram Stars or add your own API key in Settings.' };
+  if (env.REQUIRE_SUBSCRIPTION === 'true') {
+    return {
+      ok: false,
+      error: user.source === 'telegram'
+        ? 'This feature needs an active plan. Subscribe with Telegram Stars or add your own API key in Settings.'
+        : 'This feature needs an active plan. Add your own API key in Settings, or subscribe in Telegram.',
+    };
+  }
 
   const limit = Number(env.FREE_DAILY_LIMIT || 0);
   if (limit <= 0) return { ok: true };
@@ -252,13 +506,30 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return r;
   };
 
+  // Best-effort per-IP throttling. Telegram's webhook is exempt (it is authenticated by secret token).
+  const ip = clientIp(request);
+  const limited = (bucket: string, perMin: number) => {
+    const r = limiter.check(`${bucket}:${ip}`, perMin, 60_000);
+    return r.allowed ? null : withCors(json({ error: 'Too many requests. Slow down and try again.' }, 429, { 'Retry-After': String(r.retryAfterSec) }));
+  };
+  if (path !== '/telegram/webhook') {
+    const hit = limited('api', RATE_API_PER_MIN);
+    if (hit) return hit;
+  }
+
   if (path === '/health') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
     const configured = Object.fromEntries(Object.keys(PROVIDERS).map(id => [id, PROVIDERS[id].auth(env, new Headers(), {}).ok]));
     return withCors(json({
       ok: true,
       providers: configured,
       byok: Object.keys(PROVIDERS),
+      sidecars: {
+        languagetool: isSidecarConfigured(env, 'languagetool'),
+        umami: isSidecarConfigured(env, 'umami'),
+      },
       telegram: Boolean(env.BOT_TOKEN),
+      firebase: Boolean(env.FIREBASE_PROJECT_ID),
       requireAuth: env.REQUIRE_TG_AUTH === 'true',
       requireSubscription: env.REQUIRE_SUBSCRIPTION === 'true',
       freeDailyLimit: Number(env.FREE_DAILY_LIMIT || 0),
@@ -266,39 +537,441 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }));
   }
 
-  const m = path.match(/^\/providers\/([a-z]+)(\/.*)$/);
-  if (m) return withCors(proxyProvider(request, env, m[1], m[2]));
+  if (path === '/auth/session') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+    const who = await identify(request, env);
+    if (who.error) return withCors(json({ ok: false, error: who.error }, 401));
+    if (!who.user) return withCors(json({ ok: false, error: 'Not signed in' }, 401));
+    return withCors(json({ ok: true, user: who.user }));
+  }
 
-  if (path === '/telegram/webhook' && request.method === 'POST') {
+  const m = path.match(/^\/providers\/([a-z]+)(\/.*)$/);
+  if (m) {
+    const hit = limited('relay', RATE_PROVIDER_PER_MIN);
+    if (hit) return hit;
+    return withCors(proxyProvider(request, env, m[1], m[2]));
+  }
+
+  const s = path.match(/^\/sidecars\/([a-z]+)(\/.*)$/);
+  if (s) {
+    if (s[1] !== 'languagetool' && s[1] !== 'umami') return withCors(json({ error: `Unknown sidecar "${s[1]}"` }, 404));
+    const hit = limited('relay', RATE_PROVIDER_PER_MIN);
+    if (hit) return hit;
+    return withCors(proxySidecar(request, env, s[1], s[2]));
+  }
+
+  if (path === '/telegram/webhook') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
     if (!env.BOT_TOKEN) return json({ error: 'BOT_TOKEN not configured' }, 503);
-    const secret = request.headers.get('x-telegram-bot-api-secret-token');
-    if (env.TELEGRAM_WEBHOOK_SECRET && secret !== env.TELEGRAM_WEBHOOK_SECRET) return json({ error: 'bad secret' }, 401);
-    const update = await request.json();
-    ctx.waitUntil(handleTelegramUpdate(update, env));
+    // The secret token is mandatory: without it anyone could post fake payments / commands.
+    // `npm run tg:setup` registers the webhook with TELEGRAM_WEBHOOK_SECRET.
+    if (!env.TELEGRAM_WEBHOOK_SECRET) return json({ error: 'TELEGRAM_WEBHOOK_SECRET not configured' }, 503);
+    const secret = request.headers.get('x-telegram-bot-api-secret-token') || '';
+    if (!secretEquals(secret, env.TELEGRAM_WEBHOOK_SECRET)) return json({ error: 'bad secret' }, 401);
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return json({ error: read.error }, read.status);
+    ctx.waitUntil(handleTelegramUpdate(read.value, env));
     return json({ ok: true });
   }
 
-  if (path === '/telegram/auth' && request.method === 'POST') {
-    const { initData } = (await request.json().catch(() => ({}))) as { initData?: string };
-    if (!initData) return withCors(json({ error: 'initData required' }, 400));
+  if (path === '/telegram/auth' || path === '/telegram/invoice') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return withCors(json({ error: read.error }, read.status));
+    const { initData, plan } = (read.value || {}) as { initData?: unknown; plan?: unknown };
+    if (typeof initData !== 'string' || !initData) return withCors(json({ error: 'initData required' }, 400));
     if (!env.BOT_TOKEN) return withCors(json({ error: 'BOT_TOKEN not configured' }, 503));
     const v = await validateInitData(initData, env.BOT_TOKEN);
     if (!v.ok) return withCors(json({ error: v.reason }, 401));
-    const sub = await env.LUMINARA_KV.get(`sub:${v.user.id}`, 'json');
-    return withCors(json({ ok: true, user: v.user, subscription: sub, startParam: v.startParam }));
-  }
 
-  if (path === '/telegram/invoice' && request.method === 'POST') {
-    const { initData, plan } = (await request.json().catch(() => ({}))) as { initData?: string; plan?: string };
-    if (!initData || !plan) return withCors(json({ error: 'initData and plan required' }, 400));
-    if (!env.BOT_TOKEN) return withCors(json({ error: 'BOT_TOKEN not configured' }, 503));
-    const v = await validateInitData(initData, env.BOT_TOKEN);
-    if (!v.ok) return withCors(json({ error: v.reason }, 401));
+    if (path === '/telegram/auth') {
+      const sub = env.LUMINARA_KV ? await env.LUMINARA_KV.get(`sub:${v.user.id}`, 'json') : null;
+      return withCors(json({ ok: true, user: v.user, subscription: sub, startParam: v.startParam }));
+    }
+    if (typeof plan !== 'string' || !plan) return withCors(json({ error: 'initData and plan required' }, 400));
     const link = await createInvoiceLink(env, v.user.id, plan);
     return withCors(link.ok ? json({ ok: true, url: link.url }) : json({ error: link.error }, 400));
   }
 
+  // Drift Sentinel targets are owned by the signed-in Telegram user: alerts can only go to that
+  // user's own chat, and the list a user sees is their own. Anonymous registration is refused.
+  if (path === '/sentinel/register' || path === '/sentinel/status') {
+    const who = await identify(request, env);
+    if (!who.user) return withCors(json({ error: who.error || 'Telegram sign-in required' }, 401));
+    const ownerId = who.user.id;
+
+    if (path === '/sentinel/status') {
+      if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+      const raw = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get('sentinel:targets', 'json')) as SentinelTarget[] | null) : null;
+      return withCors(json({ ok: true, targets: (raw || []).filter(t => t.ownerId === ownerId) }));
+    }
+
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return withCors(json({ error: read.error }, read.status));
+    const body = (read.value || {}) as Partial<SentinelTarget>;
+    const cleanDomain = safePublicHostname(String(body.domain || ''));
+    if (!cleanDomain) return withCors(json({ error: 'domain must be a public hostname such as example.com' }, 400));
+
+    const keywords = Array.isArray(body.keywords)
+      ? body.keywords.filter((k): k is string => typeof k === 'string' && k.trim().length > 0).map(k => k.trim().slice(0, 200)).slice(0, 10)
+      : [];
+    const raw = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get('sentinel:targets', 'json')) as SentinelTarget[] | null) : null;
+    const targets = raw || [];
+    const ownedCount = targets.filter(t => t.ownerId === ownerId).length;
+    if (targets.length >= 500) return withCors(json({ error: 'Sentinel is full. Try again later.' }, 503));
+
+    const existingIdx = targets.findIndex(t => t.domain.toLowerCase() === cleanDomain && t.ownerId === ownerId);
+    if (existingIdx < 0 && ownedCount >= 10) return withCors(json({ error: 'You can watch up to 10 domains.' }, 400));
+    const newTarget: SentinelTarget = {
+      id: existingIdx >= 0 ? targets[existingIdx].id : `sentinel-${Date.now()}-${ownerId}`,
+      ownerId,
+      domain: cleanDomain,
+      brandName: (typeof body.brandName === 'string' && body.brandName.trim() ? body.brandName.trim().slice(0, 100) : cleanDomain.split('.')[0]),
+      // Alerts are delivered over Telegram only, and only to the registering user's own chat.
+      tgChatId: who.user.source === 'telegram' ? Number(ownerId) : undefined,
+      keywords: keywords.length > 0 ? keywords : [`what is ${cleanDomain}`, `best ${cleanDomain} alternative`],
+      lastScanAt: Date.now(),
+      lastStatus: 'healthy',
+    };
+
+    if (existingIdx >= 0) {
+      targets[existingIdx] = { ...targets[existingIdx], ...newTarget };
+    } else {
+      targets.push(newTarget);
+    }
+
+    if (env.LUMINARA_KV) {
+      await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(targets));
+    }
+    return withCors(json({ ok: true, target: newTarget }));
+  }
+
+  if (path === '/enrichment/entity') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const domainParam = url.searchParams.get('domain') || '';
+    const cleanDomain = safePublicHostname(domainParam);
+    if (!cleanDomain) return withCors(json({ error: 'domain query parameter must be a public hostname such as example.com' }, 400));
+    const brand = (url.searchParams.get('brand') || cleanDomain.split('.')[0] || '').slice(0, 200);
+    const cacheKey = `enrich:${cleanDomain}`;
+
+    try {
+      const cached = env.LUMINARA_KV ? await env.LUMINARA_KV.get(cacheKey, 'json') : null;
+      if (cached) {
+        return withCors(json({ ok: true, cached: true, data: cached }));
+      }
+    } catch {
+      // KV miss/unbound in local dev, proceed to fetch
+    }
+
+    // SSRF guard: the Worker is about to fetch https://<domain> on the caller's behalf. The name
+    // must resolve to public addresses only (loopback, RFC1918, link-local, metadata are refused).
+    if (!(await resolvesToPublicAddress(cleanDomain))) {
+      return withCors(json({ error: 'domain does not resolve to a public address' }, 400));
+    }
+
+    const [wikidataRes, waybackRes, securityRes, microlinkRes] = await Promise.allSettled([
+      (async () => {
+        const qUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(brand)}&language=en&format=json&origin=*&limit=1`;
+        const res = await fetch(qUrl, { headers: { 'User-Agent': 'LuminaraOracle/1.0 (https://luminarasuite.com)' } });
+        if (!res.ok) return null;
+        const data: any = await res.json();
+        const first = data?.search?.[0];
+        if (!first) return null;
+        const wikipediaUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(String(first.label || brand).replace(/\s+/g, '_'))}`;
+        return {
+          id: first.id,
+          label: first.label,
+          description: first.description,
+          url: `https://www.wikidata.org/wiki/${first.id}`,
+          wikipediaUrl,
+        };
+      })(),
+      (async () => {
+        const wbUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(cleanDomain)}&timestamp=19960101`;
+        const res = await fetch(wbUrl, { headers: { 'User-Agent': 'LuminaraOracle/1.0 (https://luminarasuite.com)' } });
+        if (!res.ok) return null;
+        const data: any = await res.json();
+        const snap = data?.archived_snapshots?.closest;
+        if (!snap || !snap.timestamp) {
+          return { hasArchive: false, status: 'unindexed' as const };
+        }
+        const ts = String(snap.timestamp);
+        const year = parseInt(ts.substring(0, 4), 10);
+        const month = ts.substring(4, 6);
+        const day = ts.substring(6, 8);
+        const earliestDate = `${year}-${month}-${day}`;
+        const archivedYearsAgo = Math.max(0, new Date().getFullYear() - year);
+        let status: 'historic_authority' | 'established' | 'new_domain' | 'unindexed' = 'new_domain';
+        if (archivedYearsAgo >= 10) status = 'historic_authority';
+        else if (archivedYearsAgo >= 3) status = 'established';
+        return {
+          hasArchive: true,
+          earliestDate,
+          archivedYearsAgo,
+          snapshotUrl: snap.url as string,
+          status,
+          // legacy fields kept for older clients
+          earliestTimestamp: ts,
+          firstArchiveYear: year,
+          archiveSnapshotUrl: snap.url as string,
+        };
+      })(),
+      auditSecurityOnEdge(cleanDomain),
+      (async () => {
+        try {
+          const mlUrl = `https://api.microlink.io/?url=${encodeURIComponent(`https://${cleanDomain}`)}`;
+          const res = await fetch(mlUrl, { headers: { 'User-Agent': 'LuminaraOracle/1.0 (https://luminarasuite.com)' } });
+          if (!res.ok) return null;
+          const data: any = await res.json();
+          if (data?.status !== 'success' || !data?.data) return null;
+          return {
+            title: data.data.title,
+            description: data.data.description,
+            publisher: data.data.publisher,
+            image: data.data.image?.url,
+            author: data.data.author,
+            date: data.data.date,
+            lang: data.data.lang,
+          };
+        } catch {
+          return null;
+        }
+      })(),
+    ]);
+
+    const wikidata = wikidataRes.status === 'fulfilled' ? wikidataRes.value : null;
+    const waybackRaw = waybackRes.status === 'fulfilled' ? waybackRes.value : null;
+    const wayback = waybackRaw || { hasArchive: false, status: 'unindexed' as const };
+    const security = securityRes.status === 'fulfilled'
+      ? securityRes.value
+      : {
+          httpsEnforced: true,
+          redirectsToHttps: false,
+          hstsEnabled: false,
+          cspDetected: false,
+          referrerPolicy: false,
+          xFrameOptions: false,
+          securityTxtPresent: false,
+          trustScore: 40,
+          measurementConfidence: 'failed' as const,
+        };
+    const metadata = microlinkRes.status === 'fulfilled' ? microlinkRes.value : null;
+
+    const sameAsUrls: string[] = [];
+    if (wikidata?.url) sameAsUrls.push(wikidata.url);
+    if (wikidata?.wikipediaUrl) sameAsUrls.push(wikidata.wikipediaUrl);
+
+    const result = {
+      domain: cleanDomain,
+      brandName: brand,
+      brand,
+      wikidata,
+      wayback,
+      metadata,
+      security,
+      sameAsUrls,
+      timestamp: Date.now(),
+    };
+
+    try {
+      if (env.LUMINARA_KV) {
+        await env.LUMINARA_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 604800 });
+      }
+    } catch {
+      // Non-fatal if KV put fails
+    }
+
+    return withCors(json({ ok: true, cached: false, data: result }));
+  }
+
   return withCors(json({ error: 'Not found' }, 404));
+}
+
+/** Edge security audit without CORS limits. Score: https40+redir15+hsts15+csp10+ref5+xfo5+sectxt10. */
+async function auditSecurityOnEdge(domain: string): Promise<{
+  httpsEnforced: boolean;
+  redirectsToHttps: boolean;
+  hstsEnabled: boolean;
+  cspDetected: boolean;
+  referrerPolicy: boolean;
+  xFrameOptions: boolean;
+  securityTxtPresent: boolean;
+  trustScore: number;
+  measurementConfidence: 'full' | 'cors_limited' | 'failed';
+}> {
+  const httpsUrl = `https://${domain}`;
+  let hsts = false;
+  let csp = false;
+  let referrerPolicy = false;
+  let xFrameOptions = false;
+  let redirectsToHttps = false;
+  let securityTxtPresent = false;
+  let fetchWorked = false;
+
+  try {
+    let res = await fetch(httpsUrl, { method: 'HEAD', redirect: 'follow' }).catch(() => null);
+    if (!res || !res.ok) {
+      res = await fetch(httpsUrl, { method: 'GET', redirect: 'follow' }).catch(() => null);
+    }
+    if (res) {
+      fetchWorked = true;
+      hsts = Boolean(res.headers.get('strict-transport-security'));
+      csp = Boolean(res.headers.get('content-security-policy'));
+      referrerPolicy = Boolean(res.headers.get('referrer-policy'));
+      xFrameOptions = Boolean(res.headers.get('x-frame-options'));
+    }
+
+    const httpUrl = `http://${domain}`;
+    const redir = await fetch(httpUrl, { method: 'GET', redirect: 'follow' }).catch(() => null);
+    if (redir?.url?.startsWith('https://')) redirectsToHttps = true;
+
+    const st = await fetch(`https://${domain}/.well-known/security.txt`, { method: 'GET' }).catch(() => null);
+    if (st && st.ok) {
+      const body = await st.text().catch(() => '');
+      securityTxtPresent = /contact\s*:/i.test(body) || /canonical\s*:/i.test(body);
+    }
+  } catch {
+    // leave defaults
+  }
+
+  const measurementConfidence = fetchWorked ? 'full' : 'failed';
+  let trustScore = 40; // https assumed for edge probe target
+  if (redirectsToHttps) trustScore += 15;
+  if (hsts) trustScore += 15;
+  if (csp) trustScore += 10;
+  if (referrerPolicy) trustScore += 5;
+  if (xFrameOptions) trustScore += 5;
+  if (securityTxtPresent) trustScore += 10;
+
+  return {
+    httpsEnforced: true,
+    redirectsToHttps,
+    hstsEnabled: hsts,
+    cspDetected: csp,
+    referrerPolicy,
+    xFrameOptions,
+    securityTxtPresent,
+    trustScore: Math.min(100, trustScore),
+    measurementConfidence,
+  };
+}
+
+export interface SentinelTarget {
+  id: string;
+  /** HostedIdentity.id of the person who registered the target (Telegram "123" or Firebase "fb:uid"). */
+  ownerId?: string;
+  domain: string;
+  brandName: string;
+  tgChatId?: number | string;
+  keywords: string[];
+  lastScanAt?: number;
+  lastCitationRate?: number;
+  lastIntegrityScore?: number;
+  lastSecurityTrust?: number;
+  lastStatus?: 'healthy' | 'drift_detected' | 'remediated';
+  driftAlertSentAt?: number;
+}
+
+export async function runSentinelScan(env: Env): Promise<{ scanned: number; alertsSent: number }> {
+  try {
+    const raw = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get('sentinel:targets', 'json')) as SentinelTarget[] | null) : null;
+    const targets = raw || [];
+    if (targets.length === 0) return { scanned: 0, alertsSent: 0 };
+
+    let alertsSent = 0;
+    const updatedTargets: SentinelTarget[] = [];
+
+    for (const target of targets) {
+      // Legacy or tampered records: never probe non-public hosts, never alert a chat the owner doesn't own.
+      if (!safePublicHostname(target.domain)) continue;
+      const alertChat = target.ownerId && target.tgChatId !== undefined && String(target.tgChatId) === String(target.ownerId) ? target.tgChatId : undefined;
+      const keyword = target.keywords?.[0] || `${target.brandName || target.domain} solutions`;
+      let cited = true;
+
+      if (env.TAVILY_API_KEY) {
+        try {
+          const resp = await fetch('https://api.tavily.com/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              api_key: env.TAVILY_API_KEY,
+              query: keyword,
+              search_depth: 'basic',
+              max_results: 5,
+            }),
+          });
+          if (resp.ok) {
+            const data = (await resp.json()) as { results?: Array<{ url: string; content: string }> };
+            const cleanDomain = target.domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').toLowerCase();
+            cited = (data.results || []).some(r => r.url.toLowerCase().includes(cleanDomain));
+          }
+        } catch (e) {
+          console.warn('[Sentinel] Tavily search fallback', e);
+        }
+      }
+
+      let securityTrust = target.lastSecurityTrust;
+      try {
+        const sec = await auditSecurityOnEdge(target.domain);
+        securityTrust = sec.trustScore;
+      } catch {
+        // keep previous
+      }
+
+      const trustRegression =
+        typeof target.lastSecurityTrust === 'number' &&
+        typeof securityTrust === 'number' &&
+        target.lastSecurityTrust - securityTrust > 20;
+
+      const now = Date.now();
+      const needsAlert = !cited || trustRegression;
+      const status = needsAlert ? 'drift_detected' : 'healthy';
+
+      if (needsAlert && alertChat && env.BOT_TOKEN) {
+        const canAlert = !target.driftAlertSentAt || (now - target.driftAlertSentAt > 24 * 3600 * 1000);
+        if (canAlert) {
+          const reasons: string[] = [];
+          if (!cited) reasons.push('Brand citation missing from top AI answers.');
+          if (trustRegression) {
+            reasons.push(
+              `Trust regression: security trust dropped from ${target.lastSecurityTrust} to ${securityTrust} (>20 point drop).`
+            );
+          }
+          const alertMsg = `⚠️ *Luminara 24/7 Drift Sentinel Alert*\n\n` +
+            `Your domain *${target.domain}* has detected an AEO citation or trust regression.\n` +
+            `• Target query: _${keyword}_\n` +
+            `• Current status: ${reasons.join(' ')}\n\n` +
+            `Tap below to review the empirical diff and deploy 1-click schema remediation.`;
+
+          const sent = await sendTelegramAlert(env, alertChat, alertMsg, env.WEBAPP_URL);
+          if (sent) {
+            alertsSent++;
+            target.driftAlertSentAt = now;
+          }
+        }
+      }
+
+      updatedTargets.push({
+        ...target,
+        lastScanAt: now,
+        lastStatus: status,
+        lastSecurityTrust: securityTrust,
+      });
+    }
+
+    if (env.LUMINARA_KV) {
+      await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(updatedTargets));
+    }
+    return { scanned: targets.length, alertsSent };
+  } catch (err) {
+    console.error('[Sentinel] Scheduled scan error', err);
+    return { scanned: 0, alertsSent: 0 };
+  }
 }
 
 export default {
@@ -306,12 +979,17 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) {
       try {
-        return await handleApi(request, env, ctx);
-      } catch (e: any) {
-        return json({ error: e?.message || 'Internal error' }, 500);
+        return withSecurityHeaders(await handleApi(request, env, ctx));
+      } catch (e) {
+        // Never echo internal error details (stack traces, upstream messages, env hints) to callers.
+        console.error('[api] unhandled error', request.method, url.pathname, e);
+        return withSecurityHeaders(json({ error: 'Internal error' }, 500));
       }
     }
-    // Static assets with SPA fallback (configured in wrangler.jsonc).
-    return env.ASSETS.fetch(request);
+    // Static assets with SPA fallback (configured in wrangler.jsonc); security headers + CSP on the HTML shell.
+    return withSecurityHeaders(await env.ASSETS.fetch(request));
+  },
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runSentinelScan(env));
   },
 } satisfies ExportedHandler<Env>;

@@ -1,0 +1,18 @@
+{
+  "name": "luminara-crawler",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stealth headless web crawling sidecar for Luminara Suite using Patchright (AST-patched Chromium)",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "patchright": "^1.50.0"
+  }
+}

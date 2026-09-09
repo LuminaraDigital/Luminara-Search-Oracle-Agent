@@ -6,13 +6,13 @@
 export interface ProviderStatus {
   id: string;
   name: string;
-  category: 'llm' | 'search' | 'scraping' | 'generative' | 'runtime';
+  category: 'llm' | 'search' | 'scraping' | 'generative' | 'runtime' | 'tools';
   isConfigured: boolean;
   source: 'env' | 'localStorage' | 'server' | 'none';
   maskedKey: string;
 }
 
-import { isProviderConfiguredOnServer, isProxyMode, providerFetch } from './apiClient';
+import { isProviderConfiguredOnServer, isProxyMode, isSidecarConfiguredOnServer, providerFetch, sidecarFetch } from './apiClient';
 
 export class ConfigService {
   private static instance: ConfigService;
@@ -89,6 +89,72 @@ export class ConfigService {
     return this.getKey('luminara_browserbase_key', 'BROWSERBASE_API_KEY', 'VITE_BROWSERBASE_API_KEY').key;
   }
 
+  public getCrawlerProvider(): 'auto' | 'patchright' | 'firecrawl' | 'jina' {
+    const p = typeof window !== 'undefined' ? (localStorage.getItem('luminara_crawler_provider') || 'auto') : 'auto';
+    return ['auto', 'patchright', 'firecrawl', 'jina'].includes(p as any) ? (p as any) : 'auto';
+  }
+
+  public setCrawlerProvider(provider: string): void {
+    this.setKey('luminara_crawler_provider', provider);
+  }
+
+  public getPatchrightUrl(): string {
+    return this.getKey('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL').key || 'http://localhost:3001';
+  }
+
+  public setPatchrightUrl(url: string): void {
+    this.setKey('luminara_patchright_url', url);
+  }
+
+  public getLocalSerpUrl(): string {
+    return this.getKey('luminara_local_serp_url', 'LOCAL_SERP_URL', 'VITE_LOCAL_SERP_URL').key || this.getPatchrightUrl() || 'http://localhost:3001';
+  }
+
+  public setLocalSerpUrl(url: string): void {
+    this.setKey('luminara_local_serp_url', url);
+  }
+
+  public isLocalSerpEnabled(): boolean {
+    try {
+      if (typeof window !== 'undefined' || typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('luminara_local_serp_enabled');
+        if (stored !== null) return stored === 'true';
+      }
+    } catch {}
+    return true; // Enabled by default as an additive zero-key fallback
+  }
+
+  public setLocalSerpEnabled(enabled: boolean): void {
+    try {
+      if (typeof window !== 'undefined' || typeof localStorage !== 'undefined') {
+        localStorage.setItem('luminara_local_serp_enabled', enabled ? 'true' : 'false');
+      }
+    } catch {}
+  }
+
+  public getCrawlerProxy(): string {
+    return this.getKey('luminara_crawler_proxy', 'CRAWLER_PROXY', 'VITE_CRAWLER_PROXY').key;
+  }
+
+  /** Shared secret for a self-hosted crawler started with CRAWLER_TOKEN (sent as x-crawler-token). */
+  public getCrawlerToken(): string {
+    return this.getKey('luminara_crawler_token', 'CRAWLER_TOKEN', 'VITE_CRAWLER_TOKEN').key;
+  }
+
+  public setCrawlerToken(token: string): void {
+    this.setKey('luminara_crawler_token', token);
+  }
+
+  /** Headers for calls to the self-hosted crawler / local SERP sidecar. Only ever sent to that endpoint. */
+  public crawlerAuthHeaders(): Record<string, string> {
+    const token = this.getCrawlerToken();
+    return token ? { 'x-crawler-token': token } : {};
+  }
+
+  public setCrawlerProxy(proxy: string): void {
+    this.setKey('luminara_crawler_proxy', proxy);
+  }
+
   public getGroqKey(): string {
     return this.getKey('luminara_groq_key', 'GROQ_API_KEY', 'VITE_GROQ_API_KEY', 'groq').key;
   }
@@ -121,6 +187,48 @@ export class ConfigService {
     return this.getKey('luminara_api_key', 'GEMINI_API_KEY', 'VITE_GEMINI_API_KEY', 'gemini').key;
   }
 
+  // ---- Self-hosted helper tools ("Writing check" / "Results tracking") ----
+  // Empty URL = use the hosted relay through the Worker.
+
+  /** Base URL of the grammar service behind "Writing check" (LanguageTool HTTP server). */
+  public getLanguageToolUrl(): string {
+    return this.getKey('luminara_languagetool_url', 'LANGUAGETOOL_URL', 'VITE_LANGUAGETOOL_URL').key;
+  }
+
+  public setLanguageToolUrl(url: string): void {
+    this.setKey('luminara_languagetool_url', url);
+  }
+
+  /** Base URL of the analytics service behind "Results tracking" (Umami self-hosted or Cloud). */
+  public getUmamiUrl(): string {
+    return this.getKey('luminara_umami_url', 'UMAMI_URL', 'VITE_UMAMI_URL').key;
+  }
+
+  public setUmamiUrl(url: string): void {
+    this.setKey('luminara_umami_url', url);
+  }
+
+  public getUmamiApiKey(): string {
+    return this.getKey('luminara_umami_key', 'UMAMI_API_KEY', 'VITE_UMAMI_API_KEY').key;
+  }
+
+  public setUmamiApiKey(key: string): void {
+    this.setKey('luminara_umami_key', key);
+  }
+
+  private toolStatus(id: string, name: string, storageKey: string, envKey: string, viteKey: string, sidecar: 'languagetool' | 'umami'): ProviderStatus {
+    const url = this.getKey(storageKey, envKey, viteKey);
+    if (url.key) {
+      let host = url.key;
+      try { host = new URL(url.key).host; } catch { /* keep raw */ }
+      return { id, name, category: 'tools', isConfigured: true, source: url.source, maskedKey: host };
+    }
+    if (isSidecarConfiguredOnServer(sidecar)) {
+      return { id, name, category: 'tools', isConfigured: true, source: 'server', maskedKey: 'server-side' };
+    }
+    return { id, name, category: 'tools', isConfigured: false, source: 'none', maskedKey: '' };
+  }
+
   private mask(key: string): string {
     if (!key) return '';
     if (key === 'proxy') return 'server-side';
@@ -130,20 +238,22 @@ export class ConfigService {
 
   public getAllStatuses(): ProviderStatus[] {
     const providers = [
-      { id: 'groq', name: 'Groq (Primary)', cat: 'llm' as const, ...this.getKey('luminara_groq_key', 'GROQ_API_KEY', 'VITE_GROQ_API_KEY', 'groq') },
-      { id: 'groq_fallback', name: 'Groq (Fallback)', cat: 'llm' as const, ...this.getKey('luminara_groq_fallback_key', 'GROQ_API_KEY_FALLBACK', 'VITE_GROQ_API_KEY_FALLBACK') },
-      { id: 'nvidia', name: 'NVIDIA NIM', cat: 'llm' as const, ...this.getKey('luminara_nvidia_key', 'NVIDIA_API_KEY', 'VITE_NVIDIA_API_KEY', 'nim') },
-      { id: 'ollama', name: 'Ollama Cloud', cat: 'llm' as const, ...this.getKey('luminara_ollama_key', 'OLLAMA_API_KEY', 'VITE_OLLAMA_API_KEY', 'ollama') },
-      { id: 'gemini', name: 'Google Gemini', cat: 'llm' as const, ...this.getKey('luminara_api_key', 'GEMINI_API_KEY', 'VITE_GEMINI_API_KEY', 'gemini') },
+      { id: 'nvidia', name: 'NVIDIA NIM (Native Primary)', cat: 'llm' as const, ...this.getKey('luminara_nvidia_key', 'NVIDIA_API_KEY', 'VITE_NVIDIA_API_KEY', 'nim') },
+      { id: 'groq', name: 'Groq Cloud (Native LPU)', cat: 'llm' as const, ...this.getKey('luminara_groq_key', 'GROQ_API_KEY', 'VITE_GROQ_API_KEY', 'groq') },
+      { id: 'groq_fallback', name: 'Groq Fallback (Native Auto-Failover)', cat: 'llm' as const, ...this.getKey('luminara_groq_fallback_key', 'GROQ_API_KEY_FALLBACK', 'VITE_GROQ_API_KEY_FALLBACK') },
+      { id: 'ollama', name: 'Ollama (Native Local & Cloud)', cat: 'llm' as const, ...this.getKey('luminara_ollama_key', 'OLLAMA_API_KEY', 'VITE_OLLAMA_API_KEY', 'ollama') },
+      { id: 'gemini', name: 'Google Gemini (Optional Fallback)', cat: 'llm' as const, ...this.getKey('luminara_api_key', 'GEMINI_API_KEY', 'VITE_GEMINI_API_KEY', 'gemini') },
       { id: 'tavily', name: 'Tavily Search', cat: 'search' as const, ...this.getKey('luminara_tavily_key', 'TAVILY_API_KEY', 'VITE_TAVILY_API_KEY', 'tavily') },
       { id: 'exa', name: 'Exa.ai Neural Search', cat: 'search' as const, ...this.getKey('luminara_exa_key', 'EXA_API_KEY', 'VITE_EXA_API_KEY', 'exa') },
       { id: 'firecrawl', name: 'Firecrawl Scraper', cat: 'scraping' as const, ...this.getKey('luminara_firecrawl_key', 'FIRECRAWL_API_KEY', 'VITE_FIRECRAWL_API_KEY', 'firecrawl') },
+      { id: 'patchright', name: 'Patchright Stealth Crawler', cat: 'scraping' as const, ...this.getKey('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL') },
+      { id: 'local_serp', name: 'Local Google SERP Scraper', cat: 'search' as const, ...this.getKey('luminara_local_serp_url', 'LOCAL_SERP_URL', 'VITE_LOCAL_SERP_URL') },
       { id: 'browserbase', name: 'Browserbase Headless', cat: 'scraping' as const, ...this.getKey('luminara_browserbase_key', 'BROWSERBASE_API_KEY', 'VITE_BROWSERBASE_API_KEY') },
       { id: 'fal', name: 'Fal.ai Generative', cat: 'generative' as const, ...this.getKey('luminara_fal_key', 'FAL_KEY', 'VITE_FAL_KEY') },
       { id: 'tinker', name: 'Tinker Runtime', cat: 'runtime' as const, ...this.getKey('luminara_tinker_key', 'TINKER_API_KEY', 'VITE_TINKER_API_KEY') },
     ];
 
-    return providers.map(p => ({
+    const statuses: ProviderStatus[] = providers.map(p => ({
       id: p.id,
       name: p.name,
       category: p.cat,
@@ -151,6 +261,73 @@ export class ConfigService {
       source: p.source,
       maskedKey: this.mask(p.key)
     }));
+
+    statuses.push(
+      this.toolStatus('writing_check', 'Writing check', 'luminara_languagetool_url', 'LANGUAGETOOL_URL', 'VITE_LANGUAGETOOL_URL', 'languagetool'),
+      this.toolStatus('results_tracking', 'Results tracking', 'luminara_umami_url', 'UMAMI_URL', 'VITE_UMAMI_URL', 'umami'),
+    );
+    return statuses;
+  }
+
+  /** Pings the grammar service with a tiny sentence that should produce at least one match. */
+  public async testWritingCheck(): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const start = Date.now();
+    const unreachable = 'Not reachable. Start it with docker compose or leave blank to use the hosted one.';
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const res = await sidecarFetch('languagetool', '/v2/check', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ text: 'This is an test.', language: 'en-US' }).toString(),
+        signal: controller.signal,
+      }, { directBase: this.getLanguageToolUrl() || undefined });
+      clearTimeout(timer);
+      const latencyMs = Date.now() - start;
+      if (!res) return { success: false, message: unreachable, latencyMs };
+      if (!res.ok) return { success: false, message: `Writing check answered with an error (HTTP ${res.status}).`, latencyMs };
+      const raw = await res.text();
+      let data: any;
+      try { data = JSON.parse(raw); } catch { return { success: false, message: unreachable, latencyMs }; }
+      if (!data || !Array.isArray(data.matches)) return { success: false, message: unreachable, latencyMs };
+      const n = data.matches.length;
+      return { success: true, message: n >= 1 ? `Connected — found ${n} issue${n === 1 ? '' : 's'} in the test sentence` : 'Connected', latencyMs };
+    } catch (e: any) {
+      const latencyMs = Date.now() - start;
+      return { success: false, message: e?.name === 'AbortError' ? 'Timed out. Is the writing check running?' : unreachable, latencyMs };
+    }
+  }
+
+  /** Lists tracked sites from the analytics service and reports how many it found. */
+  public async testResultsTracking(): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const start = Date.now();
+    const unreachable = 'Not reachable. Start it with docker compose or leave blank to use the hosted one.';
+    try {
+      const direct = this.getUmamiUrl();
+      const key = this.getUmamiApiKey();
+      if (direct && !key) return { success: false, message: 'Add the API key for your results tracking account.', latencyMs: 0 };
+      let prefix = '/api';
+      if (direct) {
+        try { if (new URL(direct).host.toLowerCase() === 'api.umami.is') prefix = '/v1'; } catch { /* keep /api */ }
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const res = await sidecarFetch('umami', `${prefix}/websites`, { signal: controller.signal }, { directBase: direct || undefined, userKey: key || undefined });
+      clearTimeout(timer);
+      const latencyMs = Date.now() - start;
+      if (!res) return { success: false, message: unreachable, latencyMs };
+      if (res.status === 401 || res.status === 403) return { success: false, message: 'The API key was rejected. Check it in your analytics account.', latencyMs };
+      if (!res.ok) return { success: false, message: `Results tracking answered with an error (HTTP ${res.status}).`, latencyMs };
+      const raw = await res.text();
+      let data: any;
+      try { data = JSON.parse(raw); } catch { return { success: false, message: unreachable, latencyMs }; }
+      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : null;
+      if (!list) return { success: false, message: unreachable, latencyMs };
+      return { success: true, message: `Connected — ${list.length} site${list.length === 1 ? '' : 's'} tracked`, latencyMs };
+    } catch (e: any) {
+      const latencyMs = Date.now() - start;
+      return { success: false, message: e?.name === 'AbortError' ? 'Timed out. Is results tracking running?' : unreachable, latencyMs };
+    }
   }
 
   // Live Connection Ping Testers
@@ -212,6 +389,46 @@ export class ConfigService {
       return { success: false, message: `Firecrawl error HTTP ${res.status}`, latencyMs };
     } catch (e: any) {
       return { success: false, message: e?.message || 'Network error', latencyMs: Date.now() - start };
+    }
+  }
+
+  public async testPatchright(): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const url = this.getPatchrightUrl();
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`${url.replace(/\/$/, '')}/health`, { signal: controller.signal });
+      clearTimeout(timer);
+      const latencyMs = Date.now() - start;
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { success: true, message: `Patchright active (${data.version || 'v1.50.0'})`, latencyMs };
+      }
+      return { success: false, message: `Crawler HTTP ${res.status}`, latencyMs };
+    } catch (err: any) {
+      const latencyMs = Date.now() - start;
+      return { success: false, message: err.name === 'AbortError' ? 'Timeout (>3.5s)' : 'Offline / Connection refused', latencyMs };
+    }
+  }
+
+  public async testLocalSerp(): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const url = this.getLocalSerpUrl();
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`${url.replace(/\/$/, '')}/health`, { signal: controller.signal });
+      clearTimeout(timer);
+      const latencyMs = Date.now() - start;
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { success: true, message: `SERP engine active (${data.engine || 'local-sidecar'})`, latencyMs };
+      }
+      return { success: false, message: `Sidecar HTTP ${res.status}`, latencyMs };
+    } catch (err: any) {
+      const latencyMs = Date.now() - start;
+      return { success: false, message: err.name === 'AbortError' ? 'Timeout (>3.5s)' : 'Offline / Connection refused', latencyMs };
     }
   }
 
@@ -311,7 +528,7 @@ export class ConfigService {
     if (typeof window !== 'undefined') {
       const custom = localStorage.getItem('luminara_nvidia_proxy_endpoint');
       if (custom && custom.trim()) return custom.trim();
-      if ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '3000') {
+      if (window.location && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '3000') {
         return '/api/nim-proxy';
       }
     }
@@ -338,7 +555,7 @@ export class ConfigService {
         if (parsed.length === 3) return parsed;
       }
     }
-    return ['groq', 'nim', 'ollama'];
+    return ['nim', 'groq', 'ollama'];
   }
 
   public setNativePriority(order: Array<'groq' | 'nim' | 'ollama'>): void {
