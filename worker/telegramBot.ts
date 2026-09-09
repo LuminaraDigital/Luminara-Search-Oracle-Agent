@@ -7,13 +7,13 @@ import type { Env } from './index';
 export const PLANS: Record<string, { title: string; description: string; stars: number; days: number }> = {
   starter: {
     title: 'Luminara Starter',
-    description: 'AI search audits for up to 2 sites, monthly AI-visibility re-check, action plan. 30 days.',
+    description: 'Unlock NVIDIA NIM, Sovereign Ollama & OpenRouter. Unlimited AI audits for up to 2 sites, monthly re-check. 30 days.',
     stars: 2500,
     days: 30,
   },
   growth: {
     title: 'Luminara Growth',
-    description: '10 sites, weekly AI-visibility tracking, competitor alerts, exports. 30 days.',
+    description: 'Full Enterprise AI: NVIDIA, Ollama, OpenRouter. 10 sites, weekly tracking, competitor graphs, 24/7 Sentinel alerts. 30 days.',
     stars: 7500,
     days: 30,
   },
@@ -83,9 +83,9 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
-          '*Luminara Suite*\n' +
-          'See how your brand shows up in Google, AI Overviews, ChatGPT and Perplexity, then get a plain-English action plan.\n\n' +
-          'Tap the button to open the app.',
+          '*Luminara Suite - Native AI Oracle*\n' +
+          'Empirical AI search visibility audits and enterprise intelligence. Groq Cloud is free to try; upgrade to unlock NVIDIA NIM, Sovereign Ollama, and OpenRouter frontier models.\n\n' +
+          'Tap below to launch the Telegram native application.',
         parse_mode: 'Markdown',
         reply_markup: openAppKeyboard(env, startParam),
       });
@@ -93,7 +93,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/plan') || text.startsWith('/subscribe')) {
-      const lines = Object.entries(PLANS).map(([id, p]) => `• *${p.title}* — ${p.stars} ⭐ / ${p.days} days\n  ${p.description}\n  /buy_${id}`);
+      const lines = Object.entries(PLANS).map(([id, p]) => `• *${p.title}* - ${p.stars} ⭐ / ${p.days} days\n  ${p.description}\n  /buy_${id}`);
       await api(env, 'sendMessage', { chat_id: chatId, text: lines.join('\n\n'), parse_mode: 'Markdown' });
       return;
     }
@@ -123,10 +123,46 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
+    if (text.startsWith('/terms')) {
+      await api(env, 'sendMessage', {
+        chat_id: chatId,
+        text:
+          '*Luminara Suite Terms (purchases)*\n' +
+          'By buying with Telegram Stars you agree to our Terms and Privacy Policy.\n\n' +
+          `Terms: ${env.WEBAPP_URL.replace(/\/$/, '')}/#terms\n` +
+          `Privacy: ${env.WEBAPP_URL.replace(/\/$/, '')}/#privacy\n\n` +
+          'Digital subscriptions activate after a successful Stars payment. For billing help use /paysupport.\n' +
+          'Telegram Support cannot help with purchases made through this bot.',
+        parse_mode: 'Markdown',
+        reply_markup: openAppKeyboard(env),
+      });
+      return;
+    }
+
+    if (text.startsWith('/paysupport') || text.startsWith('/support')) {
+      await api(env, 'sendMessage', {
+        chat_id: chatId,
+        text:
+          '*Payment support*\n' +
+          'Reply here with your Telegram username, the plan you bought (Starter/Growth), approx. date, and what went wrong.\n\n' +
+          'We handle Stars purchase issues for this bot. Telegram Support will not resolve merchant purchases.\n' +
+          'Check /status for your current plan. Open the app if the subscription is active but features look locked.',
+        parse_mode: 'Markdown',
+        reply_markup: openAppKeyboard(env),
+      });
+      return;
+    }
+
     if (text.startsWith('/help')) {
       await api(env, 'sendMessage', {
         chat_id: chatId,
-        text: '/start — open the app\n/plan — plans and prices\n/status — your subscription\n/help — this message',
+        text:
+          '/start - open the app\n' +
+          '/plan - plans and prices (Telegram Stars)\n' +
+          '/status - your subscription\n' +
+          '/terms - purchase terms\n' +
+          '/paysupport - billing help\n' +
+          '/help - this message',
         reply_markup: openAppKeyboard(env),
       });
       return;

@@ -42,6 +42,8 @@ await call('setMyCommands', {
     { command: 'start', description: 'Open Luminara Suite' },
     { command: 'plan', description: 'Plans and prices (Telegram Stars)' },
     { command: 'status', description: 'Your subscription' },
+    { command: 'terms', description: 'Purchase terms' },
+    { command: 'paysupport', description: 'Billing and payment help' },
     { command: 'help', description: 'How this bot works' },
   ],
 });
