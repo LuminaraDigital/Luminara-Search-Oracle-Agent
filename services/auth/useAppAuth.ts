@@ -8,8 +8,8 @@ import {
   isFirebaseConfigured,
   subscribeFirebaseUser,
   startFirebaseAuthListener,
+  type User,
 } from './firebaseAuthService';
-import type { User } from 'firebase/auth';
 import { telegramAuth } from '../apiClient';
 
 export type AppAuthSource = 'telegram' | 'firebase' | null;
@@ -77,7 +77,7 @@ export function useAppAuth(): AppAuthState {
       try {
         const session = await telegramAuth();
         if (cancelled) return;
-        if (session?.ok) {
+        if (session) {
           setTgOk(true);
           setTgError(null);
         } else {

@@ -14,6 +14,7 @@ import {
   type Auth,
   type User,
 } from 'firebase/auth';
+export type { User };
 import { FIREBASE_PUBLIC_CONFIG } from './firebasePublicConfig';
 
 export interface FirebasePublicConfig {
