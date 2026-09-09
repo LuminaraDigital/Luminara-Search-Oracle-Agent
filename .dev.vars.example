@@ -19,3 +19,6 @@ UMAMI_URL=
 UMAMI_API_KEY=
 UMAMI_USERNAME=
 UMAMI_PASSWORD=
+# TON dual-rail (web / desktop). Set merchant wallet + Toncenter API key.
+TON_RECEIVING_ADDRESS=
+TON_API_KEY=

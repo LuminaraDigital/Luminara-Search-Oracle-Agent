@@ -19,6 +19,7 @@
 import { validateInitData } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, PLANS } from './telegramBot';
+import { createTonInvoice, verifyTonPayment, TON_PRICING } from './tonPayment';
 import {
   MAX_BODY_BYTES,
   MAX_SMALL_BODY_BYTES,
@@ -77,6 +78,8 @@ export interface Env {
   /** Self-hosted Umami login used to mint a bearer token when no API key is set (secrets). */
   UMAMI_USERNAME?: string;
   UMAMI_PASSWORD?: string;
+  TON_RECEIVING_ADDRESS?: string;
+  TON_API_KEY?: string;
 }
 
 interface ProviderSpec {
@@ -188,6 +191,7 @@ function corsHeaders(env: Env, request: Request): Record<string, string> {
         'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
         'Access-Control-Allow-Headers': 'content-type, x-telegram-init-data, x-provider-key, authorization, x-goog-api-key, x-goog-api-client',
+        'Access-Control-Expose-Headers': 'x-quota-limit, x-quota-remaining, x-quota-reset',
         'Vary': 'Origin',
       }
     : {};
@@ -264,6 +268,8 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
   const declared = Number(request.headers.get('content-length') || 0);
   if (declared > MAX_BODY_BYTES) return json({ error: 'Request body too large' }, 413);
 
+  let quotaGate: QuotaStatus | null = null;
+
   if (userKey) {
     if (env.REQUIRE_TG_AUTH === 'true') {
       const who = await identify(request, env);
@@ -272,8 +278,22 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
   } else {
     const who = await identify(request, env);
     if (who.error) return json({ error: who.error }, 401);
-    const gate = await checkHostedQuota(env, who.user);
-    if (!gate.ok) return json({ error: gate.error, upgrade: true }, 402);
+    quotaGate = await checkHostedQuota(env, who.user);
+    if (!quotaGate.ok) {
+      return json({
+        error: quotaGate.error,
+        code: 'PAYWALL_EXCEEDED',
+        limit: quotaGate.limit,
+        used: quotaGate.used,
+        remaining: quotaGate.remaining,
+        resetSec: quotaGate.resetSec,
+        upgrade: true,
+      }, 402, {
+        'X-Quota-Limit': String(quotaGate.limit),
+        'X-Quota-Remaining': '0',
+        'X-Quota-Reset': String(quotaGate.resetSec),
+      });
+    }
   }
 
   const url = new URL(request.url);
@@ -309,6 +329,16 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
   // Vendor CORS headers and cookies are dropped: our own CORS policy is applied by handleApi.
   const out = new Headers(res.headers);
   stripUpstreamHeaders(out);
+  if (quotaGate) {
+    if (quotaGate.isUnlimited) {
+      out.set('X-Quota-Limit', 'unlimited');
+      out.set('X-Quota-Remaining', 'unlimited');
+    } else if (quotaGate.limit > 0) {
+      out.set('X-Quota-Limit', String(quotaGate.limit));
+      out.set('X-Quota-Remaining', String(quotaGate.remaining));
+      out.set('X-Quota-Reset', String(quotaGate.resetSec));
+    }
+  }
   return new Response(res.body, { status: res.status, headers: out });
 }
 
@@ -467,37 +497,87 @@ async function proxySidecar(request: Request, env: Env, id: SidecarId, subPath: 
   }
 }
 
+export interface QuotaStatus {
+  ok: boolean;
+  error?: string;
+  limit: number;
+  used: number;
+  remaining: number;
+  resetSec: number;
+  isUnlimited: boolean;
+}
+
 /**
  * Hosted keys are a paid resource. Signed-in users get FREE_DAILY_LIMIT requests per day;
  * an active subscription lifts the cap. Anonymous access is allowed only when REQUIRE_TG_AUTH is off.
  */
-async function checkHostedQuota(env: Env, user: HostedIdentity | null): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!user) return env.REQUIRE_TG_AUTH === 'true'
-    ? { ok: false, error: 'Sign in or add your own API key in Settings.' }
-    : { ok: true };
+export async function checkHostedQuota(env: Env, user: HostedIdentity | null): Promise<QuotaStatus> {
+  const now = new Date();
+  const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
+  const limit = Number(env.FREE_DAILY_LIMIT || 0);
 
-  if (!env.LUMINARA_KV) return { ok: true };
+  if (!user) {
+    if (env.REQUIRE_TG_AUTH === 'true') {
+      return { ok: false, error: 'Sign in or add your own API key in Settings.', limit, used: 0, remaining: 0, resetSec, isUnlimited: false };
+    }
+    return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0 };
+  }
+
+  if (!env.LUMINARA_KV) {
+    return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0 };
+  }
 
   const sub = (await env.LUMINARA_KV.get(`sub:${user.id}`, 'json')) as { expiresAt?: number } | null;
   const active = Boolean(sub?.expiresAt && sub.expiresAt > Date.now());
-  if (active) return { ok: true };
+  if (active) {
+    return { ok: true, limit: -1, used: 0, remaining: -1, resetSec, isUnlimited: true };
+  }
+
   if (env.REQUIRE_SUBSCRIPTION === 'true') {
     return {
       ok: false,
       error: user.source === 'telegram'
-        ? 'This feature needs an active plan. Subscribe with Telegram Stars or add your own API key in Settings.'
-        : 'This feature needs an active plan. Add your own API key in Settings, or subscribe in Telegram.',
+        ? 'This feature needs an active plan. Subscribe with Telegram Stars or TON, or add your own API key in Settings.'
+        : 'This feature needs an active plan. Add your own API key in Settings, or subscribe with TON/Stars.',
+      limit,
+      used: 0,
+      remaining: 0,
+      resetSec,
+      isUnlimited: false,
     };
   }
 
-  const limit = Number(env.FREE_DAILY_LIMIT || 0);
-  if (limit <= 0) return { ok: true };
-  const day = new Date().toISOString().slice(0, 10);
+  if (limit <= 0) {
+    return { ok: true, limit: 0, used: 0, remaining: -1, resetSec, isUnlimited: true };
+  }
+
+  const day = now.toISOString().slice(0, 10);
   const key = `quota:${user.id}:${day}`;
   const used = Number((await env.LUMINARA_KV.get(key)) || 0);
-  if (used >= limit) return { ok: false, error: `Daily free limit of ${limit} requests reached. Subscribe for unlimited use or add your own API key in Settings.` };
-  await env.LUMINARA_KV.put(key, String(used + 1), { expirationTtl: 2 * 86400 });
-  return { ok: true };
+
+  if (used >= limit) {
+    return {
+      ok: false,
+      error: `Daily free limit of ${limit} requests reached. Subscribe for unlimited use or add your own API key in Settings.`,
+      limit,
+      used,
+      remaining: 0,
+      resetSec,
+      isUnlimited: false,
+    };
+  }
+
+  const newUsed = used + 1;
+  await env.LUMINARA_KV.put(key, String(newUsed), { expirationTtl: 2 * 86400 });
+  return {
+    ok: true,
+    limit,
+    used: newUsed,
+    remaining: Math.max(0, limit - newUsed),
+    resetSec,
+    isUnlimited: false,
+  };
 }
 
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -537,6 +617,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       },
       telegram: Boolean(env.BOT_TOKEN),
       firebase: Boolean(env.FIREBASE_PROJECT_ID),
+      ton: true,
+      tonPricing: TON_PRICING,
       requireAuth: env.REQUIRE_TG_AUTH === 'true',
       requireSubscription: env.REQUIRE_SUBSCRIPTION === 'true',
       freeDailyLimit: Number(env.FREE_DAILY_LIMIT || 0),
@@ -552,6 +634,58 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (who.error) return withCors(json({ ok: false, error: who.error }, 401));
     if (!who.user) return withCors(json({ ok: false, error: 'Not signed in' }, 401));
     return withCors(json({ ok: true, user: who.user }));
+  }
+
+  if (path === '/auth/quota') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const who = await identify(request, env);
+    const limit = Number(env.FREE_DAILY_LIMIT || 0);
+    const now = new Date();
+    const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
+
+    if (!who.user) {
+      return withCors(json({
+        ok: true,
+        authenticated: false,
+        limit,
+        used: 0,
+        remaining: limit,
+        resetSec,
+        isUnlimited: false,
+      }));
+    }
+
+    const sub = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get(`sub:${who.user.id}`, 'json')) as { plan?: string; expiresAt?: number } | null) : null;
+    const isSubActive = Boolean(sub?.expiresAt && sub.expiresAt > Date.now());
+
+    if (isSubActive) {
+      return withCors(json({
+        ok: true,
+        authenticated: true,
+        plan: sub!.plan,
+        expiresAt: sub!.expiresAt,
+        limit: -1,
+        used: 0,
+        remaining: -1,
+        resetSec,
+        isUnlimited: true,
+      }));
+    }
+
+    const day = now.toISOString().slice(0, 10);
+    const used = env.LUMINARA_KV ? Number((await env.LUMINARA_KV.get(`quota:${who.user.id}:${day}`)) || 0) : 0;
+
+    return withCors(json({
+      ok: true,
+      authenticated: true,
+      plan: 'free',
+      limit,
+      used,
+      remaining: Math.max(0, limit - used),
+      resetSec,
+      isUnlimited: limit <= 0,
+    }));
   }
 
   const m = path.match(/^\/providers\/([a-z]+)(\/.*)$/);
@@ -602,6 +736,32 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (typeof plan !== 'string' || !plan) return withCors(json({ error: 'initData and plan required' }, 400));
     const link = await createInvoiceLink(env, v.user.id, plan);
     return withCors(link.ok ? json({ ok: true, url: link.url }) : json({ error: link.error }, 400));
+  }
+
+  if (path === '/ton/invoice' || path === '/ton/verify') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return withCors(json({ error: read.error }, read.status));
+
+    if (path === '/ton/invoice') {
+      const { planId } = (read.value || {}) as { planId?: string };
+      if (!planId) return withCors(json({ error: 'planId required' }, 400));
+      const who = await identify(request, env);
+      if (!who.user) return withCors(json({ error: who.error || 'Sign in required' }, 401));
+      const result = await createTonInvoice(env, who.user.id, planId);
+      return withCors(result.ok ? json(result) : json({ error: result.error }, 400));
+    }
+
+    if (path === '/ton/verify') {
+      const { orderId } = (read.value || {}) as { orderId?: string };
+      if (!orderId) return withCors(json({ error: 'orderId required' }, 400));
+      const who = await identify(request, env);
+      if (!who.user) return withCors(json({ error: who.error || 'Sign in required' }, 401));
+      const result = await verifyTonPayment(env, orderId, { expectedUserId: who.user.id });
+      return withCors(result.ok ? json(result) : json({ error: result.error }, 400));
+    }
   }
 
   // Drift Sentinel targets are owned by the signed-in Telegram user: alerts can only go to that

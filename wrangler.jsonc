@@ -53,6 +53,9 @@
   // Non-secret config. Secrets are set with `npx wrangler secret put NAME`:
   //   BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET (required for the bot webhook), GROQ_API_KEY, GEMINI_API_KEY,
   //   TAVILY_API_KEY, FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY,
+  //   TON_API_KEY (Toncenter), UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD).
+  // Non-secret TON merchant wallet (safe in vars): TON_RECEIVING_ADDRESS
+  //   TAVILY_API_KEY, FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY,
   //   UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD) for the self-hosted Results tracking relay.
   "vars": {
     "WEBAPP_URL": "https://luminarasuite.com/",

@@ -302,7 +302,12 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
         <div className="w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
-        <p className="text-[9px] text-gray-800 uppercase tracking-[0.8em]">&copy; 2025 Luminara Digital. Built to help you win.</p>
+        <p className="text-[9px] text-gray-800 uppercase tracking-[0.8em]">
+          &copy; {new Date().getFullYear()} Luminara Suite · Produced by{' '}
+          <a href="https://www.luminarasuite.com/" className="text-gold/70 hover:text-gold normal-case tracking-normal">
+            luminarasuite.com
+          </a>
+        </p>
       </footer>
     </div>
   );
