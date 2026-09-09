@@ -328,8 +328,13 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
         <p className="mt-4 text-center text-[10px] text-gray-600">
           Produced by{' '}
-          <a href="https://www.luminarasuite.com/" className="text-gold/80 hover:text-gold underline-offset-2 hover:underline">
-            luminarasuite.com
+          <a
+            href="https://luminaradigital.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-gold/80 hover:text-gold underline-offset-2 hover:underline"
+          >
+            Luminara Digital
           </a>
         </p>
       </div>

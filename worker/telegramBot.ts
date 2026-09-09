@@ -3,6 +3,7 @@
  * Telegram Stars payments for plans, and subscription records in KV.
  */
 import type { Env } from './index';
+import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 
 export const PLANS: Record<string, { title: string; description: string; stars: number; days: number }> = {
   starter: {
@@ -56,16 +57,21 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       const userId = Number(userIdRaw) || msg.from?.id;
       if (plan && userId) {
         const now = Date.now();
-        const existing = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get(`sub:${userId}`, 'json')) as { expiresAt?: number } | null) : null;
+        const loginId = String(userId);
+        const accountId = env.LUMINARA_KV ? await resolveAccountId(env, loginId) : loginId;
+        const existing = env.LUMINARA_KV
+          ? ((await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null)
+          : null;
         const base = existing?.expiresAt && existing.expiresAt > now ? existing.expiresAt : now;
         const record = {
           plan: planId,
           stars: msg.successful_payment.total_amount,
           chargeId: msg.successful_payment.telegram_payment_charge_id,
+          paymentMethod: 'stars',
           startedAt: now,
           expiresAt: base + plan.days * 86400_000,
         };
-        if (env.LUMINARA_KV) await env.LUMINARA_KV.put(`sub:${userId}`, JSON.stringify(record));
+        if (env.LUMINARA_KV) await writeSubscriptionRecord(env, loginId, record);
         await api(env, 'sendMessage', {
           chat_id: msg.chat.id,
           text: `✅ ${plan.title} is active until ${new Date(record.expiresAt).toUTCString()}. Open the app to run your first audit.`,

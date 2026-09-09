@@ -34,7 +34,7 @@ import {
   stripUpstreamHeaders,
   withSecurityHeaders,
 } from './security';
-import { upsertAppUser } from './userStore';
+import { withAccountId, linkTelegramAndFirebase, resolveAccountId, getWorkspace, putWorkspace, type WorkspacePayload } from './userStore';
 import type { HostedIdentity } from './userTypes';
 
 export type { HostedIdentity } from './userTypes';
@@ -241,38 +241,68 @@ function secretEquals(a: string, b: string): boolean {
 /**
  * Identifies the caller:
  * 1) Telegram Mini App initData (x-telegram-init-data), or
- * 2) Firebase Auth ID token (Authorization: Bearer …).
+ * 2) Firebase Auth ID token (Authorization: Bearer …),
+ * and when BOTH are present, links them onto one account_id so Stars/TON/Stripe share entitlements.
  * Upserts a durable user row when identity succeeds.
  * Returns null when auth is optional and absent.
  */
 async function identify(request: Request, env: Env): Promise<{ user: HostedIdentity | null; error?: string }> {
   const initData = request.headers.get('x-telegram-init-data');
+  const bearer = bearerFromAuthorization(request.headers.get('authorization'));
+
+  let telegramUser: HostedIdentity | null = null;
+  let firebaseUser: HostedIdentity | null = null;
+
   if (initData) {
     if (!env.BOT_TOKEN) return { user: null, error: 'Server has no BOT_TOKEN configured' };
     const result = await validateInitData(initData, env.BOT_TOKEN);
     if (!result.ok) return { user: null, error: result.reason };
     const tg = result.user;
-    const user: HostedIdentity = {
+    telegramUser = {
       id: String(tg.id),
       source: 'telegram',
       name: [tg.first_name, tg.last_name].filter(Boolean).join(' ') || tg.username,
     };
-    try { await upsertAppUser(env, user); } catch { /* persistence best-effort */ }
-    return { user };
   }
 
-  const bearer = bearerFromAuthorization(request.headers.get('authorization'));
   if (bearer && env.FIREBASE_PROJECT_ID) {
     const result = await verifyFirebaseIdToken(bearer, env.FIREBASE_PROJECT_ID);
-    if (!result.ok) return { user: null, error: result.reason };
-    const user: HostedIdentity = {
-      id: `fb:${result.user.uid}`,
-      source: 'firebase',
-      email: result.user.email,
-      name: result.user.name,
-    };
-    try { await upsertAppUser(env, user); } catch { /* persistence best-effort */ }
-    return { user };
+    if (!result.ok) {
+      // Telegram-only callers still succeed when Firebase token is bad/expired.
+      if (!telegramUser) return { user: null, error: result.reason };
+    } else {
+      firebaseUser = {
+        id: `fb:${result.user.uid}`,
+        source: 'firebase',
+        email: result.user.email,
+        name: result.user.name,
+      };
+    }
+  }
+
+  if (telegramUser && firebaseUser) {
+    try {
+      const linked = await linkTelegramAndFirebase(
+        env,
+        telegramUser.id,
+        firebaseUser.id.replace(/^fb:/, ''),
+        { email: firebaseUser.email, name: firebaseUser.name, tgName: telegramUser.name },
+      );
+      // Prefer Telegram identity inside the Mini App; accountId is shared either way.
+      const primary = initData ? telegramUser : firebaseUser;
+      return { user: { ...primary, accountId: linked.accountId } };
+    } catch {
+      /* fall through to single-identity upsert */
+    }
+  }
+
+  const primary = telegramUser || firebaseUser;
+  if (primary) {
+    try {
+      return { user: await withAccountId(env, primary) };
+    } catch {
+      return { user: primary };
+    }
   }
 
   if (env.REQUIRE_TG_AUTH === 'true') {
@@ -284,6 +314,9 @@ async function identify(request: Request, env: Env): Promise<{ user: HostedIdent
   return { user: null };
 }
 
+function billingId(user: HostedIdentity): string {
+  return user.accountId || user.id;
+}
 export async function proxyProvider(request: Request, env: Env, providerId: string, subPath: string): Promise<Response> {
   const spec = PROVIDERS[providerId];
   if (!spec) return json({ error: `Unknown provider "${providerId}"` }, 404);
@@ -588,13 +621,19 @@ export interface QuotaStatus {
 }
 
 /**
- * Checks whether a user has an active paid subscription stored in KV (sub:<userId>).
+ * Checks whether a user has an active paid subscription stored in KV (sub:<accountId>).
+ * Also accepts legacy sub:<loginId> rows written before account linking.
+ * Stars, TON, and (later) Stripe all write the same key shape.
  */
 export async function isUserSubscribed(env: Env, user: HostedIdentity | null): Promise<boolean> {
   if (!user || !env.LUMINARA_KV) return false;
   try {
-    const sub = (await env.LUMINARA_KV.get(`sub:${user.id}`, 'json')) as { expiresAt?: number } | null;
-    return Boolean(sub?.expiresAt && sub.expiresAt > Date.now());
+    const accountId = user.accountId || (await resolveAccountId(env, user.id));
+    for (const key of [`sub:${accountId}`, `sub:${user.id}`]) {
+      const sub = (await env.LUMINARA_KV.get(key, 'json')) as { expiresAt?: number } | null;
+      if (sub?.expiresAt && sub.expiresAt > Date.now()) return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -633,9 +672,8 @@ export async function checkHostedQuota(env: Env, user: HostedIdentity | null): P
     return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0 };
   }
 
-  const sub = (await env.LUMINARA_KV.get(`sub:${user.id}`, 'json')) as { expiresAt?: number } | null;
-  const active = Boolean(sub?.expiresAt && sub.expiresAt > Date.now());
-  if (active) {
+  const accountId = user.accountId || (await resolveAccountId(env, user.id));
+  if (await isUserSubscribed(env, { ...user, accountId })) {
     return { ok: true, limit: -1, used: 0, remaining: -1, resetSec, isUnlimited: true };
   }
 
@@ -658,7 +696,7 @@ export async function checkHostedQuota(env: Env, user: HostedIdentity | null): P
   }
 
   const day = now.toISOString().slice(0, 10);
-  const key = `quota:${user.id}:${day}`;
+  const key = `quota:${accountId}:${day}`;
   const used = Number((await env.LUMINARA_KV.get(key)) || 0);
 
   if (used >= limit) {
@@ -742,7 +780,85 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const who = await identify(request, env);
     if (who.error) return withCors(json({ ok: false, error: who.error }, 401));
     if (!who.user) return withCors(json({ ok: false, error: 'Not signed in' }, 401));
-    return withCors(json({ ok: true, user: who.user }));
+    return withCors(json({
+      ok: true,
+      user: who.user,
+      accountId: billingId(who.user),
+      linked: Boolean(who.user.accountId && who.user.accountId !== who.user.id),
+    }));
+  }
+
+  // Explicit link: send BOTH Telegram initData and Firebase Bearer in one request.
+  if (path === '/auth/link') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+    const initData = request.headers.get('x-telegram-init-data');
+    const bearer = bearerFromAuthorization(request.headers.get('authorization'));
+    if (!initData || !bearer) {
+      return withCors(json({
+        ok: false,
+        error: 'Open the Mini App in Telegram, sign in with email/Google there, then try Link again. Both Telegram and Firebase must be present.',
+      }, 400));
+    }
+    if (!env.BOT_TOKEN || !env.FIREBASE_PROJECT_ID) {
+      return withCors(json({ ok: false, error: 'Server linking is not configured' }, 503));
+    }
+    const tg = await validateInitData(initData, env.BOT_TOKEN);
+    if (!tg.ok) return withCors(json({ ok: false, error: tg.reason }, 401));
+    const fb = await verifyFirebaseIdToken(bearer, env.FIREBASE_PROJECT_ID);
+    if (!fb.ok) return withCors(json({ ok: false, error: fb.reason }, 401));
+    const linked = await linkTelegramAndFirebase(
+      env,
+      String(tg.user.id),
+      fb.user.uid,
+      {
+        email: fb.user.email,
+        name: fb.user.name,
+        tgName: [tg.user.first_name, tg.user.last_name].filter(Boolean).join(' ') || tg.user.username,
+      },
+    );
+    return withCors(json({ ok: true, ...linked }));
+  }
+
+  // Per-account workspace (DNA, VFS, audits, chat, optional BYOK keys).
+  if (path === '/workspace') {
+    const who = await identify(request, env);
+    if (who.error || !who.user) return withCors(json({ ok: false, error: who.error || 'Sign in required' }, 401));
+    const accountId = billingId(who.user);
+
+    if (request.method === 'GET') {
+      const record = await getWorkspace(env, accountId);
+      return withCors(json({
+        ok: true,
+        accountId,
+        updatedAt: record?.updatedAt ?? 0,
+        payload: record?.payload ?? {},
+      }));
+    }
+
+    if (request.method === 'PUT') {
+      const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+      if (!read.ok) return withCors(json({ error: read.error }, read.status));
+      const body = (read.value || {}) as { updatedAt?: number; payload?: WorkspacePayload; force?: boolean };
+      const clientUpdatedAt = Number(body.updatedAt || 0);
+      const payload = body.payload && typeof body.payload === 'object' ? body.payload : {};
+      const existing = await getWorkspace(env, accountId);
+      if (existing && !body.force && existing.updatedAt > clientUpdatedAt) {
+        return withCors(json({
+          ok: false,
+          conflict: true,
+          accountId,
+          updatedAt: existing.updatedAt,
+          payload: existing.payload,
+        }, 409));
+      }
+      const updatedAt = Math.max(clientUpdatedAt, Date.now());
+      const saved = await putWorkspace(env, accountId, payload, updatedAt);
+      return withCors(json({ ok: true, accountId, updatedAt: saved.updatedAt }));
+    }
+
+    return withCors(json({ error: 'Method not allowed' }, 405));
   }
 
   if (path === '/auth/quota') {
@@ -765,13 +881,23 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }));
     }
 
-    const sub = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get(`sub:${who.user.id}`, 'json')) as { plan?: string; expiresAt?: number } | null) : null;
+    const accountId = billingId(who.user);
+    type SubRow = { plan?: string; expiresAt?: number };
+    let sub: SubRow | null = null;
+    if (env.LUMINARA_KV) {
+      sub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as SubRow | null;
+      if (!sub?.expiresAt || sub.expiresAt <= Date.now()) {
+        const legacy = (await env.LUMINARA_KV.get(`sub:${who.user.id}`, 'json')) as SubRow | null;
+        if (legacy?.expiresAt && legacy.expiresAt > Date.now()) sub = legacy;
+      }
+    }
     const isSubActive = Boolean(sub?.expiresAt && sub.expiresAt > Date.now());
 
     if (isSubActive) {
       return withCors(json({
         ok: true,
         authenticated: true,
+        accountId,
         plan: sub!.plan,
         expiresAt: sub!.expiresAt,
         limit: -1,
@@ -783,11 +909,12 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
 
     const day = now.toISOString().slice(0, 10);
-    const used = env.LUMINARA_KV ? Number((await env.LUMINARA_KV.get(`quota:${who.user.id}:${day}`)) || 0) : 0;
+    const used = env.LUMINARA_KV ? Number((await env.LUMINARA_KV.get(`quota:${accountId}:${day}`)) || 0) : 0;
 
     return withCors(json({
       ok: true,
       authenticated: true,
+      accountId,
       plan: 'free',
       limit,
       used,

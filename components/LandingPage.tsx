@@ -1,5 +1,6 @@
 import React from 'react';
 import { ICONS } from '../constants';
+import { PremiumAtmosphere } from './ui/PremiumAtmosphere';
 
 interface LandingPageProps {
   onEnter: () => void;
@@ -11,302 +12,432 @@ interface LandingPageProps {
   onNavigatePricing: () => void;
 }
 
-const LandingPage: React.FC<LandingPageProps> = ({ 
-  onEnter, 
-  onNavigateAudit, 
-  onNavigateSuite, 
-  onNavigateInfrastructure, 
-  onNavigateIntelligence, 
-  onNavigateWhy, 
-  onNavigatePricing 
+const LandingPage: React.FC<LandingPageProps> = ({
+  onEnter,
+  onNavigateAudit,
+  onNavigateSuite,
+  onNavigateInfrastructure,
+  onNavigateIntelligence,
+  onNavigateWhy,
+  onNavigatePricing,
 }) => {
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-gold selection:text-black font-['Outfit'] antialiased">
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 left-1/4 w-[50%] h-[50%] bg-gold/5 blur-[180px] rounded-full animate-pulse"></div>
-        <div className="absolute bottom-0 right-1/4 w-[50%] h-[50%] bg-gold-dark/5 blur-[180px] rounded-full animate-pulse delay-1000"></div>
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.15] mix-blend-overlay"></div>
-      </div>
+    <div className="min-h-screen bg-black text-white selection:bg-gold selection:text-black font-sans antialiased relative">
+      <PremiumAtmosphere intensity="full" />
 
-      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-6 backdrop-blur-md bg-black/20 border-b border-white/[0.03]">
-        <div className="flex items-center gap-4 group cursor-pointer" onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}>
-          <ICONS.LuminaraLogo className="w-8 h-8 group-hover:scale-110 transition-transform duration-700" />
+      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-5 backdrop-blur-xl bg-black/35 border-b border-white/[0.04]">
+        <div
+          className="flex items-center gap-4 group cursor-pointer"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          <ICONS.LuminaraLogo className="w-9 h-9 group-hover:scale-110 transition-transform duration-700" />
           <div className="flex flex-col leading-none">
-            <span className="text-lg font-bold tracking-[0.4em] uppercase gold-text">LUMINARA SUITE</span>
-            <span className="text-[7px] text-gray-500 tracking-[0.6em] font-black uppercase mt-1">Autonomous Search & AEO Suite</span>
+            <span className="text-lg font-bold tracking-[0.35em] uppercase gold-text">LUMINARA SUITE</span>
+            <span className="text-[7px] text-gray-500 tracking-[0.55em] font-semibold uppercase mt-1.5">
+              AI search visibility
+            </span>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-5 md:gap-8">
           {onNavigateAudit && (
-            <button onClick={onNavigateAudit} className="hidden lg:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-gold-light transition-colors">Instant Audit</button>
+            <button onClick={onNavigateAudit} className="hidden lg:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-gold-light transition-colors">
+              Instant Audit
+            </button>
           )}
           {onNavigateSuite && (
-            <button onClick={onNavigateSuite} className="hidden lg:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-gold-light transition-colors">All tools</button>
+            <button onClick={onNavigateSuite} className="hidden lg:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-gold-light transition-colors">
+              All tools
+            </button>
           )}
-          <button onClick={onNavigateInfrastructure} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">How It Works</button>
-          <button onClick={onNavigateIntelligence} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Our AI</button>
-          <button onClick={onNavigateWhy} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Why Us</button>
-          <button onClick={onNavigatePricing} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Pricing</button>
-          <button 
+          <button onClick={onNavigateInfrastructure} className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-500 hover:text-white transition-colors">
+            How It Works
+          </button>
+          <button onClick={onNavigateIntelligence} className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-500 hover:text-white transition-colors">
+            Our AI
+          </button>
+          <button onClick={onNavigateWhy} className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-500 hover:text-white transition-colors">
+            Why Us
+          </button>
+          <button onClick={onNavigatePricing} className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-500 hover:text-white transition-colors">
+            Pricing
+          </button>
+          <button
             onClick={onEnter}
-            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
+            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-[1.03] active:scale-95 transition-all shadow-[0_12px_40px_rgba(191,149,63,0.25)]"
           >
             Open the app
           </button>
         </div>
       </nav>
 
-      <section className="relative pt-60 pb-40 px-6 flex flex-col items-center text-center z-10 overflow-hidden">
-        <div className="inline-block px-5 py-1.5 rounded-full border border-gold/20 bg-gold/5 mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
-          <span className="text-[9px] font-black uppercase tracking-[0.7em] gold-text">AI search visibility for your business</span>
-        </div>
-        
-        <h1 className="text-5xl md:text-8xl lg:text-[9rem] font-light tracking-tighter leading-[0.85] mb-12 animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-100">
-          Show up where <br />
-          <span className="gold-text italic animate-title-shimmer bg-size-200 font-medium not-italic tracking-tighter">customers ask.</span>
-        </h1>
-        
-        <p className="max-w-3xl text-lg md:text-2xl text-gray-400 leading-relaxed font-light mb-16 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200 px-4">
-          See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a plain-English list of what to fix first. Runs on your own AI account, open source.
-        </p>
+      {/* Hero: brand + one line + CTAs + product stage */}
+      <section className="relative min-h-[100svh] pt-28 pb-20 px-6 flex flex-col justify-center z-10 overflow-hidden">
+        <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-10 items-center">
+          <div className="lg:col-span-6 text-center lg:text-left space-y-8">
+            <p className="font-display text-5xl sm:text-6xl md:text-7xl text-white/95 tracking-tight leading-[0.95]">
+              Luminara
+            </p>
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-light tracking-tight leading-[1.05] text-gray-200">
+              Show up where{' '}
+              <span className="gold-text animate-title-shimmer font-medium tracking-tight">customers ask.</span>
+            </h1>
+            <p className="max-w-xl mx-auto lg:mx-0 text-base md:text-lg text-gray-400 font-light leading-relaxed">
+              See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a plain-English list of what to fix first.
+            </p>
+            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-2">
+              <button
+                onClick={onEnter}
+                className="px-9 py-4 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:scale-[1.03] active:scale-95 transition-all shadow-[0_20px_60px_rgba(191,149,63,0.28)]"
+              >
+                Open the app
+              </button>
+              {onNavigateAudit && (
+                <button
+                  onClick={onNavigateAudit}
+                  className="px-9 py-4 glass-premium text-gold-light font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:border-gold/60 transition-all"
+                >
+                  Audit my website
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-600 tracking-wide">
+              Produced by{' '}
+              <a
+                href="https://luminaradigital.io"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-gold/75 hover:text-gold transition-colors"
+              >
+                Luminara Digital
+              </a>
+            </p>
+          </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-300">
-          <button 
-            onClick={onEnter}
-            className="px-10 py-5 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.3em] text-[10px] rounded-xl hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-gold/20"
-          >
-            Open the app
-          </button>
-          {onNavigateAudit && (
-            <button 
-              onClick={onNavigateAudit}
-              className="px-10 py-5 glass-morphism border border-gold/40 text-gold-light font-black uppercase tracking-[0.3em] text-[10px] rounded-xl hover:bg-gold/10 hover:border-gold transition-all hover:-translate-y-0.5"
-            >
-              Audit my website
-            </button>
-          )}
-          {onNavigateSuite && (
-            <button 
-              onClick={onNavigateSuite}
-              className="px-10 py-5 glass-morphism border border-white/10 text-gray-300 font-black uppercase tracking-[0.3em] text-[10px] rounded-xl hover:bg-white/5 hover:text-white transition-all hover:-translate-y-0.5"
-            >
-              See all tools
-            </button>
-          )}
+          <div className="lg:col-span-6 relative">
+            <div className="absolute -inset-8 bg-gold/10 blur-[90px] rounded-full opacity-70" />
+            <div className="relative glass-premium rounded-[28px] p-5 sm:p-7 overflow-hidden">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <ICONS.LuminaraLogo className="w-8 h-8" isThinking />
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.35em] gold-text">Live audit stage</div>
+                    <div className="text-[11px] text-gray-500 mt-1">What you open inside the app</div>
+                  </div>
+                </div>
+                <span className="text-[9px] uppercase tracking-[0.25em] text-success-400/90 font-bold">Ready</span>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { label: 'Google + AI Overviews', score: '72', tone: 'text-gold-light' },
+                  { label: 'ChatGPT citations', score: '41', tone: 'text-warning-300' },
+                  { label: 'Perplexity presence', score: '58', tone: 'text-gold' },
+                ].map((row) => (
+                  <div key={row.label} className="rounded-2xl border border-white/[0.06] bg-black/40 px-4 py-3.5 flex items-center justify-between">
+                    <span className="text-[11px] uppercase tracking-[0.18em] text-gray-400">{row.label}</span>
+                    <span className={`text-sm font-semibold tabular-nums ${row.tone}`}>{row.score}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 h-px premium-hairline" />
+              <p className="mt-5 text-sm text-gray-400 font-light leading-relaxed">
+                Prioritized fixes, competitor map, and schema gaps in one calm workspace. Built for owners, not agency decks.
+              </p>
+              {onNavigateSuite && (
+                <button
+                  onClick={onNavigateSuite}
+                  className="mt-5 text-[10px] font-black uppercase tracking-[0.3em] text-gold/80 hover:text-gold transition-colors"
+                >
+                  See all tools →
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* The Death of the Retainer Section */}
-      <section className="relative py-48 px-6 md:px-20 z-10 bg-black/40 border-y border-white/[0.05]">
-        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-24">
-          <div className="lg:w-1/2 space-y-12">
-            <h2 className="text-4xl md:text-6xl font-light italic leading-tight">
-              Stop Paying Big <br />
-              <span className="gold-text font-bold uppercase not-italic tracking-wider">Monthly Fees.</span>
+      <section className="relative py-28 md:py-40 px-6 md:px-20 z-10 border-y border-white/[0.05] bg-black/50 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
+          <div className="lg:w-1/2 space-y-10">
+            <h2 className="font-display text-4xl md:text-6xl leading-[1.05] text-white">
+              Clarity without the{' '}
+              <span className="gold-text font-sans font-semibold uppercase tracking-wider text-3xl md:text-5xl align-middle">
+                retainer tax.
+              </span>
             </h2>
-            <p className="text-gray-400 text-lg leading-relaxed font-light">
-              Small businesses spend a lot on marketing. But many lose money on things that do not work. Luminara Search works like a top expert. It shows you what to fix to make more money. You do not need to pay a big agency every month.
+            <p className="text-gray-400 text-lg leading-relaxed font-light max-w-xl">
+              Many owners pay heavily for marketing that never shows what to fix. Luminara Suite reads search and AI answers like an expert, then ranks the moves that matter.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-              <div className="space-y-2">
-                <div className="text-2xl font-bold text-white">4 engines</div>
-                <div className="text-[10px] text-gold uppercase font-black tracking-[0.2em]">Where you show up</div>
-                <div className="text-[11px] text-gray-500">Google, AI Overviews, ChatGPT and Perplexity in one audit.</div>
+            <div className="flex flex-wrap gap-10">
+              <div>
+                <div className="text-3xl font-light text-white">4</div>
+                <div className="text-[10px] text-gold uppercase font-black tracking-[0.22em] mt-2">Answer engines</div>
+                <p className="text-[12px] text-gray-500 mt-2 max-w-[12rem]">Google, AI Overviews, ChatGPT, Perplexity.</p>
               </div>
-              <div className="space-y-2">
-                <div className="text-2xl font-bold text-white">Your keys</div>
-                <div className="text-[10px] text-gold uppercase font-black tracking-[0.2em]">Your AI account</div>
-                <div className="text-[11px] text-gray-500">Runs on Groq, NVIDIA NIM or Ollama. Open source under AGPL-3.0.</div>
+              <div>
+                <div className="text-3xl font-light text-white">BYOK</div>
+                <div className="text-[10px] text-gold uppercase font-black tracking-[0.22em] mt-2">Your AI keys</div>
+                <p className="text-[12px] text-gray-500 mt-2 max-w-[12rem]">Groq, NIM, Ollama. Or hosted keys behind plan.</p>
               </div>
             </div>
-            <button 
+            <button
               onClick={onNavigateWhy}
-              className="px-12 py-5 bg-gold text-black font-black uppercase tracking-[0.4em] text-[9px] rounded-xl hover:scale-105 transition-all shadow-xl"
+              className="px-10 py-4 bg-gold text-black font-black uppercase tracking-[0.35em] text-[9px] rounded-xl hover:scale-[1.03] transition-all"
             >
-              Learn More
+              Why Luminara
             </button>
           </div>
-          <div className="lg:w-1/2">
-             <div className="p-12 glass-morphism rounded-[48px] border-gold/20 relative">
-                <div className="absolute -top-6 -left-6 px-6 py-2 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.3em] rounded-xl">Your Expert AI</div>
-                <div className="space-y-6">
-                   <div className="flex items-center gap-4 border-b border-white/5 pb-6">
-                      <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-gold"><ICONS.Search /></div>
-                      <div className="space-y-1">
-                         <div className="text-xs font-bold uppercase tracking-widest text-white">AI Search Audit</div>
-                         <div className="text-[10px] text-gray-500 uppercase">Find Growth Fast</div>
-                      </div>
-                   </div>
-                   <div className="space-y-4">
-                      <div className="flex justify-between text-[11px] uppercase tracking-widest">
-                         <span className="text-gray-500">Big Agencies</span>
-                         <span className="text-danger-500 font-bold">$120k / Year</span>
-                      </div>
-                      <div className="flex justify-between text-[11px] uppercase tracking-widest">
-                         <span className="text-gray-500">Luminara AI</span>
-                         <span className="gold-text font-bold">Pay Less, Get More</span>
-                      </div>
-                   </div>
-                   <button onClick={onEnter} className="w-full py-5 rounded-2xl bg-white/5 border border-white/10 text-white font-black uppercase tracking-[0.3em] text-[10px] hover:bg-white/10 transition-all">Start Now</button>
+          <div className="lg:w-1/2 w-full">
+            <div className="glass-premium rounded-[32px] p-8 md:p-10 relative">
+              <div className="absolute -top-4 left-8 px-5 py-2 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.28em] rounded-lg">
+                Inside the app
+              </div>
+              <div className="flex items-center gap-4 border-b border-white/[0.06] pb-6 mt-2">
+                <div className="w-12 h-12 rounded-xl bg-gold/10 border border-gold/25 flex items-center justify-center text-gold">
+                  <ICONS.Search />
                 </div>
-             </div>
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-[0.2em] text-white">Instant Audit</div>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Plain-English priorities</div>
+                </div>
+              </div>
+              <div className="space-y-4 pt-6">
+                <div className="flex justify-between text-[11px] uppercase tracking-widest">
+                  <span className="text-gray-500">Typical agency year</span>
+                  <span className="text-danger-400 font-bold">$120k+</span>
+                </div>
+                <div className="flex justify-between text-[11px] uppercase tracking-widest">
+                  <span className="text-gray-500">Luminara Suite</span>
+                  <span className="gold-text font-bold">Owner-first clarity</span>
+                </div>
+              </div>
+              <button
+                onClick={onEnter}
+                className="mt-8 w-full py-4 rounded-xl border border-gold/30 bg-gold/10 text-gold-light font-black uppercase tracking-[0.3em] text-[10px] hover:bg-gold/15 transition-all"
+              >
+                Enter workspace
+              </button>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="sectors" className="relative py-32 px-6 md:px-20 z-10">
-        <div className="max-w-6xl mx-auto flex flex-col items-center text-center mb-24">
-          <h2 className="text-3xl md:text-5xl font-light mb-6 tracking-tight italic">Tools for <span className="gold-text font-bold uppercase not-italic tracking-wider">Top Leaders.</span></h2>
-          <div className="w-12 h-px bg-gold/40 mb-6"></div>
+      <section id="sectors" className="relative py-24 px-6 md:px-20 z-10">
+        <div className="max-w-5xl mx-auto text-center mb-14">
+          <h2 className="font-display text-3xl md:text-5xl text-white tracking-tight">
+            Built for operators who lead.
+          </h2>
+          <div className="w-14 h-px mx-auto mt-6 bg-gold/50" />
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 max-w-7xl mx-auto">
+        <div className="max-w-5xl mx-auto flex flex-wrap justify-center gap-x-10 gap-y-6">
           {[
-            { name: 'Dentists', desc: 'Get More Patients' },
-            { name: 'Brokers', desc: 'Find Better Leads' },
-            { name: 'E-commerce', desc: 'Sell More Online' },
-            { name: 'Retail', desc: 'Own the Market' },
-            { name: 'Wellness', desc: 'Be the Expert' }
-          ].map((sector, i) => (
-            <div key={i} className="group p-8 rounded-[32px] border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] transition-all text-center">
-              <h3 className="text-[10px] font-black gold-text uppercase tracking-[0.3em] mb-3">{sector.name}</h3>
-              <p className="text-[9px] text-gray-500 uppercase tracking-widest">{sector.desc}</p>
+            { name: 'Dentists', desc: 'More patients' },
+            { name: 'Brokers', desc: 'Better leads' },
+            { name: 'E-commerce', desc: 'Sell more' },
+            { name: 'Retail', desc: 'Own demand' },
+            { name: 'Wellness', desc: 'Be cited' },
+          ].map((sector) => (
+            <div key={sector.name} className="text-center min-w-[7rem]">
+              <div className="text-[11px] font-black gold-text uppercase tracking-[0.28em]">{sector.name}</div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-[0.2em] mt-2">{sector.desc}</div>
             </div>
           ))}
         </div>
       </section>
 
-      <section id="services" className="py-48 px-6 md:px-20 relative z-10 bg-black">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row items-baseline justify-between mb-32 gap-12 border-b border-white/[0.05] pb-12">
-            <h2 className="text-5xl md:text-7xl font-semibold tracking-tighter">How We <span className="gold-text italic">Help You.</span></h2>
-            <p className="text-gray-500 text-xs font-bold uppercase tracking-[0.5em]">Modern Marketing Tools</p>
+      <section id="services" className="relative py-28 md:py-36 px-6 md:px-20 z-10 border-t border-white/[0.05]">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16 border-b border-white/[0.06] pb-10">
+            <h2 className="font-display text-4xl md:text-6xl text-white tracking-tight">
+              What the suite does.
+            </h2>
+            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-[0.4em] md:pb-2">Product capabilities</p>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-16 gap-y-24">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-12">
             {[
-              { title: 'SEO Growth', desc: 'Help people find your site on Google easily.' },
-              { title: 'AI Answers', desc: 'Make sure AI like ChatGPT shows your brand.' },
-              { title: 'Local Search', desc: 'Help nearby customers find you fast.' },
-              { title: 'Smart Content', desc: 'Create videos and blogs that people love.' },
-              { title: 'Social Ads', desc: 'Run ads on TikTok and Instagram that work.' },
-              { title: 'Email Plans', desc: 'Send emails that turn people into buyers.' },
-              { title: 'Paid Ads', desc: 'Get more sales with Google and Bing ads.' },
-              { title: 'Track Success', desc: 'See how much money your site is making.' },
-              { title: 'AI Tools', desc: 'Use our special AI to find new customers.' },
-              { title: 'Learn AI', desc: 'We teach your team how to use AI for work.' },
-              { title: 'Ready Assets', desc: 'Get plans and reports you can use right away.' },
-              { title: 'AI Chatbots', desc: 'Let AI talk to your customers and sell things.' },
-              { title: 'Google AI', desc: 'Use the latest Google AI to grow your shop.' }
+              { title: 'SEO growth', desc: 'Find the gaps that block rankings and fix the highest-leverage pages first.' },
+              { title: 'AI answers', desc: 'See whether ChatGPT, Perplexity and AI Overviews mention you, and why not.' },
+              { title: 'Local presence', desc: 'Help nearby customers discover you when they ask for services like yours.' },
+              { title: 'Action brief', desc: 'Leave with a ranked list, not a 40-page PDF nobody opens.' },
+              { title: 'Your keys or ours', desc: 'Bring your own AI keys, or use hosted keys with free daily quota and paid plans.' },
+              { title: 'Saved workspace', desc: 'DNA, audits and settings follow your account when you sign back in.' },
             ].map((s, idx) => (
-              <div key={idx} className="group relative">
-                <div className="text-[10px] font-black text-gold/40 mb-4 tracking-[0.4em] transition-all group-hover:text-gold">{(idx + 1).toString().padStart(2, '0')}</div>
-                <h4 className="text-xl font-bold uppercase tracking-[0.1em] mb-4 text-gray-200 group-hover:text-white transition-colors">{s.title}</h4>
-                <p className="text-gray-500 text-sm leading-relaxed font-light group-hover:text-gray-400 transition-colors">{s.desc}</p>
+              <div key={s.title} className="group">
+                <div className="text-[10px] font-black text-gold/50 mb-3 tracking-[0.35em] group-hover:text-gold transition-colors">
+                  {(idx + 1).toString().padStart(2, '0')}
+                </div>
+                <h3 className="text-lg font-semibold tracking-wide text-gray-100 mb-2">{s.title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed font-light">{s.desc}</p>
               </div>
             ))}
           </div>
-          <div className="mt-20 text-center">
-            <button 
+          <div className="mt-16 text-center">
+            <button
               onClick={onNavigateInfrastructure}
-              className="px-12 py-5 border border-gold/30 text-gold-light font-black uppercase tracking-[0.4em] text-[9px] rounded-xl hover:bg-gold/10 transition-all"
+              className="px-10 py-4 border border-gold/30 text-gold-light font-black uppercase tracking-[0.35em] text-[9px] rounded-xl hover:bg-gold/10 transition-all"
             >
-              See All Services
+              How it works
             </button>
           </div>
         </div>
       </section>
 
-      <section id="workflow" className="py-48 px-6 md:px-20 relative z-10 border-t border-white/[0.05]">
-        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-32">
+      <section id="workflow" className="relative py-28 md:py-36 px-6 md:px-20 z-10 border-t border-white/[0.05] bg-black/40">
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-16 lg:gap-24 items-center">
           <div className="lg:w-1/2">
-            <h3 className="text-5xl font-light italic mb-12">How Our <br /><span className="gold-text font-bold uppercase not-italic tracking-[0.1em]">AI Works.</span></h3>
-            <p className="text-gray-400 text-lg font-light leading-relaxed mb-16">
-              We use the newest AI tools to help you win. Our systems are fast and very smart.
+            <h3 className="font-display text-4xl md:text-5xl text-white mb-8 leading-tight">
+              Calm intelligence,{' '}
+              <span className="gold-text font-sans font-semibold uppercase tracking-wider text-2xl md:text-3xl">on demand.</span>
+            </h3>
+            <p className="text-gray-400 text-lg font-light leading-relaxed mb-12 max-w-lg">
+              The app pairs live search grounding with your chosen AI engines so every audit stays factual, readable, and actionable.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-10 gap-x-12 mb-16">
-              {[
-                'Google Studios', 'Canva Pro', 'Replit', 'Make', 'n8n', 'OpenAI', 'GPT Agents', 'Google Gems'
-              ].map((tool, i) => (
-                <div key={i} className="flex items-center gap-4 group">
-                  <span className="text-[10px] font-black text-white/20 group-hover:text-gold transition-colors">{i+1}</span>
-                  <span className="text-[11px] font-bold tracking-[0.3em] uppercase text-gray-500 group-hover:text-white transition-colors">{tool}</span>
-                </div>
+            <div className="flex flex-wrap gap-x-8 gap-y-4 mb-12">
+              {['Groq', 'NVIDIA NIM', 'Ollama', 'OpenRouter', 'Firecrawl', 'Tavily'].map((tool) => (
+                <span key={tool} className="text-[11px] font-bold tracking-[0.22em] uppercase text-gray-500 hover:text-gold transition-colors">
+                  {tool}
+                </span>
               ))}
             </div>
-            <button 
+            <button
               onClick={onNavigateIntelligence}
-              className="px-12 py-5 bg-gold text-black font-black uppercase tracking-[0.4em] text-[9px] rounded-xl hover:scale-105 transition-all"
+              className="px-10 py-4 bg-gold text-black font-black uppercase tracking-[0.35em] text-[9px] rounded-xl hover:scale-[1.03] transition-all"
             >
-              Learn More
+              Our AI
             </button>
           </div>
-          
-          <div className="lg:w-1/2 flex items-center justify-center">
-             <div className="relative w-full aspect-square max-w-md group">
-                <div className="absolute inset-0 bg-gradient-to-br from-gold/20 to-transparent rounded-[64px] blur-3xl opacity-0 group-hover:opacity-40 transition-opacity duration-1000"></div>
-                <div className="relative h-full glass-morphism rounded-[80px] border border-white/[0.03] flex flex-col items-center justify-center p-16 shadow-[0_40px_100px_rgba(0,0,0,0.6)]">
-                   <ICONS.LuminaraLogo className="w-32 h-32 mb-12" isThinking={true} />
-                   <div className="text-center space-y-4">
-                     <div className="text-[9px] font-black uppercase tracking-[1em] text-gold">AI is Running</div>
-                     <p className="text-2xl font-light text-gray-400">Help You <span className="text-white">Be The Best</span></p>
-                   </div>
-                </div>
-             </div>
+          <div className="lg:w-1/2 flex justify-center w-full">
+            <div className="relative w-full max-w-md aspect-square">
+              <div className="absolute inset-0 bg-gold/15 blur-3xl rounded-full" />
+              <div className="relative h-full glass-premium rounded-[40px] flex flex-col items-center justify-center p-12">
+                <ICONS.LuminaraLogo className="w-28 h-28 mb-10" isThinking />
+                <div className="text-[9px] font-black uppercase tracking-[0.55em] text-gold mb-3">Suite online</div>
+                <p className="font-display text-2xl text-gray-300 text-center">Your visibility, composed.</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="relative py-72 px-6 md:px-20 z-10 text-center overflow-hidden">
-        <div className="max-w-4xl mx-auto space-y-20">
-          <h2 className="text-6xl md:text-[11rem] font-light tracking-tighter leading-none italic">
-            Win the <br />
-            <span className="gold-text animate-title-shimmer bg-size-200 font-medium not-italic">Market.</span>
+      <section id="produced-by" className="relative py-28 md:py-36 px-6 md:px-20 z-10 border-t border-white/[0.05]">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-20 items-start">
+          <div className="lg:col-span-5 space-y-7">
+            <p className="text-[9px] font-black uppercase tracking-[0.5em] text-gold">Produced by</p>
+            <h2 className="font-display text-4xl md:text-5xl text-white tracking-tight leading-tight">
+              Luminara Digital
+            </h2>
+            <p className="text-gray-400 text-base md:text-lg leading-relaxed font-light">
+              An Australian AI growth studio. We help businesses show up in Google and AI answers, then we built this suite so owners can run that clarity themselves.
+            </p>
+            <a
+              href="https://luminaradigital.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex px-9 py-3.5 border border-gold/30 text-gold-light font-black uppercase tracking-[0.3em] text-[9px] rounded-xl hover:bg-gold/10 transition-all"
+            >
+              Visit luminaradigital.io
+            </a>
+          </div>
+          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-5">
+            {[
+              { title: 'SEO, AEO and GEO', desc: 'Visibility across classic search and AI-generated answers.' },
+              { title: 'Sites and systems', desc: 'AI-ready sites, CRM, content and managed infrastructure.' },
+              { title: 'Built for owners', desc: 'Plain-English priorities you can act on this week.' },
+              { title: 'Australia-wide', desc: 'Melbourne operations with remote delivery nationally.' },
+            ].map((item) => (
+              <div key={item.title} className="p-7 rounded-2xl border border-white/[0.05] bg-white/[0.02] hover:border-gold/25 transition-colors">
+                <h3 className="text-[11px] font-black uppercase tracking-[0.22em] text-white mb-3">{item.title}</h3>
+                <p className="text-sm text-gray-500 leading-relaxed font-light">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="relative py-36 md:py-48 px-6 md:px-20 z-10 text-center overflow-hidden border-t border-white/[0.05]">
+        <div className="max-w-4xl mx-auto space-y-12">
+          <h2 className="font-display text-5xl md:text-8xl text-white tracking-tight leading-[0.95]">
+            Win the{' '}
+            <span className="gold-text animate-title-shimmer font-sans font-medium">market.</span>
           </h2>
-          <p className="text-xl md:text-3xl text-gray-500 font-light leading-relaxed px-6">
-            Luminara Digital is the best choice for your brand. We help you grow fast.
+          <p className="text-lg md:text-2xl text-gray-500 font-light leading-relaxed px-4">
+            Built by Luminara Digital for business owners who want clearer search and AI visibility.
           </p>
-          <div className="pt-12 flex flex-col md:flex-row justify-center items-center gap-10">
-            <button 
-              className="px-20 py-8 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[10px] rounded-2xl shadow-[0_60px_120px_rgba(191,149,63,0.3)] transition-all hover:scale-105"
-              onClick={() => window.open('https://luminara.digital/', '_blank')}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              className="px-12 py-5 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl shadow-[0_40px_100px_rgba(191,149,63,0.28)] transition-all hover:scale-[1.03]"
+              onClick={onEnter}
             >
-              Talk to Us
+              Open the app
             </button>
-            <div className="flex flex-col items-start text-left gap-2 border-l border-white/[0.1] pl-10">
-              <span className="text-[10px] uppercase tracking-[0.4em] font-black text-gold">Place</span>
-              <span className="text-lg font-bold tracking-[0.2em] text-white uppercase">Melbourne</span>
-            </div>
+            {onNavigateAudit && (
+              <button
+                className="px-12 py-5 glass-premium text-gold-light font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl hover:border-gold/50 transition-all"
+                onClick={onNavigateAudit}
+              >
+                Audit my website
+              </button>
+            )}
+            <a
+              href="https://luminaradigital.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-12 py-5 border border-white/10 text-gray-300 font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl hover:bg-white/5 hover:text-white transition-all"
+            >
+              Talk to Luminara Digital
+            </a>
           </div>
+          <p className="text-[10px] text-gray-600 uppercase tracking-[0.3em]">
+            A product of{' '}
+            <a href="https://luminaradigital.io" target="_blank" rel="noopener noreferrer" className="text-gold/70 hover:text-gold tracking-[0.15em] transition-colors">
+              Luminara Digital
+            </a>
+            <span className="text-gray-700"> · Melbourne</span>
+          </p>
         </div>
       </section>
 
-      <footer className="py-24 px-6 md:px-20 border-t border-white/[0.05] flex flex-col items-center gap-16 relative z-10 bg-black">
-        <div className="flex flex-col lg:flex-row justify-between w-full items-center gap-12">
-          <div className="flex items-center gap-6">
-            <ICONS.LuminaraLogo className="w-12 h-12" />
+      <footer className="py-20 px-6 md:px-20 border-t border-white/[0.05] flex flex-col items-center gap-14 relative z-10 bg-black/80">
+        <div className="flex flex-col lg:flex-row justify-between w-full items-center gap-10">
+          <div className="flex items-center gap-5">
+            <ICONS.LuminaraLogo className="w-11 h-11" />
             <div className="flex flex-col">
-              <span className="text-2xl font-bold tracking-[0.5em] uppercase gold-text leading-none">LUMINARA SUITE</span>
-              <span className="text-[9px] text-gray-700 uppercase tracking-widest mt-2">Grow Your Brand Today</span>
+              <span className="text-xl font-bold tracking-[0.4em] uppercase gold-text leading-none">LUMINARA SUITE</span>
+              <span className="text-[9px] text-gray-600 uppercase tracking-widest mt-2">Grow with clarity</span>
             </div>
           </div>
-          <div className="flex flex-wrap justify-center gap-12">
+          <div className="flex flex-wrap justify-center gap-10">
             {[
               { label: 'Privacy', href: '#privacy' },
               { label: 'Terms', href: '#terms' },
               { label: 'GitHub', href: 'https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent' },
-            ].map(link => (
-              <a key={link.label} href={link.href} target={link.href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer" className="text-[9px] text-gray-600 uppercase tracking-widest hover:text-gold transition-colors">{link.label}</a>
+              { label: 'Luminara Digital', href: 'https://luminaradigital.io' },
+            ].map((link) => (
+              <a
+                key={link.label}
+                href={link.href}
+                target={link.href.startsWith('http') ? '_blank' : undefined}
+                rel="noopener noreferrer"
+                className="text-[9px] text-gray-600 uppercase tracking-widest hover:text-gold transition-colors"
+              >
+                {link.label}
+              </a>
             ))}
           </div>
         </div>
-        <div className="w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
-        <p className="text-[9px] text-gray-800 uppercase tracking-[0.8em]">
-          &copy; {new Date().getFullYear()} Luminara Suite · Produced by{' '}
-          <a href="https://www.luminarasuite.com/" className="text-gold/70 hover:text-gold normal-case tracking-normal">
-            luminarasuite.com
+        <div className="w-full h-px premium-hairline opacity-60" />
+        <p className="text-[9px] text-gray-600 tracking-[0.12em] text-center">
+          &copy; {new Date().getFullYear()} Luminara Suite. Produced by{' '}
+          <a
+            href="https://luminaradigital.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-gold/80 hover:text-gold transition-colors"
+          >
+            Luminara Digital
           </a>
+          {' '}
+          <span className="text-gray-700">(luminaradigital.io)</span>
         </p>
       </footer>
     </div>

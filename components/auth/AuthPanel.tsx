@@ -10,13 +10,16 @@ import {
   friendlyFirebaseError,
 } from '../../services/auth/firebaseAuthService';
 import { isInTelegram } from '../../services/telegram/tma';
+import { linkTelegramFirebaseAccounts } from '../../services/apiClient';
+import { pullWorkspaceOnLogin } from '../../services/sync/workspaceSyncService';
 import { Button } from '../ui/Button';
 
 type Mode = 'signin' | 'signup';
 
 /**
  * Email/password + Google signup/signin via Firebase Auth (web).
- * Inside Telegram Mini App, Telegram identity is the login; this panel explains that.
+ * Inside Telegram Mini App, Telegram is primary; optional Firebase link merges
+ * Stars/TON entitlements and workspace with the website account.
  */
 export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
   const [mode, setMode] = useState<Mode>('signin');
@@ -36,15 +39,55 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
     });
   }, [configured]);
 
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await fn();
+      setPassword('');
+    } catch (e) {
+      setError(friendlyFirebaseError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const linkWebAccount = async () => {
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      if (!userLabel) {
+        await signInWithGoogle();
+      }
+      const linked = await linkTelegramFirebaseAccounts();
+      if (!linked.ok) throw new Error(linked.error || 'Could not link accounts');
+      await pullWorkspaceOnLogin();
+      setInfo('Linked. Stars/TON in Telegram and TON on the website now share one plan and saved work.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : friendlyFirebaseError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (inTelegram) {
     return (
-      <div className={`glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-2' : 'p-5 space-y-3'}`}>
+      <div className={`glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
         <p className="text-sm text-gray-200 font-medium">Signed in with Telegram</p>
         <p className="text-xs text-gray-400 leading-relaxed">
-          Mini App users are authenticated by Telegram. Google and email login are for the website
-          (luminarasuite.com) when you open the app outside Telegram.
+          To keep the same paid plan and saved work on luminarasuite.com, link a Google or email account once.
         </p>
+        {configured && (
+          <Button variant="secondary" disabled={busy} onClick={() => void linkWebAccount()} className="w-full text-xs">
+            {userLabel ? 'Link this web account' : 'Link Google / email account'}
+          </Button>
+        )}
+        {userLabel && <p className="text-[11px] text-gold/80 truncate">Web login: {userLabel}</p>}
+        {error && <p className="text-xs text-red-400" role="alert">{error}</p>}
+        {info && <p className="text-xs text-emerald-400" role="status">{info}</p>}
       </div>
     );
   }
@@ -61,27 +104,13 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
     );
   }
 
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    setError(null);
-    setInfo(null);
-    try {
-      await fn();
-      setPassword('');
-    } catch (e) {
-      setError(friendlyFirebaseError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (userLabel) {
     return (
       <div className={`glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
         <p className="text-sm text-gray-200 font-medium truncate">{userLabel}</p>
         <p className="text-xs text-gray-400 leading-relaxed">
-          Signed in with Firebase. Hosted AI keys on Cloudflare use this session (same daily free limit as Telegram).
+          Signed in with Firebase. Hosted AI keys and saved workspace use this account. Inside Telegram, use Link so Stars payments follow you on the web.
         </p>
         <Button
           variant="secondary"
@@ -118,7 +147,7 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
       </div>
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        Web accounts use Firebase. Open the same product inside Telegram and your Telegram user is the account instead.
+        Web accounts use Firebase. Open the Mini App in Telegram and tap Link so Stars and website TON share one plan.
       </p>
 
       <form

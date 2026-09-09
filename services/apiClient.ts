@@ -279,6 +279,79 @@ export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
   return null;
 }
 
+/** Product memory + optional BYOK bag stored per linked account in D1/KV. */
+export type WorkspacePayload = {
+  storage?: Record<string, string>;
+  keys?: Record<string, string>;
+};
+
+export async function fetchWorkspace(): Promise<{
+  ok: boolean;
+  accountId?: string;
+  updatedAt?: number;
+  payload?: WorkspacePayload;
+  error?: string;
+}> {
+  const base = apiBase();
+  if (!base) return { ok: false, error: 'No API' };
+  const r = await workerFetchWithAuthRetry(`${base}/api/workspace`);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}` };
+  return {
+    ok: true,
+    accountId: data.accountId,
+    updatedAt: data.updatedAt,
+    payload: data.payload || {},
+  };
+}
+
+export async function putWorkspaceRemote(input: {
+  updatedAt: number;
+  payload: WorkspacePayload;
+  force?: boolean;
+}): Promise<{
+  ok: boolean;
+  conflict?: boolean;
+  accountId?: string;
+  updatedAt?: number;
+  payload?: WorkspacePayload;
+  error?: string;
+}> {
+  const base = apiBase();
+  if (!base) return { ok: false, error: 'No API' };
+  const r = await workerFetchWithAuthRetry(`${base}/api/workspace`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 409) {
+    return {
+      ok: false,
+      conflict: true,
+      accountId: data.accountId,
+      updatedAt: data.updatedAt,
+      payload: data.payload,
+    };
+  }
+  if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}` };
+  return { ok: true, accountId: data.accountId, updatedAt: data.updatedAt };
+}
+
+/** Link Telegram Mini App session with Firebase (both auth headers required). */
+export async function linkTelegramFirebaseAccounts(): Promise<{
+  ok: boolean;
+  accountId?: string;
+  error?: string;
+}> {
+  const base = apiBase();
+  if (!base) return { ok: false, error: 'No API' };
+  const r = await workerFetchWithAuthRetry(`${base}/api/auth/link`, { method: 'POST' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}` };
+  return { ok: true, accountId: data.accountId };
+}
+
 export function openPaywallModal(reason?: string): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason } }));

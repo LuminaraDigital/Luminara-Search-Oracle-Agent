@@ -37,7 +37,7 @@ import { ApiKeyModal } from './components/ApiKeyModal';
 import { NativeEngineHUD } from './components/llm/NativeEngineHUD';
 import { NativeFailoverPopup } from './components/llm/NativeFailoverPopup';
 import { ICONS } from './constants';
-import { startFirebaseAuthListener, isFirebaseConfigured } from './services/auth/firebaseAuthService';
+import { startFirebaseAuthListener, isFirebaseConfigured, signOutFirebase } from './services/auth/firebaseAuthService';
 import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { PaywallModal } from './components/paywall/PaywallModal';
@@ -45,6 +45,8 @@ import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
 import { AppIntroOverlay } from './components/intro/AppIntroOverlay';
 import { hasSeenIntroThisSession } from './services/intro/appIntro';
+import { pullWorkspaceOnLogin, noteWorkspaceDirty } from './services/sync/workspaceSyncService';
+import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
 
 const CHAT_STORAGE_KEY = 'luminara_chat_session';
 const MARKETING_VIEWS = new Set<AppView>([
@@ -133,6 +135,25 @@ const App: React.FC = () => {
     setView(next);
   }, [setView, showIntro]);
 
+  /**
+   * Leave the product shell to marketing: sign out Firebase so the next "Open the app"
+   * requires sign-in again. Telegram Mini App has no Exit control (identity is the TMA session).
+   */
+  const logoutToLanding = useCallback(async () => {
+    try {
+      await signOutFirebase();
+    } catch {
+      /* still leave the shell even if sign-out fails */
+    }
+    try {
+      sessionStorage.removeItem(CHAT_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    setMessages([]);
+    setView(AppView.LANDING);
+  }, [setView]);
+
   const completeIntro = useCallback(() => {
     setShowIntro(false);
     if (introPendingView) {
@@ -149,6 +170,7 @@ const App: React.FC = () => {
     } catch {
       /* quota exceeded or storage disabled: chat just becomes ephemeral */
     }
+    if (messages.length) noteWorkspaceDirty();
   }, [messages]);
 
   // Telegram Native App: Guarantee marketing views are redirected directly into the functional app
@@ -198,6 +220,29 @@ const App: React.FC = () => {
 
   const appAuth = useAppAuth();
 
+  // After sign-in, restore DNA / audits / keys / chat from the linked account workspace.
+  useEffect(() => {
+    if (!appAuth.authenticated || appAuth.loading) return;
+    let cancelled = false;
+    void (async () => {
+      const result = await pullWorkspaceOnLogin();
+      if (cancelled || !result.ok) return;
+      try {
+        const saved = localStorage.getItem('luminara_business_dna');
+        setDna(saved ? JSON.parse(saved) as BusinessDNA : null);
+      } catch {
+        /* ignore */
+      }
+      try {
+        const chat = sessionStorage.getItem(CHAT_STORAGE_KEY);
+        if (chat) setMessages(JSON.parse(chat) as Message[]);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [appAuth.authenticated, appAuth.loading]);
+
   // Any card can ask for the Settings dialog (e.g. "Set up results tracking") without prop drilling.
   useEffect(() => {
     const open = () => setIsKeyModalOpen(true);
@@ -228,6 +273,7 @@ const App: React.FC = () => {
       } else {
         localStorage.removeItem('luminara_business_dna');
       }
+      noteWorkspaceDirty();
     } catch (e) {
       console.warn('Could not persist Business DNA', e);
     }
@@ -610,11 +656,19 @@ const App: React.FC = () => {
         paddingBottom: inTelegram ? 'var(--tg-viewport-safe-area-inset-bottom, 0px)' : undefined,
       }}
     >
+      <PremiumAtmosphere intensity="subtle" />
       {/* Universal Top Header */}
-      <header className="flex items-center justify-between px-4 sm:px-8 py-3 glass-morphism z-50 border-b border-gold/15 shrink-0 bg-black/80">
+      <header className="flex items-center justify-between px-4 sm:px-8 py-3.5 glass-morphism z-50 border-b border-gold/20 shrink-0 bg-black/70 backdrop-blur-2xl">
         {/* Left: Brand Identity */}
         <div className="flex items-center gap-4">
-          <div className="w-9 h-9 cursor-pointer shrink-0" onClick={() => setView(inTelegram ? AppView.DASHBOARD : AppView.LANDING)}>
+          <div
+            className="w-9 h-9 cursor-pointer shrink-0"
+            onClick={() => {
+              if (inTelegram) setView(AppView.DASHBOARD);
+              else void logoutToLanding();
+            }}
+            title={inTelegram ? 'Dashboard' : 'Log out and return home'}
+          >
             <ICONS.LuminaraLogo 
               className={`w-full h-full transition-all duration-500 ${isVoiceActive ? 'drop-shadow-[0_0_15px_rgba(252,246,186,0.6)]' : ''}`} 
               isThinking={isThinking} 
@@ -622,10 +676,10 @@ const App: React.FC = () => {
             />
           </div>
           <div className="hidden sm:block cursor-pointer" onClick={() => setView(AppView.DASHBOARD)}>
-            <h2 className="text-base font-bold tracking-[0.2em] uppercase gold-text leading-none">
+            <h2 className="text-base font-bold tracking-[0.22em] uppercase gold-text leading-none">
               LUMINARA SUITE
             </h2>
-            <span className="text-[7px] text-gray-500 uppercase tracking-[0.4em] font-mono block mt-1">
+            <span className="text-[7px] text-gray-500 uppercase tracking-[0.4em] font-mono block mt-1.5">
               AI search visibility
             </span>
           </div>
@@ -774,7 +828,7 @@ const App: React.FC = () => {
           </Button>
         </div>
 
-        {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Exit */}
+          {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Log out */}
         <div className="flex items-center justify-end gap-2 sm:gap-3">
           {/* Native Trinity (Groq, NVIDIA NIM, Ollama) Engine Status & Priority */}
           {advancedUi && <NativeEngineHUD />}
@@ -878,17 +932,17 @@ const App: React.FC = () => {
             <Button
               variant="ghost"
               size="none"
-              onClick={() => setView(AppView.LANDING)}
+              onClick={() => void logoutToLanding()}
               className="px-3 py-1.5 glass-morphism border border-white/5 rounded-xl text-[9px] tracking-widest font-black text-gray-500 hover:text-gold hover:bg-transparent"
             >
-              Exit
+              Log out
             </Button>
           )}
         </div>
       </header>
 
       {/* Main App Container */}
-      <main className="flex-1 relative flex flex-col overflow-y-auto">
+      <main className="flex-1 relative z-10 flex flex-col overflow-y-auto">
         {LAB_VIEWS.has(view) && (
           <div className="shrink-0 px-4 py-2 text-center text-[10px] uppercase tracking-[0.25em] font-bold bg-warning-500/10 border-b border-warning-500/20 text-warning-300">
             Labs preview · figures on this screen are simulated for demonstration, not measured

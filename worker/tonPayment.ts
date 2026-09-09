@@ -4,6 +4,7 @@
  */
 import type { Env } from './index';
 import { PLANS } from './telegramBot';
+import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 
 export const TON_PRICING: Record<string, { ton: number; nanoTon: string }> = {
   starter: { ton: 15, nanoTon: '15000000000' },
@@ -137,7 +138,8 @@ export async function verifyTonPayment(
   }
 
   if (order.status === 'confirmed') {
-    const existingSub = (await env.LUMINARA_KV.get(`sub:${order.userId}`, 'json')) as { expiresAt?: number } | null;
+    const accountId = await resolveAccountId(env, order.userId);
+    const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null;
     return { ok: true, plan: order.planId, expiresAt: existingSub?.expiresAt || Date.now() };
   }
 
@@ -153,20 +155,18 @@ export async function verifyTonPayment(
   order.txHash = match.txHash;
   await env.LUMINARA_KV.put(`ton:order:${orderId}`, JSON.stringify(order));
 
-  const existingSub = (await env.LUMINARA_KV.get(`sub:${order.userId}`, 'json')) as { expiresAt?: number } | null;
+  const accountId = await resolveAccountId(env, order.userId);
+  const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null;
   const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
   const expiresAt = baseTime + plan.days * 86400_000;
 
-  await env.LUMINARA_KV.put(
-    `sub:${order.userId}`,
-    JSON.stringify({
-      plan: order.planId,
-      paymentMethod: 'ton',
-      orderId,
-      startedAt: now,
-      expiresAt,
-    }),
-  );
+  await writeSubscriptionRecord(env, order.userId, {
+    plan: order.planId,
+    paymentMethod: 'ton',
+    orderId,
+    startedAt: now,
+    expiresAt,
+  });
 
   return { ok: true, plan: order.planId, expiresAt };
 }
