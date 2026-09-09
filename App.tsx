@@ -38,6 +38,8 @@ import { NativeEngineHUD } from './components/llm/NativeEngineHUD';
 import { NativeFailoverPopup } from './components/llm/NativeFailoverPopup';
 import { ICONS } from './constants';
 import { startFirebaseAuthListener, isFirebaseConfigured } from './services/auth/firebaseAuthService';
+import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
+import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 
 const CHAT_STORAGE_KEY = 'luminara_chat_session';
 
@@ -127,6 +129,8 @@ const App: React.FC = () => {
     if (!isFirebaseConfigured()) return;
     return startFirebaseAuthListener();
   }, []);
+
+  const appAuth = useAppAuth();
 
   // Any card can ask for the Settings dialog (e.g. "Set up results tracking") without prop drilling.
   useEffect(() => {
@@ -413,6 +417,18 @@ const App: React.FC = () => {
 
   if (view === AppView.PRIVACY || view === AppView.TERMS) {
     return <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(inTelegram ? AppView.DASHBOARD : AppView.LANDING)} />;
+  }
+
+  // Product tools require Telegram (Mini App) or Firebase (web). Marketing pages stay public.
+  if (!PUBLIC_APP_VIEWS.has(view)) {
+    if (appAuth.loading || !appAuth.authenticated) {
+      return (
+        <AuthRequiredScreen
+          auth={appAuth}
+          onBackToMarketing={inTelegram ? undefined : () => setView(AppView.LANDING)}
+        />
+      );
+    }
   }
 
   // Landing Page view (marketing site only; inside Telegram the app opens straight into the tools)

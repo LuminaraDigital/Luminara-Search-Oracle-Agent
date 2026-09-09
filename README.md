@@ -165,10 +165,13 @@ Gating is configured in `wrangler.jsonc` vars: `REQUIRE_TG_AUTH` (hosted keys ne
 ### Firebase Auth setup (web signup / signin)
 
 1. Create a Firebase project and enable **Authentication** → Email/Password (and optionally Google).
-2. Register a Web app; copy the config into `.env` as `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID` (optional: messaging sender id, storage bucket).
-3. Set the same project id on the Worker: `FIREBASE_PROJECT_ID` in `wrangler.jsonc` vars (or `.dev.vars` for local).
+2. Register a Web app; copy the config into `.env` as `VITE_FIREBASE_*` (or use `services/auth/firebasePublicConfig.ts`).
+3. Set the same project id on the Worker: `FIREBASE_PROJECT_ID` in `wrangler.jsonc`.
 4. Under Authentication → Settings → Authorized domains, add `luminarasuite.com`, `www.luminarasuite.com`, and `localhost`.
-5. Open **Settings** in the app → Overview → Account to sign up or sign in. Hosted Cloudflare keys then accept `Authorization: Bearer <Firebase ID token>`.
+5. **Web:** Settings → Account for email/password or Google. Product tools require this sign-in.
+6. **Telegram Mini App:** Telegram `initData` is the account. Do not require Firebase inside TMA; Google popups are unreliable in Telegram WebViews.
+
+User profiles are upserted on each verified session into Cloudflare KV (`user:{id}`). Optional D1 SQL is prepared in `migrations/0001_users.sql` (see comment in `wrangler.jsonc`).
 
 A static Docker image (no Worker) is also available: `docker build -t luminara-suite .`
 
@@ -214,9 +217,10 @@ Commercial licensing and trademarks: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.
 
 1. Real AI-visibility measurement: query ChatGPT, Gemini, Perplexity and Google AI Overviews and record whether the brand is cited.
 2. Findings as trackable cards with an evidence drawer, instead of one long report.
-3. Weekly re-runs with diffs and alerts.
+3. Weekly re-runs with diffs and alerts (Visibility Trends already stores per-audit SoV snapshots in-browser; Worker KV mirror next).
 4. Real technical signals (PageSpeed, rank data) in the audit.
 5. Agency workspaces, white-label PDF export, share links.
+6. Optional SOC 2 Type 1 engagement against the Enterprise Trust Pack evidence map (checklist shipped; certification is a separate audit).
 
 ## Contributing
 

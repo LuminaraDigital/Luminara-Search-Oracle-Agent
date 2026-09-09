@@ -8,13 +8,14 @@ import {
   signOutFirebase,
   friendlyFirebaseError,
 } from '../../services/auth/firebaseAuthService';
+import { isInTelegram } from '../../services/telegram/tma';
 import { Button } from '../ui/Button';
 
 type Mode = 'signin' | 'signup';
 
 /**
- * Email/password + Google signup/signin via Firebase Auth.
- * Shown in Settings when VITE_FIREBASE_* is configured.
+ * Email/password + Google signup/signin via Firebase Auth (web).
+ * Inside Telegram Mini App, Telegram identity is the login; this panel explains that.
  */
 export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
   const [mode, setMode] = useState<Mode>('signin');
@@ -24,6 +25,7 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
   const [busy, setBusy] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const configured = isFirebaseConfigured();
+  const inTelegram = isInTelegram();
 
   useEffect(() => {
     if (!configured) return;
@@ -31,6 +33,19 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
       setUserLabel(u ? (u.email || u.displayName || 'Signed in') : null);
     });
   }, [configured]);
+
+  if (inTelegram) {
+    return (
+      <div className={`glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-2' : 'p-5 space-y-3'}`}>
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
+        <p className="text-sm text-gray-200 font-medium">Signed in with Telegram</p>
+        <p className="text-xs text-gray-400 leading-relaxed">
+          Mini App users are authenticated by Telegram. Google and email login are for the website
+          (luminarasuite.com) when you open the app outside Telegram.
+        </p>
+      </div>
+    );
+  }
 
   if (!configured) {
     return (
@@ -100,7 +115,7 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
       </div>
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        Create an account to use Luminara-hosted AI keys on the Cloudflare Worker without Telegram.
+        Web accounts use Firebase. Open the same product inside Telegram and your Telegram user is the account instead.
       </p>
 
       <form

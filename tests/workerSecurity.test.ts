@@ -112,6 +112,15 @@ describe('provider proxy gating', () => {
     expect(res.status).toBe(401);
   });
 
+  it('refuses BYOK relays without sign-in when REQUIRE_TG_AUTH is on', async () => {
+    const res = await worker.fetch(
+      req('/api/providers/groq/models', { headers: { 'x-provider-key': 'gsk_user_owned' } }),
+      makeEnv({ REQUIRE_TG_AUTH: 'true' }),
+      ctx,
+    );
+    expect(res.status).toBe(401);
+  });
+
   it('rejects unknown providers, disallowed paths and methods', async () => {
     expect((await worker.fetch(req('/api/providers/openai/chat/completions', { method: 'POST', body: '{}' }), makeEnv(), ctx)).status).toBe(404);
     expect((await worker.fetch(req('/api/providers/groq/audio/transcriptions', { method: 'POST', body: '{}' }), makeEnv(), ctx)).status).toBe(403);

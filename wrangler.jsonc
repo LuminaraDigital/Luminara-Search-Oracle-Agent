@@ -34,6 +34,14 @@
     { "binding": "LUMINARA_KV", "id": "00d331adea604a70945fb1651b7968b3" }
   ],
 
+  // Optional D1 (SQL users). Create with:
+  //   npx wrangler d1 create luminara-users
+  //   npx wrangler d1 execute luminara-users --remote --file=./migrations/0001_users.sql
+  // then paste the database_id below. Until then, user profiles are stored in LUMINARA_KV.
+  // "d1_databases": [
+  //   { "binding": "DB", "database_name": "luminara-users", "database_id": "REPLACE_WITH_D1_DATABASE_ID" }
+  // ],
+
   // Optional global rate limiting (Cloudflare Rate Limiting API). The Worker already applies a
   // best-effort per-isolate limit; uncomment to enforce a single limit across all edge locations.
   // "unsafe": {

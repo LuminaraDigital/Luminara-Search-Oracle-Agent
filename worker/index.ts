@@ -30,15 +30,10 @@ import {
   stripUpstreamHeaders,
   withSecurityHeaders,
 } from './security';
+import { upsertAppUser } from './userStore';
+import type { HostedIdentity } from './userTypes';
 
-/** Caller identity for hosted-key quota (Telegram numeric id or Firebase uid prefix). */
-export interface HostedIdentity {
-  /** KV key fragment: Telegram uses String(id); Firebase uses `fb:{uid}`. */
-  id: string;
-  source: 'telegram' | 'firebase';
-  email?: string;
-  name?: string;
-}
+export type { HostedIdentity } from './userTypes';
 
 /** Best-effort per-isolate limits (see security.ts). Authenticated hosted-key use is also metered in KV. */
 const limiter = new RateLimiter();
@@ -50,11 +45,13 @@ const MAX_PROVIDER_KEY_LEN = 512;
 export interface Env {
   ASSETS: Fetcher;
   LUMINARA_KV?: KVNamespace;
+  /** Optional D1 users DB. When unset, profiles fall back to KV `user:{id}`. */
+  DB?: D1Database;
   BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
   WEBAPP_URL: string;
   ALLOWED_ORIGINS?: string;
-  /** "true": hosted provider keys need a signed-in Telegram or Firebase user. */
+  /** "true": app use needs a signed-in Telegram or Firebase user (hosted keys and BYOK relays). */
   REQUIRE_TG_AUTH?: string;
   /** "true": hosted provider keys additionally need an active paid plan. */
   REQUIRE_SUBSCRIPTION?: string;
@@ -205,9 +202,10 @@ function secretEquals(a: string, b: string): boolean {
 }
 
 /**
- * Identifies the caller for hosted keys:
+ * Identifies the caller:
  * 1) Telegram Mini App initData (x-telegram-init-data), or
  * 2) Firebase Auth ID token (Authorization: Bearer …).
+ * Upserts a durable user row when identity succeeds.
  * Returns null when auth is optional and absent.
  */
 async function identify(request: Request, env: Env): Promise<{ user: HostedIdentity | null; error?: string }> {
@@ -217,32 +215,32 @@ async function identify(request: Request, env: Env): Promise<{ user: HostedIdent
     const result = await validateInitData(initData, env.BOT_TOKEN);
     if (!result.ok) return { user: null, error: result.reason };
     const tg = result.user;
-    return {
-      user: {
-        id: String(tg.id),
-        source: 'telegram',
-        name: [tg.first_name, tg.last_name].filter(Boolean).join(' ') || tg.username,
-      },
+    const user: HostedIdentity = {
+      id: String(tg.id),
+      source: 'telegram',
+      name: [tg.first_name, tg.last_name].filter(Boolean).join(' ') || tg.username,
     };
+    try { await upsertAppUser(env, user); } catch { /* persistence best-effort */ }
+    return { user };
   }
 
   const bearer = bearerFromAuthorization(request.headers.get('authorization'));
   if (bearer && env.FIREBASE_PROJECT_ID) {
     const result = await verifyFirebaseIdToken(bearer, env.FIREBASE_PROJECT_ID);
     if (!result.ok) return { user: null, error: result.reason };
-    return {
-      user: {
-        id: `fb:${result.user.uid}`,
-        source: 'firebase',
-        email: result.user.email,
-        name: result.user.name,
-      },
+    const user: HostedIdentity = {
+      id: `fb:${result.user.uid}`,
+      source: 'firebase',
+      email: result.user.email,
+      name: result.user.name,
     };
+    try { await upsertAppUser(env, user); } catch { /* persistence best-effort */ }
+    return { user };
   }
 
   if (env.REQUIRE_TG_AUTH === 'true') {
     const hint = env.FIREBASE_PROJECT_ID
-      ? 'Sign in with Firebase or Telegram, or add your own API key in Settings.'
+      ? 'Sign in with Firebase or open the app inside Telegram.'
       : 'Telegram sign-in required';
     return { user: null, error: hint };
   }
@@ -259,10 +257,19 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
 
   // Bring-your-own-key: the caller's credential is forwarded and the hosted key is never touched.
   // This is how browser-blocked vendors (NVIDIA NIM has no CORS headers) work for self-served users.
+  // When REQUIRE_TG_AUTH is on, an account is still required (Telegram or Firebase) even for BYOK.
   const userKey = request.headers.get('x-provider-key')?.trim() || '';
   if (userKey.length > MAX_PROVIDER_KEY_LEN || /[\r\n]/.test(userKey)) return json({ error: 'Invalid provider key' }, 400);
 
-  if (!userKey) {
+  const declared = Number(request.headers.get('content-length') || 0);
+  if (declared > MAX_BODY_BYTES) return json({ error: 'Request body too large' }, 413);
+
+  if (userKey) {
+    if (env.REQUIRE_TG_AUTH === 'true') {
+      const who = await identify(request, env);
+      if (who.error || !who.user) return json({ error: who.error || 'Sign in required' }, 401);
+    }
+  } else {
     const who = await identify(request, env);
     if (who.error) return json({ error: who.error }, 401);
     const gate = await checkHostedQuota(env, who.user);
