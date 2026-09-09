@@ -110,6 +110,11 @@ export default defineConfig(({ mode }) => {
     build: {
       target: 'esnext',
       chunkSizeWarningLimit: 900,
+      // Do not modulepreload the Forme PDF/WASM chunk on every visit; it is only used on export.
+      modulePreload: {
+        resolveDependencies: (_filename, deps) =>
+          deps.filter((dep) => !/(^|\/)pdf[^/]*\.js$/i.test(dep) && !/pdfService/i.test(dep)),
+      },
       rollupOptions: {
         output: {
           manualChunks: {

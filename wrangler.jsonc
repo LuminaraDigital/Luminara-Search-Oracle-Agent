@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "luminara-search",
+  "name": "luminara-search-oracle-agent",
   "account_id": "2373013c66331e9660e47ffa3ae40f5c",
   "main": "worker/index.ts",
   "compatibility_date": "2025-09-02",

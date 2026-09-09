@@ -53,6 +53,7 @@ describe('security headers', () => {
     expect(HTML_CSP).toContain('https://telegram.org');
     expect(HTML_CSP).toContain('https://fonts.googleapis.com');
     expect(HTML_CSP).toContain('https://fonts.gstatic.com');
+    expect(HTML_CSP).toContain("'wasm-unsafe-eval'");
     expect(HTML_CSP).toContain("object-src 'none'");
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');

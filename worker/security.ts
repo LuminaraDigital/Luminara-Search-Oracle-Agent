@@ -9,12 +9,13 @@
 /**
  * CSP for the SPA shell. The app loads the Telegram Web App bridge from telegram.org and fonts
  * from Google Fonts; index.html carries an inline <style>, and React components set inline styles.
+ * 'wasm-unsafe-eval' is required for Forme PDF (WebAssembly) without opening full 'unsafe-eval'.
  * connect-src stays open because users can point the app at their own Ollama / crawler /
  * LanguageTool / Umami URLs, and the browser calls vendor APIs directly with user-held keys.
  */
 export const HTML_CSP = [
   "default-src 'self'",
-  "script-src 'self' https://telegram.org https://www.gstatic.com https://apis.google.com https://*.firebaseio.com",
+  "script-src 'self' 'wasm-unsafe-eval' https://telegram.org https://www.gstatic.com https://apis.google.com https://*.firebaseio.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
