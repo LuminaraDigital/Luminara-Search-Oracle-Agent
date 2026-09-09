@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "luminara-suite",
+  "name": "luminara-search",
   "account_id": "2373013c66331e9660e47ffa3ae40f5c",
   "main": "worker/index.ts",
   "compatibility_date": "2025-09-02",
@@ -31,7 +31,7 @@
   // Subscriptions and per-user state. Create with: npx wrangler kv namespace create LUMINARA_KV
   // then paste the returned id below.
   "kv_namespaces": [
-    { "binding": "LUMINARA_KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+    { "binding": "LUMINARA_KV", "id": "00d331adea604a70945fb1651b7968b3" }
   ],
 
   // Optional global rate limiting (Cloudflare Rate Limiting API). The Worker already applies a
