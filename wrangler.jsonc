@@ -55,7 +55,7 @@
     "REQUIRE_SUBSCRIPTION": "false",
     "FREE_DAILY_LIMIT": "25",
     // Firebase Auth project id (same as VITE_FIREBASE_PROJECT_ID). Empty disables Firebase token checks.
-    "FIREBASE_PROJECT_ID": "",
+    "FIREBASE_PROJECT_ID": "luminara-suite",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
     "LANGUAGETOOL_URL": "",
