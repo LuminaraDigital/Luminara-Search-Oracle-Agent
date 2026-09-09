@@ -6,5 +6,10 @@
     "firebase": {
       "enabled": true
     }
+  },
+  "cloudflare": {
+    "accountId": "2373013c66331e9660e47ffa3ae40f5c",
+    "zoneId": "495e6808c92887d826486bde8550f194",
+    "defaultAccountLabel": "Info@luminara.digital's Account"
   }
 }

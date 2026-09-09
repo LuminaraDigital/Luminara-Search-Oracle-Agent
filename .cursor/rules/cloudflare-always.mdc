@@ -1,0 +1,28 @@
+---
+description: Keep Cloudflare MCP and Wrangler bound to luminarasuite.com account forever
+alwaysApply: true
+---
+
+# Cloudflare (always on for this repo)
+
+This project deploys to Cloudflare Workers. Prefer Cloudflare MCP + Wrangler over guesswork.
+
+## Permanent account context
+
+- Account ID: `2373013c66331e9660e47ffa3ae40f5c` (Info@luminara.digital's Account)
+- Zone ID: `495e6808c92887d826486bde8550f194` (luminarasuite.com)
+- Worker name: `luminara-search-oracle-agent`
+- Domains: `luminarasuite.com`, `www.luminarasuite.com`
+- Config: `wrangler.jsonc` already has `account_id`
+
+## MCP usage
+
+- Keep the Cursor Cloudflare plugin enabled (`.cursor/settings.json` → `plugins.cloudflare.enabled`).
+- When calling account-scoped Cloudflare MCP tools, always pass `account_id` `2373013c66331e9660e47ffa3ae40f5c` unless the tool already defaults to it.
+- Prefer MCP servers: docs, bindings, builds, observability.
+- Never put API tokens, R2 keys, or Worker secrets in committed files.
+
+## Deploy path
+
+- Production deploy: `npm run deploy` or push to `main` (GitHub Actions uses `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets).
+- Local secrets live under `.secrets/` and `.dev.vars` (gitignored).
