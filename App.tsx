@@ -42,8 +42,19 @@ import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { PaywallModal } from './components/paywall/PaywallModal';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
+import { AppIntroOverlay } from './components/intro/AppIntroOverlay';
+import { hasSeenIntroThisSession } from './services/intro/appIntro';
 
 const CHAT_STORAGE_KEY = 'luminara_chat_session';
+const MARKETING_VIEWS = new Set<AppView>([
+  AppView.LANDING,
+  AppView.PRIVACY,
+  AppView.TERMS,
+  AppView.INFRASTRUCTURE,
+  AppView.INTELLIGENCE,
+  AppView.WHY_US,
+  AppView.PRICING,
+]);
 
 interface SendOptions {
   /** Short text to show in the user bubble instead of the full prompt. */
@@ -71,6 +82,14 @@ const App: React.FC = () => {
     }
     return AppView.LANDING;
   });
+  /** Cinematic brand intro when the product opens (Telegram cold start or first web app entry). */
+  const [showIntro, setShowIntro] = useState(() => {
+    if (hasSeenIntroThisSession()) return false;
+    if (inTelegram) return true;
+    const fromHash = viewFromHash();
+    return Boolean(fromHash && !MARKETING_VIEWS.has(fromHash));
+  });
+  const [introPendingView, setIntroPendingView] = useState<AppView | null>(null);
   const [viewHistory, setViewHistory] = useState<AppView[]>([]);
   const [timesfmInitialData, setTimesfmInitialData] = useState<any[] | undefined>(undefined);
   const [timesfmInitialName, setTimesfmInitialName] = useState<string | undefined>(undefined);
@@ -97,6 +116,25 @@ const App: React.FC = () => {
       window.history.pushState(null, '', target);
     }
   }, []);
+
+  /** Enter a product surface; play the branded intro once per session before revealing the shell. */
+  const enterApp = useCallback((next: AppView) => {
+    if (!hasSeenIntroThisSession() && !showIntro && !MARKETING_VIEWS.has(next)) {
+      setIntroPendingView(next);
+      setShowIntro(true);
+      return;
+    }
+    setView(next);
+  }, [setView, showIntro]);
+
+  const completeIntro = useCallback(() => {
+    setShowIntro(false);
+    if (introPendingView) {
+      const next = introPendingView;
+      setIntroPendingView(null);
+      setView(next);
+    }
+  }, [introPendingView, setView]);
 
   // Conversation survives reloads within the tab (sessionStorage), not across devices.
   useEffect(() => {
@@ -171,6 +209,7 @@ const App: React.FC = () => {
 
   // First run: if no AI provider is configured anywhere (local key or hosted), open Settings once.
   useEffect(() => {
+    if (showIntro) return;
     if (view === AppView.LANDING || view === AppView.PRIVACY || view === AppView.TERMS) return;
     const anyLlm = configService.getAllStatuses().some(s => s.category === 'llm' && s.isConfigured);
     if (!anyLlm && !sessionStorage.getItem('luminara_onboarding_shown')) {
@@ -178,7 +217,7 @@ const App: React.FC = () => {
       setIsKeyModalOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+  }, [view, showIntro]);
 
   // Telegram's native back button walks the in-app view history; hidden on the first screen.
   useEffect(() => {
@@ -417,18 +456,28 @@ const App: React.FC = () => {
     { label: "What's missing on my site?", query: "Check my site for missing schema markup, unclear entity information and content gaps that stop AI engines from quoting it." }
   ];
 
+  const introOverlay = showIntro ? <AppIntroOverlay onComplete={completeIntro} /> : null;
+
   if (view === AppView.PRIVACY || view === AppView.TERMS) {
-    return <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(inTelegram ? AppView.DASHBOARD : AppView.LANDING)} />;
+    return (
+      <>
+        {introOverlay}
+        <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(inTelegram ? AppView.DASHBOARD : AppView.LANDING)} />
+      </>
+    );
   }
 
   // Product tools require Telegram (Mini App) or Firebase (web). Marketing pages stay public.
   if (!PUBLIC_APP_VIEWS.has(view)) {
     if (appAuth.loading || !appAuth.authenticated) {
       return (
-        <AuthRequiredScreen
-          auth={appAuth}
-          onBackToMarketing={inTelegram ? undefined : () => setView(AppView.LANDING)}
-        />
+        <>
+          {introOverlay}
+          <AuthRequiredScreen
+            auth={appAuth}
+            onBackToMarketing={inTelegram ? undefined : () => setView(AppView.LANDING)}
+          />
+        </>
       );
     }
   }
@@ -437,10 +486,11 @@ const App: React.FC = () => {
   if (view === AppView.LANDING && !inTelegram) {
     return (
       <>
+        {introOverlay}
         <LandingPage 
-          onEnter={() => setView(AppView.ORACLE_AGENT)} 
-          onNavigateAudit={() => setView(AppView.INSTANT_AUDIT)}
-          onNavigateSuite={() => setView(AppView.DASHBOARD)}
+          onEnter={() => enterApp(AppView.ORACLE_AGENT)} 
+          onNavigateAudit={() => enterApp(AppView.INSTANT_AUDIT)}
+          onNavigateSuite={() => enterApp(AppView.DASHBOARD)}
           onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)} 
           onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)} 
           onNavigateWhy={() => setView(AppView.WHY_US)}
@@ -454,7 +504,7 @@ const App: React.FC = () => {
         <OmnibarModal
           isOpen={isOmnibarOpen}
           onClose={() => setIsOmnibarOpen(false)}
-          onNavigate={(v) => setView(v)}
+          onNavigate={(v) => (MARKETING_VIEWS.has(v) ? setView(v) : enterApp(v))}
         />
         <NativeFailoverPopup />
       </>
@@ -464,54 +514,68 @@ const App: React.FC = () => {
   // Institutional Pages
   if (view === AppView.INFRASTRUCTURE) {
     return (
-      <InfrastructurePage 
-        onBack={() => setView(AppView.LANDING)} 
-        onTerminal={() => setView(AppView.ORACLE_AGENT)} 
-        onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)} 
-        onNavigateWhy={() => setView(AppView.WHY_US)}
-        onNavigatePricing={() => setView(AppView.PRICING)}
-      />
+      <>
+        {introOverlay}
+        <InfrastructurePage 
+          onBack={() => setView(AppView.LANDING)} 
+          onTerminal={() => enterApp(AppView.ORACLE_AGENT)} 
+          onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)} 
+          onNavigateWhy={() => setView(AppView.WHY_US)}
+          onNavigatePricing={() => setView(AppView.PRICING)}
+        />
+      </>
     );
   }
 
   if (view === AppView.INTELLIGENCE) {
     return (
-      <IntelligencePage 
-        onBack={() => setView(AppView.LANDING)} 
-        onTerminal={() => setView(AppView.ORACLE_AGENT)} 
-        onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)} 
-        onNavigateWhy={() => setView(AppView.WHY_US)}
-        onNavigatePricing={() => setView(AppView.PRICING)}
-      />
+      <>
+        {introOverlay}
+        <IntelligencePage 
+          onBack={() => setView(AppView.LANDING)} 
+          onTerminal={() => enterApp(AppView.ORACLE_AGENT)} 
+          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)} 
+          onNavigateWhy={() => setView(AppView.WHY_US)}
+          onNavigatePricing={() => setView(AppView.PRICING)}
+        />
+      </>
     );
   }
 
   if (view === AppView.WHY_US) {
     return (
-      <WhyLuminaraPage 
-        onBack={() => setView(AppView.LANDING)} 
-        onTerminal={() => setView(AppView.ORACLE_AGENT)} 
-        onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
-        onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)}
-        onNavigatePricing={() => setView(AppView.PRICING)}
-      />
+      <>
+        {introOverlay}
+        <WhyLuminaraPage 
+          onBack={() => setView(AppView.LANDING)} 
+          onTerminal={() => enterApp(AppView.ORACLE_AGENT)} 
+          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
+          onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)}
+          onNavigatePricing={() => setView(AppView.PRICING)}
+        />
+      </>
     );
   }
 
   if (view === AppView.PRICING) {
     return (
-      <PricingPage 
-        onBack={() => setView(AppView.LANDING)} 
-        onTerminal={() => setView(AppView.ORACLE_AGENT)} 
-        onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
-        onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)}
-        onNavigateWhy={() => setView(AppView.WHY_US)}
-      />
+      <>
+        {introOverlay}
+        <PricingPage 
+          onBack={() => setView(AppView.LANDING)} 
+          onTerminal={() => enterApp(AppView.ORACLE_AGENT)} 
+          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
+          onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)}
+          onNavigateWhy={() => setView(AppView.WHY_US)}
+        />
+      </>
     );
   }
 
   // Main App Shell (Oracle Agent, Instant Audit, Command Suite, Harness)
   return (
+    <>
+    {introOverlay}
     <div
       className="flex flex-col bg-black text-ink overflow-hidden relative selection:bg-gold selection:text-black font-sans"
       style={{
@@ -1001,7 +1065,7 @@ const App: React.FC = () => {
       <OmnibarModal
         isOpen={isOmnibarOpen}
         onClose={() => setIsOmnibarOpen(false)}
-        onNavigate={(v) => setView(v)}
+        onNavigate={(v) => (MARKETING_VIEWS.has(v) ? setView(v) : enterApp(v))}
       />
 
       {/* Global API Key Modal */}
@@ -1018,6 +1082,7 @@ const App: React.FC = () => {
       <NativeFailoverPopup />
       {confirmModal}
     </div>
+    </>
   );
 };
 
