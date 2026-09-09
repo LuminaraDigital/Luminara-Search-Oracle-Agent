@@ -42,6 +42,7 @@ import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { PaywallModal } from './components/paywall/PaywallModal';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
+import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
 import { AppIntroOverlay } from './components/intro/AppIntroOverlay';
 import { hasSeenIntroThisSession } from './services/intro/appIntro';
 
@@ -77,7 +78,12 @@ const App: React.FC = () => {
     const fromHash = viewFromHash();
     if (fromHash) return fromHash;
     if (inTelegram) {
-      const sp = (getStartParam() || '').toUpperCase();
+      const sp = (getStartParam() || '').trim().toUpperCase();
+      if (sp === 'AUDIT' || sp === 'SCAN') return AppView.INSTANT_AUDIT;
+      if (sp === 'ORACLE' || sp === 'CHAT' || sp === 'ASK') return AppView.ORACLE_AGENT;
+      if (sp === 'DASHBOARD' || sp === 'HOME') return AppView.DASHBOARD;
+      if (sp === 'HARNESS' || sp === 'DEV') return AppView.HARNESS;
+      if (sp === 'DNA' || sp === 'PROFILE') return AppView.BUSINESS_DNA;
       return (Object.values(AppView) as string[]).includes(sp) ? (sp as AppView) : AppView.INSTANT_AUDIT;
     }
     return AppView.LANDING;
@@ -144,6 +150,26 @@ const App: React.FC = () => {
       /* quota exceeded or storage disabled: chat just becomes ephemeral */
     }
   }, [messages]);
+
+  // Telegram Native App: Guarantee marketing views are redirected directly into the functional app
+  useEffect(() => {
+    if (inTelegram && MARKETING_VIEWS.has(view)) {
+      setViewState(AppView.INSTANT_AUDIT);
+    }
+  }, [inTelegram, view]);
+
+  // Deep-link trigger for Telegram Stars / TON Paywall
+  useEffect(() => {
+    if (inTelegram) {
+      const sp = (getStartParam() || '').toLowerCase();
+      if (sp === 'plan' || sp === 'paywall' || sp === 'subscribe' || sp === 'pro' || sp === 'stars') {
+        const timer = setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Choose a plan to unlock NVIDIA NIM, Sovereign Ollama & OpenRouter' } }));
+        }, 600);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [inTelegram]);
   const [mode, setMode] = useState<OracleMode>(OracleMode.FLASH);
   const [isThinking, setIsThinking] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
@@ -1059,6 +1085,16 @@ const App: React.FC = () => {
             mode={mode}
           />
         </footer>
+      )}
+
+      {/* Telegram Native Mobile Bottom Navigation */}
+      {inTelegram && (
+        <TelegramBottomNav
+          currentView={view}
+          onNavigate={(v) => setView(v)}
+          onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall'))}
+          onOpenTools={() => setShowSuiteMenu(prev => !prev)}
+        />
       )}
 
       {/* Global Omnibar Modal */}

@@ -1,0 +1,19 @@
+{
+  "auth": {
+    "authorizedDomains": [
+      "localhost",
+      "luminarasuite.com",
+      "www.luminarasuite.com",
+      "luminara-suite.firebaseapp.com",
+      "luminara-suite.web.app"
+    ],
+    "providers": {
+      "emailPassword": true,
+      "anonymous": false,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Luminara Suite",
+        "supportEmail": "luminaradigitalagency@gmail.com"
+      }
+    }
+  }
+}

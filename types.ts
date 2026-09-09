@@ -659,6 +659,7 @@ export type AIProviderType =
   | 'groq'
   | 'ollama'
   | 'nim'
+  | 'openrouter'
   | 'custom';
 
 export type SubAgentRole =
@@ -690,7 +691,7 @@ export type GenerateFinishReason =
   | 'tool_calls'
   | 'error';
 
-export type NativeEngineId = 'groq' | 'nim' | 'ollama';
+export type NativeEngineId = 'groq' | 'nim' | 'ollama' | 'openrouter';
 
 export interface NativeEngineStatus {
   id: NativeEngineId;

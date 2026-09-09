@@ -7,8 +7,9 @@ import {
   getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
-  onAuthStateChanged,
+  onIdTokenChanged,
   GoogleAuthProvider,
   signInWithPopup,
   type Auth,
@@ -89,7 +90,8 @@ async function refreshCachedToken(user: User | null): Promise<void> {
 }
 
 /**
- * Starts listening for auth changes and keeps a sync ID token cache for apiClient.
+ * Starts listening for auth / ID-token changes and keeps a sync cache for apiClient.
+ * Uses onIdTokenChanged so refreshed tokens (hourly) stay current for Worker calls.
  * Safe to call once from the app shell or AuthPanel.
  */
 export function startFirebaseAuthListener(): () => void {
@@ -99,7 +101,7 @@ export function startFirebaseAuthListener(): () => void {
   }
   initAttempted = true;
   const a = ensureAuth();
-  return onAuthStateChanged(a, (u) => { void refreshCachedToken(u); });
+  return onIdTokenChanged(a, (u) => { void refreshCachedToken(u); });
 }
 
 /** Subscribe to Firebase user changes (also receives the current cached user immediately). */
@@ -155,6 +157,11 @@ export async function signInWithGoogle(): Promise<User> {
   return cred.user;
 }
 
+/** Sends a password-reset email (production Auth must allow Email/Password). */
+export async function resetPasswordWithEmail(email: string): Promise<void> {
+  await sendPasswordResetEmail(ensureAuth(), email.trim());
+}
+
 export async function signOutFirebase(): Promise<void> {
   if (!isFirebaseConfigured()) return;
   await signOut(ensureAuth());
@@ -183,6 +190,8 @@ export function friendlyFirebaseError(err: unknown): string {
       return 'This sign-in method is disabled in the Firebase console.';
     case 'auth/unauthorized-domain':
       return 'This domain is not authorized in Firebase Authentication settings.';
+    case 'auth/missing-email':
+      return 'Enter your email to reset your password.';
     default:
       return (err as Error)?.message || 'Sign-in failed. Try again.';
   }

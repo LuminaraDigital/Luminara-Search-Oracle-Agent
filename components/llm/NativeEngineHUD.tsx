@@ -7,7 +7,7 @@ export const NativeEngineHUD: React.FC = () => {
   const [statuses, setStatuses] = useState<NativeEngineStatus[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProbing, setIsProbing] = useState(false);
-  const [priorityOrder, setPriorityOrder] = useState<NativeEngineId[]>(['groq', 'nim', 'ollama']);
+  const [priorityOrder, setPriorityOrder] = useState<NativeEngineId[]>(['nim', 'groq', 'openrouter', 'ollama']);
   const [activeEngine, setActiveEngine] = useState<string>('groq');
 
   const probeEngines = async () => {
@@ -56,17 +56,17 @@ export const NativeEngineHUD: React.FC = () => {
     newOrder[index] = newOrder[targetIndex];
     newOrder[targetIndex] = temp;
     setPriorityOrder(newOrder);
-    configService.setNativePriority(newOrder as Array<'groq' | 'nim' | 'ollama'>);
+    configService.setNativePriority(newOrder as Array<'groq' | 'nim' | 'ollama' | 'openrouter'>);
   };
 
   const simulateFailover = () => {
     const failedName = activeEngine === 'groq' ? 'Groq Cloud LPU' : 'NVIDIA NIM Enterprise';
-    const activeNext = activeEngine === 'groq' ? 'NVIDIA NIM Enterprise' : 'Ollama Sovereign SLM';
-    const nextModel = activeEngine === 'groq' ? 'meta/llama-3.2-11b-vision-instruct' : 'llama3.2 (Local Daemon)';
+    const activeNext = activeEngine === 'groq' ? 'OpenRouter Frontier Intelligence' : 'Ollama Sovereign SLM';
+    const nextModel = activeEngine === 'groq' ? 'openai/gpt-4o' : 'llama3.2 (Local Daemon)';
 
     aiProviderService.dispatchFailover({
       failedProvider: failedName,
-      failedModel: activeEngine === 'groq' ? 'openai/gpt-oss-120b' : 'meta/llama-3.2-11b-vision-instruct',
+      failedModel: activeEngine === 'groq' ? 'llama-3.3-70b-versatile' : 'meta/llama-3.3-70b-instruct',
       reason: 'HTTP 429 Rate Limit Exceeded (Simulated Test)',
       activatedProvider: activeNext,
       activatedModel: nextModel,
@@ -74,7 +74,7 @@ export const NativeEngineHUD: React.FC = () => {
       timestamp: Date.now(),
     });
 
-    setActiveEngine(activeEngine === 'groq' ? 'nim' : 'ollama');
+    setActiveEngine(activeEngine === 'groq' ? 'openrouter' : 'ollama');
   };
 
   const getProviderBadge = (id: string) => {
@@ -85,6 +85,8 @@ export const NativeEngineHUD: React.FC = () => {
         return { label: 'GROQ', icon: '⚡', isAvail, sub: '285 tok/s' };
       case 'nim':
         return { label: 'NVIDIA', icon: '🟢', isAvail, sub: 'Enterprise' };
+      case 'openrouter':
+        return { label: 'OPENROUTER', icon: '🌐', isAvail, sub: 'Frontier 120 tok/s' };
       case 'ollama':
         return { label: 'OLLAMA', icon: '🦙', isAvail, sub: s?.isLocal ? 'Local :11434' : 'Cloud' };
       default:

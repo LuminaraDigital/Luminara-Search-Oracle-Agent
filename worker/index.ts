@@ -4,7 +4,7 @@
  * Serves the built Vite app as static assets and exposes a small API:
  *   GET  /api/health                      which providers are configured server-side
  *   GET  /api/auth/session                current Telegram or Firebase identity (if signed in)
- *   GET  /api/enrichment/entity           zero-auth Wikidata & Wayback Machine edge resolution with KV cache
+ *   GET  /api/enrichment/entity           signed-in Wikidata & Wayback Machine edge resolution with KV cache
  *   POST /api/providers/:id/<path>        authenticated proxy to LLM / search / scrape vendors
  *   *    /api/sidecars/:id/<path>         relay to self-hosted helpers: "languagetool" (Writing check)
  *                                         and "umami" (Results tracking); allow-listed, not metered
@@ -24,7 +24,10 @@ import {
   MAX_BODY_BYTES,
   MAX_SMALL_BODY_BYTES,
   RateLimiter,
+  clampHostedChatCompletionsBody,
+  clampHostedGeminiBody,
   clientIp,
+  isGeminiModelActionAllowed,
   readBody,
   resolvesToPublicAddress,
   safePublicHostname,
@@ -64,8 +67,11 @@ export interface Env {
   GROQ_API_KEY_FALLBACK?: string;
   NVIDIA_API_KEY?: string;
   NVIDIA_ORG_ID?: string;
+  OPENROUTER_API_KEY?: string;
   GEMINI_API_KEY?: string;
   OLLAMA_API_KEY?: string;
+  /** Sovereign Ollama endpoint override (e.g. https://my-ollama.internal:11434). Defaults to https://ollama.com */
+  OLLAMA_BASE_URL?: string;
   TAVILY_API_KEY?: string;
   FIRECRAWL_API_KEY?: string;
   EXA_API_KEY?: string;
@@ -83,7 +89,7 @@ export interface Env {
 }
 
 interface ProviderSpec {
-  base: string;
+  base: string | ((env: Env) => string);
   /** Only these path prefixes (after the provider id) may be proxied. */
   allow: string[];
   /** Applies the hosted (server) credential. */
@@ -96,6 +102,14 @@ interface ProviderSpec {
 export function isPathAllowed(spec: { allow: string[] } | undefined, subPath: string): boolean {
   if (!spec) return false;
   return spec.allow.some(p => subPath === p || subPath.startsWith(`${p}/`) || subPath.startsWith(`${p}:`));
+}
+
+/** OpenAI-compatible chat completion paths that get hosted token caps. */
+function isChatCompletionsPath(providerId: string, subPath: string): boolean {
+  if (providerId === 'ollama') {
+    return subPath === '/v1/chat/completions' || subPath === '/api/chat' || subPath === '/api/generate';
+  }
+  return subPath === '/chat/completions';
 }
 
 const PROVIDERS: Record<string, ProviderSpec> = {
@@ -128,8 +142,8 @@ const PROVIDERS: Record<string, ProviderSpec> = {
     },
   },
   ollama: {
-    base: 'https://ollama.com',
-    allow: ['/v1/chat/completions', '/api/tags'],
+    base: (env: Env) => (env.OLLAMA_BASE_URL ? env.OLLAMA_BASE_URL.replace(/\/+$/, '') : 'https://ollama.com'),
+    allow: ['/v1/chat/completions', '/api/tags', '/api/generate', '/api/chat'],
     auth: (env, h) => {
       if (!env.OLLAMA_API_KEY) return { ok: false };
       h.set('Authorization', `Bearer ${env.OLLAMA_API_KEY}`);
@@ -137,8 +151,26 @@ const PROVIDERS: Record<string, ProviderSpec> = {
     },
     byok: (key, h) => { h.set('Authorization', `Bearer ${key}`); return {}; },
   },
+  openrouter: {
+    base: 'https://openrouter.ai/api/v1',
+    allow: ['/chat/completions', '/models'],
+    auth: (env, h) => {
+      if (!env.OPENROUTER_API_KEY) return { ok: false };
+      h.set('Authorization', `Bearer ${env.OPENROUTER_API_KEY}`);
+      h.set('HTTP-Referer', env.WEBAPP_URL || 'https://luminarasuite.com');
+      h.set('X-Title', 'Luminara Suite');
+      return { ok: true };
+    },
+    byok: (key, h) => {
+      h.set('Authorization', `Bearer ${key}`);
+      h.set('HTTP-Referer', 'https://luminarasuite.com');
+      h.set('X-Title', 'Luminara Suite');
+      return {};
+    },
+  },
   gemini: {
     base: 'https://generativelanguage.googleapis.com',
+    // Prefix kept for isPathAllowed; proxyProvider also requires isGeminiModelActionAllowed.
     allow: ['/v1beta/models'],
     auth: (env, h) => {
       if (!env.GEMINI_API_KEY) return { ok: false };
@@ -159,6 +191,7 @@ const PROVIDERS: Record<string, ProviderSpec> = {
   },
   firecrawl: {
     base: 'https://api.firecrawl.dev/v1',
+    // /crawl is paid-tier only on hosted keys (see proxyProvider).
     allow: ['/scrape', '/crawl', '/map'],
     auth: (env, h) => {
       if (!env.FIRECRAWL_API_KEY) return { ok: false };
@@ -251,12 +284,15 @@ async function identify(request: Request, env: Env): Promise<{ user: HostedIdent
   return { user: null };
 }
 
-async function proxyProvider(request: Request, env: Env, providerId: string, subPath: string): Promise<Response> {
+export async function proxyProvider(request: Request, env: Env, providerId: string, subPath: string): Promise<Response> {
   const spec = PROVIDERS[providerId];
   if (!spec) return json({ error: `Unknown provider "${providerId}"` }, 404);
   if (request.method !== 'GET' && request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   if (!isPathAllowed(spec, subPath)) {
     return json({ error: `Path not allowed for ${providerId}: ${subPath}` }, 403);
+  }
+  if (providerId === 'gemini' && !isGeminiModelActionAllowed(subPath)) {
+    return json({ error: `Path not allowed for gemini: ${subPath}` }, 403);
   }
 
   // Bring-your-own-key: the caller's credential is forwarded and the hosted key is never touched.
@@ -278,6 +314,36 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
   } else {
     const who = await identify(request, env);
     if (who.error) return json({ error: who.error }, 401);
+
+    // Business AI Paywall Tier Policy:
+    // - Groq Cloud LPU is free (subject to daily free quota).
+    // - NVIDIA NIM Enterprise, Sovereign Ollama, and OpenRouter are behind our Paid Tier!
+    const isPaidSubscriber = await isUserSubscribed(env, who.user);
+    const PAID_TIER_PROVIDERS = new Set(['nim', 'ollama', 'openrouter']);
+    if (!isPaidSubscriber && PAID_TIER_PROVIDERS.has(providerId)) {
+      return json({
+        error: `The ${providerId.toUpperCase()} engine is a premium feature reserved for active subscribers. Upgrade with Telegram Stars or TON to access NVIDIA NIM, Sovereign Ollama, and OpenRouter, or bring your own API key in Settings.`,
+        code: 'TIER_UPGRADE_REQUIRED',
+        requiredTier: 'paid',
+        provider: providerId,
+        upgrade: true,
+      }, 402, {
+        'X-Quota-Tier': 'paid_required',
+      });
+    }
+
+    // Site-wide Firecrawl crawls are expensive; require an active plan on hosted keys.
+    const firecrawlCrawl = providerId === 'firecrawl' && (subPath === '/crawl' || subPath.startsWith('/crawl/'));
+    if (firecrawlCrawl && !isPaidSubscriber) {
+      return json({
+        error: 'Hosted Firecrawl /crawl requires an active plan. Use /scrape, subscribe, or bring your own Firecrawl key.',
+        code: 'TIER_UPGRADE_REQUIRED',
+        requiredTier: 'paid',
+        provider: providerId,
+        upgrade: true,
+      }, 402, { 'X-Quota-Tier': 'paid_required' });
+    }
+
     quotaGate = await checkHostedQuota(env, who.user);
     if (!quotaGate.ok) {
       return json({
@@ -297,7 +363,8 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
   }
 
   const url = new URL(request.url);
-  const upstream = new URL(spec.base + subPath + url.search);
+  const baseUrl = typeof spec.base === 'function' ? spec.base(env) : spec.base;
+  const upstream = new URL(baseUrl + subPath + url.search);
   const headers = new Headers();
   headers.set('content-type', request.headers.get('content-type') || 'application/json');
   const accept = request.headers.get('accept');
@@ -317,6 +384,19 @@ async function proxyProvider(request: Request, env: Env, providerId: string, sub
     const auth = spec.auth(env, headers, body);
     if (!auth.ok) return json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503);
     if (auth.body !== undefined) body = auth.body;
+
+    // Cost caps apply only to hosted keys (BYOK keeps caller-chosen limits).
+    if (request.method !== 'GET') {
+      if (isChatCompletionsPath(providerId, subPath)) {
+        const clamped = clampHostedChatCompletionsBody(body);
+        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        body = clamped.body;
+      } else if (providerId === 'gemini') {
+        const clamped = clampHostedGeminiBody(body);
+        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        body = clamped.body;
+      }
+    }
   }
 
   const res = await fetch(upstream.toString(), {
@@ -508,6 +588,19 @@ export interface QuotaStatus {
 }
 
 /**
+ * Checks whether a user has an active paid subscription stored in KV (sub:<userId>).
+ */
+export async function isUserSubscribed(env: Env, user: HostedIdentity | null): Promise<boolean> {
+  if (!user || !env.LUMINARA_KV) return false;
+  try {
+    const sub = (await env.LUMINARA_KV.get(`sub:${user.id}`, 'json')) as { expiresAt?: number } | null;
+    return Boolean(sub?.expiresAt && sub.expiresAt > Date.now());
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Hosted keys are a paid resource. Signed-in users get FREE_DAILY_LIMIT requests per day;
  * an active subscription lifts the cap. Anonymous access is allowed only when REQUIRE_TG_AUTH is off.
  */
@@ -525,6 +618,18 @@ export async function checkHostedQuota(env: Env, user: HostedIdentity | null): P
   }
 
   if (!env.LUMINARA_KV) {
+    // Fail closed when auth/metering is required: without KV we cannot enforce quotas.
+    if (env.REQUIRE_TG_AUTH === 'true' && limit > 0) {
+      return {
+        ok: false,
+        error: 'Quota store unavailable. Try again later or add your own API key in Settings.',
+        limit,
+        used: 0,
+        remaining: 0,
+        resetSec,
+        isUnlimited: false,
+      };
+    }
     return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0 };
   }
 
@@ -611,6 +716,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       ok: true,
       providers: configured,
       byok: Object.keys(PROVIDERS),
+      tiers: {
+        free: ['groq'],
+        paid: ['nim', 'ollama', 'openrouter'],
+      },
       sidecars: {
         languagetool: isSidecarConfigured(env, 'languagetool'),
         umami: isSidecarConfigured(env, 'umami'),
@@ -820,6 +929,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/enrichment/entity') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    if (env.REQUIRE_TG_AUTH === 'true') {
+      const who = await identify(request, env);
+      if (who.error || !who.user) return withCors(json({ error: who.error || 'Sign in required' }, 401));
+    }
     const domainParam = url.searchParams.get('domain') || '';
     const cleanDomain = safePublicHostname(domainParam);
     if (!cleanDomain) return withCors(json({ error: 'domain query parameter must be a public hostname such as example.com' }, 400));

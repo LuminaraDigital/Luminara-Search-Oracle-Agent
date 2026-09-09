@@ -303,6 +303,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
             trafficImpact={report.trafficImpact}
             citationIntegrity={report.citationIntegrity || report.integrity}
             trustPack={report.trustPack}
+            shareOfVoice={report.shareOfVoice}
+            sourceGraph={report.sourceGraph}
+            enterpriseTrust={report.enterpriseTrust}
           />
         </div>
       )}

@@ -55,8 +55,11 @@ export async function validateInitData(initData: string, botToken: string, ttlSe
   const computed = toHex(await hmac(secretKey, dataCheckString));
   if (!constantTimeEqual(computed, hash)) return { ok: false, reason: 'initData signature mismatch' };
 
+  const nowSec = Date.now() / 1000;
   const authDate = Number(params.get('auth_date') || 0);
-  if (!authDate || Date.now() / 1000 - authDate > ttlSeconds) return { ok: false, reason: 'initData expired; reopen the app' };
+  if (!authDate) return { ok: false, reason: 'initData missing auth_date' };
+  if (authDate > nowSec + 60) return { ok: false, reason: 'initData auth_date is in the future' };
+  if (nowSec - authDate > ttlSeconds) return { ok: false, reason: 'initData expired; reopen the app' };
 
   const userRaw = params.get('user');
   if (!userRaw) return { ok: false, reason: 'initData has no user' };

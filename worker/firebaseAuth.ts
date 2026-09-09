@@ -90,9 +90,8 @@ export async function verifyFirebaseIdToken(
     const claims = assertFirebaseClaims(payload, projectId);
     if (!claims.ok) return claims;
     return { ok: true, user: claims.user, payload };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'verification failed';
-    return { ok: false, reason: `Firebase token invalid: ${msg}` };
+  } catch {
+    return { ok: false, reason: 'Firebase token invalid' };
   }
 }
 

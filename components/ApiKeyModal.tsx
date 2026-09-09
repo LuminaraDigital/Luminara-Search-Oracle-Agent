@@ -26,6 +26,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   const [groqFallbackKey, setGroqFallbackKey] = useState('');
   const [nvidiaKey, setNvidiaKey] = useState('');
   const [nvidiaOrgId, setNvidiaOrgId] = useState('');
+  const [openRouterKey, setOpenRouterKey] = useState('');
   const [ollamaKey, setOllamaKey] = useState('');
   const [tavilyKey, setTavilyKey] = useState('');
   const [exaKey, setExaKey] = useState('');
@@ -58,6 +59,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     setGroqFallbackKey(localStorage.getItem('luminara_groq_fallback_key') || '');
     setNvidiaKey(localStorage.getItem('luminara_nvidia_key') || '');
     setNvidiaOrgId(localStorage.getItem('luminara_nvidia_org_id') || '');
+    setOpenRouterKey(localStorage.getItem('luminara_openrouter_key') || '');
     setOllamaKey(localStorage.getItem('luminara_ollama_key') || '');
     setTavilyKey(localStorage.getItem('luminara_tavily_key') || '');
     setExaKey(localStorage.getItem('luminara_exa_key') || '');
@@ -108,6 +110,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     configService.setKey('luminara_groq_fallback_key', groqFallbackKey);
     configService.setKey('luminara_nvidia_key', nvidiaKey);
     configService.setKey('luminara_nvidia_org_id', nvidiaOrgId);
+    configService.setKey('luminara_openrouter_key', openRouterKey);
     configService.setKey('luminara_ollama_key', ollamaKey);
     configService.setKey('luminara_tavily_key', tavilyKey);
     configService.setKey('luminara_exa_key', exaKey);
@@ -150,6 +153,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
       res = await configService.testExa();
     } else if (providerId === 'nvidia') {
       res = await configService.testNvidia();
+    } else if (providerId === 'openrouter') {
+      res = await configService.testOpenRouter();
     } else if (providerId === 'ollama') {
       const o = await configService.testOllama();
       res = { success: o.success, message: o.message, latencyMs: o.latencyMs };
@@ -406,11 +411,65 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                 </div>
               </div>
 
-              {/* 3. Ollama Sovereign Engine */}
+              {/* 3. OpenRouter Frontier Intelligence */}
               <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
-                    3. Ollama Sovereign SLM
+                    3. OpenRouter Frontier Intelligence
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-gold/10 text-gold-light border border-gold/30 font-bold">
+                      GPT-4o · Claude 3.5 · DeepSeek
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="none"
+                      onClick={() => handleRunPingTest('openrouter')}
+                      disabled={testingId === 'openrouter'}
+                      className="px-2 py-0.5 rounded text-[10px] font-mono text-gold-light border border-gold/30 bg-gold/5 hover:bg-gold/15"
+                    >
+                      {testingId === 'openrouter' ? 'Pinging…' : 'Ping'}
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                    OpenRouter API Key · <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-gold-light underline">get a key</a>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={visibleKeys['openrouter'] ? 'text' : 'password'}
+                      value={openRouterKey}
+                      onChange={e => setOpenRouterKey(e.target.value)}
+                      placeholder="sk-or-v1-..."
+                      className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none pr-16"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="none"
+                      onClick={() => toggleVisibility('openrouter')}
+                      aria-pressed={!!visibleKeys['openrouter']}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
+                    >
+                      {visibleKeys['openrouter'] ? 'Hide' : 'Show'}
+                    </Button>
+                  </div>
+                  {testResults['openrouter'] && (
+                    <p className={`text-[10px] mt-1 font-mono ${testResults['openrouter'].success ? 'text-success-400' : 'text-warning-400'}`}>
+                      {testResults['openrouter'].success ? '✓' : '✗'} {testResults['openrouter'].message} ({testResults['openrouter'].latencyMs}ms)
+                    </p>
+                  )}
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Included in Luminara Paid Tier (or bring your own key).
+                  </p>
+                </div>
+              </div>
+
+              {/* 4. Ollama Sovereign Engine */}
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
+                    4. Ollama Sovereign SLM
                   </span>
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-success-500/20 text-success-400 border border-success-500/30 font-bold">
                     Local & Sovereign Cloud
@@ -433,11 +492,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                 </div>
               </div>
 
-              {/* 4. Google Gemini (Auxiliary Fallback) */}
+              {/* 5. Google Gemini (Auxiliary Fallback) */}
               <div className="p-3 rounded-xl bg-white/[0.01] border border-white/5 space-y-2 opacity-80">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                    4. Google Gemini
+                    5. Google Gemini
                   </span>
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
                     Optional Fallback Only

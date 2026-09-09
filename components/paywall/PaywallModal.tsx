@@ -218,7 +218,10 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </p>
               <ul className="mt-3 space-y-1.5 text-[11px] text-gray-300">
                 <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Unlimited AI Search Queries
+                  <span className="text-gold">✓</span> <strong>Unlocks NVIDIA NIM, Ollama &amp; OpenRouter</strong>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-gold">✓</span> Unlimited AI Search Queries (Groq + Premium)
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-gold">✓</span> 2 Monitored Domains
@@ -258,7 +261,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </p>
               <ul className="mt-3 space-y-1.5 text-[11px] text-gray-300">
                 <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> All Starter Features
+                  <span className="text-gold">✓</span> <strong>All Starter Engines (NVIDIA, Ollama, OpenRouter)</strong>
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-gold">✓</span> 10 Domains + Competitor Graph

@@ -12,6 +12,10 @@ import { EntityAuthorityCard } from './EntityAuthorityCard';
 import { TrustPackPanel } from './TrustPackPanel';
 import { WritingQualityCard } from './WritingQualityCard';
 import { ResultsTrackingCard } from './ResultsTrackingCard';
+import { VisibilityTrendsCard } from './VisibilityTrendsCard';
+import { ShareOfVoiceCard } from './ShareOfVoiceCard';
+import { SourceCitationGraphView } from './SourceCitationGraph';
+import { EnterpriseTrustPanel } from './EnterpriseTrustPanel';
 import { RemediationPayload } from '../../services/deployment/cmsDeploymentService';
 import { EmpiricalCitationSummary } from '../../services/audit/empiricalCitationService';
 import { EnrichedEntityIntelligence } from '../../services/enrichment/publicApisEnrichmentService';
@@ -19,6 +23,9 @@ import type { WritingQualityReport } from '../../services/audit/writingQualitySe
 import type { TrafficImpact } from '../../services/analytics/trafficInsightsService';
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
 import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
+import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
+import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
+import type { EnterpriseTrustPack } from '../../services/trust/enterpriseTrustPackService';
 
 interface ReportDisplayProps {
   markdownText: string;
@@ -34,6 +41,9 @@ interface ReportDisplayProps {
   citationIntegrity?: CitationIntegrityResult;
   integrity?: CitationIntegrityResult;
   trustPack?: TrustPackSummary;
+  shareOfVoice?: ShareOfVoiceSummary;
+  sourceGraph?: SourceCitationGraph;
+  enterpriseTrust?: EnterpriseTrustPack;
 }
 
 // Highlighted text component with interactive glossary tooltip
@@ -381,6 +391,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   citationIntegrity,
   integrity,
   trustPack,
+  shareOfVoice,
+  sourceGraph,
+  enterpriseTrust,
 }) => {
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
@@ -564,6 +577,23 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
       {trustPack && (
         <div className="mb-6">
           <TrustPackPanel trustPack={trustPack} />
+        </div>
+      )}
+
+      <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <VisibilityTrendsCard domain={targetDomain || remediationPayload?.domain || ''} />
+        <ShareOfVoiceCard summary={shareOfVoice} />
+      </div>
+
+      {sourceGraph && (
+        <div className="mb-6">
+          <SourceCitationGraphView graph={sourceGraph} />
+        </div>
+      )}
+
+      {enterpriseTrust && (
+        <div className="mb-6">
+          <EnterpriseTrustPanel pack={enterpriseTrust} />
         </div>
       )}
 

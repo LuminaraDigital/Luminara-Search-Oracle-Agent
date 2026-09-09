@@ -2,6 +2,7 @@ import { isInTelegram } from '../services/telegram/tma';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
 import React, { useEffect } from 'react';
 import { ICONS } from '../constants';
+import { openPaywallModal } from '../services/apiClient';
 
 interface PricingPageProps {
   onBack: () => void;
@@ -114,18 +115,26 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
                 </div>
              </div>
 
-             <div className="mt-20">
+              <div className="mt-20">
                 {isInTelegram() ? (
                   <TelegramAccountPanel />
                 ) : (
-                <button onClick={onTerminal} className="w-full py-8 rounded-3xl bg-white text-black font-black uppercase tracking-[0.5em] text-[11px] hover:bg-gold-light transition-all transform hover:-translate-y-1 shadow-2xl">
-                   Start My $49/month Plan
-                </button>
+                  <div className="space-y-4">
+                    <button
+                      onClick={() => openPaywallModal('Choose Telegram Stars or TON for 1-click subscription activation.')}
+                      className="w-full py-8 rounded-3xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[11px] hover:scale-[1.02] active:scale-[0.98] transition-all transform hover:-translate-y-1 shadow-2xl"
+                    >
+                      Subscribe · Stars or TON
+                    </button>
+                    <div className="pt-2">
+                      <TelegramAccountPanel compact />
+                    </div>
+                  </div>
                 )}
                 <p className="text-center text-gray-600 text-[10px] uppercase tracking-widest mt-6">
                   Cancel anytime. Unlimited audits for your sites.
                 </p>
-             </div>
+              </div>
           </div>
         </section>
 

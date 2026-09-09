@@ -183,6 +183,14 @@ export class ConfigService {
     return this.getKey('luminara_ollama_key', 'OLLAMA_API_KEY', 'VITE_OLLAMA_API_KEY', 'ollama').key;
   }
 
+  public getOpenRouterKey(): string {
+    return this.getKey('luminara_openrouter_key', 'OPENROUTER_API_KEY', 'VITE_OPENROUTER_API_KEY', 'openrouter').key;
+  }
+
+  public setOpenRouterKey(key: string): void {
+    this.setKey('luminara_openrouter_key', key);
+  }
+
   public getGeminiKey(): string {
     return this.getKey('luminara_api_key', 'GEMINI_API_KEY', 'VITE_GEMINI_API_KEY', 'gemini').key;
   }
@@ -241,6 +249,7 @@ export class ConfigService {
       { id: 'nvidia', name: 'NVIDIA NIM (Native Primary)', cat: 'llm' as const, ...this.getKey('luminara_nvidia_key', 'NVIDIA_API_KEY', 'VITE_NVIDIA_API_KEY', 'nim') },
       { id: 'groq', name: 'Groq Cloud (Native LPU)', cat: 'llm' as const, ...this.getKey('luminara_groq_key', 'GROQ_API_KEY', 'VITE_GROQ_API_KEY', 'groq') },
       { id: 'groq_fallback', name: 'Groq Fallback (Native Auto-Failover)', cat: 'llm' as const, ...this.getKey('luminara_groq_fallback_key', 'GROQ_API_KEY_FALLBACK', 'VITE_GROQ_API_KEY_FALLBACK') },
+      { id: 'openrouter', name: 'OpenRouter (Frontier Multi-Model)', cat: 'llm' as const, ...this.getKey('luminara_openrouter_key', 'OPENROUTER_API_KEY', 'VITE_OPENROUTER_API_KEY', 'openrouter') },
       { id: 'ollama', name: 'Ollama (Native Local & Cloud)', cat: 'llm' as const, ...this.getKey('luminara_ollama_key', 'OLLAMA_API_KEY', 'VITE_OLLAMA_API_KEY', 'ollama') },
       { id: 'gemini', name: 'Google Gemini (Optional Fallback)', cat: 'llm' as const, ...this.getKey('luminara_api_key', 'GEMINI_API_KEY', 'VITE_GEMINI_API_KEY', 'gemini') },
       { id: 'tavily', name: 'Tavily Search', cat: 'search' as const, ...this.getKey('luminara_tavily_key', 'TAVILY_API_KEY', 'VITE_TAVILY_API_KEY', 'tavily') },
@@ -547,18 +556,40 @@ export class ConfigService {
     return this.getOllamaLocalEndpoint();
   }
 
-  public getNativePriority(): Array<'groq' | 'nim' | 'ollama'> {
+  public async testOpenRouter(): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const key = this.getOpenRouterKey();
+    if (!key) return { success: false, message: 'No OpenRouter API Key found', latencyMs: 0 };
+    const start = Date.now();
+    try {
+      const res = await providerFetch('openrouter', '/models', 'https://openrouter.ai/api/v1/models', {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'HTTP-Referer': 'https://luminarasuite.com',
+          'X-Title': 'Luminara Suite',
+        }
+      }, { userKey: key });
+      const latencyMs = Date.now() - start;
+      if (res.ok) {
+        return { success: true, message: 'Connected to OpenRouter API', latencyMs };
+      }
+      return { success: false, message: `OpenRouter error HTTP ${res.status}`, latencyMs };
+    } catch (e: any) {
+      return { success: false, message: e?.message || 'Network error', latencyMs: Date.now() - start };
+    }
+  }
+
+  public getNativePriority(): Array<'groq' | 'nim' | 'ollama' | 'openrouter'> {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('luminara_native_llm_order');
       if (stored) {
-        const parsed = stored.split(',').filter(id => ['groq', 'nim', 'ollama'].includes(id)) as Array<'groq' | 'nim' | 'ollama'>;
-        if (parsed.length === 3) return parsed;
+        const parsed = stored.split(',').filter(id => ['groq', 'nim', 'ollama', 'openrouter'].includes(id)) as Array<'groq' | 'nim' | 'ollama' | 'openrouter'>;
+        if (parsed.length >= 3) return parsed;
       }
     }
-    return ['nim', 'groq', 'ollama'];
+    return ['nim', 'groq', 'openrouter', 'ollama'];
   }
 
-  public setNativePriority(order: Array<'groq' | 'nim' | 'ollama'>): void {
+  public setNativePriority(order: Array<'groq' | 'nim' | 'ollama' | 'openrouter'>): void {
     if (typeof window !== 'undefined') {
       localStorage.setItem('luminara_native_llm_order', order.join(','));
       window.dispatchEvent(new CustomEvent('luminara-native-priority-change', { detail: { order } }));

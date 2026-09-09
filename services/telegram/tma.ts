@@ -55,6 +55,11 @@ export async function initTelegram(): Promise<boolean> {
       await viewport.mount();
       viewport.bindCssVars();
       if (viewport.expand.isAvailable()) viewport.expand();
+      try {
+        if ((viewport as any).requestFullscreen?.isAvailable?.()) {
+          (viewport as any).requestFullscreen();
+        }
+      } catch { /* ignore older TMA versions */ }
     }
     // Chat-style scrolling inside the app should not swipe the Mini App closed.
     if (swipeBehavior.mount.isAvailable()) {
@@ -84,6 +89,13 @@ export function getInitDataRaw(): string {
 }
 
 export function getStartParam(): string | undefined {
+  if (typeof window !== 'undefined' && window.location) {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const param = urlParams.get('tgWebAppStartParam') || urlParams.get('startapp');
+      if (param) return param;
+    } catch { /* ignore */ }
+  }
   if (!insideTelegram) return undefined;
   try {
     return retrieveLaunchParams().tgWebAppStartParam;

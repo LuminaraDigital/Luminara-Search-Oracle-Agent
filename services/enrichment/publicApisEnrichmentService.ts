@@ -4,6 +4,8 @@
  * to eliminate entity ambiguity in LLMs, prove domain longevity (E-E-A-T), and enrich Schema.org with canonical sameAs links.
  */
 
+import { getApiAuthHeaders } from '../apiClient';
+
 export interface WikidataEntityMatch {
   id: string; // e.g. "Q312" (Apple Inc.)
   label: string;
@@ -345,7 +347,7 @@ export class PublicApisEnrichmentService {
     if (typeof window === 'undefined' || !window.location?.href) return null;
     try {
       const endpoint = `/api/enrichment/entity?domain=${encodeURIComponent(domain)}&brand=${encodeURIComponent(brandName)}`;
-      const res = await fetch(endpoint).catch(() => null);
+      const res = await fetch(endpoint, { headers: getApiAuthHeaders() }).catch(() => null);
       if (!res || !res.ok) return null;
       const body = (await res.json()) as { ok?: boolean; data?: EnrichedEntityIntelligence };
       if (body?.ok && body.data?.security) return body.data;

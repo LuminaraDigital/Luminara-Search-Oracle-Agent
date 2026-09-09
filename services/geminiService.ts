@@ -10,6 +10,7 @@ import { localSerpService } from "./search/localSerpService";
 import { firecrawlService } from "./scraping/firecrawlService";
 import { unifiedScraperService } from "./scraping/unifiedScraper";
 import { geminiProxyHttpOptions } from "./apiClient";
+import { wrapUntrustedContent } from "../utils/untrustedContent";
 
 export interface StreamChunk {
   text?: string;
@@ -33,6 +34,10 @@ import { trafficInsightsService, type TrafficImpact } from './analytics/trafficI
 import { citationIntegrityService, type CitationIntegrityResult } from './audit/citationIntegrityService';
 import { aeoTrustPackService, type TrustPackSummary } from './audit/aeoTrustPackService';
 import { schemaSafetyGate } from './deployment/schemaSafetyGate';
+import { shareOfVoiceService, type ShareOfVoiceSummary } from './visibility/shareOfVoiceService';
+import { sourceCitationGraphService, type SourceCitationGraph } from './visibility/sourceCitationGraphService';
+import { enterpriseTrustPackService, type EnterpriseTrustPack } from './trust/enterpriseTrustPackService';
+import { visibilityHistoryService } from './visibility/visibilityHistoryService';
 
 export interface AuditReportResult {
   text: string;
@@ -50,6 +55,9 @@ export interface AuditReportResult {
   /** Alias for citationIntegrity (UI wiring). */
   integrity?: CitationIntegrityResult;
   trustPack?: TrustPackSummary;
+  shareOfVoice?: ShareOfVoiceSummary;
+  sourceGraph?: SourceCitationGraph;
+  enterpriseTrust?: EnterpriseTrustPack;
 }
 
 import { shouldSearch, toSearchQuery } from './search/searchIntent';
@@ -236,7 +244,8 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     }
 
     const chatPlaybooks = opts.skipSearch ? '' : playbookContext(selectChatPlaybooks(prompt), 9000);
-    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${chatPlaybooks ? chatPlaybooks + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${tavilyContext ? tavilyContext + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
+    const grounded = tavilyContext ? wrapUntrustedContent('LIVE_SEARCH', tavilyContext) : '';
+    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${chatPlaybooks ? chatPlaybooks + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${grounded ? grounded + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama Local & Cloud
     // With automatic native engine discovery, searching, and instant auto-failover
@@ -613,11 +622,11 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     const prompt = `
 ${dnaContext}
 ${methodology}
-${scrapedContent}
-${searchGrounding}
-${empiricalText}
-${enrichmentText}
-${integrityText}
+${wrapUntrustedContent('SCRAPED_PAGE', scrapedContent)}
+${wrapUntrustedContent('SEARCH_GROUNDING', searchGrounding)}
+${wrapUntrustedContent('EMPIRICAL', empiricalText)}
+${wrapUntrustedContent('ENRICHMENT', enrichmentText)}
+${wrapUntrustedContent('CITATION_INTEGRITY', integrityText)}
 ${preliminaryTrustText}
 ${writingText}
 ${trafficText}
@@ -693,6 +702,39 @@ Strict Formatting Guidelines:
         domain: displayUrl,
       });
 
+      const shareOfVoice = empiricalSummary
+        ? shareOfVoiceService.build(empiricalSummary)
+        : undefined;
+
+      const sourceGraph = sourceCitationGraphService.build({
+        domain: displayUrl,
+        sources,
+        empirical: empiricalSummary,
+      });
+
+      const enterpriseTrust = enterpriseTrustPackService.build({
+        domain: displayUrl,
+        trustPack,
+        empirical: empiricalSummary,
+        enriched: enrichedEntity,
+        traffic: trafficImpact,
+        sourceGraph,
+        requireTgAuth: true,
+      });
+
+      try {
+        visibilityHistoryService.record({
+          domain: displayUrl,
+          focus: String(focus),
+          citationRatePercent: empiricalSummary?.citationRatePercent ?? 0,
+          shareOfVoice,
+          citeWorthiness: trustPack.citeWorthiness,
+          topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
+        });
+      } catch (histErr) {
+        console.warn('[VisibilityHistory] record error', histErr);
+      }
+
       const remediationPayload: RemediationPayload = {
         domain: displayUrl,
         pageUrl: websiteUrl,
@@ -737,6 +779,9 @@ Strict Formatting Guidelines:
         citationIntegrity,
         integrity: citationIntegrity,
         trustPack,
+        shareOfVoice,
+        sourceGraph,
+        enterpriseTrust,
       };
     };
 

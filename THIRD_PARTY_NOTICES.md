@@ -20,3 +20,17 @@ Upstream credits individual contributors for several skills (seo-cluster by Lutf
 ## npm dependencies
 
 See `package.json`; each package carries its own license in `node_modules/<name>/LICENSE`.
+
+## Research inspiration (clean-room; no upstream code vendored)
+
+The Visibility Trends, Share of Voice, Source Citation Graph, and Enterprise Trust Pack
+features were designed after reviewing public MIT repositories for ideas only. No source
+from those projects is copied into this tree. Concepts reviewed:
+
+- Elmo / AiCMO style prompt-panel visibility and SoV math
+- Site-graph style node/edge citation maps
+- SOC2-guide style Type 1 vs observation control inventory (checklist only; not certification)
+- CORE-EEAT Pass/Partial/Fail signal framing
+- Awesome Public Datasets style provenance + health flags for data sources
+
+Luminara branding, storage keys, and UI remain original to this project.

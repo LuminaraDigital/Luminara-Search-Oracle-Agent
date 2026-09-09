@@ -3,7 +3,11 @@ import worker from '../worker/index';
 import type { Env } from '../worker/index';
 import {
   HTML_CSP,
+  HOSTED_MAX_TOKENS,
   RateLimiter,
+  clampHostedChatCompletionsBody,
+  clampHostedGeminiBody,
+  isGeminiModelActionAllowed,
   isPrivateIp,
   readBody,
   resolvesToPublicAddress,
@@ -178,17 +182,26 @@ describe('Sentinel and enrichment', () => {
     expect((await worker.fetch(req('/api/sentinel/status'), makeEnv(), ctx)).status).toBe(401);
   });
 
+  it('requires sign-in for enrichment when REQUIRE_TG_AUTH is on', async () => {
+    const res = await worker.fetch(req('/api/enrichment/entity?domain=example.com'), makeEnv(), ctx);
+    expect(res.status).toBe(401);
+  });
+
   it('refuses enrichment probes of private or malformed hosts before any fetch', async () => {
     for (const d of ['localhost', '127.0.0.1', '169.254.169.254', '10.0.0.1', 'intranet.local', 'http://[::1]/', 'a', '']) {
-      const res = await worker.fetch(req(`/api/enrichment/entity?domain=${encodeURIComponent(d)}`), makeEnv(), ctx);
+      const res = await worker.fetch(req(`/api/enrichment/entity?domain=${encodeURIComponent(d)}`), makeEnv({ REQUIRE_TG_AUTH: 'false' }), ctx);
       expect(res.status, d).toBe(400);
     }
   });
 
-  it('serves the cached enrichment record without probing', async () => {
+  it('serves the cached enrichment record without probing when auth is off', async () => {
     const store = new Map<string, string>();
     store.set('enrich:example.com', JSON.stringify({ domain: 'example.com' }));
-    const res = await worker.fetch(req('/api/enrichment/entity?domain=https://EXAMPLE.com/path'), makeEnv({ LUMINARA_KV: kv(store) }), ctx);
+    const res = await worker.fetch(
+      req('/api/enrichment/entity?domain=https://EXAMPLE.com/path'),
+      makeEnv({ REQUIRE_TG_AUTH: 'false', LUMINARA_KV: kv(store) }),
+      ctx,
+    );
     expect(res.status).toBe(200);
     expect(((await res.json()) as any).cached).toBe(true);
   });
@@ -242,6 +255,37 @@ describe('body reader', () => {
     expect(empty.ok && empty.value).toEqual({});
     const raw = await readBody(new Request('https://x/', { method: 'POST', body: 'plain' }), 100, false);
     expect(raw.ok && raw.value).toBe('plain');
+  });
+});
+
+describe('hosted LLM cost caps', () => {
+  it('clamps max_tokens and n on OpenAI-compatible bodies', () => {
+    const r = clampHostedChatCompletionsBody({ max_tokens: 999999, n: 8, messages: [{ role: 'user', content: 'hi' }] });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect((r.body as any).max_tokens).toBe(HOSTED_MAX_TOKENS);
+      expect((r.body as any).n).toBe(1);
+    }
+  });
+
+  it('rejects oversized message arrays on hosted keys', () => {
+    const messages = Array.from({ length: 100 }, () => ({ role: 'user', content: 'x' }));
+    const r = clampHostedChatCompletionsBody({ messages });
+    expect(r.ok).toBe(false);
+  });
+
+  it('clamps Gemini maxOutputTokens', () => {
+    const r = clampHostedGeminiBody({ generationConfig: { maxOutputTokens: 50000 } });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect((r.body as any).generationConfig.maxOutputTokens).toBe(HOSTED_MAX_TOKENS);
+  });
+
+  it('allows only Gemini generate/stream/count actions', () => {
+    expect(isGeminiModelActionAllowed('/v1beta/models/gemini-2.0-flash:generateContent')).toBe(true);
+    expect(isGeminiModelActionAllowed('/v1beta/models/gemini-2.0-flash:streamGenerateContent')).toBe(true);
+    expect(isGeminiModelActionAllowed('/v1beta/models/gemini-2.0-flash:countTokens')).toBe(true);
+    expect(isGeminiModelActionAllowed('/v1beta/models/gemini-2.0-flash:embedContent')).toBe(false);
+    expect(isGeminiModelActionAllowed('/v1beta/models')).toBe(false);
   });
 });
 

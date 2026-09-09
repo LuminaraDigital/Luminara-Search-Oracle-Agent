@@ -57,9 +57,9 @@ describe('Native LLM Trinity (NVIDIA NIM, Groq, Ollama)', () => {
   });
 
   describe('Native Engine Priority & Resolution', () => {
-    it('defaults native priority to NVIDIA NIM -> Groq -> Ollama', () => {
+    it('defaults native priority to NVIDIA NIM -> Groq -> OpenRouter -> Ollama', () => {
       const order = configService.getNativePriority();
-      expect(order).toEqual(['nim', 'groq', 'ollama']);
+      expect(order).toEqual(['nim', 'groq', 'openrouter', 'ollama']);
     });
 
     it('prioritizes NVIDIA NIM when configured', async () => {
@@ -87,12 +87,29 @@ describe('Native LLM Trinity (NVIDIA NIM, Groq, Ollama)', () => {
       expect(best?.id).toBe('groq');
     });
 
-    it('resolves to Ollama when Groq and NVIDIA are unavailable', async () => {
+    it('resolves to OpenRouter when NVIDIA NIM and Groq are unavailable', async () => {
       const nim = aiProviderService.getProvider('nim');
       vi.spyOn(nim!, 'isAvailable').mockResolvedValue(false);
 
       const groq = aiProviderService.getProvider('groq');
       vi.spyOn(groq!, 'isAvailable').mockResolvedValue(false);
+
+      const openrouter = aiProviderService.getProvider('openrouter');
+      vi.spyOn(openrouter!, 'isAvailable').mockResolvedValue(true);
+
+      const best = await aiProviderService.getBestAvailableProvider();
+      expect(best?.id).toBe('openrouter');
+    });
+
+    it('resolves to Ollama when Groq, NVIDIA, and OpenRouter are unavailable', async () => {
+      const nim = aiProviderService.getProvider('nim');
+      vi.spyOn(nim!, 'isAvailable').mockResolvedValue(false);
+
+      const groq = aiProviderService.getProvider('groq');
+      vi.spyOn(groq!, 'isAvailable').mockResolvedValue(false);
+
+      const openrouter = aiProviderService.getProvider('openrouter');
+      vi.spyOn(openrouter!, 'isAvailable').mockResolvedValue(false);
 
       const ollama = aiProviderService.getProvider('ollama');
       vi.spyOn(ollama!, 'isAvailable').mockResolvedValue(true);

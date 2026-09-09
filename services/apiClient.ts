@@ -6,7 +6,7 @@
  * and can be forced for local Vite dev with VITE_API_BASE=http://localhost:8787.
  */
 import { getInitDataRaw } from './telegram/tma';
-import { getFirebaseIdTokenSync } from './auth/firebaseAuthService';
+import { getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
 
 export interface ServerHealth {
   ok: boolean;
@@ -106,8 +106,7 @@ export async function sidecarFetch(id: SidecarId, path: string, init: RequestIni
   const viaWorker = Boolean(apiBase()) && isSidecarConfiguredOnServer(id);
   const viaViteProxy = !apiBase() && typeof window !== 'undefined';
   if (!viaWorker && !viaViteProxy) return null;
-  Object.entries(authHeaders()).forEach(([k, v]) => headers.set(k, v));
-  return fetch(`${apiBase()}/api/sidecars/${id}${path}`, { ...init, headers });
+  return workerFetchWithAuthRetry(`${apiBase()}/api/sidecars/${id}${path}`, { ...init });
 }
 
 function authHeaders(): Record<string, string> {
@@ -117,6 +116,41 @@ function authHeaders(): Record<string, string> {
   const idToken = getFirebaseIdTokenSync();
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   return headers;
+}
+
+/** Builds Worker auth headers; forceRefresh pulls a fresh Firebase ID token after expiry. */
+async function authHeadersAsync(forceRefresh = false): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  const initData = getInitDataRaw();
+  if (initData) headers['x-telegram-init-data'] = initData;
+  const idToken = forceRefresh
+    ? await getFirebaseIdToken(true)
+    : (getFirebaseIdTokenSync() ?? await getFirebaseIdToken(false));
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+  return headers;
+}
+
+function applyAuthHeaders(target: Headers, source: Record<string, string>): void {
+  Object.entries(source).forEach(([k, v]) => target.set(k, v));
+}
+
+/**
+ * Worker fetch that retries once on 401 after forcing a Firebase ID token refresh.
+ * Skips refresh when Telegram initData is already present (Telegram identity takes precedence).
+ */
+async function workerFetchWithAuthRetry(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers || {});
+  applyAuthHeaders(headers, await authHeadersAsync(false));
+  let res = await fetch(url, { ...init, headers });
+  if (res.status !== 401) return res;
+  if (getInitDataRaw()) return res;
+  applyAuthHeaders(headers, await authHeadersAsync(true));
+  return fetch(url, { ...init, headers });
+}
+
+/** Auth headers for Worker API calls (Telegram initData and/or Firebase ID token). */
+export function getApiAuthHeaders(): Record<string, string> {
+  return authHeaders();
 }
 
 /**
@@ -140,12 +174,13 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   headers.delete('authorization');
   headers.delete('x-api-key');
   headers.delete('nv-organization-id');
+  let res: Response;
   if (relayOwnKey) {
     headers.set('x-provider-key', opts.userKey as string);
+    res = await fetch(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
   } else {
-    Object.entries(authHeaders()).forEach(([k, v]) => headers.set(k, v));
+    res = await workerFetchWithAuthRetry(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
   }
-  const res = await fetch(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
   updateQuotaFromHeaders(res.headers);
   if (res.status === 402) {
     try {
@@ -155,6 +190,9 @@ export async function providerFetch(providerId: string, path: string, directUrl:
         window.dispatchEvent(new CustomEvent('luminara-open-paywall', {
           detail: {
             reason: body.error || 'Daily free limit reached',
+            code: body.code,
+            requiredTier: body.requiredTier,
+            provider: body.provider,
             limit: body.limit,
             used: body.used,
             remaining: body.remaining,
@@ -221,7 +259,7 @@ export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
   const base = apiBase();
   if (!base) return null;
   try {
-    const r = await fetch(`${base}/api/auth/quota`, { headers: authHeaders() });
+    const r = await workerFetchWithAuthRetry(`${base}/api/auth/quota`);
     if (!r.ok) return null;
     const data = await r.json();
     if (data.ok) {

@@ -52,19 +52,20 @@
 
   // Non-secret config. Secrets are set with `npx wrangler secret put NAME`:
   //   BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET (required for the bot webhook), GROQ_API_KEY, GEMINI_API_KEY,
-  //   TAVILY_API_KEY, FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY,
+  //   OPENROUTER_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY,
   //   TON_API_KEY (Toncenter), UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD).
   // Non-secret TON merchant wallet (safe in vars): TON_RECEIVING_ADDRESS
-  //   TAVILY_API_KEY, FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY,
-  //   UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD) for the self-hosted Results tracking relay.
   "vars": {
     "WEBAPP_URL": "https://luminarasuite.com/",
     "ALLOWED_ORIGINS": "https://luminarasuite.com,https://www.luminarasuite.com",
-    // Hosted keys are gated: signed-in Telegram or Firebase users, 25 free requests/day, paid plans unlimited.
-    // Users can always bring their own Groq / NVIDIA NIM / Ollama key in Settings (never gated).
+    // Hosted keys are gated: Groq Cloud LPU is free (subject to daily limit).
+    // NVIDIA NIM, Sovereign Ollama, and OpenRouter require an active paid subscription.
+    // Users can always bring their own API keys in Settings (BYOK never paywalled).
     "REQUIRE_TG_AUTH": "true",
     "REQUIRE_SUBSCRIPTION": "false",
     "FREE_DAILY_LIMIT": "25",
+    // Sovereign Ollama Base URL (optional, defaults to https://ollama.com if unset)
+    "OLLAMA_BASE_URL": "",
     // Firebase Auth project id (same as VITE_FIREBASE_PROJECT_ID). Empty disables Firebase token checks.
     "FIREBASE_PROJECT_ID": "luminara-suite",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;

@@ -67,7 +67,73 @@ export function stripUpstreamHeaders(headers: Headers): void {
 export const MAX_BODY_BYTES = 1_000_000; // provider proxies (chat completions with long context)
 export const MAX_SMALL_BODY_BYTES = 64_000; // auth / invoice / webhook / sentinel
 
+/** Caps for hosted-key LLM calls (cost abuse control). BYOK is not clamped. */
+export const HOSTED_MAX_TOKENS = 8192;
+export const HOSTED_MAX_COMPLETION_CHOICES = 1;
+export const HOSTED_MAX_MESSAGES = 64;
+
 export type BodyResult<T> = { ok: true; value: T; text: string } | { ok: false; status: number; error: string };
+
+/**
+ * Clamps OpenAI-compatible chat completion bodies on hosted keys so a single request cannot
+ * burn unbounded tokens (n, max_tokens / max_completion_tokens).
+ */
+export function clampHostedChatCompletionsBody(body: unknown): { ok: true; body: unknown } | { ok: false; error: string } {
+  if (body === undefined || body === null) return { ok: true, body: { max_tokens: HOSTED_MAX_TOKENS } };
+  if (typeof body !== 'object' || Array.isArray(body)) return { ok: false, error: 'Request body must be a JSON object' };
+  const b = { ...(body as Record<string, unknown>) };
+  if (Array.isArray(b.messages) && b.messages.length > HOSTED_MAX_MESSAGES) {
+    return { ok: false, error: `Too many messages (max ${HOSTED_MAX_MESSAGES} on hosted keys)` };
+  }
+  const clampToken = (key: 'max_tokens' | 'max_completion_tokens') => {
+    const v = b[key];
+    if (v === undefined || v === null) return;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 1) {
+      b[key] = HOSTED_MAX_TOKENS;
+      return;
+    }
+    b[key] = Math.min(Math.floor(n), HOSTED_MAX_TOKENS);
+  };
+  clampToken('max_tokens');
+  clampToken('max_completion_tokens');
+  if (b.max_tokens === undefined && b.max_completion_tokens === undefined) {
+    b.max_tokens = HOSTED_MAX_TOKENS;
+  }
+  if (b.n !== undefined) {
+    const n = Number(b.n);
+    b.n = Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), HOSTED_MAX_COMPLETION_CHOICES) : HOSTED_MAX_COMPLETION_CHOICES;
+  }
+  return { ok: true, body: b };
+}
+
+/**
+ * Clamps Gemini generateContent bodies on hosted keys (generationConfig.maxOutputTokens).
+ */
+export function clampHostedGeminiBody(body: unknown): { ok: true; body: unknown } | { ok: false; error: string } {
+  if (body === undefined || body === null || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: true, body: body ?? {} };
+  }
+  const b = { ...(body as Record<string, unknown>) };
+  const gen =
+    b.generationConfig && typeof b.generationConfig === 'object' && !Array.isArray(b.generationConfig)
+      ? { ...(b.generationConfig as Record<string, unknown>) }
+      : {};
+  const raw = gen.maxOutputTokens;
+  if (raw === undefined || raw === null) {
+    gen.maxOutputTokens = HOSTED_MAX_TOKENS;
+  } else {
+    const n = Number(raw);
+    gen.maxOutputTokens = Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), HOSTED_MAX_TOKENS) : HOSTED_MAX_TOKENS;
+  }
+  b.generationConfig = gen;
+  return { ok: true, body: b };
+}
+
+/** Gemini model actions allowed through the Worker proxy. */
+export function isGeminiModelActionAllowed(subPath: string): boolean {
+  return /^\/v1beta\/models\/[A-Za-z0-9._%-]+:(generateContent|streamGenerateContent|countTokens)$/.test(subPath);
+}
 
 /**
  * Reads a request body with a hard size cap. Rejects oversized bodies (413) and, when

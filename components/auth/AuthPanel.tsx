@@ -5,6 +5,7 @@ import {
   signUpWithEmail,
   signInWithEmail,
   signInWithGoogle,
+  resetPasswordWithEmail,
   signOutFirebase,
   friendlyFirebaseError,
 } from '../../services/auth/firebaseAuthService';
@@ -22,6 +23,7 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const configured = isFirebaseConfigured();
@@ -62,6 +64,7 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
+    setInfo(null);
     try {
       await fn();
       setPassword('');
@@ -100,14 +103,14 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
           <button
             type="button"
             className={`px-2 py-1 rounded ${mode === 'signin' ? 'bg-gold/20 text-gold-light' : 'text-gray-500 hover:text-gray-300'}`}
-            onClick={() => { setMode('signin'); setError(null); }}
+            onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
           >
             Sign in
           </button>
           <button
             type="button"
             className={`px-2 py-1 rounded ${mode === 'signup' ? 'bg-gold/20 text-gold-light' : 'text-gray-500 hover:text-gray-300'}`}
-            onClick={() => { setMode('signup'); setError(null); }}
+            onClick={() => { setMode('signup'); setError(null); setInfo(null); }}
           >
             Sign up
           </button>
@@ -154,7 +157,23 @@ export const AuthPanel: React.FC<{ compact?: boolean }> = ({ compact }) => {
             placeholder="At least 6 characters"
           />
         </label>
+        {mode === 'signin' && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              disabled={busy || !email.trim()}
+              className="text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-gold disabled:opacity-40"
+              onClick={() => run(async () => {
+                await resetPasswordWithEmail(email);
+                setInfo('Password reset email sent. Check your inbox.');
+              })}
+            >
+              Forgot password?
+            </button>
+          </div>
+        )}
         {error && <p className="text-xs text-red-400" role="alert">{error}</p>}
+        {info && <p className="text-xs text-emerald-400" role="status">{info}</p>}
         <Button type="submit" disabled={busy || !email || password.length < 6} className="w-full text-xs">
           {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
         </Button>
