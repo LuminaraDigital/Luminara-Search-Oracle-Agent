@@ -40,6 +40,8 @@ import { ICONS } from './constants';
 import { startFirebaseAuthListener, isFirebaseConfigured } from './services/auth/firebaseAuthService';
 import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
+import { PaywallModal } from './components/paywall/PaywallModal';
+import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 
 const CHAT_STORAGE_KEY = 'luminara_chat_session';
 
@@ -741,6 +743,9 @@ const App: React.FC = () => {
             <span className="truncate max-w-[90px]">{dna ? dna.name : 'Add my business'}</span>
           </Button>
 
+          {/* AI Usage Quota & Paywall Badge */}
+          <UsageQuotaBadge />
+
           {/* API Key Modal Button */}
           <Button
             variant="ghost"
@@ -1005,6 +1010,9 @@ const App: React.FC = () => {
         onClose={() => setIsKeyModalOpen(false)} 
         onKeySaved={() => {}} 
       />
+
+      {/* Global Dual-Rail Paywall Modal (Stars + TON) */}
+      <PaywallModal onOpenSettings={() => setIsKeyModalOpen(true)} />
 
       {/* Real-time Native LLM Failover Floating Pop-up */}
       <NativeFailoverPopup />

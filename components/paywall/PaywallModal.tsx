@@ -329,4 +329,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             luminarasuite.com
           </a>
         </p>
-      <
+      </div>
+    </div>
+  );
+};

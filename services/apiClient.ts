@@ -145,11 +145,106 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   } else {
     Object.entries(authHeaders()).forEach(([k, v]) => headers.set(k, v));
   }
-  return fetch(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
+  const res = await fetch(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
+  updateQuotaFromHeaders(res.headers);
+  if (res.status === 402) {
+    try {
+      const clone = res.clone();
+      const body = await clone.json();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('luminara-open-paywall', {
+          detail: {
+            reason: body.error || 'Daily free limit reached',
+            limit: body.limit,
+            used: body.used,
+            remaining: body.remaining,
+          }
+        }));
+      }
+    } catch {}
+  }
+  return res;
 }
 
 export function geminiProxyHttpOptions(): { baseUrl: string; headers: Record<string, string> } {
   return { baseUrl: `${apiBase()}/api/providers/gemini`, headers: authHeaders() };
+}
+
+// ---- Live Quota Store & Paywall Interceptor --------------------------------------------------
+
+export interface QuotaInfo {
+  limit: number;
+  used: number;
+  remaining: number;
+  resetSec: number;
+  isUnlimited: boolean;
+  plan?: string;
+  expiresAt?: number;
+}
+
+let currentQuota: QuotaInfo | null = null;
+const quotaListeners = new Set<(q: QuotaInfo | null) => void>();
+
+export function subscribeQuota(fn: (q: QuotaInfo | null) => void): () => void {
+  quotaListeners.add(fn);
+  fn(currentQuota);
+  return () => quotaListeners.delete(fn);
+}
+
+export function getCurrentQuotaSync(): QuotaInfo | null {
+  return currentQuota;
+}
+
+export function updateQuotaFromHeaders(headers: Headers): void {
+  const rem = headers.get('x-quota-remaining');
+  const lim = headers.get('x-quota-limit');
+  const rst = headers.get('x-quota-reset');
+  if (rem !== null || lim !== null) {
+    const isUnlimited = rem === 'unlimited' || lim === 'unlimited';
+    const limitNum = isUnlimited ? -1 : (Number(lim) || 0);
+    const remNum = isUnlimited ? -1 : (Number(rem) || 0);
+    const resetSec = Number(rst) || 0;
+    const used = isUnlimited ? 0 : Math.max(0, limitNum - remNum);
+    currentQuota = {
+      limit: limitNum,
+      used,
+      remaining: remNum,
+      resetSec,
+      isUnlimited,
+      plan: isUnlimited ? 'active' : 'free',
+    };
+    quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
+  }
+}
+
+export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
+  const base = apiBase();
+  if (!base) return null;
+  try {
+    const r = await fetch(`${base}/api/auth/quota`, { headers: authHeaders() });
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (data.ok) {
+      currentQuota = {
+        limit: data.limit,
+        used: data.used,
+        remaining: data.remaining,
+        resetSec: data.resetSec,
+        isUnlimited: data.isUnlimited,
+        plan: data.plan,
+        expiresAt: data.expiresAt,
+      };
+      quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
+      return currentQuota;
+    }
+  } catch {}
+  return null;
+}
+
+export function openPaywallModal(reason?: string): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason } }));
+  }
 }
 
 // ---- Telegram account endpoints -------------------------------------------------------------
