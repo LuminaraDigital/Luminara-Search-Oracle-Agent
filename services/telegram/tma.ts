@@ -26,9 +26,15 @@ function detectTelegramSync(): boolean {
     if (isTMA()) return true;
   } catch { /* ignore */ }
   try {
-    if (Boolean((window as any).TelegramWebviewProxy || (window as any).Telegram?.WebApp?.initData)) {
-      return true;
-    }
+    const w = window as any;
+    if (w.TelegramWebviewProxy) return true;
+    const wa = w.Telegram?.WebApp;
+    if (!wa) return false;
+    // Real Mini App sessions always carry signed initData; the script alone is not enough
+    // (telegram-web-app.js is also loaded on the public website).
+    if (typeof wa.initData === 'string' && wa.initData.length > 0) return true;
+    const platform = typeof wa.platform === 'string' ? wa.platform : '';
+    if (platform && platform !== 'unknown') return true;
   } catch { /* ignore */ }
   return false;
 }
@@ -109,22 +115,26 @@ function nativeInitData(): string {
 }
 
 /** Call once before rendering. Resolves instantly (0ms) outside Telegram. */
-export async function initTelegram(timeoutMs = 400): Promise<boolean> {
+export async function initTelegram(timeoutMs = 1200): Promise<boolean> {
   if (readySettled) return insideTelegram;
   if (initStarted) return readyPromise;
   initStarted = true;
 
-  if (!detectTelegramSync()) {
+  const syncHit = detectTelegramSync();
+  if (!syncHit) {
     return finishReady(false);
   }
 
+  // Never demote a sync-detected Mini App to "web" on a slow isTMA() race.
+  // That bug routed real Telegram users onto the marketing landing + Firebase wall.
   try {
-    insideTelegram = await Promise.race([
+    const confirmed = await Promise.race([
       isTMA('complete'),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(true), timeoutMs)),
     ]);
+    insideTelegram = Boolean(confirmed) || syncHit;
   } catch {
-    insideTelegram = false;
+    insideTelegram = syncHit;
   }
   if (!insideTelegram) return finishReady(false);
 
@@ -162,7 +172,10 @@ export async function initTelegram(timeoutMs = 400): Promise<boolean> {
     }
     if (miniApp.ready.isAvailable()) miniApp.ready();
   } catch (e) {
-    console.warn('[TMA] init failed, running as plain web', e);
+    console.warn('[TMA] init failed; keeping Telegram mode if native initData exists', e);
+    if (nativeInitData() || syncHit) {
+      return finishReady(true);
+    }
     return finishReady(false);
   }
   return finishReady(true);
@@ -191,6 +204,17 @@ export function getStartParam(): string | undefined {
     return retrieveLaunchParams().tgWebAppStartParam;
   } catch {
     return undefined;
+  }
+}
+
+/** True when the URL carries Mini App launch hints (used for first-paint routing only). */
+export function hasTelegramLaunchHints(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const q = new URLSearchParams(window.location.search);
+    return Boolean(q.get('tgWebAppStartParam') || q.get('startapp') || q.get('tgWebAppData'));
+  } catch {
+    return false;
   }
 }
 

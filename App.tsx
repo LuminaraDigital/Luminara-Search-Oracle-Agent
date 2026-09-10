@@ -6,7 +6,7 @@ import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
-import { isInTelegram, useTelegramBackButton, haptic, getStartParam, subscribeTelegramReady } from './services/telegram/tma';
+import { isInTelegram, useTelegramBackButton, haptic, getStartParam, subscribeTelegramReady, hasTelegramLaunchHints } from './services/telegram/tma';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
 import Waveform from './components/Waveform';
@@ -110,7 +110,8 @@ const App: React.FC = () => {
   const [view, setViewState] = useState<AppView>(() => {
     const fromHash = viewFromHash();
     if (fromHash) return fromHash;
-    if (isInTelegram()) return resolveTelegramStartView();
+    // Prefer product shell when Telegram already detected OR the bot deep-linked us.
+    if (isInTelegram() || hasTelegramLaunchHints()) return resolveTelegramStartView();
     return AppView.LANDING;
   });
 

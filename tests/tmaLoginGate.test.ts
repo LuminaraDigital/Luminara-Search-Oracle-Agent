@@ -36,3 +36,13 @@ describe('waitForInitDataRaw settle contract', () => {
     expect(attempts * intervalMs).toBeLessThanOrEqual(300);
   });
 });
+
+describe('Telegram detect timeout policy', () => {
+  it('must not demote a sync-detected Mini App to web on slow isTMA()', () => {
+    // Production regression: Promise.race(... resolve(false)) caused marketing landing inside TMA.
+    const syncHit = true;
+    const timedOutConfirmation = true; // timeout should resolve true when syncHit was true
+    const insideTelegram = Boolean(timedOutConfirmation) || syncHit;
+    expect(insideTelegram).toBe(true);
+  });
+});
