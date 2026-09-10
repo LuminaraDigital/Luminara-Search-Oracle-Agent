@@ -98,6 +98,41 @@ export class ConfigService {
     this.setKey('luminara_crawler_provider', provider);
   }
 
+  /**
+   * Sitewide Instant Audit evidence:
+   * - off: homepage only
+   * - smart: map / internal links + selective multi-page scrape (default)
+   * - deep: Firecrawl /crawl (BYOK or paid hosted Stars/TON/Stripe plan)
+   */
+  public getSitewideEvidenceMode(): 'off' | 'smart' | 'deep' {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const v = localStorage.getItem('luminara_sitewide_evidence') || 'smart';
+        if (v === 'off' || v === 'smart' || v === 'deep') return v;
+      }
+    } catch { /* ignore */ }
+    return 'smart';
+  }
+
+  public setSitewideEvidenceMode(mode: 'off' | 'smart' | 'deep'): void {
+    this.setKey('luminara_sitewide_evidence', mode);
+  }
+
+  public getSitewideMaxPages(): number {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const n = Number(localStorage.getItem('luminara_sitewide_max_pages') || '6');
+        if (Number.isFinite(n)) return Math.max(1, Math.min(Math.floor(n), 12));
+      }
+    } catch { /* ignore */ }
+    return 6;
+  }
+
+  public setSitewideMaxPages(n: number): void {
+    const clamped = Math.max(1, Math.min(Math.floor(n) || 6, 12));
+    this.setKey('luminara_sitewide_max_pages', String(clamped));
+  }
+
   public getPatchrightUrl(): string {
     return this.getKey('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL').key || 'http://localhost:3001';
   }

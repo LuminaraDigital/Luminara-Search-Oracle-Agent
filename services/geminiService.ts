@@ -7,8 +7,8 @@ import { configService } from "./configService";
 import { aiProviderService, safeJsonParse } from "./aiProviderService";
 import { tavilyService } from "./search/tavilyService";
 import { localSerpService } from "./search/localSerpService";
-import { firecrawlService } from "./scraping/firecrawlService";
 import { unifiedScraperService } from "./scraping/unifiedScraper";
+import { siteEvidencePackService } from "./scraping/siteEvidencePack";
 import { geminiProxyHttpOptions } from "./apiClient";
 import { wrapUntrustedContent } from "../utils/untrustedContent";
 
@@ -476,17 +476,26 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
         break;
     }
 
-    // 1. Live site scraping via Unified Scraper (Patchright Stealth -> Firecrawl -> Jina Fallback)
+    // 1. Live sitewide evidence pack (homepage + smart map/links or deep Firecrawl crawl)
     let scrapedContent = '';
     let scrapedText = '';
     try {
-      const scrapeRes = await unifiedScraperService.scrapeAndDistill(websiteUrl, { maxChars: 8000 });
-      if (scrapeRes.success && scrapeRes.formattedEvidence) {
-        scrapedContent = `\n${scrapeRes.formattedEvidence}\n`;
-        scrapedText = scrapeRes.distilled?.distilledText || '';
+      const pack = await siteEvidencePackService.buildPack(websiteUrl, {
+        focusHint: dna?.industry || dna?.name || focus,
+      });
+      if (pack.success && pack.formattedEvidence) {
+        scrapedContent = `\n${pack.formattedEvidence}\n`;
+        scrapedText = pack.combinedText || '';
+      } else {
+        // Hard fallback: single-page scrape if pack failed entirely.
+        const scrapeRes = await unifiedScraperService.scrapeAndDistill(websiteUrl, { maxChars: 8000 });
+        if (scrapeRes.success && scrapeRes.formattedEvidence) {
+          scrapedContent = `\n${scrapeRes.formattedEvidence}\n`;
+          scrapedText = scrapeRes.distilled?.distilledText || '';
+        }
       }
     } catch (e) {
-      console.warn('[Audit] Site scrape skipped', e);
+      console.warn('[Audit] Site evidence pack skipped', e);
     }
 
     // 1b. Writing check (page copy) + Results tracking (measured traffic) - best-effort, in parallel.
@@ -870,9 +879,17 @@ Strict Formatting Guidelines:
     if (input.includes('.')) {
       try {
         const targetUrl = input.includes('://') ? input : `https://${input}`;
-        const scrapeRes = await unifiedScraperService.scrapeAndDistill(targetUrl, { maxChars: 6000 });
-        if (scrapeRes.success && scrapeRes.formattedEvidence) {
-          scrapedInfo = `\n${scrapeRes.formattedEvidence}\n`;
+        const pack = await siteEvidencePackService.buildPack(targetUrl, {
+          maxPages: 5,
+          focusHint: 'about company product services',
+        });
+        if (pack.success && pack.formattedEvidence) {
+          scrapedInfo = `\n${pack.formattedEvidence}\n`;
+        } else {
+          const scrapeRes = await unifiedScraperService.scrapeAndDistill(targetUrl, { maxChars: 6000 });
+          if (scrapeRes.success && scrapeRes.formattedEvidence) {
+            scrapedInfo = `\n${scrapeRes.formattedEvidence}\n`;
+          }
         }
       } catch (e) {
         console.warn('[DNA] Scrape skipped', e);

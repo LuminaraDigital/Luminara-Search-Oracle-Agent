@@ -1,4 +1,4 @@
-﻿import { configService } from '../configService';
+import { configService } from '../configService';
 import { providerFetch } from '../apiClient';
 
 export interface TavilySearchResult {
@@ -30,8 +30,16 @@ export class TavilyService {
   public async search(query: string, options: { maxResults?: number; searchDepth?: 'basic' | 'advanced'; includeAnswer?: boolean } = {}): Promise<TavilySearchResponse> {
     const apiKey = configService.getTavilyKey();
     if (!apiKey) {
-      console.warn('[Tavily] No Tavily API Key configured');
-      return { query, results: [] };
+      console.warn('[Tavily] No Tavily API Key configured - falling back to zero-key search');
+      const freeResults = await import('./freeWebSearch').then(m => m.freeWebSearch(query, options.maxResults || 5)).catch(() => []);
+      return {
+        query,
+        results: freeResults.map(r => ({
+          title: r.title,
+          url: r.url,
+          content: r.snippet,
+        })),
+      };
     }
 
     try {
@@ -66,8 +74,16 @@ export class TavilyService {
         images: data.images || [],
       };
     } catch (err) {
-      console.error('[Tavily] Search failed:', err);
-      return { query, results: [] };
+      console.error('[Tavily] Search failed, falling back to zero-key search:', err);
+      const freeResults = await import('./freeWebSearch').then(m => m.freeWebSearch(query, options.maxResults || 5)).catch(() => []);
+      return {
+        query,
+        results: freeResults.map(r => ({
+          title: r.title,
+          url: r.url,
+          content: r.snippet,
+        })),
+      };
     }
   }
 

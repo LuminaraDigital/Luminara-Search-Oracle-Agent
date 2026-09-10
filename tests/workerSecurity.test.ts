@@ -7,6 +7,9 @@ import {
   RateLimiter,
   clampHostedChatCompletionsBody,
   clampHostedGeminiBody,
+  clampHostedFirecrawlCrawlBody,
+  HOSTED_FIRECRAWL_MAX_LIMIT,
+  HOSTED_FIRECRAWL_MAX_DEPTH,
   isGeminiModelActionAllowed,
   isPrivateIp,
   readBody,
@@ -278,6 +281,21 @@ describe('hosted LLM cost caps', () => {
     const r = clampHostedGeminiBody({ generationConfig: { maxOutputTokens: 50000 } });
     expect(r.ok).toBe(true);
     if (r.ok) expect((r.body as any).generationConfig.maxOutputTokens).toBe(HOSTED_MAX_TOKENS);
+  });
+
+  it('clamps hosted Firecrawl crawl limit and depth', () => {
+    const r = clampHostedFirecrawlCrawlBody({
+      url: 'https://example.com',
+      limit: 500,
+      maxDepth: 20,
+      allowExternalLinks: true,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect((r.body as any).limit).toBe(HOSTED_FIRECRAWL_MAX_LIMIT);
+      expect((r.body as any).maxDepth).toBe(HOSTED_FIRECRAWL_MAX_DEPTH);
+      expect((r.body as any).allowExternalLinks).toBe(false);
+    }
   });
 
   it('allows only Gemini generate/stream/count actions', () => {

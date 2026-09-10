@@ -14,6 +14,8 @@ const MEMORY_KEYS = [
   'luminara_freellm_prefer',
   'luminara_local_serp_enabled',
   'luminara_crawler_provider',
+  'luminara_sitewide_evidence',
+  'luminara_sitewide_max_pages',
   'luminara_audit_history_v1',
   'luminara_brand_memory_events_v1',
   'luminara_competitor_watchlist_v1',

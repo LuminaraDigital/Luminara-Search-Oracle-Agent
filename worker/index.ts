@@ -26,6 +26,7 @@ import {
   RateLimiter,
   clampHostedChatCompletionsBody,
   clampHostedGeminiBody,
+  clampHostedFirecrawlCrawlBody,
   clientIp,
   isGeminiModelActionAllowed,
   readBody,
@@ -427,6 +428,10 @@ export async function proxyProvider(request: Request, env: Env, providerId: stri
         body = clamped.body;
       } else if (providerId === 'gemini') {
         const clamped = clampHostedGeminiBody(body);
+        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        body = clamped.body;
+      } else if (providerId === 'firecrawl' && subPath === '/crawl') {
+        const clamped = clampHostedFirecrawlCrawlBody(body);
         if (!clamped.ok) return json({ error: clamped.error }, 400);
         body = clamped.body;
       }

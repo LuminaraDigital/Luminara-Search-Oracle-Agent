@@ -38,6 +38,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   const [firecrawlKey, setFirecrawlKey] = useState('');
   const [browserbaseKey, setBrowserbaseKey] = useState('');
   const [crawlerProvider, setCrawlerProvider] = useState<'auto' | 'patchright' | 'firecrawl' | 'jina'>('auto');
+  const [sitewideMode, setSitewideMode] = useState<'off' | 'smart' | 'deep'>('smart');
+  const [sitewideMaxPages, setSitewideMaxPages] = useState(6);
   const [patchrightUrl, setPatchrightUrl] = useState('http://localhost:3001');
   const [crawlerProxy, setCrawlerProxy] = useState('');
   const [crawlerToken, setCrawlerToken] = useState('');
@@ -74,6 +76,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     setFirecrawlKey(localStorage.getItem('luminara_firecrawl_key') || '');
     setBrowserbaseKey(localStorage.getItem('luminara_browserbase_key') || '');
     setCrawlerProvider(configService.getCrawlerProvider());
+    setSitewideMode(configService.getSitewideEvidenceMode());
+    setSitewideMaxPages(configService.getSitewideMaxPages());
     setPatchrightUrl(configService.getPatchrightUrl());
     setCrawlerProxy(configService.getCrawlerProxy());
     setCrawlerToken(configService.getCrawlerToken());
@@ -128,6 +132,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     configService.setKey('luminara_firecrawl_key', firecrawlKey);
     configService.setKey('luminara_browserbase_key', browserbaseKey);
     configService.setCrawlerProvider(crawlerProvider);
+    configService.setSitewideEvidenceMode(sitewideMode);
+    configService.setSitewideMaxPages(sitewideMaxPages);
     configService.setPatchrightUrl(patchrightUrl);
     configService.setCrawlerProxy(crawlerProxy);
     configService.setCrawlerToken(crawlerToken.trim());
@@ -748,6 +754,36 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                 </p>
               </div>
 
+              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light">
+                  Instant Audit sitewide evidence
+                </label>
+                <select
+                  value={sitewideMode}
+                  onChange={e => setSitewideMode(e.target.value as 'off' | 'smart' | 'deep')}
+                  className="w-full bg-black/70 border border-white/15 focus:border-gold rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                >
+                  <option value="off">Homepage only (fastest)</option>
+                  <option value="smart">Smart multi-page (map + selective scrape)</option>
+                  <option value="deep">Deep Firecrawl crawl (BYOK or paid plan)</option>
+                </select>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] text-gray-400 whitespace-nowrap">Max pages</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={sitewideMaxPages}
+                    onChange={e => setSitewideMaxPages(Number(e.target.value) || 6)}
+                    className="w-20 bg-black/70 border border-white/15 focus:border-gold rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-gray-400">
+                  Smart mode discovers URLs via Firecrawl /map or homepage links, then scrapes a budgeted mix of about, product, FAQ, and location pages.
+                  Deep crawl uses hosted Firecrawl /crawl (Stars, TON, or Stripe plan) or your own Firecrawl key. Hosted crawls are capped for cost control.
+                </p>
+              </div>
+
               {/* Patchright Stealth Runner Section */}
               <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
                 <div className="flex items-center justify-between">
@@ -929,7 +965,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                     {visibleKeys['firecrawl'] ? 'Hide' : 'Show'}
                     </Button>
                 </div>
-                <p className="text-[10px] text-gray-500 mt-1">Extracts clean site Markdown and Core Web Vitals directly from target URLs.</p>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  BYOK unlocks /map and /crawl without the hosted plan gate. Without a key, smart mode still expands from homepage links via Patchright or Jina.
+                </p>
               </div>
 
               {/* Browserbase API */}

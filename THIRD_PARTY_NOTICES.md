@@ -34,3 +34,18 @@ from those projects is copied into this tree. Concepts reviewed:
 - Awesome Public Datasets style provenance + health flags for data sources
 
 Luminara branding, storage keys, and UI remain original to this project.
+
+## OmniRoute
+
+- Source: https://github.com/diegosouzapw/OmniRoute
+- Copyright (c) 2026 Diego Rodrigues de Sa e Souza and OmniRoute contributors
+- License: MIT
+- What we adapted:
+  - `services/search/freeWebSearch.ts`: Zero-key DuckDuckGo lite HTML search parser with ReDoS bounds and entity sanitization (adapted from `open-sse/services/freeWebSearch.ts`).
+  - `services/resilience/failureClassification.ts`: Fine-grained HTTP and provider error classification separating transient rate limits from unretryable auth/quota errors (adapted from `src/lib/resilience/failureClassification.ts`).
+  - `services/resilience/adaptiveCircuit.ts`: 3-state adaptive circuit breaker (`closed` -> `open` -> `half_open`) with probe windows (adapted from `src/lib/resilience/adaptiveCircuit.ts`).
+  - `services/compression/toolResultCompressor.ts`: RTK tool result and ANSI/log/code block elision compressor (adapted from `open-sse/services/compression/toolResultCompressor.ts`).
+  - `services/compression/caveman.ts` and `cavemanRules.ts`: Natural language prompt and context pruner preserving code blocks, JSON schemas, and URLs (adapted from `open-sse/services/compression/caveman.ts`).
+  - `services/compression/prefixFreeze.ts`: Prompt cache prefix canonicalizer (adapted from `open-sse/services/compression/prefixFreeze.ts`).
+  - `services/trust/piiSanitizer.ts`: Client-side PII and credential redaction gate for scraped website data (adapted from `src/lib/piiSanitizer.ts`).
+

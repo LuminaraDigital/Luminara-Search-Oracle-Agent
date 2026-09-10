@@ -107,6 +107,36 @@ export function clampHostedChatCompletionsBody(body: unknown): { ok: true; body:
   return { ok: true, body: b };
 }
 
+/** Hosted Firecrawl /crawl cost guard: cap pages and depth on shared keys. */
+export const HOSTED_FIRECRAWL_MAX_LIMIT = 12;
+export const HOSTED_FIRECRAWL_MAX_DEPTH = 2;
+
+export function clampHostedFirecrawlCrawlBody(body: unknown): { ok: true; body: unknown } | { ok: false; error: string } {
+  if (body === undefined || body === null) {
+    return { ok: true, body: { limit: 6, maxDepth: HOSTED_FIRECRAWL_MAX_DEPTH } };
+  }
+  if (typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'Request body must be a JSON object' };
+  }
+  const b = { ...(body as Record<string, unknown>) };
+  const limitRaw = Number(b.limit);
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0
+    ? Math.min(Math.floor(limitRaw), HOSTED_FIRECRAWL_MAX_LIMIT)
+    : 6;
+  b.limit = limit;
+
+  const depthRaw = Number(b.maxDepth ?? b.maxDiscoveryDepth);
+  const depth = Number.isFinite(depthRaw) && depthRaw > 0
+    ? Math.min(Math.floor(depthRaw), HOSTED_FIRECRAWL_MAX_DEPTH)
+    : HOSTED_FIRECRAWL_MAX_DEPTH;
+  b.maxDepth = depth;
+  if (b.maxDiscoveryDepth !== undefined) b.maxDiscoveryDepth = depth;
+
+  // Never follow external sites on hosted crawls.
+  b.allowExternalLinks = false;
+  return { ok: true, body: b };
+}
+
 /**
  * Clamps Gemini generateContent bodies on hosted keys (generationConfig.maxOutputTokens).
  */

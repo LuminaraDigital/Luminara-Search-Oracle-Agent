@@ -11,6 +11,13 @@ import {
 } from '../types';
 import { configService } from './configService';
 import { providerFetch, canRelayWithOwnKey } from './apiClient';
+import { classifyProviderFailure, type ProviderFailure } from './resilience/failureClassification';
+import {
+  createAdaptiveCircuit,
+  observeCircuit,
+  isCircuitAvailable,
+  type AdaptiveCircuit,
+} from './resilience/adaptiveCircuit';
 
 import { buildChatMessages } from './chat/messages';
 export { buildChatMessages };
@@ -894,6 +901,8 @@ export class AIProviderService {
   private lastActiveEngine: NativeEngineId = 'nim';
   /** providerId -> cooldown-until epoch ms (rate-limit / 5xx soft skip) */
   private cooldowns: Map<string, number> = new Map();
+  /** providerId -> adaptive circuit breaker state */
+  private circuits: Map<string, AdaptiveCircuit> = new Map();
   private static readonly COOLDOWN_MS = 60_000;
 
   private constructor() {
@@ -928,6 +937,10 @@ export class AIProviderService {
   }
 
   private isCoolingDown(providerId: string): boolean {
+    const circuit = this.circuits.get(providerId);
+    if (circuit && !isCircuitAvailable(circuit)) {
+      return true;
+    }
     const until = this.cooldowns.get(providerId);
     if (!until) return false;
     if (Date.now() >= until) {
@@ -938,19 +951,39 @@ export class AIProviderService {
   }
 
   private markCooldown(providerId: string, err?: unknown): void {
-    const msg = String((err as any)?.message || err || '').toLowerCase();
-    const isRateOrServer =
-      msg.includes('(429)') ||
-      msg.includes('429') ||
-      msg.includes('rate limit') ||
-      msg.includes('(503)') ||
-      msg.includes('(502)') ||
-      msg.includes('(500)') ||
-      msg.includes('overloaded') ||
-      msg.includes('capacity');
-    if (isRateOrServer) {
-      this.cooldowns.set(providerId, Date.now() + AIProviderService.COOLDOWN_MS);
+    const msg = String((err as any)?.message || err || '');
+    const failure = classifyProviderFailure({
+      providerId,
+      message: msg,
+    });
+
+    let circuit = this.circuits.get(providerId) || createAdaptiveCircuit();
+    const cooldownMs = failure.retryAfter
+      ? failure.retryAfter * 1000
+      : failure.type === 'quota_exhausted' || failure.type === 'authentication_error'
+      ? 5 * 60_000 // 5-minute lockout for exhausted balances or invalid credentials
+      : AIProviderService.COOLDOWN_MS;
+
+    circuit = observeCircuit(circuit, 'failure', {
+      cooldownMs,
+      failureThreshold: failure.retryable ? 2 : 1, // Non-retryable errors trip immediately
+      reason: failure.message,
+    });
+    this.circuits.set(providerId, circuit);
+    this.cooldowns.set(providerId, Date.now() + cooldownMs);
+  }
+
+  private markSuccess(providerId: string): void {
+    const circuit = this.circuits.get(providerId);
+    if (circuit) {
+      this.circuits.set(providerId, observeCircuit(circuit, 'success'));
     }
+    this.cooldowns.delete(providerId);
+  }
+
+  /** Exposed for tests and HUD diagnostics. */
+  public getCircuit(providerId: string): AdaptiveCircuit | undefined {
+    return this.circuits.get(providerId);
   }
 
   /** Exposed for tests and HUD diagnostics. */
@@ -1137,6 +1170,7 @@ export class AIProviderService {
       const start = Date.now();
       try {
         const result = await provider.generateText(prompt, options);
+        this.markSuccess(providerId);
         this.lastActiveEngine = providerId as NativeEngineId;
         this.dispatchActiveEngine(provider.id, options?.model || provider.config.model);
         return result;
@@ -1196,6 +1230,7 @@ export class AIProviderService {
         }
 
         if (streamSucceeded) {
+          this.markSuccess(providerId);
           this.lastActiveEngine = providerId as NativeEngineId;
           this.dispatchActiveEngine(provider.id, options?.model || provider.config.model);
           return;

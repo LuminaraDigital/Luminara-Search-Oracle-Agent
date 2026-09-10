@@ -234,7 +234,7 @@ export function buildEnterpriseTrustPack(input: {
       health: 'ok',
       free: false,
       retrievedAt: asOf,
-      usedIn: 'Instant Audit page evidence',
+      usedIn: 'Instant Audit sitewide evidence pack (scrape / map / crawl)',
     },
     {
       id: 'ds-wikidata',

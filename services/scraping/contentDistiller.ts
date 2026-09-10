@@ -9,6 +9,9 @@
  *    "lost-in-the-middle" LLM attention degradation.
  */
 
+import { sanitizePii } from '../trust/piiSanitizer';
+import { compressToolResult } from '../compression/toolResultCompressor';
+
 export interface StructuredSchema {
   type: string;
   raw: Record<string, any>;
@@ -138,11 +141,15 @@ export class ContentDistiller {
       }
     }
 
+    // 5. PII Redaction Gate
+    cleanedBody = sanitizePii(cleanedBody).sanitized;
+
     // Deduplicate and summarize schema types
     const schemaTypes = Array.from(new Set(schemas.map(s => s.type)));
 
-    // Budget allocation
-    const truncatedBody = cleanedBody.slice(0, maxChars);
+    // 6. Budget allocation with RTK compression
+    const compressed = compressToolResult(cleanedBody, { maxChars }).compressed;
+    const truncatedBody = compressed.slice(0, maxChars);
 
     // Format LLM-ready structured evidence block
     let formattedEvidence = '';
