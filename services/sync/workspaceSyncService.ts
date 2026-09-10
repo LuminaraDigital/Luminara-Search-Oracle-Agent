@@ -115,6 +115,19 @@ function applyPayload(payload: WorkspacePayload): void {
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let syncing = false;
 
+/** Clears all local workspace memory, keys, and chat session from the browser (e.g. on sign-out). */
+export function clearLocalWorkspace(): void {
+  if (typeof window === 'undefined') return;
+  for (const key of MEMORY_KEYS) {
+    try { localStorage.removeItem(key); } catch {}
+  }
+  for (const key of KEY_BAG_KEYS) {
+    try { localStorage.removeItem(key); } catch {}
+  }
+  try { sessionStorage.removeItem(CHAT_SESSION_KEY); } catch {}
+  try { localStorage.removeItem(LOCAL_META_KEY); } catch {}
+}
+
 /** Pull server workspace after login; server wins when it is newer. */
 export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?: string; error?: string }> {
   if (!apiBase() || typeof window === 'undefined') return { ok: false, error: 'No API' };
@@ -125,6 +138,11 @@ export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?:
     if (!remote.ok) return { ok: false, error: remote.error || 'pull failed' };
 
     const local = readMeta();
+    // If switching accounts on this browser, purge previous account's local storage first
+    if (local.accountId && remote.accountId && local.accountId !== remote.accountId) {
+      clearLocalWorkspace();
+    }
+
     const remoteUpdated = remote.updatedAt || 0;
     if (remoteUpdated > 0 && remoteUpdated >= local.updatedAt) {
       applyPayload(remote.payload || {});

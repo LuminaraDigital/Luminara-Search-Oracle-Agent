@@ -18,7 +18,7 @@
 
 import { validateInitData } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
-import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, PLANS, planCapsFor } from './telegramBot';
+import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, TON_PRICING } from './tonPayment';
 import {
   MAX_BODY_BYTES,
@@ -34,7 +34,7 @@ import {
   stripUpstreamHeaders,
   withSecurityHeaders,
 } from './security';
-import { withAccountId, linkTelegramAndFirebase, resolveAccountId, getWorkspace, putWorkspace, type WorkspacePayload } from './userStore';
+import { withAccountId, linkTelegramAndFirebase, resolveAccountId, getWorkspace, putWorkspace, listAllUsers, type WorkspacePayload } from './userStore';
 import type { HostedIdentity } from './userTypes';
 
 export type { HostedIdentity } from './userTypes';
@@ -53,6 +53,7 @@ export interface Env {
   DB?: D1Database;
   BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
+  TELEGRAM_ADMIN_ID?: string;
   WEBAPP_URL: string;
   ALLOWED_ORIGINS?: string;
   /** "true": app use needs a signed-in Telegram or Firebase user (hosted keys and BYOK relays). */
@@ -975,12 +976,57 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!v.ok) return withCors(json({ error: v.reason }, 401));
 
     if (path === '/telegram/auth') {
-      const sub = env.LUMINARA_KV ? await env.LUMINARA_KV.get(`sub:${v.user.id}`, 'json') : null;
-      return withCors(json({ ok: true, user: v.user, subscription: sub, startParam: v.startParam }));
+      const tgIdentity: HostedIdentity = { id: String(v.user.id), source: 'telegram' };
+      const sub = await getActiveSubscription(env, tgIdentity);
+      const resolvedSub = sub || (env.LUMINARA_KV ? await env.LUMINARA_KV.get(`sub:${v.user.id}`, 'json') : null);
+      return withCors(json({ ok: true, user: v.user, subscription: resolvedSub, startParam: v.startParam }));
     }
     if (typeof plan !== 'string' || !plan) return withCors(json({ error: 'initData and plan required' }, 400));
-    const link = await createInvoiceLink(env, v.user.id, plan);
+    const link = await createInvoiceLink(env, v.user.id, normalizePlanId(plan));
     return withCors(link.ok ? json({ ok: true, url: link.url }) : json({ error: link.error }, 400));
+  }
+
+  if (path === '/telegram/refund') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+
+    const secret = request.headers.get('x-telegram-bot-api-secret-token') || request.headers.get('x-admin-secret') || '';
+    const isSecretAuthorized = Boolean(env.TELEGRAM_WEBHOOK_SECRET && secretEquals(secret, env.TELEGRAM_WEBHOOK_SECRET));
+
+    if (!isSecretAuthorized) {
+      const who = await identify(request, env);
+      const adminIds = (env.TELEGRAM_ADMIN_ID || '').split(',').map(s => s.trim()).filter(Boolean);
+      const isUserAdmin = Boolean(who.user && adminIds.includes(who.user.id));
+      if (!isUserAdmin) return withCors(json({ error: 'Unauthorized refund request' }, 401));
+    }
+
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return withCors(json({ error: read.error }, read.status));
+    const { userId, chargeId } = (read.value || {}) as { userId?: number | string; chargeId?: string };
+    if (!userId || !chargeId) return withCors(json({ error: 'userId and chargeId are required' }, 400));
+
+    const result = await refundStarPayment(env, Number(userId), String(chargeId));
+    return withCors(json(result, result.ok ? 200 : 400));
+  }
+
+  if (path === '/admin/users') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+
+    const secret = request.headers.get('x-telegram-bot-api-secret-token') || request.headers.get('x-admin-secret') || '';
+    const isSecretAuthorized = Boolean(env.TELEGRAM_WEBHOOK_SECRET && secretEquals(secret, env.TELEGRAM_WEBHOOK_SECRET));
+
+    if (!isSecretAuthorized) {
+      const who = await identify(request, env);
+      const adminIds = (env.TELEGRAM_ADMIN_ID || '').split(',').map(s => s.trim()).filter(Boolean);
+      const isUserAdmin = Boolean(who.user && adminIds.includes(who.user.id));
+      if (!isUserAdmin) return withCors(json({ error: 'Unauthorized' }, 401));
+    }
+
+    const users = await listAllUsers(env, 200);
+    return withCors(json({ ok: true, total: users.length, users }));
   }
 
   if (path === '/ton/invoice' || path === '/ton/verify') {

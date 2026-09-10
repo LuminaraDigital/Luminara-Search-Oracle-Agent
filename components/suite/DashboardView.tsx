@@ -44,6 +44,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       icon: ICONS.Shield,
       badge: 'Memory',
     },
+    {
+      id: AppView.NOTEBOOK,
+      title: 'NotebookLM Studio',
+      desc: 'Multi-source grounded intelligence, dual-host audio podcasts, and briefing docs.',
+      icon: ICONS.Notebook,
+      badge: 'Studio',
+    },
   ];
 
   const secondary: Door[] = [

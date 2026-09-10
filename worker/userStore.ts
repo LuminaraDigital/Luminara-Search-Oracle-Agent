@@ -116,7 +116,54 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Pr
     last_seen_at: now,
   };
   await writeKvUser(env, row);
+
+  // Maintain index of all registered users for admin auditability
+  if (env.LUMINARA_KV) {
+    try {
+      const idx = ((await env.LUMINARA_KV.get('users:index', 'json')) as string[] | null) || [];
+      if (!idx.includes(user.id)) {
+        idx.unshift(user.id);
+        await env.LUMINARA_KV.put('users:index', JSON.stringify(idx.slice(0, 1000)));
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   return row;
+}
+
+/** Lists all users ordered by most recent activity (sign-in) for admin auditability. */
+export async function listAllUsers(env: UserStoreEnv, limit = 100): Promise<StoredUser[]> {
+  if (env.DB) {
+    const rows = await env.DB.prepare(
+      `SELECT id, source, email, display_name as name, telegram_id, firebase_uid, created_at, last_seen_at, account_id
+       FROM users ORDER BY last_seen_at DESC LIMIT ?`,
+    )
+      .bind(limit)
+      .all<StoredUser>();
+    return rows.results || [];
+  }
+
+  if (env.LUMINARA_KV) {
+    try {
+      let ids = ((await env.LUMINARA_KV.get('users:index', 'json')) as string[] | null) || [];
+      if (!ids.length && typeof env.LUMINARA_KV.list === 'function') {
+        const listRes = await env.LUMINARA_KV.list({ prefix: 'user:', limit });
+        ids = (listRes.keys || []).map(k => k.name.replace(/^user:/, ''));
+      }
+      const users: StoredUser[] = [];
+      for (const id of ids.slice(0, limit)) {
+        const u = await readKvUser(env, id);
+        if (u) users.push(u);
+      }
+      return users.sort((a, b) => b.last_seen_at - a.last_seen_at);
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
 }
 
 /** Resolves the billing/workspace account id for a login identity. */

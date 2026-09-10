@@ -79,14 +79,21 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       if (status === 'paid') {
         setIsSuccess(true);
         setStatusMessage('Payment received! Activating your subscription…');
-        setTimeout(async () => {
-          await fetchQuotaStatus();
+        for (let i = 0; i < 6; i++) {
+          await new Promise(r => setTimeout(r, 1200));
+          const q = await fetchQuotaStatus();
+          if (q && (q.isUnlimited || q.plan !== 'free')) break;
+        }
+        setStatusMessage('Subscription active! Enjoy your upgraded access.');
+        setTimeout(() => {
           handleClose();
-        }, 2500);
+        }, 1500);
       } else if (status === 'cancelled') {
         setStatusMessage('Checkout was cancelled.');
       } else if (status === 'failed') {
         setStatusMessage('Payment failed. No Stars were charged.');
+      } else if (status === 'pending') {
+        setStatusMessage('Payment is being processed by Telegram. Your plan will activate momentarily.');
       }
     } catch (err: any) {
       haptic('error');
@@ -338,6 +345,21 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </p>
             </div>
             <TonConnectButton />
+          </div>
+        )}
+
+        {/* Telegram Stars Terms & Support Notice */}
+        {activeTab === 'stars' && (
+          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-6 text-center text-[10px] text-gray-400 space-y-1">
+            <p>
+              By purchasing with Telegram Stars, you agree to our{' '}
+              <a href="#terms" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+              {' '}and{' '}
+              <a href="#privacy" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+            </p>
+            <p className="text-gray-500 text-[9px]">
+              Subscriptions activate immediately upon payment. Telegram Support does not handle merchant disputes; for billing help use /paysupport in the bot.
+            </p>
           </div>
         )}
 

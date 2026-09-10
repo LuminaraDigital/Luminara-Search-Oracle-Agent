@@ -5,21 +5,106 @@ import type { AppAuthState } from '../../services/auth/useAppAuth';
 import { BrandLoader } from '../intro/BrandLoader';
 
 /**
- * Full-screen gate when product tools require an account.
- * Inside Telegram: identity comes from Mini App initData (no Firebase required).
- * On the web: Firebase email/password or Google.
+ * Gated Product Access / Login Wall.
+ * Standard for B2B SaaS and empirical diagnostic suites:
+ * 1. Enables individual user memory (Business DNA, audits, history) across devices.
+ * 2. Provides security, isolated tenancy, and verified auditability.
+ * 3. Inside Telegram: identity is verified natively via Mini App initData.
+ * 4. On the web: Google One-Click or Email/Password.
  */
 export const AuthRequiredScreen: React.FC<{
   auth: AppAuthState;
+  initialMode?: 'signin' | 'signup';
   onBackToMarketing?: () => void;
-}> = ({ auth, onBackToMarketing }) => {
+  isModal?: boolean;
+  onClose?: () => void;
+}> = ({ auth, initialMode = 'signin', onBackToMarketing, isModal, onClose }) => {
   const inTelegram = isInTelegram();
 
   if (auth.loading) {
     return (
-      <div className="min-h-screen bg-black text-ink flex items-center justify-center px-4 relative overflow-hidden">
+      <div className={`${isModal ? 'fixed inset-0 z-50 bg-black/80 backdrop-blur-md' : 'min-h-screen bg-black'} text-ink flex items-center justify-center px-4 relative overflow-hidden`}>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(191,149,63,0.12)_0%,transparent_55%)]" />
-        <BrandLoader caption="Checking your session" />
+        <BrandLoader caption="Verifying your account session" />
+      </div>
+    );
+  }
+
+  const content = (
+    <div className="relative w-full max-w-md space-y-5">
+      {isModal && onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute -top-3 -right-2 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm z-20"
+          aria-label="Close login dialog"
+        >
+          ✕
+        </button>
+      )}
+
+      <div className="text-center space-y-2">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gold/10 border border-gold/30 text-[9px] font-black uppercase tracking-[0.25em] text-gold">
+          <span>🔒 Gated Product Access</span>
+        </div>
+        <h1 className="text-2xl font-semibold text-white tracking-tight">
+          {inTelegram ? 'Telegram Native Access' : 'Sign in to Luminara Suite'}
+        </h1>
+        <p className="text-xs text-gray-400 leading-relaxed max-w-sm mx-auto">
+          {inTelegram
+            ? 'Your Telegram account is your identity. Your saved audits, Stars entitlements, and Business DNA are linked to your session.'
+            : 'Access to Luminara Suite is authentication-gated to secure your business intelligence, preserve your crawl memory, and personalize AI recommendations.'}
+        </p>
+      </div>
+
+      {/* Value Pillars of the Gated Experience */}
+      {!inTelegram && (
+        <div className="grid grid-cols-3 gap-2 py-2 px-1">
+          <div className="glass-morphism rounded-xl p-2.5 text-center border border-white/5 space-y-1">
+            <span className="text-base">🧠</span>
+            <p className="text-[9px] font-bold text-gray-200 uppercase tracking-wider">Persistent Memory</p>
+            <p className="text-[8px] text-gray-500 leading-tight">DNA & audits saved</p>
+          </div>
+          <div className="glass-morphism rounded-xl p-2.5 text-center border border-white/5 space-y-1">
+            <span className="text-base">🛡️</span>
+            <p className="text-[9px] font-bold text-gray-200 uppercase tracking-wider">Enterprise Security</p>
+            <p className="text-[8px] text-gray-500 leading-tight">Isolated tenancy</p>
+          </div>
+          <div className="glass-morphism rounded-xl p-2.5 text-center border border-white/5 space-y-1">
+            <span className="text-base">⚡</span>
+            <p className="text-[9px] font-bold text-gray-200 uppercase tracking-wider">Cross-Platform</p>
+            <p className="text-[8px] text-gray-500 leading-tight">Web & Telegram</p>
+          </div>
+        </div>
+      )}
+
+      {inTelegram ? (
+        <div className="glass-morphism rounded-2xl border border-white/10 p-5 space-y-3">
+          <p className="text-sm text-gray-300 leading-relaxed">
+            {auth.reason || 'Could not verify Telegram. Close this view and open Luminara again from the bot menu.'}
+          </p>
+        </div>
+      ) : (
+        <AuthPanel initialMode={initialMode} />
+      )}
+
+      {onBackToMarketing && !inTelegram && !isModal && (
+        <button
+          type="button"
+          onClick={onBackToMarketing}
+          className="w-full text-xs text-gray-500 hover:text-gold transition-colors py-1"
+        >
+          ← Back to home
+        </button>
+      )}
+    </div>
+  );
+
+  if (isModal) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 bg-black/80 backdrop-blur-md overflow-y-auto">
+        <div className="absolute inset-0" onClick={onClose} />
+        {content}
       </div>
     );
   }
@@ -27,37 +112,7 @@ export const AuthRequiredScreen: React.FC<{
   return (
     <div className="min-h-screen bg-black text-ink flex items-center justify-center px-4 py-10 relative overflow-hidden">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(191,149,63,0.08)_0%,transparent_55%)]" />
-      <div className="relative w-full max-w-md space-y-6">
-        <div className="text-center space-y-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-gold">Account required</p>
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Sign in to continue</h1>
-          <p className="text-sm text-gray-400 leading-relaxed">
-            {inTelegram
-              ? 'Inside Telegram, your Telegram account is your login. We verify it with Telegram Mini App data on every request.'
-              : 'On the web, use email/password or Google. Inside the Telegram Mini App, Telegram itself is your login (Google popup is not used there).'}
-          </p>
-        </div>
-
-        {inTelegram ? (
-          <div className="glass-morphism rounded-2xl border border-white/10 p-5 space-y-3">
-            <p className="text-sm text-gray-300 leading-relaxed">
-              {auth.reason || 'Could not verify Telegram. Close this view and open Luminara again from the bot menu.'}
-            </p>
-          </div>
-        ) : (
-          <AuthPanel />
-        )}
-
-        {onBackToMarketing && !inTelegram && (
-          <button
-            type="button"
-            onClick={onBackToMarketing}
-            className="w-full text-xs text-gray-500 hover:text-gold transition-colors"
-          >
-            Back to home
-          </button>
-        )}
-      </div>
+      {content}
     </div>
   );
 };

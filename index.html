@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
   <title>Luminara Suite | AI Search &amp; AEO Intelligence</title>
   <meta name="description" content="Luminara Suite audits how your brand shows up in Google, AI Overviews, ChatGPT and Perplexity, then turns the findings into a prioritized action plan.">
   <meta name="theme-color" content="#000000">
@@ -17,8 +17,6 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=20260909">
   <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png?v=20260909">
   <link rel="apple-touch-icon" href="/icon-180.png?v=20260909" sizes="180x180">
-  <link rel="preload" href="/intro/luminara-intro.mp4" as="video" type="video/mp4">
-  <link rel="preload" href="/intro/poster.jpg" as="image" type="image/jpeg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -492,7 +490,7 @@
   </style>
 </head>
 <body class="overflow-x-hidden">
-  <div id="boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Loading Luminara Suite">
+  <div id="boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Loading Luminara Suite" onclick="window.__dismissBootSplash &amp;&amp; window.__dismissBootSplash()" title="Click to skip">
     <div class="boot-glow" aria-hidden="true"></div>
     <div class="boot-mark">
       <img src="/favicon.png?v=20260909" alt="" width="88" height="88" decoding="async" fetchpriority="high" />
@@ -502,6 +500,18 @@
     <div class="boot-track" aria-hidden="true"><div class="boot-fill"></div></div>
   </div>
   <div id="root"></div>
+  <script>
+    window.__dismissBootSplash = function() {
+      var el = document.getElementById('boot-splash');
+      if (el && !el.classList.contains('boot-splash--exit')) {
+        el.classList.add('boot-splash--exit');
+        el.setAttribute('aria-busy', 'false');
+        setTimeout(function() { try { el.remove(); } catch(e){} }, 800);
+      }
+    };
+    // Failsafe: Automatically dismiss the boot splash if React mounting stalls past 2s
+    setTimeout(window.__dismissBootSplash, 2000);
+  </script>
   <script type="module" src="./index.tsx"></script>
 </body>
 </html>

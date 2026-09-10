@@ -18,9 +18,9 @@ export const AppIntroOverlay: React.FC<AppIntroOverlayProps> = ({ onComplete }) 
   const startedRef = useRef(false);
   const [phase, setPhase] = useState<Phase>('buffering');
   const [progress, setProgress] = useState(0);
-  const [showChrome, setShowChrome] = useState(false);
+  const [showChrome, setShowChrome] = useState(true);
   const [muted, setMuted] = useState(true);
-  const [canContinue, setCanContinue] = useState(false);
+  const [canContinue, setCanContinue] = useState(true);
   const [reduced] = useState(() => prefersReducedMotion());
 
   const finish = useCallback(() => {
@@ -37,7 +37,6 @@ export const AppIntroOverlay: React.FC<AppIntroOverlayProps> = ({ onComplete }) 
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    const chromeTimer = window.setTimeout(() => setShowChrome(true), 700);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -48,7 +47,6 @@ export const AppIntroOverlay: React.FC<AppIntroOverlayProps> = ({ onComplete }) 
 
     return () => {
       document.body.style.overflow = prev;
-      window.clearTimeout(chromeTimer);
       window.removeEventListener('keydown', onKey);
     };
   }, [finish]);
@@ -69,7 +67,6 @@ export const AppIntroOverlay: React.FC<AppIntroOverlayProps> = ({ onComplete }) 
       if (video.duration && Number.isFinite(video.duration) && video.duration > 0) {
         const p = Math.min(1, video.currentTime / video.duration);
         setProgress(p);
-        if (p >= 0.78) setCanContinue(true);
       }
       raf = requestAnimationFrame(tick);
     };
@@ -103,10 +100,10 @@ export const AppIntroOverlay: React.FC<AppIntroOverlayProps> = ({ onComplete }) 
 
     if (video.readyState >= 3) void beginPlayback();
 
-    const failsafe = window.setTimeout(finish, 14000);
+    const failsafe = window.setTimeout(finish, 8000);
     const bufferFailsafe = window.setTimeout(() => {
       if (!finishingRef.current) void beginPlayback();
-    }, 3500);
+    }, 800);
 
     return () => {
       cancelAnimationFrame(raf);

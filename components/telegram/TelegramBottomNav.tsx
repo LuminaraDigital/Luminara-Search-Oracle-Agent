@@ -22,6 +22,7 @@ export const TelegramBottomNav: React.FC<TelegramBottomNavProps> = ({
   };
 
   const isToolsActive = [
+    AppView.NOTEBOOK,
     AppView.BUSINESS_DNA,
     AppView.STRESS_TEST,
     AppView.DATA_ANALYST,

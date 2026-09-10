@@ -20,19 +20,41 @@ import {
   closingBehavior,
 } from '@telegram-apps/sdk-react';
 
-let insideTelegram = false;
+function detectTelegramSync(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (isTMA()) return true;
+  } catch { /* ignore */ }
+  try {
+    if (Boolean((window as any).TelegramWebviewProxy || (window as any).Telegram?.WebApp?.initData)) {
+      return true;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
+let insideTelegram = detectTelegramSync();
 let initialised = false;
 
 export function isInTelegram(): boolean {
   return insideTelegram;
 }
 
-/** Call once before rendering. Resolves quickly outside Telegram. */
-export async function initTelegram(): Promise<boolean> {
+/** Call once before rendering. Resolves instantly (0ms) outside Telegram. */
+export async function initTelegram(timeoutMs = 250): Promise<boolean> {
   if (initialised) return insideTelegram;
   initialised = true;
+
+  if (!detectTelegramSync()) {
+    insideTelegram = false;
+    return false;
+  }
+
   try {
-    insideTelegram = await isTMA('complete');
+    insideTelegram = await Promise.race([
+      isTMA('complete'),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+    ]);
   } catch {
     insideTelegram = false;
   }
@@ -167,10 +189,46 @@ export function setTelegramMainButton(opts: { text: string; onClick: () => void;
 }
 
 export async function payWithStars(invoiceUrl: string): Promise<'paid' | 'cancelled' | 'failed' | 'pending'> {
-  if (!insideTelegram || !openInvoice.isAvailable()) {
-    window.open(invoiceUrl, '_blank', 'noopener');
+  if (!insideTelegram) {
+    if (typeof window !== 'undefined') {
+      window.open(invoiceUrl, '_blank', 'noopener');
+    }
     return 'pending';
   }
-  const status = await openInvoice(invoiceUrl, 'url');
-  return status as 'paid' | 'cancelled' | 'failed' | 'pending';
+
+  // 1. Primary: @telegram-apps/sdk openInvoice
+  try {
+    if (openInvoice.isAvailable()) {
+      const status = await openInvoice(invoiceUrl, 'url');
+      return (status as 'paid' | 'cancelled' | 'failed' | 'pending') || 'pending';
+    }
+  } catch (err) {
+    console.warn('[TMA] SDK openInvoice encountered an error, trying native bridge fallback', err);
+  }
+
+  // 2. Secondary: native Telegram.WebApp.openInvoice callback bridge
+  if (typeof window !== 'undefined') {
+    const tgWebApp = (window as any).Telegram?.WebApp;
+    if (tgWebApp && typeof tgWebApp.openInvoice === 'function') {
+      return new Promise<'paid' | 'cancelled' | 'failed' | 'pending'>((resolve) => {
+        try {
+          tgWebApp.openInvoice(invoiceUrl, (status: string) => {
+            if (status === 'paid' || status === 'cancelled' || status === 'failed' || status === 'pending') {
+              resolve(status);
+            } else {
+              resolve('pending');
+            }
+          });
+        } catch {
+          resolve('failed');
+        }
+      });
+    }
+  }
+
+  // 3. Last resort fallback
+  if (typeof window !== 'undefined') {
+    window.open(invoiceUrl, '_blank', 'noopener');
+  }
+  return 'pending';
 }

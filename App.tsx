@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { OracleMode, Message, AppView, BusinessDNA, LAB_VIEWS } from './types';
-import { LegalPage } from './components/LegalPage';
 import { configService } from './services/configService';
 import { geminiService, toChatHistory } from './services/geminiService';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
@@ -8,46 +7,56 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
 import { isInTelegram, useTelegramBackButton, haptic, getStartParam } from './services/telegram/tma';
-import { TelegramAccountPanel } from './components/telegram/TelegramAccountPanel';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
 import Waveform from './components/Waveform';
 import LandingPage from './components/LandingPage';
-import InfrastructurePage from './components/InfrastructurePage';
-import IntelligencePage from './components/IntelligencePage';
-import WhyLuminaraPage from './components/WhyLuminaraPage';
-import PricingPage from './components/PricingPage';
-import { InstantAuditView } from './components/audit/InstantAuditView';
-import { BusinessDNAView } from './components/suite/BusinessDNAView';
-import { BrandMemoryView } from './components/suite/BrandMemoryView';
-import { DashboardView } from './components/suite/DashboardView';
-import { StressTestView } from './components/suite/StressTestView';
-import { DataAnalystView } from './components/suite/DataAnalystView';
-import { OrganizerView } from './components/suite/OrganizerView';
-import { ResearchView } from './components/suite/ResearchView';
-import { VisionView } from './components/suite/VisionView';
-import { TimesFMView } from './components/suite/TimesFMView';
-import { OracleMindView } from './components/suite/OracleMindView';
-import { ArchyHarnessView } from './components/harness/ArchyHarnessView';
-import { OmnibarModal } from './components/harness/OmnibarModal';
-import { timesfmService } from './services/timesfm/timesfmService';
 import { themingService } from './services/harness/themingService';
 import { agentMatrixService } from './services/harness/agentMatrixService';
 import { reminderService } from './services/harness/reminderService';
-import { ApiKeyModal } from './components/ApiKeyModal';
 import { NativeEngineHUD } from './components/llm/NativeEngineHUD';
 import { NativeFailoverPopup } from './components/llm/NativeFailoverPopup';
 import { ICONS } from './constants';
 import { startFirebaseAuthListener, isFirebaseConfigured, signOutFirebase } from './services/auth/firebaseAuthService';
 import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
-import { PaywallModal } from './components/paywall/PaywallModal';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
-import { AppIntroOverlay } from './components/intro/AppIntroOverlay';
 import { hasSeenIntroThisSession } from './services/intro/appIntro';
-import { pullWorkspaceOnLogin, noteWorkspaceDirty } from './services/sync/workspaceSyncService';
+import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
+
+// Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean
+const LegalPage = React.lazy(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
+const InfrastructurePage = React.lazy(() => import('./components/InfrastructurePage'));
+const IntelligencePage = React.lazy(() => import('./components/IntelligencePage'));
+const WhyLuminaraPage = React.lazy(() => import('./components/WhyLuminaraPage'));
+const PricingPage = React.lazy(() => import('./components/PricingPage'));
+const InstantAuditView = React.lazy(() => import('./components/audit/InstantAuditView').then(m => ({ default: m.InstantAuditView })));
+const BusinessDNAView = React.lazy(() => import('./components/suite/BusinessDNAView').then(m => ({ default: m.BusinessDNAView })));
+const BrandMemoryView = React.lazy(() => import('./components/suite/BrandMemoryView').then(m => ({ default: m.BrandMemoryView })));
+const DashboardView = React.lazy(() => import('./components/suite/DashboardView').then(m => ({ default: m.DashboardView })));
+const StressTestView = React.lazy(() => import('./components/suite/StressTestView').then(m => ({ default: m.StressTestView })));
+const DataAnalystView = React.lazy(() => import('./components/suite/DataAnalystView').then(m => ({ default: m.DataAnalystView })));
+const OrganizerView = React.lazy(() => import('./components/suite/OrganizerView').then(m => ({ default: m.OrganizerView })));
+const ResearchView = React.lazy(() => import('./components/suite/ResearchView').then(m => ({ default: m.ResearchView })));
+const VisionView = React.lazy(() => import('./components/suite/VisionView').then(m => ({ default: m.VisionView })));
+const TimesFMView = React.lazy(() => import('./components/suite/TimesFMView').then(m => ({ default: m.TimesFMView })));
+const OracleMindView = React.lazy(() => import('./components/suite/OracleMindView').then(m => ({ default: m.OracleMindView })));
+const ArchyHarnessView = React.lazy(() => import('./components/harness/ArchyHarnessView').then(m => ({ default: m.ArchyHarnessView })));
+const OmnibarModal = React.lazy(() => import('./components/harness/OmnibarModal').then(m => ({ default: m.OmnibarModal })));
+const ApiKeyModal = React.lazy(() => import('./components/ApiKeyModal').then(m => ({ default: m.ApiKeyModal })));
+const PaywallModal = React.lazy(() => import('./components/paywall/PaywallModal').then(m => ({ default: m.PaywallModal })));
+const AppIntroOverlay = React.lazy(() => import('./components/intro/AppIntroOverlay').then(m => ({ default: m.AppIntroOverlay })));
+const TelegramAccountPanel = React.lazy(() => import('./components/telegram/TelegramAccountPanel').then(m => ({ default: m.TelegramAccountPanel })));
+const NotebookView = React.lazy(() => import('./components/notebook/NotebookView').then(m => ({ default: m.NotebookView })));
+
+const ViewLoader: React.FC<{ label?: string }> = ({ label = 'Loading view' }) => (
+  <div className="flex-1 flex flex-col items-center justify-center min-h-[350px] gap-3 p-6 text-center animate-in fade-in duration-200">
+    <div className="w-8 h-8 border-2 border-gold/20 border-t-gold rounded-full animate-spin" />
+    <span className="text-[10px] uppercase font-mono tracking-[0.25em] text-gray-500">{label}</span>
+  </div>
+);
 
 const CHAT_STORAGE_KEY = 'luminara_chat_session';
 const MARKETING_VIEWS = new Set<AppView>([
@@ -72,6 +81,7 @@ const viewFromHash = (): AppView | null => {
   if (!h) return null;
   if (h.startsWith('HARNESS')) return AppView.HARNESS;
   if (h.startsWith('ORACLE_AGENT')) return AppView.ORACLE_AGENT;
+  if (h.startsWith('NOTEBOOK') || h.startsWith('STUDIO')) return AppView.NOTEBOOK;
   return (Object.values(AppView) as string[]).includes(h) ? (h as AppView) : null;
 };
 
@@ -88,17 +98,13 @@ const App: React.FC = () => {
       if (sp === 'HARNESS' || sp === 'DEV') return AppView.HARNESS;
       if (sp === 'DNA' || sp === 'PROFILE') return AppView.BUSINESS_DNA;
       if (sp === 'MEMORY' || sp === 'VAULT' || sp === 'BRAND_MEMORY') return AppView.BRAND_MEMORY;
+      if (sp === 'NOTEBOOK' || sp === 'NOTEBOOKS' || sp === 'STUDIO' || sp === 'LM') return AppView.NOTEBOOK;
       return (Object.values(AppView) as string[]).includes(sp) ? (sp as AppView) : AppView.INSTANT_AUDIT;
     }
     return AppView.LANDING;
   });
-  /** Cinematic brand intro when the product opens (Telegram cold start or first web app entry). */
-  const [showIntro, setShowIntro] = useState(() => {
-    if (hasSeenIntroThisSession()) return false;
-    if (inTelegram) return true;
-    const fromHash = viewFromHash();
-    return Boolean(fromHash && !MARKETING_VIEWS.has(fromHash));
-  });
+  /** Cinematic brand intro when the product opens (disabled by default for instant load). */
+  const [showIntro, setShowIntro] = useState(false);
   const [introPendingView, setIntroPendingView] = useState<AppView | null>(null);
   const [viewHistory, setViewHistory] = useState<AppView[]>([]);
   const [timesfmInitialData, setTimesfmInitialData] = useState<any[] | undefined>(undefined);
@@ -111,6 +117,7 @@ const App: React.FC = () => {
       return [];
     }
   });
+  const [loginWallMode, setLoginWallMode] = useState<'signin' | 'signup' | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -127,15 +134,10 @@ const App: React.FC = () => {
     }
   }, []);
 
-  /** Enter a product surface; play the branded intro once per session before revealing the shell. */
+  /** Enter a product surface immediately with zero latency. */
   const enterApp = useCallback((next: AppView) => {
-    if (!hasSeenIntroThisSession() && !showIntro && !MARKETING_VIEWS.has(next)) {
-      setIntroPendingView(next);
-      setShowIntro(true);
-      return;
-    }
     setView(next);
-  }, [setView, showIntro]);
+  }, [setView]);
 
   /**
    * Leave the product shell to marketing: sign out Firebase so the next "Open the app"
@@ -147,6 +149,8 @@ const App: React.FC = () => {
     } catch {
       /* still leave the shell even if sign-out fails */
     }
+    clearLocalWorkspace();
+    setDna(null);
     try {
       sessionStorage.removeItem(CHAT_STORAGE_KEY);
     } catch {
@@ -242,6 +246,10 @@ const App: React.FC = () => {
   // After sign-in, restore DNA / audits / keys / chat from the linked account workspace.
   useEffect(() => {
     if (!appAuth.authenticated || appAuth.loading) return;
+    if (loginWallMode) {
+      setLoginWallMode(null);
+      setView(AppView.DASHBOARD);
+    }
     let cancelled = false;
     void (async () => {
       const result = await pullWorkspaceOnLogin();
@@ -566,14 +574,14 @@ const App: React.FC = () => {
     { label: "What's missing on my site?", query: "Check my site for missing schema markup, unclear entity information and content gaps that stop AI engines from quoting it." }
   ];
 
-  const introOverlay = showIntro ? <AppIntroOverlay onComplete={completeIntro} /> : null;
+  const introOverlay = showIntro ? <Suspense fallback={null}><AppIntroOverlay onComplete={completeIntro} /></Suspense> : null;
 
   if (view === AppView.PRIVACY || view === AppView.TERMS) {
     return (
-      <>
+      <Suspense fallback={<ViewLoader label="Loading document" />}>
         {introOverlay}
         <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(inTelegram ? AppView.DASHBOARD : AppView.LANDING)} />
-      </>
+      </Suspense>
     );
   }
 
@@ -598,24 +606,60 @@ const App: React.FC = () => {
       <>
         {introOverlay}
         <LandingPage 
-          onEnter={() => enterApp(AppView.ORACLE_AGENT)} 
-          onNavigateAudit={() => enterApp(AppView.INSTANT_AUDIT)}
-          onNavigateSuite={() => enterApp(AppView.DASHBOARD)}
+          onEnter={() => {
+            if (!appAuth.authenticated) {
+              setLoginWallMode('signin');
+            } else {
+              enterApp(AppView.ORACLE_AGENT);
+            }
+          }} 
+          onNavigateAudit={() => {
+            if (!appAuth.authenticated) {
+              setLoginWallMode('signup');
+            } else {
+              enterApp(AppView.INSTANT_AUDIT);
+            }
+          }}
+          onNavigateSuite={() => {
+            if (!appAuth.authenticated) {
+              setLoginWallMode('signin');
+            } else {
+              enterApp(AppView.DASHBOARD);
+            }
+          }}
           onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)} 
           onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)} 
           onNavigateWhy={() => setView(AppView.WHY_US)}
           onNavigatePricing={() => setView(AppView.PRICING)}
+          isAuthenticated={appAuth.authenticated}
+          userLabel={appAuth.label || null}
+          onSignInClick={() => setLoginWallMode('signin')}
+          onSignUpClick={() => setLoginWallMode('signup')}
         />
-        <ApiKeyModal 
-          isOpen={isKeyModalOpen} 
-          onClose={() => setIsKeyModalOpen(false)} 
-          onKeySaved={() => {}} 
-        />
-        <OmnibarModal
-          isOpen={isOmnibarOpen}
-          onClose={() => setIsOmnibarOpen(false)}
-          onNavigate={(v) => (MARKETING_VIEWS.has(v) ? setView(v) : enterApp(v))}
-        />
+        {loginWallMode && (
+          <AuthRequiredScreen
+            auth={appAuth}
+            initialMode={loginWallMode}
+            isModal
+            onClose={() => setLoginWallMode(null)}
+          />
+        )}
+        <Suspense fallback={null}>
+          {isKeyModalOpen && (
+            <ApiKeyModal 
+              isOpen={isKeyModalOpen} 
+              onClose={() => setIsKeyModalOpen(false)} 
+              onKeySaved={() => {}} 
+            />
+          )}
+          {isOmnibarOpen && (
+            <OmnibarModal
+              isOpen={isOmnibarOpen}
+              onClose={() => setIsOmnibarOpen(false)}
+              onNavigate={(v) => (MARKETING_VIEWS.has(v) ? setView(v) : enterApp(v))}
+            />
+          )}
+        </Suspense>
         <NativeFailoverPopup />
       </>
     );
@@ -624,7 +668,7 @@ const App: React.FC = () => {
   // Institutional Pages
   if (view === AppView.INFRASTRUCTURE) {
     return (
-      <>
+      <Suspense fallback={<ViewLoader label="Loading infrastructure" />}>
         {introOverlay}
         <InfrastructurePage 
           onBack={() => setView(AppView.LANDING)} 
@@ -633,13 +677,13 @@ const App: React.FC = () => {
           onNavigateWhy={() => setView(AppView.WHY_US)}
           onNavigatePricing={() => setView(AppView.PRICING)}
         />
-      </>
+      </Suspense>
     );
   }
 
   if (view === AppView.INTELLIGENCE) {
     return (
-      <>
+      <Suspense fallback={<ViewLoader label="Loading intelligence" />}>
         {introOverlay}
         <IntelligencePage 
           onBack={() => setView(AppView.LANDING)} 
@@ -648,13 +692,13 @@ const App: React.FC = () => {
           onNavigateWhy={() => setView(AppView.WHY_US)}
           onNavigatePricing={() => setView(AppView.PRICING)}
         />
-      </>
+      </Suspense>
     );
   }
 
   if (view === AppView.WHY_US) {
     return (
-      <>
+      <Suspense fallback={<ViewLoader label="Loading" />}>
         {introOverlay}
         <WhyLuminaraPage 
           onBack={() => setView(AppView.LANDING)} 
@@ -663,13 +707,13 @@ const App: React.FC = () => {
           onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)}
           onNavigatePricing={() => setView(AppView.PRICING)}
         />
-      </>
+      </Suspense>
     );
   }
 
   if (view === AppView.PRICING) {
     return (
-      <>
+      <Suspense fallback={<ViewLoader label="Loading pricing" />}>
         {introOverlay}
         <PricingPage 
           onBack={() => setView(AppView.LANDING)} 
@@ -678,7 +722,7 @@ const App: React.FC = () => {
           onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)}
           onNavigateWhy={() => setView(AppView.WHY_US)}
         />
-      </>
+      </Suspense>
     );
   }
 
@@ -761,6 +805,19 @@ const App: React.FC = () => {
             Memory
           </Button>
 
+          <Button
+            variant="ghost"
+            size="none"
+            onClick={() => setView(AppView.NOTEBOOK)}
+            aria-pressed={view === AppView.NOTEBOOK}
+            className={`px-3 py-1.5 rounded-lg text-[10px] ${
+              view === AppView.NOTEBOOK ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
+            }`}
+            title="NotebookLM Studio - Source Grounded Research & Podcasts"
+          >
+            Notebooks
+          </Button>
+
           {/* Command Suite Dropdown */}
           <div className="relative">
             <Button
@@ -769,9 +826,9 @@ const App: React.FC = () => {
               onClick={() => setShowSuiteMenu(!showSuiteMenu)}
               aria-haspopup="menu"
               aria-expanded={showSuiteMenu}
-              aria-pressed={[AppView.DASHBOARD, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)}
+              aria-pressed={[AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)}
               className={`px-3 py-1.5 rounded-lg text-[10px] ${
-                [AppView.DASHBOARD, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)
+                [AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)
                   ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
                   : ''
               }`}
@@ -791,6 +848,16 @@ const App: React.FC = () => {
                 >
                   <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
                   <span>Home</span>
+                </button>
+                <button
+                  onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5"
+                >
+                  <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
+                  <div className="flex items-center justify-between flex-1">
+                    <span className="font-bold">NotebookLM Studio</span>
+                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold">STUDIO</span>
+                  </div>
                 </button>
                 <button
                   onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
@@ -999,6 +1066,7 @@ const App: React.FC = () => {
           </div>
         )}
         <ErrorBoundary scope={view}>
+        <Suspense fallback={<ViewLoader label="Loading workspace" />}>
         {/* VIEW: Instant Audit Scanner */}
         {view === AppView.INSTANT_AUDIT && (
           <InstantAuditView dna={dna} onNavigateDNA={() => setView(AppView.BUSINESS_DNA)} />
@@ -1052,7 +1120,8 @@ const App: React.FC = () => {
         {view === AppView.DATA_ANALYST && (
           <DataAnalystView 
             dna={dna} 
-            onRouteToTimesFM={(raw) => {
+            onRouteToTimesFM={async (raw) => {
+              const { timesfmService } = await import('./services/timesfm/timesfmService');
               const pts = timesfmService.parseTimeSeriesData(raw);
               setTimesfmInitialData(pts);
               setTimesfmInitialName('Data Analyst Ingested Sequence');
@@ -1095,6 +1164,12 @@ const App: React.FC = () => {
         {view === AppView.VISION && (
           <VisionView />
         )}
+
+        {/* VIEW: NotebookLM Studio */}
+        {view === AppView.NOTEBOOK && (
+          <NotebookView dna={dna} />
+        )}
+        </Suspense>
 
         {/* VIEW: Oracle Agent Terminal */}
         {view === AppView.ORACLE_AGENT && (
@@ -1209,22 +1284,27 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Global Omnibar Modal */}
-      <OmnibarModal
-        isOpen={isOmnibarOpen}
-        onClose={() => setIsOmnibarOpen(false)}
-        onNavigate={(v) => (MARKETING_VIEWS.has(v) ? setView(v) : enterApp(v))}
-      />
+      {/* Global Modals */}
+      <Suspense fallback={null}>
+        {isOmnibarOpen && (
+          <OmnibarModal
+            isOpen={isOmnibarOpen}
+            onClose={() => setIsOmnibarOpen(false)}
+            onNavigate={(v) => (MARKETING_VIEWS.has(v) ? setView(v) : enterApp(v))}
+          />
+        )}
 
-      {/* Global API Key Modal */}
-      <ApiKeyModal 
-        isOpen={isKeyModalOpen} 
-        onClose={() => setIsKeyModalOpen(false)} 
-        onKeySaved={() => {}} 
-      />
+        {isKeyModalOpen && (
+          <ApiKeyModal 
+            isOpen={isKeyModalOpen} 
+            onClose={() => setIsKeyModalOpen(false)} 
+            onKeySaved={() => {}} 
+          />
+        )}
 
-      {/* Global Dual-Rail Paywall Modal (Stars + TON) */}
-      <PaywallModal onOpenSettings={() => setIsKeyModalOpen(true)} />
+        {/* Global Dual-Rail Paywall Modal (Stars + TON) */}
+        <PaywallModal onOpenSettings={() => setIsKeyModalOpen(true)} />
+      </Suspense>
 
       {/* Real-time Native LLM Failover Floating Pop-up */}
       <NativeFailoverPopup />

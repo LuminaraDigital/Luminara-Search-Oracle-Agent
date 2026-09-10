@@ -25,6 +25,7 @@ export enum AppView {
   TIMESFM_FORECAST = 'TIMESFM_FORECAST',
   ORACLE_MIND = 'ORACLE_MIND',
   HARNESS = 'HARNESS',
+  NOTEBOOK = 'NOTEBOOK',
   PRIVACY = 'PRIVACY',
   TERMS = 'TERMS'
 }
@@ -1102,5 +1103,91 @@ export interface SwitchyardMetrics {
   targetDistribution: Record<string, number>;
 }
 
+// ---------------------------------------------------------------------------
+// NotebookLM Studio (Source-Grounded Research & Synthesis Workspace)
+// ---------------------------------------------------------------------------
 
+export type NotebookSourceType = 'url' | 'text' | 'file' | 'audit' | 'serp' | 'dna';
 
+export interface NotebookSource {
+  id: string;
+  title: string;
+  type: NotebookSourceType;
+  content: string;
+  summary?: string;
+  url?: string;
+  wordCount: number;
+  addedAt: number;
+  selected: boolean;
+  keyEntities?: string[];
+}
+
+export interface NotebookCitation {
+  sourceId: string;
+  sourceTitle: string;
+  citationNumber: number;
+  quote: string;
+  relevanceScore?: number;
+}
+
+export interface NotebookMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  citations?: NotebookCitation[];
+  pinned?: boolean;
+}
+
+export interface AudioOverviewTurn {
+  speaker: 'Alex' | 'Sam';
+  text: string;
+  durationEstimateMs?: number;
+}
+
+export interface AudioOverview {
+  id: string;
+  title: string;
+  createdAt: number;
+  script: AudioOverviewTurn[];
+  summary: string;
+  audioDurationSec?: number;
+}
+
+export type StudioArtifactType =
+  | 'briefing_doc'
+  | 'study_guide'
+  | 'faq'
+  | 'timeline'
+  | 'comparison_matrix';
+
+export interface StudioArtifact {
+  id: string;
+  type: StudioArtifactType;
+  title: string;
+  content: string;
+  createdAt: number;
+}
+
+export interface NotebookNote {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  tags?: string[];
+  pinned?: boolean;
+}
+
+export interface Notebook {
+  id: string;
+  title: string;
+  description?: string;
+  sources: NotebookSource[];
+  messages: NotebookMessage[];
+  audioOverview?: AudioOverview;
+  artifacts: StudioArtifact[];
+  notes: NotebookNote[];
+  createdAt: number;
+  updatedAt: number;
+}

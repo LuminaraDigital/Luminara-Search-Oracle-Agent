@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   upsertAppUser,
+  listAllUsers,
   linkTelegramAndFirebase,
   resolveAccountId,
   writeSubscriptionRecord,
@@ -39,6 +40,18 @@ describe('upsertAppUser', () => {
     expect(second.email).toBe('c@d.co');
     expect(second.created_at).toBe(created);
     expect(second.last_seen_at).toBeGreaterThanOrEqual(created);
+  });
+
+  it('maintains users:index and returns sorted user accounts with listAllUsers', async () => {
+    const { kv } = mockKv();
+    await upsertAppUser({ LUMINARA_KV: kv }, { id: 'fb:1', source: 'firebase', email: 'one@example.com' });
+    await new Promise(r => setTimeout(r, 5));
+    await upsertAppUser({ LUMINARA_KV: kv }, { id: 'tg:2', source: 'telegram', name: 'Two' });
+
+    const all = await listAllUsers({ LUMINARA_KV: kv });
+    expect(all).toHaveLength(2);
+    expect(all[0].id).toBe('tg:2');
+    expect(all[1].id).toBe('fb:1');
   });
 });
 

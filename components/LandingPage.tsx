@@ -10,6 +10,10 @@ interface LandingPageProps {
   onNavigateIntelligence: () => void;
   onNavigateWhy: () => void;
   onNavigatePricing: () => void;
+  isAuthenticated?: boolean;
+  userLabel?: string | null;
+  onSignInClick?: () => void;
+  onSignUpClick?: () => void;
 }
 
 const LandingPage: React.FC<LandingPageProps> = ({
@@ -20,6 +24,10 @@ const LandingPage: React.FC<LandingPageProps> = ({
   onNavigateIntelligence,
   onNavigateWhy,
   onNavigatePricing,
+  isAuthenticated,
+  userLabel,
+  onSignInClick,
+  onSignUpClick,
 }) => {
   return (
     <div className="min-h-screen bg-black text-white selection:bg-gold selection:text-black font-sans antialiased relative">
@@ -39,7 +47,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-5 md:gap-8">
+        <div className="flex items-center gap-4 sm:gap-6 md:gap-8">
           {onNavigateAudit && (
             <button onClick={onNavigateAudit} className="hidden lg:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-gold-light transition-colors">
               Instant Audit
@@ -62,12 +70,37 @@ const LandingPage: React.FC<LandingPageProps> = ({
           <button onClick={onNavigatePricing} className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-500 hover:text-white transition-colors">
             Pricing
           </button>
-          <button
-            onClick={onEnter}
-            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-[1.03] active:scale-95 transition-all shadow-[0_12px_40px_rgba(191,149,63,0.25)]"
-          >
-            Open the app
-          </button>
+
+          {!isAuthenticated ? (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onSignInClick || onEnter}
+                className="text-[9px] font-bold uppercase tracking-[0.2em] text-gray-300 hover:text-gold transition-colors px-2 py-1"
+              >
+                Sign in
+              </button>
+              <button
+                onClick={onSignUpClick || onEnter}
+                className="px-5 py-2 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-[1.03] active:scale-95 transition-all shadow-[0_12px_40px_rgba(191,149,63,0.25)]"
+              >
+                Get Started
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              {userLabel && (
+                <span className="hidden sm:inline-block text-[10px] text-gold/80 font-mono max-w-[140px] truncate">
+                  {userLabel}
+                </span>
+              )}
+              <button
+                onClick={onEnter}
+                className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-[1.03] active:scale-95 transition-all shadow-[0_12px_40px_rgba(191,149,63,0.25)]"
+              >
+                Open the app
+              </button>
+            </div>
+          )}
         </div>
       </nav>
 
@@ -90,7 +123,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 onClick={onEnter}
                 className="px-9 py-4 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:scale-[1.03] active:scale-95 transition-all shadow-[0_20px_60px_rgba(191,149,63,0.28)]"
               >
-                Open the app
+                {isAuthenticated ? 'Open the app' : 'Get Started — Sign In'}
               </button>
               {onNavigateAudit && (
                 <button
@@ -101,6 +134,11 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 </button>
               )}
             </div>
+            {!isAuthenticated && (
+              <p className="text-[10px] text-gray-500 tracking-wider uppercase font-medium">
+                🔒 Gated Access · Persistent memory & continuous AI visibility
+              </p>
+            )}
             <p className="text-[11px] text-gray-600 tracking-wide">
               Produced by{' '}
               <a

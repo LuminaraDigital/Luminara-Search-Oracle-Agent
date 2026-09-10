@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { TonConnectButton, useTonWallet } from '@tonconnect/ui-react';
 import { isInTelegram, getTelegramUserUnsafe, payWithStars, haptic } from '../../services/telegram/tma';
-import { telegramAuth, createStarsInvoice, getServerHealthSync, type TelegramSession } from '../../services/apiClient';
+import { telegramAuth, createStarsInvoice, fetchQuotaStatus, getServerHealthSync, type TelegramSession } from '../../services/apiClient';
 
 interface Props {
   compact?: boolean;
@@ -45,11 +45,14 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
           await new Promise(r => setTimeout(r, 1500));
           await refresh();
         }
+        await fetchQuotaStatus();
         setStatus(null);
       } else if (result === 'cancelled') {
         setStatus('Checkout cancelled.');
       } else if (result === 'failed') {
         setStatus('Payment failed. Nothing was charged.');
+      } else if (result === 'pending') {
+        setStatus('Payment is processing by Telegram…');
       }
     } catch (e: any) {
       haptic('error');

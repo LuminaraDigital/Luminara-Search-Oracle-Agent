@@ -14,24 +14,20 @@ if (!rootElement) {
 
 const manifestUrl = new URL('tonconnect-manifest.json', window.location.origin).toString();
 
-async function bootstrap() {
-  // Detect Telegram and learn which providers the Worker holds keys for, before first render.
-  await Promise.all([initTelegram(), loadServerHealth()]);
+// Mount React immediately: zero delay for landing page and application shell
+const root = createRoot(rootElement!);
+root.render(
+  <React.StrictMode>
+    <TonConnectUIProvider manifestUrl={manifestUrl}>
+      <App />
+    </TonConnectUIProvider>
+  </React.StrictMode>
+);
 
-  const root = createRoot(rootElement!);
-  root.render(
-    <React.StrictMode>
-      <TonConnectUIProvider manifestUrl={manifestUrl}>
-        <App />
-      </TonConnectUIProvider>
-    </React.StrictMode>
-  );
+// Dismiss the HTML boot splash smoothly right after the initial React render
+requestAnimationFrame(() => dismissBootSplash(60));
 
-  // Let the first paint land under the splash, then fade it so boot → intro/app feels continuous.
-  requestAnimationFrame(() => dismissBootSplash(160));
-}
-
-bootstrap().catch((err) => {
-  console.error('[boot] failed', err);
-  dismissBootSplash(0);
+// Non-blocking background initialization (Telegram environment + server provider health)
+Promise.allSettled([initTelegram(), loadServerHealth()]).catch((err) => {
+  console.warn('[boot] background services init warning:', err);
 });

@@ -29,7 +29,7 @@ async function call(method, payload) {
 await call('setWebhook', {
   url: `${origin}/api/telegram/webhook`,
   secret_token: TELEGRAM_WEBHOOK_SECRET || undefined,
-  allowed_updates: ['message', 'pre_checkout_query'],
+  allowed_updates: ['message', 'pre_checkout_query', 'callback_query'],
   drop_pending_updates: true,
 });
 

@@ -48,15 +48,20 @@ export function canRelayWithOwnKey(providerId: string): boolean {
   return Boolean(apiBase()) && healthCache?.ok === true && (healthCache.byok ?? []).includes(providerId);
 }
 
-/** Fetches /api/health once; safe to call often. */
+/** Fetches /api/health once; safe to call often. Protected with a 3s timeout. */
 export async function loadServerHealth(): Promise<ServerHealth> {
   if (healthCache) return healthCache;
   if (!apiBase()) { healthCache = EMPTY_HEALTH; return healthCache; }
   if (!healthPromise) {
-    healthPromise = fetch(`${apiBase()}/api/health`)
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 3000) : null;
+    healthPromise = fetch(`${apiBase()}/api/health`, { signal: controller?.signal })
       .then(r => (r.ok ? r.json() : EMPTY_HEALTH))
       .then((h: ServerHealth) => { healthCache = h; return h; })
-      .catch(() => { healthCache = EMPTY_HEALTH; return EMPTY_HEALTH; });
+      .catch(() => { healthCache = EMPTY_HEALTH; return EMPTY_HEALTH; })
+      .finally(() => {
+        if (timer) clearTimeout(timer);
+      });
   }
   return healthPromise;
 }
