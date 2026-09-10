@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useTelegramBackButton } from '../services/telegram/tma';
 
 interface Props {
   kind: 'privacy' | 'terms';
@@ -18,6 +19,10 @@ const SECURITY_EMAIL = 'security@luminarasuite.com';
  */
 export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
   const isPrivacy = kind === 'privacy';
+
+  useEffect(() => {
+    return useTelegramBackButton(onBack);
+  }, [onBack]);
   return (
     <div className="min-h-screen bg-black text-gray-300">
       <div className="max-w-3xl mx-auto px-6 py-12">

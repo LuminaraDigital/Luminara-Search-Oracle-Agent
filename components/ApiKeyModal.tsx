@@ -1061,6 +1061,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
             Remove all my keys
             </Button>
 
+          <div className="flex items-center gap-2 text-[10px] text-gray-500">
+            <a href="#privacy" onClick={onClose} className="hover:text-gold transition-colors">Privacy</a>
+            <span className="text-gray-700">·</span>
+            <a href="#terms" onClick={onClose} className="hover:text-gold transition-colors">Terms</a>
+          </div>
+
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"

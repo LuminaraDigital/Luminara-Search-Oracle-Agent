@@ -62,8 +62,6 @@ const ViewLoader: React.FC<{ label?: string }> = ({ label = 'Loading view' }) =>
 const CHAT_STORAGE_KEY = 'luminara_chat_session';
 const MARKETING_VIEWS = new Set<AppView>([
   AppView.LANDING,
-  AppView.PRIVACY,
-  AppView.TERMS,
   AppView.INFRASTRUCTURE,
   AppView.INTELLIGENCE,
   AppView.WHY_US,
@@ -78,8 +76,15 @@ interface SendOptions {
 }
 
 const viewFromHash = (): AppView | null => {
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname.toLowerCase().replace(/^\/|\/$/g, '');
+    if (path === 'privacy' || path === 'privacy-policy') return AppView.PRIVACY;
+    if (path === 'terms' || path === 'terms-of-service' || path === 'tos') return AppView.TERMS;
+  }
   const h = window.location.hash.replace('#', '').toUpperCase();
   if (!h) return null;
+  if (h === 'PRIVACY' || h === 'PRIVACY-POLICY') return AppView.PRIVACY;
+  if (h === 'TERMS' || h === 'TERMS-OF-SERVICE' || h === 'TOS') return AppView.TERMS;
   if (h.startsWith('HARNESS')) return AppView.HARNESS;
   if (h.startsWith('ORACLE_AGENT')) return AppView.ORACLE_AGENT;
   if (h.startsWith('NOTEBOOK') || h.startsWith('STUDIO')) return AppView.NOTEBOOK;
@@ -100,6 +105,8 @@ const App: React.FC = () => {
       if (sp === 'DNA' || sp === 'PROFILE') return AppView.BUSINESS_DNA;
       if (sp === 'MEMORY' || sp === 'VAULT' || sp === 'BRAND_MEMORY') return AppView.BRAND_MEMORY;
       if (sp === 'NOTEBOOK' || sp === 'NOTEBOOKS' || sp === 'STUDIO' || sp === 'LM') return AppView.NOTEBOOK;
+      if (sp === 'PRIVACY' || sp === 'PRIVACY_POLICY' || sp === 'LEGAL') return AppView.PRIVACY;
+      if (sp === 'TERMS' || sp === 'TOS') return AppView.TERMS;
       return (Object.values(AppView) as string[]).includes(sp) ? (sp as AppView) : AppView.INSTANT_AUDIT;
     }
     return AppView.LANDING;

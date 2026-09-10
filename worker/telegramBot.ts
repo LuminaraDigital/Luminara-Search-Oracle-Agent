@@ -432,17 +432,54 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/terms')) {
+      const baseUrl = env.WEBAPP_URL.replace(/\/$/, '');
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
           '*Luminara Suite Terms (purchases)*\n' +
           'By purchasing with Telegram Stars you agree to our Terms and Conditions and Privacy Policy.\n\n' +
-          `• Terms: ${env.WEBAPP_URL.replace(/\/$/, '')}/#terms\n` +
-          `• Privacy: ${env.WEBAPP_URL.replace(/\/$/, '')}/#privacy\n\n` +
+          `• Terms: ${baseUrl}/#terms\n` +
+          `• Privacy: ${baseUrl}/privacy\n\n` +
           'Digital subscriptions activate immediately after a successful Stars payment. For billing help or disputes, use /paysupport.\n' +
           'Please note: Telegram Support cannot resolve merchant purchases made through this bot.',
         parse_mode: 'Markdown',
-        reply_markup: openAppKeyboard(env),
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '📜 Privacy Policy', web_app: { url: `${env.WEBAPP_URL}?startapp=privacy#privacy` } },
+              { text: '🔍 Open App', web_app: { url: env.WEBAPP_URL } },
+            ],
+          ],
+        },
+      });
+      return;
+    }
+
+    if (text.startsWith('/privacy')) {
+      const baseUrl = env.WEBAPP_URL.replace(/\/$/, '');
+      await api(env, 'sendMessage', {
+        chat_id: chatId,
+        text:
+          '*Luminara Suite — Privacy Policy & Data Rights*\n\n' +
+          'We value your privacy and transparency. Here is how personal data is handled:\n\n' +
+          '• *Controller:* Luminara Digital Agency (Contact: `privacy@luminarasuite.com`)\n' +
+          '• *Telegram Data:* We receive your signed Telegram user ID, username, and language to identify your session and meter usage. We never receive or store payment cards or phone numbers.\n' +
+          '• *Stars & TON:* Subscriptions via Telegram Stars or TON blockchain are processed by Telegram and the public TON network. No credit card information is collected.\n' +
+          '• *Audits & Prompts:* Audit domains and queries are processed via configured AI models (Groq, NVIDIA NIM, Gemini, OpenRouter) to deliver search intelligence.\n' +
+          '• *Data Retention & Control:* Reset your bot chat memory anytime with /reset. To request account data export or deletion, contact `privacy@luminarasuite.com`.\n\n' +
+          `Full policy document: ${baseUrl}/privacy`,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '📜 Read in Mini App', web_app: { url: `${env.WEBAPP_URL}?startapp=privacy#privacy` } },
+              { text: '🌐 View on Web', url: `${baseUrl}/privacy` },
+            ],
+            [
+              { text: '🔍 Open Luminara Suite', web_app: { url: env.WEBAPP_URL } },
+            ],
+          ],
+        },
       });
       return;
     }
@@ -515,6 +552,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           '• /status - Check your active subscription & receipt\n' +
           '• /license <key> - Activate a temporary pass or license key\n' +
           '• /terms - Review purchasing terms and policies\n' +
+          '• /privacy - View privacy policy and data rights\n' +
           '• /paysupport - Get help with billing, receipts, or disputes\n' +
           '• /reset - Clear current chat session memory\n' +
           '• /help - Display this command overview\n\n' +

@@ -197,6 +197,20 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       {wallet && (
         <p className="text-[10px] font-mono text-gray-500 truncate">Connected: {wallet.account.address}</p>
       )}
+
+      <div className="flex items-center justify-between text-[10px] text-gray-500 pt-2 border-t border-white/5">
+        <a href="#privacy" className="hover:text-gold transition-colors">
+          Privacy Policy
+        </a>
+        <span className="text-gray-600">·</span>
+        <a href="#terms" className="hover:text-gold transition-colors">
+          Terms of Service
+        </a>
+        <span className="text-gray-600">·</span>
+        <a href="mailto:privacy@luminarasuite.com" className="hover:text-gold transition-colors">
+          Support
+        </a>
+      </div>
     </div>
   );
 };

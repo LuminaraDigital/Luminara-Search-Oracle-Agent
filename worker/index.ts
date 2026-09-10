@@ -1598,6 +1598,20 @@ export default {
         return withSecurityHeaders(json({ error: 'Internal error' }, 500));
       }
     }
+
+    // Direct resolution for BotFather, crawlers, and web visitors requesting the Privacy Policy
+    if (url.pathname === '/privacy' || url.pathname === '/privacy/' || url.pathname === '/privacy-policy' || url.pathname === '/privacy-policy/') {
+      try {
+        const privacyReq = new Request(new URL('/privacy.html', request.url).toString(), request);
+        const res = await env.ASSETS.fetch(privacyReq);
+        if (res.status < 400) {
+          return withSecurityHeaders(res);
+        }
+      } catch (err) {
+        console.warn('[assets] privacy.html fetch fallback', err);
+      }
+    }
+
     // Static assets with SPA fallback (configured in wrangler.jsonc); security headers + CSP on the HTML shell.
     return withSecurityHeaders(await env.ASSETS.fetch(request));
   },

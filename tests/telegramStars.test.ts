@@ -580,6 +580,27 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       expect(body.text).toContain('/plan');
     });
 
+    it('handles /privacy command and sends privacy policy summary with links', async () => {
+      mockFetch.mockResolvedValue({
+        json: async () => ({ ok: true }),
+      });
+
+      await handleTelegramUpdate(
+        { message: { chat: { id: 100 }, from: { id: 100 }, text: '/privacy' } },
+        env,
+      );
+
+      const sendCall = mockFetch.mock.calls.find(c => c[0].includes('sendMessage'));
+      expect(sendCall).toBeTruthy();
+      const body = JSON.parse(sendCall[1].body);
+      expect(body.text).toContain('Privacy Policy');
+      expect(body.text).toContain('privacy@luminarasuite.com');
+      expect(body.reply_markup.inline_keyboard).toBeTruthy();
+      const flatButtons = body.reply_markup.inline_keyboard.flat();
+      expect(flatButtons.some((b: any) => b.text.includes('Mini App') && b.web_app?.url.includes('privacy'))).toBe(true);
+      expect(flatButtons.some((b: any) => b.text.includes('Web') && b.url.includes('/privacy'))).toBe(true);
+    });
+
     it('falls back gracefully to app prompt when no AI provider is configured', async () => {
       mockFetch.mockResolvedValue({
         json: async () => ({ ok: true }),

@@ -43,6 +43,7 @@ await call('setMyCommands', {
     { command: 'plan', description: 'Plans and prices (Telegram Stars)' },
     { command: 'status', description: 'Your subscription' },
     { command: 'terms', description: 'Purchase terms' },
+    { command: 'privacy', description: 'Privacy policy & data protection' },
     { command: 'paysupport', description: 'Billing and payment help' },
     { command: 'help', description: 'How this bot works' },
   ],
