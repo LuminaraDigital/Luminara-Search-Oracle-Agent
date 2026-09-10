@@ -34,20 +34,64 @@ function detectTelegramSync(): boolean {
 }
 
 let insideTelegram = detectTelegramSync();
-let initialised = false;
+let initStarted = false;
+let readySettled = false;
+let resolveReady: ((value: boolean) => void) | null = null;
+const readyPromise = new Promise<boolean>((resolve) => {
+  resolveReady = resolve;
+});
+const readyListeners = new Set<(inside: boolean) => void>();
+
+function finishReady(inside: boolean): boolean {
+  insideTelegram = inside;
+  readySettled = true;
+  resolveReady?.(inside);
+  resolveReady = null;
+  readyListeners.forEach((cb) => {
+    try { cb(inside); } catch { /* ignore listener errors */ }
+  });
+  return inside;
+}
 
 export function isInTelegram(): boolean {
   return insideTelegram;
 }
 
+/** Resolves once initTelegram has finished (or immediately if already done). */
+export function whenTelegramReady(): Promise<boolean> {
+  if (readySettled) return Promise.resolve(insideTelegram);
+  // Hooks can race the boot call; ensure init is in flight.
+  void initTelegram();
+  return readyPromise;
+}
+
+/** Subscribe to Telegram environment readiness (for React re-renders). */
+export function subscribeTelegramReady(cb: (inside: boolean) => void): () => void {
+  readyListeners.add(cb);
+  if (readySettled) {
+    try { cb(insideTelegram); } catch { /* ignore */ }
+  }
+  return () => { readyListeners.delete(cb); };
+}
+
+/** Native bridge fallback before / alongside @telegram-apps/sdk restore. */
+function nativeInitData(): string {
+  try {
+    const raw = (window as any)?.Telegram?.WebApp?.initData;
+    return typeof raw === 'string' ? raw : '';
+  } catch {
+    return '';
+  }
+}
+
 /** Call once before rendering. Resolves instantly (0ms) outside Telegram. */
 export async function initTelegram(timeoutMs = 250): Promise<boolean> {
-  if (initialised) return insideTelegram;
-  initialised = true;
+  if (readySettled) return insideTelegram;
+  if (initStarted) return readyPromise;
+  initStarted = true;
 
   if (!detectTelegramSync()) {
-    insideTelegram = false;
-    return false;
+    return finishReady(false);
   }
 
   try {
@@ -58,7 +102,7 @@ export async function initTelegram(timeoutMs = 250): Promise<boolean> {
   } catch {
     insideTelegram = false;
   }
-  if (!insideTelegram) return false;
+  if (!insideTelegram) return finishReady(false);
 
   try {
     sdkInit();
@@ -95,19 +139,19 @@ export async function initTelegram(timeoutMs = 250): Promise<boolean> {
     if (miniApp.ready.isAvailable()) miniApp.ready();
   } catch (e) {
     console.warn('[TMA] init failed, running as plain web', e);
-    insideTelegram = false;
+    return finishReady(false);
   }
-  return insideTelegram;
+  return finishReady(true);
 }
 
 /** Raw signed launch context; send this to the server, never trust its fields on the client. */
 export function getInitDataRaw(): string {
-  if (!insideTelegram) return '';
+  if (!insideTelegram && !detectTelegramSync()) return '';
   try {
-    return initData.raw() || '';
-  } catch {
-    return '';
-  }
+    const fromSdk = initData.raw() || '';
+    if (fromSdk) return fromSdk;
+  } catch { /* SDK not restored yet */ }
+  return nativeInitData();
 }
 
 export function getStartParam(): string | undefined {

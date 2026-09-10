@@ -344,3 +344,19 @@ describe('SSRF guards', () => {
     expect(await resolvesToPublicAddress('down.example', async () => { throw new Error('offline'); })).toBe(false);
   });
 });
+
+describe('privacy policy route', () => {
+  it('serves privacy policy with 200 OK and security headers for all canonical privacy paths', async () => {
+    const env = makeEnv();
+    for (const path of ['/privacy', '/privacy/', '/privacy.html', '/privacy-policy', '/privacy-policy/']) {
+      const res = await worker.fetch(req(path), env, ctx);
+      expect(res.status, `status for ${path}`).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/html');
+      expect(res.headers.get('content-security-policy')).toBeTruthy();
+      expect(res.headers.get('strict-transport-security')).toBeTruthy();
+      const text = await res.text();
+      expect(text).toContain('Privacy Policy');
+      expect(text).toContain('privacy@luminarasuite.com');
+    }
+  });
+});

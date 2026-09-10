@@ -19,7 +19,8 @@ export const AuthRequiredScreen: React.FC<{
   isModal?: boolean;
   onClose?: () => void;
 }> = ({ auth, initialMode = 'signin', onBackToMarketing, isModal, onClose }) => {
-  const inTelegram = isInTelegram();
+  // Prefer auth-hook Telegram signal (survives background init) over a one-shot module read.
+  const inTelegram = Boolean(auth.retryTelegram) || isInTelegram();
 
   if (auth.loading) {
     return (
@@ -83,6 +84,15 @@ export const AuthRequiredScreen: React.FC<{
           <p className="text-sm text-gray-300 leading-relaxed">
             {auth.reason || 'Could not verify Telegram. Close this view and open Luminara again from the bot menu.'}
           </p>
+          {auth.retryTelegram && (
+            <button
+              type="button"
+              onClick={() => auth.retryTelegram?.()}
+              className="w-full rounded-xl bg-gold/15 border border-gold/40 text-gold text-xs font-bold uppercase tracking-wider py-2.5 hover:bg-gold/25 transition-colors"
+            >
+              Retry Telegram sign-in
+            </button>
+          )}
         </div>
       ) : (
         <AuthPanel initialMode={initialMode} />

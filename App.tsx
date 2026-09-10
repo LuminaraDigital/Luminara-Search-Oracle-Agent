@@ -6,7 +6,7 @@ import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
-import { isInTelegram, useTelegramBackButton, haptic, getStartParam } from './services/telegram/tma';
+import { isInTelegram, useTelegramBackButton, haptic, getStartParam, subscribeTelegramReady } from './services/telegram/tma';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
 import Waveform from './components/Waveform';
@@ -91,26 +91,37 @@ const viewFromHash = (): AppView | null => {
   return (Object.values(AppView) as string[]).includes(h) ? (h as AppView) : null;
 };
 
+const resolveTelegramStartView = (): AppView => {
+  const sp = (getStartParam() || '').trim().toUpperCase();
+  if (sp === 'AUDIT' || sp === 'SCAN') return AppView.INSTANT_AUDIT;
+  if (sp === 'ORACLE' || sp === 'CHAT' || sp === 'ASK') return AppView.ORACLE_AGENT;
+  if (sp === 'DASHBOARD' || sp === 'HOME') return AppView.DASHBOARD;
+  if (sp === 'HARNESS' || sp === 'DEV') return AppView.HARNESS;
+  if (sp === 'DNA' || sp === 'PROFILE') return AppView.BUSINESS_DNA;
+  if (sp === 'MEMORY' || sp === 'VAULT' || sp === 'BRAND_MEMORY') return AppView.BRAND_MEMORY;
+  if (sp === 'NOTEBOOK' || sp === 'NOTEBOOKS' || sp === 'STUDIO' || sp === 'LM') return AppView.NOTEBOOK;
+  if (sp === 'PRIVACY' || sp === 'PRIVACY_POLICY' || sp === 'LEGAL') return AppView.PRIVACY;
+  if (sp === 'TERMS' || sp === 'TOS') return AppView.TERMS;
+  return (Object.values(AppView) as string[]).includes(sp) ? (sp as AppView) : AppView.INSTANT_AUDIT;
+};
+
 const App: React.FC = () => {
-  const inTelegram = isInTelegram();
+  const [inTelegram, setInTelegram] = useState(() => isInTelegram());
   const [view, setViewState] = useState<AppView>(() => {
     const fromHash = viewFromHash();
     if (fromHash) return fromHash;
-    if (inTelegram) {
-      const sp = (getStartParam() || '').trim().toUpperCase();
-      if (sp === 'AUDIT' || sp === 'SCAN') return AppView.INSTANT_AUDIT;
-      if (sp === 'ORACLE' || sp === 'CHAT' || sp === 'ASK') return AppView.ORACLE_AGENT;
-      if (sp === 'DASHBOARD' || sp === 'HOME') return AppView.DASHBOARD;
-      if (sp === 'HARNESS' || sp === 'DEV') return AppView.HARNESS;
-      if (sp === 'DNA' || sp === 'PROFILE') return AppView.BUSINESS_DNA;
-      if (sp === 'MEMORY' || sp === 'VAULT' || sp === 'BRAND_MEMORY') return AppView.BRAND_MEMORY;
-      if (sp === 'NOTEBOOK' || sp === 'NOTEBOOKS' || sp === 'STUDIO' || sp === 'LM') return AppView.NOTEBOOK;
-      if (sp === 'PRIVACY' || sp === 'PRIVACY_POLICY' || sp === 'LEGAL') return AppView.PRIVACY;
-      if (sp === 'TERMS' || sp === 'TOS') return AppView.TERMS;
-      return (Object.values(AppView) as string[]).includes(sp) ? (sp as AppView) : AppView.INSTANT_AUDIT;
-    }
+    if (isInTelegram()) return resolveTelegramStartView();
     return AppView.LANDING;
   });
+
+  // Keep TMA detection in sync after background initTelegram() finishes.
+  useEffect(() => {
+    return subscribeTelegramReady((inside) => {
+      setInTelegram(inside);
+      if (!inside) return;
+      setViewState((current) => (current === AppView.LANDING ? resolveTelegramStartView() : current));
+    });
+  }, []);
   /** Cinematic brand intro when the product opens (disabled by default for instant load). */
   const [showIntro, setShowIntro] = useState(false);
   const [introPendingView, setIntroPendingView] = useState<AppView | null>(null);

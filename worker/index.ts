@@ -21,6 +21,7 @@ import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, TON_PRICING } from './tonPayment';
 import { activateLicenseKey, generateLicenseKeys } from './licenseService';
+import { PRIVACY_HTML } from './privacyPolicy';
 import {
   MAX_BODY_BYTES,
   MAX_SMALL_BODY_BYTES,
@@ -1600,16 +1601,22 @@ export default {
     }
 
     // Direct resolution for BotFather, crawlers, and web visitors requesting the Privacy Policy
-    if (url.pathname === '/privacy' || url.pathname === '/privacy/' || url.pathname === '/privacy-policy' || url.pathname === '/privacy-policy/') {
-      try {
-        const privacyReq = new Request(new URL('/privacy.html', request.url).toString(), request);
-        const res = await env.ASSETS.fetch(privacyReq);
-        if (res.status < 400) {
-          return withSecurityHeaders(res);
-        }
-      } catch (err) {
-        console.warn('[assets] privacy.html fetch fallback', err);
-      }
+    if (
+      url.pathname === '/privacy' ||
+      url.pathname === '/privacy/' ||
+      url.pathname === '/privacy.html' ||
+      url.pathname === '/privacy-policy' ||
+      url.pathname === '/privacy-policy/'
+    ) {
+      return withSecurityHeaders(
+        new Response(PRIVACY_HTML, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        }),
+      );
     }
 
     // Static assets with SPA fallback (configured in wrangler.jsonc); security headers + CSP on the HTML shell.

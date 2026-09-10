@@ -2,8 +2,13 @@
  * App-level auth: Telegram Mini App initData OR Firebase (web).
  * Marketing pages stay public; product tools require a signed-in account.
  */
-import { useEffect, useState } from 'react';
-import { isInTelegram, getInitDataRaw } from '../telegram/tma';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  isInTelegram,
+  getInitDataRaw,
+  whenTelegramReady,
+  subscribeTelegramReady,
+} from '../telegram/tma';
 import {
   isFirebaseConfigured,
   subscribeFirebaseUser,
@@ -23,6 +28,8 @@ export type AppAuthState = {
   label: string | null;
   /** Human-readable reason when blocked. */
   reason: string | null;
+  /** Re-check Telegram initData after a failed first pass. */
+  retryTelegram?: () => void;
 };
 
 /**
@@ -40,12 +47,18 @@ export const PUBLIC_APP_VIEWS = new Set([
 ]);
 
 export function useAppAuth(): AppAuthState {
-  const inTelegram = isInTelegram();
+  const [inTelegram, setInTelegram] = useState(() => isInTelegram());
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [firebaseReady, setFirebaseReady] = useState(!isFirebaseConfigured());
-  const [tgReady, setTgReady] = useState(!inTelegram);
+  // Always wait for Telegram init (instant outside TMA) so we never race initData.
+  const [tgReady, setTgReady] = useState(false);
   const [tgOk, setTgOk] = useState(false);
   const [tgError, setTgError] = useState<string | null>(null);
+  const [authAttempt, setAuthAttempt] = useState(0);
+
+  const retryTelegram = useCallback(() => {
+    setAuthAttempt((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     if (!isFirebaseConfigured()) {
@@ -60,31 +73,42 @@ export function useAppAuth(): AppAuthState {
   }, []);
 
   useEffect(() => {
-    if (!inTelegram) {
-      setTgReady(true);
-      setTgOk(false);
-      return;
-    }
-    const raw = getInitDataRaw();
-    if (!raw) {
-      setTgReady(true);
-      setTgOk(false);
-      setTgError('Open this Mini App from Telegram so we can verify your account.');
-      return;
-    }
+    return subscribeTelegramReady((inside) => {
+      setInTelegram(inside);
+    });
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
+    setTgReady(false);
+
     (async () => {
+      const inside = await whenTelegramReady();
+      if (cancelled) return;
+      setInTelegram(inside);
+
+      if (!inside) {
+        setTgOk(false);
+        setTgError(null);
+        setTgReady(true);
+        return;
+      }
+
+      const raw = getInitDataRaw();
+      if (!raw) {
+        setTgOk(false);
+        setTgError('Open this Mini App from Telegram so we can verify your account.');
+        setTgReady(true);
+        return;
+      }
+
       try {
-        const session = await telegramAuth();
+        await telegramAuth();
         if (cancelled) return;
-        if (session) {
-          setTgOk(true);
-          setTgError(null);
-        } else {
-          // initData present: allow UI; Worker still validates every API call.
-          setTgOk(true);
-          setTgError(null);
-        }
+        // initData present: allow UI even if /auth is briefly unreachable;
+        // Worker still validates every API call.
+        setTgOk(true);
+        setTgError(null);
       } catch {
         if (!cancelled) {
           setTgOk(Boolean(raw));
@@ -94,8 +118,9 @@ export function useAppAuth(): AppAuthState {
         if (!cancelled) setTgReady(true);
       }
     })();
+
     return () => { cancelled = true; };
-  }, [inTelegram]);
+  }, [authAttempt]);
 
   const loading = !firebaseReady || !tgReady;
 
@@ -106,6 +131,7 @@ export function useAppAuth(): AppAuthState {
       source: tgOk ? 'telegram' : null,
       label: tgOk ? 'Telegram' : null,
       reason: tgOk ? null : (tgError || 'Telegram sign-in required'),
+      retryTelegram,
     };
   }
 
