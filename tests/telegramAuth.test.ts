@@ -51,4 +51,31 @@ describe('validateInitData', () => {
     expect((await validateInitData('', token)).ok).toBe(false);
     expect((await validateInitData('hash=abc', token)).ok).toBe(false);
   });
+
+  it('accepts Bot API 7.2+ payloads that include signature in the HMAC data-check-string', async () => {
+    // Real Telegram Desktop/clients attach `signature` (Ed25519). First-party HMAC `hash`
+    // is computed OVER that field. Excluding it breaks every live Mini App session.
+    const fields = {
+      ...fresh(),
+      signature: 'FakeEd25519SignatureForHmacCoverageOnly_',
+    };
+    const r = await validateInitData(sign(fields), token);
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects when signature was stripped after Telegram signed the full payload', async () => {
+    const fields = {
+      ...fresh(),
+      signature: 'FakeEd25519SignatureForHmacCoverageOnly_',
+    };
+    const full = sign(fields);
+    // Simulate the old buggy validator path: recompute would fail if signature removed pre-hash.
+    const withoutSig = full
+      .split('&')
+      .filter((p) => !p.startsWith('signature='))
+      .join('&');
+    // Hash still claims to cover signature, so validation must fail.
+    const r = await validateInitData(withoutSig, token);
+    expect(r.ok).toBe(false);
+  });
 });

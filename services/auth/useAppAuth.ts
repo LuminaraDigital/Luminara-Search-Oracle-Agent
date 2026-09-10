@@ -134,7 +134,11 @@ export function useAppAuth(): AppAuthState {
           authStatus: result.status,
         });
         setTgOk(decided.authenticated);
-        setTgError(decided.reason);
+        if (!decided.authenticated && result.status === 'invalid' && result.error) {
+          setTgError(`${decided.reason} (${result.error})`);
+        } else {
+          setTgError(decided.reason);
+        }
       } catch {
         if (!cancelled) {
           const decided = decideTelegramGate({ hasInitData: true, authStatus: 'unavailable' });

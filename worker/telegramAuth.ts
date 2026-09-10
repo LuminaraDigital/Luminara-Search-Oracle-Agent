@@ -43,8 +43,11 @@ export async function validateInitData(initData: string, botToken: string, ttlSe
   }
   const hash = params.get('hash');
   if (!hash) return { ok: false, reason: 'initData has no hash' };
+  // First-party HMAC validation excludes only `hash`.
+  // Do NOT delete `signature` here: since Bot API 7.2 Telegram includes `signature`
+  // in the signed payload, and stripping it causes signature mismatch for every real client.
+  // (Third-party Ed25519 validation is the path that excludes both hash and signature.)
   params.delete('hash');
-  params.delete('signature');
 
   const dataCheckString = [...params.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
