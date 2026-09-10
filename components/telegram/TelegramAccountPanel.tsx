@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { TonConnectButton, useTonWallet } from '@tonconnect/ui-react';
 import { isInTelegram, getTelegramUserUnsafe, payWithStars, haptic } from '../../services/telegram/tma';
-import { telegramAuth, createStarsInvoice, fetchQuotaStatus, getServerHealthSync, type TelegramSession } from '../../services/apiClient';
+import { telegramAuth, createStarsInvoice, activateLicenseKey, fetchQuotaStatus, getServerHealthSync, type TelegramSession } from '../../services/apiClient';
 
 interface Props {
   compact?: boolean;
@@ -15,6 +15,9 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
   const [session, setSession] = useState<TelegramSession | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
+  const [showLicense, setShowLicense] = useState(false);
+  const [licenseKey, setLicenseKey] = useState('');
+  const [activating, setActivating] = useState(false);
   const wallet = useTonWallet();
   const plans = getServerHealthSync().plans;
   const inTg = isInTelegram();
@@ -59,6 +62,31 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       setStatus(e?.message || 'Could not start checkout.');
     } finally {
       setBusyPlan(null);
+    }
+  };
+
+  const handleActivate = async () => {
+    if (!licenseKey.trim()) return;
+    setActivating(true);
+    setStatus(null);
+    try {
+      const res = await activateLicenseKey(licenseKey.trim());
+      if (res.ok) {
+        haptic('success');
+        setStatus(`✅ Key activated! Plan: ${res.plan?.toUpperCase()} (${res.durationDays} days)`);
+        await refresh();
+        await fetchQuotaStatus();
+        setLicenseKey('');
+        setShowLicense(false);
+      } else {
+        haptic('error');
+        setStatus(`❌ ${res.error || 'Invalid key'}`);
+      }
+    } catch (e: any) {
+      haptic('error');
+      setStatus(e?.message || 'Activation failed');
+    } finally {
+      setActivating(false);
     }
   };
 
@@ -127,6 +155,40 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       )}
 
       {status && <p className="text-[11px] text-warning-300" role="status">{status}</p>}
+
+      {/* License Key Redemption */}
+      <div className="pt-2 border-t border-white/5">
+        <button
+          onClick={() => setShowLicense(!showLicense)}
+          className="w-full flex items-center justify-between text-[11px] font-bold text-gold hover:text-gold-light transition-colors py-1"
+        >
+          <span className="flex items-center gap-1.5">
+            <span>🔑</span>
+            <span>Redeem License Key / 3-Day Pass</span>
+          </span>
+          <span className="text-[9px] uppercase font-mono px-2 py-0.5 rounded bg-white/5 text-gray-400">
+            {showLicense ? 'Hide' : 'Enter Key'}
+          </span>
+        </button>
+        {showLicense && (
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={licenseKey}
+              onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+              placeholder="LUM-GROWTH-3DAY..."
+              className="flex-1 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono text-white placeholder-gray-600 focus:outline-none focus:border-gold"
+            />
+            <button
+              onClick={handleActivate}
+              disabled={activating || !licenseKey.trim()}
+              className="px-3 py-1.5 rounded-xl bg-gold text-black font-black uppercase text-[9px] tracking-wider hover:bg-gold-light disabled:opacity-50 transition-all"
+            >
+              {activating ? '…' : 'Activate'}
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center justify-between gap-3 pt-1 border-t border-white/5">
         <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">TON wallet</span>

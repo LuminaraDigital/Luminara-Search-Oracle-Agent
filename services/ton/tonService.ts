@@ -6,6 +6,7 @@
 import { apiBase } from '../apiClient';
 import { getInitDataRaw } from '../telegram/tma';
 import { getFirebaseIdTokenSync } from '../auth/firebaseAuthService';
+import { beginCell } from '@ton/core';
 
 export interface TonInvoiceResponse {
   ok: boolean;
@@ -43,19 +44,14 @@ function authHeaders(): Record<string, string> {
 /**
  * Builds a standard TON Bag of Cells (BOC) payload containing a 32-bit zero prefix
  * and UTF-8 comment text (recognized as a text message/memo by all TON wallets).
+ * Uses official @ton/core cell serialization.
  */
 export function buildCommentBoc(comment: string): string {
-  const enc = new TextEncoder().encode(comment);
-  const data = new Uint8Array(4 + enc.length);
-  // 4 zero bytes: 0x00 0x00 0x00 0x00 indicates a text comment
-  data.set(enc, 4);
-  const len = data.length;
-  // Standard single-cell BOC header
-  const header = [0xb5, 0xee, 0x9c, 0x72, 0x01, 0x01, 0x01, 0x01, 0x00, 2 + len, 0x00, 0x00, len];
-  const boc = new Uint8Array(header.length + len);
-  boc.set(header, 0);
-  boc.set(data, header.length);
-  return btoa(String.fromCharCode(...boc));
+  const cell = beginCell()
+    .storeUint(0, 32) // 32-bit zero prefix indicates text comment in TON
+    .storeStringTail(comment)
+    .endCell();
+  return cell.toBoc().toString('base64');
 }
 
 /**

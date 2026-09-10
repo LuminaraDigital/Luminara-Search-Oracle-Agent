@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTonConnectUI, useTonWallet, TonConnectButton } from '@tonconnect/ui-react';
 import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma';
-import { createStarsInvoice, getServerHealthSync, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
+import { createStarsInvoice, activateLicenseKey, getServerHealthSync, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
 import { executeTonPayment } from '../../services/ton/tonService';
 import { ICONS } from '../../constants';
 
@@ -19,6 +19,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
+  const [showLicenseInput, setShowLicenseInput] = useState(false);
+  const [licenseKeyInput, setLicenseKeyInput] = useState('');
+  const [activatingLicense, setActivatingLicense] = useState(false);
 
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
@@ -57,10 +60,40 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     setStatusMessage(null);
     setIsSuccess(false);
     setBusyPlan(null);
+    setShowLicenseInput(false);
+    setLicenseKeyInput('');
+    setActivatingLicense(false);
     if (controlledOpen !== undefined && onClose) {
       onClose();
     } else {
       setInternalOpen(false);
+    }
+  };
+
+  const handleActivateLicense = async () => {
+    if (!licenseKeyInput.trim()) return;
+    setActivatingLicense(true);
+    setStatusMessage(null);
+    try {
+      const res = await activateLicenseKey(licenseKeyInput.trim());
+      if (res.ok) {
+        haptic('success');
+        setIsSuccess(true);
+        const planName = res.plan ? res.plan.toUpperCase() : 'PREMIUM';
+        setStatusMessage(`License activated! ${planName} unlocked for ${res.durationDays || 3} days.`);
+        await fetchQuotaStatus();
+        setTimeout(() => {
+          handleClose();
+        }, 2000);
+      } else {
+        haptic('error');
+        setStatusMessage(res.error || 'Invalid or expired license key.');
+      }
+    } catch (err: any) {
+      haptic('error');
+      setStatusMessage(err?.message || 'Failed to activate license key.');
+    } finally {
+      setActivatingLicense(false);
     }
   };
 
@@ -163,7 +196,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         </div>
 
         {/* Reason / Quota Banner */}
-        <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 mb-6 flex items-center justify-between gap-3 text-xs">
+        <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 mb-5 flex items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 text-gray-300">
             <span className="w-2 h-2 rounded-full bg-gold animate-pulse shrink-0" />
             <span>{triggerReason || 'Free tier daily request allowance reached.'}</span>
@@ -172,6 +205,45 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             <span className="font-mono text-gold shrink-0 font-bold">
               {quota.used}/{quota.limit} used today
             </span>
+          )}
+        </div>
+
+        {/* License Key Gated Entry (Matching Mobile & Desktop License Activation UX) */}
+        <div className="mb-5 p-4 rounded-2xl bg-black/40 border border-gold/40">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-white">
+              <span className="text-base">🔑</span>
+              <span>I have a license key</span>
+            </div>
+            <button
+              onClick={() => setShowLicenseInput(!showLicenseInput)}
+              className="text-[10px] uppercase font-mono px-3 py-1 rounded-lg bg-gold/15 text-gold border border-gold/40 hover:bg-gold/25 transition-all font-bold"
+            >
+              {showLicenseInput ? 'Close' : 'Enter Key'}
+            </button>
+          </div>
+          {showLicenseInput && (
+            <div className="mt-3 pt-3 border-t border-white/10 space-y-2.5 animate-fade-in">
+              <p className="text-[11px] text-gray-400">
+                Enter your 3-day Growth pass, referral key, or enterprise license code (e.g. <span className="font-mono text-gold">LUM-GROWTH-3DAY</span>).
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={licenseKeyInput}
+                  onChange={(e) => setLicenseKeyInput(e.target.value.toUpperCase())}
+                  placeholder="LUM-GROWTH-3DAY..."
+                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/20 focus:border-gold focus:outline-none text-xs font-mono text-white placeholder-gray-600"
+                />
+                <button
+                  onClick={handleActivateLicense}
+                  disabled={activatingLicense || !licenseKeyInput.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-wider hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 transition-all shadow-md"
+                >
+                  {activatingLicense ? 'Activating…' : 'Activate'}
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
@@ -391,7 +463,17 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </button>
         </div>
 
-        <p className="mt-4 text-center text-[10px] text-gray-600">
+        {/* Not now dismissal (Matching user screenshot) */}
+        <div className="mt-3 flex justify-center">
+          <button
+            onClick={handleClose}
+            className="text-xs text-gray-500 hover:text-gray-300 transition-colors py-1 px-4 rounded-lg hover:bg-white/5"
+          >
+            Not now
+          </button>
+        </div>
+
+        <p className="mt-3 text-center text-[10px] text-gray-600">
           Produced by{' '}
           <a
             href="https://luminaradigital.io"

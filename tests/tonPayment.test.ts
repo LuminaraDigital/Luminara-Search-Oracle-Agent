@@ -104,14 +104,88 @@ describe('TON Payment Settlement Engine', () => {
     expect(verifyRes.ok).toBe(false);
   });
 
-  it('extractTonComment reads known message shapes', () => {
+  it('extractTonComment reads known message shapes and decodes base64 text', () => {
     expect(extractTonComment({ message: 'LUM:x' })).toBe('LUM:x');
     expect(extractTonComment({ msg_data: { text: 'LUM:y' } })).toBe('LUM:y');
+    const base64Comment = btoa('LUM:ton_encoded:growth');
+    expect(extractTonComment({ msg_data: { text: base64Comment } })).toBe('LUM:ton_encoded:growth');
   });
 
-  it('buildCommentBoc generates base64 payload', () => {
+  it('buildCommentBoc generates official @ton/core base64 payload', () => {
     const boc = buildCommentBoc('LUM:ton_123:starter');
     expect(typeof boc).toBe('string');
     expect(boc.length).toBeGreaterThan(10);
+  });
+
+  it('falls back to TonAPI when Toncenter returns 500 error', async () => {
+    const kv = createMockKv();
+    const env: any = { LUMINARA_KV: kv, TON_RECEIVING_ADDRESS: 'EQ_MERCHANT_WALLET' };
+    const inv = await createTonInvoice(env, 'user_fallback', 'starter');
+    expect(inv.ok).toBe(true);
+    if (!inv.ok) return;
+
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.includes('toncenter.com')) {
+        return new Response('Internal Server Error', { status: 500 });
+      }
+      if (url.includes('tonapi.io')) {
+        return new Response(
+          JSON.stringify({
+            transactions: [
+              {
+                hash: 'tonapi_tx_hash_999',
+                utime: Math.floor(Date.now() / 1000),
+                in_msg: {
+                  value: TON_PRICING.starter.nanoTon,
+                  decoded_body: { text: inv.order.memo },
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response('Not Found', { status: 404 });
+    });
+
+    const verifyRes = await verifyTonPayment(env, inv.order.orderId, {
+      expectedUserId: 'user_fallback',
+      fetcher,
+    });
+    expect(verifyRes.ok).toBe(true);
+  });
+
+  it('prevents double-spending replay attack with already claimed txHash', async () => {
+    const kv = createMockKv();
+    const env: any = { LUMINARA_KV: kv, TON_RECEIVING_ADDRESS: 'EQ_MERCHANT_WALLET' };
+
+    // Mark txHash as already claimed by a prior order
+    await kv.put('ton:tx:hash_already_spent', 'ton_order_prior');
+
+    const inv = await createTonInvoice(env, 'user_attacker', 'starter');
+    if (!inv.ok) return;
+
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          ok: true,
+          result: [
+            {
+              transaction_id: { hash: 'hash_already_spent' },
+              utime: Math.floor(Date.now() / 1000),
+              in_msg: {
+                value: TON_PRICING.starter.nanoTon,
+                message: inv.order.memo,
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const verifyRes = await verifyTonPayment(env, inv.order.orderId, { fetcher });
+    expect(verifyRes.ok).toBe(false);
+    expect(verifyRes.error).toMatch(/already been credited/i);
   });
 });

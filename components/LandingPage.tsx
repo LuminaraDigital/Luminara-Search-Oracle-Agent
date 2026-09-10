@@ -106,6 +106,37 @@ const LandingPage: React.FC<LandingPageProps> = ({
 
       {/* Hero: brand + one line + CTAs + product stage */}
       <section className="relative min-h-[100svh] pt-28 pb-20 px-6 flex flex-col justify-center z-10 overflow-hidden">
+        {!isAuthenticated && (
+          <div className="max-w-7xl mx-auto w-full mb-8 -mt-6">
+            <div className="glass-premium rounded-2xl p-3.5 border border-gold/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left shadow-2xl bg-black/80">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🔒</span>
+                <div>
+                  <p className="text-xs font-bold text-white tracking-wide">
+                    Mandatory Authentication — Account Required
+                  </p>
+                  <p className="text-[11px] text-gray-400">
+                    An account is required to run live audits, save Business DNA, and view AI visibility recommendations.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={onSignInClick || onEnter}
+                  className="px-4 py-2 rounded-xl border border-white/20 text-[10px] font-bold uppercase tracking-wider text-gray-200 hover:text-white hover:border-gold transition-all"
+                >
+                  Sign in
+                </button>
+                <button
+                  onClick={onSignUpClick || onEnter}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black text-[10px] font-black uppercase tracking-wider hover:scale-105 transition-all shadow-md"
+                >
+                  Create Account
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-10 items-center">
           <div className="lg:col-span-6 text-center lg:text-left space-y-8">
             <p className="font-display text-5xl sm:text-6xl md:text-7xl text-white/95 tracking-tight leading-[0.95]">
@@ -253,7 +284,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 onClick={onEnter}
                 className="mt-8 w-full py-4 rounded-xl border border-gold/30 bg-gold/10 text-gold-light font-black uppercase tracking-[0.3em] text-[10px] hover:bg-gold/15 transition-all"
               >
-                Enter workspace
+                {isAuthenticated ? 'Enter workspace' : 'Sign in to Enter Workspace'}
               </button>
             </div>
           </div>
@@ -406,7 +437,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               className="px-12 py-5 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl shadow-[0_40px_100px_rgba(191,149,63,0.28)] transition-all hover:scale-[1.03]"
               onClick={onEnter}
             >
-              Open the app
+              {isAuthenticated ? 'Open the app' : 'Sign in to Open App'}
             </button>
             {onNavigateAudit && (
               <button

@@ -20,6 +20,7 @@ import { validateInitData } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, TON_PRICING } from './tonPayment';
+import { activateLicenseKey, generateLicenseKeys } from './licenseService';
 import {
   MAX_BODY_BYTES,
   MAX_SMALL_BODY_BYTES,
@@ -1058,6 +1059,84 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const result = await verifyTonPayment(env, orderId, { expectedUserId: who.user.id });
       return withCors(result.ok ? json(result) : json({ error: result.error }, 400));
     }
+  }
+
+  // Temporary License Key Activation (growth trial passes & enterprise licenses)
+  if (path === '/license/activate') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+    const who = await identify(request, env);
+    if (!who.user) return withCors(json({ error: who.error || 'Sign in required' }, 401));
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return withCors(json({ error: read.error }, read.status));
+    const { key } = (read.value || {}) as { key?: string };
+    if (!key) return withCors(json({ error: 'License key is required' }, 400));
+    const result = await activateLicenseKey(env, who.user.id, key);
+    return withCors(json(result, result.ok ? 200 : 400));
+  }
+
+  // Admin License Key Generation
+  if (path === '/admin/license/generate') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+
+    const secret = request.headers.get('x-telegram-bot-api-secret-token') || request.headers.get('x-admin-secret') || '';
+    const isSecretAuthorized = Boolean(env.TELEGRAM_WEBHOOK_SECRET && secretEquals(secret, env.TELEGRAM_WEBHOOK_SECRET));
+
+    if (!isSecretAuthorized) {
+      const who = await identify(request, env);
+      const adminIds = (env.TELEGRAM_ADMIN_ID || '').split(',').map(s => s.trim()).filter(Boolean);
+      const isUserAdmin = Boolean(who.user && adminIds.includes(who.user.id));
+      if (!isUserAdmin) return withCors(json({ error: 'Unauthorized' }, 401));
+    }
+
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return withCors(json({ error: read.error }, read.status));
+    const body = (read.value || {}) as {
+      plan?: string;
+      durationDays?: number;
+      count?: number;
+      campaign?: string;
+      isTrial?: boolean;
+    };
+    if (!body.plan) return withCors(json({ error: 'plan is required' }, 400));
+    const keys = await generateLicenseKeys(env, {
+      plan: body.plan,
+      durationDays: body.durationDays || 3,
+      count: body.count || 1,
+      campaign: body.campaign,
+      isTrial: body.isTrial,
+    });
+    return withCors(json({ ok: true, count: keys.length, keys }));
+  }
+
+  // Blockchain Proof-of-Audit attestation verification & storage
+  if (path === '/agent/attest') {
+    if (request.method === 'GET') {
+      const url = new URL(request.url);
+      const digest = url.searchParams.get('digest');
+      if (!digest) return withCors(json({ error: 'digest query parameter required' }, 400));
+      const record = env.LUMINARA_KV ? await env.LUMINARA_KV.get(`poa:${digest}`, 'json') : null;
+      if (!record) return withCors(json({ ok: false, error: 'Attestation not found' }, 404));
+      return withCors(json({ ok: true, attestation: record }));
+    }
+
+    if (request.method === 'POST') {
+      const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+      if (!read.ok) return withCors(json({ error: read.error }, read.status));
+      const attestation = read.value as any;
+      if (!attestation || !attestation.digestHex || !attestation.domain) {
+        return withCors(json({ error: 'Invalid attestation payload' }, 400));
+      }
+      if (env.LUMINARA_KV) {
+        await env.LUMINARA_KV.put(`poa:${attestation.digestHex}`, JSON.stringify(attestation), { expirationTtl: 31536000 });
+      }
+      return withCors(json({ ok: true, digestHex: attestation.digestHex }));
+    }
+
+    return withCors(json({ error: 'Method not allowed' }, 405));
   }
 
   // Drift Sentinel targets are owned by the signed-in Telegram user: alerts can only go to that

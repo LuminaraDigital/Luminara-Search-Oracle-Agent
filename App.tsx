@@ -24,6 +24,7 @@ import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
 import { hasSeenIntroThisSession } from './services/intro/appIntro';
 import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
+import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean
@@ -496,7 +497,6 @@ const App: React.FC = () => {
         : m));
       if (fullText && !controller.signal.aborted && !opts.skipSearch) {
         try {
-          const { brandMemoryVaultService } = await import('./services/memory/brandMemoryVaultService');
           brandMemoryVaultService.ingestChatInsight({
             question: content,
             answerExcerpt: fullText.slice(0, 1500),

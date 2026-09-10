@@ -4,6 +4,7 @@
  */
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
+import { activateLicenseKey } from './licenseService';
 
 export type PlanMeta = {
   title: string;
@@ -50,6 +51,28 @@ export const PLANS: Record<string, PlanMeta> = {
     agencyClientLimit: 10,
     scheduledReaudit: 'daily',
     apiAccess: true,
+  },
+  single_audit: {
+    title: 'Single Autonomous Audit Run',
+    description: 'On-demand 7-agent autonomous search audit with verified Proof-of-Audit attestation.',
+    stars: 25,
+    days: 1,
+    domainLimit: 1,
+    sentinelLimit: 0,
+    agencyClientLimit: 0,
+    scheduledReaudit: 'none',
+    apiAccess: false,
+  },
+  multi_agent_crawl: {
+    title: 'Deep Multi-Agent Crawl & Proof',
+    description: 'On-demand deep crawl and competitor gap intelligence with TON on-chain certification memo.',
+    stars: 75,
+    days: 1,
+    domainLimit: 1,
+    sentinelLimit: 0,
+    agencyClientLimit: 0,
+    scheduledReaudit: 'none',
+    apiAccess: false,
   },
 };
 
@@ -442,6 +465,44 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
+    if (text.startsWith('/license')) {
+      const licMatch = text.match(/^\/license(?:\s+([a-zA-Z0-9_\-]+))?/i);
+      const rawKey = licMatch ? licMatch[1] : '';
+      if (!rawKey) {
+        await api(env, 'sendMessage', {
+          chat_id: chatId,
+          text:
+            '🔑 *Activate a License Key*\n\n' +
+            'Send `/license YOUR-KEY` to redeem a temporary trial pass or full subscription (e.g. `/license LUM-GROWTH-3DAY`).\n\n' +
+            'You can also activate keys inside the Mini App paywall modal.',
+          parse_mode: 'Markdown',
+          reply_markup: openAppKeyboard(env),
+        });
+        return;
+      }
+      const loginId = String(msg.from?.id || chatId);
+      const res = await activateLicenseKey(env, loginId, rawKey);
+      if (res.ok) {
+        await api(env, 'sendMessage', {
+          chat_id: chatId,
+          text:
+            `🎉 *License Key Activated!*\n\n` +
+            `Your *${PLANS[res.plan!]?.title || res.plan}* plan is now active for ${res.durationDays} days (until ${new Date(res.expiresAt!).toUTCString()}).\n\n` +
+            `All frontier AI models (NVIDIA NIM, Sovereign Ollama, OpenRouter) and unlimited search audits are now unlocked!`,
+          parse_mode: 'Markdown',
+          reply_markup: openAppKeyboard(env),
+        });
+      } else {
+        await api(env, 'sendMessage', {
+          chat_id: chatId,
+          text: `❌ *Activation Failed*\n\n${res.error || 'Invalid or expired key.'}\n\nUse /plan to view Telegram Stars subscriptions.`,
+          parse_mode: 'Markdown',
+          reply_markup: openAppKeyboard(env),
+        });
+      }
+      return;
+    }
+
     if (text.startsWith('/help')) {
       await api(env, 'sendMessage', {
         chat_id: chatId,
@@ -452,6 +513,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           '• /start - Launch the Luminara Suite Mini App\n' +
           '• /plan - View subscription plans & pricing (Telegram Stars)\n' +
           '• /status - Check your active subscription & receipt\n' +
+          '• /license <key> - Activate a temporary pass or license key\n' +
           '• /terms - Review purchasing terms and policies\n' +
           '• /paysupport - Get help with billing, receipts, or disputes\n' +
           '• /reset - Clear current chat session memory\n' +

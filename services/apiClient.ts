@@ -363,6 +363,27 @@ export function openPaywallModal(reason?: string): void {
   }
 }
 
+export async function activateLicenseKey(key: string): Promise<{
+  ok: boolean;
+  plan?: string;
+  expiresAt?: number;
+  durationDays?: number;
+  error?: string;
+}> {
+  const base = apiBase();
+  if (!base) return { ok: false, error: 'Worker API is unreachable' };
+  const r = await workerFetchWithAuthRetry(`${base}/api/license/activate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (data.ok) {
+    await fetchQuotaStatus();
+  }
+  return data;
+}
+
 // ---- Telegram account endpoints -------------------------------------------------------------
 
 export interface TelegramSession {

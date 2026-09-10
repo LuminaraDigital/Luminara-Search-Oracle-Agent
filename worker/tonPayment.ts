@@ -10,6 +10,8 @@ export const TON_PRICING: Record<string, { ton: number; nanoTon: string }> = {
   starter: { ton: 15, nanoTon: '15000000000' },
   growth: { ton: 45, nanoTon: '45000000000' },
   agency: { ton: 120, nanoTon: '120000000000' },
+  single_audit: { ton: 0.05, nanoTon: '50000000' },
+  multi_agent_crawl: { ton: 0.15, nanoTon: '150000000' },
 };
 
 export interface TonOrder {
@@ -69,14 +71,30 @@ export async function createTonInvoice(
 /** Extract comment text from Toncenter / TonAPI shaped messages. */
 export function extractTonComment(msg: any): string {
   if (!msg) return '';
-  if (typeof msg.message === 'string') return msg.message;
-  if (typeof msg.msg_data?.text === 'string') return msg.msg_data.text;
-  if (typeof msg.decoded_body?.text === 'string') return msg.decoded_body.text;
+  if (typeof msg.message === 'string' && msg.message) return msg.message;
+  if (typeof msg.decoded_body?.text === 'string' && msg.decoded_body.text) return msg.decoded_body.text;
+  const rawText = msg.msg_data?.text;
+  if (typeof rawText === 'string' && rawText) {
+    if (rawText.startsWith('LUM:')) return rawText;
+    // Handle base64 encoded text in Toncenter v2
+    try {
+      if (typeof atob === 'function') {
+        const decoded = atob(rawText);
+        if (decoded && (decoded.includes('LUM:') || /^[\x20-\x7E]+$/.test(decoded))) {
+          return decoded;
+        }
+      }
+    } catch {
+      /* non-base64 fallback */
+    }
+    return rawText;
+  }
   return '';
 }
 
 /**
  * Looks up recent inbound transfers to the merchant wallet and matches memo + amount.
+ * Queries Toncenter v2 with seamless fallback to TonAPI for high availability.
  */
 export async function findMatchingTonPayment(
   order: TonOrder,
@@ -84,36 +102,67 @@ export async function findMatchingTonPayment(
   fetcher: TonFetch = fetch,
 ): Promise<{ ok: true; txHash: string } | { ok: false; error: string }> {
   const apiKey = String(env.TON_API_KEY || '').trim();
-  const url =
+  const minValue = BigInt(order.amountNano);
+  const minTimeSec = Math.floor((order.createdAt - 60_000) / 1000); // 1-minute clock skew allowance
+
+  // 1. Primary on-chain provider: Toncenter v2
+  const toncenterUrl =
     `https://toncenter.com/api/v2/getTransactions` +
     `?address=${encodeURIComponent(order.recipientAddress)}&limit=30`;
+  const toncenterHeaders: Record<string, string> = { Accept: 'application/json' };
+  if (apiKey) toncenterHeaders['X-API-Key'] = apiKey;
 
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (apiKey) headers['X-API-Key'] = apiKey;
-
-  let res: Response;
+  let toncenterFailed = false;
   try {
-    res = await fetcher(url, { headers });
-  } catch {
-    return { ok: false, error: 'Could not reach Toncenter to verify payment' };
-  }
-  if (!res.ok) {
-    return { ok: false, error: `Toncenter returned ${res.status}` };
-  }
-
-  const data = (await res.json()) as { ok?: boolean; result?: any[] };
-  const txs = Array.isArray(data.result) ? data.result : [];
-  const minValue = BigInt(order.amountNano);
-
-  for (const tx of txs) {
-    const inMsg = tx.in_msg;
-    if (!inMsg) continue;
-    const comment = extractTonComment(inMsg);
-    const value = BigInt(String(inMsg.value || '0'));
-    if (comment.includes(order.memo) && value >= minValue) {
-      const hash = String(tx.transaction_id?.hash || tx.hash || tx.transaction_id || 'onchain');
-      return { ok: true, txHash: hash };
+    const res = await fetcher(toncenterUrl, { headers: toncenterHeaders });
+    if (res.ok) {
+      const data = (await res.json()) as { ok?: boolean; result?: any[] };
+      const txs = Array.isArray(data.result) ? data.result : [];
+      for (const tx of txs) {
+        const utime = Number(tx.utime || 0);
+        if (utime && utime < minTimeSec) continue;
+        const inMsg = tx.in_msg;
+        if (!inMsg) continue;
+        const comment = extractTonComment(inMsg);
+        const value = BigInt(String(inMsg.value || '0'));
+        if (comment.includes(order.memo) && value >= minValue) {
+          const hash = String(tx.transaction_id?.hash || tx.hash || tx.transaction_id || 'onchain');
+          return { ok: true, txHash: hash };
+        }
+      }
+    } else {
+      toncenterFailed = true;
     }
+  } catch {
+    toncenterFailed = true;
+  }
+
+  // 2. High-availability secondary provider: TonAPI (tonapi.io)
+  try {
+    const tonapiUrl = `https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(order.recipientAddress)}/transactions?limit=30`;
+    const tonapiRes = await fetcher(tonapiUrl, { headers: { Accept: 'application/json' } });
+    if (tonapiRes.ok) {
+      const data = (await tonapiRes.json()) as { transactions?: any[] };
+      const txs = Array.isArray(data.transactions) ? data.transactions : [];
+      for (const tx of txs) {
+        const utime = Number(tx.utime || 0);
+        if (utime && utime < minTimeSec) continue;
+        const inMsg = tx.in_msg;
+        if (!inMsg) continue;
+        const comment = extractTonComment(inMsg);
+        const value = BigInt(String(inMsg.value || '0'));
+        if (comment.includes(order.memo) && value >= minValue) {
+          const hash = String(tx.hash || 'onchain_tonapi');
+          return { ok: true, txHash: hash };
+        }
+      }
+    }
+  } catch {
+    /* ignore fallback network errors */
+  }
+
+  if (toncenterFailed) {
+    return { ok: false, error: 'Could not reach TON network to verify payment. Retrying shortly.' };
   }
 
   return { ok: false, error: 'Matching on-chain transfer not found yet. Wait a few seconds and retry.' };
@@ -150,11 +199,19 @@ export async function verifyTonPayment(
   const match = await findMatchingTonPayment(order, env, opts.fetcher || fetch);
   if (!match.ok) return match;
 
+  // Single-use transaction hash guard: prevents replay attacks and double-spending
+  const txGuardKey = `ton:tx:${match.txHash}`;
+  const alreadyClaimed = await env.LUMINARA_KV.get(txGuardKey);
+  if (alreadyClaimed && alreadyClaimed !== orderId) {
+    return { ok: false, error: 'This on-chain transaction has already been credited to another order.' };
+  }
+
   const now = Date.now();
   order.status = 'confirmed';
   order.confirmedAt = now;
   order.txHash = match.txHash;
   await env.LUMINARA_KV.put(`ton:order:${orderId}`, JSON.stringify(order));
+  await env.LUMINARA_KV.put(txGuardKey, orderId, { expirationTtl: 86400 * 60 }); // Record hash for 60 days
 
   const accountId = await resolveAccountId(env, order.userId);
   const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null;

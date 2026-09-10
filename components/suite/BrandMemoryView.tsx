@@ -16,6 +16,8 @@ import {
 } from '../../services/competitors/competitorWatchlistService';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { registerSentinelTarget, fetchSentinelStatus, fetchQuotaStatus, subscribeQuota, type QuotaInfo } from '../../services/apiClient';
+import { mem0MemoryEngine } from '../../services/agentCore/mem0MemoryEngine';
+import { MemoryFact } from '../../services/agentCore/types';
 
 interface Props {
   dna: BusinessDNA | null;
@@ -38,7 +40,8 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   const [watchName, setWatchName] = useState('');
   const [sentinelMsg, setSentinelMsg] = useState<string | null>(null);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
-  const [tab, setTab] = useState<'timeline' | 'diff' | 'query' | 'watch' | 'agency'>('diff');
+  const [tab, setTab] = useState<'timeline' | 'diff' | 'query' | 'watch' | 'agency' | 'mem0'>('diff');
+  const [mem0Facts, setMem0Facts] = useState<MemoryFact[]>([]);
 
   const planId = quota?.plan || 'free';
   const entitlements = entitlementsFor(planId);
@@ -51,6 +54,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
     setAudits(auditHistoryService.list({ limit: 40 }));
     setClients(agencyWorkspaceService.list());
     setActiveClientId(agencyWorkspaceService.getActiveClientId());
+    setMem0Facts(mem0MemoryEngine.getFacts());
     const domain = auditHistoryService.list({ limit: 1 })[0]?.domain;
     if (domain) {
       setDiff(auditDiffService.diffSince(domain, 30 * 24 * 3600 * 1000));
@@ -64,7 +68,12 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   useEffect(() => {
     refresh();
     fetchQuotaStatus();
-    return subscribeQuota((q) => setQuota(q));
+    const unsubMem0 = mem0MemoryEngine.subscribe(() => setMem0Facts(mem0MemoryEngine.getFacts()));
+    const unsubQuota = subscribeQuota((q) => setQuota(q));
+    return () => {
+      unsubMem0();
+      unsubQuota();
+    };
   }, []);
 
   useEffect(() => {
@@ -151,8 +160,9 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   };
 
   const tabs: Array<{ id: typeof tab; label: string }> = [
-    { id: 'timeline', label: 'Memory timeline' },
     { id: 'diff', label: 'What changed' },
+    { id: 'mem0', label: '4-Tier Memory' },
+    { id: 'timeline', label: 'Memory timeline' },
     { id: 'query', label: 'Audit query' },
     { id: 'watch', label: 'Competitor watch' },
     { id: 'agency', label: 'Agency clients' },
@@ -419,6 +429,90 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
             >
               Upgrade to Pro / Agency
             </button>
+          )}
+        </div>
+      )}
+
+      {tab === 'mem0' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <span>🧠</span> Autonomous 4-Tier Knowledge Graph
+              </h3>
+              <p className="text-xs text-gray-400">
+                Mem0-inspired multi-tier memory. Learns silently from audits and chats, extracting facts and auto-resolving conflicts.
+              </p>
+            </div>
+            {mem0Facts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  mem0MemoryEngine.clear();
+                  refresh();
+                }}
+                className="px-3 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors"
+              >
+                Clear All Facts
+              </button>
+            )}
+          </div>
+
+          {mem0Facts.length === 0 ? (
+            <div className="p-8 text-center border border-white/10 rounded-2xl bg-white/[0.02]">
+              <span className="text-3xl block mb-2">🌱</span>
+              <p className="text-sm font-semibold text-white">No Autonomous Facts Extracted Yet</p>
+              <p className="text-xs text-gray-400 mt-1 max-w-md mx-auto">
+                Run an instant audit or converse with the Oracle Agent. The Mem0 engine will automatically extract brand identity, competitors, and technical health facts.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {mem0Facts.map((fact) => (
+                <div
+                  key={fact.id}
+                  className="p-4 rounded-xl border border-white/10 bg-slate-900/60 hover:border-slate-700 transition-all flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        {fact.tier.replace('_', ' ')}
+                      </span>
+                      <span className="text-[10px] text-emerald-400 font-mono">
+                        {Math.round(fact.confidence * 100)}% confidence
+                      </span>
+                    </div>
+                    <div className="text-xs font-mono text-cyan-300 font-semibold mb-1">
+                      {fact.key}
+                    </div>
+                    <p className="text-xs text-slate-200 leading-relaxed font-sans">
+                      {fact.value}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between pt-3 mt-3 border-t border-slate-800 text-[10px] text-slate-500">
+                    <span>Entity: {fact.entityId}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        mem0MemoryEngine.applyDelta({
+                          action: 'DELETE',
+                          tier: fact.tier,
+                          entityId: fact.entityId,
+                          key: fact.key,
+                          value: '',
+                          rationale: 'User pruned',
+                          confidence: 1,
+                        });
+                        refresh();
+                      }}
+                      className="text-rose-400 hover:text-rose-300 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

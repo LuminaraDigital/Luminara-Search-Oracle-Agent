@@ -7,6 +7,10 @@ import { freeLlmModalitiesService } from '../../services/freellm/modalitiesServi
 import { ICONS } from '../../constants';
 import { ReportDisplay } from './ReportDisplay';
 import { useConfirm } from '../ui/ConfirmModal';
+import { AgentMissionControl } from './AgentMissionControl';
+import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
+import { crewOrchestrator } from '../../services/agentCore/crewOrchestrator';
+import { AgentActivityEvent, AuditAttestation } from '../../services/agentCore/types';
 
 interface InstantAuditViewProps {
   dna: BusinessDNA | null;
@@ -23,6 +27,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
   const [report, setReport] = useState<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [briefing, setBriefing] = useState(false);
+  const [crewEvents, setCrewEvents] = useState<AgentActivityEvent[]>([]);
+  const [attestation, setAttestation] = useState<AuditAttestation | null>(null);
+  const [showAttestationModal, setShowAttestationModal] = useState(false);
   const isFullAudit = Boolean(dna);
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -32,39 +39,33 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
     if (!targetUrl.trim() || loading) return;
     setError(null);
     setLoading(true);
-    setProgressStage(isFullAudit ? 'Reading your website…' : 'Running a quick scout…');
-
-    const stages = isFullAudit
-      ? [
-          'Reading your website…',
-          'Checking how your pages read…',
-          'Checking live search results…',
-          'Reading your traffic…',
-          'Looking at your competitors…',
-          'Writing your one-move brief…',
-          'Almost done…',
-        ]
-      : [
-          'Running a quick scout…',
-          'Checking live search results…',
-          'Writing a short verdict…',
-          'Almost done…',
-        ];
-
-    let sIdx = 0;
-    if (stageTimerRef.current) clearInterval(stageTimerRef.current);
-    const interval = setInterval(() => {
-      sIdx++;
-      if (sIdx < stages.length) {
-        setProgressStage(stages[sIdx]);
-      }
-    }, 1800);
-    stageTimerRef.current = interval;
+    setCrewEvents([]);
+    setAttestation(null);
+    setProgressStage('Assembling autonomous search crew…');
 
     try {
       const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
+
+      // 1. Run the Autonomous Multi-Agent Search Crew with real-time streaming
+      const crewResult = await crewOrchestrator.runAuditCrew(
+        formattedUrl,
+        targetFocus,
+        dna,
+        (ev) => {
+          setCrewEvents((prev) => [...prev, ev]);
+          setProgressStage(ev.message);
+        }
+      );
+
+      if (crewResult.attestation) {
+        setAttestation(crewResult.attestation);
+      }
+
+      // 2. Generate full enriched report
       const result = await geminiService.generateAuditReport(formattedUrl, targetFocus, dna, lenses);
-      clearInterval(interval);
+      if (crewResult.plainEnglishBrief && !result.plainEnglishBrief) {
+        result.plainEnglishBrief = crewResult.plainEnglishBrief;
+      }
       setReport(result);
 
       try {
@@ -81,13 +82,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         /* graph ingest is best-effort */
       }
     } catch (err: any) {
-      clearInterval(interval);
       setError(err?.message || 'Failed to complete the audit. Check your AI keys in Settings and try again.');
     } finally {
-      if (stageTimerRef.current) {
-        clearInterval(stageTimerRef.current);
-        stageTimerRef.current = null;
-      }
       setLoading(false);
       setProgressStage('');
     }
@@ -100,6 +96,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
       setReport(null);
       setError(null);
       setUrl('');
+      setCrewEvents([]);
+      setAttestation(null);
     };
     // Only ask when there is a report to lose.
     if (!report) {
@@ -240,8 +238,26 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         </div>
       )}
 
+      {/* Agent Mission Control: Real-time Multi-Agent Activity Stream */}
+      {crewEvents.length > 0 && (
+        <AgentMissionControl
+          events={crewEvents}
+          isComplete={!loading && Boolean(report)}
+          hasAttestation={Boolean(attestation)}
+          onViewAttestation={() => setShowAttestationModal(true)}
+        />
+      )}
+
+      {/* Proof of Audit Modal */}
+      {showAttestationModal && attestation && (
+        <ProofOfAuditBadgeModal
+          attestation={attestation}
+          onClose={() => setShowAttestationModal(false)}
+        />
+      )}
+
       {/* Loading Skeleton */}
-      {loading && (
+      {loading && crewEvents.length === 0 && (
         <div className="glass-morphism rounded-2xl border border-gold/40 p-8 text-center space-y-6 animate-pulse">
           <div className="w-12 h-12 rounded-full border-2 border-gold/20 border-t-gold animate-spin mx-auto"></div>
           <div>

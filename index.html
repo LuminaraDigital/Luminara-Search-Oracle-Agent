@@ -490,7 +490,7 @@
   </style>
 </head>
 <body class="overflow-x-hidden">
-  <div id="boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Loading Luminara Suite" onclick="window.__dismissBootSplash &amp;&amp; window.__dismissBootSplash()" title="Click to skip">
+  <div id="boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Loading Luminara Suite" title="Click to skip">
     <div class="boot-glow" aria-hidden="true"></div>
     <div class="boot-mark">
       <img src="/favicon.png?v=20260909" alt="" width="88" height="88" decoding="async" fetchpriority="high" />
@@ -509,8 +509,12 @@
         setTimeout(function() { try { el.remove(); } catch(e){} }, 800);
       }
     };
-    // Failsafe: Automatically dismiss the boot splash if React mounting stalls past 2s
-    setTimeout(window.__dismissBootSplash, 2000);
+    var splash = document.getElementById('boot-splash');
+    if (splash) {
+      splash.addEventListener('click', function() { window.__dismissBootSplash(); });
+    }
+    // Failsafe: Automatically dismiss the boot splash if React mounting stalls past 1.5s
+    setTimeout(window.__dismissBootSplash, 1500);
   </script>
   <script type="module" src="./index.tsx"></script>
 </body>
