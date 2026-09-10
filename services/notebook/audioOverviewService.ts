@@ -58,7 +58,7 @@ export class AudioOverviewService {
       .map((s, i) => `[Source ${i + 1}: ${s.title}]\n${s.content.slice(0, 2500)}`)
       .join('\n\n');
 
-    const prompt = `You are the executive director of a top-tier tech and AI podcast (like NotebookLM Audio Deep Dive).
+    const prompt = `You are the executive director of Luminara Deep Dive, a top-tier executive intelligence and AI visibility audio briefing.
 Write a natural, engaging, and analytical conversational dialogue between two expert AI hosts discussing the following sources:
 - Host 1: "Alex" (Inquisitive, sets the stage, frames the strategic big picture, energetic tone).
 - Host 2: "Sam" (Analytical, digs into specifics, pulls out technical nuances, competitive data, and actionable takeaways).

@@ -1,5 +1,5 @@
 /**
- * Luminara NotebookLM Intelligence Studio Service
+ * Luminara Intelligence Studio Service
  * 
  * Manages source-grounded research notebooks, strict citation RAG querying,
  * source ingestion (URLs, audits, DNA, text, files), and studio artifacts
@@ -21,8 +21,10 @@ import { aiProviderService } from '../aiProviderService';
 import { UnifiedScraperService } from '../scraping/unifiedScraper';
 import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
 
-const NOTEBOOKS_STORAGE_KEY = 'luminara_notebooklm_dossiers';
-const ACTIVE_NOTEBOOK_KEY = 'luminara_notebooklm_active_id';
+const NOTEBOOKS_STORAGE_KEY = 'luminara_studio_dossiers';
+const LEGACY_NOTEBOOKS_KEY = 'luminara_notebooklm_dossiers';
+const ACTIVE_NOTEBOOK_KEY = 'luminara_studio_active_id';
+const LEGACY_ACTIVE_KEY = 'luminara_notebooklm_active_id';
 
 export const DEMO_NOTEBOOK: Notebook = {
   id: 'demo-notebook-aeo',
@@ -211,7 +213,7 @@ export class NotebookService {
   public listNotebooks(): Notebook[] {
     if (typeof window === 'undefined') return [DEMO_NOTEBOOK];
     try {
-      const raw = localStorage.getItem(NOTEBOOKS_STORAGE_KEY);
+      const raw = localStorage.getItem(NOTEBOOKS_STORAGE_KEY) || localStorage.getItem(LEGACY_NOTEBOOKS_KEY);
       if (!raw) {
         // Initialize with default demo notebook
         this.saveNotebooks([DEMO_NOTEBOOK]);
@@ -232,7 +234,7 @@ export class NotebookService {
   public getActiveNotebookId(): string {
     if (typeof window === 'undefined') return DEMO_NOTEBOOK.id;
     try {
-      const saved = localStorage.getItem(ACTIVE_NOTEBOOK_KEY);
+      const saved = localStorage.getItem(ACTIVE_NOTEBOOK_KEY) || localStorage.getItem(LEGACY_ACTIVE_KEY);
       if (saved) return saved;
     } catch {}
     const notebooks = this.listNotebooks();
@@ -494,7 +496,7 @@ export class NotebookService {
       return `--- [SOURCE ${idx + 1}: ${s.title}] (ID: ${s.id}) ---\n${s.content.slice(0, 4000)}\n`;
     }).join('\n\n');
 
-    const systemPrompt = `You are a strict, grounded research intelligence engine (NotebookLM standard).
+    const systemPrompt = `You are a strict, grounded research intelligence engine (Luminara Grounded Intelligence standard).
 You answer questions ONLY using facts provided in the following SOURCES.
 
 Grounding Rules:
@@ -639,7 +641,7 @@ ${formattedCorpus}
         break;
     }
 
-    const systemPrompt = `You are the Luminara NotebookLM Studio synthesizer.
+    const systemPrompt = `You are the Luminara Intelligence Studio synthesizer.
 Synthesize the provided sources into a world-class documentation artifact.
 Strictly ground all points in the sources.
 

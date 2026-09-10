@@ -46,8 +46,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
     },
     {
       id: AppView.NOTEBOOK,
-      title: 'NotebookLM Studio',
-      desc: 'Multi-source grounded intelligence, dual-host audio podcasts, and briefing docs.',
+      title: 'Intelligence Studio',
+      desc: 'Multi-source grounded dossiers, dual-host audio overviews, and briefing docs.',
       icon: ICONS.Notebook,
       badge: 'Studio',
     },

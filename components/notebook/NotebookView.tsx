@@ -452,7 +452,7 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
                   What would you like to know from your sources?
                 </h3>
                 <p className="text-xs text-gray-400 mb-6 leading-relaxed">
-                  Luminara NotebookLM answers strictly from your selected sources with numbered interactive citations.
+                  Luminara Studio answers strictly from your selected sources with numbered interactive citations.
                 </p>
 
                 {/* Prompt Starters */}

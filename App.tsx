@@ -813,9 +813,9 @@ const App: React.FC = () => {
             className={`px-3 py-1.5 rounded-lg text-[10px] ${
               view === AppView.NOTEBOOK ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
-            title="NotebookLM Studio - Source Grounded Research & Podcasts"
+            title="Luminara Studio - Grounded Research Dossiers & Audio Overviews"
           >
-            Notebooks
+            Studio
           </Button>
 
           {/* Command Suite Dropdown */}
@@ -855,7 +855,7 @@ const App: React.FC = () => {
                 >
                   <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
                   <div className="flex items-center justify-between flex-1">
-                    <span className="font-bold">NotebookLM Studio</span>
+                    <span className="font-bold">Intelligence Studio</span>
                     <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold">STUDIO</span>
                   </div>
                 </button>
@@ -1165,7 +1165,7 @@ const App: React.FC = () => {
           <VisionView />
         )}
 
-        {/* VIEW: NotebookLM Studio */}
+        {/* VIEW: Luminara Intelligence Studio */}
         {view === AppView.NOTEBOOK && (
           <NotebookView dna={dna} />
         )}

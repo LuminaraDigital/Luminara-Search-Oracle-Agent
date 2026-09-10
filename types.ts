@@ -1104,7 +1104,7 @@ export interface SwitchyardMetrics {
 }
 
 // ---------------------------------------------------------------------------
-// NotebookLM Studio (Source-Grounded Research & Synthesis Workspace)
+// Luminara Intelligence Studio (Source-Grounded Research & Synthesis Workspace)
 // ---------------------------------------------------------------------------
 
 export type NotebookSourceType = 'url' | 'text' | 'file' | 'audit' | 'serp' | 'dna';
