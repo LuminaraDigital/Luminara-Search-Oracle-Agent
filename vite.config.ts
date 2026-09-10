@@ -72,7 +72,14 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    define,
+    // @ton/core expects Node globals in the browser bundle.
+    define: {
+      ...define,
+      global: 'globalThis',
+    },
+    optimizeDeps: {
+      include: ['buffer'],
+    },
     server: {
       port: 3000,
       // Bind to loopback by default: the dev server proxies the Umami key and must not be reachable
@@ -132,6 +139,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        buffer: 'buffer/',
       },
     },
   };

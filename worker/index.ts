@@ -1620,7 +1620,26 @@ export default {
     }
 
     // Static assets with SPA fallback (configured in wrangler.jsonc); security headers + CSP on the HTML shell.
-    return withSecurityHeaders(await env.ASSETS.fetch(request));
+    const assetResponse = await env.ASSETS.fetch(request);
+    // Vite hashed files under /assets must never fall through to index.html. SPA HTML for a
+    // missing *.js chunk makes dynamic import() fail with "Failed to fetch dynamically imported module".
+    const contentType = assetResponse.headers.get('content-type') || '';
+    if (
+      url.pathname.startsWith('/assets/') &&
+      assetResponse.ok &&
+      contentType.includes('text/html')
+    ) {
+      return withSecurityHeaders(
+        new Response('Not found', {
+          status: 404,
+          headers: {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+        }),
+      );
+    }
+    return withSecurityHeaders(assetResponse);
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(runSentinelScan(env));

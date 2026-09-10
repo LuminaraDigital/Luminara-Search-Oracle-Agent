@@ -26,31 +26,33 @@ import { hasSeenIntroThisSession } from './services/intro/appIntro';
 import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
+import { lazyWithReload } from './utils/lazyWithReload';
 
-// Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean
-const LegalPage = React.lazy(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
-const InfrastructurePage = React.lazy(() => import('./components/InfrastructurePage'));
-const IntelligencePage = React.lazy(() => import('./components/IntelligencePage'));
-const WhyLuminaraPage = React.lazy(() => import('./components/WhyLuminaraPage'));
-const PricingPage = React.lazy(() => import('./components/PricingPage'));
-const InstantAuditView = React.lazy(() => import('./components/audit/InstantAuditView').then(m => ({ default: m.InstantAuditView })));
-const BusinessDNAView = React.lazy(() => import('./components/suite/BusinessDNAView').then(m => ({ default: m.BusinessDNAView })));
-const BrandMemoryView = React.lazy(() => import('./components/suite/BrandMemoryView').then(m => ({ default: m.BrandMemoryView })));
-const DashboardView = React.lazy(() => import('./components/suite/DashboardView').then(m => ({ default: m.DashboardView })));
-const StressTestView = React.lazy(() => import('./components/suite/StressTestView').then(m => ({ default: m.StressTestView })));
-const DataAnalystView = React.lazy(() => import('./components/suite/DataAnalystView').then(m => ({ default: m.DataAnalystView })));
-const OrganizerView = React.lazy(() => import('./components/suite/OrganizerView').then(m => ({ default: m.OrganizerView })));
-const ResearchView = React.lazy(() => import('./components/suite/ResearchView').then(m => ({ default: m.ResearchView })));
-const VisionView = React.lazy(() => import('./components/suite/VisionView').then(m => ({ default: m.VisionView })));
-const TimesFMView = React.lazy(() => import('./components/suite/TimesFMView').then(m => ({ default: m.TimesFMView })));
-const OracleMindView = React.lazy(() => import('./components/suite/OracleMindView').then(m => ({ default: m.OracleMindView })));
-const ArchyHarnessView = React.lazy(() => import('./components/harness/ArchyHarnessView').then(m => ({ default: m.ArchyHarnessView })));
-const OmnibarModal = React.lazy(() => import('./components/harness/OmnibarModal').then(m => ({ default: m.OmnibarModal })));
-const ApiKeyModal = React.lazy(() => import('./components/ApiKeyModal').then(m => ({ default: m.ApiKeyModal })));
-const PaywallModal = React.lazy(() => import('./components/paywall/PaywallModal').then(m => ({ default: m.PaywallModal })));
-const AppIntroOverlay = React.lazy(() => import('./components/intro/AppIntroOverlay').then(m => ({ default: m.AppIntroOverlay })));
-const TelegramAccountPanel = React.lazy(() => import('./components/telegram/TelegramAccountPanel').then(m => ({ default: m.TelegramAccountPanel })));
-const NotebookView = React.lazy(() => import('./components/notebook/NotebookView').then(m => ({ default: m.NotebookView })));
+// Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
+// lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
+const LegalPage = lazyWithReload(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
+const InfrastructurePage = lazyWithReload(() => import('./components/InfrastructurePage'));
+const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
+const WhyLuminaraPage = lazyWithReload(() => import('./components/WhyLuminaraPage'));
+const PricingPage = lazyWithReload(() => import('./components/PricingPage'));
+const InstantAuditView = lazyWithReload(() => import('./components/audit/InstantAuditView').then(m => ({ default: m.InstantAuditView })));
+const BusinessDNAView = lazyWithReload(() => import('./components/suite/BusinessDNAView').then(m => ({ default: m.BusinessDNAView })));
+const BrandMemoryView = lazyWithReload(() => import('./components/suite/BrandMemoryView').then(m => ({ default: m.BrandMemoryView })));
+const DashboardView = lazyWithReload(() => import('./components/suite/DashboardView').then(m => ({ default: m.DashboardView })));
+const StressTestView = lazyWithReload(() => import('./components/suite/StressTestView').then(m => ({ default: m.StressTestView })));
+const DataAnalystView = lazyWithReload(() => import('./components/suite/DataAnalystView').then(m => ({ default: m.DataAnalystView })));
+const OrganizerView = lazyWithReload(() => import('./components/suite/OrganizerView').then(m => ({ default: m.OrganizerView })));
+const ResearchView = lazyWithReload(() => import('./components/suite/ResearchView').then(m => ({ default: m.ResearchView })));
+const VisionView = lazyWithReload(() => import('./components/suite/VisionView').then(m => ({ default: m.VisionView })));
+const TimesFMView = lazyWithReload(() => import('./components/suite/TimesFMView').then(m => ({ default: m.TimesFMView })));
+const OracleMindView = lazyWithReload(() => import('./components/suite/OracleMindView').then(m => ({ default: m.OracleMindView })));
+const ArchyHarnessView = lazyWithReload(() => import('./components/harness/ArchyHarnessView').then(m => ({ default: m.ArchyHarnessView })));
+const OmnibarModal = lazyWithReload(() => import('./components/harness/OmnibarModal').then(m => ({ default: m.OmnibarModal })));
+const ApiKeyModal = lazyWithReload(() => import('./components/ApiKeyModal').then(m => ({ default: m.ApiKeyModal })));
+const PaywallModal = lazyWithReload(() => import('./components/paywall/PaywallModal').then(m => ({ default: m.PaywallModal })));
+const AppIntroOverlay = lazyWithReload(() => import('./components/intro/AppIntroOverlay').then(m => ({ default: m.AppIntroOverlay })));
+const TelegramAccountPanel = lazyWithReload(() => import('./components/telegram/TelegramAccountPanel').then(m => ({ default: m.TelegramAccountPanel })));
+const NotebookView = lazyWithReload(() => import('./components/notebook/NotebookView').then(m => ({ default: m.NotebookView })));
 
 const ViewLoader: React.FC<{ label?: string }> = ({ label = 'Loading view' }) => (
   <div className="flex-1 flex flex-col items-center justify-center min-h-[350px] gap-3 p-6 text-center animate-in fade-in duration-200">
