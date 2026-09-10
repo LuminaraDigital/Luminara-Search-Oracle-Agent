@@ -57,9 +57,9 @@ describe('Native LLM Trinity (NVIDIA NIM, Groq, Ollama)', () => {
   });
 
   describe('Native Engine Priority & Resolution', () => {
-    it('defaults native priority to NVIDIA NIM -> Groq -> OpenRouter -> Ollama', () => {
+    it('defaults native priority to NVIDIA NIM -> Groq -> OpenRouter -> Ollama -> FreeLLM', () => {
       const order = configService.getNativePriority();
-      expect(order).toEqual(['nim', 'groq', 'openrouter', 'ollama']);
+      expect(order).toEqual(['nim', 'groq', 'openrouter', 'ollama', 'freellm']);
     });
 
     it('prioritizes NVIDIA NIM when configured', async () => {

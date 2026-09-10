@@ -94,6 +94,36 @@ export const DEFAULT_SWITCHYARD_TARGETS: SwitchyardTarget[] = [
     costPerMillionTokens: 3.50,
     latencyBaselineMs: 920,
   },
+  {
+    id: 'freellm_fast',
+    name: 'FreeLLMAPI auto:fast',
+    provider: 'freellm',
+    model: 'auto:fast',
+    role: 'efficient',
+    tokensPerSec: 200,
+    costPerMillionTokens: 0.0,
+    latencyBaselineMs: 220,
+  },
+  {
+    id: 'freellm_smart',
+    name: 'FreeLLMAPI auto:smart',
+    provider: 'freellm',
+    model: 'auto:smart',
+    role: 'capable',
+    tokensPerSec: 80,
+    costPerMillionTokens: 0.0,
+    latencyBaselineMs: 600,
+  },
+  {
+    id: 'freellm_advisor',
+    name: 'FreeLLMAPI auto:smart (Advisor)',
+    provider: 'freellm',
+    model: 'auto:smart',
+    role: 'advisor',
+    tokensPerSec: 60,
+    costPerMillionTokens: 0.0,
+    latencyBaselineMs: 900,
+  },
 ];
 
 export const DEFAULT_SWITCHYARD_ROUTES: SwitchyardRouteConfig[] = [
@@ -392,20 +422,50 @@ export class SwitchyardRouterService {
 
     // Execute generation
     let outputText = '';
-    const activeTarget = this.targets.get(chosenTargetId) || efficientTarget;
+    let activeTarget = this.targets.get(chosenTargetId) || efficientTarget;
+
+    // Task-aware FreeLLMAPI gateway: map efficient -> auto:fast, capable/advisor -> auto:smart
+    // without rewriting every vendor adapter. Only when BYOK FreeLLMAPI is preferred.
+    if (
+      configService.getFreeLlmKey() &&
+      configService.isFreeLlmPreferGateway() &&
+      activeTarget.provider !== 'gemini'
+    ) {
+      const priorRole = activeTarget.role;
+      const freellmTarget =
+        priorRole === 'efficient'
+          ? this.targets.get('freellm_fast')
+          : priorRole === 'advisor'
+            ? this.targets.get('freellm_advisor')
+            : this.targets.get('freellm_smart');
+      if (freellmTarget) {
+        activeTarget = freellmTarget;
+        steps.push({
+          stage: 'FreeLLMAPI Task Route',
+          chosenTarget: freellmTarget.name,
+          reason: `Prefer-gateway ON: mapped ${priorRole} role to ${freellmTarget.model} via unified FreeLLMAPI sidecar.`,
+          confidence: 0.9,
+          timestamp: Date.now(),
+        });
+      }
+    }
 
     if (liveExecute) {
       try {
         if (activeTarget.provider === 'gemini' && getApiKey()) {
           outputText = await geminiService.generateText(prompt, activeTarget.model);
         } else {
-          // Use multi-LLM provider service (Groq / NIM)
           const provider = aiProviderService.getProvider(activeTarget.provider);
           if (provider && (await provider.isAvailable())) {
             const gen = await provider.generateText(prompt, { model: activeTarget.model });
             outputText = gen.text;
           } else {
-            const fallbackGen = await aiProviderService.generateWithFallback(prompt);
+            // Failover with task model hint when FreeLLM gateway is preferred
+            const modelHint =
+              configService.getFreeLlmKey() && configService.isFreeLlmPreferGateway()
+                ? (activeTarget.role === 'efficient' ? 'auto:fast' : 'auto:smart')
+                : undefined;
+            const fallbackGen = await aiProviderService.generateWithFallback(prompt, modelHint ? { model: modelHint } : undefined);
             outputText = fallbackGen.text;
           }
         }

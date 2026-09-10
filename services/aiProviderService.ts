@@ -602,6 +602,144 @@ export class OllamaNativeProvider extends BaseAIProvider {
 }
 
 /**
+ * FreeLLMAPI Gateway Provider (BYOK sidecar)
+ * OpenAI-compatible `/v1` against a local or self-hosted FreeLLMAPI router.
+ * Uses direct browser fetch (not Worker-hosted keys) so localhost sidecars work.
+ */
+export class FreeLlmProvider extends BaseAIProvider {
+  id = 'freellm';
+  name = 'FreeLLMAPI Gateway';
+  type: AIProviderType = 'freellm';
+  config = {
+    model: 'auto',
+    endpoint: 'http://localhost:3001/v1/chat/completions',
+    temperature: 0.7,
+    maxTokens: 4096,
+  };
+  capabilities = {
+    streaming: true,
+    functionCalling: true,
+    vision: true,
+    audio: true,
+    maxContextLength: 128000,
+  };
+
+  private getActiveApiKey(): string {
+    return configService.getFreeLlmKey();
+  }
+
+  private chatUrl(): string {
+    return `${configService.getFreeLlmBaseUrl()}/chat/completions`;
+  }
+
+  async isAvailable(): Promise<boolean> {
+    return Boolean(this.getActiveApiKey());
+  }
+
+  async generateText(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
+    const key = this.getActiveApiKey();
+    const model = options?.model || this.config.model;
+    const startTime = Date.now();
+    const messages = buildChatMessages(prompt, options);
+
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      temperature: options?.temperature ?? this.config.temperature,
+      max_tokens: options?.maxTokens ?? this.config.maxTokens,
+    };
+
+    if (options?.jsonMode) {
+      body.response_format = { type: 'json_object' };
+    }
+
+    const response = await fetch(this.chatUrl(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`FreeLLMAPI error (${response.status}): ${errText}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || '';
+    const latencyMs = Date.now() - startTime;
+    const usage = data.usage || {};
+
+    return {
+      text,
+      tokenUsage: {
+        prompt: usage.prompt_tokens || this.estimateTokens(prompt),
+        completion: usage.completion_tokens || this.estimateTokens(text),
+        total: usage.total_tokens || (this.estimateTokens(prompt) + this.estimateTokens(text)),
+      },
+      finishReason: (data.choices?.[0]?.finish_reason as GenerateFinishReason) || 'stop',
+      latencyMs,
+    };
+  }
+
+  async *streamText(prompt: string, options?: GenerateOptions): AsyncIterable<StreamChunk> {
+    const key = this.getActiveApiKey();
+    const model = options?.model || this.config.model;
+    const messages = buildChatMessages(prompt, options);
+
+    const response = await fetch(this.chatUrl(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: options?.temperature ?? this.config.temperature,
+        max_tokens: options?.maxTokens ?? this.config.maxTokens,
+        stream: true,
+      }),
+    });
+
+    if (!response.ok || !response.body) {
+      const errText = await response.text();
+      throw new Error(`FreeLLMAPI stream error (${response.status}): ${errText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const dataStr = trimmed.slice(6);
+        if (dataStr === '[DONE]') return;
+        try {
+          const parsed = JSON.parse(dataStr);
+          const delta = parsed.choices?.[0]?.delta?.content;
+          if (delta) {
+            yield { text: delta };
+          }
+        } catch {
+          // ignore chunk boundary parse errors
+        }
+      }
+    }
+  }
+}
+
+/**
  * OpenRouter Provider (Frontier Multi-Model Router: Claude 3.5, GPT-4o, DeepSeek R1, Llama 3.3)
  */
 export class OpenRouterProvider extends BaseAIProvider {
@@ -747,19 +885,23 @@ export class OpenRouterProvider extends BaseAIProvider {
 
 /**
  * Unified AI Provider Service
- * Native Orchestrator: Groq LPU, NVIDIA NIM, OpenRouter, and Ollama Local/Cloud
- * With automatic engine searching and seamless pop-up failovers.
+ * Native Orchestrator: Groq LPU, NVIDIA NIM, OpenRouter, Ollama, and optional FreeLLMAPI BYOK gateway.
+ * With automatic engine searching, 429 cooldowns, and seamless pop-up failovers.
  */
 export class AIProviderService {
   private static instance: AIProviderService;
   private providers: Map<string, AIProvider> = new Map();
   private lastActiveEngine: NativeEngineId = 'nim';
+  /** providerId -> cooldown-until epoch ms (rate-limit / 5xx soft skip) */
+  private cooldowns: Map<string, number> = new Map();
+  private static readonly COOLDOWN_MS = 60_000;
 
   private constructor() {
     this.registerProvider(new NvidiaNimProvider());
     this.registerProvider(new GroqProvider());
     this.registerProvider(new OpenRouterProvider());
     this.registerProvider(new OllamaNativeProvider());
+    this.registerProvider(new FreeLlmProvider());
   }
 
   public static getInstance(): AIProviderService {
@@ -785,8 +927,41 @@ export class AIProviderService {
     return this.lastActiveEngine;
   }
 
+  private isCoolingDown(providerId: string): boolean {
+    const until = this.cooldowns.get(providerId);
+    if (!until) return false;
+    if (Date.now() >= until) {
+      this.cooldowns.delete(providerId);
+      return false;
+    }
+    return true;
+  }
+
+  private markCooldown(providerId: string, err?: unknown): void {
+    const msg = String((err as any)?.message || err || '').toLowerCase();
+    const isRateOrServer =
+      msg.includes('(429)') ||
+      msg.includes('429') ||
+      msg.includes('rate limit') ||
+      msg.includes('(503)') ||
+      msg.includes('(502)') ||
+      msg.includes('(500)') ||
+      msg.includes('overloaded') ||
+      msg.includes('capacity');
+    if (isRateOrServer) {
+      this.cooldowns.set(providerId, Date.now() + AIProviderService.COOLDOWN_MS);
+    }
+  }
+
+  /** Exposed for tests and HUD diagnostics. */
+  public getCooldownRemainingMs(providerId: string): number {
+    const until = this.cooldowns.get(providerId);
+    if (!until) return 0;
+    return Math.max(0, until - Date.now());
+  }
+
   /**
-   * Search and probe all 3 native engines concurrently
+   * Search and probe all native engines concurrently
    * Returns live availability, local/cloud flag, and ping latency
    */
   public async searchAndProbeNativeProviders(): Promise<NativeEngineStatus[]> {
@@ -805,7 +980,7 @@ export class AIProviderService {
       name: 'NVIDIA NIM Enterprise',
       provider: 'NVIDIA',
       model: 'meta/llama-3.3-70b-instruct',
-      isAvailable: Boolean(hasNim),
+      isAvailable: Boolean(hasNim) && !this.isCoolingDown('nim'),
       isLocal: false,
       endpoint: 'integrate.api.nvidia.com/v1',
       latencyMs: nimLatency,
@@ -826,7 +1001,7 @@ export class AIProviderService {
       name: 'Groq Cloud LPU',
       provider: 'Groq',
       model: 'llama-3.3-70b-versatile',
-      isAvailable: Boolean(hasGroq),
+      isAvailable: Boolean(hasGroq) && !this.isCoolingDown('groq'),
       isLocal: false,
       endpoint: 'api.groq.com/openai/v1',
       latencyMs: groqLatency,
@@ -847,7 +1022,7 @@ export class AIProviderService {
       name: 'OpenRouter Frontier Intelligence',
       provider: 'OpenRouter',
       model: 'openai/gpt-4o',
-      isAvailable: Boolean(hasOpenRouter),
+      isAvailable: Boolean(hasOpenRouter) && !this.isCoolingDown('openrouter'),
       isLocal: false,
       endpoint: 'openrouter.ai/api/v1',
       latencyMs: openrouterLatency,
@@ -863,7 +1038,7 @@ export class AIProviderService {
       name: ollamaProbe?.isLocal ? 'Ollama Local Daemon' : 'Ollama Cloud Gateway',
       provider: 'Ollama',
       model: 'llama3.2',
-      isAvailable: Boolean(ollamaProbe?.available),
+      isAvailable: Boolean(ollamaProbe?.available) && !this.isCoolingDown('ollama'),
       isLocal: Boolean(ollamaProbe?.isLocal),
       endpoint: ollamaProbe?.isLocal ? configService.getOllamaEndpoint() : 'ollama.com',
       latencyMs: 0,
@@ -872,18 +1047,40 @@ export class AIProviderService {
       detectedModels: ollamaProbe?.models || [],
     });
 
+    // 5. Probe FreeLLMAPI BYOK gateway
+    const freellm = this.getProvider('freellm') as FreeLlmProvider;
+    const hasFreeLlm = await freellm?.isAvailable();
+    let freellmLatency = 0;
+    if (hasFreeLlm) {
+      const ping = await configService.testFreeLlm();
+      freellmLatency = ping.latencyMs;
+    }
+    const freellmBase = configService.getFreeLlmBaseUrl();
+    results.push({
+      id: 'freellm',
+      name: 'FreeLLMAPI Gateway',
+      provider: 'FreeLLMAPI',
+      model: 'auto',
+      isAvailable: Boolean(hasFreeLlm) && !this.isCoolingDown('freellm'),
+      isLocal: /localhost|127\.0\.0\.1/i.test(freellmBase),
+      endpoint: freellmBase.replace(/^https?:\/\//, ''),
+      latencyMs: freellmLatency,
+      tokenSpeed: 'auto:fast / auto:smart',
+      lastChecked: Date.now(),
+    });
+
     return results;
   }
 
   /**
-   * Determine best available native provider in priority order:
-   * Defaults to: Groq -> NVIDIA NIM -> Ollama
-   * Or user customized order via configService.getNativePriority()
+   * Determine best available native provider in priority order.
+   * Skips engines in 429/5xx cooldown so mid-run audits keep progressing.
    */
   public async getBestAvailableProvider(): Promise<AIProvider | null> {
     const order = configService.getNativePriority();
 
     for (const providerId of order) {
+      if (this.isCoolingDown(providerId)) continue;
       const provider = this.getProvider(providerId);
       if (provider && (await provider.isAvailable())) {
         this.lastActiveEngine = providerId as NativeEngineId;
@@ -900,7 +1097,7 @@ export class AIProviderService {
   public dispatchFailover(event: NativeFailoverEvent): void {
     if (typeof window !== 'undefined') {
       console.warn(
-        `[Native Trinity Failover] 🚨 ${event.failedProvider} failed (${event.reason}) ➜ Automatically popped up ${event.activatedProvider} (${event.activatedModel})`
+        `[Native Trinity Failover] ${event.failedProvider} failed (${event.reason}) -> Automatically popped up ${event.activatedProvider} (${event.activatedModel})`
       );
       window.dispatchEvent(new CustomEvent('luminara-llm-failover', { detail: event }));
     }
@@ -918,9 +1115,7 @@ export class AIProviderService {
   }
 
   /**
-   * Automatic failover text generation:
-   * Focuses natively on Groq, NVIDIA NIM, and Ollama.
-   * When one fails, the other automatically pops up!
+   * Automatic failover text generation with rate-limit cooldown.
    */
   public async generateWithFallback(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
     return this.generateWithFailover(prompt, options);
@@ -932,6 +1127,7 @@ export class AIProviderService {
 
     for (let i = 0; i < order.length; i++) {
       const providerId = order[i];
+      if (this.isCoolingDown(providerId)) continue;
       const provider = this.getProvider(providerId);
 
       if (!provider || !(await provider.isAvailable())) {
@@ -942,18 +1138,19 @@ export class AIProviderService {
       try {
         const result = await provider.generateText(prompt, options);
         this.lastActiveEngine = providerId as NativeEngineId;
-        this.dispatchActiveEngine(provider.id, provider.config.model);
+        this.dispatchActiveEngine(provider.id, options?.model || provider.config.model);
         return result;
       } catch (err: any) {
         lastError = err;
-        const nextId = order[i + 1];
+        this.markCooldown(providerId, err);
+        const nextId = order.slice(i + 1).find(id => !this.isCoolingDown(id) && this.getProvider(id));
         const nextProvider = nextId ? this.getProvider(nextId) : null;
 
         if (nextProvider) {
           const reason = err?.message || 'Execution Error';
           this.dispatchFailover({
             failedProvider: provider.name,
-            failedModel: provider.config.model,
+            failedModel: options?.model || provider.config.model,
             reason: reason.length > 80 ? `${reason.slice(0, 77)}...` : reason,
             activatedProvider: nextProvider.name,
             activatedModel: nextProvider.config.model,
@@ -964,13 +1161,11 @@ export class AIProviderService {
       }
     }
 
-    throw lastError || new Error('No native AI providers (Groq, NVIDIA NIM, Ollama) available or responsive.');
+    throw lastError || new Error('No native AI providers (Groq, NVIDIA NIM, Ollama, FreeLLMAPI) available or responsive.');
   }
 
   /**
-   * Automatic failover streaming:
-   * Prioritizes Groq, NVIDIA NIM, and Ollama.
-   * When one fails, the other automatically pops up and fulfills the stream!
+   * Automatic failover streaming with rate-limit cooldown.
    */
   public async *streamWithFallback(prompt: string, options?: GenerateOptions): AsyncIterable<StreamChunk> {
     yield* this.streamWithFailover(prompt, options);
@@ -983,6 +1178,7 @@ export class AIProviderService {
 
     for (let i = 0; i < order.length; i++) {
       const providerId = order[i];
+      if (this.isCoolingDown(providerId)) continue;
       const provider = this.getProvider(providerId);
 
       if (!provider || !(await provider.isAvailable())) {
@@ -1001,11 +1197,12 @@ export class AIProviderService {
 
         if (streamSucceeded) {
           this.lastActiveEngine = providerId as NativeEngineId;
-          this.dispatchActiveEngine(provider.id, provider.config.model);
+          this.dispatchActiveEngine(provider.id, options?.model || provider.config.model);
           return;
         }
       } catch (err: any) {
         lastError = err;
+        this.markCooldown(providerId, err);
         // If we already yielded tokens to the user, we cannot seamlessly restart from scratch without duplicate content
         if (yieldedAny) {
           console.error(`[Stream Mid-Flight Failure] ${provider.name} stream was severed:`, err);
@@ -1013,15 +1210,14 @@ export class AIProviderService {
           return;
         }
 
-        // Before any tokens yielded: trigger immediate auto-failover to next native provider!
-        const nextId = order[i + 1];
+        const nextId = order.slice(i + 1).find(id => !this.isCoolingDown(id) && this.getProvider(id));
         const nextProvider = nextId ? this.getProvider(nextId) : null;
 
         if (nextProvider) {
           const reason = err?.message || 'Connection Refused / Rate Limited';
           this.dispatchFailover({
             failedProvider: provider.name,
-            failedModel: provider.config.model,
+            failedModel: options?.model || provider.config.model,
             reason: reason.length > 80 ? `${reason.slice(0, 77)}...` : reason,
             activatedProvider: nextProvider.name,
             activatedModel: nextProvider.config.model,
@@ -1033,7 +1229,7 @@ export class AIProviderService {
     }
 
     if (!streamSucceeded) {
-      throw lastError || new Error('All native inference providers (Groq, NVIDIA NIM, Ollama) failed.');
+      throw lastError || new Error('All native inference providers (Groq, NVIDIA NIM, Ollama, FreeLLMAPI) failed.');
     }
   }
 }

@@ -28,6 +28,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   const [nvidiaOrgId, setNvidiaOrgId] = useState('');
   const [openRouterKey, setOpenRouterKey] = useState('');
   const [ollamaKey, setOllamaKey] = useState('');
+  const [freeLlmKey, setFreeLlmKey] = useState('');
+  const [freeLlmBaseUrl, setFreeLlmBaseUrl] = useState('http://localhost:3001/v1');
+  const [freeLlmPrefer, setFreeLlmPrefer] = useState(true);
   const [tavilyKey, setTavilyKey] = useState('');
   const [exaKey, setExaKey] = useState('');
   const [localSerpUrl, setLocalSerpUrl] = useState('http://localhost:3001');
@@ -61,6 +64,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     setNvidiaOrgId(localStorage.getItem('luminara_nvidia_org_id') || '');
     setOpenRouterKey(localStorage.getItem('luminara_openrouter_key') || '');
     setOllamaKey(localStorage.getItem('luminara_ollama_key') || '');
+    setFreeLlmKey(localStorage.getItem('luminara_freellm_key') || '');
+    setFreeLlmBaseUrl(configService.getFreeLlmBaseUrl());
+    setFreeLlmPrefer(configService.isFreeLlmPreferGateway());
     setTavilyKey(localStorage.getItem('luminara_tavily_key') || '');
     setExaKey(localStorage.getItem('luminara_exa_key') || '');
     setLocalSerpUrl(configService.getLocalSerpUrl());
@@ -112,6 +118,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     configService.setKey('luminara_nvidia_org_id', nvidiaOrgId);
     configService.setKey('luminara_openrouter_key', openRouterKey);
     configService.setKey('luminara_ollama_key', ollamaKey);
+    configService.setFreeLlmKey(freeLlmKey);
+    configService.setFreeLlmBaseUrl(freeLlmBaseUrl);
+    configService.setFreeLlmPreferGateway(freeLlmPrefer);
     configService.setKey('luminara_tavily_key', tavilyKey);
     configService.setKey('luminara_exa_key', exaKey);
     configService.setLocalSerpUrl(localSerpUrl);
@@ -155,6 +164,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
       res = await configService.testNvidia();
     } else if (providerId === 'openrouter') {
       res = await configService.testOpenRouter();
+    } else if (providerId === 'freellm') {
+      res = await configService.testFreeLlm();
     } else if (providerId === 'ollama') {
       const o = await configService.testOllama();
       res = { success: o.success, message: o.message, latencyMs: o.latencyMs };
@@ -310,7 +321,89 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
           {activeTab === 'llm' && (
             <div className="space-y-4 text-xs">
               <div className="rounded-xl border border-gold/30 bg-gold/5 p-3 text-[11px] text-gray-300 leading-relaxed">
-                <b className="text-gold-light">Native Engine Trinity.</b> Luminara natively runs on <b className="text-white">NVIDIA NIM</b>, <b className="text-white">Groq</b>, and <b className="text-white">Ollama</b> with automatic search, health probes, and instant failover. Gemini is demoted to an optional auxiliary fallback. Keys are saved in this browser only.
+                <b className="text-gold-light">One-key gateway or Native Trinity.</b> Point Luminara at a local{' '}
+                <a href="https://github.com/tashfeenahmed/freellmapi" target="_blank" rel="noopener noreferrer" className="text-gold-light underline">FreeLLMAPI</a>{' '}
+                sidecar for a single unified key with automatic free-tier failover. Or wire NVIDIA NIM, Groq, OpenRouter, and Ollama individually. Gemini stays an optional fallback. FreeLLMAPI is BYOK / personal use only (not the multi-tenant hosted brain).
+              </div>
+
+              {/* 0. FreeLLMAPI One-Key Gateway */}
+              <div className="p-3 rounded-xl bg-gold/10 border border-gold/40 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
+                    0. FreeLLMAPI Gateway (Recommended for self-host)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-gold/20 text-gold-light border border-gold/40 font-bold">
+                      One key · auto:fast / auto:smart
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="none"
+                      onClick={() => handleRunPingTest('freellm')}
+                      disabled={testingId === 'freellm'}
+                      className="px-2 py-0.5 rounded text-[10px] font-mono text-gold-light border border-gold/30 bg-gold/5 hover:bg-gold/15"
+                    >
+                      {testingId === 'freellm' ? 'Pinging…' : 'Ping'}
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                    Base URL (OpenAI-compatible /v1)
+                  </label>
+                  <input
+                    type="text"
+                    value={freeLlmBaseUrl}
+                    onChange={e => setFreeLlmBaseUrl(e.target.value)}
+                    placeholder="http://localhost:3001/v1"
+                    className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                    Unified API Key · from FreeLLMAPI Keys page
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={visibleKeys['freellm'] ? 'text' : 'password'}
+                      value={freeLlmKey}
+                      onChange={e => setFreeLlmKey(e.target.value)}
+                      placeholder="freellmapi-..."
+                      className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none pr-16"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="none"
+                      onClick={() => toggleVisibility('freellm')}
+                      aria-pressed={!!visibleKeys['freellm']}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
+                    >
+                      {visibleKeys['freellm'] ? 'Hide' : 'Show'}
+                    </Button>
+                  </div>
+                  {testResults['freellm'] && (
+                    <p className={`text-[10px] mt-1 font-mono ${testResults['freellm'].success ? 'text-success-400' : 'text-warning-400'}`}>
+                      {testResults['freellm'].success ? '✓' : '✗'} {testResults['freellm'].message}
+                      {testResults['freellm'].latencyMs ? ` · ${testResults['freellm'].latencyMs}ms` : ''}
+                    </p>
+                  )}
+                </div>
+                <label className="flex items-start gap-2 cursor-pointer text-[11px] text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={freeLlmPrefer}
+                    onChange={e => setFreeLlmPrefer(e.target.checked)}
+                    className="mt-0.5 accent-[#bf953f]"
+                  />
+                  <span>
+                    Prefer FreeLLMAPI as primary gateway (puts it first for chat, audits, and Switchyard{' '}
+                    <code className="text-gold-light">auto:fast</code> / <code className="text-gold-light">auto:smart</code> routing).
+                    Turn off to keep pinned Groq/NIM for stricter JSON quality.
+                  </span>
+                </label>
+                <p className="text-[10px] text-gray-500">
+                  Runs in your browser against your sidecar only. Same base URL + key can power Cursor, Claude Code, and Codex. See docs/freellmapi.md.
+                </p>
               </div>
 
               {/* 1. NVIDIA NIM (Native Primary Engine) */}

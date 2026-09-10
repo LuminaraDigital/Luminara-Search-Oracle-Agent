@@ -7,7 +7,7 @@ export const NativeEngineHUD: React.FC = () => {
   const [statuses, setStatuses] = useState<NativeEngineStatus[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProbing, setIsProbing] = useState(false);
-  const [priorityOrder, setPriorityOrder] = useState<NativeEngineId[]>(['nim', 'groq', 'openrouter', 'ollama']);
+  const [priorityOrder, setPriorityOrder] = useState<NativeEngineId[]>(['nim', 'groq', 'openrouter', 'ollama', 'freellm']);
   const [activeEngine, setActiveEngine] = useState<string>('groq');
 
   const probeEngines = async () => {
@@ -33,6 +33,10 @@ export const NativeEngineHUD: React.FC = () => {
       }
     };
 
+    const handlePriority = () => {
+      setPriorityOrder(configService.getNativePriority());
+    };
+
     const handleHash = () => {
       if (window.location.hash.toUpperCase().includes('NATIVE')) {
         setIsModalOpen(true);
@@ -42,8 +46,10 @@ export const NativeEngineHUD: React.FC = () => {
     window.addEventListener('hashchange', handleHash);
 
     window.addEventListener('luminara-llm-active-engine', handleActive);
+    window.addEventListener('luminara-native-priority-change', handlePriority);
     return () => {
       window.removeEventListener('luminara-llm-active-engine', handleActive);
+      window.removeEventListener('luminara-native-priority-change', handlePriority);
       window.removeEventListener('hashchange', handleHash);
     };
   }, []);
@@ -56,7 +62,7 @@ export const NativeEngineHUD: React.FC = () => {
     newOrder[index] = newOrder[targetIndex];
     newOrder[targetIndex] = temp;
     setPriorityOrder(newOrder);
-    configService.setNativePriority(newOrder as Array<'groq' | 'nim' | 'ollama' | 'openrouter'>);
+    configService.setNativePriority(newOrder);
   };
 
   const simulateFailover = () => {
@@ -89,6 +95,8 @@ export const NativeEngineHUD: React.FC = () => {
         return { label: 'OPENROUTER', icon: '🌐', isAvail, sub: 'Frontier 120 tok/s' };
       case 'ollama':
         return { label: 'OLLAMA', icon: '🦙', isAvail, sub: s?.isLocal ? 'Local :11434' : 'Cloud' };
+      case 'freellm':
+        return { label: 'FREELLM', icon: '∞', isAvail, sub: s?.isLocal ? 'Local gateway' : 'Remote gateway' };
       default:
         return { label: id, icon: '•', isAvail: false, sub: '' };
     }
@@ -100,7 +108,7 @@ export const NativeEngineHUD: React.FC = () => {
       <div 
         onClick={() => { setIsModalOpen(true); probeEngines(); }}
         className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full border border-gold/30 bg-black/60 hover:bg-gold/10 hover:border-gold/60 cursor-pointer transition-all shadow-[0_0_15px_rgba(191,149,63,0.1)] group"
-        title="Native AI Trinity Status: Groq, NVIDIA NIM, Ollama (Click to configure failover order)"
+        title="Native AI engines: FreeLLMAPI, Groq, NVIDIA NIM, OpenRouter, Ollama (Click to configure failover order)"
       >
         <span className="text-[8px] font-mono font-bold tracking-widest text-gold-light uppercase">
           NATIVE LLM:
@@ -140,10 +148,10 @@ export const NativeEngineHUD: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold gold-text">
-                    Native LLM Trinity & Auto-Failover Hub
+                    Native LLM Engines & Auto-Failover Hub
                   </h3>
                   <p className="text-xs text-gray-400 font-mono">
-                    Groq LPU • NVIDIA NIM Enterprise • Ollama Local & Cloud
+                    FreeLLMAPI · Groq LPU · NVIDIA NIM · OpenRouter · Ollama
                   </p>
                 </div>
               </div>
@@ -159,8 +167,8 @@ export const NativeEngineHUD: React.FC = () => {
             {/* Subheader info banner */}
             <div className="my-4 p-3.5 rounded-2xl bg-gold/10 border border-gold/20 text-xs text-gray-300 leading-relaxed">
               <span className="text-gold-light font-bold">Autonomous Failover Architecture: </span>
-              Luminara Search natively prioritizes this trinity. When any provider hits rate limits (429), timeouts, or errors, the next healthy engine 
-              <span className="text-gold-light font-semibold"> automatically pops up with zero loss of query context</span>.
+              When any provider hits rate limits (429), timeouts, or errors, it cools down for 60s and the next healthy engine
+              <span className="text-gold-light font-semibold"> automatically continues the run</span>. FreeLLMAPI (when preferred) stacks free tiers behind one key.
             </div>
 
             {/* Providers Status & Priority Order Table */}

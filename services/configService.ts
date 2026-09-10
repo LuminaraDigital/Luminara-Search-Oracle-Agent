@@ -191,6 +191,58 @@ export class ConfigService {
     this.setKey('luminara_openrouter_key', key);
   }
 
+  /** FreeLLMAPI unified bearer key (BYOK sidecar only; never a Worker-hosted secret). */
+  public getFreeLlmKey(): string {
+    return this.getKey('luminara_freellm_key', 'FREELLM_API_KEY', 'VITE_FREELLM_API_KEY').key;
+  }
+
+  public setFreeLlmKey(key: string): void {
+    this.setKey('luminara_freellm_key', key);
+  }
+
+  /**
+   * OpenAI-compatible base URL for FreeLLMAPI (default local sidecar).
+   * Includes the `/v1` suffix, e.g. `http://localhost:3001/v1`.
+   */
+  public getFreeLlmBaseUrl(): string {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('luminara_freellm_base_url');
+      if (stored && stored.trim()) return stored.trim().replace(/\/+$/, '');
+    }
+    const envVal = this.readEnv('FREELLM_BASE_URL', 'VITE_FREELLM_BASE_URL');
+    if (envVal && envVal.trim()) return envVal.trim().replace(/\/+$/, '');
+    return 'http://localhost:3001/v1';
+  }
+
+  public setFreeLlmBaseUrl(url: string): void {
+    if (typeof window === 'undefined') return;
+    const cleaned = (url || '').trim().replace(/\/+$/, '');
+    if (!cleaned) {
+      localStorage.removeItem('luminara_freellm_base_url');
+    } else {
+      localStorage.setItem('luminara_freellm_base_url', cleaned);
+    }
+  }
+
+  /**
+   * When true and a FreeLLMAPI key is set, freellm is moved to the front of native priority
+   * so one unified key can replace wiring Groq/NIM/OpenRouter/Ollama individually.
+   */
+  public isFreeLlmPreferGateway(): boolean {
+    if (typeof window === 'undefined') return true;
+    const stored = localStorage.getItem('luminara_freellm_prefer');
+    if (stored === null) return true;
+    return stored === '1' || stored === 'true';
+  }
+
+  public setFreeLlmPreferGateway(prefer: boolean): void {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('luminara_freellm_prefer', prefer ? '1' : '0');
+    window.dispatchEvent(new CustomEvent('luminara-native-priority-change', {
+      detail: { order: this.getNativePriority() },
+    }));
+  }
+
   public getGeminiKey(): string {
     return this.getKey('luminara_api_key', 'GEMINI_API_KEY', 'VITE_GEMINI_API_KEY', 'gemini').key;
   }
@@ -245,7 +297,16 @@ export class ConfigService {
   }
 
   public getAllStatuses(): ProviderStatus[] {
+    const freellmKey = this.getFreeLlmKey();
+    const freellmConfigured = Boolean(freellmKey && freellmKey.trim());
     const providers = [
+      {
+        id: 'freellm',
+        name: 'FreeLLMAPI Gateway (One Key)',
+        cat: 'llm' as const,
+        key: freellmKey,
+        source: (freellmConfigured ? 'localStorage' : 'none') as 'env' | 'localStorage' | 'server' | 'none',
+      },
       { id: 'nvidia', name: 'NVIDIA NIM (Native Primary)', cat: 'llm' as const, ...this.getKey('luminara_nvidia_key', 'NVIDIA_API_KEY', 'VITE_NVIDIA_API_KEY', 'nim') },
       { id: 'groq', name: 'Groq Cloud (Native LPU)', cat: 'llm' as const, ...this.getKey('luminara_groq_key', 'GROQ_API_KEY', 'VITE_GROQ_API_KEY', 'groq') },
       { id: 'groq_fallback', name: 'Groq Fallback (Native Auto-Failover)', cat: 'llm' as const, ...this.getKey('luminara_groq_fallback_key', 'GROQ_API_KEY_FALLBACK', 'VITE_GROQ_API_KEY_FALLBACK') },
@@ -578,21 +639,64 @@ export class ConfigService {
     }
   }
 
-  public getNativePriority(): Array<'groq' | 'nim' | 'ollama' | 'openrouter'> {
+  private static readonly NATIVE_ENGINE_IDS = ['groq', 'nim', 'ollama', 'openrouter', 'freellm'] as const;
+
+  public getNativePriority(): Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'> {
+    const allowed = ConfigService.NATIVE_ENGINE_IDS as readonly string[];
+    let order: Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'> = ['nim', 'groq', 'openrouter', 'ollama', 'freellm'];
+
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('luminara_native_llm_order');
       if (stored) {
-        const parsed = stored.split(',').filter(id => ['groq', 'nim', 'ollama', 'openrouter'].includes(id)) as Array<'groq' | 'nim' | 'ollama' | 'openrouter'>;
-        if (parsed.length >= 3) return parsed;
+        const parsed = stored.split(',').filter(id => allowed.includes(id)) as Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'>;
+        if (parsed.length >= 3) order = parsed;
       }
     }
-    return ['nim', 'groq', 'openrouter', 'ollama'];
+
+    if (!order.includes('freellm')) {
+      order = [...order, 'freellm'];
+    }
+
+    // One-key UX: when FreeLLMAPI is configured and prefer-gateway is on, put it first.
+    if (this.getFreeLlmKey() && this.isFreeLlmPreferGateway()) {
+      order = ['freellm', ...order.filter(id => id !== 'freellm')];
+    }
+
+    return order;
   }
 
-  public setNativePriority(order: Array<'groq' | 'nim' | 'ollama' | 'openrouter'>): void {
+  public setNativePriority(order: Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'>): void {
     if (typeof window !== 'undefined') {
       localStorage.setItem('luminara_native_llm_order', order.join(','));
       window.dispatchEvent(new CustomEvent('luminara-native-priority-change', { detail: { order } }));
+    }
+  }
+
+  /** Direct ping to FreeLLMAPI `/models` (client-side; never Worker-hosted). */
+  public async testFreeLlm(): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const key = this.getFreeLlmKey();
+    if (!key) return { success: false, message: 'No FreeLLMAPI unified key found', latencyMs: 0 };
+    const base = this.getFreeLlmBaseUrl();
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(`${base}/models`, {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const latencyMs = Date.now() - start;
+      if (res.ok) {
+        return { success: true, message: `Connected to FreeLLMAPI at ${base}`, latencyMs };
+      }
+      return { success: false, message: `FreeLLMAPI error HTTP ${res.status}`, latencyMs };
+    } catch (e: any) {
+      const latencyMs = Date.now() - start;
+      const msg = e?.name === 'AbortError'
+        ? 'Timed out. Is FreeLLMAPI running (default http://localhost:3001)?'
+        : (e?.message || 'Network error. Start FreeLLMAPI locally, then retry.');
+      return { success: false, message: msg, latencyMs };
     }
   }
 }

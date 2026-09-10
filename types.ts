@@ -661,6 +661,7 @@ export type AIProviderType =
   | 'ollama'
   | 'nim'
   | 'openrouter'
+  | 'freellm'
   | 'custom';
 
 export type SubAgentRole =
@@ -692,7 +693,7 @@ export type GenerateFinishReason =
   | 'tool_calls'
   | 'error';
 
-export type NativeEngineId = 'groq' | 'nim' | 'ollama' | 'openrouter';
+export type NativeEngineId = 'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm';
 
 export interface NativeEngineStatus {
   id: NativeEngineId;
@@ -1048,7 +1049,7 @@ export type SwitchyardTargetRole = 'efficient' | 'capable' | 'classifier' | 'adv
 export interface SwitchyardTarget {
   id: string;
   name: string;
-  provider: 'groq' | 'nim' | 'gemini' | 'ollama';
+  provider: 'groq' | 'nim' | 'gemini' | 'ollama' | 'freellm';
   model: string;
   role: SwitchyardTargetRole;
   tokensPerSec: number;

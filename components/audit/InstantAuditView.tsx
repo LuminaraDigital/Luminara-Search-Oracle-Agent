@@ -3,6 +3,7 @@ import { ReportFocus, BusinessDNA } from '../../types';
 import { geminiService } from '../../services/geminiService';
 import { AUDIT_LENSES, inferLenses, type AuditLens } from '../../services/skills/seoPlaybooks';
 import { contextGraphService } from '../../services/contextGraph/contextGraphService';
+import { freeLlmModalitiesService } from '../../services/freellm/modalitiesService';
 import { ICONS } from '../../constants';
 import { ReportDisplay } from './ReportDisplay';
 import { useConfirm } from '../ui/ConfirmModal';
@@ -21,6 +22,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
   const [progressStage, setProgressStage] = useState('');
   const [report, setReport] = useState<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [briefing, setBriefing] = useState(false);
   const isFullAudit = Boolean(dna);
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -294,12 +296,40 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                 </button>
               ))}
             </div>
+            <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                if (!report?.text || briefing) return;
+                if (!freeLlmModalitiesService.isAvailable()) {
+                  setError('Configure FreeLLMAPI in Settings → LLM to enable audit voice briefings.');
+                  return;
+                }
+                setBriefing(true);
+                setError(null);
+                try {
+                  const summary = report.text.replace(/[#*`>_]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1500);
+                  await freeLlmModalitiesService.briefAloud(
+                    `Audit briefing for ${url}. Focus ${focus}. ${summary}`,
+                  );
+                } catch (e: any) {
+                  setError(e?.message || 'Voice briefing failed. Check FreeLLMAPI speech models.');
+                } finally {
+                  setBriefing(false);
+                }
+              }}
+              disabled={briefing || loading}
+              className="px-4 py-1.5 rounded-lg glass-morphism border border-gold/30 text-xs text-gold-light hover:text-white uppercase tracking-wider font-bold transition-all disabled:opacity-50"
+              title="Speak a short audit briefing via FreeLLMAPI TTS"
+            >
+              {briefing ? 'Speaking…' : 'Brief aloud'}
+            </button>
             <button
               onClick={handleReset}
               className="px-4 py-1.5 rounded-lg glass-morphism border border-white/10 text-xs text-gray-300 hover:text-white uppercase tracking-wider font-bold transition-all"
             >
               New Audit
             </button>
+            </div>
           </div>
 
           <ReportDisplay
