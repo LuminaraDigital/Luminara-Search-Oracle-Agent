@@ -65,6 +65,30 @@ export function whenTelegramReady(): Promise<boolean> {
   return readyPromise;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Wait for signed initData after Telegram is ready.
+ * Some clients inject WebApp.initData a few frames after the bridge mounts.
+ */
+export async function waitForInitDataRaw(opts?: {
+  attempts?: number;
+  intervalMs?: number;
+}): Promise<string> {
+  const attempts = opts?.attempts ?? 6;
+  const intervalMs = opts?.intervalMs ?? 50;
+  const inside = await whenTelegramReady();
+  if (!inside) return '';
+  for (let i = 0; i < attempts; i++) {
+    const raw = getInitDataRaw();
+    if (raw) return raw;
+    if (i < attempts - 1) await sleep(intervalMs);
+  }
+  return getInitDataRaw();
+}
+
 /** Subscribe to Telegram environment readiness (for React re-renders). */
 export function subscribeTelegramReady(cb: (inside: boolean) => void): () => void {
   readyListeners.add(cb);
@@ -85,7 +109,7 @@ function nativeInitData(): string {
 }
 
 /** Call once before rendering. Resolves instantly (0ms) outside Telegram. */
-export async function initTelegram(timeoutMs = 250): Promise<boolean> {
+export async function initTelegram(timeoutMs = 400): Promise<boolean> {
   if (readySettled) return insideTelegram;
   if (initStarted) return readyPromise;
   initStarted = true;

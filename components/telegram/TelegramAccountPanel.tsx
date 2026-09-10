@@ -24,7 +24,8 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
 
   const refresh = async () => {
     try {
-      setSession(await telegramAuth());
+      const result = await telegramAuth();
+      setSession(result.status === 'ok' ? result.session : null);
     } catch {
       setSession(null);
     }

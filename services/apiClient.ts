@@ -392,17 +392,45 @@ export interface TelegramSession {
   startParam?: string;
 }
 
-export async function telegramAuth(): Promise<TelegramSession | null> {
+export type TelegramAuthResult =
+  | { status: 'ok'; session: TelegramSession }
+  | { status: 'invalid'; error: string }
+  | { status: 'unavailable'; error: string };
+
+/**
+ * Validate Mini App initData with the Worker.
+ * - ok: signature accepted
+ * - invalid: 401 / bad signature (do not soft-open the product gate)
+ * - unavailable: missing config, network, or 5xx (soft-open if initData present)
+ */
+export async function telegramAuth(): Promise<TelegramAuthResult> {
   const initData = getInitDataRaw();
-  if (!initData || !apiBase()) return null;
-  const r = await fetch(`${apiBase()}/api/telegram/auth`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ initData }),
-  });
-  if (!r.ok) return null;
-  const data = await r.json();
-  return data.ok ? data : null;
+  if (!initData) return { status: 'unavailable', error: 'missing_init_data' };
+  if (!apiBase()) return { status: 'unavailable', error: 'api_base_missing' };
+  try {
+    const r = await fetch(`${apiBase()}/api/telegram/auth`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ initData }),
+    });
+    if (r.status === 401) {
+      const data = await r.json().catch(() => ({}));
+      return { status: 'invalid', error: String((data as { error?: string }).error || 'initData rejected') };
+    }
+    if (!r.ok) {
+      return { status: 'unavailable', error: `http_${r.status}` };
+    }
+    const data = await r.json();
+    if (data?.ok) {
+      return { status: 'ok', session: data as TelegramSession };
+    }
+    return { status: 'unavailable', error: 'malformed_auth_response' };
+  } catch (e) {
+    return {
+      status: 'unavailable',
+      error: e instanceof Error ? e.message : 'network_error',
+    };
+  }
 }
 
 export async function createStarsInvoice(plan: string): Promise<string> {

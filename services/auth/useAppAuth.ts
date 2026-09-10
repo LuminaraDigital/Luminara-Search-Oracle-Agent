@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   isInTelegram,
-  getInitDataRaw,
+  waitForInitDataRaw,
   whenTelegramReady,
   subscribeTelegramReady,
 } from '../telegram/tma';
@@ -45,6 +45,27 @@ export const PUBLIC_APP_VIEWS = new Set([
   'WHY_US',
   'PRICING',
 ]);
+
+/** Pure decision helper (tested). Soft-open only when signature was not rejected. */
+export function decideTelegramGate(input: {
+  hasInitData: boolean;
+  authStatus: 'ok' | 'invalid' | 'unavailable' | null;
+}): { authenticated: boolean; reason: string | null } {
+  if (!input.hasInitData) {
+    return {
+      authenticated: false,
+      reason: 'Open this Mini App from Telegram so we can verify your account.',
+    };
+  }
+  if (input.authStatus === 'invalid') {
+    return {
+      authenticated: false,
+      reason: 'Telegram could not verify this session. Close and reopen Luminara from the bot menu.',
+    };
+  }
+  // ok or unavailable (network/5xx): allow shell; Worker validates every hosted call.
+  return { authenticated: true, reason: null };
+}
 
 export function useAppAuth(): AppAuthState {
   const [inTelegram, setInTelegram] = useState(() => isInTelegram());
@@ -94,25 +115,31 @@ export function useAppAuth(): AppAuthState {
         return;
       }
 
-      const raw = getInitDataRaw();
+      const raw = await waitForInitDataRaw();
+      if (cancelled) return;
+
       if (!raw) {
-        setTgOk(false);
-        setTgError('Open this Mini App from Telegram so we can verify your account.');
+        const decided = decideTelegramGate({ hasInitData: false, authStatus: null });
+        setTgOk(decided.authenticated);
+        setTgError(decided.reason);
         setTgReady(true);
         return;
       }
 
       try {
-        await telegramAuth();
+        const result = await telegramAuth();
         if (cancelled) return;
-        // initData present: allow UI even if /auth is briefly unreachable;
-        // Worker still validates every API call.
-        setTgOk(true);
-        setTgError(null);
+        const decided = decideTelegramGate({
+          hasInitData: true,
+          authStatus: result.status,
+        });
+        setTgOk(decided.authenticated);
+        setTgError(decided.reason);
       } catch {
         if (!cancelled) {
-          setTgOk(Boolean(raw));
-          setTgError(null);
+          const decided = decideTelegramGate({ hasInitData: true, authStatus: 'unavailable' });
+          setTgOk(decided.authenticated);
+          setTgError(decided.reason);
         }
       } finally {
         if (!cancelled) setTgReady(true);
