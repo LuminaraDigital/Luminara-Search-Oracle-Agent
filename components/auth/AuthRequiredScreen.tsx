@@ -74,7 +74,7 @@ export const AuthRequiredScreen: React.FC<{
           <div className="glass-morphism rounded-xl p-2.5 text-center border border-white/5 space-y-1">
             <span className="text-base">⚡</span>
             <p className="text-[9px] font-bold text-gray-200 uppercase tracking-wider">Cross-Platform</p>
-            <p className="text-[8px] text-gray-500 leading-tight">Web & Telegram</p>
+            <p className="text-[8px] text-gray-500 leading-tight">Web, Telegram & Desktop</p>
           </div>
         </div>
       )}

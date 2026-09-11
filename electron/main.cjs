@@ -21,9 +21,21 @@ const DEFAULT_WEBAPP_URL = 'https://luminarasuite.com/';
 const DEV_WEBAPP_URL = process.env.LUMINARA_DEV_URL || 'http://localhost:3000/';
 
 function resolveWebappUrl() {
-  if (process.env.LUMINARA_WEBAPP_URL) return process.env.LUMINARA_WEBAPP_URL;
-  if (IS_DEV && process.env.LUMINARA_USE_LOCAL !== '0') return DEV_WEBAPP_URL;
-  return DEFAULT_WEBAPP_URL;
+  let raw = DEFAULT_WEBAPP_URL;
+  if (process.env.LUMINARA_WEBAPP_URL) raw = process.env.LUMINARA_WEBAPP_URL;
+  else if (IS_DEV && process.env.LUMINARA_USE_LOCAL !== '0') raw = DEV_WEBAPP_URL;
+  return withDesktopClientParam(raw);
+}
+
+/** Mark the session as the native shell so the web app skips marketing views. */
+function withDesktopClientParam(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (!u.searchParams.has('client')) u.searchParams.set('client', 'desktop');
+    return u.toString();
+  } catch {
+    return rawUrl;
+  }
 }
 
 applyWindowsHardening(app);

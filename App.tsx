@@ -27,6 +27,7 @@ import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from '.
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
 import { lazyWithReload } from './utils/lazyWithReload';
+import { isDesktopShell } from './services/desktop/desktopShell';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
@@ -109,11 +110,15 @@ const resolveTelegramStartView = (): AppView => {
 
 const App: React.FC = () => {
   const [inTelegram, setInTelegram] = useState(() => isInTelegram());
+  const [inDesktop] = useState(() => isDesktopShell());
+  const skipMarketing = inTelegram || inDesktop;
   const [view, setViewState] = useState<AppView>(() => {
     const fromHash = viewFromHash();
     if (fromHash) return fromHash;
     // Prefer product shell when Telegram already detected OR the bot deep-linked us.
     if (isInTelegram() || hasTelegramLaunchHints()) return resolveTelegramStartView();
+    // Windows Electron shell: open the product, never the marketing landing.
+    if (isDesktopShell()) return AppView.INSTANT_AUDIT;
     return AppView.LANDING;
   });
 
@@ -162,8 +167,8 @@ const App: React.FC = () => {
   }, [setView]);
 
   /**
-   * Leave the product shell to marketing: sign out Firebase so the next "Open the app"
-   * requires sign-in again. Telegram Mini App has no Exit control (identity is the TMA session).
+   * Leave the product shell: sign out Firebase.
+   * Web returns to marketing; Telegram/desktop stay in the native product shell (auth gate).
    */
   const logoutToLanding = useCallback(async () => {
     try {
@@ -179,8 +184,8 @@ const App: React.FC = () => {
       /* ignore */
     }
     setMessages([]);
-    setView(AppView.LANDING);
-  }, [setView]);
+    setView(inDesktop || inTelegram ? AppView.INSTANT_AUDIT : AppView.LANDING);
+  }, [setView, inDesktop, inTelegram]);
 
   const completeIntro = useCallback(() => {
     setShowIntro(false);
@@ -201,12 +206,12 @@ const App: React.FC = () => {
     if (messages.length) noteWorkspaceDirty();
   }, [messages]);
 
-  // Telegram Native App: Guarantee marketing views are redirected directly into the functional app
+  // Telegram + Windows desktop: marketing views redirect into the functional app
   useEffect(() => {
-    if (inTelegram && MARKETING_VIEWS.has(view)) {
+    if (skipMarketing && MARKETING_VIEWS.has(view)) {
       setViewState(AppView.INSTANT_AUDIT);
     }
-  }, [inTelegram, view]);
+  }, [skipMarketing, view]);
 
   // Deep-link trigger for Telegram Stars / TON Paywall
   useEffect(() => {
@@ -601,7 +606,7 @@ const App: React.FC = () => {
     return (
       <Suspense fallback={<ViewLoader label="Loading document" />}>
         {introOverlay}
-        <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(inTelegram ? AppView.DASHBOARD : AppView.LANDING)} />
+        <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(skipMarketing ? AppView.DASHBOARD : AppView.LANDING)} />
       </Suspense>
     );
   }
@@ -614,15 +619,15 @@ const App: React.FC = () => {
           {introOverlay}
           <AuthRequiredScreen
             auth={appAuth}
-            onBackToMarketing={inTelegram ? undefined : () => setView(AppView.LANDING)}
+            onBackToMarketing={skipMarketing ? undefined : () => setView(AppView.LANDING)}
           />
         </>
       );
     }
   }
 
-  // Landing Page view (marketing site only; inside Telegram the app opens straight into the tools)
-  if (view === AppView.LANDING && !inTelegram) {
+  // Landing Page view (marketing site only; Telegram and desktop open straight into the tools)
+  if (view === AppView.LANDING && !skipMarketing) {
     return (
       <>
         {introOverlay}

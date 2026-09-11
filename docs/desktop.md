@@ -30,9 +30,10 @@ Output lands in `release/` (NSIS one-click setup). CI builds the same artifact o
 
 | Layer | Responsibility |
 |-------|----------------|
-| `electron/main.cjs` | Window, tray, menu, single-instance lock |
+| `electron/main.cjs` | Window, tray, menu, single-instance lock; loads suite with `?client=desktop` |
 | `electron/preload.cjs` | Narrow `window.luminaraDesktop` bridge |
 | `electron/security.cjs` | Navigation allowlist |
+| `services/desktop/desktopShell.ts` | Detect shell; App skips marketing landing (same as Telegram) |
 | Cloudflare Worker | API, auth, TON, static web app |
 | GitHub Releases | Shell installer + `electron-updater` feed |
 
