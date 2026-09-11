@@ -798,6 +798,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }));
   }
 
+  if (path === '/desktop/latest') {
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return withCors(json({ error: 'Method not allowed' }, 405));
+    }
+    return withCors(desktopLatestJson(env));
+  }
+
   if (path === '/auth/session') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
     const hit = limited('auth', RATE_AUTH_PER_MIN);
@@ -1630,9 +1637,6 @@ export default {
     // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
     if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
       return withSecurityHeaders(await desktopWindowsDownload(env, request));
-    }
-    if (url.pathname === '/api/desktop/latest') {
-      return withSecurityHeaders(await desktopLatestJson(env));
     }
 
     // Static assets with SPA fallback (configured in wrangler.jsonc); security headers + CSP on the HTML shell.
