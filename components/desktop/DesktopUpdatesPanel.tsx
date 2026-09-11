@@ -13,16 +13,25 @@ export const DesktopUpdatesPanel: React.FC = () => {
   const [packaged, setPackaged] = useState(false);
   const [status, setStatus] = useState<DesktopUpdateStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const supportsPrefs = Boolean(bridge && typeof bridge.getUpdatePrefs === 'function');
 
   useEffect(() => {
     if (!bridge) return;
     let cancelled = false;
-    bridge.getUpdatePrefs().then((prefs) => {
-      if (cancelled) return;
-      setAutoUpdate(prefs.autoUpdateEnabled);
-      setShellVersion(prefs.shellVersion);
-      setPackaged(prefs.packaged);
-    }).catch(() => undefined);
+    if (typeof bridge.getUpdatePrefs === 'function') {
+      bridge.getUpdatePrefs().then((prefs) => {
+        if (cancelled) return;
+        setAutoUpdate(prefs.autoUpdateEnabled);
+        setShellVersion(prefs.shellVersion);
+        setPackaged(prefs.packaged);
+      }).catch(() => undefined);
+    } else {
+      bridge.getInfo?.().then((info) => {
+        if (cancelled) return;
+        setShellVersion(info.shellVersion);
+        setPackaged(info.packaged);
+      }).catch(() => undefined);
+    }
     const off = bridge.onUpdateStatus((payload) => {
       setStatus(payload);
       if (payload.status === 'preference') {
@@ -38,6 +47,9 @@ export const DesktopUpdatesPanel: React.FC = () => {
   if (!isDesktopShell() || !bridge) return null;
 
   const statusLabel = (() => {
+    if (!supportsPrefs) {
+      return 'Shell update controls need the latest installer. App content already updates from Cloudflare.';
+    }
     if (!status) return packaged ? 'Ready' : 'Dev shell (updates apply in installed builds)';
     switch (status.status) {
       case 'checking': return 'Checking for updates…';
@@ -63,7 +75,7 @@ export const DesktopUpdatesPanel: React.FC = () => {
         </div>
       </div>
 
-      <label className="flex items-center justify-between gap-3 cursor-pointer">
+      <label className={`flex items-center justify-between gap-3 ${supportsPrefs ? 'cursor-pointer' : 'opacity-60'}`}>
         <span className="text-xs text-gray-300">
           Automatic shell updates
           <span className="block text-[10px] text-gray-500 mt-0.5">
@@ -73,7 +85,9 @@ export const DesktopUpdatesPanel: React.FC = () => {
         <input
           type="checkbox"
           checked={autoUpdate}
+          disabled={!supportsPrefs}
           onChange={async (e) => {
+            if (!supportsPrefs || typeof bridge.setAutoUpdate !== 'function') return;
             const next = e.target.checked;
             setAutoUpdate(next);
             try {
@@ -91,8 +105,10 @@ export const DesktopUpdatesPanel: React.FC = () => {
           variant="secondary"
           size="xs"
           loading={busy}
+          disabled={!supportsPrefs}
           className="normal-case tracking-normal"
           onClick={async () => {
+            if (typeof bridge.checkForUpdates !== 'function') return;
             setBusy(true);
             try {
               await bridge.checkForUpdates();
@@ -103,7 +119,7 @@ export const DesktopUpdatesPanel: React.FC = () => {
         >
           Check for updates
         </Button>
-        {status?.status === 'downloaded' && (
+        {status?.status === 'downloaded' && typeof bridge.installUpdate === 'function' && (
           <Button
             variant="primary"
             size="xs"
