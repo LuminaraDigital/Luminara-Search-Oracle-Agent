@@ -20,6 +20,7 @@ import {
 } from './resilience/adaptiveCircuit';
 
 import { buildChatMessages } from './chat/messages';
+import { toUserFacingText } from '../utils/userFacingText';
 export { buildChatMessages };
 
 /**
@@ -1202,7 +1203,7 @@ export class AIProviderService {
         const nextProvider = nextId ? this.getProvider(nextId) : null;
 
         if (nextProvider) {
-          const reason = err?.message || 'Execution Error';
+          const reason = toUserFacingText(err, 'Execution Error');
           this.dispatchFailover({
             failedProvider: provider.name,
             failedModel: options?.model || provider.config.model,
@@ -1262,7 +1263,7 @@ export class AIProviderService {
         // If we already yielded tokens to the user, we cannot seamlessly restart from scratch without duplicate content
         if (yieldedAny) {
           console.error(`[Stream Mid-Flight Failure] ${provider.name} stream was severed:`, err);
-          yield { text: `\n\n*[Connection with ${provider.name} interrupted: ${err?.message || 'Stream error'}*` };
+          yield { text: `\n\n*[Connection with ${provider.name} interrupted: ${toUserFacingText(err, 'Stream error')}*` };
           return;
         }
 
@@ -1270,7 +1271,7 @@ export class AIProviderService {
         const nextProvider = nextId ? this.getProvider(nextId) : null;
 
         if (nextProvider) {
-          const reason = err?.message || 'Connection Refused / Rate Limited';
+          const reason = toUserFacingText(err, 'Connection Refused / Rate Limited');
           this.dispatchFailover({
             failedProvider: provider.name,
             failedModel: options?.model || provider.config.model,

@@ -65,6 +65,14 @@ function withDesktopClientParam(rawUrl) {
   }
 }
 
+function applyEnterpriseNetworkConfig(app) {
+  const proxyEnv = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY;
+  if (proxyEnv && !app.commandLine.hasSwitch('proxy-server')) {
+    app.commandLine.appendSwitch('proxy-server', proxyEnv);
+  }
+}
+
+applyEnterpriseNetworkConfig(app);
 applyWindowsHardening(app);
 
 if (IS_WINDOWS) {
@@ -135,6 +143,13 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, validatedURL) => {
+    if (errorCode === -3) return; // ignore aborted/redirected loads
+    if (validatedURL && validatedURL.startsWith('file:')) return;
+    const offline = path.join(__dirname, 'offline.html');
+    void mainWindow?.loadURL(pathToFileURL(offline).href);
   });
 
   const splash = path.join(__dirname, 'splash.html');
@@ -282,6 +297,12 @@ function registerIpc() {
   ipcMain.handle('desktop:check-updates', () => updaterApi.checkForUpdatesManual());
 
   ipcMain.handle('desktop:install-update', () => updaterApi.quitAndInstall());
+
+  ipcMain.handle('desktop:retry-connection', () => {
+    if (mainWindow) {
+      void mainWindow.loadURL(resolveWebappUrl());
+    }
+  });
 
   return updaterApi;
 }

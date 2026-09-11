@@ -2,7 +2,7 @@
  * Durable user profiles, Telegram↔Firebase account linking, and workspace blobs.
  * Prefers Cloudflare D1 when bound; falls back to KV so local tests still work.
  */
-import type { HostedIdentity } from './userTypes';
+import type { HostedIdentity, EncryptedKeyBag } from './userTypes';
 
 export type UserStoreEnv = {
   DB?: D1Database;
@@ -25,8 +25,10 @@ export type StoredUser = {
 export type WorkspacePayload = {
   /** Opaque product state keyed by localStorage-style names. */
   storage?: Record<string, string>;
-  /** Optional BYOK key bag (synced so keys follow the account). Prefer encrypting later. */
+  /** Optional BYOK key bag (synced so keys follow the account). */
   keys?: Record<string, string>;
+  /** Zero-knowledge client-side encrypted key bag (AES-256-GCM + PBKDF2) */
+  encryptedKeys?: EncryptedKeyBag;
 };
 
 export type WorkspaceRecord = {

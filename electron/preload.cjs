@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('luminaraDesktop', {
   setAutoUpdate: (enabled) => ipcRenderer.invoke('desktop:set-auto-update', enabled),
   checkForUpdates: () => ipcRenderer.invoke('desktop:check-updates'),
   installUpdate: () => ipcRenderer.invoke('desktop:install-update'),
+  retryConnection: () => ipcRenderer.invoke('desktop:retry-connection'),
   onUpdateStatus: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload);

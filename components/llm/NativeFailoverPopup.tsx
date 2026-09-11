@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NativeFailoverEvent } from '../../types';
+import { toUserFacingText } from '../../utils/userFacingText';
 
 export const NativeFailoverPopup: React.FC = () => {
   const [currentEvent, setCurrentEvent] = useState<NativeFailoverEvent | null>(null);
@@ -84,7 +85,7 @@ export const NativeFailoverPopup: React.FC = () => {
             <div className="flex-1">
               <div className="text-[10px] text-danger-300 font-mono uppercase">Interrupted Engine</div>
               <div className="text-gray-200 font-semibold">{currentEvent.failedProvider}</div>
-              <div className="text-[10px] text-danger-400/80 font-mono truncate">{currentEvent.reason}</div>
+              <div className="text-[10px] text-danger-400/80 font-mono truncate">{toUserFacingText(currentEvent.reason, 'Execution error')}</div>
             </div>
           </div>
 

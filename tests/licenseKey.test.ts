@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   activateLicenseKey,
   generateLicenseKeys,
+  importLicenseKeys,
   normalizeLicenseKey,
   formatGeneratedLicenseKey,
   BUILTIN_CAMPAIGN_KEYS,
@@ -170,5 +171,32 @@ describe('Temporary License Key & Growth Engine', () => {
     // Never-minted serial fails
     const growthRes = await activateLicenseKey(env, 'user_growth_vault', 'LUM-GROWTH-30D-K8M2-P4T9');
     expect(growthRes.ok).toBe(false);
+  });
+
+  it('importLicenseKeys seeds vault serials idempotently then activates', async () => {
+    const kv = createMockKv();
+    const env: any = { LUMINARA_KV: kv };
+    const key = 'LUM-GROWTH-30D-K8M2-P4T9';
+
+    const first = await importLicenseKeys(env, [
+      { key, plan: 'growth', durationDays: 30, isTrial: false, campaign: 'vault_test' },
+    ]);
+    expect(first.imported).toEqual([key]);
+    expect(first.skipped).toEqual([]);
+
+    const second = await importLicenseKeys(env, [
+      { key, plan: 'growth', durationDays: 30, isTrial: false, campaign: 'vault_test' },
+    ]);
+    expect(second.imported).toEqual([]);
+    expect(second.skipped).toEqual([key]);
+
+    const res = await activateLicenseKey(env, 'user_growth_import', key);
+    expect(res.ok).toBe(true);
+    expect(res.plan).toBe('growth');
+    expect(res.durationDays).toBe(30);
+
+    const again = await activateLicenseKey(env, 'user_growth_import_2', key);
+    expect(again.ok).toBe(false);
+    expect(again.error).toMatch(/already been redeemed/i);
   });
 });

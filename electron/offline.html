@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;"
+    />
+    <title>Luminara Suite - Connection Offline</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: radial-gradient(120% 80% at 50% 0%, #1a1510 0%, #0a0a0c 55%, #050506 100%);
+        color: #e8dcc8;
+        font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+        display: grid;
+        place-items: center;
+      }
+      .card {
+        max-width: 480px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(196, 165, 116, 0.25);
+        border-radius: 12px;
+        padding: 2.5rem 2rem;
+        text-align: center;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+      }
+      .brand {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #c4a574;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+      }
+      .status {
+        margin-top: 1rem;
+        font-size: 1.1rem;
+        font-weight: 500;
+        color: #f1ede4;
+      }
+      .desc {
+        margin-top: 0.75rem;
+        font-size: 0.85rem;
+        color: #9c9486;
+        line-height: 1.5;
+      }
+      .tip {
+        margin-top: 1.25rem;
+        padding: 0.75rem 1rem;
+        background: rgba(0, 0, 0, 0.4);
+        border-left: 3px solid #c4a574;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        color: #b5ac9d;
+        text-align: left;
+        line-height: 1.4;
+      }
+      .btn {
+        margin-top: 1.75rem;
+        background: linear-gradient(135deg, #c4a574, #a38250);
+        color: #050506;
+        border: none;
+        border-radius: 6px;
+        padding: 0.65rem 1.6rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.2s, transform 0.1s;
+      }
+      .btn:hover {
+        opacity: 0.92;
+      }
+      .btn:active {
+        transform: scale(0.98);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="brand">Luminara Suite</div>
+      <div class="status">Unable to Connect to Cloud Services</div>
+      <div class="desc">
+        The desktop shell cannot establish a secure connection to Luminara servers. This usually indicates an offline network or an enterprise corporate firewall blocking access.
+      </div>
+      <div class="tip">
+        <strong>Enterprise IT Notice:</strong> If your organization routes traffic through a corporate proxy or VPN (e.g. Zscaler, Palo Alto, Netskope), ensure <code>luminarasuite.com</code> is allow-listed, or set the <code>HTTPS_PROXY</code> environment variable.
+      </div>
+      <button id="retry-btn" class="btn">Retry Connection</button>
+    </div>
+    <script>
+      document.getElementById('retry-btn')?.addEventListener('click', () => {
+        if (window.luminaraDesktop?.retryConnection) {
+          window.luminaraDesktop.retryConnection();
+        } else {
+          window.location.reload();
+        }
+      });
+    </script>
+  </body>
+</html>

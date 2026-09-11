@@ -3,6 +3,11 @@
  * signed-in account so logging back in restores DNA, audits, VFS, chat, and keys.
  */
 import { apiBase, fetchWorkspace, putWorkspaceRemote, type WorkspacePayload } from '../apiClient';
+import {
+  encryptKeyBag,
+  decryptKeyBag,
+  getOrCreateAccountEncryptionPassphrase,
+} from '../crypto/envelopeEncryptionService';
 
 const MEMORY_KEYS = [
   'luminara_business_dna',
@@ -62,7 +67,7 @@ function writeMeta(meta: LocalMeta): void {
   localStorage.setItem(LOCAL_META_KEY, JSON.stringify(meta));
 }
 
-function collectPayload(): WorkspacePayload {
+async function collectPayload(accountId?: string): Promise<WorkspacePayload> {
   const storage: Record<string, string> = {};
   for (const key of MEMORY_KEYS) {
     const v = localStorage.getItem(key);
@@ -81,13 +86,32 @@ function collectPayload(): WorkspacePayload {
     if (v != null && v.trim()) keys[key] = v;
   }
 
+  const hasKeys = Object.keys(keys).length > 0;
+  if (!hasKeys) {
+    return { storage };
+  }
+
+  // If we have an active account, encrypt the key bag client-side (Zero-Knowledge)
+  if (accountId) {
+    try {
+      const passphrase = getOrCreateAccountEncryptionPassphrase(accountId);
+      const encryptedKeys = await encryptKeyBag(keys, passphrase);
+      return {
+        storage,
+        encryptedKeys,
+      };
+    } catch (err) {
+      console.warn('[WorkspaceSync] Client-side key encryption failed; falling back to standard sync', err);
+    }
+  }
+
   return {
     storage,
-    keys: Object.keys(keys).length ? keys : undefined,
+    keys,
   };
 }
 
-function applyPayload(payload: WorkspacePayload): void {
+async function applyPayload(payload: WorkspacePayload, accountId?: string): Promise<void> {
   const storage = payload.storage || {};
   for (const [key, value] of Object.entries(storage)) {
     if (key === CHAT_SESSION_KEY) {
@@ -104,6 +128,25 @@ function applyPayload(payload: WorkspacePayload): void {
       /* ignore quota */
     }
   }
+
+  // 1. If encrypted key bag is present, decrypt client-side
+  if (payload.encryptedKeys && accountId) {
+    try {
+      const passphrase = getOrCreateAccountEncryptionPassphrase(accountId);
+      const decryptedKeys = await decryptKeyBag(payload.encryptedKeys, passphrase);
+      for (const [key, value] of Object.entries(decryptedKeys)) {
+        try {
+          localStorage.setItem(key, value);
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (err) {
+      console.warn('[WorkspaceSync] Client-side key decryption failed:', err);
+    }
+  }
+
+  // 2. Backward compatibility: apply legacy unencrypted keys if present
   const keys = payload.keys || {};
   for (const [key, value] of Object.entries(keys)) {
     try {
@@ -147,14 +190,15 @@ export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?:
 
     const remoteUpdated = remote.updatedAt || 0;
     if (remoteUpdated > 0 && remoteUpdated >= local.updatedAt) {
-      applyPayload(remote.payload || {});
+      await applyPayload(remote.payload || {}, remote.accountId);
       writeMeta({ updatedAt: remoteUpdated, accountId: remote.accountId });
       window.dispatchEvent(new CustomEvent('luminara-workspace-restored', { detail: { accountId: remote.accountId } }));
     } else {
-      const localPayload = collectPayload();
+      const localPayload = await collectPayload(remote.accountId);
       const hasLocal =
         Object.keys(localPayload.storage || {}).length > 0 ||
-        Object.keys(localPayload.keys || {}).length > 0;
+        Object.keys(localPayload.keys || {}).length > 0 ||
+        Boolean(localPayload.encryptedKeys);
       if (hasLocal) await flushWorkspacePush(true);
     }
     return { ok: true, accountId: remote.accountId };
@@ -176,11 +220,12 @@ export function scheduleWorkspacePush(delayMs = 2500): void {
 
 export async function flushWorkspacePush(force = false): Promise<void> {
   if (!apiBase() || typeof window === 'undefined') return;
-  const payload = collectPayload();
+  const meta = readMeta();
+  const payload = await collectPayload(meta.accountId);
   const updatedAt = Date.now();
   const result = await putWorkspaceRemote({ updatedAt, payload, force });
   if (result.conflict && result.payload) {
-    applyPayload(result.payload);
+    await applyPayload(result.payload, result.accountId || meta.accountId);
     writeMeta({ updatedAt: result.updatedAt || updatedAt, accountId: result.accountId });
     return;
   }

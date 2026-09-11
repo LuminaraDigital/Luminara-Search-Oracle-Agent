@@ -13,6 +13,8 @@
     "deploy": "npm run build && wrangler deploy",
     "tg:setup": "node scripts/telegram-setup.mjs",
     "keys:generate": "node scripts/generate-license-keys.mjs",
+    "keys:seed-vault": "node scripts/seed-license-vault.mjs",
+    "keys:seed-vault:apply": "node scripts/seed-license-vault.mjs --apply",
     "test": "vitest run",
     "test:watch": "vitest",
     "cli": "node --experimental-strip-types services/harness/standaloneCli.ts",

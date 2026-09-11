@@ -82,3 +82,5 @@ docs/internal/
 !.claude/skills/
 !.claude/agents/
 coverage/
+
+scripts/.license-vault-bulk-*.json

@@ -28,6 +28,7 @@ export type LuminaraDesktopBridge = {
   setAutoUpdate: (enabled: boolean) => Promise<{ autoUpdateEnabled: boolean }>;
   checkForUpdates: () => Promise<{ ok: boolean; reason?: string }>;
   installUpdate: () => Promise<{ ok: boolean; reason?: string }>;
+  retryConnection?: () => Promise<void>;
   onUpdateStatus: (callback: (payload: DesktopUpdateStatus) => void) => () => void;
 };
 

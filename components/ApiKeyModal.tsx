@@ -8,6 +8,7 @@ import { AuthPanel } from './auth/AuthPanel';
 import { DesktopUpdatesPanel } from './desktop/DesktopUpdatesPanel';
 import { Button } from './ui/Button';
 import { useConfirm } from './ui/ConfirmModal';
+import { toUserFacingText } from '../utils/userFacingText';
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -197,7 +198,13 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     } else if (providerId === 'results_tracking') {
       res = await configService.testResultsTracking();
     }
-    setTestResults(prev => ({ ...prev, [providerId]: res }));
+    setTestResults(prev => ({
+      ...prev,
+      [providerId]: {
+        ...res,
+        message: toUserFacingText(res.message, res.success ? 'OK' : 'Not working'),
+      },
+    }));
     setTestingId(null);
   };
 

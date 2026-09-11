@@ -11,6 +11,7 @@ import { AgentMissionControl } from './AgentMissionControl';
 import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
 import { crewOrchestrator } from '../../services/agentCore/crewOrchestrator';
 import { AgentActivityEvent, AuditAttestation } from '../../services/agentCore/types';
+import { toUserFacingText } from '../../utils/userFacingText';
 
 interface InstantAuditViewProps {
   dna: BusinessDNA | null;
@@ -82,7 +83,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         /* graph ingest is best-effort */
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to complete the audit. Check your AI keys in Settings and try again.');
+      setError(toUserFacingText(err, 'Failed to complete the audit. Check your AI keys in Settings and try again.'));
     } finally {
       setLoading(false);
       setProgressStage('');
@@ -328,7 +329,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                     `Audit briefing for ${url}. Focus ${focus}. ${summary}`,
                   );
                 } catch (e: any) {
-                  setError(e?.message || 'Voice briefing failed. Check FreeLLMAPI speech models.');
+                  setError(toUserFacingText(e, 'Voice briefing failed. Check FreeLLMAPI speech models.'));
                 } finally {
                   setBriefing(false);
                 }

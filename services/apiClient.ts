@@ -7,6 +7,7 @@
  */
 import { getInitDataRaw } from './telegram/tma';
 import { getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
+import { toUserFacingText } from '../utils/userFacingText';
 
 export interface ServerHealth {
   ok: boolean;
@@ -239,7 +240,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('luminara-open-paywall', {
           detail: {
-            reason: body.error || 'Daily free limit reached',
+            reason: toUserFacingText(body.error, 'Daily free limit reached'),
             code: body.code,
             requiredTier: body.requiredTier,
             provider: body.provider,
@@ -358,10 +359,14 @@ export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
   return null;
 }
 
+import type { EncryptedKeyBag } from './crypto/envelopeEncryptionService';
+
 /** Product memory + optional BYOK bag stored per linked account in D1/KV. */
 export type WorkspacePayload = {
   storage?: Record<string, string>;
   keys?: Record<string, string>;
+  /** Zero-knowledge client-side encrypted key bag (AES-256-GCM + PBKDF2) */
+  encryptedKeys?: EncryptedKeyBag;
 };
 
 export async function fetchWorkspace(): Promise<{
@@ -431,9 +436,11 @@ export async function linkTelegramFirebaseAccounts(): Promise<{
   return { ok: true, accountId: data.accountId };
 }
 
-export function openPaywallModal(reason?: string): void {
+export function openPaywallModal(reason?: unknown): void {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason } }));
+    window.dispatchEvent(new CustomEvent('luminara-open-paywall', {
+      detail: { reason: toUserFacingText(reason, 'Daily free limit reached') },
+    }));
   }
 }
 

@@ -20,7 +20,7 @@ import { validateInitData } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, TON_PRICING } from './tonPayment';
-import { activateLicenseKey, generateLicenseKeys } from './licenseService';
+import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { PRIVACY_HTML } from './privacyPolicy';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import {
@@ -39,6 +39,8 @@ import {
   withSecurityHeaders,
 } from './security';
 import { withAccountId, linkTelegramAndFirebase, resolveAccountId, getWorkspace, putWorkspace, listAllUsers, type WorkspacePayload } from './userStore';
+import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
+import { recordAuditLog, getAuditLogs } from './auditLog';
 import type { HostedIdentity } from './userTypes';
 
 export type { HostedIdentity } from './userTypes';
@@ -815,11 +817,19 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const who = await identify(request, env);
     if (who.error) return withCors(json({ ok: false, error: who.error }, 401));
     if (!who.user) return withCors(json({ ok: false, error: 'Not signed in' }, 401));
+    const { org, membership } = await getOrCreateUserOrg(env, who.user);
     return withCors(json({
       ok: true,
       user: who.user,
       accountId: billingId(who.user),
       linked: Boolean(who.user.accountId && who.user.accountId !== who.user.id),
+      org: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        tier: org.tier,
+        role: membership.role,
+      },
     }));
   }
 
@@ -890,10 +900,55 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }
       const updatedAt = Math.max(clientUpdatedAt, Date.now());
       const saved = await putWorkspace(env, accountId, payload, updatedAt);
+
+      // Enterprise Audit Log: record sync event asynchronously
+      try {
+        const { org } = await getOrCreateUserOrg(env, who.user);
+        await recordAuditLog(env, {
+          org_id: org.id,
+          actor_id: who.user.id,
+          action: 'workspace.sync',
+          details: {
+            hasEncryptedKeys: Boolean(payload.encryptedKeys),
+            keyCount: Object.keys(payload.keys || {}).length,
+            storageItemCount: Object.keys(payload.storage || {}).length,
+          },
+          ip_address: clientIp(request),
+          user_agent: request.headers.get('user-agent') || undefined,
+        });
+      } catch {
+        /* ignore audit log recording errors in request path */
+      }
+
       return withCors(json({ ok: true, accountId, updatedAt: saved.updatedAt }));
     }
 
     return withCors(json({ error: 'Method not allowed' }, 405));
+  }
+
+  if (path === '/enterprise/audit-logs') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const who = await identify(request, env);
+    if (who.error || !who.user) return withCors(json({ ok: false, error: who.error || 'Sign in required' }, 401));
+
+    const { org, membership } = await getOrCreateUserOrg(env, who.user);
+    if (!hasPermission(membership.role, 'canViewLogs')) {
+      return withCors(json({ ok: false, error: 'Forbidden: Auditor or Admin role required' }, 403));
+    }
+
+    const url = new URL(request.url);
+    const limit = Math.min(Number(url.searchParams.get('limit') || 50), 200);
+    const offset = Math.max(Number(url.searchParams.get('offset') || 0), 0);
+
+    const logs = await getAuditLogs(env, org.id, { limit, offset });
+    return withCors(json({
+      ok: true,
+      orgId: org.id,
+      orgName: org.name,
+      role: membership.role,
+      total: logs.total,
+      entries: logs.entries,
+    }));
   }
 
   if (path === '/auth/quota') {
@@ -1129,6 +1184,53 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       isTrial: body.isTrial,
     });
     return withCors(json({ ok: true, count: keys.length, keys }));
+  }
+
+  // Admin: seed known serial keys into KV (idempotent; does not overwrite redeemed keys)
+  if (path === '/admin/license/seed') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hitSeed = limited('auth', RATE_AUTH_PER_MIN);
+    if (hitSeed) return hitSeed;
+
+    const seedSecret = request.headers.get('x-telegram-bot-api-secret-token') || request.headers.get('x-admin-secret') || '';
+    const seedAuthorized = Boolean(env.TELEGRAM_WEBHOOK_SECRET && secretEquals(seedSecret, env.TELEGRAM_WEBHOOK_SECRET));
+    if (!seedAuthorized) {
+      const who = await identify(request, env);
+      const adminIds = (env.TELEGRAM_ADMIN_ID || '').split(',').map(s => s.trim()).filter(Boolean);
+      const isUserAdmin = Boolean(who.user && adminIds.includes(who.user.id));
+      if (!isUserAdmin) return withCors(json({ error: 'Unauthorized' }, 401));
+    }
+
+    const seedRead = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!seedRead.ok) return withCors(json({ error: seedRead.error }, seedRead.status));
+    const seedBody = (seedRead.value || {}) as {
+      keys?: Array<{
+        key?: string;
+        plan?: string;
+        durationDays?: number;
+        isTrial?: boolean;
+        campaign?: string;
+        maxRedemptions?: number;
+      }>;
+    };
+    if (!Array.isArray(seedBody.keys) || seedBody.keys.length === 0) {
+      return withCors(json({ error: 'keys array is required' }, 400));
+    }
+    if (seedBody.keys.length > 200) {
+      return withCors(json({ error: 'At most 200 keys per seed request' }, 400));
+    }
+    const seeds = seedBody.keys
+      .filter((k) => k && typeof k.key === 'string' && typeof k.plan === 'string')
+      .map((k) => ({
+        key: String(k.key),
+        plan: String(k.plan),
+        durationDays: Number(k.durationDays) || 3,
+        isTrial: k.isTrial,
+        campaign: k.campaign,
+        maxRedemptions: k.maxRedemptions,
+      }));
+    const result = await importLicenseKeys(env, seeds);
+    return withCors(json({ ok: true, ...result, requested: seeds.length }));
   }
 
   // Blockchain Proof-of-Audit attestation verification & storage

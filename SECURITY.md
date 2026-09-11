@@ -15,7 +15,9 @@ Do not open public GitHub issues for security problems.
 ## Design notes for reviewers
 
 - Provider API keys entered by users live in the browser (`localStorage`) by default. They are sent directly to the vendor, or relayed through the Worker with the `x-provider-key` header for vendors that block browser CORS. The Worker never stores *relayed* request keys.
-- If the user is signed in and workspace sync runs, browser memory plus an optional BYOK key bag may also be stored in Cloudflare D1/KV under that account (`services/sync/workspaceSyncService.ts`). Treat synced keys as sensitive until at-rest encryption for the key bag ships.
+- **Zero-Knowledge Envelope Encryption**: When workspace sync runs, BYOK API credentials are encrypted client-side using WebCrypto `AES-256-GCM` with PBKDF2 key derivation (`services/crypto/envelopeEncryptionService.ts`). The server and Cloudflare D1/KV only ever receive and store ciphertext, IV, and salt (`encryptedKeys`). Plaintext keys are never stored on or transmitted to the server.
+- **Enterprise Multi-Tenancy & RBAC**: Multi-tenant organizations enforce strict role-based access control with least-privilege boundaries (`owner`, `admin`, `analyst`, `auditor`, `viewer`).
+- **SIEM Audit Logging**: Security-critical actions (authentication, key synchronization, workspace mutations) are recorded to an append-only audit trail with SHA-256 cryptographic hash chaining (`worker/auditLog.ts`), allowing auditors to verify log integrity and detect tampering.
 - Hosted keys are Worker secrets. They require a signed-in identity: Telegram Mini App `initData` (HMAC-SHA256, see `worker/telegramAuth.ts`) and/or a verified Firebase ID token (`worker/firebaseAuth.ts`). Hosted use is metered per user in KV.
 - Every proxied vendor path is allow-listed (`worker/index.ts`, `PROVIDERS[].allow`). Gemini is further limited to `generateContent` / `streamGenerateContent` / `countTokens`.
 - Hosted chat completions clamp `max_tokens` / `max_completion_tokens` (and Gemini `maxOutputTokens`) server-side. Hosted Firecrawl `/crawl` requires an active subscription.

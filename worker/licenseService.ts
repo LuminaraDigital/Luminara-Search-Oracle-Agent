@@ -222,3 +222,57 @@ export async function generateLicenseKeys(
 
   return generated;
 }
+
+export type LicenseSeedInput = {
+  key: string;
+  plan: string;
+  durationDays: number;
+  isTrial?: boolean;
+  campaign?: string;
+  maxRedemptions?: number;
+};
+
+/**
+ * Idempotently import known serial keys into KV (ops vault seed).
+ * Skips keys that already exist so redeemed state is preserved.
+ */
+export async function importLicenseKeys(
+  env: Env,
+  seeds: LicenseSeedInput[],
+): Promise<{ imported: string[]; skipped: string[]; invalid: string[] }> {
+  const imported: string[] = [];
+  const skipped: string[] = [];
+  const invalid: string[] = [];
+  if (!env.LUMINARA_KV) return { imported, skipped, invalid };
+
+  const now = Date.now();
+  for (const seed of seeds) {
+    const key = normalizeLicenseKey(seed.key);
+    if (!key || key.length < 8 || !key.startsWith('LUM-')) {
+      invalid.push(String(seed.key || ''));
+      continue;
+    }
+    const kvKey = `license:key:${key}`;
+    const existing = await env.LUMINARA_KV.get(kvKey, 'json');
+    if (existing) {
+      skipped.push(key);
+      continue;
+    }
+    const durationDays = Math.max(1, Number(seed.durationDays) || 3);
+    const plan = normalizePlanId(seed.plan);
+    const record: LicenseKeyRecord = {
+      key,
+      plan,
+      durationDays,
+      isTrial: seed.isTrial ?? durationDays <= 7,
+      campaign: seed.campaign || 'ops_vault_seed',
+      createdAt: now,
+      redeemed: false,
+      maxRedemptions: Math.max(1, seed.maxRedemptions || 1),
+      redemptionCount: 0,
+    };
+    await env.LUMINARA_KV.put(kvKey, JSON.stringify(record));
+    imported.push(key);
+  }
+  return { imported, skipped, invalid };
+}

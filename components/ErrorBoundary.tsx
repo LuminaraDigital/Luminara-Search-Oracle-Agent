@@ -1,5 +1,6 @@
 import React from 'react';
 import { isChunkLoadError, reloadOnceForChunkError } from '../utils/lazyWithReload';
+import { toUserFacingText } from '../utils/userFacingText';
 
 interface Props {
   children: React.ReactNode;
@@ -47,7 +48,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               : 'This panel hit an unexpected error. Your other work is safe. You can try reloading just this panel.'}
           </p>
           <pre className="text-[11px] text-danger-300/80 bg-black/60 rounded-xl p-4 overflow-x-auto whitespace-pre-wrap">
-            {this.state.error.message}
+            {toUserFacingText(this.state.error, 'Unknown render error')}
           </pre>
           <div className="flex gap-3">
             <button

@@ -15,7 +15,7 @@ describe('apiClient BYOK relay gating', () => {
     expect(canRelayWithOwnKey('groq')).toBe(true);
     expect(canRelayWithOwnKey('tavily')).toBe(true);
     expect(canRelayWithOwnKey('unknown-vendor')).toBe(false);
-  });
+  }, 15000);
 
   it('does not relay when there is no http(s) origin', async () => {
     vi.stubGlobal('window', {

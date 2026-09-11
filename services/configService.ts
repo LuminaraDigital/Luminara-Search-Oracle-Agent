@@ -13,14 +13,15 @@ export interface ProviderStatus {
 }
 
 import { canUseHostedProviderKey, isSidecarConfiguredOnServer, loadServerHealth, providerFetch, sidecarFetch } from './apiClient';
+import { toUserFacingText } from '../utils/userFacingText';
 
 async function readProviderError(res: Response): Promise<string> {
   try {
     const text = await res.text();
     if (!text) return `HTTP ${res.status}`;
     try {
-      const body = JSON.parse(text) as { error?: string; message?: string };
-      const detail = body.error || body.message;
+      const body = JSON.parse(text) as { error?: unknown; message?: unknown };
+      const detail = toUserFacingText(body.error ?? body.message, '');
       if (detail) return `HTTP ${res.status}: ${detail}`;
     } catch { /* plain text */ }
     return `HTTP ${res.status}: ${text.slice(0, 160)}`;
@@ -500,7 +501,7 @@ export class ConfigService {
       }
       return { success: false, message: `Groq error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
+      return { success: false, message: toUserFacingText(e, 'Network error (vendor CORS? use the Worker relay)'), latencyMs: Date.now() - start };
     }
   }
 
@@ -521,7 +522,7 @@ export class ConfigService {
       }
       return { success: false, message: `Tavily error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
+      return { success: false, message: toUserFacingText(e, 'Network error (vendor CORS? use the Worker relay)'), latencyMs: Date.now() - start };
     }
   }
 
@@ -545,7 +546,7 @@ export class ConfigService {
       }
       return { success: false, message: `Firecrawl error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
+      return { success: false, message: toUserFacingText(e, 'Network error (vendor CORS? use the Worker relay)'), latencyMs: Date.now() - start };
     }
   }
 
@@ -609,7 +610,7 @@ export class ConfigService {
       }
       return { success: false, message: `Exa error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
+      return { success: false, message: toUserFacingText(e, 'Network error (vendor CORS? use the Worker relay)'), latencyMs: Date.now() - start };
     }
   }
 
@@ -633,7 +634,7 @@ export class ConfigService {
       }
       return { success: false, message: `NVIDIA error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
+      return { success: false, message: toUserFacingText(e, 'Network error (vendor CORS? use the Worker relay)'), latencyMs: Date.now() - start };
     }
   }
 
@@ -690,7 +691,7 @@ export class ConfigService {
         return {
           success: false,
           isLocal: false,
-          message: e?.message || 'Ollama Cloud unreachable',
+          message: toUserFacingText(e, 'Ollama Cloud unreachable'),
           latencyMs: Date.now() - start,
         };
       }
@@ -747,7 +748,7 @@ export class ConfigService {
       }
       return { success: false, message: `OpenRouter error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
+      return { success: false, message: toUserFacingText(e, 'Network error (vendor CORS? use the Worker relay)'), latencyMs: Date.now() - start };
     }
   }
 
@@ -807,7 +808,7 @@ export class ConfigService {
       const latencyMs = Date.now() - start;
       const msg = e?.name === 'AbortError'
         ? 'Timed out. Is FreeLLMAPI running (default http://localhost:3001)?'
-        : (e?.message || 'Network error. Start FreeLLMAPI locally, then retry.');
+        : toUserFacingText(e, 'Network error. Start FreeLLMAPI locally, then retry.');
       return { success: false, message: msg, latencyMs };
     }
   }

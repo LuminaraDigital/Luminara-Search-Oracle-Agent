@@ -4,6 +4,7 @@ import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma'
 import { createStarsInvoice, activateLicenseKey, getServerHealthSync, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
 import { executeTonPayment } from '../../services/ton/tonService';
 import { ICONS } from '../../constants';
+import { toUserFacingText } from '../../utils/userFacingText';
 
 interface Props {
   isOpen?: boolean;
@@ -35,7 +36,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   useEffect(() => {
     const handlePaywall = (e: any) => {
       const detail = e.detail || {};
-      setTriggerReason(detail.reason || 'You have reached your daily free AI request limit.');
+      setTriggerReason(toUserFacingText(detail.reason, 'You have reached your daily free AI request limit.'));
       setInternalOpen(true);
       fetchQuotaStatus();
     };
@@ -87,11 +88,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         }, 2000);
       } else {
         haptic('error');
-        setStatusMessage(res.error || 'Invalid or expired license key.');
+        setStatusMessage(toUserFacingText(res.error, 'Invalid or expired license key.'));
       }
     } catch (err: any) {
       haptic('error');
-      setStatusMessage(err?.message || 'Failed to activate license key.');
+      setStatusMessage(toUserFacingText(err, 'Failed to activate license key.'));
     } finally {
       setActivatingLicense(false);
     }
@@ -130,7 +131,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       }
     } catch (err: any) {
       haptic('error');
-      setStatusMessage(err?.message || 'Could not start Stars checkout.');
+      setStatusMessage(toUserFacingText(err, 'Could not start Stars checkout.'));
     } finally {
       setBusyPlan(null);
     }
@@ -151,11 +152,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         }, 2500);
       } else {
         haptic('error');
-        setStatusMessage(res.error || 'Payment failed or cancelled.');
+        setStatusMessage(toUserFacingText(res.error, 'Payment failed or cancelled.'));
       }
     } catch (err: any) {
       haptic('error');
-      setStatusMessage(err?.message || 'TON transaction failed.');
+      setStatusMessage(toUserFacingText(err, 'TON transaction failed.'));
     } finally {
       setBusyPlan(null);
     }
