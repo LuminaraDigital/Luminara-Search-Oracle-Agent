@@ -113,7 +113,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 <span className="text-xl">🔒</span>
                 <div>
                   <p className="text-xs font-bold text-white tracking-wide">
-                    Mandatory Authentication — Account Required
+                    Mandatory Authentication: Account Required
                   </p>
                   <p className="text-[11px] text-gray-400">
                     An account is required to run live audits, save Business DNA, and view AI visibility recommendations.
@@ -154,7 +154,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 onClick={onEnter}
                 className="px-9 py-4 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:scale-[1.03] active:scale-95 transition-all shadow-[0_20px_60px_rgba(191,149,63,0.28)]"
               >
-                {isAuthenticated ? 'Open the app' : 'Get Started — Sign In'}
+                {isAuthenticated ? 'Open the app' : 'Get Started: Sign In'}
               </button>
               {onNavigateAudit && (
                 <button
@@ -164,6 +164,12 @@ const LandingPage: React.FC<LandingPageProps> = ({
                   Audit my website
                 </button>
               )}
+              <a
+                href="/desktop"
+                className="px-9 py-4 border border-gold/35 text-gold-light font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:border-gold/70 transition-all"
+              >
+                Windows app
+              </a>
             </div>
             {!isAuthenticated && (
               <p className="text-[10px] text-gray-500 tracking-wider uppercase font-medium">

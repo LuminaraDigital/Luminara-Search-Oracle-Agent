@@ -108,7 +108,8 @@ Edit the skill files, run `npm run playbooks`, commit the JSON. Attribution: [TH
 ## Architecture
 
 ```
-Browser / Telegram Mini App  (React 19, Vite, Tailwind)
+Browser / Telegram Mini App / Windows Electron shell  (React 19, Vite, Tailwind)
+   │  desktop loads https://luminarasuite.com (same origin as web)
    │  direct calls with your keys ──────────────► Groq · Ollama · Tavily · Firecrawl · Exa
    │
    └─ /api/* ─► Cloudflare Worker (worker/)
@@ -118,16 +119,18 @@ Browser / Telegram Mini App  (React 19, Vite, Tailwind)
                  ├─ /api/telegram/auth     validates Mini App initData (HMAC-SHA256)
                  ├─ /api/telegram/invoice  Telegram Stars checkout
                  ├─ /api/telegram/webhook  bot commands, payments → KV
-                 └─ static assets          the built app, SPA fallback
+                 └─ static assets          the built app, SPA fallback, /desktop download page
 ```
 
-Key files: [`App.tsx`](App.tsx) (shell and routing), [`services/geminiService.ts`](services/geminiService.ts) (audit and chat pipelines), [`services/aiProviderService.ts`](services/aiProviderService.ts) (Groq / NIM / Ollama with failover), [`services/apiClient.ts`](services/apiClient.ts) (proxy and BYOK relay), [`worker/`](worker/) (Cloudflare Worker), [`services/telegram/tma.ts`](services/telegram/tma.ts) (Telegram bridge).
+Key files: [`App.tsx`](App.tsx) (shell and routing), [`electron/`](electron/) (Windows desktop shell), [`services/geminiService.ts`](services/geminiService.ts) (audit and chat pipelines), [`services/aiProviderService.ts`](services/aiProviderService.ts) (Groq / NIM / Ollama with failover), [`services/apiClient.ts`](services/apiClient.ts) (proxy and BYOK relay), [`worker/`](worker/) (Cloudflare Worker), [`services/telegram/tma.ts`](services/telegram/tma.ts) (Telegram bridge). Desktop guide: [`docs/desktop.md`](docs/desktop.md).
 
 ## Scripts
 
 | Command | What it does |
 |---|---|
 | `npm run dev` | Vite dev server on :3000 |
+| `npm run desktop:dev` | Vite + Electron against localhost (Windows shell) |
+| `npm run desktop:dist:win` | One-click NSIS installer under `release/` |
 | `npm run cf:dev` | Build and run the full Worker on :8787 (copy `.dev.vars.example` to `.dev.vars`) |
 | `npm test` | Unit tests (vitest) |
 | `npm run typecheck` | TypeScript, app and worker |

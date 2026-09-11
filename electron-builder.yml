@@ -1,0 +1,34 @@
+appId: digital.luminara.suite
+productName: Luminara Suite
+copyright: Copyright © Luminara Digital
+directories:
+  output: release
+  buildResources: build
+files:
+  - electron/**/*
+  - package.json
+  - build/icon.png
+asar: true
+compression: maximum
+extraMetadata:
+  main: electron/main.cjs
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: Luminara-Suite-Setup-${version}.${ext}
+  executableName: LuminaraSuite
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Luminara Suite
+  deleteAppDataOnUninstall: false
+publish:
+  provider: github
+  owner: LuminaraDigital
+  repo: Luminara-Search-Oracle-Agent
+  releaseType: release

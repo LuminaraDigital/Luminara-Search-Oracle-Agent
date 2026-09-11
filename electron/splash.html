@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; img-src data:;"
+    />
+    <title>Luminara Suite</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: radial-gradient(120% 80% at 50% 0%, #1a1510 0%, #0a0a0c 55%, #050506 100%);
+        color: #e8dcc8;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        display: grid;
+        place-items: center;
+      }
+      .wrap {
+        text-align: center;
+        letter-spacing: 0.12em;
+      }
+      .brand {
+        font-size: 1.35rem;
+        font-weight: 600;
+        color: #c4a574;
+      }
+      .sub {
+        margin-top: 0.75rem;
+        font-size: 0.75rem;
+        opacity: 0.65;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+      .bar {
+        margin: 1.75rem auto 0;
+        width: 140px;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #c4a574, transparent);
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.35;
+          transform: scaleX(0.85);
+        }
+        50% {
+          opacity: 1;
+          transform: scaleX(1);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="brand">Luminara Suite</div>
+      <div class="sub">Starting desktop shell</div>
+      <div class="bar" aria-hidden="true"></div>
+    </div>
+  </body>
+</html>
