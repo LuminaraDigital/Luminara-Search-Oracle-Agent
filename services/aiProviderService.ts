@@ -273,12 +273,13 @@ export class NvidiaNimProvider extends BaseAIProvider {
   };
 
   async isAvailable(): Promise<boolean> {
-    if (!configService.getNvidiaKey()) return false;
-    // In Desktop Electron shell, direct CORS is bypassed natively
+    const key = configService.getNvidiaKey();
+    if (!key) return false;
+    // Hosted NIM without a plan is not usable (Worker returns TIER_UPGRADE_REQUIRED).
+    if (key === 'proxy') return configService.usesProxy('nim');
+    // BYOK: Desktop Electron bypasses CORS; browsers need Worker relay or a same-origin proxy.
     if (typeof window !== 'undefined' && Boolean((window as any).luminaraDesktop)) return true;
-    // In a browser NIM works via relay: the Luminara Worker (with user's own key or hosted key)
-    // or a custom same-origin proxy endpoint.
-    if (typeof window !== 'undefined' && !configService.getNvidiaProxyEndpoint() && !configService.usesProxy('nim') && !canRelayWithOwnKey('nim')) return false;
+    if (typeof window !== 'undefined' && !configService.getNvidiaProxyEndpoint() && !canRelayWithOwnKey('nim')) return false;
     return true;
   }
 
@@ -288,8 +289,11 @@ export class NvidiaNimProvider extends BaseAIProvider {
   }
 
   private ownKey(): string {
-    const key = configService.getNvidiaKey();
-    const org = configService.getNvidiaOrgId();
+    // Prefer explicit BYOK from Settings so a free user with their own NVIDIA key never
+    // silently falls through to hosted 'proxy' and the Stars/TON paywall.
+    const byok = configService.getByokKey('luminara_nvidia_key');
+    const key = byok || configService.getNvidiaKey();
+    const org = configService.getByokKey('luminara_nvidia_org_id') || configService.getNvidiaOrgId();
     return key && key !== 'proxy' && org ? `${key}|${org}` : key;
   }
 
@@ -466,7 +470,7 @@ export class OllamaNativeProvider extends BaseAIProvider {
       // Local not running or blocked by CORS
     }
 
-    // 2. Check cloud key
+    // 2. Cloud Ollama (BYOK or hosted with an active plan)
     if (configService.getOllamaKey()) {
       this.cachedIsLocal = false;
       this.lastProbeTime = now;
@@ -781,11 +785,15 @@ export class OpenRouterProvider extends BaseAIProvider {
   };
 
   private getActiveApiKey(): string {
-    return configService.getOpenRouterKey();
+    const byok = configService.getByokKey('luminara_openrouter_key');
+    return byok || configService.getOpenRouterKey();
   }
 
   async isAvailable(): Promise<boolean> {
-    return Boolean(this.getActiveApiKey());
+    const key = this.getActiveApiKey();
+    if (!key) return false;
+    if (key === 'proxy') return configService.usesProxy('openrouter');
+    return true;
   }
 
   async generateText(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {

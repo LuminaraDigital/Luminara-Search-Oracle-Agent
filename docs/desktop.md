@@ -55,4 +55,14 @@ Desktop users hit `https://luminarasuite.com`, so:
 
 Download page: `/desktop`. Installer: `/desktop/windows` (R2 when enabled, else GitHub). Status JSON: `/api/desktop/latest`.
 
+## Shell updates
+
+Installed Windows builds check GitHub Releases for shell updates (`electron-updater`).
+
+- **Automatic updates (default on):** quiet check ~8s after launch; download in background; install on quit.
+- **Toggle:** Settings → Overview → "Automatic shell updates" (also Help → Check for shell updates).
+- **App content** (UI, Worker APIs, BYOK relay) updates whenever Cloudflare deploys `luminarasuite.com`; no installer required.
+- Dev (`npx electron .`) skips update checks.
+
 R2 enable + mirror checklist: [`docs/desktop-distribution.md`](desktop-distribution.md).
+

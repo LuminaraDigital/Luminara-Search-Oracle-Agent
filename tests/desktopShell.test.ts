@@ -18,8 +18,12 @@ describe('Windows desktop native shell', () => {
   it('detects the Electron preload bridge', () => {
     vi.stubGlobal('window', {
       luminaraDesktop: {
-        getInfo: async () => ({ shellVersion: '1.0.0', webappUrl: 'https://luminarasuite.com/', platform: 'win32', packaged: true }),
+        getInfo: async () => ({ shellVersion: '1.0.0', webappUrl: 'https://luminarasuite.com/', platform: 'win32', packaged: true, autoUpdateEnabled: true }),
         openExternal: async () => {},
+        getUpdatePrefs: async () => ({ autoUpdateEnabled: true, packaged: true, shellVersion: '1.0.0' }),
+        setAutoUpdate: async () => ({ autoUpdateEnabled: true }),
+        checkForUpdates: async () => ({ ok: true }),
+        installUpdate: async () => ({ ok: true }),
         onUpdateStatus: () => () => {},
       },
       location: { search: '' },

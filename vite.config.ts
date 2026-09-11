@@ -111,6 +111,13 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        // Local Vite has no Worker. Relay remaining /api/* (providers, health, auth) to production
+        // (or VITE_API_BASE) so Settings BYOK tests work without `wrangler dev`.
+        '/api': {
+          target: env.VITE_API_BASE || 'https://luminarasuite.com',
+          changeOrigin: true,
+          secure: true,
+        },
       },
     },
     plugins: [react(), wasm(), secretLeakGuard()],

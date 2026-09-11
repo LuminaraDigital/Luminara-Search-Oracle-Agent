@@ -26,43 +26,83 @@ export interface ServerHealth {
 
 const EMPTY_HEALTH: ServerHealth = { ok: false, providers: {}, telegram: false, requireAuth: false, plans: {} };
 
+/** Keep in sync with `PROVIDERS` in worker/index.ts. Used when /api/health has not loaded yet. */
+export const BYOK_PROVIDER_IDS = [
+  'groq',
+  'nim',
+  'ollama',
+  'openrouter',
+  'gemini',
+  'tavily',
+  'firecrawl',
+  'exa',
+] as const;
+
 let healthCache: ServerHealth | null = null;
 let healthPromise: Promise<ServerHealth> | null = null;
+let healthFailedAt = 0;
 
 export function apiBase(): string {
   const forced = (import.meta as any).env?.VITE_API_BASE as string | undefined;
   if (forced) return forced.replace(/\/$/, '');
   if (typeof window === 'undefined' || !window.location) return '';
-  const host = window.location.hostname || '';
-  // Vite dev server (port 3000) has no /api; everything else served by the Worker does.
-  const isViteDev = (host === 'localhost' || host === '127.0.0.1') && window.location.port === '3000';
-  return isViteDev ? '' : (window.location.origin || '');
+  const protocol = window.location.protocol || '';
+  // Same-origin /api: Cloudflare Worker in prod, Vite proxy in local dev (see vite.config.ts).
+  if (protocol === 'http:' || protocol === 'https:') {
+    return window.location.origin || '';
+  }
+  return '';
 }
 
 export function isProxyMode(): boolean {
   return Boolean(apiBase()) && healthCache?.ok === true;
 }
 
-/** True when a Worker is reachable that can relay a request using the caller's own key. */
+/**
+ * True when BYOK calls should go through the Worker (avoids vendor CORS).
+ * Same-origin / VITE_API_BASE is enough: do not require a prior successful /api/health,
+ * because a single timed-out health probe used to permanently disable relays.
+ */
 export function canRelayWithOwnKey(providerId: string): boolean {
-  return Boolean(apiBase()) && healthCache?.ok === true && (healthCache.byok ?? []).includes(providerId);
+  if (!apiBase()) return false;
+  if (healthCache?.ok === true) {
+    const list = healthCache.byok;
+    if (Array.isArray(list) && list.length > 0) return list.includes(providerId);
+  }
+  return (BYOK_PROVIDER_IDS as readonly string[]).includes(providerId);
 }
 
-/** Fetches /api/health once; safe to call often. Protected with a 3s timeout. */
-export async function loadServerHealth(): Promise<ServerHealth> {
-  if (healthCache) return healthCache;
-  if (!apiBase()) { healthCache = EMPTY_HEALTH; return healthCache; }
-  if (!healthPromise) {
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), 3000) : null;
-    healthPromise = fetch(`${apiBase()}/api/health`, { signal: controller?.signal })
-      .then(r => (r.ok ? r.json() : EMPTY_HEALTH))
-      .then((h: ServerHealth) => { healthCache = h; return h; })
-      .catch(() => { healthCache = EMPTY_HEALTH; return EMPTY_HEALTH; })
-      .finally(() => {
-        if (timer) clearTimeout(timer);
-      });
+/** Fetches /api/health; retries after failures instead of caching a permanent miss. */
+export async function loadServerHealth(opts: { force?: boolean } = {}): Promise<ServerHealth> {
+  if (!apiBase()) {
+    healthCache = EMPTY_HEALTH;
+    return healthCache;
   }
+  if (!opts.force && healthCache?.ok === true) return healthCache;
+  if (!opts.force && healthPromise) return healthPromise;
+
+  const recentlyFailed =
+    healthCache?.ok === false && healthFailedAt > 0 && Date.now() - healthFailedAt < 5_000;
+  if (!opts.force && recentlyFailed) return healthCache as ServerHealth;
+
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 5000) : null;
+  healthPromise = fetch(`${apiBase()}/api/health`, { signal: controller?.signal })
+    .then(r => (r.ok ? r.json() : EMPTY_HEALTH))
+    .then((h: ServerHealth) => {
+      healthCache = h?.ok ? h : EMPTY_HEALTH;
+      healthFailedAt = healthCache.ok ? 0 : Date.now();
+      return healthCache;
+    })
+    .catch(() => {
+      healthCache = EMPTY_HEALTH;
+      healthFailedAt = Date.now();
+      return EMPTY_HEALTH;
+    })
+    .finally(() => {
+      if (timer) clearTimeout(timer);
+      healthPromise = null;
+    });
   return healthPromise;
 }
 
@@ -191,6 +231,11 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     try {
       const clone = res.clone();
       const body = await clone.json();
+      // Tier gates (hosted NIM/Ollama/OpenRouter) must not interrupt BYOK or auto-failover.
+      // Quota exhaustion still opens the paywall so the user can upgrade.
+      if (body?.code === 'TIER_UPGRADE_REQUIRED') {
+        return res;
+      }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('luminara-open-paywall', {
           detail: {
@@ -236,6 +281,35 @@ export function subscribeQuota(fn: (q: QuotaInfo | null) => void): () => void {
 
 export function getCurrentQuotaSync(): QuotaInfo | null {
   return currentQuota;
+}
+
+/** Paid hosted engines (NIM / Ollama Cloud / OpenRouter) require an active plan when not BYOK. */
+export const PAID_HOSTED_PROVIDER_IDS = ['nim', 'ollama', 'openrouter'] as const;
+
+export function isPaidHostedProvider(providerId: string): boolean {
+  return (PAID_HOSTED_PROVIDER_IDS as readonly string[]).includes(providerId);
+}
+
+/** Best-effort client view of an active Stars/TON/license plan (from quota headers or /api/auth/quota). */
+export function hasActivePaidPlanSync(): boolean {
+  const q = currentQuota;
+  if (!q) return false;
+  if (q.isUnlimited) return true;
+  if (typeof q.expiresAt === 'number' && q.expiresAt > Date.now()) return true;
+  if (q.plan && q.plan !== 'free' && q.plan !== 'active') {
+    // Named plans from quota endpoint (starter/growth/agency/...)
+    return true;
+  }
+  // Some paths set plan:'active' with isUnlimited for subscribers.
+  if (q.plan === 'active' && q.isUnlimited) return true;
+  return false;
+}
+
+/** True when the Worker may inject a hosted key for this provider for the current user. */
+export function canUseHostedProviderKey(providerId: string): boolean {
+  if (!isProxyMode() || !isProviderConfiguredOnServer(providerId)) return false;
+  if (isPaidHostedProvider(providerId)) return hasActivePaidPlanSync();
+  return true;
 }
 
 export function updateQuotaFromHeaders(headers: Headers): void {

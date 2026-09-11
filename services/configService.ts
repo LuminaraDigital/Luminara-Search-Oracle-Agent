@@ -12,7 +12,29 @@ export interface ProviderStatus {
   maskedKey: string;
 }
 
-import { isProviderConfiguredOnServer, isProxyMode, isSidecarConfiguredOnServer, providerFetch, sidecarFetch } from './apiClient';
+import { canUseHostedProviderKey, isSidecarConfiguredOnServer, loadServerHealth, providerFetch, sidecarFetch } from './apiClient';
+
+async function readProviderError(res: Response): Promise<string> {
+  try {
+    const text = await res.text();
+    if (!text) return `HTTP ${res.status}`;
+    try {
+      const body = JSON.parse(text) as { error?: string; message?: string };
+      const detail = body.error || body.message;
+      if (detail) return `HTTP ${res.status}: ${detail}`;
+    } catch { /* plain text */ }
+    return `HTTP ${res.status}: ${text.slice(0, 160)}`;
+  } catch {
+    return `HTTP ${res.status}`;
+  }
+}
+
+/** Ensure Worker health (and BYOK relay readiness) before a Settings ping. */
+async function ensureRelayReady(): Promise<void> {
+  try {
+    await loadServerHealth();
+  } catch { /* relay may still work via static BYOK list */ }
+}
 
 export class ConfigService {
   private static instance: ConfigService;
@@ -44,8 +66,10 @@ export class ConfigService {
     if (envVal && envVal.trim()) {
       return { key: envVal.trim(), source: 'env' };
     }
-    // Served by the Cloudflare Worker: the key lives server-side and requests are proxied.
-    if (providerId && isProxyMode() && isProviderConfiguredOnServer(providerId)) {
+    // Hosted Worker key. Paid engines (NIM / Ollama Cloud / OpenRouter) only resolve to
+    // 'proxy' when the user has an active plan; otherwise free users would look "connected",
+    // call hosted NIM first, and get the Stars/TON paywall despite having Groq BYOK.
+    if (providerId && canUseHostedProviderKey(providerId)) {
       return { key: 'proxy', source: 'server' };
     }
     return { key: '', source: 'none' };
@@ -53,7 +77,14 @@ export class ConfigService {
 
   /** True when the given provider will be reached through the Worker proxy rather than a local key. */
   public usesProxy(providerId: string): boolean {
-    return isProxyMode() && isProviderConfiguredOnServer(providerId);
+    return canUseHostedProviderKey(providerId);
+  }
+
+  /** Real bring-your-own key only (never the hosted 'proxy' sentinel). */
+  public getByokKey(storageKey: string): string {
+    if (typeof window === 'undefined') return '';
+    const stored = localStorage.getItem(storageKey);
+    return stored && stored.trim() ? stored.trim() : '';
   }
 
   public setKey(storageKey: string, value: string): void {
@@ -414,7 +445,7 @@ export class ConfigService {
       try { data = JSON.parse(raw); } catch { return { success: false, message: unreachable, latencyMs }; }
       if (!data || !Array.isArray(data.matches)) return { success: false, message: unreachable, latencyMs };
       const n = data.matches.length;
-      return { success: true, message: n >= 1 ? `Connected — found ${n} issue${n === 1 ? '' : 's'} in the test sentence` : 'Connected', latencyMs };
+      return { success: true, message: n >= 1 ? `Connected - found ${n} issue${n === 1 ? '' : 's'} in the test sentence` : 'Connected', latencyMs };
     } catch (e: any) {
       const latencyMs = Date.now() - start;
       return { success: false, message: e?.name === 'AbortError' ? 'Timed out. Is the writing check running?' : unreachable, latencyMs };
@@ -446,7 +477,7 @@ export class ConfigService {
       try { data = JSON.parse(raw); } catch { return { success: false, message: unreachable, latencyMs }; }
       const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : null;
       if (!list) return { success: false, message: unreachable, latencyMs };
-      return { success: true, message: `Connected — ${list.length} site${list.length === 1 ? '' : 's'} tracked`, latencyMs };
+      return { success: true, message: `Connected - ${list.length} site${list.length === 1 ? '' : 's'} tracked`, latencyMs };
     } catch (e: any) {
       const latencyMs = Date.now() - start;
       return { success: false, message: e?.name === 'AbortError' ? 'Timed out. Is results tracking running?' : unreachable, latencyMs };
@@ -456,7 +487,8 @@ export class ConfigService {
   // Live Connection Ping Testers
   public async testGroq(overrideKey?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
     const key = (overrideKey && overrideKey.trim()) || this.getGroqKey() || this.getGroqFallbackKey();
-    if (!key) return { success: false, message: 'No Groq API Key found', latencyMs: 0 };
+    if (!key || key === 'proxy') return { success: false, message: 'No Groq API Key found', latencyMs: 0 };
+    await ensureRelayReady();
     const start = Date.now();
     try {
       const res = await providerFetch('groq', '/models', 'https://api.groq.com/openai/v1/models', {
@@ -466,15 +498,16 @@ export class ConfigService {
       if (res.ok) {
         return { success: true, message: 'Connected to Groq Cloud API', latencyMs };
       }
-      return { success: false, message: `Groq error HTTP ${res.status}`, latencyMs };
+      return { success: false, message: `Groq error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error', latencyMs: Date.now() - start };
+      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
     }
   }
 
-  public async testTavily(): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const key = this.getTavilyKey();
-    if (!key) return { success: false, message: 'No Tavily API Key found', latencyMs: 0 };
+  public async testTavily(overrideKey?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const key = (overrideKey && overrideKey.trim()) || this.getTavilyKey();
+    if (!key || key === 'proxy') return { success: false, message: 'No Tavily API Key found', latencyMs: 0 };
+    await ensureRelayReady();
     const start = Date.now();
     try {
       const res = await providerFetch('tavily', '/search', 'https://api.tavily.com/search', {
@@ -486,15 +519,16 @@ export class ConfigService {
       if (res.ok) {
         return { success: true, message: 'Connected to Tavily SERP API', latencyMs };
       }
-      return { success: false, message: `Tavily error HTTP ${res.status}`, latencyMs };
+      return { success: false, message: `Tavily error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error', latencyMs: Date.now() - start };
+      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
     }
   }
 
-  public async testFirecrawl(): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const key = this.getFirecrawlKey();
-    if (!key) return { success: false, message: 'No Firecrawl API Key found', latencyMs: 0 };
+  public async testFirecrawl(overrideKey?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const key = (overrideKey && overrideKey.trim()) || this.getFirecrawlKey();
+    if (!key || key === 'proxy') return { success: false, message: 'No Firecrawl API Key found', latencyMs: 0 };
+    await ensureRelayReady();
     const start = Date.now();
     try {
       const res = await providerFetch('firecrawl', '/scrape', 'https://api.firecrawl.dev/v1/scrape', {
@@ -509,9 +543,9 @@ export class ConfigService {
       if (res.ok || res.status === 402 || res.status === 200) {
         return { success: true, message: 'Connected to Firecrawl API', latencyMs };
       }
-      return { success: false, message: `Firecrawl error HTTP ${res.status}`, latencyMs };
+      return { success: false, message: `Firecrawl error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error', latencyMs: Date.now() - start };
+      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
     }
   }
 
@@ -555,9 +589,10 @@ export class ConfigService {
     }
   }
 
-  public async testExa(): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const key = this.getExaKey();
-    if (!key) return { success: false, message: 'No Exa API Key found', latencyMs: 0 };
+  public async testExa(overrideKey?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const key = (overrideKey && overrideKey.trim()) || this.getExaKey();
+    if (!key || key === 'proxy') return { success: false, message: 'No Exa API Key found', latencyMs: 0 };
+    await ensureRelayReady();
     const start = Date.now();
     try {
       const res = await providerFetch('exa', '/search', 'https://api.exa.ai/search', {
@@ -572,16 +607,17 @@ export class ConfigService {
       if (res.ok) {
         return { success: true, message: 'Connected to Exa.ai API', latencyMs };
       }
-      return { success: false, message: `Exa error HTTP ${res.status}`, latencyMs };
+      return { success: false, message: `Exa error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error', latencyMs: Date.now() - start };
+      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
     }
   }
 
   public async testNvidia(overrideKey?: string, overrideOrgId?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
     const key = (overrideKey && overrideKey.trim()) || this.getNvidiaKey();
-    if (!key) return { success: false, message: 'No NVIDIA API Key found', latencyMs: 0 };
+    if (!key || key === 'proxy') return { success: false, message: 'No NVIDIA API Key found', latencyMs: 0 };
     const orgId = overrideOrgId !== undefined ? overrideOrgId.trim() : this.getNvidiaOrgId();
+    await ensureRelayReady();
     const start = Date.now();
     try {
       const headers: Record<string, string> = {
@@ -595,9 +631,9 @@ export class ConfigService {
       if (res.ok) {
         return { success: true, message: 'Connected to NVIDIA NIM Enterprise Cloud', latencyMs };
       }
-      return { success: false, message: `NVIDIA error HTTP ${res.status}`, latencyMs };
+      return { success: false, message: `NVIDIA error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error', latencyMs: Date.now() - start };
+      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
     }
   }
 
@@ -627,16 +663,37 @@ export class ConfigService {
       // Local/remote endpoint not running or blocked by CORS, proceed to check Ollama Cloud
     }
 
-    // 2. Check Ollama Cloud / custom endpoint key
+    // 2. Check Ollama Cloud via Worker BYOK (or direct) when a cloud key is set
     const cloudKey = overrideKey !== undefined ? overrideKey.trim() : this.getOllamaKey();
-    if (cloudKey) {
-      const latencyMs = Date.now() - start;
-      return {
-        success: true,
-        isLocal: false,
-        message: 'Ollama Cloud Gateway Configured & Ready',
-        latencyMs
-      };
+    if (cloudKey && cloudKey !== 'proxy') {
+      await ensureRelayReady();
+      try {
+        const res = await providerFetch('ollama', '/api/tags', 'https://ollama.com/api/tags', {
+          headers: { Authorization: `Bearer ${cloudKey}` },
+        }, { userKey: cloudKey });
+        const latencyMs = Date.now() - start;
+        if (res.ok) {
+          return {
+            success: true,
+            isLocal: false,
+            message: 'Connected to Ollama Cloud',
+            latencyMs,
+          };
+        }
+        return {
+          success: false,
+          isLocal: false,
+          message: `Ollama Cloud error ${await readProviderError(res)}`,
+          latencyMs,
+        };
+      } catch (e: any) {
+        return {
+          success: false,
+          isLocal: false,
+          message: e?.message || 'Ollama Cloud unreachable',
+          latencyMs: Date.now() - start,
+        };
+      }
     }
 
     return {
@@ -671,9 +728,10 @@ export class ConfigService {
     return this.getOllamaLocalEndpoint();
   }
 
-  public async testOpenRouter(): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const key = this.getOpenRouterKey();
-    if (!key) return { success: false, message: 'No OpenRouter API Key found', latencyMs: 0 };
+  public async testOpenRouter(overrideKey?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const key = (overrideKey && overrideKey.trim()) || this.getOpenRouterKey();
+    if (!key || key === 'proxy') return { success: false, message: 'No OpenRouter API Key found', latencyMs: 0 };
+    await ensureRelayReady();
     const start = Date.now();
     try {
       const res = await providerFetch('openrouter', '/models', 'https://openrouter.ai/api/v1/models', {
@@ -687,9 +745,9 @@ export class ConfigService {
       if (res.ok) {
         return { success: true, message: 'Connected to OpenRouter API', latencyMs };
       }
-      return { success: false, message: `OpenRouter error HTTP ${res.status}`, latencyMs };
+      return { success: false, message: `OpenRouter error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Network error', latencyMs: Date.now() - start };
+      return { success: false, message: e?.message || 'Network error (vendor CORS? use the Worker relay)', latencyMs: Date.now() - start };
     }
   }
 

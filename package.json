@@ -23,6 +23,8 @@
     "prepare": "node scripts/install-git-hooks.mjs",
     "secrets:check": "node scripts/check-secrets.mjs --all",
     "secrets:check:staged": "node scripts/check-secrets.mjs --staged",
+    "secrets:sync-hosted": "node scripts/sync-hosted-secrets.mjs",
+    "secrets:sync-hosted:apply": "node scripts/sync-hosted-secrets.mjs --apply",
     "desktop:dev": "node scripts/desktop-dev-start.mjs",
     "desktop": "electron .",
     "desktop:pack": "electron-builder --dir --config electron-builder.yml",

@@ -21,6 +21,10 @@ function configureLlmSessionSecurity() {
     '*://*.groq.com/*',
     '*://integrate.api.nvidia.com/*',
     '*://openrouter.ai/*',
+    '*://api.tavily.com/*',
+    '*://api.exa.ai/*',
+    '*://api.firecrawl.dev/*',
+    '*://ollama.com/*',
   ];
 
   session.defaultSession.webRequest.onHeadersReceived(
@@ -249,11 +253,17 @@ function createTray() {
 }
 
 function registerIpc() {
+  const updaterApi = setupAutoUpdater({
+    mainWindow,
+    getMainWindow: () => mainWindow,
+  });
+
   ipcMain.handle('desktop:get-info', () => ({
     shellVersion: app.getVersion(),
     webappUrl: resolveWebappUrl(),
     platform: process.platform,
     packaged: app.isPackaged,
+    autoUpdateEnabled: updaterApi.getAutoUpdateEnabled(),
   }));
 
   ipcMain.handle('desktop:open-external', (_event, url) => {
@@ -262,6 +272,18 @@ function registerIpc() {
     }
     return shell.openExternal(url);
   });
+
+  ipcMain.handle('desktop:get-update-prefs', () => updaterApi.getUpdatePrefs());
+
+  ipcMain.handle('desktop:set-auto-update', (_event, enabled) => {
+    return updaterApi.setAutoUpdateEnabled(Boolean(enabled));
+  });
+
+  ipcMain.handle('desktop:check-updates', () => updaterApi.checkForUpdatesManual());
+
+  ipcMain.handle('desktop:install-update', () => updaterApi.quitAndInstall());
+
+  return updaterApi;
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -282,10 +304,6 @@ if (!gotLock) {
     buildMenu();
     createWindow();
     if (IS_WINDOWS) createTray();
-    setupAutoUpdater({
-      mainWindow,
-      getMainWindow: () => mainWindow,
-    });
   });
 
   app.on('before-quit', () => {

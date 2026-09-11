@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ICONS } from '../constants';
 import { configService, ProviderStatus } from '../services/configService';
+import { getServerHealthSync, loadServerHealth } from '../services/apiClient';
 import { noteWorkspaceDirty } from '../services/sync/workspaceSyncService';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
 import { AuthPanel } from './auth/AuthPanel';
+import { DesktopUpdatesPanel } from './desktop/DesktopUpdatesPanel';
 import { Button } from './ui/Button';
 import { useConfirm } from './ui/ConfirmModal';
 
@@ -162,25 +164,26 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
 
   const handleRunPingTest = async (providerId: string) => {
     setTestingId(providerId);
+    await loadServerHealth().catch(() => undefined);
     let res: { success: boolean; message: string; latencyMs: number } = { success: false, message: 'Not implemented', latencyMs: 0 };
     if (providerId === 'groq') {
       res = await configService.testGroq(groqKey || groqFallbackKey);
     } else if (providerId === 'groq_fallback') {
       res = await configService.testGroq(groqFallbackKey);
     } else if (providerId === 'tavily') {
-      res = await configService.testTavily();
+      res = await configService.testTavily(tavilyKey);
     } else if (providerId === 'local_serp') {
       res = await configService.testLocalSerp();
     } else if (providerId === 'firecrawl') {
-      res = await configService.testFirecrawl();
+      res = await configService.testFirecrawl(firecrawlKey);
     } else if (providerId === 'patchright') {
       res = await configService.testPatchright();
     } else if (providerId === 'exa') {
-      res = await configService.testExa();
+      res = await configService.testExa(exaKey);
     } else if (providerId === 'nvidia') {
       res = await configService.testNvidia(nvidiaKey, nvidiaOrgId);
     } else if (providerId === 'openrouter') {
-      res = await configService.testOpenRouter();
+      res = await configService.testOpenRouter(openRouterKey);
     } else if (providerId === 'freellm') {
       res = await configService.testFreeLlm();
     } else if (providerId === 'ollama') {
@@ -216,7 +219,19 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
             </div>
             <div>
               <h3 className="text-sm font-bold uppercase tracking-widest text-gold-light">Settings</h3>
-              <p className="text-[10px] text-gray-400 font-mono">Keys are stored only in this browser. For production, route calls through a server so keys never ship to clients.</p>
+              <p className="text-[10px] text-gray-400 font-mono">
+                {(() => {
+                  const health = getServerHealthSync();
+                  const hostedCount = Object.values(health.providers || {}).filter(Boolean).length;
+                  if (health.ok && hostedCount > 0) {
+                    return `Hosted keys active (${hostedCount}). Your own keys stay in this browser and are relayed through Luminara so vendors never see the page origin.`;
+                  }
+                  if (health.ok) {
+                    return 'Your keys stay in this browser and are relayed through Luminara (no vendor CORS). Hosted server keys are not configured yet.';
+                  }
+                  return 'Your keys stay in this browser. Calls relay through Luminara when the Worker is reachable so keys work in production.';
+                })()}
+              </p>
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close settings">
@@ -296,6 +311,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                 />
               </label>
 
+              <DesktopUpdatesPanel />
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-2">
                 {statuses.map(s => {
                   const test = testResults[s.id];
@@ -316,15 +333,19 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between pt-1 text-[10px] font-mono text-gray-400">
-                        <span>{s.isConfigured ? s.maskedKey : 'Add a key in the tabs above'}</span>
-                        {(['groq', 'tavily', 'firecrawl', 'patchright', 'exa', 'nvidia', 'writing_check', 'results_tracking'].includes(s.id) && s.isConfigured || s.id === 'ollama') && (
+                      <div className="flex items-center justify-between gap-2 pt-1 text-[10px] font-mono text-gray-400">
+                        <span className="min-w-0 truncate" title={test && !test.success ? test.message : undefined}>
+                          {s.isConfigured
+                            ? (test && !test.success ? test.message : s.maskedKey)
+                            : 'Add a key in the tabs above'}
+                        </span>
+                        {(['groq', 'tavily', 'firecrawl', 'patchright', 'exa', 'nvidia', 'openrouter', 'writing_check', 'results_tracking'].includes(s.id) && s.isConfigured || s.id === 'ollama') && (
                           <Button
                             variant="secondary"
                             size="xs"
                             onClick={() => handleRunPingTest(s.id)}
                             loading={isTesting}
-                            className="normal-case tracking-normal"
+                            className="normal-case tracking-normal shrink-0"
                             >
                             {isTesting ? 'Testing…' : test ? (test.success ? `✓ Works (${test.latencyMs}ms)` : '✗ Not working') : 'Test'}
                             </Button>
@@ -1142,6 +1163,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
           {/* TAB 5: GENERATIVE & RUNTIME */}
           {activeTab === 'extra' && (
             <div className="space-y-4 text-xs">
+              <DesktopUpdatesPanel />
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
                   Fal.ai API Key (Generative AI Models & Flux Schnell)
