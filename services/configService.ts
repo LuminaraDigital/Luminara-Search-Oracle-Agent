@@ -14,6 +14,13 @@ export interface ProviderStatus {
 
 import { canUseHostedProviderKey, isSidecarConfiguredOnServer, loadServerHealth, providerFetch, sidecarFetch } from './apiClient';
 import { toUserFacingText } from '../utils/userFacingText';
+import {
+  CHAT_MODEL_PREF_KEY,
+  DEFAULT_CHAT_MODEL_PREFERENCE,
+  parseChatModelPreference,
+  type ChatModelPreference,
+} from './llm/chatModelCatalog';
+import { isNimChatModelId, parseOllamaTagsList, parseOpenAiModelList } from './llm/liveModelCatalog';
 
 async function readProviderError(res: Response): Promise<string> {
   try {
@@ -262,6 +269,28 @@ export class ConfigService {
 
   public setOllamaModel(model: string): void {
     this.setKey('luminara_ollama_model', model);
+  }
+
+  /** Sticky composer model pick (Hermes-style). Does not rewrite failover priority. */
+  public getChatModelPreference(): ChatModelPreference {
+    if (typeof window === 'undefined') return { ...DEFAULT_CHAT_MODEL_PREFERENCE };
+    return parseChatModelPreference(localStorage.getItem(CHAT_MODEL_PREF_KEY));
+  }
+
+  public setChatModelPreference(pref: ChatModelPreference): ChatModelPreference {
+    const next: ChatModelPreference =
+      pref.mode === 'auto'
+        ? { ...DEFAULT_CHAT_MODEL_PREFERENCE, mode: 'auto' }
+        : {
+            mode: 'manual',
+            provider: pref.provider,
+            model: (pref.model || '').trim() || DEFAULT_CHAT_MODEL_PREFERENCE.model,
+          };
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(CHAT_MODEL_PREF_KEY, JSON.stringify(next));
+      window.dispatchEvent(new CustomEvent('luminara-chat-model-change', { detail: next }));
+    }
+    return next;
   }
 
   public setOllamaEndpoint(endpoint: string): void {
@@ -614,28 +643,58 @@ export class ConfigService {
     }
   }
 
-  public async testNvidia(overrideKey?: string, overrideOrgId?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const key = (overrideKey && overrideKey.trim()) || this.getNvidiaKey();
-    if (!key || key === 'proxy') return { success: false, message: 'No NVIDIA API Key found', latencyMs: 0 };
-    const orgId = overrideOrgId !== undefined ? overrideOrgId.trim() : this.getNvidiaOrgId();
+  public async testNvidia(overrideKey?: string, overrideOrgId?: string): Promise<{ success: boolean; message: string; latencyMs: number; models?: string[] }> {
+    const key = (overrideKey && overrideKey.trim()) || this.getByokKey('luminara_nvidia_key') || this.getNvidiaKey();
+    if (!key || key === 'proxy') {
+      // Hosted proxy path: still try listing when the Worker can inject a paid hosted key.
+      if (!this.usesProxy('nim')) {
+        return { success: false, message: 'No NVIDIA API Key found', latencyMs: 0 };
+      }
+    }
     await ensureRelayReady();
     const start = Date.now();
     try {
+      const byok = (overrideKey && overrideKey.trim()) || this.getByokKey('luminara_nvidia_key');
+      const orgId = overrideOrgId !== undefined ? overrideOrgId.trim() : (this.getByokKey('luminara_nvidia_org_id') || this.getNvidiaOrgId());
+      const effectiveKey = byok || (key === 'proxy' ? 'proxy' : key);
       const headers: Record<string, string> = {
-        Authorization: `Bearer ${key}`
+        Authorization: `Bearer ${effectiveKey === 'proxy' ? 'proxy' : effectiveKey}`,
       };
-      if (orgId) {
+      if (orgId && effectiveKey !== 'proxy') {
         headers['NV-Organization-ID'] = orgId;
       }
-      const res = await providerFetch('nim', '/models', 'https://integrate.api.nvidia.com/v1/models', { headers }, { userKey: orgId ? `${key}|${orgId}` : key });
+      const userKey =
+        effectiveKey && effectiveKey !== 'proxy'
+          ? (orgId ? `${effectiveKey}|${orgId}` : effectiveKey)
+          : undefined;
+      const res = await providerFetch(
+        'nim',
+        '/models',
+        'https://integrate.api.nvidia.com/v1/models',
+        { headers },
+        userKey ? { userKey } : {},
+      );
       const latencyMs = Date.now() - start;
       if (res.ok) {
-        return { success: true, message: 'Connected to NVIDIA NIM Enterprise Cloud', latencyMs };
+        const body = await res.json().catch(() => null);
+        const models = parseOpenAiModelList(body).filter(isNimChatModelId);
+        return {
+          success: true,
+          message: `Connected to NVIDIA NIM (${models.length} chat model${models.length === 1 ? '' : 's'})`,
+          latencyMs,
+          models,
+        };
       }
       return { success: false, message: `NVIDIA error ${await readProviderError(res)}`, latencyMs };
     } catch (e: any) {
       return { success: false, message: toUserFacingText(e, 'Network error (vendor CORS? use the Worker relay)'), latencyMs: Date.now() - start };
     }
+  }
+
+  /** Live NVIDIA NIM chat-model ids for the composer picker (BYOK or hosted). */
+  public async listNvidiaModels(): Promise<string[]> {
+    const res = await this.testNvidia();
+    return res.success ? (res.models || []) : [];
   }
 
   public async testOllama(overrideEndpoint?: string, overrideKey?: string): Promise<{ success: boolean; isLocal: boolean; message: string; latencyMs: number; models?: string[] }> {
@@ -650,35 +709,46 @@ export class ConfigService {
       const latencyMs = Date.now() - start;
       if (res.ok) {
         const data = await res.json();
-        const models = (data.models || []).map((m: any) => m.name || m.model);
+        const models = parseOllamaTagsList(data);
         const hostName = targetEndpoint.includes('127.0.0.1') || targetEndpoint.includes('localhost') ? 'Local' : targetEndpoint;
         return {
           success: true,
           isLocal: true,
           message: `Connected to ${hostName} Ollama (${models.length} model${models.length === 1 ? '' : 's'} installed)`,
           latencyMs,
-          models
+          models,
         };
       }
     } catch {
       // Local/remote endpoint not running or blocked by CORS, proceed to check Ollama Cloud
     }
 
-    // 2. Check Ollama Cloud via Worker BYOK (or direct) when a cloud key is set
-    const cloudKey = overrideKey !== undefined ? overrideKey.trim() : this.getOllamaKey();
-    if (cloudKey && cloudKey !== 'proxy') {
+    // 2. Check Ollama Cloud via Worker BYOK (or hosted) when a cloud key / plan is available
+    const byok = overrideKey !== undefined ? overrideKey.trim() : this.getByokKey('luminara_ollama_key');
+    const cloudKey = byok || this.getOllamaKey();
+    if (cloudKey) {
       await ensureRelayReady();
       try {
-        const res = await providerFetch('ollama', '/api/tags', 'https://ollama.com/api/tags', {
-          headers: { Authorization: `Bearer ${cloudKey}` },
-        }, { userKey: cloudKey });
+        const userKey = cloudKey !== 'proxy' ? cloudKey : undefined;
+        const res = await providerFetch(
+          'ollama',
+          '/api/tags',
+          'https://ollama.com/api/tags',
+          {
+            headers: cloudKey !== 'proxy' ? { Authorization: `Bearer ${cloudKey}` } : {},
+          },
+          userKey ? { userKey } : {},
+        );
         const latencyMs = Date.now() - start;
         if (res.ok) {
+          const data = await res.json().catch(() => null);
+          const models = parseOllamaTagsList(data);
           return {
             success: true,
             isLocal: false,
-            message: 'Connected to Ollama Cloud',
+            message: `Connected to Ollama Cloud (${models.length} model${models.length === 1 ? '' : 's'})`,
             latencyMs,
+            models,
           };
         }
         return {
@@ -703,6 +773,12 @@ export class ConfigService {
       message: `Ollama daemon not reachable at ${targetEndpoint} and no Cloud Key configured`,
       latencyMs: Date.now() - start
     };
+  }
+
+  /** Live Ollama local/cloud model ids for the composer picker. */
+  public async listOllamaModels(): Promise<string[]> {
+    const res = await this.testOllama();
+    return res.success ? (res.models || []) : [];
   }
 
   /** Same-origin proxy for NVIDIA NIM (the public endpoint blocks browser CORS). Empty = not configured. */
@@ -756,12 +832,27 @@ export class ConfigService {
 
   public getNativePriority(): Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'> {
     const allowed = ConfigService.NATIVE_ENGINE_IDS as readonly string[];
-    let order: Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'> = ['nim', 'groq', 'openrouter', 'ollama', 'freellm'];
+    // Groq first: free hosted tier, and the most reliable cloud engine after
+    // NVIDIA/Groq Llama-3.x retirements in Aug 2026.
+    let order: Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'> = ['groq', 'nim', 'openrouter', 'ollama', 'freellm'];
 
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('luminara_native_llm_order');
-      if (stored) {
-        const parsed = stored.split(',').filter(id => allowed.includes(id)) as Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'>;
+      const migrated = localStorage.getItem('luminara_native_llm_order_migrated_v2');
+      if (stored && !migrated) {
+        const normalized = stored.split(',').map((s) => s.trim()).filter(Boolean).join(',');
+        // One-shot: rewrite the shipped pre-2026-09 default (NIM first) to Groq-first.
+        if (
+          normalized === 'nim,groq,openrouter,ollama' ||
+          normalized === 'nim,groq,openrouter,ollama,freellm'
+        ) {
+          localStorage.setItem('luminara_native_llm_order', order.join(','));
+        }
+        localStorage.setItem('luminara_native_llm_order_migrated_v2', '1');
+      }
+      const afterMigrate = localStorage.getItem('luminara_native_llm_order');
+      if (afterMigrate) {
+        const parsed = afterMigrate.split(',').filter(id => allowed.includes(id)) as Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'>;
         if (parsed.length >= 3) order = parsed;
       }
     }
@@ -781,6 +872,8 @@ export class ConfigService {
   public setNativePriority(order: Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'>): void {
     if (typeof window !== 'undefined') {
       localStorage.setItem('luminara_native_llm_order', order.join(','));
+      // Explicit user/test ordering must not be rewritten by the one-shot Groq-first migration.
+      localStorage.setItem('luminara_native_llm_order_migrated_v2', '1');
       window.dispatchEvent(new CustomEvent('luminara-native-priority-change', { detail: { order } }));
     }
   }

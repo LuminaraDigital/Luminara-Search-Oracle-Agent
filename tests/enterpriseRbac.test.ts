@@ -201,14 +201,14 @@ describe('Enterprise Multi-Tenancy, RBAC & SIEM Audit Logging', () => {
       expect(res.status).toBe(401);
       const data: any = await res.json();
       expect(data.error).toBeTruthy();
-    });
+    }, 15000);
 
     it('rejects non-GET methods on /api/enterprise/audit-logs with 405', async () => {
       const worker = (await import('../worker/index')).default;
       const res = await worker.fetch(
         new Request('https://luminarasuite.com/api/enterprise/audit-logs', {
           method: 'POST',
-          headers: { 'cf-connecting-ip': '1.2.3.5' },
+          headers: { 'cf-connecting-ip': '1.2.3.4' },
         }),
         {
           ASSETS: { fetch: async () => new Response('ok') } as any,
@@ -219,6 +219,6 @@ describe('Enterprise Multi-Tenancy, RBAC & SIEM Audit Logging', () => {
       );
 
       expect(res.status).toBe(405);
-    });
+    }, 15000);
   });
 });

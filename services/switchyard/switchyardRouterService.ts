@@ -25,24 +25,14 @@ const ROUTE_CONFIGS_STORAGE_KEY = 'luminara_switchyard_routes';
 
 export const DEFAULT_SWITCHYARD_TARGETS: SwitchyardTarget[] = [
   {
-    id: 'groq_llama70b',
-    name: 'Groq Llama-3.3-70B Versatile',
+    id: 'groq_gpt_oss_120b',
+    name: 'Groq GPT-OSS 120B',
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     role: 'efficient',
-    tokensPerSec: 285,
+    tokensPerSec: 500,
     costPerMillionTokens: 0.59,
     latencyBaselineMs: 180,
-  },
-  {
-    id: 'nvidia_nim_70b',
-    name: 'NVIDIA NIM Llama-3.3-70B Instruct',
-    provider: 'nim',
-    model: 'meta/llama-3.3-70b-instruct',
-    role: 'capable',
-    tokensPerSec: 95,
-    costPerMillionTokens: 0.70,
-    latencyBaselineMs: 320,
   },
   {
     id: 'nvidia_nim_11b',
@@ -53,6 +43,16 @@ export const DEFAULT_SWITCHYARD_TARGETS: SwitchyardTarget[] = [
     tokensPerSec: 120,
     costPerMillionTokens: 0.35,
     latencyBaselineMs: 280,
+  },
+  {
+    id: 'nvidia_nim_90b',
+    name: 'NVIDIA NIM Llama-3.2-90B Vision Instruct',
+    provider: 'nim',
+    model: 'meta/llama-3.2-90b-vision-instruct',
+    role: 'capable',
+    tokensPerSec: 60,
+    costPerMillionTokens: 0.90,
+    latencyBaselineMs: 450,
   },
   {
     id: 'nvidia_nim_r1',

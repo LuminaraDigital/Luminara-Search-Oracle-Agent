@@ -240,7 +240,7 @@ describe('AI Paywall & Quota Engine', () => {
             'content-type': 'application/json',
             'x-telegram-init-data': initData,
           },
-          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [], max_tokens: 999999 }),
+          body: JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [], max_tokens: 999999 }),
         });
 
         const { proxyProvider } = await import('../worker/index');

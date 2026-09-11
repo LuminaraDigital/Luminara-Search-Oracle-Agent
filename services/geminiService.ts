@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { OracleMode, ToolExecution, BusinessDNA, ReportFocus, OrganizerFormat, OrganizerSchema, ChatTurn } from "../types";
+import { OracleMode, ToolExecution, BusinessDNA, ReportFocus, OrganizerFormat, OrganizerSchema, ChatTurn, NativeEngineId } from "../types";
 import { SYSTEM_INSTRUCTIONS } from "../constants";
 import { vfsRetrievalService } from "./vfs/vfsRetrievalService";
 import { vfsMemoryService } from "./vfs/vfsMemoryService";
@@ -11,6 +11,7 @@ import { unifiedScraperService } from "./scraping/unifiedScraper";
 import { siteEvidencePackService } from "./scraping/siteEvidencePack";
 import { geminiProxyHttpOptions } from "./apiClient";
 import { wrapUntrustedContent } from "../utils/untrustedContent";
+import { toUserFacingText } from "../utils/userFacingText";
 
 export interface StreamChunk {
   text?: string;
@@ -23,6 +24,9 @@ export interface StreamQueryOptions {
   history?: ChatTurn[];
   /** Skip the live SERP lookup (e.g. for "simplify this" follow-ups that need no fresh evidence). */
   skipSearch?: boolean;
+  /** Composer model override (Hermes-style sticky pick). */
+  model?: string;
+  preferredProvider?: NativeEngineId;
 }
 
 import { empiricalCitationService, type EmpiricalCitationSummary } from './audit/empiricalCitationService';
@@ -252,14 +256,20 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama Local & Cloud
     // With automatic native engine discovery, searching, and instant auto-failover
+    const chatPref = configService.getChatModelPreference();
+    const preferredProvider = opts.preferredProvider || (chatPref.mode === 'manual' ? chatPref.provider : undefined);
+    const preferredModel = opts.model || (chatPref.mode === 'manual' ? chatPref.model : undefined);
+    let nativeFailure: unknown = null;
     try {
-      const bestNative = await aiProviderService.getBestAvailableProvider();
+      const bestNative = await aiProviderService.getBestAvailableProvider(preferredProvider);
       if (bestNative) {
         let isFirst = true;
         for await (const chunk of aiProviderService.streamWithFailover(fullPrompt, {
           systemPrompt: SYSTEM_INSTRUCTIONS,
           temperature: mode === OracleMode.DEEP_THINK ? 0.4 : 0.7,
           history,
+          model: preferredModel,
+          preferredProvider,
         })) {
           if (isFirst && tavilySources.length > 0) {
             yield { ...chunk, groundingUrls: tavilySources };
@@ -271,6 +281,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
         return;
       }
     } catch (nativeErr) {
+      nativeFailure = nativeErr;
       console.warn("Native Trinity Streaming failed, falling back to secondary providers...", nativeErr);
     }
 
@@ -321,10 +332,16 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
         return;
       } catch (geminiError) {
         console.warn("Gemini Streaming Error:", geminiError);
+        if (!nativeFailure) nativeFailure = geminiError;
       }
     }
 
-    throw new ProviderUnavailableError();
+    const detail = toUserFacingText(nativeFailure, '');
+    throw new ProviderUnavailableError(
+      detail
+        ? `No native LLM responded. ${detail}`
+        : undefined,
+    );
   }
 
   /**

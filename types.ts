@@ -810,6 +810,8 @@ export interface WorkspaceAgent {
  */
 export interface GenerateOptions {
   model?: string;
+  /** Pin a native provider first (composer model pick). Failover still continues afterward. */
+  preferredProvider?: NativeEngineId;
   temperature?: number;
   maxTokens?: number;
   topP?: number;

@@ -30,7 +30,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-12">
+    <div className="flex-1 overflow-y-auto px-3 sm:px-6 md:px-8 py-4 sm:py-6 space-y-8 sm:space-y-12">
       {messages.length === 0 && (
         <div className="min-h-full flex flex-col items-center justify-center text-center max-w-5xl mx-auto space-y-12 py-12">
           <div className="w-24 h-24 mb-4">
@@ -81,26 +81,26 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
 
         return (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`w-full ${msg.role === 'user' ? 'max-w-[85%] md:max-w-[70%]' : 'max-w-[95%]'}`}>
-              <div className={`flex items-start gap-6 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                <div className={`w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center shadow-xl border ${msg.role === 'user' ? 'bg-surface-2 border-white/10' : 'glass-morphism mt-4'}`}>
+            <div className={`w-full ${msg.role === 'user' ? 'max-w-[90%] md:max-w-[75%]' : 'max-w-full'}`}>
+              <div className={`flex items-start gap-3 sm:gap-6 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center shadow-xl border ${msg.role === 'user' ? 'bg-surface-2 border-white/10' : 'glass-morphism mt-2 sm:mt-4'}`}>
                   {msg.role === 'user' ? (
                      <span className="text-[9px] font-black text-gray-500 tracking-widest">USR</span>
                   ) : (
-                    <ICONS.LuminaraLogo className="w-10 h-10" isThinking={showStreamingIndicator} />
+                    <ICONS.LuminaraLogo className="w-8 h-8 sm:w-10 sm:h-10" isThinking={showStreamingIndicator} />
                   )}
                 </div>
                 
-                <div className={`flex-1 transition-all duration-500 ${
+                <div className={`flex-1 min-w-0 transition-all duration-500 ${
                   msg.role === 'user' 
-                    ? 'p-6 rounded-[28px] bg-surface-2 text-gray-300 border border-white/5 shadow-2xl whitespace-pre-wrap leading-relaxed' 
+                    ? 'p-4 sm:p-6 rounded-[24px] sm:rounded-[28px] bg-surface-2 text-gray-300 border border-white/5 shadow-2xl whitespace-pre-wrap leading-relaxed' 
                     : isError 
-                      ? 'p-10 rounded-[40px] bg-danger-950/20 text-danger-200 border border-danger-500/30 shadow-2xl'
-                      : 'p-12 md:p-16 rounded-[48px] glass-morphism border-gold/15 shadow-[0_25px_80px_rgba(0,0,0,0.8)]'
+                      ? 'p-5 sm:p-8 md:p-10 rounded-[28px] sm:rounded-[40px] bg-danger-950/20 text-danger-200 border border-danger-500/30 shadow-2xl'
+                      : 'p-5 sm:p-8 md:p-12 lg:p-14 rounded-[28px] sm:rounded-[44px] glass-morphism border-gold/15 shadow-[0_25px_80px_rgba(0,0,0,0.8)]'
                 } ${showStreamingIndicator && msg.role === 'model' ? 'border-gold/40 ring-1 ring-gold/20' : ''}`}>
                   
                   {isError && (
-                    <div className="flex items-center gap-3 mb-6 text-danger-400">
+                    <div className="flex items-center gap-3 mb-4 sm:mb-6 text-danger-400">
                       <ICONS.AlertCircle />
                       <span className="text-[10px] font-black uppercase tracking-[0.4em]">Strategic Breach Intercepted</span>
                     </div>
@@ -177,6 +177,26 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                     })()
                   ) : (
                     msg.content
+                  )}
+
+                  {isError && (
+                    <div className="mt-6 pt-4 border-t border-danger-500/20 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => window.dispatchEvent(new CustomEvent('luminara-open-settings'))}
+                        className="px-4 py-2 rounded-xl bg-gold/20 hover:bg-gold/30 border border-gold/40 text-gold-light text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                      >
+                        <ICONS.Settings className="w-3.5 h-3.5 text-gold" />
+                        <span>Open Settings &amp; AI Keys</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.dispatchEvent(new CustomEvent('luminara-open-native-hub'))}
+                        className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-gray-300 hover:text-white text-xs font-mono font-bold transition-all flex items-center gap-2 cursor-pointer"
+                      >
+                        <span>⚡ Configure Native Engines</span>
+                      </button>
+                    </div>
                   )}
 
                   {showStreamingIndicator && (

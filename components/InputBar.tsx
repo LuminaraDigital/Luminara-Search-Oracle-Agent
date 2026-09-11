@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { ICONS } from '../constants';
 import { OracleMode } from '../types';
 import { OracleLiveService } from '../services/liveService';
+import { ComposerModelPicker } from './llm/ComposerModelPicker';
 
 interface InputBarProps {
   onSendMessage: (text: string) => void;
@@ -24,7 +25,7 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 pb-10 pt-4">
+    <div className="w-full max-w-4xl mx-auto px-4 pb-3 sm:pb-4 pt-1 sm:pt-2">
       <form 
         onSubmit={handleSubmit}
         className={`glass-morphism rounded-[24px] p-2 flex items-center gap-2 transition-all duration-700 shadow-2xl relative overflow-hidden ${
@@ -37,6 +38,10 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
         {isThinking && (
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-gold/5 to-transparent animate-[shimmer_2s_infinite] pointer-events-none" />
         )}
+
+        <div className="relative z-10 pl-1">
+          <ComposerModelPicker disabled={isThinking} />
+        </div>
 
         <button
           type="button"
@@ -99,7 +104,7 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
           )}
         </div>
       </form>
-      <div className="mt-4 text-center">
+      <div className="mt-2 text-center">
         <p className={`text-[10px] uppercase tracking-[0.2em] transition-all duration-500 ${isThinking ? 'text-gray-700' : 'text-gray-600'}`}>
           Answers can be wrong. Check important facts before acting. &copy; Luminara Suite
         </p>

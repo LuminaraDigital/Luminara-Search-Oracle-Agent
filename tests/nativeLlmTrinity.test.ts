@@ -25,6 +25,7 @@ describe('Native LLM Trinity (NVIDIA NIM, Groq, Ollama)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mockLocalStorage.clear();
+    aiProviderService.clearCooldowns();
   });
 
   describe('safeJsonParse', () => {
@@ -73,16 +74,30 @@ We should construct a valid JSON payload with score and recommendations.
   });
 
   describe('Native Engine Priority & Resolution', () => {
-    it('defaults native priority to NVIDIA NIM -> Groq -> OpenRouter -> Ollama -> FreeLLM', () => {
+    it('defaults native priority to Groq -> NVIDIA NIM -> OpenRouter -> Ollama -> FreeLLM', () => {
       const order = configService.getNativePriority();
-      expect(order).toEqual(['nim', 'groq', 'openrouter', 'ollama', 'freellm']);
+      expect(order).toEqual(['groq', 'nim', 'openrouter', 'ollama', 'freellm']);
     });
 
-    it('prioritizes NVIDIA NIM when configured', async () => {
+    it('prioritizes Groq when both Groq and NIM are configured', async () => {
       localStorage.setItem('luminara_nvidia_key', 'nvapi-test-key-12345');
       localStorage.setItem('luminara_groq_key', 'gsk_test_groq_key');
 
-      // Mock NIM availability
+      const groq = aiProviderService.getProvider('groq');
+      vi.spyOn(groq!, 'isAvailable').mockResolvedValue(true);
+      const nim = aiProviderService.getProvider('nim');
+      vi.spyOn(nim!, 'isAvailable').mockResolvedValue(true);
+
+      const best = await aiProviderService.getBestAvailableProvider();
+      expect(best?.id).toBe('groq');
+    });
+
+    it('resolves to NVIDIA NIM when Groq is unavailable', async () => {
+      localStorage.setItem('luminara_nvidia_key', 'nvapi-test-key-12345');
+      localStorage.setItem('luminara_groq_key', 'gsk_test_groq_key');
+
+      const groq = aiProviderService.getProvider('groq');
+      vi.spyOn(groq!, 'isAvailable').mockResolvedValue(false);
       const nim = aiProviderService.getProvider('nim');
       vi.spyOn(nim!, 'isAvailable').mockResolvedValue(true);
 
@@ -137,6 +152,7 @@ We should construct a valid JSON payload with score and recommendations.
 
   describe('Automatic Failover Between Native Engines', () => {
     it('fails over from NVIDIA NIM to Groq when NIM encounters an error', async () => {
+      configService.setNativePriority(['nim', 'groq', 'openrouter', 'ollama', 'freellm']);
       const nim = aiProviderService.getProvider('nim');
       const groq = aiProviderService.getProvider('groq');
 
@@ -156,6 +172,32 @@ We should construct a valid JSON payload with score and recommendations.
 
       const result = await aiProviderService.generateWithFailover('Test prompt');
       expect(result.text).toBe('Groq generated response successfully');
+      expect(failoverSpy).toHaveBeenCalledTimes(1);
+
+      window.removeEventListener('luminara-llm-failover', failoverSpy);
+    });
+
+    it('fails over from Groq to NVIDIA NIM when Groq encounters an error', async () => {
+      configService.setNativePriority(['groq', 'nim', 'openrouter', 'ollama', 'freellm']);
+      const nim = aiProviderService.getProvider('nim');
+      const groq = aiProviderService.getProvider('groq');
+
+      vi.spyOn(nim!, 'isAvailable').mockResolvedValue(true);
+      vi.spyOn(groq!, 'isAvailable').mockResolvedValue(true);
+
+      vi.spyOn(groq!, 'generateText').mockRejectedValue(new Error('Groq model missing'));
+      vi.spyOn(nim!, 'generateText').mockResolvedValue({
+        text: 'NIM generated response successfully',
+        finishReason: 'stop',
+        latencyMs: 120,
+        tokenUsage: { prompt: 10, completion: 5, total: 15 },
+      });
+
+      const failoverSpy = vi.fn();
+      window.addEventListener('luminara-llm-failover', failoverSpy);
+
+      const result = await aiProviderService.generateWithFailover('Test prompt');
+      expect(result.text).toBe('NIM generated response successfully');
       expect(failoverSpy).toHaveBeenCalledTimes(1);
 
       window.removeEventListener('luminara-llm-failover', failoverSpy);

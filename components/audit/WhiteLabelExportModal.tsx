@@ -272,8 +272,8 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl glass-morphism rounded-2xl border border-gold/40 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden bg-black/95">
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative my-auto w-full max-w-2xl glass-morphism rounded-2xl border border-gold/40 shadow-2xl flex flex-col max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] overflow-hidden bg-black/95">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/60">

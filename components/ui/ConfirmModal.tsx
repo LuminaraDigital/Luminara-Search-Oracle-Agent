@@ -75,7 +75,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-[200] overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
       onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}
     >
       <div
@@ -84,7 +84,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
-        className={`glass-morphism rounded-2xl shadow-2xl w-full max-w-md overflow-hidden bg-black/95 animate-in zoom-in-95 duration-200 ${
+        className={`glass-morphism rounded-2xl shadow-2xl w-full max-w-md my-auto overflow-hidden bg-black/95 animate-in zoom-in-95 duration-200 ${
           variant === 'danger' ? 'border border-danger-500/40' : 'border border-gold/40'
         }`}
       >

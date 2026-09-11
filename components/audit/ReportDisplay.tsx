@@ -221,8 +221,8 @@ export const MetricModal: React.FC<{
   if (!isOpen || !data) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative bg-black/95">
+    <div className="fixed inset-0 z-[100] overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-lg my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] overflow-y-auto relative bg-black/95">
         <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
           <ICONS.X className="w-5 h-5" />
         </button>

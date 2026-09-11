@@ -61,7 +61,7 @@ describe('FreeLLMAPI BYOK gateway', () => {
 
   it('keeps default trinity order when freellm key is absent', () => {
     const order = configService.getNativePriority();
-    expect(order[0]).toBe('nim');
+    expect(order[0]).toBe('groq');
     expect(order).toContain('freellm');
   });
 

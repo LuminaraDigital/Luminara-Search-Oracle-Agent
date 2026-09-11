@@ -21,7 +21,25 @@ import {
 
 import { buildChatMessages } from './chat/messages';
 import { toUserFacingText } from '../utils/userFacingText';
+import {
+  GROQ_DEFAULT_MODEL,
+  groqModelCandidates,
+  isMissingModelStatus,
+  NIM_DEFAULT_MODEL,
+  nimModelCandidates,
+} from './llm/nativeModelDefaults';
+
 export { buildChatMessages };
+export {
+  GROQ_DEFAULT_MODEL,
+  GROQ_FALLBACK_MODELS,
+  NIM_DEFAULT_MODEL,
+  NIM_FALLBACK_MODELS,
+} from './llm/nativeModelDefaults';
+
+function isGroqModelMissingStatus(status: number, body: string): boolean {
+  return isMissingModelStatus(status, body);
+}
 
 /**
  * Defensive JSON parser for open-weight models (NVIDIA NIM, Groq, Ollama).
@@ -100,14 +118,14 @@ export abstract class BaseAIProvider implements AIProvider {
 }
 
 /**
- * Groq Cloud Provider (Ultra-Fast Llama-3.3-70B / DeepSeek-R1)
+ * Groq Cloud Provider (Ultra-Fast LPU: GPT-OSS / Qwen)
  */
 export class GroqProvider extends BaseAIProvider {
   id = 'groq';
   name = 'Groq Cloud Engine';
   type: AIProviderType = 'groq';
   config = {
-    model: 'llama-3.3-70b-versatile',
+    model: GROQ_DEFAULT_MODEL,
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     temperature: 0.7,
     maxTokens: 4096,
@@ -131,12 +149,11 @@ export class GroqProvider extends BaseAIProvider {
   async generateText(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
     let key = configService.getGroqKey();
     const fallbackKey = configService.getGroqFallbackKey();
-    const model = options?.model || this.config.model;
     const startTime = Date.now();
+    const messages = buildChatMessages(prompt, options);
+    const models = groqModelCandidates(options?.model);
 
-    const doFetch = async (apiKey: string) => {
-      const messages = buildChatMessages(prompt, options);
-
+    const doFetch = async (apiKey: string, model: string) => {
       const body: any = {
         model,
         messages,
@@ -158,30 +175,46 @@ export class GroqProvider extends BaseAIProvider {
       }, { userKey: apiKey });
     };
 
-    let response: Response;
-    try {
-      response = await doFetch(key || fallbackKey);
-      if (response.status === 429 && fallbackKey && key !== fallbackKey) {
-        console.warn('[Groq] Rate limit hit on primary key, rotating to fallback key...');
-        response = await doFetch(fallbackKey);
+    let response: Response | null = null;
+    let lastErrText = '';
+    let usedModel = models[0];
+
+    for (const model of models) {
+      usedModel = model;
+      let apiKey = key || fallbackKey;
+      try {
+        response = await doFetch(apiKey, model);
+        if (response.status === 429 && fallbackKey && key !== fallbackKey) {
+          console.warn('[Groq] Rate limit hit on primary key, rotating to fallback key...');
+          response = await doFetch(fallbackKey, model);
+          apiKey = fallbackKey;
+        }
+      } catch (e: any) {
+        if (fallbackKey && key !== fallbackKey) {
+          response = await doFetch(fallbackKey, model);
+        } else {
+          throw e;
+        }
       }
-    } catch (e: any) {
-      if (fallbackKey && key !== fallbackKey) {
-        response = await doFetch(fallbackKey);
-      } else {
-        throw e;
+
+      if (response.ok) break;
+      lastErrText = await response.text();
+      if (isGroqModelMissingStatus(response.status, lastErrText) && model !== models[models.length - 1]) {
+        console.warn(`[Groq] Model ${model} unavailable (${response.status}); trying next candidate...`);
+        continue;
       }
+      throw new Error(`Groq inference error (${response.status}): ${lastErrText}`);
     }
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Groq inference error (${response.status}): ${errText}`);
+    if (!response || !response.ok) {
+      throw new Error(`Groq inference error: ${lastErrText || 'no response'}`);
     }
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || '';
     const latencyMs = Date.now() - startTime;
     const usage = data.usage || {};
+    this.config.model = usedModel;
 
     return {
       text,
@@ -199,29 +232,44 @@ export class GroqProvider extends BaseAIProvider {
     const key = this.getActiveApiKey();
     if (!key) throw new Error('Groq API Key not configured');
 
-    const model = options?.model || this.config.model;
     const messages = buildChatMessages(prompt, options);
+    const models = groqModelCandidates(options?.model);
 
-    const response = await providerFetch('groq', '/chat/completions', this.config.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: options?.temperature ?? this.config.temperature,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens,
-        stream: true,
-      }),
-    }, { userKey: key });
+    let response: Response | null = null;
+    let lastErrText = '';
+    let usedModel = models[0];
 
-    if (!response.ok || !response.body) {
-      const errText = await response.text();
-      throw new Error(`Groq stream error: ${response.status} ${errText}`);
+    for (const model of models) {
+      usedModel = model;
+      response = await providerFetch('groq', '/chat/completions', this.config.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: options?.temperature ?? this.config.temperature,
+          max_tokens: options?.maxTokens ?? this.config.maxTokens,
+          stream: true,
+        }),
+      }, { userKey: key });
+
+      if (response.ok && response.body) break;
+      lastErrText = await response.text();
+      if (isGroqModelMissingStatus(response.status, lastErrText) && model !== models[models.length - 1]) {
+        console.warn(`[Groq] Model ${model} unavailable (${response.status}); trying next candidate...`);
+        continue;
+      }
+      throw new Error(`Groq stream error: ${response.status} ${lastErrText}`);
     }
 
+    if (!response?.ok || !response.body) {
+      throw new Error(`Groq stream error: ${lastErrText || 'no response body'}`);
+    }
+
+    this.config.model = usedModel;
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -253,14 +301,15 @@ export class GroqProvider extends BaseAIProvider {
 }
 
 /**
- * NVIDIA NIM Provider (Enterprise Accelerated Foundation Inference: Llama-3.3-70B / DeepSeek-R1)
+ * NVIDIA NIM Provider (Enterprise Accelerated Foundation Inference)
+ * Default model: Llama 3.2 11B Vision. Llama 3.3 70B Instruct reached EOL on 2026-08-26.
  */
 export class NvidiaNimProvider extends BaseAIProvider {
   id = 'nim';
   name = 'NVIDIA NIM Enterprise';
   type: AIProviderType = 'nim';
   config = {
-    model: 'meta/llama-3.3-70b-instruct',
+    model: NIM_DEFAULT_MODEL,
     endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
     temperature: 0.7,
     maxTokens: 4096,
@@ -314,31 +363,45 @@ export class NvidiaNimProvider extends BaseAIProvider {
 
   async generateText(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
     const headers = this.buildHeaders();
-    const model = options?.model || this.config.model;
     const startTime = Date.now();
-
     const messages = buildChatMessages(prompt, options);
+    const models = nimModelCandidates(options?.model);
 
-    const response = await providerFetch('nim', '/chat/completions', this.endpointUrl(), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: options?.temperature ?? this.config.temperature,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens,
-      }),
-    }, { userKey: this.ownKey() });
+    let response: Response | null = null;
+    let lastErr = '';
+    let usedModel = models[0];
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`NVIDIA NIM error (${response.status}): ${err}`);
+    for (const model of models) {
+      usedModel = model;
+      response = await providerFetch('nim', '/chat/completions', this.endpointUrl(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: options?.temperature ?? this.config.temperature,
+          max_tokens: options?.maxTokens ?? this.config.maxTokens,
+        }),
+      }, { userKey: this.ownKey() });
+
+      if (response.ok) break;
+      lastErr = await response.text();
+      if (isMissingModelStatus(response.status, lastErr) && model !== models[models.length - 1]) {
+        console.warn(`[NIM] Model ${model} unavailable (${response.status}); trying next candidate...`);
+        continue;
+      }
+      throw new Error(`NVIDIA NIM error (${response.status}): ${lastErr}`);
+    }
+
+    if (!response || !response.ok) {
+      throw new Error(`NVIDIA NIM error: ${lastErr || 'no response'}`);
     }
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || '';
     const latencyMs = Date.now() - startTime;
     const usage = data.usage || {};
+    this.config.model = usedModel;
 
     return {
       text,
@@ -354,26 +417,41 @@ export class NvidiaNimProvider extends BaseAIProvider {
 
   async *streamText(prompt: string, options?: GenerateOptions): AsyncIterable<StreamChunk> {
     const headers = this.buildHeaders();
-    const model = options?.model || this.config.model;
     const messages = buildChatMessages(prompt, options);
+    const models = nimModelCandidates(options?.model);
 
-    const response = await providerFetch('nim', '/chat/completions', this.endpointUrl(), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: options?.temperature ?? this.config.temperature,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens,
-        stream: true,
-      }),
-    }, { userKey: this.ownKey() });
+    let response: Response | null = null;
+    let lastErr = '';
+    let usedModel = models[0];
 
-    if (!response.ok || !response.body) {
-      const err = await response.text();
-      throw new Error(`NVIDIA NIM stream error (${response.status}): ${err}`);
+    for (const model of models) {
+      usedModel = model;
+      response = await providerFetch('nim', '/chat/completions', this.endpointUrl(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: options?.temperature ?? this.config.temperature,
+          max_tokens: options?.maxTokens ?? this.config.maxTokens,
+          stream: true,
+        }),
+      }, { userKey: this.ownKey() });
+
+      if (response.ok && response.body) break;
+      lastErr = await response.text();
+      if (isMissingModelStatus(response.status, lastErr) && model !== models[models.length - 1]) {
+        console.warn(`[NIM] Model ${model} unavailable (${response.status}); trying next candidate...`);
+        continue;
+      }
+      throw new Error(`NVIDIA NIM stream error (${response.status}): ${lastErr}`);
     }
 
+    if (!response?.ok || !response.body) {
+      throw new Error(`NVIDIA NIM stream error: ${lastErr || 'no response body'}`);
+    }
+
+    this.config.model = usedModel;
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -427,6 +505,7 @@ export class OllamaNativeProvider extends BaseAIProvider {
 
   private cachedIsLocal: boolean | null = null;
   private lastProbeTime = 0;
+  private cachedModels: string[] = [];
 
   private resolveActiveModel(optionsModel?: string, probeModels?: string[]): string {
     if (optionsModel && optionsModel.trim()) return optionsModel.trim();
@@ -434,6 +513,11 @@ export class OllamaNativeProvider extends BaseAIProvider {
     if (configured && configured.trim()) return configured.trim();
     if (probeModels && probeModels.length > 0) return probeModels[0];
     return this.config.model;
+  }
+
+  /** Prefer BYOK so free users never hit the hosted Stars/TON gate. */
+  private ownCloudKey(): string {
+    return configService.getByokKey('luminara_ollama_key') || configService.getOllamaKey();
   }
 
   async isAvailable(): Promise<boolean> {
@@ -444,13 +528,12 @@ export class OllamaNativeProvider extends BaseAIProvider {
   public async probeStatus(): Promise<{ available: boolean; isLocal: boolean; endpoint: string; models: string[] }> {
     const now = Date.now();
     const endpoint = configService.getOllamaEndpoint();
-    const preferredModel = configService.getOllamaModel();
-    if (this.cachedIsLocal !== null && now - this.lastProbeTime < 5000) {
+    if (this.cachedIsLocal !== null && now - this.lastProbeTime < 5_000 && this.cachedModels.length > 0) {
       return {
         available: true,
         isLocal: this.cachedIsLocal,
         endpoint: this.cachedIsLocal ? endpoint : 'https://ollama.com',
-        models: [preferredModel],
+        models: this.cachedModels,
       };
     }
 
@@ -462,8 +545,9 @@ export class OllamaNativeProvider extends BaseAIProvider {
       clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
-        const models = (data.models || []).map((m: any) => m.name || m.model);
+        const models = (data.models || []).map((m: any) => m.name || m.model).filter(Boolean);
         this.cachedIsLocal = true;
+        this.cachedModels = models;
         this.lastProbeTime = now;
         return { available: true, isLocal: true, endpoint, models };
       }
@@ -471,19 +555,52 @@ export class OllamaNativeProvider extends BaseAIProvider {
       // Local not running or blocked by CORS
     }
 
-    // 2. Cloud Ollama (BYOK or hosted with an active plan)
-    if (configService.getOllamaKey()) {
+    // 2. Cloud Ollama (BYOK or hosted with an active plan) - list every available model
+    const cloudKey = this.ownCloudKey();
+    if (cloudKey) {
+      try {
+        const userKey = cloudKey !== 'proxy' ? cloudKey : undefined;
+        const res = await providerFetch(
+          'ollama',
+          '/api/tags',
+          'https://ollama.com/api/tags',
+          {
+            headers: cloudKey !== 'proxy' ? { Authorization: `Bearer ${cloudKey}` } : {},
+          },
+          userKey ? { userKey } : {},
+        );
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          const models = ((data as any)?.models || [])
+            .map((m: any) => m.name || m.model)
+            .filter(Boolean);
+          this.cachedIsLocal = false;
+          this.cachedModels = models.length > 0 ? models : [configService.getOllamaModel()];
+          this.lastProbeTime = now;
+          return {
+            available: true,
+            isLocal: false,
+            endpoint: 'https://ollama.com',
+            models: this.cachedModels,
+          };
+        }
+      } catch {
+        /* fall through */
+      }
+      // Key present even if listing failed: still mark cloud available for chat attempts.
       this.cachedIsLocal = false;
+      this.cachedModels = [configService.getOllamaModel()];
       this.lastProbeTime = now;
       return {
         available: true,
         isLocal: false,
         endpoint: 'https://ollama.com',
-        models: [preferredModel, 'llama3.2', 'deepseek-r1', 'mistral'],
+        models: this.cachedModels,
       };
     }
 
     this.cachedIsLocal = null;
+    this.cachedModels = [];
     return { available: false, isLocal: false, endpoint: '', models: [] };
   }
 
@@ -527,19 +644,19 @@ export class OllamaNativeProvider extends BaseAIProvider {
         latencyMs,
       };
     } else {
-      const key = configService.getOllamaKey();
+      const key = this.ownCloudKey();
       const response = await providerFetch('ollama', '/v1/chat/completions', 'https://ollama.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(key ? { Authorization: `Bearer ${key}` } : {}),
+          ...(key && key !== 'proxy' ? { Authorization: `Bearer ${key}` } : {}),
         },
         body: JSON.stringify({
           model,
           messages,
           stream: false,
         }),
-      });
+      }, key && key !== 'proxy' ? { userKey: key } : {});
 
       if (!response.ok) {
         const err = await response.text();
@@ -574,9 +691,9 @@ export class OllamaNativeProvider extends BaseAIProvider {
       : 'https://ollama.com/v1/chat/completions';
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (!probe.isLocal) {
-      const key = configService.getOllamaKey();
-      if (key) headers.Authorization = `Bearer ${key}`;
+    const cloudKey = !probe.isLocal ? this.ownCloudKey() : '';
+    if (!probe.isLocal && cloudKey && cloudKey !== 'proxy') {
+      headers.Authorization = `Bearer ${cloudKey}`;
     }
 
     const response = probe.isLocal
@@ -589,7 +706,7 @@ export class OllamaNativeProvider extends BaseAIProvider {
           method: 'POST',
           headers,
           body: JSON.stringify({ model, messages, temperature: options?.temperature ?? this.config.temperature, stream: true }),
-        }, { userKey: configService.getOllamaKey() });
+        }, cloudKey && cloudKey !== 'proxy' ? { userKey: cloudKey } : {});
 
     if (!response.ok || !response.body) {
       const err = await response.text();
@@ -920,7 +1037,7 @@ export class OpenRouterProvider extends BaseAIProvider {
 export class AIProviderService {
   private static instance: AIProviderService;
   private providers: Map<string, AIProvider> = new Map();
-  private lastActiveEngine: NativeEngineId = 'nim';
+  private lastActiveEngine: NativeEngineId = 'groq';
   /** providerId -> cooldown-until epoch ms (rate-limit / 5xx soft skip) */
   private cooldowns: Map<string, number> = new Map();
   /** providerId -> adaptive circuit breaker state */
@@ -956,6 +1073,12 @@ export class AIProviderService {
 
   public getLastActiveEngine(): NativeEngineId {
     return this.lastActiveEngine;
+  }
+
+  /** Test helper: drop rate-limit cooldowns and circuits between vitest cases. */
+  public clearCooldowns(): void {
+    this.cooldowns.clear();
+    this.circuits.clear();
   }
 
   private isCoolingDown(providerId: string): boolean {
@@ -1026,21 +1149,24 @@ export class AIProviderService {
     const nim = this.getProvider('nim') as NvidiaNimProvider;
     const hasNim = await nim?.isAvailable();
     let nimLatency = 0;
+    let nimModels: string[] = [];
     if (hasNim) {
       const ping = await configService.testNvidia();
       nimLatency = ping.latencyMs;
+      nimModels = ping.models || [];
     }
     results.push({
       id: 'nim',
       name: 'NVIDIA NIM Enterprise',
       provider: 'NVIDIA',
-      model: 'meta/llama-3.3-70b-instruct',
+      model: NIM_DEFAULT_MODEL,
       isAvailable: Boolean(hasNim) && !this.isCoolingDown('nim'),
       isLocal: false,
       endpoint: 'integrate.api.nvidia.com/v1',
       latencyMs: nimLatency,
-      tokenSpeed: '95 tok/s',
+      tokenSpeed: '120 tok/s',
       lastChecked: Date.now(),
+      detectedModels: nimModels,
     });
 
     // 2. Probe Groq
@@ -1055,12 +1181,12 @@ export class AIProviderService {
       id: 'groq',
       name: 'Groq Cloud LPU',
       provider: 'Groq',
-      model: 'llama-3.3-70b-versatile',
+      model: GROQ_DEFAULT_MODEL,
       isAvailable: Boolean(hasGroq) && !this.isCoolingDown('groq'),
       isLocal: false,
       endpoint: 'api.groq.com/openai/v1',
       latencyMs: groqLatency,
-      tokenSpeed: '285 tok/s',
+      tokenSpeed: '~500 tok/s',
       lastChecked: Date.now(),
     });
 
@@ -1130,9 +1256,10 @@ export class AIProviderService {
   /**
    * Determine best available native provider in priority order.
    * Skips engines in 429/5xx cooldown so mid-run audits keep progressing.
+   * Composer manual picks pin that provider first without rewriting Settings order.
    */
-  public async getBestAvailableProvider(): Promise<AIProvider | null> {
-    const order = configService.getNativePriority();
+  public async getBestAvailableProvider(preferredProvider?: NativeEngineId): Promise<AIProvider | null> {
+    const order = this.resolveProviderOrder(preferredProvider);
 
     for (const providerId of order) {
       if (this.isCoolingDown(providerId)) continue;
@@ -1144,6 +1271,51 @@ export class AIProviderService {
     }
 
     return null;
+  }
+
+  /** Merge sticky composer preference into call options (explicit opts win). */
+  private resolveChatInferenceOptions(options?: GenerateOptions): {
+    order: NativeEngineId[];
+    preferredProvider?: NativeEngineId;
+    preferredModel?: string;
+  } {
+    const pref = configService.getChatModelPreference();
+    const preferredProvider =
+      options?.preferredProvider ||
+      (pref.mode === 'manual' ? pref.provider : undefined);
+    const preferredModel =
+      (options?.model && options.model.trim()) ||
+      (pref.mode === 'manual' ? pref.model : undefined);
+    return {
+      order: this.resolveProviderOrder(preferredProvider),
+      preferredProvider,
+      preferredModel,
+    };
+  }
+
+  private resolveProviderOrder(preferredProvider?: NativeEngineId): NativeEngineId[] {
+    const order = [...configService.getNativePriority()] as NativeEngineId[];
+    if (preferredProvider && order.includes(preferredProvider)) {
+      return [preferredProvider, ...order.filter((id) => id !== preferredProvider)];
+    }
+    return order;
+  }
+
+  private optionsForProvider(
+    providerId: string,
+    options: GenerateOptions | undefined,
+    preferredProvider: NativeEngineId | undefined,
+    preferredModel: string | undefined,
+  ): GenerateOptions {
+    const base = { ...(options || {}) };
+    delete (base as { preferredProvider?: NativeEngineId }).preferredProvider;
+    // Only the pinned provider gets the composer model id (avoid sending Groq ids to NIM, etc.).
+    if (preferredProvider && preferredModel) {
+      base.model = providerId === preferredProvider ? preferredModel : undefined;
+    } else if (preferredModel && !preferredProvider) {
+      base.model = preferredModel;
+    }
+    return base;
   }
 
   /**
@@ -1177,7 +1349,7 @@ export class AIProviderService {
   }
 
   public async generateWithFailover(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
-    const order = configService.getNativePriority();
+    const { order, preferredProvider, preferredModel } = this.resolveChatInferenceOptions(options);
     let lastError: any = null;
 
     for (let i = 0; i < order.length; i++) {
@@ -1189,12 +1361,13 @@ export class AIProviderService {
         continue;
       }
 
+      const callOpts = this.optionsForProvider(providerId, options, preferredProvider, preferredModel);
       const start = Date.now();
       try {
-        const result = await provider.generateText(prompt, options);
+        const result = await provider.generateText(prompt, callOpts);
         this.markSuccess(providerId);
         this.lastActiveEngine = providerId as NativeEngineId;
-        this.dispatchActiveEngine(provider.id, options?.model || provider.config.model);
+        this.dispatchActiveEngine(provider.id, callOpts.model || provider.config.model);
         return result;
       } catch (err: any) {
         lastError = err;
@@ -1206,7 +1379,7 @@ export class AIProviderService {
           const reason = toUserFacingText(err, 'Execution Error');
           this.dispatchFailover({
             failedProvider: provider.name,
-            failedModel: options?.model || provider.config.model,
+            failedModel: callOpts.model || provider.config.model,
             reason: reason.length > 80 ? `${reason.slice(0, 77)}...` : reason,
             activatedProvider: nextProvider.name,
             activatedModel: nextProvider.config.model,
@@ -1228,7 +1401,7 @@ export class AIProviderService {
   }
 
   public async *streamWithFailover(prompt: string, options?: GenerateOptions): AsyncIterable<StreamChunk> {
-    const order = configService.getNativePriority();
+    const { order, preferredProvider, preferredModel } = this.resolveChatInferenceOptions(options);
     let streamSucceeded = false;
     let lastError: any = null;
 
@@ -1241,11 +1414,12 @@ export class AIProviderService {
         continue;
       }
 
+      const callOpts = this.optionsForProvider(providerId, options, preferredProvider, preferredModel);
       const start = Date.now();
       let yieldedAny = false;
 
       try {
-        for await (const chunk of provider.streamText(prompt, options)) {
+        for await (const chunk of provider.streamText(prompt, callOpts)) {
           yieldedAny = true;
           streamSucceeded = true;
           yield chunk;
@@ -1254,7 +1428,7 @@ export class AIProviderService {
         if (streamSucceeded) {
           this.markSuccess(providerId);
           this.lastActiveEngine = providerId as NativeEngineId;
-          this.dispatchActiveEngine(provider.id, options?.model || provider.config.model);
+          this.dispatchActiveEngine(provider.id, callOpts.model || provider.config.model);
           return;
         }
       } catch (err: any) {
@@ -1274,7 +1448,7 @@ export class AIProviderService {
           const reason = toUserFacingText(err, 'Connection Refused / Rate Limited');
           this.dispatchFailover({
             failedProvider: provider.name,
-            failedModel: options?.model || provider.config.model,
+            failedModel: callOpts.model || provider.config.model,
             reason: reason.length > 80 ? `${reason.slice(0, 77)}...` : reason,
             activatedProvider: nextProvider.name,
             activatedModel: nextProvider.config.model,

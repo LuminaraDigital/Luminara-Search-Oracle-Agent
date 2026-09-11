@@ -165,8 +165,8 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-fade-in font-['Outfit']">
-      <div className="relative w-full max-w-2xl glass-morphism border border-gold/40 rounded-3xl p-6 md:p-8 shadow-2xl text-white overflow-hidden max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-xl animate-fade-in font-['Outfit']">
+      <div className="relative my-auto w-full max-w-2xl glass-morphism border border-gold/40 rounded-3xl p-5 sm:p-6 md:p-8 shadow-2xl text-white overflow-hidden max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] overflow-y-auto">
         {/* Glow ambient */}
         <div className="absolute top-0 right-1/4 w-72 h-72 bg-gold/10 blur-[120px] rounded-full pointer-events-none" />
 

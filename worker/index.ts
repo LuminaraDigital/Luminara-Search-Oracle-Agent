@@ -157,7 +157,7 @@ const PROVIDERS: Record<string, ProviderSpec> = {
   },
   ollama: {
     base: (env: Env) => (env.OLLAMA_BASE_URL ? env.OLLAMA_BASE_URL.replace(/\/+$/, '') : 'https://ollama.com'),
-    allow: ['/v1/chat/completions', '/api/tags', '/api/generate', '/api/chat'],
+    allow: ['/v1/chat/completions', '/v1/models', '/api/tags', '/api/generate', '/api/chat'],
     auth: (env, h) => {
       if (!env.OLLAMA_API_KEY) return { ok: false };
       h.set('Authorization', `Bearer ${env.OLLAMA_API_KEY}`);

@@ -18,6 +18,8 @@ function configureLlmSessionSecurity() {
   const allowedLlmPatterns = [
     '*://127.0.0.1:11434/*',
     '*://localhost:11434/*',
+    '*://127.0.0.1:3001/*',
+    '*://localhost:3001/*',
     '*://*.groq.com/*',
     '*://integrate.api.nvidia.com/*',
     '*://openrouter.ai/*',
@@ -25,6 +27,7 @@ function configureLlmSessionSecurity() {
     '*://api.exa.ai/*',
     '*://api.firecrawl.dev/*',
     '*://ollama.com/*',
+    '*://generativelanguage.googleapis.com/*',
   ];
 
   session.defaultSession.webRequest.onHeadersReceived(

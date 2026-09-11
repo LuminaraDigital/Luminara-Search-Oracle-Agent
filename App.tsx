@@ -765,12 +765,12 @@ const App: React.FC = () => {
       }}
     >
       <PremiumAtmosphere intensity="subtle" />
-      {/* Universal Top Header */}
-      <header className="flex items-center justify-between px-4 sm:px-8 py-3.5 glass-morphism z-50 border-b border-gold/20 shrink-0 bg-black/70 backdrop-blur-2xl">
+      {/* Universal Top Header - Responsive, guaranteed no overflow */}
+      <header className="flex items-center justify-between px-3 sm:px-6 py-2.5 glass-morphism z-50 border-b border-gold/20 shrink-0 bg-black/80 backdrop-blur-2xl w-full max-w-full">
         {/* Left: Brand Identity */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
           <div
-            className="w-9 h-9 cursor-pointer shrink-0"
+            className="w-8 h-8 sm:w-9 sm:h-9 cursor-pointer shrink-0"
             onClick={() => {
               if (inTelegram) setView(AppView.DASHBOARD);
               else void logoutToLanding();
@@ -784,23 +784,23 @@ const App: React.FC = () => {
             />
           </div>
           <div className="hidden sm:block cursor-pointer" onClick={() => setView(AppView.DASHBOARD)}>
-            <h2 className="text-base font-bold tracking-[0.22em] uppercase gold-text leading-none">
-              LUMINARA SUITE
+            <h2 className="text-sm sm:text-base font-bold tracking-[0.2em] uppercase gold-text leading-none">
+              LUMINARA
             </h2>
-            <span className="text-[7px] text-gray-500 uppercase tracking-[0.4em] font-mono block mt-1.5">
+            <span className="text-[7px] text-gray-500 uppercase tracking-[0.3em] font-mono hidden xl:block mt-1">
               AI search visibility
             </span>
           </div>
         </div>
 
         {/* Center: Suite Switcher & Quick Navigation */}
-        <div className="flex items-center gap-2 sm:gap-4 max-w-2xl px-2">
+        <nav className="flex items-center gap-1 sm:gap-2 shrink min-w-0 px-1 overflow-x-auto no-scrollbar">
           <Button
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.ORACLE_AGENT)}
             aria-pressed={view === AppView.ORACLE_AGENT}
-            className={`px-3 py-1.5 rounded-lg text-[10px] ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
               view === AppView.ORACLE_AGENT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -812,7 +812,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.INSTANT_AUDIT)}
             aria-pressed={view === AppView.INSTANT_AUDIT}
-            className={`px-3 py-1.5 rounded-lg text-[10px] ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
               view === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -824,7 +824,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.BRAND_MEMORY)}
             aria-pressed={view === AppView.BRAND_MEMORY}
-            className={`px-3 py-1.5 rounded-lg text-[10px] ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
               view === AppView.BRAND_MEMORY ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -836,7 +836,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.NOTEBOOK)}
             aria-pressed={view === AppView.NOTEBOOK}
-            className={`px-3 py-1.5 rounded-lg text-[10px] ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
               view === AppView.NOTEBOOK ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
             title="Luminara Studio - Grounded Research Dossiers & Audio Overviews"
@@ -845,7 +845,7 @@ const App: React.FC = () => {
           </Button>
 
           {/* Command Suite Dropdown */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <Button
               variant="ghost"
               size="none"
@@ -853,7 +853,7 @@ const App: React.FC = () => {
               aria-haspopup="menu"
               aria-expanded={showSuiteMenu}
               aria-pressed={[AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)}
-              className={`px-3 py-1.5 rounded-lg text-[10px] ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
                 [AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)
                   ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
                   : ''
@@ -962,38 +962,38 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsOmnibarOpen(true)}
-            className="hidden md:inline-flex gap-2 px-3 py-1.5 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal max-w-[200px]"
+            className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
             title="Open Omnibar (Cmd+K)"
           >
             <ICONS.Search className="w-3.5 h-3.5 text-gold" />
-            <span className="truncate">Jump to a tool</span>
-            <kbd className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300 ml-auto">⌘K</kbd>
+            <span className="hidden xl:inline truncate">Jump to a tool</span>
+            <kbd className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
           </Button>
-        </div>
+        </nav>
 
-          {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Log out */}
-        <div className="flex items-center justify-end gap-2 sm:gap-3">
+        {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Settings, Log out */}
+        <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 shrink-0">
           {/* Native Trinity (Groq, NVIDIA NIM, Ollama) Engine Status & Priority */}
           {advancedUi && <NativeEngineHUD />}
 
-          {/* Default Agent Badge */}
+          {/* Default Agent Badge - visible on 2xl displays only to prevent crowding */}
           {advancedUi && <Button
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.HARNESS)}
-            className="hidden xl:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5"
+            className="hidden 2xl:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5 shrink-0"
             title="Active Default Agent (Click to open Archy Harness)"
           >
             <span className="text-gold">⚡</span>
             <span className="truncate max-w-[90px]">{defaultAgentName}</span>
           </Button>}
 
-          {/* Theme Quick Cycle Button */}
+          {/* Theme Quick Cycle Button - visible on 2xl displays only */}
           {advancedUi && <Button
             variant="ghost"
             size="none"
             onClick={() => themingService.cycleTheme()}
-            className="hidden lg:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5"
+            className="hidden 2xl:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5 shrink-0"
             title={`Active Theme: ${currentTheme.name} (Click to cycle)`}
           >
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: currentTheme.palette.primaryGold }} />
@@ -1006,7 +1006,7 @@ const App: React.FC = () => {
               variant="ghost"
               size="none"
               onClick={() => setView(AppView.HARNESS)}
-              className="gap-1 px-2 py-1 rounded-full border border-warning-500/30 bg-warning-500/10 text-warning-400 hover:text-warning-300 text-[9px] font-mono font-normal normal-case tracking-normal hover:bg-warning-500/20"
+              className="gap-1 px-2 py-1 rounded-full border border-warning-500/30 bg-warning-500/10 text-warning-400 hover:text-warning-300 text-[9px] font-mono font-normal normal-case tracking-normal hover:bg-warning-500/20 shrink-0"
               title="Active Scheduled Reminders"
             >
               <span>⏰</span>
@@ -1014,12 +1014,12 @@ const App: React.FC = () => {
             </Button>
           )}
 
-          {/* DNA Status Pill */}
+          {/* DNA Status Pill - visible on xl+ displays */}
           <Button
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.BUSINESS_DNA)}
-            className={`hidden sm:inline-flex gap-2 px-3 py-1 rounded-full border text-[9px] font-mono font-normal ${
+            className={`hidden xl:inline-flex gap-2 px-3 py-1 rounded-full border text-[9px] font-mono font-normal shrink-0 ${
               dna
                 ? 'bg-success-500/10 border-success-500/30 text-success-400 hover:text-success-300 hover:bg-success-500/20'
                 : 'bg-white/5 border-white/10 hover:text-gold-light hover:bg-white/5'
@@ -1031,29 +1031,31 @@ const App: React.FC = () => {
           </Button>
 
           {/* AI Usage Quota & Paywall Badge */}
-          <UsageQuotaBadge />
+          <div className="shrink-0">
+            <UsageQuotaBadge />
+          </div>
 
-          {/* API Key Modal Button */}
+          {/* Settings and AI Keys Button - GUARANTEED PROMINENT & ALWAYS VISIBLE */}
           <Button
             variant="ghost"
             size="none"
             onClick={() => setIsKeyModalOpen(true)}
-            className="p-2 rounded-xl glass-morphism border border-white/10 hover:text-gold-light hover:border-gold/40 hover:bg-transparent"
-            title="Settings and AI keys"
+            className="p-2 rounded-xl glass-morphism border border-gold/40 text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-all shadow-[0_0_12px_rgba(191,149,63,0.18)]"
+            title="Settings (AI Keys & Config)"
             aria-label="Settings and AI keys"
           >
             <ICONS.Settings className="w-4 h-4" />
           </Button>
 
-          {/* Mode Selector */}
-          <div className="flex items-center bg-surface-1 rounded-xl p-0.5 border border-white/5" role="group" aria-label="Answer mode">
+          {/* Mode Selector - Quick / Thorough */}
+          <div className="hidden sm:flex items-center bg-surface-1 rounded-xl p-0.5 border border-white/10 shrink-0" role="group" aria-label="Answer mode">
             <Button
               variant="ghost"
               size="none"
               onClick={() => setMode(OracleMode.FLASH)}
               aria-pressed={mode === OracleMode.FLASH}
-              className={`px-3 py-1 rounded-lg text-[9px] tracking-widest ${
-                mode === OracleMode.FLASH ? 'bg-gradient-to-br from-gold to-gold-dark text-black hover:text-black hover:bg-transparent shadow-md' : 'text-gray-500 hover:text-gray-300'
+              className={`px-2.5 sm:px-3 py-1 rounded-lg text-[9px] tracking-widest ${
+                mode === OracleMode.FLASH ? 'bg-gradient-to-br from-gold to-gold-dark text-black hover:text-black hover:bg-transparent shadow-md font-bold' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               Quick
@@ -1063,8 +1065,8 @@ const App: React.FC = () => {
               size="none"
               onClick={() => setMode(OracleMode.DEEP_THINK)}
               aria-pressed={mode === OracleMode.DEEP_THINK}
-              className={`px-3 py-1 rounded-lg text-[9px] tracking-widest ${
-                mode === OracleMode.DEEP_THINK ? 'bg-gradient-to-br from-gold to-gold-dark text-black hover:text-black hover:bg-transparent shadow-md' : 'text-gray-500 hover:text-gray-300'
+              className={`px-2.5 sm:px-3 py-1 rounded-lg text-[9px] tracking-widest ${
+                mode === OracleMode.DEEP_THINK ? 'bg-gradient-to-br from-gold to-gold-dark text-black hover:text-black hover:bg-transparent shadow-md font-bold' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               Thorough
@@ -1076,7 +1078,7 @@ const App: React.FC = () => {
               variant="ghost"
               size="none"
               onClick={() => void logoutToLanding()}
-              className="px-3 py-1.5 glass-morphism border border-white/5 rounded-xl text-[9px] tracking-widest font-black text-gray-500 hover:text-gold hover:bg-transparent"
+              className="px-2.5 sm:px-3 py-1.5 glass-morphism border border-white/5 rounded-xl text-[9px] tracking-widest font-black text-gray-500 hover:text-gold hover:bg-transparent shrink-0"
             >
               Log out
             </Button>
@@ -1084,8 +1086,8 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Main App Container */}
-      <main className="flex-1 relative z-10 flex flex-col overflow-y-auto">
+      {/* Main App Container - min-h-0 ensures flex child heights and scrollbars calculate cleanly */}
+      <main className="flex-1 min-h-0 relative z-10 flex flex-col overflow-y-auto">
         {LAB_VIEWS.has(view) && (
           <div className="shrink-0 px-4 py-2 text-center text-[10px] uppercase tracking-[0.25em] font-bold bg-warning-500/10 border-b border-warning-500/20 text-warning-300">
             Labs preview · figures on this screen are simulated for demonstration, not measured
@@ -1257,9 +1259,9 @@ const App: React.FC = () => {
 
       {/* Terminal Footer only in Oracle Agent View */}
       {view === AppView.ORACLE_AGENT && !isVoiceActive && (
-        <footer className="z-40 bg-gradient-to-t from-black via-black to-transparent flex flex-col gap-1 pb-4 shrink-0">
+        <footer className="z-40 bg-gradient-to-t from-black via-black to-transparent flex flex-col gap-0.5 pb-2 shrink-0">
           <div 
-            className="flex flex-wrap items-center justify-center gap-3 px-6 transition-all duration-700 overflow-hidden py-3" 
+            className="flex flex-wrap items-center justify-center gap-2 px-4 transition-all duration-700 overflow-hidden py-1.5 sm:py-2" 
             style={{ 
               maxHeight: isThinking ? '0px' : '200px', 
               opacity: isThinking ? 0 : 1,
@@ -1272,7 +1274,7 @@ const App: React.FC = () => {
                 size="none"
                 onClick={handleClearChat}
                 disabled={isThinking}
-                className="px-4 py-2.5 rounded-full border border-white/10 text-[10px] text-gray-500 hover:text-danger-300 hover:border-danger-500/30 hover:bg-transparent tracking-[0.2em] focus-visible:ring-danger-400 disabled:hover:text-gray-500 disabled:hover:border-white/10"
+                className="px-3 py-1.5 rounded-full border border-white/10 text-[9px] text-gray-500 hover:text-danger-300 hover:border-danger-500/30 hover:bg-transparent tracking-[0.2em] focus-visible:ring-danger-400 disabled:hover:text-gray-500 disabled:hover:border-white/10"
                 title="Clear conversation"
               >
                 Clear chat
@@ -1283,7 +1285,7 @@ const App: React.FC = () => {
                 key={i}
                 onClick={() => handleSendMessage(action.query)}
                 disabled={isThinking}
-                className="px-5 py-2.5 rounded-full glass-morphism border border-gold/30 hover:border-gold text-[10px] font-black text-gold-light uppercase tracking-[0.3em] transition-all hover:scale-105 active:scale-95 shadow-xl bg-black/80 backdrop-blur-3xl"
+                className="px-3.5 sm:px-4 py-1.5 rounded-full glass-morphism border border-gold/30 hover:border-gold text-[9px] font-black text-gold-light uppercase tracking-[0.25em] transition-all hover:scale-105 active:scale-95 shadow-lg bg-black/80 backdrop-blur-3xl"
               >
                 {action.label}
               </button>

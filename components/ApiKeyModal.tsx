@@ -35,6 +35,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   const [ollamaEndpoint, setOllamaEndpoint] = useState('http://127.0.0.1:11434');
   const [ollamaModel, setOllamaModel] = useState('llama3.2');
   const [ollamaDetectedModels, setOllamaDetectedModels] = useState<string[]>([]);
+  const [nvidiaDetectedModels, setNvidiaDetectedModels] = useState<string[]>([]);
   const [freeLlmKey, setFreeLlmKey] = useState('');
   const [freeLlmBaseUrl, setFreeLlmBaseUrl] = useState('http://localhost:3001/v1');
   const [freeLlmPrefer, setFreeLlmPrefer] = useState(true);
@@ -182,7 +183,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     } else if (providerId === 'exa') {
       res = await configService.testExa(exaKey);
     } else if (providerId === 'nvidia') {
-      res = await configService.testNvidia(nvidiaKey, nvidiaOrgId);
+      const n = await configService.testNvidia(nvidiaKey, nvidiaOrgId);
+      res = { success: n.success, message: n.message, latencyMs: n.latencyMs };
+      if (n.models && n.models.length > 0) {
+        setNvidiaDetectedModels(n.models);
+      }
     } else if (providerId === 'openrouter') {
       res = await configService.testOpenRouter(openRouterKey);
     } else if (providerId === 'freellm') {
@@ -209,14 +214,14 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   };
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[110] overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-300">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
         tabIndex={-1}
-        className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden relative bg-black/95 flex flex-col max-h-[90vh] outline-none"
+        className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden relative bg-black/95 flex flex-col my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] outline-none"
       >
         {/* Header */}
         <div className="bg-gradient-to-r from-gold/20 to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between shrink-0">
@@ -517,7 +522,16 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                     {testResults['nvidia'].success ? '✓' : '✗'} {testResults['nvidia'].message} ({testResults['nvidia'].latencyMs}ms)
                   </p>
                 )}
-                <p className="text-[10px] text-gray-500">Accelerated Llama-3.3-70B and DeepSeek-R1 inference via NVIDIA NIM.</p>
+                {nvidiaDetectedModels.length > 0 && (
+                  <p className="text-[10px] text-gray-400 font-mono">
+                    {nvidiaDetectedModels.length} chat models available in the composer picker (first 8):{' '}
+                    {nvidiaDetectedModels.slice(0, 8).join(', ')}
+                    {nvidiaDetectedModels.length > 8 ? '…' : ''}
+                  </p>
+                )}
+                <p className="text-[10px] text-gray-500">
+                  Bring-your-own key is relayed through the Worker in production (no CORS issues). After saving, open the composer model picker to choose any live NIM chat model.
+                </p>
               </div>
 
               {/* 2. Groq Cloud LPU (Native High-Speed Engine) */}
@@ -755,7 +769,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                     </p>
                   )}
                   <p className="text-[10px] text-gray-500 mt-1">
-                    Local daemon at <code className="text-gold-light">{ollamaEndpoint || 'http://127.0.0.1:11434'}</code> is auto-detected natively without needing any key.
+                    Local daemon at <code className="text-gold-light">{ollamaEndpoint || 'http://127.0.0.1:11434'}</code> is auto-detected without a key.
+                    With an Ollama Cloud key, Ping lists every cloud model for the composer picker. Cloud chat uses the Worker BYOK relay in production.
                   </p>
                 </div>
               </div>
