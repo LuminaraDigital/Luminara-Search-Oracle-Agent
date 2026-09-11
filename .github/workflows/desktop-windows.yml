@@ -33,6 +33,14 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run desktop:dist:win -- --publish never
 
+      - name: Verify update metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f release/latest.yml
+          echo "latest.yml present for electron-updater"
+          ls -la release/*.yml release/*.exe release/*.blockmap || true
+
       - name: Upload GitHub Release artifacts
         uses: softprops/action-gh-release@v2
         with:
