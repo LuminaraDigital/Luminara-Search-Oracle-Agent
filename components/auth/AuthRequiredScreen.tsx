@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AuthPanel } from './AuthPanel';
 import { isInTelegram } from '../../services/telegram/tma';
 import type { AppAuthState } from '../../services/auth/useAppAuth';
@@ -22,6 +22,15 @@ export const AuthRequiredScreen: React.FC<{
   // Prefer auth-hook Telegram signal (survives background init) over a one-shot module read.
   const inTelegram = Boolean(auth.retryTelegram) || isInTelegram();
 
+  useEffect(() => {
+    if (!isModal || !onClose) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModal, onClose]);
+
   if (auth.loading) {
     return (
       <div className={`${isModal ? 'fixed inset-0 z-50 bg-black/80 backdrop-blur-md' : 'min-h-screen bg-black'} text-ink flex items-center justify-center px-4 relative overflow-hidden`}>
@@ -32,12 +41,13 @@ export const AuthRequiredScreen: React.FC<{
   }
 
   const content = (
-    <div className="relative w-full max-w-md space-y-5">
+    <div className="relative w-full max-w-md space-y-5 my-auto max-h-[calc(100vh-2rem)]">
       {isModal && onClose && (
         <button
           type="button"
           onClick={onClose}
           className="absolute -top-3 -right-2 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm z-20"
+          title="Close (Esc)"
           aria-label="Close login dialog"
         >
           ✕
@@ -112,7 +122,7 @@ export const AuthRequiredScreen: React.FC<{
 
   if (isModal) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 bg-black/80 backdrop-blur-md overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
         <div className="absolute inset-0" onClick={onClose} />
         {content}
       </div>

@@ -54,6 +54,15 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
   const [pasteText, setPasteText] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
 
+  useEffect(() => {
+    if (!isUploadOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsUploadOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isUploadOpen]);
+
   // Handle benchmark switch
   const handleSelectBenchmark = (benchId: string) => {
     const bench = benchmarks.find(b => b.id === benchId);
@@ -991,19 +1000,32 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
 
       {/* CSV / Data Upload Modal */}
       {isUploadOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative bg-black/95">
-            <div className="bg-gradient-to-r from-gold/20 to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between">
+        <div 
+          className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-300"
+          onClick={(e) => { if (e.target === e.currentTarget) setIsUploadOpen(false); }}
+        >
+          <div 
+            className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-lg my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden relative bg-black/95"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Ingest Time-Series Dataset"
+          >
+            <div className="bg-gradient-to-r from-gold/20 to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <ICONS.FileText className="w-4 h-4 text-gold-light" />
                 <h3 className="text-base font-bold text-white uppercase tracking-wider">Ingest Time-Series Dataset</h3>
               </div>
-              <button onClick={() => setIsUploadOpen(false)} className="text-gray-400 hover:text-white">
+              <button 
+                onClick={() => setIsUploadOpen(false)} 
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+                title="Close (Esc)"
+                aria-label="Close modal"
+              >
                 <ICONS.X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-widest text-gray-300 mb-2">
                   Upload CSV or TSV File
@@ -1029,7 +1051,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex justify-end gap-3 pt-2 shrink-0">
                 <button
                   onClick={() => setIsUploadOpen(false)}
                   className="px-4 py-2 rounded-xl text-xs text-gray-400 hover:text-white"

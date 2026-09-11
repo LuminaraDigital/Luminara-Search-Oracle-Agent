@@ -767,30 +767,40 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
       {/* Source Inspector Drawer Modal */}
       {inspectedSource && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
-          <div className="w-full max-w-2xl max-h-[80vh] flex flex-col glass-morphism rounded-3xl border border-gold/40 p-6 shadow-2xl bg-black/95">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
-              <div>
+        <div 
+          className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={(e) => { if (e.target === e.currentTarget) setInspectedSource(null); }}
+        >
+          <div 
+            className="w-full max-w-2xl my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] flex flex-col glass-morphism rounded-3xl border border-gold/40 p-4 sm:p-6 shadow-2xl bg-black/95 overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-label={inspectedSource.title}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4 shrink-0">
+              <div className="min-w-0 pr-3">
                 <span className="text-[10px] font-mono uppercase tracking-widest text-gold-light">
                   {inspectedSource.type} · {inspectedSource.wordCount} words
                 </span>
-                <h3 className="text-base font-bold text-white line-clamp-1">
+                <h3 className="text-base font-bold text-white truncate">
                   {inspectedSource.title}
                 </h3>
               </div>
               <button
                 onClick={() => setInspectedSource(null)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-white"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white shrink-0"
+                title="Close (Esc)"
+                aria-label="Close modal"
               >
                 <ICONS.Close className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 bg-surface-1 rounded-2xl border border-white/5 text-xs text-gray-300 font-mono whitespace-pre-wrap leading-relaxed">
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 bg-surface-1 rounded-2xl border border-white/5 text-xs text-gray-300 font-mono whitespace-pre-wrap leading-relaxed">
               {inspectedSource.content}
             </div>
 
-            <div className="flex justify-end pt-4">
+            <div className="flex justify-end pt-4 shrink-0">
               <button
                 onClick={() => setInspectedSource(null)}
                 className="px-4 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white"

@@ -29,6 +29,15 @@ export const VfsStudioPanel: React.FC = () => {
   const [newNodeContent, setNewNodeContent] = useState('# My New VFS Note\n\nEnter details here...');
   const [newNodeDesc, setNewNodeDesc] = useState('Custom knowledge document');
 
+  useEffect(() => {
+    if (!isCreatingNode) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsCreatingNode(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCreatingNode]);
+
   // DRR Simulator State
   const [drrQuery, setDrrQuery] = useState('Stripe AEO benchmark');
   const [drrBudget, setDrrBudget] = useState(2000);
@@ -490,19 +499,29 @@ export const VfsStudioPanel: React.FC = () => {
 
       {/* MODAL: CREATE NODE */}
       {isCreatingNode && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="glass-morphism rounded-2xl border border-gold/40 p-6 max-w-lg w-full space-y-4">
-            <div className="flex items-center justify-between">
+        <div 
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-y-auto animate-in fade-in duration-200"
+          onClick={(e) => { if (e.target === e.currentTarget) setIsCreatingNode(false); }}
+        >
+          <div 
+            className="glass-morphism rounded-2xl border border-gold/40 p-4 sm:p-6 max-w-lg w-full my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden bg-black/95 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Create New VFS Node"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
               <h3 className="text-base font-bold gold-text font-mono">Create New VFS Node</h3>
               <button
                 onClick={() => setIsCreatingNode(false)}
-                className="text-gray-400 hover:text-white text-xs font-mono"
+                className="text-gray-400 hover:text-white text-xs font-mono p-1 rounded hover:bg-white/10"
+                title="Close (Esc)"
+                aria-label="Close modal"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateNode} className="space-y-4">
+            <form onSubmit={handleCreateNode} className="flex-1 min-h-0 overflow-y-auto space-y-4 pt-3 pr-1">
               <div>
                 <label className="text-[10px] font-mono text-gray-400 uppercase">Target URI (viking:// or oracle://)</label>
                 <input
@@ -529,7 +548,7 @@ export const VfsStudioPanel: React.FC = () => {
                 <textarea
                   value={newNodeContent}
                   onChange={e => setNewNodeContent(e.target.value)}
-                  rows={6}
+                  rows={5}
                   className="w-full mt-1 px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-gold"
                 />
                 <p className="text-[10px] text-gray-500 font-mono mt-1">
@@ -537,7 +556,7 @@ export const VfsStudioPanel: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex items-center justify-end gap-2 pt-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsCreatingNode(false)}

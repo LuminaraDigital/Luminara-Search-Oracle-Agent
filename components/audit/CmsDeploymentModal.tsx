@@ -51,6 +51,15 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
     setResult(null);
   }, [platform, isOpen, remediationPayload]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   // Writing check on the human-readable text inside the schema (best-effort, never blocks deploy).
   const [writingCheck, setWritingCheck] = useState<WritingQualityReport | null>(null);
   const [writingLoading, setWritingLoading] = useState(false);
@@ -189,7 +198,10 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
   const history = cmsDeploymentService.getDeploymentHistory();
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="relative my-auto w-full max-w-3xl glass-morphism rounded-2xl border border-gold/40 shadow-2xl flex flex-col max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] overflow-hidden bg-black/95">
         
         {/* Header */}

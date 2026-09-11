@@ -300,8 +300,19 @@ const App: React.FC = () => {
   // Any card can ask for the Settings dialog (e.g. "Set up results tracking") without prop drilling.
   useEffect(() => {
     const open = () => setIsKeyModalOpen(true);
+    const checkHash = () => {
+      const h = window.location.hash.toUpperCase();
+      if (h.includes('SETTINGS') || h.includes('KEYS')) {
+        setIsKeyModalOpen(true);
+      }
+    };
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
     window.addEventListener('luminara-open-settings', open);
-    return () => window.removeEventListener('luminara-open-settings', open);
+    return () => {
+      window.removeEventListener('hashchange', checkHash);
+      window.removeEventListener('luminara-open-settings', open);
+    };
   }, []);
 
   // Wiki competitor chips and alerts deep-link into Brand Memory Vault.

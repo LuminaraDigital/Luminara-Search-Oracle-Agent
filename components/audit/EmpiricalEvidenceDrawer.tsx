@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ICONS } from '../../constants';
 import { EmpiricalCitationSummary, QueryIntent } from '../../services/audit/empiricalCitationService';
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
@@ -18,6 +18,15 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
 }) => {
   const [filter, setFilter] = useState<'all' | QueryIntent>('all');
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !summary) return null;
 
   const filteredEvidence = summary.evidenceList.filter((e) => {
@@ -26,8 +35,16 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl h-full glass-morphism border-l border-gold/40 shadow-2xl flex flex-col bg-black/95 overflow-hidden animate-in slide-in-from-right duration-300">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-end bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div 
+        className="relative w-full max-w-2xl h-full glass-morphism border-l border-gold/40 shadow-2xl flex flex-col bg-black/95 overflow-hidden animate-in slide-in-from-right duration-300"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Empirical Multi-LLM Citation Proof"
+      >
         
         {/* Drawer Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-black/60">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BusinessDNA } from '../../types';
 import { notebookService } from '../../services/notebook/notebookService';
 import { AeoCorpusService } from '../../services/corpus/aeoCorpusService';
@@ -20,6 +20,15 @@ export const SourceModal: React.FC<SourceModalProps> = ({
   onSourceAdded,
 }) => {
   const [tab, setTab] = useState<'url' | 'text' | 'luminara' | 'file'>('url');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // URL state
   const [url, setUrl] = useState('');
@@ -104,14 +113,18 @@ export const SourceModal: React.FC<SourceModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div 
-        className="w-full max-w-xl glass-morphism rounded-3xl border border-gold/40 p-6 sm:p-8 shadow-2xl bg-black/95 animate-in zoom-in-95 duration-200"
+        className="w-full max-w-xl my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] flex flex-col glass-morphism rounded-3xl border border-gold/40 p-4 sm:p-6 md:p-8 shadow-2xl bg-black/95 overflow-hidden animate-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
+        aria-label="Add Source to Notebook"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
+        {/* Header (shrink-0) */}
+        <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold-light border border-gold/30 flex items-center justify-center">
               <ICONS.Notebook className="w-4 h-4" />
@@ -128,20 +141,22 @@ export const SourceModal: React.FC<SourceModalProps> = ({
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            title="Close (Esc)"
+            aria-label="Close modal"
           >
             <ICONS.Close className="w-4 h-4" />
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-danger-500/10 border border-danger-500/30 text-danger-300 text-xs flex items-center justify-between">
+          <div className="mb-4 p-3 rounded-xl bg-danger-500/10 border border-danger-500/30 text-danger-300 text-xs flex items-center justify-between shrink-0">
             <span>{error}</span>
             <button onClick={() => setError(null)} className="text-[10px] uppercase font-bold text-danger-400">Dismiss</button>
           </div>
         )}
 
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-surface-1 border border-white/5 mb-6">
+        {/* Tab Navigation (shrink-0) */}
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-surface-1 border border-white/5 mb-4 shrink-0">
           <button
             onClick={() => setTab('url')}
             className={`flex-1 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all ${
@@ -176,11 +191,13 @@ export const SourceModal: React.FC<SourceModalProps> = ({
           </button>
         </div>
 
-        {/* TAB 1: URL */}
-        {tab === 'url' && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-2">
+        {/* Scrollable Tab Content Container */}
+        <div className="flex-1 overflow-y-auto min-h-0 pr-1">
+          {/* TAB 1: URL */}
+          {tab === 'url' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-2">
                 Website or Article URL
               </label>
               <input
@@ -346,6 +363,7 @@ export const SourceModal: React.FC<SourceModalProps> = ({
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

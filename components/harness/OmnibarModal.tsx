@@ -123,15 +123,15 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
   let runningIndex = -1;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-20 px-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] overflow-y-auto flex items-start justify-center pt-6 sm:pt-14 p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
       <div
-        className="w-full max-w-xl glass-morphism rounded-2xl border border-gold/40 bg-black/95 shadow-[0_0_80px_rgba(191,149,63,0.3)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+        className="w-full max-w-xl my-auto sm:my-0 max-h-[calc(100vh-3rem)] glass-morphism rounded-2xl border border-gold/40 bg-black/95 shadow-[0_0_80px_rgba(191,149,63,0.3)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
         onKeyDown={handleKeyDown}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-label="Jump to a tool"
       >
-        <div className="p-4 border-b border-gold/20 flex items-center gap-3">
+        <div className="p-4 border-b border-gold/20 flex items-center gap-3 shrink-0">
           <ICONS.Search className="w-4 h-4 text-gold" />
           <input
             ref={inputRef}
@@ -142,10 +142,10 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
             className="flex-1 bg-transparent text-white placeholder-gray-500 text-sm focus:outline-none"
             aria-label="Search tools"
           />
-          <button onClick={onClose} className="px-2 py-0.5 rounded bg-white/10 text-gray-400 text-[10px] hover:text-white">Esc</button>
+          <button onClick={onClose} className="px-2 py-0.5 rounded bg-white/10 text-gray-400 text-[10px] hover:text-white" title="Close (Esc)">Esc</button>
         </div>
 
-        <div className="max-h-[28rem] overflow-y-auto p-2">
+        <div className="flex-1 min-h-0 max-h-[28rem] overflow-y-auto p-2">
           {total === 0 && (
             <div className="p-8 text-center text-sm text-gray-500">Nothing matches "{query}". Try "audit", "ask" or "profile".</div>
           )}
