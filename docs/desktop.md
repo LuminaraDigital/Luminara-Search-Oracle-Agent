@@ -42,7 +42,7 @@ A second repository would duplicate auth, TON Connect domain binding, and UI. Ke
 
 ## Code signing
 
-Unsigned builds trigger Windows SmartScreen ("Windows protected your PC"). For public distribution, add an Authenticode certificate and set `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` in CI secrets.
+Unsigned builds trigger Windows SmartScreen ("Windows protected your PC"). Full steps (PFX → `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`) are in [`docs/desktop-distribution.md`](desktop-distribution.md).
 
 ## Domain, TON, and multi-user access
 
@@ -52,4 +52,6 @@ Desktop users hit `https://luminarasuite.com`, so:
 - `public/tonconnect-manifest.json` remains valid (same origin)
 - `ALLOWED_ORIGINS` already includes the suite domain
 
-Download page: `/desktop` (static) links to the latest GitHub Release asset.
+Download page: `/desktop`. Installer: `/desktop/windows` (R2 when enabled, else GitHub). Status JSON: `/api/desktop/latest`.
+
+R2 enable + mirror checklist: [`docs/desktop-distribution.md`](desktop-distribution.md).

@@ -43,6 +43,14 @@
     }
   ],
 
+  // Windows installer mirror (optional until R2 is enabled on the account).
+  // 1) Dashboard: Storage & databases → R2 → complete checkout / Enable R2
+  // 2) npx wrangler r2 bucket create luminara-desktop-releases
+  // 3) Uncomment the block below, then npm run deploy
+  // "r2_buckets": [
+  //   { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases" }
+  // ],
+
   // Optional global rate limiting (Cloudflare Rate Limiting API). The Worker already applies a
   // best-effort per-isolate limit; uncomment to enforce a single limit across all edge locations.
   // "unsafe": {
@@ -72,6 +80,7 @@
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
     "LANGUAGETOOL_URL": "",
-    "UMAMI_URL": ""
+    "UMAMI_URL": "",
+    "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent"
   }
 }

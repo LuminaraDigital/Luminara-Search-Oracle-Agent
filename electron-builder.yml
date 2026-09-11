@@ -27,8 +27,7 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: Luminara Suite
   deleteAppDataOnUninstall: false
-publish:
-  provider: github
-  owner: LuminaraDigital
-  repo: Luminara-Search-Oracle-Agent
-  releaseType: release
+# Publishing is handled by GitHub Actions (softprops/action-gh-release) so the
+# release tag stays desktop-v*, matching the workflow trigger. Do not let
+# electron-builder create a conflicting v{version} release.
+publish: null

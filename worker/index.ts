@@ -22,6 +22,7 @@ import { handleTelegramUpdate, createInvoiceLink, sendTelegramAlert, refundStarP
 import { createTonInvoice, verifyTonPayment, TON_PRICING } from './tonPayment';
 import { activateLicenseKey, generateLicenseKeys } from './licenseService';
 import { PRIVACY_HTML } from './privacyPolicy';
+import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import {
   MAX_BODY_BYTES,
   MAX_SMALL_BODY_BYTES,
@@ -54,6 +55,13 @@ export interface Env {
   LUMINARA_KV?: KVNamespace;
   /** Optional D1 users DB. When unset, profiles fall back to KV `user:{id}`. */
   DB?: D1Database;
+  /**
+   * Optional R2 bucket for Windows installer mirrors (`windows/latest.exe`, `windows/manifest.json`).
+   * When unset or empty, `/desktop/windows` redirects to GitHub Releases.
+   */
+  DESKTOP_RELEASES?: R2Bucket;
+  /** Override GitHub repo slug for desktop download fallback (owner/name). */
+  DESKTOP_GITHUB_REPO?: string;
   BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
   TELEGRAM_ADMIN_ID?: string;
@@ -1617,6 +1625,14 @@ export default {
           },
         }),
       );
+    }
+
+    // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
+    if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
+      return withSecurityHeaders(await desktopWindowsDownload(env, request));
+    }
+    if (url.pathname === '/api/desktop/latest') {
+      return withSecurityHeaders(await desktopLatestJson(env));
     }
 
     // Static assets with SPA fallback (configured in wrangler.jsonc); security headers + CSP on the HTML shell.

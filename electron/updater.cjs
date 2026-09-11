@@ -45,27 +45,32 @@ function buildApi(ctx) {
     return { checkForUpdatesManual };
   }
 
-  try {
-    const { autoUpdater } = require('electron-updater');
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+    try {
+      const { autoUpdater } = require('electron-updater');
+      autoUpdater.autoDownload = true;
+      autoUpdater.autoInstallOnAppQuit = true;
+      autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: 'LuminaraDigital',
+        repo: 'Luminara-Search-Oracle-Agent',
+      });
 
-    autoUpdater.on('checking-for-update', () => send('checking'));
-    autoUpdater.on('update-available', (info) => send('available', info?.version));
-    autoUpdater.on('update-not-available', () => send('not-available'));
-    autoUpdater.on('error', (err) => send('error', String(err?.message || err)));
-    autoUpdater.on('download-progress', (p) => send('progress', Math.round(p.percent || 0)));
-    autoUpdater.on('update-downloaded', (info) => {
-      send('downloaded', info?.version);
-    });
+      autoUpdater.on('checking-for-update', () => send('checking'));
+      autoUpdater.on('update-available', (info) => send('available', info?.version));
+      autoUpdater.on('update-not-available', () => send('not-available'));
+      autoUpdater.on('error', (err) => send('error', String(err?.message || err)));
+      autoUpdater.on('download-progress', (p) => send('progress', Math.round(p.percent || 0)));
+      autoUpdater.on('update-downloaded', (info) => {
+        send('downloaded', info?.version);
+      });
 
-    // Quiet check shortly after launch.
-    setTimeout(() => {
-      autoUpdater.checkForUpdates().catch((err) => send('error', String(err?.message || err)));
-    }, 8_000);
-  } catch (err) {
-    send('error', String(err?.message || err));
-  }
+      // Quiet check shortly after launch.
+      setTimeout(() => {
+        autoUpdater.checkForUpdates().catch((err) => send('error', String(err?.message || err)));
+      }, 8_000);
+    } catch (err) {
+      send('error', String(err?.message || err));
+    }
 
   return { checkForUpdatesManual };
 }

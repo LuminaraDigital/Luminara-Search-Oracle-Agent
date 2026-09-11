@@ -25,20 +25,54 @@ jobs:
 
       - name: Build Windows installer
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional Authenticode secrets (omit until you have a cert):
-          # WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          # WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          # Authenticode: set repo secrets WIN_CSC_LINK (base64 .pfx) and WIN_CSC_KEY_PASSWORD.
+          # When unset, electron-builder ships an unsigned installer (SmartScreen warning expected).
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          # Keep false unless an Authenticode PFX is provided via WIN_CSC_LINK.
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npm run desktop:dist:win
+        run: npm run desktop:dist:win -- --publish never
 
-      - name: Upload release artifacts
+      - name: Upload GitHub Release artifacts
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: Desktop ${{ github.ref_name }}
           files: |
             release/*.exe
             release/*.yml
             release/*.blockmap
           generate_release_notes: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mirror installer to Cloudflare R2
+        # Requires R2 enabled + bucket luminara-desktop-releases + DESKTOP_RELEASES binding deployed.
+        # Soft-fail until the account has completed R2 checkout.
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE=$(ls release/Luminara-Suite-Setup-*.exe | head -n 1)
+          VERSION=$(node -p "require('./package.json').version")
+          test -n "$EXE"
+          npx wrangler r2 object put "luminara-desktop-releases/windows/latest.exe" \
+            --file="$EXE" \
+            --content-type="application/octet-stream" \
+            --remote
+          if [ -f release/latest.yml ]; then
+            npx wrangler r2 object put "luminara-desktop-releases/windows/latest.yml" \
+              --file=release/latest.yml \
+              --content-type="text/yaml" \
+              --remote
+          fi
+          MANIFEST=$(mktemp)
+          node -e "const fs=require('fs');const p=process.argv[1];const v=process.argv[2];fs.writeFileSync(p, JSON.stringify({version:v,fileName:require('path').basename(process.argv[3]),releasedAt:new Date().toISOString(),source:'ci'},null,2))" "$MANIFEST" "$VERSION" "$EXE"
+          npx wrangler r2 object put "luminara-desktop-releases/windows/manifest.json" \
+            --file="$MANIFEST" \
+            --content-type="application/json" \
+            --remote
