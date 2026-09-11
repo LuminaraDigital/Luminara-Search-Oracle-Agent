@@ -178,7 +178,7 @@ describe('AI Paywall & Quota Engine', () => {
           'content-type': 'application/json',
           'x-telegram-init-data': initData,
         },
-        body: JSON.stringify({ model: 'meta/llama-3.1-70b-instruct', messages: [] }),
+        body: JSON.stringify({ model: 'meta/llama-3.2-11b-vision-instruct', messages: [] }),
       });
 
       const { proxyProvider } = await import('../worker/index');

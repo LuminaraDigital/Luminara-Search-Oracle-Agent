@@ -35,14 +35,14 @@ describe('Live NVIDIA + Ollama model catalogs', () => {
   it('parses OpenAI-style NVIDIA /models payloads and filters non-chat ids', () => {
     const ids = parseOpenAiModelList({
       data: [
-        { id: 'meta/llama-3.1-70b-instruct' },
+        { id: 'nvidia/llama-3.1-nemotron-70b-instruct' },
         { id: 'nvidia/nv-embedqa-e5-v5' },
-        { id: 'moonshotai/kimi-k2-instruct' },
+        { id: 'deepseek-ai/deepseek-v4-flash-0731' },
         { id: 'nvidia/llama-3.1-nemoguard-8b-content-safety' },
       ],
     });
-    expect(ids).toContain('meta/llama-3.1-70b-instruct');
-    expect(isNimChatModelId('meta/llama-3.1-70b-instruct')).toBe(true);
+    expect(ids).toContain('nvidia/llama-3.1-nemotron-70b-instruct');
+    expect(isNimChatModelId('nvidia/llama-3.1-nemotron-70b-instruct')).toBe(true);
     expect(isNimChatModelId('nvidia/nv-embedqa-e5-v5')).toBe(false);
     expect(isNimChatModelId('nvidia/llama-3.1-nemoguard-8b-content-safety')).toBe(false);
   });
@@ -59,14 +59,14 @@ describe('Live NVIDIA + Ollama model catalogs', () => {
 
   it('replaces curated NVIDIA/Ollama groups with live catalogs when keys return models', () => {
     const groups = mergeLiveProviderModels({
-      nvidia: ['meta/llama-3.1-8b-instruct', 'nvidia/nv-embedqa-e5-v5', 'deepseek-ai/deepseek-v4-pro'],
+      nvidia: ['nvidia/llama-3.1-nemotron-70b-instruct', 'nvidia/nv-embedqa-e5-v5', 'deepseek-ai/deepseek-v4-flash-0731'],
       ollama: ['gpt-oss:120b', 'minimax-m2.7', 'kimi-k2.6'],
     });
     const nim = groups.find((g) => g.provider === 'nim')!;
     const ollama = groups.find((g) => g.provider === 'ollama')!;
     expect(nim.models.map((m) => m.model)).toEqual([
-      'meta/llama-3.1-8b-instruct',
-      'deepseek-ai/deepseek-v4-pro',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+      'deepseek-ai/deepseek-v4-flash-0731',
     ]);
     expect(ollama.models.map((m) => m.model)).toEqual([
       'gpt-oss:120b',
@@ -81,7 +81,7 @@ describe('Live NVIDIA + Ollama model catalogs', () => {
       new Response(
         JSON.stringify({
           data: [
-            { id: 'meta/llama-3.1-8b-instruct' },
+            { id: 'nvidia/llama-3.1-nemotron-70b-instruct' },
             { id: 'nvidia/nv-embedqa-e5-v5' },
           ],
         }),
@@ -90,7 +90,7 @@ describe('Live NVIDIA + Ollama model catalogs', () => {
     );
 
     const models = await configService.listNvidiaModels();
-    expect(models).toContain('meta/llama-3.1-8b-instruct');
+    expect(models).toContain('nvidia/llama-3.1-nemotron-70b-instruct');
     expect(models).not.toContain('nvidia/nv-embedqa-e5-v5');
   });
 

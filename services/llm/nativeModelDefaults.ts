@@ -7,11 +7,12 @@
 export const GROQ_DEFAULT_MODEL = 'openai/gpt-oss-120b';
 export const GROQ_FALLBACK_MODELS = ['openai/gpt-oss-20b', 'qwen/qwen3.6-27b'] as const;
 
-/** NVIDIA NIM default after llama-3.3-70b-instruct EOL (2026-08-26). */
+/** NVIDIA NIM default. Llama 3.1/3.3 Instruct IDs reached EOL on integrate.api.nvidia.com. */
 export const NIM_DEFAULT_MODEL = 'meta/llama-3.2-11b-vision-instruct';
 export const NIM_FALLBACK_MODELS = [
-  'meta/llama-3.1-8b-instruct',
-  'meta/llama-3.1-70b-instruct',
+  'nvidia/llama-3.1-nemotron-70b-instruct',
+  'deepseek-ai/deepseek-v4-flash-0731',
+  'google/gemma-3-12b-it',
 ] as const;
 
 export function groqModelCandidates(preferred?: string): string[] {
@@ -27,6 +28,8 @@ export function nimModelCandidates(preferred?: string): string[] {
 }
 
 export function isMissingModelStatus(status: number, body: string): boolean {
+  // NVIDIA returns HTTP 410 Gone for EOL model IDs.
+  if (status === 410) return true;
   if (status !== 404 && status !== 400) return false;
-  return /does not exist|not found|decommission|deprecated|no longer|unknown model|model_not_found/i.test(body);
+  return /does not exist|not found|decommission|deprecated|no longer|unknown model|model_not_found|end of life|gone/i.test(body);
 }

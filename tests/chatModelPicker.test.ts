@@ -111,6 +111,8 @@ describe('Composer chat model preference (Hermes-style)', () => {
   it('builds Groq/NIM model ladders with preferred first', () => {
     expect(groqModelCandidates('qwen/qwen3.6-27b')[0]).toBe('qwen/qwen3.6-27b');
     expect(groqModelCandidates()[0]).toBe(GROQ_DEFAULT_MODEL);
-    expect(nimModelCandidates('meta/llama-3.1-8b-instruct')[0]).toBe('meta/llama-3.1-8b-instruct');
+    expect(nimModelCandidates('nvidia/llama-3.1-nemotron-70b-instruct')[0]).toBe(
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+    );
   });
 });

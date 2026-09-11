@@ -228,7 +228,7 @@ export async function generateOracleChatResponse(
           'X-Title': 'Luminara Suite',
         },
         body: JSON.stringify({
-          model: 'meta-llama/llama-3.3-70b-instruct',
+          model: 'openai/gpt-4o-mini',
           messages,
           temperature: 0.7,
           max_tokens: 1024,

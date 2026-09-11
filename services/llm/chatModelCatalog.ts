@@ -49,9 +49,9 @@ export const CURATED_CHAT_MODELS: ChatModelGroup[] = [
     providerLabel: PROVIDER_LABELS.nim,
     models: [
       { provider: 'nim', model: NIM_DEFAULT_MODEL, label: 'Llama 3.2 11B Vision' },
-      { provider: 'nim', model: 'meta/llama-3.1-8b-instruct', label: 'Llama 3.1 8B Instruct' },
-      { provider: 'nim', model: 'meta/llama-3.1-70b-instruct', label: 'Llama 3.1 70B Instruct' },
       { provider: 'nim', model: 'nvidia/llama-3.1-nemotron-70b-instruct', label: 'Nemotron 70B' },
+      { provider: 'nim', model: 'deepseek-ai/deepseek-v4-flash-0731', label: 'DeepSeek V4 Flash' },
+      { provider: 'nim', model: 'google/gemma-3-12b-it', label: 'Gemma 3 12B' },
     ],
   },
   {
