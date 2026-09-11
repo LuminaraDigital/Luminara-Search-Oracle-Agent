@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ICONS } from '../constants';
 import { configService, ProviderStatus } from '../services/configService';
+import { noteWorkspaceDirty } from '../services/sync/workspaceSyncService';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
 import { AuthPanel } from './auth/AuthPanel';
 import { Button } from './ui/Button';
@@ -28,6 +29,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   const [nvidiaOrgId, setNvidiaOrgId] = useState('');
   const [openRouterKey, setOpenRouterKey] = useState('');
   const [ollamaKey, setOllamaKey] = useState('');
+  const [ollamaEndpoint, setOllamaEndpoint] = useState('http://127.0.0.1:11434');
+  const [ollamaModel, setOllamaModel] = useState('llama3.2');
+  const [ollamaDetectedModels, setOllamaDetectedModels] = useState<string[]>([]);
   const [freeLlmKey, setFreeLlmKey] = useState('');
   const [freeLlmBaseUrl, setFreeLlmBaseUrl] = useState('http://localhost:3001/v1');
   const [freeLlmPrefer, setFreeLlmPrefer] = useState(true);
@@ -66,6 +70,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     setNvidiaOrgId(localStorage.getItem('luminara_nvidia_org_id') || '');
     setOpenRouterKey(localStorage.getItem('luminara_openrouter_key') || '');
     setOllamaKey(localStorage.getItem('luminara_ollama_key') || '');
+    setOllamaEndpoint(configService.getOllamaEndpoint());
+    setOllamaModel(configService.getOllamaModel());
     setFreeLlmKey(localStorage.getItem('luminara_freellm_key') || '');
     setFreeLlmBaseUrl(configService.getFreeLlmBaseUrl());
     setFreeLlmPrefer(configService.isFreeLlmPreferGateway());
@@ -122,6 +128,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     configService.setKey('luminara_nvidia_org_id', nvidiaOrgId);
     configService.setKey('luminara_openrouter_key', openRouterKey);
     configService.setKey('luminara_ollama_key', ollamaKey);
+    configService.setOllamaEndpoint(ollamaEndpoint.trim());
+    configService.setOllamaModel(ollamaModel.trim());
     configService.setFreeLlmKey(freeLlmKey);
     configService.setFreeLlmBaseUrl(freeLlmBaseUrl);
     configService.setFreeLlmPreferGateway(freeLlmPrefer);
@@ -143,6 +151,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     configService.setUmamiUrl(resultsTrackingUrl.trim());
     configService.setUmamiApiKey(resultsTrackingKey.trim());
 
+    noteWorkspaceDirty();
     refreshStatuses();
     setSavedSuccess(true);
     onKeySaved();
@@ -155,7 +164,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     setTestingId(providerId);
     let res: { success: boolean; message: string; latencyMs: number } = { success: false, message: 'Not implemented', latencyMs: 0 };
     if (providerId === 'groq') {
-      res = await configService.testGroq();
+      res = await configService.testGroq(groqKey || groqFallbackKey);
+    } else if (providerId === 'groq_fallback') {
+      res = await configService.testGroq(groqFallbackKey);
     } else if (providerId === 'tavily') {
       res = await configService.testTavily();
     } else if (providerId === 'local_serp') {
@@ -167,14 +178,17 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     } else if (providerId === 'exa') {
       res = await configService.testExa();
     } else if (providerId === 'nvidia') {
-      res = await configService.testNvidia();
+      res = await configService.testNvidia(nvidiaKey, nvidiaOrgId);
     } else if (providerId === 'openrouter') {
       res = await configService.testOpenRouter();
     } else if (providerId === 'freellm') {
       res = await configService.testFreeLlm();
     } else if (providerId === 'ollama') {
-      const o = await configService.testOllama();
+      const o = await configService.testOllama(ollamaEndpoint, ollamaKey);
       res = { success: o.success, message: o.message, latencyMs: o.latencyMs };
+      if (o.models && o.models.length > 0) {
+        setOllamaDetectedModels(o.models);
+      }
     } else if (providerId === 'writing_check') {
       res = await configService.testWritingCheck();
     } else if (providerId === 'results_tracking') {
@@ -267,7 +281,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
               <AuthPanel compact />
               <TelegramAccountPanel compact />
               <p className="text-xs text-gray-400 leading-relaxed">
-                Luminara needs one AI key to work (Groq is the easiest to start with). Add a live-search key to ground answers in real search results. Everything you enter stays in this browser. Sign in above to use Luminara-hosted keys on Cloudflare without pasting your own.
+                Luminara needs one AI key to work (Groq is the easiest to start with). Add a live-search key to ground answers in real search results. Your keys stay on this device and work without signing in. Sign in above only if you want Luminara-hosted keys, synced workspace, or paid plans.
               </p>
               <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
                 <span className="text-xs text-gray-300">Show developer tools (engine status, themes, Labs previews)</span>
@@ -418,22 +432,44 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                   <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
                     1. NVIDIA NIM Enterprise
                   </span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-gold/20 text-gold-light border border-gold/40 font-bold">
-                    Native Primary Engine
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-gold/20 text-gold-light border border-gold/40 font-bold">
+                      Native Primary Engine
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="none"
+                      onClick={() => handleRunPingTest('nvidia')}
+                      disabled={testingId === 'nvidia'}
+                      className="px-2 py-0.5 rounded text-[10px] font-mono text-gold-light border border-gold/30 bg-gold/5 hover:bg-gold/15"
+                    >
+                      {testingId === 'nvidia' ? 'Pinging…' : 'Ping'}
+                    </Button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
                       NVIDIA API Key · <a href="https://build.nvidia.com/settings/api-keys" target="_blank" rel="noopener noreferrer" className="text-gold-light underline">get a key</a>
                     </label>
-                    <input
-                      type="password"
-                      value={nvidiaKey}
-                      onChange={e => setNvidiaKey(e.target.value)}
-                      placeholder="nvapi-..."
-                      className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none"
-                    />
+                    <div className="relative">
+                      <input
+                        type={visibleKeys['nvidia'] ? 'text' : 'password'}
+                        value={nvidiaKey}
+                        onChange={e => setNvidiaKey(e.target.value)}
+                        placeholder="nvapi-..."
+                        className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none pr-16"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="none"
+                        onClick={() => toggleVisibility('nvidia')}
+                        aria-pressed={!!visibleKeys['nvidia']}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
+                      >
+                        {visibleKeys['nvidia'] ? 'Hide' : 'Show'}
+                      </Button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
@@ -448,6 +484,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                     />
                   </div>
                 </div>
+                {testResults['nvidia'] && (
+                  <p className={`text-[10px] mt-1 font-mono ${testResults['nvidia'].success ? 'text-success-400' : 'text-warning-400'}`}>
+                    {testResults['nvidia'].success ? '✓' : '✗'} {testResults['nvidia'].message} ({testResults['nvidia'].latencyMs}ms)
+                  </p>
+                )}
                 <p className="text-[10px] text-gray-500">Accelerated Llama-3.3-70B and DeepSeek-R1 inference via NVIDIA NIM.</p>
               </div>
 
@@ -457,9 +498,20 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                   <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
                     2. Groq Cloud LPU
                   </span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-warning-500/20 text-warning-400 border border-warning-500/30 font-bold">
-                    Native LPU (285 tok/s)
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-warning-500/20 text-warning-400 border border-warning-500/30 font-bold">
+                      Native LPU (285 tok/s)
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="none"
+                      onClick={() => handleRunPingTest('groq')}
+                      disabled={testingId === 'groq'}
+                      className="px-2 py-0.5 rounded text-[10px] font-mono text-gold-light border border-gold/30 bg-gold/5 hover:bg-gold/15"
+                    >
+                      {testingId === 'groq' ? 'Pinging…' : 'Ping'}
+                    </Button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
@@ -479,16 +531,34 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                       onClick={() => toggleVisibility('groq')}
                       aria-pressed={!!visibleKeys['groq']}
                       className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
-                      >
+                    >
                       {visibleKeys['groq'] ? 'Hide' : 'Show'}
-                      </Button>
+                    </Button>
                   </div>
+                  {testResults['groq'] && (
+                    <p className={`text-[10px] mt-1 font-mono ${testResults['groq'].success ? 'text-success-400' : 'text-warning-400'}`}>
+                      {testResults['groq'].success ? '✓' : '✗'} {testResults['groq'].message} ({testResults['groq'].latencyMs}ms)
+                    </p>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-                    Groq Secondary / Fallback Key (Auto-Failover on Rate Limit)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                      Groq Secondary / Fallback Key (Auto-Failover on Rate Limit)
+                    </label>
+                    {groqFallbackKey && (
+                      <Button
+                        variant="ghost"
+                        size="none"
+                        onClick={() => handleRunPingTest('groq_fallback')}
+                        disabled={testingId === 'groq_fallback'}
+                        className="px-1.5 py-0.5 rounded text-[9px] font-mono text-gold-light border border-gold/20"
+                      >
+                        {testingId === 'groq_fallback' ? 'Pinging…' : 'Ping Fallback'}
+                      </Button>
+                    )}
+                  </div>
                   <div className="relative">
                     <input
                       type={visibleKeys['groq_fallback'] ? 'text' : 'password'}
@@ -503,10 +573,15 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                       onClick={() => toggleVisibility('groq_fallback')}
                       aria-pressed={!!visibleKeys['groq_fallback']}
                       className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
-                      >
+                    >
                       {visibleKeys['groq_fallback'] ? 'Hide' : 'Show'}
-                      </Button>
+                    </Button>
                   </div>
+                  {testResults['groq_fallback'] && (
+                    <p className={`text-[10px] mt-1 font-mono ${testResults['groq_fallback'].success ? 'text-success-400' : 'text-warning-400'}`}>
+                      {testResults['groq_fallback'].success ? '✓' : '✗'} {testResults['groq_fallback'].message} ({testResults['groq_fallback'].latencyMs}ms)
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -570,23 +645,89 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                   <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
                     4. Ollama Sovereign SLM
                   </span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-success-500/20 text-success-400 border border-success-500/30 font-bold">
-                    Local & Sovereign Cloud
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-success-500/20 text-success-400 border border-success-500/30 font-bold">
+                      Local & Sovereign Cloud
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="none"
+                      onClick={() => handleRunPingTest('ollama')}
+                      disabled={testingId === 'ollama'}
+                      className="px-2 py-0.5 rounded text-[10px] font-mono text-gold-light border border-gold/30 bg-gold/5 hover:bg-gold/15"
+                    >
+                      {testingId === 'ollama' ? 'Pinging…' : 'Ping'}
+                    </Button>
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                      Ollama Endpoint URL
+                    </label>
+                    <input
+                      type="text"
+                      value={ollamaEndpoint}
+                      onChange={e => setOllamaEndpoint(e.target.value)}
+                      placeholder="http://127.0.0.1:11434"
+                      className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                      Ollama Model Name {ollamaDetectedModels.length > 0 && `(${ollamaDetectedModels.length} detected)`}
+                    </label>
+                    <input
+                      type="text"
+                      list="ollama-models-list"
+                      value={ollamaModel}
+                      onChange={e => setOllamaModel(e.target.value)}
+                      placeholder="llama3.2"
+                      className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none"
+                    />
+                    <datalist id="ollama-models-list">
+                      {ollamaDetectedModels.map(m => (
+                        <option key={m} value={m} />
+                      ))}
+                      <option value="llama3.2" />
+                      <option value="llama3.3" />
+                      <option value="qwen2.5-coder" />
+                      <option value="mistral" />
+                      <option value="deepseek-r1" />
+                    </datalist>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
                     Ollama Cloud API Key · <a href="https://ollama.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-gold-light underline">get a key</a>
                   </label>
-                  <input
-                    type="password"
-                    value={ollamaKey}
-                    onChange={e => setOllamaKey(e.target.value)}
-                    placeholder="f2aed... (optional if local daemon is running)"
-                    className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none"
-                  />
+                  <div className="relative">
+                    <input
+                      type={visibleKeys['ollama'] ? 'text' : 'password'}
+                      value={ollamaKey}
+                      onChange={e => setOllamaKey(e.target.value)}
+                      placeholder="f2aed... (optional if local daemon is running)"
+                      className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none pr-16"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="none"
+                      onClick={() => toggleVisibility('ollama')}
+                      aria-pressed={!!visibleKeys['ollama']}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
+                    >
+                      {visibleKeys['ollama'] ? 'Hide' : 'Show'}
+                    </Button>
+                  </div>
+                  {testResults['ollama'] && (
+                    <p className={`text-[10px] mt-1 font-mono ${testResults['ollama'].success ? 'text-success-400' : 'text-warning-400'}`}>
+                      {testResults['ollama'].success ? '✓' : '✗'} {testResults['ollama'].message} ({testResults['ollama'].latencyMs}ms)
+                    </p>
+                  )}
                   <p className="text-[10px] text-gray-500 mt-1">
-                    Local Ollama daemon at <code className="text-gold-light">http://127.0.0.1:11434</code> is auto-detected natively without needing any key.
+                    Local daemon at <code className="text-gold-light">{ollamaEndpoint || 'http://127.0.0.1:11434'}</code> is auto-detected natively without needing any key.
                   </p>
                 </div>
               </div>

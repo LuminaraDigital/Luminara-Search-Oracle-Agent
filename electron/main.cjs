@@ -6,12 +6,35 @@
  * update every desktop client without rebuilding the installer.
  */
 
-const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, session } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { applyWindowsHardening } = require('./windowsHardening.cjs');
 const { createNavigationGuard } = require('./security.cjs');
 const { setupAutoUpdater } = require('./updater.cjs');
+
+function configureLlmSessionSecurity() {
+  if (!session?.defaultSession?.webRequest) return;
+  const allowedLlmPatterns = [
+    '*://127.0.0.1:11434/*',
+    '*://localhost:11434/*',
+    '*://*.groq.com/*',
+    '*://integrate.api.nvidia.com/*',
+    '*://openrouter.ai/*',
+  ];
+
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: allowedLlmPatterns },
+    (details, callback) => {
+      const responseHeaders = { ...details.responseHeaders };
+      responseHeaders['access-control-allow-origin'] = ['*'];
+      responseHeaders['access-control-allow-headers'] = ['*'];
+      responseHeaders['access-control-allow-methods'] = ['GET, POST, OPTIONS, PUT, DELETE'];
+      responseHeaders['access-control-allow-private-network'] = ['true'];
+      callback({ responseHeaders });
+    },
+  );
+}
 
 const APP_ID = 'digital.luminara.suite';
 const IS_WINDOWS = process.platform === 'win32';
@@ -254,6 +277,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    configureLlmSessionSecurity();
     registerIpc();
     buildMenu();
     createWindow();

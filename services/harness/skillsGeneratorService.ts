@@ -1,6 +1,8 @@
 import { LuminaraSkill, SkillPlatform } from '../../types';
+import { luminaraAgentConductSkill } from '../skills/agentConduct';
 
 export const LUMINARA_SKILLS: LuminaraSkill[] = [
+  luminaraAgentConductSkill,
   {
     id: 'luminara-aeo-audit',
     name: 'luminara-aeo-audit',

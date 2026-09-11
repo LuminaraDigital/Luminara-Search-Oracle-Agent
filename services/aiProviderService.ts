@@ -24,12 +24,16 @@ export { buildChatMessages };
 
 /**
  * Defensive JSON parser for open-weight models (NVIDIA NIM, Groq, Ollama).
- * Strips markdown code fences (```json ... ```), removes extraneous prose,
- * and safely extracts structured JSON payloads.
+ * Strips reasoning tokens (<think>...</think>), markdown code fences (```json ... ```),
+ * removes extraneous commentary, and safely extracts structured JSON payloads.
  */
 export function safeJsonParse<T>(text: string, fallback: T): T {
   if (!text || typeof text !== 'string') return fallback;
-  const trimmed = text.trim();
+  // Strip reasoning model thought blocks (<think>...</think>) from DeepSeek-R1 / QwQ
+  let trimmed = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  if (trimmed.includes('<think>')) {
+    trimmed = trimmed.replace(/<think>[\s\S]*$/gi, '').trim();
+  }
   try {
     return JSON.parse(trimmed) as T;
   } catch {
@@ -270,9 +274,9 @@ export class NvidiaNimProvider extends BaseAIProvider {
 
   async isAvailable(): Promise<boolean> {
     if (!configService.getNvidiaKey()) return false;
-    // integrate.api.nvidia.com sends no Access-Control-Allow-Origin header, so direct browser calls
-    // always fail the CORS preflight. In a browser we need a same-origin proxy to reach NIM.
-    // In a browser NIM only works via a relay: the Luminara Worker (with the user's own key or a hosted key)
+    // In Desktop Electron shell, direct CORS is bypassed natively
+    if (typeof window !== 'undefined' && Boolean((window as any).luminaraDesktop)) return true;
+    // In a browser NIM works via relay: the Luminara Worker (with user's own key or hosted key)
     // or a custom same-origin proxy endpoint.
     if (typeof window !== 'undefined' && !configService.getNvidiaProxyEndpoint() && !configService.usesProxy('nim') && !canRelayWithOwnKey('nim')) return false;
     return true;
@@ -419,6 +423,14 @@ export class OllamaNativeProvider extends BaseAIProvider {
   private cachedIsLocal: boolean | null = null;
   private lastProbeTime = 0;
 
+  private resolveActiveModel(optionsModel?: string, probeModels?: string[]): string {
+    if (optionsModel && optionsModel.trim()) return optionsModel.trim();
+    const configured = configService.getOllamaModel();
+    if (configured && configured.trim()) return configured.trim();
+    if (probeModels && probeModels.length > 0) return probeModels[0];
+    return this.config.model;
+  }
+
   async isAvailable(): Promise<boolean> {
     const status = await this.probeStatus();
     return status.available;
@@ -426,31 +438,32 @@ export class OllamaNativeProvider extends BaseAIProvider {
 
   public async probeStatus(): Promise<{ available: boolean; isLocal: boolean; endpoint: string; models: string[] }> {
     const now = Date.now();
+    const endpoint = configService.getOllamaEndpoint();
+    const preferredModel = configService.getOllamaModel();
     if (this.cachedIsLocal !== null && now - this.lastProbeTime < 5000) {
       return {
         available: true,
         isLocal: this.cachedIsLocal,
-        endpoint: this.cachedIsLocal ? configService.getOllamaEndpoint() : 'https://ollama.com',
-        models: ['llama3.2'],
+        endpoint: this.cachedIsLocal ? endpoint : 'https://ollama.com',
+        models: [preferredModel],
       };
     }
 
-    // 1. Probe local daemon
+    // 1. Probe local or remote Ollama daemon at configured endpoint
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 900);
-      const localBase = configService.getOllamaEndpoint();
-      const res = await fetch(`${localBase}/api/tags`, { signal: controller.signal });
+      const timeoutId = setTimeout(() => controller.abort(), 1200);
+      const res = await fetch(`${endpoint}/api/tags`, { signal: controller.signal });
       clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
         const models = (data.models || []).map((m: any) => m.name || m.model);
         this.cachedIsLocal = true;
         this.lastProbeTime = now;
-        return { available: true, isLocal: true, endpoint: localBase, models };
+        return { available: true, isLocal: true, endpoint, models };
       }
     } catch {
-      // Local not running
+      // Local not running or blocked by CORS
     }
 
     // 2. Check cloud key
@@ -461,7 +474,7 @@ export class OllamaNativeProvider extends BaseAIProvider {
         available: true,
         isLocal: false,
         endpoint: 'https://ollama.com',
-        models: ['llama3.2', 'deepseek-r1', 'mistral'],
+        models: [preferredModel, 'llama3.2', 'deepseek-r1', 'mistral'],
       };
     }
 
@@ -472,7 +485,7 @@ export class OllamaNativeProvider extends BaseAIProvider {
   async generateText(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
     const probe = await this.probeStatus();
     const startTime = Date.now();
-    const model = options?.model || this.config.model;
+    const model = this.resolveActiveModel(options?.model, probe.models);
 
     const messages = buildChatMessages(prompt, options);
 
@@ -547,7 +560,7 @@ export class OllamaNativeProvider extends BaseAIProvider {
 
   async *streamText(prompt: string, options?: GenerateOptions): AsyncIterable<StreamChunk> {
     const probe = await this.probeStatus();
-    const model = options?.model || this.config.model;
+    const model = this.resolveActiveModel(options?.model, probe.models);
 
     const messages = buildChatMessages(prompt, options);
 

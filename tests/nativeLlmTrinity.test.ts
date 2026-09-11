@@ -48,6 +48,22 @@ describe('Native LLM Trinity (NVIDIA NIM, Groq, Ollama)', () => {
       expect(parsed.usp).toBe('Speed');
     });
 
+    it('strips <think>...</think> reasoning tags from DeepSeek-R1 outputs before parsing JSON', () => {
+      const reasoningOutput = `<think>
+The user is requesting an SEO/AEO audit.
+We should construct a valid JSON payload with score and recommendations.
+</think>
+\`\`\`json
+{
+  "score": 95,
+  "summary": "DeepSeek analysis complete"
+}
+\`\`\``;
+      const parsed = safeJsonParse(reasoningOutput, { score: 0, summary: '' });
+      expect(parsed.score).toBe(95);
+      expect(parsed.summary).toBe('DeepSeek analysis complete');
+    });
+
     it('returns fallback safely on malformed JSON without crashing', () => {
       const broken = 'Not a json string at all';
       const fallback = { fallback: true };
@@ -180,6 +196,47 @@ describe('Native LLM Trinity (NVIDIA NIM, Groq, Ollama)', () => {
       await expect(geminiService.generateText('test')).rejects.toThrowError(
         /No native LLM responded.*NVIDIA NIM.*Groq.*Ollama/
       );
+    });
+  });
+
+  describe('BYOK Dynamic Ping Testers & Ollama Customization', () => {
+    it('supports in-memory key overrides for testGroq without saving to localStorage', async () => {
+      mockLocalStorage.clear();
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+
+      const res = await configService.testGroq('gsk_in_memory_key_test');
+      expect(res.success).toBe(true);
+      expect(mockLocalStorage.getItem('luminara_groq_key')).toBeNull();
+    });
+
+    it('supports in-memory key overrides for testNvidia without saving to localStorage', async () => {
+      mockLocalStorage.clear();
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+
+      const res = await configService.testNvidia('nvapi_in_memory_test', 'org_test');
+      expect(res.success).toBe(true);
+      expect(mockLocalStorage.getItem('luminara_nvidia_key')).toBeNull();
+    });
+
+    it('supports custom endpoint and model overrides for testOllama and resolves models', async () => {
+      mockLocalStorage.clear();
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        models: [{ name: 'llama3.3:latest' }, { name: 'deepseek-r1:8b' }]
+      }), { status: 200 }));
+
+      const res = await configService.testOllama('http://192.168.1.100:11434');
+      expect(res.success).toBe(true);
+      expect(res.models).toContain('llama3.3:latest');
+      expect(res.models).toContain('deepseek-r1:8b');
+      expect(res.message).toContain('192.168.1.100:11434');
+    });
+
+    it('allows configuring custom Ollama endpoint and model in configService', () => {
+      configService.setOllamaEndpoint('http://localhost:11435');
+      configService.setOllamaModel('qwen2.5-coder:32b');
+
+      expect(configService.getOllamaEndpoint()).toBe('http://localhost:11435');
+      expect(configService.getOllamaModel()).toBe('qwen2.5-coder:32b');
     });
   });
 });

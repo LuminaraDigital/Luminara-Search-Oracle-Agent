@@ -218,6 +218,24 @@ export class ConfigService {
     return this.getKey('luminara_ollama_key', 'OLLAMA_API_KEY', 'VITE_OLLAMA_API_KEY', 'ollama').key;
   }
 
+  public getOllamaModel(): string {
+    if (typeof window !== 'undefined') {
+      const custom = localStorage.getItem('luminara_ollama_model');
+      if (custom && custom.trim()) return custom.trim();
+    }
+    const envVal = this.readEnv('OLLAMA_MODEL', 'VITE_OLLAMA_MODEL');
+    if (envVal && envVal.trim()) return envVal.trim();
+    return 'llama3.2';
+  }
+
+  public setOllamaModel(model: string): void {
+    this.setKey('luminara_ollama_model', model);
+  }
+
+  public setOllamaEndpoint(endpoint: string): void {
+    this.setKey('luminara_ollama_endpoint', endpoint);
+  }
+
   public getOpenRouterKey(): string {
     return this.getKey('luminara_openrouter_key', 'OPENROUTER_API_KEY', 'VITE_OPENROUTER_API_KEY', 'openrouter').key;
   }
@@ -436,14 +454,14 @@ export class ConfigService {
   }
 
   // Live Connection Ping Testers
-  public async testGroq(): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const key = this.getGroqKey() || this.getGroqFallbackKey();
+  public async testGroq(overrideKey?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const key = (overrideKey && overrideKey.trim()) || this.getGroqKey() || this.getGroqFallbackKey();
     if (!key) return { success: false, message: 'No Groq API Key found', latencyMs: 0 };
     const start = Date.now();
     try {
       const res = await providerFetch('groq', '/models', 'https://api.groq.com/openai/v1/models', {
         headers: { Authorization: `Bearer ${key}` }
-      });
+      }, { userKey: key });
       const latencyMs = Date.now() - start;
       if (res.ok) {
         return { success: true, message: 'Connected to Groq Cloud API', latencyMs };
@@ -463,7 +481,7 @@ export class ConfigService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ api_key: key, query: 'test', max_results: 1 })
-      });
+      }, { userKey: key });
       const latencyMs = Date.now() - start;
       if (res.ok) {
         return { success: true, message: 'Connected to Tavily SERP API', latencyMs };
@@ -486,7 +504,7 @@ export class ConfigService {
           Authorization: `Bearer ${key}`
         },
         body: JSON.stringify({ url: 'https://example.com' })
-      });
+      }, { userKey: key });
       const latencyMs = Date.now() - start;
       if (res.ok || res.status === 402 || res.status === 200) {
         return { success: true, message: 'Connected to Firecrawl API', latencyMs };
@@ -549,7 +567,7 @@ export class ConfigService {
           'x-api-key': key
         },
         body: JSON.stringify({ query: 'test', numResults: 1 })
-      });
+      }, { userKey: key });
       const latencyMs = Date.now() - start;
       if (res.ok) {
         return { success: true, message: 'Connected to Exa.ai API', latencyMs };
@@ -560,10 +578,10 @@ export class ConfigService {
     }
   }
 
-  public async testNvidia(): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const key = this.getNvidiaKey();
+  public async testNvidia(overrideKey?: string, overrideOrgId?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const key = (overrideKey && overrideKey.trim()) || this.getNvidiaKey();
     if (!key) return { success: false, message: 'No NVIDIA API Key found', latencyMs: 0 };
-    const orgId = this.getNvidiaOrgId();
+    const orgId = overrideOrgId !== undefined ? overrideOrgId.trim() : this.getNvidiaOrgId();
     const start = Date.now();
     try {
       const headers: Record<string, string> = {
@@ -572,7 +590,7 @@ export class ConfigService {
       if (orgId) {
         headers['NV-Organization-ID'] = orgId;
       }
-      const res = await providerFetch('nim', '/models', 'https://integrate.api.nvidia.com/v1/models', { headers });
+      const res = await providerFetch('nim', '/models', 'https://integrate.api.nvidia.com/v1/models', { headers }, { userKey: orgId ? `${key}|${orgId}` : key });
       const latencyMs = Date.now() - start;
       if (res.ok) {
         return { success: true, message: 'Connected to NVIDIA NIM Enterprise Cloud', latencyMs };
@@ -583,33 +601,34 @@ export class ConfigService {
     }
   }
 
-  public async testOllama(): Promise<{ success: boolean; isLocal: boolean; message: string; latencyMs: number; models?: string[] }> {
+  public async testOllama(overrideEndpoint?: string, overrideKey?: string): Promise<{ success: boolean; isLocal: boolean; message: string; latencyMs: number; models?: string[] }> {
     const start = Date.now();
-    // 1. Probe local Ollama daemon
+    const targetEndpoint = (overrideEndpoint && overrideEndpoint.trim()) ? overrideEndpoint.trim().replace(/\/+$/, '') : this.getOllamaEndpoint();
+    // 1. Probe local/remote Ollama daemon at configured endpoint
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1200);
-      const localEndpoint = this.getOllamaLocalEndpoint();
-      const res = await fetch(`${localEndpoint}/api/tags`, { signal: controller.signal });
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch(`${targetEndpoint}/api/tags`, { signal: controller.signal });
       clearTimeout(timeoutId);
       const latencyMs = Date.now() - start;
       if (res.ok) {
         const data = await res.json();
         const models = (data.models || []).map((m: any) => m.name || m.model);
+        const hostName = targetEndpoint.includes('127.0.0.1') || targetEndpoint.includes('localhost') ? 'Local' : targetEndpoint;
         return {
           success: true,
           isLocal: true,
-          message: `Connected to Local Ollama (${models.length} models installed)`,
+          message: `Connected to ${hostName} Ollama (${models.length} model${models.length === 1 ? '' : 's'} installed)`,
           latencyMs,
           models
         };
       }
     } catch {
-      // Local not running or blocked by CORS, proceed to check Ollama Cloud
+      // Local/remote endpoint not running or blocked by CORS, proceed to check Ollama Cloud
     }
 
-    // 2. Check Ollama Cloud / custom endpoint
-    const cloudKey = this.getOllamaKey();
+    // 2. Check Ollama Cloud / custom endpoint key
+    const cloudKey = overrideKey !== undefined ? overrideKey.trim() : this.getOllamaKey();
     if (cloudKey) {
       const latencyMs = Date.now() - start;
       return {
@@ -623,7 +642,7 @@ export class ConfigService {
     return {
       success: false,
       isLocal: false,
-      message: 'Local Ollama daemon not running at :11434 and no Cloud Key configured',
+      message: `Ollama daemon not reachable at ${targetEndpoint} and no Cloud Key configured`,
       latencyMs: Date.now() - start
     };
   }

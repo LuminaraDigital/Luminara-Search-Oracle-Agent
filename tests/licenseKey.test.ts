@@ -79,18 +79,14 @@ describe('Temporary License Key & Growth Engine', () => {
     expect(res2.error).toMatch(/promotional trial has already been redeemed/i);
   });
 
-  it('activates dynamic serial keys (e.g. LUM-GROWTH-30D-XXXX-YYYY)', async () => {
+  it('rejects unminted serial-shaped keys (no fabricate-on-miss)', async () => {
     const kv = createMockKv();
     const env: any = { LUMINARA_KV: kv };
 
     const serial = 'LUM-GROWTH-30D-AB12-CD34';
     const res = await activateLicenseKey(env, 'user_customer_2', serial);
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      expect(res.plan).toBe('growth');
-      expect(res.durationDays).toBe(30);
-      expect(res.expiresAt).toBeGreaterThan(Date.now() + 86400_000 * 29);
-    }
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/invalid or unrecognized/i);
   });
 
   it('allows admins to batch generate unique keys and verifies single-use redemption', async () => {
@@ -149,26 +145,30 @@ describe('Temporary License Key & Growth Engine', () => {
     }
   });
 
-  it('activates pre-minted vault keys across all tiers', async () => {
+  it('activates only when vault-shaped keys are pre-seeded in KV', async () => {
     const kv = createMockKv();
     const env: any = { LUMINARA_KV: kv };
 
-    // Starter 30-day vault key
-    const starterRes = await activateLicenseKey(env, 'user_starter_vault', 'LUM-STARTER-30D-M2K8-P7W4');
+    const starterKey = 'LUM-STARTER-30D-M2K8-P7W4';
+    await kv.put(`license:key:${starterKey}`, JSON.stringify({
+      key: starterKey,
+      plan: 'starter',
+      durationDays: 30,
+      isTrial: false,
+      campaign: 'ops_mint',
+      createdAt: Date.now(),
+      redeemed: false,
+      maxRedemptions: 1,
+      redemptionCount: 0,
+    }));
+
+    const starterRes = await activateLicenseKey(env, 'user_starter_vault', starterKey);
     expect(starterRes.ok).toBe(true);
     expect(starterRes.plan).toBe('starter');
     expect(starterRes.durationDays).toBe(30);
 
-    // Growth 30-day vault key
+    // Never-minted serial fails
     const growthRes = await activateLicenseKey(env, 'user_growth_vault', 'LUM-GROWTH-30D-K8M2-P4T9');
-    expect(growthRes.ok).toBe(true);
-    expect(growthRes.plan).toBe('growth');
-    expect(growthRes.durationDays).toBe(30);
-
-    // Pro 30-day vault key
-    const proRes = await activateLicenseKey(env, 'user_pro_vault', 'LUM-PRO-30D-E7K4-M9W2');
-    expect(proRes.ok).toBe(true);
-    expect(proRes.plan).toBe('agency');
-    expect(proRes.durationDays).toBe(30);
+    expect(growthRes.ok).toBe(false);
   });
 });

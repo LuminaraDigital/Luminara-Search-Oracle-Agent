@@ -11,6 +11,15 @@ interface WhiteLabelExportModalProps {
 
 const STORAGE_KEY_AGENCY = 'luminara_whitelabel_config';
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
   isOpen,
   onClose,
@@ -92,12 +101,24 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
       return;
     }
 
+    const safeAgency = escapeHtml(agencyName);
+    const safeClient = escapeHtml(clientName);
+    const safePreparedBy = escapeHtml(preparedBy);
+    const safeNotes = escapeHtml(executiveNotes);
+    const safeDomain = escapeHtml(targetDomain || 'Target Entity');
+    const safeMarkdown = escapeHtml(markdownText);
+    const safeColor = /^#[0-9A-Fa-f]{3,8}$/.test(primaryColor) ? primaryColor : '#BF953F';
+    const safeLogo =
+      agencyLogoUrl && /^https:\/\/[^\s"'<>]+$/i.test(agencyLogoUrl.trim())
+        ? escapeHtml(agencyLogoUrl.trim())
+        : '';
+
     const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>${agencyName} - Strategic AEO Brief for ${clientName}</title>
+  <title>${safeAgency} - Strategic AEO Brief for ${safeClient}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -112,7 +133,7 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 2px solid ${primaryColor};
+      border-bottom: 2px solid ${safeColor};
       padding-bottom: 24px;
       margin-bottom: 32px;
     }
@@ -135,7 +156,7 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
     }
     .notes-banner {
       background: #f9fafb;
-      border-left: 4px solid ${primaryColor};
+      border-left: 4px solid ${safeColor};
       padding: 14px 18px;
       margin: 20px 0 32px;
       font-size: 13px;
@@ -196,30 +217,30 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
 <body>
   <div class="header">
     <div>
-      ${agencyLogoUrl ? `<img src="${agencyLogoUrl}" alt="${agencyName}" style="max-height: 48px; margin-bottom: 8px;" />` : ''}
-      <div class="agency-name">${agencyName}</div>
-      <div style="font-size: 12px; color: #6b7280;">${preparedBy}</div>
+      ${safeLogo ? `<img src="${safeLogo}" alt="${safeAgency}" style="max-height: 48px; margin-bottom: 8px;" />` : ''}
+      <div class="agency-name">${safeAgency}</div>
+      <div style="font-size: 12px; color: #6b7280;">${safePreparedBy}</div>
     </div>
     <div class="meta-box">
-      <div><strong>Target:</strong> ${clientName}</div>
+      <div><strong>Target:</strong> ${safeClient}</div>
       <div><strong>Date:</strong> ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
       <div><strong>Confidentiality:</strong> STRICT PRIVILEGE</div>
     </div>
   </div>
 
   <div class="client-title">AEO & Search Intelligence Audit</div>
-  <div style="font-size: 14px; color: #4b5563;">Prepared exclusively for ${clientName} (${targetDomain || 'Target Entity'})</div>
+  <div style="font-size: 14px; color: #4b5563;">Prepared exclusively for ${safeClient} (${safeDomain})</div>
 
   <div class="notes-banner">
-    <strong>Executive Strategic Context:</strong> ${executiveNotes}
+    <strong>Executive Strategic Context:</strong> ${safeNotes}
   </div>
 
   <div class="report-body">
-    <pre style="white-space: pre-wrap; font-family: inherit; background: transparent; color: inherit; padding: 0;">${markdownText}</pre>
+    <pre style="white-space: pre-wrap; font-family: inherit; background: transparent; color: inherit; padding: 0;">${safeMarkdown}</pre>
   </div>
 
   <div class="footer">
-    <div>Generated via ${agencyName} Enterprise Intelligence Practice</div>
+    <div>Generated via ${safeAgency} Enterprise Intelligence Practice</div>
     <div>Page 1 &bull; Strictly Confidential</div>
   </div>
 

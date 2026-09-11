@@ -415,7 +415,7 @@ export interface LuminaraSkill {
   name: string;
   title: string;
   description: string;
-  category: 'audit' | 'neural' | 'forecast' | 'strategy' | 'triage' | 'graph';
+  category: 'audit' | 'neural' | 'forecast' | 'strategy' | 'triage' | 'graph' | 'conduct';
   author: string;
   version: string;
   systemPrompt: string;

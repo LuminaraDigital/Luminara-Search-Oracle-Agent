@@ -47,7 +47,7 @@ export const SkillsHubPanel: React.FC = () => {
             Cross-Agent Skills Exporter & Registry
           </h2>
           <p className="text-gray-400 text-xs mt-1 max-w-2xl">
-            Package and export Luminara's core intelligence capabilities (AEO Audit, SLM Studio, TimesFM Forecaster, DNA Sequencer) as standard <code>SKILL.md</code> bundles for Antigravity, Claude Code, Codex, and Hermes.
+            Package and export Luminara capabilities (Agent Conduct, AEO Audit, SLM Studio, TimesFM, DNA Sequencer, and more) as standard <code>SKILL.md</code> bundles for Antigravity, Claude Code, Codex, Hermes, and Pi.
           </p>
         </div>
 

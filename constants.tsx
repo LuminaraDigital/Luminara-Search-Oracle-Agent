@@ -1,4 +1,5 @@
 import React from 'react';
+import { AGENT_CONDUCT_RUNTIME } from './services/skills/agentConduct';
 
 export const SYSTEM_INSTRUCTIONS = `
 Role: You are Oracle Agent for Luminara Suite. You help founders see whether AI answers and Google mention their brand, then choose one fix worth shipping this week.
@@ -52,6 +53,8 @@ Strict template (REQUIRED for audits):
 
 ---
 *Luminara · fog clearing complete · ship the one move*
+
+${AGENT_CONDUCT_RUNTIME}
 `;
 
 export const GLOSSARY: Record<string, string> = {

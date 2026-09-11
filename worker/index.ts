@@ -250,6 +250,13 @@ function secretEquals(a: string, b: string): boolean {
   return diff === 0;
 }
 
+async function sha256Hex(data: string): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 /**
  * Identifies the caller:
  * 1) Telegram Mini App initData (x-telegram-init-data), or
@@ -342,7 +349,8 @@ export async function proxyProvider(request: Request, env: Env, providerId: stri
 
   // Bring-your-own-key: the caller's credential is forwarded and the hosted key is never touched.
   // This is how browser-blocked vendors (NVIDIA NIM has no CORS headers) work for self-served users.
-  // When REQUIRE_TG_AUTH is on, an account is still required (Telegram or Firebase) even for BYOK.
+  // BYOK does not require sign-in: the caller pays the vendor, and Settings promises keys work without hosted auth.
+  // Hosted keys (no x-provider-key) still require identify + quota / tier checks below.
   const userKey = request.headers.get('x-provider-key')?.trim() || '';
   if (userKey.length > MAX_PROVIDER_KEY_LEN || /[\r\n]/.test(userKey)) return json({ error: 'Invalid provider key' }, 400);
 
@@ -351,12 +359,7 @@ export async function proxyProvider(request: Request, env: Env, providerId: stri
 
   let quotaGate: QuotaStatus | null = null;
 
-  if (userKey) {
-    if (env.REQUIRE_TG_AUTH === 'true') {
-      const who = await identify(request, env);
-      if (who.error || !who.user) return json({ error: who.error || 'Sign in required' }, 401);
-    }
-  } else {
+  if (!userKey) {
     const who = await identify(request, env);
     if (who.error) return json({ error: who.error }, 401);
 
@@ -1133,23 +1136,83 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (request.method === 'GET') {
       const url = new URL(request.url);
       const digest = url.searchParams.get('digest');
-      if (!digest) return withCors(json({ error: 'digest query parameter required' }, 400));
-      const record = env.LUMINARA_KV ? await env.LUMINARA_KV.get(`poa:${digest}`, 'json') : null;
+      if (!digest || !/^[a-f0-9]{64}$/i.test(digest)) {
+        return withCors(json({ error: 'digest query parameter required (64-char hex)' }, 400));
+      }
+      const record = env.LUMINARA_KV ? await env.LUMINARA_KV.get(`poa:${digest.toLowerCase()}`, 'json') : null;
       if (!record) return withCors(json({ ok: false, error: 'Attestation not found' }, 404));
       return withCors(json({ ok: true, attestation: record }));
     }
 
     if (request.method === 'POST') {
+      const who = await identify(request, env);
+      if (!who.user) return withCors(json({ error: who.error || 'Sign in required' }, 401));
+
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
-      const attestation = read.value as any;
-      if (!attestation || !attestation.digestHex || !attestation.domain) {
-        return withCors(json({ error: 'Invalid attestation payload' }, 400));
+      const body = read.value as Record<string, unknown>;
+      const digestHex = typeof body.digestHex === 'string' ? body.digestHex.trim().toLowerCase() : '';
+      const domainRaw = typeof body.domain === 'string' ? body.domain : '';
+      const findingsFingerprint = typeof body.findingsFingerprint === 'string' ? body.findingsFingerprint : '';
+      const healthScore = Number(body.healthScore);
+      const citationRatePercent = Number(body.citationRatePercent);
+      const timestamp = Number(body.timestamp);
+      const findingsCount = Number(body.findingsCount);
+
+      if (!/^[a-f0-9]{64}$/.test(digestHex)) {
+        return withCors(json({ error: 'Invalid digestHex' }, 400));
       }
+      const cleanDomain = safePublicHostname(domainRaw);
+      if (!cleanDomain) return withCors(json({ error: 'Invalid domain' }, 400));
+      if (!Number.isFinite(healthScore) || healthScore < 0 || healthScore > 100) {
+        return withCors(json({ error: 'Invalid healthScore' }, 400));
+      }
+      if (!Number.isFinite(citationRatePercent) || citationRatePercent < 0 || citationRatePercent > 100) {
+        return withCors(json({ error: 'Invalid citationRatePercent' }, 400));
+      }
+      if (!Number.isFinite(timestamp) || timestamp < 1_600_000_000_000 || timestamp > Date.now() + 86_400_000) {
+        return withCors(json({ error: 'Invalid timestamp' }, 400));
+      }
+      if (!Number.isFinite(findingsCount) || findingsCount < 0 || findingsCount > 10_000) {
+        return withCors(json({ error: 'Invalid findingsCount' }, 400));
+      }
+      if (typeof body.findingsFingerprint !== 'string' || findingsFingerprint.length > 8_000) {
+        return withCors(json({ error: 'findingsFingerprint required' }, 400));
+      }
+      if (findingsCount === 0 && findingsFingerprint.length > 0) {
+        return withCors(json({ error: 'findingsFingerprint must be empty when findingsCount is 0' }, 400));
+      }
+      if (findingsCount > 0 && !findingsFingerprint) {
+        return withCors(json({ error: 'findingsFingerprint required' }, 400));
+      }
+
+      const canonicalPayload = JSON.stringify({
+        domain: cleanDomain,
+        score: healthScore,
+        citationRate: citationRatePercent,
+        findingsCount,
+        timestamp,
+        findingsFingerprint,
+      });
+      const expectedDigest = await sha256Hex(canonicalPayload);
+      if (!secretEquals(expectedDigest, digestHex)) {
+        return withCors(json({ error: 'Digest does not match attestation payload' }, 400));
+      }
+
+      const attestation = {
+        digestHex,
+        domain: cleanDomain,
+        healthScore,
+        citationRatePercent,
+        timestamp,
+        tonMemo: typeof body.tonMemo === 'string' ? body.tonMemo.slice(0, 512) : `LUM:POA:${cleanDomain}:${healthScore}:${digestHex.slice(0, 16)}`,
+        verifiedAt: Date.now(),
+        ownerId: who.user.id,
+      };
       if (env.LUMINARA_KV) {
-        await env.LUMINARA_KV.put(`poa:${attestation.digestHex}`, JSON.stringify(attestation), { expirationTtl: 31536000 });
+        await env.LUMINARA_KV.put(`poa:${digestHex}`, JSON.stringify(attestation), { expirationTtl: 31536000 });
       }
-      return withCors(json({ ok: true, digestHex: attestation.digestHex }));
+      return withCors(json({ ok: true, digestHex }));
     }
 
     return withCors(json({ error: 'Method not allowed' }, 405));

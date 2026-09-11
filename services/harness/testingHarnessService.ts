@@ -450,11 +450,24 @@ class TestingHarnessService {
       case 'tc_agent_3': {
         const skills = skillsGeneratorService.listSkills();
         tc.logs.push(`Generating platform manifests for ${skills.length} skills...`);
+        const conduct = skillsGeneratorService.getSkill('luminara-agent-conduct');
+        if (!conduct) throw new Error('Missing luminara-agent-conduct skill in registry');
+        if (conduct.category !== 'conduct') throw new Error('Agent conduct skill must use category conduct');
         const sample = skills[0];
         const claudeMd = skillsGeneratorService.formatForPlatform(sample, 'claude');
         const agyMd = skillsGeneratorService.formatForPlatform(sample, 'antigravity');
+        const conductClaude = skillsGeneratorService.formatForPlatform(conduct, 'claude');
         if (!claudeMd.includes(sample.name)) throw new Error('Claude Code skill markdown missing skill name');
         if (!agyMd.includes('---')) throw new Error('Antigravity skill markdown missing YAML frontmatter');
+        if (!conductClaude.includes('Luminara Agent Conduct')) {
+          throw new Error('Agent conduct Claude export missing title');
+        }
+        if (/You are Claude\b/i.test(conduct.systemPrompt)) {
+          throw new Error('Agent conduct skill must not claim Claude identity');
+        }
+        if (!/Never claim Claude/i.test(conduct.systemPrompt)) {
+          throw new Error('Agent conduct skill must explicitly refuse Claude identity claims');
+        }
         break;
       }
 

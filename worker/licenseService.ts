@@ -6,7 +6,7 @@
  * and cross-platform synchronization between Telegram Mini App and Web.
  */
 import type { Env } from './index';
-import { normalizePlanId, PLANS } from './telegramBot';
+import { normalizePlanId } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 
 export interface LicenseKeyRecord {
@@ -107,27 +107,9 @@ export async function activateLicenseKey(
       maxRedemptions: 100000, // Multi-use campaign code
       redemptionCount: 0,
     };
-  } else {
-    // Dynamic pattern check for LUM-[PLAN]-[DAYS]D-[RANDOM]
-    const match = key.match(/^LUM-(STARTER|GROWTH|PRO|AGENCY)-(\d+)D-([A-Z0-9]{4})-([A-Z0-9]{4})$/);
-    if (match) {
-      const plan = match[1].toLowerCase() === 'pro' ? 'agency' : match[1].toLowerCase();
-      const days = parseInt(match[2], 10);
-      if (PLANS[plan] && days > 0 && days <= 365) {
-        keyRecord = {
-          key,
-          plan,
-          durationDays: days,
-          isTrial: days <= 7,
-          campaign: 'serial_key',
-          createdAt: Date.now(),
-          redeemed: false,
-          maxRedemptions: 1,
-          redemptionCount: 0,
-        };
-      }
-    }
   }
+  // Serial-shaped keys must be pre-minted into KV via generateLicenseKeys.
+  // Do not fabricate entitlements from the key string alone.
 
   if (!keyRecord) {
     return { ok: false, error: 'Invalid or unrecognized license key. Please check the code and try again.' };
