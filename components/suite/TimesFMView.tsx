@@ -10,6 +10,9 @@ import {
 import { ICONS } from '../../constants';
 import { timesfmService } from '../../services/timesfm/timesfmService';
 import { renderMarkdown } from '../../utils/markdown';
+import { copyToClipboard } from '../../utils/clipboard';
+import { downloadBlob } from '../../utils/download';
+import { TimesFMChart, TimesFMCovariatesPanel, TimesFMUploadModal } from './timesfm';
 
 interface TimesFMViewProps {
   dna: BusinessDNA | null;
@@ -51,17 +54,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
 
   // Custom Upload Modal / Drawer
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
-  const [pasteText, setPasteText] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (!isUploadOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsUploadOpen(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isUploadOpen]);
 
   // Handle benchmark switch
   const handleSelectBenchmark = (benchId: string) => {
@@ -120,43 +113,6 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyData, horizon, patchLength, revin, covariates, frequency, executionMode, seriesName, dna]);
 
-  // Handle custom data submission
-  const handleApplyCustomData = () => {
-    if (!pasteText.trim()) return;
-    const parsed = timesfmService.parseTimeSeriesData(pasteText);
-    if (parsed.length < 5) {
-      setError("Parsed fewer than 5 data points. Please ensure valid CSV, TSV, or numeric sequence.");
-      return;
-    }
-    setSelectedBenchmarkId('custom');
-    setSeriesName('Custom Ingested Sequence');
-    setHistoryData(parsed);
-    setIsUploadOpen(false);
-    setPasteText('');
-  };
-
-  // Handle file input
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (text) {
-        const parsed = timesfmService.parseTimeSeriesData(text);
-        if (parsed.length >= 5) {
-          setSelectedBenchmarkId('custom');
-          setSeriesName(file.name.replace(/\.[^/.]+$/, ""));
-          setHistoryData(parsed);
-          setIsUploadOpen(false);
-        } else {
-          setError("File contains insufficient valid data points (minimum 5 required).");
-        }
-      }
-    };
-    reader.readAsText(file);
-  };
-
   // Toggle Covariate
   const toggleCovariate = (id: string) => {
     setCovariates(prev => prev.map(c => c.id === id ? { ...c, active: !c.active } : c));
@@ -168,11 +124,13 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
   };
 
   // Copy Briefing to Clipboard
-  const handleCopyReport = () => {
+  const handleCopyReport = async () => {
     if (!result?.executiveSummary) return;
-    navigator.clipboard.writeText(result.executiveSummary);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyToClipboard(result.executiveSummary);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   // Export Forecast to CSV
@@ -191,14 +149,9 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
       rows.push([f.timestamp, f.dateStr, "", f.p10, f.p25, f.p50, f.p75, f.p90].join(","));
     });
 
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `timesfm_forecast_${seriesName.replace(/\s+/g, '_').toLowerCase()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    downloadBlob(blob, `timesfm_forecast_${seriesName.replace(/\s+/g, '_').toLowerCase()}.csv`);
   };
 
   // -------------------------------------------------------------
@@ -386,7 +339,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
           <div className="flex items-center gap-3 mb-2">
             <span className="w-8 h-[1px] bg-gold"></span>
             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-gold-light">
-              Zero-Shot Time-Series Foundation Model
+              Forecasting
             </span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight flex items-center gap-3">
@@ -396,7 +349,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
             </span>
           </h1>
           <p className="text-xs text-gray-400 mt-1 max-w-2xl leading-relaxed">
-            Proprietary clean-room time-series foundation harness forecasting search traffic, AEO citations, and sovereign economics with multi-quantile probabilistic uncertainty bounds (<code className="text-gold-light font-mono">p10..p90</code>).
+            Forecast search traffic, citation trajectories, and metrics with multi-quantile uncertainty bounds (<code className="text-gold-light font-mono">p10..p90</code>).
           </p>
         </div>
 
@@ -404,7 +357,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
         <div className="flex items-center gap-3 shrink-0">
           {dna && (
             <div className="glass-morphism rounded-xl px-3.5 py-2 border border-success-500/30 flex items-center gap-2.5 bg-success-950/20 text-xs">
-              <span className="w-2 h-2 rounded-full bg-success-400 shadow-[0_0_8px_#10B981]"></span>
+              <span className="w-2 h-2 rounded-full bg-success-400 shadow-sm shadow-success-500/30"></span>
               <span className="text-gray-300">DNA Linked: <strong className="text-white">{dna.name}</strong></span>
             </div>
           )}
@@ -412,25 +365,29 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
           {/* Mode Switcher */}
           <div className="flex items-center bg-black/60 rounded-xl p-1 border border-white/10">
             <button
+              type="button"
+              aria-pressed={executionMode === 'edge'}
               onClick={() => setExecutionMode('edge')}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                 executionMode === 'edge'
                   ? 'bg-gradient-to-r from-gold to-gold-dark text-black shadow-md'
                   : 'text-gray-400 hover:text-white'
               }`}
-              title="Instant local browser tensor-patch calculation"
+              title="Instant local browser calculation"
             >
               <ICONS.Zap className="w-3 h-3" />
               <span>Edge Foundation</span>
             </button>
             <button
+              type="button"
+              aria-pressed={executionMode === 'neural'}
               onClick={() => setExecutionMode('neural')}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                 executionMode === 'neural'
                   ? 'bg-gradient-to-r from-gold to-gold-dark text-black shadow-md'
                   : 'text-gray-400 hover:text-white'
               }`}
-              title="Deep Gemini foundation synthesis with Code Execution"
+              title="Neural foundation synthesis"
             >
               <ICONS.Sparkle className="w-3 h-3" />
               <span>Neural Foundation</span>
@@ -441,12 +398,14 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
 
       {/* Dataset Benchmark Bar */}
       <div className="mb-6 flex flex-wrap items-center gap-2 pb-2">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mr-2">Benchmarks:</span>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mr-2">Benchmarks:</span>
         {benchmarks.map(b => (
           <button
             key={b.id}
+            type="button"
+            aria-pressed={selectedBenchmarkId === b.id}
             onClick={() => handleSelectBenchmark(b.id)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-mono transition-all flex items-center gap-2 ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-mono transition-all flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
               selectedBenchmarkId === b.id
                 ? 'bg-gold/20 text-gold-light border border-gold/50 shadow-lg'
                 : 'bg-black/40 text-gray-400 border border-white/5 hover:border-white/20 hover:text-gray-200'
@@ -457,8 +416,9 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
         ))}
 
         <button
+          type="button"
           onClick={() => setIsUploadOpen(true)}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-mono transition-all flex items-center gap-2 ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-mono transition-all flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
             selectedBenchmarkId === 'custom'
               ? 'bg-gold/20 text-gold-light border border-gold/50 shadow-lg'
               : 'bg-white/5 text-gray-300 border border-white/10 hover:border-gold/40'
@@ -480,33 +440,34 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                 <ICONS.Settings className="w-3.5 h-3.5" />
                 <span>Foundation Parameters</span>
               </div>
-              <span className="text-[10px] font-mono text-gray-500">v1.2</span>
+              <span className="text-[10px] font-mono text-gray-400">v1.2</span>
             </div>
 
             {/* Horizon Selector */}
             <div>
               <div className="flex justify-between items-center mb-1.5">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-gray-300">
+                <label htmlFor="forecast-horizon-slider" className="text-[11px] font-bold uppercase tracking-wider text-gray-300">
                   Forecast Horizon
                 </label>
                 <span className="text-xs font-mono text-gold-light font-bold">{horizon} {frequency}</span>
               </div>
               <input
+                id="forecast-horizon-slider"
                 type="range"
                 min="7"
                 max="180"
                 step="1"
                 value={horizon}
                 onChange={(e) => setHorizon(Number(e.target.value))}
-                className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-gold"
+                className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-gold focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               />
-              <div className="flex justify-between text-[9px] font-mono text-gray-500 mt-1">
-                <button onClick={() => setHorizon(7)} className="hover:text-white">7d</button>
-                <button onClick={() => setHorizon(14)} className="hover:text-white">14d</button>
-                <button onClick={() => setHorizon(30)} className="hover:text-white">30d</button>
-                <button onClick={() => setHorizon(60)} className="hover:text-white">60d</button>
-                <button onClick={() => setHorizon(90)} className="hover:text-white">90d</button>
-                <button onClick={() => setHorizon(180)} className="hover:text-white">180d</button>
+              <div className="flex justify-between text-[9px] font-mono text-gray-400 mt-1">
+                <button type="button" onClick={() => setHorizon(7)} className="hover:text-white focus-visible:ring-1 focus-visible:ring-gold rounded">7d</button>
+                <button type="button" onClick={() => setHorizon(14)} className="hover:text-white focus-visible:ring-1 focus-visible:ring-gold rounded">14d</button>
+                <button type="button" onClick={() => setHorizon(30)} className="hover:text-white focus-visible:ring-1 focus-visible:ring-gold rounded">30d</button>
+                <button type="button" onClick={() => setHorizon(60)} className="hover:text-white focus-visible:ring-1 focus-visible:ring-gold rounded">60d</button>
+                <button type="button" onClick={() => setHorizon(90)} className="hover:text-white focus-visible:ring-1 focus-visible:ring-gold rounded">90d</button>
+                <button type="button" onClick={() => setHorizon(180)} className="hover:text-white focus-visible:ring-1 focus-visible:ring-gold rounded">180d</button>
               </div>
             </div>
 
@@ -519,8 +480,10 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                 {[4, 8, 16, 32].map(p => (
                   <button
                     key={p}
+                    type="button"
+                    aria-pressed={patchLength === p}
                     onClick={() => setPatchLength(p)}
-                    className={`py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+                    className={`py-1 rounded-lg text-xs font-mono font-bold transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                       patchLength === p
                         ? 'bg-gold text-black'
                         : 'bg-white/5 text-gray-400 hover:text-white border border-white/10'
@@ -530,459 +493,88 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
                   </button>
                 ))}
               </div>
-              <p className="text-[9px] text-gray-500 mt-1">Tokenization chunk width for temporal attention.</p>
+              <p className="text-[9px] text-gray-400 mt-1">Chunk size for temporal attention.</p>
             </div>
 
             {/* Normalization & Decomp */}
             <div className="pt-2 border-t border-white/5 space-y-3">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-300 text-[11px]">Reversible Instance Norm (RevIN)</span>
+                <label htmlFor="revin-checkbox" className="text-gray-300 text-[11px] cursor-pointer">Reversible Instance Norm (RevIN)</label>
                 <input
+                  id="revin-checkbox"
                   type="checkbox"
                   checked={revin}
                   onChange={(e) => setRevin(e.target.checked)}
-                  className="w-4 h-4 accent-gold rounded cursor-pointer"
+                  className="w-4 h-4 accent-gold rounded cursor-pointer focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 />
               </div>
 
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-300 text-[11px]">Show p10-p90 Risk Cone</span>
+                <label htmlFor="risk-cone-checkbox" className="text-gray-300 text-[11px] cursor-pointer">Show p10-p90 Risk Cone</label>
                 <input
+                  id="risk-cone-checkbox"
                   type="checkbox"
                   checked={showP10P90}
                   onChange={(e) => setShowP10P90(e.target.checked)}
-                  className="w-4 h-4 accent-gold rounded cursor-pointer"
+                  className="w-4 h-4 accent-gold rounded cursor-pointer focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 />
               </div>
 
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-300 text-[11px]">Show p25-p75 Quartile Ribbon</span>
+                <label htmlFor="ribbon-checkbox" className="text-gray-300 text-[11px] cursor-pointer">Show p25-p75 Quartile Ribbon</label>
                 <input
+                  id="ribbon-checkbox"
                   type="checkbox"
                   checked={showP25P75}
                   onChange={(e) => setShowP25P75(e.target.checked)}
-                  className="w-4 h-4 accent-gold rounded cursor-pointer"
+                  className="w-4 h-4 accent-gold rounded cursor-pointer focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 />
               </div>
             </div>
           </div>
 
           {/* Exogenous Covariates & Shocks */}
-          <div className="glass-morphism rounded-2xl border border-white/10 p-5 bg-black/60 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gold-light">
-                <ICONS.Sliders className="w-3.5 h-3.5" />
-                <span>Exogenous Covariates</span>
-              </div>
-              <span className="text-[9px] font-mono text-success-400 uppercase">Scenario Alpha</span>
-            </div>
-
-            <div className="space-y-4">
-              {covariates.map(cov => (
-                <div key={cov.id} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-gray-200 cursor-pointer flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={cov.active}
-                        onChange={() => toggleCovariate(cov.id)}
-                        className="w-3.5 h-3.5 accent-gold rounded cursor-pointer"
-                      />
-                      <span>{cov.name}</span>
-                    </label>
-                    <span className="text-[10px] font-mono text-gold-light">
-                      {cov.type === 'multiplier' ? `x${cov.value.toFixed(2)}` : `${(cov.value * 100).toFixed(0)}%`}
-                    </span>
-                  </div>
-
-                  <p className="text-[10px] text-gray-500 leading-tight">
-                    {cov.description}
-                  </p>
-
-                  {cov.active && cov.type === 'multiplier' && (
-                    <input
-                      type="range"
-                      min="1.05"
-                      max="2.00"
-                      step="0.05"
-                      value={cov.value}
-                      onChange={(e) => updateCovariateValue(cov.id, Number(e.target.value))}
-                      className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-gold"
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+          <TimesFMCovariatesPanel
+            covariates={covariates}
+            onToggleCovariate={toggleCovariate}
+            onUpdateCovariateValue={updateCovariateValue}
+          />
         </div>
 
         {/* Center/Right Column: Luxury SVG Forecaster Canvas (3 cols) */}
         <div className="lg:col-span-3 space-y-6">
           {/* Main Visualizer Card */}
-          <div className="glass-morphism rounded-2xl border border-gold/30 p-6 bg-black/80 shadow-2xl relative overflow-hidden">
-            {/* Top Chart Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-white/10 pb-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-bold text-white uppercase tracking-wider">{seriesName}</span>
-                  <span className="text-[10px] font-mono text-gray-400">({frequency})</span>
-                </div>
-                <div className="flex items-center gap-4 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3 h-0.5 bg-white"></span>
-                    <span className="text-gray-400 text-[11px]">Historical Context</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3 h-0.5 bg-gold-light"></span>
-                    <span className="text-gold-light text-[11px] font-bold">TimesFM p50 Median</span>
-                  </div>
-                  {showP10P90 && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-3 h-2 bg-gold/20 border border-gold/40 rounded-sm"></span>
-                      <span className="text-gray-400 text-[11px]">p10-p90 Cone</span>
-                    </div>
-                  )}
-                  {result && result.anomalies.length > 0 && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-danger-400"></span>
-                      <span className="text-danger-400 text-[11px]">Anomalies ({result.anomalies.length})</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Actions: Export & Re-Run */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleExportCSV}
-                  disabled={!result}
-                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white transition-all flex items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/5 disabled:hover:text-gray-300"
-                  title="Download CSV of Historical & Quantile Predictions"
-                >
-                  <ICONS.FileText className="w-3 h-3 text-gold-light" />
-                  <span>Export CSV</span>
-                </button>
-
-                <button
-                  onClick={runForecast}
-                  disabled={isExecuting}
-                  className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-bold text-xs uppercase tracking-wider hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  {isExecuting ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-black/40 border-t-black rounded-full animate-spin"></div>
-                      <span>Synthesizing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <ICONS.Refresh className="w-3.5 h-3.5" />
-                      <span>Re-Forecast</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Error banner if any */}
-            {error && (
-              <div className="mb-4 p-3 rounded-xl bg-danger-950/40 border border-danger-500/40 text-danger-300 text-xs flex items-center gap-2">
-                <ICONS.AlertTriangle className="w-4 h-4 text-danger-400 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* SVG Forecaster Canvas */}
-            <div className="relative w-full h-[340px] bg-black/60 rounded-2xl border border-white/10 overflow-hidden select-none">
-              {chartData && (
-                <svg
-                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                  className="w-full h-full"
-                  onMouseLeave={() => setHoverIndex(null)}
-                >
-                  <defs>
-                    {/* Outer p10-p90 gradient */}
-                    <linearGradient id="p10p90Grad" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor="#BF953F" stopOpacity="0.35" />
-                      <stop offset="50%" stopColor="#BF953F" stopOpacity="0.15" />
-                      <stop offset="100%" stopColor="#BF953F" stopOpacity="0.35" />
-                    </linearGradient>
-
-                    {/* Inner p25-p75 gradient */}
-                    <linearGradient id="p25p75Grad" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor="#FCF6BA" stopOpacity="0.45" />
-                      <stop offset="50%" stopColor="#BF953F" stopOpacity="0.25" />
-                      <stop offset="100%" stopColor="#FCF6BA" stopOpacity="0.45" />
-                    </linearGradient>
-
-                    {/* Glowing trajectory filter */}
-                    <filter id="goldGlow" x="-20%" y="-20%" width="140%" height="140%">
-                      <feGaussianBlur stdDeviation="3" result="blur" />
-                      <feMerge>
-                        <feMergeNode in="blur" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
-
-                  {/* Horizontal Grid lines */}
-                  {chartData.yTicks.map((tick, i) => (
-                    <g key={i}>
-                      <line
-                        x1={padding.left}
-                        y1={tick.y}
-                        x2={chartWidth - padding.right}
-                        y2={tick.y}
-                        stroke="rgba(255,255,255,0.06)"
-                        strokeDasharray="3 3"
-                      />
-                      <text
-                        x={padding.left - 10}
-                        y={tick.y + 3}
-                        fill="#6B7280"
-                        fontSize="9"
-                        fontFamily="monospace"
-                        textAnchor="end"
-                      >
-                        {tick.label}
-                      </text>
-                    </g>
-                  ))}
-
-                  {/* Vertical Horizon Boundary Line */}
-                  <line
-                    x1={chartData.splitX}
-                    y1={padding.top}
-                    x2={chartData.splitX}
-                    y2={chartHeight - padding.bottom}
-                    stroke="#BF953F"
-                    strokeWidth="1.2"
-                    strokeDasharray="4 4"
-                    opacity="0.6"
-                  />
-                  <text
-                    x={chartData.splitX + 6}
-                    y={padding.top + 14}
-                    fill="#FCF6BA"
-                    fontSize="9"
-                    fontFamily="monospace"
-                    fontWeight="bold"
-                    opacity="0.8"
-                  >
-                    HORIZON &rarr;
-                  </text>
-
-                  {/* Shaded Confidence Bands */}
-                  {showP10P90 && (
-                    <path d={chartData.p10p90AreaStr} fill="url(#p10p90Grad)" />
-                  )}
-
-                  {showP25P75 && (
-                    <path d={chartData.p25p75AreaStr} fill="url(#p25p75Grad)" />
-                  )}
-
-                  {/* Historical Trajectory Path */}
-                  <path
-                    d={chartData.historyPathStr}
-                    fill="none"
-                    stroke="rgba(255,255,255,0.85)"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-
-                  {/* P50 Forecast Trajectory Path */}
-                  <path
-                    d={chartData.p50PathStr}
-                    fill="none"
-                    stroke="#FCF6BA"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    filter="url(#goldGlow)"
-                  />
-
-                  {/* Anomaly Highlight Circles */}
-                  {chartData.anomalyPoints.map((pt, i) => pt && (
-                    <g key={i}>
-                      <circle
-                        cx={pt.x}
-                        cy={pt.y}
-                        r="5"
-                        fill={pt.anom.type === 'spike' ? '#10B981' : '#EF4444'}
-                        stroke="#000"
-                        strokeWidth="1.5"
-                        className="animate-pulse"
-                      />
-                    </g>
-                  ))}
-
-                  {/* Interactive Crosshair Hover Area */}
-                  {chartData.allPoints.map((pt, i) => {
-                    const x = chartData.scaleX(i);
-                    const widthPerStep = innerWidth / Math.max(1, chartData.allPoints.length);
-                    return (
-                      <rect
-                        key={i}
-                        x={x - widthPerStep / 2}
-                        y={padding.top}
-                        width={widthPerStep}
-                        height={innerHeight}
-                        fill="transparent"
-                        className="cursor-crosshair"
-                        onMouseEnter={() => setHoverIndex(i)}
-                      />
-                    );
-                  })}
-
-                  {/* Active Hover Crosshair Line & Dot */}
-                  {hoverIndex !== null && chartData.allPoints[hoverIndex] && (() => {
-                    const x = chartData.scaleX(hoverIndex);
-                    const pt = chartData.allPoints[hoverIndex];
-                    const y = pt.type === 'history' ? chartData.scaleY(pt.val) : chartData.scaleY(pt.p50);
-                    return (
-                      <g>
-                        <line
-                          x1={x}
-                          y1={padding.top}
-                          x2={x}
-                          y2={chartHeight - padding.bottom}
-                          stroke="#FCF6BA"
-                          strokeWidth="1"
-                          strokeDasharray="2 2"
-                        />
-                        <circle
-                          cx={x}
-                          cy={y}
-                          r="5"
-                          fill="#FCF6BA"
-                          stroke="#000"
-                          strokeWidth="2"
-                        />
-                      </g>
-                    );
-                  })()}
-
-                  {/* X-axis Date Ticks */}
-                  {chartData.xTicks.map((tick, i) => (
-                    <text
-                      key={i}
-                      x={tick.x}
-                      y={chartHeight - padding.bottom + 18}
-                      fill="#6B7280"
-                      fontSize="9"
-                      fontFamily="monospace"
-                      textAnchor="middle"
-                    >
-                      {tick.label}
-                    </text>
-                  ))}
-                </svg>
-              )}
-
-              {/* Hover Floating Tooltip */}
-              {hoverPoint && (
-                <div className="absolute top-3 right-3 glass-morphism rounded-xl border border-gold/40 p-3 bg-black/95 text-xs shadow-2xl pointer-events-none animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between gap-4 mb-1 border-b border-white/10 pb-1">
-                    <span className="font-mono text-gold-light font-bold">{hoverPoint.dateStr}</span>
-                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/10 text-gray-300">
-                      {hoverPoint.type === 'history' ? 'Historical' : 'TimesFM Projected'}
-                    </span>
-                  </div>
-
-                  {hoverPoint.type === 'history' ? (
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-gray-400">Actual:</span>
-                      <span className="text-base font-bold font-mono text-white">
-                        {hoverPoint.val.toLocaleString()}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="space-y-1 font-mono text-[11px]">
-                      <div className="flex items-center justify-between gap-3 text-gold-light font-bold">
-                        <span>p50 (Median):</span>
-                        <span>{hoverPoint.p50?.toLocaleString()}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3 text-gray-400">
-                        <span>p10 - p90:</span>
-                        <span>{hoverPoint.p10?.toLocaleString()} — {hoverPoint.p90?.toLocaleString()}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3 text-gray-500 text-[10px]">
-                        <span>p25 - p75:</span>
-                        <span>{hoverPoint.p25?.toLocaleString()} — {hoverPoint.p75?.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Bottom KPI Metrics Ribbon */}
-            {kpis && (
-              <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="glass-morphism rounded-xl p-3.5 border border-white/10 bg-black/40">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-                    Horizon Median (p50)
-                  </p>
-                  <p className="text-xl font-bold font-mono text-gold-light flex items-baseline gap-2">
-                    <span>{kpis.finalP50.toLocaleString()}</span>
-                    <span className={`text-xs ${kpis.diffPct >= 0 ? 'text-success-400' : 'text-danger-400'}`}>
-                      {kpis.diffPct >= 0 ? '+' : ''}{kpis.diffPct}%
-                    </span>
-                  </p>
-                </div>
-
-                <div className="glass-morphism rounded-xl p-3.5 border border-white/10 bg-black/40">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-                    Uncertainty Cone Spread
-                  </p>
-                  <p className="text-xl font-bold font-mono text-white">
-                    &plusmn;{kpis.uncertaintyPct}%
-                  </p>
-                  <p className="text-[9px] font-mono text-gray-500 mt-0.5">
-                    [{kpis.finalP10.toLocaleString()} .. {kpis.finalP90.toLocaleString()}]
-                  </p>
-                </div>
-
-                <div className="glass-morphism rounded-xl p-3.5 border border-white/10 bg-black/40">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-                    Directional Fit Score
-                  </p>
-                  <p className="text-xl font-bold font-mono text-success-400">
-                    {kpis.directionalAccuracy}%
-                  </p>
-                  <p className="text-[9px] font-mono text-gray-500 mt-0.5">
-                    Backtest MAPE: {kpis.mape}%
-                  </p>
-                </div>
-
-                <div className="glass-morphism rounded-xl p-3.5 border border-white/10 bg-black/40">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-                    Detected Structural Breaks
-                  </p>
-                  <p className="text-xl font-bold font-mono text-gold">
-                    {kpis.anomalyCount}
-                  </p>
-                  <p className="text-[9px] font-mono text-gray-500 mt-0.5">
-                    Historical residual outliers
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
+          <TimesFMChart
+            seriesName={seriesName}
+            frequency={frequency}
+            result={result}
+            chartData={chartData}
+            hoverIndex={hoverIndex}
+            setHoverIndex={setHoverIndex}
+            hoverPoint={hoverPoint}
+            kpis={kpis}
+            showP10P90={showP10P90}
+            showP25P75={showP25P75}
+            isExecuting={isExecuting}
+            error={error}
+            onExportCSV={handleExportCSV}
+            onRunForecast={runForecast}
+          />
 
           {/* Executive Strategic Takeaways / Synthesis */}
           {result?.executiveSummary && (
             <div className="glass-morphism rounded-2xl border border-gold/40 p-6 sm:p-8 bg-black/90 shadow-2xl animate-in fade-in duration-500">
               <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-gold shadow-[0_0_8px_#BF953F]"></div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-gold shadow-sm shadow-gold/30"></div>
                   <h3 className="text-base font-bold uppercase tracking-widest text-gold-light">
                     TimesFM Executive Intelligence Briefing
                   </h3>
                 </div>
                 <button
+                  type="button"
                   onClick={handleCopyReport}
-                  className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 hover:text-white transition-all flex items-center gap-1.5"
+                  className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 hover:text-white transition-all flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
                   <ICONS.Share className="w-3.5 h-3.5 text-gold-light" />
                   <span>{copied ? 'Copied!' : 'Copy Briefing'}</span>
@@ -999,77 +591,16 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
       </div>
 
       {/* CSV / Data Upload Modal */}
-      {isUploadOpen && (
-        <div 
-          className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-300"
-          onClick={(e) => { if (e.target === e.currentTarget) setIsUploadOpen(false); }}
-        >
-          <div 
-            className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-lg my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden relative bg-black/95"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Ingest Time-Series Dataset"
-          >
-            <div className="bg-gradient-to-r from-gold/20 to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <ICONS.FileText className="w-4 h-4 text-gold-light" />
-                <h3 className="text-base font-bold text-white uppercase tracking-wider">Ingest Time-Series Dataset</h3>
-              </div>
-              <button 
-                onClick={() => setIsUploadOpen(false)} 
-                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
-                title="Close (Esc)"
-                aria-label="Close modal"
-              >
-                <ICONS.X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-widest text-gray-300 mb-2">
-                  Upload CSV or TSV File
-                </label>
-                <label className="border-2 border-dashed border-white/15 hover:border-gold/60 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors group">
-                  <ICONS.FileText className="w-8 h-8 text-gold-light/60 group-hover:text-gold-light mb-2" />
-                  <span className="text-xs text-gray-300 group-hover:text-white font-medium">Click to browse file (.csv, .tsv, .txt)</span>
-                  <span className="text-[10px] text-gray-500 mt-1">Columns: Date/Timestamp, Metric Value</span>
-                  <input type="file" accept=".csv,.tsv,.txt" onChange={handleFileUpload} className="hidden" />
-                </label>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-widest text-gray-300 mb-2">
-                  Or Paste Raw Numbers / CSV Lines
-                </label>
-                <textarea
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                  placeholder="2026-01-01, 1420&#10;2026-01-02, 1490&#10;2026-01-03, 1510..."
-                  rows={5}
-                  className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl p-3 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2 shrink-0">
-                <button
-                  onClick={() => setIsUploadOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs text-gray-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleApplyCustomData}
-                  disabled={!pasteText.trim()}
-                  className="px-6 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-bold text-xs uppercase tracking-wider disabled:opacity-30"
-                >
-                  Load & Ingest
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <TimesFMUploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onApplyData={(parsed, name) => {
+          setSelectedBenchmarkId('custom');
+          setSeriesName(name);
+          setHistoryData(parsed);
+        }}
+        onError={(msg) => setError(msg)}
+      />
     </div>
   );
 };

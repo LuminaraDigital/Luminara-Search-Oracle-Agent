@@ -107,8 +107,8 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
           </Button>
         )}
         {userLabel && <p className="text-[11px] text-gold/80 truncate">Web login: {userLabel}</p>}
-        {error && <p className="text-xs text-red-400" role="alert">{error}</p>}
-        {info && <p className="text-xs text-emerald-400" role="status">{info}</p>}
+        {error && <p className="text-xs text-danger-400" role="alert">{error}</p>}
+        {info && <p className="text-xs text-success-400" role="status">{info}</p>}
       </div>
     );
   }
@@ -152,14 +152,14 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
         <div className="flex gap-1 text-[10px] font-bold uppercase tracking-wider">
           <button
             type="button"
-            className={`px-2 py-1 rounded ${mode === 'signin' ? 'bg-gold/20 text-gold-light' : 'text-gray-500 hover:text-gray-300'}`}
+            className={`px-2 py-1 rounded transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signin' ? 'bg-gold/20 text-gold-light' : 'text-gray-400 hover:text-gray-200'}`}
             onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
           >
             Sign in
           </button>
           <button
             type="button"
-            className={`px-2 py-1 rounded ${mode === 'signup' ? 'bg-gold/20 text-gold-light' : 'text-gray-500 hover:text-gray-300'}`}
+            className={`px-2 py-1 rounded transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signup' ? 'bg-gold/20 text-gold-light' : 'text-gray-400 hover:text-gray-200'}`}
             onClick={() => { setMode('signup'); setError(null); setInfo(null); }}
           >
             Sign up
@@ -182,37 +182,39 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
           }
         }}
       >
-        <label className="block space-y-1">
-          <span className="text-[10px] font-mono uppercase text-gray-500">Email</span>
+        <div className="space-y-1">
+          <label htmlFor="auth-email" className="block text-[10px] font-mono uppercase text-gray-400">Email</label>
           <input
+            id="auth-email"
             type="email"
             autoComplete="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-gray-100 outline-none focus:border-gold/50"
+            className="w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 outline-none focus:border-gold/50 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             placeholder="you@example.com"
           />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-[10px] font-mono uppercase text-gray-500">Password</span>
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="auth-password" className="block text-[10px] font-mono uppercase text-gray-400">Password</label>
           <input
+            id="auth-password"
             type="password"
             autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
             required
             minLength={6}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-gray-100 outline-none focus:border-gold/50"
+            className="w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 outline-none focus:border-gold/50 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             placeholder="At least 6 characters"
           />
-        </label>
+        </div>
         {mode === 'signin' && (
           <div className="flex justify-end">
             <button
               type="button"
               disabled={busy || !email.trim()}
-              className="text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-gold disabled:opacity-40"
+              className="text-[10px] font-bold uppercase tracking-wider text-gray-400 hover:text-gold disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded transition-colors"
               onClick={() => run(async () => {
                 await resetPasswordWithEmail(email);
                 setInfo('Password reset email sent. Check your inbox.');
@@ -222,8 +224,8 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
             </button>
           </div>
         )}
-        {error && <p className="text-xs text-red-400" role="alert">{error}</p>}
-        {info && <p className="text-xs text-emerald-400" role="status">{info}</p>}
+        {error && <p className="text-xs text-danger-400" role="alert">{error}</p>}
+        {info && <p className="text-xs text-success-400" role="status">{info}</p>}
         <Button type="submit" disabled={busy || !email || password.length < 6} className="w-full text-xs">
           {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
         </Button>
@@ -231,7 +233,7 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
 
       <div className="relative py-1">
         <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10" /></div>
-        <div className="relative flex justify-center"><span className="px-2 text-[10px] uppercase tracking-wider text-gray-500 bg-transparent">or</span></div>
+        <div className="relative flex justify-center"><span className="px-2 text-[10px] uppercase tracking-wider text-gray-400 bg-transparent">or</span></div>
       </div>
 
       <Button

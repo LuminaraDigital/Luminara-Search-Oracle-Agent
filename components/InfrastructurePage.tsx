@@ -34,21 +34,51 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({ onBack, onTermi
       </div>
 
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-6 backdrop-blur-md bg-black/20 border-b border-white/[0.03]">
-        <div className="flex items-center gap-4 group cursor-pointer" onClick={onBack}>
+        <button
+          type="button"
+          className="flex items-center gap-4 group cursor-pointer text-left focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded-lg"
+          onClick={onBack}
+          aria-label="Return to previous page"
+        >
           <ICONS.LuminaraLogo className="w-8 h-8" />
           <div className="flex flex-col leading-none">
             <span className="text-lg font-bold tracking-[0.4em] uppercase gold-text">APP MODULES</span>
           </div>
-        </div>
+        </button>
         
         <div className="flex items-center gap-6 md:gap-10">
-          <button onClick={onBack} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Return</button>
-          <button onClick={onNavigateIntelligence} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Our AI</button>
-          <button onClick={onNavigateWhy} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Why Us</button>
-          <button onClick={onNavigatePricing} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Pricing</button>
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
+            Return
+          </button>
+          <button
+            type="button"
+            onClick={onNavigateIntelligence}
+            className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
+            Our AI
+          </button>
+          <button
+            type="button"
+            onClick={onNavigateWhy}
+            className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
+            Why Us
+          </button>
+          <button
+            type="button"
+            onClick={onNavigatePricing}
+            className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
+            Pricing
+          </button>
           <button 
+            type="button"
             onClick={onTerminal}
-            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
+            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             Launch Terminal
           </button>
@@ -90,13 +120,14 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({ onBack, onTermi
         <section className="mt-48 py-32 border-y border-white/[0.05]">
           <div className="text-center max-w-4xl mx-auto space-y-12">
             <h2 className="text-4xl md:text-6xl font-light italic">Automatic <span className="gold-text font-bold uppercase not-italic tracking-[0.1em]">Intelligence.</span></h2>
-            <p className="text-gray-500 text-lg font-light leading-relaxed">
+            <p className="text-gray-400 text-lg font-light leading-relaxed">
               Our software uses the Vaticinator Core to run thousands of search checks. It builds a roadmap for your growth without you needing to be a pro.
             </p>
             <div className="pt-8">
               <button 
+                type="button"
                 onClick={onTerminal}
-                className="px-16 py-6 border border-gold text-gold-light font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-gold/10 transition-all"
+                className="px-16 py-6 border border-gold text-gold-light font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-gold/10 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 Run Your First Audit
               </button>
@@ -107,7 +138,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({ onBack, onTermi
 
       <footer className="py-24 px-6 md:px-20 flex flex-col items-center gap-12 relative z-10 bg-black">
         <div className="w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
-        <p className="text-[9px] text-gray-700 uppercase tracking-[0.8em]">&copy; 2025 Luminara Audit Tool. Software: Active.</p>
+        <p className="text-[9px] text-gray-400 uppercase tracking-[0.8em]">&copy; 2025 Luminara Audit Tool. Software: Active.</p>
       </footer>
     </div>
   );

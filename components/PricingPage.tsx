@@ -49,20 +49,26 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
       </div>
 
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-6 backdrop-blur-md bg-black/20 border-b border-white/[0.03]">
-        <div className="flex items-center gap-4 group cursor-pointer" onClick={onBack}>
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Return to previous page"
+          className="flex items-center gap-4 group text-left focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded p-1"
+        >
           <ICONS.LuminaraLogo className="w-8 h-8" />
           <div className="flex flex-col leading-none">
             <span className="text-lg font-bold tracking-[0.4em] uppercase gold-text">APP PRICING</span>
           </div>
-        </div>
+        </button>
         
         <div className="flex items-center gap-6 md:gap-10">
-          <button onClick={onBack} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Return</button>
-          <button onClick={onNavigateWhy} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Why Us</button>
-          <button onClick={onNavigateInfrastructure} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">How It Works</button>
+          <button type="button" onClick={onBack} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded px-1.5 py-1">Return</button>
+          <button type="button" onClick={onNavigateWhy} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded px-1.5 py-1">Why Us</button>
+          <button type="button" onClick={onNavigateInfrastructure} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded px-1.5 py-1">How It Works</button>
           <button 
+            type="button"
             onClick={onTerminal}
-            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
+            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             Launch Terminal
           </button>
@@ -82,8 +88,8 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
             Get the professional audit tool experts use. US$49 per month for up to 2 sites. Start your free trial today.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-6">
-            <button onClick={onTerminal} className="px-12 py-6 bg-gold text-black font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl">Start 14-Day Free Trial</button>
-            <button onClick={onTerminal} className="px-12 py-6 glass-morphism border border-white/10 text-white font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-white/5 transition-all">Try The App Free</button>
+            <button type="button" onClick={onTerminal} className="px-12 py-6 bg-gold text-black font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none">Start 14-Day Free Trial</button>
+            <button type="button" onClick={onTerminal} className="px-12 py-6 glass-morphism border border-white/10 text-white font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-white/5 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none">Try The App Free</button>
           </div>
         </section>
 
@@ -92,10 +98,10 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
              <div className="absolute -top-6 left-1/2 -translate-x-1/2 px-8 py-3 bg-gradient-to-br from-gold to-gold-dark text-black text-[11px] font-black uppercase tracking-[0.4em] rounded-2xl shadow-xl">App Subscription</div>
              
              <div className="text-center mb-16">
-                <div className="text-gray-500 uppercase tracking-[0.3em] font-black text-[10px] mb-4">Starter Software Plan</div>
+                <div className="text-gray-400 uppercase tracking-[0.3em] font-black text-[10px] mb-4">Starter Software Plan</div>
                 <div className="flex items-baseline justify-center gap-2">
                    <span className="text-7xl font-light">US$49</span>
-                   <span className="text-gray-500 uppercase tracking-widest text-xs">/ Month</span>
+                   <span className="text-gray-400 uppercase tracking-widest text-xs">/ Month</span>
                 </div>
              </div>
 
@@ -108,7 +114,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
                        </div>
                        <div className="space-y-1">
                           <h4 className="text-lg font-bold tracking-tight text-white uppercase group-hover:text-gold-light transition-colors">{f.title}</h4>
-                          <p className="text-sm text-gray-500 font-light leading-relaxed">{f.desc}</p>
+                          <p className="text-sm text-gray-400 font-light leading-relaxed">{f.desc}</p>
                        </div>
                     </div>
                   ))}
@@ -121,8 +127,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
                 ) : (
                   <div className="space-y-4">
                     <button
+                      type="button"
                       onClick={() => openPaywallModal('Choose Telegram Stars or TON for 1-click subscription activation.')}
-                      className="w-full py-8 rounded-3xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[11px] hover:scale-[1.02] active:scale-[0.98] transition-all transform hover:-translate-y-1 shadow-2xl"
+                      className="w-full py-8 rounded-3xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[11px] hover:scale-[1.02] active:scale-[0.98] transition-all transform hover:-translate-y-1 shadow-2xl focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                     >
                       Subscribe · Stars or TON
                     </button>
@@ -131,7 +138,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
                     </div>
                   </div>
                 )}
-                <p className="text-center text-gray-600 text-[10px] uppercase tracking-widest mt-6">
+                <p className="text-center text-gray-400 text-[10px] uppercase tracking-widest mt-6">
                   Cancel anytime. Unlimited audits for your sites.
                 </p>
               </div>
@@ -144,9 +151,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
            </div>
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="p-10 rounded-[40px] border border-white/5 bg-white/[0.02] space-y-6">
-                 <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600">DIY Audit Tools</div>
+                 <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">DIY Audit Tools</div>
                  <div className="text-3xl font-bold">$30–$50/mo</div>
-                 <p className="text-gray-500 text-sm font-light leading-relaxed">Basic tools that only check old SEO. They miss AI answers and search grounding.</p>
+                 <p className="text-gray-400 text-sm font-light leading-relaxed">Basic tools that only check old SEO. They miss AI answers and search grounding.</p>
               </div>
               <div className="p-10 rounded-[40px] border border-gold/40 bg-gold/5 space-y-6 scale-105 shadow-2xl z-10">
                  <div className="text-[10px] font-black uppercase tracking-[0.3em] gold-text">Luminara Audit App</div>
@@ -154,9 +161,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
                  <p className="text-gray-300 text-sm font-light leading-relaxed">The only tool that simulates Google, Perplexity, and ChatGPT in one place.</p>
               </div>
               <div className="p-10 rounded-[40px] border border-white/5 bg-white/[0.02] space-y-6">
-                 <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600">Hiring Consultants</div>
+                 <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Hiring Consultants</div>
                  <div className="text-3xl font-bold">$1,000+/mo</div>
-                 <p className="text-gray-500 text-sm font-light leading-relaxed">Expensive human help. You pay for their time, not always for your results.</p>
+                 <p className="text-gray-400 text-sm font-light leading-relaxed">Expensive human help. You pay for their time, not always for your results.</p>
               </div>
            </div>
            <div className="mt-20 text-center">
@@ -169,7 +176,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onTerminal, onNavigat
 
       <footer className="py-24 px-6 md:px-20 flex flex-col items-center gap-12 relative z-10 bg-black">
         <div className="w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
-        <p className="text-[9px] text-gray-700 uppercase tracking-[0.8em]">&copy; 2025 Audit Software. Plan: Active.</p>
+        <p className="text-[9px] text-gray-400 uppercase tracking-[0.8em]">&copy; 2025 Audit Software. Plan: Active.</p>
       </footer>
     </div>
   );

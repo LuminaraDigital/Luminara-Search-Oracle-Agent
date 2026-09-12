@@ -9,16 +9,10 @@ interface WhiteLabelExportModalProps {
   dnaName?: string;
 }
 
-const STORAGE_KEY_AGENCY = 'luminara_whitelabel_config';
+import { escapeHtml } from '../../utils/html';
+import { downloadBlob } from '../../utils/download';
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+const STORAGE_KEY_AGENCY = 'luminara_whitelabel_config';
 
 export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
   isOpen,
@@ -271,13 +265,7 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
 
   const handleDownloadMarkdown = () => {
     const header = `# ${agencyName} - Strategic AEO Intelligence Brief\n**Client:** ${clientName}\n**Date:** ${new Date().toISOString().split('T')[0]}\n**Prepared by:** ${preparedBy}\n\n> Executive Note: ${executiveNotes}\n\n---\n\n`;
-    const blob = new Blob([header + markdownText], { type: 'text/markdown' });
-    const u = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = u;
-    a.download = `${clientName.replace(/\s+/g, '_')}_AEO_Brief.md`;
-    a.click();
-    URL.revokeObjectURL(u);
+    downloadBlob(header + markdownText, `${clientName.replace(/\s+/g, '_')}_AEO_Brief.md`, 'text/markdown');
   };
 
   return (

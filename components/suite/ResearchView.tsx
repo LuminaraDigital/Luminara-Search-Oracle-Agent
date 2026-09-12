@@ -1,8 +1,9 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { BusinessDNA } from '../../types';
 import { geminiService } from '../../services/geminiService';
 import { ICONS } from '../../constants';
 import { renderMarkdown } from '../../utils/markdown';
+import { SynthesisSkeleton } from '../ui/Skeleton';
 
 interface ResearchViewProps {
   dna: BusinessDNA | null;
@@ -49,13 +50,13 @@ export const ResearchView: React.FC<ResearchViewProps> = ({ dna }) => {
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Research className="w-4 h-4 text-gold-light" />
-          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold-light">Grounded Intelligence Protocol</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold-light">Market Research</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-bold gold-text tracking-tight mb-3">
           Global Grounding Engine
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
-          Ground market assumptions against live Google Web SERPs and Google Maps geospatial intelligence.
+          Ground market research with live web and local Google Maps data.
         </p>
       </div>
 
@@ -72,10 +73,12 @@ export const ResearchView: React.FC<ResearchViewProps> = ({ dna }) => {
       <div className="glass-morphism rounded-2xl border border-gold/30 p-6 sm:p-8 mb-8 shadow-2xl space-y-6">
         <div>
           <div className="flex items-center gap-3 mb-3">
-            <span className="text-xs font-bold uppercase tracking-widest text-gray-300">Research Grounding Source:</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-gray-300">Grounding Source:</span>
             <button
+              type="button"
+              aria-pressed={mode === 'web'}
               onClick={() => setMode('web')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                 mode === 'web' 
                   ? 'bg-gradient-to-r from-gold to-gold-dark text-black shadow-lg shadow-gold/20' 
                   : 'glass-morphism border border-white/10 text-gray-400 hover:text-white'
@@ -84,8 +87,10 @@ export const ResearchView: React.FC<ResearchViewProps> = ({ dna }) => {
               Google Search
             </button>
             <button
+              type="button"
+              aria-pressed={mode === 'local'}
               onClick={() => setMode('local')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                 mode === 'local' 
                   ? 'bg-gradient-to-r from-gold to-gold-dark text-black shadow-lg shadow-gold/20' 
                   : 'glass-morphism border border-white/10 text-gray-400 hover:text-white'
@@ -96,24 +101,33 @@ export const ResearchView: React.FC<ResearchViewProps> = ({ dna }) => {
           </div>
 
           <div className="relative">
+            <label htmlFor="research-query-input" className="sr-only">Research Query</label>
             <input
+              id="research-query-input"
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={mode === 'web' ? "e.g., 'Competitor pricing strategies in generative AI search tools 2026'" : "e.g., 'Top digital marketing agencies near me with highest rating'"}
               onKeyDown={(e) => e.key === 'Enter' && handleResearch()}
-              className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl py-3.5 pl-4 pr-32 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none transition-all shadow-inner"
+              className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl py-3.5 pl-4 pr-32 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner"
             />
             <button
+              type="button"
               onClick={handleResearch}
               disabled={loading || !query.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-5 py-2 rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-30"
+              className="absolute right-2 top-1/2 -translate-y-1/2 px-5 py-2 rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {loading ? 'Grounding...' : 'Research'}
             </button>
           </div>
         </div>
       </div>
+
+      {loading && (
+        <div className="mb-8">
+          <SynthesisSkeleton />
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 glass-morphism rounded-2xl border border-danger-500/30 bg-danger-950/20 px-5 py-4 text-sm text-danger-200 flex items-start gap-3" role="alert">

@@ -1,17 +1,33 @@
-name: Deploy to Cloudflare
+name: Multi-Tier Cloudflare Deployment Safeguard
 
 on:
   push:
-    branches: [main]
+    branches:
+      - staging
+      - main
   workflow_dispatch:
+    inputs:
+      target_env:
+        description: 'Target Deployment Environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
 
 permissions:
   contents: read
 
 jobs:
-  deploy:
-    name: Build and Deploy to Cloudflare
+  # =========================================================================
+  # STAGE 1: Staging Deployment & Automated Validation
+  # =========================================================================
+  deploy_staging:
+    name: Staging Deployment & Pre-Production Smoke Gates
+    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'staging')
     runs-on: ubuntu-latest
+    environment: staging
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,16 +44,19 @@ jobs:
       - name: Secrets check
         run: npm run secrets:check
 
+      - name: Validate Staging Environment Schema
+        run: node scripts/validate-env.mjs --staging
+
       - name: Type check
         run: npm run typecheck
 
-      - name: Run automated tests
+      - name: Run automated test suite
         run: npm test
 
-      - name: Build production bundle
-        run: npm run build
+      - name: Build staging bundle
+        run: npx vite build --mode staging
 
-      - name: Deploy to Cloudflare Workers
+      - name: Deploy to Cloudflare Workers (Staging Sandbox)
         uses: cloudflare/wrangler-action@v3
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -45,4 +64,56 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '2373013c66331e9660e47ffa3ae40f5c' }}
-          command: deploy
+          command: deploy --env staging
+
+      - name: Staging Automated Smoke Check
+        run: node scripts/smoke-check.mjs --staging
+
+  # =========================================================================
+  # STAGE 2: Production Deployment (Gated by Staging / Main)
+  # =========================================================================
+  deploy_production:
+    name: Production Deployment & Live Verification
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'production')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Secrets check
+        run: npm run secrets:check
+
+      - name: Validate Production Environment Schema
+        run: node scripts/validate-env.mjs --prod
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run automated test suite
+        run: npm test
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Deploy to Cloudflare Workers (Production)
+        uses: cloudflare/wrangler-action@v3
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '2373013c66331e9660e47ffa3ae40f5c' }}
+          command: deploy --env production
+
+      - name: Production Post-Deploy Smoke Check
+        run: node scripts/smoke-check.mjs --prod

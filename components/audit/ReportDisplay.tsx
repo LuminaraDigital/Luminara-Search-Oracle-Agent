@@ -1,9 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { ICONS, GLOSSARY } from '../../constants';
+import React, { useState, useMemo } from 'react';
+import { ICONS } from '../../constants';
 import { ROICalculator } from './ROICalculator';
 import { VisibilityRadar } from './VisibilityRadar';
 import { CompetitorMap } from './CompetitorMap';
-import { TimesFmMathEngine } from '../../services/timesfm/timesfmEngine';
 import { DiffViewerModal } from './DiffViewerModal';
 import { CmsDeploymentModal } from './CmsDeploymentModal';
 import { EmpiricalEvidenceDrawer } from './EmpiricalEvidenceDrawer';
@@ -13,7 +12,6 @@ import { TrustPackPanel } from './TrustPackPanel';
 import { WritingQualityCard } from './WritingQualityCard';
 import { ResultsTrackingCard } from './ResultsTrackingCard';
 import { VisibilityTrendsCard } from './VisibilityTrendsCard';
-import { splitWikiParts } from '../../services/audit/wikiLinkService';
 import { ShareOfVoiceCard } from './ShareOfVoiceCard';
 import { SourceCitationGraphView } from './SourceCitationGraph';
 import { EnterpriseTrustPanel } from './EnterpriseTrustPanel';
@@ -29,6 +27,12 @@ import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService'
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
 import type { EnterpriseTrustPack } from '../../services/trust/enterpriseTrustPackService';
+import { HighlightedText, parseInlineFormatting } from './HighlightedText';
+import { MetricModal } from './MetricModal';
+import { InteractiveTable } from './InteractiveTable';
+import { CollapsibleSection } from './CollapsibleSection';
+
+export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
 
 interface ReportDisplayProps {
   markdownText: string;
@@ -48,377 +52,6 @@ interface ReportDisplayProps {
   sourceGraph?: SourceCitationGraph;
   enterpriseTrust?: EnterpriseTrustPack;
 }
-
-// Highlighted text component with interactive glossary tooltip
-export const HighlightedText: React.FC<{ text: string }> = ({ text }) => {
-  const terms = Object.keys(GLOSSARY);
-  const pattern = new RegExp(`\\b(${terms.join('|')})\\b`, 'gi');
-
-  const renderGlossary = (segment: string, keyPrefix: string) => {
-    const parts = segment.split(pattern);
-    return parts.map((part, index) => {
-      const upperPart = part.toUpperCase();
-      const definition = GLOSSARY[upperPart];
-      if (definition) {
-        return (
-          <span key={`${keyPrefix}-${index}`} className="group relative inline-block cursor-help text-gold-light border-b border-dotted border-gold/60 hover:text-white transition-colors">
-            {part}
-            <span className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-300 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 glass-morphism border border-gold/40 text-gray-200 text-xs rounded-xl p-3 shadow-2xl z-50 whitespace-normal pointer-events-none bg-black/95">
-              <strong className="block mb-1 text-gold-light font-bold uppercase tracking-wider text-[10px]">{upperPart}</strong>
-              {definition}
-            </span>
-          </span>
-        );
-      }
-      return <React.Fragment key={`${keyPrefix}-${index}`}>{part}</React.Fragment>;
-    });
-  };
-
-  const wikiParts = splitWikiParts(text);
-  return (
-    <>
-      {wikiParts.map((wp, i) => {
-        if (wp.type === 'wiki') {
-          return (
-            <button
-              key={`wiki-${i}`}
-              type="button"
-              title={`Competitor: ${wp.value}`}
-              onClick={() => {
-                window.dispatchEvent(
-                  new CustomEvent('luminara-open-brand-memory', { detail: { competitor: wp.value } })
-                );
-              }}
-              className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-md bg-gold/15 border border-gold/40 text-gold-light text-[11px] font-semibold hover:bg-gold/25 transition-colors"
-            >
-              [[{wp.value}]]
-            </button>
-          );
-        }
-        return <React.Fragment key={`t-${i}`}>{renderGlossary(wp.value, `g-${i}`)}</React.Fragment>;
-      })}
-    </>
-  );
-};
-
-export const parseInlineFormatting = (line: string): React.ReactElement => {
-  const parts = line.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g).filter(Boolean);
-  return (
-    <>
-      {parts.map((part, index) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={index} className="font-semibold text-white"><HighlightedText text={part.slice(2, -2)} /></strong>;
-        }
-        if ((part.startsWith('*') && part.endsWith('*')) || (part.startsWith('_') && part.endsWith('_'))) {
-          return <em key={index} className="text-gray-300 italic"><HighlightedText text={part.slice(1, -1)} /></em>;
-        }
-        if (part.startsWith('`') && part.endsWith('`')) {
-          return <code key={index} className="bg-black/60 text-gold-light rounded px-1.5 py-0.5 text-xs font-mono border border-white/10">{part.slice(1, -1)}</code>;
-        }
-        return <span key={index}><HighlightedText text={part} /></span>;
-      })}
-    </>
-  );
-};
-
-// Metric modal for clickable table cells with TimesFM Foundation Forecasting
-export const MetricModal: React.FC<{ 
-  isOpen: boolean; 
-  onClose: () => void; 
-  data: { header: string; value: string; entity: string } | null 
-}> = ({ isOpen, onClose, data }) => {
-  // Extract numeric baseline (hooks must run on every render, so this sits above the early return)
-  const numValue = parseFloat((data?.value ?? '').replace(/[^0-9.-]/g, '')) || 50;
-
-  // Compute an illustrative 6-month baseline and 6-month TimesFM projection.
-  // NOTE: the history is synthetic (the audit only yields a single point-in-time value).
-  const forecastData = useMemo(() => {
-    if (!data) return null;
-    const history = [];
-    const now = Date.now();
-    const oneMonth = 86400000 * 30.4;
-    
-    // Simulate 6 months of historical baseline leading up to this metric
-    for (let i = 5; i >= 0; i--) {
-      const t = now - i * oneMonth;
-      const d = new Date(t);
-      const noise = (Math.sin(i * 1.7) * 4);
-      const val = Math.max(5, Math.round(numValue - (i * 1.8) + noise));
-      history.push({
-        timestamp: t,
-        dateStr: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-        value: val
-      });
-    }
-
-    try {
-      const res = TimesFmMathEngine.runForecast(
-        history,
-        {
-          horizon: 6,
-          patchLength: 4,
-          frequency: 'monthly',
-          quantiles: [0.1, 0.25, 0.5, 0.75, 0.9],
-          decomposition: 'additive',
-          revin: true
-        },
-        [
-          {
-            id: 'schema_uplift',
-            name: 'Schema Lift',
-            type: 'multiplier',
-            value: 1.15,
-            active: true,
-            description: 'AEO Schema uplift'
-          }
-        ]
-      );
-
-      const allVals = [...history.map(h => h.value), ...res.forecast.map(f => f.p90), ...res.forecast.map(f => f.p10)];
-      const minVal = Math.min(...allVals) * 0.9;
-      const maxVal = Math.max(...allVals) * 1.1;
-      const range = Math.max(1, maxVal - minVal);
-
-      // SVG coordinates
-      const totalSteps = history.length + res.forecast.length;
-      const scaleX = (idx: number) => (idx / (totalSteps - 1)) * 100;
-      const scaleY = (val: number) => 100 - ((val - minVal) / range) * 80 - 10;
-
-      const histPoints = history.map((h, i) => `${scaleX(i).toFixed(1)},${scaleY(h.value).toFixed(1)}`);
-      const lastHistPt = `${scaleX(history.length - 1).toFixed(1)},${scaleY(history[history.length - 1].value).toFixed(1)}`;
-
-      const p50Points = res.forecast.map((f, i) => `${scaleX(history.length + i).toFixed(1)},${scaleY(f.p50).toFixed(1)}`);
-      const p10Points = res.forecast.map((f, i) => ({ x: scaleX(history.length + i), y: scaleY(f.p10) }));
-      const p90Points = res.forecast.map((f, i) => ({ x: scaleX(history.length + i), y: scaleY(f.p90) }));
-
-      // Area string for p10-p90 cone
-      const coneAreaStr = `M${lastHistPt} ` + 
-        p90Points.map(p => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') + ' ' +
-        p10Points.slice().reverse().map(p => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') + ' Z';
-
-      const histLineStr = histPoints.join(' ');
-      const p50LineStr = [lastHistPt, ...p50Points].join(' ');
-
-      const finalP50 = res.forecast[res.forecast.length - 1].p50;
-      const finalP10 = res.forecast[res.forecast.length - 1].p10;
-      const finalP90 = res.forecast[res.forecast.length - 1].p90;
-
-      return {
-        coneAreaStr,
-        histLineStr,
-        p50LineStr,
-        finalP50,
-        finalP10,
-        finalP90,
-        splitX: scaleX(history.length - 1),
-        forecast: res.forecast
-      };
-    } catch (e) {
-      return null;
-    }
-  }, [numValue]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen || !data) return null;
-
-  return (
-    <div 
-      className="fixed inset-0 z-[100] overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div 
-        className="glass-morphism border border-gold/40 rounded-2xl shadow-2xl w-full max-w-lg my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] overflow-y-auto relative bg-black/95"
-        role="dialog"
-        aria-modal="true"
-        aria-label={data.header || 'Metric Details'}
-      >
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
-          <ICONS.X className="w-5 h-5" />
-        </button>
-
-        <div className="bg-gradient-to-r from-gold/20 to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-white uppercase tracking-wider">{data.entity}</h3>
-            <p className="text-xs text-gold-light font-mono">{data.header}</p>
-          </div>
-          <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gold/10 border border-gold/30 text-[9px] font-mono text-gold-light uppercase">
-            <ICONS.TimeSeries className="w-3 h-3" />
-            <span>TimesFM Patch Core</span>
-          </span>
-        </div>
-
-        <div className="p-6">
-          <div className="flex items-baseline justify-between mb-4">
-            <div>
-              <span className="text-3xl font-black font-mono gold-text">{data.value}</span>
-              <span className="text-xs text-success-400 font-bold uppercase tracking-wider ml-3">Current Score</span>
-            </div>
-            {forecastData && (
-              <div className="text-right">
-                <span className="text-xs text-gray-400 font-mono">TimesFM +6M Projected:</span>
-                <p className="text-lg font-bold font-mono text-gold-light">
-                  {forecastData.finalP50.toLocaleString()}{' '}
-                  <span className="text-[10px] text-gray-500 font-normal">
-                    [{forecastData.finalP10} .. {forecastData.finalP90}]
-                  </span>
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-2">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                <ICONS.TrendUp className="w-3 h-3 text-gold-light" />
-                <span>TimesFM 6-Month Probabilistic Projection</span>
-              </p>
-              <div className="flex items-center gap-3 text-[9px] font-mono text-gray-400">
-                <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-white"></span>History</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-gold-light"></span>p50</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-gold/30 border border-gold/50"></span>p10-p90</span>
-              </div>
-            </div>
-
-            <div className="h-32 w-full bg-black/60 rounded-xl border border-white/10 relative p-2 overflow-hidden">
-              {forecastData && (
-                <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
-                  <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
-                  <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
-                  
-                  {/* Split line */}
-                  <line x1={forecastData.splitX} y1="0" x2={forecastData.splitX} y2="100" stroke="#BF953F" strokeWidth="0.5" strokeDasharray="2 2" opacity="0.6" />
-
-                  <defs>
-                    <linearGradient id="goldCone" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor="#BF953F" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#BF953F" stopOpacity="0.1" />
-                    </linearGradient>
-                  </defs>
-
-                  {/* Uncertainty Cone */}
-                  <path d={forecastData.coneAreaStr} fill="url(#goldCone)" />
-
-                  {/* Historical Line */}
-                  <polyline points={forecastData.histLineStr} fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-
-                  {/* P50 Forecast Line */}
-                  <polyline points={forecastData.p50LineStr} fill="none" stroke="#FCF6BA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </div>
-            <div className="flex justify-between text-[9px] text-gray-500 mt-1 font-mono">
-              <span>-6M Baseline</span>
-              <span>Today ({data.value})</span>
-              <span>+6M Foundation Horizon</span>
-            </div>
-          </div>
-
-          <div className="glass-morphism rounded-xl p-3 border border-gold/20 text-xs text-gray-300 leading-relaxed">
-            <span className="text-gold-light font-bold">TimesFM Insight:</span> Zero-shot temporal foundation projection benchmarks <strong>{data.value}</strong> along a <strong>p50 trajectory of {forecastData?.finalP50 || data.value}</strong>. Entity schema saturation and AEO answer readiness expand upside leverage toward the <strong>{forecastData?.finalP90 || data.value}</strong> ceiling.
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Interactive table with clickable sparklines
-export const InteractiveTable: React.FC<{ headers: string[]; rows: string[][] }> = ({ headers, rows }) => {
-  const [selectedCell, setSelectedCell] = useState<{ header: string; value: string; entity: string } | null>(null);
-
-  return (
-    <>
-      <div className="my-6 glass-morphism rounded-xl border border-white/10 overflow-hidden shadow-2xl">
-        <div className="bg-white/[0.02] px-4 py-2 border-b border-white/5 flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light flex items-center gap-1.5">
-            <ICONS.ChartBar className="w-3.5 h-3.5" /> Interactive Matrix Analysis
-          </span>
-          <span className="text-[9px] text-gray-500 uppercase tracking-widest">Click cells to inspect trends</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-black/60 border-b border-white/10 text-gray-400 font-bold uppercase tracking-wider text-[10px]">
-                {headers.map((h, i) => (
-                  <th key={i} className="px-4 py-3">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5 font-sans">
-              {rows.map((row, rIdx) => {
-                const entityName = row[0];
-                return (
-                  <tr key={rIdx} className="hover:bg-white/[0.03] transition-colors group">
-                    {row.map((cell, cIdx) => (
-                      <td
-                        key={cIdx}
-                        onClick={() => setSelectedCell({
-                          header: headers[cIdx] || 'Metric',
-                          value: cell.replace(/[*_`]/g, ''),
-                          entity: (entityName ?? '').replace(/[*_`]/g, '')
-                        })}
-                        className={`px-4 py-3 align-top cursor-pointer transition-colors ${
-                          cIdx === 0 ? 'font-bold text-white' : 'text-gray-300 hover:text-gold-light hover:bg-white/[0.02]'
-                        }`}
-                        title="Click to analyze trend"
-                      >
-                        {parseInlineFormatting(cell)}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <MetricModal isOpen={!!selectedCell} onClose={() => setSelectedCell(null)} data={selectedCell} />
-    </>
-  );
-};
-
-export const CollapsibleSection: React.FC<{
-  title: React.ReactNode;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-  isMainTitle?: boolean;
-}> = ({ title, children, defaultOpen = true, isMainTitle = false }) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-
-  if (isMainTitle) {
-    return <div className="mb-6">{children}</div>;
-  }
-
-  return (
-    <div className="mb-4 glass-morphism rounded-xl border border-white/10 overflow-hidden shadow-lg transition-all duration-300 hover:border-gold/40">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-6 py-4 text-left bg-gradient-to-r from-black/60 via-black/40 to-transparent hover:from-gold/10 transition-colors focus:outline-none group"
-      >
-        <h2 className="text-base font-bold text-white flex items-center gap-2 group-hover:text-gold-light transition-colors uppercase tracking-wider">
-          {title}
-        </h2>
-        <div className={`text-gold transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}>
-          <ICONS.ChevronDown className="w-4 h-4" />
-        </div>
-      </button>
-      <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-[3500px] opacity-100' : 'max-h-0 opacity-0'}`}>
-        <div className="px-6 py-5 border-t border-white/5 text-sm text-gray-300 leading-relaxed">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-};
 
 export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   markdownText,
@@ -593,7 +226,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
             <button
               type="button"
               onClick={() => setShowDeployModal(true)}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center gap-1.5 shrink-0"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center gap-1.5 shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               <ICONS.Zap className="w-4 h-4 text-black" />
               <span>1-Click Deploy</span>
@@ -602,7 +235,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
             <button
               type="button"
               onClick={() => setShowDiffModal(true)}
-              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-gold/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0"
+              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-gold/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               <ICONS.Terminal className="w-4 h-4 text-gold" />
               <span>View Diff</span>
@@ -612,7 +245,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
               <button
                 type="button"
                 onClick={() => setShowEvidenceDrawer(true)}
-                className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-success-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0"
+                className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-success-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 <ICONS.Radar className="w-4 h-4 text-success-400" />
                 <span>Evidence ({empiricalSummary.citationRatePercent}%)</span>
@@ -622,9 +255,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
             <button
               type="button"
               onClick={() => setShowWhiteLabelModal(true)}
-              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-cyan-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0"
+              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-info-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
-              <ICONS.Download className="w-4 h-4 text-cyan-400" />
+              <ICONS.Download className="w-4 h-4 text-info-400" />
               <span>Agency PDF</span>
             </button>
           </div>
@@ -639,7 +272,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           <button
             type="button"
             onClick={() => setShowEvidenceDrawer(true)}
-            className="px-3.5 py-2 rounded-xl glass-morphism border border-success-500/30 text-xs font-mono text-success-200 hover:text-white flex items-center gap-1.5 transition-all"
+            className="px-3.5 py-2 rounded-xl glass-morphism border border-success-500/30 text-xs font-mono text-success-200 hover:text-white flex items-center gap-1.5 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             <ICONS.Radar className="w-4 h-4 text-success-400" />
             Preview evidence ({empiricalSummary.citationRatePercent}%)

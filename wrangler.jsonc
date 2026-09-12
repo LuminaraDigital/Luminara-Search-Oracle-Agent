@@ -65,6 +65,7 @@
   //   TON_API_KEY (Toncenter), UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD).
   // Non-secret TON merchant wallet (safe in vars): TON_RECEIVING_ADDRESS
   "vars": {
+    "ENVIRONMENT": "production",
     "WEBAPP_URL": "https://luminarasuite.com/",
     "ALLOWED_ORIGINS": "https://luminarasuite.com,https://www.luminarasuite.com",
     // Hosted keys are gated: Groq Cloud LPU is free (subject to daily limit).
@@ -82,5 +83,68 @@
     "LANGUAGETOOL_URL": "",
     "UMAMI_URL": "",
     "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent"
+  },
+
+  // Multi-Environment Isolation Safeguards
+  "env": {
+    "staging": {
+      "name": "luminara-search-oracle-agent-staging",
+      "routes": [
+        { "pattern": "staging.luminarasuite.com", "custom_domain": true }
+      ],
+      "kv_namespaces": [
+        { "binding": "LUMINARA_KV", "id": "1898b8c88b1048b38be720bcf6c5a91c" }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "luminara-users-staging",
+          "database_id": "2aeb897a-d2d4-462b-89c5-0d9efbf093fe"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "WEBAPP_URL": "https://staging.luminarasuite.com/",
+        "ALLOWED_ORIGINS": "https://staging.luminarasuite.com",
+        "REQUIRE_TG_AUTH": "false",
+        "REQUIRE_SUBSCRIPTION": "false",
+        "FREE_DAILY_LIMIT": "100",
+        "FIREBASE_PROJECT_ID": "luminara-suite-staging",
+        "OLLAMA_BASE_URL": "",
+        "LANGUAGETOOL_URL": "",
+        "UMAMI_URL": "",
+        "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent"
+      }
+    },
+    "production": {
+      "name": "luminara-search-oracle-agent",
+      "routes": [
+        { "pattern": "luminarasuite.com", "custom_domain": true },
+        { "pattern": "www.luminarasuite.com", "custom_domain": true }
+      ],
+      "kv_namespaces": [
+        { "binding": "LUMINARA_KV", "id": "00d331adea604a70945fb1651b7968b3" }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "luminara-users",
+          "database_id": "e828e0b0-491d-4d0b-b5ea-bd4bdd6c7b8a"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "production",
+        "WEBAPP_URL": "https://luminarasuite.com/",
+        "ALLOWED_ORIGINS": "https://luminarasuite.com,https://www.luminarasuite.com",
+        "REQUIRE_TG_AUTH": "true",
+        "REQUIRE_SUBSCRIPTION": "false",
+        "FREE_DAILY_LIMIT": "25",
+        "FIREBASE_PROJECT_ID": "luminara-suite",
+        "OLLAMA_BASE_URL": "",
+        "LANGUAGETOOL_URL": "",
+        "UMAMI_URL": "",
+        "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent"
+      }
+    }
   }
 }

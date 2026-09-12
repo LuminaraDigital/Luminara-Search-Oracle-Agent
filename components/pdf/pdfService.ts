@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ExecutiveReportData } from './ExecutiveReportDocument';
 import { ExecutiveReportDocument } from './ExecutiveReportDocument';
+import { downloadBlob } from '../../utils/download';
 
 /**
  * Renders the Executive Report Document to raw PDF bytes using Forme's WASM engine.
@@ -34,21 +35,7 @@ export async function downloadExecutiveReportPdf(
   suggestedFilename?: string
 ): Promise<void> {
   const pdfBytes = await generateExecutiveReportPdfBytes(data);
-  const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
-  const objectUrl = URL.createObjectURL(blob);
-
   const cleanClient = (data.clientName || 'Executive').replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = suggestedFilename || `${cleanClient}_AEO_Executive_Brief.pdf`;
-
-  const link = document.createElement('a');
-  link.href = objectUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  // Clean up object URL after brief delay to allow browser download initiation
-  setTimeout(() => {
-    URL.revokeObjectURL(objectUrl);
-  }, 1000);
+  downloadBlob(new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' }), filename, 'application/pdf');
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { testingHarnessService } from '../../services/harness/testingHarnessService';
 import { HarnessTestSuite, HarnessTestReport } from '../../types';
+import { downloadBlob } from '../../utils/download';
 
 export const TestingHarnessPanel: React.FC = () => {
   const [suites, setSuites] = useState<HarnessTestSuite[]>([]);
@@ -40,13 +41,7 @@ ${s.testCases.map(tc => `| ${tc.name} | ${tc.status.toUpperCase()} | ${tc.durati
 `).join('\n')}
 `;
 
-    const blob = new Blob([md], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `acceptance-report-${Date.now()}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(md, `acceptance-report-${Date.now()}.md`, 'text/markdown');
   };
 
   const totalTests = suites.reduce((acc, s) => acc + s.testCases.length, 0);

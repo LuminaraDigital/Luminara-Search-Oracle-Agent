@@ -49,25 +49,25 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
             <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
               <div className="text-3xl font-bold gold-text mb-2">Live</div>
               <div className="text-[9px] text-gold font-black uppercase tracking-[0.2em] mb-3">SERP Grounding</div>
-              <div className="text-[10px] text-gray-500 leading-relaxed">Every answer is grounded in real search results when a search key is configured.</div>
+              <div className="text-[10px] text-gray-400 leading-relaxed">Every answer is grounded in real search results when a search key is configured.</div>
             </div>
             
             <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
               <div className="text-3xl font-bold gold-text mb-2">3</div>
               <div className="text-[9px] text-gold font-black uppercase tracking-[0.2em] mb-3">Audit Lenses</div>
-              <div className="text-[10px] text-gray-500 leading-relaxed">SEO, AEO and GEO audits with visibility radar, competitor map and schema gaps.</div>
+              <div className="text-[10px] text-gray-400 leading-relaxed">SEO, AEO and GEO audits with visibility radar, competitor map and schema gaps.</div>
             </div>
             
             <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
               <div className="text-3xl font-bold gold-text mb-2">DNA</div>
               <div className="text-[9px] text-gold font-black uppercase tracking-[0.2em] mb-3">Brand Memory</div>
-              <div className="text-[10px] text-gray-500 leading-relaxed">Link your Business DNA once and every audit is personalised to your USP and competitors.</div>
+              <div className="text-[10px] text-gray-400 leading-relaxed">Link your Business DNA once and every audit is personalised to your USP and competitors.</div>
             </div>
 
             <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
               <div className="text-3xl font-bold gold-text mb-2">Plain</div>
               <div className="text-[9px] text-gold font-black uppercase tracking-[0.2em] mb-3">English Mode</div>
-              <div className="text-[10px] text-gray-500 leading-relaxed">One click rewrites any report at an 8th-grade reading level for non-technical stakeholders.</div>
+              <div className="text-[10px] text-gray-400 leading-relaxed">One click rewrites any report at an 8th-grade reading level for non-technical stakeholders.</div>
             </div>
           </div>
         </div>
@@ -85,7 +85,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
               <div className={`flex items-start gap-3 sm:gap-6 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center shadow-xl border ${msg.role === 'user' ? 'bg-surface-2 border-white/10' : 'glass-morphism mt-2 sm:mt-4'}`}>
                   {msg.role === 'user' ? (
-                     <span className="text-[9px] font-black text-gray-500 tracking-widest">USR</span>
+                     <span className="text-[9px] font-black text-gray-400 tracking-widest">USR</span>
                   ) : (
                     <ICONS.LuminaraLogo className="w-8 h-8 sm:w-10 sm:h-10" isThinking={showStreamingIndicator} />
                   )}
@@ -109,20 +109,24 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                   <div className="flex justify-end gap-2 mb-2">
                     {msg.role === 'model' && !isError && onSimplify && (
                       <button
+                        type="button"
                         onClick={() => onSimplify(msg.content)}
-                        className="p-1.5 rounded-lg border border-white/5 bg-white/5 text-gray-500 hover:text-gold hover:border-gold/20 transition-all flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold"
+                        className="p-1.5 rounded-lg border border-white/10 bg-white/5 text-gray-400 hover:text-gold hover:border-gold/30 transition-all flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold outline-none focus-visible:ring-2 focus-visible:ring-gold"
                         title="Rewrite this in plain English"
+                        aria-label="Rewrite response in plain English"
                       >
                         <ICONS.FileText />
                         <span>Plain English</span>
                       </button>
                     )}
                     <button
+                      type="button"
                       onClick={() => handleCopy(msg.content, msg.id)}
-                      className="p-1.5 rounded-lg border border-white/5 bg-white/5 text-gray-500 hover:text-gold hover:border-gold/20 transition-all"
+                      className="p-1.5 rounded-lg border border-white/10 bg-white/5 text-gray-400 hover:text-gold hover:border-gold/30 transition-all outline-none focus-visible:ring-2 focus-visible:ring-gold"
                       title="Copy"
+                      aria-label={copiedId === msg.id ? "Copied" : "Copy response to clipboard"}
                     >
-                      {copiedId === msg.id ? <ICONS.Check /> : <ICONS.Copy />}
+                      {copiedId === msg.id ? <ICONS.Check className="text-success-400" /> : <ICONS.Copy />}
                     </button>
                   </div>
                   
@@ -134,20 +138,22 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                           <div key={i} className="rounded-2xl overflow-hidden border border-gold/20 bg-black/60 shadow-inner">
                             <div className="bg-gold/5 px-6 py-3 flex items-center justify-between border-b border-gold/10">
                               <div className="flex items-center gap-4">
-                                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-gold">What I checked</span>
+                                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-gold">Grounding SERP</span>
                               </div>
                               <button 
+                                type="button"
                                 onClick={() => handleCopy(exec.output, execId)}
-                                className="text-[9px] font-bold uppercase tracking-widest px-4 py-1.5 rounded-lg border border-gold/20 bg-gold/5 text-gold/60 hover:text-gold hover:border-gold/50 transition-all"
+                                aria-label={copiedId === execId ? "Copied" : "Copy search output"}
+                                className="text-[9px] font-bold uppercase tracking-widest px-4 py-1.5 rounded-lg border border-gold/20 bg-gold/5 text-gold-light hover:text-gold hover:border-gold/50 transition-all outline-none focus-visible:ring-2 focus-visible:ring-gold"
                               >
                                 {copiedId === execId ? 'Copied' : 'Copy'}
                               </button>
                             </div>
                             <div className="p-6 font-mono text-[12px] space-y-4">
-                              <div className="text-blue-400/60 bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">
-                                <span className="text-gray-600 mr-3">&gt;&gt;</span>{exec.code ?? (Array.isArray(exec.args?.queries) ? `Searched: ${exec.args.queries.map((q: string) => `"${q}"`).join(', ')}` : exec.tool ? `${exec.tool}(${exec.args?.query ?? ''})` : '')}
+                              <div className="text-info-400 bg-info-500/10 p-3 rounded-xl border border-info-500/20">
+                                <span className="text-gray-400 mr-3">&gt;&gt;</span>{exec.code ?? (Array.isArray(exec.args?.queries) ? `Searched: ${exec.args.queries.map((q: string) => `"${q}"`).join(', ')}` : exec.tool ? `${exec.tool}(${exec.args?.query ?? ''})` : '')}
                               </div>
-                              <div className="text-gray-400 pt-3 whitespace-pre leading-relaxed border-t border-white/5">
+                              <div className="text-gray-300 pt-3 whitespace-pre leading-relaxed border-t border-white/5">
                                 {exec.output}
                               </div>
                             </div>
@@ -212,10 +218,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                   {msg.groundingUrls && msg.groundingUrls.length > 0 && !msg.content.includes('Visibility Radar') && (
                     <div className="mt-16 pt-12 border-t border-gold/10 space-y-8">
                       <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <p className="text-[11px] font-black text-gold uppercase tracking-[0.4em]">Sources</p>
-                          <p className="text-[9px] text-gray-600 uppercase tracking-widest">Live pages this answer drew on</p>
-                        </div>
+                        <p className="text-[11px] font-black text-gold uppercase tracking-[0.4em]">Sources</p>
                         <div className="w-12 h-1px bg-gold/30"></div>
                       </div>
                       
@@ -226,16 +229,16 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                             href={url.uri}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="group p-5 rounded-2xl bg-white/5 hover:bg-gold/10 border border-white/5 hover:border-gold/30 transition-all flex flex-col gap-2"
+                            className="group p-5 rounded-2xl bg-white/5 hover:bg-gold/10 border border-white/5 hover:border-gold/30 transition-all flex flex-col gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                           >
                             <div className="flex items-center justify-between">
                               <span className="text-[9px] text-gold font-bold">[{idx + 1}]</span>
                               <div className="w-2 h-2 rounded-full bg-gold/20 group-hover:bg-gold transition-colors"></div>
                             </div>
-                            <span className="text-[13px] font-medium text-gray-300 group-hover:text-gold-light transition-colors line-clamp-1">
+                            <span className="text-[13px] font-medium text-gray-200 group-hover:text-gold-light transition-colors line-clamp-1">
                               {url.title || url.uri}
                             </span>
-                            <span className="text-[10px] text-gray-600 font-mono truncate">{url.uri}</span>
+                            <span className="text-[10px] text-gray-400 font-mono truncate">{url.uri}</span>
                           </a>
                         ))}
                       </div>

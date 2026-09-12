@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { skillsGeneratorService, LUMINARA_SKILLS } from '../../services/harness/skillsGeneratorService';
 import { SkillPlatform, LuminaraSkill } from '../../types';
 
+import { downloadBlob } from '../../utils/download';
+import { copyToClipboard } from '../../utils/clipboard';
+
 export const SkillsHubPanel: React.FC = () => {
   const [selectedSkillId, setSelectedSkillId] = useState<string>(LUMINARA_SKILLS[0].id);
   const [activePlatform, setActivePlatform] = useState<SkillPlatform>('antigravity');
@@ -11,20 +14,16 @@ export const SkillsHubPanel: React.FC = () => {
   const formattedCode = skillsGeneratorService.formatForPlatform(selectedSkill, activePlatform);
   const installPath = skillsGeneratorService.getInstallPath(selectedSkill, activePlatform);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(formattedCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const success = await copyToClipboard(formattedCode);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handleDownload = () => {
-    const blob = new Blob([formattedCode], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${selectedSkill.name}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(formattedCode, `${selectedSkill.name}.md`, 'text/markdown');
   };
 
   const platforms: Array<{ id: SkillPlatform; name: string; icon: string }> = [

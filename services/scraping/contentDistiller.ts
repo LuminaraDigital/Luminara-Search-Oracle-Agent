@@ -11,6 +11,7 @@
 
 import { sanitizePii } from '../trust/piiSanitizer';
 import { compressToolResult } from '../compression/toolResultCompressor';
+import { stripTags } from '../../utils/html';
 
 export interface StructuredSchema {
   type: string;
@@ -239,14 +240,7 @@ export class ContentDistiller {
   }
 
   private stripHtmlTags(str: string): string {
-    return str
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/&amp;/gi, '&')
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;/gi, "'");
+    return stripTags(str);
   }
 
   private normalizeWhitespace(str: string): string {

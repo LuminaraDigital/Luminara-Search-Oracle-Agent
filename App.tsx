@@ -28,6 +28,7 @@ import { brandMemoryVaultService } from './services/memory/brandMemoryVaultServi
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
 import { lazyWithReload } from './utils/lazyWithReload';
 import { isDesktopShell } from './services/desktop/desktopShell';
+import { productTelemetry } from './services/analytics/productTelemetry';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
@@ -51,15 +52,14 @@ const ArchyHarnessView = lazyWithReload(() => import('./components/harness/Archy
 const OmnibarModal = lazyWithReload(() => import('./components/harness/OmnibarModal').then(m => ({ default: m.OmnibarModal })));
 const ApiKeyModal = lazyWithReload(() => import('./components/ApiKeyModal').then(m => ({ default: m.ApiKeyModal })));
 const PaywallModal = lazyWithReload(() => import('./components/paywall/PaywallModal').then(m => ({ default: m.PaywallModal })));
+import { ViewSkeleton } from './components/ui/Skeleton';
+
 const AppIntroOverlay = lazyWithReload(() => import('./components/intro/AppIntroOverlay').then(m => ({ default: m.AppIntroOverlay })));
 const TelegramAccountPanel = lazyWithReload(() => import('./components/telegram/TelegramAccountPanel').then(m => ({ default: m.TelegramAccountPanel })));
 const NotebookView = lazyWithReload(() => import('./components/notebook/NotebookView').then(m => ({ default: m.NotebookView })));
 
-const ViewLoader: React.FC<{ label?: string }> = ({ label = 'Loading view' }) => (
-  <div className="flex-1 flex flex-col items-center justify-center min-h-[350px] gap-3 p-6 text-center animate-in fade-in duration-200">
-    <div className="w-8 h-8 border-2 border-gold/20 border-t-gold rounded-full animate-spin" />
-    <span className="text-[10px] uppercase font-mono tracking-[0.25em] text-gray-500">{label}</span>
-  </div>
+const ViewLoader: React.FC<{ label?: string }> = ({ label = 'workspace' }) => (
+  <ViewSkeleton viewName={label} />
 );
 
 const CHAT_STORAGE_KEY = 'luminara_chat_session';
@@ -154,11 +154,16 @@ const App: React.FC = () => {
       if (prev !== next) setViewHistory(h => [...h.slice(-20), prev]);
       return next;
     });
+    productTelemetry.trackPageView(next);
     haptic('light');
     const target = `#${next.toLowerCase()}`;
     if (window.location.hash !== target) {
       window.history.pushState(null, '', target);
     }
+  }, []);
+
+  useEffect(() => {
+    productTelemetry.trackPageView(view);
   }, []);
 
   /** Enter a product surface immediately with zero latency. */
@@ -779,30 +784,29 @@ const App: React.FC = () => {
       {/* Universal Top Header - Responsive, guaranteed no overflow */}
       <header className="flex items-center justify-between px-3 sm:px-6 py-2.5 glass-morphism z-50 border-b border-gold/20 shrink-0 bg-black/80 backdrop-blur-2xl w-full max-w-full">
         {/* Left: Brand Identity */}
-        <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-          <div
-            className="w-8 h-8 sm:w-9 sm:h-9 cursor-pointer shrink-0"
-            onClick={() => {
-              if (inTelegram) setView(AppView.DASHBOARD);
-              else void logoutToLanding();
-            }}
-            title={inTelegram ? 'Dashboard' : 'Log out and return home'}
-          >
+        <button
+          type="button"
+          onClick={() => {
+            if (inTelegram) setView(AppView.DASHBOARD);
+            else void logoutToLanding();
+          }}
+          className="flex items-center gap-2.5 sm:gap-3 shrink-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-gold rounded-xl p-1 -m-1 transition-all"
+          title={inTelegram ? 'Dashboard' : 'Log out and return home'}
+          aria-label={inTelegram ? 'Luminara Dashboard' : 'Log out and return home'}
+        >
+          <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0">
             <ICONS.LuminaraLogo 
               className={`w-full h-full transition-all duration-500 ${isVoiceActive ? 'drop-shadow-[0_0_15px_rgba(252,246,186,0.6)]' : ''}`} 
               isThinking={isThinking} 
               isVoice={isVoiceActive} 
             />
           </div>
-          <div className="hidden sm:block cursor-pointer" onClick={() => setView(AppView.DASHBOARD)}>
+          <div className="hidden sm:block">
             <h2 className="text-sm sm:text-base font-bold tracking-[0.2em] uppercase gold-text leading-none">
               LUMINARA
             </h2>
-            <span className="text-[7px] text-gray-500 uppercase tracking-[0.3em] font-mono hidden xl:block mt-1">
-              AI search visibility
-            </span>
           </div>
-        </div>
+        </button>
 
         {/* Center: Suite Switcher & Quick Navigation */}
         <nav className="flex items-center gap-1 sm:gap-2 shrink min-w-0 px-1 overflow-x-auto no-scrollbar">
@@ -880,15 +884,17 @@ const App: React.FC = () => {
                 onMouseLeave={() => setShowSuiteMenu(false)}
               >
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.DASHBOARD); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
                   <span>Home</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
                   <div className="flex items-center justify-between flex-1">
@@ -897,16 +903,18 @@ const App: React.FC = () => {
                   </div>
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
                   <span>My business profile</span>
                 </button>
                 {advancedUi && (<>
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.HARNESS); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Terminal className="w-3.5 h-3.5 text-gold-light" />
                   <div className="flex items-center justify-between flex-1">
@@ -915,51 +923,58 @@ const App: React.FC = () => {
                   </div>
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.ORACLE_MIND); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Brain className="w-3.5 h-3.5 text-gold-light" />
                   <span>OracleMind SLM Studio <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.TIMESFM_FORECAST); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.TimeSeries className="w-3.5 h-3.5 text-gold-light" />
                   <span>TimesFM Forecaster <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.STRESS_TEST); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Stress className="w-3.5 h-3.5 text-gold-light" />
                   <span>Poke holes in my plan</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.DATA_ANALYST); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Analyst className="w-3.5 h-3.5 text-gold-light" />
                   <span>Analyse my data</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.ORGANIZER); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
                   <span>Turn notes into a plan</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.RESEARCH); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Research className="w-3.5 h-3.5 text-gold-light" />
                   <span>Research the market</span>
                 </button>
                 </>)}
                 <button
+                  type="button"
                   onClick={() => { setView(AppView.VISION); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2"
+                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />
                   <span>How Luminara works</span>
@@ -1216,12 +1231,13 @@ const App: React.FC = () => {
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-12">
               <div className="space-y-4">
                 <h3 className="text-4xl font-semibold gold-text tracking-tight">Listening…</h3>
-                <p className="text-gray-500 max-w-md mx-auto text-sm">Talk normally. Your words and the answer appear in the chat when you stop.</p>
+                <p className="text-gray-400 max-w-md mx-auto text-sm">Speak normally. Your words and response will appear when you pause.</p>
               </div>
               <Waveform active={isVoiceActive} />
               <button
+                type="button"
                 onClick={toggleVoice}
-                className="px-12 py-5 bg-danger-500/10 text-danger-400 border border-danger-500/20 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-danger-500/20 transition-all shadow-xl"
+                className="px-12 py-5 bg-danger-500/10 text-danger-400 border border-danger-500/20 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-danger-500/20 transition-all shadow-xl outline-none focus-visible:ring-2 focus-visible:ring-danger-400"
               >
                 Stop listening
               </button>
@@ -1232,7 +1248,7 @@ const App: React.FC = () => {
                 <div className="mx-auto mt-4 max-w-2xl w-full px-4">
                   <div className="glass-morphism rounded-2xl border border-warning-500/30 bg-warning-950/20 px-5 py-3 text-xs text-warning-200 flex items-center justify-between gap-4" role="alert">
                     <span>{voiceError}</span>
-                    <button onClick={() => setVoiceError(null)} className="text-warning-400 hover:text-white text-[10px] uppercase font-bold tracking-widest">Dismiss</button>
+                    <button type="button" onClick={() => setVoiceError(null)} className="text-warning-400 hover:text-white text-[10px] uppercase font-bold tracking-widest outline-none focus-visible:ring-2 focus-visible:ring-warning-400 rounded px-1">Dismiss</button>
                   </div>
                 </div>
               )}
@@ -1248,8 +1264,8 @@ const App: React.FC = () => {
                       <div className="flex items-center justify-between mb-2 gap-3">
                         <span className="text-[11px] text-gold-light font-black uppercase tracking-[0.4em] truncate">{agentStep}</span>
                         <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-[10px] text-gray-500 font-mono font-bold">{progress}%</span>
-                          <button onClick={handleStop} className="text-[9px] uppercase tracking-widest font-black text-danger-400 hover:text-danger-300 border border-danger-500/30 rounded-lg px-2 py-0.5" title="Stop generating">Stop</button>
+                          <span className="text-[10px] text-gray-400 font-mono font-bold">{progress}%</span>
+                          <button type="button" onClick={handleStop} className="text-[9px] uppercase tracking-widest font-black text-danger-400 hover:text-danger-300 border border-danger-500/30 rounded-lg px-2 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-danger-400" title="Stop generating" aria-label="Stop generating">Stop</button>
                         </div>
                       </div>
                       <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
@@ -1285,7 +1301,7 @@ const App: React.FC = () => {
                 size="none"
                 onClick={handleClearChat}
                 disabled={isThinking}
-                className="px-3 py-1.5 rounded-full border border-white/10 text-[9px] text-gray-500 hover:text-danger-300 hover:border-danger-500/30 hover:bg-transparent tracking-[0.2em] focus-visible:ring-danger-400 disabled:hover:text-gray-500 disabled:hover:border-white/10"
+                className="px-3 py-1.5 rounded-full border border-white/10 text-[9px] text-gray-400 hover:text-danger-300 hover:border-danger-500/30 hover:bg-transparent tracking-[0.2em] focus-visible:ring-danger-400 disabled:hover:text-gray-400 disabled:hover:border-white/10"
                 title="Clear conversation"
               >
                 Clear chat
@@ -1294,9 +1310,10 @@ const App: React.FC = () => {
             {quickActions.map((action, i) => (
               <button
                 key={i}
+                type="button"
                 onClick={() => handleSendMessage(action.query)}
                 disabled={isThinking}
-                className="px-3.5 sm:px-4 py-1.5 rounded-full glass-morphism border border-gold/30 hover:border-gold text-[9px] font-black text-gold-light uppercase tracking-[0.25em] transition-all hover:scale-105 active:scale-95 shadow-lg bg-black/80 backdrop-blur-3xl"
+                className="px-3.5 sm:px-4 py-1.5 rounded-full glass-morphism border border-gold/30 hover:border-gold text-[9px] font-black text-gold-light uppercase tracking-[0.25em] transition-all hover:scale-105 active:scale-95 shadow-lg bg-black/80 backdrop-blur-3xl outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {action.label}
               </button>

@@ -4,6 +4,8 @@ import { geminiService } from '../../services/geminiService';
 import { brandMemoryVaultService } from '../../services/memory/brandMemoryVaultService';
 import { ICONS } from '../../constants';
 import { useConfirm } from '../ui/ConfirmModal';
+import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
 
 interface BusinessDNAViewProps {
   currentDNA: BusinessDNA | null;
@@ -13,9 +15,10 @@ interface BusinessDNAViewProps {
 }
 
 export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, onDNAGenerated, onNavigateToTool, onRouteToOracleMind }) => {
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(() => draftPersistenceService.getDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inlineValidationError, setInlineValidationError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState<BusinessDNA | null>(currentDNA);
   const [vfsSyncSuccess, setVfsSyncSuccess] = useState<string | null>(null);
@@ -25,6 +28,12 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
     if (!editing) setFormData(currentDNA);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentDNA]);
+
+  const handleInputChange = (value: string) => {
+    setInput(value);
+    draftPersistenceService.setDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT, value);
+    if (inlineValidationError) setInlineValidationError(null);
+  };
 
   const syncToVfs = (dna: BusinessDNA) => {
     try {
@@ -37,7 +46,12 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
   };
 
   const handleExtractDNA = async () => {
-    if (!input.trim() || loading) return;
+    if (loading) return;
+    if (!input.trim()) {
+      setInlineValidationError('Please enter your website URL or a short description of your business.');
+      return;
+    }
+    setInlineValidationError(null);
     setLoading(true);
     setError(null);
     try {
@@ -45,9 +59,13 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       setFormData(extracted);
       onDNAGenerated(extracted);
       syncToVfs(extracted);
+      draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
+      productTelemetry.recordOnboardingStep('business_dna');
       setEditing(false);
     } catch (err: any) {
-      setError(err?.message || 'Could not build your business profile. Check your AI key in Settings.');
+      const msg = err?.message || 'Could not build your business profile. Check your AI key in Settings.';
+      setError(msg);
+      productTelemetry.recordError('BusinessDNAView', msg);
     } finally {
       setLoading(false);
     }
@@ -57,6 +75,8 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
     if (formData) {
       onDNAGenerated(formData);
       syncToVfs(formData);
+      draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
+      productTelemetry.recordOnboardingStep('business_dna');
       setEditing(false);
     }
   };
@@ -75,6 +95,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
         onDNAGenerated(null);
         setFormData(null);
         setInput('');
+        draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
       },
     );
   };
@@ -91,29 +112,34 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           My business profile
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
-          Extract and anchor your brand’s core genome—mission, USP, target audience, and competitive gaps—to personalize all audits and simulations.
+          Define your brand mission, USP, and market competitors to personalize all audits and simulations.
         </p>
       </div>
 
       {/* Input / Scanner Section */}
       <div className="glass-morphism rounded-2xl border border-gold/30 p-6 sm:p-8 mb-8 shadow-2xl">
         <div className="space-y-4">
-          <label className="block text-xs font-bold uppercase tracking-widest text-gray-300">
+          <label htmlFor="business-dna-input" className="block text-xs font-bold uppercase tracking-widest text-gray-300">
             Scan Brand URL or Describe Business
           </label>
           <div className="flex flex-col sm:flex-row gap-3">
             <input
+              id="business-dna-input"
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => handleInputChange(e.target.value)}
               placeholder="Your website, or a sentence about your business (e.g. 'family dental clinic in Austin')"
               onKeyDown={(e) => e.key === 'Enter' && handleExtractDNA()}
-              className="flex-1 bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none transition-all shadow-inner"
+              className={`flex-1 bg-black/60 border rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner ${
+                inlineValidationError ? 'border-danger-500/70 focus:border-danger-400' : 'border-white/15 focus:border-gold'
+              }`}
             />
             <button
+              type="button"
               onClick={handleExtractDNA}
-              disabled={loading || !input.trim()}
-              className="px-6 py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-gold/20"
+              disabled={loading}
+              aria-busy={loading}
+              className="px-6 py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-gold/20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {loading ? (
                 <>
@@ -128,6 +154,12 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               )}
             </button>
           </div>
+          {inlineValidationError && (
+            <div className="flex items-center gap-1.5 text-xs text-danger-400 font-medium animate-in fade-in">
+              <ICONS.AlertCircle className="w-4 h-4 shrink-0 text-danger-400" />
+              <span>{inlineValidationError}</span>
+            </div>
+          )}
           {error && <p className="text-xs text-danger-400 mt-2">{error}</p>}
         </div>
       </div>
@@ -137,7 +169,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
         <div className="glass-morphism rounded-2xl border border-gold/40 p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/10 pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-success-400 shadow-[0_0_10px_#10B981] animate-pulse"></div>
+              <div className="w-3 h-3 rounded-full bg-success-400 shadow-sm shadow-success-500/30 animate-pulse"></div>
               <div>
                 <span className="text-[10px] font-mono text-success-400 uppercase tracking-widest">Profile active</span>
                 <h2 className="text-2xl font-bold text-white tracking-tight">{formData.name}</h2>
@@ -150,22 +182,25 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
             </div>
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => syncToVfs(formData)}
-                className="px-3 py-1.5 rounded-lg border border-gold/40 bg-gold/10 text-xs text-gold-light hover:bg-gold/20 uppercase font-bold tracking-wider transition-all flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-lg border border-gold/40 bg-gold/10 text-xs text-gold-light hover:bg-gold/20 uppercase font-bold tracking-wider transition-all flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 title="Force sync DNA to Viking VFS .memories/"
               >
                 <span>🧠</span>
                 <span>Sync VFS</span>
               </button>
               <button
+                type="button"
                 onClick={() => setEditing(!editing)}
-                className="px-4 py-1.5 rounded-lg border border-white/15 text-xs text-gray-300 hover:text-white uppercase font-bold tracking-wider transition-all"
+                className="px-4 py-1.5 rounded-lg border border-white/15 text-xs text-gray-300 hover:text-white uppercase font-bold tracking-wider transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 {editing ? 'Cancel' : 'Edit DNA'}
               </button>
               <button
+                type="button"
                 onClick={handleClear}
-                className="px-4 py-1.5 rounded-lg border border-danger-500/30 text-xs text-danger-300 hover:text-danger-200 uppercase font-bold tracking-wider transition-all hover:bg-danger-500/10"
+                className="px-4 py-1.5 rounded-lg border border-danger-500/30 text-xs text-danger-300 hover:text-danger-200 uppercase font-bold tracking-wider transition-all hover:bg-danger-500/10 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 Clear
               </button>
@@ -249,8 +284,9 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           {editing && (
             <div className="pt-4 border-t border-white/10 flex justify-end">
               <button
+                type="button"
                 onClick={handleSave}
-                className="px-6 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-bold uppercase text-xs tracking-wider"
+                className="px-6 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-bold uppercase text-xs tracking-wider focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 Save Changes
               </button>
@@ -258,12 +294,13 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           )}
 
           <div className="pt-4 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center gap-3">
-            <span className="text-[11px] text-gray-400">This DNA context is now automatically injected into all audits, Oracle Agent, and OracleMind SLM.</span>
+            <span className="text-[11px] text-gray-400">Brand profile active across audits, agent sessions, and intelligence models.</span>
             <div className="flex items-center gap-3">
               {onRouteToOracleMind && (
                 <button
+                  type="button"
                   onClick={onRouteToOracleMind}
-                  className="px-3 py-1.5 rounded-lg border border-gold/40 bg-gold/15 text-xs font-bold text-gold-light hover:bg-gold/25 uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
+                  className="px-3 py-1.5 rounded-lg border border-gold/40 bg-gold/15 text-xs font-bold text-gold-light hover:bg-gold/25 uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
                   <ICONS.Brain className="w-3.5 h-3.5 text-gold-light" />
                   <span>Fine-Tune SLM &rarr;</span>
@@ -271,8 +308,9 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               )}
               {onNavigateToTool && (
                 <button
+                  type="button"
                   onClick={onNavigateToTool}
-                  className="text-xs font-bold text-gold-light hover:underline uppercase tracking-wider flex items-center gap-1"
+                  className="text-xs font-bold text-gold-light hover:underline uppercase tracking-wider flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
                   Launch Terminal with DNA &rarr;
                 </button>

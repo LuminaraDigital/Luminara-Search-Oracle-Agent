@@ -54,6 +54,13 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       if (!inTg && wallet) {
         setActiveTab('ton');
       }
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          handleClose();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
     }
   }, [isOpen, inTg, wallet]);
 
@@ -166,7 +173,12 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-xl animate-fade-in font-['Outfit']">
-      <div className="relative my-auto w-full max-w-2xl glass-morphism border border-gold/40 rounded-3xl p-5 sm:p-6 md:p-8 shadow-2xl text-white overflow-hidden max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] overflow-y-auto">
+      <div 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="paywall-modal-title"
+        className="relative my-auto w-full max-w-2xl glass-morphism border border-gold/40 rounded-3xl p-5 sm:p-6 md:p-8 shadow-2xl text-white overflow-hidden max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] overflow-y-auto"
+      >
         {/* Glow ambient */}
         <div className="absolute top-0 right-1/4 w-72 h-72 bg-gold/10 blur-[120px] rounded-full pointer-events-none" />
 
@@ -183,14 +195,16 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                   Dual-Rail
                 </span>
               </div>
-              <h3 className="text-xl md:text-2xl font-bold tracking-tight text-white mt-0.5">
+              <h3 id="paywall-modal-title" className="text-xl md:text-2xl font-bold tracking-tight text-white mt-0.5">
                 Unlock Unlimited AI Intelligence
               </h3>
             </div>
           </div>
           <button
+            type="button"
+            aria-label="Close dialog"
             onClick={handleClose}
-            className="text-gray-400 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors"
+            className="text-gray-400 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             ✕
           </button>
@@ -209,7 +223,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           )}
         </div>
 
-        {/* License Key Gated Entry (Matching Mobile & Desktop License Activation UX) */}
+        {/* License Key Gated Entry */}
         <div className="mb-5 p-4 rounded-2xl bg-black/40 border border-gold/40">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold text-white">
@@ -217,8 +231,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <span>I have a license key</span>
             </div>
             <button
+              type="button"
               onClick={() => setShowLicenseInput(!showLicenseInput)}
-              className="text-[10px] uppercase font-mono px-3 py-1 rounded-lg bg-gold/15 text-gold border border-gold/40 hover:bg-gold/25 transition-all font-bold"
+              className="text-[10px] uppercase font-mono px-3 py-1 rounded-lg bg-gold/15 text-gold border border-gold/40 hover:bg-gold/25 transition-all font-bold focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {showLicenseInput ? 'Close' : 'Enter Key'}
             </button>
@@ -229,17 +244,20 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                 Enter your 3-day Growth pass, referral key, or enterprise license code (e.g. <span className="font-mono text-gold">LUM-GROWTH-3DAY</span>).
               </p>
               <div className="flex gap-2">
+                <label htmlFor="paywall-license-key-input" className="sr-only">License key</label>
                 <input
+                  id="paywall-license-key-input"
                   type="text"
                   value={licenseKeyInput}
                   onChange={(e) => setLicenseKeyInput(e.target.value.toUpperCase())}
                   placeholder="LUM-GROWTH-3DAY..."
-                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/20 focus:border-gold focus:outline-none text-xs font-mono text-white placeholder-gray-600"
+                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/20 focus:border-gold focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none text-xs font-mono text-white placeholder-gray-500"
                 />
                 <button
+                  type="button"
                   onClick={handleActivateLicense}
                   disabled={activatingLicense || !licenseKeyInput.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-wider hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 transition-all shadow-md"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-wider hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 transition-all shadow-md focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
                   {activatingLicense ? 'Activating…' : 'Activate'}
                 </button>
@@ -251,8 +269,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         {/* Payment Rail Selector */}
         <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-black/40 border border-white/10 mb-6">
           <button
+            type="button"
             onClick={() => setActiveTab('stars')}
-            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
               activeTab === 'stars'
                 ? 'bg-gold text-black shadow-lg shadow-gold/20'
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -266,8 +285,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             )}
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('ton')}
-            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
               activeTab === 'ton'
                 ? 'bg-gold text-black shadow-lg shadow-gold/20'
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -312,9 +332,10 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </ul>
             </div>
             <button
+              type="button"
               onClick={() => (activeTab === 'stars' ? handleStarsCheckout('starter') : handleTonCheckout('starter'))}
               disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.2em] text-[10px] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg"
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.2em] text-[10px] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {busyPlan === 'starter'
                 ? 'Processing…'
@@ -352,9 +373,10 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </ul>
             </div>
             <button
+              type="button"
               onClick={() => (activeTab === 'stars' ? handleStarsCheckout('growth') : handleTonCheckout('growth'))}
               disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] hover:bg-gold-light hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg"
+              className="w-full py-3 rounded-xl bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] hover:bg-gold-light hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {busyPlan === 'growth'
                 ? 'Processing…'
@@ -395,9 +417,10 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </ul>
             </div>
             <button
+              type="button"
               onClick={() => (activeTab === 'stars' ? handleStarsCheckout('agency') : handleTonCheckout('agency'))}
               disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.2em] text-[10px] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg"
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.2em] text-[10px] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {busyPlan === 'agency'
                 ? 'Processing…'
@@ -430,7 +453,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               {' '}and{' '}
               <a href="#privacy" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
             </p>
-            <p className="text-gray-500 text-[9px]">
+            <p className="text-gray-400 text-[9px]">
               Subscriptions activate immediately upon payment. Telegram Support does not handle merchant disputes; for billing help use /paysupport in the bot.
             </p>
           </div>
@@ -453,28 +476,30 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             Prefer your own models? <span className="text-gray-300">Add a Groq / NVIDIA / Ollama key after sign-in.</span>
           </p>
           <button
+            type="button"
             onClick={() => {
               handleClose();
               if (onOpenSettings) onOpenSettings();
               else window.dispatchEvent(new CustomEvent('luminara-open-settings'));
             }}
-            className="px-4 py-1.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white font-medium text-[11px] transition-colors"
+            className="px-4 py-1.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white font-medium text-[11px] transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             Open Settings
           </button>
         </div>
 
-        {/* Not now dismissal (Matching user screenshot) */}
+        {/* Not now dismissal */}
         <div className="mt-3 flex justify-center">
           <button
+            type="button"
             onClick={handleClose}
-            className="text-xs text-gray-500 hover:text-gray-300 transition-colors py-1 px-4 rounded-lg hover:bg-white/5"
+            className="text-xs text-gray-400 hover:text-gray-300 transition-colors py-1 px-4 rounded-lg hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             Not now
           </button>
         </div>
 
-        <p className="mt-3 text-center text-[10px] text-gray-600">
+        <p className="mt-3 text-center text-[10px] text-gray-400">
           Produced by{' '}
           <a
             href="https://luminaradigital.io"

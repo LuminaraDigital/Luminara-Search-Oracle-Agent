@@ -845,6 +845,8 @@ export interface GenerateResult {
  */
 export interface StreamChunk {
   text?: string;
+  groundingUrls?: Array<{ uri: string; title: string }>;
+  toolExecution?: ToolExecution;
   toolCalls?: ToolCall[];
   finishReason?: GenerateFinishReason;
   tokenUsage?: { prompt: number; completion: number; total: number };

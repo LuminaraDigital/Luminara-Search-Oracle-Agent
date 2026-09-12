@@ -46,7 +46,7 @@ export const AuthRequiredScreen: React.FC<{
         <button
           type="button"
           onClick={onClose}
-          className="absolute -top-3 -right-2 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm z-20"
+          className="absolute -top-3 -right-2 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm z-20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           title="Close (Esc)"
           aria-label="Close login dialog"
         >
@@ -74,17 +74,17 @@ export const AuthRequiredScreen: React.FC<{
           <div className="glass-morphism rounded-xl p-2.5 text-center border border-white/5 space-y-1">
             <span className="text-base">🧠</span>
             <p className="text-[9px] font-bold text-gray-200 uppercase tracking-wider">Persistent Memory</p>
-            <p className="text-[8px] text-gray-500 leading-tight">DNA & audits saved</p>
+            <p className="text-[8px] text-gray-400 leading-tight">DNA & audits saved</p>
           </div>
           <div className="glass-morphism rounded-xl p-2.5 text-center border border-white/5 space-y-1">
             <span className="text-base">🛡️</span>
             <p className="text-[9px] font-bold text-gray-200 uppercase tracking-wider">Enterprise Security</p>
-            <p className="text-[8px] text-gray-500 leading-tight">Isolated tenancy</p>
+            <p className="text-[8px] text-gray-400 leading-tight">Isolated tenancy</p>
           </div>
           <div className="glass-morphism rounded-xl p-2.5 text-center border border-white/5 space-y-1">
             <span className="text-base">⚡</span>
             <p className="text-[9px] font-bold text-gray-200 uppercase tracking-wider">Cross-Platform</p>
-            <p className="text-[8px] text-gray-500 leading-tight">Web, Telegram & Desktop</p>
+            <p className="text-[8px] text-gray-400 leading-tight">Web, Telegram & Desktop</p>
           </div>
         </div>
       )}
@@ -98,7 +98,7 @@ export const AuthRequiredScreen: React.FC<{
             <button
               type="button"
               onClick={() => auth.retryTelegram?.()}
-              className="w-full rounded-xl bg-gold/15 border border-gold/40 text-gold text-xs font-bold uppercase tracking-wider py-2.5 hover:bg-gold/25 transition-colors"
+              className="w-full rounded-xl bg-gold/15 border border-gold/40 text-gold text-xs font-bold uppercase tracking-wider py-2.5 hover:bg-gold/25 transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               Retry Telegram sign-in
             </button>
@@ -112,7 +112,7 @@ export const AuthRequiredScreen: React.FC<{
         <button
           type="button"
           onClick={onBackToMarketing}
-          className="w-full text-xs text-gray-500 hover:text-gold transition-colors py-1"
+          className="w-full text-xs text-gray-400 hover:text-gold transition-colors py-1 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
         >
           ← Back to home
         </button>
@@ -122,7 +122,12 @@ export const AuthRequiredScreen: React.FC<{
 
   if (isModal) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Account access"
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md overflow-y-auto"
+      >
         <div className="absolute inset-0" onClick={onClose} />
         {content}
       </div>

@@ -53,21 +53,51 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
       </div>
 
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-6 backdrop-blur-md bg-black/20 border-b border-white/[0.03]">
-        <div className="flex items-center gap-4 group cursor-pointer" onClick={onBack}>
+        <button
+          type="button"
+          className="flex items-center gap-4 group cursor-pointer text-left focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded-lg"
+          onClick={onBack}
+          aria-label="Return to previous page"
+        >
           <ICONS.LuminaraLogo className="w-8 h-8" />
           <div className="flex flex-col leading-none">
             <span className="text-lg font-bold tracking-[0.4em] uppercase gold-text">WHY USE THE APP</span>
           </div>
-        </div>
+        </button>
         
         <div className="flex items-center gap-6 md:gap-10">
-          <button onClick={onBack} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Return</button>
-          <button onClick={onNavigateInfrastructure} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">How It Works</button>
-          <button onClick={onNavigateIntelligence} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Our AI</button>
-          <button onClick={onNavigatePricing} className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Pricing</button>
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
+            Return
+          </button>
+          <button
+            type="button"
+            onClick={onNavigateInfrastructure}
+            className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
+            How It Works
+          </button>
+          <button
+            type="button"
+            onClick={onNavigateIntelligence}
+            className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
+            Our AI
+          </button>
+          <button
+            type="button"
+            onClick={onNavigatePricing}
+            className="hidden md:block text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
+            Pricing
+          </button>
           <button 
+            type="button"
             onClick={onTerminal}
-            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
+            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             Start Check
           </button>
@@ -87,8 +117,20 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
             Luminara Search gives you a professional marketing audit in minutes. No more paying thousands for slow human reports. Our AI finds the gaps and shows you how to win.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-6">
-            <button onClick={onTerminal} className="px-12 py-6 bg-gold text-black font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl">Audit My Site</button>
-            <button onClick={onNavigatePricing} className="px-12 py-6 glass-morphism border border-white/10 text-white font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-white/5 transition-all">View Pricing</button>
+            <button
+              type="button"
+              onClick={onTerminal}
+              className="px-12 py-6 bg-gold text-black font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+            >
+              Audit My Site
+            </button>
+            <button
+              type="button"
+              onClick={onNavigatePricing}
+              className="px-12 py-6 glass-morphism border border-white/10 text-white font-black uppercase tracking-[0.4em] text-[10px] rounded-2xl hover:bg-white/5 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+            >
+              View Pricing
+            </button>
           </div>
         </section>
 
@@ -102,7 +144,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
                       "Why wait weeks for a consultant? Our app gives you a full plan to fix your Google and AI presence right now. It saves you thousands in agency fees."
                     </p>
                   </div>
-                  <p className="text-gray-500 text-lg font-light leading-relaxed">
+                  <p className="text-gray-400 text-lg font-light leading-relaxed">
                     Solo founders and small teams use our app to act like a big brand. We give you the same tools the experts use, but for a fraction of the cost.
                   </p>
                </div>
@@ -142,7 +184,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
         <section className="px-6 md:px-20 mb-48 max-w-7xl mx-auto">
           <div className="text-center mb-24">
             <h2 className="text-4xl md:text-6xl font-light italic mb-8">Data <span className="gold-text font-bold uppercase not-italic tracking-wider">Comparison.</span></h2>
-            <p className="text-gray-500 text-lg font-light max-w-3xl mx-auto">
+            <p className="text-gray-400 text-lg font-light max-w-3xl mx-auto">
               Our app is faster and cheaper than traditional SEO audits. See for yourself.
             </p>
           </div>
@@ -155,16 +197,16 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
                     <th className="p-8 text-[11px] font-black uppercase tracking-[0.3em] gold-text">Metric</th>
                     <th className="p-8 text-[11px] font-black uppercase tracking-[0.3em] text-gray-400">Manual Method</th>
                     <th className="p-8 text-[11px] font-black uppercase tracking-[0.3em] text-white">Luminara App</th>
-                    <th className="p-8 text-[11px] font-black uppercase tracking-[0.3em] text-gray-500">The Winner</th>
+                    <th className="p-8 text-[11px] font-black uppercase tracking-[0.3em] text-gray-400">The Winner</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {metrics.map((m, i) => (
                     <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                       <td className="p-8 text-lg font-bold uppercase tracking-tight text-gray-200">{m.metric}</td>
-                      <td className="p-8 text-gray-500 font-light">{m.baseline}</td>
+                      <td className="p-8 text-gray-400 font-light">{m.baseline}</td>
                       <td className="p-8 text-gold-light font-bold">{m.luminara}</td>
-                      <td className="p-8 text-gray-600 text-xs italic">{m.source}</td>
+                      <td className="p-8 text-gray-400 text-xs italic">{m.source}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -183,8 +225,9 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
               </p>
               <div className="pt-8">
                 <button 
+                  type="button"
                   onClick={onTerminal}
-                  className="px-20 py-8 bg-gradient-to-br from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl shadow-2xl hover:scale-105 transition-all"
+                  className="px-20 py-8 bg-gradient-to-br from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl shadow-2xl hover:scale-105 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
                   Launch App Terminal
                 </button>
@@ -196,7 +239,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
 
       <footer className="py-24 px-6 md:px-20 flex flex-col items-center gap-12 relative z-10 bg-black">
         <div className="w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
-        <p className="text-[9px] text-gray-700 uppercase tracking-[0.8em]">&copy; 2025 Audit App. Status: Optimized.</p>
+        <p className="text-[9px] text-gray-400 uppercase tracking-[0.8em]">&copy; 2025 Audit App. Status: Optimized.</p>
       </footer>
     </div>
   );

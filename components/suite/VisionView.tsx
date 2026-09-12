@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { ICONS } from '../../constants';
 
 export const VisionView: React.FC = () => {
@@ -30,7 +30,7 @@ export const VisionView: React.FC = () => {
       <header className="mb-16 text-center relative pt-8">
         <div className="inline-flex items-center gap-4 mb-6">
           <div className="w-12 h-[1px] bg-gold/40"></div>
-          <span className="text-gold-light font-black text-[10px] uppercase tracking-[0.8em]">Manifesto of Strategic Autonomy</span>
+          <span className="text-gold-light font-black text-[10px] uppercase tracking-[0.6em]">Strategic Methodology</span>
           <div className="w-12 h-[1px] bg-gold/40"></div>
         </div>
         <h1 className="text-4xl sm:text-7xl font-light text-white mb-6 tracking-tight leading-tight">
@@ -38,7 +38,7 @@ export const VisionView: React.FC = () => {
           <span className="gold-text font-medium not-italic tracking-tighter">Without Compromise.</span>
         </h1>
         <p className="text-gray-400 text-base sm:text-lg font-light leading-relaxed max-w-2xl mx-auto">
-          Luminara Search is designed to replace expensive monthly agency retainers with continuous, high-fidelity adversarial logic and grounded reality.
+          Luminara Search gives founders and teams continuous, verified search and AI visibility intelligence grounded in live data.
         </p>
       </header>
 

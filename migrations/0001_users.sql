@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT,
   telegram_id TEXT,
   firebase_uid TEXT,
-  account_id TEXT,
   created_at INTEGER NOT NULL,
   last_seen_at INTEGER NOT NULL
 );
@@ -14,4 +13,3 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
 CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at);
-CREATE INDEX IF NOT EXISTS idx_users_account_id ON users(account_id);

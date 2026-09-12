@@ -125,10 +125,11 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
   return (
     <div className="fixed inset-0 z-[100] overflow-y-auto flex items-start justify-center pt-6 sm:pt-14 p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
       <div
-        className="w-full max-w-xl my-auto sm:my-0 max-h-[calc(100vh-3rem)] glass-morphism rounded-2xl border border-gold/40 bg-black/95 shadow-[0_0_80px_rgba(191,149,63,0.3)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+        className="w-full max-w-xl my-auto sm:my-0 max-h-[calc(100vh-3rem)] glass-morphism rounded-2xl border border-gold/40 bg-black/95 shadow-2xl shadow-gold/20 overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
         onKeyDown={handleKeyDown}
         onClick={e => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Jump to a tool"
       >
         <div className="p-4 border-b border-gold/20 flex items-center gap-3 shrink-0">
@@ -139,15 +140,15 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Where do you want to go?"
-            className="flex-1 bg-transparent text-white placeholder-gray-500 text-sm focus:outline-none"
+            className="flex-1 bg-transparent text-white placeholder-gray-400 text-sm focus:outline-none"
             aria-label="Search tools"
           />
-          <button onClick={onClose} className="px-2 py-0.5 rounded bg-white/10 text-gray-400 text-[10px] hover:text-white" title="Close (Esc)">Esc</button>
+          <button type="button" onClick={onClose} aria-label="Close dialog" className="px-2 py-0.5 rounded bg-white/10 text-gray-400 text-[10px] hover:text-white focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none" title="Close (Esc)">Esc</button>
         </div>
 
-        <div className="flex-1 min-h-0 max-h-[28rem] overflow-y-auto p-2">
+        <div className="flex-1 min-h-0 max-h-[28rem] overflow-y-auto p-2" role="listbox" aria-label="Tool options">
           {total === 0 && (
-            <div className="p-8 text-center text-sm text-gray-500">Nothing matches "{query}". Try "audit", "ask" or "profile".</div>
+            <div className="p-8 text-center text-sm text-gray-400">Nothing matches "{query}". Try "audit", "ask" or "profile".</div>
           )}
 
           {groups.map(group => {
@@ -155,18 +156,21 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
             if (!items.length) return null;
             return (
               <div key={group} className="mb-2">
-                <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">{group}</div>
+                <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">{group}</div>
                 {items.map(d => {
                   runningIndex += 1;
                   const idx = runningIndex;
                   const selected = idx === selectedIndex;
                   const Icon = d.icon;
                   return (
-                    <div
+                    <button
                       key={d.id}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
                       onClick={() => go(d)}
                       onMouseEnter={() => setSelectedIndex(idx)}
-                      className={`px-3 py-2.5 rounded-xl cursor-pointer flex items-center gap-3 transition-all ${
+                      className={`w-full text-left px-3 py-2.5 rounded-xl cursor-pointer flex items-center gap-3 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                         selected ? 'bg-gold/15 border border-gold/40' : 'border border-transparent hover:bg-white/5'
                       }`}
                     >
@@ -177,8 +181,8 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
                         <div className="text-sm font-semibold text-white">{d.label}</div>
                         <div className="text-[11px] text-gray-400 truncate">{d.description}</div>
                       </div>
-                      {selected && <span className="ml-auto text-[10px] text-gray-500 shrink-0">Enter ↵</span>}
-                    </div>
+                      {selected && <span className="ml-auto text-[10px] text-gray-400 shrink-0">Enter ↵</span>}
+                    </button>
                   );
                 })}
               </div>
@@ -193,26 +197,29 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({ isOpen, onClose, onN
                 const idx = runningIndex;
                 const selected = idx === selectedIndex;
                 return (
-                  <div
+                  <button
                     key={`${cmd.group}_${cmd.name}`}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
                     onClick={() => runDev(cmd)}
                     onMouseEnter={() => setSelectedIndex(idx)}
-                    className={`px-3 py-2.5 rounded-xl cursor-pointer flex items-center gap-3 font-mono ${
+                    className={`w-full text-left px-3 py-2.5 rounded-xl cursor-pointer flex items-center gap-3 font-mono focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                       selected ? 'bg-warning-500/10 border border-warning-500/40' : 'border border-transparent hover:bg-white/5'
                     }`}
                   >
                     <div className="min-w-0">
-                      <div className="text-xs text-white">luminara {cmd.group} {cmd.name} <span className="text-gray-500">{cmd.args}</span></div>
+                      <div className="text-xs text-white">luminara {cmd.group} {cmd.name} <span className="text-gray-400">{cmd.args}</span></div>
                       <div className="text-[11px] text-gray-400 truncate">{cmd.summary}</div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
           )}
         </div>
 
-        <div className="p-3 bg-black/60 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-500">
+        <div className="p-3 bg-black/60 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-400">
           <span>↑↓ move · Enter open · Esc close</span>
           <span>Ctrl+K anywhere</span>
         </div>

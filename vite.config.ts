@@ -58,9 +58,9 @@ export default defineConfig(({ mode }) => {
   const languageToolUrl = env.LANGUAGETOOL_URL || 'http://localhost:8010';
   const umamiUrl = env.UMAMI_URL || 'http://localhost:3002';
   const umamiApiKey = env.UMAMI_API_KEY || '';
-  const isProduction = mode === 'production';
+  const isProduction = mode === 'production' || mode === 'staging';
 
-  // Production: blank every credential-looking VITE_ variable so the inlined import.meta.env
+  // Production/Staging: blank every credential-looking VITE_ variable so the inlined import.meta.env
   // object never carries a developer's local keys. Non-secret VITE_ config (URLs, API base) is kept.
   const define: Record<string, string> = {};
   if (isProduction) {

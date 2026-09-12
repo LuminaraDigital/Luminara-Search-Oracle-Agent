@@ -3,6 +3,7 @@ import { BusinessDNA } from '../../types';
 import { geminiService } from '../../services/geminiService';
 import { ICONS } from '../../constants';
 import { renderMarkdown } from '../../utils/markdown';
+import { SynthesisSkeleton } from '../ui/Skeleton';
 
 interface DataAnalystViewProps {
   dna: BusinessDNA | null;
@@ -69,43 +70,46 @@ export const DataAnalystView: React.FC<DataAnalystViewProps> = ({ dna, onRouteTo
       <div className="glass-morphism rounded-2xl border border-gold/30 p-6 sm:p-8 mb-8 shadow-2xl space-y-6">
         <div>
           <div className="flex justify-between items-center mb-2">
-            <label className="text-xs font-bold uppercase tracking-widest text-gray-300">
+            <label htmlFor="dataset-context-input" className="text-xs font-bold uppercase tracking-widest text-gray-300">
               Dataset Context (Paste CSV / JSON / Metrics)
             </label>
-            <label className="cursor-pointer text-[10px] font-mono text-gold-light hover:underline flex items-center gap-1">
+            <label className="cursor-pointer text-[10px] font-mono text-gold-light hover:underline flex items-center gap-1 focus-within:ring-2 focus-within:ring-gold rounded">
               <ICONS.FileText className="w-3.5 h-3.5" />
               <span>Upload File</span>
               <input type="file" accept=".csv,.json,.txt,.tsv" onChange={handleFileUpload} className="hidden" />
             </label>
           </div>
           <textarea
+            id="dataset-context-input"
             value={dataContext}
             onChange={(e) => setDataContext(e.target.value)}
             placeholder="Paste your numbers, tables, or conversion metrics here..."
             rows={6}
-            className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl p-4 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none transition-all shadow-inner leading-relaxed resize-y"
+            className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl p-4 text-xs text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner leading-relaxed resize-y"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-bold uppercase tracking-widest text-gray-300 mb-2">
+          <label htmlFor="analysis-directive-input" className="block text-xs font-bold uppercase tracking-widest text-gray-300 mb-2">
             Analysis Directive
           </label>
           <input
+            id="analysis-directive-input"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="e.g., 'Identify anomalies in customer acquisition cost and calculate ROI trends'"
             onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-            className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-3 text-sm text-white font-sans placeholder:text-gray-600 focus:outline-none transition-all shadow-inner"
+            className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-3 text-sm text-white font-sans placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner"
           />
         </div>
 
         <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-2">
           {onRouteToTimesFM && dataContext.trim() && (
             <button
+              type="button"
               onClick={() => onRouteToTimesFM(dataContext)}
-              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gold/10 hover:bg-gold/20 border border-gold/40 text-gold-light font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gold/10 hover:bg-gold/20 border border-gold/40 text-gold-light font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               <ICONS.TimeSeries className="w-4 h-4" />
               <span>Forecast with TimesFM</span>
@@ -113,14 +117,15 @@ export const DataAnalystView: React.FC<DataAnalystViewProps> = ({ dna, onRouteTo
           )}
 
           <button
+            type="button"
             onClick={handleAnalyze}
             disabled={loading || !dataContext.trim() || !query.trim()}
-            className="w-full sm:w-auto px-8 py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-30 shadow-lg shadow-gold/20 flex items-center justify-center gap-2"
+            className="w-full sm:w-auto px-8 py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-30 shadow-lg shadow-gold/20 flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             {loading ? (
               <>
                 <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                <span>Executing Python & Statistical Models...</span>
+                <span>Analyzing dataset…</span>
               </>
             ) : (
               <>
@@ -131,6 +136,12 @@ export const DataAnalystView: React.FC<DataAnalystViewProps> = ({ dna, onRouteTo
           </button>
         </div>
       </div>
+
+      {loading && (
+        <div className="mb-8">
+          <SynthesisSkeleton />
+        </div>
+      )}
 
       {result && (
         <div className="glass-morphism rounded-2xl border border-gold/40 p-6 sm:p-8 shadow-2xl animate-in fade-in duration-500">

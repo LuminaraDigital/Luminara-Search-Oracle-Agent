@@ -1,9 +1,10 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ICONS } from '../constants';
 import { OracleMode } from '../types';
 import { OracleLiveService } from '../services/liveService';
 import { ComposerModelPicker } from './llm/ComposerModelPicker';
+import { draftPersistenceService, DRAFT_KEYS } from '../services/state/draftPersistenceService';
+import { productTelemetry } from '../services/analytics/productTelemetry';
 
 interface InputBarProps {
   onSendMessage: (text: string) => void;
@@ -14,13 +15,32 @@ interface InputBarProps {
 }
 
 const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoiceActive, isThinking, mode }) => {
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState(() => draftPersistenceService.getDraft(DRAFT_KEYS.CHAT_INPUT));
+  const [showDraftNotice, setShowDraftNotice] = useState(() => draftPersistenceService.hasDraft(DRAFT_KEYS.CHAT_INPUT));
+
+  useEffect(() => {
+    if (showDraftNotice) {
+      productTelemetry.recordDraftRestored('chat_input');
+      const timer = setTimeout(() => setShowDraftNotice(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [showDraftNotice]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setInputValue(val);
+    draftPersistenceService.setDraft(DRAFT_KEYS.CHAT_INPUT, val);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputValue.trim() && !isThinking) {
-      onSendMessage(inputValue);
+      const text = inputValue.trim();
+      draftPersistenceService.clearDraft(DRAFT_KEYS.CHAT_INPUT);
+      productTelemetry.recordFirstValue('chat');
+      onSendMessage(text);
       setInputValue('');
+      setShowDraftNotice(false);
     }
   };
 
@@ -48,6 +68,7 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
           onClick={onVoiceToggle}
           disabled={isThinking || !OracleLiveService.isAvailable()}
           title={OracleLiveService.isAvailable() ? 'Oracle Agent Live Voice' : 'Live Voice needs a Gemini API key in Settings'}
+          aria-label={isVoiceActive ? 'Stop voice input' : 'Start live voice'}
           aria-pressed={isVoiceActive}
           className={`p-3.5 rounded-xl transition-all relative z-10 outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent ${
             isVoiceActive
@@ -58,29 +79,41 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
           <ICONS.Mic />
         </button>
         
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          disabled={isThinking}
-          placeholder={
-            isThinking 
-              ? "Working on your answer…" 
-              : isVoiceActive 
-                ? "Listening…" 
-                : "Ask a question, or paste your website address"
-          }
-          className={`flex-1 bg-transparent border-none outline-none text-gray-100 py-3.5 px-3 placeholder-gray-600 text-sm tracking-wide transition-all relative z-10 ${
-            isThinking ? 'cursor-not-allowed italic text-gray-500' : ''
-          }`}
-        />
+        <div className="flex-1 flex items-center relative z-10">
+          <label htmlFor="chat-query-input" className="sr-only">
+            Ask a question or paste your website address
+          </label>
+          <input
+            id="chat-query-input"
+            type="text"
+            value={inputValue}
+            onChange={handleInputChange}
+            disabled={isThinking}
+            placeholder={
+              isThinking 
+                ? "Working on your answer…" 
+                : isVoiceActive 
+                  ? "Listening…" 
+                  : "Ask a question, or paste your website address"
+            }
+            className={`w-full bg-transparent border-none outline-none text-gray-100 py-3.5 px-3 placeholder-gray-500 text-sm tracking-wide transition-all focus-visible:ring-1 focus-visible:ring-gold/50 rounded-lg ${
+              isThinking ? 'cursor-not-allowed italic text-gray-400' : ''
+            }`}
+          />
+          {showDraftNotice && (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[9px] font-mono text-gold-light bg-gold/15 border border-gold/30 px-2 py-0.5 rounded-full mr-2 shrink-0 animate-in fade-in">
+              <span className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse" />
+              Draft restored
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-2 pr-2 relative z-10">
           {inputValue.trim() && !isThinking ? (
             <button
               type="submit"
               disabled={isThinking}
-              aria-label="Send"
+              aria-label="Send message"
               className="p-3.5 bg-gradient-to-br from-gold to-gold-dark text-black rounded-xl hover:opacity-90 active:scale-[0.98] transition-all shadow-lg gold-glow outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50"
             >
               <ICONS.Send />
@@ -105,7 +138,7 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
         </div>
       </form>
       <div className="mt-2 text-center">
-        <p className={`text-[10px] uppercase tracking-[0.2em] transition-all duration-500 ${isThinking ? 'text-gray-700' : 'text-gray-600'}`}>
+        <p className={`text-[10px] uppercase tracking-[0.2em] transition-all duration-500 ${isThinking ? 'text-gray-500' : 'text-gray-400'}`}>
           Answers can be wrong. Check important facts before acting. &copy; Luminara Suite
         </p>
       </div>

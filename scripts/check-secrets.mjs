@@ -19,7 +19,7 @@ const mode = process.argv.includes('--staged')
 
 /** Paths that may mention key shapes as documentation, placeholders, or public client config. */
 const ALLOW_PATH_RE =
-  /(^|[/\\])(\.env\.example|\.dev\.vars\.example|THIRD_PARTY_NOTICES\.md|package-lock\.json|playbooks\.generated\.json|firebasePublicConfig\.ts)$/i;
+  /(^|[/\\])(\.env\.example|\.env\..*\.example|\.dev\.vars\.example|\.dev\.vars\..*\.example|THIRD_PARTY_NOTICES\.md|package-lock\.json|playbooks\.generated\.json|firebasePublicConfig\.ts)$/i;
 
 /** Filenames that must never be committed. */
 const FORBIDDEN_NAME_RE =

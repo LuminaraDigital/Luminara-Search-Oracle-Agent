@@ -12,6 +12,9 @@ import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
 import { crewOrchestrator } from '../../services/agentCore/crewOrchestrator';
 import { AgentActivityEvent, AuditAttestation } from '../../services/agentCore/types';
 import { toUserFacingText } from '../../utils/userFacingText';
+import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
+import { AuditReportSkeleton } from '../ui/Skeleton';
 
 interface InstantAuditViewProps {
   dna: BusinessDNA | null;
@@ -19,7 +22,7 @@ interface InstantAuditViewProps {
 }
 
 export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavigateDNA }) => {
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(() => draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL));
   const [focus, setFocus] = useState<ReportFocus>('AEO');
   const [lenses, setLenses] = useState<AuditLens[]>(() => inferLenses(dna));
   const toggleLens = (id: AuditLens) => setLenses(prev => (prev.includes(id) ? prev.filter(l => l !== id) : [...prev, id]));
@@ -27,6 +30,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
   const [progressStage, setProgressStage] = useState('');
   const [report, setReport] = useState<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inlineValidationError, setInlineValidationError] = useState<string | null>(null);
   const [briefing, setBriefing] = useState(false);
   const [crewEvents, setCrewEvents] = useState<AgentActivityEvent[]>([]);
   const [attestation, setAttestation] = useState<AuditAttestation | null>(null);
@@ -36,13 +40,40 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => () => { if (stageTimerRef.current) clearInterval(stageTimerRef.current); }, []);
 
+  const handleUrlChange = (value: string) => {
+    setUrl(value);
+    draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, value);
+    if (inlineValidationError) setInlineValidationError(null);
+  };
+
+  const validateUrl = (raw: string): string | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return 'Please enter a website address or domain (e.g., yourbrand.com).';
+    }
+    const clean = trimmed.replace(/^https?:\/\//i, '').split('/')[0];
+    if (clean.includes(' ') || (!clean.includes('.') && clean !== 'localhost')) {
+      return 'Please enter a valid domain format (e.g., luminaradigital.io or yourbrand.com).';
+    }
+    return null;
+  };
+
   const handleExecuteAudit = async (targetUrl: string, targetFocus: ReportFocus) => {
-    if (!targetUrl.trim() || loading) return;
+    if (loading) return;
+    const validationErr = validateUrl(targetUrl);
+    if (validationErr) {
+      setInlineValidationError(validationErr);
+      productTelemetry.recordError('InstantAuditView', validationErr);
+      return;
+    }
+
+    setInlineValidationError(null);
     setError(null);
     setLoading(true);
     setCrewEvents([]);
     setAttestation(null);
     setProgressStage('Assembling autonomous search crew…');
+    productTelemetry.recordOnboardingStep('quick_scout');
 
     try {
       const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
@@ -68,6 +99,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         result.plainEnglishBrief = crewResult.plainEnglishBrief;
       }
       setReport(result);
+      draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
+      productTelemetry.recordFirstValue('audit');
 
       try {
         const payload = {
@@ -83,7 +116,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         /* graph ingest is best-effort */
       }
     } catch (err: any) {
-      setError(toUserFacingText(err, 'Failed to complete the audit. Check your AI keys in Settings and try again.'));
+      const userErr = toUserFacingText(err, 'Failed to complete the audit. Check your AI keys in Settings and try again.');
+      setError(userErr);
+      productTelemetry.recordError('InstantAuditView', userErr);
     } finally {
       setLoading(false);
       setProgressStage('');
@@ -97,6 +132,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
       setReport(null);
       setError(null);
       setUrl('');
+      draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
       setCrewEvents([]);
       setAttestation(null);
     };
@@ -164,26 +200,38 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         <div className="glass-morphism rounded-2xl border border-gold/30 p-6 sm:p-8 mb-8 shadow-2xl">
           <div className="flex flex-col gap-6">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+              <label htmlFor="audit-target-url" className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
                 Target Website Domain / URL
               </label>
               <div className="relative">
                 <input
+                  id="audit-target-url"
                   type="text"
                   value={url}
-                  onChange={(e) => setUrl(e.target.value)}
+                  onChange={(e) => handleUrlChange(e.target.value)}
                   placeholder="e.g., luminaradigital.io or yourbrand.com"
                   onKeyDown={(e) => e.key === 'Enter' && handleExecuteAudit(url, focus)}
-                  className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl py-3.5 pl-4 pr-32 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none transition-all shadow-inner"
+                  className={`w-full bg-black/60 border rounded-xl py-3.5 pl-4 pr-36 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner ${
+                    inlineValidationError ? 'border-danger-500/70 focus:border-danger-400' : 'border-white/15 focus:border-gold'
+                  }`}
                 />
                 <button
+                  type="button"
                   onClick={() => handleExecuteAudit(url, focus)}
-                  disabled={loading || !url.trim()}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 px-5 py-2 rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-30"
+                  disabled={loading}
+                  aria-busy={loading}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-gold/20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
-                  {loading ? 'Scanning...' : isFullAudit ? 'Run full audit' : 'Run quick scout'}
+                  {loading && <div className="w-3 h-3 border-2 border-black/40 border-t-black rounded-full animate-spin" />}
+                  <span>{loading ? 'Scanning...' : isFullAudit ? 'Run full audit' : 'Run quick scout'}</span>
                 </button>
               </div>
+              {inlineValidationError && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-danger-400 font-medium animate-in fade-in">
+                  <ICONS.AlertCircle className="w-4 h-4 shrink-0 text-danger-400" />
+                  <span>{inlineValidationError}</span>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-white/5">
@@ -192,8 +240,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                 {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                   <button
                     key={f}
+                    type="button"
+                    aria-pressed={focus === f}
                     onClick={() => setFocus(f)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                       focus === f 
                         ? 'bg-gradient-to-br from-gold to-gold-dark text-black shadow-lg shadow-gold/20' 
                         : 'glass-morphism border border-white/10 text-gray-400 hover:text-white'
@@ -203,17 +253,11 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                   </button>
                 ))}
               </div>
-              <span className="text-[10px] text-gray-500 font-mono">
-                {focus === 'SEO' && 'SEO: how you rank in Google'}
-                {focus === 'AEO' && 'AEO: whether AI answers mention you'}
-                {focus === 'GEO' && 'GEO: whether AI summaries quote your content'}
-              </span>
             </div>
 
             <div className="pt-4 border-t border-white/5">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Also check:</span>
-                <span className="text-[10px] text-gray-600">Optional. Each adds a specialist checklist to the report.</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus Lenses:</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {AUDIT_LENSES.map(l => {
@@ -225,7 +269,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                       onClick={() => toggleLens(l.id)}
                       title={l.hint}
                       aria-pressed={on}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all border ${
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all border focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                         on ? 'bg-gold/20 border-gold/60 text-gold-light' : 'border-white/10 text-gray-400 hover:text-white hover:border-white/30'
                       }`}
                     >
@@ -259,17 +303,17 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
 
       {/* Loading Skeleton */}
       {loading && crewEvents.length === 0 && (
-        <div className="glass-morphism rounded-2xl border border-gold/40 p-8 text-center space-y-6 animate-pulse">
-          <div className="w-12 h-12 rounded-full border-2 border-gold/20 border-t-gold animate-spin mx-auto"></div>
-          <div>
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider mb-1">
-              {isFullAudit ? 'Clearing the fog…' : 'Quick scout in progress…'}
-            </h3>
-            <p className="text-xs text-gold-light font-mono">{progressStage}</p>
+        <div className="space-y-4">
+          <div className="glass-morphism rounded-xl px-4 py-3 border border-gold/30 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse" />
+              <span className="text-xs text-white font-medium">
+                {isFullAudit ? 'Conducting full brand audit…' : 'Quick scout in progress…'}
+              </span>
+            </div>
+            <span className="text-[11px] font-mono text-gold-light truncate max-w-xs">{progressStage || 'Initializing agents…'}</span>
           </div>
-          <div className="max-w-md mx-auto h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
-            <div className="h-full progress-gold w-full"></div>
-          </div>
+          <AuditReportSkeleton />
         </div>
       )}
 
@@ -281,8 +325,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
             <span>{error}</span>
           </div>
           <button
+            type="button"
             onClick={() => handleExecuteAudit(url, focus)}
-            className="px-4 py-1.5 rounded-lg bg-danger-500/20 hover:bg-danger-500/30 text-danger-200 uppercase font-bold text-[10px] tracking-wider transition-colors shrink-0"
+            className="px-4 py-1.5 rounded-lg bg-danger-500/20 hover:bg-danger-500/30 text-danger-200 uppercase font-bold text-[10px] tracking-wider transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             Retry
           </button>
@@ -298,12 +343,14 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
               {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                 <button
                   key={f}
+                  type="button"
+                  aria-pressed={focus === f}
                   onClick={() => {
                     setFocus(f);
                     handleExecuteAudit(url, f);
                   }}
                   disabled={loading}
-                  className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all ${
+                  className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
                     focus === f 
                       ? 'bg-gold text-black' 
                       : 'border border-white/10 text-gray-400 hover:text-white'
@@ -315,6 +362,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
             </div>
             <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={async () => {
                 if (!report?.text || briefing) return;
                 if (!freeLlmModalitiesService.isAvailable()) {
@@ -335,14 +383,15 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                 }
               }}
               disabled={briefing || loading}
-              className="px-4 py-1.5 rounded-lg glass-morphism border border-gold/30 text-xs text-gold-light hover:text-white uppercase tracking-wider font-bold transition-all disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg glass-morphism border border-gold/30 text-xs text-gold-light hover:text-white uppercase tracking-wider font-bold transition-all disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               title="Speak a short audit briefing via FreeLLMAPI TTS"
             >
               {briefing ? 'Speaking…' : 'Brief aloud'}
             </button>
             <button
+              type="button"
               onClick={handleReset}
-              className="px-4 py-1.5 rounded-lg glass-morphism border border-white/10 text-xs text-gray-300 hover:text-white uppercase tracking-wider font-bold transition-all"
+              className="px-4 py-1.5 rounded-lg glass-morphism border border-white/10 text-xs text-gray-300 hover:text-white uppercase tracking-wider font-bold transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               New Audit
             </button>

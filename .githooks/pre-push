@@ -1,3 +1,32 @@
 #!/bin/sh
-# Block pushes when the worktree still contains secret-shaped material.
+# Luminara Suite - Pre-Push Branch Safeguard & Automated Smoke Checks
+# Enforces branch hierarchy: feature/* -> staging (pre-production validation) -> main / prod
+
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+
+# 1. Block direct unvalidated pushes to main / prod
+if [ "$current_branch" = "main" ] || [ "$current_branch" = "prod" ]; then
+  if [ "$ALLOW_DIRECT_PROD_PUSH" != "1" ] && [ -z "$CI" ]; then
+    echo "\033[0;31m[Branch Safeguard Error] Direct push to '$current_branch' is blocked!\033[0m"
+    echo "Multi-tier hierarchy required: feature/* -> staging -> main"
+    echo "Please push to 'staging' first for pre-production validation."
+    echo "To bypass only in critical emergencies: ALLOW_DIRECT_PROD_PUSH=1 git push"
+    exit 1
+  fi
+fi
+
+# 2. Block pushes when the worktree still contains secret-shaped material
+echo "[Pre-Push] 1/3 Checking for secret leaks..."
 node "$(dirname "$0")/../scripts/check-secrets.mjs" --all || exit 1
+
+# 3. Typecheck validation
+echo "[Pre-Push] 2/3 Validating TypeScript types..."
+npm run typecheck || exit 1
+
+# 4. Automated smoke checks
+echo "[Pre-Push] 3/3 Running automated test suite & smoke checks..."
+npm test || exit 1
+node "$(dirname "$0")/../scripts/smoke-check.mjs" --dry-run || exit 1
+
+echo "\033[0;32m[Pre-Push] All branch safeguards and smoke checks passed!\033[0m"
+exit 0

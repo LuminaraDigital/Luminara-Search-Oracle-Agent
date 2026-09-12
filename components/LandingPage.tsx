@@ -34,54 +34,82 @@ const LandingPage: React.FC<LandingPageProps> = ({
       <PremiumAtmosphere intensity="full" />
 
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-5 backdrop-blur-xl bg-black/35 border-b border-white/[0.04]">
-        <div
-          className="flex items-center gap-4 group cursor-pointer"
+        <button
+          type="button"
+          className="flex items-center gap-4 group cursor-pointer text-left focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded-lg"
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="Scroll to top of Luminara Suite"
         >
           <ICONS.LuminaraLogo className="w-9 h-9 group-hover:scale-110 transition-transform duration-700" />
           <div className="flex flex-col leading-none">
             <span className="text-lg font-bold tracking-[0.35em] uppercase gold-text">LUMINARA SUITE</span>
-            <span className="text-[7px] text-gray-500 tracking-[0.55em] font-semibold uppercase mt-1.5">
+            <span className="text-[7px] text-gray-400 tracking-[0.55em] font-semibold uppercase mt-1.5">
               AI search visibility
             </span>
           </div>
-        </div>
+        </button>
 
         <div className="flex items-center gap-4 sm:gap-6 md:gap-8">
           {onNavigateAudit && (
-            <button onClick={onNavigateAudit} className="hidden lg:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-gold-light transition-colors">
+            <button
+              type="button"
+              onClick={onNavigateAudit}
+              className="hidden lg:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-gold-light transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+            >
               Instant Audit
             </button>
           )}
           {onNavigateSuite && (
-            <button onClick={onNavigateSuite} className="hidden lg:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-gold-light transition-colors">
+            <button
+              type="button"
+              onClick={onNavigateSuite}
+              className="hidden lg:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-gold-light transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+            >
               All tools
             </button>
           )}
-          <button onClick={onNavigateInfrastructure} className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-500 hover:text-white transition-colors">
+          <button
+            type="button"
+            onClick={onNavigateInfrastructure}
+            className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
             How It Works
           </button>
-          <button onClick={onNavigateIntelligence} className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-500 hover:text-white transition-colors">
+          <button
+            type="button"
+            onClick={onNavigateIntelligence}
+            className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
             Our AI
           </button>
-          <button onClick={onNavigateWhy} className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-500 hover:text-white transition-colors">
+          <button
+            type="button"
+            onClick={onNavigateWhy}
+            className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
             Why Us
           </button>
-          <button onClick={onNavigatePricing} className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-500 hover:text-white transition-colors">
+          <button
+            type="button"
+            onClick={onNavigatePricing}
+            className="hidden md:block text-[9px] uppercase tracking-[0.28em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
             Pricing
           </button>
 
           {!isAuthenticated ? (
             <div className="flex items-center gap-3">
               <button
+                type="button"
                 onClick={onSignInClick || onEnter}
-                className="text-[9px] font-bold uppercase tracking-[0.2em] text-gray-300 hover:text-gold transition-colors px-2 py-1"
+                className="text-[9px] font-bold uppercase tracking-[0.2em] text-gray-300 hover:text-gold transition-colors px-2 py-1 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
               >
                 Sign in
               </button>
               <button
+                type="button"
                 onClick={onSignUpClick || onEnter}
-                className="px-5 py-2 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-[1.03] active:scale-95 transition-all shadow-[0_12px_40px_rgba(191,149,63,0.25)]"
+                className="px-5 py-2 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-[1.03] active:scale-95 transition-all shadow-[0_12px_40px_rgba(191,149,63,0.25)] focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 Get Started
               </button>
@@ -94,8 +122,9 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 </span>
               )}
               <button
+                type="button"
                 onClick={onEnter}
-                className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-[1.03] active:scale-95 transition-all shadow-[0_12px_40px_rgba(191,149,63,0.25)]"
+                className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-[1.03] active:scale-95 transition-all shadow-[0_12px_40px_rgba(191,149,63,0.25)] focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 Open the app
               </button>
@@ -122,14 +151,16 @@ const LandingPage: React.FC<LandingPageProps> = ({
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
+                  type="button"
                   onClick={onSignInClick || onEnter}
-                  className="px-4 py-2 rounded-xl border border-white/20 text-[10px] font-bold uppercase tracking-wider text-gray-200 hover:text-white hover:border-gold transition-all"
+                  className="px-4 py-2 rounded-xl border border-white/20 text-[10px] font-bold uppercase tracking-wider text-gray-200 hover:text-white hover:border-gold transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
                   Sign in
                 </button>
                 <button
+                  type="button"
                   onClick={onSignUpClick || onEnter}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black text-[10px] font-black uppercase tracking-wider hover:scale-105 transition-all shadow-md"
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black text-[10px] font-black uppercase tracking-wider hover:scale-105 transition-all shadow-md focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
                   Create Account
                 </button>
@@ -151,38 +182,40 @@ const LandingPage: React.FC<LandingPageProps> = ({
             </p>
             <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-2">
               <button
+                type="button"
                 onClick={onEnter}
-                className="px-9 py-4 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:scale-[1.03] active:scale-95 transition-all shadow-[0_20px_60px_rgba(191,149,63,0.28)]"
+                className="px-9 py-4 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:scale-[1.03] active:scale-95 transition-all shadow-[0_20px_60px_rgba(191,149,63,0.28)] focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 {isAuthenticated ? 'Open the app' : 'Get Started: Sign In'}
               </button>
               {onNavigateAudit && (
                 <button
+                  type="button"
                   onClick={onNavigateAudit}
-                  className="px-9 py-4 glass-premium text-gold-light font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:border-gold/60 transition-all"
+                  className="px-9 py-4 glass-premium text-gold-light font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:border-gold/60 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
                   Audit my website
                 </button>
               )}
               <a
                 href="/desktop"
-                className="px-9 py-4 border border-gold/35 text-gold-light font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:border-gold/70 transition-all"
+                className="px-9 py-4 border border-gold/35 text-gold-light font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:border-gold/70 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 Windows app
               </a>
             </div>
             {!isAuthenticated && (
-              <p className="text-[10px] text-gray-500 tracking-wider uppercase font-medium">
+              <p className="text-[10px] text-gray-400 tracking-wider uppercase font-medium">
                 🔒 Gated Access · Persistent memory & continuous AI visibility
               </p>
             )}
-            <p className="text-[11px] text-gray-600 tracking-wide">
+            <p className="text-[11px] text-gray-400 tracking-wide">
               Produced by{' '}
               <a
                 href="https://luminaradigital.io"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-gold/75 hover:text-gold transition-colors"
+                className="text-gold/75 hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
               >
                 Luminara Digital
               </a>
@@ -197,7 +230,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
                   <ICONS.LuminaraLogo className="w-8 h-8" isThinking />
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-[0.35em] gold-text">Live audit stage</div>
-                    <div className="text-[11px] text-gray-500 mt-1">What you open inside the app</div>
+                    <div className="text-[11px] text-gray-400 mt-1">What you open inside the app</div>
                   </div>
                 </div>
                 <span className="text-[9px] uppercase tracking-[0.25em] text-success-400/90 font-bold">Ready</span>
@@ -220,8 +253,9 @@ const LandingPage: React.FC<LandingPageProps> = ({
               </p>
               {onNavigateSuite && (
                 <button
+                  type="button"
                   onClick={onNavigateSuite}
-                  className="mt-5 text-[10px] font-black uppercase tracking-[0.3em] text-gold/80 hover:text-gold transition-colors"
+                  className="mt-5 text-[10px] font-black uppercase tracking-[0.3em] text-gold/80 hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
                 >
                   See all tools →
                 </button>
@@ -247,17 +281,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <div>
                 <div className="text-3xl font-light text-white">4</div>
                 <div className="text-[10px] text-gold uppercase font-black tracking-[0.22em] mt-2">Answer engines</div>
-                <p className="text-[12px] text-gray-500 mt-2 max-w-[12rem]">Google, AI Overviews, ChatGPT, Perplexity.</p>
+                <p className="text-[12px] text-gray-400 mt-2 max-w-[12rem]">Google, AI Overviews, ChatGPT, Perplexity.</p>
               </div>
               <div>
                 <div className="text-3xl font-light text-white">BYOK</div>
                 <div className="text-[10px] text-gold uppercase font-black tracking-[0.22em] mt-2">Your AI keys</div>
-                <p className="text-[12px] text-gray-500 mt-2 max-w-[12rem]">Groq, NIM, Ollama. Or hosted keys behind plan.</p>
+                <p className="text-[12px] text-gray-400 mt-2 max-w-[12rem]">Groq, NIM, Ollama. Or hosted keys behind plan.</p>
               </div>
             </div>
             <button
+              type="button"
               onClick={onNavigateWhy}
-              className="px-10 py-4 bg-gold text-black font-black uppercase tracking-[0.35em] text-[9px] rounded-xl hover:scale-[1.03] transition-all"
+              className="px-10 py-4 bg-gold text-black font-black uppercase tracking-[0.35em] text-[9px] rounded-xl hover:scale-[1.03] transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               Why Luminara
             </button>
@@ -273,22 +308,23 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 </div>
                 <div>
                   <div className="text-xs font-bold uppercase tracking-[0.2em] text-white">Instant Audit</div>
-                  <div className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Plain-English priorities</div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Plain-English priorities</div>
                 </div>
               </div>
               <div className="space-y-4 pt-6">
                 <div className="flex justify-between text-[11px] uppercase tracking-widest">
-                  <span className="text-gray-500">Typical agency year</span>
+                  <span className="text-gray-400">Typical agency year</span>
                   <span className="text-danger-400 font-bold">$120k+</span>
                 </div>
                 <div className="flex justify-between text-[11px] uppercase tracking-widest">
-                  <span className="text-gray-500">Luminara Suite</span>
+                  <span className="text-gray-400">Luminara Suite</span>
                   <span className="gold-text font-bold">Owner-first clarity</span>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={onEnter}
-                className="mt-8 w-full py-4 rounded-xl border border-gold/30 bg-gold/10 text-gold-light font-black uppercase tracking-[0.3em] text-[10px] hover:bg-gold/15 transition-all"
+                className="mt-8 w-full py-4 rounded-xl border border-gold/30 bg-gold/10 text-gold-light font-black uppercase tracking-[0.3em] text-[10px] hover:bg-gold/15 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 {isAuthenticated ? 'Enter workspace' : 'Sign in to Enter Workspace'}
               </button>
@@ -314,7 +350,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
           ].map((sector) => (
             <div key={sector.name} className="text-center min-w-[7rem]">
               <div className="text-[11px] font-black gold-text uppercase tracking-[0.28em]">{sector.name}</div>
-              <div className="text-[10px] text-gray-500 uppercase tracking-[0.2em] mt-2">{sector.desc}</div>
+              <div className="text-[10px] text-gray-400 uppercase tracking-[0.2em] mt-2">{sector.desc}</div>
             </div>
           ))}
         </div>
@@ -326,7 +362,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <h2 className="font-display text-4xl md:text-6xl text-white tracking-tight">
               What the suite does.
             </h2>
-            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-[0.4em] md:pb-2">Product capabilities</p>
+            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.4em] md:pb-2">Product capabilities</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-12">
             {[
@@ -342,14 +378,15 @@ const LandingPage: React.FC<LandingPageProps> = ({
                   {(idx + 1).toString().padStart(2, '0')}
                 </div>
                 <h3 className="text-lg font-semibold tracking-wide text-gray-100 mb-2">{s.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed font-light">{s.desc}</p>
+                <p className="text-gray-400 text-sm leading-relaxed font-light">{s.desc}</p>
               </div>
             ))}
           </div>
           <div className="mt-16 text-center">
             <button
+              type="button"
               onClick={onNavigateInfrastructure}
-              className="px-10 py-4 border border-gold/30 text-gold-light font-black uppercase tracking-[0.35em] text-[9px] rounded-xl hover:bg-gold/10 transition-all"
+              className="px-10 py-4 border border-gold/30 text-gold-light font-black uppercase tracking-[0.35em] text-[9px] rounded-xl hover:bg-gold/10 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               How it works
             </button>
@@ -369,14 +406,15 @@ const LandingPage: React.FC<LandingPageProps> = ({
             </p>
             <div className="flex flex-wrap gap-x-8 gap-y-4 mb-12">
               {['Groq', 'NVIDIA NIM', 'Ollama', 'OpenRouter', 'Firecrawl', 'Tavily'].map((tool) => (
-                <span key={tool} className="text-[11px] font-bold tracking-[0.22em] uppercase text-gray-500 hover:text-gold transition-colors">
+                <span key={tool} className="text-[11px] font-bold tracking-[0.22em] uppercase text-gray-400 hover:text-gold transition-colors">
                   {tool}
                 </span>
               ))}
             </div>
             <button
+              type="button"
               onClick={onNavigateIntelligence}
-              className="px-10 py-4 bg-gold text-black font-black uppercase tracking-[0.35em] text-[9px] rounded-xl hover:scale-[1.03] transition-all"
+              className="px-10 py-4 bg-gold text-black font-black uppercase tracking-[0.35em] text-[9px] rounded-xl hover:scale-[1.03] transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               Our AI
             </button>
@@ -422,7 +460,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             ].map((item) => (
               <div key={item.title} className="p-7 rounded-2xl border border-white/[0.05] bg-white/[0.02] hover:border-gold/25 transition-colors">
                 <h3 className="text-[11px] font-black uppercase tracking-[0.22em] text-white mb-3">{item.title}</h3>
-                <p className="text-sm text-gray-500 leading-relaxed font-light">{item.desc}</p>
+                <p className="text-sm text-gray-400 leading-relaxed font-light">{item.desc}</p>
               </div>
             ))}
           </div>
@@ -435,19 +473,21 @@ const LandingPage: React.FC<LandingPageProps> = ({
             Win the{' '}
             <span className="gold-text animate-title-shimmer font-sans font-medium">market.</span>
           </h2>
-          <p className="text-lg md:text-2xl text-gray-500 font-light leading-relaxed px-4">
+          <p className="text-lg md:text-2xl text-gray-400 font-light leading-relaxed px-4">
             Built by Luminara Digital for business owners who want clearer search and AI visibility.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button
-              className="px-12 py-5 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl shadow-[0_40px_100px_rgba(191,149,63,0.28)] transition-all hover:scale-[1.03]"
+              type="button"
+              className="px-12 py-5 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl shadow-[0_40px_100px_rgba(191,149,63,0.28)] transition-all hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               onClick={onEnter}
             >
               {isAuthenticated ? 'Open the app' : 'Sign in to Open App'}
             </button>
             {onNavigateAudit && (
               <button
-                className="px-12 py-5 glass-premium text-gold-light font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl hover:border-gold/50 transition-all"
+                type="button"
+                className="px-12 py-5 glass-premium text-gold-light font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl hover:border-gold/50 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 onClick={onNavigateAudit}
               >
                 Audit my website
@@ -457,17 +497,17 @@ const LandingPage: React.FC<LandingPageProps> = ({
               href="https://luminaradigital.io"
               target="_blank"
               rel="noopener noreferrer"
-              className="px-12 py-5 border border-white/10 text-gray-300 font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl hover:bg-white/5 hover:text-white transition-all"
+              className="px-12 py-5 border border-white/10 text-gray-300 font-black uppercase tracking-[0.35em] text-[10px] rounded-2xl hover:bg-white/5 hover:text-white transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               Talk to Luminara Digital
             </a>
           </div>
-          <p className="text-[10px] text-gray-600 uppercase tracking-[0.3em]">
+          <p className="text-[10px] text-gray-400 uppercase tracking-[0.3em]">
             A product of{' '}
-            <a href="https://luminaradigital.io" target="_blank" rel="noopener noreferrer" className="text-gold/70 hover:text-gold tracking-[0.15em] transition-colors">
+            <a href="https://luminaradigital.io" target="_blank" rel="noopener noreferrer" className="text-gold/80 hover:text-gold tracking-[0.15em] transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded">
               Luminara Digital
             </a>
-            <span className="text-gray-700"> · Melbourne</span>
+            <span className="text-gray-500"> · Melbourne</span>
           </p>
         </div>
       </section>
@@ -478,7 +518,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <ICONS.LuminaraLogo className="w-11 h-11" />
             <div className="flex flex-col">
               <span className="text-xl font-bold tracking-[0.4em] uppercase gold-text leading-none">LUMINARA SUITE</span>
-              <span className="text-[9px] text-gray-600 uppercase tracking-widest mt-2">Grow with clarity</span>
+              <span className="text-[9px] text-gray-400 uppercase tracking-widest mt-2">Grow with clarity</span>
             </div>
           </div>
           <div className="flex flex-wrap justify-center gap-10">
@@ -493,7 +533,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 href={link.href}
                 target={link.href.startsWith('http') ? '_blank' : undefined}
                 rel="noopener noreferrer"
-                className="text-[9px] text-gray-600 uppercase tracking-widest hover:text-gold transition-colors"
+                className="text-[9px] text-gray-400 uppercase tracking-widest hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
               >
                 {link.label}
               </a>
@@ -501,18 +541,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
         <div className="w-full h-px premium-hairline opacity-60" />
-        <p className="text-[9px] text-gray-600 tracking-[0.12em] text-center">
+        <p className="text-[9px] text-gray-400 tracking-[0.12em] text-center">
           &copy; {new Date().getFullYear()} Luminara Suite. Produced by{' '}
           <a
             href="https://luminaradigital.io"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-gold/80 hover:text-gold transition-colors"
+            className="text-gold/80 hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
           >
             Luminara Digital
           </a>
           {' '}
-          <span className="text-gray-700">(luminaradigital.io)</span>
+          <span className="text-gray-500">(luminaradigital.io)</span>
         </p>
       </footer>
     </div>

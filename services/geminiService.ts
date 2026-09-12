@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { OracleMode, ToolExecution, BusinessDNA, ReportFocus, OrganizerFormat, OrganizerSchema, ChatTurn, NativeEngineId } from "../types";
+import { OracleMode, ToolExecution, BusinessDNA, ReportFocus, OrganizerFormat, OrganizerSchema, ChatTurn, NativeEngineId, StreamChunk } from "../types";
+export type { StreamChunk };
 import { SYSTEM_INSTRUCTIONS } from "../constants";
 import { vfsRetrievalService } from "./vfs/vfsRetrievalService";
 import { vfsMemoryService } from "./vfs/vfsMemoryService";
@@ -12,13 +13,6 @@ import { siteEvidencePackService } from "./scraping/siteEvidencePack";
 import { geminiProxyHttpOptions } from "./apiClient";
 import { wrapUntrustedContent } from "../utils/untrustedContent";
 import { toUserFacingText } from "../utils/userFacingText";
-
-export interface StreamChunk {
-  text?: string;
-  groundingUrls?: Array<{ uri: string; title: string }>;
-  /** Real tool activity (e.g. a completed SERP search) so the UI can show honest progress. */
-  toolExecution?: ToolExecution;
-}
 
 export interface StreamQueryOptions {
   history?: ChatTurn[];

@@ -103,8 +103,9 @@ export const ShipActionGate: React.FC<Props> = ({
           <button
             key={a.id}
             type="button"
+            aria-pressed={selected === a.id}
             onClick={() => setSelected(a.id)}
-            className={`w-full text-left rounded-xl border p-4 transition-all ${
+            className={`w-full text-left rounded-xl border p-4 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
               selected === a.id
                 ? 'border-gold/60 bg-gold/10'
                 : 'border-white/10 bg-black/40 hover:border-white/25'
@@ -120,7 +121,7 @@ export const ShipActionGate: React.FC<Props> = ({
         <button
           type="button"
           onClick={() => commit(selectedAction.id, selectedAction.label)}
-          className="px-6 py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-[0.25em] hover:scale-[1.02] active:scale-95 transition-all"
+          className="px-6 py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-[0.25em] hover:scale-[1.02] active:scale-95 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
         >
           I will ship this
         </button>
@@ -131,14 +132,14 @@ export const ShipActionGate: React.FC<Props> = ({
               commit('deploy-schema', 'Ship schema / structured data');
               onDeploy();
             }}
-            className="px-6 py-3 rounded-xl glass-morphism border border-gold/40 text-gold-light font-black uppercase text-[10px] tracking-[0.25em] hover:bg-gold/10 transition-all flex items-center justify-center gap-2"
+            className="px-6 py-3 rounded-xl glass-morphism border border-gold/40 text-gold-light font-black uppercase text-[10px] tracking-[0.25em] hover:bg-gold/10 transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             <ICONS.Zap className="w-4 h-4" />
             Open 1-click deploy
           </button>
         )}
       </div>
-      <p className="mt-4 text-[10px] text-gray-500 font-mono tracking-wide">
+      <p className="mt-4 text-[10px] text-gray-400 font-mono tracking-wide">
         Domain: {domain || 'unknown'} · Gate key {fp}
       </p>
     </div>

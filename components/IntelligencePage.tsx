@@ -54,21 +54,27 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
       </div>
 
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-6 backdrop-blur-md bg-black/20 border-b border-white/[0.03]">
-        <div className="flex items-center gap-4 group cursor-pointer" onClick={onBack}>
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Return to previous page"
+          className="flex items-center gap-4 group text-left focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded p-1"
+        >
           <ICONS.LuminaraLogo className="w-8 h-8" />
           <div className="flex flex-col leading-none">
             <span className="text-lg font-bold tracking-[0.4em] uppercase gold-text">OUR AI ENGINE</span>
           </div>
-        </div>
+        </button>
         
         <div className="flex items-center gap-6 md:gap-10">
-          <button onClick={onBack} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Return</button>
-          <button onClick={onNavigateInfrastructure} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">How It Works</button>
-          <button onClick={onNavigateWhy} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Why Us</button>
-          <button onClick={onNavigatePricing} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-500 hover:text-white transition-colors">Pricing</button>
+          <button type="button" onClick={onBack} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded px-1.5 py-1">Return</button>
+          <button type="button" onClick={onNavigateInfrastructure} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded px-1.5 py-1">How It Works</button>
+          <button type="button" onClick={onNavigateWhy} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded px-1.5 py-1">Why Us</button>
+          <button type="button" onClick={onNavigatePricing} className="text-[9px] uppercase tracking-[0.3em] font-bold text-gray-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded px-1.5 py-1">Pricing</button>
           <button 
+            type="button"
             onClick={onTerminal}
-            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl"
+            className="px-6 py-2.5 bg-gradient-to-br from-gold to-gold-dark text-black text-[9px] font-black uppercase tracking-[0.2em] rounded-full hover:scale-105 active:scale-95 transition-all shadow-2xl focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             Launch Terminal
           </button>
@@ -133,20 +139,22 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
                <p className="text-xl text-gray-400 font-light leading-relaxed">
                  Our tool performs real-time market simulations. It sees trends before they happen. Use our AI to stay ahead of the game every single day.
                </p>
-               <div className="pt-8 flex flex-wrap justify-center gap-8">
+                <div className="pt-8 flex flex-wrap justify-center gap-8">
                   <button 
+                    type="button"
                     onClick={onTerminal}
-                    className="px-20 py-8 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl shadow-2xl hover:scale-105 transition-all"
+                    className="px-20 py-8 bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl shadow-2xl hover:scale-105 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                   >
                     Engage AI Engine
                   </button>
                   <button 
+                    type="button"
                     onClick={onNavigateInfrastructure}
-                    className="px-20 py-8 glass-morphism border border-white/10 text-white font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl hover:bg-white/5 transition-all"
+                    className="px-20 py-8 glass-morphism border border-white/10 text-white font-black uppercase tracking-[0.5em] text-[10px] rounded-3xl hover:bg-white/5 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                   >
                     View All Modules
                   </button>
-               </div>
+                </div>
             </div>
           </section>
         </div>
@@ -154,7 +162,7 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({ onBack, onTerminal,
 
       <footer className="py-24 px-6 md:px-20 flex flex-col items-center gap-12 relative z-10 bg-black">
         <div className="w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
-        <p className="text-[9px] text-gray-700 uppercase tracking-[0.8em]">&copy; 2025 AI Logic Engine. Processing: Stable.</p>
+        <p className="text-[9px] text-gray-400 uppercase tracking-[0.8em]">&copy; 2025 AI Logic Engine. Processing: Stable.</p>
       </footer>
     </div>
   );
