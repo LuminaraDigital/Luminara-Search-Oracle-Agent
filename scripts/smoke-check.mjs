@@ -50,10 +50,13 @@ const targetUrl = process.env.SMOKE_TARGET_URL || (isStaging ? 'https://staging.
 if (targetUrl && !isDryRun) {
   console.log(`[SmokeCheck] Testing remote health endpoint: ${targetUrl}/api/health`);
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(`${targetUrl}/api/health`, {
       headers: { 'User-Agent': 'Luminara-Smoke-Check/1.0' },
-      signal: AbortSignal.timeout(8000),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
     if (!res.ok) {
       console.error(`[SmokeCheck] Remote health check returned HTTP ${res.status}`);
       process.exit(1);
@@ -66,4 +69,3 @@ if (targetUrl && !isDryRun) {
 }
 
 console.log(`[SmokeCheck] [SUCCESS] All smoke checks passed for ${targetLabel}.`);
-process.exit(0);
