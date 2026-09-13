@@ -459,4 +459,16 @@ describe('proof-of-audit attest route', () => {
     );
     expect(res.status).toBe(401);
   });
+
+  it('keeps public badge verification (GET) reachable without sign-in', async () => {
+    const digest = 'c'.repeat(64);
+    const store = new Map<string, string>([[`poa:${digest}`, JSON.stringify({ digestHex: digest, domain: 'example.com' })]]);
+    const env = makeEnv({ LUMINARA_KV: kv(store) });
+
+    expect((await worker.fetch(req('/api/agent/attest?digest=bad'), env, ctx)).status).toBe(400);
+    expect((await worker.fetch(req(`/api/agent/attest?digest=${'d'.repeat(64)}`), env, ctx)).status).toBe(404);
+    const found = await worker.fetch(req(`/api/agent/attest?digest=${digest}`), env, ctx);
+    expect(found.status).toBe(200);
+    expect(((await found.json()) as { attestation?: { domain?: string } }).attestation?.domain).toBe('example.com');
+  });
 });

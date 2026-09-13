@@ -117,31 +117,30 @@ export function isPublicRoute(path: string, method: string, env?: Env, request?:
 
 export type ProtectedRouteSpec = {
   pattern: RegExp;
-  allowedMethods?: string[];
+  // Methods that require identity. Other methods reach the handler, which owns public reads and 405s.
+  methods?: string[];
 };
 
 /**
  * Protected application API routes that require verified user identity.
- * Method checks are strictly validated to return 405 before identity checks.
  */
 export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
-  { pattern: /^\/workspace$/, allowedMethods: ['GET', 'PUT'] },
-  { pattern: /^\/enterprise\/audit-logs$/, allowedMethods: ['GET'] },
-  { pattern: /^\/auth\/quota$/, allowedMethods: ['GET'] },
-  { pattern: /^\/auth\/link$/, allowedMethods: ['POST'] },
-  { pattern: /^\/license\/activate$/, allowedMethods: ['POST'] },
-  { pattern: /^\/ton\/(invoice|verify)$/, allowedMethods: ['POST'] },
-  { pattern: /^\/agent\/attest$/, allowedMethods: ['POST'] },
+  { pattern: /^\/workspace$/, methods: ['GET', 'PUT'] },
+  { pattern: /^\/enterprise\/audit-logs$/, methods: ['GET'] },
+  { pattern: /^\/auth\/quota$/, methods: ['GET'] },
+  { pattern: /^\/auth\/link$/, methods: ['POST'] },
+  { pattern: /^\/license\/activate$/, methods: ['POST'] },
+  { pattern: /^\/ton\/(invoice|verify)$/, methods: ['POST'] },
+  { pattern: /^\/agent\/attest$/, methods: ['POST'] },
   { pattern: /^\/sentinel\/(register|status)$/ },
 ];
 
 /**
  * Universal Route Guarding Middleware
  * Intercepts requests to protected application endpoints.
- * 1. Validates allowed HTTP methods (returns 405 on mismatch).
- * 2. Checks user credentials via identify().
- * 3. Returns standardized 401 Unauthorized JSON response if unauthenticated.
- * 4. Returns null if allowed to proceed.
+ * 1. Checks user credentials via identify() for the protected methods of a matched route.
+ * 2. Returns standardized 401 Unauthorized JSON response if unauthenticated.
+ * 3. Returns null if allowed to proceed.
  */
 export async function guardApiRoute(request: Request, env: Env, path: string): Promise<Response | null> {
   // CORS Preflight is always allowed
@@ -154,9 +153,8 @@ export async function guardApiRoute(request: Request, env: Env, path: string): P
     return null;
   }
 
-  // Method validation
-  if (protectedRoute.allowedMethods && !protectedRoute.allowedMethods.includes(request.method)) {
-    return json({ error: 'Method not allowed' }, 405);
+  if (protectedRoute.methods && !protectedRoute.methods.includes(request.method)) {
+    return null;
   }
 
   // Check identity (via __session cookie, Authorization Bearer, or Telegram initData)
