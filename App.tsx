@@ -773,16 +773,20 @@ const App: React.FC = () => {
     <>
     {introOverlay}
     <div
-      className="flex flex-col bg-black text-ink overflow-hidden relative selection:bg-gold selection:text-black font-sans"
+      className="flex flex-col bg-black text-ink overflow-x-clip overflow-y-hidden relative selection:bg-gold selection:text-black font-sans"
       style={{
-        height: inTelegram ? 'var(--tg-viewport-stable-height, 100vh)' : '100vh',
-        paddingTop: inTelegram ? 'var(--tg-viewport-content-safe-area-inset-top, var(--tg-viewport-safe-area-inset-top, 0px))' : undefined,
+        height: inTelegram ? 'var(--tg-viewport-stable-height, 100dvh)' : '100dvh',
+        paddingTop: inTelegram
+          ? 'var(--tg-viewport-content-safe-area-inset-top, var(--tg-viewport-safe-area-inset-top, 0px))'
+          : 'env(safe-area-inset-top, 0px)',
         paddingBottom: inTelegram ? 'var(--tg-viewport-safe-area-inset-bottom, 0px)' : undefined,
+        paddingLeft: 'env(safe-area-inset-left, 0px)',
+        paddingRight: 'env(safe-area-inset-right, 0px)',
       }}
     >
       <PremiumAtmosphere intensity="subtle" />
       {/* Universal Top Header - Responsive, guaranteed no overflow */}
-      <header className="flex items-center justify-between px-3 sm:px-6 py-2.5 glass-morphism z-50 border-b border-gold/20 shrink-0 bg-black/80 backdrop-blur-2xl w-full max-w-full">
+      <header className="flex items-center justify-between gap-2 px-2.5 sm:px-6 py-2 sm:py-2.5 glass-morphism z-50 border-b border-gold/20 shrink-0 bg-black/80 backdrop-blur-2xl w-full max-w-full min-w-0">
         {/* Left: Brand Identity */}
         <button
           type="button"
@@ -790,7 +794,7 @@ const App: React.FC = () => {
             if (inTelegram) setView(AppView.DASHBOARD);
             else void logoutToLanding();
           }}
-          className="flex items-center gap-2.5 sm:gap-3 shrink-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-gold rounded-xl p-1 -m-1 transition-all"
+          className="flex items-center gap-2 sm:gap-3 shrink-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-gold rounded-xl p-1 -m-1 transition-all"
           title={inTelegram ? 'Dashboard' : 'Log out and return home'}
           aria-label={inTelegram ? 'Luminara Dashboard' : 'Log out and return home'}
         >
@@ -801,7 +805,7 @@ const App: React.FC = () => {
               isVoice={isVoiceActive} 
             />
           </div>
-          <div className="hidden sm:block">
+          <div className="hidden md:block">
             <h2 className="text-sm sm:text-base font-bold tracking-[0.2em] uppercase gold-text leading-none">
               LUMINARA
             </h2>
@@ -809,13 +813,13 @@ const App: React.FC = () => {
         </button>
 
         {/* Center: Suite Switcher & Quick Navigation */}
-        <nav className="flex items-center gap-1 sm:gap-2 shrink min-w-0 px-1 overflow-x-auto no-scrollbar">
+        <nav className="flex items-center gap-0.5 sm:gap-2 shrink min-w-0 px-0.5 sm:px-1 overflow-x-auto no-scrollbar overscroll-x-contain" aria-label="Primary tools">
           <Button
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.ORACLE_AGENT)}
             aria-pressed={view === AppView.ORACLE_AGENT}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
+            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
               view === AppView.ORACLE_AGENT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -827,7 +831,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.INSTANT_AUDIT)}
             aria-pressed={view === AppView.INSTANT_AUDIT}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
+            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
               view === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -839,7 +843,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.BRAND_MEMORY)}
             aria-pressed={view === AppView.BRAND_MEMORY}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
+            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
               view === AppView.BRAND_MEMORY ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -851,7 +855,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.NOTEBOOK)}
             aria-pressed={view === AppView.NOTEBOOK}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
+            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
               view === AppView.NOTEBOOK ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
             title="Luminara Studio - Grounded Research Dossiers & Audio Overviews"
@@ -867,9 +871,9 @@ const App: React.FC = () => {
               onClick={() => setShowSuiteMenu(!showSuiteMenu)}
               aria-haspopup="menu"
               aria-expanded={showSuiteMenu}
-              aria-pressed={[AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)}
-              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] shrink-0 ${
-                [AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION].includes(view)
+              aria-pressed={[AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
+              className={`px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+                [AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)
                   ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
                   : ''
               }`}
@@ -880,26 +884,34 @@ const App: React.FC = () => {
 
             {showSuiteMenu && (
               <div 
-                className="absolute top-full left-0 mt-2 w-72 glass-morphism border border-gold/30 rounded-2xl p-2 shadow-2xl z-50 bg-black/95 animate-in fade-in zoom-in-95 duration-200"
+                className="absolute top-full right-0 sm:left-0 sm:right-auto mt-2 w-[min(18rem,calc(100vw-1.5rem))] max-h-[min(70dvh,28rem)] overflow-y-auto glass-morphism border border-gold/30 rounded-2xl p-2 shadow-2xl z-50 bg-black/95 animate-in fade-in zoom-in-95 duration-200"
                 onMouseLeave={() => setShowSuiteMenu(false)}
               >
                 <button
                   type="button"
                   onClick={() => { setView(AppView.DASHBOARD); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
                   <span>Home</span>
                 </button>
                 <button
                   type="button"
+                  onClick={() => { setView(AppView.BRAND_MEMORY); setShowSuiteMenu(false); }}
+                  className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                >
+                  <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
+                  <span>Memory</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                 >
                   <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
-                  <div className="flex items-center justify-between flex-1">
-                    <span className="font-bold">Intelligence Studio</span>
-                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold">STUDIO</span>
+                  <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
+                    <span className="font-bold truncate">Intelligence Studio</span>
+                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold shrink-0">STUDIO</span>
                   </div>
                 </button>
                 <button
@@ -979,6 +991,16 @@ const App: React.FC = () => {
                   <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />
                   <span>How Luminara works</span>
                 </button>
+                {!inTelegram && (
+                  <button
+                    type="button"
+                    onClick={() => { setShowSuiteMenu(false); void logoutToLanding(); }}
+                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-400 hover:text-gold hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Close className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Log out</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -988,17 +1010,18 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsOmnibarOpen(true)}
-            className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
+            className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-2 min-h-10 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
             title="Open Omnibar (Cmd+K)"
+            aria-label="Jump to a tool"
           >
             <ICONS.Search className="w-3.5 h-3.5 text-gold" />
             <span className="hidden xl:inline truncate">Jump to a tool</span>
-            <kbd className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
+            <kbd className="hidden lg:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
           </Button>
         </nav>
 
         {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Settings, Log out */}
-        <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 shrink-0">
+        <div className="flex items-center justify-end gap-1 sm:gap-2.5 shrink-0">
           {/* Native Trinity (Groq, NVIDIA NIM, Ollama) Engine Status & Priority */}
           {advancedUi && <NativeEngineHUD />}
 
@@ -1066,7 +1089,7 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsKeyModalOpen(true)}
-            className="p-2 rounded-xl glass-morphism border border-gold/40 text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-all shadow-[0_0_12px_rgba(191,149,63,0.18)]"
+            className="p-2.5 min-h-10 min-w-10 rounded-xl glass-morphism border border-gold/40 text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-all shadow-[0_0_12px_rgba(191,149,63,0.18)]"
             title="Settings (AI Keys & Config)"
             aria-label="Settings and AI keys"
           >
@@ -1104,7 +1127,7 @@ const App: React.FC = () => {
               variant="ghost"
               size="none"
               onClick={() => void logoutToLanding()}
-              className="px-2.5 sm:px-3 py-1.5 glass-morphism border border-white/5 rounded-xl text-[9px] tracking-widest font-black text-gray-500 hover:text-gold hover:bg-transparent shrink-0"
+              className="hidden sm:inline-flex px-2.5 sm:px-3 py-1.5 min-h-10 glass-morphism border border-white/5 rounded-xl text-[9px] tracking-widest font-black text-gray-500 hover:text-gold hover:bg-transparent shrink-0 whitespace-nowrap"
             >
               Log out
             </Button>

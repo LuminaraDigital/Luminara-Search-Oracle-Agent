@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
   <title>Luminara Suite | AI Search &amp; AEO Intelligence</title>
   <meta name="description" content="Luminara Suite audits how your brand shows up in Google, AI Overviews, ChatGPT and Perplexity, then turns the findings into a prioritized action plan.">
@@ -119,15 +119,16 @@
       max-width: 850px;
     }
     .markdown-content h1 {
-      font-size: 2.25rem;
+      font-size: clamp(1.5rem, 5vw, 2.25rem);
       font-weight: 600;
       color: var(--gold-light);
       margin-top: 0;
       margin-bottom: 1.5rem;
       letter-spacing: -0.02em;
+      overflow-wrap: anywhere;
     }
     .markdown-content h2 {
-      font-size: 1.5rem;
+      font-size: clamp(1.15rem, 3.5vw, 1.5rem);
       font-weight: 600;
       color: var(--gold);
       margin-top: 2.5rem;
@@ -136,6 +137,7 @@
       padding-bottom: 0.5rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      overflow-wrap: anywhere;
     }
     .markdown-content h3 {
       font-size: 1.2rem;
@@ -157,6 +159,20 @@
       overflow: hidden;
       background: rgba(255, 255, 255, 0.02);
       box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    @media (max-width: 640px) {
+      .markdown-content th,
+      .markdown-content td {
+        padding: 0.85rem 0.75rem;
+        font-size: 0.85rem;
+      }
+      .markdown-content ul, .markdown-content ol {
+        padding-left: 1.25rem;
+      }
     }
     .markdown-content th {
       text-align: left;
@@ -489,7 +505,7 @@
     }
   </style>
 </head>
-<body class="overflow-x-hidden">
+<body class="overflow-x-clip">
   <div id="boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Loading Luminara Suite" title="Click to skip">
     <div class="boot-glow" aria-hidden="true"></div>
     <div class="boot-mark">

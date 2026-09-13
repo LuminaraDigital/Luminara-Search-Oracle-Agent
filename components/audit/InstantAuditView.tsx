@@ -153,19 +153,19 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 animate-in fade-in duration-700">
+    <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
       {confirmModal}
-      <div className="text-center mb-8">
+      <div className="text-center mb-6 sm:mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Radar className="w-4 h-4 text-gold-light" />
-          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold-light">
+          <span className="text-[10px] font-black uppercase tracking-[0.22em] sm:tracking-[0.3em] text-gold-light">
             {isFullAudit ? 'Full audit' : 'Quick scout'}
           </span>
         </div>
-        <h1 className="text-3xl sm:text-5xl font-bold gold-text tracking-tight mb-3">
+        <h1 className="text-[clamp(1.5rem,6vw,3rem)] font-bold gold-text tracking-tight mb-3 [overflow-wrap:anywhere]">
           Will AI mention your brand?
         </h1>
-        <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
+        <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed px-1">
           Paste your site. Get a plain verdict, evidence chips, and one move to ship this week.
         </p>
       </div>
@@ -197,21 +197,23 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
 
       {/* Controls Card */}
       {!report && (
-        <div className="glass-morphism rounded-2xl border border-gold/30 p-6 sm:p-8 mb-8 shadow-2xl">
+        <div className="glass-morphism rounded-2xl border border-gold/30 p-4 sm:p-6 md:p-8 mb-8 shadow-2xl">
           <div className="flex flex-col gap-6">
             <div>
               <label htmlFor="audit-target-url" className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
                 Target Website Domain / URL
               </label>
-              <div className="relative">
+              <div className="flex flex-col sm:relative gap-2 sm:gap-0">
                 <input
                   id="audit-target-url"
                   type="text"
+                  inputMode="url"
+                  autoComplete="url"
                   value={url}
                   onChange={(e) => handleUrlChange(e.target.value)}
                   placeholder="e.g., luminaradigital.io or yourbrand.com"
                   onKeyDown={(e) => e.key === 'Enter' && handleExecuteAudit(url, focus)}
-                  className={`w-full bg-black/60 border rounded-xl py-3.5 pl-4 pr-36 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner ${
+                  className={`w-full bg-black/60 border rounded-xl py-3.5 px-4 sm:pr-40 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner min-h-12 ${
                     inlineValidationError ? 'border-danger-500/70 focus:border-danger-400' : 'border-white/15 focus:border-gold'
                   }`}
                 />
@@ -220,7 +222,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
                   onClick={() => handleExecuteAudit(url, focus)}
                   disabled={loading}
                   aria-busy={loading}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-gold/20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                  className="sm:absolute sm:right-2 sm:top-1/2 sm:-translate-y-1/2 w-full sm:w-auto min-h-11 px-4 py-3 sm:py-2 rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-md shadow-gold/20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none whitespace-nowrap"
                 >
                   {loading && <div className="w-3 h-3 border-2 border-black/40 border-t-black rounded-full animate-spin" />}
                   <span>{loading ? 'Scanning...' : isFullAudit ? 'Run full audit' : 'Run quick scout'}</span>
