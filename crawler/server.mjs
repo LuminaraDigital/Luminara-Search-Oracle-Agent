@@ -12,7 +12,7 @@ import express from 'express';
 import cors from 'cors';
 import * as cheerio from 'cheerio';
 import { timingSafeEqual } from 'node:crypto';
-import { assertPublicTarget, parsePublicHttpUrl } from './ssrf.mjs';
+import { assertPublicTarget } from './ssrf.mjs';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,12 +27,25 @@ const CRAWLER_TOKEN = (process.env.CRAWLER_TOKEN || '').trim();
 // an attacker with access to the API could otherwise route the browser through their own proxy.
 const CRAWLER_PROXY = (process.env.CRAWLER_PROXY || '').trim();
 const MAX_TIMEOUT_MS = 60_000;
+const IS_LOOPBACK_HOST = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
+
+// Fail closed: a non-loopback bind with no token would let anyone who can reach the port drive a
+// real browser (SSRF, credential-stuffing via proxy, etc). Refuse to start rather than warn.
+if (!IS_LOOPBACK_HOST && !CRAWLER_TOKEN) {
+  console.error(
+    '[Luminara Crawler] FATAL: HOST is not loopback and CRAWLER_TOKEN is empty. Refusing to start ' +
+      'without a token, since anyone who can reach this port could drive the browser. Set CRAWLER_TOKEN ' +
+      'or bind HOST to 127.0.0.1.'
+  );
+  process.exit(1);
+}
 
 app.disable('x-powered-by');
 app.use(cors({ methods: ['GET', 'POST'], allowedHeaders: ['content-type', 'x-crawler-token', 'authorization'] }));
 app.use(express.json({ limit: '256kb' }));
 
 function tokenMatches(presented) {
+  // No token configured is only ever reachable here on a loopback bind (enforced at startup above).
   if (!CRAWLER_TOKEN) return true;
   const given = Buffer.from(String(presented || ''));
   const expected = Buffer.from(CRAWLER_TOKEN);
@@ -415,10 +428,25 @@ app.post('/scrape', async (req, res) => {
     });
 
     // Redirects and subresources are checked too: a public page must not pull the browser onto a
-    // private host (DNS rebinding and redirect-based SSRF are checked syntactically per request).
-    await context.route('**/*', route => {
+    // private host. Each distinct hostname is DNS-resolved (not just syntax-checked) so a redirect
+    // or subresource pointed at a rebinding domain (e.g. *.nip.io -> 127.0.0.1) is still refused.
+    const hostRoutableCache = new Map();
+    async function isRoutableTarget(reqUrl) {
+      if (/^(data|blob|about):/i.test(reqUrl)) return true;
+      let hostname;
+      try {
+        hostname = new URL(reqUrl).hostname.toLowerCase();
+      } catch {
+        return false;
+      }
+      if (hostRoutableCache.has(hostname)) return hostRoutableCache.get(hostname);
+      const verdict = (await assertPublicTarget(reqUrl)).ok;
+      hostRoutableCache.set(hostname, verdict);
+      return verdict;
+    }
+    await context.route('**/*', async route => {
       const reqUrl = route.request().url();
-      if (/^(data|blob|about):/i.test(reqUrl) || parsePublicHttpUrl(reqUrl)) return route.continue();
+      if (await isRoutableTarget(reqUrl)) return route.continue();
       return route.abort('blockedbyclient');
     });
 
@@ -539,10 +567,6 @@ app.post('/serp', async (req, res) => {
     });
   }
 });
-
-if (HOST !== '127.0.0.1' && HOST !== 'localhost' && HOST !== '::1' && !CRAWLER_TOKEN) {
-  console.warn('[Luminara Crawler] WARNING: HOST is not loopback and CRAWLER_TOKEN is empty. Anyone who can reach this port can drive the browser. Set CRAWLER_TOKEN.');
-}
 
 app.listen(PORT, HOST, () => {
   console.log(`[Luminara Crawler] Patchright Stealth Runner & SERP Engine listening on ${HOST}:${PORT}${CRAWLER_TOKEN ? ' (token required)' : ''}`);
