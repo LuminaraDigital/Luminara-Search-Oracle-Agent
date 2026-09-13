@@ -1,6 +1,8 @@
 # Copy to .dev.vars for `wrangler dev` (never commit .dev.vars). Production uses `wrangler secret put`.
 BOT_TOKEN=
 TELEGRAM_WEBHOOK_SECRET=
+# Secret for verifying signed auth lifecycle webhooks (openssl rand -hex 32)
+AUTH_WEBHOOK_SECRET=
 # Same as VITE_FIREBASE_PROJECT_ID (public project id; used to verify ID tokens via Google JWKS).
 FIREBASE_PROJECT_ID=luminara-suite
 GROQ_API_KEY=

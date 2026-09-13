@@ -336,10 +336,13 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
       {/* Header Section */}
       <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-white/10 pb-6">
         <div>
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex flex-wrap items-center gap-3 mb-2">
             <span className="w-8 h-[1px] bg-gold"></span>
             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-gold-light">
               Forecasting
+            </span>
+            <span role="note" className="text-[9px] px-2 py-0.5 rounded-full bg-warning-500/10 border border-warning-500/30 text-warning-300 font-mono">
+              Simulated demo, not real measurements
             </span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight flex items-center gap-3">

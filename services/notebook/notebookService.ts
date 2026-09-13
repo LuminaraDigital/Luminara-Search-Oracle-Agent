@@ -26,7 +26,46 @@ const LEGACY_NOTEBOOKS_KEY = 'luminara_notebooklm_dossiers';
 const ACTIVE_NOTEBOOK_KEY = 'luminara_studio_active_id';
 const LEGACY_ACTIVE_KEY = 'luminara_notebooklm_active_id';
 import { DEMO_NOTEBOOK } from './demoNotebook';
+import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from '../../utils/untrustedContent';
 export { DEMO_NOTEBOOK };
+
+export function buildNotebookQuerySystemPrompt(sources: NotebookSource[]): string {
+  const formattedCorpus = sources.map((s, idx) => {
+    return `--- [SOURCE ${idx + 1}: ${s.title}] (ID: ${s.id}) ---\n${s.content.slice(0, 4000)}\n`;
+  }).join('\n\n');
+
+  return `You are a strict, grounded research intelligence engine (Luminara Grounded Intelligence standard).
+You answer questions ONLY using facts provided in the following SOURCES.
+${UNTRUSTED_CONTENT_RULE}
+
+Grounding Rules:
+1. Ground every claim directly in the provided sources. Do not invent or assume facts not in the sources.
+2. If the answer cannot be found in the sources, clearly state: "The provided sources do not contain this information."
+3. Cite sources inline using bracketed numbers like [1], [2] immediately following the cited statement.
+4. Output your response in natural, authoritative Markdown.
+5. At the very end of your response, add a section exactly formatted as:
+<!-- CITATIONS -->
+[1]: "Exact quote or excerpt from Source 1 supporting this statement"
+[2]: "Exact quote or excerpt from Source 2 supporting this statement"
+<!-- END_CITATIONS -->
+
+SOURCES:
+${wrapUntrustedContent('NOTEBOOK_SOURCES', formattedCorpus)}
+`;
+}
+
+export function buildStudioArtifactSystemPrompt(sources: NotebookSource[]): string {
+  const corpusText = sources.map((s, i) => `[Source ${i + 1}: ${s.title}]\n${s.content.slice(0, 3000)}`).join('\n\n');
+
+  return `You are the Luminara Intelligence Studio synthesizer.
+Synthesize the provided sources into a world-class documentation artifact.
+Strictly ground all points in the sources.
+${UNTRUSTED_CONTENT_RULE}
+
+SOURCES:
+${wrapUntrustedContent('NOTEBOOK_SOURCES', corpusText)}
+`;
+}
 
 export class NotebookService {
   private static instance: NotebookService;
@@ -325,28 +364,7 @@ export class NotebookService {
       return fallbackMsg;
     }
 
-    // Build Grounding Context
-    const formattedCorpus = activeSources.map((s, idx) => {
-      return `--- [SOURCE ${idx + 1}: ${s.title}] (ID: ${s.id}) ---\n${s.content.slice(0, 4000)}\n`;
-    }).join('\n\n');
-
-    const systemPrompt = `You are a strict, grounded research intelligence engine (Luminara Grounded Intelligence standard).
-You answer questions ONLY using facts provided in the following SOURCES.
-
-Grounding Rules:
-1. Ground every claim directly in the provided sources. Do not invent or assume facts not in the sources.
-2. If the answer cannot be found in the sources, clearly state: "The provided sources do not contain this information."
-3. Cite sources inline using bracketed numbers like [1], [2] immediately following the cited statement.
-4. Output your response in natural, authoritative Markdown.
-5. At the very end of your response, add a section exactly formatted as:
-<!-- CITATIONS -->
-[1]: "Exact quote or excerpt from Source 1 supporting this statement"
-[2]: "Exact quote or excerpt from Source 2 supporting this statement"
-<!-- END_CITATIONS -->
-
-SOURCES:
-${formattedCorpus}
-`;
+    const systemPrompt = buildNotebookQuerySystemPrompt(activeSources);
 
     const userMessage: NotebookMessage = {
       id: `user-${Date.now()}`,
@@ -447,8 +465,6 @@ ${formattedCorpus}
       throw new Error('Please select at least one source in the notebook before generating an artifact.');
     }
 
-    const corpusText = activeSources.map((s, i) => `[Source ${i + 1}: ${s.title}]\n${s.content.slice(0, 3000)}`).join('\n\n');
-
     let prompt = '';
     let title = '';
 
@@ -475,13 +491,7 @@ ${formattedCorpus}
         break;
     }
 
-    const systemPrompt = `You are the Luminara Intelligence Studio synthesizer.
-Synthesize the provided sources into a world-class documentation artifact.
-Strictly ground all points in the sources.
-
-SOURCES:
-${corpusText}
-`;
+    const systemPrompt = buildStudioArtifactSystemPrompt(activeSources);
 
     let generatedContent = '';
     try {

@@ -5,9 +5,41 @@
  * from notebook sources and manages synchronized dual-voice playback via Web Speech API.
  */
 
-import { AudioOverview, AudioOverviewTurn, Notebook } from '../../types';
+import { AudioOverview, AudioOverviewTurn, Notebook, NotebookSource } from '../../types';
 import { aiProviderService, safeJsonParse } from '../aiProviderService';
 import { notebookService } from './notebookService';
+import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from '../../utils/untrustedContent';
+
+export function buildAudioOverviewPrompt(sources: NotebookSource[]): string {
+  const corpusText = sources
+    .map((s, i) => `[Source ${i + 1}: ${s.title}]\n${s.content.slice(0, 2500)}`)
+    .join('\n\n');
+
+  return `You are the executive director of Luminara Deep Dive, a top-tier executive intelligence and AI visibility audio briefing.
+Write a natural, engaging, and analytical conversational dialogue between two expert AI hosts discussing the following sources:
+- Host 1: "Alex" (Inquisitive, sets the stage, frames the strategic big picture, energetic tone).
+- Host 2: "Sam" (Analytical, digs into specifics, pulls out technical nuances, competitive data, and actionable takeaways).
+
+Rules:
+1. Make the conversation sound authentic: use natural transitions, casual interjections ("Right", "Exactly", "Here's what's fascinating", "Wait, so..."), but keep it deeply informative.
+2. Discuss the key insights, competitor gaps, and strategic actions from the sources.
+3. Write between 5 and 8 alternating dialogue turns.
+4. Output STRICT JSON format as follows:
+{
+  "title": "Short catchy podcast episode title",
+  "summary": "1-2 sentence episode summary",
+  "script": [
+    { "speaker": "Alex", "text": "Opening hook..." },
+    { "speaker": "Sam", "text": "Nuanced reaction and first key point..." }
+  ]
+}
+
+${UNTRUSTED_CONTENT_RULE}
+
+SOURCES:
+${wrapUntrustedContent('NOTEBOOK_SOURCES', corpusText)}
+`;
+}
 
 export interface AudioPlayerState {
   isPlaying: boolean;
@@ -54,32 +86,7 @@ export class AudioOverviewService {
       throw new Error('Please select at least one source before generating an Audio Overview podcast.');
     }
 
-    const corpusText = activeSources
-      .map((s, i) => `[Source ${i + 1}: ${s.title}]\n${s.content.slice(0, 2500)}`)
-      .join('\n\n');
-
-    const prompt = `You are the executive director of Luminara Deep Dive, a top-tier executive intelligence and AI visibility audio briefing.
-Write a natural, engaging, and analytical conversational dialogue between two expert AI hosts discussing the following sources:
-- Host 1: "Alex" (Inquisitive, sets the stage, frames the strategic big picture, energetic tone).
-- Host 2: "Sam" (Analytical, digs into specifics, pulls out technical nuances, competitive data, and actionable takeaways).
-
-Rules:
-1. Make the conversation sound authentic: use natural transitions, casual interjections ("Right", "Exactly", "Here's what's fascinating", "Wait, so..."), but keep it deeply informative.
-2. Discuss the key insights, competitor gaps, and strategic actions from the sources.
-3. Write between 5 and 8 alternating dialogue turns.
-4. Output STRICT JSON format as follows:
-{
-  "title": "Short catchy podcast episode title",
-  "summary": "1-2 sentence episode summary",
-  "script": [
-    { "speaker": "Alex", "text": "Opening hook..." },
-    { "speaker": "Sam", "text": "Nuanced reaction and first key point..." }
-  ]
-}
-
-SOURCES:
-${corpusText}
-`;
+    const prompt = buildAudioOverviewPrompt(activeSources);
 
     let generatedScript: AudioOverviewTurn[] = [];
     let title = `Deep Dive: ${nb.title}`;

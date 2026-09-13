@@ -5,6 +5,22 @@
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
 import { activateLicenseKey } from './licenseService';
+import { PROVIDERS } from './providerRelay';
+import { claimStarsCharge, isStarsLedgerReady, releaseStarsCharge } from './paymentLedger';
+
+const PREMIUM_ENGINE_LABELS: Record<string, string> = {
+  nim: 'NVIDIA NIM',
+  ollama: 'Sovereign Ollama',
+  openrouter: 'OpenRouter',
+};
+
+/** Names only the paid-tier engines that have a hosted key configured, so bot copy never over-promises. */
+export function premiumEnginesPhrase(env: Env): string {
+  const labels = Object.entries(PREMIUM_ENGINE_LABELS)
+    .filter(([id]) => PROVIDERS[id]?.auth(env, new Headers(), {}).ok)
+    .map(([, label]) => label);
+  return labels.length ? labels.join(', ') : 'premium hosted AI engines';
+}
 
 export type PlanMeta = {
   title: string;
@@ -21,7 +37,7 @@ export type PlanMeta = {
 export const PLANS: Record<string, PlanMeta> = {
   starter: {
     title: 'Luminara Starter',
-    description: 'Unlock NVIDIA NIM, Sovereign Ollama & OpenRouter. Unlimited AI audits for up to 2 sites, monthly re-check, Brand Memory. 30 days.',
+    description: 'Unlock premium hosted AI engines. Unlimited AI audits for up to 2 sites, monthly re-check, Brand Memory. 30 days.',
     stars: 2500,
     days: 30,
     domainLimit: 2,
@@ -268,6 +284,9 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       } else if (typeof q.total_amount === 'number' && q.total_amount !== plan.stars) {
         ok = false;
         errorMessage = `Price mismatch. Expected ${plan.stars} Stars.`;
+      } else if (!(await isStarsLedgerReady(env))) {
+        ok = false;
+        errorMessage = 'Payments are temporarily unavailable. Please try again in a few minutes.';
       }
 
       await api(env, 'answerPreCheckoutQuery', ok
@@ -291,18 +310,36 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         const chargeId = String(sp.telegram_payment_charge_id || '');
         const chargeKey = chargeId ? `stars:charge:${chargeId}` : '';
 
-        // Idempotency check: avoid double-crediting if Telegram retries webhook delivery
-        if (chargeKey && env.LUMINARA_KV) {
-          const alreadyProcessed = await env.LUMINARA_KV.get(chargeKey, 'json');
-          if (alreadyProcessed) {
-            console.warn(`[Stars] Duplicate payment webhook for charge ${chargeId}, skipping duplicate credit`);
-            return;
-          }
-        }
-
         const now = Date.now();
         const loginId = String(userId);
         const accountId = env.LUMINARA_KV ? await resolveAccountId(env, loginId) : loginId;
+
+        // Charges credited before the D1 ledger existed are recorded only in KV.
+        if (chargeKey && env.LUMINARA_KV && (await env.LUMINARA_KV.get(chargeKey))) {
+          console.warn(`[Stars] Duplicate payment webhook for charge ${chargeId}, skipping duplicate credit`);
+          return;
+        }
+
+        const claim = await claimStarsCharge(env, chargeId, accountId);
+        if (!claim.ok) {
+          if (claim.reason === 'duplicate') {
+            console.warn(`[Stars] Duplicate payment webhook for charge ${chargeId}, skipping duplicate credit`);
+            return;
+          }
+          // Telegram will not redeliver a successful_payment, so refund rather than keep Stars we cannot credit.
+          console.error(`[Stars] Could not record charge ${chargeId || '(missing id)'} (${claim.reason}); refunding instead of crediting.`);
+          const refund = chargeId ? await refundStarPayment(env, userId, chargeId) : { ok: false };
+          if (msg.chat?.id) {
+            await api(env, 'sendMessage', {
+              chat_id: msg.chat.id,
+              text: refund.ok
+                ? 'We could not activate your plan right now, so your Stars have been refunded. Please try again in a few minutes.'
+                : 'We could not activate your plan right now. Send /paysupport with your receipt and we will sort it out.',
+              reply_markup: openAppKeyboard(env),
+            });
+          }
+          return;
+        }
         const existing = env.LUMINARA_KV
           ? ((await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null)
           : null;
@@ -318,7 +355,12 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         };
 
         if (env.LUMINARA_KV) {
-          await writeSubscriptionRecord(env, loginId, record);
+          try {
+            await writeSubscriptionRecord(env, loginId, record);
+          } catch (err) {
+            await releaseStarsCharge(env, chargeId);
+            throw err;
+          }
           if (chargeKey) {
             await env.LUMINARA_KV.put(
               chargeKey,
@@ -362,7 +404,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         chat_id: chatId,
         text:
           '*Luminara Suite - Native AI Oracle*\n' +
-          'Empirical AI search visibility audits and enterprise intelligence. Groq Cloud is free to try; upgrade to unlock NVIDIA NIM, Sovereign Ollama, and OpenRouter frontier models.\n\n' +
+          'Empirical AI search visibility audits and enterprise intelligence. Groq Cloud is free to try; upgrade to unlock ' + premiumEnginesPhrase(env) + '.\n\n' +
           'Tap below to launch the Telegram native application.',
         parse_mode: 'Markdown',
         reply_markup: openAppKeyboard(env, startParam),
@@ -379,7 +421,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         text:
           `*Luminara Suite Subscription Plans (Telegram Stars)*\n\n` +
           lines.join('\n\n') +
-          `\n\nTap /buy_starter, /buy_growth, or /buy_agency to pay directly in chat, or open the app to subscribe with Stars or TON.`,
+          `\n\nTap /buy_starter, /buy_growth, or /buy_agency to pay directly in chat, or open the app to see every payment option.`,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
@@ -525,7 +567,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           text:
             `🎉 *License Key Activated!*\n\n` +
             `Your *${PLANS[res.plan!]?.title || res.plan}* plan is now active for ${res.durationDays} days (until ${new Date(res.expiresAt!).toUTCString()}).\n\n` +
-            `All frontier AI models (NVIDIA NIM, Sovereign Ollama, OpenRouter) and unlimited search audits are now unlocked!`,
+            `Your plan now includes ${premiumEnginesPhrase(env)} and unlimited search audits.`,
           parse_mode: 'Markdown',
           reply_markup: openAppKeyboard(env),
         });

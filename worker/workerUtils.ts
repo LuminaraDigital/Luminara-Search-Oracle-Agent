@@ -20,9 +20,18 @@ export function corsHeaders(env: Env, request: Request): Record<string, string> 
         'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
         'Access-Control-Allow-Headers': 'content-type, x-telegram-init-data, x-provider-key, authorization, x-goog-api-key, x-goog-api-client',
         'Access-Control-Expose-Headers': 'x-quota-limit, x-quota-remaining, x-quota-reset',
+        'Access-Control-Allow-Credentials': 'true',
         'Vary': 'Origin',
       }
     : {};
+}
+
+/** Extract __session token from Cookie header */
+export function getSessionCookieToken(request: Request): string | null {
+  const cookie = request.headers.get('cookie') || '';
+  if (!cookie) return null;
+  const match = cookie.match(/(?:^|;\s*)__session=([^;]+)/);
+  return match ? decodeURIComponent(match[1].trim()) : null;
 }
 
 /** Constant-time string comparison for shared secrets (webhook token). */
@@ -46,15 +55,29 @@ export function billingId(user: HostedIdentity): string {
 
 /**
  * Identifies the caller:
- * 1) Telegram Mini App initData (x-telegram-init-data), or
- * 2) Firebase Auth ID token (Authorization: Bearer …),
+ * 1) HttpOnly __session cookie token (Cookie: __session=…), or
+ * 2) Firebase Auth ID token (Authorization: Bearer …), or
+ * 3) Telegram Mini App initData (x-telegram-init-data),
  * and when BOTH are present, links them onto one account_id so Stars/TON/Stripe share entitlements.
  * Upserts a durable user row when identity succeeds.
  * Returns null when auth is optional and absent.
  */
 export async function identify(request: Request, env: Env): Promise<{ user: HostedIdentity | null; error?: string }> {
   const initData = request.headers.get('x-telegram-init-data');
-  const bearer = bearerFromAuthorization(request.headers.get('authorization'));
+  const cookieToken = getSessionCookieToken(request);
+  const bearer = bearerFromAuthorization(request.headers.get('authorization')) || cookieToken;
+
+  // CSRF protection: verify Origin header on state-changing cookie-based mutations
+  if (cookieToken && !initData && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+    const origin = request.headers.get('Origin');
+    if (origin) {
+      const allowed = (env.ALLOWED_ORIGINS || env.WEBAPP_URL || '').split(',').map(s => s.trim()).filter(Boolean);
+      const isAllowed = allowed.some(a => origin === a || origin === a.replace(/\/$/, ''));
+      if (!isAllowed) {
+        return { user: null, error: 'CSRF validation failed: Origin header rejected' };
+      }
+    }
+  }
 
   let telegramUser: HostedIdentity | null = null;
   let firebaseUser: HostedIdentity | null = null;

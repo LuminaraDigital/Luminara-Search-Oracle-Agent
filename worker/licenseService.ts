@@ -4,8 +4,12 @@
  * Powers promotional growth campaigns, partner passes, and enterprise prepaid keys.
  * Enforces 1-trial-per-account anti-abuse rules, multi-tier entitlement elevation,
  * and cross-platform synchronization between Telegram Mini App and Web.
+ *
+ * Redemption is claimed atomically in D1 (worker/paymentLedger.ts) before any entitlement is written.
+ * KV `license:key:*` stays the record store and read cache.
  */
 import type { Env } from './index';
+import { claimLicenseRedemption, releaseLicenseRedemption } from './paymentLedger';
 import { normalizePlanId } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 
@@ -21,6 +25,8 @@ export interface LicenseKeyRecord {
   redeemedAt?: number;
   maxRedemptions?: number;
   redemptionCount?: number;
+  revoked?: boolean;
+  revokedAt?: number;
 }
 
 export interface LicenseActivationResult {
@@ -30,6 +36,14 @@ export interface LicenseActivationResult {
   durationDays?: number;
   error?: string;
 }
+
+const LICENSE_UNAVAILABLE_ERROR = 'License activation is temporarily unavailable. Please try again in a few minutes.';
+const LICENSE_REDEEMED_ERROR = 'This license key has already been redeemed.';
+const LICENSE_REDEEMED_BY_ACCOUNT_ERROR = 'This license key has already been redeemed on this account.';
+const LICENSE_REVOKED_ERROR =
+  'This license key has been revoked and can no longer be redeemed. Contact support if you think this is a mistake.';
+const TRIAL_CLAIMED_ERROR =
+  'A temporary promotional trial has already been redeemed on this account. Upgrade with Telegram Stars for continued access.';
 
 /**
  * Built-in Promotional Trial Keys:
@@ -55,16 +69,29 @@ export function normalizeLicenseKey(rawKey: string): string {
     .replace(/[^A-Z0-9-]/g, '');
 }
 
+const KEY_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+function randomKeyChars(length: number): string {
+  let out = '';
+  while (out.length < length) {
+    const bytes = new Uint8Array(length * 2);
+    crypto.getRandomValues(bytes);
+    for (const byte of bytes) {
+      // 252 is the largest multiple of 36 below 256; skipping higher bytes keeps characters uniform.
+      if (byte < 252 && out.length < length) out += KEY_ALPHABET[byte % KEY_ALPHABET.length];
+    }
+  }
+  return out;
+}
+
 /**
- * Generates a clean, memorable license key formatted as LUM-TIER-XXD-XXXX.
+ * Generates a clean, memorable license key formatted as LUM-TIER-XXD-XXXX-XXXX.
  */
 export function formatGeneratedLicenseKey(plan: string, durationDays: number): string {
   const normPlan = normalizePlanId(plan);
   const tag = normPlan === 'agency' ? 'PRO' : normPlan.toUpperCase().slice(0, 6);
-  const randPart = Math.random().toString(36).substring(2, 6).toUpperCase() +
-                   '-' +
-                   Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `LUM-${tag}-${durationDays}D-${randPart}`;
+  const rand = randomKeyChars(8);
+  return `LUM-${tag}-${durationDays}D-${rand.slice(0, 4)}-${rand.slice(4)}`;
 }
 
 /**
@@ -115,61 +142,93 @@ export async function activateLicenseKey(
     return { ok: false, error: 'Invalid or unrecognized license key. Please check the code and try again.' };
   }
 
-  // 2. Anti-Abuse Check: Only ONE promotional trial allowed per account
+  if (keyRecord.revoked === true) {
+    return { ok: false, error: LICENSE_REVOKED_ERROR };
+  }
+
+  // 2. Fast rejects from KV (also covers trials and redemptions recorded before the D1 ledger existed)
   if (keyRecord.isTrial) {
-    const trialClaimKey = `license:trial:claimed:${accountId}`;
-    const alreadyClaimed = await env.LUMINARA_KV.get(trialClaimKey);
+    const alreadyClaimed = await env.LUMINARA_KV.get(`license:trial:claimed:${accountId}`);
     if (alreadyClaimed) {
-      return {
-        ok: false,
-        error: 'A temporary promotional trial has already been redeemed on this account. Upgrade with Telegram Stars or TON for continued access.',
-      };
+      return { ok: false, error: TRIAL_CLAIMED_ERROR };
     }
   }
 
-  // 3. Single-use redemption check for unique keys
-  const maxUses = keyRecord.maxRedemptions || 1;
+  const maxUses = Math.max(1, keyRecord.maxRedemptions || 1);
   const currentUses = keyRecord.redemptionCount || 0;
-  if (keyRecord.redeemed && currentUses >= maxUses) {
-    return { ok: false, error: 'This license key has already been redeemed.' };
+  // Same condition existing KV records were judged by before the ledger; the D1 claim enforces the count.
+  if (keyRecord.redeemed === true && currentUses >= maxUses) {
+    return { ok: false, error: LICENSE_REDEEMED_ERROR };
+  }
+
+  // 3. Atomic claim (single-use count, one redemption per account, one trial per account)
+  const claim = await claimLicenseRedemption(env, {
+    key,
+    accountId,
+    maxRedemptions: maxUses,
+    priorRedemptions: currentUses,
+    isTrial: keyRecord.isTrial,
+  });
+  if (!claim.ok) {
+    switch (claim.reason) {
+      case 'trial_already_claimed':
+        return { ok: false, error: TRIAL_CLAIMED_ERROR };
+      case 'account_already_redeemed':
+        return { ok: false, error: LICENSE_REDEEMED_BY_ACCOUNT_ERROR };
+      case 'exhausted':
+        return { ok: false, error: LICENSE_REDEEMED_ERROR };
+      default:
+        return { ok: false, error: LICENSE_UNAVAILABLE_ERROR };
+    }
   }
 
   const now = Date.now();
   const durationMs = keyRecord.durationDays * 86400_000;
+  let expiresAt: number;
 
-  // 4. Calculate subscription extension
-  const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
-  const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
-  const expiresAt = baseTime + durationMs;
+  // 4. Extend subscription
+  try {
+    const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
+    const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
+    expiresAt = baseTime + durationMs;
 
-  // 5. Update user subscription state in KV & D1
-  await writeSubscriptionRecord(env, userId, {
-    plan: keyRecord.plan,
-    paymentMethod: 'license_key',
-    orderId: `lic_${key}`,
-    startedAt: now,
-    expiresAt,
-  });
-
-  // 6. Record trial claim if applicable
-  if (keyRecord.isTrial) {
-    await env.LUMINARA_KV.put(
-      `license:trial:claimed:${accountId}`,
-      JSON.stringify({ key, redeemedAt: now, plan: keyRecord.plan, durationDays: keyRecord.durationDays }),
-      { expirationTtl: 31536000 }, // 1 year anti-abuse persistence
-    );
+    await writeSubscriptionRecord(env, userId, {
+      plan: keyRecord.plan,
+      paymentMethod: 'license_key',
+      orderId: `lic_${key}`,
+      startedAt: now,
+      expiresAt,
+    });
+  } catch (err) {
+    // Release so the user can retry; if the write partly landed, a retry may extend twice, which beats burning a paid key.
+    await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
+    console.error(`[License] Subscription write failed after claim; claim released: ${err instanceof Error ? err.message : err}`);
+    return { ok: false, error: LICENSE_UNAVAILABLE_ERROR };
   }
 
-  // 7. Update license record
-  const nextUses = currentUses + 1;
-  const updatedRecord: LicenseKeyRecord = {
-    ...keyRecord,
-    redeemed: nextUses >= maxUses,
-    redeemedBy: accountId,
-    redeemedAt: now,
-    redemptionCount: nextUses,
-  };
-  await env.LUMINARA_KV.put(kvKey, JSON.stringify(updatedRecord), { expirationTtl: 86400 * 365 });
+  // 5. Refresh KV cache. The D1 claim is authoritative, so a failure here must not undo the grant.
+  try {
+    if (keyRecord.isTrial) {
+      await env.LUMINARA_KV.put(
+        `license:trial:claimed:${accountId}`,
+        JSON.stringify({ key, redeemedAt: now, plan: keyRecord.plan, durationDays: keyRecord.durationDays }),
+        { expirationTtl: 31536000 }, // 1 year anti-abuse persistence
+      );
+    }
+
+    // Re-read so an operator revocation written meanwhile is not overwritten.
+    const latest = (await env.LUMINARA_KV.get(kvKey, 'json')) as LicenseKeyRecord | null;
+    const updatedRecord: LicenseKeyRecord = {
+      ...(latest ?? keyRecord),
+      redeemed: claim.redemptionCount >= claim.maxRedemptions,
+      redeemedBy: accountId,
+      redeemedAt: now,
+      redemptionCount: claim.redemptionCount,
+    };
+    await env.LUMINARA_KV.put(kvKey, JSON.stringify(updatedRecord), { expirationTtl: 86400 * 365 });
+  } catch (err) {
+    console.error(`[License] KV cache refresh failed after a granted redemption: ${err instanceof Error ? err.message : err}`);
+  }
 
   return {
     ok: true,
@@ -180,7 +239,7 @@ export async function activateLicenseKey(
 }
 
 /**
- * Admin utility to mint new license keys.
+ * Admin utility to mint new license keys. Never overwrites an existing key record.
  */
 export async function generateLicenseKeys(
   env: Env,
@@ -202,9 +261,19 @@ export async function generateLicenseKeys(
 
   const generated: LicenseKeyRecord[] = [];
   const now = Date.now();
+  const MAX_ATTEMPTS = 5;
 
   for (let i = 0; i < count; i++) {
-    const key = formatGeneratedLicenseKey(plan, durationDays);
+    let key = '';
+    for (let attempt = 0; attempt < MAX_ATTEMPTS && !key; attempt++) {
+      const candidate = formatGeneratedLicenseKey(plan, durationDays);
+      if (generated.some((r) => r.key === candidate)) continue;
+      if ((await env.LUMINARA_KV.get(`license:key:${candidate}`)) === null) key = candidate;
+    }
+    if (!key) {
+      console.error('[License] Could not mint a non-colliding key after several attempts; skipping one key.');
+      continue;
+    }
     const record: LicenseKeyRecord = {
       key,
       plan,
@@ -234,7 +303,7 @@ export type LicenseSeedInput = {
 
 /**
  * Idempotently import known serial keys into KV (ops vault seed).
- * Skips keys that already exist so redeemed state is preserved.
+ * Skips any key that already has a record (even unparseable), so revoked/redeemed state is preserved.
  */
 export async function importLicenseKeys(
   env: Env,
@@ -253,8 +322,8 @@ export async function importLicenseKeys(
       continue;
     }
     const kvKey = `license:key:${key}`;
-    const existing = await env.LUMINARA_KV.get(kvKey, 'json');
-    if (existing) {
+    const existing = await env.LUMINARA_KV.get(kvKey);
+    if (existing !== null) {
       skipped.push(key);
       continue;
     }

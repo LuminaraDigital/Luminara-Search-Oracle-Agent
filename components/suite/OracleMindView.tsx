@@ -207,7 +207,7 @@ export const OracleMindView: React.FC<OracleMindViewProps> = ({ dna, onRouteToDN
       <div className="border-b border-white/5 bg-gradient-to-b from-surface-gold via-black to-black px-6 py-6 shrink-0">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-gold/30 to-gold-dark/10 border border-gold/40 flex items-center justify-center shadow-sm shadow-gold/30">
                 <ICONS.Brain className="w-4 h-4 text-gold-light" />
               </div>
@@ -216,6 +216,9 @@ export const OracleMindView: React.FC<OracleMindViewProps> = ({ dna, onRouteToDN
               </span>
               <span className="text-[9px] px-2 py-0.5 rounded-full bg-success-500/10 border border-success-500/30 text-success-400 font-mono">
                 Clean-Room Architecture
+              </span>
+              <span role="note" className="text-[9px] px-2 py-0.5 rounded-full bg-warning-500/10 border border-warning-500/30 text-warning-300 font-mono">
+                Simulated demo, not real measurements
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold gold-text tracking-tight">

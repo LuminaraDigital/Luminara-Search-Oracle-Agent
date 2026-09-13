@@ -9,10 +9,17 @@
  */
 
 import express from 'express';
-import cors from 'cors';
 import * as cheerio from 'cheerio';
 import { timingSafeEqual } from 'node:crypto';
 import { assertPublicTarget } from './ssrf.mjs';
+import {
+  createRateLimiter,
+  createSemaphore,
+  parseAllowedOrigins,
+  parsePositiveInt,
+  resolveClientIp,
+  resolveCorsOrigin,
+} from './limits.mjs';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,6 +33,15 @@ const CRAWLER_TOKEN = (process.env.CRAWLER_TOKEN || '').trim();
 // Optional outbound proxy for the headless browser. Callers can no longer pick one per request:
 // an attacker with access to the API could otherwise route the browser through their own proxy.
 const CRAWLER_PROXY = (process.env.CRAWLER_PROXY || '').trim();
+// Browser origins allowed cross-origin (comma-separated, exact). Unset means the local Vite app; empty means none.
+const CRAWLER_ALLOWED_ORIGINS = parseAllowedOrigins(
+  process.env.CRAWLER_ALLOWED_ORIGINS ?? 'http://localhost:3000,http://127.0.0.1:3000'
+);
+const CRAWLER_MAX_CONCURRENCY = parsePositiveInt(process.env.CRAWLER_MAX_CONCURRENCY, 2, 1, 32);
+const CRAWLER_RATE_LIMIT_PER_MIN = parsePositiveInt(process.env.CRAWLER_RATE_LIMIT_PER_MIN, 30, 1, 10_000);
+// Only behind a reverse proxy you control; otherwise X-Forwarded-For is caller-chosen and dodges the limit.
+const CRAWLER_TRUST_PROXY = String(process.env.CRAWLER_TRUST_PROXY || '').trim().toLowerCase() === 'true';
+const BUSY_RETRY_AFTER_SEC = 5;
 const MAX_TIMEOUT_MS = 60_000;
 const IS_LOOPBACK_HOST = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 
@@ -41,8 +57,27 @@ if (!IS_LOOPBACK_HOST && !CRAWLER_TOKEN) {
 }
 
 app.disable('x-powered-by');
-app.use(cors({ methods: ['GET', 'POST'], allowedHeaders: ['content-type', 'x-crawler-token', 'authorization'] }));
-app.use(express.json({ limit: '256kb' }));
+
+// Preflights from origins outside the allowlist get 403; other requests proceed with no ACAO header.
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+  const allowedOrigin = resolveCorsOrigin(origin, CRAWLER_ALLOWED_ORIGINS);
+  if (origin) res.vary('Origin');
+  if (allowedOrigin) {
+    res.set('Access-Control-Allow-Origin', allowedOrigin);
+    res.set('Access-Control-Expose-Headers', 'Retry-After');
+  }
+  if (req.method !== 'OPTIONS') return next();
+  if (!allowedOrigin) return res.status(403).end();
+  res.set('Access-Control-Allow-Methods', 'GET, POST');
+  res.set('Access-Control-Allow-Headers', 'content-type, x-crawler-token, authorization');
+  res.set('Access-Control-Max-Age', '600');
+  // Chrome Private Network Access: an allowlisted https app calling this loopback port must opt in.
+  if (req.get('access-control-request-private-network') === 'true') {
+    res.set('Access-Control-Allow-Private-Network', 'true');
+  }
+  return res.status(204).end();
+});
 
 function tokenMatches(presented) {
   // No token configured is only ever reachable here on a loopback bind (enforced at startup above).
@@ -55,17 +90,59 @@ function tokenMatches(presented) {
 }
 
 app.use((req, res, next) => {
-  if (req.path === '/health' || req.method === 'OPTIONS') return next();
+  if (req.path === '/health') return next();
   const bearer = String(req.get('authorization') || '').replace(/^Bearer\s+/i, '');
   if (tokenMatches(req.get('x-crawler-token') || bearer)) return next();
   res.status(401).json({ success: false, error: 'Missing or invalid crawler token' });
 });
+
+// Parsed after auth so unauthenticated callers cannot make us buffer request bodies.
+app.use(express.json({ limit: '256kb' }));
 
 const clampNumber = (value, fallback, min, max) => {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
 };
+
+const rateLimiter = createRateLimiter({ limit: CRAWLER_RATE_LIMIT_PER_MIN, windowMs: 60_000 });
+const browserSlots = createSemaphore(CRAWLER_MAX_CONCURRENCY);
+
+/**
+ * Wraps a heavy route: per-IP rate limit, then one browser slot held for the whole handler and
+ * released exactly once in `finally`. The handler receives a signal that aborts on client disconnect.
+ */
+function heavyRoute(handler) {
+  return async (req, res) => {
+    const ip = resolveClientIp(req.socket.remoteAddress, req.get('x-forwarded-for'), CRAWLER_TRUST_PROXY);
+    const rate = rateLimiter.hit(ip);
+    if (!rate.allowed) {
+      res.set('Retry-After', String(rate.retryAfterSec));
+      return res.status(429).json({ success: false, error: 'Rate limit exceeded, retry later' });
+    }
+
+    const release = browserSlots.tryAcquire();
+    if (!release) {
+      res.set('Retry-After', String(BUSY_RETRY_AFTER_SEC));
+      return res.status(429).json({ success: false, error: 'Crawler is busy, retry later' });
+    }
+
+    const aborter = new AbortController();
+    const onClose = () => {
+      if (!res.writableFinished) aborter.abort();
+    };
+    res.on('close', onClose);
+    try {
+      await handler(req, res, aborter.signal);
+    } catch (err) {
+      console.error('[Crawler] Unhandled route error:', err?.message || err);
+      if (!res.headersSent) res.status(500).json({ success: false, error: 'Internal crawler error' });
+    } finally {
+      res.off('close', onClose);
+      release();
+    }
+  };
+}
 
 // Health Check Endpoint
 app.get('/health', (_req, res) => {
@@ -291,7 +368,7 @@ async function executeFastHttpSerp(query, { num = 10, hl = 'en', gl = 'us' } = {
 /**
  * Stealth-path Patchright Chromium Google SERP request.
  */
-async function executePatchrightSerp(query, { num = 10, hl = 'en', gl = 'us', proxy, timeout = 25000 } = {}) {
+async function executePatchrightSerp(query, { num = 10, hl = 'en', gl = 'us', proxy, timeout = 25000, signal } = {}) {
   const pr = await getPatchright();
   const chromium = pr.chromium;
 
@@ -318,6 +395,8 @@ async function executePatchrightSerp(query, { num = 10, hl = 'en', gl = 'us', pr
 
   try {
     browser = await chromium.launch(launchOptions);
+    if (signal?.aborted) throw new Error('Client disconnected');
+    signal?.addEventListener('abort', () => browser.close().catch(() => {}), { once: true });
     context = await browser.newContext({
       viewport: { width: 1920, height: 1080 },
       userAgent:
@@ -374,7 +453,7 @@ async function executePatchrightSerp(query, { num = 10, hl = 'en', gl = 'us', pr
 }
 
 // Scrape Endpoint (Generic Web Page Scraping)
-app.post('/scrape', async (req, res) => {
+app.post('/scrape', heavyRoute(async (req, res, signal) => {
   const body = req.body || {};
   const url = body.url;
   const waitFor = clampNumber(body.waitFor, 1500, 0, 15_000);
@@ -418,6 +497,9 @@ app.post('/scrape', async (req, res) => {
     }
 
     browser = await chromium.launch(launchOptions);
+    // A disconnected client should not pin a browser slot until the navigation timeout.
+    if (signal.aborted) throw new Error('Client disconnected');
+    signal.addEventListener('abort', () => browser.close().catch(() => {}), { once: true });
 
     context = await browser.newContext({
       viewport: { width: 1920, height: 1080 },
@@ -504,10 +586,10 @@ app.post('/scrape', async (req, res) => {
     if (context) await context.close().catch(() => {});
     if (browser) await browser.close().catch(() => {});
   }
-});
+}));
 
 // SERP Scrape Endpoint (Google Search Grounding & AEO Intelligence)
-app.post('/serp', async (req, res) => {
+app.post('/serp', heavyRoute(async (req, res, signal) => {
   const body = req.body || {};
   const query = typeof body.query === 'string' ? body.query.trim().slice(0, 500) : '';
   const num = clampNumber(body.num, 10, 1, 20);
@@ -538,7 +620,7 @@ app.post('/serp', async (req, res) => {
     // Tier 2: Patchright Stealth Fallback
     if (!parsed) {
       tier = 'patchright-stealth';
-      parsed = await executePatchrightSerp(query, { num, hl, gl, proxy });
+      parsed = await executePatchrightSerp(query, { num, hl, gl, proxy, signal });
     }
 
     const latencyMs = Date.now() - startTime;
@@ -566,9 +648,13 @@ app.post('/serp', async (req, res) => {
       results: [],
     });
   }
-});
+}));
 
 app.listen(PORT, HOST, () => {
   console.log(`[Luminara Crawler] Patchright Stealth Runner & SERP Engine listening on ${HOST}:${PORT}${CRAWLER_TOKEN ? ' (token required)' : ''}`);
+  console.log(
+    `[Luminara Crawler] Limits: ${browserSlots.max} concurrent sessions, ${CRAWLER_RATE_LIMIT_PER_MIN} req/min per IP` +
+      `${CRAWLER_TRUST_PROXY ? ' (X-Forwarded-For trusted)' : ''}, ${CRAWLER_ALLOWED_ORIGINS.size} CORS origin(s)`
+  );
   console.log(`[Luminara Crawler] Health check available at http://localhost:${PORT}/health`);
 });

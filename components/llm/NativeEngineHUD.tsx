@@ -81,21 +81,21 @@ export const NativeEngineHUD: React.FC = () => {
   };
 
   const simulateFailover = () => {
-    const failedName = activeEngine === 'groq' ? 'Groq Cloud LPU' : 'NVIDIA NIM Enterprise';
-    const activeNext = activeEngine === 'groq' ? 'OpenRouter Frontier Intelligence' : 'Ollama Sovereign SLM';
-    const nextModel = activeEngine === 'groq' ? 'openai/gpt-4o' : 'llama3.2 (Local Daemon)';
+    // Fail over only to an engine the probe found available, never to a hardcoded one.
+    const next = priorityOrder.find((id) => id !== activeEngine && statuses.find((x) => x.id === id)?.isAvailable);
+    if (!next) return;
 
     aiProviderService.dispatchFailover({
-      failedProvider: failedName,
-      failedModel: activeEngine === 'groq' ? 'openai/gpt-oss-120b' : 'meta/llama-3.2-11b-vision-instruct',
+      failedProvider: getProviderBadge(activeEngine).label,
+      failedModel: statuses.find((x) => x.id === activeEngine)?.model || 'auto',
       reason: 'HTTP 429 Rate Limit Exceeded (Simulated Test)',
-      activatedProvider: activeNext,
-      activatedModel: nextModel,
+      activatedProvider: getProviderBadge(next).label,
+      activatedModel: statuses.find((x) => x.id === next)?.model || 'auto',
       latencyMs: 145,
       timestamp: Date.now(),
     });
 
-    setActiveEngine(activeEngine === 'groq' ? 'openrouter' : 'ollama');
+    setActiveEngine(next);
   };
 
   const getProviderBadge = (id: string) => {

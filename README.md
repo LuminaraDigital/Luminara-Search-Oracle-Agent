@@ -186,10 +186,13 @@ Under the hood these are [LanguageTool](https://languagetool.org) (LGPL-2.1) and
 
 Operator steps:
 
-1. Put a long random string in `.env` as `UMAMI_APP_SECRET`, then start the whole helper stack (crawler on :3001, writing check on :8010, tracking dashboard on :3002):
+1. In `.env` set `CRAWLER_TOKEN`, `UMAMI_APP_SECRET` and `UMAMI_DB_PASSWORD` to long random values (`openssl rand -hex 32` for each), and `UMAMI_DB_USER` / `UMAMI_DB_NAME` (for example `umami`). Compose refuses to start while any of them is missing. Then start the whole helper stack (crawler on :3001, writing check on :8010, tracking dashboard on :3002, all published on 127.0.0.1 only):
    ```bash
    docker compose up -d
    ```
+   Upgrading an existing install that used the old built-in `umami`/`umami` database login: Postgres only reads these variables when the `umami-db-data` volume is first created. Run `docker compose exec umami-db psql -U umami -d umami`, type `\password umami` and enter the new `UMAMI_DB_PASSWORD`, then `docker compose up -d` again (or delete the volume, which also deletes tracking data).
+
+   Crawler settings: paste the same `CRAWLER_TOKEN` into Settings > Crawler token. A browser can only call the crawler from origins listed in `CRAWLER_ALLOWED_ORIGINS` (comma-separated exact origins, never `*`; unset defaults to the local dev app `http://localhost:3000,http://127.0.0.1:3000`, empty allows none, and you add `https://luminarasuite.com` to use the hosted app with your own crawler). `CRAWLER_MAX_CONCURRENCY` (default 2) caps browser sessions and `CRAWLER_RATE_LIMIT_PER_MIN` (default 30) caps requests per client IP; both answer `429` with `Retry-After`. Set `CRAWLER_TRUST_PROXY=true` only behind a reverse proxy you control.
 2. Open http://localhost:3002, sign in with the default `admin` / `umami` and change the password right away.
 3. In the dashboard add the website, then paste the tracking snippet it gives you into the site's pages.
 4. Create an API key in the dashboard (Profile, API keys), or plan to use the username and password.

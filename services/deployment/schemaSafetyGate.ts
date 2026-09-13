@@ -16,14 +16,52 @@ export interface SchemaSafetyResult {
   severity: GateSeverity;
   issues: SchemaSafetyIssue[];
   parsedTypes: string[];
+  /** Re-serialized JSON with `<`, `>`, `&`, U+2028/9 escaped. Only set when okToDeploy; deployers must ship this, not the raw input. */
+  canonicalJson?: string;
 }
 
 const DEPRECATED_RICH_RESULT_TYPES = new Set(['howto', 'faqpage']);
 
-function stripFences(raw: string): string {
+const FENCE_RE = /```(?:json)?\s*([\s\S]*?)```/i;
+
+function stripFences(raw: string): { body: string; outsideFence: boolean } {
   const trimmed = (raw || '').trim();
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  return fenced ? fenced[1].trim() : trimmed;
+  const fenced = trimmed.match(FENCE_RE);
+  if (!fenced) return { body: trimmed, outsideFence: false };
+  const outside = trimmed.replace(fenced[0], '').trim();
+  return { body: fenced[1].trim(), outsideFence: outside.length > 0 };
+}
+
+// Any of these in the raw text or a decoded string can terminate a <script> block or open an HTML comment state.
+const RAW_BREAKOUT_PATTERNS: RegExp[] = [
+  /<\s*[\\/]+\s*script/i,
+  /<!--/,
+  /\\u003c\s*(?:\\u002f|\\?\/)+\s*script/i,
+  /\\u003c\s*!\s*--/i,
+];
+
+const DECODED_BREAKOUT_PATTERNS: RegExp[] = [/<\s*[\\/]+\s*script/i, /<!--/];
+
+function hasBreakout(text: string, patterns: RegExp[]): boolean {
+  return patterns.some((re) => re.test(text));
+}
+
+function anyStringHasBreakout(node: unknown): boolean {
+  if (typeof node === 'string') return hasBreakout(node, DECODED_BREAKOUT_PATTERNS);
+  if (!node || typeof node !== 'object') return false;
+  if (Array.isArray(node)) return node.some(anyStringHasBreakout);
+  return Object.entries(node as Record<string, unknown>).some(
+    ([k, v]) => hasBreakout(k, DECODED_BREAKOUT_PATTERNS) || anyStringHasBreakout(v),
+  );
+}
+
+function toCanonicalJson(parsed: unknown): string {
+  return JSON.stringify(parsed, null, 2)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 }
 
 function collectTypes(node: unknown, out: string[]): void {
@@ -53,34 +91,55 @@ function hasContext(node: unknown): boolean {
   return false;
 }
 
+function blocked(issue: SchemaSafetyIssue): SchemaSafetyResult {
+  return { okToDeploy: false, severity: 'critical', issues: [issue], parsedTypes: [] };
+}
+
+const BREAKOUT_ISSUE: SchemaSafetyIssue = {
+  code: 'SCRIPT_BREAKOUT',
+  severity: 'critical',
+  message: 'Schema JSON-LD contains a </script> or <!-- sequence that could break out of the script tag.',
+};
+
 /**
  * Validates Schema.org JSON-LD before CMS / script-tag deployment.
  */
 export function validateSchemaJsonLd(schemaJsonLd: string): SchemaSafetyResult {
   const issues: SchemaSafetyIssue[] = [];
   const parsedTypes: string[] = [];
-  const raw = stripFences(schemaJsonLd);
+  const input = typeof schemaJsonLd === 'string' ? schemaJsonLd : '';
+  const { body: raw, outsideFence } = stripFences(input);
 
   if (!raw) {
-    issues.push({
+    return blocked({
       code: 'EMPTY_SCHEMA',
       severity: 'critical',
       message: 'Schema JSON-LD is empty. Nothing to deploy.',
     });
-    return { okToDeploy: false, severity: 'critical', issues, parsedTypes };
+  }
+
+  if (hasBreakout(input, RAW_BREAKOUT_PATTERNS)) return blocked({ ...BREAKOUT_ISSUE });
+
+  if (outsideFence) {
+    return blocked({
+      code: 'CONTENT_OUTSIDE_FENCE',
+      severity: 'critical',
+      message: 'Schema JSON-LD has extra text outside the JSON code block.',
+    });
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    issues.push({
+    return blocked({
       code: 'INVALID_JSON',
       severity: 'critical',
       message: 'Schema JSON-LD is not valid JSON.',
     });
-    return { okToDeploy: false, severity: 'critical', issues, parsedTypes };
   }
+
+  if (anyStringHasBreakout(parsed)) return blocked({ ...BREAKOUT_ISSUE });
 
   collectTypes(parsed, parsedTypes);
   const uniqueTypes = [...new Set(parsedTypes)];
@@ -120,6 +179,7 @@ export function validateSchemaJsonLd(schemaJsonLd: string): SchemaSafetyResult {
     severity,
     issues,
     parsedTypes: uniqueTypes,
+    canonicalJson: hasCritical ? undefined : toCanonicalJson(parsed),
   };
 }
 

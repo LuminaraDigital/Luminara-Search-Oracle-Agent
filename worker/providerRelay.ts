@@ -192,7 +192,7 @@ export async function proxyProvider(
     if (!isPaidSubscriber && PAID_TIER_PROVIDERS.has(providerId)) {
       return json(
         {
-          error: `The ${providerId.toUpperCase()} engine is a premium feature reserved for active subscribers. Upgrade with Telegram Stars or TON to access NVIDIA NIM, Sovereign Ollama, and OpenRouter, or bring your own API key in Settings.`,
+          error: `The ${providerId.toUpperCase()} engine is a premium feature reserved for active subscribers. Upgrade your plan to use premium hosted AI engines, or bring your own API key in Settings.`,
           code: 'TIER_UPGRADE_REQUIRED',
           requiredTier: 'paid',
           provider: providerId,

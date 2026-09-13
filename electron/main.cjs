@@ -34,7 +34,23 @@ function configureLlmSessionSecurity() {
     { urls: allowedLlmPatterns },
     (details, callback) => {
       const responseHeaders = { ...details.responseHeaders };
-      responseHeaders['access-control-allow-origin'] = ['*'];
+      for (const name of Object.keys(responseHeaders)) {
+        if (name.toLowerCase() === 'access-control-allow-origin') delete responseHeaders[name];
+      }
+      // Local helpers (crawler, Ollama) accept only the app's own origin; hosted vendors still need a key.
+      if (/^https?:\/\/(127\.0\.0\.1|localhost):/i.test(details.url)) {
+        let appOrigin = null;
+        try {
+          appOrigin = new URL(resolveWebappUrl()).origin;
+        } catch {
+          appOrigin = null;
+        }
+        if (!appOrigin) return callback({ responseHeaders });
+        responseHeaders['access-control-allow-origin'] = [appOrigin];
+        responseHeaders.vary = ['Origin'];
+      } else {
+        responseHeaders['access-control-allow-origin'] = ['*'];
+      }
       responseHeaders['access-control-allow-headers'] = ['*'];
       responseHeaders['access-control-allow-methods'] = ['GET, POST, OPTIONS, PUT, DELETE'];
       responseHeaders['access-control-allow-private-network'] = ['true'];

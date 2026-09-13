@@ -6,18 +6,27 @@ services:
     container_name: luminara-crawler
     restart: unless-stopped
     # Published on loopback only: the crawler drives a real browser and must not be reachable from
-    # the network. To share it, put it behind an HTTPS reverse proxy and set CRAWLER_TOKEN.
+    # the network. To share it, put it behind an HTTPS reverse proxy.
     ports:
       - "127.0.0.1:3001:3001"
     environment:
       - PORT=3001
       - HOST=0.0.0.0
       - NODE_ENV=production
-      # Optional shared secret; paste the same value into Settings > Crawler token in the app.
-      - CRAWLER_TOKEN=${CRAWLER_TOKEN:-}
+      # Required because the container binds 0.0.0.0; paste the same value into Settings > Crawler token.
+      - CRAWLER_TOKEN=${CRAWLER_TOKEN:?Set CRAWLER_TOKEN in .env (openssl rand -hex 32)}
       # Optional outbound proxy for the headless browser (http://user:pass@host:port).
       - CRAWLER_PROXY=${CRAWLER_PROXY:-}
+      # Browser origins allowed to call the crawler, comma-separated exact origins (never *).
+      # Unset: the local dev app. Set empty to allow none; add https://luminarasuite.com for the hosted app.
+      - CRAWLER_ALLOWED_ORIGINS=${CRAWLER_ALLOWED_ORIGINS-http://localhost:3000,http://127.0.0.1:3000}
+      - CRAWLER_MAX_CONCURRENCY=${CRAWLER_MAX_CONCURRENCY:-2}
+      - CRAWLER_RATE_LIMIT_PER_MIN=${CRAWLER_RATE_LIMIT_PER_MIN:-30}
+      - CRAWLER_TRUST_PROXY=${CRAWLER_TRUST_PROXY:-false}
     shm_size: 1gb
+    # Sized for the default of 2 concurrent browsers; raise together with CRAWLER_MAX_CONCURRENCY.
+    mem_limit: 2g
+    cpus: 2.0
     security_opt:
       - no-new-privileges:true
     cap_drop:

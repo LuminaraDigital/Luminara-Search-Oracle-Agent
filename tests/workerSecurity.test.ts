@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
 import {
@@ -177,6 +177,38 @@ describe('Telegram endpoints', () => {
     expect(good.status).toBe(200);
     const malformed = await worker.fetch(req('/api/telegram/webhook', { method: 'POST', body: '{not json', headers: { 'x-telegram-bot-api-secret-token': 's3cret' } }), env, ctx);
     expect(malformed.status).toBe(400);
+  });
+
+  it('soft-throttles a flooding chat but never throttles payment updates', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } })));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const env = makeEnv({ BOT_TOKEN: '1:a', TELEGRAM_WEBHOOK_SECRET: 's3cret' });
+      let processed = 0;
+      const countingCtx = { waitUntil: () => { processed++; }, passThroughOnException: () => {} } as unknown as ExecutionContext;
+      const send = (update: unknown) => worker.fetch(
+        req('/api/telegram/webhook', { method: 'POST', body: JSON.stringify(update), headers: { 'x-telegram-bot-api-secret-token': 's3cret' } }, '149.154.167.1'),
+        env,
+        countingCtx,
+      );
+
+      for (let i = 0; i < 30; i++) {
+        expect((await send({ edited_message: { chat: { id: 777001 }, text: 'spam' } })).status).toBe(200);
+      }
+      expect(processed).toBe(20);
+      expect(warn).toHaveBeenCalledWith('[telegram] webhook update throttled', expect.stringContaining('777001'));
+
+      const before = processed;
+      expect((await send({ pre_checkout_query: { id: 'q1', from: { id: 777001 }, currency: 'XTR', total_amount: 1, invoice_payload: 'starter:777001' } })).status).toBe(200);
+      expect((await send({ message: { chat: { id: 777001 }, from: { id: 777001 }, successful_payment: { invoice_payload: 'x:1', total_amount: 1 } } })).status).toBe(200);
+      expect(processed).toBe(before + 2);
+
+      await send({ edited_message: { chat: { id: 777002 }, text: 'other chat' } });
+      expect(processed).toBe(before + 3);
+    } finally {
+      warn.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('validates auth/invoice input shape without leaking internals', async () => {

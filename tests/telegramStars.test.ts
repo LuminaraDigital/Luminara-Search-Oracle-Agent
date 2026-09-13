@@ -4,9 +4,11 @@ import {
   handleTelegramUpdate,
   refundStarPayment,
   normalizePlanId,
+  premiumEnginesPhrase,
   PLANS,
 } from '../worker/telegramBot';
 import type { Env } from '../worker/index';
+import { createSqliteD1 } from './helpers/sqliteD1';
 
 // Mock in-memory KV
 class MockKV {
@@ -132,6 +134,7 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
 
   describe('handleTelegramUpdate: pre_checkout_query', () => {
     it('answers preCheckoutQuery with ok: true when plan, currency, and amount match', async () => {
+      env.DB = createSqliteD1();
       mockFetch.mockResolvedValueOnce({
         json: async () => ({ ok: true }),
       });
@@ -221,6 +224,10 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
   });
 
   describe('handleTelegramUpdate: successful_payment', () => {
+    beforeEach(() => {
+      env.DB = createSqliteD1();
+    });
+
     it('records subscription and stores receipt by charge ID idempotently', async () => {
       mockFetch.mockResolvedValueOnce({
         json: async () => ({ ok: true }),
@@ -296,6 +303,35 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
   });
 
   describe('refundStarPayment (Telegram Bot API)', () => {
+    it('rejects pre-checkout while the payment ledger is unavailable, so nobody is charged', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      env.DB = createSqliteD1({ skipMigrations: ['0004'] });
+      mockFetch.mockResolvedValue({ json: async () => ({ ok: true, result: true }) });
+      await handleTelegramUpdate({
+        pre_checkout_query: { id: 'q_ledger', currency: 'XTR', total_amount: PLANS.starter.stars, invoice_payload: 'starter:4242' },
+      }, env);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(String(mockFetch.mock.calls[0][0])).toContain('answerPreCheckoutQuery');
+      expect(body.ok).toBe(false);
+      errSpy.mockRestore();
+    });
+
+    it('refunds instead of crediting when the charge cannot be recorded', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      env.DB = undefined;
+      mockFetch.mockResolvedValue({ json: async () => ({ ok: true, result: true }) });
+      await handleTelegramUpdate({
+        message: {
+          chat: { id: 4243 },
+          from: { id: 4243 },
+          successful_payment: { invoice_payload: 'starter:4243', total_amount: PLANS.starter.stars, currency: 'XTR', telegram_payment_charge_id: 'ch_no_ledger' },
+        },
+      }, env);
+      expect(await mockKv.get('sub:4243', 'json')).toBeNull();
+      expect(mockFetch.mock.calls.some(([url]) => String(url).endsWith('/refundStarPayment'))).toBe(true);
+      errSpy.mockRestore();
+    });
+
     it('calls Telegram API refundStarPayment and updates KV state', async () => {
       const chargeId = 'tg_charge_refund_me';
       await mockKv.put(
@@ -723,5 +759,23 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       expect(systemPromptSent).toContain('Fastest B2B invoice reconciliation');
       expect(systemPromptSent).toContain('Rival Corp');
     });
+  });
+});
+
+describe('premium engine copy honesty', () => {
+  it('names only engines with a configured hosted key', () => {
+    const phrase = premiumEnginesPhrase({ NVIDIA_API_KEY: 'x' } as unknown as Env);
+    expect(phrase).toBe('NVIDIA NIM');
+    expect(phrase).not.toContain('OpenRouter');
+  });
+
+  it('falls back to provider-neutral wording when none are configured', () => {
+    expect(premiumEnginesPhrase({} as unknown as Env)).toBe('premium hosted AI engines');
+  });
+
+  it('keeps static Stars plan descriptions provider-neutral', () => {
+    for (const plan of Object.values(PLANS)) {
+      expect(plan.description).not.toMatch(/OpenRouter|NVIDIA|Ollama/);
+    }
   });
 });

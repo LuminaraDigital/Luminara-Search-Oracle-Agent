@@ -1,8 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useTonConnectUI, useTonWallet, TonConnectButton } from '@tonconnect/ui-react';
 import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma';
-import { createStarsInvoice, activateLicenseKey, getServerHealthSync, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
+import { createStarsInvoice, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
 import { executeTonPayment } from '../../services/ton/tonService';
+import {
+  effectiveTab,
+  formatEngineList,
+  isFreeEngineConfigured,
+  paidEngineLabels,
+  resolvePaymentOptions,
+  TELEGRAM_MINI_APP_URL,
+  type PaymentRail,
+} from './paymentOptions';
 import { ICONS } from '../../constants';
 import { toUserFacingText } from '../../utils/userFacingText';
 
@@ -16,7 +25,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   const [internalOpen, setInternalOpen] = useState(false);
   const [triggerReason, setTriggerReason] = useState<string | null>(null);
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'stars' | 'ton'>(isInTelegram() ? 'stars' : 'ton');
+  const [health, setHealth] = useState(getServerHealthSync);
+  const inTg = isInTelegram();
+  const paymentOptions = resolvePaymentOptions({ inTelegram: inTg, health });
+  const [activeTab, setActiveTab] = useState<PaymentRail>(paymentOptions.defaultTab);
+  const tab = effectiveTab(activeTab, paymentOptions);
+  const engineLabels = paidEngineLabels(health);
+  const engineList = formatEngineList(engineLabels);
+  const groqLive = isFreeEngineConfigured(health);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
@@ -26,9 +42,6 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
-  const inTg = isInTelegram();
-  const health = getServerHealthSync();
-  const plans = health.plans || {};
 
   const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
 
@@ -51,16 +64,24 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   useEffect(() => {
     if (isOpen) {
       fetchQuotaStatus();
-      if (!inTg && wallet) {
-        setActiveTab('ton');
-      }
+      let cancelled = false;
+      // The modal usually mounts before /api/health resolves, so re-derive rails on open.
+      void loadServerHealth().then(h => {
+        if (cancelled) return;
+        setHealth(h);
+        const opts = resolvePaymentOptions({ inTelegram: inTg, health: h });
+        setActiveTab(!inTg && wallet && opts.tonAvailable ? 'ton' : opts.defaultTab);
+      });
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
           handleClose();
         }
       };
       window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
+      return () => {
+        cancelled = true;
+        window.removeEventListener('keydown', handleKeyDown);
+      };
     }
   }, [isOpen, inTg, wallet]);
 
@@ -107,7 +128,8 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
   const handleStarsCheckout = async (planId: string) => {
     if (!inTg) {
-      setStatusMessage('Telegram Stars checkout only works inside the Telegram Mini App. Use TON on the web, or open the bot in Telegram.');
+      window.open(TELEGRAM_MINI_APP_URL, '_blank', 'noopener,noreferrer');
+      setStatusMessage('Opening Luminara in Telegram. Finish your Stars checkout in the Mini App.');
       return;
     }
     setBusyPlan(planId);
@@ -191,9 +213,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">AI Oracle Paywall</span>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-gold/15 text-gold-light border border-gold/30">
-                  Dual-Rail
-                </span>
+                {paymentOptions.tonAvailable && (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-gold/15 text-gold-light border border-gold/30">
+                    Dual-Rail
+                  </span>
+                )}
               </div>
               <h3 id="paywall-modal-title" className="text-xl md:text-2xl font-bold tracking-tight text-white mt-0.5">
                 Unlock Unlimited AI Intelligence
@@ -267,12 +291,12 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         </div>
 
         {/* Payment Rail Selector */}
-        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-black/40 border border-white/10 mb-6">
+        <div className={`flex items-center gap-2 p-1.5 rounded-2xl bg-black/40 border border-white/10 ${paymentOptions.tonAvailable ? 'mb-6' : 'mb-2'}`}>
           <button
             type="button"
             onClick={() => setActiveTab('stars')}
             className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
-              activeTab === 'stars'
+              tab === 'stars'
                 ? 'bg-gold text-black shadow-lg shadow-gold/20'
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
@@ -287,20 +311,30 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           <button
             type="button"
             onClick={() => setActiveTab('ton')}
+            disabled={!paymentOptions.tonAvailable}
             className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
-              activeTab === 'ton'
+              tab === 'ton'
                 ? 'bg-gold text-black shadow-lg shadow-gold/20'
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                : paymentOptions.tonAvailable
+                ? 'text-gray-400 hover:text-white hover:bg-white/5'
+                : 'text-gray-500 cursor-not-allowed'
             }`}
           >
             <span>💎 TON Blockchain</span>
-            {wallet && (
+            {!paymentOptions.tonAvailable ? (
+              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-black">
+                Soon
+              </span>
+            ) : wallet && (
               <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
                 Connected
               </span>
             )}
           </button>
         </div>
+        {!paymentOptions.tonAvailable && (
+          <p className="mb-6 text-center text-[10px] text-gray-400">TON payments are coming soon.</p>
+        )}
 
         {/* Plans Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
@@ -310,7 +344,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-bold text-gold-light">Starter Plan</span>
                 <span className="text-xs font-mono text-gold font-bold">
-                  {activeTab === 'stars' ? '2,500 ⭐' : '15 TON'}
+                  {tab === 'stars' ? '2,500 ⭐' : '15 TON'}
                 </span>
               </div>
               <p className="text-[11px] text-gray-400 leading-relaxed">
@@ -318,10 +352,10 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </p>
               <ul className="mt-3 space-y-1.5 text-[11px] text-gray-300">
                 <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> <strong>Unlocks NVIDIA NIM, Ollama &amp; OpenRouter</strong>
+                  <span className="text-gold">✓</span> <strong>{engineLabels.length ? `Unlocks ${engineList}` : engineList}</strong>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Unlimited AI Search Queries (Groq + Premium)
+                  <span className="text-gold">✓</span> Unlimited AI Search Queries{groqLive ? ' (Groq + Premium)' : ''}
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-gold">✓</span> 2 Monitored Domains
@@ -333,14 +367,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </div>
             <button
               type="button"
-              onClick={() => (activeTab === 'stars' ? handleStarsCheckout('starter') : handleTonCheckout('starter'))}
+              onClick={() => (tab === 'stars' ? handleStarsCheckout('starter') : handleTonCheckout('starter'))}
               disabled={busyPlan !== null}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.2em] text-[10px] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {busyPlan === 'starter'
                 ? 'Processing…'
-                : activeTab === 'stars'
-                ? 'Pay 2,500 Stars · 30 Days'
+                : tab === 'stars'
+                ? inTg ? 'Pay 2,500 Stars · 30 Days' : 'Open in Telegram · 2,500 Stars'
                 : 'Pay 15 TON · 30 Days'}
             </button>
           </div>
@@ -354,7 +388,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-bold text-white">Growth Plan</span>
                 <span className="text-xs font-mono text-gold font-bold">
-                  {activeTab === 'stars' ? '7,500 ⭐' : '45 TON'}
+                  {tab === 'stars' ? '7,500 ⭐' : '45 TON'}
                 </span>
               </div>
               <p className="text-[11px] text-gray-400 leading-relaxed">
@@ -362,7 +396,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </p>
               <ul className="mt-3 space-y-1.5 text-[11px] text-gray-300">
                 <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> <strong>All Starter Engines (NVIDIA, Ollama, OpenRouter)</strong>
+                  <span className="text-gold">✓</span> <strong>{engineLabels.length ? `All Starter Engines (${engineList})` : 'All Starter Engines'}</strong>
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-gold">✓</span> 10 Domains + Competitor Graph
@@ -374,14 +408,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </div>
             <button
               type="button"
-              onClick={() => (activeTab === 'stars' ? handleStarsCheckout('growth') : handleTonCheckout('growth'))}
+              onClick={() => (tab === 'stars' ? handleStarsCheckout('growth') : handleTonCheckout('growth'))}
               disabled={busyPlan !== null}
               className="w-full py-3 rounded-xl bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] hover:bg-gold-light hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {busyPlan === 'growth'
                 ? 'Processing…'
-                : activeTab === 'stars'
-                ? 'Pay 7,500 Stars · 30 Days'
+                : tab === 'stars'
+                ? inTg ? 'Pay 7,500 Stars · 30 Days' : 'Open in Telegram · 7,500 Stars'
                 : 'Pay 45 TON · 30 Days'}
             </button>
           </div>
@@ -395,7 +429,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-bold text-gold-light">Pro / Agency</span>
                 <span className="text-xs font-mono text-gold font-bold">
-                  {activeTab === 'stars' ? '18,000 ⭐' : '120 TON'}
+                  {tab === 'stars' ? '18,000 ⭐' : '120 TON'}
                 </span>
               </div>
               <p className="text-[11px] text-gray-400 leading-relaxed">
@@ -418,21 +452,21 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </div>
             <button
               type="button"
-              onClick={() => (activeTab === 'stars' ? handleStarsCheckout('agency') : handleTonCheckout('agency'))}
+              onClick={() => (tab === 'stars' ? handleStarsCheckout('agency') : handleTonCheckout('agency'))}
               disabled={busyPlan !== null}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.2em] text-[10px] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {busyPlan === 'agency'
                 ? 'Processing…'
-                : activeTab === 'stars'
-                ? 'Pay 18,000 Stars · 30 Days'
+                : tab === 'stars'
+                ? inTg ? 'Pay 18,000 Stars · 30 Days' : 'Open in Telegram · 18,000 Stars'
                 : 'Pay 120 TON · 30 Days'}
             </button>
           </div>
         </div>
 
         {/* TON Wallet Connect helper if in TON tab */}
-        {activeTab === 'ton' && (
+        {tab === 'ton' && (
           <div className="p-4 rounded-2xl bg-black/40 border border-white/10 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-left">
               <p className="text-xs font-bold text-white">TON Wallet Connection</p>
@@ -444,8 +478,27 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </div>
         )}
 
+        {tab === 'stars' && !inTg && (
+          <div className="p-4 rounded-2xl bg-black/40 border border-gold/30 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-left">
+              <p className="text-xs font-bold text-white">Pay with Telegram Stars</p>
+              <p className="text-[10px] text-gray-400">
+                Stars checkout runs inside the Luminara Mini App. Open it in Telegram to subscribe, or activate a license key above.
+              </p>
+            </div>
+            <a
+              href={TELEGRAM_MINI_APP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-wider hover:scale-[1.02] active:scale-[0.98] transition-all shadow-md focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+            >
+              Open in Telegram
+            </a>
+          </div>
+        )}
+
         {/* Telegram Stars Terms & Support Notice */}
-        {activeTab === 'stars' && (
+        {tab === 'stars' && (
           <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-6 text-center text-[10px] text-gray-400 space-y-1">
             <p>
               By purchasing with Telegram Stars, you agree to our{' '}

@@ -6,6 +6,7 @@ import {
   DeploymentResult,
   RemediationPayload,
   cmsDeploymentService,
+  validateCmsEndpoint,
 } from '../../services/deployment/cmsDeploymentService';
 import { writingQualityService, type WritingQualityReport } from '../../services/audit/writingQualityService';
 import { schemaSafetyGate, type SchemaSafetyResult } from '../../services/deployment/schemaSafetyGate';
@@ -30,6 +31,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
 
   // Form states
   const [endpoint, setEndpoint] = useState('');
+  const [endpointTouched, setEndpointTouched] = useState(false);
   const [authToken, setAuthToken] = useState('');
   const [siteId, setSiteId] = useState('');
   const [repoOwner, setRepoOwner] = useState('');
@@ -41,7 +43,9 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const cfg = cmsDeploymentService.getSavedConfig(platform);
-    setEndpoint(cfg.endpoint || (remediationPayload?.domain ? `https://${remediationPayload.domain}` : ''));
+    // Only a URL the user saved themselves; never prefill from the audited domain.
+    setEndpoint(cfg.endpoint && validateCmsEndpoint(cfg.endpoint).ok ? cfg.endpoint : '');
+    setEndpointTouched(false);
     setAuthToken(cfg.authToken || '');
     setSiteId(cfg.siteId || '');
     setRepoOwner(cfg.repoOwner || '');
@@ -49,7 +53,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
     setTargetBranch(cfg.targetBranch || 'main');
     setFilePath(cfg.filePath || (platform === 'github_pr' ? 'app/layout.tsx' : ''));
     setResult(null);
-  }, [platform, isOpen, remediationPayload]);
+  }, [platform, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -103,8 +107,16 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
 
   const schemaGate: SchemaSafetyResult = schemaSafetyGate.validate(defaultPayload.schemaJsonLd);
   const deployBlocked = !schemaGate.okToDeploy;
+  const endpointCheck = validateCmsEndpoint(endpoint);
+  const endpointInvalid = platform === 'wordpress' && !endpointCheck.ok;
+  const endpointError = endpointInvalid && endpointTouched && !endpointCheck.ok ? endpointCheck.error : '';
 
   const handleDeploy = async () => {
+    if (endpointInvalid) {
+      setEndpointTouched(true);
+      return;
+    }
+
     if (deployBlocked && platform !== 'script_tag') {
       setResult({
         success: false,
@@ -127,7 +139,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
 
     const config: DeploymentConfig = {
       platform,
-      endpoint: endpoint.trim(),
+      endpoint: endpointCheck.ok ? endpointCheck.url : endpoint.trim(),
       authToken: authToken.trim(),
       siteId: siteId.trim(),
       repoOwner: repoOwner.trim(),
@@ -187,9 +199,12 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
     }
   };
 
-  const scriptTagCode = cmsDeploymentService.generateClientScriptTag(defaultPayload);
+  const scriptTagCode = deployBlocked || !schemaGate.canonicalJson
+    ? ''
+    : cmsDeploymentService.generateClientScriptTag({ ...defaultPayload, schemaJsonLd: schemaGate.canonicalJson });
 
   const handleCopyScript = () => {
+    if (!scriptTagCode) return;
     navigator.clipboard.writeText(scriptTagCode);
     setCopiedScript(true);
     setTimeout(() => setCopiedScript(false), 2000);
@@ -286,16 +301,31 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
           {platform === 'wordpress' && (
             <div className="space-y-4 glass-morphism p-4 rounded-xl border border-white/10">
               <div>
-                <label className="block text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-1">
+                <label htmlFor="cms-wp-endpoint" className="block text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-1">
                   WordPress Site URL
                 </label>
                 <input
-                  type="text"
+                  id="cms-wp-endpoint"
+                  type="url"
+                  inputMode="url"
+                  autoComplete="off"
                   value={endpoint}
                   onChange={(e) => setEndpoint(e.target.value)}
-                  placeholder="https://yourblog.com"
-                  className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-lg px-3 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none"
+                  onBlur={() => setEndpointTouched(true)}
+                  placeholder="https://your-site.com"
+                  aria-invalid={Boolean(endpointError)}
+                  aria-describedby={endpointError ? 'cms-wp-endpoint-error' : undefined}
+                  className={`w-full bg-black/60 border ${endpointError ? 'border-danger-500/70' : 'border-white/15'} focus:border-gold rounded-lg px-3 py-2 text-xs text-white font-mono placeholder:text-gray-600 focus:outline-none`}
                 />
+                {endpointError ? (
+                  <span id="cms-wp-endpoint-error" role="alert" className="text-[10px] text-danger-300 mt-1 block">
+                    {endpointError}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-gray-500 mt-1 block">
+                    Type the public https address of the WordPress site you control.
+                  </span>
+                )}
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-1">
@@ -433,7 +463,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
                 Paste this single script tag into Google Tag Manager, Shopify theme.liquid, Webflow Custom Code, or any site header.
               </p>
               <pre className="p-3 bg-black/80 rounded-lg text-[11px] font-mono text-cyan-300 overflow-x-auto border border-white/5 whitespace-pre-wrap select-all">
-                {scriptTagCode}
+                {scriptTagCode || 'Script tag unavailable: the schema safety gate blocked this payload.'}
               </pre>
             </div>
           )}
@@ -584,7 +614,8 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
           {platform === 'script_tag' ? (
             <button
               onClick={handleCopyScript}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center gap-2"
+              disabled={!scriptTagCode}
+              className="disabled:opacity-40 px-5 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center gap-2"
             >
               <ICONS.Copy className="w-4 h-4" />
               <span>Copy Script Tag</span>
@@ -592,7 +623,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
           ) : (
             <button
               onClick={handleDeploy}
-              disabled={deploying || deployBlocked}
+              disabled={deploying || deployBlocked || (endpointInvalid && endpointTouched)}
               className="px-5 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center gap-2 disabled:opacity-40"
             >
               <ICONS.Zap className="w-4 h-4" />

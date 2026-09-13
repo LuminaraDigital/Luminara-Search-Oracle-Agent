@@ -15,8 +15,11 @@ export interface Env {
   DESKTOP_GITHUB_REPO?: string;
   BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
+  AUTH_WEBHOOK_SECRET?: string;
   TELEGRAM_ADMIN_ID?: string;
   WEBAPP_URL: string;
+  /** "production" | "staging" | unset (local dev). */
+  ENVIRONMENT?: string;
   ALLOWED_ORIGINS?: string;
   /** "true": app use needs a signed-in Telegram or Firebase user (hosted keys and BYOK relays). */
   REQUIRE_TG_AUTH?: string;

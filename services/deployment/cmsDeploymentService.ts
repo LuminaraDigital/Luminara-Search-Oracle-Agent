@@ -9,6 +9,9 @@ import {
   type SchemaSafetyIssue,
   type SchemaSafetyResult,
 } from './schemaSafetyGate';
+import { validateCmsEndpoint } from './cmsEndpointValidator';
+
+export { validateCmsEndpoint, type CmsEndpointValidation } from './cmsEndpointValidator';
 
 export type CmsPlatform = 'wordpress' | 'webflow' | 'shopify' | 'github_pr' | 'script_tag';
 
@@ -159,9 +162,24 @@ export class CmsDeploymentService {
     const gate = this.assertSafeToDeploy(payload);
     if (!gate.okToDeploy) return this.gateBlockedResult('wordpress', gate);
 
-    const baseEndpoint = (config.endpoint || `https://${payload.domain}`).replace(/\/$/, '');
+    // Never derive the endpoint from the audited domain: an audit must not steer credentials to another site.
+    const endpointCheck = validateCmsEndpoint(config.endpoint ?? '');
+    if (!endpointCheck.ok) {
+      return {
+        success: false,
+        platform: 'wordpress',
+        deploymentId: `err-${Date.now()}`,
+        message: `WordPress site URL rejected: ${endpointCheck.error}`,
+        diffSummary: { linesAdded: 0, linesRemoved: 0 },
+        timestamp: Date.now(),
+        gateSeverity: gate.severity,
+        validationErrors: gate.issues.length ? gate.issues : undefined,
+      };
+    }
+    const baseEndpoint = endpointCheck.url;
     const apiUrl = `${baseEndpoint}/wp-json/wp/v2/settings`;
     const token = config.authToken || '';
+    const schemaJson = gate.canonicalJson ?? '';
 
     try {
       if (!token) {
@@ -177,7 +195,7 @@ export class CmsDeploymentService {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          luminara_aeo_schema: payload.schemaJsonLd,
+          luminara_aeo_schema: schemaJson,
         }),
       }).catch(() => null);
 
@@ -240,7 +258,7 @@ export class CmsDeploymentService {
 
     try {
       const url = `https://api.webflow.com/v2/sites/${siteId || 'current'}/custom_code`;
-      const scriptCode = `<script type="application/ld+json">\n${payload.schemaJsonLd}\n</script>`;
+      const scriptCode = `<script type="application/ld+json">\n${gate.canonicalJson ?? ''}\n</script>`;
 
       const res = await fetch(url, {
         method: 'POST',
@@ -354,7 +372,7 @@ This Pull Request automatically injects authoritative Schema.org JSON-LD entity 
       }
 
       // 3. Create or update file content in branch
-      const patchContent = `\n{/* Luminara AEO Schema Injection */}\n<script\n  type="application/ld+json"\n  dangerouslySetInnerHTML={{ __html: JSON.stringify(${payload.schemaJsonLd}) }}\n/>\n`;
+      const patchContent = `\n{/* Luminara AEO Schema Injection */}\n<script\n  type="application/ld+json"\n  dangerouslySetInnerHTML={{ __html: JSON.stringify(${gate.canonicalJson ?? '{}'}) }}\n/>\n`;
       
       await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`, {
         method: 'PUT',

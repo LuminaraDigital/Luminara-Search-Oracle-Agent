@@ -23,6 +23,10 @@ export interface ServerHealth {
   requireSubscription?: boolean;
   freeDailyLimit?: number;
   plans: Record<string, { title: string; description: string; stars: number; days: number }>;
+  /** True only when the Worker has a valid TON receiving address; absent means unavailable. */
+  ton?: boolean;
+  tonPricing?: Record<string, unknown>;
+  tiers?: { free?: string[]; paid?: string[] };
 }
 
 const EMPTY_HEALTH: ServerHealth = { ok: false, providers: {}, telegram: false, requireAuth: false, plans: {} };
@@ -187,16 +191,49 @@ function applyAuthHeaders(target: Headers, source: Record<string, string>): void
 async function workerFetchWithAuthRetry(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers || {});
   applyAuthHeaders(headers, await authHeadersAsync(false));
-  let res = await fetch(url, { ...init, headers });
+  const options: RequestInit = { credentials: 'same-origin', ...init, headers };
+  let res = await fetch(url, options);
   if (res.status !== 401) return res;
   if (getInitDataRaw()) return res;
   applyAuthHeaders(headers, await authHeadersAsync(true));
-  return fetch(url, { ...init, headers });
+  return fetch(url, { ...options, headers });
 }
 
 /** Auth headers for Worker API calls (Telegram initData and/or Firebase ID token). */
 export function getApiAuthHeaders(): Record<string, string> {
   return authHeaders();
+}
+
+/** Explicitly establish an HttpOnly __session cookie on the server */
+export async function createSessionCookie(idToken: string): Promise<boolean> {
+  const base = apiBase();
+  if (!base) return false;
+  try {
+    const res = await fetch(`${base}/api/auth/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ idToken }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Explicitly clear the HttpOnly __session cookie on the server */
+export async function destroySessionCookie(): Promise<boolean> {
+  const base = apiBase();
+  if (!base) return false;
+  try {
+    const res = await fetch(`${base}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -21,7 +21,7 @@ import type { HostedIdentity } from './userTypes';
 import { validateInitData } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS } from './telegramBot';
-import { createTonInvoice, verifyTonPayment, TON_PRICING } from './tonPayment';
+import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, TON_PRICING } from './tonPayment';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { PRIVACY_HTML } from './privacyPolicy';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
@@ -32,7 +32,15 @@ import {
   readBody,
   withSecurityHeaders,
 } from './security';
-import { linkTelegramAndFirebase, getWorkspace, putWorkspace, listAllUsers, type WorkspacePayload } from './userStore';
+import {
+  linkTelegramAndFirebase,
+  getWorkspace,
+  putWorkspace,
+  listAllUsers,
+  withAccountId,
+  upsertAppUser,
+  type WorkspacePayload,
+} from './userStore';
 import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
 import { recordAuditLog, getAuditLogs } from './auditLog';
 
@@ -43,6 +51,13 @@ import { proxyProvider, PROVIDERS } from './providerRelay';
 import { runSentinelScan, handleSentinelRoute } from './sentinel';
 import { handleEntityEnrichment } from './enrichmentService';
 import { handleAgentAttestation } from './attestationService';
+import { checkTelegramUpdateThrottle } from './webhookThrottle';
+import {
+  guardApiRoute,
+  buildSessionCookie,
+  buildLogoutCookie,
+  verifyWebhookSignature,
+} from './authMiddleware';
 
 // Re-exports for consumers and unit tests
 export type { HostedIdentity } from './userTypes';
@@ -55,9 +70,11 @@ export { getActiveSubscription, isUserSubscribed, checkHostedQuota } from './quo
 export type { QuotaStatus, SubRow } from './quotaMiddleware';
 export { runSentinelScan, auditSecurityOnEdge } from './sentinel';
 export type { SentinelTarget } from './sentinel';
+export { guardApiRoute, buildSessionCookie, buildLogoutCookie } from './authMiddleware';
 
 /** Best-effort per-isolate limits (see security.ts). Authenticated hosted-key use is also metered in KV. */
 const limiter = new RateLimiter();
+const telegramLimiter = new RateLimiter();
 const RATE_API_PER_MIN = 120; // any /api/* call, per IP
 const RATE_PROVIDER_PER_MIN = 60; // provider / sidecar relays, per IP
 const RATE_AUTH_PER_MIN = 20; // initData validation endpoints, per IP
@@ -75,7 +92,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return r;
   };
 
-  // Best-effort per-IP throttling. Telegram's webhook is exempt (it is authenticated by secret token).
+  // Best-effort per-IP throttling. Telegram's webhook skips it (shared Telegram IPs); it is secret-checked and soft-throttled per chat below.
   const ip = clientIp(request);
   const limited = (bucket: string, perMin: number) => {
     const r = limiter.check(`${bucket}:${ip}`, perMin, 60_000);
@@ -85,6 +102,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const hit = limited('api', RATE_API_PER_MIN);
     if (hit) return hit;
   }
+
+  // Universal Edge Route Guard: intercepts unauthenticated requests to protected endpoints
+  const guard = await guardApiRoute(request, env, path);
+  if (guard) return withCors(guard);
 
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
@@ -103,7 +124,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       },
       telegram: Boolean(env.BOT_TOKEN),
       firebase: Boolean(env.FIREBASE_PROJECT_ID),
-      ton: true,
+      ton: isTonPaymentConfigured(env),
       tonPricing: TON_PRICING,
       requireAuth: env.REQUIRE_TG_AUTH === 'true',
       requireSubscription: env.REQUIRE_SUBSCRIPTION === 'true',
@@ -120,26 +141,120 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
 
   if (path === '/auth/session') {
-    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
     const hit = limited('auth', RATE_AUTH_PER_MIN);
     if (hit) return hit;
-    const who = await identify(request, env);
-    if (who.error) return withCors(json({ ok: false, error: who.error }, 401));
-    if (!who.user) return withCors(json({ ok: false, error: 'Not signed in' }, 401));
-    const { org, membership } = await getOrCreateUserOrg(env, who.user);
-    return withCors(json({
-      ok: true,
-      user: who.user,
-      accountId: billingId(who.user),
-      linked: Boolean(who.user.accountId && who.user.accountId !== who.user.id),
-      org: {
-        id: org.id,
-        name: org.name,
-        slug: org.slug,
-        tier: org.tier,
-        role: membership.role,
-      },
-    }));
+
+    if (request.method === 'GET') {
+      const who = await identify(request, env);
+      if (who.error) return withCors(json({ ok: false, error: who.error }, 401));
+      if (!who.user) return withCors(json({ ok: false, error: 'Not signed in' }, 401));
+      const { org, membership } = await getOrCreateUserOrg(env, who.user);
+      return withCors(json({
+        ok: true,
+        user: who.user,
+        accountId: billingId(who.user),
+        linked: Boolean(who.user.accountId && who.user.accountId !== who.user.id),
+        org: {
+          id: org.id,
+          name: org.name,
+          slug: org.slug,
+          tier: org.tier,
+          role: membership.role,
+        },
+      }));
+    }
+
+    if (request.method === 'POST') {
+      const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+      if (!read.ok) return withCors(json({ error: read.error }, read.status));
+      const body = (read.value || {}) as { idToken?: string };
+      const bearer = bearerFromAuthorization(request.headers.get('authorization'));
+      const idToken = String(body.idToken || bearer || '').trim();
+      if (!idToken) {
+        return withCors(json({ ok: false, error: 'idToken is required' }, 400));
+      }
+      if (!env.FIREBASE_PROJECT_ID) {
+        return withCors(json({ ok: false, error: 'FIREBASE_PROJECT_ID not configured' }, 503));
+      }
+      const verified = await verifyFirebaseIdToken(idToken, env.FIREBASE_PROJECT_ID);
+      if (!verified.ok) {
+        return withCors(json({ ok: false, error: verified.reason }, 401));
+      }
+      const fbIdentity: HostedIdentity = {
+        id: `fb:${verified.user.uid}`,
+        source: 'firebase',
+        email: verified.user.email,
+        name: verified.user.name,
+      };
+      const stored = await withAccountId(env, fbIdentity);
+      const { org, membership } = await getOrCreateUserOrg(env, stored);
+
+      const cookieHeader = buildSessionCookie(idToken);
+      const res = json({
+        ok: true,
+        user: stored,
+        accountId: billingId(stored),
+        org: {
+          id: org.id,
+          name: org.name,
+          slug: org.slug,
+          tier: org.tier,
+          role: membership.role,
+        },
+      }, 200, { 'Set-Cookie': cookieHeader });
+      return withCors(res);
+    }
+
+    return withCors(json({ error: 'Method not allowed' }, 405));
+  }
+
+  if (path === '/auth/logout') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const cookieHeader = buildLogoutCookie();
+    return withCors(json({ ok: true, message: 'Signed out successfully' }, 200, { 'Set-Cookie': cookieHeader }));
+  }
+
+  if (path === '/webhooks/auth') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    if (!env.AUTH_WEBHOOK_SECRET) {
+      return withCors(json({ ok: false, error: 'AUTH_WEBHOOK_SECRET is not configured on the server' }, 503));
+    }
+    const signature = request.headers.get('x-auth-signature') || request.headers.get('svix-signature') || '';
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES, false);
+    if (!read.ok) return withCors(json({ error: read.error }, read.status));
+    const isValid = await verifyWebhookSignature(read.text, signature, env.AUTH_WEBHOOK_SECRET);
+    if (!isValid) {
+      return withCors(json({ ok: false, error: 'Invalid webhook signature' }, 401));
+    }
+    let payload: any = {};
+    try {
+      payload = JSON.parse(read.text);
+    } catch {
+      return withCors(json({ ok: false, error: 'Malformed JSON payload' }, 400));
+    }
+
+    const event = payload.type || payload.event;
+    const data = payload.data || payload.user || {};
+    if (event === 'user.deleted' && data.id) {
+      const targetId = String(data.id);
+      if (env.DB) {
+        await env.DB.prepare(`DELETE FROM users WHERE id = ? OR firebase_uid = ?`).bind(targetId, targetId.replace(/^fb:/, '')).run();
+      }
+      if (env.LUMINARA_KV) {
+        await env.LUMINARA_KV.delete(`user:${targetId}`);
+      }
+    } else if ((event === 'user.created' || event === 'user.updated') && (data.uid || data.id)) {
+      const uid = String(data.uid || data.id).replace(/^fb:/, '');
+      const userObj: HostedIdentity = {
+        id: `fb:${uid}`,
+        source: 'firebase',
+        email: data.email,
+        name: data.displayName || data.name,
+      };
+      await withAccountId(env, userObj);
+    }
+
+    return withCors(json({ ok: true, processed: event || 'unknown' }));
   }
 
   // Explicit link: send BOTH Telegram initData and Firebase Bearer in one request.
@@ -345,6 +460,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!secretEquals(secret, env.TELEGRAM_WEBHOOK_SECRET)) return json({ error: 'bad secret' }, 401);
     const read = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!read.ok) return json({ error: read.error }, read.status);
+    const throttle = checkTelegramUpdateThrottle(read.value, telegramLimiter);
+    if (!throttle.allowed) {
+      console.warn('[telegram] webhook update throttled', throttle.key);
+      return json({ ok: true });
+    }
     ctx.waitUntil(handleTelegramUpdate(read.value, env));
     return json({ ok: true });
   }

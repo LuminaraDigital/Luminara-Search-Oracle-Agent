@@ -74,15 +74,49 @@ function ensureAuth(): Auth {
   return auth;
 }
 
+async function syncSessionCookie(token: string): Promise<void> {
+  if (typeof window === 'undefined' || !window.location) return;
+  const base = window.location.origin || '';
+  if (!base) return;
+  try {
+    await fetch(`${base}/api/auth/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ idToken: token }),
+    });
+  } catch {
+    /* ignore session cookie sync failures in offline/dev */
+  }
+}
+
+async function clearSessionCookie(): Promise<void> {
+  if (typeof window === 'undefined' || !window.location) return;
+  const base = window.location.origin || '';
+  if (!base) return;
+  try {
+    await fetch(`${base}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+  } catch {
+    /* ignore logout cookie clearing errors */
+  }
+}
+
 async function refreshCachedToken(user: User | null): Promise<void> {
   cachedUser = user;
   if (!user) {
     cachedIdToken = null;
     notifyUserListeners(null);
+    void clearSessionCookie();
     return;
   }
   try {
     cachedIdToken = await user.getIdToken();
+    if (cachedIdToken) {
+      void syncSessionCookie(cachedIdToken);
+    }
   } catch {
     cachedIdToken = null;
   }
@@ -166,6 +200,7 @@ export async function signOutFirebase(): Promise<void> {
   if (!isFirebaseConfigured()) return;
   await signOut(ensureAuth());
   await refreshCachedToken(null);
+  await clearSessionCookie();
 }
 
 /** Maps Firebase Auth error codes to short user-facing copy. */

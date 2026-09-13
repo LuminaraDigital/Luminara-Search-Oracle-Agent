@@ -11,8 +11,28 @@ import { localSerpService } from "./search/localSerpService";
 import { unifiedScraperService } from "./scraping/unifiedScraper";
 import { siteEvidencePackService } from "./scraping/siteEvidencePack";
 import { geminiProxyHttpOptions } from "./apiClient";
-import { wrapUntrustedContent } from "../utils/untrustedContent";
+import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from "../utils/untrustedContent";
 import { toUserFacingText } from "../utils/userFacingText";
+
+const ORACLE_SYSTEM_PROMPT = `${SYSTEM_INSTRUCTIONS}\n\n${UNTRUSTED_CONTENT_RULE}`;
+
+export const BUSINESS_DNA_SYSTEM_PROMPT =
+  `You are an expert Strategic Business DNA extractor. Always output valid JSON matching the requested schema.\n${UNTRUSTED_CONTENT_RULE}`;
+
+export function buildBusinessDnaPrompt(input: string, scrapedInfo: string): string {
+  return `Perform a deep strategic scan of the following business/URL: "${input}".
+${wrapUntrustedContent('SCRAPED_SITE', scrapedInfo)}
+Extract the brand's 'Strategic DNA'. Return strictly a valid JSON object matching this exact schema:
+{
+  "name": "Brand Name",
+  "mission": "Core Mission statement",
+  "usp": "Unique Selling Proposition",
+  "targetAudience": "Primary Target Audience",
+  "competitors": ["Competitor1", "Competitor2", "Competitor3"],
+  "perceivedGaps": ["Gap 1", "Gap 2", "Gap 3"],
+  "rawContext": "A condensed 2-3 paragraph summary of the entire strategic profile."
+}`;
+}
 
 export interface StreamQueryOptions {
   history?: ChatTurn[];
@@ -259,7 +279,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
       if (bestNative) {
         let isFirst = true;
         for await (const chunk of aiProviderService.streamWithFailover(fullPrompt, {
-          systemPrompt: SYSTEM_INSTRUCTIONS,
+          systemPrompt: ORACLE_SYSTEM_PROMPT,
           temperature: mode === OracleMode.DEEP_THINK ? 0.4 : 0.7,
           history,
           model: preferredModel,
@@ -285,7 +305,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
         const ai = this.getAI();
         const model = mode === OracleMode.DEEP_THINK ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
         const config: any = {
-          systemInstruction: SYSTEM_INSTRUCTIONS,
+          systemInstruction: ORACLE_SYSTEM_PROMPT,
           tools: [{ googleSearch: {} }],
         };
 
@@ -381,14 +401,15 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
       }
     }
 
-    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${searchContext ? searchContext + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
+    const groundedSearch = searchContext ? wrapUntrustedContent('LIVE_SEARCH', searchContext) : '';
+    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${groundedSearch ? groundedSearch + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama with auto-failover
     try {
       const best = await aiProviderService.getBestAvailableProvider();
       if (best) {
         const result = await aiProviderService.generateWithFailover(fullPrompt, {
-          systemPrompt: SYSTEM_INSTRUCTIONS,
+          systemPrompt: ORACLE_SYSTEM_PROMPT,
           temperature: 0.5,
           history,
         });
@@ -412,7 +433,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
           model: 'gemini-3-pro-preview',
           contents: toGeminiContents(fullPrompt, history),
           config: {
-            systemInstruction: SYSTEM_INSTRUCTIONS,
+            systemInstruction: ORACLE_SYSTEM_PROMPT,
             tools: [{ googleSearch: {} }, { codeExecution: {} }],
           }
         });
@@ -648,7 +669,7 @@ ${wrapUntrustedContent('EMPIRICAL', empiricalText)}
 ${wrapUntrustedContent('ENRICHMENT', enrichmentText)}
 ${wrapUntrustedContent('CITATION_INTEGRITY', integrityText)}
 ${preliminaryTrustText}
-${writingText}
+${wrapUntrustedContent('WRITING_CHECK', writingText)}
 ${trafficText}
 You are Oracle Agent for Luminara Suite. Emotional direction: fog clearing at first light.
 Generate an evidence-based audit in Markdown for: "${websiteUrl}".
@@ -828,7 +849,7 @@ Strict Formatting Guidelines:
       const best = await aiProviderService.getBestAvailableProvider();
       if (best) {
         const result = await aiProviderService.generateWithFailover(prompt, {
-          systemPrompt: SYSTEM_INSTRUCTIONS,
+          systemPrompt: ORACLE_SYSTEM_PROMPT,
           temperature: 0.3,
         });
         const text = result.text;
@@ -907,18 +928,7 @@ Strict Formatting Guidelines:
       }
     }
 
-    const prompt = `Perform a deep strategic scan of the following business/URL: "${input}".
-${scrapedInfo}
-Extract the brand's 'Strategic DNA'. Return strictly a valid JSON object matching this exact schema:
-{
-  "name": "Brand Name",
-  "mission": "Core Mission statement",
-  "usp": "Unique Selling Proposition",
-  "targetAudience": "Primary Target Audience",
-  "competitors": ["Competitor1", "Competitor2", "Competitor3"],
-  "perceivedGaps": ["Gap 1", "Gap 2", "Gap 3"],
-  "rawContext": "A condensed 2-3 paragraph summary of the entire strategic profile."
-}`;
+    const prompt = buildBusinessDnaPrompt(input, scrapedInfo);
 
     // 1. Primary Native LLM Focus: Groq / NVIDIA NIM / Ollama with auto-failover
     try {
@@ -927,7 +937,7 @@ Extract the brand's 'Strategic DNA'. Return strictly a valid JSON object matchin
         const result = await aiProviderService.generateWithFailover(prompt, {
           jsonMode: true,
           temperature: 0.2,
-          systemPrompt: 'You are an expert Strategic Business DNA extractor. Always output valid JSON matching the requested schema.'
+          systemPrompt: BUSINESS_DNA_SYSTEM_PROMPT
         });
 
         const parsed = safeJsonParse<any>(result.text, {});
@@ -1004,7 +1014,7 @@ Format your response in two rigorous sections:
       const best = await aiProviderService.getBestAvailableProvider();
       if (best) {
         const result = await aiProviderService.generateWithFailover(prompt, {
-          systemPrompt: SYSTEM_INSTRUCTIONS,
+          systemPrompt: ORACLE_SYSTEM_PROMPT,
           temperature: 0.6,
         });
         return result.text || "No analysis generated.";
@@ -1043,7 +1053,7 @@ Format your response in two rigorous sections:
 You are an executive Business Data Analyst for Luminara Search. Analyze the following data AND the Strategic DNA context to answer the user directive.
 
 DATASET / CONTEXT:
-${context}
+${wrapUntrustedContent('UPLOADED_DATASET', context)}
 
 USER QUERY:
 ${query}`;
@@ -1053,7 +1063,7 @@ ${query}`;
       const best = await aiProviderService.getBestAvailableProvider();
       if (best) {
         const result = await aiProviderService.generateWithFailover(prompt, {
-          systemPrompt: SYSTEM_INSTRUCTIONS,
+          systemPrompt: ORACLE_SYSTEM_PROMPT,
           temperature: 0.3,
         });
         return result.text || "No analysis generated.";
@@ -1184,14 +1194,14 @@ ${thoughts}`;
       }
     }
 
-    const prompt = `${dnaContext}\n${tavilyEvidence}\nPerform market research for the following query: ${query}`;
+    const prompt = `${dnaContext}\n${wrapUntrustedContent('LIVE_SEARCH', tavilyEvidence)}\nPerform market research for the following query: ${query}`;
 
     // 1. Primary Native LLM Focus: Groq / NVIDIA NIM / Ollama with auto-failover
     try {
       const best = await aiProviderService.getBestAvailableProvider();
       if (best) {
         const result = await aiProviderService.generateWithFailover(prompt, {
-          systemPrompt: SYSTEM_INSTRUCTIONS,
+          systemPrompt: ORACLE_SYSTEM_PROMPT,
           temperature: 0.5,
         });
 

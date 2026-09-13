@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ICONS } from '../../constants';
 import { RemediationPayload } from '../../services/deployment/cmsDeploymentService';
+import { schemaSafetyGate } from '../../services/deployment/schemaSafetyGate';
 
 interface DiffViewerModalProps {
   isOpen: boolean;
@@ -31,12 +32,19 @@ export const DiffViewerModal: React.FC<DiffViewerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const diffText = unifiedDiff || (remediationPayload
-    ? `--- a/index.html (Existing Schema: None)\n+++ b/index.html (Remediated AEO Entity Graph)\n@@ -1 +1 @@\n+ <script type="application/ld+json">\n+ ${remediationPayload.schemaJsonLd}\n+ </script>`
-    : '// No remediation diff available for this audit.');
+  const schemaGate = remediationPayload ? schemaSafetyGate.validate(remediationPayload.schemaJsonLd) : null;
+  const blockedNotice = schemaGate && !schemaGate.okToDeploy
+    ? `// Schema safety gate blocked this patch: ${schemaGate.issues.filter((i) => i.severity === 'critical').map((i) => i.message).join(' ')}`
+    : null;
+  const safeSchema = schemaGate?.canonicalJson ?? '';
+
+  const diffText = blockedNotice ?? (unifiedDiff || (remediationPayload
+    ? `--- a/index.html (Existing Schema: None)\n+++ b/index.html (Remediated AEO Entity Graph)\n@@ -1 +1 @@\n+ <script type="application/ld+json">\n+ ${safeSchema}\n+ </script>`
+    : '// No remediation diff available for this audit.'));
 
   const handleCopy = () => {
-    const textToCopy = activeTab === 'diff' ? diffText : (remediationPayload?.schemaJsonLd || diffText);
+    if (blockedNotice) return;
+    const textToCopy = activeTab === 'diff' ? diffText : (safeSchema || diffText);
     navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -60,9 +68,15 @@ export const DiffViewerModal: React.FC<DiffViewerModalProps> = ({
             <div>
               <h3 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
                 AEO Remediation Diff & Entity Patch
-                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-success-500/20 text-success-300 border border-success-500/30">
-                  Ready to Deploy
-                </span>
+                {blockedNotice ? (
+                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-danger-500/20 text-danger-300 border border-danger-500/30">
+                    Blocked by Safety Gate
+                  </span>
+                ) : (
+                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-success-500/20 text-success-300 border border-success-500/30">
+                    Ready to Deploy
+                  </span>
+                )}
               </h3>
               <p className="text-xs text-gray-400">
                 {remediationPayload?.domain || 'Target Website'} &bull; Structured Schema.org Graph

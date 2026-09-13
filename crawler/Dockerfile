@@ -34,7 +34,7 @@ RUN npm install --omit=dev
 RUN npx patchright install chromium || true
 RUN chmod -R a+rX /ms-playwright 2>/dev/null || true
 
-COPY server.mjs ssrf.mjs ./
+COPY server.mjs ssrf.mjs limits.mjs ./
 
 # Run as the unprivileged `node` user (uid 1000). Chromium keeps --no-sandbox because user
 # namespaces are usually unavailable in containers; the container itself is the sandbox.

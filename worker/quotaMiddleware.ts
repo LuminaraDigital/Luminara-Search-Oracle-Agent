@@ -82,8 +82,8 @@ export async function checkHostedQuota(env: Env, user: HostedIdentity | null): P
     return {
       ok: false,
       error: user.source === 'telegram'
-        ? 'This feature needs an active plan. Subscribe with Telegram Stars or TON, or add your own API key in Settings.'
-        : 'This feature needs an active plan. Add your own API key in Settings, or subscribe with TON/Stars.',
+        ? 'This feature needs an active plan. Subscribe with Telegram Stars or a license key, or add your own API key in Settings.'
+        : 'This feature needs an active plan. Add your own API key in Settings, activate a license key, or subscribe in the Telegram app.',
       limit,
       used: 0,
       remaining: 0,

@@ -2,16 +2,20 @@
 #
 #   docker compose up -d
 #
-# Ports on this machine:
+# Ports on this machine (all published on 127.0.0.1 only):
 #   3001  luminara-crawler   stealth page crawler (Patchright). Same service as docker-compose.crawler.yml.
 #   8010  languagetool       "Writing check": grammar and style checker (LanguageTool, LGPL-2.1).
 #   3002  umami              "Results tracking": privacy-first visitor analytics dashboard (Umami, MIT).
 #         umami-db           Postgres for Umami; not published on the host.
 #
+# Required in .env (compose refuses to start without them; generate secrets with `openssl rand -hex 32`):
+#   CRAWLER_TOKEN, UMAMI_APP_SECRET, UMAMI_DB_USER, UMAMI_DB_PASSWORD, UMAMI_DB_NAME
+# Postgres reads UMAMI_DB_* only when the umami-db-data volume is first created. If that volume
+# already exists from the old umami/umami login, change the password inside Postgres to match.
+#
 # First run of the tracking dashboard: open http://localhost:3002, log in with the default
 # admin / umami and change the password straight away. Then add your website and paste the
-# tracking snippet into your site. Umami needs APP_SECRET: put a long random string in .env as
-# UMAMI_APP_SECRET (it stays on this machine; it is never shipped with the app).
+# tracking snippet into your site.
 #
 # To use these from the hosted app, put them behind HTTPS (any reverse proxy) and set the Worker
 # vars LANGUAGETOOL_URL / UMAMI_URL plus the UMAMI_API_KEY (or UMAMI_USERNAME / UMAMI_PASSWORD)
@@ -25,18 +29,27 @@ services:
     container_name: luminara-crawler
     restart: unless-stopped
     # Published on loopback only: the crawler drives a real browser and must not be reachable from
-    # the network. To share it, put it behind an HTTPS reverse proxy and set CRAWLER_TOKEN.
+    # the network. To share it, put it behind an HTTPS reverse proxy.
     ports:
       - "127.0.0.1:3001:3001"
     environment:
       - PORT=3001
       - HOST=0.0.0.0
       - NODE_ENV=production
-      # Optional shared secret; paste the same value into Settings > Crawler token in the app.
-      - CRAWLER_TOKEN=${CRAWLER_TOKEN:-}
+      # Required because the container binds 0.0.0.0; paste the same value into Settings > Crawler token.
+      - CRAWLER_TOKEN=${CRAWLER_TOKEN:?Set CRAWLER_TOKEN in .env (openssl rand -hex 32)}
       # Optional outbound proxy for the headless browser (http://user:pass@host:port).
       - CRAWLER_PROXY=${CRAWLER_PROXY:-}
+      # Browser origins allowed to call the crawler, comma-separated exact origins (never *).
+      # Unset: the local dev app. Set empty to allow none; add https://luminarasuite.com for the hosted app.
+      - CRAWLER_ALLOWED_ORIGINS=${CRAWLER_ALLOWED_ORIGINS-http://localhost:3000,http://127.0.0.1:3000}
+      - CRAWLER_MAX_CONCURRENCY=${CRAWLER_MAX_CONCURRENCY:-2}
+      - CRAWLER_RATE_LIMIT_PER_MIN=${CRAWLER_RATE_LIMIT_PER_MIN:-30}
+      - CRAWLER_TRUST_PROXY=${CRAWLER_TRUST_PROXY:-false}
     shm_size: 1gb
+    # Sized for the default of 2 concurrent browsers; raise together with CRAWLER_MAX_CONCURRENCY.
+    mem_limit: 2g
+    cpus: 2.0
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -47,21 +60,25 @@ services:
     container_name: luminara-languagetool
     restart: unless-stopped
     ports:
-      - "8010:8010"
+      - "127.0.0.1:8010:8010"
     environment:
       - Java_Xms=512m
       - Java_Xmx=1g
+    mem_limit: 1536m
+    cpus: 1.0
 
   umami:
     image: ghcr.io/umami-software/umami:postgresql-latest
     container_name: luminara-umami
     restart: unless-stopped
     ports:
-      - "3002:3000"
+      - "127.0.0.1:3002:3000"
     environment:
-      - DATABASE_URL=postgresql://umami:umami@umami-db:5432/umami
+      - DATABASE_URL=postgresql://${UMAMI_DB_USER:?Set UMAMI_DB_USER in .env}:${UMAMI_DB_PASSWORD:?Set UMAMI_DB_PASSWORD in .env (openssl rand -hex 32)}@umami-db:5432/${UMAMI_DB_NAME:?Set UMAMI_DB_NAME in .env}
       - DATABASE_TYPE=postgresql
-      - APP_SECRET=${UMAMI_APP_SECRET:?Set UMAMI_APP_SECRET in .env}
+      - APP_SECRET=${UMAMI_APP_SECRET:?Set UMAMI_APP_SECRET in .env (openssl rand -hex 32)}
+    mem_limit: 1g
+    cpus: 1.0
     depends_on:
       umami-db:
         condition: service_healthy
@@ -71,13 +88,15 @@ services:
     container_name: luminara-umami-db
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=umami
-      - POSTGRES_USER=umami
-      - POSTGRES_PASSWORD=umami
+      - POSTGRES_DB=${UMAMI_DB_NAME:?Set UMAMI_DB_NAME in .env}
+      - POSTGRES_USER=${UMAMI_DB_USER:?Set UMAMI_DB_USER in .env}
+      - POSTGRES_PASSWORD=${UMAMI_DB_PASSWORD:?Set UMAMI_DB_PASSWORD in .env (openssl rand -hex 32)}
     volumes:
       - umami-db-data:/var/lib/postgresql/data
+    mem_limit: 512m
+    cpus: 1.0
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U umami"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 10
