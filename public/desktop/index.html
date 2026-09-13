@@ -44,6 +44,20 @@
         color: var(--muted);
         line-height: 1.6;
       }
+      .meta {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 0.75rem;
+        justify-content: center;
+        margin-top: 1rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .pill {
+        border: 1px solid rgba(196, 165, 116, 0.35);
+        padding: 0.25rem 0.65rem;
+        letter-spacing: 0.04em;
+      }
       a.btn {
         display: inline-block;
         margin-top: 1.5rem;
@@ -77,17 +91,47 @@
       <p>
         One-click installer for your PC. The desktop shell opens the live app at
         luminarasuite.com, so features and fixes ship with every Cloudflare deploy.
-        The installer is served from this domain (Cloudflare edge when R2 is enabled,
-        otherwise GitHub Releases).
+        Prefer this page for downloads so Windows users stay on the official domain.
       </p>
-      <a class="btn" href="/desktop/windows">Download for Windows</a>
+      <div class="meta" id="status" aria-live="polite">
+        <span class="pill" id="versionPill">Version …</span>
+        <span class="pill" id="sourcePill">Checking mirror…</span>
+      </div>
+      <a class="btn" id="downloadBtn" href="/desktop/windows">Download for Windows</a>
+      <br />
+      <a class="secondary" id="githubFallback" href="https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent/releases/latest"
+        >GitHub Releases fallback</a
+      >
       <br />
       <a class="secondary" href="/">Back to luminarasuite.com</a>
-      <p class="note">
+      <p class="note" id="signingNote">
         Until the installer is code-signed, Windows SmartScreen may warn on first
         run. Choose More info, then Run anyway when you trust the official
         luminarasuite.com download.
       </p>
     </main>
+    <script>
+      (async function () {
+        const versionPill = document.getElementById("versionPill");
+        const sourcePill = document.getElementById("sourcePill");
+        const githubFallback = document.getElementById("githubFallback");
+        try {
+          const res = await fetch("/api/desktop/latest", { cache: "no-store" });
+          if (!res.ok) throw new Error("status " + res.status);
+          const data = await res.json();
+          versionPill.textContent = data.version ? "Version " + data.version : "Latest release";
+          sourcePill.textContent = data.mirroredOnR2
+            ? "CDN: Cloudflare R2"
+            : "CDN: GitHub redirect";
+          if (data.githubLatest) githubFallback.href = data.githubLatest;
+          if (data.fileName) {
+            document.getElementById("downloadBtn").setAttribute("download", data.fileName);
+          }
+        } catch (err) {
+          versionPill.textContent = "Version unavailable";
+          sourcePill.textContent = "CDN status unknown";
+        }
+      })();
+    </script>
   </body>
 </html>

@@ -200,8 +200,9 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <a
                 href="/desktop"
                 className="px-9 py-4 border border-gold/35 text-gold-light font-black uppercase tracking-[0.28em] text-[10px] rounded-xl hover:border-gold/70 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                title="Download the Windows desktop installer"
               >
-                Windows app
+                Download for Windows
               </a>
             </div>
             {!isAuthenticated && (

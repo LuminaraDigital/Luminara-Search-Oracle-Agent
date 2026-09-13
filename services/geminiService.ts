@@ -59,6 +59,7 @@ import { visibilityHistoryService } from './visibility/visibilityHistoryService'
 import { brandMemoryVaultService } from './memory/brandMemoryVaultService';
 import { competitorWatchlistService } from './competitors/competitorWatchlistService';
 import { WIKI_LINK_PROMPT_HINT } from './audit/wikiLinkService';
+import { postAuditReflectionService } from './audit/postAuditReflectionService';
 
 export interface AuditReportResult {
   text: string;
@@ -660,10 +661,11 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     }
 
     const auditMode = dna?.name ? 'Full audit' : 'Quick scout';
+    const pastExperienceText = postAuditReflectionService.formatExperienceForPrompt(displayUrl);
     const prompt = `
 ${dnaContext || '[MODE: Quick scout - no Business DNA. Keep recommendations general. Label the report Mode: Quick scout.]'}
 ${methodology}
-${wrapUntrustedContent('SCRAPED_PAGE', scrapedContent)}
+${pastExperienceText ? `${pastExperienceText}\n` : ''}${wrapUntrustedContent('SCRAPED_PAGE', scrapedContent)}
 ${wrapUntrustedContent('SEARCH_GROUNDING', searchGrounding)}
 ${wrapUntrustedContent('EMPIRICAL', empiricalText)}
 ${wrapUntrustedContent('ENRICHMENT', enrichmentText)}
@@ -790,6 +792,34 @@ Strict Formatting Guidelines:
           competitorWatchlistService.seedFromDna(dna.competitors, displayUrl);
         }
         competitorWatchlistService.evaluate(displayUrl);
+
+        try {
+          const experience = postAuditReflectionService.reflectOnAudit({
+            domain: displayUrl,
+            focus: String(focus),
+            auditId: vault.entry.id,
+            healthScore: trustPack?.citeWorthiness ?? null,
+            scrapedEvidence: {
+              scrapedUrl: websiteUrl,
+              hasContent: Boolean(scrapedContent),
+              schemasFound: [],
+              title: reportTitle,
+              wordCount: (scrapedText.match(/[A-Za-z0-9À-ÿ'’-]+/g) || []).length,
+              rawTextSnippet: scrapedContent,
+            },
+            findings: trustPack?.findings?.map((f) => ({
+              title: f.title,
+              severity: f.severity,
+              description: f.detail,
+            })),
+            citationRatePercent: empiricalSummary?.citationRatePercent ?? null,
+            topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
+            dna,
+          });
+          brandMemoryVaultService.ingestAuditExperience(experience);
+        } catch (reflErr) {
+          console.warn('[MUSE Reflection] Post-audit reflection error', reflErr);
+        }
       } catch (memErr) {
         console.warn('[BrandMemory] ingest error', memErr);
       }

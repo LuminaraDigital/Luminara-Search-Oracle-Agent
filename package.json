@@ -39,7 +39,9 @@
     "desktop:dev": "node scripts/desktop-dev-start.mjs",
     "desktop": "electron .",
     "desktop:pack": "electron-builder --dir --config electron-builder.yml",
-    "desktop:dist:win": "electron-builder --win --config electron-builder.yml"
+    "desktop:dist:win": "electron-builder --win --config electron-builder.yml",
+    "desktop:mirror-r2": "node scripts/mirror-desktop-r2.mjs",
+    "desktop:check-signing": "node scripts/check-desktop-signing.mjs"
   },
   "dependencies": {
     "@formepdf/core": "^0.20.1",

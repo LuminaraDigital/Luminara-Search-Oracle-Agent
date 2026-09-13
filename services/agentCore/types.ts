@@ -174,6 +174,7 @@ export interface MemoryFact {
   key: string;          // e.g. 'competitor:adyen', 'gap:missing_organization_schema'
   value: string;
   confidence: number;
+  decayedScore?: number;
   createdAt: number;
   updatedAt: number;
   resolvedAt?: number;
@@ -188,6 +189,27 @@ export interface MemoryDelta {
   value: string;
   rationale: string;
   confidence: number;
+}
+
+export interface MemoryRelation {
+  id: string;
+  source: string;       // e.g. "luminarasuite.com"
+  predicate: string;    // e.g. "competes_with", "lacks_schema", "has_canonical_loop", "targets_audience", "authoritative_for"
+  target: string;       // e.g. "ahrefs.com" or "Organization" or "enterprise_b2b"
+  confidence: number;
+  decayedScore?: number;
+  createdAt: number;
+  updatedAt: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MemoryRelationDelta {
+  action: MemoryAction;
+  source: string;
+  predicate: string;
+  target: string;
+  confidence: number;
+  metadata?: Record<string, unknown>;
 }
 
 // ============================================================================

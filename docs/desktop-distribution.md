@@ -1,43 +1,44 @@
 # Desktop distribution: R2 mirror + Authenticode signing
 
-## What works today (no R2 yet)
+## What works today
 
-- `/desktop` download page
-- `/desktop/windows` Worker route: redirects to the latest GitHub Release `.exe`
-- `/api/desktop/latest` JSON status (reports whether an R2 mirror is active)
-- GitHub Actions builds the NSIS installer on `desktop-v*` tags
+- `/desktop` download page (shows live version + whether R2 is mirroring)
+- `/desktop/windows` Worker route: streams from R2 when `DESKTOP_RELEASES` is bound and `windows/latest.exe` exists; otherwise redirects to GitHub Releases
+- `/api/desktop/latest` JSON status (`mirroredOnR2`, version, file name)
+- GitHub Actions builds the NSIS installer on `desktop-v*` tags and mirrors to R2
+- Bucket: `luminara-desktop-releases` on account `2373013c66331e9660e47ffa3ae40f5c`
 
-R2 is **not enabled** on account `2373013c66331e9660e47ffa3ae40f5c` yet (API error 10042). You must finish Cloudflare's R2 checkout once before the CDN mirror can go live.
+## R2 mirror (ops)
 
-## Enable R2 (one-time, you must click this)
-
-1. Open [Cloudflare R2 Overview](https://dash.cloudflare.com/2373013c66331e9660e47ffa3ae40f5c/r2/overview) for Info@luminara.digital's Account.
-2. Complete **Enable R2** / checkout. A payment method is required even though the free tier covers small installer traffic.
-3. Create the bucket:
+Create or refresh the mirror from the latest GitHub desktop release:
 
 ```bash
-npx wrangler r2 bucket create luminara-desktop-releases
+npm run desktop:mirror-r2
+# or a specific tag / local build:
+node scripts/mirror-desktop-r2.mjs --tag desktop-v1.0.2
+node scripts/mirror-desktop-r2.mjs --exe release/Luminara-Suite-Setup-1.0.2.exe
 ```
 
-4. In `wrangler.jsonc`, uncomment the `r2_buckets` block that binds `DESKTOP_RELEASES` to `luminara-desktop-releases`.
-5. Deploy:
+Worker binding (already in `wrangler.jsonc` for default + `production`):
+
+```jsonc
+"r2_buckets": [
+  { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases" }
+]
+```
+
+After binding changes: `npm run deploy` (or push `main` for CI). Confirm:
 
 ```bash
-npm run deploy
+curl -s https://luminarasuite.com/api/desktop/latest
+# expect mirroredOnR2: true
 ```
-
-6. Re-run the Desktop Windows workflow (or push a new `desktop-v*` tag). The "Mirror installer to Cloudflare R2" step uploads:
-   - `windows/latest.exe`
-   - `windows/latest.yml`
-   - `windows/manifest.json`
-
-After that, `https://luminarasuite.com/desktop/windows` streams from R2 at the edge. GitHub remains the fallback and the feed for `electron-updater`.
 
 ## Authenticode (SmartScreen)
 
-Unsigned installers show "Windows protected your PC". For public distribution:
+Unsigned installers show "Windows protected your PC". This cannot be removed without a purchased certificate. CI already wires electron-builder to secrets when present.
 
-1. Buy an Authenticode code-signing certificate (OV or EV) from a Windows-trusted CA (DigiCert, Sectigo, SSL.com, etc.). EV with hardware token gives reputation faster.
+1. Buy an Authenticode code-signing certificate (OV or EV) from a Windows-trusted CA (DigiCert, Sectigo, SSL.com, etc.). EV with hardware token builds reputation faster.
 2. Export a `.pfx` (certificate + private key). Keep the export password.
 3. Base64-encode the PFX (PowerShell):
 
@@ -48,9 +49,20 @@ Unsigned installers show "Windows protected your PC". For public distribution:
 4. Add GitHub Actions secrets on this repo:
    - `WIN_CSC_LINK` = the base64 PFX string (electron-builder convention)
    - `WIN_CSC_KEY_PASSWORD` = the PFX password
-5. Re-run the Desktop Windows workflow. When `WIN_CSC_LINK` is present, the build signs with Authenticode.
+5. Check locally (never prints secret values):
+
+```bash
+# In CI these are injected; locally export them first if testing
+npm run desktop:check-signing
+```
+
+6. Re-run the Desktop Windows workflow (or push a new `desktop-v*` tag). When `WIN_CSC_LINK` is present, the build signs with Authenticode.
 
 Do **not** commit the `.pfx`, password, or base64 blob. Rotate if exposed.
+
+## Discoverability (download counts)
+
+GitHub release download counts rise only when people download. Prefer linking users to `https://luminarasuite.com/desktop` (and `/desktop/windows`) rather than raw GitHub asset URLs so traffic stays on the official domain and R2 mirror. Landing already links "Windows app" to `/desktop`.
 
 ## Domain, TON, multi-user
 

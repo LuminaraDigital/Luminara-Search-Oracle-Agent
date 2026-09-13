@@ -25,6 +25,8 @@ import { executiveTranslatorAgent } from './agents/executiveTranslatorAgent';
 import { criticReflectionEngine } from './criticReflectionEngine';
 import { mem0MemoryEngine } from './mem0MemoryEngine';
 import { tonAttestationService } from './tonAttestationService';
+import { postAuditReflectionService } from '../audit/postAuditReflectionService';
+import { brandMemoryVaultService } from '../memory/brandMemoryVaultService';
 import { ReportFocus, BusinessDNA } from '../../types';
 
 export const CREW_PROFILES: Record<AgentRole, AgentProfile> = {
@@ -221,16 +223,46 @@ export class CrewOrchestrator {
       return { attestation };
     });
 
-    // Node 9: Mem0 4-Tier Memory Extraction & Sync
+    // Node 9: Mem0 4-Tier Memory Extraction & Sync + MUSE Reflection
     graph.addNode('memory_sync_node', 'Mem0 Memory Delta Sync', async (ctx, emit) => {
       const deltas = mem0MemoryEngine.extractAndSyncAuditContext(ctx);
+      const cleanDomain = ctx.targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
+      try {
+        const experience = postAuditReflectionService.reflectOnAudit({
+          domain: cleanDomain,
+          focus: String(ctx.focus),
+          auditId: `crew-audit-${Date.now()}`,
+          healthScore: ctx.healthScore,
+          scrapedEvidence: {
+            scrapedUrl: ctx.scrapedPages[0]?.url || ctx.targetUrl,
+            hasContent: ctx.scrapedPages.length > 0,
+            schemasFound: ctx.scrapedPages[0]?.schemasFound.map((s) => s.type) || [],
+            title: ctx.scrapedPages[0]?.title || cleanDomain,
+            wordCount: ctx.scrapedPages[0]?.wordCount || 0,
+            rawTextSnippet: ctx.scrapedPages[0]?.rawTextSnippet || '',
+          },
+          findings: ctx.findings.map((f) => ({
+            title: f.title,
+            category: f.category,
+            severity: f.severity,
+            description: f.description,
+          })),
+          citationRatePercent: ctx.citationRatePercent,
+          topCompetitor: ctx.topCompetitors[0] || null,
+          dna: ctx.dna,
+        });
+        brandMemoryVaultService.ingestAuditExperience(experience);
+      } catch (err) {
+        console.warn('[Crew Orchestrator] Reflection sync error', err);
+      }
+
       emit({
         id: `mem0-sync-${Date.now()}`,
         timestamp: Date.now(),
         agentRole: 'executive_translator',
         agentName: 'Brand Memory Vault',
         phase: 'memory_synced',
-        message: `Synced ${deltas.length} autonomous memory delta(s) into brand knowledge graph.`,
+        message: `Synced ${deltas.length} autonomous memory delta(s) & MUSE experience heuristics into brand knowledge graph.`,
         status: 'completed',
       });
       return {};

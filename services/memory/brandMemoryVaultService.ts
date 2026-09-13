@@ -10,6 +10,7 @@ import { auditHistoryService, type AuditHistoryEntry } from '../audit/auditHisto
 import { injectCompetitorWikiLinks, extractWikiLinks } from '../audit/wikiLinkService';
 import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
 import { getActiveClientId } from '../workspace/agencyWorkspaceService';
+import type { PostAuditExperience } from '../audit/postAuditReflectionService';
 
 const EVENT_KEY = 'luminara_brand_memory_events_v1';
 const MAX_EVENTS = 200;
@@ -19,7 +20,8 @@ export type BrandMemoryEventType =
   | 'chat_insight'
   | 'competitor_mention'
   | 'dna_sync'
-  | 'watchlist_alert';
+  | 'watchlist_alert'
+  | 'experience_heuristic';
 
 export interface BrandMemoryEvent {
   id: string;
@@ -203,6 +205,24 @@ export function syncDna(dna: BusinessDNA): BrandMemoryEvent {
   });
 }
 
+export function ingestAuditExperience(exp: PostAuditExperience): BrandMemoryEvent {
+  const clientId = getActiveClientId();
+  const summaryText = [
+    ...exp.proceduralLessons.map((p) => `[${p.pattern}] ${p.heuristic}`),
+    ...exp.strategicLessons.map((s) => `[Strategy] ${s.actionableRule}`),
+  ].slice(0, 3).join(' | ');
+
+  return pushEvent({
+    type: 'experience_heuristic',
+    title: `MUSE Heuristics: ${exp.domain} (${exp.focus})`,
+    summary: summaryText.slice(0, 300) || `Learned heuristics for ${exp.domain}`,
+    domain: exp.domain,
+    clientId,
+    auditId: exp.auditId,
+    tags: ['muse', 'experience', 'heuristics', exp.domain],
+  });
+}
+
 export function listEvents(limit = 50): BrandMemoryEvent[] {
   return loadEvents()
     .slice()
@@ -212,6 +232,7 @@ export function listEvents(limit = 50): BrandMemoryEvent[] {
 
 export const brandMemoryVaultService = {
   ingestAudit,
+  ingestAuditExperience,
   ingestChatInsight,
   syncDna,
   listEvents,

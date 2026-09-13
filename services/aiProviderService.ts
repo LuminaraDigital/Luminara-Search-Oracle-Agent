@@ -5,7 +5,9 @@ import {
   StreamChunk, 
   NativeEngineId,
   NativeEngineStatus,
-  NativeFailoverEvent
+  NativeFailoverEvent,
+  InferenceRouterUsage,
+  InferenceRouterUsageProvider,
 } from '../types';
 import { configService } from './configService';
 import { classifyProviderFailure } from './resilience/failureClassification';
@@ -50,10 +52,49 @@ export {
   OpenRouterProvider,
 };
 
+export const USAGE_STORAGE_KEY = 'luminara_inference_usage_v1';
+
+export const PROVIDER_COST_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: number }> = {
+  groq: { prompt: 0.05, completion: 0.08 },
+  nim: { prompt: 0.15, completion: 0.15 },
+  openrouter: { prompt: 0.50, completion: 0.50 },
+  ollama: { prompt: 0.0, completion: 0.0 },
+  freellm: { prompt: 0.0, completion: 0.0 },
+};
+
+export function emptyInferenceRouterUsage(): InferenceRouterUsage {
+  const empty = (): InferenceRouterUsageProvider => ({
+    requests: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    estimatedCostUsd: 0,
+    lastUsedAt: null,
+    averageLatencyMs: 0,
+  });
+  return {
+    schemaVersion: 1,
+    providers: {
+      groq: empty(),
+      nim: empty(),
+      openrouter: empty(),
+      ollama: empty(),
+      freellm: empty(),
+    },
+    totals: {
+      requests: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      estimatedCostUsd: 0,
+    },
+  };
+}
+
 /**
  * Unified AI Provider Service
  * Native Orchestrator: Groq LPU, NVIDIA NIM, OpenRouter, Ollama, and optional FreeLLMAPI BYOK gateway.
- * With automatic engine searching, 429 cooldowns, and seamless pop-up failovers.
+ * With automatic engine searching, 429 cooldowns, Grok-Bot usage tracking, and seamless pop-up failovers.
  */
 export class AIProviderService {
   private static instance: AIProviderService;
@@ -65,12 +106,129 @@ export class AIProviderService {
   private circuits: Map<string, AdaptiveCircuit> = new Map();
   private static readonly COOLDOWN_MS = 60_000;
 
+  private usage: InferenceRouterUsage = emptyInferenceRouterUsage();
+  private usageListeners = new Set<(usage: InferenceRouterUsage) => void>();
+
   private constructor() {
     this.registerProvider(new NvidiaNimProvider());
     this.registerProvider(new GroqProvider());
     this.registerProvider(new OpenRouterProvider());
     this.registerProvider(new OllamaNativeProvider());
     this.registerProvider(new FreeLlmProvider());
+    this.loadUsage();
+  }
+
+  private canStorage(): boolean {
+    try {
+      if (typeof localStorage === 'undefined') return false;
+      localStorage.setItem('__usage_probe__', '1');
+      localStorage.removeItem('__usage_probe__');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private loadUsage(): void {
+    if (!this.canStorage()) return;
+    try {
+      const raw = localStorage.getItem(USAGE_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.schemaVersion === 1 && parsed.providers && parsed.totals) {
+          this.usage = parsed;
+          return;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    this.usage = emptyInferenceRouterUsage();
+  }
+
+  private saveUsage(): void {
+    if (this.canStorage()) {
+      try {
+        localStorage.setItem(USAGE_STORAGE_KEY, JSON.stringify(this.usage));
+      } catch {
+        /* ignore */
+      }
+    }
+    this.notifyUsage();
+  }
+
+  private notifyUsage(): void {
+    const snapshot = this.getUsageStats();
+    this.usageListeners.forEach((cb) => {
+      try {
+        cb(snapshot);
+      } catch {
+        /* listener error */
+      }
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('luminara-inference-usage', { detail: snapshot }));
+    }
+  }
+
+  public getUsageStats(): InferenceRouterUsage {
+    return JSON.parse(JSON.stringify(this.usage));
+  }
+
+  public resetUsageStats(): void {
+    this.usage = emptyInferenceRouterUsage();
+    this.saveUsage();
+  }
+
+  public subscribeToUsage(cb: (usage: InferenceRouterUsage) => void): () => void {
+    this.usageListeners.add(cb);
+    return () => this.usageListeners.delete(cb);
+  }
+
+  public recordUsage(
+    providerId: string,
+    tokens: { prompt?: number; completion?: number; cacheRead?: number; cacheWrite?: number },
+    latencyMs = 0,
+    _model?: string
+  ): void {
+    const id = providerId as NativeEngineId;
+    if (!this.usage.providers[id]) {
+      this.usage.providers[id] = {
+        requests: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        estimatedCostUsd: 0,
+        lastUsedAt: null,
+        averageLatencyMs: 0,
+      };
+    }
+    const prov = this.usage.providers[id];
+    const inp = Math.max(0, tokens.prompt || 0);
+    const outp = Math.max(0, tokens.completion || 0);
+    const cr = Math.max(0, tokens.cacheRead || 0);
+    const cw = Math.max(0, tokens.cacheWrite || 0);
+
+    const prevReqs = prov.requests;
+    prov.requests += 1;
+    prov.inputTokens += inp;
+    prov.outputTokens += outp;
+    prov.cacheReadTokens += cr;
+    prov.cacheWriteTokens += cw;
+    prov.lastUsedAt = Date.now();
+    prov.averageLatencyMs = prevReqs === 0 ? latencyMs : Math.round((prov.averageLatencyMs * prevReqs + latencyMs) / (prevReqs + 1));
+
+    const rates = PROVIDER_COST_PER_MILLION_TOKENS[id] || { prompt: 0, completion: 0 };
+    const costIncrement = (inp / 1_000_000) * rates.prompt + (outp / 1_000_000) * rates.completion;
+    prov.estimatedCostUsd = Number((prov.estimatedCostUsd + costIncrement).toFixed(6));
+
+    this.usage.totals.requests += 1;
+    this.usage.totals.inputTokens += inp;
+    this.usage.totals.outputTokens += outp;
+    this.usage.totals.estimatedCostUsd = Number((this.usage.totals.estimatedCostUsd + costIncrement).toFixed(6));
+
+    this.saveUsage();
   }
 
   public static getInstance(): AIProviderService {
@@ -386,9 +544,18 @@ export class AIProviderService {
       const start = Date.now();
       try {
         const result = await provider.generateText(prompt, callOpts);
+        const latencyMs = Date.now() - start;
         this.markSuccess(providerId);
         this.lastActiveEngine = providerId as NativeEngineId;
         this.dispatchActiveEngine(provider.id, callOpts.model || provider.config.model);
+        const promptTokens = result.tokenUsage?.prompt || Math.max(1, Math.ceil(prompt.length / 4));
+        const completionTokens = result.tokenUsage?.completion || Math.max(1, Math.ceil(result.text.length / 4));
+        this.recordUsage(
+          providerId,
+          { prompt: promptTokens, completion: completionTokens },
+          latencyMs,
+          callOpts.model || provider.config.model
+        );
         return result;
       } catch (err: any) {
         lastError = err;
@@ -439,17 +606,31 @@ export class AIProviderService {
       const start = Date.now();
       let yieldedAny = false;
 
+      let accumulatedText = '';
+      let chunkTokenUsage: { prompt: number; completion: number; total: number } | undefined;
+
       try {
         for await (const chunk of provider.streamText(prompt, callOpts)) {
           yieldedAny = true;
           streamSucceeded = true;
+          if (chunk.text) accumulatedText += chunk.text;
+          if (chunk.tokenUsage) chunkTokenUsage = chunk.tokenUsage;
           yield chunk;
         }
 
         if (streamSucceeded) {
+          const latencyMs = Date.now() - start;
           this.markSuccess(providerId);
           this.lastActiveEngine = providerId as NativeEngineId;
           this.dispatchActiveEngine(provider.id, callOpts.model || provider.config.model);
+          const promptTokens = chunkTokenUsage?.prompt || Math.max(1, Math.ceil(prompt.length / 4));
+          const completionTokens = chunkTokenUsage?.completion || Math.max(1, Math.ceil(accumulatedText.length / 4));
+          this.recordUsage(
+            providerId,
+            { prompt: promptTokens, completion: completionTokens },
+            latencyMs,
+            callOpts.model || provider.config.model
+          );
           return;
         }
       } catch (err: any) {

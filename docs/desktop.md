@@ -43,7 +43,7 @@ A second repository would duplicate auth, TON Connect domain binding, and UI. Ke
 
 ## Code signing
 
-Unsigned builds trigger Windows SmartScreen ("Windows protected your PC"). Full steps (PFX → `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`) are in [`docs/desktop-distribution.md`](desktop-distribution.md).
+Unsigned builds trigger Windows SmartScreen ("Windows protected your PC"). Full steps (PFX → `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`) are in [`docs/desktop-distribution.md`](desktop-distribution.md). Check readiness with `npm run desktop:check-signing` (does not print secret values).
 
 ## Domain, TON, and multi-user access
 
@@ -64,5 +64,5 @@ Installed Windows builds check GitHub Releases for shell updates (`electron-upda
 - **App content** (UI, Worker APIs, BYOK relay) updates whenever Cloudflare deploys `luminarasuite.com`; no installer required.
 - Dev (`npx electron .`) skips update checks.
 
-R2 enable + mirror checklist: [`docs/desktop-distribution.md`](desktop-distribution.md).
+R2 mirror: `npm run desktop:mirror-r2`. Full checklist: [`docs/desktop-distribution.md`](desktop-distribution.md).
 

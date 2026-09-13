@@ -721,6 +721,28 @@ export interface NativeFailoverEvent {
   timestamp: number;
 }
 
+export interface InferenceRouterUsageProvider {
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  estimatedCostUsd: number;
+  lastUsedAt: number | null;
+  averageLatencyMs: number;
+}
+
+export interface InferenceRouterUsage {
+  schemaVersion: 1;
+  providers: Record<NativeEngineId, InferenceRouterUsageProvider>;
+  totals: {
+    requests: number;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+  };
+}
+
 /**
  * AI Provider configuration and capabilities
  * Supports multiple LLM providers with unified interface
