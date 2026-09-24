@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { ICONS } from '../constants';
 import { MarketingNav } from './MarketingNav';
+import { PremiumAtmosphere } from './ui/PremiumAtmosphere';
 
 interface WhyLuminaraPageProps {
   onBack: () => void;
@@ -10,54 +11,56 @@ interface WhyLuminaraPageProps {
   onNavigatePricing: () => void;
 }
 
-const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, onNavigateInfrastructure, onNavigateIntelligence, onNavigatePricing }) => {
+const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
+  onBack,
+  onTerminal,
+  onNavigateInfrastructure,
+  onNavigateIntelligence,
+  onNavigatePricing,
+}) => {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
   const features = [
     {
-      title: 'Instant AI Audits',
-      desc: 'The tool checks your whole site in seconds. It finds things humans miss. It gives you a clear list of what to fix.',
-      benefit: 'Get a full report in minutes, not weeks.'
+      title: 'Instant audits',
+      desc: 'Run a focused check on a URL and leave with a ranked list of fixes instead of waiting on a long consulting cycle.',
+      benefit: 'Same day priorities you can hand to a developer.',
     },
     {
-      title: 'AI Answer Visibility',
-      desc: 'The tool tests how you show up in ChatGPT. It helps you change your text so AI recommends your brand.',
-      benefit: 'Win the 68% of customers who use AI to find info.'
+      title: 'AI answer visibility',
+      desc: 'See whether ChatGPT, Perplexity and AI Overviews mention you when the data path is connected. Gaps show as not measured, not invented.',
+      benefit: 'Honest AEO signal, not theatrical scores.',
     },
     {
-      title: 'Competitor Tracking',
-      desc: 'Our software scans up to 5 rivals at once. It shows you their gaps so you can take their traffic.',
-      benefit: 'Be smarter than your rivals with less effort.'
+      title: 'Competitor context',
+      desc: 'Compare nearby rivals on the same checks so you know where they outrank or out-cite you.',
+      benefit: 'A short map of where to push next.',
     },
     {
-      title: 'Plain English Reports',
-      desc: 'No confusing tech words. The app explains everything simply. You can give these reports to your team to start work.',
-      benefit: 'Save time on calls and long meetings.'
-    }
+      title: 'Plain-English reports',
+      desc: 'Findings are written for owners and operators. Share them without translating agency jargon.',
+      benefit: 'Less time explaining, more time shipping fixes.',
+    },
   ];
 
-  const metrics = [
-    { metric: 'Audit Speed', baseline: '10+ Days', luminara: '5 Minutes', source: 'Software Automation' },
-    { metric: 'AI Accuracy', baseline: 'Guessing', luminara: 'Data-Backed', source: 'Search Grounding' },
-    { metric: 'Task Priority', baseline: 'Random', luminara: 'Impact-Based', source: 'ROI Algorithm' },
-    { metric: 'Cost', baseline: '$1,000+', luminara: '$49/mo', source: 'App Subscription' }
+  const contrasts = [
+    { label: 'Delivery', manual: 'Weeks of back-and-forth', luminara: 'Audit in the app when you need it' },
+    { label: 'Evidence', manual: 'Slide decks and opinion', luminara: 'Search-grounded where keys allow' },
+    { label: 'Priority', manual: 'Long unordered lists', luminara: 'Impact-ordered actions' },
+    { label: 'Cost model', manual: 'Retainer or project fees', luminara: 'Subscription or BYOK usage' },
   ];
 
   return (
-    <div className="min-h-[100dvh] bg-black text-white selection:bg-gold selection:text-black font-['Outfit'] antialiased overflow-x-clip">
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 left-0 w-[50%] h-[50%] bg-gold/5 blur-[200px] rounded-full"></div>
-        <div className="absolute bottom-0 right-0 w-[50%] h-[50%] bg-gold-dark/5 blur-[200px] rounded-full"></div>
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.1] mix-blend-overlay"></div>
-      </div>
-
+    <div className="min-h-[100dvh] bg-[#0a0a0a] text-white selection:bg-gold selection:text-black font-sans antialiased overflow-x-clip">
+      <PremiumAtmosphere intensity="subtle" />
       <MarketingNav
-        brandLabel="Why Us"
+        brandLabel="Luminara Suite"
+        brandSub="Why us"
         onBrandClick={onBack}
         links={[
-          { label: 'Return', onClick: onBack },
+          { label: 'Home', onClick: onBack },
           { label: 'How It Works', onClick: onNavigateInfrastructure },
           { label: 'Our AI', onClick: onNavigateIntelligence },
           { label: 'Pricing', onClick: onNavigatePricing },
@@ -66,141 +69,121 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({ onBack, onTerminal, o
       />
 
       <main className="relative z-10 pt-28 sm:pt-36 pb-20 sm:pb-32">
-        <section className="px-4 sm:px-6 md:px-20 mb-20 sm:mb-40 max-w-7xl mx-auto text-center">
-          <div className="inline-block px-4 py-1.5 rounded-full border border-gold/20 bg-gold/5 mb-8 sm:mb-10">
-            <span className="text-[9px] font-black uppercase tracking-[0.35em] sm:tracking-[0.6em] gold-text">Better Than Manual SEO</span>
-          </div>
-          <h1 className="text-[clamp(2rem,8vw,5.5rem)] font-light tracking-tighter leading-[1.05] mb-8 sm:mb-10 [overflow-wrap:anywhere]">
-            Stop Guessing. <br />
-            <span className="gold-text animate-title-shimmer bg-size-200 font-medium tracking-tighter">Start Auditing.</span>
+        <section className="px-4 sm:px-6 md:px-20 mb-16 sm:mb-24 max-w-7xl mx-auto">
+          <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-gold mb-6">For operators</p>
+          <h1 className="font-display text-[clamp(2rem,7vw,4.5rem)] tracking-tight leading-[1.05] mb-8 max-w-4xl [overflow-wrap:anywhere]">
+            Stop guessing which search fix matters first.
           </h1>
-          <p className="max-w-4xl mx-auto text-base sm:text-xl md:text-2xl text-gray-400 font-light leading-relaxed mb-10 sm:mb-16">
-            Luminara Search gives you a professional marketing audit in minutes. No more paying thousands for slow human reports. Our AI finds the gaps and shows you how to win.
+          <p className="max-w-3xl text-base sm:text-xl text-gray-400 font-light leading-relaxed mb-10">
+            Luminara Suite is built for owners who need a clear plan for Google and AI answers without buying a full agency engagement.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-6">
+          <div className="flex flex-col sm:flex-row gap-3">
             <button
               type="button"
               onClick={onTerminal}
-              className="w-full sm:w-auto whitespace-nowrap min-h-12 px-8 sm:px-12 py-4 sm:py-6 bg-gold text-black font-black uppercase tracking-[0.22em] text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="mkt-cta-primary w-full sm:w-auto"
             >
-              Audit My Site
+              Audit my site
             </button>
             <button
               type="button"
               onClick={onNavigatePricing}
-              className="w-full sm:w-auto whitespace-nowrap min-h-12 px-8 sm:px-12 py-4 sm:py-6 glass-morphism border border-white/10 text-white font-black uppercase tracking-[0.22em] text-[10px] rounded-2xl hover:bg-white/5 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="mkt-cta-secondary w-full sm:w-auto"
             >
-              View Pricing
+              View pricing
             </button>
           </div>
         </section>
 
-        <section className="px-4 sm:px-6 md:px-20 mb-24 sm:mb-48 max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-             <div className="space-y-8 sm:space-y-12 min-w-0">
-               <h2 className="text-[clamp(1.75rem,6vw,3.75rem)] font-light [overflow-wrap:anywhere]">Built for <br /><span className="gold-text font-bold uppercase tracking-wider">Fast Results.</span></h2>
-               <div className="space-y-6 sm:space-y-8">
-                  <div className="p-6 sm:p-8 glass-morphism rounded-[24px] sm:rounded-[32px] border-white/5">
-                    <p className="text-gray-300 leading-relaxed font-light text-base sm:text-lg">
-                      Why wait weeks for a consultant? Our app gives you a full plan to fix your Google and AI presence right now. It saves you thousands in agency fees.
-                    </p>
-                  </div>
-                  <p className="text-gray-400 text-base sm:text-lg font-light leading-relaxed">
-                    Solo founders and small teams use our app to act like a big brand. We give you the same tools the experts use, but for a fraction of the cost.
-                  </p>
-               </div>
-             </div>
-             <div className="relative min-w-0">
-                <div className="absolute inset-0 bg-gold/10 blur-[100px] rounded-full"></div>
-                <div className="relative p-8 sm:p-12 glass-morphism rounded-[28px] sm:rounded-[64px] border-gold/20 text-center space-y-6 sm:space-y-8">
-                  <ICONS.LuminaraLogo className="w-28 h-28 sm:w-40 sm:h-40 mx-auto" isThinking={true} />
-                  <div>
-                    <div className="text-[10px] font-black uppercase tracking-[0.35em] sm:tracking-[1em] gold-text mb-4">Software Advantage</div>
-                    <p className="text-xl sm:text-2xl font-light text-white">Better Growth Data</p>
-                  </div>
-                </div>
-             </div>
+        <section className="px-4 sm:px-6 md:px-20 mb-20 sm:mb-28 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-start">
+          <div className="space-y-6 min-w-0">
+            <h2 className="font-display text-[clamp(1.75rem,5vw,3rem)] [overflow-wrap:anywhere]">
+              Built for people who ship fixes.
+            </h2>
+            <p className="text-gray-400 text-base sm:text-lg font-light leading-relaxed">
+              Solo founders and small teams use the suite to see search and AI gaps the same week they ask. You keep your own AI keys if you want; hosted quota is available on plan.
+            </p>
+          </div>
+          <div className="border border-white/[0.08] rounded-2xl p-8 bg-black/40 text-center space-y-4">
+            <ICONS.LuminaraLogo className="w-16 h-16 mx-auto" />
+            <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-gold">Product stance</p>
+            <p className="text-lg text-white font-light">Measure when we can. Label when we cannot.</p>
           </div>
         </section>
 
-        <section className="px-4 sm:px-6 md:px-20 mb-24 sm:mb-48 max-w-7xl mx-auto">
-          <div className="mb-12 sm:mb-20">
-             <h3 className="text-2xl sm:text-3xl font-light uppercase tracking-widest border-l-4 border-gold pl-5 sm:pl-8">Software <span className="gold-text font-black">Benefits.</span></h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8">
-            {features.map((f, i) => (
-              <div key={i} className="group p-6 sm:p-10 md:p-12 glass-morphism rounded-[28px] sm:rounded-[40px] border border-white/5 hover:border-gold/30 transition-all duration-700 min-w-0">
-                <div className="text-[10px] font-black gold-text uppercase tracking-[0.3em] mb-6 sm:mb-8">APP FEATURE {(i + 1).toString().padStart(2, '0')}</div>
-                <h4 className="text-xl sm:text-2xl font-bold uppercase tracking-tight mb-4 group-hover:text-gold-light transition-colors">{f.title}</h4>
-                <p className="text-gray-400 text-sm font-light leading-relaxed mb-6 sm:mb-8">{f.desc}</p>
-                <div className="pt-6 sm:pt-8 border-t border-white/5">
-                  <span className="text-[11px] text-gold font-black uppercase tracking-[0.22em]">The Software Win:</span>
-                  <p className="text-white text-[13px] font-medium mt-2">{f.benefit}</p>
-                </div>
+        <section className="px-4 sm:px-6 md:px-20 mb-20 sm:mb-28 max-w-7xl mx-auto">
+          <h2 className="text-xl sm:text-2xl font-semibold tracking-tight mb-10 border-l-2 border-gold pl-5">
+            What you get
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-10">
+            {features.map((f) => (
+              <div key={f.title} className="min-w-0 border-t border-white/[0.08] pt-6">
+                <h3 className="text-lg font-semibold mb-3">{f.title}</h3>
+                <p className="text-gray-400 text-sm font-light leading-relaxed mb-4">{f.desc}</p>
+                <p className="text-[12px] text-gold tracking-wide">{f.benefit}</p>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="px-4 sm:px-6 md:px-20 mb-24 sm:mb-48 max-w-7xl mx-auto">
-          <div className="text-center mb-12 sm:mb-24">
-            <h2 className="text-[clamp(1.75rem,6vw,3.75rem)] font-light mb-6 sm:mb-8 [overflow-wrap:anywhere]">Data <span className="gold-text font-bold uppercase tracking-wider">Comparison.</span></h2>
-            <p className="text-gray-400 text-base sm:text-lg font-light max-w-3xl mx-auto">
-              Our app is faster and cheaper than traditional SEO audits. See for yourself.
-            </p>
-          </div>
-          
-          <div className="overflow-hidden rounded-[24px] sm:rounded-[40px] border border-white/10 glass-morphism shadow-2xl">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[36rem]">
-                <thead>
-                  <tr className="bg-gold/10 border-b border-white/10">
-                    <th className="p-4 sm:p-8 text-[11px] font-black uppercase tracking-[0.22em] gold-text">Metric</th>
-                    <th className="p-4 sm:p-8 text-[11px] font-black uppercase tracking-[0.22em] text-gray-400">Manual Method</th>
-                    <th className="p-4 sm:p-8 text-[11px] font-black uppercase tracking-[0.22em] text-white">Luminara App</th>
-                    <th className="p-4 sm:p-8 text-[11px] font-black uppercase tracking-[0.22em] text-gray-400">The Winner</th>
+        <section className="px-4 sm:px-6 md:px-20 mb-20 sm:mb-28 max-w-7xl mx-auto">
+          <h2 className="font-display text-[clamp(1.75rem,5vw,3rem)] mb-4 [overflow-wrap:anywhere]">
+            Compared to a manual SEO project
+          </h2>
+          <p className="text-gray-400 text-base font-light mb-10 max-w-2xl">
+            Qualitative differences only. We do not invent conversion rates or customer counts.
+          </p>
+          <div className="overflow-x-auto border border-white/10 rounded-2xl">
+            <table className="w-full text-left min-w-[32rem]">
+              <thead>
+                <tr className="border-b border-white/10 bg-white/[0.02]">
+                  <th className="p-4 sm:p-6 text-[11px] font-bold uppercase tracking-[0.18em] text-gold">Dimension</th>
+                  <th className="p-4 sm:p-6 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Manual project</th>
+                  <th className="p-4 sm:p-6 text-[11px] font-bold uppercase tracking-[0.18em] text-white">Luminara Suite</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {contrasts.map((row) => (
+                  <tr key={row.label}>
+                    <td className="p-4 sm:p-6 text-sm font-semibold text-gray-200">{row.label}</td>
+                    <td className="p-4 sm:p-6 text-sm text-gray-500 font-light">{row.manual}</td>
+                    <td className="p-4 sm:p-6 text-sm text-gold-light">{row.luminara}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {metrics.map((m, i) => (
-                    <tr key={i} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="p-4 sm:p-8 text-sm sm:text-lg font-bold uppercase tracking-tight text-gray-200">{m.metric}</td>
-                      <td className="p-4 sm:p-8 text-gray-400 font-light text-sm sm:text-base">{m.baseline}</td>
-                      <td className="p-4 sm:p-8 text-gold-light font-bold text-sm sm:text-base">{m.luminara}</td>
-                      <td className="p-4 sm:p-8 text-gray-400 text-xs">{m.source}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
-        <section className="px-4 sm:px-6 md:px-20 text-center max-w-7xl mx-auto">
-          <div className="p-8 sm:p-16 md:p-24 glass-morphism rounded-[28px] sm:rounded-[56px] md:rounded-[80px] border border-gold/20 relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-gold/40 to-transparent"></div>
-            <div className="relative z-10 space-y-8 sm:space-y-12">
-              <h2 className="text-[clamp(1.75rem,7vw,4.5rem)] font-light [overflow-wrap:anywhere]">Start Your First <br /><span className="gold-text font-bold uppercase tracking-wider">Software Audit.</span></h2>
-              <p className="text-base sm:text-xl text-gray-400 font-light max-w-2xl mx-auto leading-relaxed">
-                Join thousands of brands using our tool to stay ahead. Try it for free today.
-              </p>
-              <div className="pt-4 sm:pt-8">
-                <button 
-                  type="button"
-                  onClick={onTerminal}
-                  className="w-full sm:w-auto whitespace-nowrap min-h-12 px-10 sm:px-16 py-5 sm:py-8 bg-gradient-to-br from-gold to-gold-dark text-black font-black uppercase tracking-[0.22em] text-[10px] rounded-2xl sm:rounded-3xl shadow-2xl hover:scale-105 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-                >
-                  Launch App
-                </button>
-              </div>
-            </div>
+        <section className="px-4 sm:px-6 md:px-20 max-w-7xl mx-auto">
+          <div className="border border-gold/25 rounded-2xl p-8 sm:p-14 max-w-3xl">
+            <h2 className="font-display text-[clamp(1.75rem,5vw,3rem)] mb-6 [overflow-wrap:anywhere]">
+              Start with one site audit.
+            </h2>
+            <p className="text-gray-400 font-light leading-relaxed mb-8">
+              Create an account, connect providers if you use BYOK, and run Instant Audit on the URL that matters most.
+            </p>
+            <button
+              type="button"
+              onClick={onTerminal}
+              className="mkt-cta-primary w-full sm:w-auto"
+            >
+              Launch app
+            </button>
           </div>
         </section>
       </main>
 
-      <footer className="py-16 sm:py-24 px-4 sm:px-6 md:px-20 flex flex-col items-center gap-10 sm:gap-12 relative z-10 bg-black" style={{ paddingBottom: 'max(3.5rem, env(safe-area-inset-bottom, 0px))' }}>
-        <div className="w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
-        <p className="text-[9px] text-gray-400 uppercase tracking-[0.35em] sm:tracking-[0.8em] text-center">&copy; 2025 Audit App. Status: Optimized.</p>
+      <footer
+        className="py-12 px-4 sm:px-6 md:px-20 flex flex-col sm:flex-row items-center justify-between gap-6 border-t border-white/[0.06]"
+        style={{ paddingBottom: 'max(3rem, env(safe-area-inset-bottom, 0px))' }}
+      >
+        <p className="text-[10px] text-gray-500 tracking-wide">&copy; {new Date().getFullYear()} Luminara Suite</p>
+        <div className="flex flex-wrap justify-center gap-6">
+          <a href="/privacy" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">Privacy</a>
+          <a href="/terms" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">Terms</a>
+          <a href="/docs/mcp.html" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">MCP</a>
+        </div>
       </footer>
     </div>
   );

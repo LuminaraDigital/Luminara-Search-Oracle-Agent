@@ -1,0 +1,45 @@
+# Conservative dependency automation: weekly cadence, minor/patch grouped into
+# one PR per ecosystem so review load stays low. No ignores initially; add
+# targeted ignore rules only when an update is known to break the build.
+version: 2
+
+updates:
+  # Root app (React 19 + Vite + worker tooling, package-lock.json)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Crawler sidecar (tracked manifest + lockfile under crawler/)
+  - package-ecosystem: npm
+    directory: /crawler
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # CI workflow actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore
+      include: scope

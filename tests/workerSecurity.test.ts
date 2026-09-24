@@ -81,6 +81,13 @@ describe('security headers', () => {
     expect(html.headers.get('content-security-policy')).toBeTruthy();
     expect(js.headers.get('content-security-policy')).toBeNull();
   });
+
+  it('returns 404 for missing static asset requests that fall through to index.html', async () => {
+    const resPng = await worker.fetch(req('/missing-icon.png'), makeEnv(), ctx);
+    expect(resPng.status).toBe(404);
+    const resChunk = await worker.fetch(req('/assets/missing-chunk.js'), makeEnv(), ctx);
+    expect(resChunk.status).toBe(404);
+  });
 });
 
 describe('CORS', () => {
@@ -117,6 +124,21 @@ describe('provider proxy gating', () => {
   it('refuses hosted-key use without Telegram sign-in', async () => {
     const res = await worker.fetch(req('/api/providers/groq/chat/completions', { method: 'POST', body: '{}' }), makeEnv({ GROQ_API_KEY: 'gsk_test' }), ctx);
     expect(res.status).toBe(401);
+    const body = (await res.json()) as { error?: string; code?: string };
+    expect(body.code).toBe('AUTH_REQUIRED');
+    expect(String(body.error || '')).toMatch(/Sign in|API key|Settings|Telegram|Firebase/i);
+  });
+
+  it('refuses hosted pagespeed without sign-in with an instructive error', async () => {
+    const res = await worker.fetch(
+      req('/api/pagespeed', { method: 'POST', body: JSON.stringify({ url: 'https://example.com' }) }),
+      makeEnv({ PAGESPEED_API_KEY: 'psi_test' }),
+      ctx,
+    );
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error?: string; code?: string };
+    expect(body.code).toBe('AUTH_REQUIRED');
+    expect(String(body.error || '')).toMatch(/Sign in|PageSpeed|PSI|Settings|Telegram|Firebase/i);
   });
 
   it('allows BYOK relays without sign-in even when REQUIRE_TG_AUTH is on', async () => {
@@ -400,6 +422,74 @@ describe('privacy policy route', () => {
       expect(text).toContain('Privacy Policy');
       expect(text).toContain('privacy@luminarasuite.com');
     }
+  });
+});
+
+describe('crawl surfaces', () => {
+  it('serves robots.txt as plain text, not the SPA shell', async () => {
+    const res = await worker.fetch(req('/robots.txt'), makeEnv(), ctx);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const text = await res.text();
+    expect(text).toContain('Sitemap: https://www.luminarasuite.com/sitemap.xml');
+    expect(text).not.toContain('<!DOCTYPE html>');
+  });
+
+  it('serves sitemap.xml as XML', async () => {
+    const res = await worker.fetch(req('/sitemap.xml'), makeEnv(), ctx);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('xml');
+    const text = await res.text();
+    expect(text).toContain('https://www.luminarasuite.com/pricing');
+  });
+
+  it('serves llms.txt as plain text', async () => {
+    const res = await worker.fetch(req('/llms.txt'), makeEnv(), ctx);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const text = await res.text();
+    expect(text).toContain('Luminara Suite');
+    expect(text).toContain('/docs/mcp.html');
+  });
+
+  it('injects pricing meta into the marketing shell HTML', async () => {
+    const env = makeEnv({
+      ASSETS: {
+        fetch: async () =>
+          new Response(
+            `<!DOCTYPE html><html><head>
+              <title>Luminara Suite | AI Search &amp; AEO Intelligence</title>
+              <meta name="description" content="old">
+              <meta property="og:title" content="old">
+              <meta property="og:description" content="old">
+              <meta property="og:url" content="https://www.luminarasuite.com/">
+              <meta property="og:image" content="https://www.luminarasuite.com/icon-512.png">
+            </head><body>app</body></html>`,
+            { headers: { 'content-type': 'text/html; charset=utf-8' } },
+          ),
+      } as unknown as Fetcher,
+    });
+    const res = await worker.fetch(
+      req('/pricing', { headers: { accept: 'text/html' } }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('<title>Pricing | Luminara Suite</title>');
+    expect(text).toContain('rel="canonical" href="https://www.luminarasuite.com/pricing"');
+    expect(text).toContain('SoftwareApplication');
+    expect(text).toContain('luminara-crawler-body');
+    expect(text).toContain('US$49');
+  });
+
+  it('serves static terms HTML', async () => {
+    const res = await worker.fetch(req('/terms'), makeEnv(), ctx);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const text = await res.text();
+    expect(text).toContain('Terms of Service');
+    expect(text).toContain('Labs features');
   });
 });
 

@@ -10,6 +10,45 @@ export const json = (data: unknown, status = 200, extra: Record<string, string> 
     headers: { 'content-type': 'application/json; charset=utf-8', ...extra },
   });
 
+/** Case-insensitive union of comma-separated CORS header values. */
+export function unionCorsHeaderValues(...parts: Array<string | null | undefined>): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    if (!part) continue;
+    for (const raw of part.split(',')) {
+      const token = raw.trim();
+      if (!token) continue;
+      const key = token.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(token);
+    }
+  }
+  return out.join(', ');
+}
+
+/**
+ * Apply app CORS onto a response. List-valued CORS headers are merged with any
+ * values already set (e.g. MCP Allow-Headers for mcp-session-id) so withCors
+ * cannot wipe protocol-specific headers.
+ */
+export function applyCorsHeaders(response: Response, cors: Record<string, string>): Response {
+  const mergeKeys = new Set([
+    'access-control-allow-headers',
+    'access-control-allow-methods',
+    'access-control-expose-headers',
+  ]);
+  for (const [k, v] of Object.entries(cors)) {
+    if (mergeKeys.has(k.toLowerCase())) {
+      response.headers.set(k, unionCorsHeaderValues(response.headers.get(k), v));
+    } else {
+      response.headers.set(k, v);
+    }
+  }
+  return response;
+}
+
 export function corsHeaders(env: Env, request: Request): Record<string, string> {
   const origin = request.headers.get('Origin') || '';
   const allowed = (env.ALLOWED_ORIGINS || env.WEBAPP_URL || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -17,9 +56,11 @@ export function corsHeaders(env: Env, request: Request): Record<string, string> 
   return ok
     ? {
         'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-        'Access-Control-Allow-Headers': 'content-type, x-telegram-init-data, x-provider-key, authorization, x-goog-api-key, x-goog-api-client',
-        'Access-Control-Expose-Headers': 'x-quota-limit, x-quota-remaining, x-quota-reset',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers':
+          'content-type, accept, authorization, x-telegram-init-data, x-provider-key, x-goog-api-key, x-goog-api-client, x-share-password, mcp-session-id, MCP-Protocol-Version, Mcp-Method, Mcp-Name',
+        'Access-Control-Expose-Headers':
+          'x-quota-limit, x-quota-remaining, x-quota-reset, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset, retry-after, mcp-session-id',
         'Access-Control-Allow-Credentials': 'true',
         'Vary': 'Origin',
       }

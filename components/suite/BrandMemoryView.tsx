@@ -18,6 +18,7 @@ import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { registerSentinelTarget, fetchSentinelStatus, fetchQuotaStatus, subscribeQuota, type QuotaInfo } from '../../services/apiClient';
 import { mem0MemoryEngine } from '../../services/agentCore/mem0MemoryEngine';
 import { MemoryFact } from '../../services/agentCore/types';
+import { useAsyncLock } from '../../hooks/useAsyncLock';
 
 interface Props {
   dna: BusinessDNA | null;
@@ -38,6 +39,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   const [watch, setWatch] = useState<CompetitorWatchItem[]>([]);
   const [alerts, setAlerts] = useState<CompetitorAlert[]>([]);
   const [watchName, setWatchName] = useState('');
+  const { pending: sentinelBusy, run: runSentinel } = useAsyncLock();
   const [sentinelMsg, setSentinelMsg] = useState<string | null>(null);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
   const [tab, setTab] = useState<'timeline' | 'diff' | 'query' | 'watch' | 'agency' | 'mem0'>('diff');
@@ -130,33 +132,35 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
     refresh();
   };
 
-  const handleEnableSentinel = async () => {
-    const domain = domainOptions[0];
-    if (!domain) {
-      setSentinelMsg('Run an audit first so we know which domain to watch.');
-      return;
-    }
-    if (dna?.competitors?.length) {
-      competitorWatchlistService.seedFromDna(dna.competitors, domain, planId);
-    }
-    const keywords = competitorWatchlistService.sentinelKeywordsFor(domain, dna?.name || domain);
-    try {
-      await registerSentinelTarget({
-        domain,
-        brandName: dna?.name || domain,
-        keywords,
-        competitorNames: competitorWatchlistService.list(domain).map((w) => w.name),
-        reauditCadence: entitlements.scheduledReaudit === 'none' ? 'weekly' : entitlements.scheduledReaudit,
-      });
-      const status = await fetchSentinelStatus();
-      setSentinelMsg(`Sentinel watching ${status.targets?.length || 1} domain(s). Cron scans daily; re-audit nudges follow your plan.`);
-      refresh();
-    } catch (e: any) {
-      setSentinelMsg(e?.message || 'Could not register Sentinel. Sign in and use a paid plan.');
-      if (String(e?.message || '').includes('402') || String(e?.message || '').toLowerCase().includes('plan')) {
-        onOpenPaywall?.();
+  const handleEnableSentinel = () => {
+    void runSentinel(async () => {
+      const domain = domainOptions[0];
+      if (!domain) {
+        setSentinelMsg('Run an audit first so we know which domain to watch.');
+        return;
       }
-    }
+      if (dna?.competitors?.length) {
+        competitorWatchlistService.seedFromDna(dna.competitors, domain, planId);
+      }
+      const keywords = competitorWatchlistService.sentinelKeywordsFor(domain, dna?.name || domain);
+      try {
+        await registerSentinelTarget({
+          domain,
+          brandName: dna?.name || domain,
+          keywords,
+          competitorNames: competitorWatchlistService.list(domain).map((w) => w.name),
+          reauditCadence: entitlements.scheduledReaudit === 'none' ? 'weekly' : entitlements.scheduledReaudit,
+        });
+        const status = await fetchSentinelStatus();
+        setSentinelMsg(`Sentinel watching ${status.targets?.length || 1} domain(s). Cron scans daily; re-audit nudges follow your plan.`);
+        refresh();
+      } catch (e: any) {
+        setSentinelMsg(e?.message || 'Could not register Sentinel. Sign in and use a paid plan.');
+        if (String(e?.message || '').includes('402') || String(e?.message || '').toLowerCase().includes('plan')) {
+          onOpenPaywall?.();
+        }
+      }
+    });
   };
 
   const tabs: Array<{ id: typeof tab; label: string }> = [
@@ -192,9 +196,10 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
           <button
             type="button"
             onClick={handleEnableSentinel}
-            className="px-4 py-2 rounded-xl border border-gold/40 text-gold text-xs font-bold uppercase tracking-wider hover:bg-gold/10 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+            disabled={sentinelBusy}
+            className="px-4 py-2 rounded-xl border border-gold/40 text-gold text-xs font-bold uppercase tracking-wider hover:bg-gold/10 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none"
           >
-            Enable Sentinel
+            {sentinelBusy ? 'Enabling...' : 'Enable Sentinel'}
           </button>
         </div>
       </div>

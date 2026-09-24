@@ -216,8 +216,8 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
               disabled={busy || !email.trim()}
               className="text-[10px] font-bold uppercase tracking-wider text-gray-400 hover:text-gold disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded transition-colors"
               onClick={() => run(async () => {
-                await resetPasswordWithEmail(email);
-                setInfo('Password reset email sent. Check your inbox.');
+                const result = await resetPasswordWithEmail(email);
+                setInfo(result.message);
               })}
             >
               Forgot password?

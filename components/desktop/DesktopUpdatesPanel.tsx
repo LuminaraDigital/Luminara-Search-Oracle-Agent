@@ -123,8 +123,18 @@ export const DesktopUpdatesPanel: React.FC = () => {
           <Button
             variant="primary"
             size="xs"
+            loading={busy}
+            disabled={busy}
             className="normal-case tracking-normal"
-            onClick={() => void bridge.installUpdate()}
+            onClick={async () => {
+              if (busy) return;
+              setBusy(true);
+              try {
+                await bridge.installUpdate?.();
+              } finally {
+                setBusy(false);
+              }
+            }}
           >
             Restart and install
           </Button>

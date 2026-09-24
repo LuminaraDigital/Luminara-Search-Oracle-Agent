@@ -7,6 +7,7 @@ import type { Env } from './index';
 import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './paymentLedger';
 import { PLANS } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { recordAuditLogBestEffort } from './auditLog';
 
 export const TON_PRICING: Record<string, { ton: number; nanoTon: string }> = {
   starter: { ton: 15, nanoTon: '15000000000' },
@@ -380,6 +381,21 @@ export async function verifyTonPayment(
   } catch (err) {
     console.error(`[TON] KV cache update failed after crediting order ${orderId}: ${err instanceof Error ? err.message : err}`);
   }
+
+  // Money event: plan credited via on-chain TON. Best-effort audit; the claim and
+  // subscription write above already committed, so a logging blip must not unwind them.
+  await recordAuditLogBestEffort(env, {
+    org_id: `org_${accountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    actor_id: order.userId,
+    action: 'ton.credit',
+    details: {
+      plan: order.planId,
+      tonAmount: order.tonAmount,
+      orderId,
+      txHash: match.txHash,
+      expiresAt,
+    },
+  });
 
   return { ok: true, plan: order.planId, expiresAt };
 }

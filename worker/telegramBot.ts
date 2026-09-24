@@ -7,6 +7,7 @@ import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace }
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
 import { claimStarsCharge, isStarsLedgerReady, releaseStarsCharge } from './paymentLedger';
+import { recordAuditLogBestEffort } from './auditLog';
 
 const PREMIUM_ENGINE_LABELS: Record<string, string> = {
   nim: 'NVIDIA NIM',
@@ -32,6 +33,8 @@ export type PlanMeta = {
   agencyClientLimit: number;
   scheduledReaudit: 'none' | 'monthly' | 'weekly' | 'daily';
   apiAccess: boolean;
+  shareLinks: boolean;
+  mcpAccess: boolean;
 };
 
 export const PLANS: Record<string, PlanMeta> = {
@@ -45,6 +48,8 @@ export const PLANS: Record<string, PlanMeta> = {
     agencyClientLimit: 0,
     scheduledReaudit: 'monthly',
     apiAccess: false,
+    shareLinks: false,
+    mcpAccess: false,
   },
   growth: {
     title: 'Luminara Growth',
@@ -56,6 +61,8 @@ export const PLANS: Record<string, PlanMeta> = {
     agencyClientLimit: 0,
     scheduledReaudit: 'weekly',
     apiAccess: false,
+    shareLinks: true,
+    mcpAccess: true,
   },
   agency: {
     title: 'Luminara Pro / Agency',
@@ -67,6 +74,8 @@ export const PLANS: Record<string, PlanMeta> = {
     agencyClientLimit: 10,
     scheduledReaudit: 'daily',
     apiAccess: true,
+    shareLinks: true,
+    mcpAccess: true,
   },
   single_audit: {
     title: 'Single Autonomous Audit Run',
@@ -78,6 +87,8 @@ export const PLANS: Record<string, PlanMeta> = {
     agencyClientLimit: 0,
     scheduledReaudit: 'none',
     apiAccess: false,
+    shareLinks: false,
+    mcpAccess: false,
   },
   multi_agent_crawl: {
     title: 'Deep Multi-Agent Crawl & Proof',
@@ -89,6 +100,8 @@ export const PLANS: Record<string, PlanMeta> = {
     agencyClientLimit: 0,
     scheduledReaudit: 'none',
     apiAccess: false,
+    shareLinks: false,
+    mcpAccess: false,
   },
 };
 
@@ -99,6 +112,8 @@ export const FREE_PLAN_CAPS = {
   agencyClientLimit: 0,
   scheduledReaudit: 'none' as const,
   apiAccess: false,
+  shareLinks: false,
+  mcpAccess: false,
 };
 
 export function normalizePlanId(planId: string | null | undefined): string {
@@ -113,6 +128,8 @@ export function planCapsFor(planId: string | null | undefined): {
   agencyClientLimit: number;
   scheduledReaudit: PlanMeta['scheduledReaudit'] | 'none';
   apiAccess: boolean;
+  shareLinks: boolean;
+  mcpAccess: boolean;
 } {
   const id = normalizePlanId(planId);
   const plan = PLANS[id];
@@ -123,6 +140,8 @@ export function planCapsFor(planId: string | null | undefined): {
     agencyClientLimit: plan.agencyClientLimit,
     scheduledReaudit: plan.scheduledReaudit,
     apiAccess: plan.apiAccess,
+    shareLinks: plan.shareLinks,
+    mcpAccess: plan.mcpAccess,
   };
 }
 
@@ -502,7 +521,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
-          '*Luminara Suite — Privacy Policy & Data Rights*\n\n' +
+          '*Luminara Suite - Privacy Policy & Data Rights*\n\n' +
           'We value your privacy and transparency. Here is how personal data is handled:\n\n' +
           '• *Controller:* Luminara Digital Agency (Contact: `privacy@luminarasuite.com`)\n' +
           '• *Telegram Data:* We receive your signed Telegram user ID, username, and language to identify your session and meter usage. We never receive or store payment cards or phone numbers.\n' +
@@ -586,7 +605,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
-          '*Luminara Suite — How This Bot Works*\n\n' +
+          '*Luminara Suite - How This Bot Works*\n\n' +
           'Luminara is your AI search & visibility copilot. We diagnose how LLMs (ChatGPT, Gemini, Perplexity, Google AI Overviews) cite and recommend your brand, and give you actionable fixes.\n\n' +
           '*Available Commands:*\n' +
           '• /start - Launch the Luminara Suite Mini App\n' +
@@ -884,6 +903,7 @@ export async function refundStarPayment(
   }
 
   // Update KV state: mark charge as refunded and revoke subscription if it was active
+  let refundedAccountId = String(userId);
   if (env.LUMINARA_KV) {
     try {
       const chargeKey = `stars:charge:${telegramPaymentChargeId}`;
@@ -894,6 +914,7 @@ export async function refundStarPayment(
           JSON.stringify({ ...existing, refunded: true, refundedAt: Date.now() }),
         );
         const accountId = String(existing.accountId || existing.loginId || userId);
+        refundedAccountId = accountId;
         const sub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { chargeId?: string } | null;
         if (sub && sub.chargeId === telegramPaymentChargeId) {
           await env.LUMINARA_KV.delete(`sub:${accountId}`);
@@ -904,6 +925,18 @@ export async function refundStarPayment(
       console.error('[Stars] Error updating KV after refund', err);
     }
   }
+
+  // Money event: Stars refund already issued at Telegram. Best-effort audit; a
+  // logging failure here cannot un-refund, so it must not fail the response.
+  await recordAuditLogBestEffort(env, {
+    org_id: `org_${refundedAccountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    actor_id: 'admin',
+    action: 'stars.refund',
+    details: {
+      userId,
+      chargeId: telegramPaymentChargeId,
+    },
+  });
 
   return { ok: true };
 }

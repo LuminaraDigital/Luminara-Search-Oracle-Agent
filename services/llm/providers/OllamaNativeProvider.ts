@@ -9,6 +9,8 @@ import { providerFetch } from '../../apiClient';
 import { buildChatMessages } from '../../chat/messages';
 import { parseOpenAiSseStream } from '../../../utils/sse';
 import { BaseAIProvider } from './BaseAIProvider';
+import { applyToolsToChatBody, parseToolCallsFromMessage } from '../openaiTools';
+import type { GenerateFinishReason } from '../../../types';
 
 /**
  * Ollama Native Provider (Dual-Mode: Local Daemon at :11434 & Sovereign Cloud Gateway)
@@ -141,15 +143,17 @@ export class OllamaNativeProvider extends BaseAIProvider {
 
     if (probe.isLocal) {
       const url = `${probe.endpoint}/v1/chat/completions`;
+      const body: Record<string, unknown> = {
+        model,
+        messages,
+        temperature: options?.temperature ?? this.config.temperature,
+        stream: false,
+      };
+      applyToolsToChatBody(body, options);
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: options?.temperature ?? this.config.temperature,
-          stream: false,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -159,6 +163,7 @@ export class OllamaNativeProvider extends BaseAIProvider {
 
       const data = await response.json();
       const text = data.choices?.[0]?.message?.content || '';
+      const toolCalls = parseToolCallsFromMessage(data.choices?.[0]?.message);
       const latencyMs = Date.now() - startTime;
 
       return {
@@ -168,22 +173,25 @@ export class OllamaNativeProvider extends BaseAIProvider {
           completion: this.estimateTokens(text),
           total: this.estimateTokens(prompt) + this.estimateTokens(text),
         },
-        finishReason: 'stop',
+        finishReason: (data.choices?.[0]?.finish_reason as GenerateFinishReason) || 'stop',
+        toolCalls,
         latencyMs,
       };
     } else {
       const key = this.ownCloudKey();
+      const body: Record<string, unknown> = {
+        model,
+        messages,
+        stream: false,
+      };
+      applyToolsToChatBody(body, options);
       const response = await providerFetch('ollama', '/v1/chat/completions', 'https://ollama.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(key && key !== 'proxy' ? { Authorization: `Bearer ${key}` } : {}),
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: false,
-        }),
+        body: JSON.stringify(body),
       }, key && key !== 'proxy' ? { userKey: key } : {});
 
       if (!response.ok) {
@@ -193,6 +201,7 @@ export class OllamaNativeProvider extends BaseAIProvider {
 
       const data = await response.json();
       const text = data.choices?.[0]?.message?.content || data.message?.content || '';
+      const toolCalls = parseToolCallsFromMessage(data.choices?.[0]?.message);
       const latencyMs = Date.now() - startTime;
 
       return {
@@ -202,7 +211,8 @@ export class OllamaNativeProvider extends BaseAIProvider {
           completion: this.estimateTokens(text),
           total: this.estimateTokens(prompt) + this.estimateTokens(text),
         },
-        finishReason: 'stop',
+        finishReason: (data.choices?.[0]?.finish_reason as GenerateFinishReason) || 'stop',
+        toolCalls,
         latencyMs,
       };
     }
@@ -224,16 +234,24 @@ export class OllamaNativeProvider extends BaseAIProvider {
       headers.Authorization = `Bearer ${cloudKey}`;
     }
 
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      temperature: options?.temperature ?? this.config.temperature,
+      stream: true,
+    };
+    applyToolsToChatBody(body, options);
+
     const response = probe.isLocal
       ? await fetch(targetUrl, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ model, messages, temperature: options?.temperature ?? this.config.temperature, stream: true }),
+          body: JSON.stringify(body),
         })
       : await providerFetch('ollama', '/v1/chat/completions', targetUrl, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ model, messages, temperature: options?.temperature ?? this.config.temperature, stream: true }),
+          body: JSON.stringify(body),
         }, cloudKey && cloudKey !== 'proxy' ? { userKey: cloudKey } : {});
 
     if (!response.ok || !response.body) {
@@ -242,8 +260,12 @@ export class OllamaNativeProvider extends BaseAIProvider {
     }
 
     for await (const chunk of parseOpenAiSseStream(response)) {
-      if (chunk.text) {
-        yield { text: chunk.text };
+      if (chunk.text) yield { text: chunk.text };
+      if (chunk.toolCalls?.length) {
+        yield {
+          toolCalls: chunk.toolCalls,
+          finishReason: (chunk.finishReason as GenerateFinishReason) || 'tool_calls',
+        };
       }
     }
   }

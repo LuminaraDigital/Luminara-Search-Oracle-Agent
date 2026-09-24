@@ -10,7 +10,7 @@
 
 import express from 'express';
 import * as cheerio from 'cheerio';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { assertPublicTarget } from './ssrf.mjs';
 import {
   createRateLimiter,
@@ -20,6 +20,11 @@ import {
   resolveClientIp,
   resolveCorsOrigin,
 } from './limits.mjs';
+import {
+  ACTION_SNAPSHOT_SOURCE,
+  RESOLVE_ACTION_TARGET_SOURCE,
+} from './actionSnapshot.mjs';
+import { createSessionStore, MAX_SESSIONS } from './sessionStore.mjs';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -69,7 +74,7 @@ app.use((req, res, next) => {
   }
   if (req.method !== 'OPTIONS') return next();
   if (!allowedOrigin) return res.status(403).end();
-  res.set('Access-Control-Allow-Methods', 'GET, POST');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, DELETE');
   res.set('Access-Control-Allow-Headers', 'content-type, x-crawler-token, authorization');
   res.set('Access-Control-Max-Age', '600');
   // Chrome Private Network Access: an allowlisted https app calling this loopback port must opt in.
@@ -107,12 +112,27 @@ const clampNumber = (value, fallback, min, max) => {
 
 const rateLimiter = createRateLimiter({ limit: CRAWLER_RATE_LIMIT_PER_MIN, windowMs: 60_000 });
 const browserSlots = createSemaphore(CRAWLER_MAX_CONCURRENCY);
+// Interactive observe/act sessions. Each live session holds one browserSlots entry for its
+// lifetime, so CRAWLER_MAX_CONCURRENCY also caps concurrent sessions.
+const sessionStore = createSessionStore({ maxSessions: Math.min(MAX_SESSIONS, CRAWLER_MAX_CONCURRENCY) });
+
+const LAUNCH_ARGS = [
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-blink-features=AutomationControlled',
+  '--disable-infobars',
+  '--window-size=1920,1080',
+  '--disable-dev-shm-usage',
+];
 
 /**
- * Wraps a heavy route: per-IP rate limit, then one browser slot held for the whole handler and
- * released exactly once in `finally`. The handler receives a signal that aborts on client disconnect.
+ * Rate-limit + optional browser slot. Session observe/act pass skipSlot because the session
+ * already holds a long-lived slot from POST /session.
+ *
+ * @param {Function} handler
+ * @param {{ holdSlot?: boolean, skipSlot?: boolean }} [opts]
  */
-function heavyRoute(handler) {
+function heavyRoute(handler, { holdSlot = false, skipSlot = false } = {}) {
   return async (req, res) => {
     const ip = resolveClientIp(req.socket.remoteAddress, req.get('x-forwarded-for'), CRAWLER_TRUST_PROXY);
     const rate = rateLimiter.hit(ip);
@@ -121,11 +141,25 @@ function heavyRoute(handler) {
       return res.status(429).json({ success: false, error: 'Rate limit exceeded, retry later' });
     }
 
-    const release = browserSlots.tryAcquire();
-    if (!release) {
-      res.set('Retry-After', String(BUSY_RETRY_AFTER_SEC));
-      return res.status(429).json({ success: false, error: 'Crawler is busy, retry later' });
+    let release = null;
+    if (!skipSlot) {
+      release = browserSlots.tryAcquire();
+      if (!release) {
+        res.set('Retry-After', String(BUSY_RETRY_AFTER_SEC));
+        return res.status(429).json({ success: false, error: 'Crawler is busy, retry later' });
+      }
     }
+
+    let retained = false;
+    const ctx = holdSlot
+      ? {
+          keepSlot() {
+            if (!release) throw new Error('keepSlot requires an acquired browser slot');
+            retained = true;
+            return release;
+          },
+        }
+      : undefined;
 
     const aborter = new AbortController();
     const onClose = () => {
@@ -133,15 +167,126 @@ function heavyRoute(handler) {
     };
     res.on('close', onClose);
     try {
-      await handler(req, res, aborter.signal);
+      await handler(req, res, aborter.signal, ctx);
     } catch (err) {
       console.error('[Crawler] Unhandled route error:', err?.message || err);
       if (!res.headersSent) res.status(500).json({ success: false, error: 'Internal crawler error' });
     } finally {
       res.off('close', onClose);
-      release();
+      if (release && !retained) release();
     }
   };
+}
+
+function fingerprintMarker(marker) {
+  return createHash('sha256').update(JSON.stringify(marker ?? null)).digest('hex');
+}
+
+async function closeSessionResources(session) {
+  if (!session) return;
+  try {
+    if (session.context) await session.context.close().catch(() => {});
+  } finally {
+    try {
+      if (session.browser) await session.browser.close().catch(() => {});
+    } finally {
+      if (typeof session.releaseSlot === 'function') {
+        try {
+          session.releaseSlot();
+        } catch {
+          /* slot already freed */
+        }
+      }
+    }
+  }
+}
+
+async function sweepExpiredSessions() {
+  const expired = sessionStore.destroyExpired();
+  for (const session of expired) {
+    await closeSessionResources(session);
+  }
+  return expired.length;
+}
+
+async function installPublicRouteGuard(context) {
+  const hostRoutableCache = new Map();
+  async function isRoutableTarget(reqUrl) {
+    if (/^(data|blob|about):/i.test(reqUrl)) return true;
+    let hostname;
+    try {
+      hostname = new URL(reqUrl).hostname.toLowerCase();
+    } catch {
+      return false;
+    }
+    if (hostRoutableCache.has(hostname)) return hostRoutableCache.get(hostname);
+    const verdict = (await assertPublicTarget(reqUrl)).ok;
+    hostRoutableCache.set(hostname, verdict);
+    return verdict;
+  }
+  await context.route('**/*', async route => {
+    const reqUrl = route.request().url();
+    if (await isRoutableTarget(reqUrl)) return route.continue();
+    return route.abort('blockedbyclient');
+  });
+}
+
+/**
+ * Run the indexed DOM snapshot on a live page. Browser stays open.
+ * @returns {Promise<object|null>}
+ */
+async function observePage(page, { screenshot = false } = {}) {
+  const snapshot = await page.evaluate(ACTION_SNAPSHOT_SOURCE);
+  if (!snapshot) return null;
+  const observe = {
+    ...snapshot,
+    fingerprint: fingerprintMarker(snapshot.marker),
+  };
+  if (screenshot) {
+    const buf = await page.screenshot({ type: 'jpeg', quality: 72, fullPage: false });
+    observe.screenshot = Buffer.from(buf).toString('base64');
+  }
+  return observe;
+}
+
+/**
+ * Execute one observed action (click|fill|select|scroll|wait). Never accepts selectors/JS from the model.
+ */
+async function executeObservedAction(page, action, text) {
+  const kind = action.kind;
+  if (kind === 'wait') {
+    await page.waitForTimeout(100);
+    return { executed: action.id };
+  }
+  if (kind === 'scroll') {
+    const delta = Number(action.delta) || 0;
+    await page.mouse.wheel(0, delta);
+    return { executed: action.id };
+  }
+  if (!Number.isInteger(action.node)) {
+    throw Object.assign(new Error('Invalid observed node'), { code: 'StalePage' });
+  }
+  const target = await page.evaluate(RESOLVE_ACTION_TARGET_SOURCE, action);
+  if (target == null) {
+    throw Object.assign(
+      new Error(kind === 'select'
+        ? 'Dropdown execution was not confirmed; observe again'
+        : 'Target changed or is covered. Observe again.'),
+      { code: 'StalePage' }
+    );
+  }
+  if (kind === 'select') {
+    return { executed: action.id };
+  }
+  await page.mouse.click(target.x, target.y);
+  if (kind === 'fill') {
+    if (typeof text !== 'string') {
+      throw Object.assign(new Error('fill actions require a string "text" field'), { code: 'BadRequest' });
+    }
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+    await page.keyboard.insertText(text);
+  }
+  return { executed: action.id };
 }
 
 // Health Check Endpoint
@@ -650,10 +795,224 @@ app.post('/serp', heavyRoute(async (req, res, signal) => {
   }
 }));
 
+// ---------------------------------------------------------------------------
+// Indexed DOM action sessions (additive; /health /scrape /serp unchanged)
+// ---------------------------------------------------------------------------
+
+app.post('/session', heavyRoute(async (req, res, signal, ctx) => {
+  await sweepExpiredSessions();
+
+  const body = req.body || {};
+  const url = body.url;
+  const accountKey = typeof body.accountKey === 'string' ? body.accountKey.trim().slice(0, 128) : undefined;
+  const timeout = clampNumber(body.timeout, 25_000, 1_000, MAX_TIMEOUT_MS);
+  const proxy = CRAWLER_PROXY || undefined;
+
+  if (!url || typeof url !== 'string' || url.length > 2048) {
+    return res.status(400).json({ success: false, error: 'A valid "url" parameter is required' });
+  }
+  const target = await assertPublicTarget(url);
+  if (!target.ok) {
+    return res.status(400).json({ success: false, url, error: target.error });
+  }
+  if (sessionStore.size >= sessionStore.maxSessions) {
+    res.set('Retry-After', String(BUSY_RETRY_AFTER_SEC));
+    return res.status(429).json({
+      success: false,
+      error: 'Session cap reached; CRAWLER_MAX_CONCURRENCY also caps concurrent sessions',
+    });
+  }
+
+  let browser = null;
+  let context = null;
+  let kept = false;
+
+  try {
+    const pr = await getPatchright();
+    const launchOptions = { headless: true, args: LAUNCH_ARGS };
+    if (proxy) launchOptions.proxy = { server: proxy };
+
+    browser = await pr.chromium.launch(launchOptions);
+    if (signal.aborted) throw new Error('Client disconnected');
+
+    context = await browser.newContext({
+      viewport: { width: 1920, height: 1080 },
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
+    });
+    await installPublicRouteGuard(context);
+
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+    await page.waitForTimeout(400);
+
+    const observe = await observePage(page, { screenshot: false });
+    if (!observe) {
+      throw new Error('Document is navigating; observe returned null');
+    }
+
+    const releaseSlot = ctx.keepSlot();
+    kept = true;
+
+    const created = sessionStore.create({
+      browser,
+      context,
+      page,
+      accountKey,
+      releaseSlot,
+      lastObserve: observe,
+    });
+    if (!created.ok) {
+      kept = false;
+      releaseSlot();
+      await context.close().catch(() => {});
+      await browser.close().catch(() => {});
+      return res.status(429).json({ success: false, error: created.error });
+    }
+
+    // Ownership transferred to the session store; do not close here.
+    browser = null;
+    context = null;
+
+    return res.json({
+      success: true,
+      sessionId: created.session.id,
+      observe,
+    });
+  } catch (err) {
+    console.error('[Crawler] Session create error:', err.message);
+    if (!kept) {
+      if (context) await context.close().catch(() => {});
+      if (browser) await browser.close().catch(() => {});
+    }
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}, { holdSlot: true }));
+
+app.post('/session/:id/observe', heavyRoute(async (req, res) => {
+  await sweepExpiredSessions();
+  const session = sessionStore.get(req.params.id);
+  if (!session) {
+    return res.status(404).json({ success: false, error: 'Unknown or expired session' });
+  }
+  sessionStore.touch(session.id);
+
+  const wantScreenshot = req.body?.screenshot === true;
+  try {
+    const observe = await observePage(session.page, { screenshot: wantScreenshot });
+    if (!observe) {
+      return res.status(409).json({ success: false, error: 'Document is navigating; observe again' });
+    }
+    session.lastObserve = observe;
+    return res.json({ success: true, sessionId: session.id, observe });
+  } catch (err) {
+    console.error('[Crawler] Session observe error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}, { skipSlot: true }));
+
+app.post('/session/:id/act', heavyRoute(async (req, res) => {
+  await sweepExpiredSessions();
+  const session = sessionStore.get(req.params.id);
+  if (!session) {
+    return res.status(404).json({ success: false, error: 'Unknown or expired session' });
+  }
+  sessionStore.touch(session.id);
+
+  const body = req.body || {};
+  const fingerprint = typeof body.fingerprint === 'string' ? body.fingerprint : '';
+  const actionId = typeof body.actionId === 'string' ? body.actionId : '';
+  const text = body.text;
+
+  if (!fingerprint || !actionId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Both "fingerprint" and "actionId" are required',
+    });
+  }
+
+  const prior = session.lastObserve;
+  if (!prior || prior.fingerprint !== fingerprint) {
+    return res.status(409).json({
+      success: false,
+      error: 'StalePage: fingerprint mismatch; observe again',
+      code: 'StalePage',
+    });
+  }
+
+  const action = (prior.actions || []).find(a => a.id === actionId);
+  if (!action) {
+    return res.status(400).json({
+      success: false,
+      error: `Unknown actionId "${actionId}" for the current observe`,
+    });
+  }
+
+  try {
+    const result = await executeObservedAction(session.page, action, text);
+    // Brief settle then re-observe (never retry a mutation; only re-predict after observe).
+    await session.page.waitForTimeout(80);
+    const observe = await observePage(session.page, { screenshot: false });
+    if (!observe) {
+      return res.status(409).json({
+        success: false,
+        error: 'Document is navigating after act; observe again',
+        code: 'StalePage',
+        historyEntry: {
+          actionId: action.id,
+          kind: action.kind,
+          label: action.label,
+          executed: result.executed,
+          text: action.kind === 'fill' ? '[redacted]' : undefined,
+        },
+      });
+    }
+    session.lastObserve = observe;
+
+    const historyEntry = {
+      actionId: action.id,
+      kind: action.kind,
+      label: action.label,
+      executed: result.executed,
+      at: new Date().toISOString(),
+    };
+    // Do not echo fill payloads that may contain secrets.
+    if (action.kind === 'fill') historyEntry.hadText = typeof text === 'string';
+
+    return res.json({
+      success: true,
+      sessionId: session.id,
+      historyEntry,
+      observe,
+    });
+  } catch (err) {
+    const status = err.code === 'BadRequest' ? 400 : err.code === 'StalePage' ? 409 : 500;
+    console.error('[Crawler] Session act error:', err.message);
+    return res.status(status).json({
+      success: false,
+      error: err.message,
+      code: err.code || undefined,
+    });
+  }
+}, { skipSlot: true }));
+
+app.delete('/session/:id', heavyRoute(async (req, res) => {
+  await sweepExpiredSessions();
+  const session = sessionStore.destroy(req.params.id);
+  if (!session) {
+    return res.status(404).json({ success: false, error: 'Unknown or expired session' });
+  }
+  await closeSessionResources(session);
+  return res.json({ success: true, sessionId: session.id, closed: true });
+}, { skipSlot: true }));
+
 app.listen(PORT, HOST, () => {
   console.log(`[Luminara Crawler] Patchright Stealth Runner & SERP Engine listening on ${HOST}:${PORT}${CRAWLER_TOKEN ? ' (token required)' : ''}`);
   console.log(
-    `[Luminara Crawler] Limits: ${browserSlots.max} concurrent sessions, ${CRAWLER_RATE_LIMIT_PER_MIN} req/min per IP` +
+    `[Luminara Crawler] Limits: ${browserSlots.max} concurrent browser slots (also caps /session), ` +
+      `${CRAWLER_RATE_LIMIT_PER_MIN} req/min per IP` +
       `${CRAWLER_TRUST_PROXY ? ' (X-Forwarded-For trusted)' : ''}, ${CRAWLER_ALLOWED_ORIGINS.size} CORS origin(s)`
   );
   console.log(`[Luminara Crawler] Health check available at http://localhost:${PORT}/health`);

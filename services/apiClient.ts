@@ -41,6 +41,7 @@ export const BYOK_PROVIDER_IDS = [
   'tavily',
   'firecrawl',
   'exa',
+  'dataforseo',
 ] as const;
 
 let healthCache: ServerHealth | null = null;
@@ -186,17 +187,75 @@ function applyAuthHeaders(target: Headers, source: Record<string, string>): void
 
 /**
  * Worker fetch that retries once on 401 after forcing a Firebase ID token refresh.
- * Skips refresh when Telegram initData is already present (Telegram identity takes precedence).
+ * Never retries 4xx (including 429) or after a second attempt. Skips refresh when
+ * Telegram initData is already present (Telegram identity takes precedence).
  */
-async function workerFetchWithAuthRetry(url: string, init: RequestInit = {}): Promise<Response> {
+export async function workerFetchWithAuthRetry(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers || {});
   applyAuthHeaders(headers, await authHeadersAsync(false));
   const options: RequestInit = { credentials: 'same-origin', ...init, headers };
   let res = await fetch(url, options);
-  if (res.status !== 401) return res;
-  if (getInitDataRaw()) return res;
-  applyAuthHeaders(headers, await authHeadersAsync(true));
-  return fetch(url, { ...options, headers });
+  notifyRateLimitIfNeeded(res);
+
+  // Hard ban: never auto-retry client/auth/rate-limit errors.
+  if (res.status === 400 || res.status === 401 || res.status === 402 || res.status === 403 || res.status === 404 || res.status === 429) {
+    if (res.status !== 401) return res;
+    if (getInitDataRaw()) return res;
+    applyAuthHeaders(headers, await authHeadersAsync(true));
+    res = await fetch(url, { ...options, headers });
+    notifyRateLimitIfNeeded(res);
+    return res;
+  }
+
+  return res;
+}
+
+function notifyRateLimitIfNeeded(res: Response): void {
+  updateQuotaFromHeaders(res.headers);
+  if (res.status !== 429 || typeof window === 'undefined') return;
+  const retryAfter = Number(res.headers.get('retry-after') || res.headers.get('Retry-After') || 0);
+  const limit = res.headers.get('x-ratelimit-limit');
+  const remaining = res.headers.get('x-ratelimit-remaining');
+  const reset = res.headers.get('x-ratelimit-reset');
+  window.dispatchEvent(
+    new CustomEvent('luminara-rate-limited', {
+      detail: {
+        retryAfterSec: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+        limit: limit != null ? Number(limit) : undefined,
+        remaining: remaining != null ? Number(remaining) : undefined,
+        resetEpoch: reset != null ? Number(reset) : undefined,
+      },
+    }),
+  );
+}
+
+/**
+ * Transient network / 5xx retry with exponential backoff + jitter.
+ * Max 2 attempts total (1 initial + 1 retry). Never retries 4xx.
+ */
+export async function fetchWithTransientRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  opts?: { maxAttempts?: number },
+): Promise<Response> {
+  const maxAttempts = Math.min(2, Math.max(1, opts?.maxAttempts ?? 2));
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(input, init);
+      notifyRateLimitIfNeeded(res);
+      if (res.status >= 400 && res.status < 500) return res;
+      if (res.ok || attempt === maxAttempts) return res;
+      const jitter = Math.floor(Math.random() * 200);
+      await new Promise((r) => setTimeout(r, 300 * attempt + jitter));
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxAttempts) throw err;
+      const jitter = Math.floor(Math.random() * 200);
+      await new Promise((r) => setTimeout(r, 300 * attempt + jitter));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Request failed');
 }
 
 /** Auth headers for Worker API calls (Telegram initData and/or Firebase ID token). */
@@ -322,7 +381,7 @@ export function getCurrentQuotaSync(): QuotaInfo | null {
 }
 
 /** Paid hosted engines (NIM / Ollama Cloud / OpenRouter) require an active plan when not BYOK. */
-export const PAID_HOSTED_PROVIDER_IDS = ['nim', 'ollama', 'openrouter'] as const;
+export const PAID_HOSTED_PROVIDER_IDS = ['nim', 'ollama', 'openrouter', 'dataforseo'] as const;
 
 export function isPaidHostedProvider(providerId: string): boolean {
   return (PAID_HOSTED_PROVIDER_IDS as readonly string[]).includes(providerId);
@@ -603,3 +662,151 @@ export async function fetchSentinelStatus(): Promise<{ ok: boolean; targets: Sen
   if (!r.ok || !data.ok) return { ok: false, targets: [] };
   return { ok: true, targets: (data.targets || []) as SentinelTargetClient[] };
 }
+
+/**
+ * Agency server Oracle SSE (feature-flagged on Worker).
+ * Paid tools are opt-in: pass invokeTool + confirmTool:true (e.g. research_keywords).
+ * Message regex auto-invoke only when Worker ORACLE_AUTO_TOOLS=true.
+ * No in-app UI caller yet; this helper is the API contract for future surfaces.
+ */
+export async function* streamOracleChat(input: {
+  message: string;
+  sessionId?: string;
+  projectId?: string;
+  history?: Array<{ role: string; content: string }>;
+  /** Explicit paid tool (e.g. research_keywords). Requires confirmTool:true. */
+  invokeTool?: 'research_keywords';
+  /** Confirms paid tool side effects when invokeTool is set. */
+  confirmTool?: boolean;
+  signal?: AbortSignal;
+}): AsyncGenerator<
+  | { type: 'token'; text: string }
+  | { type: 'tool'; tool: string; stage: string; output?: string; reason?: string }
+  | { type: 'status'; stage: string }
+  | { type: 'monitor'; ok: boolean; flags: string[]; notes?: string[] }
+  | { type: 'error'; error: string; code?: string }
+  | { type: 'done'; ok: boolean; sessionId?: string; monitor?: { ok: boolean; flags: string[] } }
+> {
+  const base = apiBase();
+  if (!base) {
+    yield { type: 'error', error: 'Worker API is unreachable', code: 'NO_API' };
+    return;
+  }
+  const r = await workerFetchWithAuthRetry(`${base}/api/oracle/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({
+      message: input.message,
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      history: input.history,
+      ...(input.invokeTool ? { invokeTool: input.invokeTool, confirmTool: Boolean(input.confirmTool) } : {}),
+    }),
+    signal: input.signal,
+  });
+  if (!r.ok || !r.body) {
+    const data = await r.json().catch(() => ({}));
+    yield {
+      type: 'error',
+      error: String((data as { error?: string }).error || `Oracle chat failed (${r.status})`),
+      code: String((data as { code?: string }).code || 'ORACLE_HTTP'),
+    };
+    return;
+  }
+
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let eventName = 'message';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n');
+    buffer = parts.pop() || '';
+    for (const line of parts) {
+      const trimmed = line.trimEnd();
+      if (trimmed.startsWith('event:')) {
+        eventName = trimmed.slice(6).trim();
+        continue;
+      }
+      if (!trimmed.startsWith('data:')) continue;
+      const dataStr = trimmed.slice(5).trim();
+      try {
+        const data = JSON.parse(dataStr) as Record<string, unknown>;
+        if (eventName === 'token' && typeof data.text === 'string') {
+          yield { type: 'token', text: data.text };
+        } else if (eventName === 'tool') {
+          yield {
+            type: 'tool',
+            tool: String(data.tool || 'tool'),
+            stage: String(data.stage || 'running'),
+            output: typeof data.output === 'string' ? data.output : undefined,
+            reason: typeof data.reason === 'string' ? data.reason : undefined,
+          };
+        } else if (eventName === 'status') {
+          yield { type: 'status', stage: String(data.stage || '') };
+        } else if (eventName === 'monitor') {
+          yield {
+            type: 'monitor',
+            ok: Boolean(data.ok),
+            flags: Array.isArray(data.flags) ? data.flags.map(String) : [],
+            notes: Array.isArray(data.notes) ? data.notes.map(String) : undefined,
+          };
+        } else if (eventName === 'error') {
+          yield {
+            type: 'error',
+            error: String(data.error || 'Oracle error'),
+            code: typeof data.code === 'string' ? data.code : undefined,
+          };
+        } else if (eventName === 'done') {
+          const mon = data.monitor as { ok?: boolean; flags?: unknown } | undefined;
+          yield {
+            type: 'done',
+            ok: Boolean(data.ok),
+            sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined,
+            monitor: mon
+              ? {
+                  ok: Boolean(mon.ok),
+                  flags: Array.isArray(mon.flags) ? mon.flags.map(String) : [],
+                }
+              : undefined,
+          };
+        }
+      } catch {
+        // ignore malformed SSE
+      }
+      eventName = 'message';
+    }
+  }
+}
+
+export async function startAuditRun(input: {
+  targetUrl: string;
+  projectId?: string;
+}): Promise<{ ok: boolean; runId?: string; status?: string; error?: string; code?: string }> {
+  const base = apiBase();
+  if (!base) return { ok: false, error: 'API unavailable', code: 'NO_API' };
+  const r = await workerFetchWithAuthRetry(`${base}/api/audit/run`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await r.json().catch(() => ({}));
+  return data as { ok: boolean; runId?: string; status?: string; error?: string; code?: string };
+}
+
+export async function fetchAuditRun(
+  runId: string,
+): Promise<{ ok: boolean; run?: Record<string, unknown>; error?: string }> {
+  const base = apiBase();
+  if (!base) return { ok: false, error: 'API unavailable' };
+  const r = await workerFetchWithAuthRetry(`${base}/api/audit/runs/${encodeURIComponent(runId)}`);
+  return (await r.json().catch(() => ({}))) as {
+    ok: boolean;
+    run?: Record<string, unknown>;
+    error?: string;
+  };
+}
+

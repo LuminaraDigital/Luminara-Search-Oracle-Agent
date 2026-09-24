@@ -58,6 +58,22 @@ npm run desktop:check-signing
 
 6. Re-run the Desktop Windows workflow (or push a new `desktop-v*` tag). When `WIN_CSC_LINK` is present, the build signs with Authenticode.
 
+### Enforcement gate
+
+The Desktop Windows workflow runs `scripts/check-desktop-signing.mjs` right after the build:
+
+- No `WIN_CSC_LINK` secret: the step prints a warning and the workflow keeps going (today's state).
+- `WIN_CSC_LINK` present but the built installer is unsigned: the step runs with `--require`, exits 1, and the release is blocked. No operator action needed: enforcement turns on by itself the moment the certificate secrets are added.
+
+Locally you can preview the gate against a fresh build (`npm run desktop:pack` first, or any `release/Luminara-Suite-Setup-*.exe`):
+
+```bash
+node scripts/check-desktop-signing.mjs          # informative, exit 0
+node scripts/check-desktop-signing.mjs --require # exit 1 unless the .exe is Authenticode-signed
+```
+
+Signature inspection shells out to PowerShell `Get-AuthenticodeSignature`, so `--require` can only verify on Windows (CI runs on `windows-latest`; off-Windows it reports unverifiable and fails the require check).
+
 Do **not** commit the `.pfx`, password, or base64 blob. Rotate if exposed.
 
 ## Discoverability (download counts)

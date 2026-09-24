@@ -31,6 +31,8 @@ import { HighlightedText, parseInlineFormatting } from './HighlightedText';
 import { MetricModal } from './MetricModal';
 import { InteractiveTable } from './InteractiveTable';
 import { CollapsibleSection } from './CollapsibleSection';
+import { canCreateShareLinks, createShareReport } from '../../services/share/shareReportClient';
+import { fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
 
@@ -51,6 +53,8 @@ interface ReportDisplayProps {
   shareOfVoice?: ShareOfVoiceSummary;
   sourceGraph?: SourceCitationGraph;
   enterpriseTrust?: EnterpriseTrustPack;
+  /** Hide PDF / share / deploy chrome (public share pages). */
+  hideAgencyActions?: boolean;
 }
 
 export const ReportDisplay: React.FC<ReportDisplayProps> = ({
@@ -70,14 +74,68 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   shareOfVoice,
   sourceGraph,
   enterpriseTrust,
+  hideAgencyActions = false,
 }) => {
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
   const [showWhiteLabelModal, setShowWhiteLabelModal] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shipCommitment, setShipCommitment] = useState<ShipCommitment | null>(() =>
     readShipCommitment(targetDomain || 'unknown', markdownText),
   );
+
+  const handleCopyShareLink = async () => {
+    await loadServerHealth().catch(() => undefined);
+    await fetchQuotaStatus().catch(() => null);
+    if (!canCreateShareLinks()) {
+      // Soft-gate: guests need sign-in first; signed-in free/starter see Growth paywall.
+      if (!getCurrentQuotaSync()) {
+        setShareMessage('Sign in to create share links. Growth and Agency include share and MCP.');
+        return;
+      }
+      openPaywallModal('Share links are included on Growth and Agency plans.');
+      return;
+    }
+    setShareBusy(true);
+    setShareMessage(null);
+    try {
+      let branding: Record<string, string> | undefined;
+      try {
+        const saved = JSON.parse(localStorage.getItem('luminara_whitelabel_config') || '{}') as Record<string, string>;
+        if (saved.agencyName || saved.agencyLogoUrl) {
+          branding = {
+            agencyName: saved.agencyName,
+            logoUrl: saved.agencyLogoUrl,
+            accentColor: saved.primaryColor,
+            preparedBy: saved.preparedBy,
+            clientName: dnaName || targetDomain || '',
+          };
+        }
+      } catch { /* ignore */ }
+
+      const res = await createShareReport({
+        markdownText,
+        domain: targetDomain,
+        dnaName,
+        sources,
+        branding,
+      });
+      if (!res.ok || !res.url) {
+        setShareMessage(res.error || 'Could not create share link');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(res.url);
+        setShareMessage('Share link copied');
+      } catch {
+        setShareMessage(res.url);
+      }
+    } finally {
+      setShareBusy(false);
+    }
+  };
 
   const parsedStructure = useMemo(() => {
     const lines = markdownText.split('\n');
@@ -190,11 +248,11 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const hasEvidence = Boolean(
     (empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,
   );
-  const reportUnlocked = Boolean(shipCommitment);
+  const reportUnlocked = hideAgencyActions || Boolean(shipCommitment);
 
   return (
     <div className="w-full text-gray-200 animate-in fade-in duration-500">
-      {!reportUnlocked && (
+      {!reportUnlocked && !hideAgencyActions && (
         <ShipActionGate
           domain={targetDomain}
           markdownText={markdownText}
@@ -205,7 +263,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         />
       )}
 
-      {reportUnlocked && (
+      {reportUnlocked && !hideAgencyActions && (
       <>
       {/* Action bar after ship commitment */}
       <div className="mb-6 glass-morphism rounded-2xl border border-gold/40 p-4 sm:p-5 bg-black/80 shadow-2xl">
@@ -260,7 +318,23 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
               <ICONS.Download className="w-4 h-4 text-info-400" />
               <span>Agency PDF</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => void handleCopyShareLink()}
+              disabled={shareBusy}
+              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-gold/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none disabled:opacity-50"
+            >
+              <ICONS.Share className="w-4 h-4 text-gold" />
+              <span>{shareBusy ? 'Sharing...' : 'Copy share link'}</span>
+            </button>
           </div>
+          {shareMessage && (
+            <p className="text-[10px] font-mono text-gold-light mt-2 break-all" role="status">
+              {shareMessage}
+              {getCurrentQuotaSync()?.plan ? ` · plan ${getCurrentQuotaSync()?.plan}` : ''}
+            </p>
+          )}
         </div>
       </div>
       </>

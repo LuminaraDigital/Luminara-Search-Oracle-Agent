@@ -39,6 +39,21 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run desktop:dist:win -- --publish never
 
+      # Signing gate: warns while no certificate is configured; fails the build
+      # the moment WIN_CSC_LINK exists and the installer is still unsigned.
+      - name: Enforce desktop signing gate
+        shell: bash
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$WIN_CSC_LINK" ]; then
+            node scripts/check-desktop-signing.mjs --require
+          else
+            node scripts/check-desktop-signing.mjs
+          fi
+
       - name: Verify update metadata
         shell: bash
         run: |

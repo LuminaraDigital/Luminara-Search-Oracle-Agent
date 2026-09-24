@@ -6,6 +6,12 @@ export interface ApiKeySearchTabProps {
   setTavilyKey: (val: string) => void;
   exaKey: string;
   setExaKey: (val: string) => void;
+  pagespeedKey: string;
+  setPagespeedKey: (val: string) => void;
+  dataForSeoLogin: string;
+  setDataForSeoLogin: (val: string) => void;
+  dataForSeoPassword: string;
+  setDataForSeoPassword: (val: string) => void;
   localSerpEnabled: boolean;
   setLocalSerpEnabled: (val: boolean) => void;
   localSerpUrl: string;
@@ -22,6 +28,12 @@ export const ApiKeySearchTab: React.FC<ApiKeySearchTabProps> = ({
   setTavilyKey,
   exaKey,
   setExaKey,
+  pagespeedKey,
+  setPagespeedKey,
+  dataForSeoLogin,
+  setDataForSeoLogin,
+  dataForSeoPassword,
+  setDataForSeoPassword,
   localSerpEnabled,
   setLocalSerpEnabled,
   localSerpUrl,
@@ -88,7 +100,104 @@ export const ApiKeySearchTab: React.FC<ApiKeySearchTabProps> = ({
         <p className="text-[10px] text-gray-400 mt-1">Deep neural entity search and competitor citation mapping.</p>
       </div>
 
-      {/* Local Google SERP Scraper Sidecar */}
+      <div>
+        <label htmlFor="pagespeed-api-key" className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+          Google PageSpeed Insights API Key
+        </label>
+        <div className="relative">
+          <input
+            id="pagespeed-api-key"
+            type={visibleKeys['pagespeed'] ? 'text' : 'password'}
+            value={pagespeedKey}
+            onChange={e => setPagespeedKey(e.target.value)}
+            placeholder="AIza..."
+            className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none pr-16"
+          />
+          <Button
+            variant="ghost"
+            size="none"
+            onClick={() => toggleVisibility('pagespeed')}
+            aria-pressed={!!visibleKeys['pagespeed']}
+            aria-label={visibleKeys['pagespeed'] ? 'Hide PageSpeed key' : 'Show PageSpeed key'}
+            className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
+          >
+            {visibleKeys['pagespeed'] ? 'Hide' : 'Show'}
+          </Button>
+        </div>
+        <p className="text-[10px] text-gray-400 mt-1">
+          Powers Instant Audit CWV Measure. Free Google Cloud key for PageSpeed Insights API. Signed-in users can also use a hosted key when the operator sets one.
+        </p>
+      </div>
+
+      <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
+            DataForSEO (ChatGPT + Google AI Overview mentions)
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onRunPingTest('dataforseo')}
+            loading={testingId === 'dataforseo'}
+            className="font-mono normal-case tracking-normal"
+          >
+            {testingId === 'dataforseo' ? 'Testing...' : 'Test'}
+          </Button>
+        </div>
+        <p className="text-[10px] text-gray-400">
+          Primary source for true AI-visibility measurement. When unset, audits fall back to LLM answer probes or show Not measured. Never invents citations.
+        </p>
+        <div>
+          <label htmlFor="dataforseo-login" className="block text-[9px] font-mono uppercase text-gray-400 mb-1">
+            API Login
+          </label>
+          <input
+            id="dataforseo-login"
+            type={visibleKeys['dataforseo'] ? 'text' : 'password'}
+            value={dataForSeoLogin}
+            onChange={e => setDataForSeoLogin(e.target.value)}
+            placeholder="email@example.com"
+            autoComplete="off"
+            className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+          />
+        </div>
+        <div className="relative">
+          <label htmlFor="dataforseo-password" className="block text-[9px] font-mono uppercase text-gray-400 mb-1">
+            API Password
+          </label>
+          <input
+            id="dataforseo-password"
+            type={visibleKeys['dataforseo'] ? 'text' : 'password'}
+            value={dataForSeoPassword}
+            onChange={e => setDataForSeoPassword(e.target.value)}
+            placeholder="••••••••"
+            autoComplete="off"
+            className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none pr-16"
+          />
+          <Button
+            variant="ghost"
+            size="none"
+            onClick={() => toggleVisibility('dataforseo')}
+            aria-pressed={!!visibleKeys['dataforseo']}
+            aria-label={visibleKeys['dataforseo'] ? 'Hide DataForSEO credentials' : 'Show DataForSEO credentials'}
+            className="absolute right-2 bottom-2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
+          >
+            {visibleKeys['dataforseo'] ? 'Hide' : 'Show'}
+          </Button>
+        </div>
+        {testResults['dataforseo'] && (
+          <div
+            className={`text-[10px] font-mono px-3 py-1.5 rounded-lg border ${
+              testResults['dataforseo'].success
+                ? 'bg-success-500/10 border-success-500/30 text-success-400'
+                : 'bg-danger-500/10 border-danger-500/30 text-danger-400'
+            }`}
+          >
+            {testResults['dataforseo'].message} ({testResults['dataforseo'].latencyMs}ms)
+          </div>
+        )}
+      </div>
+
       <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
         <div className="flex items-center justify-between">
           <div>

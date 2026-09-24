@@ -14,9 +14,11 @@ describe('Staging Environment & Branch Safety Controls', () => {
     expect(content).toContain('"staging"');
     expect(content).toContain('"production"');
 
-    // Staging routes and isolated databases
+    // Staging routes and isolated databases / storage
     expect(content).toContain('staging.luminarasuite.com');
     expect(content).toContain('luminara-users-staging');
+    expect(content).toContain('luminara-desktop-releases-staging');
+    expect(content).toContain('luminara-audit-jobs-staging');
   });
 
   it('example environment files exist for staging and production', () => {

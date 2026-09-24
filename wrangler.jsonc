@@ -48,18 +48,37 @@
     { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases" }
   ],
 
-  // Optional global rate limiting (Cloudflare Rate Limiting API). The Worker already applies a
-  // best-effort per-isolate limit; uncomment to enforce a single limit across all edge locations.
-  // "unsafe": {
-  //   "bindings": [
-  //     { "name": "API_RATE_LIMITER", "type": "ratelimit", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } }
-  //   ]
-  // },
+  // Cloudflare Workers Rate Limiting (GA). Edge-local per colo; complements KV dual limits.
+  // See docs/plans/three-tier-rate-limiting.md and https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+  "ratelimits": [
+    {
+      "name": "API_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 120, "period": 60 }
+    },
+    {
+      "name": "HIGH_COST_RATE_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      // Atomic backstop for public auth messaging (password reset / OTP).
+      // KV sliding windows are read-modify-write and eventually consistent, so a
+      // concurrent flood can slip past them; this binding is atomic per colo.
+      // Binding periods are restricted to 10 or 60 seconds, hence 3/min rather
+      // than the 3/15min policy window enforced in KV.
+      "name": "AUTH_MESSAGING_LIMITER",
+      "namespace_id": "1003",
+      "simple": { "limit": 3, "period": 60 }
+    }
+  ],
 
   // Non-secret config. Secrets are set with `npx wrangler secret put NAME`:
   //   BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET (required for the bot webhook), GROQ_API_KEY, GEMINI_API_KEY,
   //   OPENROUTER_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY,
-  //   TON_API_KEY (Toncenter), UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD).
+  //   DATAFORSEO_LOGIN, DATAFORSEO_PASSWORD, TON_API_KEY (Toncenter), UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD).
+  //   ADMIN_SECRET (required for admin routes: /api/admin/users, /api/admin/license/generate,
+  //   /api/admin/license/seed, /api/telegram/refund; sent as x-admin-secret header; separate from the webhook secret).
   // Non-secret TON merchant wallet (safe in vars): TON_RECEIVING_ADDRESS
   "vars": {
     "ENVIRONMENT": "production",
@@ -75,12 +94,46 @@
     "OLLAMA_BASE_URL": "",
     // Firebase Auth project id (same as VITE_FIREBASE_PROJECT_ID). Empty disables Firebase token checks.
     "FIREBASE_PROJECT_ID": "luminara-suite",
+    // Numeric project number (Messaging Sender ID). Needed for App Check JWT audience/issuer.
+    "FIREBASE_PROJECT_NUMBER": "274315225068",
+    // Keep false until VITE_FIREBASE_APPCHECK_SITE_KEY is set and console registration is live.
+    "REQUIRE_APP_CHECK": "false",
+    // Public Firebase web API key (same as VITE_FIREBASE_API_KEY). Enables Worker-mediated password reset.
+    "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
+    // Soft killswitch for outbound Auth emails (password reset). Raise only with monitoring.
+    "OUTBOUND_EMAIL_DAILY_LIMIT": "200",
     "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
     "LANGUAGETOOL_URL": "",
     "UMAMI_URL": "",
-    "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent"
+    "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
+    "ORACLE_SERVER_ENABLED": "true",
+    // Paid Oracle tools require invokeTool+confirmTool unless explicitly enabled.
+    "ORACLE_AUTO_TOOLS": "false",
+    "AUDIT_QUEUE_ENABLED": "true"
+  },
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "ORACLE_SESSION", "class_name": "OracleSession" }
+    ]
+  },
+
+  "migrations": [
+    { "tag": "v1-oracle-session", "new_sqlite_classes": ["OracleSession"] }
+  ],
+
+  "queues": {
+    "producers": [{ "binding": "AUDIT_JOBS", "queue": "luminara-audit-jobs" }],
+    "consumers": [
+      {
+        "queue": "luminara-audit-jobs",
+        "max_batch_size": 1,
+        "max_retries": 2,
+        "dead_letter_queue": "luminara-audit-jobs-dlq"
+      }
+    ]
   },
 
   // Multi-Environment Isolation Safeguards
@@ -93,6 +146,26 @@
       "kv_namespaces": [
         { "binding": "LUMINARA_KV", "id": "1898b8c88b1048b38be720bcf6c5a91c" }
       ],
+      "r2_buckets": [
+        { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases-staging" }
+      ],
+      "ratelimits": [
+        {
+          "name": "API_RATE_LIMITER",
+          "namespace_id": "1101",
+          "simple": { "limit": 120, "period": 60 }
+        },
+        {
+          "name": "HIGH_COST_RATE_LIMITER",
+          "namespace_id": "1102",
+          "simple": { "limit": 30, "period": 60 }
+        },
+        {
+          "name": "AUTH_MESSAGING_LIMITER",
+          "namespace_id": "1103",
+          "simple": { "limit": 3, "period": 60 }
+        }
+      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -100,6 +173,22 @@
           "database_id": "2aeb897a-d2d4-462b-89c5-0d9efbf093fe"
         }
       ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "ORACLE_SESSION", "class_name": "OracleSession" }
+        ]
+      },
+      "queues": {
+        "producers": [{ "binding": "AUDIT_JOBS", "queue": "luminara-audit-jobs-staging" }],
+        "consumers": [
+          {
+            "queue": "luminara-audit-jobs-staging",
+            "max_batch_size": 1,
+            "max_retries": 2,
+            "dead_letter_queue": "luminara-audit-jobs-staging-dlq"
+          }
+        ]
+      },
       "vars": {
         "ENVIRONMENT": "staging",
         "WEBAPP_URL": "https://staging.luminarasuite.com/",
@@ -108,10 +197,18 @@
         "REQUIRE_SUBSCRIPTION": "false",
         "FREE_DAILY_LIMIT": "100",
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",
+        "FIREBASE_PROJECT_NUMBER": "",
+        "REQUIRE_APP_CHECK": "false",
+        "FIREBASE_WEB_API_KEY": "",
+        "OUTBOUND_EMAIL_DAILY_LIMIT": "100",
+        "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
-        "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent"
+        "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
+        "ORACLE_SERVER_ENABLED": "true",
+        "ORACLE_AUTO_TOOLS": "false",
+        "AUDIT_QUEUE_ENABLED": "true"
       }
     },
     "production": {
@@ -126,6 +223,23 @@
       "r2_buckets": [
         { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases" }
       ],
+      "ratelimits": [
+        {
+          "name": "API_RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": { "limit": 120, "period": 60 }
+        },
+        {
+          "name": "HIGH_COST_RATE_LIMITER",
+          "namespace_id": "1002",
+          "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "AUTH_MESSAGING_LIMITER",
+          "namespace_id": "1003",
+          "simple": { "limit": 3, "period": 60 }
+        }
+      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -133,6 +247,22 @@
           "database_id": "e828e0b0-491d-4d0b-b5ea-bd4bdd6c7b8a"
         }
       ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "ORACLE_SESSION", "class_name": "OracleSession" }
+        ]
+      },
+      "queues": {
+        "producers": [{ "binding": "AUDIT_JOBS", "queue": "luminara-audit-jobs" }],
+        "consumers": [
+          {
+            "queue": "luminara-audit-jobs",
+            "max_batch_size": 1,
+            "max_retries": 2,
+            "dead_letter_queue": "luminara-audit-jobs-dlq"
+          }
+        ]
+      },
       "vars": {
         "ENVIRONMENT": "production",
         "WEBAPP_URL": "https://luminarasuite.com/",
@@ -141,11 +271,18 @@
         "REQUIRE_SUBSCRIPTION": "false",
         "FREE_DAILY_LIMIT": "25",
         "FIREBASE_PROJECT_ID": "luminara-suite",
+        "FIREBASE_PROJECT_NUMBER": "274315225068",
+        "REQUIRE_APP_CHECK": "false",
+        "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
+        "OUTBOUND_EMAIL_DAILY_LIMIT": "200",
         "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
-        "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent"
+        "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
+        "ORACLE_SERVER_ENABLED": "true",
+        "ORACLE_AUTO_TOOLS": "false",
+        "AUDIT_QUEUE_ENABLED": "true"
       }
     }
   }

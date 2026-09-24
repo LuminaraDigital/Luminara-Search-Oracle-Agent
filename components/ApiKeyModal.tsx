@@ -6,6 +6,7 @@ import { noteWorkspaceDirty } from '../services/sync/workspaceSyncService';
 import { Button } from './ui/Button';
 import { useConfirm } from './ui/ConfirmModal';
 import { toUserFacingText } from '../utils/userFacingText';
+import { useAsyncLock } from '../hooks/useAsyncLock';
 import {
   ApiKeyOverviewTab,
   ApiKeyLlmTab,
@@ -27,6 +28,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   const { requestConfirm, confirmModal } = useConfirm();
   const [statuses, setStatuses] = useState<ProviderStatus[]>([]);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const { pending: saving, run: runSave } = useAsyncLock();
 
   // Form values
   const [geminiKey, setGeminiKey] = useState('');
@@ -45,6 +47,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   const [freeLlmPrefer, setFreeLlmPrefer] = useState(true);
   const [tavilyKey, setTavilyKey] = useState('');
   const [exaKey, setExaKey] = useState('');
+  const [pagespeedKey, setPagespeedKey] = useState('');
+  const [dataForSeoLogin, setDataForSeoLogin] = useState('');
+  const [dataForSeoPassword, setDataForSeoPassword] = useState('');
   const [localSerpUrl, setLocalSerpUrl] = useState('http://localhost:3001');
   const [localSerpEnabled, setLocalSerpEnabled] = useState(true);
   const [firecrawlKey, setFirecrawlKey] = useState('');
@@ -85,6 +90,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     setFreeLlmPrefer(configService.isFreeLlmPreferGateway());
     setTavilyKey(localStorage.getItem('luminara_tavily_key') || '');
     setExaKey(localStorage.getItem('luminara_exa_key') || '');
+    setPagespeedKey(localStorage.getItem('luminara_pagespeed_key') || '');
+    setDataForSeoLogin(localStorage.getItem('luminara_dataforseo_login') || '');
+    setDataForSeoPassword(localStorage.getItem('luminara_dataforseo_password') || '');
     setLocalSerpUrl(configService.getLocalSerpUrl());
     setLocalSerpEnabled(configService.isLocalSerpEnabled());
     setFirecrawlKey(localStorage.getItem('luminara_firecrawl_key') || '');
@@ -149,43 +157,46 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   };
 
   const handleSaveAll = () => {
-    configService.setKey('luminara_api_key', geminiKey);
-    configService.setKey('luminara_groq_key', groqKey);
-    configService.setKey('luminara_groq_fallback_key', groqFallbackKey);
-    configService.setKey('luminara_nvidia_key', nvidiaKey);
-    configService.setKey('luminara_nvidia_org_id', nvidiaOrgId);
-    configService.setKey('luminara_openrouter_key', openRouterKey);
-    configService.setKey('luminara_ollama_key', ollamaKey);
-    configService.setOllamaEndpoint(ollamaEndpoint.trim());
-    configService.setOllamaModel(ollamaModel.trim());
-    configService.setFreeLlmKey(freeLlmKey);
-    configService.setFreeLlmBaseUrl(freeLlmBaseUrl);
-    configService.setFreeLlmPreferGateway(freeLlmPrefer);
-    configService.setKey('luminara_tavily_key', tavilyKey);
-    configService.setKey('luminara_exa_key', exaKey);
-    configService.setLocalSerpUrl(localSerpUrl);
-    configService.setLocalSerpEnabled(localSerpEnabled);
-    configService.setKey('luminara_firecrawl_key', firecrawlKey);
-    configService.setKey('luminara_browserbase_key', browserbaseKey);
-    configService.setCrawlerProvider(crawlerProvider);
-    configService.setSitewideEvidenceMode(sitewideMode);
-    configService.setSitewideMaxPages(sitewideMaxPages);
-    configService.setPatchrightUrl(patchrightUrl);
-    configService.setCrawlerProxy(crawlerProxy);
-    configService.setCrawlerToken(crawlerToken.trim());
-    configService.setKey('luminara_fal_key', falKey);
-    configService.setKey('luminara_tinker_key', tinkerKey);
-    configService.setLanguageToolUrl(writingCheckUrl.trim());
-    configService.setUmamiUrl(resultsTrackingUrl.trim());
-    configService.setUmamiApiKey(resultsTrackingKey.trim());
+    void runSave(async () => {
+      configService.setKey('luminara_api_key', geminiKey);
+      configService.setKey('luminara_groq_key', groqKey);
+      configService.setKey('luminara_groq_fallback_key', groqFallbackKey);
+      configService.setKey('luminara_nvidia_key', nvidiaKey);
+      configService.setKey('luminara_nvidia_org_id', nvidiaOrgId);
+      configService.setKey('luminara_openrouter_key', openRouterKey);
+      configService.setKey('luminara_ollama_key', ollamaKey);
+      configService.setOllamaEndpoint(ollamaEndpoint.trim());
+      configService.setOllamaModel(ollamaModel.trim());
+      configService.setFreeLlmKey(freeLlmKey);
+      configService.setFreeLlmBaseUrl(freeLlmBaseUrl);
+      configService.setFreeLlmPreferGateway(freeLlmPrefer);
+      configService.setKey('luminara_tavily_key', tavilyKey);
+      configService.setKey('luminara_exa_key', exaKey);
+      configService.setPagespeedKey(pagespeedKey);
+      configService.setDataForSeoCredentials(dataForSeoLogin, dataForSeoPassword);
+      configService.setLocalSerpUrl(localSerpUrl);
+      configService.setLocalSerpEnabled(localSerpEnabled);
+      configService.setKey('luminara_firecrawl_key', firecrawlKey);
+      configService.setKey('luminara_browserbase_key', browserbaseKey);
+      configService.setCrawlerProvider(crawlerProvider);
+      configService.setSitewideEvidenceMode(sitewideMode);
+      configService.setSitewideMaxPages(sitewideMaxPages);
+      configService.setPatchrightUrl(patchrightUrl);
+      configService.setCrawlerProxy(crawlerProxy);
+      configService.setCrawlerToken(crawlerToken.trim());
+      configService.setKey('luminara_fal_key', falKey);
+      configService.setKey('luminara_tinker_key', tinkerKey);
+      configService.setLanguageToolUrl(writingCheckUrl.trim());
+      configService.setUmamiUrl(resultsTrackingUrl.trim());
+      configService.setUmamiApiKey(resultsTrackingKey.trim());
 
-    noteWorkspaceDirty();
-    refreshStatuses();
-    setSavedSuccess(true);
-    onKeySaved();
-    setTimeout(() => {
+      noteWorkspaceDirty();
+      refreshStatuses();
+      setSavedSuccess(true);
+      onKeySaved();
+      await new Promise((r) => setTimeout(r, 2000));
       setSavedSuccess(false);
-    }, 2000);
+    });
   };
 
   const handleRunPingTest = async (providerId: string) => {
@@ -206,6 +217,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
       res = await configService.testPatchright();
     } else if (providerId === 'exa') {
       res = await configService.testExa(exaKey);
+    } else if (providerId === 'dataforseo') {
+      const cred =
+        dataForSeoLogin.trim() && dataForSeoPassword.trim()
+          ? `${dataForSeoLogin.trim()}:${dataForSeoPassword.trim()}`
+          : undefined;
+      res = await configService.testDataForSeo(cred);
     } else if (providerId === 'nvidia') {
       const n = await configService.testNvidia(nvidiaKey, nvidiaOrgId);
       res = { success: n.success, message: n.message, latencyMs: n.latencyMs };
@@ -377,6 +394,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
               setTavilyKey={setTavilyKey}
               exaKey={exaKey}
               setExaKey={setExaKey}
+              pagespeedKey={pagespeedKey}
+              setPagespeedKey={setPagespeedKey}
+              dataForSeoLogin={dataForSeoLogin}
+              setDataForSeoLogin={setDataForSeoLogin}
+              dataForSeoPassword={dataForSeoPassword}
+              setDataForSeoPassword={setDataForSeoPassword}
               localSerpEnabled={localSerpEnabled}
               setLocalSerpEnabled={setLocalSerpEnabled}
               localSerpUrl={localSerpUrl}
@@ -481,6 +504,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
               variant="primary"
               size="none"
               onClick={handleSaveAll}
+              loading={saving}
+              disabled={saving}
               className="px-5 py-2 rounded-xl text-[10px] font-black"
             >
               Save Changes

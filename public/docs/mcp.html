@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Luminara MCP</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.55; color: #111; }
+    code { background: #f4f4f4; padding: 0.1em 0.35em; border-radius: 4px; }
+    pre { background: #f4f4f4; padding: 1rem; overflow: auto; border-radius: 8px; }
+    a { color: #0a0a0a; }
+  </style>
+</head>
+<body>
+  <h1>Luminara MCP</h1>
+  <p>Connect Cursor, Claude, or Codex to <code>https://luminarasuite.com/api/mcp</code> with a Growth or Agency API key (<code>Authorization: Bearer lm_live_...</code>).</p>
+  <p>Create keys via signed-in <code>POST /api/api-keys</code>. Free tools: projects, context, reports. Paid research needs Agency or DataForSEO BYOK (<code>x-provider-key</code>).</p>
+  <p>Plugin and skills live in the repo under <code>plugins/luminara/</code>.</p>
+  <h2>Setup</h2>
+  <pre>{
+  "mcpServers": {
+    "luminara": {
+      "url": "https://luminarasuite.com/api/mcp",
+      "headers": {
+        "Authorization": "Bearer lm_live_YOUR_KEY"
+      }
+    }
+  }
+}</pre>
+</body>
+</html>

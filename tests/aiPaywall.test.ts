@@ -285,6 +285,27 @@ describe('AI Paywall & Quota Engine', () => {
       expect(q.error).toMatch(/Quota store unavailable/i);
     });
 
+    it('meters anonymous hosted use by IP when REQUIRE_TG_AUTH is off', async () => {
+      const kv = createMockKv();
+      const env: any = {
+        LUMINARA_KV: kv,
+        FREE_DAILY_LIMIT: '2',
+        REQUIRE_TG_AUTH: 'false',
+      };
+      const q1 = await checkHostedQuota(env, null, { clientIp: '203.0.113.10' });
+      expect(q1.ok).toBe(true);
+      expect(q1.used).toBe(1);
+      const q2 = await checkHostedQuota(env, null, { clientIp: '203.0.113.10' });
+      expect(q2.ok).toBe(true);
+      expect(q2.used).toBe(2);
+      const q3 = await checkHostedQuota(env, null, { clientIp: '203.0.113.10' });
+      expect(q3.ok).toBe(false);
+      expect(q3.error).toMatch(/Daily free limit/i);
+      const otherIp = await checkHostedQuota(env, null, { clientIp: '203.0.113.99' });
+      expect(otherIp.ok).toBe(true);
+      expect(otherIp.used).toBe(1);
+    });
+
     it('allows active paid subscriber to use hosted OpenRouter, NIM, and Ollama', async () => {
       const kv = createMockKv();
       const env = createEnv(kv);

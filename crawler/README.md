@@ -31,8 +31,8 @@ To start the crawler together with the other self-hosted helpers (Writing check 
 | --- | --- | --- |
 | `CRAWLER_TOKEN` | empty | Shared secret sent as `x-crawler-token` or `Authorization: Bearer`. Required whenever `HOST` is not loopback. |
 | `CRAWLER_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated exact browser origins allowed via CORS (never `*`). Set it empty to allow no browser origin; add `https://luminarasuite.com` to use the hosted app. |
-| `CRAWLER_MAX_CONCURRENCY` | `2` | Concurrent `/scrape` and `/serp` requests. Extra requests get `429` with `Retry-After`. |
-| `CRAWLER_RATE_LIMIT_PER_MIN` | `30` | Requests per client IP per minute for `/scrape` and `/serp`. |
+| `CRAWLER_MAX_CONCURRENCY` | `2` | Concurrent `/scrape`, `/serp`, and live `/session` browsers. Each open session holds one slot until `DELETE /session/:id` or idle TTL (10 min). Extra requests get `429` with `Retry-After`. |
+| `CRAWLER_RATE_LIMIT_PER_MIN` | `30` | Requests per client IP per minute for `/scrape`, `/serp`, and `/session*`. |
 | `CRAWLER_TRUST_PROXY` | `false` | Use `X-Forwarded-For` for the client IP. Only behind a reverse proxy you control. |
 | `CRAWLER_PROXY` | empty | Outbound proxy for the headless browser. |
 
@@ -91,6 +91,26 @@ Response:
   "antiBotBypassed": true
 }
 ```
+
+### Session observe/act (indexed DOM)
+
+Additive interactive routes for agent browse. Each live session holds one concurrency slot until `DELETE` or idle TTL (~10 min). Targets must pass SSRF checks. Model clients must use returned action ids only (never selectors or JS).
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `POST` | `/session` | Body `{ "url", "accountKey?" }` → `{ success, sessionId, observe }` |
+| `POST` | `/session/:id/observe` | Body `{ "screenshot?" }` → observe payload with `fingerprint` |
+| `POST` | `/session/:id/act` | Body `{ "fingerprint", "actionId", "text?" }` → act + re-observe; stale fingerprint → error |
+| `DELETE` | `/session/:id` | Close browser context and free the slot |
+
+Smoke (crawler running on `:3001`, public URL or locally served fixture):
+
+```bash
+curl -s -X POST http://127.0.0.1:3001/session -H "content-type: application/json" -d "{\"url\":\"https://example.com\"}"
+# then POST .../observe and .../act with the returned sessionId + fingerprint + actionId
+```
+
+`/health`, `/scrape`, and `/serp` are unchanged.
 
 ---
 

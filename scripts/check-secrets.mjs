@@ -45,6 +45,28 @@ const PATTERNS = [
   { label: 'Google service account private_key', re: /"private_key"\s*:\s*"-----BEGIN/ },
 ];
 
+/**
+ * Narrow allowlist for findings that are public by design. A finding is
+ * suppressed ONLY when the matched string fits the exact shape AND the file
+ * path fits the allowlisted location. Every other finding in every other
+ * file still fails the gate. Keep entries paired with a reason so audits
+ * can see why an allowlisted shape is not a live credential.
+ */
+const ALLOWED_FINDINGS = [
+  {
+    label: 'Firebase web apiKey (public client config)',
+    // Firebase web apiKey: AIza + exactly 35 chars, public by design.
+    shape: /^AIza[0-9A-Za-z_-]{35}$/,
+    path: /(^|\/)wrangler\.jsonc$|^dist\//,
+    reason:
+      'Firebase web apiKey is public by design and intentionally ships in wrangler.jsonc and dist.',
+  },
+];
+
+function toPosix(p) {
+  return p.split(/[/\\]/).join('/');
+}
+
 function git(cmd) {
   return execSync(cmd, { cwd: root, encoding: 'utf8' }).trim();
 }
@@ -99,23 +121,29 @@ for (const rel of files) {
   if (!text || text.length > 2_000_000) continue;
 
   for (const { label, re } of PATTERNS) {
-    re.lastIndex = 0;
-    const m = text.match(re);
-    if (!m) continue;
-    const hit = m[0];
-    // Allow obvious placeholders next to the match context
-    const idx = text.indexOf(hit);
-    const ctx = text.slice(Math.max(0, idx - 40), idx + hit.length + 40);
-    if (PLACEHOLDER_RE.test(ctx) && !/PRIVATE KEY|github_pat_|gho_|ghp_|gsk_|nvapi-|AKIA/.test(hit)) {
-      continue;
+    // Scan every match, not just the first: an allowlisted first hit must never
+    // mask a second, non-allowlisted credential of the same shape in the file.
+    const globalRe = re.global ? re : new RegExp(re.source, re.flags + 'g');
+    for (const m of text.matchAll(globalRe)) {
+      const hit = m[0];
+      // Allow obvious placeholders next to the match context
+      const idx = m.index ?? text.indexOf(hit);
+      const ctx = text.slice(Math.max(0, idx - 40), idx + hit.length + 40);
+      if (PLACEHOLDER_RE.test(ctx) && !/PRIVATE KEY|github_pat_|gho_|ghp_|gsk_|nvapi-|AKIA/.test(hit)) {
+        continue;
+      }
+      // Never allow private keys or GitHub tokens even near "example"
+      if (/PRIVATE KEY|gho_|ghp_|ghu_|ghs_|ghr_|github_pat_/.test(hit)) {
+        findings.push({ file: rel, label, snippet: hit.slice(0, 12) + '…<REDACTED>' });
+        continue;
+      }
+      if (PLACEHOLDER_RE.test(ctx)) continue;
+      const allowed = ALLOWED_FINDINGS.some(
+        (a) => a.shape.test(hit) && a.path.test(toPosix(rel)),
+      );
+      if (allowed) continue;
+      findings.push({ file: rel, label, snippet: hit.slice(0, 8) + '…<REDACTED>' });
     }
-    // Never allow private keys or GitHub tokens even near "example"
-    if (/PRIVATE KEY|gho_|ghp_|ghu_|ghs_|ghr_|github_pat_/.test(hit)) {
-      findings.push({ file: rel, label, snippet: hit.slice(0, 12) + '…<REDACTED>' });
-      continue;
-    }
-    if (PLACEHOLDER_RE.test(ctx)) continue;
-    findings.push({ file: rel, label, snippet: hit.slice(0, 8) + '…<REDACTED>' });
   }
 }
 

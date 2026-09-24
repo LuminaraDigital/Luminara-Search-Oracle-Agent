@@ -33,7 +33,8 @@ export type AppAuthState = {
 };
 
 /**
- * Views that stay reachable without an account (marketing + legal).
+ * Views that stay reachable without an account (marketing + legal + guest Instant Audit).
+ * Guest scout uses client BYOK only; hosted Worker LLM / paid relay / hosted PSI still need auth.
  * Everything else requires Telegram (inside TMA) or Firebase (web).
  */
 export const PUBLIC_APP_VIEWS = new Set([
@@ -44,6 +45,9 @@ export const PUBLIC_APP_VIEWS = new Set([
   'INTELLIGENCE',
   'WHY_US',
   'PRICING',
+  'SHARED_REPORT',
+  'VERIFY_ATTESTATION',
+  'INSTANT_AUDIT',
 ]);
 
 /** Pure decision helper (tested). Soft-open only when signature was not rejected. */

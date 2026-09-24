@@ -100,6 +100,9 @@ export interface SerpEvidenceItem {
   brandMentioned: boolean;
 }
 
+/** Work-item lifecycle for finding cards (W2 board). Defaults to open when omitted. */
+export type FindingWorkStatus = 'open' | 'in_progress' | 'done' | 'wont_fix';
+
 export interface AuditFinding {
   id: string;
   category: 'schema' | 'technical' | 'content_quality' | 'eeat' | 'citations' | 'competitor_gap';
@@ -113,6 +116,12 @@ export interface AuditFinding {
   criticVerified: boolean;
   criticConfidence: number;
   criticCorrection?: string;
+  /** Board status; omitted findings are treated as open on ingest. */
+  status?: FindingWorkStatus;
+  owner?: string;
+  auditRunId?: string;
+  /** Upsert key across re-audits: domain|category|title fingerprint. */
+  stableKey?: string;
 }
 
 export interface CodeRemediationPatch {

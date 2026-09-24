@@ -363,6 +363,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                 <li className="flex items-center gap-2">
                   <span className="text-gold">✓</span> PDF &amp; Google Docs Exports
                 </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-gold">✓</span> Web audits only (no MCP, no share links)
+                </li>
               </ul>
             </div>
             <button
@@ -399,10 +402,13 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                   <span className="text-gold">✓</span> <strong>{engineLabels.length ? `All Starter Engines (${engineList})` : 'All Starter Engines'}</strong>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 10 Domains + Competitor Graph
+                  <span className="text-gold">✓</span> MCP access (Cursor / Claude / Codex)
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 24/7 Telegram Sentinel Alerts
+                  <span className="text-gold">✓</span> Public share links + 3 team seats
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-gold">✓</span> 10 Domains + weekly Sentinel
                 </li>
               </ul>
             </div>
@@ -437,16 +443,16 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </p>
               <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] text-gray-300">
                 <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Brand Memory Vault (unlimited depth)
+                  <span className="text-gold">✓</span> MCP + share links (everything in Growth)
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-gold">✓</span> Hosted API / research access
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-gold">✓</span> 10 Agency client workspaces
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Competitor watchlist + deltas
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Scheduled re-audits + API
+                  <span className="text-gold">✓</span> 10 team seats + daily Sentinel
                 </li>
               </ul>
             </div>

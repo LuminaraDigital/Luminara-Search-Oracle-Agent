@@ -453,6 +453,35 @@ class AgentMatrixService {
         } else {
           resultText = await geminiService.generateText(prompt);
         }
+      } else if (agent.id === 'claude' || agent.id === 'openrouter' || agent.id === 'codex') {
+        const demo =
+          typeof localStorage !== 'undefined' && localStorage.getItem('luminara_demo_agents') === '1';
+        if (demo) {
+          await new Promise((r) => setTimeout(r, 1400));
+          resultText =
+            `### ${agent.name} Demo Output\n\nSimulated response (luminara_demo_agents=1).\n\n> ${prompt}`;
+        } else {
+          task.thoughtLog?.push(`[${agent.name}] Routing via OpenRouter Anthropic-compatible model...`);
+          const provider = aiProviderService.getProvider('openrouter');
+          if (provider && (await provider.isAvailable())) {
+            const model =
+              agent.id === 'claude'
+                ? 'anthropic/claude-3.5-sonnet'
+                : agent.defaultModel || 'openai/gpt-4o-mini';
+            const genRes = await provider.generateText(prompt, {
+              systemPrompt: `You are ${agent.name}. Execute the directive with maximum precision.\n${graphSnippet}`,
+              model,
+            });
+            resultText = genRes.text;
+            task.thoughtLog?.push(
+              `[${agent.name}] Response received in ${genRes.latencyMs}ms. Burned ${genRes.tokenUsage.total} tokens.`,
+            );
+          } else {
+            resultText =
+              'OpenRouter is not configured. Add an OpenRouter key in Settings, or set luminara_demo_agents=1 for simulated agents.';
+            task.thoughtLog?.push('[Harness] Provider not configured - refused to invent agent output.');
+          }
+        }
       } else {
         // Run simulated multi-agent execution with domain-rich feedback
         await new Promise(r => setTimeout(r, 1400));

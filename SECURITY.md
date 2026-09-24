@@ -23,6 +23,7 @@ Do not open public GitHub issues for security problems.
 - Hosted chat completions clamp `max_tokens` / `max_completion_tokens` (and Gemini `maxOutputTokens`) server-side. Hosted Firecrawl `/crawl` requires an active subscription.
 - `/api/enrichment/entity` requires sign-in when `REQUIRE_TG_AUTH` is on.
 - Model and scraped-web output is sanitised with DOMPurify before rendering (`utils/markdown.ts`). Scraped and search text is wrapped as untrusted data before it enters model prompts (`utils/untrustedContent.ts`).
+- Hosted Oracle SSE (`worker/oracleChat.ts`) fences tool results, prefers Durable Object session history over client-supplied history, requires `invokeTool` + `confirmTool` for paid auto-tools (unless `ORACLE_AUTO_TOOLS=true`), and emits a soft `monitor` SSE event when replies look like invented SEO metrics (`worker/oracleInteractionGuard.ts`).
 - The Telegram webhook requires the `X-Telegram-Bot-Api-Secret-Token` header.
 
 ## Supported versions

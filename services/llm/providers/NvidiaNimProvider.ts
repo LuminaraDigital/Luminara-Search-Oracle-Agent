@@ -15,6 +15,7 @@ import {
 } from '../nativeModelDefaults';
 import { parseOpenAiSseStream } from '../../../utils/sse';
 import { BaseAIProvider } from './BaseAIProvider';
+import { applyToolsToChatBody, parseToolCallsFromMessage } from '../openaiTools';
 
 /**
  * NVIDIA NIM Provider (Enterprise Accelerated Foundation Inference)
@@ -89,15 +90,17 @@ export class NvidiaNimProvider extends BaseAIProvider {
 
     for (const model of models) {
       usedModel = model;
+      const body: Record<string, unknown> = {
+        model,
+        messages,
+        temperature: options?.temperature ?? this.config.temperature,
+        max_tokens: options?.maxTokens ?? this.config.maxTokens,
+      };
+      applyToolsToChatBody(body, options);
       response = await providerFetch('nim', '/chat/completions', this.endpointUrl(), {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: options?.temperature ?? this.config.temperature,
-          max_tokens: options?.maxTokens ?? this.config.maxTokens,
-        }),
+        body: JSON.stringify(body),
       }, { userKey: this.ownKey() });
 
       if (response.ok) break;
@@ -115,6 +118,7 @@ export class NvidiaNimProvider extends BaseAIProvider {
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || '';
+    const toolCalls = parseToolCallsFromMessage(data.choices?.[0]?.message);
     const latencyMs = Date.now() - startTime;
     const usage = data.usage || {};
     this.config.model = usedModel;
@@ -127,6 +131,7 @@ export class NvidiaNimProvider extends BaseAIProvider {
         total: usage.total_tokens || (this.estimateTokens(prompt) + this.estimateTokens(text)),
       },
       finishReason: (data.choices?.[0]?.finish_reason as GenerateFinishReason) || 'stop',
+      toolCalls,
       latencyMs,
     };
   }
@@ -142,16 +147,18 @@ export class NvidiaNimProvider extends BaseAIProvider {
 
     for (const model of models) {
       usedModel = model;
+      const body: Record<string, unknown> = {
+        model,
+        messages,
+        temperature: options?.temperature ?? this.config.temperature,
+        max_tokens: options?.maxTokens ?? this.config.maxTokens,
+        stream: true,
+      };
+      applyToolsToChatBody(body, options);
       response = await providerFetch('nim', '/chat/completions', this.endpointUrl(), {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: options?.temperature ?? this.config.temperature,
-          max_tokens: options?.maxTokens ?? this.config.maxTokens,
-          stream: true,
-        }),
+        body: JSON.stringify(body),
       }, { userKey: this.ownKey() });
 
       if (response.ok && response.body) break;
@@ -169,8 +176,12 @@ export class NvidiaNimProvider extends BaseAIProvider {
 
     this.config.model = usedModel;
     for await (const chunk of parseOpenAiSseStream(response)) {
-      if (chunk.text) {
-        yield { text: chunk.text };
+      if (chunk.text) yield { text: chunk.text };
+      if (chunk.toolCalls?.length) {
+        yield {
+          toolCalls: chunk.toolCalls,
+          finishReason: (chunk.finishReason as GenerateFinishReason) || 'tool_calls',
+        };
       }
     }
   }

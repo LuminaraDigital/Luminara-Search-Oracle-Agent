@@ -219,9 +219,22 @@ export class RateLimiter {
   }
 }
 
-/** Client address as seen by Cloudflare; falls back to a shared bucket when absent (local dev). */
+/**
+ * Client address as seen by Cloudflare.
+ *
+ * Only `cf-connecting-ip` is trusted: the edge overwrites it on every proxied
+ * request, so a caller cannot forge it. Client-supplied forwarding headers
+ * (`x-real-ip`, `x-forwarded-for`) are deliberately ignored - honouring them
+ * lets an attacker mint a fresh rate-limit bucket per request and walk straight
+ * through the password-reset and toll-fraud gates.
+ *
+ * When the header is absent (local dev, direct non-proxied invocation) every
+ * caller collapses into one shared `unknown` bucket. That is intentionally
+ * fail-closed: limits still bite, they just bite collectively.
+ */
 export function clientIp(request: Request): string {
-  return request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || 'unknown';
+  const edgeIp = request.headers.get('cf-connecting-ip');
+  return edgeIp && edgeIp.trim() ? edgeIp.trim() : 'unknown';
 }
 
 // ---- SSRF guards -----------------------------------------------------------------------------

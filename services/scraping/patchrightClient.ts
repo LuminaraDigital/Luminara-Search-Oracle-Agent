@@ -28,6 +28,29 @@ export interface PatchrightHealthResponse {
   latencyMs: number;
 }
 
+/** Indexed DOM observe payload from crawler /session routes (additive). */
+export type PatchrightObservePayload = {
+  url: string;
+  title: string;
+  text: string;
+  actions: Array<Record<string, unknown>>;
+  fingerprint: string;
+  marker?: unknown;
+  screenshot?: string;
+  [key: string]: unknown;
+};
+
+export type PatchrightSessionResponse = {
+  success: boolean;
+  sessionId?: string;
+  observe?: PatchrightObservePayload;
+  historyEntry?: Record<string, unknown>;
+  closed?: boolean;
+  error?: string;
+  code?: string;
+  latencyMs?: number;
+};
+
 export class PatchrightClient {
   private static instance: PatchrightClient;
 
@@ -152,6 +175,229 @@ export class PatchrightClient {
         url,
         latencyMs,
         error: err.name === 'AbortError' ? 'Scrape timed out' : (err.message || 'Scrape failed'),
+      };
+    }
+  }
+
+  private resolveEndpoint(customEndpoint?: string): string {
+    return (customEndpoint || configService.getPatchrightUrl() || 'http://localhost:3001').replace(/\/$/, '');
+  }
+
+  /**
+   * Open an interactive session and return the first observe payload.
+   * Additive to scrape(); does not change Instant Audit behavior.
+   */
+  public async createSession(opts: {
+    url: string;
+    accountKey?: string;
+    customEndpoint?: string;
+    timeoutMs?: number;
+  }): Promise<PatchrightSessionResponse> {
+    const endpoint = this.resolveEndpoint(opts.customEndpoint);
+    const startTime = performance.now();
+    const timeoutMs = opts.timeoutMs || 60_000;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(`${endpoint}/session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...configService.crawlerAuthHeaders(),
+        },
+        body: JSON.stringify({
+          url: opts.url,
+          ...(opts.accountKey ? { accountKey: opts.accountKey } : {}),
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const latencyMs = Math.round(performance.now() - startTime);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok || data.success === false) {
+        return {
+          success: false,
+          sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined,
+          error:
+            (typeof data.error === 'string' && data.error) ||
+            `Patchright session create error: HTTP ${res.status}`,
+          code: typeof data.code === 'string' ? data.code : undefined,
+          latencyMs,
+        };
+      }
+      return {
+        success: true,
+        sessionId: String(data.sessionId || ''),
+        observe: data.observe as PatchrightObservePayload | undefined,
+        latencyMs,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        latencyMs: Math.round(performance.now() - startTime),
+        error: err.name === 'AbortError' ? 'Session create timed out' : (err.message || 'Session create failed'),
+        code: 'BROWSER_UNAVAILABLE',
+      };
+    }
+  }
+
+  public async observeSession(
+    sessionId: string,
+    options: { screenshot?: boolean; customEndpoint?: string; timeoutMs?: number } = {},
+  ): Promise<PatchrightSessionResponse> {
+    const endpoint = this.resolveEndpoint(options.customEndpoint);
+    const startTime = performance.now();
+    const timeoutMs = options.timeoutMs || 30_000;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(`${endpoint}/session/${encodeURIComponent(sessionId)}/observe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...configService.crawlerAuthHeaders(),
+        },
+        body: JSON.stringify({ screenshot: options.screenshot === true }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const latencyMs = Math.round(performance.now() - startTime);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok || data.success === false) {
+        return {
+          success: false,
+          sessionId,
+          error:
+            (typeof data.error === 'string' && data.error) ||
+            `Patchright observe error: HTTP ${res.status}`,
+          code: typeof data.code === 'string' ? data.code : undefined,
+          latencyMs,
+        };
+      }
+      return {
+        success: true,
+        sessionId,
+        observe: data.observe as PatchrightObservePayload | undefined,
+        latencyMs,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        sessionId,
+        latencyMs: Math.round(performance.now() - startTime),
+        error: err.name === 'AbortError' ? 'Observe timed out' : (err.message || 'Observe failed'),
+        code: 'BROWSER_UNAVAILABLE',
+      };
+    }
+  }
+
+  public async actSession(
+    sessionId: string,
+    opts: {
+      fingerprint: string;
+      actionId: string;
+      text?: string;
+      customEndpoint?: string;
+      timeoutMs?: number;
+    },
+  ): Promise<PatchrightSessionResponse> {
+    const endpoint = this.resolveEndpoint(opts.customEndpoint);
+    const startTime = performance.now();
+    const timeoutMs = opts.timeoutMs || 45_000;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(`${endpoint}/session/${encodeURIComponent(sessionId)}/act`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...configService.crawlerAuthHeaders(),
+        },
+        body: JSON.stringify({
+          fingerprint: opts.fingerprint,
+          actionId: opts.actionId,
+          ...(typeof opts.text === 'string' ? { text: opts.text } : {}),
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const latencyMs = Math.round(performance.now() - startTime);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok || data.success === false) {
+        return {
+          success: false,
+          sessionId,
+          observe: data.observe as PatchrightObservePayload | undefined,
+          historyEntry: data.historyEntry as Record<string, unknown> | undefined,
+          error:
+            (typeof data.error === 'string' && data.error) ||
+            `Patchright act error: HTTP ${res.status}`,
+          code: typeof data.code === 'string' ? data.code : undefined,
+          latencyMs,
+        };
+      }
+      return {
+        success: true,
+        sessionId,
+        observe: data.observe as PatchrightObservePayload | undefined,
+        historyEntry: data.historyEntry as Record<string, unknown> | undefined,
+        latencyMs,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        sessionId,
+        latencyMs: Math.round(performance.now() - startTime),
+        error: err.name === 'AbortError' ? 'Act timed out' : (err.message || 'Act failed'),
+        code: 'BROWSER_UNAVAILABLE',
+      };
+    }
+  }
+
+  public async closeSession(
+    sessionId: string,
+    options: { customEndpoint?: string; timeoutMs?: number } = {},
+  ): Promise<PatchrightSessionResponse> {
+    const endpoint = this.resolveEndpoint(options.customEndpoint);
+    const startTime = performance.now();
+    const timeoutMs = options.timeoutMs || 15_000;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(`${endpoint}/session/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE',
+        headers: {
+          ...configService.crawlerAuthHeaders(),
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const latencyMs = Math.round(performance.now() - startTime);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok || data.success === false) {
+        return {
+          success: false,
+          sessionId,
+          error:
+            (typeof data.error === 'string' && data.error) ||
+            `Patchright close error: HTTP ${res.status}`,
+          code: typeof data.code === 'string' ? data.code : undefined,
+          latencyMs,
+        };
+      }
+      return {
+        success: true,
+        sessionId,
+        closed: true,
+        latencyMs,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        sessionId,
+        latencyMs: Math.round(performance.now() - startTime),
+        error: err.name === 'AbortError' ? 'Close timed out' : (err.message || 'Close failed'),
+        code: 'BROWSER_UNAVAILABLE',
       };
     }
   }

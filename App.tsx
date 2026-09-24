@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { OracleMode, Message, AppView, BusinessDNA, LAB_VIEWS } from './types';
+import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS } from './types';
 import { configService } from './services/configService';
 import { geminiService, toChatHistory } from './services/geminiService';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
@@ -29,10 +29,14 @@ import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
 import { lazyWithReload } from './utils/lazyWithReload';
 import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
+import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
 const LegalPage = lazyWithReload(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
+const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
+const VerifyAttestationView = lazyWithReload(() => import('./components/audit/VerifyAttestationView').then(m => ({ default: m.VerifyAttestationView })));
+const AgentReportView = lazyWithReload(() => import('./components/audit/AgentReportView').then(m => ({ default: m.AgentReportView })));
 const InfrastructurePage = lazyWithReload(() => import('./components/InfrastructurePage'));
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
 const WhyLuminaraPage = lazyWithReload(() => import('./components/WhyLuminaraPage'));
@@ -78,20 +82,24 @@ interface SendOptions {
   skipSearch?: boolean;
 }
 
-const viewFromHash = (): AppView | null => {
-  if (typeof window !== 'undefined') {
-    const path = window.location.pathname.toLowerCase().replace(/^\/|\/$/g, '');
-    if (path === 'privacy' || path === 'privacy-policy') return AppView.PRIVACY;
-    if (path === 'terms' || path === 'terms-of-service' || path === 'tos') return AppView.TERMS;
+import { parseUrlSwapRoute, type UrlSwapRouteParams } from './utils/urlSwapRouting';
+import {
+  marketingViewFromHash,
+  marketingViewFromPathname,
+  pathForMarketingView,
+  resolveAppView,
+  urlForView,
+} from './utils/marketingRoutes';
+import { applyDocumentMetaForView } from './services/marketing/documentMeta';
+
+const viewFromLocation = (): AppView | null => {
+  if (typeof window === 'undefined') return null;
+  const rawPath = window.location.pathname.replace(/^\/|\/$/g, '');
+  const swap = parseUrlSwapRoute(rawPath);
+  if (swap?.targetUrl) {
+    draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, swap.targetUrl);
   }
-  const h = window.location.hash.replace('#', '').toUpperCase();
-  if (!h) return null;
-  if (h === 'PRIVACY' || h === 'PRIVACY-POLICY') return AppView.PRIVACY;
-  if (h === 'TERMS' || h === 'TERMS-OF-SERVICE' || h === 'TOS') return AppView.TERMS;
-  if (h.startsWith('HARNESS')) return AppView.HARNESS;
-  if (h.startsWith('ORACLE_AGENT')) return AppView.ORACLE_AGENT;
-  if (h.startsWith('NOTEBOOK') || h.startsWith('STUDIO')) return AppView.NOTEBOOK;
-  return (Object.values(AppView) as string[]).includes(h) ? (h as AppView) : null;
+  return resolveAppView(window.location.pathname, window.location.hash);
 };
 
 const resolveTelegramStartView = (): AppView => {
@@ -113,14 +121,17 @@ const App: React.FC = () => {
   const [inDesktop] = useState(() => isDesktopShell());
   const skipMarketing = inTelegram || inDesktop;
   const [view, setViewState] = useState<AppView>(() => {
-    const fromHash = viewFromHash();
-    if (fromHash) return fromHash;
+    const fromLocation = viewFromLocation();
+    if (fromLocation) return fromLocation;
     // Prefer product shell when Telegram already detected OR the bot deep-linked us.
     if (isInTelegram() || hasTelegramLaunchHints()) return resolveTelegramStartView();
     // Windows Electron shell: open the product, never the marketing landing.
     if (isDesktopShell()) return AppView.INSTANT_AUDIT;
     return AppView.LANDING;
   });
+  const [urlSwapParams] = useState<UrlSwapRouteParams | null>(() =>
+    typeof window !== 'undefined' ? parseUrlSwapRoute(window.location.pathname) : null
+  );
 
   // Keep TMA detection in sync after background initTelegram() finishes.
   useEffect(() => {
@@ -148,7 +159,9 @@ const App: React.FC = () => {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Keep the URL hash in sync with the active view so refresh and the back button work.
+  // Keep the URL in sync: marketing views use real paths; product shells keep hashes.
+  // Path deep-links (/share, /verify, /reports) must be cleared when leaving so we do not
+  // leave pathname + hash pollution (e.g. /share/TOKEN#landing).
   const setView = useCallback((next: AppView) => {
     setViewState(prev => {
       if (prev !== next) setViewHistory(h => [...h.slice(-20), prev]);
@@ -156,14 +169,39 @@ const App: React.FC = () => {
     });
     productTelemetry.trackPageView(next);
     haptic('light');
-    const target = `#${next.toLowerCase()}`;
-    if (window.location.hash !== target) {
+    const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    const isPathDeepLink = /^\/(share|verify|reports)(\/|$)/i.test(path);
+    const onMarketingPath = Boolean(marketingViewFromPathname(window.location.pathname));
+    const nextIsMarketing = pathForMarketingView(next) != null;
+    const target = urlForView(next, {
+      clearPathDeepLink: isPathDeepLink,
+      leaveMarketingPath: onMarketingPath && !nextIsMarketing,
+    });
+    const marketingPath = pathForMarketingView(next);
+    const alreadyThere = marketingPath
+      ? path === (marketingPath === '/' ? '/' : marketingPath.replace(/\/+$/, '') || '/') && !window.location.hash
+      : window.location.hash.toLowerCase() === `#${next.toLowerCase()}` && path === '/' && !isPathDeepLink;
+    if (!alreadyThere) {
       window.history.pushState(null, '', target);
     }
   }, []);
 
   useEffect(() => {
     productTelemetry.trackPageView(view);
+    applyDocumentMetaForView(view);
+  }, [view]);
+
+  // Legacy #pricing-style hashes → canonical paths for crawlers and shared links.
+  useEffect(() => {
+    const marketingFromHash = marketingViewFromHash(window.location.hash);
+    if (!marketingFromHash) return;
+    const canonical = pathForMarketingView(marketingFromHash);
+    if (!canonical) return;
+    const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    if (path !== '/' && marketingViewFromPathname(path)) return;
+    if (path === '/' || path === '') {
+      window.history.replaceState(null, '', canonical);
+    }
   }, []);
 
   /** Enter a product surface immediately with zero latency. */
@@ -356,10 +394,18 @@ const App: React.FC = () => {
     }
   }, [dna]);
 
-  // First run: if no AI provider is configured anywhere (local key or hosted), open Settings once.
+  // First run: if no AI provider is configured, open Settings once - but not on Instant Audit
+  // (guest/BYOK scout should see the form first; errors already point to Settings).
   useEffect(() => {
     if (showIntro) return;
-    if (view === AppView.LANDING || view === AppView.PRIVACY || view === AppView.TERMS) return;
+    if (
+      view === AppView.LANDING ||
+      view === AppView.PRIVACY ||
+      view === AppView.TERMS ||
+      view === AppView.INSTANT_AUDIT
+    ) {
+      return;
+    }
     const anyLlm = configService.getAllStatuses().some(s => s.category === 'llm' && s.isConfigured);
     if (!anyLlm && !sessionStorage.getItem('luminara_onboarding_shown')) {
       sessionStorage.setItem('luminara_onboarding_shown', '1');
@@ -403,19 +449,19 @@ const App: React.FC = () => {
       }
     };
 
-    const handleHash = () => {
+    const handleLocation = () => {
       const h = window.location.hash.replace('#', '').toUpperCase();
       if (h === 'SETTINGS' || h === 'INTEGRATIONS') {
         setIsKeyModalOpen(true);
         return;
       }
-      const next = viewFromHash();
+      const next = viewFromLocation();
       if (next) setViewState(next);
     };
     // #settings / #integrations deep links open the key modal on first load too.
     if (['SETTINGS', 'INTEGRATIONS'].includes(window.location.hash.replace('#', '').toUpperCase())) setIsKeyModalOpen(true);
-    window.addEventListener('hashchange', handleHash);
-    window.addEventListener('popstate', handleHash);
+    window.addEventListener('hashchange', handleLocation);
+    window.addEventListener('popstate', handleLocation);
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
@@ -423,8 +469,8 @@ const App: React.FC = () => {
       unsubRem();
       unsubAgent();
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('hashchange', handleHash);
-      window.removeEventListener('popstate', handleHash);
+      window.removeEventListener('hashchange', handleLocation);
+      window.removeEventListener('popstate', handleLocation);
     };
   }, []);
 
@@ -627,6 +673,41 @@ const App: React.FC = () => {
     );
   }
 
+  if (view === AppView.SHARED_REPORT) {
+    return (
+      <Suspense fallback={<ViewLoader label="Loading shared report" />}>
+        <SharedReportView onBack={() => setView(AppView.LANDING)} />
+      </Suspense>
+    );
+  }
+
+  if (view === AppView.AGENT_REPORT) {
+    if (appAuth.loading || !appAuth.authenticated) {
+      return (
+        <>
+          {introOverlay}
+          <AuthRequiredScreen
+            auth={appAuth}
+            onBackToMarketing={skipMarketing ? undefined : () => setView(AppView.LANDING)}
+          />
+        </>
+      );
+    }
+    return (
+      <Suspense fallback={<ViewLoader label="Loading report" />}>
+        <AgentReportView />
+      </Suspense>
+    );
+  }
+
+  if (view === AppView.VERIFY_ATTESTATION) {
+    return (
+      <Suspense fallback={<ViewLoader label="Verifying attestation" />}>
+        <VerifyAttestationView onBack={() => setView(AppView.LANDING)} />
+      </Suspense>
+    );
+  }
+
   // Product tools require Telegram (Mini App) or Firebase (web). Marketing pages stay public.
   if (!PUBLIC_APP_VIEWS.has(view)) {
     if (appAuth.loading || !appAuth.authenticated) {
@@ -656,11 +737,8 @@ const App: React.FC = () => {
             }
           }} 
           onNavigateAudit={() => {
-            if (!appAuth.authenticated) {
-              setLoginWallMode('signup');
-            } else {
-              enterApp(AppView.INSTANT_AUDIT);
-            }
+            // Slice A: guests open Instant Audit without signup; hosted spend soft-gates later.
+            enterApp(AppView.INSTANT_AUDIT);
           }}
           onNavigateSuite={() => {
             if (!appAuth.authenticated) {
@@ -1146,7 +1224,15 @@ const App: React.FC = () => {
         <Suspense fallback={<ViewLoader label="Loading workspace" />}>
         {/* VIEW: Instant Audit Scanner */}
         {view === AppView.INSTANT_AUDIT && (
-          <InstantAuditView dna={dna} onNavigateDNA={() => setView(AppView.BUSINESS_DNA)} />
+          <InstantAuditView
+            dna={dna}
+            onNavigateDNA={
+              appAuth.authenticated ? () => setView(AppView.BUSINESS_DNA) : undefined
+            }
+            initialUrl={urlSwapParams?.targetUrl}
+            initialFocus={urlSwapParams?.focus}
+            isGuest={!appAuth.authenticated}
+          />
         )}
 
         {/* VIEW: Command Suite Dashboard */}

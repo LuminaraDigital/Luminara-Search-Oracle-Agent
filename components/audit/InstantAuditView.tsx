@@ -6,6 +6,8 @@ import { contextGraphService } from '../../services/contextGraph/contextGraphSer
 import { freeLlmModalitiesService } from '../../services/freellm/modalitiesService';
 import { ICONS } from '../../constants';
 import { ReportDisplay } from './ReportDisplay';
+import { PageSpeedPanel } from './PageSpeedPanel';
+import { GscPanel } from './GscPanel';
 import { useConfirm } from '../ui/ConfirmModal';
 import { AgentMissionControl } from './AgentMissionControl';
 import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
@@ -19,13 +21,36 @@ import { AuditReportSkeleton } from '../ui/Skeleton';
 interface InstantAuditViewProps {
   dna: BusinessDNA | null;
   onNavigateDNA?: () => void;
+  initialUrl?: string;
+  initialFocus?: ReportFocus;
+  /** Guest / unsigned scout: BYOK path; save and hosted spend stay soft-gated. */
+  isGuest?: boolean;
 }
 
-export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavigateDNA }) => {
-  const [url, setUrl] = useState(() => draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL));
-  const [focus, setFocus] = useState<ReportFocus>('AEO');
+export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
+  dna,
+  onNavigateDNA,
+  initialUrl,
+  initialFocus,
+  isGuest = false,
+}) => {
+  const [url, setUrl] = useState(() => initialUrl || draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL));
+  const [focus, setFocus] = useState<ReportFocus>(() => initialFocus || 'AEO');
   const [lenses, setLenses] = useState<AuditLens[]>(() => inferLenses(dna));
   const toggleLens = (id: AuditLens) => setLenses(prev => (prev.includes(id) ? prev.filter(l => l !== id) : [...prev, id]));
+
+  useEffect(() => {
+    if (initialUrl && initialUrl !== url) {
+      setUrl(initialUrl);
+      draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, initialUrl);
+    }
+  }, [initialUrl]);
+
+  useEffect(() => {
+    if (initialFocus) {
+      setFocus(initialFocus);
+    }
+  }, [initialFocus]);
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState('');
   const [report, setReport] = useState<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null>(null);
@@ -35,6 +60,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
   const [crewEvents, setCrewEvents] = useState<AgentActivityEvent[]>([]);
   const [attestation, setAttestation] = useState<AuditAttestation | null>(null);
   const [showAttestationModal, setShowAttestationModal] = useState(false);
+  const [persistHint, setPersistHint] = useState<string | null>(null);
   const isFullAudit = Boolean(dna);
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -69,10 +95,11 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
 
     setInlineValidationError(null);
     setError(null);
+    setPersistHint(null);
     setLoading(true);
     setCrewEvents([]);
     setAttestation(null);
-    setProgressStage('Assembling autonomous search crew…');
+    setProgressStage('Starting audit…');
     productTelemetry.recordOnboardingStep('quick_scout');
 
     try {
@@ -103,6 +130,28 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
       productTelemetry.recordFirstValue('audit');
 
       try {
+        const { saveAuditStrategyToProject } = await import('../../services/projects/projectClient');
+        const saved = await saveAuditStrategyToProject({
+          domain: formattedUrl,
+          dna,
+          plainEnglishBrief: result.plainEnglishBrief || result.text?.slice(0, 2000),
+          focus: targetFocus,
+        });
+        if (saved) {
+          productTelemetry.recordOnboardingStep('strategy_saved');
+          setPersistHint(`Strategy saved to project ${saved.projectId.slice(0, 12)}…`);
+        } else {
+          setPersistHint(
+            'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
+          );
+        }
+      } catch {
+        setPersistHint(
+          'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
+        );
+      }
+
+      try {
         const payload = {
           url: formattedUrl,
           focus: targetFocus,
@@ -131,6 +180,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
     const reset = () => {
       setReport(null);
       setError(null);
+      setPersistHint(null);
       setUrl('');
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
       setCrewEvents([]);
@@ -162,13 +212,20 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
             {isFullAudit ? 'Full audit' : 'Quick scout'}
           </span>
         </div>
-        <h1 className="text-[clamp(1.5rem,6vw,3rem)] font-bold gold-text tracking-tight mb-3 [overflow-wrap:anywhere]">
+        <h1 className="text-[clamp(1.5rem,6vw,3rem)] font-bold text-white tracking-tight mb-3 [overflow-wrap:anywhere]">
           Will AI mention your brand?
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed px-1">
           Paste your site. Get a plain verdict, evidence chips, and one move to ship this week.
         </p>
       </div>
+
+      {isGuest && (
+        <div className="mb-4 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-gray-300">
+          Guest scout: use your own AI keys in Settings for a live run. Hosted Worker spend, share links, and
+          saving a project strategy require sign-in.
+        </div>
+      )}
 
       {dna ? (
         <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-success-500/30 flex items-center justify-between text-xs">
@@ -336,6 +393,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
         </div>
       )}
 
+      {persistHint && !error && (
+        <p className="text-[11px] font-mono text-gray-400 px-1">{persistHint}</p>
+      )}
+
       {/* Audit Report Result */}
       {report && (
         <div className="space-y-6">
@@ -400,6 +461,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({ dna, onNavig
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <PageSpeedPanel url={url.startsWith('http') ? url : `https://${url}`} />
+            <GscPanel domain={url} />
+          </div>
           <ReportDisplay
             markdownText={report.text}
             sources={report.sources}

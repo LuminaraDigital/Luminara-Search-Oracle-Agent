@@ -1,10 +1,21 @@
 # Copy to .dev.vars for `wrangler dev` (never commit .dev.vars). Production uses `wrangler secret put`.
 BOT_TOKEN=
 TELEGRAM_WEBHOOK_SECRET=
+# Dedicated admin API secret (x-admin-secret header) for /api/admin/* and /api/telegram/refund.
+# Separate from TELEGRAM_WEBHOOK_SECRET; unset = admin API returns 503 (openssl rand -hex 32)
+ADMIN_SECRET=
 # Secret for verifying signed auth lifecycle webhooks (openssl rand -hex 32)
 AUTH_WEBHOOK_SECRET=
 # Same as VITE_FIREBASE_PROJECT_ID (public project id; used to verify ID tokens via Google JWKS).
 FIREBASE_PROJECT_ID=luminara-suite
+# Numeric project number (Messaging Sender ID). Required when REQUIRE_APP_CHECK=true.
+FIREBASE_PROJECT_NUMBER=274315225068
+# Keep false until App Check site key + console registration are live.
+REQUIRE_APP_CHECK=false
+# Same public value as VITE_FIREBASE_API_KEY (Identity Toolkit password-reset from the Worker).
+FIREBASE_WEB_API_KEY=
+# Soft daily cap on outbound password-reset emails (default 200 in wrangler vars).
+OUTBOUND_EMAIL_DAILY_LIMIT=200
 GROQ_API_KEY=
 GROQ_API_KEY_FALLBACK=
 GEMINI_API_KEY=

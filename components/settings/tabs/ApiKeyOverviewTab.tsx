@@ -3,6 +3,7 @@ import { ProviderStatus } from '../../../services/configService';
 import { AuthPanel } from '../../auth/AuthPanel';
 import { TelegramAccountPanel } from '../../telegram/TelegramAccountPanel';
 import { DesktopUpdatesPanel } from '../../desktop/DesktopUpdatesPanel';
+import { McpUsageStrip } from '../McpUsageStrip';
 import { Button } from '../../ui/Button';
 
 export interface ApiKeyOverviewTabProps {
@@ -39,6 +40,7 @@ export const ApiKeyOverviewTab: React.FC<ApiKeyOverviewTabProps> = ({
       </label>
 
       <DesktopUpdatesPanel />
+      <McpUsageStrip />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-2">
         {statuses.map(s => {

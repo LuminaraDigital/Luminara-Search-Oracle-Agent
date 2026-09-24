@@ -36,6 +36,12 @@ audit and chat prompts by focus (SEO / AEO / GEO) and lens (local, ecommerce, sc
 - Product rules that override upstream: no community footer in app output; label estimates;
   say "not verified" when evidence is missing; assume the reader is a business owner.
 
+## 3. Prefer product MCP skills when connected
+
+When Luminara MCP is available (`plugins/luminara/`), prefer thin product skills
+(`luminara-coach`, `luminara-project-setup`, `luminara-audit`, …) that call MCP and
+`save_report`. Keep methodology skills as references for depth. Never invent metrics.
+
 ## Running an audit from this repo
 
 `/luminara-seo audit <url>` → follow `seo-audit` with the substitutions above, then present

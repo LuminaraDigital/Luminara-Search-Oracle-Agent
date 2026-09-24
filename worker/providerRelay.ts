@@ -6,10 +6,12 @@ import {
   clampHostedChatCompletionsBody,
   clampHostedGeminiBody,
   clampHostedFirecrawlCrawlBody,
+  clientIp,
   isGeminiModelActionAllowed,
   readBody,
   stripUpstreamHeaders,
 } from './security';
+import { dataForSeoBasicAuthHeader, envHasDataForSeo } from '../services/config/runtimeKeys';
 
 export const MAX_PROVIDER_KEY_LEN = 512;
 
@@ -150,6 +152,31 @@ export const PROVIDERS: Record<string, ProviderSpec> = {
       return {};
     },
   },
+  dataforseo: {
+    base: 'https://api.dataforseo.com',
+    allow: [
+      '/v3/ai_optimization',
+      '/v3/serp',
+      '/v3/dataforseo_labs',
+      '/v3/backlinks',
+      '/v3/domain_analytics',
+      '/v3/keywords_data',
+    ],
+    auth: (env, h) => {
+      if (!envHasDataForSeo(env)) return { ok: false };
+      const header = dataForSeoBasicAuthHeader(
+        `${String(env.DATAFORSEO_LOGIN).trim()}:${String(env.DATAFORSEO_PASSWORD).trim()}`,
+      );
+      if (!header) return { ok: false };
+      h.set('Authorization', header);
+      return { ok: true };
+    },
+    byok: (key, h) => {
+      const header = dataForSeoBasicAuthHeader(key);
+      if (header) h.set('Authorization', header);
+      return {};
+    },
+  },
 };
 
 export async function proxyProvider(
@@ -182,13 +209,32 @@ export async function proxyProvider(
 
   if (!userKey) {
     const who = await identify(request, env);
-    if (who.error) return json({ error: who.error }, 401);
+    if (who.error) {
+      return json(
+        {
+          error: who.error,
+          code: 'AUTH_REQUIRED',
+        },
+        401,
+      );
+    }
+    // Production (REQUIRE_TG_AUTH): hosted keys need a signed-in identity.
+    // Staging open-auth may meter anonymous hosted use by IP via checkHostedQuota.
+    if (!who.user && env.REQUIRE_TG_AUTH === 'true') {
+      return json(
+        {
+          error: 'Sign in to use hosted AI, or add your own API key in Settings.',
+          code: 'AUTH_REQUIRED',
+        },
+        401,
+      );
+    }
 
     // Business AI Paywall Tier Policy:
     // - Groq Cloud LPU is free (subject to daily free quota).
     // - NVIDIA NIM Enterprise, Sovereign Ollama, and OpenRouter are behind our Paid Tier!
     const isPaidSubscriber = await isUserSubscribed(env, who.user);
-    const PAID_TIER_PROVIDERS = new Set(['nim', 'ollama', 'openrouter']);
+    const PAID_TIER_PROVIDERS = new Set(['nim', 'ollama', 'openrouter', 'dataforseo']);
     if (!isPaidSubscriber && PAID_TIER_PROVIDERS.has(providerId)) {
       return json(
         {
@@ -221,7 +267,7 @@ export async function proxyProvider(
       );
     }
 
-    quotaGate = await checkHostedQuota(env, who.user);
+    quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
     if (!quotaGate.ok) {
       return json(
         {

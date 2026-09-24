@@ -1,6 +1,7 @@
 /**
  * Luminara Search Console & GA4 Pipeline Adapter
- * Connects GSC and GA4 metrics to detect zero-click AI Overview cannibalization.
+ * Connects GSC and GA4 metrics to flag low-CTR / cannibalization risk.
+ * Never invents AI Overview presence from CTR heuristics alone (APS).
  */
 
 export interface GscKeywordRow {
@@ -10,7 +11,13 @@ export interface GscKeywordRow {
   ctr: number;
   position: number;
   cannibalizationRisk: 'High' | 'Medium' | 'Low';
-  aiOverviewPresent: boolean;
+  /** Low CTR at strong position: risk signal only, not proof of AI Overview. */
+  lowCtrRisk: boolean;
+  /**
+   * AI Overview presence is unknown from GSC CTR alone.
+   * Always false here; never set true from CTR heuristics.
+   */
+  aiOverviewPresent: false;
 }
 
 export interface GscSummary {
@@ -60,7 +67,7 @@ export class GscAnalyticsService {
   }
 
   /**
-   * Generates a realistic diagnostic GSC dataset with AI Overview cannibalization flags
+   * Labs-only simulated GSC dataset with low-CTR risk flags (not AI Overview claims).
    */
   public generateSimulatedGscData(domain: string, primaryTopic: string = 'software'): GscSummary {
     const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
@@ -75,8 +82,8 @@ export class GscAnalyticsService {
 
     const rows: GscKeywordRow[] = queries.map((q, idx) => {
       const impressions = Math.round(1200 + Math.random() * 8500);
-      const isAeoHigh = idx % 2 === 0;
-      const ctr = isAeoHigh ? +(1.8 + Math.random() * 2.2).toFixed(1) : +(8.5 + Math.random() * 6.5).toFixed(1);
+      const lowCtr = idx % 2 === 0;
+      const ctr = lowCtr ? +(1.8 + Math.random() * 2.2).toFixed(1) : +(8.5 + Math.random() * 6.5).toFixed(1);
       const clicks = Math.round((impressions * ctr) / 100);
       const position = +(1.2 + idx * 1.6).toFixed(1);
 
@@ -86,8 +93,9 @@ export class GscAnalyticsService {
         impressions,
         ctr,
         position,
-        cannibalizationRisk: isAeoHigh ? 'High' : 'Low',
-        aiOverviewPresent: isAeoHigh,
+        cannibalizationRisk: lowCtr ? 'High' : 'Low',
+        lowCtrRisk: lowCtr,
+        aiOverviewPresent: false,
       };
     });
 
@@ -113,9 +121,15 @@ export class GscAnalyticsService {
   }
 
   /**
-   * Ingests user-uploaded CSV / TSV text exported from Google Search Console
+   * Ingests user-uploaded CSV / TSV text exported from Google Search Console.
+   * When allowSimulate is false (default product path), empty/invalid CSV returns null
+   * instead of inventing metrics.
    */
-  public parseGscCsv(csvContent: string, domain: string = 'target-domain.com'): GscSummary {
+  public parseGscCsv(
+    csvContent: string,
+    domain: string = 'target-domain.com',
+    opts: { allowSimulate?: boolean } = {},
+  ): GscSummary | null {
     const cleanDomain = (domain || 'target-domain.com').replace(/^https?:\/\//i, '').split('/')[0];
     const lines = csvContent.split('\n').map(l => l.trim()).filter(Boolean);
     const rows: GscKeywordRow[] = [];
@@ -134,9 +148,10 @@ export class GscAnalyticsService {
         const impressions = parseInt(parts[2], 10) || 0;
         const ctr = parseFloat(parts[3].replace('%', '')) || 0;
         const position = parseFloat(parts[4]) || 1.0;
-        
-        // High impressions + Low CTR (<3.5%) indicates AI Overview cannibalization
-        const isCannibalized = impressions > 1000 && ctr < 3.5 && position <= 3.0;
+
+        // High impressions + low CTR at strong position: low-CTR / cannibalization risk only.
+        // Do not claim AI Overview presence from CTR heuristics (APS: never invent SEO metrics).
+        const lowCtrRisk = impressions > 1000 && ctr < 3.5 && position <= 3.0;
 
         rows.push({
           query,
@@ -144,14 +159,16 @@ export class GscAnalyticsService {
           impressions,
           ctr,
           position,
-          cannibalizationRisk: isCannibalized ? 'High' : ctr < 5 ? 'Medium' : 'Low',
-          aiOverviewPresent: isCannibalized,
+          cannibalizationRisk: lowCtrRisk ? 'High' : ctr < 5 ? 'Medium' : 'Low',
+          lowCtrRisk,
+          aiOverviewPresent: false,
         });
       }
     }
 
     if (!rows.length) {
-      return this.generateSimulatedGscData(cleanDomain);
+      if (opts.allowSimulate) return this.generateSimulatedGscData(cleanDomain);
+      return null;
     }
 
     const totalClicks = rows.reduce((s, r) => s + r.clicks, 0);
@@ -176,20 +193,20 @@ export class GscAnalyticsService {
   }
 
   /**
-   * Generates an actionable Plain-English remediation brief from GSC cannibalization data
+   * Generates an actionable Plain-English remediation brief from GSC low-CTR risk data.
    */
   public generateRemediationBrief(summary: GscSummary, domain?: string): string {
     const targetDomain = domain || summary.domain;
-    const cannibalized = summary.rows.filter(r => r.cannibalizationRisk === 'High');
-    
+    const atRisk = summary.rows.filter(r => r.cannibalizationRisk === 'High' || r.lowCtrRisk);
+
     return `# Luminara GSC Zero-Click Cannibalization Remediation Brief
 Target Domain: ${targetDomain}
 Total Queries Analyzed: ${summary.rows.length}
-Cannibalized Queries (Zero-Click AI Overview Risk): ${summary.cannibalizedKeywordsCount}
+High Low-CTR Risk Queries: ${summary.cannibalizedKeywordsCount}
 Average Organic Position: ${summary.avgPosition}
 
-## Identified Cannibalization Targets:
-${cannibalized.map(c => `- **"${c.query}"**: Position ${c.position}, ${c.impressions} impressions, but only ${c.ctr}% CTR (Expected >8%). AI Overviews are absorbing click traffic without attribution.`).join('\n')}
+## Identified Low-CTR Risk Targets:
+${atRisk.map(c => `- **"${c.query}"**: Position ${c.position}, ${c.impressions} impressions, but only ${c.ctr}% CTR (Expected >8%). Low CTR at strong rank may indicate SERP features, intent mismatch, or title/snippet issues. AI Overview presence is not_measured from GSC CTR alone.`).join('\n')}
 
 ## Actionable AEO Playbook:
 1. Deploy authoritative Schema.org FAQPage and Dataset markup targeting the high-impression queries.

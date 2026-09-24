@@ -14,6 +14,7 @@ import { configService } from '../configService';
 import { patchrightClient } from './patchrightClient';
 import { firecrawlService } from './firecrawlService';
 import { contentDistiller, DistilledContentResult } from './contentDistiller';
+import { githubCitabilityService } from './githubCitabilityService';
 
 export type ScraperProviderType = 'auto' | 'patchright' | 'firecrawl' | 'jina';
 
@@ -59,6 +60,21 @@ export class UnifiedScraperService {
     const startTime = performance.now();
     const providerPref = options.providerOverride || configService.getCrawlerProvider() || 'auto';
     let lastError = '';
+
+    // Strategy 0: GitHub Repository Specialized Citability Ingestion
+    const githubRef = githubCitabilityService.parseGitHubUrl(url);
+    if (githubRef) {
+      try {
+        const ghEvidence = await githubCitabilityService.scrapeAndDistillGitHub(url, githubRef, {
+          maxChars: options.maxChars,
+        });
+        if (ghEvidence.success) {
+          return ghEvidence;
+        }
+      } catch (ghErr) {
+        console.warn('[UnifiedScraper] GitHub direct extraction failed, falling through to crawlers', ghErr);
+      }
+    }
 
     // Strategy 1: Explicit Patchright or Auto
     if (providerPref === 'patchright' || providerPref === 'auto') {

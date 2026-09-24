@@ -12,6 +12,7 @@ import type { Env } from './index';
 import { claimLicenseRedemption, releaseLicenseRedemption } from './paymentLedger';
 import { normalizePlanId } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { licenseKeyFingerprint, recordAuditLogBestEffort } from './auditLog';
 
 export interface LicenseKeyRecord {
   key: string;
@@ -230,12 +231,42 @@ export async function activateLicenseKey(
     console.error(`[License] KV cache refresh failed after a granted redemption: ${err instanceof Error ? err.message : err}`);
   }
 
+  // Money event: record the redemption (fingerprint only). Best-effort; a failed
+  // audit write must not retro-fail an already-granted entitlement.
+  await auditLicenseActivation(env, accountId, userId, key, {
+    plan: keyRecord.plan,
+    durationDays: keyRecord.durationDays,
+  });
+
   return {
     ok: true,
     plan: keyRecord.plan,
     expiresAt,
     durationDays: keyRecord.durationDays,
   };
+}
+
+/**
+ * Audit hook called once per successful activation, from the web route and the
+ * Telegram /license command alike. Key fingerprint only; never the raw key.
+ */
+export async function auditLicenseActivation(
+  env: Env,
+  accountId: string,
+  userId: string,
+  key: string,
+  result: { plan: string; durationDays: number },
+): Promise<void> {
+  await recordAuditLogBestEffort(env, {
+    org_id: `org_${accountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    actor_id: userId,
+    action: 'license.activate',
+    details: {
+      plan: result.plan,
+      durationDays: result.durationDays,
+      keyFingerprint: await licenseKeyFingerprint(key),
+    },
+  });
 }
 
 /**

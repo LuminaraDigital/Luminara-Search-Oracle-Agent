@@ -1,0 +1,21 @@
+User-agent: *
+Allow: /
+Allow: /how-it-works
+Allow: /ai
+Allow: /why
+Allow: /pricing
+Allow: /privacy
+Allow: /terms
+Allow: /desktop
+Allow: /docs/
+Allow: /llms.txt
+Allow: /sitemap.xml
+
+Disallow: /api/
+Disallow: /share/
+Disallow: /verify/
+Disallow: /reports/
+Disallow: /oauth/
+
+Sitemap: https://www.luminarasuite.com/sitemap.xml
+Sitemap: https://luminarasuite.com/sitemap.xml

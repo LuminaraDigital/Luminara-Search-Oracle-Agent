@@ -21,6 +21,7 @@ import {
   prioritizeUrls,
 } from './pageTypeClassifier';
 import { ScrapedPageEvidence, unifiedScraperService } from './unifiedScraper';
+import { githubCitabilityService } from './githubCitabilityService';
 
 export type SitewideEvidenceMode = 'off' | 'smart' | 'deep';
 
@@ -100,6 +101,23 @@ export class SiteEvidencePackService {
     const home = await unifiedScraperService.scrapeAndDistill(rootUrl, {
       maxChars: PER_PAGE_BUDGET.home,
     });
+
+    // If target is a GitHub repo, finalize immediately with the single repo citability pack.
+    if (githubCitabilityService.parseGitHubUrl(rootUrl)) {
+      return this.finalize({
+        rootUrl,
+        mode: 'off',
+        pages: home.success ? [home] : [],
+        discovery: {
+          source: 'homepage_only',
+          candidateCount: 1,
+          selectedCount: home.success ? 1 : 0,
+        },
+        warnings: home.success ? warnings : [home.error || 'GitHub repository scrape failed'],
+        start,
+        upgradeRequired,
+      });
+    }
 
     if (mode === 'off') {
       return this.finalize({

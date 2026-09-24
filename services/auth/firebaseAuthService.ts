@@ -1,13 +1,13 @@
 /**
  * Browser Firebase Auth (email/password + Google).
- * Public VITE_FIREBASE_* config only; the Worker verifies ID tokens with JWKS.
+ * Email/password goes through the Worker (IP-throttled Identity Toolkit) then
+ * hydrates the client SDK. Google still uses the popup SDK path.
+ * Optional App Check (reCAPTCHA v3) attaches when VITE_FIREBASE_APPCHECK_SITE_KEY is set.
  */
 import { initializeApp, type FirebaseApp, getApps } from 'firebase/app';
 import {
   getAuth,
-  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  sendPasswordResetEmail,
   signOut,
   onIdTokenChanged,
   GoogleAuthProvider,
@@ -17,6 +17,7 @@ import {
 } from 'firebase/auth';
 export type { User };
 import { FIREBASE_PUBLIC_CONFIG } from './firebasePublicConfig';
+import { ensureAppCheck, getAppCheckTokenForBackend, isAppCheckConfigured } from './firebaseAppCheck';
 
 export interface FirebasePublicConfig {
   apiKey: string;
@@ -65,11 +66,14 @@ export function isFirebaseConfigured(): boolean {
   return readConfig() !== null;
 }
 
+export { isAppCheckConfigured };
+
 function ensureAuth(): Auth {
   if (auth) return auth;
   const cfg = readConfig();
   if (!cfg) throw new Error('Firebase is not configured. Add VITE_FIREBASE_* to your .env.');
   app = getApps().length ? getApps()[0]! : initializeApp(cfg);
+  ensureAppCheck(app);
   auth = getAuth(app);
   return auth;
 }
@@ -171,19 +175,127 @@ export async function getFirebaseIdToken(forceRefresh = false): Promise<string |
   return token;
 }
 
-export async function signUpWithEmail(email: string, password: string): Promise<User> {
-  const cred = await createUserWithEmailAndPassword(ensureAuth(), email.trim(), password);
-  await refreshCachedToken(cred.user);
-  return cred.user;
+type WorkerCredentialOk = {
+  ok: true;
+  idToken: string;
+  refreshToken: string;
+  localId: string;
+  email: string;
+  expiresIn: string;
+};
+
+type WorkerCredentialErr = {
+  ok: false;
+  status: number;
+  error: string;
+  code: string;
+};
+
+async function workerCredential(
+  path: '/api/auth/sign-up' | '/api/auth/sign-in',
+  email: string,
+  password: string,
+): Promise<WorkerCredentialOk | WorkerCredentialErr> {
+  if (typeof window === 'undefined' || !window.location) {
+    return { ok: false, status: 500, error: 'Auth requires a browser context.', code: 'NO_BROWSER' };
+  }
+  ensureAuth();
+  const appCheckToken = await getAppCheckTokenForBackend();
+  const res = await fetch(`${window.location.origin}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({
+      email: email.trim(),
+      password,
+      ...(appCheckToken ? { appCheckToken } : {}),
+    }),
+  });
+  let body: {
+    ok?: boolean;
+    idToken?: string;
+    refreshToken?: string;
+    localId?: string;
+    email?: string;
+    expiresIn?: string;
+    error?: string;
+    code?: string;
+  } = {};
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  if (!res.ok || !body.idToken || !body.refreshToken || !body.localId) {
+    return {
+      ok: false,
+      status: res.status,
+      error: body.error || 'Authentication failed.',
+      code: body.code || 'AUTH_FAILED',
+    };
+  }
+  return {
+    ok: true,
+    idToken: body.idToken,
+    refreshToken: body.refreshToken,
+    localId: body.localId,
+    email: body.email || email.trim(),
+    expiresIn: body.expiresIn || '3600',
+  };
 }
 
-export async function signInWithEmail(email: string, password: string): Promise<User> {
+/**
+ * Hydrate the Firebase client SDK after a successful Worker-mediated auth.
+ * Reuses the same credentials once so onIdTokenChanged / persistence keep working.
+ * App Check (when enforced) still protects direct Toolkit calls that skip the Worker.
+ */
+async function hydrateClientSession(email: string, password: string): Promise<User> {
   const cred = await signInWithEmailAndPassword(ensureAuth(), email.trim(), password);
   await refreshCachedToken(cred.user);
   return cred.user;
 }
 
+function throwWorkerAuthError(err: WorkerCredentialErr): never {
+  const code =
+    err.status === 429
+      ? 'auth/too-many-requests'
+      : err.code === 'INVALID_EMAIL'
+        ? 'auth/invalid-email'
+        : err.code === 'WEAK_PASSWORD'
+          ? 'auth/weak-password'
+          : err.code === 'SIGN_UP_FAILED'
+            ? 'auth/email-already-in-use'
+            : err.code === 'SIGN_IN_FAILED'
+              ? 'auth/invalid-credential'
+              : 'auth/credential-gateway';
+  throw Object.assign(new Error(err.error), { code });
+}
+
+/**
+ * Sign up via Worker (rate-limited Identity Toolkit), then hydrate the client SDK.
+ */
+export async function signUpWithEmail(email: string, password: string): Promise<User> {
+  const gated = await workerCredential('/api/auth/sign-up', email, password);
+  if (!gated.ok) throwWorkerAuthError(gated);
+  try {
+    return await hydrateClientSession(email, password);
+  } catch {
+    // Worker already created the account; hydrate may race. Retry sign-in once.
+    return hydrateClientSession(email, password);
+  }
+}
+
+/**
+ * Sign in via Worker (rate-limited Identity Toolkit), then hydrate the client SDK.
+ */
+export async function signInWithEmail(email: string, password: string): Promise<User> {
+  const gated = await workerCredential('/api/auth/sign-in', email, password);
+  if (!gated.ok) throwWorkerAuthError(gated);
+  return hydrateClientSession(email, password);
+}
+
 export async function signInWithGoogle(): Promise<User> {
+  ensureAuth();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   const cred = await signInWithPopup(ensureAuth(), provider);
@@ -191,9 +303,54 @@ export async function signInWithGoogle(): Promise<User> {
   return cred.user;
 }
 
-/** Sends a password-reset email (production Auth must allow Email/Password). */
-export async function resetPasswordWithEmail(email: string): Promise<void> {
-  await sendPasswordResetEmail(ensureAuth(), email.trim());
+/**
+ * Requests a password-reset email via the Worker (IP-throttled, anti-enumeration).
+ * Always resolves on HTTP 200 with a neutral message; never reveals whether the
+ * email exists. Throws only on network / hard server failures (429, 5xx, invalid).
+ */
+export async function resetPasswordWithEmail(email: string): Promise<{ success: true; message: string }> {
+  const trimmed = email.trim();
+  if (!trimmed) {
+    throw Object.assign(new Error('Enter your email to reset your password.'), { code: 'auth/missing-email' });
+  }
+  if (typeof window === 'undefined' || !window.location) {
+    throw new Error('Password reset requires a browser context.');
+  }
+  const base = window.location.origin || '';
+  const res = await fetch(`${base}/api/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ email: trimmed }),
+  });
+  let body: { success?: boolean; message?: string; error?: string; code?: string } = {};
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  if (res.status === 429) {
+    throw Object.assign(new Error(body.error || 'Too many reset attempts. Wait and try again.'), {
+      code: 'auth/too-many-requests',
+    });
+  }
+  if (res.status === 400) {
+    throw Object.assign(new Error(body.error || 'Enter a valid email address.'), {
+      code: 'auth/invalid-email',
+    });
+  }
+  if (!res.ok) {
+    throw Object.assign(
+      new Error(body.error || 'Password reset is temporarily unavailable. Try again later.'),
+      { code: body.code || 'auth/reset-unavailable' },
+    );
+  }
+  return {
+    success: true,
+    message:
+      body.message ||
+      'If an account exists with this email address, a password reset link has been dispatched.',
+  };
 }
 
 export async function signOutFirebase(): Promise<void> {
@@ -203,12 +360,14 @@ export async function signOutFirebase(): Promise<void> {
   await clearSessionCookie();
 }
 
-/** Maps Firebase Auth error codes to short user-facing copy. */
+/** Maps Firebase Auth error codes to short user-facing copy (no account-existence leaks). */
 export function friendlyFirebaseError(err: unknown): string {
   const code = (err as { code?: string })?.code || '';
   switch (code) {
     case 'auth/email-already-in-use':
-      return 'That email already has an account. Sign in instead.';
+    case 'auth/credential-gateway':
+      // Anti-enumeration: do not confirm the email is registered.
+      return 'Could not create an account with those details. Try signing in or reset your password.';
     case 'auth/invalid-email':
       return 'Enter a valid email address.';
     case 'auth/weak-password':
@@ -227,6 +386,8 @@ export function friendlyFirebaseError(err: unknown): string {
       return 'This domain is not authorized in Firebase Authentication settings.';
     case 'auth/missing-email':
       return 'Enter your email to reset your password.';
+    case 'auth/reset-unavailable':
+      return 'Password reset is temporarily unavailable. Try again later.';
     default:
       return (err as Error)?.message || 'Sign-in failed. Try again.';
   }

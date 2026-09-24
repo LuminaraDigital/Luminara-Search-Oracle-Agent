@@ -1,0 +1,27 @@
+# Papercuts
+
+Append small, non-blocking repository friction here when it happens. Continue the current task.
+Do not log secrets, tokens, or PII.
+
+## Format
+
+```
+- YYYY-MM-DD: short description (area)
+```
+
+## Log
+
+- 2026-09-18: Staging and prod cannot share one Queues consumer; use `luminara-audit-jobs-staging` for staging (wrangler)
+- 2026-09-18: Root `tsc` pulls `worker/env` via `services/tools`; import CF binding types from `@cloudflare/workers-types` (worker)
+- 2026-09-18: APS plan notes OpenSEO uses Zod; this repo validates at boundaries without adding Zod for MCP v1 (worker)
+- 2026-09-19: API key list needs D1 migration `0009_api_key_prefix.sql` on staging+prod before deploy (worker)
+- 2026-09-20: Password reset moved to Worker `/api/auth/reset-password`; set `FIREBASE_WEB_API_KEY` in `.dev.vars` for local reset tests (auth)
+- 2026-09-20: Firebase/Firestore audit brief maps to Workers+D1; no firestore.rules in this repo (security)
+- 2026-09-20: Three-tier rate limits: Workers `ratelimits` bindings + KV dual keys + client useAsyncLock (security)
+- 2026-09-19: Staging desktop R2 is `luminara-desktop-releases-staging` (created); keep prod on `luminara-desktop-releases` (wrangler)
+- 2026-09-20: PointerBench PNGs are not in git; use `npm run grounding:fetch` into `tmp/pointerbench` (grounding)
+- 2026-09-20: Marketing crawl files and path meta need a production deploy before live `/robots.txt` stops returning SPA HTML (seo)
+
+- 2026-09-23: `animate-premium-drift*` is defined in `index.html` (not Tailwind); earlier papercut was a false alarm if you only grep css/config (marketing craft)
+- `worker/authMiddleware.ts`: `isPublicRoute()` / `PUBLIC_API_ROUTES` have no callers. `guardApiRoute()` uses `PROTECTED_API_ROUTES` and lets everything else fall through, so the public allow-list is documentation only. Either wire it as a default-deny gate or delete it; a stale "public" list invites false confidence during auth review.
+- 2026-09-24: Oracle paid auto-tools now need `invokeTool`+`confirmTool` (or `ORACLE_AUTO_TOOLS=true`); no SPA caller of `/api/oracle/chat` yet, so wire confirm when UI lands (oracle)

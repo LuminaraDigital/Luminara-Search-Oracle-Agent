@@ -7,8 +7,50 @@
 
 import type { UserStoreEnv } from './userStore';
 import type { AuditLogEntry } from './userTypes';
+import { sha256Hex } from './workerUtils';
 
 const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
+
+/**
+ * Non-secret fingerprint of a license key for audit metadata: first 12 hex chars
+ * of SHA-256(key). Never log or store the raw key in audit details.
+ */
+export async function licenseKeyFingerprint(key: string): Promise<string> {
+  return (await sha256Hex(`luminara-license-key:${key}`)).slice(0, 12);
+}
+
+/**
+ * Best-effort audit write for money and admin events (license activation, TON
+ * credit, Stars refund, admin key mint/seed/dump).
+ *
+ * Tradeoff: a failed audit write must not abort the money op. The entitlement was
+ * already granted (or the refund already issued at Telegram); failing the request
+ * now would desynchronize the user's paid state from the ledger with no way to
+ * retry cleanly, and D1/KV blips are transient. So we log the failure to the
+ * Worker console (alerting surface) and return. The hash-chained log loses that
+ * one entry until operators reconcile from console logs.
+ */
+export async function recordAuditLogBestEffort(
+  env: UserStoreEnv,
+  params: {
+    org_id: string;
+    actor_id: string;
+    action: string;
+    target_id?: string;
+    details?: Record<string, unknown> | string;
+    ip_address?: string;
+    user_agent?: string;
+  },
+): Promise<void> {
+  try {
+    await recordAuditLog(env, params);
+  } catch (err) {
+    console.error(
+      `[audit] failed to record ${params.action} for org ${params.org_id} (money op already committed, not retried):`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
 
 function bufferToHex(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);

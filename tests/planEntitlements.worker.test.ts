@@ -17,5 +17,7 @@ describe('agency plan + caps', () => {
     expect(planCapsFor('growth').scheduledReaudit).toBe('weekly');
     expect(planCapsFor('pro').apiAccess).toBe(true);
     expect(planCapsFor('agency').sentinelLimit).toBe(25);
+    expect(planCapsFor('growth').shareLinks).toBe(true);
+    expect(planCapsFor('free' as string).shareLinks).toBe(false);
   });
 });

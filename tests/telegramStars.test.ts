@@ -495,7 +495,7 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       );
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.text).toContain('Luminara Suite — How This Bot Works');
+      expect(body.text).toContain('Luminara Suite - How This Bot Works');
       expect(body.text).toContain('/start');
       expect(body.text).toContain('/plan');
       expect(body.text).toContain('/status');

@@ -29,7 +29,18 @@ export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'GET', pattern: /^\/auth\/session$/ },
   { method: 'POST', pattern: /^\/auth\/session$/ },
   { method: 'POST', pattern: /^\/auth\/logout$/ },
+  // Public by design: anti-enumeration reset, IP-throttled in handlePasswordResetRequest.
+  { method: 'POST', pattern: /^\/auth\/reset-password$/ },
+  { method: 'POST', pattern: /^\/auth\/sign-up$/ },
+  { method: 'POST', pattern: /^\/auth\/sign-in$/ },
+  // Public OTP: IP-throttled; Twilio only when OTP_SMS_ENABLED + secrets are set.
+  { method: 'POST', pattern: /^\/auth\/request-otp$/ },
+  { method: 'POST', pattern: /^\/auth\/verify-otp$/ },
   { method: 'POST', pattern: /^\/webhooks\/auth$/ },
+  { method: 'GET', pattern: /^\/share\/reports\/[a-f0-9]{64}$/i },
+  // MCP OAuth: token exchange + discovery (authorize uses session via identify inside handler)
+  { method: 'POST', pattern: /^\/oauth\/mcp\/token$/ },
+  { method: 'GET', pattern: /^\/oauth\/mcp\/\.well-known\/oauth-authorization-server$/ },
 ];
 
 /** Parse Cookie header into a key-value dictionary */
@@ -129,10 +140,23 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/enterprise\/audit-logs$/, methods: ['GET'] },
   { pattern: /^\/auth\/quota$/, methods: ['GET'] },
   { pattern: /^\/auth\/link$/, methods: ['POST'] },
+  { pattern: /^\/auth\/send-verification$/, methods: ['POST'] },
   { pattern: /^\/license\/activate$/, methods: ['POST'] },
   { pattern: /^\/ton\/(invoice|verify)$/, methods: ['POST'] },
   { pattern: /^\/agent\/attest$/, methods: ['POST'] },
   { pattern: /^\/sentinel\/(register|status)$/ },
+  { pattern: /^\/share\/reports$/, methods: ['POST'] },
+  { pattern: /^\/share\/reports\/[^/]+$/, methods: ['DELETE'] },
+  // Agency API surfaces (W6+); also gated by requireApiAccess after identify.
+  { pattern: /^\/oracle(\/|$)/ },
+  { pattern: /^\/audit(\/|$)/ },
+  { pattern: /^\/tools(\/|$)/ },
+  { pattern: /^\/projects(\/|$)/ },
+  { pattern: /^\/reports(\/|$)/ },
+  { pattern: /^\/api-keys(\/|$)/ },
+  { pattern: /^\/memory\/facts$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/oauth\/mcp\/authorize$/, methods: ['GET'] },
+  // /mcp auth is resolveMcpUser (session, lm_live_*, or mcp_* OAuth); not standard identify-only.
 ];
 
 /**

@@ -1,0 +1,23 @@
+# Luminara Suite
+
+> Owner-first product for SEO, AEO and GEO visibility. Audits Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix.
+
+## Product
+- Home: https://www.luminarasuite.com/
+- How it works: https://www.luminarasuite.com/how-it-works
+- Our AI: https://www.luminarasuite.com/ai
+- Why Luminara: https://www.luminarasuite.com/why
+- Pricing: https://www.luminarasuite.com/pricing
+- Windows desktop: https://www.luminarasuite.com/desktop
+
+## Agents and MCP
+- MCP docs: https://www.luminarasuite.com/docs/mcp.html
+- MCP endpoint: https://luminarasuite.com/api/mcp
+
+## Studio
+- Luminara Digital: https://luminaradigital.io
+- Source: https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent
+
+## Legal
+- Privacy: https://www.luminarasuite.com/privacy
+- Terms: https://www.luminarasuite.com/terms

@@ -41,6 +41,8 @@ export interface StreamQueryOptions {
   /** Composer model override (Hermes-style sticky pick). */
   model?: string;
   preferredProvider?: NativeEngineId;
+  /** When true, native providers may call live_search via tool_calls (also luminara_oracle_native_tools=1). */
+  enableNativeTools?: boolean;
 }
 
 import { empiricalCitationService, type EmpiricalCitationSummary } from './audit/empiricalCitationService';
@@ -274,9 +276,71 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     const chatPref = configService.getChatModelPreference();
     const preferredProvider = opts.preferredProvider || (chatPref.mode === 'manual' ? chatPref.provider : undefined);
     const preferredModel = opts.model || (chatPref.mode === 'manual' ? chatPref.model : undefined);
+    const nativeToolsEnabled =
+      opts.enableNativeTools === true ||
+      (typeof localStorage !== 'undefined' && localStorage.getItem('luminara_oracle_native_tools') === '1');
     let nativeFailure: unknown = null;
     try {
       const bestNative = await aiProviderService.getBestAvailableProvider(preferredProvider);
+      if (bestNative && nativeToolsEnabled) {
+        const { runToolLoop } = await import('./tools/runToolLoop');
+        const { LIVE_SEARCH_TOOL_META } = await import('./tools/catalogue');
+        const toolDefs = [
+          {
+            name: LIVE_SEARCH_TOOL_META.name,
+            description: LIVE_SEARCH_TOOL_META.description,
+            parameters: LIVE_SEARCH_TOOL_META.inputSchema,
+          },
+        ];
+        const toolSources: Array<{ uri: string; title: string }> = [];
+        const loop = await runToolLoop({
+          provider: bestNative,
+          prompt: fullPrompt,
+          generateOptions: {
+            systemPrompt: ORACLE_SYSTEM_PROMPT,
+            temperature: mode === OracleMode.DEEP_THINK ? 0.4 : 0.7,
+            history,
+            model: preferredModel,
+            preferredProvider,
+          },
+          tools: toolDefs,
+          executeTool: async (call) => {
+            if (call.name === 'live_search') {
+              const q = String(call.arguments?.query || prompt);
+              const evidence = await gatherSearchEvidence(q, dna);
+              if (Array.isArray(evidence.sources)) {
+                for (const s of evidence.sources) {
+                  if (s?.uri) toolSources.push({ uri: s.uri, title: s.title || s.uri });
+                }
+              }
+              return {
+                output: evidence.contextText || 'No live search results.',
+                structured: { sources: evidence.sources, queries: evidence.queries },
+              };
+            }
+            return { output: `Unknown tool: ${call.name}`, isError: true };
+          },
+          maxRounds: 3,
+          onChunk: () => {},
+        });
+        for (const exec of loop.toolExecutions) {
+          yield { toolExecution: exec };
+        }
+        // Only short-circuit when the tool loop produced an answer. Tools-with-no-text
+        // must fall through to normal streaming/failover (avoids blank Oracle replies).
+        if (loop.text) {
+          const grounding = toolSources.length
+            ? toolSources
+            : tavilySources.length
+              ? tavilySources
+              : undefined;
+          yield {
+            text: loop.text,
+            groundingUrls: grounding,
+          };
+          return;
+        }
+      }
       if (bestNative) {
         let isFirst = true;
         for await (const chunk of aiProviderService.streamWithFailover(fullPrompt, {
@@ -507,6 +571,12 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
         reportTitle = `SEO Performance Brief - ${displayUrl}`;
         focusIntro = `Specialized audit of organic rankings, technical Core Web Vitals, and competitive search footprint.`;
         break;
+    }
+
+    const isGitHubRepo = /github\.com\/[^\/]+\/[^\/]+/i.test(websiteUrl);
+    if (isGitHubRepo) {
+      reportTitle = `Open-Source GEO & AEO Citability Brief - ${displayUrl}`;
+      focusIntro = `Specialized analysis of the repository's visibility across Answer Engines (Perplexity, ChatGPT, Claude), llms.txt readiness, and README answer extractability.`;
     }
 
     // 1. Live sitewide evidence pack (homepage + smart map/links or deep Firecrawl crawl)

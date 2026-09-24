@@ -241,6 +241,37 @@ export class ConfigService {
     return this.getKey('luminara_exa_key', 'EXA_API_KEY', 'VITE_EXA_API_KEY', 'exa').key;
   }
 
+  public getPagespeedKey(): string {
+    return this.getKey('luminara_pagespeed_key', 'PAGESPEED_API_KEY', 'VITE_PAGESPEED_API_KEY').key;
+  }
+
+  public setPagespeedKey(key: string): void {
+    this.setKey('luminara_pagespeed_key', key);
+  }
+
+  /** DataForSEO Basic auth material as `login:password` (or empty). */
+  public getDataForSeoCredential(): string {
+    if (typeof window !== 'undefined') {
+      const login = localStorage.getItem('luminara_dataforseo_login')?.trim() || '';
+      const password = localStorage.getItem('luminara_dataforseo_password')?.trim() || '';
+      if (login && password) return `${login}:${password}`;
+      const combined = localStorage.getItem('luminara_dataforseo_key')?.trim() || '';
+      if (combined) return combined;
+    }
+    if (canUseHostedProviderKey('dataforseo')) return 'proxy';
+    return '';
+  }
+
+  public setDataForSeoCredentials(login: string, password: string): void {
+    this.setKey('luminara_dataforseo_login', login);
+    this.setKey('luminara_dataforseo_password', password);
+    if (login.trim() && password.trim()) {
+      this.setKey('luminara_dataforseo_key', `${login.trim()}:${password.trim()}`);
+    } else {
+      this.clearKey('luminara_dataforseo_key');
+    }
+  }
+
   public getFalKey(): string {
     return this.getKey('luminara_fal_key', 'FAL_KEY', 'VITE_FAL_KEY').key;
   }
@@ -429,6 +460,18 @@ export class ConfigService {
       { id: 'gemini', name: 'Google Gemini (Optional Fallback)', cat: 'llm' as const, ...this.getKey('luminara_api_key', 'GEMINI_API_KEY', 'VITE_GEMINI_API_KEY', 'gemini') },
       { id: 'tavily', name: 'Tavily Search', cat: 'search' as const, ...this.getKey('luminara_tavily_key', 'TAVILY_API_KEY', 'VITE_TAVILY_API_KEY', 'tavily') },
       { id: 'exa', name: 'Exa.ai Neural Search', cat: 'search' as const, ...this.getKey('luminara_exa_key', 'EXA_API_KEY', 'VITE_EXA_API_KEY', 'exa') },
+      { id: 'pagespeed', name: 'Google PageSpeed Insights', cat: 'search' as const, ...this.getKey('luminara_pagespeed_key', 'PAGESPEED_API_KEY', 'VITE_PAGESPEED_API_KEY') },
+      {
+        id: 'dataforseo',
+        name: 'DataForSEO (LLM Mentions)',
+        cat: 'search' as const,
+        key: this.getDataForSeoCredential(),
+        source: (this.getDataForSeoCredential() === 'proxy'
+          ? 'server'
+          : this.getDataForSeoCredential()
+            ? 'localStorage'
+            : 'none') as 'env' | 'localStorage' | 'server' | 'none',
+      },
       { id: 'firecrawl', name: 'Firecrawl Scraper', cat: 'scraping' as const, ...this.getKey('luminara_firecrawl_key', 'FIRECRAWL_API_KEY', 'VITE_FIRECRAWL_API_KEY', 'firecrawl') },
       { id: 'patchright', name: 'Patchright Stealth Crawler', cat: 'scraping' as const, ...this.getKey('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL') },
       { id: 'local_serp', name: 'Local Google SERP Scraper', cat: 'search' as const, ...this.getKey('luminara_local_serp_url', 'LOCAL_SERP_URL', 'VITE_LOCAL_SERP_URL') },
@@ -637,9 +680,38 @@ export class ConfigService {
       if (res.ok) {
         return { success: true, message: 'Connected to Exa.ai API', latencyMs };
       }
-      return { success: false, message: `Exa error ${await readProviderError(res)}`, latencyMs };
-    } catch (e: any) {
-      return { success: false, message: toUserFacingText(e, 'Network error (vendor CORS? use the Worker relay)'), latencyMs: Date.now() - start };
+      return { success: false, message: await readProviderError(res), latencyMs };
+    } catch (err: unknown) {
+      const latencyMs = Date.now() - start;
+      return { success: false, message: toUserFacingText(err, 'Connection failed'), latencyMs };
+    }
+  }
+
+  public async testDataForSeo(overrideCredential?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
+    const key = (overrideCredential && overrideCredential.trim()) || this.getDataForSeoCredential();
+    if (!key) return { success: false, message: 'No DataForSEO login/password found', latencyMs: 0 };
+    await ensureRelayReady();
+    const start = Date.now();
+    try {
+      const userKey = key === 'proxy' ? undefined : key;
+      const res = await providerFetch(
+        'dataforseo',
+        '/v3/ai_optimization/llm_mentions/locations_and_languages',
+        'https://api.dataforseo.com/v3/ai_optimization/llm_mentions/locations_and_languages',
+        {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+        },
+        userKey ? { userKey } : undefined,
+      );
+      const latencyMs = Date.now() - start;
+      if (res.ok) {
+        return { success: true, message: 'Connected to DataForSEO LLM Mentions', latencyMs };
+      }
+      return { success: false, message: await readProviderError(res), latencyMs };
+    } catch (err: unknown) {
+      const latencyMs = Date.now() - start;
+      return { success: false, message: toUserFacingText(err, 'Connection failed'), latencyMs };
     }
   }
 

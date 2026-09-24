@@ -40,11 +40,62 @@ export async function isUserSubscribed(env: Env, user: HostedIdentity | null): P
   return !!(await getActiveSubscription(env, user));
 }
 
+async function meterDailyQuota(
+  env: Env,
+  quotaKeyId: string,
+  limit: number,
+  resetSec: number,
+): Promise<QuotaStatus> {
+  if (!env.LUMINARA_KV) {
+    return {
+      ok: false,
+      error: 'Quota store unavailable. Try again later or add your own API key in Settings.',
+      limit,
+      used: 0,
+      remaining: 0,
+      resetSec,
+      isUnlimited: false,
+    };
+  }
+  if (limit <= 0) {
+    return { ok: true, limit: 0, used: 0, remaining: -1, resetSec, isUnlimited: true };
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `quota:${quotaKeyId}:${day}`;
+  const used = Number((await env.LUMINARA_KV.get(key)) || 0);
+  if (used >= limit) {
+    return {
+      ok: false,
+      error: `Daily free limit of ${limit} requests reached. Subscribe for unlimited use or add your own API key in Settings.`,
+      limit,
+      used,
+      remaining: 0,
+      resetSec,
+      isUnlimited: false,
+    };
+  }
+  const newUsed = used + 1;
+  await env.LUMINARA_KV.put(key, String(newUsed), { expirationTtl: 2 * 86400 });
+  return {
+    ok: true,
+    limit,
+    used: newUsed,
+    remaining: Math.max(0, limit - newUsed),
+    resetSec,
+    isUnlimited: false,
+  };
+}
+
 /**
  * Hosted keys are a paid resource. Signed-in users get FREE_DAILY_LIMIT requests per day;
- * an active subscription lifts the cap. Anonymous access is allowed only when REQUIRE_TG_AUTH is off.
+ * an active subscription lifts the cap. Anonymous access is allowed only when REQUIRE_TG_AUTH is off,
+ * and is metered by IP when a client IP is provided (staging / open auth).
  */
-export async function checkHostedQuota(env: Env, user: HostedIdentity | null): Promise<QuotaStatus> {
+export async function checkHostedQuota(
+  env: Env,
+  user: HostedIdentity | null,
+  opts?: { clientIp?: string | null },
+): Promise<QuotaStatus> {
   const now = new Date();
   const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
   const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
@@ -54,7 +105,11 @@ export async function checkHostedQuota(env: Env, user: HostedIdentity | null): P
     if (env.REQUIRE_TG_AUTH === 'true') {
       return { ok: false, error: 'Sign in or add your own API key in Settings.', limit, used: 0, remaining: 0, resetSec, isUnlimited: false };
     }
-    return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0 };
+    if (!env.LUMINARA_KV) {
+      return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0 };
+    }
+    const ip = (opts?.clientIp || '').trim() || 'unknown';
+    return meterDailyQuota(env, `anon:${ip}`, limit, resetSec);
   }
 
   if (!env.LUMINARA_KV) {
@@ -92,34 +147,5 @@ export async function checkHostedQuota(env: Env, user: HostedIdentity | null): P
     };
   }
 
-  if (limit <= 0) {
-    return { ok: true, limit: 0, used: 0, remaining: -1, resetSec, isUnlimited: true };
-  }
-
-  const day = now.toISOString().slice(0, 10);
-  const key = `quota:${accountId}:${day}`;
-  const used = Number((await env.LUMINARA_KV.get(key)) || 0);
-
-  if (used >= limit) {
-    return {
-      ok: false,
-      error: `Daily free limit of ${limit} requests reached. Subscribe for unlimited use or add your own API key in Settings.`,
-      limit,
-      used,
-      remaining: 0,
-      resetSec,
-      isUnlimited: false,
-    };
-  }
-
-  const newUsed = used + 1;
-  await env.LUMINARA_KV.put(key, String(newUsed), { expirationTtl: 2 * 86400 });
-  return {
-    ok: true,
-    limit,
-    used: newUsed,
-    remaining: Math.max(0, limit - newUsed),
-    resetSec,
-    isUnlimited: false,
-  };
+  return meterDailyQuota(env, accountId, limit, resetSec);
 }

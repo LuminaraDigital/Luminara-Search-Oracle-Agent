@@ -76,9 +76,9 @@ export const OracleMindView: React.FC<OracleMindViewProps> = ({ dna, onRouteToDN
   const [grpoGroupSize] = useState<number>(4);
 
   // GRPO Lab State
-  const [grpoPrompt] = useState<string>('How does Luminara achieve zero-click search supremacy?');
+  const [grpoPrompt] = useState<string>('How does Luminara Suite improve AI answer visibility?');
   const [grpoRollout, setGrpoRollout] = useState<GRPORolloutItem | null>(() =>
-    oracleMindService.executeGRPORollout('How does Luminara achieve zero-click search supremacy?', dna)
+    oracleMindService.executeGRPORollout('How does Luminara Suite improve AI answer visibility?', dna)
   );
 
   // Benchmark State

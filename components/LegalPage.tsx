@@ -358,7 +358,8 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
             <section>
               <h2 className="text-gold-light font-bold uppercase tracking-widest text-xs mb-2">Privacy</h2>
               <p>
-                Personal data is handled as described in the Privacy Policy at #privacy.
+                Personal data is handled as described in the Privacy Policy at{' '}
+                <a href="/privacy" className="text-gold hover:underline">/privacy</a>.
               </p>
             </section>
           </div>

@@ -16,6 +16,10 @@ export interface PlanEntitlements {
   scheduledReaudit: 'none' | 'monthly' | 'weekly' | 'daily';
   apiAccess: boolean;
   whiteLabelPdf: boolean;
+  /** Public tokenized share URLs for audit reports. */
+  shareLinks: boolean;
+  /** MCP free tools (projects, context, reports). Growth+. */
+  mcpAccess: boolean;
   teamSeats: number;
 }
 
@@ -31,6 +35,8 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'none',
     apiAccess: false,
     whiteLabelPdf: false,
+    shareLinks: false,
+    mcpAccess: false,
     teamSeats: 1,
   },
   starter: {
@@ -44,6 +50,8 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'monthly',
     apiAccess: false,
     whiteLabelPdf: true,
+    shareLinks: false,
+    mcpAccess: false,
     teamSeats: 1,
   },
   growth: {
@@ -57,6 +65,8 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'weekly',
     apiAccess: false,
     whiteLabelPdf: true,
+    shareLinks: true,
+    mcpAccess: true,
     teamSeats: 3,
   },
   agency: {
@@ -70,6 +80,8 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'daily',
     apiAccess: true,
     whiteLabelPdf: true,
+    shareLinks: true,
+    mcpAccess: true,
     teamSeats: 10,
   },
 };

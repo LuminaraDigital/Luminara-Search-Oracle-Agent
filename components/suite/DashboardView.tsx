@@ -32,27 +32,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
   const onboardingSteps = [
     {
       id: 'step_scout',
-      title: '1. Run Quick Scout',
-      desc: 'Audit your website in 10 seconds to see if AI engines cite your brand.',
+      title: '1. Run Instant Audit',
+      desc: 'Paste your site URL and get a ranked list of search and AI visibility fixes.',
       done: hasAudits,
       view: AppView.INSTANT_AUDIT,
-      cta: 'Run Scout →',
+      cta: 'Run audit',
     },
     {
       id: 'step_dna',
-      title: '2. Anchor Business DNA',
-      desc: 'Extract your core mission and USP to unlock full personalized audits.',
+      title: '2. Set business profile',
+      desc: 'Add your mission and USP so full audits match what you sell.',
       done: hasDna,
       view: AppView.BUSINESS_DNA,
-      cta: 'Set Profile →',
+      cta: 'Set profile',
     },
     {
       id: 'step_memory',
-      title: '3. Inspect Brand Memory',
-      desc: 'Track AI citation deltas and activate 24/7 Drift Sentinel monitoring.',
+      title: '3. Open Brand Memory',
+      desc: 'Track citation changes and optional Drift Sentinel alerts over time.',
       done: hasChatOrMemory && hasDna,
       view: AppView.BRAND_MEMORY,
-      cta: 'Open Vault →',
+      cta: 'Open memory',
     },
   ];
 
@@ -68,28 +68,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
     {
       id: AppView.ORACLE_AGENT,
       title: 'Ask a question',
-      desc: 'Clear the fog with a live, cited answer about your brand in search and AI.',
+      desc: 'Get a cited answer about your brand in search and AI answers.',
       icon: ICONS.Terminal,
       badge: 'Ask',
     },
     {
       id: AppView.INSTANT_AUDIT,
       title: 'Audit my website',
-      desc: 'See whether Google and AI answers mention you, then commit to one fix.',
+      desc: 'See whether Google and AI answers mention you, then pick one fix.',
       icon: ICONS.Radar,
       badge: 'Audit',
     },
     {
       id: AppView.BRAND_MEMORY,
       title: 'Brand Memory',
-      desc: 'What changed since last scan: citation deltas, watchlist, Sentinel.',
+      desc: 'What changed since last scan: citations, watchlist, Sentinel.',
       icon: ICONS.Shield,
       badge: 'Memory',
     },
     {
       id: AppView.NOTEBOOK,
       title: 'Intelligence Studio',
-      desc: 'Multi-source grounded dossiers, dual-host audio overviews, and briefing docs.',
+      desc: 'Sources, audio overviews and briefing docs in one workspace.',
       icon: ICONS.Notebook,
       badge: 'Studio',
     },
@@ -108,7 +108,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
     {
       id: AppView.VISION,
       title: 'How Luminara works',
-      desc: 'The method behind fog-clearing audits.',
+      desc: 'The audit method in plain English.',
       icon: ICONS.Sparkle,
       badge: 'Method',
     },
@@ -117,17 +117,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 animate-in fade-in duration-700">
       <div className="mb-8 border-b border-white/10 pb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="w-8 h-[1px] bg-gold" />
-          <span className="text-[10px] font-black uppercase tracking-[0.4em] text-gold-light">
-            Fog clearing
-          </span>
-        </div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gold mb-3">
+          Home
+        </p>
         <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
           Will AI mention your brand?
         </h1>
         <p className="text-sm text-gray-400 mt-2 max-w-2xl leading-relaxed">
-          Monitor your brand's presence, audit citation health, and uncover optimization moves across AI search engines.
+          Audit citation health and pick the next optimization move across Google and AI answer engines.
         </p>
       </div>
 
@@ -145,7 +142,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
                 </span>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                Complete these initial steps to anchor your brand in AI search visibility.
+                Three steps to run a useful audit and keep results in memory.
               </p>
             </div>
             <div className="w-full sm:w-36 h-2 bg-white/10 rounded-full overflow-hidden shrink-0">

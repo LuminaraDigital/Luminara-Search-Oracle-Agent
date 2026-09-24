@@ -7,6 +7,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { initTelegram } from './services/telegram/tma';
 import { loadServerHealth } from './services/apiClient';
 import { dismissBootSplash } from './services/intro/bootSplash';
+import './tokens.css';
 import './index.css';
 
 const rootElement = document.getElementById('root');

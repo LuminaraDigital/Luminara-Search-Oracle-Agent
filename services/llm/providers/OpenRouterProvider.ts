@@ -10,6 +10,7 @@ import { providerFetch } from '../../apiClient';
 import { buildChatMessages } from '../../chat/messages';
 import { parseOpenAiSseStream } from '../../../utils/sse';
 import { BaseAIProvider } from './BaseAIProvider';
+import { applyToolsToChatBody, parseToolCallsFromMessage } from '../openaiTools';
 
 /**
  * OpenRouter Provider (Frontier Multi-Model Router: Claude 3.5, GPT-4o, DeepSeek R1, Llama 3.3)
@@ -60,6 +61,7 @@ export class OpenRouterProvider extends BaseAIProvider {
     if (options?.jsonMode) {
       body.response_format = { type: 'json_object' };
     }
+    applyToolsToChatBody(body, options);
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -83,6 +85,7 @@ export class OpenRouterProvider extends BaseAIProvider {
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || '';
+    const toolCalls = parseToolCallsFromMessage(data.choices?.[0]?.message);
     const latencyMs = Date.now() - startTime;
     const usage = data.usage || {};
 
@@ -94,6 +97,7 @@ export class OpenRouterProvider extends BaseAIProvider {
         total: usage.total_tokens || (this.estimateTokens(prompt) + this.estimateTokens(text)),
       },
       finishReason: (data.choices?.[0]?.finish_reason as GenerateFinishReason) || 'stop',
+      toolCalls,
       latencyMs,
     };
   }
@@ -112,16 +116,19 @@ export class OpenRouterProvider extends BaseAIProvider {
       headers.Authorization = `Bearer ${key}`;
     }
 
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      temperature: options?.temperature ?? this.config.temperature,
+      max_tokens: options?.maxTokens ?? this.config.maxTokens,
+      stream: true,
+    };
+    applyToolsToChatBody(body, options);
+
     const response = await providerFetch('openrouter', '/chat/completions', this.config.endpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: options?.temperature ?? this.config.temperature,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens,
-        stream: true,
-      }),
+      body: JSON.stringify(body),
     }, { userKey: key });
 
     if (!response.ok || !response.body) {
@@ -130,8 +137,12 @@ export class OpenRouterProvider extends BaseAIProvider {
     }
 
     for await (const chunk of parseOpenAiSseStream(response)) {
-      if (chunk.text) {
-        yield { text: chunk.text };
+      if (chunk.text) yield { text: chunk.text };
+      if (chunk.toolCalls?.length) {
+        yield {
+          toolCalls: chunk.toolCalls,
+          finishReason: (chunk.finishReason as GenerateFinishReason) || 'tool_calls',
+        };
       }
     }
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideTelegramGate } from '../services/auth/useAppAuth';
+import { decideTelegramGate, PUBLIC_APP_VIEWS } from '../services/auth/useAppAuth';
 
 describe('decideTelegramGate (TMA login decision matrix)', () => {
   it('blocks when initData never arrives', () => {
@@ -24,6 +24,15 @@ describe('decideTelegramGate (TMA login decision matrix)', () => {
     const r = decideTelegramGate({ hasInitData: true, authStatus: 'unavailable' });
     expect(r.authenticated).toBe(true);
     expect(r.reason).toBeNull();
+  });
+});
+
+describe('PUBLIC_APP_VIEWS (activation Slice A)', () => {
+  it('includes Instant Audit for guest BYOK scout', () => {
+    expect(PUBLIC_APP_VIEWS.has('INSTANT_AUDIT')).toBe(true);
+    expect(PUBLIC_APP_VIEWS.has('LANDING')).toBe(true);
+    expect(PUBLIC_APP_VIEWS.has('ORACLE_AGENT')).toBe(false);
+    expect(PUBLIC_APP_VIEWS.has('DASHBOARD')).toBe(false);
   });
 });
 

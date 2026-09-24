@@ -6,12 +6,13 @@
  * update every desktop client without rebuilding the installer.
  */
 
-const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, session } = require('electron');
+const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, session, crashReporter } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { applyWindowsHardening } = require('./windowsHardening.cjs');
 const { createNavigationGuard } = require('./security.cjs');
 const { setupAutoUpdater } = require('./updater.cjs');
+const { setupCrashReporting, installProcessErrorHandlers } = require('./crashReporting.cjs');
 
 function configureLlmSessionSecurity() {
   if (!session?.defaultSession?.webRequest) return;
@@ -93,6 +94,11 @@ function applyEnterpriseNetworkConfig(app) {
 
 applyEnterpriseNetworkConfig(app);
 applyWindowsHardening(app);
+
+// Crash visibility: native minidumps when CRASH_REPORT_URL / SENTRY_DSN is set,
+// plus a local log line for every uncaught error (see electron/crashReporting.cjs).
+setupCrashReporting({ app, crashReporter, env: process.env });
+installProcessErrorHandlers({ app, dialog });
 
 if (IS_WINDOWS) {
   app.setAppUserModelId(APP_ID);

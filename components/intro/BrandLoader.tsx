@@ -19,7 +19,7 @@ export const BrandLoader: React.FC<BrandLoaderProps> = ({
         aria-hidden="true"
       />
       <img
-        src="/favicon.png?v=20260909"
+        src="/favicon.png"
         alt=""
         width={compact ? 56 : 72}
         height={compact ? 56 : 72}

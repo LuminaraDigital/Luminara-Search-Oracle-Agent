@@ -33,6 +33,9 @@ jobs:
       - name: Automated unit & integration tests
         run: npm test
 
+      - name: Audit production dependencies for high/critical CVEs
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Build client bundles (with secret leak guard)
         run: npx vite build
 

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Luminara Browser Action Fixture</title>
+  <style>
+    body { font-family: Georgia, "Times New Roman", serif; margin: 2rem; max-width: 40rem; line-height: 1.5; }
+    label { display: block; margin-top: 1rem; }
+    #status { margin-top: 1.25rem; min-height: 1.5em; }
+    details { margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Interactive fixture</h1>
+  <p>Minimal controls for indexed DOM observe/act smoke tests.</p>
+
+  <label for="q">Query</label>
+  <input id="q" name="q" type="text" placeholder="Search term" value="" />
+
+  <label for="tier">Tier</label>
+  <select id="tier" name="tier">
+    <option value="starter" selected>Starter</option>
+    <option value="growth">Growth</option>
+    <option value="agency">Agency</option>
+  </select>
+
+  <p style="margin-top: 1.25rem;">
+    <button id="go" type="button">Go</button>
+  </p>
+
+  <p id="status" aria-live="polite"></p>
+
+  <details id="faq">
+    <summary>FAQ: What is this page?</summary>
+    <p>A local fixture with a button, text input, select, and accordion for browser action tests.</p>
+  </details>
+
+  <!-- Intentionally skipped by snapshot: password, file, hidden -->
+  <input type="password" id="secret" name="secret" value="do-not-index" autocomplete="off" />
+  <input type="file" id="upload" name="upload" />
+  <input type="hidden" id="csrf" name="csrf" value="token" />
+
+  <script>
+    const status = document.getElementById('status');
+    document.getElementById('go').addEventListener('click', () => {
+      const q = document.getElementById('q').value;
+      const tier = document.getElementById('tier').value;
+      status.textContent = 'Submitted: ' + q + ' / ' + tier;
+    });
+    document.getElementById('tier').addEventListener('change', () => {
+      status.textContent = 'Tier: ' + document.getElementById('tier').value;
+    });
+  </script>
+</body>
+</html>
