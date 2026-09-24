@@ -100,6 +100,7 @@ import { createProject, listProjects, getProject } from './projectService';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeyService';
+import { loadAgentSkill, setAgentSkillEnabled, upsertAgentSkillVersion, type AgentSkill } from './agentSkills';
 import type { ProjectContextPatch } from '../services/projects/types';
 import type { BusinessDNA } from '../types';
 
@@ -853,6 +854,96 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
 
     return withCors(json({ ok: true, ...result, requested: seeds.length }));
+  }
+
+  // Admin: runtime agent skill catalog (versioned methodology prompts in D1)
+  if (path.startsWith('/admin/skills/')) {
+    const adminSkills = isAdminAuthorized(env, request);
+    if (!adminSkills.ok) return withCors(adminSkills.response);
+
+    const skillPathMatch = path.match(/^\/admin\/skills\/([^/]+)(\/versions|\/enable)?$/);
+    const slug = skillPathMatch?.[1] || '';
+    const sub = skillPathMatch?.[2] || '';
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) {
+      return withCors(json({
+        ok: false,
+        error: 'Invalid skill slug. Use lowercase letters, digits, and hyphens, starting with a letter or digit, max 64 chars (regex: /^[a-z0-9][a-z0-9-]{0,63}$/).',
+      }, 400));
+    }
+
+    if (sub === '/versions') {
+      if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+      const hit = limited('auth', RATE_AUTH_PER_MIN);
+      if (hit) return hit;
+      const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+      if (!read.ok) return withCors(json({ error: read.error }, read.status));
+      const body = (read.value || {}) as { promptBody?: string; modelHint?: string; notes?: string };
+      if (typeof body.promptBody !== 'string' || !body.promptBody.trim() || body.promptBody.length > 32000) {
+        return withCors(json({ ok: false, error: 'promptBody must be a non-empty string of at most 32000 chars' }, 400));
+      }
+      try {
+        const { version } = await upsertAgentSkillVersion(env, {
+          slug,
+          promptBody: body.promptBody,
+          modelHint: body.modelHint,
+          createdBy: 'admin',
+          notes: body.notes,
+        });
+        return withCors(json({ ok: true, slug, version }, 201));
+      } catch (err) {
+        return withCors(json({ ok: false, error: String((err as Error)?.message || err) }, 503));
+      }
+    }
+
+    if (sub === '/enable') {
+      if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+      const hit = limited('auth', RATE_AUTH_PER_MIN);
+      if (hit) return hit;
+      const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+      if (!read.ok) return withCors(json({ error: read.error }, read.status));
+      const body = (read.value || {}) as { version?: number; enabled?: boolean };
+      const version = body.version;
+      if (!Number.isInteger(version) || (version as number) < 1) {
+        return withCors(json({ ok: false, error: 'version must be a positive integer (the skill version to enable or disable)' }, 400));
+      }
+      if (typeof body.enabled !== 'boolean') {
+        return withCors(json({ ok: false, error: 'enabled must be a boolean (true to enable, false to disable)' }, 400));
+      }
+      try {
+        const changed = await setAgentSkillEnabled(env, slug, version as number, body.enabled);
+        return withCors(json({ ok: true, changed }));
+      } catch (err) {
+        return withCors(json({ ok: false, error: String((err as Error)?.message || err) }, 503));
+      }
+    }
+
+    // GET /admin/skills/:slug -> latest prompt + version metadata
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+    if (!env.DB) {
+      return withCors(json({ ok: false, error: 'agent_skills requires a D1 database (env.DB). Check your wrangler.toml d1_databases binding.' }, 503));
+    }
+    let versions: Array<{ version: number; enabled: number; created_at: number; created_by: string | null; notes: string | null }>;
+    try {
+      const result = await env.DB.prepare(
+        'SELECT version, enabled, created_at, created_by, notes FROM agent_skills WHERE skill_slug = ? ORDER BY version DESC LIMIT 50',
+      )
+        .bind(slug)
+        .all<{ version: number; enabled: number; created_at: number; created_by: string | null; notes: string | null }>();
+      versions = result.results || [];
+    } catch (err) {
+      if (/no such table: agent_skills/i.test(String((err as Error)?.message || err))) {
+        versions = [];
+      } else {
+        return withCors(json({ ok: false, error: String((err as Error)?.message || err) }, 503));
+      }
+    }
+    if (versions.length === 0) {
+      return withCors(json({ ok: false, error: `No skill versions found for slug '${slug}'. Create one with POST /admin/skills/${slug}/versions.` }, 404));
+    }
+    const latest: AgentSkill | null = await loadAgentSkill(env, slug);
+    return withCors(json({ ok: true, latest, versions }));
   }
 
   // Blockchain Proof-of-Audit attestation verification & storage
