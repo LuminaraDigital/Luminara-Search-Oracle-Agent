@@ -5,6 +5,7 @@ import { getActiveSubscription } from './quotaMiddleware';
 import { sendTelegramAlert, planCapsFor } from './telegramBot';
 import { startRun, completeRun } from './runProvenance';
 import { enqueueAuditJob } from './auditQueue';
+import { redactSensitive } from './logRedaction';
 
 export interface SentinelTarget {
   id: string;
@@ -256,7 +257,7 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
     }
 
     if (env.LUMINARA_KV) {
-      await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(updatedTargets));
+      await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(redactSensitive(updatedTargets)));
     }
     for (const runId of sentinelRuns.values()) {
       await completeRun(env, runId, 'completed');
@@ -343,7 +344,7 @@ export async function handleSentinelRoute(request: Request, env: Env, path: stri
   }
 
   if (env.LUMINARA_KV) {
-    await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(targets));
+    await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(redactSensitive(targets)));
   }
   return json({ ok: true, target: newTarget });
 }

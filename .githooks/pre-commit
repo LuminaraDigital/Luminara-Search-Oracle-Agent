@@ -1,3 +1,4 @@
 #!/bin/sh
-# Block commits that stage credential-shaped strings or secret filenames.
+# Block commits that stage credential-shaped strings, secret filenames, or forbidden identity tokens.
 node "$(dirname "$0")/../scripts/check-secrets.mjs" --staged || exit 1
+node "$(dirname "$0")/../scripts/check-forbidden-tokens.mjs" --staged || exit 1

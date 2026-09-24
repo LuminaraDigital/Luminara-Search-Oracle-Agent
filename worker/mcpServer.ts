@@ -20,6 +20,13 @@ import {
   executePaidTool,
 } from '../services/tools/registry';
 import { startRun, completeRun } from './runProvenance';
+import {
+  decideToolCall,
+  createActionRequest,
+  hasApprovedRequest,
+} from './mcpGovernance';
+import { recordAuditLogBestEffort } from './auditLog';
+import { redactSensitive } from './logRedaction';
 
 export type McpToolDef = {
   name: string;
@@ -351,7 +358,52 @@ async function callTool(
   args: Record<string, unknown>,
   ctx: McpToolContext,
 ): Promise<McpToolResult> {
+  const sub = await getActiveSubscription(ctx.env, ctx.user);
+  const subscriptionActive = !!sub;
   const tool = TOOLS.find((t) => t.name === name);
+  const creditClass = tool?.creditClass ?? 'free';
+  const projectId = typeof args.projectId === 'string' ? args.projectId : null;
+  const approved = await hasApprovedRequest(ctx.env, ctx.accountId, name, projectId);
+  const decision = decideToolCall(
+    name,
+    { subscriptionActive, creditClass, identityPlan: ctx.planId },
+    approved,
+  );
+
+  await recordAuditLogBestEffort(ctx.env, {
+    org_id: ctx.accountId,
+    actor_id: ctx.user.id,
+    action: `mcp_tool_${decision.action}`,
+    target_id: name,
+    details: redactSensitive({
+      tool: name,
+      decision: decision.action,
+      reason: decision.action === 'allow' ? undefined : decision.reason,
+      projectId,
+      args,
+    }) as Record<string, unknown>,
+  });
+
+  if (decision.action === 'block') {
+    return textResult(
+      `Tool blocked by governance policy: ${decision.reason}`,
+      { code: 'GOVERNANCE_BLOCKED', reason: decision.reason },
+      true,
+    );
+  }
+  if (decision.action === 'require_approval') {
+    const req = await createActionRequest(ctx.env, {
+      userId: ctx.accountId,
+      toolName: name,
+      projectId,
+      args,
+    });
+    return textResult(
+      `Tool requires operator approval. Action request ${req.id} created.`,
+      { requiresApproval: true, actionRequestId: req.id },
+    );
+  }
+
   if (!tool) return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);
   if (tool.creditClass === 'paid' && !canUsePaid(ctx)) {
     return textResult(

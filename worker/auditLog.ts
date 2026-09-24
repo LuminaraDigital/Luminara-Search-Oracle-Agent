@@ -8,6 +8,7 @@
 import type { UserStoreEnv } from './userStore';
 import type { AuditLogEntry } from './userTypes';
 import { sha256Hex } from './workerUtils';
+import { redactForAudit } from './logRedaction';
 
 const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
@@ -17,6 +18,17 @@ const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000
  */
 export async function licenseKeyFingerprint(key: string): Promise<string> {
   return (await sha256Hex(`luminara-license-key:${key}`)).slice(0, 12);
+}
+
+/**
+ * Full SHA-256 hex of the normalized (trimmed, uppercased) license key.
+ * Used by vault seed/verify manifests to prove remote state after rotation.
+ * Distinct from licenseKeyFingerprint (12-char audit display digest); both are
+ * non-reversible. Never log or return the raw key alongside this value.
+ */
+export async function licenseKeySha256(key: string): Promise<string> {
+  const normalized = String(key || '').trim().toUpperCase();
+  return sha256Hex(`luminara-license-key:${normalized}`);
 }
 
 /**
@@ -97,9 +109,11 @@ export async function recordAuditLog(
 ): Promise<AuditLogEntry> {
   const now = Date.now();
   const id = `log_${crypto.randomUUID()}`;
-  const detailsJson = typeof params.details === 'string'
-    ? params.details
-    : JSON.stringify(params.details || {});
+  // Redact secrets out of details before they are persisted or returned.
+  const safeDetails = redactForAudit(params.details) as Record<string, unknown> | string | undefined;
+  const detailsJson = typeof safeDetails === 'string'
+    ? safeDetails
+    : JSON.stringify(safeDetails || {});
   const targetId = params.target_id || '';
 
   let prevHash = GENESIS_HASH;
@@ -150,7 +164,7 @@ export async function recordAuditLog(
       actor_id: params.actor_id,
       action: params.action,
       target_id: targetId || undefined,
-      details: params.details,
+      details: safeDetails,
       ip_address: params.ip_address,
       user_agent: params.user_agent,
       prev_hash: prevHash,
@@ -176,7 +190,7 @@ export async function recordAuditLog(
     actor_id: params.actor_id,
     action: params.action,
     target_id: targetId || undefined,
-    details: params.details,
+    details: safeDetails,
     ip_address: params.ip_address,
     user_agent: params.user_agent,
     prev_hash: prevHash,

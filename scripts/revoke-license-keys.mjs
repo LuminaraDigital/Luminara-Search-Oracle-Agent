@@ -71,7 +71,9 @@ export function loadKeys(listPath) {
 
 /**
  * Merge revocation into an existing KV record (or build a tombstone when absent).
- * Exported for tests. Preserves plan / redemption / campaign history.
+ * Exported for tests. Preserves plan / redemption / campaign history, and any
+ * keySha256 / vaultGeneration fields stamped by scripts/seed-license-vault.mjs
+ * (no backfill: records lacking the new fields stay as-is, revocation only).
  */
 export function mergeRevocation(existingValueJson, key, revokedAt) {
   let record = {};

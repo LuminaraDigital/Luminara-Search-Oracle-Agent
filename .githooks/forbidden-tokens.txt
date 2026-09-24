@@ -1,0 +1,13 @@
+# Luminara forbidden token list
+#
+# One literal token per line. Case-sensitive substring match against every
+# scanned text file. Use `#` for full-line comments or trailing comments.
+# Blank lines are ignored. CRLF line endings are tolerated.
+# Tokens shorter than 3 characters are ignored with a warning.
+#
+# Local machine identity (USER / LOGNAME / USERNAME env vars, the OS account
+# name, and the last segment of the OS home directory) is always forbidden
+# automatically; you do not need to list usernames or hostnames here.
+#
+# Add project-specific strings below this line when the CEO decides they must
+# never be committed. Keep the initial list minimal.

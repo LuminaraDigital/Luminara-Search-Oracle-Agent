@@ -87,3 +87,28 @@ curl -s -X POST https://luminarasuite.com/api/license/activate \
 | 4 | `node scripts/revoke-license-keys.mjs <list> --apply` | "Revoked N license keys in production LUMINARA_KV." |
 | 5a | `wrangler kv key get ...` | record shows `revoked:true` |
 | 5b | `POST /api/license/activate` with revoked key | 400 revoked error |
+
+## Verification after rotation
+
+Every `scripts/seed-license-vault.mjs --apply` run mints a vault generation id `vg_<UTC date>_<8 hex>` and stamps it onto each seeded record as `vaultGeneration` together with `keySha256` (full sha256 hex of the normalized key). After applying, the seed writes a manifest to `.secrets/license-vault.manifest.<vaultGeneration>.json` containing ONLY `{ generation, count, entries: [{ sha256, plan, durationDays }] }`: raw keys are never written to manifests, and `.secrets/` is gitignored so manifests are never committed.
+
+Verify remote KV against the newest manifest after each rotation:
+
+```bash
+# Human-readable report: prints verified N/N plus missing / stale_generation /
+# revoked / unknown_remote counts (never raw keys). Exit 0 only when every
+# manifest entry verifies.
+node scripts/verify-license-vault.mjs
+
+# Machine-readable report.
+node scripts/verify-license-vault.mjs --json
+```
+
+Reading the report:
+
+- `missing`: a manifest entry has no remote `license:key:*` record; re-run the seed apply for that generation.
+- `stale_generation`: remote record exists but carries a different `vaultGeneration`; the rotation did not fully apply.
+- `revoked`: remote record exists but was revoked since the manifest was written; confirm it was an intended revocation.
+- `unknown_remote`: remote keys whose sha256 is not in the manifest. Records seeded before this tooling (no `keySha256`) appear here flagged `legacy`; they are informational, not failures.
+
+The verify command exits 1 when any manifest entry fails to verify or the manifest is missing or empty, so it can gate a rotation runbook step or CI job.

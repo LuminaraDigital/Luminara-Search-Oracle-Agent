@@ -5,7 +5,7 @@
 **Date:** 2026-09-18  
 **Status:** In progress (A0-A8 implemented in tree; paid DFS live calls still `not_measured` stubs)  
 **Companion plan:** [`e2e-visibility-agent-platform.md`](./e2e-visibility-agent-platform.md) (W0-W1 done; W2-W8 continue in parallel where noted)  
-**Pattern library:** `C:\Users\lumin\Desktop\open-seo-ref` (do not fork into product)
+**Pattern library:** local `open-seo-ref` checkout on the dev machine (do not fork into product)
 
 ---
 

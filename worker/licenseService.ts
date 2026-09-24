@@ -28,6 +28,10 @@ export interface LicenseKeyRecord {
   redemptionCount?: number;
   revoked?: boolean;
   revokedAt?: number;
+  /** Full SHA-256 hex of the normalized key (vault verification manifests). Optional: never required on redemption. */
+  keySha256?: string;
+  /** Vault rotation generation id this record was seeded under (optional, informational). */
+  vaultGeneration?: string;
 }
 
 export interface LicenseActivationResult {
@@ -331,6 +335,42 @@ export type LicenseSeedInput = {
   campaign?: string;
   maxRedemptions?: number;
 };
+
+export interface LicenseKeyDescription {
+  exists: boolean;
+  /** 12-char audit display fingerprint from licenseKeyFingerprint (only when the record exists). */
+  fingerprint?: string;
+  /** Full 64-char sha256 hex of the normalized key, when recorded on the record (only when it exists). */
+  keySha256?: string;
+  /** Vault rotation generation id the record was seeded under, when present. */
+  vaultGeneration?: string;
+  redeemed?: boolean;
+  revoked?: boolean;
+}
+
+/**
+ * Operator-facing inspection of a license record. Returns existence, redemption
+ * and revocation flags, plus vault rotation metadata when the record carries it.
+ * NEVER returns the raw key; new fields are optional and never required here.
+ */
+export async function describeLicenseKey(env: Env, rawKey: string): Promise<LicenseKeyDescription> {
+  if (!env.LUMINARA_KV) return { exists: false };
+  const key = normalizeLicenseKey(rawKey);
+  if (!key) return { exists: false };
+  const record = (await env.LUMINARA_KV.get(`license:key:${key}`, 'json')) as LicenseKeyRecord | null;
+  if (!record) return { exists: false };
+  return {
+    exists: true,
+    fingerprint: await licenseKeyFingerprint(key),
+    keySha256: record.keySha256,
+    vaultGeneration: record.vaultGeneration,
+    redeemed: record.redeemed === true,
+    revoked: record.revoked === true,
+  };
+}
+
+// licenseKeySha256 is exported from worker/auditLog.ts (next to licenseKeyFingerprint);
+// describeLicenseKey above deliberately surfaces the stored hash only, never the raw key.
 
 /**
  * Idempotently import known serial keys into KV (ops vault seed).
