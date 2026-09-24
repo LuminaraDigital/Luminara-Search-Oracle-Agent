@@ -22,7 +22,6 @@ export const STORAGE_KEYS = {
   LOCAL_SERP_URL: 'luminara_local_serp_url',
   LOCAL_SERP_ENABLED: 'luminara_local_serp_enabled',
   FIRECRAWL_KEY: 'luminara_firecrawl_key',
-  BROWSERBASE_KEY: 'luminara_browserbase_key',
   CRAWLER_PROVIDER: 'luminara_crawler_provider',
   SITEWIDE_EVIDENCE: 'luminara_sitewide_evidence',
   SITEWIDE_MAX_PAGES: 'luminara_sitewide_max_pages',
@@ -30,8 +29,7 @@ export const STORAGE_KEYS = {
   CRAWLER_PROXY: 'luminara_crawler_proxy',
   CRAWLER_TOKEN: 'luminara_crawler_token',
 
-  // Media & Generative Keys
-  FAL_KEY: 'luminara_fal_key',
+  // Runtime keys
   TINKER_KEY: 'luminara_tinker_key',
 
   // Sidecars & Analytics

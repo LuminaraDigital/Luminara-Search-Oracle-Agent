@@ -54,14 +54,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   const [localSerpUrl, setLocalSerpUrl] = useState('http://localhost:3001');
   const [localSerpEnabled, setLocalSerpEnabled] = useState(true);
   const [firecrawlKey, setFirecrawlKey] = useState('');
-  const [browserbaseKey, setBrowserbaseKey] = useState('');
   const [crawlerProvider, setCrawlerProvider] = useState<'auto' | 'patchright' | 'firecrawl' | 'jina'>('auto');
   const [sitewideMode, setSitewideMode] = useState<'off' | 'smart' | 'deep'>('smart');
   const [sitewideMaxPages, setSitewideMaxPages] = useState(6);
   const [patchrightUrl, setPatchrightUrl] = useState('http://localhost:3001');
   const [crawlerProxy, setCrawlerProxy] = useState('');
   const [crawlerToken, setCrawlerToken] = useState('');
-  const [falKey, setFalKey] = useState('');
   const [tinkerKey, setTinkerKey] = useState('');
   const [writingCheckUrl, setWritingCheckUrl] = useState('');
   const [resultsTrackingUrl, setResultsTrackingUrl] = useState('');
@@ -97,14 +95,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
     setLocalSerpUrl(configService.getLocalSerpUrl());
     setLocalSerpEnabled(configService.isLocalSerpEnabled());
     setFirecrawlKey(localStorage.getItem('luminara_firecrawl_key') || '');
-    setBrowserbaseKey(localStorage.getItem('luminara_browserbase_key') || '');
     setCrawlerProvider(configService.getCrawlerProvider());
     setSitewideMode(configService.getSitewideEvidenceMode());
     setSitewideMaxPages(configService.getSitewideMaxPages());
     setPatchrightUrl(configService.getPatchrightUrl());
     setCrawlerProxy(configService.getCrawlerProxy());
     setCrawlerToken(configService.getCrawlerToken());
-    setFalKey(localStorage.getItem('luminara_fal_key') || '');
     setTinkerKey(localStorage.getItem('luminara_tinker_key') || '');
     setWritingCheckUrl(configService.getLanguageToolUrl());
     setResultsTrackingUrl(configService.getUmamiUrl());
@@ -178,14 +174,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
       configService.setLocalSerpUrl(localSerpUrl);
       configService.setLocalSerpEnabled(localSerpEnabled);
       configService.setKey('luminara_firecrawl_key', firecrawlKey);
-      configService.setKey('luminara_browserbase_key', browserbaseKey);
       configService.setCrawlerProvider(crawlerProvider);
       configService.setSitewideEvidenceMode(sitewideMode);
       configService.setSitewideMaxPages(sitewideMaxPages);
       configService.setPatchrightUrl(patchrightUrl);
       configService.setCrawlerProxy(crawlerProxy);
       configService.setCrawlerToken(crawlerToken.trim());
-      configService.setKey('luminara_fal_key', falKey);
       configService.setKey('luminara_tinker_key', tinkerKey);
       configService.setLanguageToolUrl(writingCheckUrl.trim());
       configService.setUmamiUrl(resultsTrackingUrl.trim());
@@ -444,8 +438,6 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
               setResultsTrackingKey={setResultsTrackingKey}
               firecrawlKey={firecrawlKey}
               setFirecrawlKey={setFirecrawlKey}
-              browserbaseKey={browserbaseKey}
-              setBrowserbaseKey={setBrowserbaseKey}
               visibleKeys={visibleKeys}
               toggleVisibility={toggleVisibility}
               testingId={testingId}
@@ -456,8 +448,6 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
 
           {activeTab === 'extra' && (
             <ApiKeyExtraTab
-              falKey={falKey}
-              setFalKey={setFalKey}
               tinkerKey={tinkerKey}
               setTinkerKey={setTinkerKey}
             />

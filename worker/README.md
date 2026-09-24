@@ -56,8 +56,9 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 - `worker/auditQueue.ts`: v1 queue is live; when a full node payload is not
   available the `measurementStatus` field is `not_measured` (reduced graph,
   incremental build).
-- `worker/agentOutputValidators.ts`: scans agent output for `not_measured` /
-  `not_configured` strings and flags them rather than inventing numbers.
+- `worker/agentOutputValidators.ts`: scans agent output for invented metrics /
+  missing citations / vendor names. Wired into Oracle SSE provenance events
+  (v1 flags only; does not block streams).
 - `worker/oracleInteractionGuard.ts`: instructs Oracle to respond
   `not_measured` or "not verified" when data is missing; numeric claims
   without tool evidence are rejected. Live.

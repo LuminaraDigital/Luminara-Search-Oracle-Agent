@@ -142,19 +142,4 @@ export async function executePaidTool(
   }
 }
 
-/** OpenAI-compatible tool definitions for LLM function calling (paid DFS + browse). */
-export function paidToolsAsLlmDefinitions(): Array<{
-  type: 'function';
-  function: { name: string; description: string; parameters: Record<string, unknown> };
-}> {
-  return [...PAID_TOOL_CATALOGUE, ...BROWSER_ACTION_CATALOGUE].map((t) => ({
-    type: 'function' as const,
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.inputSchema,
-    },
-  }));
-}
-
 export type { ToolResult, ToolDefinitionMeta, PaidToolRuntime, BrowserActionRuntime };

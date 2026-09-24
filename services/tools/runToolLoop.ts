@@ -109,18 +109,3 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
 
   return { text: finalText, toolExecutions, rounds };
 }
-
-/**
- * Async generator variant for UI streaming of tool stages then final text.
- */
-export async function* streamToolLoop(opts: ToolLoopOptions): AsyncIterable<StreamChunk> {
-  const chunks: StreamChunk[] = [];
-  const result = await runToolLoop({
-    ...opts,
-    onChunk: (c) => chunks.push(c),
-  });
-  for (const c of chunks) yield c;
-  if (result.text && !chunks.some((c) => c.text === result.text)) {
-    yield { text: result.text };
-  }
-}

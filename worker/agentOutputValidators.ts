@@ -2,7 +2,8 @@
  * Deterministic agent output validators.
  *
  * Pure functions only: no I/O, no env imports, no LLM calls.
- * This module ships unwired; routes integration lands in a later task.
+ * Wired into Oracle SSE via worker/oracleChat.ts: findings land on the
+ * provenance event (v1 never blocks the stream).
  */
 
 export type ValidatorFinding = {

@@ -22,8 +22,6 @@ export interface ApiKeyScrapingTabProps {
   setResultsTrackingKey: (val: string) => void;
   firecrawlKey: string;
   setFirecrawlKey: (val: string) => void;
-  browserbaseKey: string;
-  setBrowserbaseKey: (val: string) => void;
   visibleKeys: Record<string, boolean>;
   toggleVisibility: (id: string) => void;
   testingId: string | null;
@@ -52,8 +50,6 @@ export const ApiKeyScrapingTab: React.FC<ApiKeyScrapingTabProps> = ({
   setResultsTrackingKey,
   firecrawlKey,
   setFirecrawlKey,
-  browserbaseKey,
-  setBrowserbaseKey,
   visibleKeys,
   toggleVisibility,
   testingId,
@@ -309,34 +305,6 @@ export const ApiKeyScrapingTab: React.FC<ApiKeyScrapingTabProps> = ({
         <p className="text-[10px] text-gray-400 mt-1">
           BYOK unlocks /map and /crawl without the hosted plan gate. Without a key, smart mode still expands from homepage links via Patchright or Jina.
         </p>
-      </div>
-
-      {/* Browserbase API */}
-      <div>
-        <label htmlFor="browserbase-api-key" className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-          Browserbase API Key (Cloud Headless Browser Sessions)
-        </label>
-        <div className="relative">
-          <input
-            id="browserbase-api-key"
-            type={visibleKeys['browserbase'] ? 'text' : 'password'}
-            value={browserbaseKey}
-            onChange={e => setBrowserbaseKey(e.target.value)}
-            placeholder="bb_live_..."
-            className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none pr-16"
-          />
-          <Button
-            variant="ghost"
-            size="none"
-            onClick={() => toggleVisibility('browserbase')}
-            aria-pressed={!!visibleKeys['browserbase']}
-            aria-label={visibleKeys['browserbase'] ? 'Hide Browserbase key' : 'Show Browserbase key'}
-            className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
-          >
-            {visibleKeys['browserbase'] ? 'Hide' : 'Show'}
-          </Button>
-        </div>
-        <p className="text-[10px] text-gray-400 mt-1">Executes complex JavaScript and headless interactions on web pages.</p>
       </div>
     </div>
   );

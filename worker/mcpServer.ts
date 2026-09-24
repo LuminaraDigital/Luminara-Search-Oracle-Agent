@@ -19,6 +19,7 @@ import {
   buildPaidToolRuntime,
   executePaidTool,
 } from '../services/tools/registry';
+import { startRun, completeRun } from './runProvenance';
 
 export type McpToolDef = {
   name: string;
@@ -449,12 +450,30 @@ export async function handleMcpRequest(
         params.arguments && typeof params.arguments === 'object'
           ? (params.arguments as Record<string, unknown>)
           : {};
-      const result = await callTool(name, args, ctx);
+      const runHandle = await startRun(env, {
+        surface: 'mcp_tool',
+        accountId: ctx.accountId,
+        wakeReason: 'mcp_call',
+        inputPayload: { tool: name },
+      });
+      let result: McpToolResult;
+      try {
+        result = await callTool(name, args, ctx);
+        if (runHandle) {
+          await completeRun(env, runHandle.runId, result.isError ? 'failed' : 'completed');
+        }
+      } catch (err) {
+        if (runHandle) {
+          await completeRun(env, runHandle.runId, 'failed');
+        }
+        throw err;
+      }
       responses.push(
         rpcResult(id, {
           content: [{ type: 'text', text: result.text }],
           structuredContent: result.structuredContent,
           isError: result.isError || false,
+          ...(runHandle ? { _meta: { runId: runHandle.runId } } : {}),
         }),
       );
       continue;

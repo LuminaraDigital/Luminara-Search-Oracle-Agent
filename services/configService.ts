@@ -124,10 +124,6 @@ export class ConfigService {
     return this.getKey('luminara_tinker_key', 'TINKER_API_KEY', 'VITE_TINKER_API_KEY').key;
   }
 
-  public getBrowserbaseKey(): string {
-    return this.getKey('luminara_browserbase_key', 'BROWSERBASE_API_KEY', 'VITE_BROWSERBASE_API_KEY').key;
-  }
-
   public getCrawlerProvider(): 'auto' | 'patchright' | 'firecrawl' | 'jina' {
     const p = typeof window !== 'undefined' ? (localStorage.getItem('luminara_crawler_provider') || 'auto') : 'auto';
     return ['auto', 'patchright', 'firecrawl', 'jina'].includes(p as any) ? (p as any) : 'auto';
@@ -270,10 +266,6 @@ export class ConfigService {
     } else {
       this.clearKey('luminara_dataforseo_key');
     }
-  }
-
-  public getFalKey(): string {
-    return this.getKey('luminara_fal_key', 'FAL_KEY', 'VITE_FAL_KEY').key;
   }
 
   public getNvidiaKey(): string {
@@ -475,8 +467,6 @@ export class ConfigService {
       { id: 'firecrawl', name: 'Firecrawl Scraper', cat: 'scraping' as const, ...this.getKey('luminara_firecrawl_key', 'FIRECRAWL_API_KEY', 'VITE_FIRECRAWL_API_KEY', 'firecrawl') },
       { id: 'patchright', name: 'Patchright Stealth Crawler', cat: 'scraping' as const, ...this.getKey('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL') },
       { id: 'local_serp', name: 'Local Google SERP Scraper', cat: 'search' as const, ...this.getKey('luminara_local_serp_url', 'LOCAL_SERP_URL', 'VITE_LOCAL_SERP_URL') },
-      { id: 'browserbase', name: 'Browserbase Headless', cat: 'scraping' as const, ...this.getKey('luminara_browserbase_key', 'BROWSERBASE_API_KEY', 'VITE_BROWSERBASE_API_KEY') },
-      { id: 'fal', name: 'Fal.ai Generative', cat: 'generative' as const, ...this.getKey('luminara_fal_key', 'FAL_KEY', 'VITE_FAL_KEY') },
       { id: 'tinker', name: 'Tinker Runtime', cat: 'runtime' as const, ...this.getKey('luminara_tinker_key', 'TINKER_API_KEY', 'VITE_TINKER_API_KEY') },
     ];
 

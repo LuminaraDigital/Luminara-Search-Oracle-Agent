@@ -78,8 +78,52 @@ describe('oracleChat run provenance', () => {
     expect(provIdx).toBeGreaterThanOrEqual(0);
     const dataLine = lines[provIdx + 1];
     expect(dataLine?.startsWith('data: ')).toBe(true);
-    const payload = JSON.parse(dataLine.slice(6)) as { runId: string };
+    const payload = JSON.parse(dataLine.slice(6)) as {
+      runId: string;
+      validation?: { ok: boolean; summary: { block: number; warn: number; info: number } };
+    };
     expect(payload.runId).toBe(rows[0].run_id);
+    expect(payload.validation).toBeDefined();
+    expect(payload.validation?.ok).toBe(true);
+  });
+
+  it('flags invented metrics in provenance without breaking the stream', async () => {
+    const inventedFrame =
+      'data: {"choices":[{"delta":{"content":"Domain Authority is 73 according to studies."}}]}\n\ndata: [DONE]\n\n';
+    globalThis.fetch = vi.fn(async () =>
+      new Response(inventedFrame, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      }),
+    ) as unknown as typeof fetch;
+
+    const db = createSqliteD1();
+    const env = makeEnv({ DB: db as unknown as D1Database });
+
+    const res = await handleOracleChatSse(
+      makeRequest({ message: 'what is my DA?' }),
+      env,
+      mockUser,
+    );
+    expect(res.status).toBe(200);
+    const body = await drain(res);
+    expect(body).toContain('event: done');
+    expect(body).toContain('event: provenance');
+
+    const lines = body.split(/\n/);
+    const provIdx = lines.findIndex((l) => l === 'event: provenance');
+    const dataLine = lines[provIdx + 1];
+    const payload = JSON.parse(dataLine.slice(6)) as {
+      validation: {
+        ok: boolean;
+        summary: { warn: number };
+        findings: Array<{ validator: string; severity: string }>;
+      };
+    };
+    // v1: warn-level honesty hits land in provenance; ok stays true unless a block fires.
+    expect(payload.validation.findings.length).toBeGreaterThan(0);
+    expect(payload.validation.summary.warn).toBeGreaterThan(0);
+    expect(payload.validation.findings.some((f) => f.validator === 'noInventedMetrics')).toBe(true);
   });
 
   it('streams identically with env.DB undefined and emits no provenance event', async () => {

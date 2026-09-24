@@ -45,8 +45,6 @@ const KEY_BAG_KEYS = [
   'luminara_dataforseo_password',
   'luminara_dataforseo_key',
   'luminara_firecrawl_key',
-  'luminara_browserbase_key',
-  'luminara_fal_key',
   'luminara_tinker_key',
   'luminara_umami_key',
 ] as const;

@@ -10,6 +10,8 @@ import { planCapsFor } from './telegramBot';
 import { getActiveSubscription } from './quotaMiddleware';
 import { hasDataForSeoCredentials } from '../services/config/runtimeKeys';
 import { startRun, completeRun } from './runProvenance';
+import { loadAgentSkill } from './agentSkills';
+import { runAllValidators, summarizeFindings } from './agentOutputValidators';
 import {
   buildOracleSystemPrompt,
   fenceToolResult,
@@ -19,6 +21,9 @@ import {
   shouldInvokeResearchKeywords,
   type SessionTurn,
 } from './oracleInteractionGuard';
+
+/** Runtime skill slug for hosted Oracle chat (admin-seedable via agent_skills). */
+const ORACLE_CHAT_SKILL_SLUG = 'oracle-chat';
 
 export function isOracleServerEnabled(env: Env): boolean {
   return String(env.ORACLE_SERVER_ENABLED || '').toLowerCase() === 'true';
@@ -175,8 +180,13 @@ export async function handleOracleChatSse(
         doHistory,
         clientHistory,
       });
+      const bundledOraclePrompt = buildOracleSystemPrompt();
+      const oracleSkill = await loadAgentSkill(env, ORACLE_CHAT_SKILL_SLUG, {
+        fallbackPrompt: bundledOraclePrompt,
+      });
+      const systemPrompt = oracleSkill?.promptBody || bundledOraclePrompt;
       const messages = [
-        { role: 'system', content: buildOracleSystemPrompt() },
+        { role: 'system', content: systemPrompt },
         ...historySource,
         { role: 'user', content: message + toolNote },
       ];
@@ -248,6 +258,10 @@ export async function handleOracleChatSse(
         });
       }
 
+      // Honesty validators: flag into provenance only (v1 never blocks the stream).
+      const validation = runAllValidators(fullText);
+      const validationSummary = summarizeFindings(validation.findings);
+
       if (sessionStub && fullText) {
         await sessionStub.fetch('https://oracle-session/append', {
           method: 'POST',
@@ -260,6 +274,7 @@ export async function handleOracleChatSse(
         ok: true,
         sessionId,
         monitor: monitor.ok ? { ok: true, flags: [] } : { ok: false, flags: monitor.flags, notes: monitor.notes },
+        validation: { ok: validation.ok, summary: validationSummary },
         toolsAvailable: [
           ...PAID_TOOL_CATALOGUE.map((t) => t.name),
           // Observe-first: list browse tools even when crawler is unset; calls return BROWSER_UNAVAILABLE.
@@ -267,7 +282,16 @@ export async function handleOracleChatSse(
         ],
       });
       if (runHandle) {
-        await write('provenance', { runId: runHandle.runId });
+        await write('provenance', {
+          runId: runHandle.runId,
+          skillSlug: ORACLE_CHAT_SKILL_SLUG,
+          skillVersion: oracleSkill?.version ?? 0,
+          validation: {
+            ok: validation.ok,
+            summary: validationSummary,
+            findings: validation.findings.slice(0, 20),
+          },
+        });
         await completeRun(env, runHandle.runId, 'completed');
       }
     } catch (e) {

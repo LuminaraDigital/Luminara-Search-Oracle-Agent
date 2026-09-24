@@ -29,6 +29,7 @@ import { lazyWithReload } from './utils/lazyWithReload';
 import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
+import { apiBase, streamOracleChat } from './services/apiClient';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
@@ -531,40 +532,137 @@ const App: React.FC = () => {
       let allUrls: Array<{ uri: string; title: string }> = [];
       const toolExecutions: Message['toolExecutions'] = [];
       let firstToken = true;
+      let usedServerOracle = false;
 
-      for await (const chunk of geminiService.streamQuery(content, mode, dna, { history, skipSearch: opts.skipSearch })) {
-        if (controller.signal.aborted) break;
+      // Agency hosted Oracle (validators + provenance). Fall back to BYOK client path on soft failure.
+      const preferServer =
+        appAuth.authenticated && Boolean(apiBase()) && !opts.skipSearch;
 
-        if (chunk.toolExecution) {
-          toolExecutions.push(chunk.toolExecution);
-          setProgress(35);
-          setActiveTool({ name: 'Live search', stage: chunk.toolExecution.output });
-        }
-        if (chunk.groundingUrls) {
-          const existingUris = new Set(allUrls.map(u => u.uri));
-          chunk.groundingUrls.forEach(u => {
-            if (!existingUris.has(u.uri)) allUrls.push(u);
-          });
-        }
-        if (chunk.text) {
-          if (firstToken) {
-            firstToken = false;
-            setIsSearching(false);
-            setActiveTool(null);
-            setAgentStep('Writing your answer');
-            setProgress(60);
+      if (preferServer) {
+        let softFail = false;
+        for await (const ev of streamOracleChat({
+          message: content,
+          history: history.map((h) => ({ role: h.role, content: h.content })),
+          signal: controller.signal,
+        })) {
+          if (controller.signal.aborted) break;
+          if (ev.type === 'error') {
+            if (!usedServerOracle) {
+              softFail = true;
+              break;
+            }
+            throw new Error(ev.error);
           }
-          fullText += chunk.text;
-          setMessages(prev => prev.map(m => m.id === modelId
-            ? { ...m, content: fullText, groundingUrls: allUrls, toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined }
-            : m));
+          if (ev.type === 'status') {
+            setAgentStep(ev.stage === 'thinking' ? 'Thinking' : ev.stage || 'Getting ready');
+            setProgress(20);
+          }
+          if (ev.type === 'tool') {
+            setProgress(35);
+            setActiveTool({
+              name: ev.tool,
+              stage: ev.output || ev.stage || 'Running research',
+            });
+            if (ev.stage === 'done' && ev.output) {
+              toolExecutions.push({
+                tool: ev.tool,
+                args: {},
+                output: ev.output,
+              });
+            }
+          }
+          if (ev.type === 'token' && ev.text) {
+            usedServerOracle = true;
+            if (firstToken) {
+              firstToken = false;
+              setIsSearching(false);
+              setActiveTool(null);
+              setAgentStep('Writing your answer');
+              setProgress(60);
+            }
+            fullText += ev.text;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === modelId
+                  ? {
+                      ...m,
+                      content: fullText,
+                      toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined,
+                    }
+                  : m,
+              ),
+            );
+          }
+          if (ev.type === 'done' && !ev.ok && !usedServerOracle) {
+            softFail = true;
+            break;
+          }
+        }
+        if (softFail) {
+          usedServerOracle = false;
+          fullText = '';
+          firstToken = true;
+          toolExecutions.length = 0;
+        }
+      }
+
+      if (!usedServerOracle) {
+        for await (const chunk of geminiService.streamQuery(content, mode, dna, {
+          history,
+          skipSearch: opts.skipSearch,
+        })) {
+          if (controller.signal.aborted) break;
+
+          if (chunk.toolExecution) {
+            toolExecutions.push(chunk.toolExecution);
+            setProgress(35);
+            setActiveTool({ name: 'Live search', stage: chunk.toolExecution.output });
+          }
+          if (chunk.groundingUrls) {
+            const existingUris = new Set(allUrls.map((u) => u.uri));
+            chunk.groundingUrls.forEach((u) => {
+              if (!existingUris.has(u.uri)) allUrls.push(u);
+            });
+          }
+          if (chunk.text) {
+            if (firstToken) {
+              firstToken = false;
+              setIsSearching(false);
+              setActiveTool(null);
+              setAgentStep('Writing your answer');
+              setProgress(60);
+            }
+            fullText += chunk.text;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === modelId
+                  ? {
+                      ...m,
+                      content: fullText,
+                      groundingUrls: allUrls,
+                      toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined,
+                    }
+                  : m,
+              ),
+            );
+          }
         }
       }
 
       setProgress(100);
-      setMessages(prev => prev.map(m => m.id === modelId
-        ? { ...m, content: fullText || (controller.signal.aborted ? '*Stopped.*' : ''), groundingUrls: allUrls, isStreaming: false, toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined }
-        : m));
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === modelId
+            ? {
+                ...m,
+                content: fullText || (controller.signal.aborted ? '*Stopped.*' : ''),
+                groundingUrls: allUrls.length ? allUrls : undefined,
+                isStreaming: false,
+                toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined,
+              }
+            : m,
+        ),
+      );
       if (fullText && !controller.signal.aborted && !opts.skipSearch) {
         try {
           brandMemoryVaultService.ingestChatInsight({
@@ -579,9 +677,18 @@ const App: React.FC = () => {
     } catch (error: any) {
       console.error('Luminara Search Error:', error);
       const reason = error?.message || 'Unknown error';
-      setMessages(prev => prev.map(m => m.id === modelId
-        ? { ...m, isStreaming: false, isError: true, content: `**I couldn't answer that.** ${reason}\n\nOpen Settings (the gear icon, top right) to check your AI key, then try again.` }
-        : m));
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === modelId
+            ? {
+                ...m,
+                isStreaming: false,
+                isError: true,
+                content: `**I couldn't answer that.** ${reason}\n\nOpen Settings (the gear icon, top right) to check your AI key, then try again.`,
+              }
+            : m,
+        ),
+      );
     } finally {
       abortRef.current = null;
       setIsThinking(false);
@@ -591,7 +698,7 @@ const App: React.FC = () => {
       setProgress(0);
       setHeaderSearch('');
     }
-  }, [mode, isThinking, dna, view, messages, setView]);
+  }, [mode, isThinking, dna, view, messages, setView, appAuth.authenticated]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();

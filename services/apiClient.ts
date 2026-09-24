@@ -667,7 +667,8 @@ export async function fetchSentinelStatus(): Promise<{ ok: boolean; targets: Sen
  * Agency server Oracle SSE (feature-flagged on Worker).
  * Paid tools are opt-in: pass invokeTool + confirmTool:true (e.g. research_keywords).
  * Message regex auto-invoke only when Worker ORACLE_AUTO_TOOLS=true.
- * No in-app UI caller yet; this helper is the API contract for future surfaces.
+ * App.tsx prefers this path when the user is signed in and apiBase() is set;
+ * soft-fails back to geminiService.streamQuery for guests / 403 / ORACLE_DISABLED.
  */
 export async function* streamOracleChat(input: {
   message: string;
@@ -684,6 +685,17 @@ export async function* streamOracleChat(input: {
   | { type: 'tool'; tool: string; stage: string; output?: string; reason?: string }
   | { type: 'status'; stage: string }
   | { type: 'monitor'; ok: boolean; flags: string[]; notes?: string[] }
+  | {
+      type: 'provenance';
+      runId: string;
+      skillSlug?: string;
+      skillVersion?: number;
+      validation?: {
+        ok: boolean;
+        summary?: { block: number; warn: number; info: number };
+        findings?: Array<Record<string, unknown>>;
+      };
+    }
   | { type: 'error'; error: string; code?: string }
   | { type: 'done'; ok: boolean; sessionId?: string; monitor?: { ok: boolean; flags: string[] } }
 > {
@@ -753,6 +765,27 @@ export async function* streamOracleChat(input: {
             ok: Boolean(data.ok),
             flags: Array.isArray(data.flags) ? data.flags.map(String) : [],
             notes: Array.isArray(data.notes) ? data.notes.map(String) : undefined,
+          };
+        } else if (eventName === 'provenance' && typeof data.runId === 'string') {
+          const validation = data.validation as
+            | {
+                ok?: boolean;
+                summary?: { block: number; warn: number; info: number };
+                findings?: Array<Record<string, unknown>>;
+              }
+            | undefined;
+          yield {
+            type: 'provenance',
+            runId: data.runId,
+            skillSlug: typeof data.skillSlug === 'string' ? data.skillSlug : undefined,
+            skillVersion: typeof data.skillVersion === 'number' ? data.skillVersion : undefined,
+            validation: validation
+              ? {
+                  ok: Boolean(validation.ok),
+                  summary: validation.summary,
+                  findings: Array.isArray(validation.findings) ? validation.findings : undefined,
+                }
+              : undefined,
           };
         } else if (eventName === 'error') {
           yield {
