@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
-import { auditHistoryService } from '../../services/audit/auditHistoryService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
+import { HomeCtaStrip } from './HomeCtaStrip';
+import { auditCountFromStorage, shouldShowHomeCta } from './homeCtaStripLogic';
 
 interface DashboardViewProps {
   onNavigate: (view: AppView) => void;
@@ -24,7 +25,8 @@ type Door = {
  * Secondary and Labs surfaces stay reachable from More tools / Omnibar when needed.
  */
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, advancedUi = false }) => {
-  const hasAudits = useMemo(() => auditHistoryService.list({ limit: 1 }).length > 0, []);
+  const auditCount = useMemo(() => auditCountFromStorage(), []);
+  const hasAudits = auditCount > 0;
   const hasDna = Boolean(dna);
   const telemetrySummary = productTelemetry.getSummary();
   const hasChatOrMemory = telemetrySummary.totalChatsSent > 0 || hasAudits;
@@ -127,6 +129,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
           Audit citation health and pick the next optimization move across Google and AI answer engines.
         </p>
       </div>
+
+      {/* Zero-audit home primary CTA strip */}
+      {shouldShowHomeCta(auditCount) && <HomeCtaStrip onNavigate={onNavigate} />}
 
       {/* Guided Onboarding Tracker */}
       {!onboardingComplete && (
