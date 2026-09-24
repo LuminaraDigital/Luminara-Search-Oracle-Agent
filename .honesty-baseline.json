@@ -1,0 +1,704 @@
+{
+  "violations": [
+    {
+      "file": "components/audit/CompetitorMap.tsx",
+      "line": 55,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/MetricModal.tsx",
+      "line": 179,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/MetricModal.tsx",
+      "line": 183,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/MetricModal.tsx",
+      "line": 184,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/MetricModal.tsx",
+      "line": 195,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/ROICalculator.tsx",
+      "line": 270,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/ROICalculator.tsx",
+      "line": 274,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/ROICalculator.tsx",
+      "line": 275,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/ROICalculator.tsx",
+      "line": 281,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/SourceCitationGraph.tsx",
+      "line": 10,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/SourceCitationGraph.tsx",
+      "line": 11,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/SourceCitationGraph.tsx",
+      "line": 12,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/SourceCitationGraph.tsx",
+      "line": 13,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/SourceCitationGraph.tsx",
+      "line": 14,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/SourceCitationGraph.tsx",
+      "line": 15,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/SourceCitationGraph.tsx",
+      "line": 89,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/VisibilityRadar.tsx",
+      "line": 80,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 29,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 113,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 130,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 131,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 146,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 152,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 157,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 161,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 166,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 171,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 174,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 177,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 187,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 192,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 196,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 197,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 208,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 212,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 225,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/audit/WhiteLabelExportModal.tsx",
+      "line": 235,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/auth/AuthPanel.tsx",
+      "line": 22,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/auth/AuthPanel.tsx",
+      "line": 26,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/auth/AuthPanel.tsx",
+      "line": 30,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/auth/AuthPanel.tsx",
+      "line": 34,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/harness/AgentMatrixPanel.tsx",
+      "line": 61,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/harness/SwitchyardPanel.tsx",
+      "line": 336,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/harness/SwitchyardPanel.tsx",
+      "line": 336,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/harness/TestingHarnessPanel.tsx",
+      "line": 161,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/InfrastructurePage.tsx",
+      "line": 60,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/IntelligencePage.tsx",
+      "line": 49,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/marketing/VisibilityConstellationCanvas.tsx",
+      "line": 30,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/marketing/VisibilityConstellationCanvas.tsx",
+      "line": 31,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/marketing/VisibilityConstellationCanvas.tsx",
+      "line": 32,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/marketing/VisibilityConstellationCanvas.tsx",
+      "line": 33,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/marketing/VisibilityConstellationCanvas.tsx",
+      "line": 34,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/marketing/VisibilityConstellationCanvas.tsx",
+      "line": 35,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/marketing/VisibilityFieldCanvas.tsx",
+      "line": 63,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/marketing/VisibilityFieldCanvas.tsx",
+      "line": 108,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/marketing/VisibilityFieldCanvas.tsx",
+      "line": 115,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/notebook/AudioOverviewPlayer.tsx",
+      "line": 117,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/ExecutiveReportDocument.tsx",
+      "line": 33,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/MarkdownRenderer.tsx",
+      "line": 51,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/MarkdownRenderer.tsx",
+      "line": 52,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/MarkdownRenderer.tsx",
+      "line": 214,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/MarkdownRenderer.tsx",
+      "line": 246,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/MarkdownRenderer.tsx",
+      "line": 246,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/MarkdownRenderer.tsx",
+      "line": 285,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/MarkdownRenderer.tsx",
+      "line": 313,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/MarkdownRenderer.tsx",
+      "line": 323,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 73,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 74,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 75,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 76,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 77,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 82,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 83,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 84,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 85,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 86,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 92,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 103,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/pdf/primitives.tsx",
+      "line": 123,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/PricingPage.tsx",
+      "line": 74,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/settings/tabs/ApiKeyLlmTab.tsx",
+      "line": 149,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/oracleMind/TrainingLabTab.tsx",
+      "line": 105,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/oracleMind/TrainingLabTab.tsx",
+      "line": 106,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/oracleMind/TrainingLabTab.tsx",
+      "line": 116,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 128,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 129,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 130,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 135,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 136,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 137,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 164,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 180,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 188,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 220,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 234,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 234,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 235,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 272,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 280,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 281,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/timesfm/TimesFMChart.tsx",
+      "line": 294,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/VisionView.tsx",
+      "line": 37,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/suite/VisionView.tsx",
+      "line": 47,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/ui/PremiumAtmosphere.tsx",
+      "line": 56,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "components/WhyLuminaraPage.tsx",
+      "line": 56,
+      "rule": "no-hardcoded-hex-colors"
+    },
+    {
+      "file": "services/agentCore/mem0MemoryEngine.ts",
+      "line": 247,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/agentCore/mem0MemoryEngine.ts",
+      "line": 335,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/agentCore/tonAttestationService.ts",
+      "line": 73,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/apiClient.ts",
+      "line": 249,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/apiClient.ts",
+      "line": 254,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/audit/auditHistoryService.ts",
+      "line": 125,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/audit/empiricalCitationService.ts",
+      "line": 155,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/audit/postAuditReflectionService.ts",
+      "line": 164,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/competitors/competitorWatchlistService.ts",
+      "line": 122,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/competitors/competitorWatchlistService.ts",
+      "line": 168,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/competitors/competitorWatchlistService.ts",
+      "line": 180,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/contextGraph/decisionService.ts",
+      "line": 82,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/harness/triageService.ts",
+      "line": 133,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/mcp/gscAnalyticsService.ts",
+      "line": 84,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/mcp/gscAnalyticsService.ts",
+      "line": 86,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/mcp/gscAnalyticsService.ts",
+      "line": 86,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/notebook/notebookService.ts",
+      "line": 126,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/notebook/notebookService.ts",
+      "line": 214,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/notebook/notebookService.ts",
+      "line": 234,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/notebook/notebookService.ts",
+      "line": 252,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/notebook/notebookService.ts",
+      "line": 277,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/notebook/notebookService.ts",
+      "line": 295,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/notebook/notebookService.ts",
+      "line": 509,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/notebook/notebookService.ts",
+      "line": 530,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/oracleMind/oracleMindEngine.ts",
+      "line": 218,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/oracleMind/oracleMindEngine.ts",
+      "line": 219,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/oracleMind/oracleMindService.ts",
+      "line": 214,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/oracleMind/oracleMindService.ts",
+      "line": 216,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/oracleMind/oracleMindService.ts",
+      "line": 217,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/oracleMind/oracleMindService.ts",
+      "line": 220,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/oracleMind/oracleMindService.ts",
+      "line": 229,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/oracleMind/oracleMindService.ts",
+      "line": 232,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/oracleMind/oracleMindService.ts",
+      "line": 459,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/switchyard/switchyardRouterService.ts",
+      "line": 493,
+      "rule": "no-math-random-metrics"
+    },
+    {
+      "file": "services/visibility/visibilityHistoryService.ts",
+      "line": 91,
+      "rule": "no-math-random-metrics"
+    }
+  ]
+}
