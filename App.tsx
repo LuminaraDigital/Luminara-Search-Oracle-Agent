@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS } from './types';
-import { configService } from './services/configService';
 import { geminiService, toChatHistory } from './services/geminiService';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -394,25 +393,8 @@ const App: React.FC = () => {
     }
   }, [dna]);
 
-  // First run: if no AI provider is configured, open Settings once - but not on Instant Audit
-  // (guest/BYOK scout should see the form first; errors already point to Settings).
-  useEffect(() => {
-    if (showIntro) return;
-    if (
-      view === AppView.LANDING ||
-      view === AppView.PRIVACY ||
-      view === AppView.TERMS ||
-      view === AppView.INSTANT_AUDIT
-    ) {
-      return;
-    }
-    const anyLlm = configService.getAllStatuses().some(s => s.category === 'llm' && s.isConfigured);
-    if (!anyLlm && !sessionStorage.getItem('luminara_onboarding_shown')) {
-      sessionStorage.setItem('luminara_onboarding_shown', '1');
-      setIsKeyModalOpen(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, showIntro]);
+  // First run: Settings must NOT auto-open. Guided onboarding (DashboardView) and the
+  // zero-audit HomeCtaStrip own first value; Settings opens only via explicit user action.
 
   // Telegram's native back button walks the in-app view history; hidden on the first screen.
   useEffect(() => {
