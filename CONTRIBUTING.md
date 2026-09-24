@@ -15,13 +15,15 @@ npm ci
 npm run dev          # Vite at http://localhost:3000, bring your own keys in Settings
 npm run cf:dev       # full Cloudflare Worker at http://localhost:8787 (needs .dev.vars)
 npm test             # vitest
+npm run test:coverage
+npm run lint         # ESLint
 npm run typecheck    # app + worker
 ```
 
 ## Pull requests
 
-1. Branch from `main`; keep PRs focused.
-2. `npm run typecheck && npm test && npm run build` must pass. CI runs the same.
+1. Branch from `main`; never push directly. `main` is protected (PR + green CI required).
+2. `npm run typecheck && npm run lint && npm test && npm run test:coverage && npm run build` must pass. CI runs the same.
 3. Add or update tests for behaviour you change. Pure logic lives in small modules (`services/search/searchIntent.ts`, `services/chat/messages.ts`, `worker/telegramAuth.ts`) precisely so it can be tested.
 4. Describe what changed and why. Screenshots for UI.
 5. Sign off every commit: `git commit -s`. This adds `Signed-off-by:` and certifies the [DCO](https://developercertificate.org/).

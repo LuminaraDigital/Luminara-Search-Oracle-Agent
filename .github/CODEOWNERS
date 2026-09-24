@@ -1,0 +1,7 @@
+# Code owners for Luminara Suite.
+# Reviews are optional for solo maintainers; ownership is explicit.
+
+*       @LuminaraDigital
+/.github/ @LuminaraDigital
+/worker/ @LuminaraDigital
+/services/ @LuminaraDigital

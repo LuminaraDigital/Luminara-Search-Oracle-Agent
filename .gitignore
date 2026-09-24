@@ -78,10 +78,21 @@ scratch/
 # Internal planning docs (not part of the public release)
 docs/internal/
 
-# Local tooling
+# Local tooling / IDE (skills stay public; Claude Code agent stubs stay local)
 .claude/*
 !.claude/skills/
-!.claude/agents/
 coverage/
+.cursor/
+tasks/
+
+# Local agent / IDE residue (never publish as product surface)
+.hallmark/
+.hermes/
+.agents/skills/**
+!.agents/skills/deslop/
+!.agents/skills/deslop/**
+skills-lock.json
+tmp-*.json
+classic-protection.json
 
 scripts/.license-vault-bulk-*.json

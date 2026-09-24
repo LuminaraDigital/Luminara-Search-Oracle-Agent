@@ -5,7 +5,7 @@ import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
-import { isInTelegram, useTelegramBackButton, haptic, getStartParam, subscribeTelegramReady, hasTelegramLaunchHints } from './services/telegram/tma';
+import { isInTelegram, bindTelegramBackButton, haptic, getStartParam, subscribeTelegramReady, hasTelegramLaunchHints } from './services/telegram/tma';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
 import Waveform from './components/Waveform';
@@ -401,7 +401,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!inTelegram) return;
     const canGoBack = viewHistory.length > 0;
-    return useTelegramBackButton(canGoBack ? () => {
+    return bindTelegramBackButton(canGoBack ? () => {
       const prev = viewHistory[viewHistory.length - 1];
       setViewHistory(h => h.slice(0, -1));
       setViewState(prev);

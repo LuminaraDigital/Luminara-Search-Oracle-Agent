@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useTelegramBackButton } from '../services/telegram/tma';
+import { bindTelegramBackButton } from '../services/telegram/tma';
 
 interface Props {
   kind: 'privacy' | 'terms';
@@ -21,7 +21,7 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
   const isPrivacy = kind === 'privacy';
 
   useEffect(() => {
-    return useTelegramBackButton(onBack);
+    return bindTelegramBackButton(onBack);
   }, [onBack]);
   return (
     <div className="min-h-screen bg-black text-gray-300">

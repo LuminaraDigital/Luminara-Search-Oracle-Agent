@@ -30,8 +30,21 @@ jobs:
       - name: Type check (Client + Worker)
         run: npm run typecheck
 
-      - name: Automated unit & integration tests
-        run: npm test
+      - name: Lint (ESLint)
+        run: npm run lint:ci
+
+      - name: Unit and integration tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary
+          path: |
+            coverage/coverage-summary.json
+            coverage/lcov.info
+          if-no-files-found: ignore
 
       - name: Audit production dependencies for high/critical CVEs
         run: npm audit --omit=dev --audit-level=high

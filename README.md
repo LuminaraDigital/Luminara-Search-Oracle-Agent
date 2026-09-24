@@ -9,9 +9,11 @@
     <a href="CONTRIBUTING.md">Contribute</a>
   </p>
   <p>
+    <a href="https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent/actions/workflows/ci.yml/badge.svg"></a>
     <img alt="License AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B38728">
     <img alt="Runs on Cloudflare" src="https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-F38020">
     <img alt="Telegram Mini App" src="https://img.shields.io/badge/Telegram-Mini%20App-26A5E4">
+    <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.8-3178C6">
   </p>
 </div>
 
@@ -132,7 +134,9 @@ Key files: [`App.tsx`](App.tsx) (shell and routing), [`electron/`](electron/) (W
 | `npm run desktop:dev` | Vite + Electron against localhost (Windows shell) |
 | `npm run desktop:dist:win` | One-click NSIS installer under `release/` |
 | `npm run cf:dev` | Build and run the full Worker on :8787 (copy `.dev.vars.example` to `.dev.vars`) |
-| `npm test` | Unit tests (vitest) |
+| `npm test` | Unit and integration tests (vitest) |
+| `npm run test:coverage` | Same tests with coverage report + thresholds |
+| `npm run lint` | ESLint across app and worker sources |
 | `npm run typecheck` | TypeScript, app and worker |
 | `npm run build` | Typecheck + production build |
 | `npm run deploy` | Build and `wrangler deploy` |
@@ -140,7 +144,18 @@ Key files: [`App.tsx`](App.tsx) (shell and routing), [`electron/`](electron/) (W
 | `npm run secrets:check` | Fail if credential-shaped strings or secret files are in the tree |
 | `npm run prepare` | Point git at `.githooks` (secret scan on commit and push) |
 
-Secrets never belong in git. Use `.env` / `.dev.vars` (gitignored) and `wrangler secret put` for production. GitHub secret scanning and push protection are enabled on this repo; local hooks and CI run `secrets:check` as a second line of defense. After clone, run `npm install` once so hooks install.
+Secrets never belong in git. Use `.env` / `.dev.vars` (gitignored) and `wrangler secret put` for production. GitHub secret scanning, push protection, Dependabot security updates, and branch protection on `main` are enabled. Local hooks and CI run `secrets:check` as a second line of defense. After clone, run `npm install` once so hooks install.
+
+## Reliability and quality
+
+- **CI on every PR and push:** secrets scan, env schema validation, typecheck, ESLint, Vitest with coverage thresholds, `npm audit`, production build, bundle secret-leak guard, smoke dry-run, Wrangler staging/production dry-run.
+- **Protected `main`:** pull requests required; force pushes and branch deletion blocked; CI status check required.
+- **Hosted Worker:** staging and production deploy workflows with live verification; see `.github/workflows/deploy-cloudflare.yml`.
+- **Honesty gates:** Labs and simulated metrics are labeled in the UI; audits report `not measured` when evidence is missing.
+
+## Maintainer
+
+Built and maintained by **Babatundji Williams-Fulwood** ([@LuminaraDigital](https://github.com/LuminaraDigital)) / Luminara Digital Agency. Product site: [luminarasuite.com](https://luminarasuite.com).
 
 ## Deploy: Cloudflare + Telegram Mini App
 
