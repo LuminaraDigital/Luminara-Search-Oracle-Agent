@@ -1,0 +1,30 @@
+- name: attribution-with-citation
+  provider:
+    model: recorded-fixture
+    captured: 2026-09-25
+  response: |
+    According to the Q3 search landscape report ([full report](https://example.com/q3-report)), informational queries now dominate your category.
+    Your current content mix already covers most of those intents well.
+    The clearest gap is comparison-style pages, which competitors rank for but you do not.
+    Building two of those pages this month is the highest leverage move available.
+  expect:
+    ok: true
+    maxBlock: 0
+    mustContain:
+      - https://example.com/q3-report
+
+- name: attribution-without-citation-caught
+  provider:
+    model: recorded-fixture
+    captured: 2026-09-25
+  evidenceNumbers: []
+  response: |
+    The evidence bundle records backlink count: not_measured for your domain this cycle.
+    Studies show your backlink count is 900 anyway, which is far below the leaders in your space.
+    Research indicates that closing this gap requires a sustained digital PR push.
+    We recommend commissioning original data assets to earn those links.
+  expect:
+    ok: false
+    maxBlock: 1
+    mustNotContain:
+      - https://

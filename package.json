@@ -27,6 +27,7 @@
     "keys:seed-vault:apply": "node scripts/seed-license-vault.mjs --apply",
     "keys:revoke": "node scripts/revoke-license-keys.mjs",
     "test": "vitest run",
+    "evals": "node evals/run-evals.mjs",
     "test:watch": "vitest",
     "cli": "node --experimental-strip-types services/harness/standaloneCli.ts",
     "crawler": "node crawler/server.mjs",

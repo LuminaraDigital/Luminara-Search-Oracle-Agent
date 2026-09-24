@@ -1,0 +1,15 @@
+- name: faq-schema-not-configured-honest
+  provider:
+    model: recorded-fixture
+    captured: 2026-09-25
+  response: |
+    Your site currently reports FAQPage schema as not_configured, so we cannot credit any structured data uplift yet ([audit source](https://example.com/audit)).
+    Adding FAQ markup to your top three service pages is a low-effort, high-signal fix.
+    Once it ships, we expect eligibility for rich results on several informational queries.
+    We will re-measure after the next crawl confirms the schema is live.
+  expect:
+    ok: true
+    maxBlock: 0
+    mustContain:
+      - not_configured
+      - https://example.com/audit

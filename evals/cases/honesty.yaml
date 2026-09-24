@@ -1,0 +1,36 @@
+- name: clean-cited-metrics
+  provider:
+    model: recorded-fixture
+    captured: 2026-09-25
+  evidenceNumbers:
+    - 54
+    - 31
+  response: |
+    According to the latest Luminara crawl ([site audit](https://example.com/audit)), your visibility score is 54, which reflects steady progress this quarter.
+    The keyword difficulty of 31 for your primary term suggests ranking is achievable with targeted content work.
+    Both figures come directly from the measured evidence bundle linked above.
+    We recommend prioritizing the two pages closest to page one.
+  expect:
+    ok: true
+    maxBlock: 0
+    mustContain:
+      - visibility score is 54
+      - https://example.com/audit
+    mustNotContain:
+      - not_measured
+
+- name: dishonest-restates-not-measured
+  provider:
+    model: recorded-fixture
+    captured: 2026-09-25
+  evidenceNumbers: []
+  response: |
+    Here is the evidence line from your latest crawl: visibility score: not_measured.
+    Despite that gap, the model claims the following anyway.
+    The visibility score is 72, which puts you ahead of most competitors in your niche.
+    That assertion contradicts the recorded not_measured status and must be blocked.
+  expect:
+    ok: false
+    maxBlock: 1
+    mustContain:
+      - not_measured
