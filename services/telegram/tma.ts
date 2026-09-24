@@ -238,8 +238,8 @@ export function haptic(kind: 'light' | 'medium' | 'success' | 'error' = 'light')
   } catch { /* unsupported client */ }
 }
 
-/** Shows Telegram's native back button; returns a disposer. */
-export function useTelegramBackButton(onBack: (() => void) | null): () => void {
+/** Shows Telegram's native back button; returns a disposer. Not a React hook. */
+export function bindTelegramBackButton(onBack: (() => void) | null): () => void {
   if (!insideTelegram || !backButton.isMounted()) return () => {};
   if (!onBack) {
     if (backButton.hide.isAvailable()) backButton.hide();

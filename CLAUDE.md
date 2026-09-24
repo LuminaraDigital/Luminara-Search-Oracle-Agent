@@ -1,3 +1,1 @@
-# Agent guidance
-
-Follow root [`AGENTS.md`](./AGENTS.md). Same rules for Claude Code and Cursor agents.
+# See [AGENTS.md](./AGENTS.md) for engineering guidance.
