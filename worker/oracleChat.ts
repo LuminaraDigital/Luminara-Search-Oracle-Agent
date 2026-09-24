@@ -9,6 +9,7 @@ import { buildPaidToolRuntime, executePaidTool, PAID_TOOL_CATALOGUE, BROWSER_ACT
 import { planCapsFor } from './telegramBot';
 import { getActiveSubscription } from './quotaMiddleware';
 import { hasDataForSeoCredentials } from '../services/config/runtimeKeys';
+import { startRun, completeRun } from './runProvenance';
 import {
   buildOracleSystemPrompt,
   fenceToolResult,
@@ -68,6 +69,16 @@ export async function handleOracleChatSse(
 
   const sessionId = (body.sessionId || `sess_${user.id}`).slice(0, 128);
   const accountId = billingId(user);
+  const runHandle = await startRun(env, {
+    surface: 'oracle_chat',
+    accountId,
+    wakeReason: 'user_invoke',
+    inputPayload: {
+      sessionId,
+      messageLength: message.length,
+      hasProviderKey: Boolean(request.headers.get('x-provider-key')),
+    },
+  });
   const sub = await getActiveSubscription(env, user);
   const caps = planCapsFor(sub?.plan || 'free');
   const byok = request.headers.get('x-provider-key')?.trim() || null;
@@ -255,7 +266,14 @@ export async function handleOracleChatSse(
           ...BROWSER_ACTION_CATALOGUE.map((t) => t.name),
         ],
       });
+      if (runHandle) {
+        await write('provenance', { runId: runHandle.runId });
+        await completeRun(env, runHandle.runId, 'completed');
+      }
     } catch (e) {
+      if (runHandle) {
+        await completeRun(env, runHandle.runId, 'failed');
+      }
       await write('error', {
         error: e instanceof Error ? e.message : 'Oracle chat failed',
         code: 'ORACLE_ERROR',
