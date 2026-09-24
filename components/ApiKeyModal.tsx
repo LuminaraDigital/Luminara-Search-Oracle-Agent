@@ -13,6 +13,7 @@ import {
   ApiKeySearchTab,
   ApiKeyScrapingTab,
   ApiKeyExtraTab,
+  ApiKeysTab,
 } from './settings/tabs';
 
 interface ApiKeyModalProps {
@@ -21,7 +22,7 @@ interface ApiKeyModalProps {
   onKeySaved: () => void;
 }
 
-type TabType = 'overview' | 'llm' | 'search' | 'scraping' | 'extra';
+type TabType = 'overview' | 'llm' | 'search' | 'scraping' | 'extra' | 'apikeys';
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKeySaved }) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -339,6 +340,15 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
           >
             Other
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'apikeys'}
+            onClick={() => setActiveTab('apikeys')}
+            className={`pb-2.5 px-2 border-b-2 font-bold transition-all outline-none focus-visible:ring-2 focus-visible:ring-gold rounded-t ${activeTab === 'apikeys' ? 'border-gold text-gold-light' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
+          >
+            MCP keys
+          </button>
         </div>
 
         {/* Body Content */}
@@ -452,6 +462,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
               setTinkerKey={setTinkerKey}
             />
           )}
+
+          {activeTab === 'apikeys' && <ApiKeysTab />}
 
           {savedSuccess && (
             <div className="text-center text-xs font-bold text-success-400 animate-in fade-in py-1">

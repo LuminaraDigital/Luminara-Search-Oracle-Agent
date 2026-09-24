@@ -3,3 +3,4 @@ export { ApiKeyLlmTab } from './ApiKeyLlmTab';
 export { ApiKeySearchTab } from './ApiKeySearchTab';
 export { ApiKeyScrapingTab } from './ApiKeyScrapingTab';
 export { ApiKeyExtraTab } from './ApiKeyExtraTab';
+export { ApiKeysTab } from './ApiKeysTab';
