@@ -7,6 +7,7 @@ import { billingId, json } from './workerUtils';
 import { randomId } from '../services/projects/projectUtils';
 import { buildPaidToolRuntime, executePaidTool } from '../services/tools/registry';
 import { getProject } from './projectService';
+import { startRun, completeRun } from './runProvenance';
 
 export function isAuditQueueEnabled(env: Env): boolean {
   return String(env.AUDIT_QUEUE_ENABLED || '').toLowerCase() === 'true';
@@ -29,6 +30,17 @@ type AuditJobMessage = {
   accountId: string;
   targetUrl: string;
   projectId?: string | null;
+  /** Run provenance linkage. Optional; provenance is best-effort. */
+  parentRunId?: string;
+  provenanceRunId?: string;
+};
+
+export type EnqueueAuditJobParams = {
+  accountId: string;
+  targetUrl: string;
+  projectId?: string | null;
+  /** Parent run (e.g. a sentinel cron tick) this audit was spawned by. */
+  parentRunId?: string;
 };
 
 function hostFromUrl(url: string): string {
@@ -37,6 +49,48 @@ function hostFromUrl(url: string): string {
   } catch {
     return 'unknown';
   }
+}
+
+/**
+ * Insert an audit_runs row, open a 'queued_audit' provenance run, and push the
+ * job onto AUDIT_JOBS. Returns null when the queue/DB bindings are missing so
+ * callers in KV-only mode keep their previous zero-op behavior.
+ */
+export async function enqueueAuditJob(
+  env: Env,
+  params: EnqueueAuditJobParams,
+): Promise<{ runId: string; provenanceRunId: string | null } | null> {
+  if (!env.DB || !env.AUDIT_JOBS) return null;
+  const runId = randomId('aud', 12);
+  const now = Date.now();
+
+  await env.DB.prepare(
+    `INSERT INTO audit_runs (id, account_id, client_id, domain, focus, status, created_at, completed_at, report_ref, project_id, target_url, result_json, error, updated_at)
+     VALUES (?, ?, NULL, ?, 'queued_audit', 'queued', ?, NULL, NULL, ?, ?, NULL, NULL, ?)`,
+  )
+    .bind(runId, params.accountId, hostFromUrl(params.targetUrl), now, params.projectId ?? null, params.targetUrl, now)
+    .run();
+
+  const provenance = await startRun(env, {
+    surface: 'queued_audit',
+    accountId: params.accountId,
+    parentRunId: params.parentRunId,
+    wakeReason: params.parentRunId ? 'cron_tick' : 'queue_drain',
+    inputPayload: { domain: hostFromUrl(params.targetUrl), focusPresent: true },
+  });
+  const provenanceRunId = provenance?.runId ?? null;
+
+  const msg: AuditJobMessage = {
+    runId,
+    accountId: params.accountId,
+    targetUrl: params.targetUrl,
+    projectId: params.projectId ?? null,
+    parentRunId: params.parentRunId,
+    provenanceRunId: provenanceRunId ?? undefined,
+  };
+  await env.AUDIT_JOBS.send(msg);
+
+  return { runId, provenanceRunId };
 }
 
 export async function enqueueAuditRun(
@@ -52,6 +106,7 @@ export async function enqueueAuditRun(
   const body = (await request.json().catch(() => ({}))) as {
     targetUrl?: string;
     projectId?: string;
+    parentRunId?: string;
   };
   const targetUrl = typeof body.targetUrl === 'string' ? body.targetUrl.trim() : '';
   if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
@@ -72,25 +127,17 @@ export async function enqueueAuditRun(
     projectId = owned.id;
   }
 
-  const runId = randomId('aud', 12);
-  const now = Date.now();
+  const parentRunId =
+    typeof body.parentRunId === 'string' && body.parentRunId.trim()
+      ? body.parentRunId.trim()
+      : undefined;
 
-  await env.DB.prepare(
-    `INSERT INTO audit_runs (id, account_id, client_id, domain, focus, status, created_at, completed_at, report_ref, project_id, target_url, result_json, error, updated_at)
-     VALUES (?, ?, NULL, ?, 'queued_audit', 'queued', ?, NULL, NULL, ?, ?, NULL, NULL, ?)`,
-  )
-    .bind(runId, accountId, hostFromUrl(targetUrl), now, projectId, targetUrl, now)
-    .run();
+  const enqueued = await enqueueAuditJob(env, { accountId, targetUrl, projectId, parentRunId });
+  if (!enqueued) {
+    return json({ ok: false, error: 'Database unavailable', code: 'NO_DB' }, 503);
+  }
 
-  const msg: AuditJobMessage = {
-    runId,
-    accountId,
-    targetUrl,
-    projectId,
-  };
-  await env.AUDIT_JOBS.send(msg);
-
-  return json({ ok: true, runId, status: 'queued' });
+  return json({ ok: true, runId: enqueued.runId, status: 'queued' });
 }
 
 export async function getAuditRun(
@@ -156,8 +203,21 @@ async function markRun(
  */
 export async function processAuditJob(env: Env, msg: AuditJobMessage): Promise<void> {
   await markRun(env, msg.runId, 'running', null, null);
+  let provenanceRunId = msg.provenanceRunId ?? null;
   try {
     const host = new URL(msg.targetUrl).hostname.replace(/^www\./, '');
+    // Direct queue producers (e.g. the sentinel cron) enqueue without an HTTP
+    // pass through enqueueAuditJob, so open the provenance run here instead.
+    if (!provenanceRunId) {
+      const provenance = await startRun(env, {
+        surface: 'queued_audit',
+        accountId: msg.accountId,
+        parentRunId: msg.parentRunId,
+        wakeReason: msg.parentRunId ? 'cron_tick' : 'queue_drain',
+        inputPayload: { domain: host, focusPresent: true },
+      });
+      provenanceRunId = provenance?.runId ?? null;
+    }
     let domainOverview: unknown = {
       measurementStatus: 'not_measured',
       code: 'AUDIT_V1_MINIMAL',
@@ -188,8 +248,10 @@ export async function processAuditJob(env: Env, msg: AuditJobMessage): Promise<v
       domainOverview,
       notes:
         'v1 Worker audit: reduced graph. Full CrewOrchestrator port is incremental; missing nodes stay not_measured.',
+      ...(provenanceRunId ? { provenance: { runId: provenanceRunId } } : {}),
     };
     await markRun(env, msg.runId, 'completed', result, null);
+    if (provenanceRunId) await completeRun(env, provenanceRunId, 'completed');
   } catch (e) {
     await markRun(
       env,
@@ -198,6 +260,7 @@ export async function processAuditJob(env: Env, msg: AuditJobMessage): Promise<v
       null,
       e instanceof Error ? e.message : 'Audit job failed',
     );
+    if (provenanceRunId) await completeRun(env, provenanceRunId, 'failed');
   }
 }
 

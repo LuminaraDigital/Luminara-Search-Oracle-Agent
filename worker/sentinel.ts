@@ -3,6 +3,8 @@ import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
 import { identify, json } from './workerUtils';
 import { getActiveSubscription } from './quotaMiddleware';
 import { sendTelegramAlert, planCapsFor } from './telegramBot';
+import { startRun, completeRun } from './runProvenance';
+import { enqueueAuditJob } from './auditQueue';
 
 export interface SentinelTarget {
   id: string;
@@ -96,10 +98,31 @@ export async function auditSecurityOnEdge(domain: string): Promise<{
 }
 
 export async function runSentinelScan(env: Env): Promise<{ scanned: number; alertsSent: number; reauditNudges: number }> {
+  // Run provenance runs opened this tick, keyed by owner account. Declared
+  // outside try so the catch path can still mark them failed.
+  const sentinelRuns = new Map<string, string>();
   try {
     const raw = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get('sentinel:targets', 'json')) as SentinelTarget[] | null) : null;
     const targets = raw || [];
     if (targets.length === 0) return { scanned: 0, alertsSent: 0, reauditNudges: 0 };
+
+    // Run provenance: one sentinel run per owner account on this tick. Targets
+    // may span owners; each owner's audits chain to their own sentinel run.
+    // Best-effort: no DB means no runs and zero behavior change.
+    const ownerTargetCounts = new Map<string, number>();
+    for (const t of targets) {
+      const key = t.ownerId || '';
+      ownerTargetCounts.set(key, (ownerTargetCounts.get(key) || 0) + 1);
+    }
+    for (const [ownerKey, targetCount] of ownerTargetCounts) {
+      const run = await startRun(env, {
+        surface: 'sentinel',
+        accountId: ownerKey || undefined,
+        wakeReason: 'cron_tick',
+        inputPayload: { targetCount },
+      });
+      if (run) sentinelRuns.set(ownerKey, run.runId);
+    }
 
     let alertsSent = 0;
     let reauditNudges = 0;
@@ -210,6 +233,17 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
         }
       }
 
+      // Chain drift detection into a queued audit so the audit's provenance run
+      // links back to this sentinel tick. No-op without DB/AUDIT_JOBS bindings.
+      const sentinelRunId = sentinelRuns.get(target.ownerId || '') || null;
+      if (needsAlert && sentinelRunId && target.ownerId) {
+        await enqueueAuditJob(env, {
+          accountId: target.ownerId,
+          targetUrl: `https://${target.domain}`,
+          parentRunId: sentinelRunId,
+        }).catch((e) => console.warn('[Sentinel] audit enqueue failed (continuing)', e));
+      }
+
       updatedTargets.push({
         ...target,
         lastScanAt: now,
@@ -224,9 +258,15 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
     if (env.LUMINARA_KV) {
       await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(updatedTargets));
     }
+    for (const runId of sentinelRuns.values()) {
+      await completeRun(env, runId, 'completed');
+    }
     return { scanned: targets.length, alertsSent, reauditNudges };
   } catch (err) {
     console.error('[Sentinel] Scheduled scan error', err);
+    for (const runId of sentinelRuns.values()) {
+      await completeRun(env, runId, 'failed');
+    }
     return { scanned: 0, alertsSent: 0, reauditNudges: 0 };
   }
 }
