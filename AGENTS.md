@@ -16,6 +16,7 @@ This repo is **Luminara Suite**: React (Vite) + Cloudflare Workers + D1 + option
 - Validate untrusted input at trust boundaries. Prefer instructive error messages (agents read them).
 - No em dashes (U+2014) in new copy. Use `-`, `:`, or `.`.
 - Prefer edit over create. Do not fork OpenSEO into the product; pattern library only.
+- Subsystem invariants live in per-folder README.md files (pattern: paperclip AUTHORING.md). Update the README when you change an invariant.
 - Specs under `specs/` are public design records: what, why, alternatives. No line numbers, secrets, or migration dump noise.
 
 ## APS invariants
