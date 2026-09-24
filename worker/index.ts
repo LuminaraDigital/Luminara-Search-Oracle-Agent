@@ -71,6 +71,7 @@ import {
 import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
+import { getBudgetStatus, upsertBudgetPolicy, approveBudgetResume } from './budgets';
 import { handleOracleChatSse, isOracleServerEnabled } from './oracleChat';
 import { OracleSession } from './oracleSession';
 import { handlePagespeedRoute } from './pagespeedRoute';
@@ -1046,6 +1047,67 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
     if (!dual.ok) return withCors(dual.response);
     return withCors(handlePagespeedRoute(request, env, who.user));
+  }
+
+  // Budget policy self-service (spec 0014). Authz: the caller's own account
+  // only; routes are registered in PROTECTED_API_ROUTES so the universal
+  // guard authenticates before these handlers run, and identify() re-checks.
+  if (path === '/budgets/self' || path === '/budgets/self/resume') {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const accountId = billingId(who.user);
+
+    if (path === '/budgets/self' && request.method === 'GET') {
+      const status = await getBudgetStatus(env, accountId);
+      return withCors(json({ ok: true, accountId, ...status }));
+    }
+
+    if (path === '/budgets/self' && request.method === 'PUT') {
+      const body = await readBody(request, MAX_SMALL_BODY_BYTES);
+      if (!body.ok) return withCors(json({ error: body.error }, body.status));
+      const raw = JSON.parse(body.text || '{}') as { monthlyBudgetCents?: unknown };
+      const monthlyBudgetCents = Number(raw.monthlyBudgetCents);
+      if (!Number.isFinite(monthlyBudgetCents) || Math.floor(monthlyBudgetCents) <= 0) {
+        return withCors(json({ ok: false, error: 'monthlyBudgetCents must be a positive integer of cents' }, 400));
+      }
+      try {
+        const policy = await upsertBudgetPolicy(env, {
+          accountId,
+          monthlyBudgetCents: Math.floor(monthlyBudgetCents),
+          createdBy: who.user.id,
+        });
+        await recordAuditLogBestEffort(env, {
+          org_id: accountId,
+          actor_id: who.user.id,
+          action: 'budget_policy_upsert',
+          target_id: policy.id,
+          details: { amount_cents: policy.amount_cents, currency: policy.currency },
+        });
+        return withCors(json({ ok: true, policy }));
+      } catch (err) {
+        return withCors(json({ ok: false, error: 'Budget store unavailable', code: 'BUDGET_UNAVAILABLE' }, 503));
+      }
+    }
+
+    if (path === '/budgets/self/resume') {
+      if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+      const resume = await approveBudgetResume(env, accountId, who.user.id);
+      if (!resume) {
+        return withCors(json({ ok: false, error: 'Budget store unavailable', code: 'BUDGET_UNAVAILABLE' }, 503));
+      }
+      await recordAuditLogBestEffort(env, {
+        org_id: accountId,
+        actor_id: who.user.id,
+        action: 'budget_resume',
+        target_id: resume.id,
+        details: { windowStart: resume.windowStart },
+      });
+      return withCors(json({ ok: true, actionRequestId: resume.id, windowStart: resume.windowStart }));
+    }
+
+    return withCors(json({ error: 'Method not allowed' }, 405));
   }
 
   // APS: MCP (Growth+ mcpAccess; session, lm_live_* API key, or mcp_* OAuth token)

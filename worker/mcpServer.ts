@@ -25,6 +25,15 @@ import {
   createActionRequest,
   hasApprovedRequest,
 } from './mcpGovernance';
+import {
+  BYOK_PAID_CALL_COST_CENTS,
+  HOSTED_PAID_CALL_COST_CENTS,
+  evaluateSoftAlerts,
+  getBudgetStatus,
+  isBudgetHalted,
+  recordBudgetIncident,
+  recordCostEvent,
+} from './budgets';
 import { recordAuditLogBestEffort } from './auditLog';
 import { redactSensitive } from './logRedaction';
 
@@ -358,11 +367,46 @@ async function callTool(
   args: Record<string, unknown>,
   ctx: McpToolContext,
 ): Promise<McpToolResult> {
+  // One clock read per call: the budget gate, cost event, and soft-alert
+  // evaluation must agree on the current UTC window (spec 0014 clock rule).
+  const now = Date.now();
   const sub = await getActiveSubscription(ctx.env, ctx.user);
   const subscriptionActive = !!sub;
   const tool = TOOLS.find((t) => t.name === name);
   const creditClass = tool?.creditClass ?? 'free';
   const projectId = typeof args.projectId === 'string' ? args.projectId : null;
+
+  // Budget gate runs BEFORE the governance decideToolCall; when the account is
+  // budget-halted the budget block wins over every governance outcome.
+  if (await isBudgetHalted(ctx.env, ctx.accountId, now)) {
+    await recordAuditLogBestEffort(ctx.env, {
+      org_id: ctx.accountId,
+      actor_id: ctx.user.id,
+      action: 'mcp_tool_block',
+      target_id: name,
+      details: redactSensitive({
+        tool: name,
+        decision: 'block',
+        reason: 'budget_exhausted',
+        projectId,
+        args,
+      }) as Record<string, unknown>,
+    });
+    const budgetStatus = await getBudgetStatus(ctx.env, ctx.accountId, now);
+    if (budgetStatus.policy) {
+      await recordBudgetIncident(ctx.env, ctx.accountId, 100, budgetStatus.spentCents, {
+        kind: 'hard',
+        policyId: budgetStatus.policy.id,
+        now,
+      }).catch(() => undefined);
+    }
+    return textResult(
+      'Tool blocked by governance policy: budget_exhausted',
+      { code: 'BUDGET_EXHAUSTED', reason: 'budget_exhausted', budgetHalted: true },
+      true,
+    );
+  }
+
   const approved = await hasApprovedRequest(ctx.env, ctx.accountId, name, projectId);
   const decision = decideToolCall(
     name,
@@ -412,7 +456,55 @@ async function callTool(
       true,
     );
   }
-  return tool.handler(args || {}, ctx);
+  const result = await tool.handler(args || {}, ctx);
+
+  // Cost ingestion: cost events land only after a successful PAID tool
+  // execution; free tools and error results record nothing. Interim rule per
+  // the design record: real provider cost is unavailable at this seam, so the
+  // tool bills its declared credit class as cents (source 'credit_class');
+  // BYOK calls bill zero (Luminara owes nothing, design decision 9).
+  if (tool.creditClass === 'paid' && !result.isError) {
+    const billedCents = ctx.dataForSeoCredential
+      ? BYOK_PAID_CALL_COST_CENTS
+      : HOSTED_PAID_CALL_COST_CENTS;
+    if (billedCents > 0) {
+      try {
+        await recordCostEvent(ctx.env, {
+          accountId: ctx.accountId,
+          toolName: name,
+          billedCents,
+          projectId,
+          creditClass: 'paid',
+          source: 'credit_class',
+          now,
+        });
+      } catch (err) {
+        // Metering must never turn a completed tool call into an error.
+        console.error('[budgets] recordCostEvent failed after paid tool execution:', err);
+      }
+      // Soft alerts: post-call, on first crossing of 50/80/95 in the window,
+      // record a deduped incident and audit-log budget_soft_alert. Never blocks.
+      const status = await getBudgetStatus(ctx.env, ctx.accountId, now);
+      if (status.policy && status.state !== 'ok' && status.state !== 'hard_stop') {
+        const alert = await evaluateSoftAlerts(ctx.env, ctx.accountId, status, now);
+        if (alert?.recorded) {
+          await recordAuditLogBestEffort(ctx.env, {
+            org_id: ctx.accountId,
+            actor_id: ctx.user.id,
+            action: 'budget_soft_alert',
+            target_id: name,
+            details: redactSensitive({
+              threshold: alert.threshold,
+              percent: Math.round(status.percent * 100) / 100,
+              spentCents: status.spentCents,
+              limitCents: status.policy.amount_cents,
+            }) as Record<string, unknown>,
+          });
+        }
+      }
+    }
+  }
+  return result;
 }
 
 function rpcResult(id: unknown, result: unknown) {
@@ -512,7 +604,12 @@ export async function handleMcpRequest(
       try {
         result = await callTool(name, args, ctx);
         if (runHandle) {
-          await completeRun(env, runHandle.runId, result.isError ? 'failed' : 'completed');
+          const budgetHalted = result.structuredContent?.budgetHalted === true;
+          await completeRun(
+            env,
+            runHandle.runId,
+            budgetHalted ? 'budget_halted' : result.isError ? 'failed' : 'completed',
+          );
         }
       } catch (err) {
         if (runHandle) {

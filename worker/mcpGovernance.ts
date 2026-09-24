@@ -89,6 +89,8 @@ export function decideToolCall(
 
 export type ActionRequestStatus = 'pending' | 'approved' | 'denied';
 
+export type ActionRequestKind = 'tool' | 'budget_override';
+
 export type ActionRequestRow = {
   id: string;
   user_id: string;
@@ -96,6 +98,7 @@ export type ActionRequestRow = {
   tool_name: string;
   args_json: string;
   status: ActionRequestStatus;
+  kind: ActionRequestKind;
   decided_by: string | null;
   decided_at: number | null;
   expires_at: number;
@@ -123,7 +126,7 @@ export async function createActionRequest(
 
   const existing = await env.DB.prepare(
     `SELECT id FROM mcp_action_requests
-     WHERE user_id = ? AND tool_name = ? AND status = 'pending'
+     WHERE user_id = ? AND tool_name = ? AND status = 'pending' AND kind = 'tool'
        AND (project_id IS ? OR project_id = ?)
      ORDER BY created_at DESC LIMIT 1`,
   )
@@ -136,8 +139,8 @@ export async function createActionRequest(
   const argsJson = JSON.stringify(redactSensitive(params.args || {}));
   await env.DB.prepare(
     `INSERT INTO mcp_action_requests
-     (id, user_id, project_id, tool_name, args_json, status, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
+     (id, user_id, project_id, tool_name, args_json, status, expires_at, created_at, kind)
+     VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, 'tool')`,
   )
     .bind(id, params.userId, projectId, params.toolName, argsJson, now + APPROVAL_TTL_MS, now)
     .run();
@@ -206,7 +209,7 @@ export async function hasApprovedRequest(
   const pid = projectId ?? null;
   const row = await env.DB.prepare(
     `SELECT id FROM mcp_action_requests
-     WHERE user_id = ? AND tool_name = ? AND status = 'approved' AND expires_at > ?
+     WHERE user_id = ? AND tool_name = ? AND status = 'approved' AND kind = 'tool' AND expires_at > ?
        AND (project_id IS ? OR project_id = ?)
      LIMIT 1`,
   )
