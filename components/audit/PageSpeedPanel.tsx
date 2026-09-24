@@ -3,6 +3,7 @@ import { fetchPagespeedInsights, type PagespeedMetrics } from '../../services/te
 import { configService } from '../../services/configService';
 import { apiBase, workerFetchWithAuthRetry } from '../../services/apiClient';
 import { Button } from '../ui/Button';
+import { PsiEmptyState } from './psiGscEmptyStates';
 
 type Props = {
   url: string;
@@ -70,11 +71,7 @@ export const PageSpeedPanel: React.FC<Props> = ({ url }) => {
           {loading ? 'Measuring…' : 'Measure'}
         </Button>
       </div>
-      {!metrics && (
-        <p className="text-[11px] text-gray-500">
-          Not measured. Add a PageSpeed API key in Settings (Search tab), or sign in to use a hosted key when available, then run Measure.
-        </p>
-      )}
+      {!metrics && <PsiEmptyState />}
       {metrics && metrics.measurementStatus === 'not_measured' && (
         <p className="text-[11px] text-warning-400">{metrics.errorReason || 'Not measured'}</p>
       )}

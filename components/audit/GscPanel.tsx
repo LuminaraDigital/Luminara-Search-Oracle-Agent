@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { gscAnalyticsService, type GscSummary } from '../../services/mcp/gscAnalyticsService';
+import { GscEmptyState } from './psiGscEmptyStates';
 
 type Props = {
   domain: string;
@@ -38,11 +39,7 @@ export const GscPanel: React.FC<Props> = ({ domain }) => {
   return (
     <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
       <p className="text-xs font-bold text-gray-200">Search Console</p>
-      {!summary && (
-        <p className="text-[11px] text-gray-500">
-          Not connected. Upload a GSC Queries CSV. Simulated data is Labs-only (`luminara_labs_gsc_simulate=1`).
-        </p>
-      )}
+      {!summary && <GscEmptyState />}
       {error && <p className="text-[11px] text-warning-400">{error}</p>}
       {summary && (
         <dl className="grid grid-cols-2 gap-1 text-[11px] font-mono text-gray-300">
