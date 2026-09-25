@@ -500,7 +500,7 @@ class Mem0MemoryEngine {
       });
     }
 
-    if (context.citationRatePercent >= 70) {
+    if (typeof context.citationRatePercent === 'number' && context.citationRatePercent >= 70) {
       this.addRelation({
         source: domain,
         predicate: 'authoritative_for',

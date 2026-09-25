@@ -7,8 +7,30 @@
  */
 
 import { siteEvidencePackService } from '../../scraping/siteEvidencePack';
-import { unifiedScraperService } from '../../scraping/unifiedScraper';
+import { unifiedScraperService, type ScrapedPageEvidence as ProviderPage } from '../../scraping/unifiedScraper';
 import { AgentActivityEvent, ScrapedPageEvidence } from '../types';
+
+function toCrewPage(p: ProviderPage, fallbackUrl: string): ScrapedPageEvidence {
+  const markdown = p.markdown || '';
+  return {
+    url: p.url,
+    title: p.title || fallbackUrl,
+    description: p.description,
+    h1s: (p.distilled?.headings || []).filter((h) => h.level === 1).map((h) => h.text),
+    schemasFound: (p.distilled?.schemas || []).map((s) => ({
+      type: s.type || 'UnknownSchema',
+      rawJson: JSON.stringify(s.raw || s),
+      isValid: true,
+    })),
+    wordCount: markdown.trim() ? markdown.trim().split(/\s+/).filter(Boolean).length : 0,
+    loadTimeMs: p.latencyMs,
+    rawTextSnippet: markdown ? markdown.slice(0, 1500) : '',
+  };
+}
+
+function isUsablePage(page: ScrapedPageEvidence): boolean {
+  return page.wordCount > 0 || page.schemasFound.length > 0 || page.rawTextSnippet.trim().length > 0;
+}
 
 export class ScoutAgent {
   public readonly name = 'Scout Agent';
@@ -31,59 +53,39 @@ export class ScoutAgent {
     const pages: ScrapedPageEvidence[] = [];
 
     try {
-      // 1. Attempt Sitewide Evidence Pack
       const pack = await siteEvidencePackService.buildPack(url, { mode: 'smart', maxPages: 4 });
       if (pack.success && pack.pages.length > 0) {
         for (const p of pack.pages) {
-          pages.push({
-            url: p.url,
-            title: p.title || url,
-            description: p.description,
-            h1s: (p.distilled?.headings || []).filter((h) => h.level === 1).map((h) => h.text),
-            schemasFound: (p.distilled?.schemas || []).map((s: any) => ({
-              type: s['@type'] || s.type || 'UnknownSchema',
-              rawJson: JSON.stringify(s),
-              isValid: true,
-            })),
-            wordCount: p.markdown ? p.markdown.split(/\s+/).length : 0,
-            loadTimeMs: p.latencyMs,
-            rawTextSnippet: p.markdown ? p.markdown.slice(0, 1500) : '',
-          });
+          const page = toCrewPage(p, url);
+          if (isUsablePage(page)) pages.push(page);
         }
       }
     } catch {
       /* fallback to single scrape */
     }
 
-    // 2. Fallback to direct single page scrape if pack produced nothing
     if (pages.length === 0) {
       try {
         const single = await unifiedScraperService.scrapeAndDistill(url);
-        pages.push({
-          url: single.url,
-          title: single.title || url,
-          description: single.description,
-          h1s: (single.distilled?.headings || []).filter((h) => h.level === 1).map((h) => h.text),
-          schemasFound: (single.distilled?.schemas || []).map((s: any) => ({
-            type: s['@type'] || s.type || 'UnknownSchema',
-            rawJson: JSON.stringify(s),
-            isValid: true,
-          })),
-          wordCount: single.markdown ? single.markdown.split(/\s+/).length : 0,
-          loadTimeMs: single.latencyMs,
-          rawTextSnippet: single.markdown ? single.markdown.slice(0, 1500) : '',
-        });
-      } catch (err: any) {
-        // Even on scrape failure, produce a baseline evidence entry so the pipeline continues
-        pages.push({
-          url,
-          title: url,
-          h1s: [],
-          schemasFound: [],
-          wordCount: 0,
-          rawTextSnippet: '',
-        });
+        const page = toCrewPage(single, url);
+        if (isUsablePage(page)) pages.push(page);
+      } catch {
+        /* total scrape failure: do not invent a page */
       }
+    }
+
+    if (pages.length === 0) {
+      emit({
+        id: `scout-unmeasured-${Date.now()}`,
+        timestamp: Date.now(),
+        agentRole: 'scout',
+        agentName: this.name,
+        phase: 'crawling_complete',
+        message: 'Page fetch failed. On-page evidence not measured.',
+        status: 'completed',
+        evidenceSnippet: 'Scraper returned no page text, headings, or schema.',
+      });
+      return [];
     }
 
     const schemaCount = pages.reduce((acc, p) => acc + p.schemasFound.length, 0);

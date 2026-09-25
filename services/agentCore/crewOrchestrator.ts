@@ -29,6 +29,57 @@ import { postAuditReflectionService } from '../audit/postAuditReflectionService'
 import { brandMemoryVaultService } from '../memory/brandMemoryVaultService';
 import { ReportFocus, BusinessDNA } from '../../types';
 
+export function deriveAuditMeasurement(metrics: {
+  citationRatePercent: number | null;
+  shareOfVoiceScore: number | null;
+  healthScore: number | null;
+}): { measurementStatus: 'measured' | 'not_measured'; measurementReason?: string } {
+  const missing: string[] = [];
+  if (typeof metrics.citationRatePercent !== 'number') missing.push('citation rate');
+  if (typeof metrics.shareOfVoiceScore !== 'number') missing.push('share of voice');
+  if (typeof metrics.healthScore !== 'number') missing.push('health score');
+  if (missing.length === 0) return { measurementStatus: 'measured' };
+  return {
+    measurementStatus: 'not_measured',
+    measurementReason: `${missing.join(', ')} not measured`,
+  };
+}
+
+function contextHasLiveEvidence(ctx: AuditStateGraphContext): boolean {
+  const pageEvidence = ctx.scrapedPages.some(
+    (p) => p.wordCount > 0 || p.schemasFound.length > 0 || (p.rawTextSnippet || '').trim().length > 0,
+  );
+  return pageEvidence || ctx.serpEvidence.length > 0;
+}
+
+export function createInitialAuditContext(
+  targetUrl: string,
+  focus: ReportFocus = 'AEO',
+  dna?: BusinessDNA | null,
+): AuditStateGraphContext {
+  const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
+  return {
+    targetUrl: formattedUrl,
+    focus,
+    dna,
+    scrapedPages: [],
+    serpEvidence: [],
+    citationRatePercent: null,
+    shareOfVoiceScore: null,
+    healthScore: null,
+    measurementStatus: 'not_measured',
+    measurementReason: 'Audit has not measured search or page evidence yet.',
+    findings: [],
+    topCompetitors: [],
+    competitorGaps: [],
+    patches: [],
+    plainEnglishBrief: '',
+    criticRejections: 0,
+    criticPass: false,
+    errors: [],
+  };
+}
+
 export const CREW_PROFILES: Record<AgentRole, AgentProfile> = {
   scout: {
     role: 'scout',
@@ -116,7 +167,16 @@ export class CrewOrchestrator {
         ctx.dna,
         emit
       );
-      return { serpEvidence, citationRatePercent, shareOfVoiceScore };
+      return {
+        serpEvidence,
+        citationRatePercent,
+        shareOfVoiceScore,
+        ...deriveAuditMeasurement({
+          citationRatePercent,
+          shareOfVoiceScore,
+          healthScore: ctx.healthScore,
+        }),
+      };
     });
 
     // Node 3: Playbook Compliance Audit
@@ -128,7 +188,15 @@ export class CrewOrchestrator {
         ctx.dna,
         emit
       );
-      return { findings, healthScore };
+      return {
+        findings,
+        healthScore,
+        ...deriveAuditMeasurement({
+          citationRatePercent: ctx.citationRatePercent,
+          shareOfVoiceScore: ctx.shareOfVoiceScore,
+          healthScore,
+        }),
+      };
     });
 
     // Node 4: Competitor Intelligence
@@ -154,8 +222,9 @@ export class CrewOrchestrator {
         status: 'reflecting',
       });
 
-      const { verifiedFindings, rejectedCount, reflectionFeedback, criticConfidence } =
+      const { verifiedFindings, rejectedCount, criticConfidence } =
         criticReflectionEngine.verify(ctx.findings, ctx.patches, ctx.scrapedPages, ctx.serpEvidence);
+      const liveEvidence = contextHasLiveEvidence(ctx);
 
       emit({
         id: `critic-done-${Date.now()}`,
@@ -163,18 +232,19 @@ export class CrewOrchestrator {
         agentRole: 'adversarial_critic',
         agentName: 'Adversarial Critic',
         phase: 'verification_complete',
-        message:
-          rejectedCount > 0
+        message: !liveEvidence
+          ? 'No page or search evidence to verify. Findings were not measured against live data.'
+          : rejectedCount > 0
             ? `Adversarial check complete: Corrected ${rejectedCount} false claim(s). Remaining ${verifiedFindings.length} findings verified.`
-            : `All ${verifiedFindings.length} findings 100% verified against ground truth DOM and SERP evidence.`,
+            : `All ${verifiedFindings.length} findings checked against scraped pages and SERP evidence.`,
         status: 'completed',
-        confidenceScore: criticConfidence,
+        confidenceScore: liveEvidence ? criticConfidence : undefined,
       });
 
       return {
         findings: verifiedFindings,
         criticRejections: (ctx.criticRejections || 0) + rejectedCount,
-        criticPass: true,
+        criticPass: liveEvidence,
       };
     });
 
@@ -203,6 +273,18 @@ export class CrewOrchestrator {
     // Node 8: Cryptographic Proof-of-Audit Attestation (TON)
     graph.addNode('attestation_node', 'TON Attestation Generator', async (ctx, emit) => {
       const cleanDomain = ctx.targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
+      if (typeof ctx.healthScore !== 'number' || typeof ctx.citationRatePercent !== 'number') {
+        emit({
+          id: `ton-attest-skip-${Date.now()}`,
+          timestamp: Date.now(),
+          agentRole: 'adversarial_critic',
+          agentName: 'Blockchain Attestation Vault',
+          phase: 'attestation_skipped',
+          message: 'Proof-of-Audit skipped. Health score or citation rate was not measured.',
+          status: 'completed',
+        });
+        return {};
+      }
       const attestation = await tonAttestationService.createAttestation({
         domain: cleanDomain,
         healthScore: ctx.healthScore,
@@ -292,26 +374,7 @@ export class CrewOrchestrator {
     dna?: BusinessDNA | null,
     onEvent?: (event: AgentActivityEvent) => void
   ): Promise<AuditStateGraphContext> {
-    const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
-
-    const initialContext: AuditStateGraphContext = {
-      targetUrl: formattedUrl,
-      focus,
-      dna,
-      scrapedPages: [],
-      serpEvidence: [],
-      citationRatePercent: 50,
-      shareOfVoiceScore: 50,
-      healthScore: 75,
-      findings: [],
-      topCompetitors: [],
-      competitorGaps: [],
-      patches: [],
-      plainEnglishBrief: '',
-      criticRejections: 0,
-      criticPass: false,
-      errors: [],
-    };
+    const initialContext = createInitialAuditContext(targetUrl, focus, dna);
 
     const graph = this.buildGraph();
     const { finalContext } = await graph.run(initialContext, onEvent);

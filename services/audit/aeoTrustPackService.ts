@@ -96,7 +96,11 @@ export class AeoTrustPackService {
 
     const securityTrust = input.security?.trustScore ?? 0;
     const citationIntegrity = input.integrity?.integrityScore ?? 0;
-    const entityClarity = input.empirical?.entityClarityScore ?? 0;
+    const empiricalMeasured =
+      Boolean(input.empirical) &&
+      input.empirical?.measurementStatus !== 'not_measured' &&
+      typeof input.empirical?.entityClarityScore === 'number';
+    const entityClarity = empiricalMeasured ? (input.empirical?.entityClarityScore as number) : 0;
     const schemaSafety = input.schemaSafety
       ? schemaSafetyScore(input.schemaSafety)
       : 0;
@@ -195,7 +199,11 @@ export class AeoTrustPackService {
       });
     }
 
-    if (ymylTier !== 'none' && !input.empirical?.evidenceList.some((e) => e.brandCited)) {
+    if (
+      ymylTier !== 'none' &&
+      empiricalMeasured &&
+      !input.empirical?.evidenceList.some((e) => e.brandCited)
+    ) {
       findings.push({
         severity: 'high',
         title: 'YMYL brand not empirically cited',
@@ -223,7 +231,7 @@ export class AeoTrustPackService {
               : 'not_measured'
           : 'not_measured',
         integrity: input.integrity ? 'measured' : 'not_measured',
-        entityClarity: input.empirical ? 'measured' : 'not_measured',
+        entityClarity: empiricalMeasured ? 'measured' : 'not_measured',
         schema: input.schemaSafety ? 'measured' : 'not_measured',
       },
     };

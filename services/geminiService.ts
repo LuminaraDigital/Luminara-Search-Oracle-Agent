@@ -649,7 +649,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
         dna?.name,
         dna?.competitors || []
       );
-      if (empiricalSummary.evidenceList.length > 0) {
+      if (empiricalSummary.evidenceList.length > 0 && typeof empiricalSummary.citationRatePercent === 'number') {
         empiricalText = `\n[VERIFIED EMPIRICAL CITATION AUDIT DATA]\nTarget Domain: ${empiricalSummary.targetDomain}\nEmpirical Citation Rate: ${empiricalSummary.citationRatePercent}%\nTop Cited Competitor: ${empiricalSummary.topCitedCompetitor || 'None identified'}\nEvidence Summary:\n` +
           empiricalSummary.evidenceList.map(e => `- Query "${e.query}" (${e.intent}): ${e.brandCited ? `CITING [Rank #${e.brandRank}]` : `NOT CITED (Competitors: ${e.competitorsCited.join(', ') || 'None'})`} -> Snippet: ${e.snippet}`).join('\n') + '\n';
       }
@@ -686,7 +686,11 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     let citationIntegrity: CitationIntegrityResult | undefined;
     let integrityText = '';
     try {
-      if (empiricalSummary) {
+      if (
+        empiricalSummary &&
+        empiricalSummary.measurementStatus !== 'not_measured' &&
+        typeof empiricalSummary.citationRatePercent === 'number'
+      ) {
         citationIntegrity = await citationIntegrityService.evaluate(empiricalSummary, {
           brandName: dna?.name || enrichedEntity?.brandName,
           domain: enrichedEntity?.domain || displayUrl,
@@ -813,9 +817,12 @@ Strict Formatting Guidelines:
         domain: displayUrl,
       });
 
-      const shareOfVoice = empiricalSummary
-        ? shareOfVoiceService.build(empiricalSummary)
-        : undefined;
+      const shareOfVoice =
+        empiricalSummary &&
+        empiricalSummary.measurementStatus !== 'not_measured' &&
+        typeof empiricalSummary.citationRatePercent === 'number'
+          ? shareOfVoiceService.build(empiricalSummary)
+          : undefined;
 
       const sourceGraph = sourceCitationGraphService.build({
         domain: displayUrl,
@@ -834,14 +841,16 @@ Strict Formatting Guidelines:
       });
 
       try {
-        visibilityHistoryService.record({
-          domain: displayUrl,
-          focus: String(focus),
-          citationRatePercent: empiricalSummary?.citationRatePercent ?? 0,
-          shareOfVoice,
-          citeWorthiness: trustPack.citeWorthiness,
-          topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
-        });
+        if (typeof empiricalSummary?.citationRatePercent === 'number') {
+          visibilityHistoryService.record({
+            domain: displayUrl,
+            focus: String(focus),
+            citationRatePercent: empiricalSummary.citationRatePercent,
+            shareOfVoice,
+            citeWorthiness: trustPack.citeWorthiness,
+            topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
+          });
+        }
       } catch (histErr) {
         console.warn('[VisibilityHistory] record error', histErr);
       }
@@ -908,20 +917,22 @@ Strict Formatting Guidelines:
       );
 
       try {
-        aeoCorpusService.ingestAudit(
-          displayUrl,
-          text,
-          empiricalSummary?.citationRatePercent ?? 65,
-          schemaJsonLd,
-          {
-            ymylTier: trustPack.ymylTier,
-            securityTrust: trustPack.securityTrust,
-            integrityScore: trustPack.citationIntegrity,
-            schemaSafety: trustPack.schemaSafety,
-            citeWorthiness: trustPack.citeWorthiness,
-            measurementConfidence: enrichedEntity?.security.measurementConfidence,
-          }
-        );
+        if (typeof empiricalSummary?.citationRatePercent === 'number') {
+          aeoCorpusService.ingestAudit(
+            displayUrl,
+            text,
+            empiricalSummary.citationRatePercent,
+            schemaJsonLd,
+            {
+              ymylTier: trustPack.ymylTier,
+              securityTrust: trustPack.securityTrust,
+              integrityScore: trustPack.citationIntegrity,
+              schemaSafety: trustPack.schemaSafety,
+              citeWorthiness: trustPack.citeWorthiness,
+              measurementConfidence: enrichedEntity?.security.measurementConfidence,
+            }
+          );
+        }
       } catch (corpusErr) {
         console.warn('[Corpus] Ingest error', corpusErr);
       }

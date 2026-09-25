@@ -126,6 +126,7 @@ describe('Mem0 Memory Engine Upgrades (Graph Triplets & Recency Decay)', () => {
         citationRatePercent: 82,
         shareOfVoiceScore: 75,
         healthScore: 88,
+        measurementStatus: 'measured',
         findings: [
           {
             id: 'f-1',

@@ -20,7 +20,7 @@ export class PlaybookAuditorAgent {
     serpEvidence: SerpEvidenceItem[],
     dna: BusinessDNA | null | undefined,
     emit: (event: AgentActivityEvent) => void
-  ): Promise<{ findings: AuditFinding[]; healthScore: number }> {
+  ): Promise<{ findings: AuditFinding[]; healthScore: number | null }> {
     emit({
       id: `auditor-start-${Date.now()}`,
       timestamp: Date.now(),
@@ -32,6 +32,23 @@ export class PlaybookAuditorAgent {
     });
 
     const findings: AuditFinding[] = [];
+    const hasPageEvidence = scrapedPages.some(
+      (p) => p.wordCount > 0 || p.schemasFound.length > 0 || (p.rawTextSnippet || '').trim().length > 0,
+    );
+    const hasSerpEvidence = serpEvidence.length > 0;
+    if (!hasPageEvidence && !hasSerpEvidence) {
+      emit({
+        id: `auditor-unmeasured-${Date.now()}`,
+        timestamp: Date.now(),
+        agentRole: 'playbook_auditor',
+        agentName: this.name,
+        phase: 'audit_complete',
+        message: 'Compliance audit finished. Health score not measured: no page or search evidence.',
+        status: 'completed',
+      });
+      return { findings, healthScore: null };
+    }
+
     let baseScore = 85;
 
     // 1. Audit Schemas across scraped pages
@@ -101,7 +118,7 @@ export class PlaybookAuditorAgent {
         title: 'Weak Generative Search Footprint in Live SERP',
         description: 'Zero third-party search results or AI overview summaries currently cite the brand directly for category queries.',
         evidenceSource: 'SERP Radar live search probe',
-        howWeKnowItFailed: '0 out of ${serpEvidence.length} search snippets mentioned the brand.',
+        howWeKnowItFailed: `0 out of ${serpEvidence.length} search snippets mentioned the brand.`,
         leadingIndicator: 'Publishing entity-grounded comparison pages increases AI Overview citation rate.',
         criticVerified: false,
         criticConfidence: 0.85,

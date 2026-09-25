@@ -22,8 +22,8 @@ export class SerpRadarAgent {
     emit: (event: AgentActivityEvent) => void
   ): Promise<{
     serpEvidence: SerpEvidenceItem[];
-    citationRatePercent: number;
-    shareOfVoiceScore: number;
+    citationRatePercent: number | null;
+    shareOfVoiceScore: number | null;
   }> {
     const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
     const brandName = dna?.name || cleanDomain.split('.')[0];
@@ -107,11 +107,13 @@ export class SerpRadarAgent {
       }
     }
 
-    // Calculate empirical metrics
     const totalItems = serpEvidence.length;
     const mentionedItems = serpEvidence.filter((e) => e.brandMentioned).length;
-    const citationRatePercent = totalItems > 0 ? Math.round((mentionedItems / totalItems) * 100) : 45;
-    const shareOfVoiceScore = Math.min(100, Math.round(citationRatePercent * 0.85 + (totalItems > 5 ? 15 : 5)));
+    const citationRatePercent = totalItems > 0 ? Math.round((mentionedItems / totalItems) * 100) : null;
+    const shareOfVoiceScore =
+      citationRatePercent == null
+        ? null
+        : Math.min(100, Math.round(citationRatePercent * 0.85 + (totalItems > 5 ? 15 : 5)));
 
     emit({
       id: `serp-done-${Date.now()}`,
@@ -119,10 +121,16 @@ export class SerpRadarAgent {
       agentRole: 'serp_radar',
       agentName: this.name,
       phase: 'radar_complete',
-      message: `Analyzed ${totalItems} SERP results. Empirical citation rate: ${citationRatePercent}%, Share-of-Voice: ${shareOfVoiceScore}/100.`,
+      message:
+        citationRatePercent == null
+          ? `Analyzed 0 SERP results. Citation rate and share of voice were not measured.`
+          : `Analyzed ${totalItems} SERP results. Empirical citation rate: ${citationRatePercent}%, Share-of-Voice: ${shareOfVoiceScore}/100.`,
       status: 'completed',
-      evidenceSnippet: `Live mentions found in ${mentionedItems}/${totalItems} search snippets.`,
-      confidenceScore: 0.9,
+      evidenceSnippet:
+        citationRatePercent == null
+          ? 'No live search snippets. Citation rate is not measured.'
+          : `Live mentions found in ${mentionedItems}/${totalItems} search snippets.`,
+      confidenceScore: citationRatePercent == null ? undefined : 0.9,
     });
 
     return {

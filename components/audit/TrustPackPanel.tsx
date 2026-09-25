@@ -59,7 +59,12 @@ export const TrustPackPanel: React.FC<TrustPackPanelProps> = ({ trustPack }) => 
           <div className="flex items-center gap-2 justify-end">
             <span className="text-[10px] font-mono text-gray-500 uppercase">Cite-Worthiness:</span>
             <span className="text-lg font-bold font-mono text-gold-light">
-              {citeWorthiness}/100
+              {signalStatus.security === 'not_measured' &&
+              signalStatus.integrity === 'not_measured' &&
+              signalStatus.entityClarity === 'not_measured' &&
+              signalStatus.schema === 'not_measured'
+                ? 'not measured'
+                : `${citeWorthiness}/100`}
             </span>
           </div>
           <span className="text-[9px] font-mono text-gray-500">cap {confidenceCap}</span>
@@ -75,7 +80,9 @@ export const TrustPackPanel: React.FC<TrustPackPanelProps> = ({ trustPack }) => 
         ].map((s) => (
           <div key={s.label} className="glass-morphism rounded-xl p-3 border border-white/10 text-center">
             <span className="block text-[10px] uppercase font-mono text-gray-400">{s.label}</span>
-            <span className="text-base font-bold font-mono text-success-400">{s.value}/100</span>
+            <span className="text-base font-bold font-mono text-success-400">
+              {s.status === 'not_measured' ? 'not measured' : `${s.value}/100`}
+            </span>
             <span className="block text-[9px] text-gray-500 mt-0.5">{s.status}</span>
           </div>
         ))}

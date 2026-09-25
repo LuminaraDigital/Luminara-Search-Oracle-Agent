@@ -7,6 +7,21 @@ interface AgentMissionControlProps {
   isComplete: boolean;
   onViewAttestation?: () => void;
   hasAttestation?: boolean;
+  /** measured only when citation, share of voice, and health all came from evidence. */
+  measurementStatus?: 'measured' | 'not_measured' | null;
+}
+
+export function missionControlHeadline(
+  isComplete: boolean,
+  measurementStatus?: 'measured' | 'not_measured' | null,
+): string {
+  if (!isComplete) {
+    return 'Autonomous specialist agents actively collaborating on your audit…';
+  }
+  if (measurementStatus === 'measured') {
+    return 'Multi-agent audit complete. Measured signals come from live page and search evidence.';
+  }
+  return 'Audit finished. Some signals were not measured.';
 }
 
 export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
@@ -14,6 +29,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
   isComplete,
   onViewAttestation,
   hasAttestation,
+  measurementStatus = null,
 }) => {
   // Find latest status for each role
   const roleStatuses = React.useMemo(() => {
@@ -65,9 +81,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
             </h3>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            {isComplete
-              ? 'Multi-agent audit complete. 100% verified against ground-truth evidence.'
-              : 'Autonomous specialist agents actively collaborating on your audit…'}
+            {missionControlHeadline(isComplete, measurementStatus)}
           </p>
         </div>
 
@@ -86,7 +100,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
       {/* Progress Bar */}
       <div className="mt-4 mb-4">
         <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-mono">
-          <span>PIPELINE PROGRESS</span>
+          <span>AGENT PROGRESS</span>
           <span>{progressPercent}% COMPLETE</span>
         </div>
         <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -95,6 +109,11 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
             style={{ width: `${progressPercent}%` }}
           />
         </div>
+        {isComplete && measurementStatus !== 'measured' && (
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            This percentage is agent progress, not evidence quality.
+          </p>
+        )}
       </div>
 
       {/* Live Agent Cards Grid */}
@@ -137,6 +156,11 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
                   {isDone && (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                       ✓ Done
+                    </span>
+                  )}
+                  {state.status === 'failed' && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                      Not measured
                     </span>
                   )}
                   {state.status === 'idle' && (
