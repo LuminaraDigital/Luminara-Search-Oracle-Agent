@@ -11,6 +11,17 @@ interface AgentMissionControlProps {
   measurementStatus?: 'measured' | 'not_measured' | null;
 }
 
+export function missionControlCardBadge(
+  status: AgentStatus,
+  message: string,
+): 'running' | 'reflecting' | 'done' | 'not_measured' | 'queued' {
+  if (status === 'running') return 'running';
+  if (status === 'reflecting') return 'reflecting';
+  if (status === 'failed' || (status === 'completed' && /not measured/i.test(message))) return 'not_measured';
+  if (status === 'completed') return 'done';
+  return 'queued';
+}
+
 export function missionControlHeadline(
   isComplete: boolean,
   measurementStatus?: 'measured' | 'not_measured' | null,
@@ -121,8 +132,10 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
         {(Object.keys(CREW_PROFILES) as AgentRole[]).map((role) => {
           const profile = CREW_PROFILES[role];
           const state = roleStatuses[role];
-          const isRunning = state.status === 'running' || state.status === 'reflecting';
-          const isDone = state.status === 'completed';
+          const badge = missionControlCardBadge(state.status, state.message);
+          const isRunning = badge === 'running' || badge === 'reflecting';
+          const isDone = badge === 'done';
+          const isUnmeasured = badge === 'not_measured';
 
           return (
             <div
@@ -130,6 +143,8 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
               className={`p-3 rounded-lg border transition-all text-left flex flex-col justify-between ${
                 isRunning
                   ? 'bg-indigo-950/40 border-indigo-500/60 shadow-lg shadow-indigo-500/10'
+                  : isUnmeasured
+                  ? 'bg-slate-800/40 border-amber-500/30'
                   : isDone
                   ? 'bg-slate-800/40 border-slate-700/60'
                   : 'bg-slate-900/40 border-slate-800/40 opacity-60'
@@ -158,7 +173,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
                       ✓ Done
                     </span>
                   )}
-                  {state.status === 'failed' && (
+                  {isUnmeasured && (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30">
                       Not measured
                     </span>

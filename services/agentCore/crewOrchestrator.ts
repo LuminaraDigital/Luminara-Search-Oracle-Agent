@@ -45,6 +45,13 @@ export function deriveAuditMeasurement(metrics: {
   };
 }
 
+export function criticStartMessage(hasLiveEvidence: boolean): string {
+  if (!hasLiveEvidence) {
+    return 'No page or search evidence to verify. Findings were not measured against live data.';
+  }
+  return 'Cross-examining candidate findings against scraped pages and SERP evidence…';
+}
+
 function contextHasLiveEvidence(ctx: AuditStateGraphContext): boolean {
   const pageEvidence = ctx.scrapedPages.some(
     (p) => p.wordCount > 0 || p.schemasFound.length > 0 || (p.rawTextSnippet || '').trim().length > 0,
@@ -212,19 +219,19 @@ export class CrewOrchestrator {
 
     // Node 5: Adversarial Critic Verification Gate (AutoGen reflection)
     graph.addNode('critic_gate_node', 'Adversarial Critic Gate', async (ctx, emit) => {
+      const liveEvidence = contextHasLiveEvidence(ctx);
       emit({
         id: `critic-start-${Date.now()}`,
         timestamp: Date.now(),
         agentRole: 'adversarial_critic',
         agentName: 'Adversarial Critic',
         phase: 'adversarial_verification',
-        message: 'Cross-examining candidate findings against ground-truth DOM and SERP evidence…',
+        message: criticStartMessage(liveEvidence),
         status: 'reflecting',
       });
 
       const { verifiedFindings, rejectedCount, criticConfidence } =
         criticReflectionEngine.verify(ctx.findings, ctx.patches, ctx.scrapedPages, ctx.serpEvidence);
-      const liveEvidence = contextHasLiveEvidence(ctx);
 
       emit({
         id: `critic-done-${Date.now()}`,
@@ -233,7 +240,7 @@ export class CrewOrchestrator {
         agentName: 'Adversarial Critic',
         phase: 'verification_complete',
         message: !liveEvidence
-          ? 'No page or search evidence to verify. Findings were not measured against live data.'
+          ? criticStartMessage(false)
           : rejectedCount > 0
             ? `Adversarial check complete: Corrected ${rejectedCount} false claim(s). Remaining ${verifiedFindings.length} findings verified.`
             : `All ${verifiedFindings.length} findings checked against scraped pages and SERP evidence.`,

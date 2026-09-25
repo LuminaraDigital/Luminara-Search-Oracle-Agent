@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AgentMissionControl, missionControlHeadline } from '../../components/audit/AgentMissionControl';
+import { AgentMissionControl, missionControlCardBadge, missionControlHeadline } from '../../components/audit/AgentMissionControl';
 import { pricingTiers } from '../../components/PricingPage';
 import { executiveTranslatorAgent } from '../../services/agentCore/agents/executiveTranslatorAgent';
 import { playbookAuditorAgent } from '../../services/agentCore/agents/playbookAuditorAgent';
@@ -10,6 +10,7 @@ import { serpRadarAgent } from '../../services/agentCore/agents/serpRadarAgent';
 import {
   CREW_PROFILES,
   createInitialAuditContext,
+  criticStartMessage,
   deriveAuditMeasurement,
 } from '../../services/agentCore/crewOrchestrator';
 import type { AgentRole, ScrapedPageEvidence } from '../../services/agentCore/types';
@@ -95,6 +96,39 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(result.findings).toEqual([]);
     expect(events.map((event) => event.message).join(' ')).toContain('not measured');
     expect(events.map((event) => event.message).join(' ')).not.toContain('/100');
+  });
+
+  it('does not invent health or schema findings when the scrape is empty but SERP has rows', async () => {
+    const events: { message: string }[] = [];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [],
+      [{
+        query: 'example alternative',
+        engine: 'tavily',
+        title: 'Other brand review',
+        url: 'https://other.example/review',
+        snippet: 'A different product.',
+        brandMentioned: false,
+      }],
+      null,
+      (event) => {
+        events.push(event);
+      },
+    );
+    expect(result.healthScore).toBeNull();
+    expect(result.findings.some((finding) => finding.category === 'schema')).toBe(false);
+    expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(false);
+    const measurement = deriveAuditMeasurement({
+      citationRatePercent: 0,
+      shareOfVoiceScore: 5,
+      healthScore: result.healthScore,
+    });
+    expect(measurement.measurementStatus).toBe('not_measured');
+    expect(missionControlHeadline(true, measurement.measurementStatus)).not.toContain('live page');
+    const text = events.map((event) => event.message).join(' ');
+    expect(text).toContain('not measured');
+    expect(text).not.toMatch(/\/100/);
   });
 
   it('scores health when a scraped page has real content', async () => {
@@ -195,6 +229,48 @@ describe('Mission Control copy', () => {
     expect(html).toContain('agent progress, not evidence quality');
     expect(html).not.toContain('ground-truth');
     expect(html).not.toContain('45%');
+  });
+
+  it('badges completed unmeasured scout and auditor cards as Not measured', () => {
+    expect(missionControlCardBadge('completed', 'Page fetch failed. On-page evidence not measured.')).toBe('not_measured');
+    expect(missionControlCardBadge('completed', 'Compliance audit finished. Health score not measured: no page evidence.')).toBe('not_measured');
+    expect(missionControlCardBadge('completed', 'Scouted 2 page(s). Discovered 1 structured schema entity block(s).')).toBe('done');
+    expect(missionControlCardBadge('failed', 'Page fetch failed.')).toBe('not_measured');
+
+    const events = (Object.keys(CREW_PROFILES) as AgentRole[]).map((role) => ({
+      id: role,
+      timestamp: 1,
+      agentRole: role,
+      agentName: CREW_PROFILES[role].name,
+      phase: 'done',
+      message:
+        role === 'scout'
+          ? 'Page fetch failed. On-page evidence not measured.'
+          : role === 'playbook_auditor'
+            ? 'Compliance audit finished. Health score not measured: no page evidence.'
+            : 'Step finished.',
+      status: 'completed' as const,
+    }));
+    const html = renderToStaticMarkup(
+      createElement(AgentMissionControl, {
+        events,
+        isComplete: true,
+        measurementStatus: 'not_measured',
+      }),
+    );
+    expect(html).toContain('Not measured');
+    expect(html).toContain('On-page evidence not measured');
+    expect(html).toContain('Health score not measured');
+    expect(html).toContain('100% COMPLETE');
+  });
+
+  it('does not claim ground-truth in the critic start line when evidence is missing', () => {
+    expect(criticStartMessage(false)).toBe(
+      'No page or search evidence to verify. Findings were not measured against live data.',
+    );
+    expect(criticStartMessage(false).toLowerCase()).not.toContain('ground-truth');
+    expect(criticStartMessage(false).toLowerCase()).not.toContain('ground truth');
+    expect(criticStartMessage(true).toLowerCase()).not.toContain('ground-truth');
   });
 });
 
