@@ -66,7 +66,7 @@ export const TeaserShareView: React.FC<{ onOpenApp?: () => void }> = ({ onOpenAp
         {!loading && error && <p className="text-sm text-gray-300">{error}</p>}
         {!loading && teaser && (
           <article>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Prepared as a redacted summary</p>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Redacted teaser, not a verified measurement</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white [overflow-wrap:anywhere]">{teaser.domain}</h2>
             <p className="mt-5 text-[15px] leading-relaxed text-gray-200">{teaser.verdict}</p>
             <h3 className="mt-8 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Your next move</h3>
@@ -91,7 +91,7 @@ export const TeaserShareView: React.FC<{ onOpenApp?: () => void }> = ({ onOpenAp
               </>
             )}
             <p className="mt-10 text-[12px] leading-relaxed text-gray-500">
-              This page omits the full report, sources list, and any account data. Open the Mini App to run your own scout. Full branded share links are a Growth and Agency feature.
+              This page is a redacted teaser, not a verified measurement. It omits the full report, sources list, and any account data. Open the Mini App to run your own scout. Full branded share links are a Growth and Agency feature.
             </p>
           </article>
         )}

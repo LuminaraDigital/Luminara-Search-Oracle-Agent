@@ -210,6 +210,14 @@ export function teaserTextLooksLikeCredential(text: string): boolean {
 }
 
 const TEASER_CREDENTIAL_ERROR = 'Teaser text looks like a credential and was rejected';
+const TEASER_METRIC_ERROR = 'Teaser badges cannot claim a measured percentage.';
+
+/** Percentage or out-of-100 claims. Free teasers are not an attested measurement. */
+const TEASER_PERCENT_CLAIM = /\d+(?:\.\d+)?\s*(?:%|percent\b)|\b\d+\s*\/\s*100\b/i;
+
+function teaserTextLooksLikeMetric(text: string): boolean {
+  return TEASER_PERCENT_CLAIM.test(text);
+}
 
 export function parseTeaserCreateBody(raw: unknown): { ok: true; payload: TeaserPublic } | { ok: false; error: string } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'Teaser body required' };
@@ -228,12 +236,15 @@ export function parseTeaserCreateBody(raw: unknown): { ok: true; payload: Teaser
     const label = clipText(row.label, 80);
     const status = clipText(row.status, 32);
     if (!label || !BADGE_STATUS.has(status)) continue;
-    const badge: TeaserBadge = { label, status: status as TeaserBadge['status'] };
-    if (status !== 'not_measured') {
-      const value = clipText(row.value, 32);
-      if (value) badge.value = value;
+    const value = clipText(row.value, 32);
+    if (teaserTextLooksLikeCredential(label) || teaserTextLooksLikeCredential(value)) {
+      return { ok: false, error: TEASER_CREDENTIAL_ERROR };
     }
-    badges.push(badge);
+    if (teaserTextLooksLikeMetric(label) || teaserTextLooksLikeMetric(value)) {
+      return { ok: false, error: TEASER_METRIC_ERROR };
+    }
+    // No server-side scout attestation. Never store measured or estimated.
+    badges.push({ label, status: 'not_measured' });
   }
   const checksIn = Array.isArray(body.crawlerChecks) ? body.crawlerChecks.slice(0, 4) : [];
   const crawlerChecks: TeaserCheck[] = [];
@@ -245,7 +256,13 @@ export function parseTeaserCreateBody(raw: unknown): { ok: true; payload: Teaser
     const status = clipText(row.status, 32);
     const detail = clipText(row.detail, 240);
     if (!id || !label || !detail || !CHECK_STATUS.has(status)) continue;
-    crawlerChecks.push({ id, label, status: status as TeaserCheck['status'], detail });
+    if (teaserTextLooksLikeCredential(id) || teaserTextLooksLikeCredential(label) || teaserTextLooksLikeCredential(detail)) {
+      return { ok: false, error: TEASER_CREDENTIAL_ERROR };
+    }
+    if (teaserTextLooksLikeMetric(label) || teaserTextLooksLikeMetric(detail)) {
+      return { ok: false, error: TEASER_METRIC_ERROR };
+    }
+    crawlerChecks.push({ id, label, status: 'not_measured', detail });
   }
   const failed: string[] = [];
   for (const item of (Array.isArray(body.failed) ? body.failed : []).slice(0, 6)) {

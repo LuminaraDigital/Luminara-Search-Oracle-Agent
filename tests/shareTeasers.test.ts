@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
-import { handleShareRoute, parseTeaserCreateBody } from '../worker/shareService';
+import { handleShareRoute, parseTeaserCreateBody, TEASER_DAILY_LIMIT } from '../worker/shareService';
 import { loadCrawlerSnapshot } from '../worker/llmCrawlerRoute';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -108,7 +108,7 @@ describe('teaser share entitlement', () => {
       topFix: 'Fetch the homepage again.',
       evidenceNote: 'No search rows.',
       failed: ['page_fetch_empty', 'provider_failed', 'Search sample was empty.'],
-      badges: [{ label: 'Citation rate', status: 'measured', value: '12%' }],
+      badges: [{ label: 'Citation rate', status: 'measured' }],
       crawlerChecks: [{ id: 'llms_txt', label: 'llms.txt', status: 'fail', detail: 'llms.txt was not found at the site root.' }],
     });
     expect(parsed.ok).toBe(true);
@@ -118,7 +118,8 @@ describe('teaser share entitlement', () => {
       'A provider call failed. The public teaser omits the raw error.',
       'Search sample was empty.',
     ]);
-    expect(parsed.payload.badges[0]?.value).toBe('12%');
+    expect(parsed.payload.badges[0]).toEqual({ label: 'Citation rate', status: 'not_measured' });
+    expect(parsed.payload.crawlerChecks[0]?.status).toBe('not_measured');
     expect(parsed.payload.crawlerChecks[0]?.detail).toContain('not found');
     expect(parsed.payload.ctaUrl).toBe('https://t.me/LuminaraSuiteBot/app');
     expect(JSON.stringify(parsed.payload)).not.toContain('page_fetch_empty');
@@ -133,6 +134,85 @@ describe('teaser share entitlement', () => {
       });
       expect(parsed.ok, domain).toBe(false);
     }
+  });
+
+  it('rejects a measured percentage so the public card cannot show 97%', async () => {
+    const env = makeEnv();
+    const createdRes = await worker.fetch(
+      new Request('https://luminarasuite.com/api/share/teasers', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-telegram-init-data': freeInit(21),
+          origin: 'https://luminarasuite.com',
+        },
+        body: JSON.stringify({
+          domain: 'competitor.com',
+          verdict: 'AI mention readiness was not measured.',
+          topFix: 'Fetch the homepage again.',
+          badges: [{ label: 'Citation rate', status: 'measured', value: '97%' }],
+          crawlerChecks: [{ id: 'llms_txt', label: 'llms.txt', status: 'pass', detail: 'Present.' }],
+        }),
+      }),
+      env,
+      ctx,
+    );
+    expect(createdRes.status).toBe(400);
+    const created = (await createdRes.json()) as { ok?: boolean; token?: string; error?: string };
+    expect(created.ok).toBe(false);
+    expect(created.token).toBeUndefined();
+    expect(JSON.stringify(created)).not.toContain('97%');
+    expect(JSON.stringify(created)).not.toContain('"measured"');
+  });
+
+  it('coerces a measured badge with no number to not_measured', () => {
+    const parsed = parseTeaserCreateBody({
+      domain: 'stripe.com',
+      verdict: 'AI mention readiness was not measured.',
+      topFix: 'Fetch the homepage again.',
+      badges: [
+        { label: 'Citation rate', status: 'measured', value: 'high' },
+        { label: 'Share of voice', status: 'estimated', value: 'mid' },
+      ],
+      crawlerChecks: [{ id: 'ai_bot_directives', label: 'AI crawler directives', status: 'pass', detail: 'Named bots are not blocked at /.' }],
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.payload.badges.every((badge) => badge.status === 'not_measured' && badge.value === undefined)).toBe(true);
+    expect(parsed.payload.crawlerChecks.every((check) => check.status === 'not_measured')).toBe(true);
+    expect(JSON.stringify(parsed.payload.badges)).not.toContain('97%');
+    expect(JSON.stringify(parsed.payload.badges)).not.toContain('"measured"');
+  });
+
+  it('stops minting after the daily teaser limit', async () => {
+    const env = makeEnv();
+    const initData = freeInit(31);
+    const post = () => worker.fetch(
+      new Request('https://luminarasuite.com/api/share/teasers', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-telegram-init-data': initData,
+          origin: 'https://luminarasuite.com',
+        },
+        body: JSON.stringify({
+          domain: 'stripe.com',
+          verdict: 'AI mention readiness was not measured.',
+          topFix: 'Fetch the homepage again.',
+          badges: [{ label: 'Citation rate', status: 'not_measured' }],
+        }),
+      }),
+      env,
+      ctx,
+    );
+    for (let i = 0; i < TEASER_DAILY_LIMIT; i++) {
+      const ok = await post();
+      expect(ok.status, `mint ${i + 1}`).toBe(200);
+    }
+    const blocked = await post();
+    expect(blocked.status).toBe(429);
+    const body = (await blocked.json()) as { code?: string };
+    expect(body.code).toBe('TEASER_QUOTA');
   });
 
   it('lets a free Telegram user mint a teaser and still blocks full share links', async () => {

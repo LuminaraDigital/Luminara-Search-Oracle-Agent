@@ -138,10 +138,20 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         }
       );
 
+      const summary = summaryFromCrew(crewResult, hostedRail);
       setCrewMeasurement(crewResult.measurementStatus);
-      setScoutSummary(summaryFromCrew(crewResult, hostedRail));
+      setScoutSummary(summary);
       if (crewResult.attestation) {
         setAttestation(crewResult.attestation);
+      }
+
+      // Empty guest evidence stays on the honest summary. The full report model
+      // can still invent citation language when providers returned nothing.
+      if (isGuest && summary.evidenceEmpty) {
+        setPersistHint(
+          'Scout finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.',
+        );
+        return;
       }
 
       // 2. Generate full enriched report
@@ -220,10 +230,14 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           evidenceNote: scoutSummary.evidenceUsed,
           badges: scoutSummary.badges.map((badge) => ({
             label: badge.label,
-            status: badge.status,
-            value: badge.value,
+            status: 'not_measured' as const,
           })),
-          crawlerChecks: scoutSummary.crawlerChecks,
+          crawlerChecks: scoutSummary.crawlerChecks.map((check) => ({
+            id: check.id,
+            label: check.label,
+            status: 'not_measured' as const,
+            detail: check.detail,
+          })),
           failed: scoutSummary.failureCodes,
         });
         if (minted.ok && minted.url) url = minted.url;

@@ -57,6 +57,23 @@ describe('Telegram Mini App Native Experience', () => {
     expect(resolveTelegramStart('audit_not a domain').auditUrl).toBeUndefined();
   });
 
+  it('drops hostile startapp tails: private hosts and junk charset', () => {
+    for (const raw of [
+      'audit_localhost',
+      'audit_127.0.0.1',
+      'audit_10.0.0.8',
+      'audit_192.168.1.1',
+      'audit_169.254.169.254',
+      'audit_%22%3Eimg%3E.com',
+      'audit_<script>.com',
+      'audit_..%2F..',
+      'scan_\u0000stripe.com',
+      'audit_ex%C3%A4mple.com',
+    ]) {
+      expect(resolveTelegramStart(raw).auditUrl, raw).toBeUndefined();
+    }
+  });
+
   it('does not prefill localhost, IP literals, or special-use suffixes', () => {
     for (const host of [
       'localhost',

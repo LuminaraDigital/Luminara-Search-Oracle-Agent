@@ -17,12 +17,15 @@ Instant Audit honesty is already the rule: empty evidence stays `not_measured`. 
 5. LLM crawler readiness is pass, fail, or not_measured for `llms.txt` and common AI bot directives. It does not change the health score.
 6. Deep links, teaser domains, and Instant Audit targets use the same public-hostname rules as the Worker fetch guard. IP literals, localhost, and special-use suffixes (`.local`, `.internal`, `.example`, and the rest of that list) are rejected before a hosted run.
 7. Teaser create rejects credential-like text in every stored string. Instant Audit mints allow-listed failure codes, not raw provider errors. The CTA stays forced to the Mini App, and secret-looking keys are still dropped.
+8. A free teaser cannot claim `measured` or `estimated`. Badges and crawler checks are stored as `not_measured`. Percentage-looking badge values are rejected. The public page says it is a redacted teaser, not a verified measurement. The in-app summary can still show a measured figure from the crew.
+9. A guest scout with empty page and search evidence does not call the full report generator.
 
 ## Alternatives considered
 
 - Anonymous hosted scouts metered only by IP: rejected. That is the toll-fraud path the Worker already closes when `REQUIRE_TG_AUTH` is on.
 - Reuse Growth share links for free users: rejected. That gives away the paid artifact.
 - Score LLM crawler readiness out of 100: rejected. Missing fetches must stay `not_measured`.
+- Let a free teaser repeat client-supplied measured percentages: rejected until the Worker can attest a prior scout run.
 
 ## Not in scope
 
