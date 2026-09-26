@@ -18,6 +18,7 @@ import {
   retrieveLaunchParams,
   swipeBehavior,
   closingBehavior,
+  shareURL,
 } from '@telegram-apps/sdk-react';
 
 function detectTelegramSync(): boolean {
@@ -225,6 +226,49 @@ export function getTelegramUserUnsafe() {
   } catch {
     return null;
   }
+}
+
+/**
+ * Share a public URL from the Mini App when the SDK allows it.
+ * Falls back to copying the text. Does not call shareMessage (that API needs a bot-prepared message id).
+ */
+export async function shareExternalLink(url: string, text: string): Promise<'telegram' | 'copied' | 'failed'> {
+  const clippedText = text.replace(/\s+/g, ' ').trim().slice(0, 240);
+  const payload = `${clippedText}\n${url}`.slice(0, 700);
+  try {
+    if (shareURL.isAvailable()) {
+      shareURL(url, clippedText);
+      haptic('success');
+      return 'telegram';
+    }
+  } catch {
+    /* SDK share is optional outside Telegram */
+  }
+  try {
+    const wa = (window as unknown as {
+      Telegram?: { WebApp?: { openTelegramLink?: (link: string) => void } };
+    }).Telegram?.WebApp;
+    if (wa?.openTelegramLink && (insideTelegram || getInitDataRaw())) {
+      wa.openTelegramLink(
+        `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(clippedText)}`,
+      );
+      haptic('success');
+      return 'telegram';
+    }
+  } catch {
+    /* native share sheet unavailable */
+  }
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(payload);
+      haptic('success');
+      return 'copied';
+    }
+  } catch {
+    /* clipboard blocked */
+  }
+  haptic('error');
+  return 'failed';
 }
 
 export function haptic(kind: 'light' | 'medium' | 'success' | 'error' = 'light') {

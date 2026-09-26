@@ -1,3 +1,37 @@
+# Luminara Suite crawl policy
+# Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
+# Full branded share reports (/share/<token>), attestation verify, API, and OAuth stay disallowed.
+# Named AI crawlers repeat the same rules as User-agent: * so the allow is explicit.
+# Allow: /share/teaser/ is more specific than Disallow: /share/, so teaser cards stay readable.
+# User-triggered fetchers may ignore robots.txt. This file does not grant access to /api/ or account data.
+
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+Allow: /
+Allow: /how-it-works
+Allow: /ai
+Allow: /why
+Allow: /pricing
+Allow: /privacy
+Allow: /terms
+Allow: /desktop
+Allow: /docs/
+Allow: /llms.txt
+Allow: /sitemap.xml
+Allow: /share/teaser/
+Disallow: /api/
+Disallow: /share/
+Disallow: /verify/
+Disallow: /reports/
+Disallow: /oauth/
+
 User-agent: *
 Allow: /
 Allow: /how-it-works
@@ -10,7 +44,7 @@ Allow: /desktop
 Allow: /docs/
 Allow: /llms.txt
 Allow: /sitemap.xml
-
+Allow: /share/teaser/
 Disallow: /api/
 Disallow: /share/
 Disallow: /verify/

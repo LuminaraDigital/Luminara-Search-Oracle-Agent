@@ -3,6 +3,8 @@
  */
 import { apiBase, getCurrentQuotaSync, hasActivePaidPlanSync, workerFetchWithAuthRetry } from '../apiClient';
 import { entitlementsFor } from '../plans/planEntitlements';
+import { getFirebaseIdTokenSync } from '../auth/firebaseAuthService';
+import { getInitDataRaw } from '../telegram/tma';
 
 export interface CreateShareReportInput {
   markdownText: string;
@@ -124,6 +126,68 @@ export async function revokeShareReport(id: string): Promise<{ ok: boolean; erro
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
     if (!res.ok) return { ok: false, error: data.error || `HTTP ${res.status}` };
     return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Network error' };
+  }
+}
+
+export interface TeaserPublic {
+  version: 1;
+  kind: 'teaser';
+  domain: string;
+  verdict: string;
+  topFix: string;
+  evidenceNote: string;
+  badges: Array<{ label: string; status: 'measured' | 'estimated' | 'not_measured'; value?: string }>;
+  crawlerChecks: Array<{ id: string; label: string; status: 'pass' | 'fail' | 'not_measured'; detail: string }>;
+  failed: string[];
+  createdAt: number;
+  ctaUrl: string;
+}
+
+/** True when Telegram initData or a Firebase token can mint a redacted teaser. Not a plan check. */
+export function canMintTeaserShare(): boolean {
+  return Boolean(getInitDataRaw() || getFirebaseIdTokenSync());
+}
+
+export async function createShareTeaser(input: Omit<TeaserPublic, 'version' | 'kind' | 'createdAt' | 'ctaUrl'>): Promise<{
+  ok: boolean;
+  url?: string;
+  token?: string;
+  error?: string;
+  code?: string;
+}> {
+  const base = apiBase();
+  if (!base) return { ok: false, error: 'API unavailable', code: 'NO_API' };
+  try {
+    const res = await workerFetchWithAuthRetry(`${base}/api/share/teasers`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; token?: string; error?: string; code?: string };
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data.error || `HTTP ${res.status}`, code: data.code };
+    }
+    return { ok: true, url: data.url, token: data.token };
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Network error' };
+  }
+}
+
+export async function fetchShareTeaser(token: string): Promise<{ ok: boolean; teaser?: TeaserPublic; error?: string; code?: string }> {
+  const base = apiBase();
+  if (!base) return { ok: false, error: 'API unavailable', code: 'NO_API' };
+  try {
+    const res = await fetch(`${base}/api/share/teasers/${encodeURIComponent(token)}`, {
+      method: 'GET',
+      credentials: 'omit',
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; teaser?: TeaserPublic; error?: string; code?: string };
+    if (!res.ok || !data.ok || !data.teaser) {
+      return { ok: false, error: data.error || `HTTP ${res.status}`, code: data.code };
+    }
+    return { ok: true, teaser: data.teaser };
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : 'Network error' };
   }

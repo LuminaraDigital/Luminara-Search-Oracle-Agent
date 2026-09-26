@@ -12,19 +12,45 @@ import { useConfirm } from '../ui/ConfirmModal';
 import { AgentMissionControl } from './AgentMissionControl';
 import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
 import { crewOrchestrator } from '../../services/agentCore/crewOrchestrator';
-import { AgentActivityEvent, AuditAttestation } from '../../services/agentCore/types';
+import { AgentActivityEvent, AuditAttestation, AuditStateGraphContext } from '../../services/agentCore/types';
 import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
+import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
+import { buildGuestScoutSummary, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
+import { hostedScoutPreRunCopy, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
+import { canMintTeaserShare, createShareTeaser } from '../../services/share/shareReportClient';
+import { shareExternalLink } from '../../services/telegram/tma';
+import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
+
+function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
+  return buildGuestScoutSummary({
+    targetUrl: crew.targetUrl,
+    measurementStatus: crew.measurementStatus,
+    measurementReason: crew.measurementReason,
+    citationRatePercent: crew.citationRatePercent,
+    shareOfVoiceScore: crew.shareOfVoiceScore,
+    healthScore: crew.healthScore,
+    scrapedPageCount: crew.scrapedPages.length,
+    serpCount: crew.serpEvidence.length,
+    findings: crew.findings.map((finding) => ({ title: finding.title })),
+    errors: crew.errors,
+    plainEnglishBrief: crew.plainEnglishBrief,
+    llmCrawler: crew.llmCrawlerReadiness,
+    hostedRail,
+  });
+}
 
 interface InstantAuditViewProps {
   dna: BusinessDNA | null;
   onNavigateDNA?: () => void;
   initialUrl?: string;
   initialFocus?: ReportFocus;
-  /** Guest / unsigned scout: BYOK path; save and hosted spend stay soft-gated. */
+  /** Guest / unsigned scout: web guests stay on BYOK. Telegram initData may use capped hosted spend. */
   isGuest?: boolean;
+  hostedRail?: HostedScoutRail;
 }
 
 export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
@@ -33,6 +59,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   initialUrl,
   initialFocus,
   isGuest = false,
+  hostedRail = 'byok_or_signin',
 }) => {
   const [url, setUrl] = useState(() => initialUrl || draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL));
   const [focus, setFocus] = useState<ReportFocus>(() => initialFocus || 'AEO');
@@ -59,6 +86,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [briefing, setBriefing] = useState(false);
   const [crewEvents, setCrewEvents] = useState<AgentActivityEvent[]>([]);
   const [crewMeasurement, setCrewMeasurement] = useState<'measured' | 'not_measured' | null>(null);
+  const [scoutSummary, setScoutSummary] = useState<GuestScoutSummary | null>(null);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
   const [attestation, setAttestation] = useState<AuditAttestation | null>(null);
   const [showAttestationModal, setShowAttestationModal] = useState(false);
   const [persistHint, setPersistHint] = useState<string | null>(null);
@@ -73,21 +103,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     if (inlineValidationError) setInlineValidationError(null);
   };
 
-  const validateUrl = (raw: string): string | null => {
-    const trimmed = raw.trim();
-    if (!trimmed) {
-      return 'Please enter a website address or domain (e.g., yourbrand.com).';
-    }
-    const clean = trimmed.replace(/^https?:\/\//i, '').split('/')[0];
-    if (clean.includes(' ') || (!clean.includes('.') && clean !== 'localhost')) {
-      return 'Please enter a valid domain format (e.g., luminaradigital.io or yourbrand.com).';
-    }
-    return null;
-  };
-
   const handleExecuteAudit = async (targetUrl: string, targetFocus: ReportFocus) => {
     if (loading) return;
-    const validationErr = validateUrl(targetUrl);
+    const validationErr = validateAuditTargetUrl(targetUrl);
     if (validationErr) {
       setInlineValidationError(validationErr);
       productTelemetry.recordError('InstantAuditView', validationErr);
@@ -100,6 +118,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setLoading(true);
     setCrewEvents([]);
     setCrewMeasurement(null);
+    setScoutSummary(null);
+    setShareNote(null);
     setAttestation(null);
     setProgressStage('Starting audit…');
     productTelemetry.recordOnboardingStep('quick_scout');
@@ -118,9 +138,20 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         }
       );
 
+      const summary = summaryFromCrew(crewResult, hostedRail);
       setCrewMeasurement(crewResult.measurementStatus);
+      setScoutSummary(summary);
       if (crewResult.attestation) {
         setAttestation(crewResult.attestation);
+      }
+
+      // Empty guest evidence stays on the honest summary. The full report model
+      // can still invent citation language when providers returned nothing.
+      if (isGuest && summary.evidenceEmpty) {
+        setPersistHint(
+          'Scout finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.',
+        );
+        return;
       }
 
       // 2. Generate full enriched report
@@ -143,6 +174,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         if (saved) {
           productTelemetry.recordOnboardingStep('strategy_saved');
           setPersistHint(`Strategy saved to project ${saved.projectId.slice(0, 12)}…`);
+        } else if (isGuest) {
+          setPersistHint(
+            'Scout finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.',
+          );
         } else {
           setPersistHint(
             'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
@@ -150,7 +185,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         }
       } catch {
         setPersistHint(
-          'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
+          isGuest
+            ? 'Scout finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.'
+            : 'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
         );
       }
 
@@ -179,6 +216,55 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
   const { requestConfirm, confirmModal } = useConfirm();
 
+  const shareTeaser = async (mode: 'share' | 'copy') => {
+    if (!scoutSummary || sharing) return;
+    setSharing(true);
+    setShareNote(null);
+    try {
+      let url = `${TELEGRAM_MINI_APP_URL}?startapp=${encodeURIComponent(`audit_${scoutSummary.domain}`)}`;
+      if (canMintTeaserShare()) {
+        const minted = await createShareTeaser({
+          domain: scoutSummary.domain,
+          verdict: scoutSummary.verdict,
+          topFix: scoutSummary.topFix,
+          evidenceNote: scoutSummary.evidenceUsed,
+          badges: scoutSummary.badges.map((badge) => ({
+            label: badge.label,
+            status: 'not_measured' as const,
+          })),
+          crawlerChecks: scoutSummary.crawlerChecks.map((check) => ({
+            id: check.id,
+            label: check.label,
+            status: 'not_measured' as const,
+            detail: check.detail,
+          })),
+          failed: scoutSummary.failureCodes,
+        });
+        if (minted.ok && minted.url) url = minted.url;
+        else if (mode === 'share') {
+          setShareNote(minted.error || 'Public teaser needs a Telegram or signed-in session. Sharing the Mini App link instead.');
+        }
+      } else if (mode === 'share') {
+        setShareNote('Public teaser links need Telegram or a signed-in session. Sharing the Mini App link instead.');
+      }
+      const text = `${scoutSummary.verdict} Next: ${scoutSummary.topFix}`;
+      if (mode === 'copy') {
+        try {
+          await navigator.clipboard.writeText(`${text}\n${url}`);
+          setShareNote('Copied. The link is a redacted teaser or the Mini App, with no account secrets.');
+        } catch {
+          setShareNote(url);
+        }
+        return;
+      }
+      const shared = await shareExternalLink(url, text);
+      if (shared === 'copied') setShareNote('Copied. Open Telegram to paste it, or use Share teaser inside the Mini App.');
+      else if (shared === 'failed') setShareNote(url);
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const handleReset = () => {
     const reset = () => {
       setReport(null);
@@ -188,6 +274,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
       setCrewEvents([]);
       setCrewMeasurement(null);
+      setScoutSummary(null);
+      setShareNote(null);
       setAttestation(null);
     };
     // Only ask when there is a report to lose.
@@ -224,12 +312,14 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </p>
       </div>
 
-      {isGuest && (
-        <div className="mb-4 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-gray-300">
-          Guest scout: use your own AI keys in Settings for a live run. Hosted Worker spend, share links, and
-          saving a project strategy require sign-in.
-        </div>
-      )}
+      <div className="mb-4 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-gray-300 leading-relaxed">
+        {hostedScoutPreRunCopy(hostedRail)}
+        {isGuest && hostedRail === 'byok_or_signin' && (
+          <span className="block mt-1 text-gray-400">
+            Saving a project strategy and full branded share links still need sign-in. Growth and Agency include those share links.
+          </span>
+        )}
+      </div>
 
       {dna ? (
         <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-success-500/30 flex items-center justify-between text-xs">
@@ -344,6 +434,16 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {scoutSummary && !loading && (
+        <GuestScoutSummaryPanel
+          summary={scoutSummary}
+          shareNote={shareNote}
+          sharing={sharing}
+          onShare={() => { void shareTeaser('share'); }}
+          onCopy={() => { void shareTeaser('copy'); }}
+        />
       )}
 
       {/* Agent Mission Control: Real-time Multi-Agent Activity Stream */}

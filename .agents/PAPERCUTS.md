@@ -29,3 +29,8 @@ Do not log secrets, tokens, or PII.
 - 2026-09-25: Seed `oracle-chat` skill via `scripts/seed-agent-skills.mjs` (or admin `/admin/skills`) so D1 overrides the bundled Oracle system prompt; until then loader uses version-0 fallback (worker)
 - 2026-09-25: D1 migration 0010 applied on local + staging + prod (`run_provenance`, `agent_skills`) (deploy)
 - 2026-09-25: Instant Audit provider-failure path now returns not_measured instead of seeded scores. Follow-on: LLM report prose, ROI calculators, and Labs can still invent numbers after metrics are null (honesty)
+- 2026-09-26: Anonymous web hosted scout stays closed. Telegram initData and Firebase use FREE_DAILY_LIMIT. A per-scout cap tighter than the request meter is not separate yet (hosted)
+- 2026-09-26: Teaser OG image, referral graph, streaks, Idea Scout, and card checkout are deferred (virality)
+- 2026-09-26: Crawler-file fetch does not follow redirects. DNS rebinding after the DoH check is a residual (security)
+- 2026-09-26: Teaser create quota in KV is read-then-write, not a single atomic increment, so concurrent creates can exceed 5/account/day (share)
+- 2026-09-26: Teaser credential scan is pattern-based (bearer, sk-, gsk_, AIza, and similar). A secret shape outside those patterns can still be stored (share)

@@ -402,11 +402,44 @@ export function hasActivePaidPlanSync(): boolean {
   return false;
 }
 
+/**
+ * Telegram initData or a Firebase ID token. Anonymous browsers are not an identity.
+ * HttpOnly cookies are not readable here; the Worker still rejects hosted calls without one of these.
+ */
+export function clientHasHostedIdentity(): boolean {
+  try {
+    if (getInitDataRaw()) return true;
+  } catch {
+    /* Telegram bridge absent */
+  }
+  try {
+    if (getFirebaseIdTokenSync()) return true;
+  } catch {
+    /* Firebase absent */
+  }
+  return false;
+}
+
+/** Pure gate: free hosted keys need identity; paid hosted keys need an active plan. */
+export function hostedProviderKeyDecision(input: {
+  proxyReady: boolean;
+  paidProvider: boolean;
+  paidPlan: boolean;
+  hasIdentity: boolean;
+}): boolean {
+  if (!input.proxyReady) return false;
+  if (input.paidProvider) return input.paidPlan;
+  return input.hasIdentity;
+}
+
 /** True when the Worker may inject a hosted key for this provider for the current user. */
 export function canUseHostedProviderKey(providerId: string): boolean {
-  if (!isProxyMode() || !isProviderConfiguredOnServer(providerId)) return false;
-  if (isPaidHostedProvider(providerId)) return hasActivePaidPlanSync();
-  return true;
+  return hostedProviderKeyDecision({
+    proxyReady: isProxyMode() && isProviderConfiguredOnServer(providerId),
+    paidProvider: isPaidHostedProvider(providerId),
+    paidPlan: hasActivePaidPlanSync(),
+    hasIdentity: clientHasHostedIdentity(),
+  });
 }
 
 export function updateQuotaFromHeaders(headers: Headers): void {

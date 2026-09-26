@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { AppView } from '../types';
 import {
@@ -59,9 +60,30 @@ describe('marketing crawl documents', () => {
     expect(SITEMAP_XML).toContain('http://www.sitemaps.org/schemas/sitemap/0.9');
   });
 
-  it('llms.txt lists product and MCP surfaces', () => {
+  it('llms.txt lists product, honesty, pricing, MCP, and the Mini App', () => {
     expect(LLMS_TXT).toContain('/docs/mcp.html');
-    expect(LLMS_TXT).toContain('/pricing');
+    expect(LLMS_TXT).toContain('https://luminarasuite.com/api/mcp');
+    expect(LLMS_TXT).toContain('https://t.me/LuminaraSuiteBot/app');
+    expect(LLMS_TXT).toContain('US$49');
+    expect(LLMS_TXT).toContain('US$149');
+    expect(LLMS_TXT).toContain('US$349');
+    expect(LLMS_TXT).toContain('not_measured');
+    expect(LLMS_TXT).not.toContain('\u2014');
+  });
+
+  it('robots.txt names AI crawlers and keeps full share reports disallowed', () => {
+    expect(ROBOTS_TXT).toContain('User-agent: GPTBot');
+    expect(ROBOTS_TXT).toContain('User-agent: ClaudeBot');
+    expect(ROBOTS_TXT).toContain('User-agent: PerplexityBot');
+    expect(ROBOTS_TXT).toContain('User-agent: Google-Extended');
+    expect(ROBOTS_TXT).toContain('Allow: /share/teaser/');
+    expect(ROBOTS_TXT).toContain('Disallow: /share/');
+    expect(ROBOTS_TXT).toContain('Disallow: /api/');
+  });
+
+  it('public crawl files match the Worker constants', () => {
+    expect(readFileSync('public/robots.txt', 'utf8')).toBe(ROBOTS_TXT);
+    expect(readFileSync('public/llms.txt', 'utf8')).toBe(LLMS_TXT);
   });
 });
 

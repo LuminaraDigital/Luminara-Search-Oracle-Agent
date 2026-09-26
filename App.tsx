@@ -5,7 +5,9 @@ import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
-import { isInTelegram, bindTelegramBackButton, haptic, getStartParam, subscribeTelegramReady, hasTelegramLaunchHints } from './services/telegram/tma';
+import { isInTelegram, bindTelegramBackButton, haptic, getStartParam, getInitDataRaw, subscribeTelegramReady, hasTelegramLaunchHints } from './services/telegram/tma';
+import { resolveTelegramStart } from './services/telegram/startParam';
+import { resolveHostedScoutRail } from './services/audit/hostedScoutRail';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
 import Waveform from './components/Waveform';
@@ -35,6 +37,7 @@ import { apiBase, streamOracleChat } from './services/apiClient';
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
 const LegalPage = lazyWithReload(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
 const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
+const TeaserShareView = lazyWithReload(() => import('./components/audit/TeaserShareView').then(m => ({ default: m.TeaserShareView })));
 const VerifyAttestationView = lazyWithReload(() => import('./components/audit/VerifyAttestationView').then(m => ({ default: m.VerifyAttestationView })));
 const AgentReportView = lazyWithReload(() => import('./components/audit/AgentReportView').then(m => ({ default: m.AgentReportView })));
 const InfrastructurePage = lazyWithReload(() => import('./components/InfrastructurePage'));
@@ -102,19 +105,18 @@ const viewFromLocation = (): AppView | null => {
   return resolveAppView(window.location.pathname, window.location.hash);
 };
 
-const resolveTelegramStartView = (): AppView => {
-  const sp = (getStartParam() || '').trim().toUpperCase();
-  if (sp === 'AUDIT' || sp === 'SCAN') return AppView.INSTANT_AUDIT;
-  if (sp === 'ORACLE' || sp === 'CHAT' || sp === 'ASK') return AppView.ORACLE_AGENT;
-  if (sp === 'DASHBOARD' || sp === 'HOME') return AppView.DASHBOARD;
-  if (sp === 'HARNESS' || sp === 'DEV') return AppView.HARNESS;
-  if (sp === 'DNA' || sp === 'PROFILE') return AppView.BUSINESS_DNA;
-  if (sp === 'MEMORY' || sp === 'VAULT' || sp === 'BRAND_MEMORY') return AppView.BRAND_MEMORY;
-  if (sp === 'NOTEBOOK' || sp === 'NOTEBOOKS' || sp === 'STUDIO' || sp === 'LM') return AppView.NOTEBOOK;
-  if (sp === 'PRIVACY' || sp === 'PRIVACY_POLICY' || sp === 'LEGAL') return AppView.PRIVACY;
-  if (sp === 'TERMS' || sp === 'TOS') return AppView.TERMS;
-  return (Object.values(AppView) as string[]).includes(sp) ? (sp as AppView) : AppView.INSTANT_AUDIT;
-};
+const resolveTelegramStartView = (): AppView => resolveTelegramStart(getStartParam()).view;
+
+function isTeaserSharePath(): boolean {
+  if (typeof window === 'undefined') return false;
+  return /\/share\/teaser\/[a-f0-9]{64}/i.test(window.location.pathname);
+}
+
+function readTelegramAuditUrl(): string | undefined {
+  const auditUrl = resolveTelegramStart(getStartParam()).auditUrl;
+  if (auditUrl) draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, auditUrl);
+  return auditUrl;
+}
 
 const App: React.FC = () => {
   const [inTelegram, setInTelegram] = useState(() => isInTelegram());
@@ -122,21 +124,28 @@ const App: React.FC = () => {
   const skipMarketing = inTelegram || inDesktop;
   const [view, setViewState] = useState<AppView>(() => {
     const fromLocation = viewFromLocation();
+    const start = resolveTelegramStart(getStartParam());
+    // Bot links are /?startapp=audit_<domain>. That path is the marketing root unless we honour the payload.
+    if (start.auditUrl && (!fromLocation || fromLocation === AppView.LANDING)) return AppView.INSTANT_AUDIT;
+    if (fromLocation && fromLocation !== AppView.LANDING) return fromLocation;
+    if (isInTelegram() || hasTelegramLaunchHints()) return start.view;
     if (fromLocation) return fromLocation;
-    // Prefer product shell when Telegram already detected OR the bot deep-linked us.
-    if (isInTelegram() || hasTelegramLaunchHints()) return resolveTelegramStartView();
-    // Windows Electron shell: open the product, never the marketing landing.
     if (isDesktopShell()) return AppView.INSTANT_AUDIT;
     return AppView.LANDING;
   });
   const [urlSwapParams] = useState<UrlSwapRouteParams | null>(() =>
     typeof window !== 'undefined' ? parseUrlSwapRoute(window.location.pathname) : null
   );
+  const [telegramAuditUrl, setTelegramAuditUrl] = useState<string | undefined>(() => readTelegramAuditUrl());
+  const [hasTelegramInitData, setHasTelegramInitData] = useState(() => Boolean(getInitDataRaw()));
 
   // Keep TMA detection in sync after background initTelegram() finishes.
   useEffect(() => {
     return subscribeTelegramReady((inside) => {
       setInTelegram(inside);
+      setHasTelegramInitData(Boolean(getInitDataRaw()));
+      const auditUrl = readTelegramAuditUrl();
+      if (auditUrl) setTelegramAuditUrl(auditUrl);
       if (!inside) return;
       setViewState((current) => (current === AppView.LANDING ? resolveTelegramStartView() : current));
     });
@@ -763,6 +772,13 @@ const App: React.FC = () => {
   }
 
   if (view === AppView.SHARED_REPORT) {
+    if (isTeaserSharePath()) {
+      return (
+        <Suspense fallback={<ViewLoader label="Loading teaser" />}>
+          <TeaserShareView />
+        </Suspense>
+      );
+    }
     return (
       <Suspense fallback={<ViewLoader label="Loading shared report" />}>
         <SharedReportView onBack={() => setView(AppView.LANDING)} />
@@ -1318,9 +1334,14 @@ const App: React.FC = () => {
             onNavigateDNA={
               appAuth.authenticated ? () => setView(AppView.BUSINESS_DNA) : undefined
             }
-            initialUrl={urlSwapParams?.targetUrl}
+            initialUrl={urlSwapParams?.targetUrl || telegramAuditUrl}
             initialFocus={urlSwapParams?.focus}
             isGuest={!appAuth.authenticated}
+            hostedRail={resolveHostedScoutRail({
+              inTelegram,
+              hasInitData: hasTelegramInitData,
+              signedIn: appAuth.authenticated,
+            })}
           />
         )}
 

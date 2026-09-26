@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppView } from '../types';
+import { resolveTelegramStart } from '../services/telegram/startParam';
 
 describe('Telegram Mini App Native Experience', () => {
   const MARKETING_VIEWS = new Set<AppView>([
@@ -22,17 +23,7 @@ describe('Telegram Mini App Native Experience', () => {
   });
 
   it('maps startParam deep-links to native functional and legal views', () => {
-    const resolveStartParam = (param: string): AppView => {
-      const sp = param.trim().toUpperCase();
-      if (sp === 'AUDIT' || sp === 'SCAN') return AppView.INSTANT_AUDIT;
-      if (sp === 'ORACLE' || sp === 'CHAT' || sp === 'ASK') return AppView.ORACLE_AGENT;
-      if (sp === 'DASHBOARD' || sp === 'HOME') return AppView.DASHBOARD;
-      if (sp === 'HARNESS' || sp === 'DEV') return AppView.HARNESS;
-      if (sp === 'DNA' || sp === 'PROFILE') return AppView.BUSINESS_DNA;
-      if (sp === 'PRIVACY' || sp === 'PRIVACY_POLICY' || sp === 'LEGAL') return AppView.PRIVACY;
-      if (sp === 'TERMS' || sp === 'TOS') return AppView.TERMS;
-      return (Object.values(AppView) as string[]).includes(sp) ? (sp as AppView) : AppView.INSTANT_AUDIT;
-    };
+    const resolveStartParam = (param: string): AppView => resolveTelegramStart(param).view;
 
     expect(resolveStartParam('audit')).toBe(AppView.INSTANT_AUDIT);
     expect(resolveStartParam('SCAN')).toBe(AppView.INSTANT_AUDIT);
@@ -46,6 +37,59 @@ describe('Telegram Mini App Native Experience', () => {
     expect(resolveStartParam('terms')).toBe(AppView.TERMS);
     expect(resolveStartParam('tos')).toBe(AppView.TERMS);
     expect(resolveStartParam('unknown_fallback')).toBe(AppView.INSTANT_AUDIT);
+  });
+
+  it('prefills Instant Audit from audit_<domain> without uppercasing the host', () => {
+    expect(resolveTelegramStart('audit_stripe.com')).toEqual({
+      view: AppView.INSTANT_AUDIT,
+      auditUrl: 'stripe.com',
+    });
+    expect(resolveTelegramStart('audit_https://Stripe.COM/pricing?x=1')).toEqual({
+      view: AppView.INSTANT_AUDIT,
+      auditUrl: 'stripe.com',
+    });
+    expect(resolveTelegramStart('scan_shop.example.org')).toEqual({
+      view: AppView.INSTANT_AUDIT,
+      auditUrl: 'shop.example.org',
+    });
+    expect(resolveTelegramStart('AUDIT').auditUrl).toBeUndefined();
+    expect(resolveTelegramStart('audit_').auditUrl).toBeUndefined();
+    expect(resolveTelegramStart('audit_not a domain').auditUrl).toBeUndefined();
+  });
+
+  it('drops hostile startapp tails: private hosts and junk charset', () => {
+    for (const raw of [
+      'audit_localhost',
+      'audit_127.0.0.1',
+      'audit_10.0.0.8',
+      'audit_192.168.1.1',
+      'audit_169.254.169.254',
+      'audit_%22%3Eimg%3E.com',
+      'audit_<script>.com',
+      'audit_..%2F..',
+      'scan_\u0000stripe.com',
+      'audit_ex%C3%A4mple.com',
+    ]) {
+      expect(resolveTelegramStart(raw).auditUrl, raw).toBeUndefined();
+    }
+  });
+
+  it('does not prefill localhost, IP literals, or special-use suffixes', () => {
+    for (const host of [
+      'localhost',
+      '127.0.0.1',
+      '10.0.0.8',
+      '192.168.1.1',
+      '169.254.169.254',
+      '8.8.8.8',
+      'printer.local',
+      'db.internal',
+      'foo.example',
+      '[::1]',
+    ]) {
+      expect(resolveTelegramStart(`audit_${host}`).auditUrl, host).toBeUndefined();
+      expect(resolveTelegramStart(`scan_${host}`).auditUrl, host).toBeUndefined();
+    }
   });
 
   it('recognizes subscription and paywall deep-links to trigger paywall modal', () => {

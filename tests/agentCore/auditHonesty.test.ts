@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AgentMissionControl, missionControlCardBadge, missionControlHeadline } from '../../components/audit/AgentMissionControl';
+import { AgentMissionControl, missionControlCardBadge, missionControlHeadline, missionControlProgressLabel } from '../../components/audit/AgentMissionControl';
 import { pricingTiers } from '../../components/PricingPage';
 import { executiveTranslatorAgent } from '../../services/agentCore/agents/executiveTranslatorAgent';
 import { playbookAuditorAgent } from '../../services/agentCore/agents/playbookAuditorAgent';
@@ -224,7 +224,9 @@ describe('Mission Control copy', () => {
       }),
     );
     expect(html).toContain('AGENT PROGRESS');
-    expect(html).toContain('100% COMPLETE');
+    expect(html).toContain('NOT MEASURED');
+    expect(html).not.toContain('100% COMPLETE');
+    expect(missionControlProgressLabel(true, 'measured', 100)).toBe('100% COMPLETE');
     expect(html).toContain('Audit finished. Some signals were not measured.');
     expect(html).toContain('agent progress, not evidence quality');
     expect(html).not.toContain('ground-truth');
@@ -261,7 +263,8 @@ describe('Mission Control copy', () => {
     expect(html).toContain('Not measured');
     expect(html).toContain('On-page evidence not measured');
     expect(html).toContain('Health score not measured');
-    expect(html).toContain('100% COMPLETE');
+    expect(html).toContain('NOT MEASURED');
+    expect(html).not.toContain('100% COMPLETE');
   });
 
   it('does not claim ground-truth in the critic start line when evidence is missing', () => {
