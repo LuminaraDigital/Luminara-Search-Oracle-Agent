@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { validateAuditTargetUrl } from '../services/audit/auditTargetUrl';
 import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
 import { hostedProviderKeyDecision } from '../services/apiClient';
 import { hostedScoutPreRunCopy, resolveHostedScoutRail } from '../services/audit/hostedScoutRail';
@@ -16,10 +17,13 @@ describe('guest scout summary honesty', () => {
       scrapedPageCount: 0,
       serpCount: 0,
       findings: [],
-      errors: ['Tavily 401'],
+      errors: ['Tavily 401 sk-abcdefghijklmnopqrstuvwxyz'],
       hostedRail: 'tma_hosted',
     });
     const blob = JSON.stringify(summary);
+    expect(summary.failureCodes).toEqual(['page_fetch_empty', 'search_empty', 'provider_failed']);
+    expect(blob).not.toContain('sk-abcdefghijklmnopqrstuvwxyz');
+    expect(blob).not.toContain('Tavily');
     expect(summary.evidenceEmpty).toBe(true);
     expect(summary.verdict.toLowerCase()).toContain('not measured');
     expect(summary.topFix.toLowerCase()).toContain('do not ship');
@@ -49,6 +53,17 @@ describe('guest scout summary honesty', () => {
       value: '12%',
     });
     expect(summary.topFix).toBe('Add Organization schema');
+    expect(summary.failureCodes).toEqual([]);
+  });
+});
+
+describe('Instant Audit public target', () => {
+  it('rejects localhost, IP literals, and special-use suffixes before a hosted run', () => {
+    expect(validateAuditTargetUrl('')).toMatch(/website address/i);
+    expect(validateAuditTargetUrl('https://stripe.com/pricing')).toBeNull();
+    for (const host of ['localhost', 'http://127.0.0.1/', '10.0.0.1', '169.254.169.254', '192.168.1.9', '8.8.8.8', 'printer.local', 'db.internal', '[::1]']) {
+      expect(validateAuditTargetUrl(host), host).toMatch(/public website/i);
+    }
   });
 });
 

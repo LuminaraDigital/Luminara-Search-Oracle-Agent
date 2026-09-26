@@ -15,6 +15,8 @@ Instant Audit honesty is already the rule: empty evidence stays `not_measured`. 
 3. After a scout, the result area leads with a plain summary: verdict, evidence, one next move, measured / not_measured badges, and what failed. `100% COMPLETE` is reserved for a fully measured run.
 4. Redacted teasers are a separate artifact from `shareLinks`. Create requires identity, five per account per day, a random token, and a SHA-256 hash in D1. The public page is `/share/teaser/<token>`. The stored CTA is always the Mini App URL. Full branded `/share/<token>` reports stay Growth+.
 5. LLM crawler readiness is pass, fail, or not_measured for `llms.txt` and common AI bot directives. It does not change the health score.
+6. Deep links, teaser domains, and Instant Audit targets use the same public-hostname rules as the Worker fetch guard. IP literals, localhost, and special-use suffixes (`.local`, `.internal`, `.example`, and the rest of that list) are rejected before a hosted run.
+7. Teaser create rejects credential-like text in every stored string. Instant Audit mints allow-listed failure codes, not raw provider errors. The CTA stays forced to the Mini App, and secret-looking keys are still dropped.
 
 ## Alternatives considered
 

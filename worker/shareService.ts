@@ -3,8 +3,9 @@
  * Tokens are random; only SHA-256 hashes are stored in D1.
  */
 import type { Env } from './env';
-import { MAX_SMALL_BODY_BYTES, readBody } from './security';
+import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
 import { identify, json, billingId, sha256Hex, secretEquals } from './workerUtils';
+import { isTeaserFailureCode, teaserFailureLine } from '../services/audit/teaserFailureCodes';
 import { getActiveSubscription } from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
 
@@ -186,20 +187,38 @@ function clipText(value: unknown, max: number): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '';
 }
 
+/**
+ * High-confidence credential shapes. Applied to every string stored for public GET.
+ * Key-name stripping in sanitizeSharePayload stays in addition to this value check.
+ */
+const TEASER_CREDENTIAL_PATTERNS: RegExp[] = [
+  /bearer\s+[a-z0-9._~+/-]{12,}/i,
+  /sk-[a-z0-9]{12,}/i,
+  /gsk_[a-z0-9]{12,}/i,
+  /(?:sk|rk)_(?:live|test)_[a-z0-9]{8,}/i,
+  /AIza[0-9A-Za-z_-]{20,}/,
+  /xox[baprs]-[0-9A-Za-z-]{10,}/i,
+  /gh[pousr]_[A-Za-z0-9]{16,}/,
+  /github_pat_[A-Za-z0-9_]{16,}/i,
+  /AKIA[0-9A-Z]{16}/,
+  /-----BEGIN [A-Z0-9 ]{0,48}PRIVATE KEY-----/,
+  /fc-[a-f0-9]{20,}/i,
+];
+
+export function teaserTextLooksLikeCredential(text: string): boolean {
+  return TEASER_CREDENTIAL_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+const TEASER_CREDENTIAL_ERROR = 'Teaser text looks like a credential and was rejected';
+
 export function parseTeaserCreateBody(raw: unknown): { ok: true; payload: TeaserPublic } | { ok: false; error: string } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'Teaser body required' };
   const body = sanitizeSharePayload(raw) as Record<string, unknown>;
-  const domain = clipText(body.domain, 253).toLowerCase().replace(/^https?:\/\//, '').split(/[/?#]/)[0] || '';
-  if (!domain || domain.length > 253 || /\s/.test(domain) || domain.includes('@') || domain.includes('..')) {
-    return { ok: false, error: 'A public domain is required' };
-  }
+  const domain = safePublicHostname(clipText(body.domain, 300)) || '';
+  if (!domain) return { ok: false, error: 'A public domain is required' };
   const verdict = clipText(body.verdict, 600);
   const topFix = clipText(body.topFix, 400);
   if (!verdict || !topFix) return { ok: false, error: 'Verdict and next move are required' };
-  const blob = `${verdict} ${topFix}`;
-  if (/bearer\s+[a-z0-9._-]{12,}/i.test(blob) || /sk-[a-z0-9]{12,}/i.test(blob)) {
-    return { ok: false, error: 'Teaser text looks like a credential and was rejected' };
-  }
   const evidenceNote = clipText(body.evidenceNote, 400) || 'Evidence note not included.';
   const badgesIn = Array.isArray(body.badges) ? body.badges.slice(0, 8) : [];
   const badges: TeaserBadge[] = [];
@@ -228,10 +247,26 @@ export function parseTeaserCreateBody(raw: unknown): { ok: true; payload: Teaser
     if (!id || !label || !detail || !CHECK_STATUS.has(status)) continue;
     crawlerChecks.push({ id, label, status: status as TeaserCheck['status'], detail });
   }
-  const failed = (Array.isArray(body.failed) ? body.failed : [])
-    .slice(0, 6)
-    .map((item) => clipText(item, 200))
-    .filter(Boolean);
+  const failed: string[] = [];
+  for (const item of (Array.isArray(body.failed) ? body.failed : []).slice(0, 6)) {
+    const text = clipText(item, 200);
+    if (!text) continue;
+    if (teaserTextLooksLikeCredential(text)) return { ok: false, error: TEASER_CREDENTIAL_ERROR };
+    const line = isTeaserFailureCode(text) ? teaserFailureLine(text) : text;
+    if (!failed.includes(line)) failed.push(line);
+  }
+  const stored = [
+    domain,
+    verdict,
+    topFix,
+    evidenceNote,
+    ...badges.flatMap((badge) => [badge.label, badge.value || '']),
+    ...crawlerChecks.flatMap((check) => [check.id, check.label, check.detail]),
+    ...failed,
+  ];
+  if (stored.some((text) => teaserTextLooksLikeCredential(text))) {
+    return { ok: false, error: TEASER_CREDENTIAL_ERROR };
+  }
   return {
     ok: true,
     payload: {

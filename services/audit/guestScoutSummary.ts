@@ -4,6 +4,7 @@
  */
 import type { LlmCrawlerCheck, LlmCrawlerReport } from './llmCrawlerReadiness';
 import type { HostedScoutRail } from './hostedScoutRail';
+import { teaserFailureCodes, teaserFailureLine, type TeaserFailureCode } from './teaserFailureCodes';
 
 export type EvidenceBadgeStatus = 'measured' | 'estimated' | 'not_measured';
 
@@ -22,7 +23,10 @@ export interface GuestScoutSummary {
   nextStep: string;
   badges: ScoutBadge[];
   crawlerChecks: LlmCrawlerCheck[];
+  /** Public sentences. Raw provider errors are not copied here. */
   failed: string[];
+  /** Allow-listed codes sent when minting a public teaser. */
+  failureCodes: TeaserFailureCode[];
   evidenceEmpty: boolean;
 }
 
@@ -103,29 +107,19 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
       ? 'Do not ship changes from this run. Fetch the homepage and a search sample, then scout again.'
       : 'Ship the first measured gap before adding more pages.');
 
-  const failed: string[] = [];
-  for (const err of input.errors || []) {
-    const clean = err.replace(/\s+/g, ' ').trim();
-    if (clean && !failed.includes(clean)) failed.push(clean.slice(0, 240));
-  }
-  if (input.scrapedPageCount === 0) {
-    const line = 'Page fetch returned no usable text or schema.';
-    if (!failed.some((f) => /page fetch/i.test(f))) failed.push(line);
-  }
-  if (input.serpCount === 0) {
-    const line = 'Search sample was empty or the search provider did not respond.';
-    if (!failed.some((f) => /search/i.test(f))) failed.push(line);
-  }
-
   const badges: ScoutBadge[] = [
     metricBadge('Citation rate', input.citationRatePercent, '%'),
     metricBadge('Share of voice', input.shareOfVoiceScore, '/100'),
     metricBadge('Page health', input.healthScore, '/100'),
   ];
   const crawlerChecks = input.llmCrawler?.checks || [];
-  for (const check of crawlerChecks) {
-    if (check.status === 'fail' && check.detail) failed.push(check.detail);
-  }
+  const failureCodes = teaserFailureCodes({
+    scrapedPageCount: input.scrapedPageCount,
+    serpCount: input.serpCount,
+    hadProviderError: (input.errors || []).some((err) => err.trim().length > 0),
+    crawlerChecks,
+  });
+  const failed = failureCodes.map((code) => teaserFailureLine(code));
 
   return {
     domain,
@@ -135,7 +129,8 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     nextStep: nextStepFor(input.hostedRail, evidenceEmpty),
     badges,
     crawlerChecks,
-    failed: failed.slice(0, 8),
+    failed,
+    failureCodes,
     evidenceEmpty,
   };
 }

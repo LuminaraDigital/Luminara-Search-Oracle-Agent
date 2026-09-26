@@ -75,6 +75,66 @@ describe('teaser share entitlement', () => {
     expect(JSON.stringify(parsed.payload)).not.toContain('evil.example');
   });
 
+  it('rejects credential-like text in every persisted string', () => {
+    const secret = 'sk-abcdefghijklmnopqrstuvwxyz';
+    const bearer = 'Bearer abcdefghijklmnop';
+    const base = {
+      domain: 'stripe.com',
+      verdict: 'AI mention readiness was not measured.',
+      topFix: 'Fetch the homepage again.',
+    };
+    const bodies = [
+      { ...base, verdict: `Leak ${secret}` },
+      { ...base, topFix: `Leak ${bearer}` },
+      { ...base, evidenceNote: `Provider said ${secret}` },
+      { ...base, failed: [secret] },
+      { ...base, badges: [{ label: 'Citation rate', status: 'measured', value: secret }] },
+      {
+        ...base,
+        crawlerChecks: [{ id: 'llms_txt', label: 'llms.txt', status: 'fail', detail: `blocked ${bearer}` }],
+      },
+    ];
+    for (const body of bodies) {
+      const parsed = parseTeaserCreateBody(body);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) expect(parsed.error.toLowerCase()).toContain('credential');
+    }
+  });
+
+  it('maps allow-listed failure codes and keeps a clean free-text line', () => {
+    const parsed = parseTeaserCreateBody({
+      domain: 'stripe.com',
+      verdict: 'AI mention readiness was not measured.',
+      topFix: 'Fetch the homepage again.',
+      evidenceNote: 'No search rows.',
+      failed: ['page_fetch_empty', 'provider_failed', 'Search sample was empty.'],
+      badges: [{ label: 'Citation rate', status: 'measured', value: '12%' }],
+      crawlerChecks: [{ id: 'llms_txt', label: 'llms.txt', status: 'fail', detail: 'llms.txt was not found at the site root.' }],
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.payload.failed).toEqual([
+      'Page fetch returned no usable text or schema.',
+      'A provider call failed. The public teaser omits the raw error.',
+      'Search sample was empty.',
+    ]);
+    expect(parsed.payload.badges[0]?.value).toBe('12%');
+    expect(parsed.payload.crawlerChecks[0]?.detail).toContain('not found');
+    expect(parsed.payload.ctaUrl).toBe('https://t.me/LuminaraSuiteBot/app');
+    expect(JSON.stringify(parsed.payload)).not.toContain('page_fetch_empty');
+  });
+
+  it('rejects private and special-use teaser domains', () => {
+    for (const domain of ['localhost', '127.0.0.1', '10.1.2.3', '169.254.169.254', '192.168.0.5', '8.8.8.8', 'printer.local', 'db.internal', 'foo.example']) {
+      const parsed = parseTeaserCreateBody({
+        domain,
+        verdict: 'Not measured.',
+        topFix: 'Fetch the homepage.',
+      });
+      expect(parsed.ok, domain).toBe(false);
+    }
+  });
+
   it('lets a free Telegram user mint a teaser and still blocks full share links', async () => {
     const env = makeEnv();
     const initData = freeInit();

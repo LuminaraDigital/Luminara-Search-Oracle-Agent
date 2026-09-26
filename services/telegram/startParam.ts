@@ -1,8 +1,10 @@
 /**
  * Telegram startapp payloads.
- * View tokens stay case-insensitive. Domain payloads keep the host as typed,
- * then normalise to a hostname so Instant Audit can prefill the URL field.
+ * View tokens stay case-insensitive. Domain payloads normalise to a public
+ * hostname so Instant Audit can prefill the URL field. IP literals, localhost,
+ * and special-use suffixes are rejected.
  */
+import { safePublicHostname } from '../security/publicHostname';
 import { AppView } from '../../types';
 
 export interface TelegramStartIntent {
@@ -48,12 +50,7 @@ export function parseAuditDomainPayload(raw: string | null | undefined): string 
   } catch {
     /* keep the raw tail */
   }
-  domain = domain.replace(/^https?:\/\//i, '').split(/[/?#]/)[0]?.trim() || '';
-  domain = domain.replace(/:\d+$/, '').replace(/\.$/, '').toLowerCase();
-  if (!domain || domain.length > 253 || /\s/.test(domain)) return null;
-  if (domain.includes('@') || domain.includes('..')) return null;
-  if (!domain.includes('.') && domain !== 'localhost') return null;
-  return domain;
+  return safePublicHostname(domain);
 }
 
 export function resolveTelegramStart(raw: string | null | undefined): TelegramStartIntent {

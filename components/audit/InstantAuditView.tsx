@@ -19,6 +19,7 @@ import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
 import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
 import { buildGuestScoutSummary, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
 import { hostedScoutPreRunCopy, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import { canMintTeaserShare, createShareTeaser } from '../../services/share/shareReportClient';
 import { shareExternalLink } from '../../services/telegram/tma';
@@ -102,21 +103,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     if (inlineValidationError) setInlineValidationError(null);
   };
 
-  const validateUrl = (raw: string): string | null => {
-    const trimmed = raw.trim();
-    if (!trimmed) {
-      return 'Please enter a website address or domain (e.g., yourbrand.com).';
-    }
-    const clean = trimmed.replace(/^https?:\/\//i, '').split('/')[0];
-    if (clean.includes(' ') || (!clean.includes('.') && clean !== 'localhost')) {
-      return 'Please enter a valid domain format (e.g., luminaradigital.io or yourbrand.com).';
-    }
-    return null;
-  };
-
   const handleExecuteAudit = async (targetUrl: string, targetFocus: ReportFocus) => {
     if (loading) return;
-    const validationErr = validateUrl(targetUrl);
+    const validationErr = validateAuditTargetUrl(targetUrl);
     if (validationErr) {
       setInlineValidationError(validationErr);
       productTelemetry.recordError('InstantAuditView', validationErr);
@@ -235,7 +224,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             value: badge.value,
           })),
           crawlerChecks: scoutSummary.crawlerChecks,
-          failed: scoutSummary.failed,
+          failed: scoutSummary.failureCodes,
         });
         if (minted.ok && minted.url) url = minted.url;
         else if (mode === 'share') {

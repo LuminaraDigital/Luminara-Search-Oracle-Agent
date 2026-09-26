@@ -57,6 +57,24 @@ describe('Telegram Mini App Native Experience', () => {
     expect(resolveTelegramStart('audit_not a domain').auditUrl).toBeUndefined();
   });
 
+  it('does not prefill localhost, IP literals, or special-use suffixes', () => {
+    for (const host of [
+      'localhost',
+      '127.0.0.1',
+      '10.0.0.8',
+      '192.168.1.1',
+      '169.254.169.254',
+      '8.8.8.8',
+      'printer.local',
+      'db.internal',
+      'foo.example',
+      '[::1]',
+    ]) {
+      expect(resolveTelegramStart(`audit_${host}`).auditUrl, host).toBeUndefined();
+      expect(resolveTelegramStart(`scan_${host}`).auditUrl, host).toBeUndefined();
+    }
+  });
+
   it('recognizes subscription and paywall deep-links to trigger paywall modal', () => {
     const isPaywallTrigger = (param: string): boolean => {
       const sp = param.toLowerCase();
