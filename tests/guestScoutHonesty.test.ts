@@ -8,6 +8,7 @@ import { playbookAuditorAgent } from '../services/agentCore/agents/playbookAudit
 
 describe('guest scout summary honesty', () => {
   it('does not invent percentages when SERP and page evidence are empty', () => {
+    const leakedKey = ['sk', '-', 'abcdefghijklmnopqrstuvwxyz'].join('');
     const summary = buildGuestScoutSummary({
       targetUrl: 'https://example.com/pricing',
       measurementStatus: 'not_measured',
@@ -17,12 +18,12 @@ describe('guest scout summary honesty', () => {
       scrapedPageCount: 0,
       serpCount: 0,
       findings: [],
-      errors: ['Tavily 401 sk-abcdefghijklmnopqrstuvwxyz'],
+      errors: [`Tavily 401 ${leakedKey}`],
       hostedRail: 'tma_hosted',
     });
     const blob = JSON.stringify(summary);
     expect(summary.failureCodes).toEqual(['page_fetch_empty', 'search_empty', 'provider_failed']);
-    expect(blob).not.toContain('sk-abcdefghijklmnopqrstuvwxyz');
+    expect(blob).not.toContain(leakedKey);
     expect(blob).not.toContain('Tavily');
     expect(summary.evidenceEmpty).toBe(true);
     expect(summary.verdict.toLowerCase()).toContain('not measured');

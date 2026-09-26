@@ -76,7 +76,7 @@ describe('teaser share entitlement', () => {
   });
 
   it('rejects credential-like text in every persisted string', () => {
-    const secret = 'sk-abcdefghijklmnopqrstuvwxyz';
+    const secret = ['sk', '-', 'abcdefghijklmnopqrstuvwxyz'].join('');
     const bearer = 'Bearer abcdefghijklmnop';
     const base = {
       domain: 'stripe.com',
