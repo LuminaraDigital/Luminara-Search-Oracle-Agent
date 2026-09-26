@@ -7,6 +7,32 @@ interface AgentMissionControlProps {
   isComplete: boolean;
   onViewAttestation?: () => void;
   hasAttestation?: boolean;
+  /** measured only when citation, share of voice, and health all came from evidence. */
+  measurementStatus?: 'measured' | 'not_measured' | null;
+}
+
+export function missionControlCardBadge(
+  status: AgentStatus,
+  message: string,
+): 'running' | 'reflecting' | 'done' | 'not_measured' | 'queued' {
+  if (status === 'running') return 'running';
+  if (status === 'reflecting') return 'reflecting';
+  if (status === 'failed' || (status === 'completed' && /not measured/i.test(message))) return 'not_measured';
+  if (status === 'completed') return 'done';
+  return 'queued';
+}
+
+export function missionControlHeadline(
+  isComplete: boolean,
+  measurementStatus?: 'measured' | 'not_measured' | null,
+): string {
+  if (!isComplete) {
+    return 'Autonomous specialist agents actively collaborating on your audit…';
+  }
+  if (measurementStatus === 'measured') {
+    return 'Multi-agent audit complete. Measured signals come from live page and search evidence.';
+  }
+  return 'Audit finished. Some signals were not measured.';
 }
 
 export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
@@ -14,6 +40,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
   isComplete,
   onViewAttestation,
   hasAttestation,
+  measurementStatus = null,
 }) => {
   // Find latest status for each role
   const roleStatuses = React.useMemo(() => {
@@ -65,9 +92,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
             </h3>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            {isComplete
-              ? 'Multi-agent audit complete. 100% verified against ground-truth evidence.'
-              : 'Autonomous specialist agents actively collaborating on your audit…'}
+            {missionControlHeadline(isComplete, measurementStatus)}
           </p>
         </div>
 
@@ -86,7 +111,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
       {/* Progress Bar */}
       <div className="mt-4 mb-4">
         <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-mono">
-          <span>PIPELINE PROGRESS</span>
+          <span>AGENT PROGRESS</span>
           <span>{progressPercent}% COMPLETE</span>
         </div>
         <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -95,6 +120,11 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
             style={{ width: `${progressPercent}%` }}
           />
         </div>
+        {isComplete && measurementStatus !== 'measured' && (
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            This percentage is agent progress, not evidence quality.
+          </p>
+        )}
       </div>
 
       {/* Live Agent Cards Grid */}
@@ -102,8 +132,10 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
         {(Object.keys(CREW_PROFILES) as AgentRole[]).map((role) => {
           const profile = CREW_PROFILES[role];
           const state = roleStatuses[role];
-          const isRunning = state.status === 'running' || state.status === 'reflecting';
-          const isDone = state.status === 'completed';
+          const badge = missionControlCardBadge(state.status, state.message);
+          const isRunning = badge === 'running' || badge === 'reflecting';
+          const isDone = badge === 'done';
+          const isUnmeasured = badge === 'not_measured';
 
           return (
             <div
@@ -111,6 +143,8 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
               className={`p-3 rounded-lg border transition-all text-left flex flex-col justify-between ${
                 isRunning
                   ? 'bg-indigo-950/40 border-indigo-500/60 shadow-lg shadow-indigo-500/10'
+                  : isUnmeasured
+                  ? 'bg-slate-800/40 border-amber-500/30'
                   : isDone
                   ? 'bg-slate-800/40 border-slate-700/60'
                   : 'bg-slate-900/40 border-slate-800/40 opacity-60'
@@ -137,6 +171,11 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
                   {isDone && (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                       ✓ Done
+                    </span>
+                  )}
+                  {isUnmeasured && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                      Not measured
                     </span>
                   )}
                   {state.status === 'idle' && (

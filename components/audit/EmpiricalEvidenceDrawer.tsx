@@ -29,6 +29,11 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
 
   if (!isOpen || !summary) return null;
 
+  const citationMeasured =
+    summary.measurementStatus !== 'not_measured' && summary.citationRatePercent != null;
+  const clarityMeasured =
+    summary.measurementStatus !== 'not_measured' && summary.entityClarityScore != null;
+
   const filteredEvidence = summary.evidenceList.filter((e) => {
     if (filter === 'all') return true;
     return e.intent === filter;
@@ -56,7 +61,7 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
               <h3 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
                 Empirical Multi-LLM Citation Proof
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gold/20 text-gold-light border border-gold/30">
-                  Live SERP Grounded
+                  {citationMeasured ? 'Live SERP Grounded' : 'Not measured'}
                 </span>
               </h3>
               <p className="text-xs text-gray-400">
@@ -77,8 +82,8 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
         <div className={`grid gap-3 p-4 bg-black/40 border-b border-white/5 ${integrity ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
           <div className="glass-morphism p-3 rounded-xl border border-white/10 text-center">
             <span className="block text-[10px] uppercase font-mono text-gray-400">Citation Rate</span>
-            <span className={`text-xl font-bold font-mono ${summary.citationRatePercent >= 60 ? 'text-success-400' : 'text-warning-400'}`}>
-              {summary.citationRatePercent}%
+            <span className={`text-xl font-bold font-mono ${citationMeasured && (summary.citationRatePercent ?? 0) >= 60 ? 'text-success-400' : 'text-warning-400'}`}>
+              {citationMeasured ? `${summary.citationRatePercent}%` : 'not measured'}
             </span>
             <span className="text-[9px] text-gray-500">{summary.queriesCitedCount}/{summary.totalQueriesTested} queries cited</span>
           </div>
@@ -86,7 +91,7 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
           <div className="glass-morphism p-3 rounded-xl border border-white/10 text-center">
             <span className="block text-[10px] uppercase font-mono text-gray-400">Entity Clarity</span>
             <span className="text-xl font-bold font-mono text-gold-light">
-              {summary.entityClarityScore}/100
+              {clarityMeasured ? `${summary.entityClarityScore}/100` : 'not measured'}
             </span>
             <span className="text-[9px] text-gray-500">Knowledge graph strength</span>
           </div>

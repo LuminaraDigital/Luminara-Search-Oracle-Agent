@@ -306,7 +306,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
                 className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-success-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 <ICONS.Radar className="w-4 h-4 text-success-400" />
-                <span>Evidence ({empiricalSummary.citationRatePercent}%)</span>
+                <span>Evidence ({empiricalSummary.measurementStatus === 'not_measured' || empiricalSummary.citationRatePercent == null ? 'not measured' : `${empiricalSummary.citationRatePercent}%`})</span>
               </button>
             )}
 
@@ -349,7 +349,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
             className="px-3.5 py-2 rounded-xl glass-morphism border border-success-500/30 text-xs font-mono text-success-200 hover:text-white flex items-center gap-1.5 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             <ICONS.Radar className="w-4 h-4 text-success-400" />
-            Preview evidence ({empiricalSummary.citationRatePercent}%)
+            Preview evidence ({empiricalSummary.measurementStatus === 'not_measured' || empiricalSummary.citationRatePercent == null ? 'not measured' : `${empiricalSummary.citationRatePercent}%`})
           </button>
         </div>
       )}

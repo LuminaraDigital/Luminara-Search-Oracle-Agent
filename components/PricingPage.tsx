@@ -20,7 +20,7 @@ interface PricingPageProps {
   onNavigateWhy: () => void;
 }
 
-const tiers = [
+export const pricingTiers = [
   {
     id: 'starter' as const,
     priceLabel: 'US$49',
@@ -30,14 +30,14 @@ const tiers = [
   },
   {
     id: 'growth' as const,
-    priceLabel: 'Growth',
+    priceLabel: 'US$149',
     stars: '7,500 Stars',
     blurb: 'MCP tools, shareable reports, 3 seats, weekly re-audits.',
     highlight: true,
   },
   {
     id: 'agency' as const,
-    priceLabel: 'Agency',
+    priceLabel: 'US$349',
     stars: '18,000 Stars',
     blurb: 'API access, 10 client seats, daily Sentinel, white-label PDF.',
     highlight: false,
@@ -123,7 +123,7 @@ const PricingPage: React.FC<PricingPageProps> = ({
         </section>
 
         <section className="mb-20 sm:mb-28 grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
-          {tiers.map((tier) => {
+          {pricingTiers.map((tier) => {
             const lines = bulletsFor(tier.id);
             return (
               <div

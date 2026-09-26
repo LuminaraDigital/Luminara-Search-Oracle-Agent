@@ -58,6 +58,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [inlineValidationError, setInlineValidationError] = useState<string | null>(null);
   const [briefing, setBriefing] = useState(false);
   const [crewEvents, setCrewEvents] = useState<AgentActivityEvent[]>([]);
+  const [crewMeasurement, setCrewMeasurement] = useState<'measured' | 'not_measured' | null>(null);
   const [attestation, setAttestation] = useState<AuditAttestation | null>(null);
   const [showAttestationModal, setShowAttestationModal] = useState(false);
   const [persistHint, setPersistHint] = useState<string | null>(null);
@@ -98,6 +99,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setPersistHint(null);
     setLoading(true);
     setCrewEvents([]);
+    setCrewMeasurement(null);
     setAttestation(null);
     setProgressStage('Starting audit…');
     productTelemetry.recordOnboardingStep('quick_scout');
@@ -116,6 +118,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         }
       );
 
+      setCrewMeasurement(crewResult.measurementStatus);
       if (crewResult.attestation) {
         setAttestation(crewResult.attestation);
       }
@@ -184,6 +187,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       setUrl('');
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
       setCrewEvents([]);
+      setCrewMeasurement(null);
       setAttestation(null);
     };
     // Only ask when there is a report to lose.
@@ -346,7 +350,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       {crewEvents.length > 0 && (
         <AgentMissionControl
           events={crewEvents}
-          isComplete={!loading && Boolean(report)}
+          isComplete={!loading && crewMeasurement != null}
+          measurementStatus={crewMeasurement}
           hasAttestation={Boolean(attestation)}
           onViewAttestation={() => setShowAttestationModal(true)}
         />

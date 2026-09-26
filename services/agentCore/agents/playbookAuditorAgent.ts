@@ -20,7 +20,7 @@ export class PlaybookAuditorAgent {
     serpEvidence: SerpEvidenceItem[],
     dna: BusinessDNA | null | undefined,
     emit: (event: AgentActivityEvent) => void
-  ): Promise<{ findings: AuditFinding[]; healthScore: number }> {
+  ): Promise<{ findings: AuditFinding[]; healthScore: number | null }> {
     emit({
       id: `auditor-start-${Date.now()}`,
       timestamp: Date.now(),
@@ -32,7 +32,45 @@ export class PlaybookAuditorAgent {
     });
 
     const findings: AuditFinding[] = [];
+    const hasPageEvidence = scrapedPages.some(
+      (p) => p.wordCount > 0 || p.schemasFound.length > 0 || (p.rawTextSnippet || '').trim().length > 0,
+    );
+    const hasSerpEvidence = serpEvidence.length > 0;
+
+    const brandMentions = serpEvidence.filter((s) => s.brandMentioned).length;
+    if (hasSerpEvidence && brandMentions === 0) {
+      findings.push({
+        id: 'finding-zero-citations',
+        category: 'citations',
+        severity: 'critical',
+        title: 'Weak Generative Search Footprint in Live SERP',
+        description: 'Zero third-party search results or AI overview summaries currently cite the brand directly for category queries.',
+        evidenceSource: 'SERP Radar live search probe',
+        howWeKnowItFailed: `0 out of ${serpEvidence.length} search snippets mentioned the brand.`,
+        leadingIndicator: 'Publishing entity-grounded comparison pages increases AI Overview citation rate.',
+        criticVerified: false,
+        criticConfidence: 0.85,
+      });
+    }
+
+    // Health and schema rules need a scraped page. SERP rows alone are not a DOM audit.
+    if (!hasPageEvidence) {
+      emit({
+        id: `auditor-unmeasured-${Date.now()}`,
+        timestamp: Date.now(),
+        agentRole: 'playbook_auditor',
+        agentName: this.name,
+        phase: 'audit_complete',
+        message: hasSerpEvidence
+          ? 'Compliance audit finished. Health score not measured: no page evidence.'
+          : 'Compliance audit finished. Health score not measured: no page or search evidence.',
+        status: 'completed',
+      });
+      return { findings, healthScore: null };
+    }
+
     let baseScore = 85;
+    if (findings.some((f) => f.id === 'finding-zero-citations')) baseScore -= 15;
 
     // 1. Audit Schemas across scraped pages
     const allSchemas = scrapedPages.flatMap((p) => p.schemasFound);
@@ -87,24 +125,6 @@ export class PlaybookAuditorAgent {
         leadingIndicator: 'Increasing informational density expands chunk indexing in RAG pipelines.',
         criticVerified: false,
         criticConfidence: 0.88,
-      });
-    }
-
-    // 3. Citations & SERP Footprint
-    const brandMentions = serpEvidence.filter((s) => s.brandMentioned).length;
-    if (serpEvidence.length > 0 && brandMentions === 0) {
-      baseScore -= 15;
-      findings.push({
-        id: 'finding-zero-citations',
-        category: 'citations',
-        severity: 'critical',
-        title: 'Weak Generative Search Footprint in Live SERP',
-        description: 'Zero third-party search results or AI overview summaries currently cite the brand directly for category queries.',
-        evidenceSource: 'SERP Radar live search probe',
-        howWeKnowItFailed: '0 out of ${serpEvidence.length} search snippets mentioned the brand.',
-        leadingIndicator: 'Publishing entity-grounded comparison pages increases AI Overview citation rate.',
-        criticVerified: false,
-        criticConfidence: 0.85,
       });
     }
 

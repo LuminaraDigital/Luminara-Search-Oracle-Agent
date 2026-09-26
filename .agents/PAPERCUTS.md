@@ -28,3 +28,4 @@ Do not log secrets, tokens, or PII.
 - 2026-09-25: Hosted Brand Memory dual-write (`services/memory/hostedMemoryStub.ts`) and PointerBench grounding remain eval/lab-only; not on Instant Audit / MCP measurement path (wiring)
 - 2026-09-25: Seed `oracle-chat` skill via `scripts/seed-agent-skills.mjs` (or admin `/admin/skills`) so D1 overrides the bundled Oracle system prompt; until then loader uses version-0 fallback (worker)
 - 2026-09-25: D1 migration 0010 applied on local + staging + prod (`run_provenance`, `agent_skills`) (deploy)
+- 2026-09-25: Instant Audit provider-failure path now returns not_measured instead of seeded scores. Follow-on: LLM report prose, ROI calculators, and Labs can still invent numbers after metrics are null (honesty)

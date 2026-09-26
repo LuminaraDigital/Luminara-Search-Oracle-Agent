@@ -152,9 +152,11 @@ export class CitationIntegrityService {
     const sameAsConflict = detectSameAsConflict(brand, domain, opts?.sameAsUrls || []);
     const spoofRisk = computeSpoofRisk(summary.evidenceList);
 
+    const citedRate = typeof summary.citationRatePercent === 'number' ? summary.citationRatePercent : 0;
+    const clarity = typeof summary.entityClarityScore === 'number' ? summary.entityClarityScore : 0;
     const aliveRate =
-      measuredUrls === 0 ? summary.citationRatePercent : Math.round(((measuredUrls - deadCitationCount) / measuredUrls) * 100);
-    const avgOverlap = measuredUrls === 0 ? Math.max(20, summary.entityClarityScore) : Math.round(overlapSum / measuredUrls);
+      measuredUrls === 0 ? citedRate : Math.round(((measuredUrls - deadCitationCount) / measuredUrls) * 100);
+    const avgOverlap = measuredUrls === 0 ? Math.max(20, clarity) : Math.round(overlapSum / measuredUrls);
     const spoofScore = spoofRisk === 'low' ? 100 : spoofRisk === 'medium' ? 55 : 20;
     const sameAsScore = sameAsConflict ? 0 : 100;
 
