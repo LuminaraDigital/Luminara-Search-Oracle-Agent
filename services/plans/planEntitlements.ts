@@ -16,7 +16,7 @@ export interface PlanEntitlements {
   scheduledReaudit: 'none' | 'monthly' | 'weekly' | 'daily';
   apiAccess: boolean;
   whiteLabelPdf: boolean;
-  /** Public tokenized share URLs for audit reports. */
+  /** Full branded public report URLs. Growth+. Redacted scout teasers are a separate free artifact. */
   shareLinks: boolean;
   /** MCP free tools (projects, context, reports). Growth+. */
   mcpAccess: boolean;

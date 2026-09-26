@@ -1,8 +1,40 @@
 # Luminara Suite
 
-> Owner-first product for SEO, AEO and GEO visibility. Audits Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix.
+> Luminara Suite audits how a website shows up in Google, AI Overviews, ChatGPT, and Perplexity, then ranks one next fix. Web app, Windows desktop, and a Telegram Mini App.
+
+## What Instant Audit measures
+
+Instant Audit can report citation rate, share of voice, and page health only when that run collected live page or search evidence.
+
+Honesty policy:
+- measured: the figure comes from evidence collected in that run
+- estimated: a labelled estimate, never presented as a measured score
+- not_measured: the provider failed, the sample was empty, or the signal was not collected
+- Suite does not invent citation percentages, health scores, or share of voice when evidence is missing
+
+LLM crawler readiness is pass, fail, or not_measured for llms.txt presence and common AI bot directives in robots.txt. It is not a score.
+
+## Pricing (30 days)
+
+Published USD labels. Telegram Stars or TON can pay inside the app. Card checkout is not available yet.
+
+- Starter: US$49. Up to 2 sites. No MCP. No full public share links.
+- Growth: US$149. MCP, full share links, 3 seats, weekly re-audits.
+- Agency: US$349. API access, 10 client seats, daily Sentinel, white-label PDF.
+- Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
+
+## MCP
+
+- Docs: https://www.luminarasuite.com/docs/mcp.html
+- Endpoint: https://luminarasuite.com/api/mcp
+- MCP access is included on Growth and Agency.
+
+## Telegram Mini App
+
+- https://t.me/LuminaraSuiteBot/app
 
 ## Product
+
 - Home: https://www.luminarasuite.com/
 - How it works: https://www.luminarasuite.com/how-it-works
 - Our AI: https://www.luminarasuite.com/ai
@@ -10,14 +42,12 @@
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
 
-## Agents and MCP
-- MCP docs: https://www.luminarasuite.com/docs/mcp.html
-- MCP endpoint: https://luminarasuite.com/api/mcp
-
 ## Studio
+
 - Luminara Digital: https://luminaradigital.io
 - Source: https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent
 
 ## Legal
+
 - Privacy: https://www.luminarasuite.com/privacy
 - Terms: https://www.luminarasuite.com/terms

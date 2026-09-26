@@ -34,7 +34,9 @@ leaked internals).
 | `POST /admin/skills/:slug/versions`, `POST /admin/skills/:slug/enable`, `GET /admin/skills/:slug` | worker/agentSkills.ts | admin | Agent skill versions/enable |
 | `POST /agent/attest` | worker/attestationService.ts | none | Agent attestation |
 | `POST /sentinel/register`, `/sentinel/status` | worker/sentinel.ts | session | Drift Sentinel targets |
-| `GET /share/reports/:id`, POST base | worker/shareReports | session + public GET | Shared audit reports |
+| `GET /share/reports/:token`, `POST /share/reports` | worker/shareService.ts | session + public GET | Full branded reports. Growth+ `shareLinks` |
+| `POST /share/teasers`, `GET /share/teasers/:token` | worker/shareService.ts | session create, public GET | Redacted scout teaser. Not `shareLinks`. 5/day |
+| `GET /visibility/crawler-files` | worker/llmCrawlerRoute.ts | session | `/robots.txt` + `/llms.txt` only. SSRF guarded |
 | `POST /enrichment/entity` | worker/enrichmentService | session | Entity enrichment |
 | `* /oauth/mcp/*` | worker/mcpOAuth.ts | oauth/token | OAuth 2.1 + PKCE for MCP |
 | `GET,POST /memory/facts` | worker/memoryService.ts | session | Hosted memory facts |

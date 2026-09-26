@@ -9,6 +9,12 @@
 
 import { AgentActivityEvent, AuditFinding, ScrapedPageEvidence, SerpEvidenceItem } from '../types';
 import { ReportFocus, BusinessDNA } from '../../../types';
+import {
+  evaluateLlmCrawlerReadiness,
+  unevaluatedLlmCrawlerReport,
+  type LlmCrawlerReport,
+  type LlmCrawlerSnapshot,
+} from '../../audit/llmCrawlerReadiness';
 
 export class PlaybookAuditorAgent {
   public readonly name = 'Playbook Auditor';
@@ -19,8 +25,9 @@ export class PlaybookAuditorAgent {
     scrapedPages: ScrapedPageEvidence[],
     serpEvidence: SerpEvidenceItem[],
     dna: BusinessDNA | null | undefined,
-    emit: (event: AgentActivityEvent) => void
-  ): Promise<{ findings: AuditFinding[]; healthScore: number | null }> {
+    emit: (event: AgentActivityEvent) => void,
+    crawlerSnapshot?: LlmCrawlerSnapshot | null,
+  ): Promise<{ findings: AuditFinding[]; healthScore: number | null; llmCrawler: LlmCrawlerReport }> {
     emit({
       id: `auditor-start-${Date.now()}`,
       timestamp: Date.now(),
@@ -32,6 +39,9 @@ export class PlaybookAuditorAgent {
     });
 
     const findings: AuditFinding[] = [];
+    const llmCrawler = crawlerSnapshot
+      ? evaluateLlmCrawlerReadiness(crawlerSnapshot)
+      : unevaluatedLlmCrawlerReport();
     const hasPageEvidence = scrapedPages.some(
       (p) => p.wordCount > 0 || p.schemasFound.length > 0 || (p.rawTextSnippet || '').trim().length > 0,
     );
@@ -66,7 +76,7 @@ export class PlaybookAuditorAgent {
           : 'Compliance audit finished. Health score not measured: no page or search evidence.',
         status: 'completed',
       });
-      return { findings, healthScore: null };
+      return { findings, healthScore: null, llmCrawler };
     }
 
     let baseScore = 85;
@@ -141,7 +151,7 @@ export class PlaybookAuditorAgent {
       confidenceScore: 0.92,
     });
 
-    return { findings, healthScore };
+    return { findings, healthScore, llmCrawler };
   }
 }
 

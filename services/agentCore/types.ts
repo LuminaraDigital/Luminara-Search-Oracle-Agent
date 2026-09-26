@@ -10,6 +10,7 @@
  */
 
 import { ReportFocus, BusinessDNA } from '../../types';
+import type { LlmCrawlerReport } from '../audit/llmCrawlerReadiness';
 
 // ============================================================================
 // 1. Multi-Agent Crew & Roles (CrewAI-inspired)
@@ -152,6 +153,8 @@ export interface AuditStateGraphContext {
   /** measured only when citation, share of voice, and health are all numeric. */
   measurementStatus: 'measured' | 'not_measured';
   measurementReason?: string;
+  /** pass / fail / not_measured crawler-file checks. Never a numeric score. */
+  llmCrawlerReadiness?: LlmCrawlerReport;
   /** Audit findings evaluated by Playbook Auditor */
   findings: AuditFinding[];
   /** Competitor intelligence */

@@ -22,6 +22,16 @@ export function missionControlCardBadge(
   return 'queued';
 }
 
+export function missionControlProgressLabel(
+  isComplete: boolean,
+  measurementStatus: 'measured' | 'not_measured' | null | undefined,
+  progressPercent: number,
+): string {
+  if (!isComplete) return `${progressPercent}%`;
+  if (measurementStatus === 'measured') return '100% COMPLETE';
+  return 'NOT MEASURED';
+}
+
 export function missionControlHeadline(
   isComplete: boolean,
   measurementStatus?: 'measured' | 'not_measured' | null,
@@ -112,11 +122,15 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
       <div className="mt-4 mb-4">
         <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-mono">
           <span>AGENT PROGRESS</span>
-          <span>{progressPercent}% COMPLETE</span>
+          <span>{missionControlProgressLabel(isComplete, measurementStatus, progressPercent)}</span>
         </div>
         <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-400 transition-all duration-500 rounded-full"
+            className={`h-full transition-all duration-500 rounded-full ${
+              isComplete && measurementStatus !== 'measured'
+                ? 'bg-white/25'
+                : 'bg-gradient-to-r from-gold to-gold-dark'
+            }`}
             style={{ width: `${progressPercent}%` }}
           />
         </div>

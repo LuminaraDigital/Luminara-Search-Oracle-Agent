@@ -147,6 +147,126 @@ function webappOrigin(env: Env): string {
   return (env.WEBAPP_URL || 'https://luminarasuite.com').replace(/\/$/, '');
 }
 
+/** Redacted scout cards. Not the Growth+ shareLinks entitlement. */
+export const TEASER_DAILY_LIMIT = 5;
+const TEASER_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const TEASER_CTA = 'https://t.me/LuminaraSuiteBot/app';
+const BADGE_STATUS = new Set(['measured', 'estimated', 'not_measured']);
+const CHECK_STATUS = new Set(['pass', 'fail', 'not_measured']);
+
+export interface TeaserBadge {
+  label: string;
+  status: 'measured' | 'estimated' | 'not_measured';
+  value?: string;
+}
+
+export interface TeaserCheck {
+  id: string;
+  label: string;
+  status: 'pass' | 'fail' | 'not_measured';
+  detail: string;
+}
+
+export interface TeaserPublic {
+  version: 1;
+  kind: 'teaser';
+  domain: string;
+  verdict: string;
+  topFix: string;
+  evidenceNote: string;
+  badges: TeaserBadge[];
+  crawlerChecks: TeaserCheck[];
+  failed: string[];
+  createdAt: number;
+  /** Always the Mini App. Callers cannot set this. */
+  ctaUrl: string;
+}
+
+function clipText(value: unknown, max: number): string {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '';
+}
+
+export function parseTeaserCreateBody(raw: unknown): { ok: true; payload: TeaserPublic } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object') return { ok: false, error: 'Teaser body required' };
+  const body = sanitizeSharePayload(raw) as Record<string, unknown>;
+  const domain = clipText(body.domain, 253).toLowerCase().replace(/^https?:\/\//, '').split(/[/?#]/)[0] || '';
+  if (!domain || domain.length > 253 || /\s/.test(domain) || domain.includes('@') || domain.includes('..')) {
+    return { ok: false, error: 'A public domain is required' };
+  }
+  const verdict = clipText(body.verdict, 600);
+  const topFix = clipText(body.topFix, 400);
+  if (!verdict || !topFix) return { ok: false, error: 'Verdict and next move are required' };
+  const blob = `${verdict} ${topFix}`;
+  if (/bearer\s+[a-z0-9._-]{12,}/i.test(blob) || /sk-[a-z0-9]{12,}/i.test(blob)) {
+    return { ok: false, error: 'Teaser text looks like a credential and was rejected' };
+  }
+  const evidenceNote = clipText(body.evidenceNote, 400) || 'Evidence note not included.';
+  const badgesIn = Array.isArray(body.badges) ? body.badges.slice(0, 8) : [];
+  const badges: TeaserBadge[] = [];
+  for (const item of badgesIn) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const label = clipText(row.label, 80);
+    const status = clipText(row.status, 32);
+    if (!label || !BADGE_STATUS.has(status)) continue;
+    const badge: TeaserBadge = { label, status: status as TeaserBadge['status'] };
+    if (status !== 'not_measured') {
+      const value = clipText(row.value, 32);
+      if (value) badge.value = value;
+    }
+    badges.push(badge);
+  }
+  const checksIn = Array.isArray(body.crawlerChecks) ? body.crawlerChecks.slice(0, 4) : [];
+  const crawlerChecks: TeaserCheck[] = [];
+  for (const item of checksIn) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const id = clipText(row.id, 40);
+    const label = clipText(row.label, 80);
+    const status = clipText(row.status, 32);
+    const detail = clipText(row.detail, 240);
+    if (!id || !label || !detail || !CHECK_STATUS.has(status)) continue;
+    crawlerChecks.push({ id, label, status: status as TeaserCheck['status'], detail });
+  }
+  const failed = (Array.isArray(body.failed) ? body.failed : [])
+    .slice(0, 6)
+    .map((item) => clipText(item, 200))
+    .filter(Boolean);
+  return {
+    ok: true,
+    payload: {
+      version: 1,
+      kind: 'teaser',
+      domain,
+      verdict,
+      topFix,
+      evidenceNote,
+      badges,
+      crawlerChecks,
+      failed,
+      createdAt: Date.now(),
+      ctaUrl: TEASER_CTA,
+    },
+  };
+}
+
+async function meterTeaserCreate(env: Env, accountId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!env.LUMINARA_KV) {
+    if (env.REQUIRE_TG_AUTH === 'true') {
+      return { ok: false, error: 'Teaser quota store unavailable. Try again later.' };
+    }
+    return { ok: true };
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `teaser:${accountId}:${day}`;
+  const used = Number((await env.LUMINARA_KV.get(key)) || 0);
+  if (used >= TEASER_DAILY_LIMIT) {
+    return { ok: false, error: `Daily teaser limit of ${TEASER_DAILY_LIMIT} reached.` };
+  }
+  await env.LUMINARA_KV.put(key, String(used + 1), { expirationTtl: 2 * 86400 });
+  return { ok: true };
+}
+
 function parseCreateBody(raw: unknown): {
   ok: true;
   payload: SharedReportPublic;
@@ -221,6 +341,54 @@ function parseCreateBody(raw: unknown): {
 export async function handleShareRoute(request: Request, env: Env, path: string): Promise<Response> {
   if (!env.DB) {
     return json({ ok: false, error: 'Database not configured', code: 'DB_UNAVAILABLE' }, 503);
+  }
+
+  const teaserGet = path.match(/^\/share\/teasers\/([a-f0-9]{64})$/i);
+  if (teaserGet && request.method === 'GET') {
+    const token = teaserGet[1].toLowerCase();
+    const tokenHash = await sha256Hex(token);
+    const row = (await env.DB.prepare(
+      `SELECT payload_json, expires_at, revoked_at FROM share_teasers WHERE token_hash = ? LIMIT 1`,
+    )
+      .bind(tokenHash)
+      .first()) as { payload_json: string; expires_at: number; revoked_at: number | null } | null;
+    if (!row || row.revoked_at || (row.expires_at && row.expires_at < Date.now())) {
+      return json({ ok: false, error: 'Teaser not found or expired', code: 'TEASER_NOT_FOUND' }, 404);
+    }
+    let teaser: TeaserPublic;
+    try {
+      teaser = JSON.parse(row.payload_json) as TeaserPublic;
+    } catch {
+      return json({ ok: false, error: 'Teaser not found or expired', code: 'TEASER_NOT_FOUND' }, 404);
+    }
+    teaser.ctaUrl = TEASER_CTA;
+    return json({ ok: true, teaser });
+  }
+
+  if (path === '/share/teasers' && request.method === 'POST') {
+    const who = await identify(request, env);
+    if (!who.user) return json({ ok: false, error: who.error || 'Sign in required', code: 'AUTH_REQUIRED' }, 401);
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return json({ error: read.error }, read.status);
+    const parsed = parseTeaserCreateBody(read.value);
+    if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
+    const accountId = billingId(who.user);
+    const meter = await meterTeaserCreate(env, accountId);
+    if (!meter.ok) {
+      return json({ ok: false, error: meter.error, code: 'TEASER_QUOTA' }, 429);
+    }
+    const token = randomTokenHex(32);
+    const tokenHash = await sha256Hex(token);
+    const id = `tsz_${randomTokenHex(12)}`;
+    const expiresAt = parsed.payload.createdAt + TEASER_TTL_MS;
+    await env.DB.prepare(
+      `INSERT INTO share_teasers (id, token_hash, owner_account_id, payload_json, expires_at, revoked_at, created_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+    )
+      .bind(id, tokenHash, accountId, JSON.stringify(parsed.payload), expiresAt, parsed.payload.createdAt)
+      .run();
+    const url = `${webappOrigin(env)}/share/teaser/${token}`;
+    return json({ ok: true, id, token, url, expiresAt });
   }
 
   // GET /share/reports/:token (public)

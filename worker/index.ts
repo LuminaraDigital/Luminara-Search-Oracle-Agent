@@ -70,6 +70,7 @@ import {
 } from './authMiddleware';
 import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
+import { handleLlmCrawlerRoute } from './llmCrawlerRoute';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
 import { handleOracleChatSse, isOracleServerEnabled } from './oracleChat';
 import { OracleSession } from './oracleSession';
@@ -968,6 +969,32 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!dual.ok) return withCors(dual.response);
     }
     return withCors(handleShareRoute(request, env, path));
+  }
+
+  if (path === '/share/teasers' || path.startsWith('/share/teasers/')) {
+    const teaserPublicGet = request.method === 'GET' && /^\/share\/teasers\/[a-f0-9]{64}$/i.test(path);
+    const dual = await enforceDualRateLimit(env, {
+      action: teaserPublicGet ? 'teaser_public_get' : 'teaser_create',
+      accountId: null,
+      ip,
+      limitPerKey: teaserPublicGet ? RATE_SHARE_PUBLIC_PER_MIN : 8,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    return withCors(handleShareRoute(request, env, path));
+  }
+
+  if (path === '/visibility/crawler-files' && request.method === 'GET') {
+    const who = await identify(request, env);
+    const dual = await enforceDualRateLimit(env, {
+      action: 'crawler_files',
+      accountId: who.user ? billingId(who.user) : null,
+      ip,
+      limitPerKey: 20,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    return withCors(handleLlmCrawlerRoute(request, env));
   }
 
   if (path === '/enrichment/entity') {

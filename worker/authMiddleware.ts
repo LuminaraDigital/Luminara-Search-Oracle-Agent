@@ -38,6 +38,7 @@ export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/auth\/verify-otp$/ },
   { method: 'POST', pattern: /^\/webhooks\/auth$/ },
   { method: 'GET', pattern: /^\/share\/reports\/[a-f0-9]{64}$/i },
+  { method: 'GET', pattern: /^\/share\/teasers\/[a-f0-9]{64}$/i },
   // MCP OAuth: token exchange + discovery (authorize uses session via identify inside handler)
   { method: 'POST', pattern: /^\/oauth\/mcp\/token$/ },
   { method: 'GET', pattern: /^\/oauth\/mcp\/\.well-known\/oauth-authorization-server$/ },
@@ -147,6 +148,8 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/sentinel\/(register|status)$/ },
   { pattern: /^\/share\/reports$/, methods: ['POST'] },
   { pattern: /^\/share\/reports\/[^/]+$/, methods: ['DELETE'] },
+  { pattern: /^\/share\/teasers$/, methods: ['POST'] },
+  { pattern: /^\/visibility\/crawler-files$/, methods: ['GET'] },
   // Agency API surfaces (W6+); also gated by requireApiAccess after identify.
   { pattern: /^\/oracle(\/|$)/ },
   { pattern: /^\/audit(\/|$)/ },

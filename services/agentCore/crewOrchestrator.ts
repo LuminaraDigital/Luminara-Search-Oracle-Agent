@@ -28,6 +28,8 @@ import { tonAttestationService } from './tonAttestationService';
 import { postAuditReflectionService } from '../audit/postAuditReflectionService';
 import { brandMemoryVaultService } from '../memory/brandMemoryVaultService';
 import { ReportFocus, BusinessDNA } from '../../types';
+import { unevaluatedLlmCrawlerReport } from '../audit/llmCrawlerReadiness';
+import { probeLlmCrawlerReadiness } from '../audit/llmCrawlerProbe';
 
 export function deriveAuditMeasurement(metrics: {
   citationRatePercent: number | null;
@@ -76,6 +78,7 @@ export function createInitialAuditContext(
     healthScore: null,
     measurementStatus: 'not_measured',
     measurementReason: 'Audit has not measured search or page evidence yet.',
+    llmCrawlerReadiness: unevaluatedLlmCrawlerReport(),
     findings: [],
     topCompetitors: [],
     competitorGaps: [],
@@ -188,16 +191,18 @@ export class CrewOrchestrator {
 
     // Node 3: Playbook Compliance Audit
     graph.addNode('auditor_node', 'Playbook Auditor', async (ctx, emit) => {
+      const llmCrawlerReadiness = await probeLlmCrawlerReadiness(ctx.targetUrl);
       const { findings, healthScore } = await playbookAuditorAgent.execute(
         ctx.focus,
         ctx.scrapedPages,
         ctx.serpEvidence,
         ctx.dna,
-        emit
+        emit,
       );
       return {
         findings,
         healthScore,
+        llmCrawlerReadiness,
         ...deriveAuditMeasurement({
           citationRatePercent: ctx.citationRatePercent,
           shareOfVoiceScore: ctx.shareOfVoiceScore,
