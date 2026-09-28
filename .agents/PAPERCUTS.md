@@ -36,3 +36,4 @@ Do not log secrets, tokens, or PII.
 - 2026-09-26: Teaser credential scan is pattern-based (bearer, sk-, gsk_, AIza, and similar). A secret shape outside those patterns can still be stored (share)
 - 2026-09-28: Referral qualify trusts the signed-in client's honest status flags. The Worker stores no percentages and pays once per referred account, but it does not re-measure the scout (referrals)
 - 2026-09-28: Referral credit consume is one UPDATE. Concurrent isolates can still double-spend a single credit, same class of race as teaser create quota (referrals)
+- 2026-09-28: `.githooks/pre-commit` is not executable, so git skips it (`hint: hook was ignored`) (git)
