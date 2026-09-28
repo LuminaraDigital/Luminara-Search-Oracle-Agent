@@ -360,17 +360,40 @@ export async function claimReferral(
   return { ok: true, status: 'attributed' };
 }
 
-async function insertCredit(env: Env, accountId: string, reason: string, now: number): Promise<void> {
-  try {
-    await env.DB!.prepare(
-      `INSERT INTO referral_rewards (id, account_id, kind, amount, remaining, reason, created_at)
+/**
+ * Both credit rows and qualified_at commit together.
+ * A thrown batch rolls back, so qualified_at stays null and a later qualify can pay both sides.
+ * INSERT OR IGNORE lets a retry finish a pair if one row already exists.
+ * Returns true only when this call set qualified_at.
+ */
+async function grantQualifiedPair(
+  env: Env,
+  referredAccountId: string,
+  referrerAccountId: string,
+  now: number,
+): Promise<boolean> {
+  const db = env.DB!;
+  const referrerReason = `qualified:${referredAccountId}:referrer`;
+  const referredReason = `qualified:${referredAccountId}:referred`;
+  const credit = (id: string, accountId: string, reason: string) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO referral_rewards (id, account_id, kind, amount, remaining, reason, created_at)
        VALUES (?, ?, 'hosted_scout_credit', ?, ?, ?, ?)`,
-    )
-      .bind(randomId('rwd'), accountId, REFERRAL_SCOUT_CREDITS, REFERRAL_SCOUT_CREDITS, reason, now)
-      .run();
-  } catch {
-    /* unique (account_id, reason): this side was already paid */
-  }
+    ).bind(id, accountId, REFERRAL_SCOUT_CREDITS, REFERRAL_SCOUT_CREDITS, reason, now);
+
+  const results = await db.batch([
+    credit(randomId('rwd'), referrerAccountId, referrerReason),
+    credit(randomId('rwd'), referredAccountId, referredReason),
+    db.prepare(
+      `UPDATE referral_attributions
+       SET qualified_at = ?
+       WHERE referred_account_id = ?
+         AND qualified_at IS NULL
+         AND EXISTS (SELECT 1 FROM referral_rewards WHERE account_id = ? AND reason = ?)
+         AND EXISTS (SELECT 1 FROM referral_rewards WHERE account_id = ? AND reason = ?)`,
+    ).bind(now, referredAccountId, referrerAccountId, referrerReason, referredAccountId, referredReason),
+  ]);
+  return Number(results[2]?.meta?.changes || 0) > 0;
 }
 
 export async function qualifyReferral(
@@ -397,16 +420,24 @@ export async function qualifyReferral(
 
   let rewardsGranted = false;
   if (attribution && attribution.qualified_at == null) {
-    const updated = await env.DB.prepare(
-      `UPDATE referral_attributions SET qualified_at = ? WHERE referred_account_id = ? AND qualified_at IS NULL`,
-    )
-      .bind(now, input.accountId)
-      .run();
-    if (Number(updated.meta?.changes || 0) > 0) {
-      const reasonBase = `qualified:${input.accountId}`;
-      await insertCredit(env, attribution.referrer_account_id, `${reasonBase}:referrer`, now);
-      await insertCredit(env, input.accountId, `${reasonBase}:referred`, now);
-      rewardsGranted = true;
+    try {
+      rewardsGranted = await grantQualifiedPair(env, input.accountId, attribution.referrer_account_id, now);
+    } catch {
+      rewardsGranted = false;
+    }
+    if (!rewardsGranted) {
+      const after = await env.DB.prepare(
+        `SELECT qualified_at FROM referral_attributions WHERE referred_account_id = ?`,
+      )
+        .bind(input.accountId)
+        .first<{ qualified_at: number | null }>();
+      if (after?.qualified_at == null) {
+        return {
+          ok: false,
+          error: 'Invite credits could not be saved. Run the scout again to retry. Nothing was marked qualified.',
+          code: 'GRANT_FAILED',
+        };
+      }
     }
   }
 
@@ -502,7 +533,7 @@ export async function handleReferralRoute(request: Request, env: Env, path: stri
   if (path === '/referrals/qualify') {
     const result = await qualifyReferral(env, { accountId, body });
     if (!result.ok) {
-      const status = result.code === 'RATE_LIMITED' ? 429 : result.code === 'NO_DB' ? 503 : 400;
+      const status = result.code === 'RATE_LIMITED' ? 429 : result.code === 'NO_DB' || result.code === 'GRANT_FAILED' ? 503 : 400;
       return json({ ok: false, error: result.error, code: result.code }, status);
     }
     return json(result);

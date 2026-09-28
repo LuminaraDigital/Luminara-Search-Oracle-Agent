@@ -23,6 +23,7 @@ import {
 } from '../services/referrals/rules';
 import { safePublicHostname } from '../services/security/publicHostname';
 import { clearPendingReferral, holdPendingReferral, readPendingReferral } from '../services/referrals/pendingReferral';
+import { claimStoredReferral, shouldClearPendingClaim } from '../services/referrals/referralClient';
 
 function memoryKv() {
   const store = new Map<string, string>();
@@ -205,6 +206,55 @@ describe('referral ledger', () => {
     expect(snap.missions.find((mission) => mission.key === 'view_delta')?.status).toBe('completed');
   });
 
+  it('rolls back both credits when the referred insert fails, then a later qualify pays both sides', async () => {
+    const env = envWithDb();
+    const codeA = await ensureReferralCode(env, 'acct_a');
+    await claimReferral(env, { accountId: 'acct_b', code: codeA });
+    await env.DB!.exec(`
+      CREATE TRIGGER fail_referred_credit
+      BEFORE INSERT ON referral_rewards
+      WHEN NEW.reason LIKE '%:referred'
+      BEGIN
+        SELECT RAISE(ABORT, 'referred credit failed');
+      END;
+    `);
+
+    const failed = await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    expect(failed).toMatchObject({ ok: false, code: 'GRANT_FAILED' });
+    const stuck = await env.DB!.prepare(
+      `SELECT qualified_at FROM referral_attributions WHERE referred_account_id = ?`,
+    ).bind('acct_b').first<{ qualified_at: number | null }>();
+    expect(stuck?.qualified_at ?? null).toBeNull();
+    expect(await referralBonusRemaining(env, 'acct_a')).toBe(0);
+    expect(await referralBonusRemaining(env, 'acct_b')).toBe(0);
+
+    await env.DB!.exec('DROP TRIGGER fail_referred_credit');
+    const retried = await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    expect(retried).toMatchObject({ ok: true, rewardsGranted: true, reason: 'granted' });
+    expect(await referralBonusRemaining(env, 'acct_a')).toBe(2);
+    expect(await referralBonusRemaining(env, 'acct_b')).toBe(2);
+  });
+
+  it('finishes a one-sided ledger row without leaving the attribution unqualified', async () => {
+    const env = envWithDb();
+    const codeA = await ensureReferralCode(env, 'acct_a');
+    await claimReferral(env, { accountId: 'acct_b', code: codeA });
+    const now = Date.now();
+    await env.DB!.prepare(
+      `INSERT INTO referral_rewards (id, account_id, kind, amount, remaining, reason, created_at)
+       VALUES ('rwd_partial', 'acct_a', 'hosted_scout_credit', 2, 2, 'qualified:acct_b:referrer', ?)`,
+    ).bind(now).run();
+
+    const granted = await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    expect(granted).toMatchObject({ ok: true, rewardsGranted: true });
+    expect(await referralBonusRemaining(env, 'acct_a')).toBe(2);
+    expect(await referralBonusRemaining(env, 'acct_b')).toBe(2);
+    const row = await env.DB!.prepare(
+      `SELECT qualified_at FROM referral_attributions WHERE referred_account_id = ?`,
+    ).bind('acct_b').first<{ qualified_at: number | null }>();
+    expect(row?.qualified_at).toBeTruthy();
+  });
+
   it('spends referral credits only after the daily cap, and never for anonymous or unlimited plans', async () => {
     const env = envWithDb();
     const codeA = await ensureReferralCode(env, 'acct_a');
@@ -252,6 +302,56 @@ describe('referral ledger', () => {
     const unlimited = await checkHostedQuota(paid, user);
     expect(unlimited.isUnlimited).toBe(true);
     expect(await referralBonusRemaining(paid, 'acct_b')).toBe(2);
+  });
+});
+
+describe('pending invite claim', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('clears only a final claim result', () => {
+    expect(shouldClearPendingClaim(200, 'attributed')).toBe(true);
+    expect(shouldClearPendingClaim(200, 'already')).toBe(true);
+    expect(shouldClearPendingClaim(400, 'self')).toBe(true);
+    expect(shouldClearPendingClaim(400, 'invalid')).toBe(true);
+    expect(shouldClearPendingClaim(409, 'already_other')).toBe(true);
+    expect(shouldClearPendingClaim(401, 'self')).toBe(false);
+    expect(shouldClearPendingClaim(403, 'invalid')).toBe(false);
+    expect(shouldClearPendingClaim(429, 'invalid')).toBe(false);
+    expect(shouldClearPendingClaim(503, 'attributed')).toBe(false);
+    expect(shouldClearPendingClaim(500, 'attributed')).toBe(false);
+    expect(shouldClearPendingClaim(400, undefined)).toBe(false);
+    expect(shouldClearPendingClaim(200, undefined)).toBe(false);
+  });
+
+  it('keeps the stored code on 401 and drops it on a definitive rejection', async () => {
+    const mem = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => mem.get(key) ?? null,
+      setItem: (key: string, value: string) => { mem.set(key, value); },
+      removeItem: (key: string) => { mem.delete(key); },
+    });
+    vi.stubGlobal('window', {
+      location: { protocol: 'https:', origin: 'https://luminarasuite.com', search: '' },
+      dispatchEvent: () => true,
+    });
+    holdPendingReferral('ref_abcdefghj2');
+    expect(readPendingReferral()).toBe('abcdefghj2');
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: false, error: 'Sign in' }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    })));
+    await claimStoredReferral();
+    expect(readPendingReferral()).toBe('abcdefghj2');
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: false, status: 'self', error: 'You cannot use your own invite.' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    })));
+    await claimStoredReferral();
+    expect(readPendingReferral()).toBeNull();
   });
 });
 

@@ -30,6 +30,19 @@ export interface ReferralProfile {
   missions: ReferralMission[];
 }
 
+const CLEAR_PENDING_STATUSES = new Set(['attributed', 'already', 'self', 'invalid', 'already_other']);
+
+/**
+ * Drop the stored invite only after a final claim result.
+ * 401/403 means auth is not ready. 429, 503, and 5xx can be retried.
+ * Any other body without a known status stays pending.
+ */
+export function shouldClearPendingClaim(httpStatus: number, bodyStatus: unknown): boolean {
+  if (httpStatus === 401 || httpStatus === 403) return false;
+  if (httpStatus === 429 || httpStatus === 503 || httpStatus >= 500) return false;
+  return typeof bodyStatus === 'string' && CLEAR_PENDING_STATUSES.has(bodyStatus);
+}
+
 export async function claimStoredReferral(): Promise<void> {
   const code = readPendingReferral();
   if (!code) return;
@@ -41,8 +54,9 @@ export async function claimStoredReferral(): Promise<void> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code }),
     });
-    if (res.status === 429 || res.status === 503 || res.status >= 500) return;
-    clearPendingReferral();
+    const data = (await res.json().catch(() => null)) as { status?: unknown } | null;
+    if (!data) return;
+    if (shouldClearPendingClaim(res.status, data.status)) clearPendingReferral();
   } catch {
     /* keep the code for the next signed-in load */
   }
