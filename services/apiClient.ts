@@ -365,6 +365,8 @@ export interface QuotaInfo {
   isUnlimited: boolean;
   plan?: string;
   expiresAt?: number;
+  /** Hosted scout credits from a qualified invite. Separate from the daily cap. */
+  bonusRemaining?: number;
 }
 
 let currentQuota: QuotaInfo | null = null;
@@ -452,6 +454,8 @@ export function updateQuotaFromHeaders(headers: Headers): void {
     const remNum = isUnlimited ? -1 : (Number(rem) || 0);
     const resetSec = Number(rst) || 0;
     const used = isUnlimited ? 0 : Math.max(0, limitNum - remNum);
+    const bonusHeader = headers.get('x-quota-bonus');
+    const bonusRemaining = bonusHeader == null || bonusHeader === '' ? undefined : Number(bonusHeader);
     currentQuota = {
       limit: limitNum,
       used,
@@ -459,6 +463,7 @@ export function updateQuotaFromHeaders(headers: Headers): void {
       resetSec,
       isUnlimited,
       plan: isUnlimited ? 'active' : 'free',
+      bonusRemaining: Number.isFinite(bonusRemaining) ? bonusRemaining : undefined,
     };
     quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
   }
@@ -480,6 +485,7 @@ export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
         isUnlimited: data.isUnlimited,
         plan: data.plan,
         expiresAt: data.expiresAt,
+        bonusRemaining: typeof data.bonusRemaining === 'number' ? data.bonusRemaining : undefined,
       };
       quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
       return currentQuota;

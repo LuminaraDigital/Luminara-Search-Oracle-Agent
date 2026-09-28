@@ -352,6 +352,9 @@ export async function proxyProvider(
       out.set('X-Quota-Limit', String(quotaGate.limit));
       out.set('X-Quota-Remaining', String(quotaGate.remaining));
       out.set('X-Quota-Reset', String(quotaGate.resetSec));
+      if (typeof quotaGate.bonusRemaining === 'number') {
+        out.set('X-Quota-Bonus', String(quotaGate.bonusRemaining));
+      }
     }
   }
   return new Response(res.body, { status: res.status, headers: out });

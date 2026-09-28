@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for the guest Instant Audit path. Referral credits, streaks, and Idea Scout are later phases.
+Accepted for the guest Instant Audit path. Referral credits and streaks are specified in specs/0009-referrals-and-retention.md. Idea Scout remains a later phase.
 
 ## Context
 
@@ -29,4 +29,4 @@ Instant Audit honesty is already the rule: empty evidence stays `not_measured`. 
 
 ## Not in scope
 
-Referral graph, streaks, Idea Scout, card checkout, and a teaser image.
+Idea Scout, card checkout, and a teaser image. Referral credits and streaks: see specs/0009-referrals-and-retention.md.

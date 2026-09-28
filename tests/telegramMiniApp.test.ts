@@ -57,6 +57,20 @@ describe('Telegram Mini App Native Experience', () => {
     expect(resolveTelegramStart('audit_not a domain').auditUrl).toBeUndefined();
   });
 
+  it('parses ref_<code> without treating it as an audit domain', () => {
+    expect(resolveTelegramStart('ref_abcdefghj2')).toEqual({
+      view: AppView.INSTANT_AUDIT,
+      referralCode: 'abcdefghj2',
+    });
+    expect(resolveTelegramStart('REF_ABCDEFGHJ2').referralCode).toBe('abcdefghj2');
+    expect(resolveTelegramStart('ref_abcdefghj2').auditUrl).toBeUndefined();
+    expect(resolveTelegramStart('ref_1234567890').referralCode).toBeUndefined();
+    expect(resolveTelegramStart('ref_short').referralCode).toBeUndefined();
+    expect(resolveTelegramStart('ref_iiiiiiiiii').referralCode).toBeUndefined();
+    expect(resolveTelegramStart('audit_stripe.com').referralCode).toBeUndefined();
+    expect(resolveTelegramStart('dashboard').referralCode).toBeUndefined();
+  });
+
   it('drops hostile startapp tails: private hosts and junk charset', () => {
     for (const raw of [
       'audit_localhost',

@@ -55,6 +55,7 @@ import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId } from './workerUtils';
 import { getActiveSubscription, checkHostedQuota, type SubRow } from './quotaMiddleware';
+import { handleReferralRoute, referralBonusRemaining } from './referrals';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
 import { proxyProvider, PROVIDERS } from './providerRelay';
 import { runSentinelScan, handleSentinelRoute } from './sentinel';
@@ -586,6 +587,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
     const day = now.toISOString().slice(0, 10);
     const used = env.LUMINARA_KV ? Number((await env.LUMINARA_KV.get(`quota:${accountId}:${day}`)) || 0) : 0;
+    const bonusRemaining = await referralBonusRemaining(env, accountId);
 
     return withCors(json({
       ok: true,
@@ -595,6 +597,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       limit,
       used,
       remaining: Math.max(0, limit - used),
+      bonusRemaining,
       resetSec,
       isUnlimited: limit <= 0,
     }));
@@ -955,6 +958,15 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Drift Sentinel targets
   if (path === '/sentinel/register' || path === '/sentinel/status') {
     return withCors(handleSentinelRoute(request, env, path));
+  }
+
+  if (
+    path === '/referrals/me' ||
+    path === '/referrals/claim' ||
+    path === '/referrals/qualify' ||
+    path === '/missions/complete'
+  ) {
+    return withCors(handleReferralRoute(request, env, path));
   }
 
   if (path === '/share/reports' || path.startsWith('/share/reports/')) {

@@ -24,6 +24,7 @@ import { hostedScoutPreRunCopy, type HostedScoutRail } from '../../services/audi
 import { canMintTeaserShare, createShareTeaser } from '../../services/share/shareReportClient';
 import { shareExternalLink } from '../../services/telegram/tma';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
+import { qualifyHonestScout } from '../../services/referrals/referralClient';
 
 function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
   return buildGuestScoutSummary({
@@ -141,6 +142,20 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       const summary = summaryFromCrew(crewResult, hostedRail);
       setCrewMeasurement(crewResult.measurementStatus);
       setScoutSummary(summary);
+
+      let inviteNote = '';
+      if (!isGuest && !summary.evidenceEmpty && (crewResult.measurementStatus === 'measured' || crewResult.measurementStatus === 'not_measured')) {
+        const qualified = await qualifyHonestScout({
+          domain: summary.domain,
+          measurementStatus: crewResult.measurementStatus,
+          completed: true,
+          evidencePresent: true,
+        });
+        if (qualified.rewardsGranted) {
+          inviteNote = 'Invite credit unlocked for you and the person who invited you. Extra hosted scouts were added. No citation score was invented.';
+        }
+      }
+      const withInvite = (message: string) => (inviteNote ? `${message} ${inviteNote}` : message);
       if (crewResult.attestation) {
         setAttestation(crewResult.attestation);
       }
@@ -148,9 +163,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       // Empty guest evidence stays on the honest summary. The full report model
       // can still invent citation language when providers returned nothing.
       if (isGuest && summary.evidenceEmpty) {
-        setPersistHint(
+        setPersistHint(withInvite(
           'Scout finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.',
-        );
+        ));
         return;
       }
 
@@ -173,22 +188,22 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         });
         if (saved) {
           productTelemetry.recordOnboardingStep('strategy_saved');
-          setPersistHint(`Strategy saved to project ${saved.projectId.slice(0, 12)}…`);
+          setPersistHint(withInvite(`Strategy saved to project ${saved.projectId.slice(0, 12)}…`));
         } else if (isGuest) {
-          setPersistHint(
+          setPersistHint(withInvite(
             'Scout finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.',
-          );
+          ));
         } else {
-          setPersistHint(
+          setPersistHint(withInvite(
             'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
-          );
+          ));
         }
       } catch {
-        setPersistHint(
+        setPersistHint(withInvite(
           isGuest
             ? 'Scout finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.'
             : 'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
-        );
+        ));
       }
 
       try {

@@ -5,12 +5,15 @@
  * and special-use suffixes are rejected.
  */
 import { safePublicHostname } from '../security/publicHostname';
+import { parseReferralStartParam } from '../referrals/rules';
 import { AppView } from '../../types';
 
 export interface TelegramStartIntent {
   view: AppView;
   /** Hostname to prefill, when the payload is audit_<domain> or scan_<domain>. */
   auditUrl?: string;
+  /** Opaque invite code from `ref_<code>`. Absent for view tokens and audit payloads. */
+  referralCode?: string;
 }
 
 const VIEW_BY_TOKEN: Record<string, AppView> = {
@@ -55,6 +58,9 @@ export function parseAuditDomainPayload(raw: string | null | undefined): string 
 
 export function resolveTelegramStart(raw: string | null | undefined): TelegramStartIntent {
   const original = String(raw || '').trim();
+  const referralCode = parseReferralStartParam(original);
+  if (referralCode) return { view: AppView.INSTANT_AUDIT, referralCode };
+
   const auditUrl = parseAuditDomainPayload(original);
   if (auditUrl) return { view: AppView.INSTANT_AUDIT, auditUrl };
 
