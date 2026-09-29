@@ -480,7 +480,8 @@ describe('crawl surfaces', () => {
     expect(text).toContain('rel="canonical" href="https://www.luminarasuite.com/pricing"');
     expect(text).toContain('SoftwareApplication');
     expect(text).toContain('luminara-crawler-body');
-    expect(text).toContain('US$49');
+    expect(text).toContain('Growth');
+    expect(text).toContain('MCP');
   });
 
   it('serves static terms HTML', async () => {
