@@ -60,10 +60,6 @@ export function stripPercentageTheater(text: string): string {
   return text.replace(PERCENT_RE, '').replace(/\s{2,}/g, ' ').replace(/\s+([,.])/g, '$1').trim();
 }
 
-export function ideaScoutQuotaKey(accountId: string, now = new Date()): string {
-  return `idea-scout:${accountId}:${now.toISOString().slice(0, 10)}`;
-}
-
 export function ideaCardSlot(input: {
   subscribed: boolean;
   byok: boolean;
