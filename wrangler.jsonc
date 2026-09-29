@@ -195,7 +195,7 @@
         "ENVIRONMENT": "staging",
         "WEBAPP_URL": "https://staging.luminarasuite.com/",
         "ALLOWED_ORIGINS": "https://staging.luminarasuite.com",
-        "REQUIRE_TG_AUTH": "false",
+        "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",
         "FREE_DAILY_LIMIT": "100",
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",

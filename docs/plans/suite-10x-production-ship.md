@@ -3,7 +3,7 @@
 **Date:** 2026-09-29  
 **Status:** P1+V1+V2+V3 (S1 copy) landed; staging D1 `0011`-`0013` applied; governance SQL approve drill passed (`drill-*` on staging). **Investor spine supersession:** [`investor-marketable-10x-ship.md`](./investor-marketable-10x-ship.md) (M1-M8). Next: M1 share virality, M2 MCP mint, M3 Probe handoff, or operator staging Worker deploy.  
 **Owner:** CEO + full-stack + graphics/perf + AI/ML product  
-**Companions:** [`landing-moat-100x.md`](./landing-moat-100x.md), [`paperclip-pattern-production-ship.md`](./paperclip-pattern-production-ship.md), [`premium-craft-surface.md`](./premium-craft-surface.md), [`budget-policies-and-enforcement.md`](./budget-policies-and-enforcement.md), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md)  
+**Companions:** [`weekly-decision-loop-10x-ship.md`](./weekly-decision-loop-10x-ship.md) (product spine WDL0-WDL8), [`landing-moat-100x.md`](./landing-moat-100x.md), [`paperclip-pattern-production-ship.md`](./paperclip-pattern-production-ship.md), [`premium-craft-surface.md`](./premium-craft-surface.md), [`budget-policies-and-enforcement.md`](./budget-policies-and-enforcement.md), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md)  
 **Pattern library (outside repo):** sibling `paperclipai/paperclip` @ `53aad90b9` (never vendored into Suite)
 
 ## Assumption

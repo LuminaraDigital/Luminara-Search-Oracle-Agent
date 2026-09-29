@@ -26,7 +26,13 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0013_mcp_action_requests_kind.sql',
 ];
 
-const REQUIRED_D1_TABLES = ['mcp_action_requests', 'budget_policies', 'cost_events', 'budget_incidents'];
+const REQUIRED_D1_TABLES = [
+  'mcp_action_requests',
+  'budget_policies',
+  'cost_events',
+  'budget_incidents',
+  'audit_findings',
+];
 
 // 1. Verify build bundle integrity
 const distPath = resolve(root, 'dist');
@@ -143,6 +149,32 @@ if (targetUrl && !isDryRun) {
     process.exit(1);
   }
   console.log('[SmokeCheck] [PASS] Remote health check returned:', JSON.stringify(data));
+
+  // Findings board must be mounted and auth-gated (unsigned GET → 401).
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const findingsRes = await fetch(
+      `${targetUrl}/api/findings?domain=smoke.example.com`,
+      {
+        headers: { 'User-Agent': 'Luminara-Smoke-Check/1.0' },
+        signal: controller.signal,
+      },
+    );
+    clearTimeout(timeout);
+    if (findingsRes.status !== 401) {
+      console.error(
+        `[SmokeCheck] FAILED: GET /api/findings expected 401 when unsigned, got HTTP ${findingsRes.status}`,
+      );
+      process.exit(1);
+    }
+    console.log('[SmokeCheck] [PASS] GET /api/findings returns 401 when unsigned.');
+  } catch (err) {
+    console.error(
+      `[SmokeCheck] FAILED: /api/findings probe unreachable: ${err instanceof Error ? err.message : err}`,
+    );
+    process.exit(1);
+  }
 }
 
 console.log(`[SmokeCheck] [SUCCESS] All smoke checks passed for ${targetLabel}.`);

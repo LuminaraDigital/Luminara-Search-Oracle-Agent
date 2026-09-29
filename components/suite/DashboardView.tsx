@@ -1,9 +1,16 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { HomeCtaStrip } from './HomeCtaStrip';
 import { auditCountFromStorage, shouldShowHomeCta } from './homeCtaStripLogic';
+import { WeeklyDecisionCard } from '../audit/WeeklyDecisionCard';
+import {
+  listLocalFindings,
+  pickPrimaryFinding,
+  type BoardFinding,
+} from '../../services/audit/findingBoardService';
+import { auditHistoryService } from '../../services/audit/auditHistoryService';
 
 interface DashboardViewProps {
   onNavigate: (view: AppView) => void;
@@ -30,6 +37,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
   const hasDna = Boolean(dna);
   const telemetrySummary = productTelemetry.getSummary();
   const hasChatOrMemory = telemetrySummary.totalChatsSent > 0 || hasAudits;
+
+  const homeSeed = useMemo(() => {
+    try {
+      for (const entry of auditHistoryService.list()) {
+        const findings = listLocalFindings(entry.domain);
+        if (findings.length) {
+          return { domain: entry.domain, findings };
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }, []);
+  const [boardFindings, setBoardFindings] = useState<BoardFinding[]>(() => homeSeed?.findings || []);
+  const homeDomain = homeSeed?.domain || '';
+  const primaryFinding = useMemo(() => pickPrimaryFinding(boardFindings), [boardFindings]);
 
   const onboardingSteps = [
     {
@@ -132,6 +156,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
 
       {/* Zero-audit home primary CTA strip */}
       {shouldShowHomeCta(auditCount) && <HomeCtaStrip onNavigate={onNavigate} />}
+
+      {homeDomain && boardFindings.length > 0 && (
+        <WeeklyDecisionCard
+          domain={homeDomain}
+          primary={primaryFinding}
+          findings={boardFindings}
+          commitment={null}
+          onFindingUpdated={(f) => {
+            setBoardFindings((prev) => {
+              const i = prev.findIndex((x) => x.id === f.id || x.stableKey === f.stableKey);
+              if (i < 0) return [f, ...prev];
+              const next = [...prev];
+              next[i] = f;
+              return next;
+            });
+          }}
+        />
+      )}
 
       {/* Guided Onboarding Tracker */}
       {!onboardingComplete && (

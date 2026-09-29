@@ -3,7 +3,7 @@
 **Date:** 2026-09-29  
 **Status:** M3-M7 code landed in tree (2026-09-29). Investor activation spine + approve HTTP API ready. **Deployment-ready:** typecheck/lint/full test/build/pre-push green on `feat/mcp-governance-hardening` (PR #22). Staging Worker + `requireAuth` flip and prod deploy still need explicit operator approval (do not auto-deploy).  
 **Owner:** CEO + full-stack + AI/ML product + graphics/perf + deploy operator  
-**Companions:** [`suite-10x-production-ship.md`](./suite-10x-production-ship.md), [`landing-moat-100x.md`](./landing-moat-100x.md), [`virality-activation-loops.md`](./virality-activation-loops.md), [`user-activation-first-value.md`](./user-activation-first-value.md), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md), [`paperclip-pattern-production-ship.md`](./paperclip-pattern-production-ship.md)  
+**Companions:** [`weekly-decision-loop-10x-ship.md`](./weekly-decision-loop-10x-ship.md) (product spine), [`suite-10x-production-ship.md`](./suite-10x-production-ship.md), [`landing-moat-100x.md`](./landing-moat-100x.md), [`virality-activation-loops.md`](./virality-activation-loops.md), [`user-activation-first-value.md`](./user-activation-first-value.md), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md), [`paperclip-pattern-production-ship.md`](./paperclip-pattern-production-ship.md)  
 **Pattern library (outside repo):** sibling `paperclipai/paperclip` @ `53aad90b9` (never vendored)  
 **Ground:** PR [#22](https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent/pull/22) holds P1+V1-V3/S1; staging D1 `0011`-`0013` + SQL gov drill done; staging `requireAuth` still false (`.agents/PAPERCUTS.md`). Worker deploy gated.
 

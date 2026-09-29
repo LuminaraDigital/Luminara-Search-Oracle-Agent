@@ -6,8 +6,10 @@ import { contextGraphService } from '../../services/contextGraph/contextGraphSer
 import { freeLlmModalitiesService } from '../../services/freellm/modalitiesService';
 import { ICONS } from '../../constants';
 import { ReportDisplay } from './ReportDisplay';
+import { WeeklyDecisionCard } from './WeeklyDecisionCard';
 import { PageSpeedPanel } from './PageSpeedPanel';
 import { GscPanel } from './GscPanel';
+import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/findingBoardService';
 import { useConfirm } from '../ui/ConfirmModal';
 import { AgentMissionControl } from './AgentMissionControl';
 import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
@@ -56,7 +58,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   sampleSource = false,
   onSeePricing,
 }) => {
-  const [url, setUrl] = useState(() => initialUrl || draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL));
+  const [url, setUrl] = useState(
+    () => initialUrl || draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL) || readLastBoardDomain(),
+  );
   const [focus, setFocus] = useState<ReportFocus>(() => initialFocus || 'AEO');
   const [lenses, setLenses] = useState<AuditLens[]>(() => inferLenses(dna));
   const toggleLens = (id: AuditLens) => setLenses(prev => (prev.includes(id) ? prev.filter(l => l !== id) : [...prev, id]));
@@ -76,6 +80,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState('');
   const [report, setReport] = useState<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null>(null);
+  const [boardFindings, setBoardFindings] = useState<
+    import('../../services/audit/findingBoardService').BoardFinding[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [inlineValidationError, setInlineValidationError] = useState<string | null>(null);
   const [briefing, setBriefing] = useState(false);
@@ -92,6 +99,23 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => () => { if (stageTimerRef.current) clearInterval(stageTimerRef.current); }, []);
+
+  // Hydrate Decision Card from session board when revisiting a domain (always swap domain).
+  useEffect(() => {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      setBoardFindings([]);
+      return;
+    }
+    let cancelled = false;
+    void import('../../services/audit/findingBoardService').then(({ listLocalFindings }) => {
+      if (cancelled) return;
+      setBoardFindings(listLocalFindings(trimmed));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
 
   const handleUrlChange = (value: string) => {
     setUrl(value);
@@ -145,6 +169,18 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       if (crewResult.attestation) {
         setAttestation(crewResult.attestation);
+      }
+
+      try {
+        const { ingestCrewFindings } = await import('../../services/audit/findingBoardService');
+        const boarded = await ingestCrewFindings({
+          domain: formattedUrl,
+          findings: crewResult.findings || [],
+          auditRunId: `crew_${Date.now().toString(36)}`,
+        });
+        setBoardFindings(boarded);
+      } catch {
+        setBoardFindings([]);
       }
 
       // 2. Generate full enriched report
@@ -217,6 +253,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       setUrl('');
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
       setCrewEvents([]);
+      setBoardFindings([]);
       setAttestation(null);
     };
     // Only ask when there is a report to lose.
@@ -530,6 +567,25 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </div>
       )}
 
+      {/* Decision Card from session board (revisit without a live report in memory). */}
+      {!report && boardFindings.length > 0 && (
+        <WeeklyDecisionCard
+          domain={url || 'unknown'}
+          primary={pickPrimaryFinding(boardFindings)}
+          findings={boardFindings}
+          commitment={null}
+          onFindingUpdated={(f) => {
+            setBoardFindings((prev) => {
+              const i = prev.findIndex((x) => x.id === f.id || x.stableKey === f.stableKey);
+              if (i < 0) return [f, ...prev];
+              const next = [...prev];
+              next[i] = f;
+              return next;
+            });
+          }}
+        />
+      )}
+
       {/* Audit Report Result */}
       {report && (
         <div className="space-y-6">
@@ -614,6 +670,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             shareOfVoice={report.shareOfVoice}
             sourceGraph={report.sourceGraph}
             enterpriseTrust={report.enterpriseTrust}
+            boardFindings={boardFindings}
           />
         </div>
       )}

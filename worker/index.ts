@@ -17,6 +17,9 @@
  *   POST /api/telegram/webhook            Telegram bot updates (secret-token protected)
  *   POST /api/telegram/auth               validates Mini App initData, returns user + plan
  *   POST /api/telegram/invoice            creates a Telegram Stars invoice link for a plan
+ *   GET  /api/findings?domain=            signed-in Instant Audit findings board (D1)
+ *   POST /api/findings/bulk               upsert crew findings by stable_key (never Oracle validators)
+ *   PATCH /api/findings/:id               status / owner / due_at
  *
  * Provider keys and the bot token live only here (wrangler secrets), never in the client bundle.
  * Firebase ID tokens are verified with Google JWKS (FIREBASE_PROJECT_ID); no Admin private key needed.
@@ -70,6 +73,7 @@ import {
 } from './authMiddleware';
 import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
+import { handleFindingsRoute } from './findingsService';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
 import { getBudgetStatus, upsertBudgetPolicy, approveBudgetResume } from './budgets';
 import {
@@ -975,6 +979,19 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!dual.ok) return withCors(dual.response);
     }
     return withCors(handleShareRoute(request, env, path));
+  }
+
+  if (path === '/findings' || path === '/findings/bulk' || path.startsWith('/findings/')) {
+    const whoFind = await identify(request, env);
+    const dualFind = await enforceDualRateLimit(env, {
+      action: 'findings',
+      accountId: whoFind.user ? billingId(whoFind.user) : null,
+      ip,
+      limitPerKey: 60,
+      windowSec: 60,
+    });
+    if (!dualFind.ok) return withCors(dualFind.response);
+    return withCors(await handleFindingsRoute(request, env, path));
   }
 
   if (path === '/enrichment/entity') {

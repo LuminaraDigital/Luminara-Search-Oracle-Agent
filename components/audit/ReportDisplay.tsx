@@ -16,7 +16,10 @@ import { ShareOfVoiceCard } from './ShareOfVoiceCard';
 import { SourceCitationGraphView } from './SourceCitationGraph';
 import { EnterpriseTrustPanel } from './EnterpriseTrustPanel';
 import { ShipActionGate } from './ShipActionGate';
+import { WeeklyDecisionCard } from './WeeklyDecisionCard';
 import { readShipCommitment, type ShipCommitment } from '../../services/audit/shipCommitmentService';
+import type { BoardFinding } from '../../services/audit/findingBoardService';
+import { pickPrimaryFinding } from '../../services/audit/findingBoardService';
 import { RemediationPayload } from '../../services/deployment/cmsDeploymentService';
 import { EmpiricalCitationSummary } from '../../services/audit/empiricalCitationService';
 import { EnrichedEntityIntelligence } from '../../services/enrichment/publicApisEnrichmentService';
@@ -53,6 +56,8 @@ interface ReportDisplayProps {
   shareOfVoice?: ShareOfVoiceSummary;
   sourceGraph?: SourceCitationGraph;
   enterpriseTrust?: EnterpriseTrustPack;
+  /** Instant Audit crew findings for Weekly Decision Card (never Oracle validators). */
+  boardFindings?: BoardFinding[];
   /** Hide PDF / share / deploy chrome (public share pages). */
   hideAgencyActions?: boolean;
 }
@@ -74,6 +79,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   shareOfVoice,
   sourceGraph,
   enterpriseTrust,
+  boardFindings: boardFindingsProp,
   hideAgencyActions = false,
 }) => {
   const [showDiffModal, setShowDiffModal] = useState(false);
@@ -85,6 +91,13 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const [shipCommitment, setShipCommitment] = useState<ShipCommitment | null>(() =>
     readShipCommitment(targetDomain || 'unknown', markdownText),
   );
+  const [boardFindings, setBoardFindings] = useState<BoardFinding[]>(boardFindingsProp || []);
+
+  React.useEffect(() => {
+    if (boardFindingsProp) setBoardFindings(boardFindingsProp);
+  }, [boardFindingsProp]);
+
+  const primaryFinding = useMemo(() => pickPrimaryFinding(boardFindings), [boardFindings]);
 
   const handleCopyShareLink = async () => {
     await loadServerHealth().catch(() => undefined);
@@ -260,6 +273,24 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           sourceCount={sourceCount}
           onCommitted={setShipCommitment}
           onDeploy={() => setShowDeployModal(true)}
+        />
+      )}
+
+      {!hideAgencyActions && (
+        <WeeklyDecisionCard
+          domain={targetDomain || 'unknown'}
+          primary={primaryFinding}
+          findings={boardFindings}
+          commitment={shipCommitment}
+          onFindingUpdated={(f) => {
+            setBoardFindings((prev) => {
+              const i = prev.findIndex((x) => x.id === f.id || x.stableKey === f.stableKey);
+              if (i < 0) return [f, ...prev];
+              const next = [...prev];
+              next[i] = f;
+              return next;
+            });
+          }}
         />
       )}
 

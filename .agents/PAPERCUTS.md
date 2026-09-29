@@ -35,5 +35,5 @@ Do not log secrets, tokens, or PII.
 - 2026-09-25: CI runs evals; MCP paid tools require get_project_context; Dashboard step 3 = save project; MessageList deslop (aps)
 - 2026-09-27: Share unlock still sends `?password=` from `shareReportClient.ts`; prod rejects query (`SHARE_PASSWORD_QUERY_FORBIDDEN`). Fix in VAL Session 1 via `x-share-password` (share)
 - 2026-09-29: Budget `isBudgetHalted` used to fail-closed on missing tables (paid MCP outage if Worker shipped before D1 migrate). H1 now schema-aware fail-open; new policies default hard_stop off; `BUDGET_ENFORCEMENT` kill-switch (budget)
-- 2026-09-29: Staging `/api/health` returns `requireAuth: false` so `npm run smoke:staging` fails after D1 preflight; operator must flip hosted auth before claiming smoke green (deploy)
+- 2026-09-29: Staging `REQUIRE_TG_AUTH` set true in wrangler.jsonc; live `/api/health` still false until `npm run deploy:staging` (deploy)
 - 2026-09-29: `smoke-check` remote D1 probe needs one shell cmdline + `JSON.stringify(sql)` on Windows; argv `--command` split breaks wrangler (scripts)

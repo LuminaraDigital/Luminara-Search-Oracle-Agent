@@ -147,6 +147,9 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/sentinel\/(register|status)$/ },
   { pattern: /^\/share\/reports$/, methods: ['POST'] },
   { pattern: /^\/share\/reports\/[^/]+$/, methods: ['DELETE'] },
+  { pattern: /^\/findings$/, methods: ['GET'] },
+  { pattern: /^\/findings\/bulk$/, methods: ['POST'] },
+  { pattern: /^\/findings\/[^/]+$/, methods: ['PATCH'] },
   // Agency API surfaces (W6+); also gated by requireApiAccess after identify.
   { pattern: /^\/oracle(\/|$)/ },
   { pattern: /^\/audit(\/|$)/ },
