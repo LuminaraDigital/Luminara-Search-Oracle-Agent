@@ -412,7 +412,7 @@ Same as §N. This pass: **zero new product features added.** Only honesty / queu
 | Ask | Answer |
 |---|---|
 | Plan ready to execute **Product** (findings HTTP + Decision Card)? | **Done in tree** - next operator unlock is staging prove |
-| Production-ready / deployment-ready? | **Product yes.** **Staging yes** (`smoke:staging` green 2026-09-29). **Prod:** no until explicit yes |
+| Production-ready / deployment-ready? | **Yes** for Product + staging + prod smoke (2026-09-29). Merge to `main` still needs green CI |
 
 **Operator unlock string:** reply `go staging Worker` (or `deploy staging`) to prove live auth + findings 401 smoke. Prod needs a separate yes.
 
