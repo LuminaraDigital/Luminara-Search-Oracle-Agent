@@ -7,6 +7,9 @@ import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
 import { isInTelegram, bindTelegramBackButton, haptic, getStartParam, getInitDataRaw, subscribeTelegramReady, hasTelegramLaunchHints } from './services/telegram/tma';
 import { resolveTelegramStart } from './services/telegram/startParam';
+import { parseReferralStartParam } from './services/referrals/rules';
+import { holdPendingReferral } from './services/referrals/pendingReferral';
+import { claimStoredReferral } from './services/referrals/referralClient';
 import { resolveHostedScoutRail } from './services/audit/hostedScoutRail';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
@@ -146,6 +149,8 @@ const App: React.FC = () => {
       setHasTelegramInitData(Boolean(getInitDataRaw()));
       const auditUrl = readTelegramAuditUrl();
       if (auditUrl) setTelegramAuditUrl(auditUrl);
+      const referralCode = parseReferralStartParam(getStartParam());
+      if (referralCode) holdPendingReferral(referralCode);
       if (!inside) return;
       setViewState((current) => (current === AppView.LANDING ? resolveTelegramStartView() : current));
     });
@@ -321,6 +326,14 @@ const App: React.FC = () => {
   }, []);
 
   const appAuth = useAppAuth();
+
+  // Hold ref_* until Telegram or Firebase auth exists, then claim once.
+  useEffect(() => {
+    const referralCode = parseReferralStartParam(getStartParam());
+    if (referralCode) holdPendingReferral(referralCode);
+    if (!appAuth.authenticated || appAuth.loading) return;
+    void claimStoredReferral();
+  }, [appAuth.authenticated, appAuth.loading]);
 
   // After sign-in, restore DNA / audits / keys / chat from the linked account workspace.
   useEffect(() => {
@@ -1353,7 +1366,13 @@ const App: React.FC = () => {
                 <TelegramAccountPanel compact />
               </div>
             )}
-            <DashboardView onNavigate={(v) => setView(v)} dna={dna} onClearDNA={() => setDna(null)} advancedUi={advancedUi} />
+            <DashboardView
+              onNavigate={(v) => setView(v)}
+              dna={dna}
+              onClearDNA={() => setDna(null)}
+              advancedUi={advancedUi}
+              signedIn={appAuth.authenticated}
+            />
           </>
         )}
 

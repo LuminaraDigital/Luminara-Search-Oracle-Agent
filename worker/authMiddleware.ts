@@ -149,6 +149,8 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/share\/reports$/, methods: ['POST'] },
   { pattern: /^\/share\/reports\/[^/]+$/, methods: ['DELETE'] },
   { pattern: /^\/share\/teasers$/, methods: ['POST'] },
+  { pattern: /^\/referrals\/(me|claim|qualify)$/ },
+  { pattern: /^\/missions\/complete$/, methods: ['POST'] },
   { pattern: /^\/visibility\/crawler-files$/, methods: ['GET'] },
   // Agency API surfaces (W6+); also gated by requireApiAccess after identify.
   { pattern: /^\/oracle(\/|$)/ },

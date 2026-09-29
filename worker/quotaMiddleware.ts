@@ -1,6 +1,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { resolveAccountId } from './userStore';
+import { referralBonusRemaining, tryConsumeReferralCredit } from './referrals';
 
 export interface QuotaStatus {
   ok: boolean;
@@ -10,6 +11,10 @@ export interface QuotaStatus {
   remaining: number;
   resetSec: number;
   isUnlimited: boolean;
+  /** Unused referral hosted-scout credits after this check. Omitted when the ledger was not read. */
+  bonusRemaining?: number;
+  /** True when this request was allowed by a referral credit after the daily cap. */
+  bonusConsumed?: boolean;
 }
 
 /**
@@ -130,6 +135,7 @@ export async function checkHostedQuota(
 
   const accountId = user.accountId || (await resolveAccountId(env, user.id));
   if (await isUserSubscribed(env, { ...user, accountId })) {
+    // Active plans are unlimited. Leave referral credits on the ledger for after the plan ends.
     return { ok: true, limit: -1, used: 0, remaining: -1, resetSec, isUnlimited: true };
   }
 
@@ -147,5 +153,25 @@ export async function checkHostedQuota(
     };
   }
 
-  return meterDailyQuota(env, accountId, limit, resetSec);
+  // Entitlement: FREE_DAILY_LIMIT per UTC day, then unused referral credits (FIFO, one per request).
+  // Anonymous callers never reach this branch. Bonus spend requires this Telegram or Firebase identity.
+  const daily = await meterDailyQuota(env, accountId, limit, resetSec);
+  const bonusRemaining = await referralBonusRemaining(env, accountId);
+  if (daily.ok) return { ...daily, bonusRemaining };
+  if (user.source === 'telegram' || user.source === 'firebase') {
+    const spent = await tryConsumeReferralCredit(env, accountId);
+    if (spent.ok) {
+      return {
+        ok: true,
+        limit,
+        used: daily.used,
+        remaining: 0,
+        resetSec,
+        isUnlimited: false,
+        bonusConsumed: true,
+        bonusRemaining: spent.remaining,
+      };
+    }
+  }
+  return { ...daily, bonusRemaining: 0 };
 }
