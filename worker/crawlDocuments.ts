@@ -28,6 +28,7 @@ Allow: /privacy
 Allow: /terms
 Allow: /desktop
 Allow: /docs/
+Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
 Allow: /sitemap.xml
 Allow: /share/teaser/
@@ -47,6 +48,7 @@ Allow: /privacy
 Allow: /terms
 Allow: /desktop
 Allow: /docs/
+Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
 Allow: /sitemap.xml
 Allow: /share/teaser/
@@ -72,6 +74,7 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/privacy</loc></url>
   <url><loc>${base}/terms</loc></url>
   <url><loc>${base}/docs/mcp.html</loc></url>
+  <url><loc>${base}/docs/what-is-aeo.html</loc></url>
   <url><loc>${base}/desktop</loc></url>
   <url><loc>${base}/llms.txt</loc></url>
 </urlset>
@@ -84,17 +87,31 @@ export const LLMS_TXT = `# Luminara Suite
 
 > Luminara Suite audits how a website shows up in Google, AI Overviews, ChatGPT, and Perplexity, then ranks one next fix. Web app, Windows desktop, and a Telegram Mini App.
 
+## Methodology
+
+Instant Audit fetches a public page and a search sample when the hosted rail or the caller's keys allow it, then ranks one next fix from that evidence. LLM crawler checks read robots.txt, llms.txt, and optional ai.txt. Each check is pass, fail, or not_measured. None of them is a 0-100 score.
+
+Method, honesty glossary, and FAQ: https://www.luminarasuite.com/docs/what-is-aeo.html
+
+Agents may cite redacted teaser cards under /share/teaser/. robots.txt allows that path. Full branded reports under /share/ stay disallowed. A teaser is a redacted summary, not a verified measurement.
+
+## Honesty glossary
+
+- measured: the figure comes from evidence collected in that run
+- estimated: a labelled estimate, never presented as a measured score
+- not_measured: the provider failed, the sample was empty, or the signal was not collected
+- Glossary: https://www.luminarasuite.com/docs/what-is-aeo.html#honesty
+- Suite does not invent citation percentages, health scores, or share of voice when evidence is missing
+
 ## What Instant Audit measures
 
 Instant Audit can report citation rate, share of voice, and page health only when that run collected live page or search evidence.
 
-Honesty policy:
-- measured: the figure comes from evidence collected in that run
-- estimated: a labelled estimate, never presented as a measured score
-- not_measured: the provider failed, the sample was empty, or the signal was not collected
-- Suite does not invent citation percentages, health scores, or share of voice when evidence is missing
+LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt presence, llms.txt structure (a title and a short summary), common AI crawler directives, cite-path blocks, and optional ai.txt. Structure is a hint, not a score.
 
-LLM crawler readiness is pass, fail, or not_measured for llms.txt presence and common AI bot directives in robots.txt. It is not a score.
+## Sitemap
+
+- https://www.luminarasuite.com/sitemap.xml
 
 ## Pricing (30 days)
 
@@ -118,6 +135,7 @@ Published USD labels. Telegram Stars or TON can pay inside the app. Card checkou
 ## Product
 
 - Home: https://www.luminarasuite.com/
+- What is AEO: https://www.luminarasuite.com/docs/what-is-aeo.html
 - How it works: https://www.luminarasuite.com/how-it-works
 - Our AI: https://www.luminarasuite.com/ai
 - Why Luminara: https://www.luminarasuite.com/why

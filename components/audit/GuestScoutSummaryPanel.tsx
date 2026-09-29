@@ -65,6 +65,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       {summary.crawlerChecks.length > 0 && (
         <>
           <h3 className="mt-6 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">LLM crawler readiness</h3>
+          <p className="mt-2 text-[11px] text-gray-500">Each row is pass, fail, or not measured. Structure hints are not a score.</p>
           <ul className="mt-3 space-y-2">
             {summary.crawlerChecks.map((check) => (
               <li key={check.id} className="text-sm text-gray-300">

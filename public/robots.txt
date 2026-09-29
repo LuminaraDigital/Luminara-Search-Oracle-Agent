@@ -23,6 +23,7 @@ Allow: /privacy
 Allow: /terms
 Allow: /desktop
 Allow: /docs/
+Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
 Allow: /sitemap.xml
 Allow: /share/teaser/
@@ -42,6 +43,7 @@ Allow: /privacy
 Allow: /terms
 Allow: /desktop
 Allow: /docs/
+Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
 Allow: /sitemap.xml
 Allow: /share/teaser/

@@ -79,6 +79,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <h1>Luminara Suite</h1>
   <p>Show up where customers ask. See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a plain-English list of what to fix first.</p>
   <ul>
+    <li><a href="/docs/what-is-aeo.html">What is AEO</a></li>
     <li><a href="/how-it-works">How it works</a></li>
     <li><a href="/ai">Our AI</a></li>
     <li><a href="/why">Why Luminara</a></li>
@@ -106,7 +107,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     <li>Schema mapping and competitor comparison</li>
     <li>Impact-ranked action list</li>
   </ul>
-  <p><a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
+  <p><a href="/docs/what-is-aeo.html">What is AEO</a> · <a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
   '/ai': {

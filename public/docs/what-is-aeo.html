@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>What is AEO? | Luminara Suite</title>
+  <meta name="description" content="Answer Engine Optimization is making a page easy for answer engines to quote. Luminara Suite reports pass, fail, or not measured. It does not invent a citation score." />
+  <link rel="canonical" href="https://www.luminarasuite.com/docs/what-is-aeo.html" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.55; color: #111; }
+    a { color: #0a0a0a; }
+    code { background: #f4f4f4; padding: 0.1em 0.35em; border-radius: 4px; }
+  </style>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is AEO?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Answer Engine Optimization (AEO) is the work of making a page easy for an answer engine to quote. That includes Google AI Overviews, ChatGPT, and Perplexity. AEO is not a score."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How does Luminara Suite measure AEO?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Instant Audit reports citation rate, share of voice, and page health only when that run collected live page or search evidence. LLM crawler checks are pass, fail, or not_measured. They are not a 0-100 score."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What may an agent cite?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Agents may cite public marketing pages, /llms.txt, this page, and redacted cards under /share/teaser/. Full branded reports under /share/ stay disallowed, along with /api/, /verify/, /reports/, and /oauth/. A teaser is a redacted summary, not a verified measurement."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does llms.txt guarantee a citation?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. Google Search may ignore llms.txt. Other agents can still quote it. Suite does not invent a citation percentage when evidence is missing."
+        }
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <p><a href="/">Luminara Suite</a> · <a href="/llms.txt">llms.txt</a> · <a href="/sitemap.xml">Sitemap</a></p>
+  <h1>What is AEO?</h1>
+  <p>Answer Engine Optimization (AEO) is the work of making a page easy for an answer engine to quote. That includes Google AI Overviews, ChatGPT, and Perplexity. AEO is not a score.</p>
+  <p>Luminara Suite audits how a website shows up in those answers, then ranks one next fix. The product is a web app, a Windows desktop app, and a Telegram Mini App from <a href="https://luminaradigital.io">Luminara Digital</a>.</p>
+
+  <h2 id="methodology">How Suite measures it</h2>
+  <p>Instant Audit fetches a public page and a search sample when the hosted rail or the caller's keys allow it. Citation rate, share of voice, and page health appear only when that run collected live evidence.</p>
+  <p>LLM crawler checks are separate. They read <code>robots.txt</code>, <code>llms.txt</code>, and optional <code>ai.txt</code>. Each row is pass, fail, or not measured:</p>
+  <ul>
+    <li><code>llms.txt</code> presence</li>
+    <li><code>llms.txt</code> structure: a title and a short summary. This is a hint, not a score.</li>
+    <li>Common AI crawler directives in <code>robots.txt</code></li>
+    <li>Whether those crawlers are blocked from the homepage, <code>/llms.txt</code>, or <code>/sitemap.xml</code></li>
+    <li>Optional <code>ai.txt</code>. A missing file is recorded. It is not a citation score.</li>
+  </ul>
+  <p>None of these rows is a 0-100 score, and none of them changes the page health figure.</p>
+  <p>Agents may cite redacted teaser cards under <code>/share/teaser/</code>. <code>robots.txt</code> allows that path for named AI crawlers and for every other user-agent. Full branded reports under <code>/share/</code> stay disallowed, along with <code>/api/</code>, <code>/verify/</code>, <code>/reports/</code>, and <code>/oauth/</code>. A teaser repeats a short verdict and one next move. It is not a verified measurement.</p>
+
+  <h2 id="honesty">Honesty glossary</h2>
+  <ul>
+    <li><strong>measured</strong>: the figure comes from evidence collected in that run.</li>
+    <li><strong>estimated</strong>: a labelled estimate, never presented as a measured score.</li>
+    <li><strong>not_measured</strong>: the provider failed, the sample was empty, or the signal was not collected.</li>
+  </ul>
+  <p>Suite does not invent citation percentages, health scores, or share of voice when evidence is missing.</p>
+
+  <h2 id="faq">FAQ</h2>
+  <h3>What is AEO?</h3>
+  <p>Answer Engine Optimization (AEO) is the work of making a page easy for an answer engine to quote. That includes Google AI Overviews, ChatGPT, and Perplexity. AEO is not a score.</p>
+  <h3>How does Luminara Suite measure AEO?</h3>
+  <p>Instant Audit reports citation rate, share of voice, and page health only when that run collected live page or search evidence. LLM crawler checks are pass, fail, or not_measured. They are not a 0-100 score.</p>
+  <h3>What may an agent cite?</h3>
+  <p>Agents may cite public marketing pages, <code>/llms.txt</code>, this page, and redacted cards under <code>/share/teaser/</code>. Full branded reports under <code>/share/</code> stay disallowed, along with <code>/api/</code>, <code>/verify/</code>, <code>/reports/</code>, and <code>/oauth/</code>. A teaser is a redacted summary, not a verified measurement.</p>
+  <h3>Does llms.txt guarantee a citation?</h3>
+  <p>No. Google Search may ignore <code>llms.txt</code>. Other agents can still quote it. Suite does not invent a citation percentage when evidence is missing.</p>
+
+  <p><a href="/how-it-works">How it works</a> · <a href="/pricing">Pricing</a> · <a href="/docs/mcp.html">MCP</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+</body>
+</html>

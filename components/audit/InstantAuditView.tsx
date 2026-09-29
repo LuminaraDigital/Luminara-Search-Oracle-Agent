@@ -18,6 +18,7 @@ import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftP
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
 import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
+import { SuiteCitabilityChecklist } from './SuiteCitabilityChecklist';
 import { buildGuestScoutSummary, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
 import { hostedScoutPreRunCopy, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
@@ -493,6 +494,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           </div>
         </div>
       )}
+
+      <SuiteCitabilityChecklist />
 
       {scoutSummary && !loading && (
         <GuestScoutSummaryPanel
