@@ -1,7 +1,7 @@
 # Weekly Decision Loop 10x Ship (production + deploy ready)
 
 **Date:** 2026-09-29  
-**Status:** Product slice landed and pushed (`18af5e7`). Staging Worker live with `REQUIRE_TG_AUTH=true`; `npm run smoke:staging` green (health + findings 401). Prod not deployed. No auto prod deploy.  
+**Status:** Product + staging + **prod** live. Staging smoke green; prod Worker `eea83918` + D1 `0011`-`0013` applied; `smoke:prod` green (health `requireAuth:true`, findings 401). Branch `feat/mcp-governance-hardening` still needs CI/merge to `main`.  
 **Owner:** CEO + full-stack + AI/ML product + graphics/perf + deploy operator  
 **Companions:** [`investor-marketable-10x-ship.md`](./investor-marketable-10x-ship.md) (M0-M8), [`suite-10x-production-ship.md`](./suite-10x-production-ship.md) (Track P + V), [`paperclip-pattern-production-ship.md`](./paperclip-pattern-production-ship.md), [`landing-moat-100x.md`](./landing-moat-100x.md), [`e2e-visibility-agent-platform.md`](./e2e-visibility-agent-platform.md) (W2-W4), [`user-activation-first-value.md`](./user-activation-first-value.md), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md)  
 **Pattern library (outside repo):** sibling `paperclipai/paperclip` @ `53aad90b9` (never vendored; Luminara brand only)
