@@ -46,6 +46,9 @@ const CRAWLER_MAX_CONCURRENCY = parsePositiveInt(process.env.CRAWLER_MAX_CONCURR
 const CRAWLER_RATE_LIMIT_PER_MIN = parsePositiveInt(process.env.CRAWLER_RATE_LIMIT_PER_MIN, 30, 1, 10_000);
 // Only behind a reverse proxy you control; otherwise X-Forwarded-For is caller-chosen and dodges the limit.
 const CRAWLER_TRUST_PROXY = String(process.env.CRAWLER_TRUST_PROXY || '').trim().toLowerCase() === 'true';
+// When true, refuse to start without CRAWLER_TOKEN even on loopback (recommended for shared machines).
+const CRAWLER_REQUIRE_TOKEN =
+  String(process.env.CRAWLER_REQUIRE_TOKEN || '').trim().toLowerCase() === 'true';
 const BUSY_RETRY_AFTER_SEC = 5;
 const MAX_TIMEOUT_MS = 60_000;
 const IS_LOOPBACK_HOST = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
@@ -59,6 +62,18 @@ if (!IS_LOOPBACK_HOST && !CRAWLER_TOKEN) {
       'or bind HOST to 127.0.0.1.'
   );
   process.exit(1);
+}
+if (CRAWLER_REQUIRE_TOKEN && !CRAWLER_TOKEN) {
+  console.error(
+    '[Luminara Crawler] FATAL: CRAWLER_REQUIRE_TOKEN=true but CRAWLER_TOKEN is empty. Set a token.'
+  );
+  process.exit(1);
+}
+if (IS_LOOPBACK_HOST && !CRAWLER_TOKEN) {
+  console.warn(
+    '[Luminara Crawler] WARNING: loopback bind with empty CRAWLER_TOKEN. Any local process can drive ' +
+      'the browser. Set CRAWLER_TOKEN (or CRAWLER_REQUIRE_TOKEN=true) for shared/dev machines.'
+  );
 }
 
 app.disable('x-powered-by');

@@ -19,11 +19,18 @@ describe('GscAnalyticsService', () => {
     expect(atRisk.map(c => c.query)).toContain('what is cloud dental software');
     expect(result!.rows.every(r => r.aiOverviewPresent === false)).toBe(true);
     expect(result!.rows.filter(r => r.lowCtrRisk).length).toBe(2);
+    expect(result!.measurementStatus).toBe('measured');
   });
 
   it('does not simulate on empty CSV in product path', () => {
     const result = gscAnalyticsService.parseGscCsv('not a csv', 'acme.com', { allowSimulate: false });
     expect(result).toBeNull();
+  });
+
+  it('marks Labs simulate rows as estimated', () => {
+    const result = gscAnalyticsService.parseGscCsv('not a csv', 'labs.com', { allowSimulate: true });
+    expect(result).not.toBeNull();
+    expect(result!.measurementStatus).toBe('estimated');
   });
 
   it('generates an actionable AEO remediation brief', () => {

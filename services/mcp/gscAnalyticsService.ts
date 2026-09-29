@@ -29,6 +29,8 @@ export interface GscSummary {
   cannibalizedKeywordsCount: number;
   rows: GscKeywordRow[];
   timestamp: number;
+  /** measured = real CSV; estimated = Labs simulate only. */
+  measurementStatus?: 'measured' | 'estimated';
 }
 
 const STORAGE_KEY = 'luminara_gsc_dataset';
@@ -114,6 +116,7 @@ export class GscAnalyticsService {
       cannibalizedKeywordsCount,
       rows,
       timestamp: Date.now(),
+      measurementStatus: 'estimated',
     };
 
     this.saveDataset(summary);
@@ -186,6 +189,7 @@ export class GscAnalyticsService {
       cannibalizedKeywordsCount,
       rows,
       timestamp: Date.now(),
+      measurementStatus: 'measured',
     };
 
     this.saveDataset(summary);

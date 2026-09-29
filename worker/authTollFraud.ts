@@ -11,6 +11,7 @@
  */
 import type { Env } from './env';
 import { json } from './workerUtils';
+import { enforceAppCheckIfRequired } from './appCheck';
 import {
   checkOutboundDailyBudget,
   enforceBurstLimit,
@@ -174,9 +175,13 @@ export async function handlePasswordResetRequest(
   if (!gate.ok) return gate.response;
 
   let emailRaw: unknown;
+  let appCheckToken: string | undefined;
   try {
-    const body = (await request.json()) as { email?: unknown };
+    const body = (await request.json()) as { email?: unknown; appCheckToken?: unknown };
     emailRaw = body?.email;
+    if (typeof body?.appCheckToken === 'string' && body.appCheckToken.trim()) {
+      appCheckToken = body.appCheckToken.trim();
+    }
   } catch {
     await padMinLatency(started, minLatency);
     return json({ ok: false, error: 'Request body must be JSON with an email field.', code: 'INVALID_BODY' }, 400);
@@ -186,6 +191,12 @@ export async function handlePasswordResetRequest(
   if (!email) {
     await padMinLatency(started, minLatency);
     return json({ ok: false, error: 'Enter a valid email address.', code: 'INVALID_EMAIL' }, 400);
+  }
+
+  const appCheckGate = await enforceAppCheckIfRequired(request, env, appCheckToken);
+  if (!appCheckGate.ok) {
+    await padMinLatency(started, minLatency);
+    return appCheckGate.response;
   }
 
   const budget = await checkOutboundDailyBudget(env);

@@ -262,9 +262,9 @@ Lazy `VisibilityConstellation` (vanilla Three or fragment shader):
 **Outcome:** `design.md` + token map + punch list accepted; no visual ship yet beyond tokens if trivial.
 
 **Acceptance:**
-- [ ] `design.md` at repo root matches locks above
-- [ ] File-level modify/create/delete list confirmed (deletes empty)
-- [ ] Activation plan coexistence noted
+- [x] `design.md` at repo root matches locks above
+- [x] File-level modify/create/delete list confirmed (deletes empty)
+- [x] Activation plan coexistence noted
 
 **Kill:** Brand color rewrite requested → stop; map existing gold/black only.
 
@@ -275,10 +275,10 @@ Lazy `VisibilityConstellation` (vanilla Three or fragment shader):
 **Files:** `LandingPage.tsx`, `PremiumAtmosphere.tsx`, `App.tsx`, `index.html` tokens
 
 **Acceptance:**
-- [ ] Atmosphere visible on landing
-- [ ] Fold: brand, one headline, one support line, ≤2 CTAs, stage panel
-- [ ] Capability grid ≤3 items or replaced by Workbench captions
-- [ ] Reduced-motion: no drift/tilt
+- [x] Atmosphere visible on landing
+- [x] Fold: brand, one headline, one support line, ≤2 CTAs, stage panel
+- [x] Capability grid ≤3 items or replaced by Workbench captions
+- [x] Reduced-motion: no drift/tilt
 
 **Kill:** Adds Framer/Three in this phase → stop.
 
@@ -289,10 +289,10 @@ Lazy `VisibilityConstellation` (vanilla Three or fragment shader):
 **Files:** `VisibilityProbe.tsx`, `MarketingStage.tsx`, `demo/*`, `LandingPage.tsx`, CTA wiring
 
 **Acceptance:**
-- [ ] User can complete sample run in ≤60s (offline fixtures OK)
-- [ ] Honesty badges + engine enum vocabulary present
-- [ ] Zero invented metrics; no fake score fallbacks
-- [ ] Soft CTA into Instant Audit; no unsigned hosted spend
+- [x] User can complete sample run in ≤60s (offline fixtures OK)
+- [x] Honesty badges + engine enum vocabulary present
+- [x] Zero invented metrics; no fake score fallbacks
+- [x] Soft CTA into Instant Audit; no unsigned hosted spend
 
 **Kill:** Requires production LLM spend for unauthenticated users → stop; keep sample.
 
@@ -303,10 +303,10 @@ Lazy `VisibilityConstellation` (vanilla Three or fragment shader):
 **Files:** `App.tsx` shell, `DashboardView.tsx`, `InstantAuditView.tsx` chrome only; `PricingPage` / `Why` / `Infrastructure` / `Intelligence`; Auth + Paywall glass parity
 
 **Acceptance:**
-- [ ] Same accent/type/focus language
-- [ ] No marketing marquee inside tools
-- [ ] Activation tracker / pricing truth not broken
-- [ ] Marketing siblings: subtle atmosphere + shared footer
+- [x] Same accent/type/focus language (app header + Pricing voice aligned to `design.md`; Instant Audit chrome continues)
+- [x] No marketing marquee inside tools
+- [x] Activation tracker / pricing truth not broken
+- [x] Marketing siblings: subtle atmosphere + shared footer
 
 **Kill:** Redesigns Brand Memory / Mem0 → stop.
 
@@ -323,6 +323,23 @@ Lazy `VisibilityConstellation` (vanilla Three or fragment shader):
 - [x] Bundle/FPS budgets met; no R3F (Canvas2D chunk ~2KB gzip; Three not added)
 
 **Kill:** Decorative particles / unrelated scene → stop. Payload >200KB gzip without override → stop.
+
+### Phase 4.5 - Blender-authored field plates (Session craft-4.5)
+
+**Outcome:** Product-serving Visibility Field plates authored in Blender, committed for deploy, soft underlay under SVG/Canvas. No Three/GLB runtime.
+
+**Files:** `scripts/constellation/*`, `components/marketing/constellationLayout.ts`, `ConstellationPlate.tsx`, `public/brand/constellation/*`, `design/constellation/visibility-field.glb` (archive), Svg/Canvas/Probe wire
+
+**Acceptance:**
+- [x] Layout SSOT shared by SVG, Canvas, and Blender bake (`components/marketing/constellationLayout.ts`)
+- [x] `npm run constellation:bake` regenerates plates + archive GLB when Blender is present
+- [x] `npm run constellation:bake:check` validates layout parity + budgets without Blender
+- [x] Committed WebP plates ≤100KB; hero ≤140KB; OG still ≤220KB; GLB archive ≤450KB
+- [x] Runtime still SVG + Canvas2D; plate is optional gated underlay; hero stage uses Blender field-hero behind Probe
+- [x] Honesty: idle / sample-fixture statuses only; no invented SEO KPIs
+- [x] Landing Map section shows product-accurate field render (engines only)
+
+**Kill:** Loading GLB/Three on marketing path → stop. CI requiring Blender for `npm run build` → stop.
 
 ### Phase 5 - Hallmark gate + deslop (Session craft-5)
 

@@ -100,6 +100,12 @@ export interface Env {
   /** DataForSEO API login (hosted LLM Mentions / SERP). Pair with DATAFORSEO_PASSWORD. */
   DATAFORSEO_LOGIN?: string;
   DATAFORSEO_PASSWORD?: string;
+  /**
+   * Budget hard-stop kill-switch: `off` (never halt), `soft` (alerts only),
+   * `hard` (policy-driven). Unset defaults to hard. Soft-alert era should set
+   * `soft` or leave policies with hard_stop_enabled=0 until invoice validation.
+   */
+  BUDGET_ENFORCEMENT?: string;
   /** Feature flags (string "true" / "false"). */
   ORACLE_SERVER_ENABLED?: string;
   /**

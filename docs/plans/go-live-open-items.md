@@ -101,6 +101,16 @@ Auth stack for MCP: session cookie → `lm_live_*` API key → `mcp_*` OAuth tok
 - [x] Observability: Worker observability enabled in wrangler
 - [x] Never invent SEO metrics (`not_measured` / `unknown`)
 - [x] Pricing/Paywall entitlement truth (Growth = MCP + share; no fake free-trial CTA)
+- [x] Corpus OpenAI tool-trajectory export for external SFT (`exportOpenAiToolTrajectories`)
+- [x] Crawler loopback empty-token warning + `CRAWLER_REQUIRE_TOKEN` fail-closed option
+- [x] Eval cases for tool discipline / not_measured honesty (`evals/cases/tool-discipline.yaml`)
+
+### Operator-only (cannot close in git alone)
+
+1. Firebase App Check site key + console Enforce (A1-A6 in beginner ops doc).
+2. Optional Worker `REQUIRE_APP_CHECK=true` after metrics look healthy.
+3. `wrangler secret put` for PageSpeed / MCP OAuth / hosted DFS / OpenRouter as needed.
+4. Self-host crawler: set `CRAWLER_TOKEN` (and prefer `CRAWLER_REQUIRE_TOKEN=true`).
 
 ## Out of scope (next wave)
 
@@ -109,4 +119,4 @@ Auth stack for MCP: session cookie → `lm_live_*` API key → `mcp_*` OAuth tok
 - Multi-provider OAuth clients UI in Settings
 - Hosted OpenRouter/DataForSEO secrets on staging (currently BYOK-oriented)
 
-Companion: [`ai-functions-production.md`](./ai-functions-production.md), [`tasks/deploy-gates.md`](../../tasks/deploy-gates.md).
+Companion: [`ai-functions-production.md`](./ai-functions-production.md), [`tasks/deploy-gates.md`](../../tasks/deploy-gates.md), [`domain-agent-training-mixture.md`](./domain-agent-training-mixture.md).

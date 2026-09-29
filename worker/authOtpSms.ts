@@ -6,6 +6,7 @@
  */
 import type { Env } from './env';
 import { json } from './workerUtils';
+import { enforceAppCheckIfRequired } from './appCheck';
 import {
   checkOutboundDailyBudget,
   enforceBurstLimit,
@@ -144,12 +145,22 @@ export async function handleRequestOtp(
   }
 
   let phoneRaw: unknown;
+  let appCheckToken: string | undefined;
   try {
-    const body = (await request.json()) as { phone?: unknown };
+    const body = (await request.json()) as { phone?: unknown; appCheckToken?: unknown };
     phoneRaw = body?.phone;
+    if (typeof body?.appCheckToken === 'string' && body.appCheckToken.trim()) {
+      appCheckToken = body.appCheckToken.trim();
+    }
   } catch {
     await padMinLatency(started, minLatency);
     return json({ ok: false, error: 'Request body must be JSON with a phone field.', code: 'INVALID_BODY' }, 400);
+  }
+
+  const appCheckGate = await enforceAppCheckIfRequired(request, env, appCheckToken);
+  if (!appCheckGate.ok) {
+    await padMinLatency(started, minLatency);
+    return appCheckGate.response;
   }
 
   const phone = normalizeE164Phone(phoneRaw);
@@ -233,12 +244,22 @@ export async function handleVerifyOtp(
     );
   }
 
-  let body: { phone?: unknown; code?: unknown };
+  let body: { phone?: unknown; code?: unknown; appCheckToken?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     await padMinLatency(started, minLatency);
     return json({ ok: false, error: 'Request body must be JSON with phone and code.', code: 'INVALID_BODY' }, 400);
+  }
+
+  const appCheckToken =
+    typeof body.appCheckToken === 'string' && body.appCheckToken.trim()
+      ? body.appCheckToken.trim()
+      : undefined;
+  const appCheckGate = await enforceAppCheckIfRequired(request, env, appCheckToken);
+  if (!appCheckGate.ok) {
+    await padMinLatency(started, minLatency);
+    return appCheckGate.response;
   }
 
   const phone = normalizeE164Phone(body.phone);

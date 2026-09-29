@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS budget_policies (
   amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
   currency TEXT NOT NULL DEFAULT 'usd',
   warn_percents TEXT NOT NULL DEFAULT '[50,80,95]',
-  hard_stop_enabled INTEGER NOT NULL DEFAULT 1,
+  hard_stop_enabled INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
   created_by TEXT,
   created_at INTEGER NOT NULL,

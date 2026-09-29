@@ -7,6 +7,11 @@ import type { HostedIdentity, EncryptedKeyBag } from './userTypes';
 export type UserStoreEnv = {
   DB?: D1Database;
   LUMINARA_KV?: KVNamespace;
+  /**
+   * Budget enforcement kill-switch: `off` | `soft` | `hard`.
+   * Unset defaults to hard (policy-driven). See worker/budgets.ts.
+   */
+  BUDGET_ENFORCEMENT?: string;
 };
 
 export type StoredUser = {

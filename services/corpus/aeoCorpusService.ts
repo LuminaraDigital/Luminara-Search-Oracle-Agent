@@ -46,6 +46,29 @@ export interface ShareGptTrainingSample {
   }>;
 }
 
+/** OpenAI-compatible tool-call message turn (standardize Hermes/xLAM/OpenManus-style data). */
+export interface OpenAiToolMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string;
+  name?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
+}
+
+export interface OpenAiToolTrajectory {
+  messages: OpenAiToolMessage[];
+  meta: {
+    domain: string;
+    query: string;
+    vertical: string;
+    source: 'luminara_aeo_corpus';
+  };
+}
+
 const CORPUS_STORAGE_KEY = 'luminara_aeo_corpus_records';
 
 export class AeoCorpusService {
@@ -221,6 +244,111 @@ export class AeoCorpusService {
           {
             from: 'gpt',
             value: gptValue,
+          },
+        ],
+      };
+    });
+  }
+
+  /**
+   * OpenAI-style tool trajectories for external SFT (Hermes / xLAM / agent mixtures).
+   * Encodes APS discipline: get_project_context before paid research; never invent metrics.
+   */
+  public exportOpenAiToolTrajectories(): OpenAiToolTrajectory[] {
+    const records = this.trainRecords();
+    return records.map((r, index) => {
+      const callIdCtx = `call_ctx_${index}`;
+      const callIdVis = `call_vis_${index}`;
+      const trust = this.formatTrustBlock(r);
+      const toolResult = {
+        domain: r.domain,
+        vertical: r.vertical,
+        query: r.query,
+        winning_schema_type: r.winningSchemaType,
+        entity_nodes: r.entityNodes,
+        citation_rate: r.citationRate,
+        schema_snippet: r.schemaSnippet,
+        trust: trust || null,
+        status: 'measured',
+      };
+      const finalContent = [
+        `Verdict: Prefer ${r.winningSchemaType} schema for "${r.query}" on ${r.domain}.`,
+        `Action: Deploy the @graph below, then re-measure visibility within 30 days.`,
+        '',
+        '```json',
+        r.schemaSnippet,
+        '```',
+        '',
+        r.plainEnglishBrief,
+        trust ? `\n${trust}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      return {
+        meta: {
+          domain: r.domain,
+          query: r.query,
+          vertical: r.vertical,
+          source: 'luminara_aeo_corpus',
+        },
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are Luminara Oracle. Call get_project_context before paid research tools. Never invent SEO metrics; use not_measured when evidence is missing. Return verdict + one action + report link when chatting.',
+          },
+          {
+            role: 'user',
+            content: `Improve AI citation readiness for ${r.domain} (${r.vertical}) on query "${r.query}".`,
+          },
+          {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              {
+                id: callIdCtx,
+                type: 'function',
+                function: {
+                  name: 'get_project_context',
+                  arguments: JSON.stringify({ domain: r.domain }),
+                },
+              },
+            ],
+          },
+          {
+            role: 'tool',
+            name: 'get_project_context',
+            tool_call_id: callIdCtx,
+            content: JSON.stringify({
+              domain: r.domain,
+              vertical: r.vertical,
+              research_log_within_30_days: false,
+            }),
+          },
+          {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              {
+                id: callIdVis,
+                type: 'function',
+                function: {
+                  name: 'get_visibility_snapshot',
+                  arguments: JSON.stringify({ domain: r.domain, query: r.query }),
+                },
+              },
+            ],
+          },
+          {
+            role: 'tool',
+            name: 'get_visibility_snapshot',
+            tool_call_id: callIdVis,
+            content: JSON.stringify(toolResult),
+          },
+          {
+            role: 'assistant',
+            content: finalContent,
           },
         ],
       };

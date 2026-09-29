@@ -108,6 +108,58 @@ function canUsePaid(ctx: McpToolContext): boolean {
   return false;
 }
 
+const CONTEXT_LOADED_TTL_SEC = 60 * 60;
+
+function contextLoadedKey(accountId: string, projectId: string): string {
+  return `mcp:context_loaded:${accountId}:${projectId}`;
+}
+
+/** APS: mark that get_project_context succeeded for this project (KV TTL 1h). */
+export async function markProjectContextLoaded(
+  env: Env,
+  accountId: string,
+  projectId: string,
+): Promise<void> {
+  if (!env.LUMINARA_KV) return;
+  await env.LUMINARA_KV.put(contextLoadedKey(accountId, projectId), String(Date.now()), {
+    expirationTtl: CONTEXT_LOADED_TTL_SEC,
+  });
+}
+
+/**
+ * APS invariant: paid research requires a recent get_project_context for the project.
+ * Returns an error result when the gate fails; null when allowed.
+ */
+export async function requireProjectContextBeforePaid(
+  env: Env,
+  accountId: string,
+  projectId: string | null,
+): Promise<McpToolResult | null> {
+  if (!projectId) {
+    return textResult(
+      'Paid tools require projectId. Call get_project_context for that project first.',
+      { code: 'CONTEXT_REQUIRED', reason: 'missing_project_id' },
+      true,
+    );
+  }
+  if (!env.LUMINARA_KV) {
+    return textResult(
+      'Paid tools require project context, but KV is unbound. Bind LUMINARA_KV and call get_project_context.',
+      { code: 'CONTEXT_REQUIRED', reason: 'kv_unbound' },
+      true,
+    );
+  }
+  const loaded = await env.LUMINARA_KV.get(contextLoadedKey(accountId, projectId));
+  if (!loaded) {
+    return textResult(
+      'Call get_project_context for this project before paid research tools (APS).',
+      { code: 'CONTEXT_REQUIRED', reason: 'context_not_loaded' },
+      true,
+    );
+  }
+  return null;
+}
+
 function paidHandler(name: string) {
   return async (args: Record<string, unknown>, ctx: McpToolContext): Promise<McpToolResult> => {
     const rt = buildPaidToolRuntime({
@@ -203,6 +255,7 @@ const TOOLS: McpToolDef[] = [
       if (!projectId) return textResult('projectId required', undefined, true);
       const context = await getProjectContext(ctx.env, ctx.accountId, projectId);
       if (!context) return textResult('Project not found', undefined, true);
+      await markProjectContextLoaded(ctx.env, ctx.accountId, projectId);
       return textResult(context.digestMarkdown, { context });
     },
   },
@@ -455,6 +508,10 @@ async function callTool(
       { code: 'PAID_TOOL_FORBIDDEN' },
       true,
     );
+  }
+  if (tool.creditClass === 'paid') {
+    const contextGate = await requireProjectContextBeforePaid(ctx.env, ctx.accountId, projectId);
+    if (contextGate) return contextGate;
   }
   const result = await tool.handler(args || {}, ctx);
 

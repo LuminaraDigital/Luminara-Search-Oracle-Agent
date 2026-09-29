@@ -24,17 +24,26 @@ jobs:
       - name: Fail if secrets are present in the tree
         run: npm run secrets:check
 
+      - name: Fail if forbidden product tokens leak into the tree
+        run: npm run tokens:check
+
       - name: Validate environment isolation schema
         run: npm run env:validate
 
       - name: Type check (Client + Worker)
         run: npm run typecheck
 
+      - name: Constellation bake budgets (committed assets; no Blender)
+        run: npm run constellation:bake:check
+
       - name: Lint (ESLint)
         run: npm run lint:ci
 
       - name: Unit and integration tests with coverage
         run: npm run test:coverage
+
+      - name: Deterministic agent honesty evals
+        run: npm run evals
 
       - name: Upload coverage summary
         if: always()

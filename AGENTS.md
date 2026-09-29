@@ -53,7 +53,9 @@ Screenshot-click automation uses `services/grounding/` (PointerBench protocol): 
 
 ## Related plans
 
+- `docs/plans/landing-moat-100x.md` (landing moat Sessions S0-S6; Three.js S6 CEO-only)
 - `docs/plans/agent-mcp-product-surface.md` (APS A0-A8)
+- `docs/plans/virality-activation-loops.md` (share OG + MCP mint activation)
 - `docs/plans/e2e-visibility-agent-platform.md` (W0-W8)
 - `docs/plans/gui-grounding-pointerbench.md`
 - `docs/plans/indexed-dom-action-agent.md` (B0-B5)

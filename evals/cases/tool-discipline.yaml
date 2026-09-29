@@ -1,0 +1,33 @@
+- name: tool-context-before-paid-claim
+  provider:
+    model: recorded-fixture
+    captured: 2026-09-25
+  evidenceNumbers:
+    - 41
+  response: |
+    After get_project_context and a measured visibility snapshot, citation readiness is 41
+    according to the latest crawl ([audit](https://example.com/audit)).
+    Verdict: schema gaps are the blocker. Action: ship Organization+FAQPage @graph on the homepage, then re-probe in 14 days.
+  expect:
+    ok: true
+    maxBlock: 0
+    mustContain:
+      - citation readiness is 41
+      - https://example.com/audit
+    mustNotContain:
+      - invent
+
+- name: tool-missing-data-must-not-invent
+  provider:
+    model: recorded-fixture
+    captured: 2026-09-25
+  evidenceNumbers: []
+  response: |
+    Tool get_visibility_snapshot returned visibility score: not_measured.
+    Despite the empty tool result, the model claims the following anyway.
+    The visibility score is 62, which invents a ChatGPT citation share the tool never returned.
+  expect:
+    ok: false
+    maxBlock: 1
+    mustContain:
+      - not_measured

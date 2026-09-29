@@ -8,11 +8,17 @@
  * lifetime budgets are schema-included (migration 0012) but NOT enforced in
  * this loop; the account scope is the only live control.
  *
- * Money-state rules (mirroring paymentLedger.ts):
- * - Enforcement reads fail closed: isBudgetHalted returns true when DB is
- *   unbound or the tables are missing, so paid tools never run unmetered.
+ * Money-state rules (mirroring paymentLedger.ts, refined for safe deploys):
+ * - Enforcement fails closed when the budget schema is present but a read
+ *   errors, or when DB is unbound: never silently allow spend you cannot meter.
+ * - Enforcement fails open when budget tables/columns are absent (migrations
+ *   not applied yet): treat as unbudgeted so a Worker deploy cannot outage
+ *   paid MCP before `db:migrate`. See docs/plans/paperclip-pattern-production-ship.md H1.
+ * - `BUDGET_ENFORCEMENT=off|soft|hard` is an operator kill-switch (Env binding).
  * - Alerting writes fail open: a failed incident insert or audit log never
  *   blocks a tool call.
+ * - New policies default hard_stop_enabled = 0 (soft-alert era) until an
+ *   operator explicitly enables hard stops.
  * - cost_events is the only spend record; window totals are always computed
  *   with SQL SUM so a replay or correction recompute is possible (no mutable
  *   counters).
@@ -35,6 +41,27 @@ export const SOFT_THRESHOLDS = [50, 80, 95] as const;
 /** Approve-once resume marker: mcp_action_requests.kind = 'budget_override'
  * with this tool_name; the window it covers lives in args_json. */
 export const BUDGET_OVERRIDE_TOOL = 'budget_override';
+
+/** Operator kill-switch: off = never halt; soft = honor policies but never
+ * hard-stop; hard / unset = policy-driven hard stops (default for prod once
+ * soft-alert validation completes). */
+export type BudgetEnforcementMode = 'off' | 'soft' | 'hard';
+
+export function budgetEnforcementMode(env: UserStoreEnv): BudgetEnforcementMode {
+  const raw = (env.BUDGET_ENFORCEMENT || '').trim().toLowerCase();
+  if (raw === 'off' || raw === 'soft' || raw === 'hard') return raw;
+  return 'hard';
+}
+
+function isBudgetSchemaMissingError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('no such table') ||
+    lower.includes('no such column') ||
+    (lower.includes('budget_policies') && lower.includes('does not exist'))
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -208,6 +235,8 @@ export async function upsertBudgetPolicy(
     monthlyBudgetCents: number;
     currency?: string;
     createdBy?: string | null;
+    /** Default false (soft-alert era). Pass true only when enabling hard stops. */
+    hardStopEnabled?: boolean;
     now?: number;
   },
 ): Promise<BudgetPolicyRow> {
@@ -221,21 +250,22 @@ export async function upsertBudgetPolicy(
   }
   const now = params.now ?? Date.now();
   const currency = (params.currency || 'usd').trim().toLowerCase() || 'usd';
+  const hardStop = params.hardStopEnabled === true ? 1 : 0;
   const id = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO budget_policies
        (id, account_id, scope_type, scope_id, metric, window_kind, amount_cents, currency,
         warn_percents, hard_stop_enabled, is_active, created_by, created_at, updated_at)
      VALUES (?, ?, 'account', NULL, 'billed_cents', 'calendar_month_utc', ?, ?,
-             '[50,80,95]', 1, 1, ?, ?, ?)
+             '[50,80,95]', ?, 1, ?, ?, ?)
      ON CONFLICT(account_id, scope_type, IFNULL(scope_id, '')) WHERE is_active = 1
      DO UPDATE SET amount_cents = excluded.amount_cents,
                    currency = excluded.currency,
                    warn_percents = excluded.warn_percents,
-                   hard_stop_enabled = 1,
+                   hard_stop_enabled = excluded.hard_stop_enabled,
                    updated_at = excluded.updated_at`,
   )
-    .bind(id, params.accountId, amount, currency, params.createdBy ?? null, now, now)
+    .bind(id, params.accountId, amount, currency, hardStop, params.createdBy ?? null, now, now)
     .run();
   const policy = await getBudgetPolicy(env, params.accountId, now);
   if (!policy) throw new Error('budget policy upsert failed');
@@ -405,9 +435,11 @@ export async function recordBudgetIncident(
 /**
  * True when the account budget hard stop is active for the CURRENT UTC window:
  * spent >= monthly budget and no approve-once override row exists that covers
- * this window. Enforcement path fails closed: DB missing, tables missing, or
- * a read error all return true so paid tools stop rather than run unmetered
- * (design decision 10). Unbudgeted accounts are never halted.
+ * this window.
+ *
+ * Unbudgeted accounts are never halted. Schema-not-applied fails open (H1).
+ * DB unbound or other read errors fail closed (design decision 10). Kill-switch
+ * `BUDGET_ENFORCEMENT=off|soft` never hard-stops.
  */
 export async function isBudgetHalted(
   env: UserStoreEnv,
@@ -415,6 +447,8 @@ export async function isBudgetHalted(
   now?: number,
 ): Promise<boolean> {
   const at = now ?? Date.now();
+  const mode = budgetEnforcementMode(env);
+  if (mode === 'off' || mode === 'soft') return false;
   if (!env.DB) {
     reportBudgetFault('isBudgetHalted');
     return true;
@@ -428,6 +462,7 @@ export async function isBudgetHalted(
     spentCents = await countWindowSpend(env, accountId, budgetWindowFor(at));
   } catch (err) {
     reportBudgetFault('isBudgetHalted', err);
+    if (isBudgetSchemaMissingError(err)) return false;
     return true;
   }
   if (spentCents < policy.amount_cents) return false;

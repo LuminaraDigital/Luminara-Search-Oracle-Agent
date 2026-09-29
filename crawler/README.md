@@ -30,6 +30,7 @@ To start the crawler together with the other self-hosted helpers (Writing check 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CRAWLER_TOKEN` | empty | Shared secret sent as `x-crawler-token` or `Authorization: Bearer`. Required whenever `HOST` is not loopback. |
+| `CRAWLER_REQUIRE_TOKEN` | `false` | When `true`, refuse to start without `CRAWLER_TOKEN` even on loopback (recommended on shared machines). |
 | `CRAWLER_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated exact browser origins allowed via CORS (never `*`). Set it empty to allow no browser origin; add `https://luminarasuite.com` to use the hosted app. |
 | `CRAWLER_MAX_CONCURRENCY` | `2` | Concurrent `/scrape`, `/serp`, and live `/session` browsers. Each open session holds one slot until `DELETE /session/:id` or idle TTL (10 min). Extra requests get `429` with `Retry-After`. |
 | `CRAWLER_RATE_LIMIT_PER_MIN` | `30` | Requests per client IP per minute for `/scrape`, `/serp`, and `/session*`. |

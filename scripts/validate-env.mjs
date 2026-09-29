@@ -62,6 +62,49 @@ if (targetMode === 'production') {
     process.exit(1);
   }
   if (ton.warning) console.warn(`[EnvValidation] WARNING: ${ton.warning}`);
+
+  const appCheck = checkAppCheckConfig(config, 'production');
+  if (!appCheck.ok) {
+    console.error(`[EnvValidation] ${appCheck.message}`);
+    process.exit(1);
+  }
+}
+
+if (targetMode === 'staging') {
+  let config;
+  try {
+    config = parseJsonc(wranglerContent);
+  } catch (err) {
+    console.error(`[EnvValidation] wrangler.jsonc could not be parsed: ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
+  }
+  const appCheck = checkAppCheckConfig(config, 'staging');
+  if (!appCheck.ok) {
+    console.error(`[EnvValidation] ${appCheck.message}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * When REQUIRE_APP_CHECK is true for an env, FIREBASE_PROJECT_NUMBER must be a non-empty numeric string.
+ */
+function checkAppCheckConfig(config, envName) {
+  const vars =
+    envName === 'staging'
+      ? config?.env?.staging?.vars || {}
+      : { ...(config?.vars || {}), ...(config?.env?.production?.vars || {}) };
+  const required = String(vars.REQUIRE_APP_CHECK || '').trim().toLowerCase() === 'true';
+  if (!required) return { ok: true };
+  const projectNumber = String(vars.FIREBASE_PROJECT_NUMBER || '').trim();
+  if (!/^\d{6,}$/.test(projectNumber)) {
+    return {
+      ok: false,
+      message:
+        `${envName}: REQUIRE_APP_CHECK=true but FIREBASE_PROJECT_NUMBER is missing or not numeric. ` +
+        'Worker would return 503 APP_CHECK_MISCONFIGURED.',
+    };
+  }
+  return { ok: true };
 }
 
 console.log(`[EnvValidation] Environment checks passed for ${targetMode}. Staging-production isolation verified.`);

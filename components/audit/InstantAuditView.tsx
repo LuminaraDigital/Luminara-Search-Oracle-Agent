@@ -208,7 +208,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       <div className="text-center mb-6 sm:mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Radar className="w-4 h-4 text-gold-light" />
-          <span className="text-[10px] font-black uppercase tracking-[0.22em] sm:tracking-[0.3em] text-gold-light">
+          <span className="text-[10px] font-semibold tracking-wide text-gold-light">
             {isFullAudit ? 'Full audit' : 'Quick scout'}
           </span>
         </div>
@@ -228,15 +228,15 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       )}
 
       {dna ? (
-        <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-success-500/30 flex items-center justify-between text-xs">
+        <div className="mb-6 rounded-xl px-4 py-3 border border-success-500/30 bg-black/50 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-success-400 animate-pulse"></span>
             <span className="text-gray-300">Full audit locked to <strong className="text-white">{dna.name}</strong></span>
           </div>
-          <span className="text-[10px] font-mono text-success-400 uppercase tracking-wider">Profile linked</span>
+          <span className="text-[10px] font-mono text-success-400 tracking-wide">Profile linked</span>
         </div>
       ) : (
-        <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-warning-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="mb-6 rounded-xl px-4 py-3 border border-warning-500/30 bg-black/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-gold"></span>
             <span className="text-gray-300">
@@ -245,7 +245,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             </span>
           </div>
           {onNavigateDNA && (
-            <button type="button" onClick={onNavigateDNA} className="text-[10px] font-bold uppercase tracking-wider text-gold-light hover:underline shrink-0">
+            <button type="button" onClick={onNavigateDNA} className="text-[10px] font-semibold tracking-wide text-gold-light hover:underline shrink-0">
               Set up profile →
             </button>
           )}
@@ -254,11 +254,11 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       {/* Controls Card */}
       {!report && (
-        <div className="glass-morphism rounded-2xl border border-gold/30 p-4 sm:p-6 md:p-8 mb-8 shadow-2xl">
+        <div className="rounded-2xl border border-gold/25 bg-black/55 p-4 sm:p-6 md:p-8 mb-8 shadow-xl">
           <div className="flex flex-col gap-6">
             <div>
-              <label htmlFor="audit-target-url" className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
-                Target Website Domain / URL
+              <label htmlFor="audit-target-url" className="block text-xs font-medium tracking-wide text-gray-400 mb-2">
+                Target website domain / URL
               </label>
               <div className="flex flex-col sm:relative gap-2 sm:gap-0">
                 <input
@@ -279,10 +279,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                   onClick={() => handleExecuteAudit(url, focus)}
                   disabled={loading}
                   aria-busy={loading}
-                  className="sm:absolute sm:right-2 sm:top-1/2 sm:-translate-y-1/2 w-full sm:w-auto min-h-11 px-4 py-3 sm:py-2 rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-md shadow-gold/20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none whitespace-nowrap"
+                  className="sm:absolute sm:right-2 sm:top-1/2 sm:-translate-y-1/2 w-full sm:w-auto min-h-11 px-4 py-3 sm:py-2 rounded-lg bg-gold text-black font-semibold text-[11px] tracking-wide hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-md shadow-gold/15 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none whitespace-nowrap"
                 >
                   {loading && <div className="w-3 h-3 border-2 border-black/40 border-t-black rounded-full animate-spin" />}
-                  <span>{loading ? 'Scanning...' : isFullAudit ? 'Run full audit' : 'Run quick scout'}</span>
+                  <span>{loading ? 'Scanning…' : isFullAudit ? 'Run full audit' : 'Run quick scout'}</span>
                 </button>
               </div>
               {inlineValidationError && (

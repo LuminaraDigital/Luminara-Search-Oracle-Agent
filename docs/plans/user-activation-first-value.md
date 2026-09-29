@@ -3,7 +3,7 @@
 **Date:** 2026-09-22  
 **Status:** Planned (not started)  
 **Owner:** Product + full-stack (activation)  
-**Companion:** APS [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md), checklist [`tasks/todo.md`](../../tasks/todo.md)
+**Companion:** APS [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md), virality loops [`virality-activation-loops.md`](./virality-activation-loops.md) (authoritative for share OG + post-save MCP mint)
 
 ## Overview
 
@@ -90,7 +90,7 @@ Research: Growth MCP + DataForSEO BYOK; Agency hosted metered. Domain/Sentinel/s
 **Files:** `components/suite/DashboardView.tsx`, `App.tsx` (no Settings auto-open when ready / when guest), `PageSpeedPanel.tsx`, GSC empty copy, `AuthRequiredScreen` only if still shown for other views.
 
 **Acceptance:**
-- [ ] Tracker: Audit → profile → Save to project; Brand Memory not step 3
+- [x] Tracker: Audit → profile → Save to project; Brand Memory not step 3
 - [ ] Zero-audit home: one primary Audit CTA (not 3-column incomplete checklist)
 - [ ] Settings does not auto-open for first paint when user can already run scout (BYOK or, when signed in, hosted-ready)
 - [ ] PSI/GSC empty states say not measured / not connected, not "broken"

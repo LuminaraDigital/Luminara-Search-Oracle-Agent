@@ -199,7 +199,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         role="dialog"
         aria-modal="true"
         aria-labelledby="paywall-modal-title"
-        className="relative my-auto w-full max-w-2xl glass-morphism border border-gold/40 rounded-3xl p-5 sm:p-6 md:p-8 shadow-2xl text-white overflow-hidden max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] overflow-y-auto"
+        className="relative my-auto w-full max-w-2xl border border-gold/35 rounded-3xl p-5 sm:p-6 md:p-8 shadow-2xl text-white overflow-hidden max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] overflow-y-auto bg-black/90 backdrop-blur-xl"
       >
         {/* Glow ambient */}
         <div className="absolute top-0 right-1/4 w-72 h-72 bg-gold/10 blur-[120px] rounded-full pointer-events-none" />
@@ -212,10 +212,10 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">AI Oracle Paywall</span>
+                <span className="text-[10px] font-semibold tracking-wide text-gold">Plans</span>
                 {paymentOptions.tonAvailable && (
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-gold/15 text-gold-light border border-gold/30">
-                    Dual-Rail
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold tracking-wide bg-gold/15 text-gold-light border border-gold/30">
+                    Stars + TON
                   </span>
                 )}
               </div>
@@ -372,20 +372,20 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               type="button"
               onClick={() => (tab === 'stars' ? handleStarsCheckout('starter') : handleTonCheckout('starter'))}
               disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.2em] text-[10px] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="w-full py-3 rounded-xl bg-gold text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {busyPlan === 'starter'
                 ? 'Processing…'
                 : tab === 'stars'
-                ? inTg ? 'Pay 2,500 Stars · 30 Days' : 'Open in Telegram · 2,500 Stars'
-                : 'Pay 15 TON · 30 Days'}
+                ? inTg ? 'Pay 2,500 Stars · 30 days' : 'Open in Telegram · 2,500 Stars'
+                : 'Pay 15 TON · 30 days'}
             </button>
           </div>
 
           {/* Growth Plan */}
           <div className="p-5 rounded-2xl border border-white/15 bg-white/[0.02] flex flex-col justify-between space-y-4 hover:border-gold/60 transition-all relative">
-            <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-black text-[9px] uppercase tracking-widest">
-              Most Popular
+            <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-semibold text-[9px] tracking-wide">
+              Most popular
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -416,13 +416,13 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               type="button"
               onClick={() => (tab === 'stars' ? handleStarsCheckout('growth') : handleTonCheckout('growth'))}
               disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] hover:bg-gold-light hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="w-full py-3 rounded-xl bg-white text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {busyPlan === 'growth'
                 ? 'Processing…'
                 : tab === 'stars'
-                ? inTg ? 'Pay 7,500 Stars · 30 Days' : 'Open in Telegram · 7,500 Stars'
-                : 'Pay 45 TON · 30 Days'}
+                ? inTg ? 'Pay 7,500 Stars · 30 days' : 'Open in Telegram · 7,500 Stars'
+                : 'Pay 45 TON · 30 days'}
             </button>
           </div>
 
@@ -460,13 +460,13 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               type="button"
               onClick={() => (tab === 'stars' ? handleStarsCheckout('agency') : handleTonCheckout('agency'))}
               disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase tracking-[0.2em] text-[10px] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="w-full py-3 rounded-xl bg-gold text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               {busyPlan === 'agency'
                 ? 'Processing…'
                 : tab === 'stars'
-                ? inTg ? 'Pay 18,000 Stars · 30 Days' : 'Open in Telegram · 18,000 Stars'
-                : 'Pay 120 TON · 30 Days'}
+                ? inTg ? 'Pay 18,000 Stars · 30 days' : 'Open in Telegram · 18,000 Stars'
+                : 'Pay 120 TON · 30 days'}
             </button>
           </div>
         </div>

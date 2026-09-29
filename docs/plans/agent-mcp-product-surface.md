@@ -3,7 +3,7 @@
 **Goal:** Add OpenSEO-class agent productivity as an **additive** layer on Luminara (Workers + D1 + React). Agents and the app share the same projects, memory, tools, and durable reports. Methodology skills stay; a thin product skill + MCP layer binds them to real data.
 
 **Date:** 2026-09-18  
-**Status:** In progress (A0-A8 implemented in tree; paid DFS live calls still `not_measured` stubs)  
+**Status:** In progress (A0-A8 in tree; paid research live via DFS/OpenRouter router with honest `not_measured` / `estimated`; callers must `get_project_context` before paid MCP tools)
 **Companion plan:** [`e2e-visibility-agent-platform.md`](./e2e-visibility-agent-platform.md) (W0-W1 done; W2-W8 continue in parallel where noted)  
 **Pattern library:** local `open-seo-ref` checkout on the dev machine (do not fork into product)
 

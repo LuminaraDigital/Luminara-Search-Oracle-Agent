@@ -7,7 +7,12 @@ type Props = {
 };
 
 function labsSimulateEnabled(): boolean {
-  return typeof localStorage !== 'undefined' && localStorage.getItem('luminara_labs_gsc_simulate') === '1';
+  if (typeof localStorage === 'undefined') return false;
+  // Labs quarantine: developer Tools flag AND GSC simulate opt-in.
+  return (
+    localStorage.getItem('luminara_advanced_ui') === '1' &&
+    localStorage.getItem('luminara_labs_gsc_simulate') === '1'
+  );
 }
 
 export const GscPanel: React.FC<Props> = ({ domain }) => {
@@ -52,6 +57,11 @@ export const GscPanel: React.FC<Props> = ({ domain }) => {
           <dt>Avg position</dt>
           <dd>{summary.avgPosition}</dd>
         </dl>
+      )}
+      {summary?.measurementStatus === 'estimated' && (
+        <p className="text-[10px] text-warning-400 font-medium">
+          Simulated Labs data (estimated). Not measured Search Console metrics.
+        </p>
       )}
       <label className="inline-flex items-center gap-2 cursor-pointer text-[11px] text-gold-light">
         <span className="px-2 py-1 rounded-lg border border-white/10">Upload CSV</span>

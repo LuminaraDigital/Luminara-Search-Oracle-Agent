@@ -316,18 +316,37 @@ export async function resetPasswordWithEmail(email: string): Promise<{ success: 
   if (typeof window === 'undefined' || !window.location) {
     throw new Error('Password reset requires a browser context.');
   }
+  ensureAuth();
+  const appCheckToken = await getAppCheckTokenForBackend();
   const base = window.location.origin || '';
   const res = await fetch(`${base}/api/auth/reset-password`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
+    },
     credentials: 'same-origin',
-    body: JSON.stringify({ email: trimmed }),
+    body: JSON.stringify({
+      email: trimmed,
+      ...(appCheckToken ? { appCheckToken } : {}),
+    }),
   });
   let body: { success?: boolean; message?: string; error?: string; code?: string } = {};
   try {
     body = (await res.json()) as typeof body;
   } catch {
     body = {};
+  }
+  if (res.status === 401 && (body.code === 'APP_CHECK_REQUIRED' || body.code === 'APP_CHECK_INVALID')) {
+    throw Object.assign(
+      new Error(
+        body.error ||
+          (isAppCheckConfigured()
+            ? 'App Check token rejected. Refresh and try again.'
+            : 'App Check is required. Rebuild with VITE_FIREBASE_APPCHECK_SITE_KEY.'),
+      ),
+      { code: 'auth/app-check-required' },
+    );
   }
   if (res.status === 429) {
     throw Object.assign(new Error(body.error || 'Too many reset attempts. Wait and try again.'), {

@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { VisibilityConstellation } from './VisibilityConstellation';
-import { DEMO_PRESETS, DemoFocus } from './demo/demoFixtures';
+import { DEMO_PRESETS, DemoEngineId, DemoFocus } from './demo/demoFixtures';
 import { useDemoPlayback } from './demo/useDemoPlayback';
 
 interface VisibilityProbeProps {
@@ -8,6 +8,8 @@ interface VisibilityProbeProps {
   onOpenAudit: () => void;
   onSignIn: () => void;
   onSeePricing: () => void;
+  /** Notify stage when sample results light the field. */
+  onResultsLitChange?: (lit: boolean) => void;
 }
 
 const FOCI: DemoFocus[] = ['SEO', 'AEO', 'GEO'];
@@ -28,27 +30,43 @@ function statusLabel(status: string): string {
 }
 
 /**
- * Interactive Instant Audit micro-stage for the landing Workbench hero.
- * Sample path is offline fixtures only. Live hosted spend never starts here.
+ * Interactive Instant Audit workbench. Constellation-first immersion;
+ * click field nodes to focus engine rows. Sample path only.
  */
 export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
   isAuthenticated,
   onOpenAudit,
   onSignIn,
   onSeePricing,
+  onResultsLitChange,
 }) => {
   const demo = useDemoPlayback();
+  const [selected, setSelected] = useState<DemoEngineId | null>(null);
+  const rowRefs = useRef<Partial<Record<DemoEngineId, HTMLLIElement | null>>>({});
   const host =
     demo.fixture?.domain ||
     (demo.url.trim() ? demo.url.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') : 'your site');
 
+  useEffect(() => {
+    onResultsLitChange?.(demo.phase === 'results_sample' || demo.phase === 'analyzing');
+  }, [demo.phase, onResultsLitChange]);
+
+  useEffect(() => {
+    if (!selected) return;
+    rowRefs.current[selected]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selected]);
+
+  const selectEngine = (id: DemoEngineId) => {
+    setSelected((prev) => (prev === id ? null : id));
+  };
+
   return (
-    <div className="relative border border-white/[0.08] rounded-2xl p-4 sm:p-6 bg-[var(--color-paper-2)]/90 min-w-0">
-      <div className="flex items-center justify-between gap-3 mb-4 min-w-0">
+    <div className="relative border border-[var(--color-rule)] rounded-2xl p-3 sm:p-5 bg-[var(--color-paper-2)]/88 backdrop-blur-[3px] shadow-[0_28px_90px_-36px_rgba(0,0,0,0.9)] min-w-0 ring-1 ring-[var(--color-accent)]/15">
+      <div className="flex items-center justify-between gap-3 mb-3 min-w-0">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[var(--color-ink)] truncate">Visibility Probe</p>
           <p className="text-[11px] text-[var(--color-ink-2)] mt-0.5">
-            Instant Audit stage · answer engines
+            Instant Audit · click an engine on the field
           </p>
         </div>
         <span className="shrink-0 text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded-md border border-[var(--color-rule)] text-[var(--gold-light)]">
@@ -56,7 +74,15 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
         </span>
       </div>
 
-      <VisibilityConstellation engines={demo.engines} domainLabel={host} className="mb-4" />
+      <VisibilityConstellation
+        engines={demo.engines}
+        domainLabel={host}
+        className="mb-4"
+        size="hero"
+        plateVariant={demo.phase === 'results_sample' ? 'sample' : 'idle'}
+        selectedEngineId={selected}
+        onSelectEngine={selectEngine}
+      />
 
       <label htmlFor="visibility-probe-url" className="block text-[11px] text-[var(--color-ink-2)] mb-1.5">
         Domain
@@ -120,20 +146,35 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
       )}
 
       <ul className="space-y-2 mb-4">
-        {demo.engines.map((row) => (
-          <li
-            key={row.id}
-            className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-black/35 px-3 py-2.5 min-w-0"
-          >
-            <div className="min-w-0">
-              <p className="text-[12px] text-[var(--color-ink)] truncate">{row.label}</p>
-              <p className="text-[11px] text-[var(--color-ink-2)] mt-0.5 leading-snug">{row.note}</p>
-            </div>
-            <span className="shrink-0 text-[10px] font-mono uppercase tracking-wider text-gray-500">
-              {statusLabel(row.status)}
-            </span>
-          </li>
-        ))}
+        {demo.engines.map((row) => {
+          const active = selected === row.id;
+          return (
+            <li
+              key={row.id}
+              ref={(el) => {
+                rowRefs.current[row.id] = el;
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => selectEngine(row.id)}
+                className={`w-full text-left flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 min-w-0 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none ${
+                  active
+                    ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/12'
+                    : 'border-white/[0.06] bg-black/35 hover:border-white/20'
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="text-[12px] text-[var(--color-ink)] truncate">{row.label}</p>
+                  <p className="text-[11px] text-[var(--color-ink-2)] mt-0.5 leading-snug">{row.note}</p>
+                </div>
+                <span className="shrink-0 text-[10px] font-mono uppercase tracking-wider text-gray-500">
+                  {statusLabel(row.status)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
       {demo.fixture && (

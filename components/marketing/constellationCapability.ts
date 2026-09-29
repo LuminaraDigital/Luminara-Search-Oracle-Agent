@@ -44,3 +44,17 @@ export function shouldUseEnhancedConstellation(): boolean {
   if (isLowMemoryDevice()) return false;
   return hasWebGL();
 }
+
+/**
+ * Baked Blender plate underlay: desktop + bandwidth-friendly only.
+ * Does not require WebGL (static image). Skipped on mobile / saveData /
+ * reduced-motion / low-memory so SVG stays the light path.
+ */
+export function shouldLoadConstellationPlate(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.innerWidth < MIN_WIDTH) return false;
+  if (prefersReducedMotion()) return false;
+  if (isSaveDataEnabled()) return false;
+  if (isLowMemoryDevice()) return false;
+  return true;
+}

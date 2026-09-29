@@ -3,6 +3,8 @@ import { MarketingNav } from './MarketingNav';
 import { MarketingAtmosphere } from './marketing/MarketingAtmosphere';
 import { MarketingStage } from './marketing/MarketingStage';
 import { MarketingFooter } from './marketing/MarketingFooter';
+import { VisibilityConstellation } from './marketing/VisibilityConstellation';
+import { SAMPLE_FIXTURE } from './marketing/demo/demoFixtures';
 
 interface LandingPageProps {
   onEnter: () => void;
@@ -21,15 +23,15 @@ interface LandingPageProps {
 const LandingPage: React.FC<LandingPageProps> = ({
   onEnter,
   onNavigateAudit,
-  onNavigateSuite,
+  onNavigateSuite: _onNavigateSuite,
   onNavigateInfrastructure,
-  onNavigateIntelligence,
+  onNavigateIntelligence: _onNavigateIntelligence,
   onNavigateWhy,
   onNavigatePricing,
   isAuthenticated,
   userLabel,
   onSignInClick,
-  onSignUpClick,
+  onSignUpClick: _onSignUpClick,
 }) => {
   const openAudit = () => {
     if (onNavigateAudit) onNavigateAudit();
@@ -39,13 +41,11 @@ const LandingPage: React.FC<LandingPageProps> = ({
     (onSignInClick || onEnter)();
   };
 
+  // S1 nav: Pricing · Why · How (short). Instant Audit stays a CTA, not a nav clutter.
   const navLinks = [
-    ...(onNavigateAudit ? [{ label: 'Instant Audit', onClick: openAudit, desktopHidden: true as const }] : []),
-    ...(onNavigateSuite ? [{ label: 'All tools', onClick: onNavigateSuite, desktopHidden: true as const }] : []),
-    { label: 'How it works', onClick: onNavigateInfrastructure },
-    { label: 'Why us', onClick: onNavigateWhy },
     { label: 'Pricing', onClick: onNavigatePricing },
-    { label: 'Our AI', onClick: onNavigateIntelligence, desktopHidden: true as const },
+    { label: 'Why', onClick: onNavigateWhy },
+    { label: 'How', onClick: onNavigateInfrastructure },
   ];
 
   return (
@@ -53,14 +53,13 @@ const LandingPage: React.FC<LandingPageProps> = ({
       <MarketingAtmosphere />
       <MarketingNav
         brandLabel="Luminara Suite"
-        brandSub="AI search visibility"
         onBrandClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         links={navLinks}
         secondaryCta={
           !isAuthenticated ? { label: 'Sign in', onClick: signIn } : undefined
         }
         primaryCta={{
-          label: isAuthenticated ? 'Open app' : 'Audit my site',
+          label: isAuthenticated ? 'Open Instant Audit' : 'Run sample scout',
           onClick: isAuthenticated ? onEnter : openAudit,
         }}
         trailing={
@@ -79,16 +78,16 @@ const LandingPage: React.FC<LandingPageProps> = ({
               Luminara
             </p>
             <h1 className="text-[clamp(1.5rem,5.5vw,2.75rem)] font-light tracking-tight leading-[1.15] text-[var(--color-ink-2)] min-w-0 [overflow-wrap:anywhere]">
-              Show up where{' '}
-              <span className="text-[var(--gold-light)] font-medium">customers ask.</span>
+              Replace tool sprawl. Adopt AI{' '}
+              <span className="text-[var(--gold-light)] font-medium">without rebuilding.</span>
             </h1>
             <p className="max-w-xl mx-auto lg:mx-0 text-sm sm:text-base text-[var(--color-ink-2)] font-light leading-relaxed">
-              See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a
-              plain-English list of what to fix first.
+              Cut stack sprawl and ship on what you already run. Instant Audit and Visibility Probe
+              prove answer-engine presence with honest Sample labels; Live follows Instant Audit rules.
             </p>
             <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center lg:justify-start gap-3 pt-1 w-full">
               <button type="button" onClick={openAudit} className="mkt-cta-primary w-full sm:w-auto">
-                {isAuthenticated ? 'Open Instant Audit' : 'Audit my site'}
+                {isAuthenticated ? 'Open Instant Audit' : 'Run sample scout'}
               </button>
               <button type="button" onClick={onNavigatePricing} className="mkt-cta-secondary w-full sm:w-auto">
                 See pricing
@@ -119,46 +118,62 @@ const LandingPage: React.FC<LandingPageProps> = ({
       </section>
 
       <section className="relative py-16 sm:py-24 px-4 sm:px-6 md:px-20 z-10 border-t border-white/[0.05]">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-10">
-          {[
-            {
-              title: 'Paste a domain',
-              desc: 'The Workbench stage mirrors Instant Audit: URL in, engines out, no agency deck.',
-            },
-            {
-              title: 'Read measurement honestly',
-              desc: 'Measured, estimated, or not measured. We never invent citation scores.',
-            },
-            {
-              title: 'Ship one action',
-              desc: 'Leave with a ranked fix you can do this week, then open the full suite when ready.',
-            },
-          ].map((step) => (
-            <div key={step.title} className="min-w-0 border-t border-white/[0.08] pt-5">
-              <h2 className="text-base font-semibold text-[var(--color-ink)] mb-2">{step.title}</h2>
-              <p className="text-sm text-[var(--color-ink-2)] leading-relaxed font-light">{step.desc}</p>
-            </div>
-          ))}
-        </div>
-        {onNavigateInfrastructure && (
-          <div className="max-w-5xl mx-auto mt-10">
-            <button type="button" onClick={onNavigateInfrastructure} className="mkt-cta-secondary">
-              How it works
-            </button>
+        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-14 items-center">
+          <div className="min-w-0 order-2 lg:order-1">
+            <p className="text-[11px] font-mono uppercase tracking-wider text-[var(--gold-light)] mb-3">
+              Visibility field
+            </p>
+            <h2 className="font-display text-[clamp(1.75rem,5vw,2.75rem)] text-[var(--color-ink)] tracking-tight leading-tight mb-4 [overflow-wrap:anywhere]">
+              One map of where answers happen.
+            </h2>
+            <p className="text-sm sm:text-base text-[var(--color-ink-2)] font-light leading-relaxed mb-6">
+              Instant Audit models your brand across Google, AI Overviews, ChatGPT, and Perplexity.
+              Sample is labeled; Live follows Instant Audit rules. Brightness means measured or
+              estimated; dim means not measured yet. No invented citation scores.
+            </p>
+            <ul className="space-y-2 text-sm text-[var(--color-ink-2)]">
+              {[
+                'Paste a domain in the Workbench Probe',
+                'Read Measured / Estimated / Not measured honestly',
+                'Ship one owner-first fix, then open Instant Audit',
+              ].map((line) => (
+                <li key={line} className="border-t border-white/[0.08] pt-2">
+                  {line}
+                </li>
+              ))}
+            </ul>
+            {onNavigateInfrastructure && (
+              <button type="button" onClick={onNavigateInfrastructure} className="mkt-cta-secondary mt-8">
+                How it works
+              </button>
+            )}
           </div>
-        )}
+          <figure className="min-w-0 order-1 lg:order-2 relative overflow-hidden border border-[var(--color-rule)] bg-[var(--color-paper-2)] p-3 sm:p-4">
+            <VisibilityConstellation
+              engines={SAMPLE_FIXTURE.engines}
+              domainLabel={SAMPLE_FIXTURE.domain}
+              size="hero"
+              plateVariant="sample"
+              className="max-h-none"
+            />
+            <figcaption className="mt-2 text-[11px] font-mono text-[var(--color-ink-2)]">
+              Interactive sample field · product metaphor · not a live KPI chart
+            </figcaption>
+          </figure>
+        </div>
       </section>
 
       <section className="relative py-16 sm:py-24 px-4 sm:px-6 z-10 border-t border-white/[0.05] text-center">
         <div className="max-w-2xl mx-auto space-y-6">
           <h2 className="font-display text-[clamp(1.75rem,6vw,3rem)] text-[var(--color-ink)] tracking-tight leading-tight [overflow-wrap:anywhere]">
-            Run your first site audit.
+            Run your first sample scout.
           </h2>
           <p className="text-sm sm:text-base text-[var(--color-ink-2)] font-light leading-relaxed">
-            Built by Luminara Digital for owners who want clearer search and AI visibility.
+            Start labeled Sample, then open Instant Audit when you are ready for Live. Built by
+            Luminara Digital.
           </p>
           <button type="button" className="mkt-cta-primary" onClick={openAudit}>
-            {isAuthenticated ? 'Open Instant Audit' : 'Audit my site'}
+            {isAuthenticated ? 'Open Instant Audit' : 'Run sample scout'}
           </button>
         </div>
       </section>

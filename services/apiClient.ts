@@ -19,6 +19,8 @@ export interface ServerHealth {
   telegram: boolean;
   /** True when the Worker verifies Firebase ID tokens (FIREBASE_PROJECT_ID set). */
   firebase?: boolean;
+  /** True when Worker auth routes require a valid Firebase App Check token. */
+  appCheckRequired?: boolean;
   requireAuth: boolean;
   requireSubscription?: boolean;
   freeDailyLimit?: number;

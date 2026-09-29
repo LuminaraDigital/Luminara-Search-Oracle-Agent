@@ -98,4 +98,18 @@ Brand is performing well.
     const alpaca = aeoCorpusService.exportAlpacaDataset();
     expect(alpaca.every((r) => !r.input.includes('corslimited.com'))).toBe(true);
   });
+
+  it('exports OpenAI-style tool trajectories with get_project_context first', () => {
+    aeoCorpusService.ingestAudit('tooltraj.com', '# Tool Trajectory Report\nSaaS audit', 88);
+    const rows = aeoCorpusService.exportOpenAiToolTrajectories();
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+
+    const first = rows.find((r) => r.meta.domain === 'tooltraj.com');
+    expect(first).toBeDefined();
+    expect(first!.messages[0].role).toBe('system');
+    expect(first!.messages[2].tool_calls?.[0].function.name).toBe('get_project_context');
+    expect(first!.messages[4].tool_calls?.[0].function.name).toBe('get_visibility_snapshot');
+    expect(first!.messages.some((m) => m.role === 'tool')).toBe(true);
+    expect(first!.messages[first!.messages.length - 1].content).toContain('Verdict');
+  });
 });

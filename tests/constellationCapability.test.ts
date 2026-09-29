@@ -4,6 +4,7 @@ import {
   isLowMemoryDevice,
   isSaveDataEnabled,
   prefersReducedMotion,
+  shouldLoadConstellationPlate,
   shouldUseEnhancedConstellation,
 } from '../components/marketing/constellationCapability';
 
@@ -80,5 +81,18 @@ describe('constellationCapability', () => {
     stubDesktopWindow({ webgl: false });
     expect(hasWebGL()).toBe(false);
     expect(shouldUseEnhancedConstellation()).toBe(false);
+  });
+
+  it('allows baked plate without WebGL on capable desktop', () => {
+    stubDesktopWindow({ webgl: false });
+    expect(shouldLoadConstellationPlate()).toBe(true);
+    expect(shouldUseEnhancedConstellation()).toBe(false);
+  });
+
+  it('skips baked plate under 768px and saveData', () => {
+    stubDesktopWindow({ width: 375, webgl: true });
+    expect(shouldLoadConstellationPlate()).toBe(false);
+    stubDesktopWindow({ saveData: true, webgl: true });
+    expect(shouldLoadConstellationPlate()).toBe(false);
   });
 });

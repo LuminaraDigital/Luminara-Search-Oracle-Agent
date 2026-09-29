@@ -37,7 +37,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
             <ICONS.LuminaraLogo isThinking={isThinking} className="w-full h-full" />
           </div>
           <div className="space-y-6">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight gold-text pb-2">
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-display tracking-tight text-gold-light pb-2">
               Ask Luminara
             </h1>
             <p className="text-gray-400 text-lg max-w-2xl mx-auto leading-relaxed px-4">
@@ -46,27 +46,27 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full px-4">
-            <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
-              <div className="text-3xl font-bold gold-text mb-2">Live</div>
-              <div className="text-[9px] text-gold font-black uppercase tracking-[0.2em] mb-3">SERP Grounding</div>
+            <div className="p-6 rounded-[24px] text-center border border-gold/20 bg-black/50 hover:border-gold/40 transition-all group">
+              <div className="text-3xl font-semibold text-gold-light mb-2">Live</div>
+              <div className="text-[10px] text-gold font-semibold tracking-wide mb-3">SERP grounding</div>
               <div className="text-[10px] text-gray-400 leading-relaxed">Every answer is grounded in real search results when a search key is configured.</div>
             </div>
             
-            <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
-              <div className="text-3xl font-bold gold-text mb-2">3</div>
-              <div className="text-[9px] text-gold font-black uppercase tracking-[0.2em] mb-3">Audit Lenses</div>
+            <div className="p-6 rounded-[24px] text-center border border-gold/20 bg-black/50 hover:border-gold/40 transition-all group">
+              <div className="text-3xl font-semibold text-gold-light mb-2">3</div>
+              <div className="text-[10px] text-gold font-semibold tracking-wide mb-3">Audit lenses</div>
               <div className="text-[10px] text-gray-400 leading-relaxed">SEO, AEO and GEO audits with visibility radar, competitor map and schema gaps.</div>
             </div>
             
-            <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
-              <div className="text-3xl font-bold gold-text mb-2">DNA</div>
-              <div className="text-[9px] text-gold font-black uppercase tracking-[0.2em] mb-3">Brand Memory</div>
+            <div className="p-6 rounded-[24px] text-center border border-gold/20 bg-black/50 hover:border-gold/40 transition-all group">
+              <div className="text-3xl font-semibold text-gold-light mb-2">DNA</div>
+              <div className="text-[10px] text-gold font-semibold tracking-wide mb-3">Business profile</div>
               <div className="text-[10px] text-gray-400 leading-relaxed">Link your Business DNA once and every audit is personalised to your USP and competitors.</div>
             </div>
 
-            <div className="p-6 glass-morphism rounded-[24px] text-center border border-gold-500/10 hover:border-gold-500/40 transition-all group">
-              <div className="text-3xl font-bold gold-text mb-2">Plain</div>
-              <div className="text-[9px] text-gold font-black uppercase tracking-[0.2em] mb-3">English Mode</div>
+            <div className="p-6 rounded-[24px] text-center border border-gold/20 bg-black/50 hover:border-gold/40 transition-all group">
+              <div className="text-3xl font-semibold text-gold-light mb-2">Plain</div>
+              <div className="text-[10px] text-gold font-semibold tracking-wide mb-3">English mode</div>
               <div className="text-[10px] text-gray-400 leading-relaxed">One click rewrites any report at an 8th-grade reading level for non-technical stakeholders.</div>
             </div>
           </div>

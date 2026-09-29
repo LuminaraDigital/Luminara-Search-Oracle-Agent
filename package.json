@@ -53,7 +53,9 @@
     "grounding:seed": "node --experimental-strip-types services/grounding/cli.ts --seed",
     "grounding:fetch": "node --experimental-strip-types services/grounding/cli.ts --fetch",
     "grounding:gate": "node --experimental-strip-types services/grounding/cli.ts",
-    "grounding:score": "node --experimental-strip-types services/grounding/cli.ts"
+    "grounding:score": "node --experimental-strip-types services/grounding/cli.ts",
+    "constellation:bake": "node scripts/constellation/bake.mjs",
+    "constellation:bake:check": "node scripts/constellation/bake.mjs --check-only"
   },
   "dependencies": {
     "@formepdf/core": "^0.20.1",

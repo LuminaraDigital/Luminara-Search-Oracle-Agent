@@ -1,0 +1,56 @@
+{
+  "name": "luminara-visibility-field",
+  "version": 2,
+  "metaphor": "answer-engine-visibility-constellation",
+  "product": "Instant Audit Visibility Probe: hub + Google/SERP, AI Overviews, ChatGPT, Perplexity",
+  "layout_source": "components/marketing/constellationLayout.ts",
+  "runtime": "SVG + Canvas2D only; GLB is archive/authoring",
+  "honesty": "Statuses are idle or sample-fixture labels only; never invent SEO KPIs",
+  "nodes": {
+    "web_serp": {
+      "pct": {
+        "x": 50,
+        "y": 12
+      },
+      "label": "Google"
+    },
+    "google_aio": {
+      "pct": {
+        "x": 88,
+        "y": 42
+      },
+      "label": "AIO"
+    },
+    "chatgpt": {
+      "pct": {
+        "x": 50,
+        "y": 88
+      },
+      "label": "ChatGPT"
+    },
+    "perplexity": {
+      "pct": {
+        "x": 12,
+        "y": 42
+      },
+      "label": "Perplexity"
+    }
+  },
+  "files": {
+    "idle": "field-idle.webp",
+    "sample": "field-sample.webp",
+    "hero": "field-hero.webp",
+    "hero_nodes": "field-hero-nodes.webp",
+    "og": "og-visibility-field.png"
+  },
+  "archive_glb": "design/constellation/visibility-field.glb",
+  "budgets": {
+    "plate_webp_max_bytes": 100000,
+    "hero_webp_max_bytes": 140000,
+    "hero_nodes_webp_max_bytes": 60000,
+    "og_png_max_bytes": 220000,
+    "glb_archive_max_bytes": 700000,
+    "soft_hero_idle_combined_bytes": 48000,
+    "hard_hero_idle_combined_bytes": 72000
+  }
+}

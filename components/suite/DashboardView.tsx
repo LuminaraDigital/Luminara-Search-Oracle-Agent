@@ -49,12 +49,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       cta: 'Set profile',
     },
     {
-      id: 'step_memory',
-      title: '3. Open Brand Memory',
-      desc: 'Track citation changes and optional Drift Sentinel alerts over time.',
+      id: 'step_save_project',
+      title: '3. Save to a project',
+      desc: 'Sign in to keep strategy and reports on the hosted project, not only in this browser.',
       done: hasChatOrMemory && hasDna,
-      view: AppView.BRAND_MEMORY,
-      cta: 'Open memory',
+      view: AppView.INSTANT_AUDIT,
+      cta: 'Continue in audit',
     },
   ];
 
@@ -147,7 +147,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
                 </span>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                Three steps to run a useful audit and keep results in memory.
+                Three steps: audit, profile, then save to a project.
               </p>
             </div>
             <div className="w-full sm:w-36 h-2 bg-white/10 rounded-full overflow-hidden shrink-0">

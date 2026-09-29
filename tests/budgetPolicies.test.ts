@@ -77,7 +77,7 @@ describe('budget policy CRUD', () => {
     expect(policy.metric).toBe('billed_cents');
     expect(policy.window_kind).toBe('calendar_month_utc');
     expect(policy.scope_type).toBe('account');
-    expect(policy.hard_stop_enabled).toBe(1);
+    expect(policy.hard_stop_enabled).toBe(0);
 
     const fetched = await getBudgetPolicy(env, 'acct_a', MAY_15);
     expect(fetched?.id).toBe(policy.id);
@@ -162,7 +162,7 @@ describe('window math (single `now` param)', () => {
 describe('thresholds and incident dedupe', () => {
   it('state ladder: ok -> soft_50 -> soft_80 -> soft_95 -> hard_stop', async () => {
     const env = makeEnv();
-    await upsertBudgetPolicy(env, { accountId: 'acct_l', monthlyBudgetCents: 1000, now: MAY_15 });
+    await upsertBudgetPolicy(env, { accountId: 'acct_l', monthlyBudgetCents: 1000, hardStopEnabled: true, now: MAY_15 });
     const ladder = async (cents: number) =>
       (await getBudgetStatus(env, 'acct_l', MAY_15)).state;
     expect(await ladder(0)).toBe('ok');
@@ -258,7 +258,7 @@ describe('hard stop and approve-once resume', () => {
 
   it('hard stop at >= 100 percent; below budget is not halted', async () => {
     const env = makeEnv();
-    await upsertBudgetPolicy(env, { accountId: 'acct_hs', monthlyBudgetCents: 100, now: MAY_15 });
+    await upsertBudgetPolicy(env, { accountId: 'acct_hs', monthlyBudgetCents: 100, hardStopEnabled: true, now: MAY_15 });
     await recordCostEvent(env, { accountId: 'acct_hs', billedCents: 99, toolName: 't', now: MAY_15 });
     expect(await isBudgetHalted(env, 'acct_hs', MAY_15)).toBe(false);
     await recordCostEvent(env, { accountId: 'acct_hs', billedCents: 1, toolName: 't', now: MAY_15 });
@@ -267,7 +267,7 @@ describe('hard stop and approve-once resume', () => {
 
   it('approveBudgetResume unhalts the current window only', async () => {
     const env = makeEnv();
-    await upsertBudgetPolicy(env, { accountId: 'acct_r', monthlyBudgetCents: 100, now: MAY_15 });
+    await upsertBudgetPolicy(env, { accountId: 'acct_r', monthlyBudgetCents: 100, hardStopEnabled: true, now: MAY_15 });
     await recordCostEvent(env, { accountId: 'acct_r', billedCents: 150, toolName: 't', now: MAY_15 });
     expect(await isBudgetHalted(env, 'acct_r', MAY_15)).toBe(true);
 
@@ -295,16 +295,35 @@ describe('hard stop and approve-once resume', () => {
     expect(row?.status).toBe('approved');
   });
 
-  it('enforcement fails closed when the budget tables are missing', async () => {
+  it('enforcement fails open when the budget tables are missing (H1)', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const env = makeEnv(new Map(), { DB: createSqliteD1({ skipMigrations: ['0012', '0013'] }) });
-    expect(await isBudgetHalted(env, 'acct_x', MAY_15)).toBe(true);
+    expect(await isBudgetHalted(env, 'acct_x', MAY_15)).toBe(false);
   });
 
   it('enforcement fails closed when DB is unbound', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const env = makeEnv(new Map(), { DB: undefined } as Partial<Env>);
     expect(await isBudgetHalted(env, 'acct_x', MAY_15)).toBe(true);
+  });
+
+  it('BUDGET_ENFORCEMENT=off never hard-stops even when over budget', async () => {
+    const env = makeEnv(new Map(), { BUDGET_ENFORCEMENT: 'off' });
+    await upsertBudgetPolicy(env, {
+      accountId: 'acct_off',
+      monthlyBudgetCents: 100,
+      hardStopEnabled: true,
+      now: MAY_15,
+    });
+    await recordCostEvent(env, { accountId: 'acct_off', billedCents: 500, toolName: 't', now: MAY_15 });
+    expect(await isBudgetHalted(env, 'acct_off', MAY_15)).toBe(false);
+  });
+
+  it('soft-alert default: overspend does not halt until hardStopEnabled', async () => {
+    const env = makeEnv();
+    await upsertBudgetPolicy(env, { accountId: 'acct_soft', monthlyBudgetCents: 100, now: MAY_15 });
+    await recordCostEvent(env, { accountId: 'acct_soft', billedCents: 500, toolName: 't', now: MAY_15 });
+    expect(await isBudgetHalted(env, 'acct_soft', MAY_15)).toBe(false);
   });
 });
 
@@ -327,7 +346,7 @@ describe('MCP gate integration', () => {
     // Halt the account BEFORE any paid call passes, then call a read-classified
     // paid tool (get_pagespeed_summary is governance risk 'read') so only the
     // budget gate could have blocked it.
-    await upsertBudgetPolicy(env, { accountId: 'acct_gate', monthlyBudgetCents: 1, now: Date.now() });
+    await upsertBudgetPolicy(env, { accountId: 'acct_gate', monthlyBudgetCents: 1, hardStopEnabled: true, now: Date.now() });
     await recordCostEvent(env, { accountId: 'acct_gate', billedCents: 5, toolName: 'seed', now: Date.now() });
     expect(await isBudgetHalted(env, 'acct_gate')).toBe(true);
 
@@ -350,7 +369,7 @@ describe('MCP gate integration', () => {
 
   it('budget block wins over destructive require_approval too', async () => {
     const env = makeEnv(new Map(agencyKv));
-    await upsertBudgetPolicy(env, { accountId: 'acct_gate', monthlyBudgetCents: 1, now: Date.now() });
+    await upsertBudgetPolicy(env, { accountId: 'acct_gate', monthlyBudgetCents: 1, hardStopEnabled: true, now: Date.now() });
     await recordCostEvent(env, { accountId: 'acct_gate', billedCents: 5, toolName: 'seed', now: Date.now() });
 
     const res = await handleMcpRequest(mcpCall('browse_goal', { url: 'https://x.test' }), env, user);
@@ -364,7 +383,7 @@ describe('MCP gate integration', () => {
 
   it('run provenance completes with budget_halted on a budget block', async () => {
     const env = makeEnv(new Map(agencyKv));
-    await upsertBudgetPolicy(env, { accountId: 'acct_gate', monthlyBudgetCents: 1, now: Date.now() });
+    await upsertBudgetPolicy(env, { accountId: 'acct_gate', monthlyBudgetCents: 1, hardStopEnabled: true, now: Date.now() });
     await recordCostEvent(env, { accountId: 'acct_gate', billedCents: 5, toolName: 'seed', now: Date.now() });
 
     const res = await handleMcpRequest(mcpCall('get_pagespeed_summary', { projectId: 'p1', url: 'https://x.test' }), env, user);
@@ -403,6 +422,7 @@ describe('MCP gate integration', () => {
 
   it('successful paid call records a cost event and fires a deduped soft alert', async () => {
     const kv = new Map(agencyKv);
+    kv.set('mcp:context_loaded:acct_gate:p1', String(Date.now()));
     const env = makeEnv(kv);
     // Budget 2 cents: the first hosted paid call (1c) hits 50 percent exactly
     // at the interim rate, second call crosses to 100.
@@ -535,7 +555,7 @@ describe('budget routes', () => {
       'x-telegram-init-data': initData,
       'cf-connecting-ip': '10.60.0.3',
     };
-    await upsertBudgetPolicy(env, { accountId: '7703', monthlyBudgetCents: 1 });
+    await upsertBudgetPolicy(env, { accountId: '7703', monthlyBudgetCents: 1, hardStopEnabled: true });
     await recordCostEvent(env, { accountId: '7703', billedCents: 3, toolName: 'seed' });
     expect(await isBudgetHalted(env, '7703')).toBe(true);
 

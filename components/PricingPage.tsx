@@ -54,7 +54,7 @@ function bulletsFor(id: 'starter' | 'growth' | 'agency'): string[] {
     e.shareLinks ? 'Public share links' : 'No public share links',
     `${e.teamSeats} team seat${e.teamSeats === 1 ? '' : 's'}`,
   ];
-  if (e.apiAccess) lines.push('Hosted API / research access');
+  if (e.apiAccess) lines.push('MCP paid research (Agency API or BYOK DataForSEO)');
   if (e.agencyClientLimit > 0) lines.push(`${e.agencyClientLimit} client workspaces`);
   return lines;
 }
@@ -88,7 +88,7 @@ const PricingPage: React.FC<PricingPageProps> = ({
 
       <main className="relative z-10 pt-28 sm:pt-36 pb-20 sm:pb-32 max-w-7xl mx-auto px-4 sm:px-6">
         <section className="mb-16 sm:mb-24 max-w-3xl">
-          <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-gold mb-6">Growth plan</p>
+          <p className="text-[10px] font-medium tracking-wide text-gold mb-6">Growth plan</p>
           <h1 className="font-display text-[clamp(2rem,7vw,4.5rem)] tracking-tight leading-[1.05] mb-8 [overflow-wrap:anywhere]">
             MCP, share links, and weekly audits in one workspace.
           </h1>
@@ -135,11 +135,11 @@ const PricingPage: React.FC<PricingPageProps> = ({
                 }`}
               >
                 {tier.highlight ? (
-                  <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-black text-[9px] uppercase tracking-widest">
+                  <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-semibold text-[9px] tracking-wide">
                     Recommended
                   </div>
                 ) : null}
-                <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-gray-400 mb-3">
+                <div className="text-[10px] font-medium tracking-wide text-gray-400 mb-3">
                   {PLAN_ENTITLEMENTS[tier.id].title}
                 </div>
                 <div className="flex items-baseline gap-2 mb-2">
@@ -193,8 +193,8 @@ const PricingPage: React.FC<PricingPageProps> = ({
               <TelegramAccountPanel compact />
             </div>
           )}
-          <p className="text-center text-gray-500 text-[10px] uppercase tracking-widest mt-6">
-            Stars or TON inside the app. Card checkout coming. Cancel anytime. Plan limits apply per account.
+          <p className="text-center text-gray-500 text-[10px] tracking-wide mt-6">
+            Stars or TON inside the app. Card checkout is not available yet. Cancel anytime. Plan limits apply per account.
           </p>
         </section>
       </main>
@@ -205,13 +205,13 @@ const PricingPage: React.FC<PricingPageProps> = ({
       >
         <p className="text-[10px] text-gray-500 tracking-wide">&copy; {new Date().getFullYear()} Luminara Suite</p>
         <div className="flex flex-wrap justify-center gap-6">
-          <a href="/privacy" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">
+          <a href="/privacy" className="text-[10px] tracking-wide text-gray-500 hover:text-gold">
             Privacy
           </a>
-          <a href="/terms" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">
+          <a href="/terms" className="text-[10px] tracking-wide text-gray-500 hover:text-gold">
             Terms
           </a>
-          <a href="/docs/mcp.html" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">
+          <a href="/docs/mcp.html" className="text-[10px] tracking-wide text-gray-500 hover:text-gold">
             MCP
           </a>
         </div>

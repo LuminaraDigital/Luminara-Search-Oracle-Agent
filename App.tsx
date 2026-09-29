@@ -953,7 +953,7 @@ const App: React.FC = () => {
     >
       <PremiumAtmosphere intensity="subtle" />
       {/* Universal Top Header - Responsive, guaranteed no overflow */}
-      <header className="flex items-center justify-between gap-2 px-2.5 sm:px-6 py-2 sm:py-2.5 glass-morphism z-50 border-b border-gold/20 shrink-0 bg-black/80 backdrop-blur-2xl w-full max-w-full min-w-0">
+      <header className="flex items-center justify-between gap-2 px-2.5 sm:px-6 py-2 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-black/85 backdrop-blur-xl w-full max-w-full min-w-0">
         {/* Left: Brand Identity */}
         <button
           type="button"
@@ -973,8 +973,8 @@ const App: React.FC = () => {
             />
           </div>
           <div className="hidden md:block">
-            <h2 className="text-sm sm:text-base font-bold tracking-[0.2em] uppercase gold-text leading-none">
-              LUMINARA
+            <h2 className="text-sm sm:text-base font-display text-gold-light leading-none tracking-tight">
+              Luminara
             </h2>
           </div>
         </button>
@@ -1428,14 +1428,14 @@ const App: React.FC = () => {
           isVoiceActive ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-12">
               <div className="space-y-4">
-                <h3 className="text-4xl font-semibold gold-text tracking-tight">Listening…</h3>
+                <h3 className="text-4xl font-display text-gold-light tracking-tight">Listening…</h3>
                 <p className="text-gray-400 max-w-md mx-auto text-sm">Speak normally. Your words and response will appear when you pause.</p>
               </div>
               <Waveform active={isVoiceActive} />
               <button
                 type="button"
                 onClick={toggleVoice}
-                className="px-12 py-5 bg-danger-500/10 text-danger-400 border border-danger-500/20 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-danger-500/20 transition-all shadow-xl outline-none focus-visible:ring-2 focus-visible:ring-danger-400"
+                className="px-12 py-5 bg-danger-500/10 text-danger-400 border border-danger-500/20 rounded-2xl font-semibold text-sm tracking-wide hover:bg-danger-500/20 transition-all shadow-xl outline-none focus-visible:ring-2 focus-visible:ring-danger-400"
               >
                 Stop listening
               </button>
@@ -1444,9 +1444,9 @@ const App: React.FC = () => {
             <>
               {voiceError && (
                 <div className="mx-auto mt-4 max-w-2xl w-full px-4">
-                  <div className="glass-morphism rounded-2xl border border-warning-500/30 bg-warning-950/20 px-5 py-3 text-xs text-warning-200 flex items-center justify-between gap-4" role="alert">
+                  <div className="rounded-2xl border border-warning-500/30 bg-warning-950/30 px-5 py-3 text-xs text-warning-200 flex items-center justify-between gap-4" role="alert">
                     <span>{voiceError}</span>
-                    <button type="button" onClick={() => setVoiceError(null)} className="text-warning-400 hover:text-white text-[10px] uppercase font-bold tracking-widest outline-none focus-visible:ring-2 focus-visible:ring-warning-400 rounded px-1">Dismiss</button>
+                    <button type="button" onClick={() => setVoiceError(null)} className="text-warning-400 hover:text-white text-[10px] font-semibold tracking-wide outline-none focus-visible:ring-2 focus-visible:ring-warning-400 rounded px-1">Dismiss</button>
                   </div>
                 </div>
               )}
@@ -1454,16 +1454,16 @@ const App: React.FC = () => {
               
               {agentStep && (
                 <div className="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-40 w-full max-w-lg px-6">
-                  <div className="w-full flex items-center gap-4 px-6 py-4 glass-morphism rounded-[24px] border border-gold/50 shadow-[0_0_60px_rgba(191,149,63,0.25)] animate-in slide-in-from-top-6 duration-700 bg-black/90">
+                  <div className="w-full flex items-center gap-4 px-6 py-4 rounded-[24px] border border-gold/40 bg-black/90 shadow-xl animate-in slide-in-from-top-6 duration-700">
                     <div className="w-6 h-6 flex items-center justify-center shrink-0">
                       <div className="w-full h-full border-2 border-gold/20 border-t-gold rounded-full animate-spin"></div>
                     </div>
                     <div className="flex-1 flex flex-col">
                       <div className="flex items-center justify-between mb-2 gap-3">
-                        <span className="text-[11px] text-gold-light font-black uppercase tracking-[0.4em] truncate">{agentStep}</span>
+                        <span className="text-[11px] text-gold-light font-semibold tracking-wide truncate">{agentStep}</span>
                         <div className="flex items-center gap-3 shrink-0">
                           <span className="text-[10px] text-gray-400 font-mono font-bold">{progress}%</span>
-                          <button type="button" onClick={handleStop} className="text-[9px] uppercase tracking-widest font-black text-danger-400 hover:text-danger-300 border border-danger-500/30 rounded-lg px-2 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-danger-400" title="Stop generating" aria-label="Stop generating">Stop</button>
+                          <button type="button" onClick={handleStop} className="text-[10px] font-semibold tracking-wide text-danger-400 hover:text-danger-300 border border-danger-500/30 rounded-lg px-2 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-danger-400" title="Stop generating" aria-label="Stop generating">Stop</button>
                         </div>
                       </div>
                       <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
@@ -1511,7 +1511,7 @@ const App: React.FC = () => {
                 type="button"
                 onClick={() => handleSendMessage(action.query)}
                 disabled={isThinking}
-                className="px-3.5 sm:px-4 py-1.5 rounded-full glass-morphism border border-gold/30 hover:border-gold text-[9px] font-black text-gold-light uppercase tracking-[0.25em] transition-all hover:scale-105 active:scale-95 shadow-lg bg-black/80 backdrop-blur-3xl outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3.5 sm:px-4 py-1.5 rounded-full border border-gold/30 hover:border-gold text-[10px] font-semibold text-gold-light tracking-wide transition-all hover:bg-gold/10 active:scale-[0.98] shadow-md bg-black/80 outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {action.label}
               </button>

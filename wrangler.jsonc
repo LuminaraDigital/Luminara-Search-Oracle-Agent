@@ -111,7 +111,9 @@
     "ORACLE_SERVER_ENABLED": "true",
     // Paid Oracle tools require invokeTool+confirmTool unless explicitly enabled.
     "ORACLE_AUTO_TOOLS": "false",
-    "AUDIT_QUEUE_ENABLED": "true"
+    "AUDIT_QUEUE_ENABLED": "true",
+    // Budget hard stops: off | soft | hard. Soft until invoice-validated P0 (suite-10x).
+    "BUDGET_ENFORCEMENT": "soft"
   },
 
   "durable_objects": {
@@ -208,7 +210,8 @@
         "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
-        "AUDIT_QUEUE_ENABLED": "true"
+        "AUDIT_QUEUE_ENABLED": "true",
+        "BUDGET_ENFORCEMENT": "soft"
       }
     },
     "production": {
@@ -282,7 +285,8 @@
         "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
-        "AUDIT_QUEUE_ENABLED": "true"
+        "AUDIT_QUEUE_ENABLED": "true",
+        "BUDGET_ENFORCEMENT": "soft"
       }
     }
   }
