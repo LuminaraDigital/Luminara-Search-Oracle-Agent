@@ -1,7 +1,7 @@
 # Weekly Decision Loop 10x Ship (production + deploy ready)
 
 **Date:** 2026-09-29  
-**Status:** Product slice landed (findings API + Decision Card + Sample AI-said + Instant Audit/Dashboard wire). Staging config `REQUIRE_TG_AUTH=true` awaiting `deploy:staging` + `smoke:staging`. Not prod-deployed. No auto prod deploy.  
+**Status:** Product slice landed and pushed (`18af5e7`). Staging Worker live with `REQUIRE_TG_AUTH=true`; `npm run smoke:staging` green (health + findings 401). Prod not deployed. No auto prod deploy.  
 **Owner:** CEO + full-stack + AI/ML product + graphics/perf + deploy operator  
 **Companions:** [`investor-marketable-10x-ship.md`](./investor-marketable-10x-ship.md) (M0-M8), [`suite-10x-production-ship.md`](./suite-10x-production-ship.md) (Track P + V), [`paperclip-pattern-production-ship.md`](./paperclip-pattern-production-ship.md), [`landing-moat-100x.md`](./landing-moat-100x.md), [`e2e-visibility-agent-platform.md`](./e2e-visibility-agent-platform.md) (W2-W4), [`user-activation-first-value.md`](./user-activation-first-value.md), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md)  
 **Pattern library (outside repo):** sibling `paperclipai/paperclip` @ `53aad90b9` (never vendored; Luminara brand only)
@@ -412,7 +412,7 @@ Same as §N. This pass: **zero new product features added.** Only honesty / queu
 | Ask | Answer |
 |---|---|
 | Plan ready to execute **Product** (findings HTTP + Decision Card)? | **Done in tree** - next operator unlock is staging prove |
-| Production-ready / deployment-ready? | **Product yes** (findings + Card + Sample fixtures). **Staging deploy-ready in tree** (`REQUIRE_TG_AUTH=true`); live prove needs `deploy:staging` + `smoke:staging`. **Prod:** no (needs explicit yes) |
+| Production-ready / deployment-ready? | **Product yes.** **Staging yes** (`smoke:staging` green 2026-09-29). **Prod:** no until explicit yes |
 
 **Operator unlock string:** reply `go staging Worker` (or `deploy staging`) to prove live auth + findings 401 smoke. Prod needs a separate yes.
 
