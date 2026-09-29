@@ -26,6 +26,7 @@ import { shareExternalLink } from '../../services/telegram/tma';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 import { qualifyHonestScout } from '../../services/referrals/referralClient';
 import { clearScoutReceipt, takeScoutReceipt } from '../../services/referrals/scoutReceiptCapture';
+import { linkIdeaScout } from '../../services/ideaScout/ideaScoutClient';
 
 function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
   return buildGuestScoutSummary({
@@ -53,6 +54,8 @@ interface InstantAuditViewProps {
   /** Guest / unsigned scout: web guests stay on BYOK. Telegram initData may use capped hosted spend. */
   isGuest?: boolean;
   hostedRail?: HostedScoutRail;
+  /** Idea Scout card to attach when this scout finishes. */
+  ideaScoutId?: string;
 }
 
 export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
@@ -62,6 +65,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   initialFocus,
   isGuest = false,
   hostedRail = 'byok_or_signin',
+  ideaScoutId,
 }) => {
   const [url, setUrl] = useState(() => initialUrl || draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL));
   const [focus, setFocus] = useState<ReportFocus>(() => initialFocus || 'AEO');
@@ -144,6 +148,15 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       const summary = summaryFromCrew(crewResult, hostedRail);
       setCrewMeasurement(crewResult.measurementStatus);
       setScoutSummary(summary);
+      if (ideaScoutId && summary.domain) {
+        const measured = !isGuest && crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty;
+        void linkIdeaScout({
+          id: ideaScoutId,
+          domain: summary.domain,
+          measurementStatus: measured ? 'measured' : 'not_measured',
+          evidencePresent: measured,
+        });
+      }
 
       let inviteNote = '';
       if (!isGuest && !summary.evidenceEmpty && (crewResult.measurementStatus === 'measured' || crewResult.measurementStatus === 'not_measured')) {

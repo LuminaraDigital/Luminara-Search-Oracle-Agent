@@ -42,7 +42,22 @@ export const TelegramBottomNav: React.FC<TelegramBottomNavProps> = ({
         paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 8px) + 2px)',
       }}
     >
-      {/* 1. Instant Audit */}
+      <button
+        onClick={() => handleNav(AppView.IDEA_SCOUT)}
+        aria-label="Idea Scout"
+        className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
+          currentView === AppView.IDEA_SCOUT
+            ? 'text-gold-light scale-105 font-bold'
+            : 'text-gray-400 hover:text-gray-200'
+        }`}
+      >
+        <div className={`p-1 rounded-xl transition-all ${currentView === AppView.IDEA_SCOUT ? 'bg-gold/20 text-gold-light shadow-[0_0_10px_rgba(191,149,63,0.3)]' : ''}`}>
+          <ICONS.Zap className="w-5 h-5" />
+        </div>
+        <span className="text-[10px] mt-0.5 tracking-tight font-medium">Idea</span>
+      </button>
+
+      {/* Instant Audit */}
       <button
         onClick={() => handleNav(AppView.INSTANT_AUDIT)}
         aria-label="Audit"

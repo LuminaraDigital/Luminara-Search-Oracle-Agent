@@ -3,6 +3,7 @@ import { AppView } from '../types';
 import { auditHistoryService } from '../services/audit/auditHistoryService';
 import {
   HOME_CTA_HEADING,
+  HOME_CTA_IDEA_LABEL,
   HOME_CTA_PRIMARY_LABEL,
   HOME_CTA_SECONDARY_LABEL,
   HOME_CTA_SUB,
@@ -28,6 +29,7 @@ describe('HomeCtaStrip content contract', () => {
     expect(HOME_CTA_SUB).toContain('SEO, AEO and GEO');
     expect(HOME_CTA_PRIMARY_LABEL).toBe('Start Instant Audit');
     expect(HOME_CTA_SECONDARY_LABEL).toBe('Set up Business DNA first');
+    expect(HOME_CTA_IDEA_LABEL).toBe('No domain yet? Idea Scout');
   });
 
   it('primary CTA targets INSTANT_AUDIT (what onNavigate receives)', () => {
@@ -39,6 +41,10 @@ describe('HomeCtaStrip content contract', () => {
 
   it('secondary CTA targets BUSINESS_DNA', () => {
     expect(homeCtaTarget('secondary')).toBe(AppView.BUSINESS_DNA);
+  });
+
+  it('idea CTA targets IDEA_SCOUT', () => {
+    expect(homeCtaTarget('idea')).toBe(AppView.IDEA_SCOUT);
   });
 });
 

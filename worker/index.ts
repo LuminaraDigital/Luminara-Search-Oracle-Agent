@@ -56,6 +56,7 @@ import { isAdminAuthorized } from './adminAuth';
 import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId } from './workerUtils';
 import { getActiveSubscription, checkHostedQuota, type SubRow } from './quotaMiddleware';
 import { handleReferralRoute, referralBonusRemaining } from './referrals';
+import { handleIdeaScoutRoute } from './ideaScout';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
 import { proxyProvider, PROVIDERS } from './providerRelay';
 import { runSentinelScan, handleSentinelRoute } from './sentinel';
@@ -967,6 +968,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     path === '/missions/complete'
   ) {
     return withCors(handleReferralRoute(request, env, path));
+  }
+
+  if (path === '/idea-scout' || path.startsWith('/idea-scout/')) {
+    return withCors(handleIdeaScoutRoute(request, env, path));
   }
 
   if (path === '/share/reports' || path.startsWith('/share/reports/')) {
