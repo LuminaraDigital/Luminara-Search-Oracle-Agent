@@ -9,7 +9,7 @@ Assumption: "Complete an implementation plan for the above" means ship and harde
 
 **H1 progress (2026-09-29):** schema-aware fail-open, soft-alert default on upsert, and `BUDGET_ENFORCEMENT` kill-switch are in `worker/budgets.ts` (+ tests green). Remaining: Phase C migrate drill, smoke preflight, lock 0013 open questions, Budget-P0 soft alerts.
 
-**10x successor:** [`suite-10x-production-ship.md`](./suite-10x-production-ship.md) expands this plan into Track P (platform) parallel with Track V (Blender HD plates + Canvas; Three gated). Prefer that doc for execute order.
+**10x successor:** [`suite-10x-production-ship.md`](./suite-10x-production-ship.md) expands this plan into Track P (platform) parallel with Track V (Blender HD plates + Canvas; Three gated). Prefer that doc for craft/platform execute order. **Investor-critical activation spine:** [`investor-marketable-10x-ship.md`](./investor-marketable-10x-ship.md).
 
 ## 1. Requirements checklist (from the ask)
 

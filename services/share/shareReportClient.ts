@@ -93,11 +93,14 @@ export async function createShareReport(input: CreateShareReportInput): Promise<
 export async function fetchSharedReport(token: string, password?: string): Promise<SharedReportResponse> {
   const base = apiBase();
   if (!base) return { ok: false, error: 'API unavailable', code: 'NO_API' };
-  const q = password ? `?password=${encodeURIComponent(password)}` : '';
+  // Prod rejects ?password= (SHARE_PASSWORD_QUERY_FORBIDDEN). Prefer header only.
+  const headers: Record<string, string> = {};
+  if (password) headers['x-share-password'] = password;
   try {
-    const res = await fetch(`${base}/api/share/reports/${encodeURIComponent(token)}${q}`, {
+    const res = await fetch(`${base}/api/share/reports/${encodeURIComponent(token)}`, {
       method: 'GET',
       credentials: 'omit',
+      headers,
     });
     const data = (await res.json().catch(() => ({}))) as SharedReportResponse;
     if (!res.ok) {

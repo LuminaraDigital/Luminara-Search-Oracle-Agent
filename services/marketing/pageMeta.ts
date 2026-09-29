@@ -32,9 +32,11 @@ const SOFTWARE_NODE = {
     'Audits how a brand shows up in Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix first.',
   publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
   offers: {
-    '@type': 'Offer',
-    price: '49',
+    '@type': 'AggregateOffer',
+    lowPrice: '49',
+    highPrice: '149',
     priceCurrency: 'USD',
+    offerCount: 3,
     url: `${MARKETING_ORIGIN}/pricing`,
   },
 };
@@ -145,14 +147,17 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/pricing',
     title: 'Pricing | Luminara Suite',
     description:
-      'Luminara Suite Starter plan: US$49 per month for up to two sites, monthly audits and AI answer checks.',
-    jsonLd: graph('/pricing', 'Pricing', 'Plans and subscription options.'),
+      'Free insight and sample scouts. Starter for web audits. Growth adds share links and MCP for Cursor and Claude. Agency adds API access.',
+    jsonLd: graph('/pricing', 'Pricing', 'Plans: Free insight, Starter audits, Growth MCP and share, Agency API.'),
     crawlerBody: `
 <section>
   <h1>Pricing</h1>
-  <p>Starter plan: US$49 per month for up to two sites. Monthly audits, AI answer checks and branded reports.</p>
-  <p>Telegram Stars or TON billing is available in the Mini App.</p>
-  <p><a href="/">Home</a> · <a href="/why">Why Luminara</a></p>
+  <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account.</p>
+  <p>Starter: web audits for a small site set. No MCP. No share links.</p>
+  <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>
+  <p>Agency / Pro: Growth capabilities plus API access and client workspaces.</p>
+  <p>Telegram Stars or TON billing is available in the Mini App. No invented SEO scores on any plan.</p>
+  <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
 </section>`,
   },
 };

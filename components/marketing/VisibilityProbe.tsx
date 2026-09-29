@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { VisibilityConstellation } from './VisibilityConstellation';
 import { DEMO_PRESETS, DemoEngineId, DemoFocus } from './demo/demoFixtures';
 import { useDemoPlayback } from './demo/useDemoPlayback';
+import type { AuditHandoff } from '../../services/activation/auditHandoff';
+import type { ReportFocus } from '../../types';
 
 interface VisibilityProbeProps {
   isAuthenticated?: boolean;
-  onOpenAudit: () => void;
+  onOpenAudit: (handoff?: AuditHandoff) => void;
   onSignIn: () => void;
   onSeePricing: () => void;
   /** Notify stage when sample results light the field. */
@@ -58,6 +60,20 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
 
   const selectEngine = (id: DemoEngineId) => {
     setSelected((prev) => (prev === id ? null : id));
+  };
+
+  const openLiveAudit = () => {
+    const focus = (demo.focus || 'AEO') as ReportFocus;
+    const url =
+      demo.fixture?.domain ||
+      demo.url.trim() ||
+      host ||
+      '';
+    onOpenAudit({
+      url,
+      focus,
+      sampleSource: true,
+    });
   };
 
   return (
@@ -191,7 +207,7 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
       )}
 
       <div className="flex flex-col sm:flex-row flex-wrap gap-2">
-        <button type="button" className="mkt-cta-primary w-full sm:w-auto" onClick={onOpenAudit}>
+        <button type="button" className="mkt-cta-primary w-full sm:w-auto" onClick={openLiveAudit}>
           Open Instant Audit
         </button>
         {!isAuthenticated && (

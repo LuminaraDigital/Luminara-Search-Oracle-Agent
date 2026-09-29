@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
 import { VisibilityFieldHero } from './VisibilityFieldHero';
 import { VisibilityProbe } from './VisibilityProbe';
+import type { AuditHandoff } from '../../services/activation/auditHandoff';
 
 interface MarketingStageProps {
   isAuthenticated?: boolean;
-  onOpenAudit: () => void;
+  onOpenAudit: (handoff?: AuditHandoff) => void;
   onSignIn: () => void;
   onSeePricing: () => void;
 }

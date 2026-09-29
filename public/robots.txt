@@ -10,9 +10,9 @@ Allow: /desktop
 Allow: /docs/
 Allow: /llms.txt
 Allow: /sitemap.xml
+Allow: /share/
 
 Disallow: /api/
-Disallow: /share/
 Disallow: /verify/
 Disallow: /reports/
 Disallow: /oauth/

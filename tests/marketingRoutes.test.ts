@@ -50,7 +50,9 @@ describe('marketing crawl documents', () => {
   it('robots.txt allows marketing and points at sitemap', () => {
     expect(ROBOTS_TXT).toContain('Sitemap: https://www.luminarasuite.com/sitemap.xml');
     expect(ROBOTS_TXT).toContain('Allow: /pricing');
+    expect(ROBOTS_TXT).toContain('Allow: /share/');
     expect(ROBOTS_TXT).toContain('Disallow: /api/');
+    expect(ROBOTS_TXT).not.toContain('Disallow: /share/');
   });
 
   it('sitemap lists canonical marketing URLs', () => {
@@ -82,6 +84,10 @@ describe('marketing shell injection', () => {
     expect(out).toContain('application/ld+json');
     expect(out).toContain('SoftwareApplication');
     expect(out).toContain('luminara-crawler-body');
+    expect(out).toContain('Growth');
+    expect(out).toContain('MCP');
+    expect(page.description).toMatch(/Growth/i);
+    expect(page.crawlerBody).toMatch(/Starter:[\s\S]*No MCP/);
   });
 
   it('resolves shell keys for aliases', () => {

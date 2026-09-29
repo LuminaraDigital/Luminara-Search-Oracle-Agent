@@ -17,6 +17,10 @@ import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
+import { apiBase, getCurrentQuotaSync, hasActivePaidPlanSync, workerFetchWithAuthRetry } from '../../services/apiClient';
+import { entitlementsFor } from '../../services/plans/planEntitlements';
+import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
+import { Button } from '../ui/Button';
 
 interface InstantAuditViewProps {
   dna: BusinessDNA | null;
@@ -25,6 +29,22 @@ interface InstantAuditViewProps {
   initialFocus?: ReportFocus;
   /** Guest / unsigned scout: BYOK path; save and hosted spend stay soft-gated. */
   isGuest?: boolean;
+  /** Came from labeled Sample Probe / landing scout. */
+  sampleSource?: boolean;
+  onSeePricing?: () => void;
+}
+
+function canMintMcpKeys(): boolean {
+  const quota = getCurrentQuotaSync();
+  if (!quota) return false;
+  const plan = quota.plan || 'free';
+  if (plan !== 'free' && plan !== 'active') {
+    return entitlementsFor(plan).mcpAccess;
+  }
+  if (hasActivePaidPlanSync()) {
+    return entitlementsFor('growth').mcpAccess;
+  }
+  return false;
 }
 
 export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
@@ -33,6 +53,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   initialUrl,
   initialFocus,
   isGuest = false,
+  sampleSource = false,
+  onSeePricing,
 }) => {
   const [url, setUrl] = useState(() => initialUrl || draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL));
   const [focus, setFocus] = useState<ReportFocus>(() => initialFocus || 'AEO');
@@ -61,6 +83,11 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [attestation, setAttestation] = useState<AuditAttestation | null>(null);
   const [showAttestationModal, setShowAttestationModal] = useState(false);
   const [persistHint, setPersistHint] = useState<string | null>(null);
+  const [strategySaved, setStrategySaved] = useState(false);
+  const [mcpMinting, setMcpMinting] = useState(false);
+  const [mcpKey, setMcpKey] = useState<string | null>(null);
+  const [mcpError, setMcpError] = useState<string | null>(null);
+  const [mcpCopied, setMcpCopied] = useState<'key' | 'snippet' | null>(null);
   const isFullAudit = Boolean(dna);
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -139,13 +166,16 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         });
         if (saved) {
           productTelemetry.recordOnboardingStep('strategy_saved');
+          setStrategySaved(true);
           setPersistHint(`Strategy saved to project ${saved.projectId.slice(0, 12)}…`);
         } else {
+          setStrategySaved(false);
           setPersistHint(
             'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
           );
         }
       } catch {
+        setStrategySaved(false);
         setPersistHint(
           'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
         );
@@ -181,6 +211,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       setReport(null);
       setError(null);
       setPersistHint(null);
+      setStrategySaved(false);
+      setMcpKey(null);
+      setMcpError(null);
       setUrl('');
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
       setCrewEvents([]);
@@ -202,6 +235,44 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     );
   };
 
+  const mintMcpKey = async () => {
+    const base = apiBase();
+    if (!base || mcpMinting || mcpKey) return;
+    setMcpMinting(true);
+    setMcpError(null);
+    try {
+      const r = await workerFetchWithAuthRetry(`${base}/api/api-keys`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Instant Audit MCP' }),
+      });
+      const data = (await r.json().catch(() => ({}))) as { ok?: boolean; key?: string; error?: string };
+      if (!r.ok || !data.ok || typeof data.key !== 'string') {
+        throw new Error(data.error || `HTTP ${r.status}`);
+      }
+      setMcpKey(data.key);
+    } catch (e) {
+      setMcpError(e instanceof Error && e.message ? e.message : 'Could not mint MCP key.');
+    } finally {
+      setMcpMinting(false);
+    }
+  };
+
+  const copyMcp = async (kind: 'key' | 'snippet') => {
+    if (!mcpKey) return;
+    const text =
+      kind === 'key'
+        ? mcpKey
+        : buildCursorMcpServersJson(mcpHttpUrlFromApiBase(apiBase()), mcpKey);
+    try {
+      await navigator.clipboard.writeText(text);
+      setMcpCopied(kind);
+      window.setTimeout(() => setMcpCopied(null), 2000);
+    } catch {
+      setMcpError('Copy failed. Select the text and copy manually.');
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
       {confirmModal}
@@ -210,8 +281,15 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           <ICONS.Radar className="w-4 h-4 text-gold-light" />
           <span className="text-[10px] font-semibold tracking-wide text-gold-light">
             {isFullAudit ? 'Full audit' : 'Quick scout'}
+            {sampleSource && !report ? ' · from Sample' : ''}
+            {sampleSource && report ? ' · was Sample handoff' : ''}
           </span>
         </div>
+        {sampleSource && !report && (
+          <p className="text-[11px] font-mono text-gold-light/90 mb-3">
+            Prefill from Sample scout. Live measurement starts when you run; Sample labels stay until then.
+          </p>
+        )}
         <h1 className="text-[clamp(1.5rem,6vw,3rem)] font-bold text-white tracking-tight mb-3 [overflow-wrap:anywhere]">
           Will AI mention your brand?
         </h1>
@@ -395,6 +473,61 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       {persistHint && !error && (
         <p className="text-[11px] font-mono text-gray-400 px-1">{persistHint}</p>
+      )}
+
+      {strategySaved && !error && (
+        <div className="mt-3 mb-6 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 space-y-2">
+          {isGuest && (
+            <p className="text-xs text-gray-300">
+              Sign in to mint an MCP key for Cursor after save.
+            </p>
+          )}
+          {!isGuest && !canMintMcpKeys() && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
+              <p className="text-xs text-gray-300">
+                Growth includes MCP for Cursor and Claude. Upgrade to mint a hosted key.
+              </p>
+              {onSeePricing && (
+                <Button variant="secondary" size="sm" onClick={onSeePricing}>
+                  See Growth pricing
+                </Button>
+              )}
+            </div>
+          )}
+          {!isGuest && canMintMcpKeys() && !mcpKey && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
+              <p className="text-xs text-gray-300">
+                Connect Cursor: mint a one-time <span className="font-mono">lm_live_*</span> key and copy the mcpServers snippet.
+              </p>
+              <Button variant="primary" size="sm" loading={mcpMinting} onClick={() => void mintMcpKey()}>
+                Mint MCP key
+              </Button>
+            </div>
+          )}
+          {mcpKey && (
+            <div className="space-y-2">
+              <p className="text-[11px] text-warning-200 font-mono">
+                Store this now. The full key will not be shown again.
+              </p>
+              <pre className="text-[10px] font-mono text-gray-200 bg-black/50 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-all">
+                {mcpKey}
+              </pre>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" onClick={() => void copyMcp('key')}>
+                  {mcpCopied === 'key' ? 'Copied key' : 'Copy key'}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => void copyMcp('snippet')}>
+                  {mcpCopied === 'snippet' ? 'Copied snippet' : 'Copy Cursor snippet'}
+                </Button>
+              </div>
+            </div>
+          )}
+          {mcpError && (
+            <p className="text-[11px] text-danger-300" role="alert">
+              {mcpError}
+            </p>
+          )}
+        </div>
       )}
 
       {/* Audit Report Result */}

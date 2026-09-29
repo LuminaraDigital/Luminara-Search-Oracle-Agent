@@ -30,6 +30,8 @@ import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
 import { apiBase, streamOracleChat } from './services/apiClient';
+import type { AuditHandoff } from './services/activation/auditHandoff';
+import { normalizeHandoffUrl } from './services/activation/auditHandoff';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
@@ -132,6 +134,7 @@ const App: React.FC = () => {
   const [urlSwapParams] = useState<UrlSwapRouteParams | null>(() =>
     typeof window !== 'undefined' ? parseUrlSwapRoute(window.location.pathname) : null
   );
+  const [auditHandoff, setAuditHandoff] = useState<AuditHandoff | null>(null);
 
   // Keep TMA detection in sync after background initTelegram() finishes.
   useEffect(() => {
@@ -765,7 +768,14 @@ const App: React.FC = () => {
   if (view === AppView.SHARED_REPORT) {
     return (
       <Suspense fallback={<ViewLoader label="Loading shared report" />}>
-        <SharedReportView onBack={() => setView(AppView.LANDING)} />
+        <SharedReportView
+          onBack={() => setView(AppView.LANDING)}
+          onOpenInstantAudit={() => {
+            setAuditHandoff(null);
+            enterApp(AppView.INSTANT_AUDIT);
+          }}
+          onSeePricing={() => setView(AppView.PRICING)}
+        />
       </Suspense>
     );
   }
@@ -825,8 +835,17 @@ const App: React.FC = () => {
               enterApp(AppView.ORACLE_AGENT);
             }
           }} 
-          onNavigateAudit={() => {
+          onNavigateAudit={(handoff) => {
             // Slice A: guests open Instant Audit without signup; hosted spend soft-gates later.
+            if (handoff?.url) {
+              setAuditHandoff({
+                url: normalizeHandoffUrl(handoff.url) || handoff.url,
+                focus: handoff.focus,
+                sampleSource: handoff.sampleSource !== false,
+              });
+            } else {
+              setAuditHandoff(null);
+            }
             enterApp(AppView.INSTANT_AUDIT);
           }}
           onNavigateSuite={() => {
@@ -1318,9 +1337,11 @@ const App: React.FC = () => {
             onNavigateDNA={
               appAuth.authenticated ? () => setView(AppView.BUSINESS_DNA) : undefined
             }
-            initialUrl={urlSwapParams?.targetUrl}
-            initialFocus={urlSwapParams?.focus}
+            initialUrl={auditHandoff?.url || urlSwapParams?.targetUrl}
+            initialFocus={auditHandoff?.focus || urlSwapParams?.focus}
+            sampleSource={Boolean(auditHandoff?.sampleSource)}
             isGuest={!appAuth.authenticated}
+            onSeePricing={() => setView(AppView.PRICING)}
           />
         )}
 

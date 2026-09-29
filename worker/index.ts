@@ -32,7 +32,7 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML, buildSitemapXml } from './crawlDocuments';
-import { maybeServeMarketingHtml } from './marketingShell';
+import { maybeServeMarketingHtml, maybeServeShareHtml } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import {
   MAX_SMALL_BODY_BYTES,
@@ -72,6 +72,12 @@ import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
 import { getBudgetStatus, upsertBudgetPolicy, approveBudgetResume } from './budgets';
+import {
+  listActionRequests,
+  getActionRequestById,
+  approveActionRequest,
+  denyActionRequest,
+} from './mcpGovernance';
 import { handleOracleChatSse, isOracleServerEnabled } from './oracleChat';
 import { OracleSession } from './oracleSession';
 import { handlePagespeedRoute } from './pagespeedRoute';
@@ -1110,6 +1116,57 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(json({ error: 'Method not allowed' }, 405));
   }
 
+  // MCP action-request approve/deny (suite-10x M3 / P5). Account owner only.
+  if (path === '/mcp-action-requests' || path.startsWith('/mcp-action-requests/')) {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const accountId = billingId(who.user);
+
+    if (path === '/mcp-action-requests' && request.method === 'GET') {
+      const urlObj = new URL(request.url);
+      const limit = Number(urlObj.searchParams.get('limit') || 50);
+      const rows = await listActionRequests(env, accountId, Number.isFinite(limit) ? limit : 50);
+      return withCors(json({ ok: true, requests: rows }));
+    }
+
+    const decideMatch = path.match(/^\/mcp-action-requests\/([^/]+)\/(approve|deny)$/);
+    if (decideMatch && request.method === 'POST') {
+      const requestId = decideMatch[1];
+      const decision = decideMatch[2] as 'approve' | 'deny';
+      const row = await getActionRequestById(env, requestId);
+      if (!row) {
+        return withCors(json({ ok: false, error: 'Action request not found', code: 'NOT_FOUND' }, 404));
+      }
+      if (row.user_id !== accountId) {
+        return withCors(json({ ok: false, error: 'Forbidden', code: 'FORBIDDEN' }, 403));
+      }
+      if (row.status !== 'pending') {
+        return withCors(
+          json({ ok: false, error: 'Already decided', code: 'ALREADY_DECIDED', status: row.status }, 409),
+        );
+      }
+      const ok =
+        decision === 'approve'
+          ? await approveActionRequest(env, requestId, who.user.id)
+          : await denyActionRequest(env, requestId, who.user.id);
+      if (!ok) {
+        return withCors(json({ ok: false, error: 'Could not update action request', code: 'UPDATE_FAILED' }, 409));
+      }
+      await recordAuditLogBestEffort(env, {
+        org_id: accountId,
+        actor_id: who.user.id,
+        action: decision === 'approve' ? 'mcp_action_approve' : 'mcp_action_deny',
+        target_id: requestId,
+        details: { tool_name: row.tool_name, kind: row.kind, project_id: row.project_id },
+      });
+      return withCors(json({ ok: true, id: requestId, status: decision === 'approve' ? 'approved' : 'denied' }));
+    }
+
+    return withCors(json({ error: 'Method not allowed' }, 405));
+  }
+
   // APS: MCP (Growth+ mcpAccess; session, lm_live_* API key, or mcp_* OAuth token)
   if (path === '/mcp' || path.startsWith('/mcp/')) {
     const resolved = await resolveMcpUser(request, env);
@@ -1469,6 +1526,12 @@ export default {
     // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
     if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
       return withSecurityHeaders(await desktopWindowsDownload(env, request));
+    }
+
+    // Unlisted share OG HTML (before static marketing shells).
+    const shareHtml = await maybeServeShareHtml(request, env);
+    if (shareHtml) {
+      return withSecurityHeaders(shareHtml);
     }
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.

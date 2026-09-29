@@ -64,7 +64,17 @@ Lifecycle functions in `worker/mcpGovernance.ts`:
   `status = 'approved' AND expires_at > now`. Expired approvals never
   authorize; the next destructive call opens a fresh request.
 
-Approving today is a D1 write by an operator:
+Approving today is preferably via authenticated HTTP (account owner):
+
+```
+GET  /api/mcp-action-requests
+POST /api/mcp-action-requests/:id/approve
+POST /api/mcp-action-requests/:id/deny
+```
+
+Auth: same as other protected routes (`identify`). Authz: `user_id` on the row must match `billingId` of the caller. Cross-account approve returns 403. Already-decided rows return 409.
+
+Interim operator SQL (staging drills only):
 
 ```sql
 UPDATE mcp_action_requests

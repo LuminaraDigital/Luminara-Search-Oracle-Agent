@@ -162,6 +162,18 @@ export async function listActionRequests(
   return (result.results ?? []) as unknown as ActionRequestRow[];
 }
 
+/** Fetch one action request by id (any owner). Caller must enforce authz. */
+export async function getActionRequestById(
+  env: UserStoreEnv,
+  id: string,
+): Promise<ActionRequestRow | null> {
+  if (!env.DB || !id) return null;
+  const row = await env.DB.prepare(`SELECT * FROM mcp_action_requests WHERE id = ? LIMIT 1`)
+    .bind(id)
+    .first();
+  return (row as ActionRequestRow | null) ?? null;
+}
+
 async function decide(
   env: UserStoreEnv,
   id: string,

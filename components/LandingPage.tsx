@@ -5,10 +5,11 @@ import { MarketingStage } from './marketing/MarketingStage';
 import { MarketingFooter } from './marketing/MarketingFooter';
 import { VisibilityConstellation } from './marketing/VisibilityConstellation';
 import { SAMPLE_FIXTURE } from './marketing/demo/demoFixtures';
+import type { AuditHandoff } from '../services/activation/auditHandoff';
 
 interface LandingPageProps {
   onEnter: () => void;
-  onNavigateAudit?: () => void;
+  onNavigateAudit?: (handoff?: AuditHandoff) => void;
   onNavigateSuite?: () => void;
   onNavigateInfrastructure: () => void;
   onNavigateIntelligence: () => void;
@@ -33,8 +34,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
   onSignInClick,
   onSignUpClick: _onSignUpClick,
 }) => {
-  const openAudit = () => {
-    if (onNavigateAudit) onNavigateAudit();
+  const openAudit = (handoff?: AuditHandoff) => {
+    if (onNavigateAudit) onNavigateAudit(handoff);
     else onEnter();
   };
   const signIn = () => {
@@ -60,7 +61,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         }
         primaryCta={{
           label: isAuthenticated ? 'Open Instant Audit' : 'Run sample scout',
-          onClick: isAuthenticated ? onEnter : openAudit,
+          onClick: isAuthenticated ? onEnter : () => openAudit(),
         }}
         trailing={
           isAuthenticated && userLabel ? (
@@ -86,7 +87,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               prove answer-engine presence with honest Sample labels; Live follows Instant Audit rules.
             </p>
             <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center lg:justify-start gap-3 pt-1 w-full">
-              <button type="button" onClick={openAudit} className="mkt-cta-primary w-full sm:w-auto">
+              <button type="button" onClick={() => openAudit()} className="mkt-cta-primary w-full sm:w-auto">
                 {isAuthenticated ? 'Open Instant Audit' : 'Run sample scout'}
               </button>
               <button type="button" onClick={onNavigatePricing} className="mkt-cta-secondary w-full sm:w-auto">
@@ -172,7 +173,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             Start labeled Sample, then open Instant Audit when you are ready for Live. Built by
             Luminara Digital.
           </p>
-          <button type="button" className="mkt-cta-primary" onClick={openAudit}>
+          <button type="button" className="mkt-cta-primary" onClick={() => openAudit()}>
             {isAuthenticated ? 'Open Instant Audit' : 'Run sample scout'}
           </button>
         </div>

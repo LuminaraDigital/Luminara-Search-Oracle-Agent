@@ -15,9 +15,10 @@ Allow: /desktop
 Allow: /docs/
 Allow: /llms.txt
 Allow: /sitemap.xml
+# Unlisted share URLs (not in sitemap). Allowed so link unfurls can fetch OG HTML.
+Allow: /share/
 
 Disallow: /api/
-Disallow: /share/
 Disallow: /verify/
 Disallow: /reports/
 Disallow: /oauth/

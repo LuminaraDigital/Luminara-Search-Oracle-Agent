@@ -156,6 +156,8 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/api-keys(\/|$)/ },
   { pattern: /^\/memory\/facts$/, methods: ['GET', 'POST'] },
   { pattern: /^\/budgets\/self(\/resume)?$/, methods: ['GET', 'PUT', 'POST'] },
+  { pattern: /^\/mcp-action-requests$/, methods: ['GET'] },
+  { pattern: /^\/mcp-action-requests\/[^/]+\/(approve|deny)$/, methods: ['POST'] },
   { pattern: /^\/oauth\/mcp\/authorize$/, methods: ['GET'] },
   // /mcp auth is resolveMcpUser (session, lm_live_*, or mcp_* OAuth); not standard identify-only.
 ];

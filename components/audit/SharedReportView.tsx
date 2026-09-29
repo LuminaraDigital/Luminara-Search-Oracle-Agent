@@ -12,7 +12,11 @@ function tokenFromLocation(): string {
   return hashMatch?.[1]?.toLowerCase() || '';
 }
 
-export const SharedReportView: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
+export const SharedReportView: React.FC<{
+  onBack?: () => void;
+  onOpenInstantAudit?: () => void;
+  onSeePricing?: () => void;
+}> = ({ onBack, onOpenInstantAudit, onSeePricing }) => {
   const token = useMemo(() => tokenFromLocation(), []);
   const [password, setPassword] = useState('');
   const [needsPassword, setNeedsPassword] = useState(false);
@@ -116,6 +120,25 @@ export const SharedReportView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
               dnaName={payload.dnaName}
               hideAgencyActions
             />
+            {(onOpenInstantAudit || onSeePricing) && (
+              <footer className="mt-10 pt-6 border-t border-white/10 space-y-3">
+                <p className="text-sm text-gray-300 leading-relaxed">
+                  Run your own Instant Audit on a domain, or see Growth pricing for share links and MCP.
+                </p>
+                <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+                  {onOpenInstantAudit && (
+                    <Button variant="primary" size="sm" onClick={onOpenInstantAudit}>
+                      Run Instant Audit
+                    </Button>
+                  )}
+                  {onSeePricing && (
+                    <Button variant="secondary" size="sm" onClick={onSeePricing}>
+                      See pricing
+                    </Button>
+                  )}
+                </div>
+              </footer>
+            )}
           </>
         )}
       </main>
