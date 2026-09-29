@@ -6,6 +6,7 @@ describe('PUBLIC_APP_VIEWS (activation Slice A)', () => {
   it('allows guest Instant Audit without Firebase', () => {
     expect(PUBLIC_APP_VIEWS.has(AppView.INSTANT_AUDIT)).toBe(true);
     expect(PUBLIC_APP_VIEWS.has('INSTANT_AUDIT')).toBe(true);
+    expect(PUBLIC_APP_VIEWS.has(AppView.IDEA_SCOUT)).toBe(true);
   });
 
   it('still gates non-scout product surfaces', () => {

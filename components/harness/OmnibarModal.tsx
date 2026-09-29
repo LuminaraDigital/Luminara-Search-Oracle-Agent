@@ -24,6 +24,7 @@ interface Destination {
 
 const DESTINATIONS: Destination[] = [
   { id: 'audit', label: 'Audit my website', description: 'See whether AI answers mention you, then commit to one fix.', keywords: 'audit seo aeo geo website report check site', view: AppView.INSTANT_AUDIT, icon: ICONS.Radar, group: 'Start here' },
+  { id: 'idea', label: 'Idea Scout', description: 'No domain yet. A hypothesis card, then Instant Audit when you have a URL.', keywords: 'idea scout founder niche competitor no domain', view: AppView.IDEA_SCOUT, icon: ICONS.Zap, group: 'Start here' },
   { id: 'ask', label: 'Ask a question', description: 'Chat with an analyst that checks live search results and remembers your business.', keywords: 'ask chat question oracle agent help', view: AppView.ORACLE_AGENT, icon: ICONS.Sparkle, group: 'Start here' },
   { id: 'notebook', label: 'Intelligence Studio', description: 'Grounded research dossiers, dual-host audio overviews, and executive briefing docs.', keywords: 'notebook studio sources dossier research audio overview briefing guide study faq', view: AppView.NOTEBOOK, icon: ICONS.Notebook, group: 'Start here' },
   { id: 'memory', label: 'Brand Memory', description: 'What changed since last scan: diffs, watchlist, Sentinel.', keywords: 'memory vault brand timeline diff watchlist sentinel', view: AppView.BRAND_MEMORY, icon: ICONS.Shield, group: 'Start here' },

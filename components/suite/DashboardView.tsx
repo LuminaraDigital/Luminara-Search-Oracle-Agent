@@ -110,6 +110,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       badge: dna ? 'Linked' : 'Set up',
     },
     {
+      id: AppView.IDEA_SCOUT,
+      title: 'Idea Scout',
+      desc: 'No domain yet. Turn an idea into a hypothesis card, then hand off to Instant Audit.',
+      icon: ICONS.Zap,
+      badge: 'Idea',
+    },
+    {
       id: AppView.VISION,
       title: 'How Luminara works',
       desc: 'The audit method in plain English.',

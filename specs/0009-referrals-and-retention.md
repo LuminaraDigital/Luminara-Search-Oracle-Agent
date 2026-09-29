@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for Phase 2. Idea Scout, duels, and leaderboards stay later phases.
+Accepted for Phase 2. Idea Scout is spec 0010. Duels and leaderboards stay later phases.
 
 ## Context
 
@@ -31,4 +31,4 @@ Phase 1 can bring a person into Instant Scout and a redacted teaser. Nothing yet
 
 ## Not in scope
 
-Idea Scout, friend duels, leaderboards, card checkout, and a full server-side re-measurement that rebuilds the scout. Qualification uses the Worker receipt above instead.
+Friend duels, leaderboards, card checkout, and a full server-side re-measurement that rebuilds the scout. Idea Scout lives in spec 0010. Qualification uses the Worker receipt above instead.

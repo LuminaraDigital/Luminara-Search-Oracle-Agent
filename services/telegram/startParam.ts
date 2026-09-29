@@ -6,6 +6,7 @@
  */
 import { safePublicHostname } from '../security/publicHostname';
 import { parseReferralStartParam } from '../referrals/rules';
+import { parseIdeaStartParam } from '../ideaScout/rules';
 import { AppView } from '../../types';
 
 export interface TelegramStartIntent {
@@ -14,11 +15,15 @@ export interface TelegramStartIntent {
   auditUrl?: string;
   /** Opaque invite code from `ref_<code>`. Absent for view tokens and audit payloads. */
   referralCode?: string;
+  /** Idea card id from `idea_<id>`. Absent for the bare `idea` token. */
+  ideaId?: string;
 }
 
 const VIEW_BY_TOKEN: Record<string, AppView> = {
   AUDIT: AppView.INSTANT_AUDIT,
   SCAN: AppView.INSTANT_AUDIT,
+  IDEA: AppView.IDEA_SCOUT,
+  IDEA_SCOUT: AppView.IDEA_SCOUT,
   ORACLE: AppView.ORACLE_AGENT,
   CHAT: AppView.ORACLE_AGENT,
   ASK: AppView.ORACLE_AGENT,
@@ -63,6 +68,11 @@ export function resolveTelegramStart(raw: string | null | undefined): TelegramSt
 
   const auditUrl = parseAuditDomainPayload(original);
   if (auditUrl) return { view: AppView.INSTANT_AUDIT, auditUrl };
+
+  const idea = parseIdeaStartParam(original);
+  if (idea) {
+    return idea.ideaId ? { view: AppView.IDEA_SCOUT, ideaId: idea.ideaId } : { view: AppView.IDEA_SCOUT };
+  }
 
   const token = original.toUpperCase();
   if (!token) return { view: AppView.INSTANT_AUDIT };
