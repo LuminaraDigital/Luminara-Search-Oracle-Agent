@@ -1,14 +1,18 @@
+import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { createSqliteD1 } from './helpers/sqliteD1';
 import { checkHostedQuota } from '../worker/quotaMiddleware';
+import { proxyProvider } from '../worker/providerRelay';
 import {
   claimReferral,
   completeClientMission,
   ensureReferralCode,
   handleReferralRoute,
+  mintScoutReceipt,
   qualifyReferral,
   readRetentionSnapshot,
   referralBonusRemaining,
+  tryConsumeReferralCredit,
 } from '../worker/referrals';
 import { handleTelegramUpdate } from '../worker/telegramBot';
 import type { Env } from '../worker/env';
@@ -19,11 +23,13 @@ import {
   inviteUrlForCode,
   isoWeekKey,
   nextStreakWeeks,
+  scoutEvidenceDomain,
   visibilityLevel,
 } from '../services/referrals/rules';
 import { safePublicHostname } from '../services/security/publicHostname';
 import { clearPendingReferral, holdPendingReferral, readPendingReferral } from '../services/referrals/pendingReferral';
-import { claimStoredReferral, shouldClearPendingClaim } from '../services/referrals/referralClient';
+import { claimStoredReferral, qualifyHonestScout, shouldClearPendingClaim } from '../services/referrals/referralClient';
+import { clearScoutReceipt, noteScoutReceipt } from '../services/referrals/scoutReceiptCapture';
 
 function memoryKv() {
   const store = new Map<string, string>();
@@ -61,6 +67,11 @@ const honestBody = {
   completed: true,
   evidencePresent: true,
 };
+
+async function honestFor(env: Env, accountId: string, extra: Record<string, unknown> = {}) {
+  const receipt = await mintScoutReceipt(env, accountId, 'stripe.com');
+  return { ...honestBody, ...extra, receipt };
+}
 
 describe('referral rules', () => {
   it('rejects self-referral and keeps the first referrer', () => {
@@ -102,6 +113,30 @@ describe('referral rules', () => {
       ok: false,
       code: 'BAD_DOMAIN',
     });
+    expect(scoutEvidenceDomain({
+      providerId: 'firecrawl',
+      subPath: '/scrape',
+      body: { url: 'https://stripe.com/pricing' },
+      hostname: safePublicHostname,
+    })).toBe('stripe.com');
+    expect(scoutEvidenceDomain({
+      providerId: 'tavily',
+      subPath: '/search',
+      body: { query: 'what is stripe.com' },
+      hostname: safePublicHostname,
+    })).toBe('stripe.com');
+    expect(scoutEvidenceDomain({
+      providerId: 'groq',
+      subPath: '/chat/completions',
+      body: { url: 'https://stripe.com' },
+      hostname: safePublicHostname,
+    })).toBeNull();
+    expect(scoutEvidenceDomain({
+      providerId: 'firecrawl',
+      subPath: '/scrape',
+      body: { url: 'http://localhost/admin' },
+      hostname: safePublicHostname,
+    })).toBeNull();
   });
 
   it('maps Visibility Level to real progress and builds an invite link', () => {
@@ -179,12 +214,16 @@ describe('referral ledger', () => {
     });
     expect(scored).toMatchObject({ ok: false, code: 'SCORE_NOT_ACCEPTED' });
 
-    const granted = await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    const forged = await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    expect(forged).toMatchObject({ ok: false, code: 'NO_RECEIPT' });
+    expect(await referralBonusRemaining(env, 'acct_a')).toBe(0);
+
+    const granted = await qualifyReferral(env, { accountId: 'acct_b', body: await honestFor(env, 'acct_b') });
     expect(granted).toMatchObject({ ok: true, rewardsGranted: true, reason: 'granted' });
     expect(await referralBonusRemaining(env, 'acct_a')).toBe(2);
     expect(await referralBonusRemaining(env, 'acct_b')).toBe(2);
 
-    const repeat = await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    const repeat = await qualifyReferral(env, { accountId: 'acct_b', body: await honestFor(env, 'acct_b') });
     expect(repeat).toMatchObject({ ok: true, rewardsGranted: false });
     expect(await referralBonusRemaining(env, 'acct_a')).toBe(2);
     expect(await referralBonusRemaining(env, 'acct_b')).toBe(2);
@@ -219,7 +258,7 @@ describe('referral ledger', () => {
       END;
     `);
 
-    const failed = await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    const failed = await qualifyReferral(env, { accountId: 'acct_b', body: await honestFor(env, 'acct_b') });
     expect(failed).toMatchObject({ ok: false, code: 'GRANT_FAILED' });
     const stuck = await env.DB!.prepare(
       `SELECT qualified_at FROM referral_attributions WHERE referred_account_id = ?`,
@@ -229,7 +268,7 @@ describe('referral ledger', () => {
     expect(await referralBonusRemaining(env, 'acct_b')).toBe(0);
 
     await env.DB!.exec('DROP TRIGGER fail_referred_credit');
-    const retried = await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    const retried = await qualifyReferral(env, { accountId: 'acct_b', body: await honestFor(env, 'acct_b') });
     expect(retried).toMatchObject({ ok: true, rewardsGranted: true, reason: 'granted' });
     expect(await referralBonusRemaining(env, 'acct_a')).toBe(2);
     expect(await referralBonusRemaining(env, 'acct_b')).toBe(2);
@@ -245,7 +284,7 @@ describe('referral ledger', () => {
        VALUES ('rwd_partial', 'acct_a', 'hosted_scout_credit', 2, 2, 'qualified:acct_b:referrer', ?)`,
     ).bind(now).run();
 
-    const granted = await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    const granted = await qualifyReferral(env, { accountId: 'acct_b', body: await honestFor(env, 'acct_b') });
     expect(granted).toMatchObject({ ok: true, rewardsGranted: true });
     expect(await referralBonusRemaining(env, 'acct_a')).toBe(2);
     expect(await referralBonusRemaining(env, 'acct_b')).toBe(2);
@@ -259,7 +298,7 @@ describe('referral ledger', () => {
     const env = envWithDb();
     const codeA = await ensureReferralCode(env, 'acct_a');
     await claimReferral(env, { accountId: 'acct_b', code: codeA });
-    await qualifyReferral(env, { accountId: 'acct_b', body: honestBody });
+    await qualifyReferral(env, { accountId: 'acct_b', body: await honestFor(env, 'acct_b') });
 
     const user = { id: 'acct_b', source: 'telegram' as const, accountId: 'acct_b' };
     const first = await checkHostedQuota(env, user);
@@ -303,7 +342,157 @@ describe('referral ledger', () => {
     expect(unlimited.isUnlimited).toBe(true);
     expect(await referralBonusRemaining(paid, 'acct_b')).toBe(2);
   });
+
+  it('does not finish re-scout on the first honest scout of a new week when lifetime count is already past 2', async () => {
+    const env = envWithDb();
+    const now = Date.now();
+    await env.DB!.prepare(
+      `INSERT INTO user_progression (
+         account_id, streak_weeks, last_mission_week, last_mission_at, visibility_level,
+         honest_scout_count, last_honest_scout_day, week_scout_key, week_scout_count, updated_at
+       ) VALUES ('acct_b', 2, '1999-W01', ?, 'builder', 4, '2000-01-01', '1999-W01', 9, ?)`,
+    ).bind(now, now).run();
+
+    const first = await qualifyReferral(env, { accountId: 'acct_b', body: await honestFor(env, 'acct_b') });
+    expect(first).toMatchObject({ ok: true, rewardsGranted: false, reason: 'no_attribution' });
+    const mid = await readRetentionSnapshot(env, 'acct_b');
+    expect(mid.missions.find((mission) => mission.key === 'rescout')?.status).toBe('open');
+    expect(mid.progression.honestScoutCount).toBe(5);
+
+    const second = await qualifyReferral(env, { accountId: 'acct_b', body: await honestFor(env, 'acct_b') });
+    expect(second.ok).toBe(true);
+    const done = await readRetentionSnapshot(env, 'acct_b');
+    expect(done.missions.find((mission) => mission.key === 'rescout')?.status).toBe('completed');
+  });
+
+  it('rejects a replayed receipt and a receipt for another account', async () => {
+    const env = envWithDb();
+    const receipt = await mintScoutReceipt(env, 'acct_b', 'stripe.com');
+    const first = await qualifyReferral(env, { accountId: 'acct_b', body: { ...honestBody, receipt } });
+    expect(first.ok).toBe(true);
+    const replay = await qualifyReferral(env, { accountId: 'acct_b', body: { ...honestBody, receipt } });
+    expect(replay).toMatchObject({ ok: false, code: 'RECEIPT_REJECTED' });
+
+    const other = await mintScoutReceipt(env, 'acct_a', 'stripe.com');
+    const stolen = await qualifyReferral(env, { accountId: 'acct_b', body: { ...honestBody, receipt: other } });
+    expect(stolen).toMatchObject({ ok: false, code: 'RECEIPT_REJECTED' });
+
+    const wrongHost = await mintScoutReceipt(env, 'acct_b', 'cloudflare.com');
+    const mismatch = await qualifyReferral(env, { accountId: 'acct_b', body: { ...honestBody, receipt: wrongHost } });
+    expect(mismatch).toMatchObject({ ok: false, code: 'RECEIPT_REJECTED' });
+  });
+
+  it('lets only one of two concurrent consumes take the last credit', async () => {
+    const env = envWithDb();
+    await env.DB!.prepare(
+      `INSERT INTO referral_rewards (id, account_id, kind, amount, remaining, reason, created_at)
+       VALUES ('rwd_race', 'acct_b', 'hosted_scout_credit', 1, 1, 'qualified:race:referred', ?)`,
+    ).bind(Date.now()).run();
+
+    const [a, b] = await Promise.all([
+      tryConsumeReferralCredit(env, 'acct_b'),
+      tryConsumeReferralCredit(env, 'acct_b'),
+    ]);
+    const wins = [a, b].filter((result) => result.ok);
+    expect(wins).toHaveLength(1);
+    expect(await referralBonusRemaining(env, 'acct_b')).toBe(0);
+
+    await env.DB!.prepare(
+      `INSERT INTO referral_rewards (id, account_id, kind, amount, remaining, reason, created_at)
+       VALUES ('rwd_two', 'acct_c', 'hosted_scout_credit', 2, 2, 'qualified:two:referred', ?)`,
+    ).bind(Date.now()).run();
+    const pair = await Promise.all([
+      tryConsumeReferralCredit(env, 'acct_c'),
+      tryConsumeReferralCredit(env, 'acct_c'),
+    ]);
+    expect(pair.filter((result) => result.ok)).toHaveLength(2);
+    expect(await referralBonusRemaining(env, 'acct_c')).toBe(0);
+  });
+
+  it('mints a scout receipt on signed-in Firecrawl scrape and not on chat', async () => {
+    const env = envWithDb();
+    env.FREE_DAILY_LIMIT = '10';
+    env.FIRECRAWL_API_KEY = 'fc_hosted';
+    env.GROQ_API_KEY = 'gsk_hosted';
+    const initData = signInitData({
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      user: JSON.stringify({ id: 4242, first_name: 'Scout' }),
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({ data: { markdown: '# Stripe' } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+    try {
+      const scrape = await proxyProvider(
+        new Request('https://luminarasuite.com/api/providers/firecrawl/scrape', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-telegram-init-data': initData },
+          body: JSON.stringify({ url: 'https://stripe.com' }),
+        }),
+        env,
+        'firecrawl',
+        '/scrape',
+      );
+      expect(scrape.status).toBe(200);
+      const receipt = scrape.headers.get('x-scout-receipt');
+      expect(receipt).toMatch(/^[a-f0-9]{64}$/);
+
+      const chat = await proxyProvider(
+        new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-telegram-init-data': initData },
+          body: JSON.stringify({ model: 'llama', messages: [{ role: 'user', content: 'https://stripe.com' }] }),
+        }),
+        env,
+        'groq',
+        '/chat/completions',
+      );
+      expect(chat.status).toBe(200);
+      expect(chat.headers.get('x-scout-receipt')).toBeNull();
+
+      const qualified = await qualifyReferral(env, {
+        accountId: '4242',
+        body: { ...honestBody, receipt },
+      });
+      expect(qualified).toMatchObject({ ok: true, reason: 'no_attribution' });
+      const replay = await qualifyReferral(env, {
+        accountId: '4242',
+        body: { ...honestBody, receipt },
+      });
+      expect(replay).toMatchObject({ ok: false, code: 'RECEIPT_REJECTED' });
+
+      const byok = await proxyProvider(
+        new Request('https://luminarasuite.com/api/providers/firecrawl/scrape', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-provider-key': 'fc_user',
+          },
+          body: JSON.stringify({ url: 'https://stripe.com' }),
+        }),
+        env,
+        'firecrawl',
+        '/scrape',
+      );
+      expect(byok.headers.get('x-scout-receipt')).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
+
+function signInitData(fields: Record<string, string>, token = '123456:MOCK_TOKEN'): string {
+  const dcs = Object.keys(fields)
+    .sort()
+    .map((k) => `${k}=${fields[k]}`)
+    .join('\n');
+  const secret = createHmac('sha256', 'WebAppData').update(token).digest();
+  const hash = createHmac('sha256', secret).update(dcs).digest('hex');
+  const params = new URLSearchParams(fields);
+  params.set('hash', hash);
+  return params.toString();
+}
 
 describe('pending invite claim', () => {
   afterEach(() => {
@@ -352,6 +541,40 @@ describe('pending invite claim', () => {
     })));
     await claimStoredReferral();
     expect(readPendingReferral()).toBeNull();
+  });
+
+  it('posts the Worker receipt and skips qualify when none was captured', async () => {
+    clearScoutReceipt();
+    vi.stubGlobal('window', {
+      location: { protocol: 'https:', origin: 'https://luminarasuite.com', search: '' },
+      dispatchEvent: () => true,
+    });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ rewardsGranted: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const skipped = await qualifyHonestScout({
+      domain: 'stripe.com',
+      measurementStatus: 'measured',
+      completed: true,
+      evidencePresent: true,
+    });
+    expect(skipped).toEqual({ rewardsGranted: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    noteScoutReceipt('a'.repeat(64));
+    const sent = await qualifyHonestScout({
+      domain: 'stripe.com',
+      measurementStatus: 'measured',
+      completed: true,
+      evidencePresent: true,
+    });
+    expect(sent).toEqual({ rewardsGranted: true });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.receipt).toBe('a'.repeat(64));
+    expect(body.citationRatePercent).toBeUndefined();
   });
 });
 

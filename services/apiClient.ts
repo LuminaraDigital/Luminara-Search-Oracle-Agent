@@ -8,6 +8,7 @@
 import { getInitDataRaw } from './telegram/tma';
 import { getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
 import { toUserFacingText } from '../utils/userFacingText';
+import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
 
 export interface ServerHealth {
   ok: boolean;
@@ -324,6 +325,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     res = await workerFetchWithAuthRetry(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
   }
   updateQuotaFromHeaders(res.headers);
+  noteScoutReceipt(res.headers.get('x-scout-receipt'));
   if (res.status === 402) {
     try {
       const clone = res.clone();

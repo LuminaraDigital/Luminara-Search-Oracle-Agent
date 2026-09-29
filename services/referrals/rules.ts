@@ -23,7 +23,7 @@ export const WEEKLY_MISSIONS = [
   {
     key: 'rescout',
     title: 'Re-scout a site',
-    detail: 'Run Instant Scout again after your first honest result. A second honest run completes this.',
+    detail: 'Run a second honest Instant Scout this week. The first run of a new day does not finish this mission by itself.',
     clientCompletable: false,
   },
   {
@@ -142,6 +142,38 @@ export function assessHonestScout(
   return { ok: true, domain, measurementStatus: status };
 }
 
+const SCOUT_EVIDENCE_PATHS: Record<string, readonly string[]> = {
+  firecrawl: ['/scrape', '/map', '/crawl'],
+  tavily: ['/search'],
+};
+
+function readBodyField(body: unknown, key: string): string {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return '';
+  const value = (body as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
+}
+
+/** Public host on a Worker-visible Instant Scout evidence call, or null for chat and other traffic. */
+export function scoutEvidenceDomain(input: {
+  providerId: string;
+  subPath: string;
+  body: unknown;
+  hostname: (value: string) => string | null;
+}): string | null {
+  const paths = SCOUT_EVIDENCE_PATHS[input.providerId];
+  if (!paths || !paths.includes(input.subPath)) return null;
+  if (input.providerId === 'tavily') {
+    const query = readBodyField(input.body, 'query');
+    const hosts = query.match(/\b(?:[a-z0-9-]+\.)+[a-z]{2,63}\b/gi) || [];
+    for (const host of hosts) {
+      const safe = input.hostname(host);
+      if (safe) return safe;
+    }
+    return null;
+  }
+  return input.hostname(readBodyField(input.body, 'url'));
+}
+
 export function visibilityLevel(input: {
   honestScoutCount: number;
   missionsCompleted: number;
@@ -199,7 +231,7 @@ export function formatWeeklyMissionNudge(input?: { level?: VisibilityLevel; stre
     '*Weekly missions*',
     'These are real audit tasks. There is no coin balance.',
     '',
-    '1. Re-scout a site after your first honest result.',
+    '1. Re-scout a site. A second honest Instant Scout this week completes it.',
     '2. Open Brand Memory and view what changed.',
     '3. Ship one checklist fix (schema, title, or a crawler file).',
     '',

@@ -25,6 +25,7 @@ import { canMintTeaserShare, createShareTeaser } from '../../services/share/shar
 import { shareExternalLink } from '../../services/telegram/tma';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 import { qualifyHonestScout } from '../../services/referrals/referralClient';
+import { clearScoutReceipt, takeScoutReceipt } from '../../services/referrals/scoutReceiptCapture';
 
 function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
   return buildGuestScoutSummary({
@@ -116,6 +117,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setInlineValidationError(null);
     setError(null);
     setPersistHint(null);
+    clearScoutReceipt();
     setLoading(true);
     setCrewEvents([]);
     setCrewMeasurement(null);
@@ -150,6 +152,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           measurementStatus: crewResult.measurementStatus,
           completed: true,
           evidencePresent: true,
+          receipt: takeScoutReceipt(),
         });
         if (qualified.rewardsGranted) {
           inviteNote = 'Invite credit unlocked for you and the person who invited you. Extra hosted scouts were added. No citation score was invented.';

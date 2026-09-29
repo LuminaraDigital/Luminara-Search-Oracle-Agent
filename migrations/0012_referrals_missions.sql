@@ -1,7 +1,11 @@
 -- Phase 2: opaque invite codes, one attribution per referred account,
 -- two-sided hosted scout credits, weekly missions, and Visibility Level.
 -- Codes are public tokens. code_hash is sha256("luminara-ref:" || code).
--- Do not apply remotely until an operator says yes.
+-- week_scout_* counts honest scouts inside the current ISO week so re-scout
+-- needs a second run that week. scout_receipts holds one-time Worker attestations
+-- (token_hash is sha256("luminara-scout-receipt:" || token)). The raw token is
+-- returned once on the evidence response and is not stored.
+-- Do not apply remotely until an operator says yes. This file is still unapplied.
 --   npm run db:migrate:local
 --   npm run db:migrate:staging
 --   npm run db:migrate
@@ -47,8 +51,23 @@ CREATE TABLE IF NOT EXISTS user_progression (
   visibility_level TEXT NOT NULL DEFAULT 'explorer',
   honest_scout_count INTEGER NOT NULL DEFAULT 0,
   last_honest_scout_day TEXT,
+  week_scout_key TEXT,
+  week_scout_count INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL
 );
+
+-- One-time attestations minted when the Worker sees a signed-in scout evidence call.
+-- consumed_at is set by a single conditional UPDATE so two isolates cannot both spend it.
+CREATE TABLE IF NOT EXISTS scout_receipts (
+  token_hash TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  minted_at INTEGER NOT NULL,
+  consumed_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_scout_receipts_account
+  ON scout_receipts(account_id, minted_at);
 
 CREATE TABLE IF NOT EXISTS user_missions (
   id TEXT PRIMARY KEY,

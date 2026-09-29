@@ -3,8 +3,9 @@
  * Identity required. Private hosts and redirects are not followed.
  */
 import type { Env } from './env';
-import { identify, json } from './workerUtils';
-import { resolvesToPublicAddress, safePublicUrl, type DohFetch } from './security';
+import { billingId, identify, json } from './workerUtils';
+import { resolvesToPublicAddress, safePublicHostname, safePublicUrl, type DohFetch } from './security';
+import { mintScoutReceipt } from './referrals';
 import type { LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 
 const MAX_BYTES = 64_000;
@@ -76,5 +77,17 @@ export async function handleLlmCrawlerRoute(request: Request, env: Env): Promise
   if (!loaded.ok) {
     return json({ ok: false, error: loaded.error, code: loaded.code, snapshot: null }, 400);
   }
-  return json({ ok: true, snapshot: loaded.snapshot });
+  const sawFile = [loaded.snapshot.llmsTxt, loaded.snapshot.robotsTxt].some(
+    (text) => typeof text === 'string' && text.trim().length > 0,
+  );
+  const host = safePublicHostname(target);
+  let receipt: string | null = null;
+  if (sawFile && host) {
+    try {
+      receipt = await mintScoutReceipt(env, billingId(who.user), host);
+    } catch {
+      receipt = null;
+    }
+  }
+  return json({ ok: true, snapshot: loaded.snapshot }, 200, receipt ? { 'X-Scout-Receipt': receipt } : {});
 }

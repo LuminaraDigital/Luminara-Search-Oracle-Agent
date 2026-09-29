@@ -36,8 +36,8 @@ leaked internals).
 | `POST /sentinel/register`, `/sentinel/status` | worker/sentinel.ts | session | Drift Sentinel targets |
 | `GET /share/reports/:token`, `POST /share/reports` | worker/shareService.ts | session + public GET | Full branded reports. Growth+ `shareLinks` |
 | `POST /share/teasers`, `GET /share/teasers/:token` | worker/shareService.ts | session create, public GET | Redacted scout teaser. Not `shareLinks`. 5/day. Public hosts only. Credential-like text rejected. Badges stored as not_measured |
-| `GET /referrals/me`, `POST /referrals/claim`, `POST /referrals/qualify`, `POST /missions/complete` | worker/referrals.ts | session | Opaque `ref_` invites, two-sided hosted scout credits after an honest scout, weekly missions. Needs D1 `0012_referrals_missions.sql`. Bot `/missions` is opt-in and is not on the Sentinel cron |
-| `GET /visibility/crawler-files` | worker/llmCrawlerRoute.ts | session | `/robots.txt` + `/llms.txt` only. SSRF guarded |
+| `GET /referrals/me`, `POST /referrals/claim`, `POST /referrals/qualify`, `POST /missions/complete` | worker/referrals.ts | session | Opaque `ref_` invites. Qualify pays two-sided credits only with a one-time scout receipt from a signed-in evidence call. Re-scout needs a second honest scout in the current ISO week. Credit consume is compare-and-swap. Needs unapplied D1 `0012_referrals_missions.sql`. Bot `/missions` is opt-in and is not on the Sentinel cron |
+| `GET /visibility/crawler-files` | worker/llmCrawlerRoute.ts | session | `/robots.txt` + `/llms.txt` only. SSRF guarded. A non-empty file mints `X-Scout-Receipt` for that host |
 | `POST /enrichment/entity` | worker/enrichmentService | session | Entity enrichment |
 | `* /oauth/mcp/*` | worker/mcpOAuth.ts | oauth/token | OAuth 2.1 + PKCE for MCP |
 | `GET,POST /memory/facts` | worker/memoryService.ts | session | Hosted memory facts |

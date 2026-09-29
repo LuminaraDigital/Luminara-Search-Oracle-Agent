@@ -3,6 +3,7 @@
  * No API, no identity, or an unsafe URL becomes not_measured. Never a score.
  */
 import { apiBase, workerFetchWithAuthRetry } from '../apiClient';
+import { noteScoutReceipt } from '../referrals/scoutReceiptCapture';
 import {
   evaluateLlmCrawlerReadiness,
   unevaluatedLlmCrawlerReport,
@@ -17,6 +18,7 @@ export async function probeLlmCrawlerReadiness(pageUrl: string): Promise<LlmCraw
     const res = await workerFetchWithAuthRetry(
       `${base}/api/visibility/crawler-files?url=${encodeURIComponent(pageUrl)}`,
     );
+    noteScoutReceipt(res.headers.get('x-scout-receipt'));
     if (!res.ok) return unevaluatedLlmCrawlerReport('LLM crawler files were not fetched.');
     const data = (await res.json()) as { snapshot?: LlmCrawlerSnapshot | null };
     return evaluateLlmCrawlerReadiness(data.snapshot ?? null);

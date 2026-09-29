@@ -33,8 +33,12 @@ type ProgRow = {
   visibility_level: string;
   honest_scout_count: number;
   last_honest_scout_day: string | null;
+  week_scout_key: string | null;
+  week_scout_count: number;
   updated_at: number;
 };
+
+const SCOUT_RECEIPT_TTL_MS = 45 * 60 * 1000;
 
 function randomId(prefix: string): string {
   const buf = new Uint8Array(9);
@@ -74,28 +78,84 @@ export async function referralBonusRemaining(env: Env, accountId: string): Promi
   }
 }
 
-/** One credit, oldest grant first. Returns false when the ledger is empty or D1 is missing. */
+/**
+ * One credit, oldest grant first.
+ * Read the row, then decrement only if remaining is still that value.
+ * A second isolate that read the same value gets changes=0 and retries, so one unit is not spent twice.
+ */
 export async function tryConsumeReferralCredit(env: Env, accountId: string): Promise<{ ok: boolean; remaining: number }> {
   if (!env.DB || !accountId) return { ok: false, remaining: 0 };
   try {
-    const updated = await env.DB.prepare(
-      `UPDATE referral_rewards
-       SET remaining = remaining - 1
-       WHERE id = (
-         SELECT id FROM referral_rewards
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const row = await env.DB.prepare(
+        `SELECT id, remaining FROM referral_rewards
          WHERE account_id = ? AND kind = 'hosted_scout_credit' AND remaining > 0
          ORDER BY created_at ASC, id ASC
-         LIMIT 1
-       ) AND remaining > 0`,
-    )
-      .bind(accountId)
-      .run();
-    const changed = Number(updated.meta?.changes || 0) > 0;
-    const remaining = await referralBonusRemaining(env, accountId);
-    return { ok: changed, remaining };
+         LIMIT 1`,
+      )
+        .bind(accountId)
+        .first<{ id: string; remaining: number }>();
+      if (!row?.id) {
+        return { ok: false, remaining: await referralBonusRemaining(env, accountId) };
+      }
+      const expected = Number(row.remaining);
+      const updated = await env.DB.prepare(
+        `UPDATE referral_rewards
+         SET remaining = remaining - 1
+         WHERE id = ? AND remaining = ?`,
+      )
+        .bind(row.id, expected)
+        .run();
+      if (Number(updated.meta?.changes || 0) > 0) {
+        return { ok: true, remaining: await referralBonusRemaining(env, accountId) };
+      }
+    }
+    return { ok: false, remaining: await referralBonusRemaining(env, accountId) };
   } catch {
     return { ok: false, remaining: 0 };
   }
+}
+
+/** Mint a one-time receipt after the Worker sees a signed-in scout evidence call. Returns the raw token once. */
+export async function mintScoutReceipt(env: Env, accountId: string, domain: string): Promise<string | null> {
+  const host = safePublicHostname(domain);
+  if (!env.DB || !accountId || !host) return null;
+  const buf = new Uint8Array(32);
+  crypto.getRandomValues(buf);
+  const token = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+  const tokenHash = await sha256Hex(`luminara-scout-receipt:${token}`);
+  await env.DB.prepare(
+    `INSERT INTO scout_receipts (token_hash, account_id, domain, minted_at, consumed_at)
+     VALUES (?, ?, ?, ?, NULL)`,
+  )
+    .bind(tokenHash, accountId, host, Date.now())
+    .run();
+  return token;
+}
+
+/** Atomically consume a receipt for this account and public host. A second caller loses. */
+async function consumeScoutReceipt(
+  env: Env,
+  accountId: string,
+  token: string,
+  domain: string,
+): Promise<boolean> {
+  const normalized = token.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(normalized)) return false;
+  const tokenHash = await sha256Hex(`luminara-scout-receipt:${normalized}`);
+  const now = Date.now();
+  const updated = await env.DB!.prepare(
+    `UPDATE scout_receipts
+     SET consumed_at = ?
+     WHERE token_hash = ?
+       AND account_id = ?
+       AND domain = ?
+       AND consumed_at IS NULL
+       AND minted_at >= ?`,
+  )
+    .bind(now, tokenHash, accountId, domain, now - SCOUT_RECEIPT_TTL_MS)
+    .run();
+  return Number(updated.meta?.changes || 0) > 0;
 }
 
 async function codeHash(code: string): Promise<string> {
@@ -132,7 +192,8 @@ export async function ensureReferralCode(env: Env, accountId: string): Promise<s
 
 async function loadProgression(env: Env, accountId: string): Promise<ProgRow> {
   const row = await env.DB!.prepare(
-    `SELECT streak_weeks, last_mission_week, last_mission_at, visibility_level, honest_scout_count, last_honest_scout_day, updated_at
+    `SELECT streak_weeks, last_mission_week, last_mission_at, visibility_level,
+            honest_scout_count, last_honest_scout_day, week_scout_key, week_scout_count, updated_at
      FROM user_progression WHERE account_id = ?`,
   )
     .bind(accountId)
@@ -145,6 +206,8 @@ async function loadProgression(env: Env, accountId: string): Promise<ProgRow> {
       visibility_level: 'explorer',
       honest_scout_count: 0,
       last_honest_scout_day: null,
+      week_scout_key: null,
+      week_scout_count: 0,
       updated_at: 0,
     }
   );
@@ -174,8 +237,8 @@ async function saveProgression(
   await env.DB!.prepare(
     `INSERT INTO user_progression (
        account_id, streak_weeks, last_mission_week, last_mission_at, visibility_level,
-       honest_scout_count, last_honest_scout_day, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       honest_scout_count, last_honest_scout_day, week_scout_key, week_scout_count, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(account_id) DO UPDATE SET
        streak_weeks = excluded.streak_weeks,
        last_mission_week = excluded.last_mission_week,
@@ -183,6 +246,8 @@ async function saveProgression(
        visibility_level = excluded.visibility_level,
        honest_scout_count = excluded.honest_scout_count,
        last_honest_scout_day = excluded.last_honest_scout_day,
+       week_scout_key = excluded.week_scout_key,
+       week_scout_count = excluded.week_scout_count,
        updated_at = excluded.updated_at`,
   )
     .bind(
@@ -193,6 +258,8 @@ async function saveProgression(
       level,
       row.honest_scout_count,
       row.last_honest_scout_day,
+      row.week_scout_key,
+      row.week_scout_count,
       now,
     )
     .run();
@@ -410,6 +477,32 @@ export async function qualifyReferral(
   const assessed = assessHonestScout(input.body, safePublicHostname);
   if (!assessed.ok) return assessed;
 
+  const rawReceipt = input.body.receipt;
+  if (typeof rawReceipt !== 'string' || !rawReceipt.trim()) {
+    return {
+      ok: false,
+      error: 'Scout credits need a Worker receipt from a signed-in Instant Scout. A raw status post does not qualify.',
+      code: 'NO_RECEIPT',
+    };
+  }
+  let receiptOk = false;
+  try {
+    receiptOk = await consumeScoutReceipt(env, input.accountId, rawReceipt, assessed.domain);
+  } catch {
+    return {
+      ok: false,
+      error: 'Scout receipt store is not ready. Apply the referrals migration before qualifying.',
+      code: 'NO_DB',
+    };
+  }
+  if (!receiptOk) {
+    return {
+      ok: false,
+      error: 'That scout receipt is missing, expired, already used, or for a different site. Run Instant Scout again.',
+      code: 'RECEIPT_REJECTED',
+    };
+  }
+
   const now = Date.now();
   const today = utcDay(now);
   const attribution = await env.DB.prepare(
@@ -442,19 +535,26 @@ export async function qualifyReferral(
   }
 
   const prog = await loadProgression(env, input.accountId);
+  const week = isoWeekKey(new Date(now));
+  if (prog.week_scout_key !== week) {
+    prog.week_scout_key = week;
+    prog.week_scout_count = 0;
+  }
   let scoutAdvanced = false;
   if (prog.last_honest_scout_day !== today) {
     prog.honest_scout_count += 1;
     prog.last_honest_scout_day = today;
+    prog.week_scout_count += 1;
     scoutAdvanced = true;
-  } else if (prog.honest_scout_count < 2) {
-    // A second honest run the same day still counts as a re-scout. Later runs are once per UTC day.
-    prog.honest_scout_count += 1;
+  } else if (prog.week_scout_count < 2) {
+    // The second honest run of this week can land on the same UTC day. Later runs are once per day.
+    prog.week_scout_count += 1;
+    if (prog.honest_scout_count < 2) prog.honest_scout_count += 1;
     scoutAdvanced = true;
   }
   const missionsCompleted = await completedMissionCount(env, input.accountId);
   await saveProgression(env, input.accountId, prog, missionsCompleted);
-  if (scoutAdvanced && prog.honest_scout_count >= 2) {
+  if (scoutAdvanced && prog.week_scout_count >= 2) {
     await markMissionComplete(env, input.accountId, 'rescout');
   }
 
@@ -475,7 +575,7 @@ export async function completeClientMission(
   if (!key) {
     return {
       ok: false,
-      error: 'That mission cannot be marked from the client. Re-scout finishes when a second honest Instant Scout completes.',
+      error: 'That mission cannot be marked from the client. Re-scout finishes when a second honest Instant Scout this week completes.',
       code: 'MISSION_NOT_CLIENT',
     };
   }

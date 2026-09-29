@@ -5,6 +5,7 @@
 import { apiBase, workerFetchWithAuthRetry } from '../apiClient';
 import type { HonestMeasurementStatus, MissionKey, VisibilityLevel } from './rules';
 import { clearPendingReferral, readPendingReferral } from './pendingReferral';
+import { takeScoutReceipt } from './scoutReceiptCapture';
 
 export interface ReferralMission {
   key: string;
@@ -80,9 +81,12 @@ export async function qualifyHonestScout(input: {
   measurementStatus: HonestMeasurementStatus;
   completed: true;
   evidencePresent: boolean;
+  receipt?: string | null;
 }): Promise<{ rewardsGranted: boolean }> {
   const base = apiBase();
   if (!base) return { rewardsGranted: false };
+  const receipt = String(input.receipt ?? takeScoutReceipt() ?? '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(receipt)) return { rewardsGranted: false };
   try {
     const res = await workerFetchWithAuthRetry(`${base}/api/referrals/qualify`, {
       method: 'POST',
@@ -92,6 +96,7 @@ export async function qualifyHonestScout(input: {
         measurementStatus: input.measurementStatus,
         completed: true,
         evidencePresent: input.evidencePresent,
+        receipt,
       }),
     });
     const data = (await res.json().catch(() => ({}))) as { rewardsGranted?: boolean };
