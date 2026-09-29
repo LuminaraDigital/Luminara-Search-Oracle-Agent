@@ -450,6 +450,7 @@ describe('crawl surfaces', () => {
     const text = await res.text();
     expect(text).toContain('Luminara Suite');
     expect(text).toContain('/docs/mcp.html');
+    expect(text).toContain('/docs/what-is-aeo.html');
   });
 
   it('injects pricing meta into the marketing shell HTML', async () => {

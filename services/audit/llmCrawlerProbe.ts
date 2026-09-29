@@ -1,5 +1,5 @@
 /**
- * Best-effort fetch of llms.txt and robots.txt through the Worker.
+ * Best-effort fetch of llms.txt, robots.txt, and optional ai.txt through the Worker.
  * No API, no identity, or an unsafe URL becomes not_measured. Never a score.
  */
 import { apiBase, workerFetchWithAuthRetry } from '../apiClient';

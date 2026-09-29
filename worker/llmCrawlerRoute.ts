@@ -1,5 +1,5 @@
 /**
- * Bounded fetch of /robots.txt and /llms.txt for an Instant Audit target.
+ * Bounded fetch of /robots.txt, /llms.txt, and optional /ai.txt for an Instant Audit target.
  * Identity required. Private hosts and redirects are not followed.
  */
 import type { Env } from './env';
@@ -52,15 +52,18 @@ export async function loadCrawlerSnapshot(
     return { ok: false, error: 'Host did not resolve to a public address.', code: 'UNSAFE_HOST' };
   }
   const origin = `${page.protocol}//${page.host}`;
-  const [llms, robots] = await Promise.all([
+  const [llms, robots, aiTxt] = await Promise.all([
     fetchOne(`${origin}/llms.txt`, fetcher),
     fetchOne(`${origin}/robots.txt`, fetcher),
+    fetchOne(`${origin}/ai.txt`, fetcher),
   ]);
   const snapshot: LlmCrawlerSnapshot = {
     llmsTxt: llms.body,
     llmsHttpStatus: llms.status,
     robotsTxt: robots.body,
     robotsHttpStatus: robots.status,
+    aiTxt: aiTxt.body,
+    aiHttpStatus: aiTxt.status,
   };
   return { ok: true, snapshot };
 }
@@ -77,7 +80,7 @@ export async function handleLlmCrawlerRoute(request: Request, env: Env): Promise
   if (!loaded.ok) {
     return json({ ok: false, error: loaded.error, code: loaded.code, snapshot: null }, 400);
   }
-  const sawFile = [loaded.snapshot.llmsTxt, loaded.snapshot.robotsTxt].some(
+  const sawFile = [loaded.snapshot.llmsTxt, loaded.snapshot.robotsTxt, loaded.snapshot.aiTxt].some(
     (text) => typeof text === 'string' && text.trim().length > 0,
   );
   const host = safePublicHostname(target);

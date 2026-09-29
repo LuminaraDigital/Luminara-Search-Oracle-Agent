@@ -211,6 +211,9 @@ const PricingPage: React.FC<PricingPageProps> = ({
           <a href="/terms" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">
             Terms
           </a>
+          <a href="/docs/what-is-aeo.html" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">
+            What is AEO
+          </a>
           <a href="/docs/mcp.html" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">
             MCP
           </a>

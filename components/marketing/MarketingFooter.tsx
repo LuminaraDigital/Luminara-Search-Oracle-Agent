@@ -8,6 +8,7 @@ interface MarketingFooterProps {
 const LINKS = [
   { label: 'Privacy', href: '/privacy' },
   { label: 'Terms', href: '/terms' },
+  { label: 'What is AEO', href: '/docs/what-is-aeo.html' },
   { label: 'MCP', href: '/docs/mcp.html' },
   { label: 'Windows app', href: '/desktop' },
   { label: 'Studio', href: 'https://luminaradigital.io' },

@@ -289,7 +289,7 @@ describe('crawler file fetch', () => {
     vi.unstubAllGlobals();
   });
 
-  it('loads only robots.txt and llms.txt for a public host', async () => {
+  it('loads robots.txt, llms.txt, and optional ai.txt for a public host', async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('cloudflare-dns.com')) {
@@ -307,7 +307,10 @@ describe('crawler file fetch', () => {
     if (!loaded.ok) return;
     expect(loaded.snapshot.llmsTxt).toContain('Suite');
     expect(loaded.snapshot.robotsTxt).toContain('Allow: /');
-    expect(fetcher.mock.calls.map((call) => String(call[0])).some((url) => url.includes('/wp-admin'))).toBe(false);
+    expect(loaded.snapshot.aiHttpStatus).toBe(404);
+    const fetched = fetcher.mock.calls.map((call) => String(call[0]));
+    expect(fetched.some((url) => url.endsWith('/ai.txt'))).toBe(true);
+    expect(fetched.some((url) => url.includes('/wp-admin'))).toBe(false);
   });
 
   it('rejects private hosts', async () => {

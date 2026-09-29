@@ -57,6 +57,7 @@ describe('marketing crawl documents', () => {
   it('sitemap lists canonical marketing URLs', () => {
     expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/how-it-works');
     expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/llms.txt');
+    expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/docs/what-is-aeo.html');
     expect(SITEMAP_XML).toContain('http://www.sitemaps.org/schemas/sitemap/0.9');
   });
 
@@ -68,6 +69,9 @@ describe('marketing crawl documents', () => {
     expect(LLMS_TXT).toContain('US$149');
     expect(LLMS_TXT).toContain('US$349');
     expect(LLMS_TXT).toContain('not_measured');
+    expect(LLMS_TXT).toContain('/docs/what-is-aeo.html#honesty');
+    expect(LLMS_TXT).toContain('https://www.luminarasuite.com/sitemap.xml');
+    expect(LLMS_TXT).toContain('/share/teaser/');
     expect(LLMS_TXT).not.toContain('\u2014');
   });
 
@@ -76,6 +80,7 @@ describe('marketing crawl documents', () => {
     expect(ROBOTS_TXT).toContain('User-agent: ClaudeBot');
     expect(ROBOTS_TXT).toContain('User-agent: PerplexityBot');
     expect(ROBOTS_TXT).toContain('User-agent: Google-Extended');
+    expect(ROBOTS_TXT).toContain('Allow: /docs/what-is-aeo.html');
     expect(ROBOTS_TXT).toContain('Allow: /share/teaser/');
     expect(ROBOTS_TXT).toContain('Disallow: /share/');
     expect(ROBOTS_TXT).toContain('Disallow: /api/');
@@ -84,6 +89,7 @@ describe('marketing crawl documents', () => {
   it('public crawl files match the Worker constants', () => {
     expect(readFileSync('public/robots.txt', 'utf8')).toBe(ROBOTS_TXT);
     expect(readFileSync('public/llms.txt', 'utf8')).toBe(LLMS_TXT);
+    expect(readFileSync('public/sitemap.xml', 'utf8')).toBe(SITEMAP_XML);
   });
 });
 

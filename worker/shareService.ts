@@ -150,6 +150,8 @@ function webappOrigin(env: Env): string {
 
 /** Redacted scout cards. Not the Growth+ shareLinks entitlement. */
 export const TEASER_DAILY_LIMIT = 5;
+/** Deeper crawler rows (presence, structure, bots, cite paths, optional ai.txt) plus a little headroom. */
+export const TEASER_CRAWLER_CHECK_LIMIT = 8;
 const TEASER_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const TEASER_CTA = 'https://t.me/LuminaraSuiteBot/app';
 const BADGE_STATUS = new Set(['measured', 'estimated', 'not_measured']);
@@ -246,7 +248,7 @@ export function parseTeaserCreateBody(raw: unknown): { ok: true; payload: Teaser
     // No server-side scout attestation. Never store measured or estimated.
     badges.push({ label, status: 'not_measured' });
   }
-  const checksIn = Array.isArray(body.crawlerChecks) ? body.crawlerChecks.slice(0, 4) : [];
+  const checksIn = Array.isArray(body.crawlerChecks) ? body.crawlerChecks.slice(0, TEASER_CRAWLER_CHECK_LIMIT) : [];
   const crawlerChecks: TeaserCheck[] = [];
   for (const item of checksIn) {
     if (!item || typeof item !== 'object') continue;

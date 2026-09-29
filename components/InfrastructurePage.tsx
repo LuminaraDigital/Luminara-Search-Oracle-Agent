@@ -124,6 +124,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
         <div className="flex flex-wrap justify-center gap-6">
           <a href="/privacy" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">Privacy</a>
           <a href="/terms" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">Terms</a>
+          <a href="/docs/what-is-aeo.html" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">What is AEO</a>
           <a href="/docs/mcp.html" className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-gold">MCP</a>
         </div>
       </footer>

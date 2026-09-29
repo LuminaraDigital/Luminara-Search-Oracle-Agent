@@ -102,13 +102,16 @@ describe('hosted scout rail', () => {
 describe('LLM crawler readiness', () => {
   it('passes when llms.txt exists and citation bots are not blocked', () => {
     const report = evaluateLlmCrawlerReadiness({
-      llmsTxt: '# Product\n',
+      llmsTxt: '# Product\n\n> A short product summary for agents that quote this site.\n',
       llmsHttpStatus: 200,
       robotsTxt: 'User-agent: *\nAllow: /\n',
       robotsHttpStatus: 200,
+      aiTxt: '# Agent notes\n',
+      aiHttpStatus: 200,
     });
-    expect(report.checks.map((check) => check.status)).toEqual(['pass', 'pass']);
+    expect(report.checks.map((check) => check.status)).toEqual(['pass', 'pass', 'pass', 'pass', 'pass']);
     expect(JSON.stringify(report)).not.toMatch(/\d+\/100/);
+    expect(JSON.stringify(report)).not.toMatch(/\d+%/);
   });
 
   it('fails a blocked GPTBot rule and a missing llms.txt without inventing a score', () => {
@@ -119,8 +122,11 @@ describe('LLM crawler readiness', () => {
       robotsHttpStatus: 200,
     });
     expect(report.checks.find((check) => check.id === 'llms_txt')?.status).toBe('fail');
+    expect(report.checks.find((check) => check.id === 'llms_structure')?.status).toBe('not_measured');
     expect(report.checks.find((check) => check.id === 'ai_bot_directives')?.status).toBe('fail');
+    expect(report.checks.find((check) => check.id === 'cite_paths')?.status).toBe('fail');
     expect(report.checks.find((check) => check.id === 'ai_bot_directives')?.detail).toContain('GPTBot');
+    expect(JSON.stringify(report)).not.toMatch(/\d+%/);
   });
 
   it('stays not_measured when the files were not fetched', async () => {
