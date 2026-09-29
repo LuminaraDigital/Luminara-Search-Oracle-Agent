@@ -27,6 +27,7 @@ import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 import { qualifyHonestScout } from '../../services/referrals/referralClient';
 import { clearScoutReceipt, takeScoutReceipt } from '../../services/referrals/scoutReceiptCapture';
 import { linkIdeaScout } from '../../services/ideaScout/ideaScoutClient';
+import { takeContinuumLink } from '../../services/ideaScout/continuum';
 
 function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
   return buildGuestScoutSummary({
@@ -54,8 +55,9 @@ interface InstantAuditViewProps {
   /** Guest / unsigned scout: web guests stay on BYOK. Telegram initData may use capped hosted spend. */
   isGuest?: boolean;
   hostedRail?: HostedScoutRail;
-  /** Idea Scout card to attach when this scout finishes. */
+  /** Idea Scout card to attach when this scout finishes. Cleared after one successful link. */
   ideaScoutId?: string;
+  onContinuumSettled?: (ok: boolean) => void;
 }
 
 export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
@@ -66,6 +68,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   isGuest = false,
   hostedRail = 'byok_or_signin',
   ideaScoutId,
+  onContinuumSettled,
 }) => {
   const [url, setUrl] = useState(() => initialUrl || draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL));
   const [focus, setFocus] = useState<ReportFocus>(() => initialFocus || 'AEO');
@@ -101,6 +104,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const isFullAudit = Boolean(dna);
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const continuumRef = useRef<string | undefined>(ideaScoutId);
+  useEffect(() => { continuumRef.current = ideaScoutId; }, [ideaScoutId]);
   useEffect(() => () => { if (stageTimerRef.current) clearInterval(stageTimerRef.current); }, []);
 
   const handleUrlChange = (value: string) => {
@@ -122,6 +127,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setError(null);
     setPersistHint(null);
     clearScoutReceipt();
+    const taken = takeContinuumLink(continuumRef.current);
+    continuumRef.current = taken.next;
+    const linkId = taken.linkId;
+    let linkedOk = false;
+    const restoreContinuum = () => {
+      if (linkId && !linkedOk && continuumRef.current == null) continuumRef.current = linkId;
+    };
     setLoading(true);
     setCrewEvents([]);
     setCrewMeasurement(null);
@@ -148,14 +160,28 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       const summary = summaryFromCrew(crewResult, hostedRail);
       setCrewMeasurement(crewResult.measurementStatus);
       setScoutSummary(summary);
-      if (ideaScoutId && summary.domain) {
+      if (linkId && summary.domain) {
         const measured = !isGuest && crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty;
-        void linkIdeaScout({
-          id: ideaScoutId,
-          domain: summary.domain,
-          measurementStatus: measured ? 'measured' : 'not_measured',
-          evidencePresent: measured,
-        });
+        try {
+          const linked = await linkIdeaScout({
+            id: linkId,
+            domain: summary.domain,
+            measurementStatus: measured ? 'measured' : 'not_measured',
+            evidencePresent: measured,
+          });
+          if (linked.ok) {
+            linkedOk = true;
+            onContinuumSettled?.(true);
+          } else {
+            restoreContinuum();
+            onContinuumSettled?.(false);
+          }
+        } catch {
+          restoreContinuum();
+          onContinuumSettled?.(false);
+        }
+      } else if (linkId) {
+        restoreContinuum();
       }
 
       let inviteNote = '';
@@ -236,6 +262,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         /* graph ingest is best-effort */
       }
     } catch (err: any) {
+      restoreContinuum();
       const userErr = toUserFacingText(err, 'Failed to complete the audit. Check your AI keys in Settings and try again.');
       setError(userErr);
       productTelemetry.recordError('InstantAuditView', userErr);

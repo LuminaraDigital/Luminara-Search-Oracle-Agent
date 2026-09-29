@@ -11,6 +11,7 @@ import { parseReferralStartParam } from './services/referrals/rules';
 import { holdPendingReferral } from './services/referrals/pendingReferral';
 import { claimStoredReferral } from './services/referrals/referralClient';
 import { resolveHostedScoutRail } from './services/audit/hostedScoutRail';
+import { resolveContinuumIdeaId } from './services/ideaScout/continuum';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
 import Waveform from './components/Waveform';
@@ -144,6 +145,7 @@ const App: React.FC = () => {
   const [telegramAuditUrl, setTelegramAuditUrl] = useState<string | undefined>(() => readTelegramAuditUrl());
   const [launchIdeaId, setLaunchIdeaId] = useState<string | undefined>(() => resolveTelegramStart(getStartParam()).ideaId);
   const [continuumIdeaId, setContinuumIdeaId] = useState<string | undefined>(undefined);
+  const continuumHandoffRef = useRef(false);
   const [hasTelegramInitData, setHasTelegramInitData] = useState(() => Boolean(getInitDataRaw()));
 
   // Keep TMA detection in sync after background initTelegram() finishes.
@@ -183,6 +185,13 @@ const App: React.FC = () => {
   // Path deep-links (/share, /verify, /reports) must be cleared when leaving so we do not
   // leave pathname + hash pollution (e.g. /share/TOKEN#landing).
   const setView = useCallback((next: AppView) => {
+    if (next === AppView.INSTANT_AUDIT) {
+      if (continuumHandoffRef.current) continuumHandoffRef.current = false;
+      else setContinuumIdeaId((current) => resolveContinuumIdeaId(current, { type: 'open_instant_audit' }));
+    } else {
+      continuumHandoffRef.current = false;
+      setContinuumIdeaId((current) => resolveContinuumIdeaId(current, { type: 'leave_idea_scout' }));
+    }
     setViewState(prev => {
       if (prev !== next) setViewHistory(h => [...h.slice(-20), prev]);
       return next;
@@ -1382,6 +1391,12 @@ const App: React.FC = () => {
               signedIn: appAuth.authenticated,
             })}
             ideaScoutId={continuumIdeaId}
+            onContinuumSettled={(ok) => {
+              setContinuumIdeaId((current) => resolveContinuumIdeaId(
+                current,
+                ok ? { type: 'link_succeeded' } : { type: 'link_failed' },
+              ));
+            }}
           />
         )}
 
@@ -1391,7 +1406,8 @@ const App: React.FC = () => {
             onRunAudit={(host, ideaId) => {
               draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, host);
               setTelegramAuditUrl(host);
-              if (ideaId) setContinuumIdeaId(ideaId);
+              continuumHandoffRef.current = true;
+              setContinuumIdeaId(resolveContinuumIdeaId(undefined, { type: 'handoff', ideaId }));
               setView(AppView.INSTANT_AUDIT);
             }}
           />

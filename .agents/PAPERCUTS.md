@@ -35,4 +35,4 @@ Do not log secrets, tokens, or PII.
 - 2026-09-26: Teaser create quota in KV is read-then-write, not a single atomic increment, so concurrent creates can exceed 5/account/day (share)
 - 2026-09-26: Teaser credential scan is pattern-based (bearer, sk-, gsk_, AIza, and similar). A secret shape outside those patterns can still be stored (share)
 - 2026-09-28: `.githooks/pre-commit` is not executable, so git skips it (`hint: hook was ignored`) (git)
-- 2026-09-29: Idea Scout free-card counter is KV read-then-write, same shape as teaser creates. Niche Pulse cron is not wired; `/pulse` is opt-in only (idea scout)
+- 2026-09-29: Niche Pulse cron is not wired; `/pulse` is opt-in only (idea scout)

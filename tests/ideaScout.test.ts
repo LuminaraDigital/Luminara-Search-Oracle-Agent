@@ -19,7 +19,8 @@ import {
   validateIdeaScoutCard,
   type IdeaScoutCard,
 } from '../services/ideaScout/rules';
-import { completeIdeaSketch, fetchCompetitorSnapshots, handleIdeaScoutRoute, nichePulseReply } from '../worker/ideaScout';
+import { resolveContinuumIdeaId, takeContinuumLink } from '../services/ideaScout/continuum';
+import { claimIdeaCardSlot, completeIdeaSketch, fetchCompetitorSnapshots, handleIdeaScoutRoute, nichePulseReply } from '../worker/ideaScout';
 import { handleTelegramUpdate } from '../worker/telegramBot';
 import type { Env } from '../worker/env';
 
@@ -44,11 +45,11 @@ function memoryKv() {
   };
 }
 
-function envWithDb(store?: Map<string, string>): Env {
+function envWithDb(store?: Map<string, string>, skipMigrations?: string[]): Env {
   const mem = store ? { store, kv: memoryKvFrom(store) } : memoryKv();
   return {
     ASSETS: {} as Env['ASSETS'],
-    DB: createSqliteD1(),
+    DB: createSqliteD1(skipMigrations ? { skipMigrations } : {}),
     LUMINARA_KV: mem.kv as unknown as KVNamespace,
     FREE_DAILY_LIMIT: '10',
     REQUIRE_TG_AUTH: 'true',
@@ -255,6 +256,20 @@ describe('idea scout continuum', () => {
     expect(ideaCardSlot({ subscribed: false, byok: false, usedToday: 2 }).code).toBe('IDEA_DAILY_CAP');
     expect(ideaCardSlot({ subscribed: true, byok: false, usedToday: 9 }).ok).toBe(true);
   });
+
+  it('clears the continuum id after one link and when Instant Audit is not a handoff', () => {
+    const id = resolveContinuumIdeaId(undefined, { type: 'handoff', ideaId: 'is_0123456789abcdef' });
+    expect(id).toBe('is_0123456789abcdef');
+    const first = takeContinuumLink(id);
+    expect(first).toEqual({ linkId: 'is_0123456789abcdef', next: undefined });
+    const second = takeContinuumLink(first.next);
+    expect(second.linkId).toBeUndefined();
+    expect(resolveContinuumIdeaId(id, { type: 'link_succeeded' })).toBeUndefined();
+    expect(resolveContinuumIdeaId(id, { type: 'open_instant_audit' })).toBeUndefined();
+    expect(resolveContinuumIdeaId(id, { type: 'leave_idea_scout' })).toBeUndefined();
+    expect(resolveContinuumIdeaId(id, { type: 'link_failed' })).toBe(id);
+    expect(resolveContinuumIdeaId(undefined, { type: 'handoff' })).toBeUndefined();
+  });
 });
 
 describe('page sample', () => {
@@ -412,6 +427,96 @@ describe('idea scout routes', () => {
     expect(body.linkedAuditRunId).toBe('run_idea_01');
     expect(body.startParam).toBe('audit_stripe.com');
     expect(body.linkedAuditRunId).not.toBe('run_other_9');
+  });
+
+  it('does not spend a free slot or the hosted meter when storage fails or migration 0013 is missing', async () => {
+    const store = new Map<string, string>();
+    const missing = envWithDb(store, ['0013']);
+    let sketched = false;
+    const unmigrated = await handleIdeaScoutRoute(ideaRequest(ideaBody), missing, '/idea-scout', {
+      completeModel: async () => {
+        sketched = true;
+        return null;
+      },
+    });
+    expect(unmigrated.status).toBe(503);
+    const unmigratedBody = await unmigrated.json() as { code?: string };
+    expect(unmigratedBody.code).toBe('MIGRATION_REQUIRED');
+    expect(sketched).toBe(false);
+    expect([...store.keys()].some((key) => key.startsWith('quota:'))).toBe(false);
+
+    const env = envWithDb(store);
+    const prepare = env.DB!.prepare.bind(env.DB);
+    let ideaInserts = 0;
+    env.DB!.prepare = ((sql: string) => {
+      const stmt = prepare(sql);
+      if (!/INSERT INTO idea_scouts/i.test(sql)) return stmt;
+      return {
+        bind: (...args: unknown[]) => {
+          const bound = stmt.bind(...args);
+          return {
+            ...bound,
+            async run() {
+              ideaInserts += 1;
+              if (ideaInserts === 1) throw new Error('disk full');
+              return bound.run();
+            },
+          };
+        },
+      };
+    }) as typeof env.DB.prepare;
+    let modelCalls = 0;
+    const failed = await handleIdeaScoutRoute(ideaRequest(ideaBody), env, '/idea-scout', {
+      completeModel: async () => {
+        modelCalls += 1;
+        return null;
+      },
+    });
+    expect(failed.status).toBe(503);
+    const failedBody = await failed.json() as { code?: string };
+    expect(failedBody.code).toBe('STORE_FAILED');
+    expect(modelCalls).toBe(1);
+    expect([...store.keys()].some((key) => key.startsWith('quota:'))).toBe(false);
+    const used = await env.DB!.prepare('SELECT used FROM idea_scout_daily').first<{ used: number }>();
+    expect(used).toBeNull();
+
+    const recovered = await handleIdeaScoutRoute(ideaRequest(ideaBody), env, '/idea-scout', {
+      completeModel: async () => null,
+    });
+    expect(recovered.status).toBe(200);
+    const card = await recovered.json() as { ideaCardsRemaining: number };
+    expect(card.ideaCardsRemaining).toBe(1);
+  });
+
+  it('compare-and-swap keeps concurrent free cards at two', async () => {
+    const env = envWithDb();
+    const now = Date.now();
+    const claims = await Promise.all(
+      Array.from({ length: 8 }, () => claimIdeaCardSlot(env, '4242', now)),
+    );
+    expect(claims.filter((claim) => claim.ok)).toHaveLength(2);
+    const counter = await env.DB!.prepare(
+      'SELECT used FROM idea_scout_daily WHERE account_id = ?',
+    ).bind('4242').first<{ used: number }>();
+    expect(Number(counter?.used)).toBe(2);
+
+    const deps = { completeModel: async () => null };
+    const created = await Promise.all(
+      Array.from({ length: 6 }, () => handleIdeaScoutRoute(ideaRequest(ideaBody), env, '/idea-scout', deps)),
+    );
+    const statuses = created.map((res) => res.status);
+    expect(statuses.filter((status) => status === 200)).toHaveLength(0);
+    expect(statuses.filter((status) => status === 429)).toHaveLength(6);
+    const fresh = envWithDb();
+    const raced = await Promise.all(
+      Array.from({ length: 6 }, () => handleIdeaScoutRoute(ideaRequest(ideaBody), fresh, '/idea-scout', deps)),
+    );
+    expect(raced.filter((res) => res.status === 200)).toHaveLength(2);
+    expect(raced.filter((res) => res.status === 429)).toHaveLength(4);
+    const rows = await fresh.DB!.prepare('SELECT COUNT(*) AS n FROM idea_scouts').first<{ n: number }>();
+    const slot = await fresh.DB!.prepare('SELECT used FROM idea_scout_daily').first<{ used: number }>();
+    expect(Number(rows?.n)).toBe(2);
+    expect(Number(slot?.used)).toBe(2);
   });
 });
 

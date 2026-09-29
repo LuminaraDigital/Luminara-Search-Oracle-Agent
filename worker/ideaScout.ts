@@ -24,7 +24,6 @@ import {
   extractPageSample,
   formatNichePulseMessage,
   ideaCardSlot,
-  ideaScoutQuotaKey,
   parseIdeaScoutRequest,
   plainPulseField,
   stripPercentageTheater,
@@ -52,7 +51,7 @@ export interface IdeaScoutDeps {
 type PulseRow = { niche: string; lastTip: string | null; enabled: boolean };
 
 function missingTable(err: unknown): boolean {
-  return /no such table: (idea_scouts|niche_pulse_subs)/i.test(String((err as Error)?.message || err));
+  return /no such table: (idea_scouts|idea_scout_daily|niche_pulse_subs)/i.test(String((err as Error)?.message || err));
 }
 
 function dbRequired(): Response {
@@ -249,16 +248,74 @@ function sketchPrompt(idea: string, niche: string | null, snapshots: CompetitorS
   ].join('\n');
 }
 
-async function readIdeaCount(env: Env, accountId: string, now: number): Promise<number> {
-  if (!env.LUMINARA_KV) return 0;
-  const key = ideaScoutQuotaKey(accountId, new Date(now));
-  return Number((await env.LUMINARA_KV.get(key)) || 0);
+function utcDay(now: number): string {
+  return new Date(now).toISOString().slice(0, 10);
 }
 
-async function writeIdeaCount(env: Env, accountId: string, now: number, used: number): Promise<void> {
-  if (!env.LUMINARA_KV) return;
-  const key = ideaScoutQuotaKey(accountId, new Date(now));
-  await env.LUMINARA_KV.put(key, String(used), { expirationTtl: 2 * 86400 });
+async function probeIdeaTables(env: Env): Promise<Response | null> {
+  if (!env.DB) return dbRequired();
+  try {
+    await env.DB.prepare('SELECT id FROM idea_scouts LIMIT 1').first();
+    await env.DB.prepare('SELECT used FROM idea_scout_daily LIMIT 1').first();
+    return null;
+  } catch (err) {
+    if (missingTable(err)) return dbRequired();
+    return json({ ok: false, error: 'Idea Scout storage failed.', code: 'STORE_FAILED' }, 503);
+  }
+}
+
+async function readIdeaUsed(env: Env, accountId: string, now: number): Promise<number> {
+  const row = await env.DB!.prepare(
+    `SELECT used FROM idea_scout_daily WHERE account_id = ? AND utc_day = ?`,
+  ).bind(accountId, utcDay(now)).first<{ used: number }>();
+  return Number(row?.used || 0);
+}
+
+/**
+ * Free-card counter. Same shape as referral credit consume:
+ * read used, then increment only while that value is still current and under the cap.
+ * A second caller that read the same value gets changes=0 and retries.
+ * Call this only after the idea_scouts row is stored.
+ */
+export async function claimIdeaCardSlot(
+  env: Env,
+  accountId: string,
+  now: number,
+): Promise<{ ok: true; remaining: number } | { ok: false; code: 'IDEA_DAILY_CAP' }> {
+  const day = utcDay(now);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await env.DB!.prepare(
+      `INSERT INTO idea_scout_daily (account_id, utc_day, used) VALUES (?, ?, 0)
+       ON CONFLICT(account_id, utc_day) DO NOTHING`,
+    ).bind(accountId, day).run();
+    const row = await env.DB!.prepare(
+      `SELECT used FROM idea_scout_daily WHERE account_id = ? AND utc_day = ?`,
+    ).bind(accountId, day).first<{ used: number }>();
+    const expected = Number(row?.used || 0);
+    if (expected >= FREE_IDEA_CARDS_PER_UTC_DAY) return { ok: false, code: 'IDEA_DAILY_CAP' };
+    const updated = await env.DB!.prepare(
+      `UPDATE idea_scout_daily SET used = used + 1
+       WHERE account_id = ? AND utc_day = ? AND used = ? AND used < ?`,
+    ).bind(accountId, day, expected, FREE_IDEA_CARDS_PER_UTC_DAY).run();
+    if (Number(updated.meta?.changes || 0) > 0) {
+      const usedNow = expected + 1;
+      return { ok: true, remaining: FREE_IDEA_CARDS_PER_UTC_DAY - usedNow };
+    }
+  }
+  return { ok: false, code: 'IDEA_DAILY_CAP' };
+}
+
+async function releaseIdeaCardSlot(env: Env, accountId: string, now: number): Promise<void> {
+  await env.DB!.prepare(
+    `UPDATE idea_scout_daily SET used = used - 1
+     WHERE account_id = ? AND utc_day = ? AND used > 0`,
+  ).bind(accountId, utcDay(now)).run();
+}
+
+async function deleteIdeaRow(env: Env, id: string, accountId: string): Promise<void> {
+  await env.DB!.prepare(
+    `DELETE FROM idea_scouts WHERE id = ? AND account_id = ?`,
+  ).bind(id, accountId).run();
 }
 
 function newIdeaId(): string {
@@ -331,7 +388,8 @@ function cardFromRow(raw: string): IdeaScoutCard | null {
 }
 
 async function createIdea(request: Request, env: Env, user: HostedIdentity, accountId: string, deps: IdeaScoutDeps): Promise<Response> {
-  if (!env.DB) return dbRequired();
+  const blocked = await probeIdeaTables(env);
+  if (blocked) return blocked;
   const read = await readBody(request, MAX_SMALL_BODY_BYTES);
   if (!read.ok) return json({ ok: false, error: read.error }, read.status);
   const parsed = parseIdeaScoutRequest(read.value);
@@ -343,10 +401,10 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
   }
   const byok = byokKey.length > 0;
   const now = deps.now ? deps.now() : Date.now();
-  let remaining: number | null = null;
   const hosted = !byok;
+  let subscribed = false;
 
-  if (!byok) {
+  if (hosted) {
     if (!env.LUMINARA_KV) {
       return json({
         ok: false,
@@ -354,14 +412,12 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
         code: 'QUOTA_STORE',
       }, 503);
     }
-    const subscribed = await isUserSubscribed(env, user);
-    const used = await readIdeaCount(env, accountId, now);
-    const slot = ideaCardSlot({ subscribed, byok: false, usedToday: used });
-    if (!slot.ok) return json({ ok: false, error: slot.error, code: slot.code, limit: FREE_IDEA_CARDS_PER_UTC_DAY }, 429);
-    const quota = await checkHostedQuota(env, user);
-    if (!quota.ok) return json({ ok: false, error: quota.error || 'Hosted limit reached.', code: 'HOSTED_QUOTA' }, 429);
-    if (!subscribed) await writeIdeaCount(env, accountId, now, used + 1);
-    remaining = slot.remaining;
+    subscribed = await isUserSubscribed(env, user);
+    if (!subscribed) {
+      const used = await readIdeaUsed(env, accountId, now);
+      const slot = ideaCardSlot({ subscribed: false, byok: false, usedToday: used });
+      if (!slot.ok) return json({ ok: false, error: slot.error, code: slot.code, limit: FREE_IDEA_CARDS_PER_UTC_DAY }, 429);
+    }
   }
 
   const fetcher = deps.fetcher || fetch;
@@ -390,7 +446,7 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
 
   const id = newIdeaId();
   try {
-    await env.DB.prepare(
+    await env.DB!.prepare(
       `INSERT INTO idea_scouts (id, account_id, idea_text, niche, competitor_urls_json, card_json, status, created_at, linked_domain, linked_audit_run_id)
        VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, NULL, NULL)`,
     ).bind(
@@ -405,6 +461,36 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
   } catch (err) {
     if (missingTable(err)) return dbRequired();
     return json({ ok: false, error: 'Could not store the idea card.', code: 'STORE_FAILED' }, 503);
+  }
+
+  let remaining: number | null = null;
+  let claimed = false;
+  if (hosted && !subscribed) {
+    try {
+      const claim = await claimIdeaCardSlot(env, accountId, now);
+      if (!claim.ok) {
+        await deleteIdeaRow(env, id, accountId);
+        const denied = ideaCardSlot({ subscribed: false, byok: false, usedToday: FREE_IDEA_CARDS_PER_UTC_DAY });
+        const error = denied.ok ? 'Free idea card limit reached.' : denied.error;
+        const code = denied.ok ? 'IDEA_DAILY_CAP' : denied.code;
+        return json({ ok: false, error, code, limit: FREE_IDEA_CARDS_PER_UTC_DAY }, 429);
+      }
+      claimed = true;
+      remaining = claim.remaining;
+    } catch (err) {
+      await deleteIdeaRow(env, id, accountId).catch(() => undefined);
+      if (missingTable(err)) return dbRequired();
+      return json({ ok: false, error: 'Could not store the idea card.', code: 'STORE_FAILED' }, 503);
+    }
+  }
+
+  if (hosted) {
+    const quota = await checkHostedQuota(env, user);
+    if (!quota.ok) {
+      if (claimed) await releaseIdeaCardSlot(env, accountId, now).catch(() => undefined);
+      await deleteIdeaRow(env, id, accountId).catch(() => undefined);
+      return json({ ok: false, error: quota.error || 'Hosted limit reached.', code: 'HOSTED_QUOTA' }, 429);
+    }
   }
 
   let pulseEnabled = false;
