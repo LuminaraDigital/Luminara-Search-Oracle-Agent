@@ -19,6 +19,15 @@ export function resolveContinuumIdeaId(
   return undefined;
 }
 
+/**
+ * Telegram back, hash change, popstate, and the marketing redirect are not a fresh handoff.
+ * Instant Audit on those paths remounts with no idea id. Any other view leaves Idea Scout.
+ */
+export function continuumEventForViewChange(nextView: string): ContinuumEvent {
+  if (nextView === 'INSTANT_AUDIT') return { type: 'open_instant_audit' };
+  return { type: 'leave_idea_scout' };
+}
+
 /** The audit that is about to link consumes the id. The following audit does not see it. */
 export function takeContinuumLink(current: string | undefined): {
   linkId: string | undefined;

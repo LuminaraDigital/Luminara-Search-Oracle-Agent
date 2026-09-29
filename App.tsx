@@ -11,7 +11,7 @@ import { parseReferralStartParam } from './services/referrals/rules';
 import { holdPendingReferral } from './services/referrals/pendingReferral';
 import { claimStoredReferral } from './services/referrals/referralClient';
 import { resolveHostedScoutRail } from './services/audit/hostedScoutRail';
-import { resolveContinuumIdeaId } from './services/ideaScout/continuum';
+import { resolveContinuumIdeaId, continuumEventForViewChange } from './services/ideaScout/continuum';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
 import Waveform from './components/Waveform';
@@ -146,6 +146,16 @@ const App: React.FC = () => {
   const [launchIdeaId, setLaunchIdeaId] = useState<string | undefined>(() => resolveTelegramStart(getStartParam()).ideaId);
   const [continuumIdeaId, setContinuumIdeaId] = useState<string | undefined>(undefined);
   const continuumHandoffRef = useRef(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const applyContinuumForView = useCallback((next: AppView) => {
+    if (next === AppView.INSTANT_AUDIT && continuumHandoffRef.current) {
+      continuumHandoffRef.current = false;
+      return;
+    }
+    continuumHandoffRef.current = false;
+    setContinuumIdeaId((current) => resolveContinuumIdeaId(current, continuumEventForViewChange(next)));
+  }, []);
   const [hasTelegramInitData, setHasTelegramInitData] = useState(() => Boolean(getInitDataRaw()));
 
   // Keep TMA detection in sync after background initTelegram() finishes.
@@ -160,9 +170,12 @@ const App: React.FC = () => {
       const ideaId = resolveTelegramStart(getStartParam()).ideaId;
       if (ideaId) setLaunchIdeaId(ideaId);
       if (!inside) return;
-      setViewState((current) => (current === AppView.LANDING ? resolveTelegramStartView() : current));
+      if (viewRef.current !== AppView.LANDING) return;
+      const next = resolveTelegramStartView();
+      applyContinuumForView(next);
+      setViewState(next);
     });
-  }, []);
+  }, [applyContinuumForView]);
   /** Cinematic brand intro when the product opens (disabled by default for instant load). */
   const [showIntro, setShowIntro] = useState(false);
   const [introPendingView, setIntroPendingView] = useState<AppView | null>(null);
@@ -185,13 +198,7 @@ const App: React.FC = () => {
   // Path deep-links (/share, /verify, /reports) must be cleared when leaving so we do not
   // leave pathname + hash pollution (e.g. /share/TOKEN#landing).
   const setView = useCallback((next: AppView) => {
-    if (next === AppView.INSTANT_AUDIT) {
-      if (continuumHandoffRef.current) continuumHandoffRef.current = false;
-      else setContinuumIdeaId((current) => resolveContinuumIdeaId(current, { type: 'open_instant_audit' }));
-    } else {
-      continuumHandoffRef.current = false;
-      setContinuumIdeaId((current) => resolveContinuumIdeaId(current, { type: 'leave_idea_scout' }));
-    }
+    applyContinuumForView(next);
     setViewState(prev => {
       if (prev !== next) setViewHistory(h => [...h.slice(-20), prev]);
       return next;
@@ -213,7 +220,7 @@ const App: React.FC = () => {
     if (!alreadyThere) {
       window.history.pushState(null, '', target);
     }
-  }, []);
+  }, [applyContinuumForView]);
 
   useEffect(() => {
     productTelemetry.trackPageView(view);
@@ -281,9 +288,10 @@ const App: React.FC = () => {
   // Telegram + Windows desktop: marketing views redirect into the functional app
   useEffect(() => {
     if (skipMarketing && MARKETING_VIEWS.has(view)) {
+      applyContinuumForView(AppView.INSTANT_AUDIT);
       setViewState(AppView.INSTANT_AUDIT);
     }
-  }, [skipMarketing, view]);
+  }, [skipMarketing, view, applyContinuumForView]);
 
   // Deep-link trigger for Telegram Stars / TON Paywall
   useEffect(() => {
@@ -441,9 +449,10 @@ const App: React.FC = () => {
     return bindTelegramBackButton(canGoBack ? () => {
       const prev = viewHistory[viewHistory.length - 1];
       setViewHistory(h => h.slice(0, -1));
+      applyContinuumForView(prev);
       setViewState(prev);
     } : null);
-  }, [inTelegram, viewHistory]);
+  }, [inTelegram, viewHistory, applyContinuumForView]);
 
   // Apply theme and global keyboard listener for Omnibar (Cmd+K / Ctrl+K / Super+Alt+Space)
   useEffect(() => {
@@ -476,7 +485,10 @@ const App: React.FC = () => {
         return;
       }
       const next = viewFromLocation();
-      if (next) setViewState(next);
+      if (next) {
+        applyContinuumForView(next);
+        setViewState(next);
+      }
     };
     // #settings / #integrations deep links open the key modal on first load too.
     if (['SETTINGS', 'INTEGRATIONS'].includes(window.location.hash.replace('#', '').toUpperCase())) setIsKeyModalOpen(true);
@@ -492,7 +504,7 @@ const App: React.FC = () => {
       window.removeEventListener('hashchange', handleLocation);
       window.removeEventListener('popstate', handleLocation);
     };
-  }, []);
+  }, [applyContinuumForView]);
 
   const liveServiceRef = useRef<OracleLiveService | null>(null);
 

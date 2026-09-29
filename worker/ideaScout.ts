@@ -305,13 +305,6 @@ export async function claimIdeaCardSlot(
   return { ok: false, code: 'IDEA_DAILY_CAP' };
 }
 
-async function releaseIdeaCardSlot(env: Env, accountId: string, now: number): Promise<void> {
-  await env.DB!.prepare(
-    `UPDATE idea_scout_daily SET used = used - 1
-     WHERE account_id = ? AND utc_day = ? AND used > 0`,
-  ).bind(accountId, utcDay(now)).run();
-}
-
 async function deleteIdeaRow(env: Env, id: string, accountId: string): Promise<void> {
   await env.DB!.prepare(
     `DELETE FROM idea_scouts WHERE id = ? AND account_id = ?`,
@@ -418,6 +411,9 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
       const slot = ideaCardSlot({ subscribed: false, byok: false, usedToday: used });
       if (!slot.ok) return json({ ok: false, error: slot.error, code: slot.code, limit: FREE_IDEA_CARDS_PER_UTC_DAY }, 429);
     }
+    // Burn the hosted meter before fetch or model. A later idea-slot miss does not refund it.
+    const quota = await checkHostedQuota(env, user);
+    if (!quota.ok) return json({ ok: false, error: quota.error || 'Hosted limit reached.', code: 'HOSTED_QUOTA' }, 429);
   }
 
   const fetcher = deps.fetcher || fetch;
@@ -464,7 +460,6 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
   }
 
   let remaining: number | null = null;
-  let claimed = false;
   if (hosted && !subscribed) {
     try {
       const claim = await claimIdeaCardSlot(env, accountId, now);
@@ -475,21 +470,11 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
         const code = denied.ok ? 'IDEA_DAILY_CAP' : denied.code;
         return json({ ok: false, error, code, limit: FREE_IDEA_CARDS_PER_UTC_DAY }, 429);
       }
-      claimed = true;
       remaining = claim.remaining;
     } catch (err) {
       await deleteIdeaRow(env, id, accountId).catch(() => undefined);
       if (missingTable(err)) return dbRequired();
       return json({ ok: false, error: 'Could not store the idea card.', code: 'STORE_FAILED' }, 503);
-    }
-  }
-
-  if (hosted) {
-    const quota = await checkHostedQuota(env, user);
-    if (!quota.ok) {
-      if (claimed) await releaseIdeaCardSlot(env, accountId, now).catch(() => undefined);
-      await deleteIdeaRow(env, id, accountId).catch(() => undefined);
-      return json({ ok: false, error: quota.error || 'Hosted limit reached.', code: 'HOSTED_QUOTA' }, 429);
     }
   }
 

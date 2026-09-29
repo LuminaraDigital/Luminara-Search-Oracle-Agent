@@ -19,7 +19,7 @@ import {
   validateIdeaScoutCard,
   type IdeaScoutCard,
 } from '../services/ideaScout/rules';
-import { resolveContinuumIdeaId, takeContinuumLink } from '../services/ideaScout/continuum';
+import { resolveContinuumIdeaId, takeContinuumLink, continuumEventForViewChange } from '../services/ideaScout/continuum';
 import { claimIdeaCardSlot, completeIdeaSketch, fetchCompetitorSnapshots, handleIdeaScoutRoute, nichePulseReply } from '../worker/ideaScout';
 import { handleTelegramUpdate } from '../worker/telegramBot';
 import type { Env } from '../worker/env';
@@ -270,6 +270,16 @@ describe('idea scout continuum', () => {
     expect(resolveContinuumIdeaId(id, { type: 'link_failed' })).toBe(id);
     expect(resolveContinuumIdeaId(undefined, { type: 'handoff' })).toBeUndefined();
   });
+
+  it('clears the continuum id on back and when Instant Audit remounts without a handoff', () => {
+    const armed = resolveContinuumIdeaId(undefined, { type: 'handoff', ideaId: 'is_0123456789abcdef' });
+    const afterBack = resolveContinuumIdeaId(armed, continuumEventForViewChange('DASHBOARD'));
+    expect(afterBack).toBeUndefined();
+    const remounted = resolveContinuumIdeaId(armed, continuumEventForViewChange(AppView.INSTANT_AUDIT));
+    expect(remounted).toBeUndefined();
+    expect(takeContinuumLink(remounted).linkId).toBeUndefined();
+    expect(continuumEventForViewChange('IDEA_SCOUT')).toEqual({ type: 'leave_idea_scout' });
+  });
 });
 
 describe('page sample', () => {
@@ -429,7 +439,7 @@ describe('idea scout routes', () => {
     expect(body.linkedAuditRunId).not.toBe('run_other_9');
   });
 
-  it('does not spend a free slot or the hosted meter when storage fails or migration 0013 is missing', async () => {
+  it('does not claim a free slot when storage fails, and does not meter a missing migration', async () => {
     const store = new Map<string, string>();
     const missing = envWithDb(store, ['0013']);
     let sketched = false;
@@ -476,7 +486,9 @@ describe('idea scout routes', () => {
     const failedBody = await failed.json() as { code?: string };
     expect(failedBody.code).toBe('STORE_FAILED');
     expect(modelCalls).toBe(1);
-    expect([...store.keys()].some((key) => key.startsWith('quota:'))).toBe(false);
+    const quotaKey = [...store.keys()].find((key) => key.startsWith('quota:'));
+    expect(quotaKey).toBeTruthy();
+    expect(store.get(quotaKey!)).toBe('1');
     const used = await env.DB!.prepare('SELECT used FROM idea_scout_daily').first<{ used: number }>();
     expect(used).toBeNull();
 
@@ -486,6 +498,85 @@ describe('idea scout routes', () => {
     expect(recovered.status).toBe(200);
     const card = await recovered.json() as { ideaCardsRemaining: number };
     expect(card.ideaCardsRemaining).toBe(1);
+    expect(store.get(quotaKey!)).toBe('2');
+  });
+
+  it('rejects a hosted create at the daily meter before fetch or model', async () => {
+    const store = new Map<string, string>();
+    const env = envWithDb(store);
+    env.FREE_DAILY_LIMIT = '1';
+    const day = new Date().toISOString().slice(0, 10);
+    store.set(`quota:4242:${day}`, '1');
+    const fetchMock = vi.fn(async () => {
+      throw new Error('should not fetch');
+    });
+    let sketched = false;
+    const res = await handleIdeaScoutRoute(
+      ideaRequest({ ...ideaBody, competitorUrls: ['https://stripe.com/pricing'] }),
+      env,
+      '/idea-scout',
+      {
+        fetcher: fetchMock as unknown as typeof fetch,
+        completeModel: async () => {
+          sketched = true;
+          return null;
+        },
+      },
+    );
+    expect(res.status).toBe(429);
+    const body = await res.json() as { code?: string };
+    expect(body.code).toBe('HOSTED_QUOTA');
+    expect(sketched).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(store.get(`quota:4242:${day}`)).toBe('1');
+  });
+
+  it('does not refund the hosted meter when the idea slot claim loses', async () => {
+    const store = new Map<string, string>();
+    const env = envWithDb(store);
+    env.FREE_DAILY_LIMIT = '5';
+    const now = Date.parse('2026-09-29T12:00:00.000Z');
+    const day = new Date(now).toISOString().slice(0, 10);
+    const prepare = env.DB!.prepare.bind(env.DB);
+    const sqlite = (env.DB as unknown as { sqlite: { prepare: (sql: string) => { run: (...args: unknown[]) => void } } }).sqlite;
+    let usedReads = 0;
+    env.DB!.prepare = ((sql: string) => {
+      const stmt = prepare(sql);
+      if (!/SELECT used FROM idea_scout_daily WHERE account_id/i.test(sql)) return stmt;
+      return {
+        bind: (...args: unknown[]) => {
+          const bound = stmt.bind(...args);
+          return {
+            ...bound,
+            async first() {
+              usedReads += 1;
+              const row = await bound.first();
+              if (usedReads === 1) {
+                sqlite.prepare(
+                  'INSERT INTO idea_scout_daily (account_id, utc_day, used) VALUES (?, ?, 2)',
+                ).run('4242', day);
+              }
+              return row;
+            },
+          };
+        },
+      };
+    }) as typeof env.DB.prepare;
+    let sketched = false;
+    const res = await handleIdeaScoutRoute(ideaRequest(ideaBody), env, '/idea-scout', {
+      now: () => now,
+      completeModel: async () => {
+        sketched = true;
+        return null;
+      },
+    });
+    expect(res.status).toBe(429);
+    const body = await res.json() as { code?: string };
+    expect(body.code).toBe('IDEA_DAILY_CAP');
+    expect(sketched).toBe(true);
+    expect(store.get(`quota:4242:${day}`)).toBe('1');
+    const rows = await env.DB!.prepare('SELECT COUNT(*) AS n FROM idea_scouts').first<{ n: number }>();
+    expect(Number(rows?.n)).toBe(0);
   });
 
   it('compare-and-swap keeps concurrent free cards at two', async () => {
