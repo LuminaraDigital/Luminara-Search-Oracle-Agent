@@ -62,5 +62,6 @@ describe('Settings Telegram and TON section', () => {
     expect(html).toContain(`href="${TELEGRAM_MINI_APP_URL}"`);
     expect(html).toContain('Open Mini App in Telegram');
     expect(html).toContain('Card checkout is unavailable');
+    expect(html).toContain('Link Telegram and web account - shares subscription');
   });
 });

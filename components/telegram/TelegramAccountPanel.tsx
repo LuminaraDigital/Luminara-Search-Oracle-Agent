@@ -104,6 +104,9 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
         <p className="text-xs text-gray-400 leading-relaxed">
           Pay with Stars or TON inside the Mini App. Card checkout is unavailable. You can also connect a TON wallet here.
         </p>
+        <p className="text-xs text-gray-400 leading-relaxed">
+          Link Telegram and web account - shares subscription. Open the Mini App, sign in there, and confirm the link. Signing in does not merge plans by itself.
+        </p>
         <a
           href={TELEGRAM_MINI_APP_URL}
           target="_blank"
@@ -144,6 +147,10 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       {active && (
         <p className="text-[11px] text-gray-400">Active until {new Date(sub!.expiresAt).toLocaleDateString()}.</p>
       )}
+
+      <p className="text-xs text-gray-400 leading-relaxed">
+        Link Telegram and web account - shares subscription. Use Account above and confirm before plans are shared.
+      </p>
 
       {!inTg && (
         <div className="space-y-1">

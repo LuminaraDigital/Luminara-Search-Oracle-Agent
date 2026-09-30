@@ -21,7 +21,7 @@ leaked internals).
 | `POST /auth/request-otp`, `/auth/verify-otp` | worker/authOtpSms.ts | none | SMS OTP |
 | `POST /auth/send-verification` | worker/index.ts | none | Email verification |
 | `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook |
-| `GET,POST /auth/link` | worker/index.ts | session | Telegram <-> Firebase account linking |
+| `POST /auth/link` | worker/index.ts | Telegram initData + Firebase Bearer | Explicit account link. Body must be `{ confirm: true }` or the route returns 400 and writes nothing. Two distinct accounts that each have an active paid plan return 409 with no merge. `identify()` never links. Success and dual-paid refusal write an audit event |
 | `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag) |
 | `GET /enterprise/audit-logs` | worker/enterpriseStore.ts + auditLog | session + role | Admin/Auditor role required |
 | `GET /auth/quota` | worker/index.ts | session | Daily quota |

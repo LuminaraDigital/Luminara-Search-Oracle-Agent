@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   isFirebaseConfigured,
   subscribeFirebaseUser,
@@ -13,6 +13,7 @@ import { isInTelegram } from '../../services/telegram/tma';
 import { linkTelegramFirebaseAccounts } from '../../services/apiClient';
 import { pullWorkspaceOnLogin } from '../../services/sync/workspaceSyncService';
 import { Button } from '../ui/Button';
+import { ConfirmModal } from '../ui/ConfirmModal';
 
 type Mode = 'signin' | 'signup';
 
@@ -50,8 +51,10 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
+  const [linkConfirmOpen, setLinkConfirmOpen] = useState(false);
   const configured = isFirebaseConfigured();
   const inTelegram = isInTelegram();
+  const closeLinkConfirm = useCallback(() => setLinkConfirmOpen(false), []);
 
   useEffect(() => {
     if (!configured) return;
@@ -82,10 +85,24 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
       if (!userLabel) {
         await signInWithGoogle();
       }
-      const linked = await linkTelegramFirebaseAccounts();
+      setLinkConfirmOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : friendlyFirebaseError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmLink = async () => {
+    setLinkConfirmOpen(false);
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const linked = await linkTelegramFirebaseAccounts({ confirm: true });
       if (!linked.ok) throw new Error(linked.error || 'Could not link accounts');
       await pullWorkspaceOnLogin();
-      setInfo('Linked. Stars/TON in Telegram and TON on the website now share one plan and saved work.');
+      setInfo('Linked. Stars/TON in Telegram and the website now share one plan and saved work.');
     } catch (e) {
       setError(e instanceof Error ? e.message : friendlyFirebaseError(e));
     } finally {
@@ -99,16 +116,25 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
         <p className="text-sm text-gray-200 font-medium">Signed in with Telegram</p>
         <p className="text-xs text-gray-400 leading-relaxed">
-          To keep the same paid plan and saved work on luminarasuite.com, link a Google or email account once.
+          Link Telegram and web account - shares subscription. Confirm in the dialog before plans are shared. Opening the Mini App while you are signed in on the web does not merge accounts.
         </p>
         {configured && (
-          <Button variant="secondary" disabled={busy} onClick={() => void linkWebAccount()} className="w-full text-xs">
-            {userLabel ? 'Link this web account' : 'Link Google / email account'}
+          <Button variant="secondary" disabled={busy} onClick={() => void linkWebAccount()} className="w-full text-xs normal-case tracking-normal">
+            Link Telegram and web account - shares subscription
           </Button>
         )}
         {userLabel && <p className="text-[11px] text-gold/80 truncate">Web login: {userLabel}</p>}
         {error && <p className="text-xs text-danger-400" role="alert">{error}</p>}
         {info && <p className="text-xs text-success-400" role="status">{info}</p>}
+        <ConfirmModal
+          open={linkConfirmOpen}
+          title="Link Telegram and web account - shares subscription"
+          description="This shares one subscription and saved workspace between this Telegram login and the web account. Nothing is merged until you confirm."
+          confirmLabel="Link accounts"
+          cancelLabel="Cancel"
+          onConfirm={() => { void confirmLink(); }}
+          onCancel={closeLinkConfirm}
+        />
       </div>
     );
   }
@@ -131,7 +157,7 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
         <p className="text-sm text-gray-200 font-medium truncate">{userLabel}</p>
         <p className="text-xs text-gray-400 leading-relaxed">
-          Signed in with Firebase. Hosted AI keys and saved workspace use this account. Inside Telegram, use Link so Stars payments follow you on the web.
+          Signed in with Firebase. Hosted AI keys and saved workspace use this account. Inside Telegram, confirm "Link Telegram and web account - shares subscription" so Stars payments follow you on the web.
         </p>
         <Button
           variant="secondary"
@@ -168,7 +194,7 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
       </div>
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        Web accounts use Firebase. Open the Mini App in Telegram and tap Link so Stars and website TON share one plan.
+        Web accounts use Firebase. Open the Mini App in Telegram and confirm "Link Telegram and web account - shares subscription" so Stars and website TON share one plan.
       </p>
 
       <form

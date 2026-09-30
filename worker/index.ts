@@ -10,6 +10,7 @@
  *   POST /api/auth/request-otp            IP-throttled OTP (Twilio when enabled; else 501)
  *   POST /api/auth/verify-otp             IP-throttled OTP verify (when SMS enabled)
  *   POST /api/auth/send-verification      Dual-key email verification trigger (neutral body)
+ *   POST /api/auth/link                   explicit Telegram + Firebase link ({ confirm: true })
  *   GET  /api/enrichment/entity           signed-in Wikidata & Wayback Machine edge resolution with KV cache
  *   POST /api/providers/:id/<path>        authenticated proxy to LLM / search / scrape vendors
  *   *    /api/sidecars/:id/<path>         relay to self-hosted helpers: "languagetool" (Writing check)
@@ -42,6 +43,7 @@ import {
   withSecurityHeaders,
 } from './security';
 import {
+  AccountLinkRefusedError,
   linkTelegramAndFirebase,
   getWorkspace,
   putWorkspace,
@@ -140,6 +142,34 @@ const RATE_HIGH_COST_EDGE = 20;
  * requires an org_id; this sentinel keeps money/admin events in one reviewable chain.
  */
 const ADMIN_SYSTEM_ORG = 'org_system_admin';
+
+/** Structured console line plus the hash-chained audit row (D1 when bound). */
+async function auditAccountLink(
+  env: Env,
+  request: Request,
+  entry: {
+    action: 'account.link' | 'account.link.refused';
+    actorId: string;
+    targetId?: string;
+    details: Record<string, unknown>;
+  },
+): Promise<void> {
+  console.info(JSON.stringify({
+    audit: entry.action,
+    actorId: entry.actorId,
+    targetId: entry.targetId,
+    ...entry.details,
+  }));
+  await recordAuditLogBestEffort(env, {
+    org_id: `org_${entry.actorId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    actor_id: entry.actorId,
+    action: entry.action,
+    target_id: entry.targetId,
+    details: entry.details,
+    ip_address: clientIp(request),
+    user_agent: request.headers.get('user-agent') || undefined,
+  });
+}
 
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
@@ -411,7 +441,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(json({ ok: true, processed: event || 'unknown' }));
   }
 
-  // Explicit link: send BOTH Telegram initData and Firebase Bearer in one request.
+  // Explicit link: both Telegram initData and Firebase Bearer, plus { confirm: true }.
+  // identify() does not merge accounts. This route is the only merge path.
   if (path === '/auth/link') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
     const hit = limited('auth', RATE_AUTH_PER_MIN);
@@ -427,21 +458,59 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!env.BOT_TOKEN || !env.FIREBASE_PROJECT_ID) {
       return withCors(json({ ok: false, error: 'Server linking is not configured' }, 503));
     }
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return withCors(json({ ok: false, error: read.error }, read.status));
+    const body = read.value;
+    const confirm = body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as { confirm?: unknown }).confirm
+      : undefined;
+    if (confirm !== true) {
+      return withCors(json({
+        ok: false,
+        error: 'Linking needs an explicit confirmation. Send JSON { "confirm": true }.',
+        code: 'CONFIRM_REQUIRED',
+      }, 400));
+    }
     const tg = await validateInitData(initData, env.BOT_TOKEN);
     if (!tg.ok) return withCors(json({ ok: false, error: tg.reason }, 401));
     const fb = await verifyFirebaseIdToken(bearer, env.FIREBASE_PROJECT_ID);
     if (!fb.ok) return withCors(json({ ok: false, error: fb.reason }, 401));
-    const linked = await linkTelegramAndFirebase(
-      env,
-      String(tg.user.id),
-      fb.user.uid,
-      {
-        email: fb.user.email,
-        name: fb.user.name,
-        tgName: [tg.user.first_name, tg.user.last_name].filter(Boolean).join(' ') || tg.user.username,
-      },
-    );
-    return withCors(json({ ok: true, ...linked }));
+    const telegramUserId = String(tg.user.id);
+    const tgName = [tg.user.first_name, tg.user.last_name].filter(Boolean).join(' ') || tg.user.username;
+    try {
+      const linked = await linkTelegramAndFirebase(
+        env,
+        telegramUserId,
+        fb.user.uid,
+        { email: fb.user.email, name: fb.user.name, tgName },
+      );
+      await auditAccountLink(env, request, {
+        action: 'account.link',
+        actorId: telegramUserId,
+        targetId: linked.accountId,
+        details: {
+          accountId: linked.accountId,
+          telegramUserId: linked.telegramUserId,
+          firebaseUserId: linked.firebaseUserId,
+        },
+      });
+      return withCors(json({ ok: true, ...linked }));
+    } catch (err) {
+      if (err instanceof AccountLinkRefusedError) {
+        await auditAccountLink(env, request, {
+          action: 'account.link.refused',
+          actorId: telegramUserId,
+          details: {
+            code: err.code,
+            reason: 'dual_paid',
+            telegramAccountId: err.telegramAccountId,
+            firebaseAccountId: err.firebaseAccountId,
+          },
+        });
+        return withCors(json({ ok: false, error: err.message, code: err.code }, err.status));
+      }
+      throw err;
+    }
   }
 
   // Per-account workspace (DNA, VFS, audits, chat, optional BYOK keys).
