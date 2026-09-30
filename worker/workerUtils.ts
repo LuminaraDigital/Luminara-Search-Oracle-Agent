@@ -2,7 +2,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { validateInitData } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
-import { linkTelegramAndFirebase, withAccountId } from './userStore';
+import { withAccountId } from './userStore';
 
 export const json = (data: unknown, status = 200, extra: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), {
@@ -98,8 +98,11 @@ export function billingId(user: HostedIdentity): string {
  * Identifies the caller:
  * 1) HttpOnly __session cookie token (Cookie: __session=…), or
  * 2) Firebase Auth ID token (Authorization: Bearer …), or
- * 3) Telegram Mini App initData (x-telegram-init-data),
- * and when BOTH are present, links them onto one account_id so Stars/TON/Stripe share entitlements.
+ * 3) Telegram Mini App initData (x-telegram-init-data).
+ * Each side is stored on its own account_id. This function never links them.
+ * Sharing a plan requires POST /api/auth/link with { confirm: true }.
+ * When initData is valid, the returned identity is the Telegram user.
+ * Otherwise the Firebase user is returned.
  * Upserts a durable user row when identity succeeds.
  * Returns null when auth is optional and absent.
  */
@@ -151,19 +154,20 @@ export async function identify(request: Request, env: Env): Promise<{ user: Host
   }
 
   if (telegramUser && firebaseUser) {
+    // Do not merge. A dual-credential request must not change the other row's account_id
+    // or mirror sub:* keys. The user links explicitly via POST /api/auth/link.
+    let resolvedTelegram = telegramUser;
     try {
-      const linked = await linkTelegramAndFirebase(
-        env,
-        telegramUser.id,
-        firebaseUser.id.replace(/^fb:/, ''),
-        { email: firebaseUser.email, name: firebaseUser.name, tgName: telegramUser.name },
-      );
-      // Prefer Telegram identity inside the Mini App; accountId is shared either way.
-      const primary = initData ? telegramUser : firebaseUser;
-      return { user: { ...primary, accountId: linked.accountId } };
+      resolvedTelegram = await withAccountId(env, telegramUser);
     } catch {
-      /* fall through to single-identity upsert */
+      /* keep the verified in-memory Telegram identity */
     }
+    try {
+      await withAccountId(env, firebaseUser);
+    } catch {
+      /* Firebase row stays as it was; still do not merge */
+    }
+    return { user: resolvedTelegram };
   }
 
   const primary = telegramUser || firebaseUser;

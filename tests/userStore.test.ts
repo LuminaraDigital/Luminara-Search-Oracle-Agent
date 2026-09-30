@@ -3,6 +3,7 @@ import {
   upsertAppUser,
   listAllUsers,
   linkTelegramAndFirebase,
+  AccountLinkRefusedError,
   resolveAccountId,
   writeSubscriptionRecord,
   getWorkspace,
@@ -76,6 +77,89 @@ describe('account linking', () => {
 
     const mirrored = JSON.parse(store.get(`sub:${linked.accountId}`)!) as { plan: string };
     expect(mirrored.plan).toBe('starter');
+    expect(linked.accountId).toBe('42');
+  });
+
+  it('merges onto the paid Firebase account when only that side is paid', async () => {
+    const { kv, store } = mockKv();
+    store.set('sub:fb:uid-web', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 86400_000 }));
+
+    const linked = await linkTelegramAndFirebase(
+      { LUMINARA_KV: kv },
+      '42',
+      'uid-web',
+      { email: 'owner@example.com', name: 'Owner', tgName: 'TG Owner' },
+    );
+
+    expect(linked.accountId).toBe('fb:uid-web');
+    const tg = JSON.parse(store.get('user:42')!) as StoredUser;
+    const fb = JSON.parse(store.get('user:fb:uid-web')!) as StoredUser;
+    expect(tg.account_id).toBe('fb:uid-web');
+    expect(fb.account_id).toBe('fb:uid-web');
+    expect(store.has('sub:42')).toBe(false);
+  });
+
+  it('refuses when both sides have distinct active paid plans and writes nothing', async () => {
+    const { kv, store } = mockKv();
+    const future = Date.now() + 86400_000;
+    store.set('user:42', JSON.stringify({
+      id: '42',
+      source: 'telegram',
+      account_id: 'acct-tg',
+      created_at: 1_000,
+      last_seen_at: 1_000,
+    }));
+    store.set('user:fb:uid-web', JSON.stringify({
+      id: 'fb:uid-web',
+      source: 'firebase',
+      account_id: 'acct-fb',
+      created_at: 2_000,
+      last_seen_at: 2_000,
+    }));
+    store.set('sub:acct-tg', JSON.stringify({ plan: 'starter', expiresAt: future }));
+    store.set('sub:acct-fb', JSON.stringify({ plan: 'growth', expiresAt: future }));
+    const before = new Map(store);
+
+    await expect(linkTelegramAndFirebase(
+      { LUMINARA_KV: kv },
+      '42',
+      'uid-web',
+    )).rejects.toBeInstanceOf(AccountLinkRefusedError);
+
+    expect(store.get('user:42')).toBe(before.get('user:42'));
+    expect(store.get('user:fb:uid-web')).toBe(before.get('user:fb:uid-web'));
+    expect(store.get('sub:acct-tg')).toBe(before.get('sub:acct-tg'));
+    expect(store.get('sub:acct-fb')).toBe(before.get('sub:acct-fb'));
+    expect(store.size).toBe(before.size);
+  });
+
+  it('still links when both paid flags belong to the same account', async () => {
+    const { kv, store } = mockKv();
+    const future = Date.now() + 86400_000;
+    store.set('user:42', JSON.stringify({
+      id: '42',
+      source: 'telegram',
+      account_id: 'acct-shared',
+      telegram_id: '42',
+      created_at: 1_000,
+      last_seen_at: 1_000,
+    }));
+    store.set('user:fb:uid-web', JSON.stringify({
+      id: 'fb:uid-web',
+      source: 'firebase',
+      account_id: 'acct-shared',
+      firebase_uid: 'uid-web',
+      created_at: 2_000,
+      last_seen_at: 2_000,
+    }));
+    store.set('sub:acct-shared', JSON.stringify({ plan: 'agency', expiresAt: future }));
+
+    const linked = await linkTelegramAndFirebase({ LUMINARA_KV: kv }, '42', 'uid-web');
+    expect(linked.accountId).toBe('acct-shared');
+    const tg = JSON.parse(store.get('user:42')!) as StoredUser;
+    const fb = JSON.parse(store.get('user:fb:uid-web')!) as StoredUser;
+    expect(tg.account_id).toBe('acct-shared');
+    expect(fb.account_id).toBe('acct-shared');
   });
 
   it('writeSubscriptionRecord dual-writes account and login keys', async () => {

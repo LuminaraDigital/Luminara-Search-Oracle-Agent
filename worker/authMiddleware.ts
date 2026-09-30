@@ -140,7 +140,9 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/workspace$/, methods: ['GET', 'PUT'] },
   { pattern: /^\/enterprise\/audit-logs$/, methods: ['GET'] },
   { pattern: /^\/auth\/quota$/, methods: ['GET'] },
-  { pattern: /^\/auth\/link$/, methods: ['POST'] },
+  // /auth/link is not guarded here. guardApiRoute calls identify(), which upserts
+  // each login. The link handler must reject a missing { confirm: true } before any
+  // user-store write, then validate both credentials itself.
   { pattern: /^\/auth\/send-verification$/, methods: ['POST'] },
   { pattern: /^\/license\/activate$/, methods: ['POST'] },
   { pattern: /^\/ton\/(invoice|verify)$/, methods: ['POST'] },

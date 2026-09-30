@@ -569,15 +569,26 @@ export async function putWorkspaceRemote(input: {
   return { ok: true, accountId: data.accountId, updatedAt: data.updatedAt };
 }
 
-/** Link Telegram Mini App session with Firebase (both auth headers required). */
-export async function linkTelegramFirebaseAccounts(): Promise<{
+/**
+ * Link Telegram Mini App session with Firebase (both auth headers required).
+ * Sends `{ confirm: true }` only when the caller passes `confirm: true` after
+ * the Settings dialog. A missing confirm does not call the Worker.
+ */
+export async function linkTelegramFirebaseAccounts(opts?: { confirm?: boolean }): Promise<{
   ok: boolean;
   accountId?: string;
   error?: string;
 }> {
+  if (opts?.confirm !== true) {
+    return { ok: false, error: 'Confirm the link before accounts are merged.' };
+  }
   const base = apiBase();
   if (!base) return { ok: false, error: 'No API' };
-  const r = await workerFetchWithAuthRetry(`${base}/api/auth/link`, { method: 'POST' });
+  const r = await workerFetchWithAuthRetry(`${base}/api/auth/link`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
+  });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}` };
   return { ok: true, accountId: data.accountId };

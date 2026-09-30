@@ -57,6 +57,8 @@ env covered in `worker/README.md`.
 ## Key tests
 
 - `tests/userStore.test.ts`: KV profile upsert preserving `created_at`,
-  `users:index` sorted listing, account linking (one `account_id` across
-  Telegram/Firebase logins), subscription dual-write, workspace payload
-  round trip from KV.
+  `users:index` sorted listing, explicit account linking (one `account_id`
+  across Telegram/Firebase logins, paid side wins, dual-paid refuses with
+  no write), subscription dual-write, workspace payload round trip from KV.
+- `tests/accountLink.test.ts`: `identify()` with both credentials does not
+  merge; `POST /api/auth/link` requires `{ confirm: true }`.
