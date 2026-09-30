@@ -11,6 +11,8 @@ import { openPaywallModal } from '../services/apiClient';
 import { MarketingNav } from './MarketingNav';
 import { PremiumAtmosphere } from './ui/PremiumAtmosphere';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
+import { TELEGRAM_MINI_APP_URL } from './paywall/paymentOptions';
+import { PAID_PLAN_PRICES, type PaidPlanId } from './paywall/planPrices';
 
 interface PricingPageProps {
   onBack: () => void;
@@ -20,25 +22,35 @@ interface PricingPageProps {
   onNavigateWhy: () => void;
 }
 
-export const pricingTiers = [
+export const pricingTiers: Array<{
+  id: PaidPlanId;
+  priceLabel: string;
+  stars: string;
+  ton: string;
+  blurb: string;
+  highlight: boolean;
+}> = [
   {
-    id: 'starter' as const,
-    priceLabel: 'US$49',
-    stars: '2,500 Stars',
+    id: 'starter',
+    priceLabel: PAID_PLAN_PRICES.starter.usdLabel,
+    stars: PAID_PLAN_PRICES.starter.starsLabel,
+    ton: PAID_PLAN_PRICES.starter.tonLabel,
     blurb: 'Web audits for up to 2 sites. No MCP or public share links.',
     highlight: false,
   },
   {
-    id: 'growth' as const,
-    priceLabel: 'US$149',
-    stars: '7,500 Stars',
+    id: 'growth',
+    priceLabel: PAID_PLAN_PRICES.growth.usdLabel,
+    stars: PAID_PLAN_PRICES.growth.starsLabel,
+    ton: PAID_PLAN_PRICES.growth.tonLabel,
     blurb: 'MCP tools, shareable reports, 3 seats, weekly re-audits.',
     highlight: true,
   },
   {
-    id: 'agency' as const,
-    priceLabel: 'US$349',
-    stars: '18,000 Stars',
+    id: 'agency',
+    priceLabel: PAID_PLAN_PRICES.agency.usdLabel,
+    stars: PAID_PLAN_PRICES.agency.starsLabel,
+    ton: PAID_PLAN_PRICES.agency.tonLabel,
     blurb: 'API access, 10 client seats, daily Sentinel, white-label PDF.',
     highlight: false,
   },
@@ -70,6 +82,11 @@ const PricingPage: React.FC<PricingPageProps> = ({
     window.scrollTo(0, 0);
   }, []);
 
+  const inTelegram = isInTelegram();
+  const miniAppLinkProps = inTelegram
+    ? { rel: 'noopener noreferrer' as const }
+    : { target: '_blank' as const, rel: 'noopener noreferrer' as const };
+
   return (
     <div className="min-h-[100dvh] bg-[#0a0a0a] text-white selection:bg-gold selection:text-black font-sans antialiased overflow-x-clip">
       <PremiumAtmosphere intensity="subtle" />
@@ -92,10 +109,25 @@ const PricingPage: React.FC<PricingPageProps> = ({
           <h1 className="font-display text-[clamp(2rem,7vw,4.5rem)] tracking-tight leading-[1.05] mb-8 [overflow-wrap:anywhere]">
             MCP, share links, and weekly audits in one workspace.
           </h1>
-          <p className="text-base sm:text-xl text-gray-400 font-light leading-relaxed mb-10">
+          <p className="text-base sm:text-xl text-gray-400 font-light leading-relaxed mb-6">
             Free covers a single scout. Starter is web audits only. Growth unlocks MCP for Cursor and shareable
-            reports. Pay with Telegram Stars or TON inside the app. Card checkout is coming.
+            reports.
           </p>
+          <div className="mb-10 rounded-2xl border border-gold/30 bg-gold/5 p-5 sm:p-6">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gold mb-3">How to pay</p>
+            <p className="text-sm sm:text-base text-gray-300 font-light leading-relaxed mb-4">
+              Open the Mini App in Telegram, then pay with Stars or TON for Starter, Growth, or Agency.
+              Card checkout is unavailable.
+            </p>
+            <a
+              href={TELEGRAM_MINI_APP_URL}
+              {...miniAppLinkProps}
+              className="mkt-cta-primary w-full sm:w-auto"
+            >
+              Open Mini App in Telegram
+            </a>
+            <p className="mt-3 text-xs text-gray-500 font-mono break-all">{TELEGRAM_MINI_APP_URL}</p>
+          </div>
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               type="button"
@@ -108,7 +140,7 @@ const PricingPage: React.FC<PricingPageProps> = ({
               type="button"
               onClick={() =>
                 openPaywallModal(
-                  'Upgrade to Growth for MCP + share links, or Agency for API access. Stars or TON inside the app.',
+                  'Upgrade to Growth for MCP + share links, or Agency for API access. Pay with Stars or TON inside the Mini App. Card checkout is unavailable.',
                 )
               }
               className="mkt-cta-secondary w-full sm:w-auto"
@@ -147,7 +179,7 @@ const PricingPage: React.FC<PricingPageProps> = ({
                   <span className="text-gray-500 text-xs uppercase tracking-widest">/ 30 days</span>
                 </div>
                 <p className="text-sm text-gray-400 font-light leading-relaxed mb-2">{tier.blurb}</p>
-                <p className="text-[11px] text-gold/80 font-mono mb-6">{tier.stars} or TON</p>
+                <p className="text-[11px] text-gold/80 font-mono mb-6">{tier.stars} or {tier.ton}</p>
                 <ul className="space-y-3 flex-1 mb-8">
                   {lines.map((line) => (
                     <li key={line} className="flex gap-3 items-start text-sm text-gray-300">
@@ -162,7 +194,7 @@ const PricingPage: React.FC<PricingPageProps> = ({
                   type="button"
                   onClick={() =>
                     openPaywallModal(
-                      `Choose ${PLAN_ENTITLEMENTS[tier.id].title} with Stars or TON inside the app.`,
+                      `Choose ${PLAN_ENTITLEMENTS[tier.id].title}: ${tier.stars} or ${tier.ton} inside the Mini App. Card checkout is unavailable.`,
                     )
                   }
                   className={`w-full ${tier.highlight ? 'mkt-cta-primary' : 'mkt-cta-secondary'}`}
@@ -183,7 +215,7 @@ const PricingPage: React.FC<PricingPageProps> = ({
                 type="button"
                 onClick={() =>
                   openPaywallModal(
-                    'Pay with Telegram Stars or TON inside the app. Card checkout is coming; until then subscriptions activate with Stars or TON.',
+                    'Pay with Telegram Stars or TON inside the Mini App. Card checkout is unavailable.',
                   )
                 }
                 className="mkt-cta-primary w-full"
@@ -194,7 +226,7 @@ const PricingPage: React.FC<PricingPageProps> = ({
             </div>
           )}
           <p className="text-center text-gray-500 text-[10px] uppercase tracking-widest mt-6">
-            Stars or TON inside the app. Card checkout coming. Cancel anytime. Plan limits apply per account.
+            Pay in the Mini App with Stars or TON. Card checkout is unavailable. Cancel anytime. Plan limits apply per account.
           </p>
         </section>
       </main>
