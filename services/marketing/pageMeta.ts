@@ -161,7 +161,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 /** Normalize pathname to a marketing shell key, or null. */
 export function marketingShellKey(pathname: string): string | null {
   const clean = pathname.replace(/\/+$/, '') || '/';
-  if (clean === '/infrastructure' || clean === '/modules') return '/how-it-works';
+  if (clean === '/how' || clean === '/infrastructure' || clean === '/modules') return '/how-it-works';
   if (clean === '/intelligence') return '/ai';
   if (clean === '/why-us') return '/why';
   if (MARKETING_SHELL_BY_PATH[clean]) return clean;
