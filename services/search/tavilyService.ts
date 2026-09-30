@@ -1,5 +1,6 @@
 import { configService } from '../configService';
 import { providerFetch } from '../apiClient';
+import { hostedAuthBlocked, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
 
 export interface TavilySearchResult {
   title: string;
@@ -28,6 +29,9 @@ export class TavilyService {
   }
 
   public async search(query: string, options: { maxResults?: number; searchDepth?: 'basic' | 'advanced'; includeAnswer?: boolean } = {}): Promise<TavilySearchResponse> {
+    if (hostedAuthBlocked()) {
+      return { query, results: [] };
+    }
     const apiKey = configService.getTavilyKey();
     if (!apiKey) {
       console.warn('[Tavily] No Tavily API Key configured - falling back to zero-key search');
@@ -58,6 +62,9 @@ export class TavilyService {
       }, { userKey: apiKey });
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          noteHostedAuthFailure(response.status, 'tavily');
+        }
         throw new Error(`Tavily API error: ${response.status} ${response.statusText}`);
       }
 

@@ -128,10 +128,14 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
           <div
             className={`h-full transition-all duration-500 rounded-full ${
               isComplete && measurementStatus !== 'measured'
-                ? 'bg-white/25'
+                ? 'bg-white/25 w-full'
                 : 'bg-gradient-to-r from-gold to-gold-dark'
             }`}
-            style={{ width: `${progressPercent}%` }}
+            style={
+              isComplete && measurementStatus !== 'measured'
+                ? undefined
+                : { width: `${progressPercent}%` }
+            }
           />
         </div>
         {isComplete && measurementStatus !== 'measured' && (

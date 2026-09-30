@@ -30,6 +30,108 @@ import { brandMemoryVaultService } from '../memory/brandMemoryVaultService';
 import { ReportFocus, BusinessDNA } from '../../types';
 import { unevaluatedLlmCrawlerReport } from '../audit/llmCrawlerReadiness';
 import { probeLlmCrawlerReadiness } from '../audit/llmCrawlerProbe';
+import { hostedAuthBlocked, resetHostedAuthCircuit } from '../resilience/hostedAuthCircuit';
+
+const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
+
+export function memorySyncPlan(input: {
+  deltaCount: number | null;
+  measurementStatus: 'measured' | 'not_measured';
+  hasEvidence: boolean;
+  authBlocked: boolean;
+}): { skipExtract: boolean; claimSync: boolean; message: string } {
+  const measured = input.measurementStatus === 'measured';
+  const degraded = input.authBlocked || (!measured && !input.hasEvidence);
+  if (degraded) {
+    return { skipExtract: true, claimSync: false, message: MEMORY_SYNC_SKIPPED };
+  }
+  if (input.deltaCount == null) {
+    return { skipExtract: false, claimSync: false, message: MEMORY_SYNC_SKIPPED };
+  }
+  if (input.deltaCount > 0 && (measured || input.hasEvidence)) {
+    return {
+      skipExtract: false,
+      claimSync: true,
+      message: `Synced ${input.deltaCount} autonomous memory delta(s) & MUSE experience heuristics into brand knowledge graph.`,
+    };
+  }
+  return { skipExtract: false, claimSync: false, message: MEMORY_SYNC_SKIPPED };
+}
+
+export async function applyMemorySync(
+  ctx: AuditStateGraphContext,
+  emit: (event: AgentActivityEvent) => void,
+): Promise<void> {
+  const hasEvidence = contextHasLiveEvidence(ctx);
+  const authBlocked = hostedAuthBlocked();
+  const gate = memorySyncPlan({
+    deltaCount: null,
+    measurementStatus: ctx.measurementStatus,
+    hasEvidence,
+    authBlocked,
+  });
+  if (gate.skipExtract) {
+    emit({
+      id: `mem0-skip-${Date.now()}`,
+      timestamp: Date.now(),
+      agentRole: 'executive_translator',
+      agentName: 'Brand Memory Vault',
+      phase: 'memory_skipped',
+      message: gate.message,
+      status: 'completed',
+    });
+    return;
+  }
+
+  const deltas = mem0MemoryEngine.extractAndSyncAuditContext(ctx);
+  const decided = memorySyncPlan({
+    deltaCount: deltas.length,
+    measurementStatus: ctx.measurementStatus,
+    hasEvidence,
+    authBlocked,
+  });
+  if (decided.claimSync) {
+    const cleanDomain = ctx.targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
+    try {
+      const experience = postAuditReflectionService.reflectOnAudit({
+        domain: cleanDomain,
+        focus: String(ctx.focus),
+        auditId: `crew-audit-${Date.now()}`,
+        healthScore: ctx.healthScore,
+        scrapedEvidence: {
+          scrapedUrl: ctx.scrapedPages[0]?.url || ctx.targetUrl,
+          hasContent: ctx.scrapedPages.length > 0,
+          schemasFound: ctx.scrapedPages[0]?.schemasFound.map((s) => s.type) || [],
+          title: ctx.scrapedPages[0]?.title || cleanDomain,
+          wordCount: ctx.scrapedPages[0]?.wordCount || 0,
+          rawTextSnippet: ctx.scrapedPages[0]?.rawTextSnippet || '',
+        },
+        findings: ctx.findings.map((f) => ({
+          title: f.title,
+          category: f.category,
+          severity: f.severity,
+          description: f.description,
+        })),
+        citationRatePercent: ctx.citationRatePercent,
+        topCompetitor: ctx.topCompetitors[0] || null,
+        dna: ctx.dna,
+      });
+      brandMemoryVaultService.ingestAuditExperience(experience);
+    } catch (err) {
+      console.warn('[Crew Orchestrator] Reflection sync error', err);
+    }
+  }
+
+  emit({
+    id: `mem0-sync-${Date.now()}`,
+    timestamp: Date.now(),
+    agentRole: 'executive_translator',
+    agentName: 'Brand Memory Vault',
+    phase: decided.claimSync ? 'memory_synced' : 'memory_skipped',
+    message: decided.message,
+    status: 'completed',
+  });
+}
 
 export function deriveAuditMeasurement(metrics: {
   citationRatePercent: number | null;
@@ -177,10 +279,14 @@ export class CrewOrchestrator {
         ctx.dna,
         emit
       );
+      const errors = hostedAuthBlocked()
+        ? [...ctx.errors, 'provider_auth_failed']
+        : ctx.errors;
       return {
         serpEvidence,
         citationRatePercent,
         shareOfVoiceScore,
+        errors,
         ...deriveAuditMeasurement({
           citationRatePercent,
           shareOfVoiceScore,
@@ -262,6 +368,19 @@ export class CrewOrchestrator {
 
     // Node 6: Code Remediation Generation
     graph.addNode('remediation_node', 'Remediation Architect', async (ctx, emit) => {
+      const degraded = hostedAuthBlocked() || ctx.measurementStatus !== 'measured' || !contextHasLiveEvidence(ctx);
+      if (degraded) {
+        emit({
+          id: `coder-skip-${Date.now()}`,
+          timestamp: Date.now(),
+          agentRole: 'remediation_architect',
+          agentName: 'Remediation Architect',
+          phase: 'code_generation_skipped',
+          message: 'Remediation skipped. Live evidence was not measured, so no patches were generated.',
+          status: 'completed',
+        });
+        return { patches: [] };
+      }
       const patches = await remediationArchitectAgent.execute(ctx.targetUrl, ctx.findings, ctx.dna, emit);
       // Run critic syntax validation on generated patches
       const { verifiedPatches } = criticReflectionEngine.verify([], patches, ctx.scrapedPages, ctx.serpEvidence);
@@ -319,46 +438,7 @@ export class CrewOrchestrator {
 
     // Node 9: Mem0 4-Tier Memory Extraction & Sync + MUSE Reflection
     graph.addNode('memory_sync_node', 'Mem0 Memory Delta Sync', async (ctx, emit) => {
-      const deltas = mem0MemoryEngine.extractAndSyncAuditContext(ctx);
-      const cleanDomain = ctx.targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
-      try {
-        const experience = postAuditReflectionService.reflectOnAudit({
-          domain: cleanDomain,
-          focus: String(ctx.focus),
-          auditId: `crew-audit-${Date.now()}`,
-          healthScore: ctx.healthScore,
-          scrapedEvidence: {
-            scrapedUrl: ctx.scrapedPages[0]?.url || ctx.targetUrl,
-            hasContent: ctx.scrapedPages.length > 0,
-            schemasFound: ctx.scrapedPages[0]?.schemasFound.map((s) => s.type) || [],
-            title: ctx.scrapedPages[0]?.title || cleanDomain,
-            wordCount: ctx.scrapedPages[0]?.wordCount || 0,
-            rawTextSnippet: ctx.scrapedPages[0]?.rawTextSnippet || '',
-          },
-          findings: ctx.findings.map((f) => ({
-            title: f.title,
-            category: f.category,
-            severity: f.severity,
-            description: f.description,
-          })),
-          citationRatePercent: ctx.citationRatePercent,
-          topCompetitor: ctx.topCompetitors[0] || null,
-          dna: ctx.dna,
-        });
-        brandMemoryVaultService.ingestAuditExperience(experience);
-      } catch (err) {
-        console.warn('[Crew Orchestrator] Reflection sync error', err);
-      }
-
-      emit({
-        id: `mem0-sync-${Date.now()}`,
-        timestamp: Date.now(),
-        agentRole: 'executive_translator',
-        agentName: 'Brand Memory Vault',
-        phase: 'memory_synced',
-        message: `Synced ${deltas.length} autonomous memory delta(s) & MUSE experience heuristics into brand knowledge graph.`,
-        status: 'completed',
-      });
+      await applyMemorySync(ctx, emit);
       return {};
     });
 
@@ -386,11 +466,16 @@ export class CrewOrchestrator {
     dna?: BusinessDNA | null,
     onEvent?: (event: AgentActivityEvent) => void
   ): Promise<AuditStateGraphContext> {
+    resetHostedAuthCircuit();
     const initialContext = createInitialAuditContext(targetUrl, focus, dna);
 
     const graph = this.buildGraph();
-    const { finalContext } = await graph.run(initialContext, onEvent);
-    return finalContext;
+    try {
+      const { finalContext } = await graph.run(initialContext, onEvent);
+      return finalContext;
+    } finally {
+      resetHostedAuthCircuit();
+    }
   }
 }
 

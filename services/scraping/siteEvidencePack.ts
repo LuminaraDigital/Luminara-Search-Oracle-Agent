@@ -11,6 +11,7 @@
  */
 
 import { configService } from '../configService';
+import { hostedAuthBlocked } from '../resilience/hostedAuthCircuit';
 import { contentDistiller } from './contentDistiller';
 import { firecrawlService } from './firecrawlService';
 import {
@@ -130,6 +131,25 @@ export class SiteEvidencePackService {
           selectedCount: home.success ? 1 : 0,
         },
         warnings: home.success ? warnings : [home.error || 'Homepage scrape failed'],
+        start,
+        upgradeRequired,
+      });
+    }
+
+    if (hostedAuthBlocked()) {
+      warnings.push(
+        'Live data unavailable after a provider authentication failure. Add your own key in Settings or sign in. Further hosted provider calls were skipped.',
+      );
+      return this.finalize({
+        rootUrl,
+        mode: 'smart',
+        pages: home.success ? [home] : [],
+        discovery: {
+          source: 'homepage_only',
+          candidateCount: 1,
+          selectedCount: home.success ? 1 : 0,
+        },
+        warnings,
         start,
         upgradeRequired,
       });

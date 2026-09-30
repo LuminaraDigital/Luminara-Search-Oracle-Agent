@@ -1,4 +1,7 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPanel';
 import { validateAuditTargetUrl } from '../services/audit/auditTargetUrl';
 import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
 import { hostedProviderKeyDecision } from '../services/apiClient';
@@ -55,6 +58,35 @@ describe('guest scout summary honesty', () => {
     });
     expect(summary.topFix).toBe('Add Organization schema');
     expect(summary.failureCodes).toEqual([]);
+    expect(summary.degraded).toBe(false);
+  });
+
+  it('treats provider_failed plus an empty SERP as degraded and hides percent badges', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured',
+      citationRatePercent: 45,
+      shareOfVoiceScore: 43,
+      healthScore: 73,
+      scrapedPageCount: 0,
+      serpCount: 0,
+      findings: [],
+      errors: ['Firecrawl HTTP 401'],
+      hostedRail: 'byok_or_signin',
+    });
+    expect(summary.evidenceEmpty).toBe(true);
+    expect(summary.degraded).toBe(true);
+    expect(summary.failureCodes).toEqual(['page_fetch_empty', 'search_empty', 'provider_failed']);
+    expect(summary.banner).toMatch(/Live data unavailable/);
+    expect(summary.banner).toMatch(/sign in/i);
+    expect(summary.badges.every((badge) => badge.status === 'not_measured' && !badge.value)).toBe(true);
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
+    expect(html).toContain('Live data unavailable');
+    expect(html).not.toMatch(/\d+%/);
+    expect(html).not.toMatch(/Share-of-Voice: \d+/);
+    expect(html).not.toMatch(/Health Score: \d+/);
+    expect(html).not.toContain('45');
+    expect(html).not.toContain('73');
   });
 });
 

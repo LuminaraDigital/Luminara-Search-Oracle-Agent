@@ -8,6 +8,7 @@
 
 import { siteEvidencePackService } from '../../scraping/siteEvidencePack';
 import { unifiedScraperService, type ScrapedPageEvidence as ProviderPage } from '../../scraping/unifiedScraper';
+import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 import { AgentActivityEvent, ScrapedPageEvidence } from '../types';
 
 function toCrewPage(p: ProviderPage, fallbackUrl: string): ScrapedPageEvidence {
@@ -81,7 +82,9 @@ export class ScoutAgent {
         agentRole: 'scout',
         agentName: this.name,
         phase: 'crawling_complete',
-        message: 'Page fetch failed. On-page evidence not measured.',
+        message: hostedAuthBlocked()
+          ? 'Page fetch failed. On-page evidence not measured. Add your own key in Settings or sign in.'
+          : 'Page fetch failed. On-page evidence not measured.',
         status: 'completed',
         evidenceSnippet: 'Scraper returned no page text, headings, or schema.',
       });
