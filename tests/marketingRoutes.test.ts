@@ -22,6 +22,8 @@ describe('marketingRoutes', () => {
   });
 
   it('accepts aliases', () => {
+    expect(marketingViewFromPathname('/how')).toBe(AppView.INFRASTRUCTURE);
+    expect(marketingViewFromPathname('/how/')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/infrastructure')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/why-us')).toBe(AppView.WHY_US);
   });
@@ -113,6 +115,8 @@ describe('marketing shell injection', () => {
   });
 
   it('resolves shell keys for aliases', () => {
+    expect(marketingShellKey('/how')).toBe('/how-it-works');
+    expect(marketingShellKey('/how/')).toBe('/how-it-works');
     expect(marketingShellKey('/infrastructure')).toBe('/how-it-works');
     expect(marketingShellKey('/pricing/')).toBe('/pricing');
   });

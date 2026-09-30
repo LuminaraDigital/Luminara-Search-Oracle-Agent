@@ -1361,6 +1361,17 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   return withCors(json({ error: 'Not found' }, 404));
 }
 
+/** Permanent redirect that keeps the query string. Location is a path, not an open redirect. */
+function permanentRedirect(url: URL, pathname: string): Response {
+  return new Response(null, {
+    status: 301,
+    headers: {
+      Location: `${pathname}${url.search}`,
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -1451,6 +1462,17 @@ export default {
     // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
     if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
       return withSecurityHeaders(await desktopWindowsDownload(env, request));
+    }
+
+    // Extensionless citability URL must not fall through to the SPA home shell.
+    // Canonical file is public/docs/what-is-aeo.html (sitemap and llms.txt).
+    if (url.pathname === '/docs/what-is-aeo' || url.pathname === '/docs/what-is-aeo/') {
+      return withSecurityHeaders(permanentRedirect(url, '/docs/what-is-aeo.html'));
+    }
+
+    // Short marketing alias. Canonical page is /how-it-works.
+    if (url.pathname === '/how' || url.pathname === '/how/') {
+      return withSecurityHeaders(permanentRedirect(url, '/how-it-works'));
     }
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.

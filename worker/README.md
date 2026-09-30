@@ -55,6 +55,12 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 `apikey` = `lm_live_*` MCP key; `oauth` = `mcp_*` OAuth token;
 `admin` = `ADMIN_SECRET` header; `byok` = bring-your-own-key header.
 
+Public document redirects run in `worker/index.ts` before the marketing shell
+and the SPA asset fallback:
+
+- `GET /docs/what-is-aeo` and `/docs/what-is-aeo/` return 301 to `/docs/what-is-aeo.html`.
+- `GET /how` and `/how/` return 301 to `/how-it-works`.
+
 ## Stubbed vs live status
 
 - `worker/auditQueue.ts`: v1 queue is live; when a full node payload is not
