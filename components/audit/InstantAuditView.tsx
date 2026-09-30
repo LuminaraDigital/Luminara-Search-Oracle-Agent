@@ -19,7 +19,7 @@ import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
 import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
 import { SuiteCitabilityChecklist } from './SuiteCitabilityChecklist';
-import { buildGuestScoutSummary, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { buildGuestScoutSummary, isDegradedScout, shouldGenerateAuditReport, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
 import { hostedScoutPreRunCopy, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import { canMintTeaserShare, createShareTeaser } from '../../services/share/shareReportClient';
@@ -29,6 +29,26 @@ import { qualifyHonestScout } from '../../services/referrals/referralClient';
 import { clearScoutReceipt, takeScoutReceipt } from '../../services/referrals/scoutReceiptCapture';
 import { linkIdeaScout } from '../../services/ideaScout/ideaScoutClient';
 import { takeContinuumLink } from '../../services/ideaScout/continuum';
+
+export function instantAuditPrimaryLabel(crewRunning: boolean, isFullAudit: boolean): string {
+  if (crewRunning) return 'Scanning...';
+  return isFullAudit ? 'Run full audit' : 'Run quick scout';
+}
+
+export async function generateAuditReportUnlessDegraded(input: {
+  isGuest: boolean;
+  summary: GuestScoutSummary;
+  measurementStatus: 'measured' | 'not_measured';
+  formattedUrl: string;
+  targetFocus: ReportFocus;
+  dna: BusinessDNA | null;
+  lenses: AuditLens[];
+}): Promise<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null> {
+  if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
+    return null;
+  }
+  return geminiService.generateAuditReport(input.formattedUrl, input.targetFocus, input.dna, input.lenses);
+}
 
 function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
   return buildGuestScoutSummary({
@@ -105,6 +125,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const isFullAudit = Boolean(dna);
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const runSeq = useRef(0);
   const continuumRef = useRef<string | undefined>(ideaScoutId);
   useEffect(() => { continuumRef.current = ideaScoutId; }, [ideaScoutId]);
   useEffect(() => () => { if (stageTimerRef.current) clearInterval(stageTimerRef.current); }, []);
@@ -124,6 +145,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       return;
     }
 
+    const seq = ++runSeq.current;
     setInlineValidationError(null);
     setError(null);
     setPersistHint(null);
@@ -157,8 +179,17 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           setProgressStage(ev.message);
         }
       );
+      if (seq !== runSeq.current) return;
 
       const summary = summaryFromCrew(crewResult, hostedRail);
+      const degraded = isDegradedScout({
+        measurementStatus: crewResult.measurementStatus,
+        evidenceEmpty: summary.evidenceEmpty,
+        failureCodes: summary.failureCodes,
+      });
+      // Crew is terminal. Re-enable Retry / New domain before any report enrichment.
+      setLoading(false);
+      setProgressStage('');
       setCrewMeasurement(crewResult.measurementStatus);
       setScoutSummary(summary);
       if (linkId && summary.domain) {
@@ -184,6 +215,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       } else if (linkId) {
         restoreContinuum();
       }
+      if (seq !== runSeq.current) return;
 
       let inviteNote = '';
       if (!isGuest && !summary.evidenceEmpty && (crewResult.measurementStatus === 'measured' || crewResult.measurementStatus === 'not_measured')) {
@@ -198,22 +230,30 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           inviteNote = 'Invite credit unlocked for you and the person who invited you. Extra hosted scouts were added. No citation score was invented.';
         }
       }
+      if (seq !== runSeq.current) return;
       const withInvite = (message: string) => (inviteNote ? `${message} ${inviteNote}` : message);
-      if (crewResult.attestation) {
+      if (crewResult.attestation && !degraded) {
         setAttestation(crewResult.attestation);
       }
 
-      // Empty guest evidence stays on the honest summary. The full report model
+      // Guest degraded runs stay on the honest summary. The full report model
       // can still invent citation language when providers returned nothing.
-      if (isGuest && summary.evidenceEmpty) {
+      const result = await generateAuditReportUnlessDegraded({
+        isGuest,
+        summary,
+        measurementStatus: crewResult.measurementStatus,
+        formattedUrl,
+        targetFocus,
+        dna,
+        lenses,
+      });
+      if (seq !== runSeq.current) return;
+      if (!result) {
         setPersistHint(withInvite(
           'Scout finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.',
         ));
         return;
       }
-
-      // 2. Generate full enriched report
-      const result = await geminiService.generateAuditReport(formattedUrl, targetFocus, dna, lenses);
       if (crewResult.plainEnglishBrief && !result.plainEnglishBrief) {
         result.plainEnglishBrief = crewResult.plainEnglishBrief;
       }
@@ -268,8 +308,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       setError(userErr);
       productTelemetry.recordError('InstantAuditView', userErr);
     } finally {
-      setLoading(false);
-      setProgressStage('');
+      if (seq === runSeq.current) {
+        setLoading(false);
+        setProgressStage('');
+      }
     }
   };
 
@@ -435,9 +477,27 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                   className="sm:absolute sm:right-2 sm:top-1/2 sm:-translate-y-1/2 w-full sm:w-auto min-h-11 px-4 py-3 sm:py-2 rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-md shadow-gold/20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none whitespace-nowrap"
                 >
                   {loading && <div className="w-3 h-3 border-2 border-black/40 border-t-black rounded-full animate-spin" />}
-                  <span>{loading ? 'Scanning...' : isFullAudit ? 'Run full audit' : 'Run quick scout'}</span>
+                  <span>{instantAuditPrimaryLabel(loading, isFullAudit)}</span>
                 </button>
               </div>
+              {scoutSummary && !loading && (
+                <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleExecuteAudit(url, focus)}
+                    className="min-h-11 px-4 py-2 rounded-lg border border-gold/40 text-[10px] font-black uppercase tracking-widest text-gold-light focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                  >
+                    Retry
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="min-h-11 px-4 py-2 rounded-lg border border-white/15 text-[10px] font-black uppercase tracking-widest text-gray-200 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                  >
+                    New domain
+                  </button>
+                </div>
+              )}
               {inlineValidationError && (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-danger-400 font-medium animate-in fade-in">
                   <ICONS.AlertCircle className="w-4 h-4 shrink-0 text-danger-400" />
@@ -645,6 +705,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             citationIntegrity={report.citationIntegrity || report.integrity}
             trustPack={report.trustPack}
             shareOfVoice={report.shareOfVoice}
+            suppressLiveMetrics={crewMeasurement === 'not_measured'}
             sourceGraph={report.sourceGraph}
             enterpriseTrust={report.enterpriseTrust}
           />

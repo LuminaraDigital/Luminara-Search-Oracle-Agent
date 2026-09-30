@@ -8,6 +8,7 @@
 import { getInitDataRaw } from './telegram/tma';
 import { getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
 import { toUserFacingText } from '../utils/userFacingText';
+import { hostedAuthBlocked, hostedAuthCircuitResponse, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
 
 export interface ServerHealth {
@@ -313,6 +314,12 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     return fetch(directUrl, init);
   }
 
+  // Run-scoped: after the first hosted 401/403, skip later /api/providers calls.
+  // workerFetchWithAuthRetry still refreshes a Firebase token once on the first 401.
+  if (hostedAuthBlocked()) {
+    return hostedAuthCircuitResponse();
+  }
+
   const headers = new Headers(init.headers || {});
   headers.delete('authorization');
   headers.delete('x-api-key');
@@ -326,6 +333,9 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   }
   updateQuotaFromHeaders(res.headers);
   noteScoutReceipt(res.headers.get('x-scout-receipt'));
+  if (res.status === 401 || res.status === 403) {
+    noteHostedAuthFailure(res.status, providerId);
+  }
   if (res.status === 402) {
     try {
       const clone = res.clone();

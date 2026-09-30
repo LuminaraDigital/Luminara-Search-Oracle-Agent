@@ -34,6 +34,11 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
         {summary.domain}
       </h2>
       <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-gray-200">{summary.verdict}</p>
+      {summary.banner && (
+        <p role="status" className="mt-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm leading-relaxed text-gray-200">
+          {summary.banner}
+        </p>
+      )}
       <p className="mt-3 text-[11px] text-gray-500">
         Signals are measured, estimated, or not measured. This scout does not invent scores.
       </p>

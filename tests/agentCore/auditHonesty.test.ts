@@ -2,6 +2,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentMissionControl, missionControlCardBadge, missionControlHeadline, missionControlProgressLabel } from '../../components/audit/AgentMissionControl';
+import { GuestScoutSummaryPanel } from '../../components/audit/GuestScoutSummaryPanel';
+import { generateAuditReportUnlessDegraded, instantAuditPrimaryLabel } from '../../components/audit/InstantAuditView';
+import { ReportDisplay } from '../../components/audit/ReportDisplay';
 import { pricingTiers } from '../../components/PricingPage';
 import { executiveTranslatorAgent } from '../../services/agentCore/agents/executiveTranslatorAgent';
 import { playbookAuditorAgent } from '../../services/agentCore/agents/playbookAuditorAgent';
@@ -9,13 +12,23 @@ import { scoutAgent } from '../../services/agentCore/agents/scoutAgent';
 import { serpRadarAgent } from '../../services/agentCore/agents/serpRadarAgent';
 import {
   CREW_PROFILES,
+  applyMemorySync,
   createInitialAuditContext,
+  crewOrchestrator,
   criticStartMessage,
   deriveAuditMeasurement,
+  memorySyncPlan,
 } from '../../services/agentCore/crewOrchestrator';
-import type { AgentRole, ScrapedPageEvidence } from '../../services/agentCore/types';
+import type { AgentActivityEvent, AgentRole, ScrapedPageEvidence } from '../../services/agentCore/types';
 import { empiricalCitationService } from '../../services/audit/empiricalCitationService';
+import { buildGuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { geminiService } from '../../services/geminiService';
 import { configService } from '../../services/configService';
+import { mem0MemoryEngine } from '../../services/agentCore/mem0MemoryEngine';
+import { classifyProviderFailure } from '../../services/resilience/failureClassification';
+import { noteHostedAuthFailure, resetHostedAuthCircuit } from '../../services/resilience/hostedAuthCircuit';
+import { firecrawlService } from '../../services/scraping/firecrawlService';
+import { patchrightClient } from '../../services/scraping/patchrightClient';
 import { siteEvidencePackService } from '../../services/scraping/siteEvidencePack';
 import { unifiedScraperService } from '../../services/scraping/unifiedScraper';
 import { tavilyService } from '../../services/search/tavilyService';
@@ -24,6 +37,8 @@ const noop = () => {};
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  resetHostedAuthCircuit();
 });
 
 describe('Instant Audit honesty on empty evidence', () => {
@@ -284,5 +299,210 @@ describe('Pricing display labels', () => {
       ['growth', 'US$149', '7,500 Stars', '45 TON'],
       ['agency', 'US$349', '18,000 Stars', '120 TON'],
     ]);
+  });
+});
+
+describe('Instant Audit degraded provider failures', () => {
+  it('keeps health null when a page exists but the auth circuit is open', async () => {
+    noteHostedAuthFailure(401, 'firecrawl');
+    const page: ScrapedPageEvidence = {
+      url: 'https://example.com',
+      title: 'Example',
+      h1s: ['Example'],
+      schemasFound: [],
+      wordCount: 400,
+      rawTextSnippet: 'Example publishes enough product detail for a real page audit.',
+    };
+    const result = await playbookAuditorAgent.execute('AEO', [page], [], null, noop);
+    expect(result.healthScore).toBeNull();
+    expect(result.findings).toEqual([]);
+  });
+
+  it('does not claim a memory sync on an empty context, and does claim one when measured', async () => {
+    const extract = vi.spyOn(mem0MemoryEngine, 'extractAndSyncAuditContext');
+    const skipped: string[] = [];
+    await applyMemorySync(createInitialAuditContext('https://example.com'), (event) => {
+      skipped.push(event.message);
+    });
+    expect(extract).not.toHaveBeenCalled();
+    expect(skipped.join(' ')).not.toMatch(/Synced \d+ autonomous memory/);
+    expect(memorySyncPlan({
+      deltaCount: 0,
+      measurementStatus: 'not_measured',
+      hasEvidence: false,
+      authBlocked: false,
+    }).message).not.toMatch(/Synced \d+ autonomous memory/);
+
+    extract.mockRestore();
+    const measured = createInitialAuditContext('https://measured.example');
+    measured.measurementStatus = 'measured';
+    measured.healthScore = 81;
+    measured.citationRatePercent = 22;
+    measured.shareOfVoiceScore = 18;
+    measured.scrapedPages = [{
+      url: 'https://measured.example',
+      title: 'Measured',
+      h1s: ['Measured'],
+      schemasFound: [],
+      wordCount: 220,
+      rawTextSnippet: 'A measured page with enough words to count as evidence.',
+    }];
+    const synced: string[] = [];
+    await applyMemorySync(measured, (event) => {
+      synced.push(event.message);
+    });
+    expect(synced.join(' ')).toMatch(/Synced \d+ autonomous memory/);
+    mem0MemoryEngine.clear();
+  });
+
+  it('returns null metrics after Firecrawl, Tavily, and Jina 401s and hides invented scores', async () => {
+    vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
+    vi.spyOn(configService, 'getTavilyKey').mockReturnValue('tv-test-key');
+    vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
+    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
+    vi.spyOn(configService, 'getSitewideEvidenceMode').mockReturnValue('smart');
+    vi.spyOn(patchrightClient, 'scrape').mockResolvedValue({
+      success: false,
+      url: 'https://example.com',
+      error: 'runner offline',
+    });
+    const mapSpy = vi.spyOn(firecrawlService, 'mapUrl');
+    const tavilySpy = vi.spyOn(tavilyService, 'search');
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const events: AgentActivityEvent[] = [];
+    const result = await crewOrchestrator.runAuditCrew('https://example.com', 'AEO', null, (event) => {
+      events.push(event);
+    });
+
+    expect(result.citationRatePercent).toBeNull();
+    expect(result.shareOfVoiceScore).toBeNull();
+    expect(result.healthScore).toBeNull();
+    expect(result.measurementStatus).toBe('not_measured');
+    expect(result.attestation).toBeUndefined();
+    expect(mapSpy).not.toHaveBeenCalled();
+    expect(tavilySpy).not.toHaveBeenCalled();
+    const firecrawlCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('firecrawl.dev')).length;
+    expect(firecrawlCalls).toBeLessThanOrEqual(1);
+
+    const joined = events.map((event) => event.message).join('\n');
+    expect(joined).not.toMatch(/Synced \d+ autonomous memory/);
+    expect(joined).not.toMatch(/production-grade/i);
+    expect(joined).not.toMatch(/Share-of-Voice: \d+/);
+    expect(joined).not.toMatch(/Health Score: \d+/);
+
+    const mission = renderToStaticMarkup(createElement(AgentMissionControl, {
+      events,
+      isComplete: true,
+      measurementStatus: 'not_measured',
+    }));
+    expect(mission).not.toMatch(/\d+%/);
+    expect(mission).not.toMatch(/Share-of-Voice: \d+/);
+    expect(mission).not.toMatch(/Health Score: \d+/);
+    expect(mission).toContain('NOT MEASURED');
+    expect(mission).not.toContain('100% COMPLETE');
+
+    const summary = buildGuestScoutSummary({
+      targetUrl: result.targetUrl,
+      measurementStatus: result.measurementStatus,
+      measurementReason: result.measurementReason,
+      citationRatePercent: result.citationRatePercent,
+      shareOfVoiceScore: result.shareOfVoiceScore,
+      healthScore: result.healthScore,
+      scrapedPageCount: result.scrapedPages.length,
+      serpCount: result.serpEvidence.length,
+      findings: result.findings.map((finding) => ({ title: finding.title })),
+      errors: result.errors,
+      plainEnglishBrief: result.plainEnglishBrief,
+      hostedRail: 'byok_or_signin',
+    });
+    const guestHtml = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
+    expect(summary.degraded).toBe(true);
+    expect(guestHtml).toContain('Live data unavailable');
+    expect(guestHtml).not.toMatch(/\d+%/);
+    expect(guestHtml).not.toMatch(/Share-of-Voice: \d+/);
+    expect(guestHtml).not.toMatch(/Health Score: \d+/);
+
+    const reportHtml = renderToStaticMarkup(createElement(ReportDisplay, {
+      markdownText: 'Scout notes without a live score.',
+      hideAgencyActions: true,
+      suppressLiveMetrics: true,
+      empiricalSummary: {
+        targetDomain: 'example.com',
+        brandName: 'Example',
+        totalQueriesTested: 0,
+        queriesCitedCount: 0,
+        citationRatePercent: 45,
+        topCitedCompetitor: null,
+        evidenceList: [],
+        entityClarityScore: 73,
+        lastAudited: 1,
+        measurementStatus: 'not_measured',
+      },
+      shareOfVoice: {
+        targetDomain: 'example.com',
+        brandName: 'Example',
+        measuredAt: 1,
+        totalPrompts: 4,
+        mentionCoveragePercent: 43,
+        citationCoveragePercent: 43,
+        brandCitationSharePercent: 43,
+        slices: [],
+        formula: 'observed',
+        method: 'observed',
+      },
+    }));
+    expect(reportHtml).toContain('Live data unavailable');
+    expect(reportHtml).not.toContain('45%');
+    expect(reportHtml).not.toContain('43%');
+    expect(reportHtml).not.toMatch(/Health Score: \d+/);
+    expect(reportHtml).not.toMatch(/Share-of-Voice: \d+/);
+  });
+
+  it('does not call generateAuditReport for a guest degraded run and clears Scanning', async () => {
+    const reportSpy = vi.spyOn(geminiService, 'generateAuditReport').mockResolvedValue({
+      text: 'invented 45%',
+      sources: [],
+    } as Awaited<ReturnType<typeof geminiService.generateAuditReport>>);
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured',
+      citationRatePercent: 45,
+      shareOfVoiceScore: 43,
+      healthScore: 73,
+      scrapedPageCount: 1,
+      serpCount: 0,
+      findings: [],
+      errors: ['provider_auth_failed'],
+      hostedRail: 'byok_or_signin',
+    });
+    let loading = true;
+    const crew = Promise.resolve({ measurementStatus: 'not_measured' as const });
+    await crew;
+    loading = false;
+    const report = await generateAuditReportUnlessDegraded({
+      isGuest: true,
+      summary,
+      measurementStatus: 'not_measured',
+      formattedUrl: 'https://example.com',
+      targetFocus: 'AEO',
+      dna: null,
+      lenses: [],
+    });
+    expect(loading).toBe(false);
+    expect(report).toBeNull();
+    expect(reportSpy).not.toHaveBeenCalled();
+    const html = renderToStaticMarkup(createElement(
+      'button',
+      { type: 'button', disabled: loading },
+      instantAuditPrimaryLabel(loading, false),
+    ));
+    expect(html).not.toContain('Scanning');
+    expect(html).toContain('Run quick scout');
+    expect(html).not.toContain('disabled');
   });
 });

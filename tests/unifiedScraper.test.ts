@@ -1,12 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { unifiedScraperService } from '../services/scraping/unifiedScraper';
 import { patchrightClient } from '../services/scraping/patchrightClient';
 import { firecrawlService } from '../services/scraping/firecrawlService';
 import { configService } from '../services/configService';
+import { classifyProviderFailure } from '../services/resilience/failureClassification';
+import { resetHostedAuthCircuit } from '../services/resilience/hostedAuthCircuit';
 
 describe('UnifiedScraperService', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    resetHostedAuthCircuit();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetHostedAuthCircuit();
   });
 
   it('uses Patchright when available and successful', async () => {
@@ -72,5 +81,37 @@ describe('UnifiedScraperService', () => {
     expect(result.providerUsed).toBe('firecrawl');
     expect(result.title).toBe('Protected Site');
     expect(result.formattedEvidence).toContain('[REAL SITE SCRAPE EVIDENCE - VIA FIRECRAWL API]');
+  });
+
+  it('stops further Firecrawl calls after the first 401', async () => {
+    expect(classifyProviderFailure({
+      providerId: 'firecrawl',
+      statusCode: 401,
+      message: 'unauthorized',
+    }).retryable).toBe(false);
+
+    vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
+    vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
+    vi.spyOn(patchrightClient, 'scrape').mockResolvedValue({
+      success: false,
+      url: 'https://example.com',
+      error: 'runner offline',
+    });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await unifiedScraperService.scrapeAndDistill('https://example.com');
+    const firecrawlCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).includes('firecrawl.dev')).length;
+    expect(firecrawlCalls()).toBe(1);
+
+    const beforeMap = fetchMock.mock.calls.length;
+    const mapped = await firecrawlService.mapUrl('https://example.com');
+    expect(mapped.httpStatus).toBe(401);
+    expect(mapped.code).toBe('HOSTED_AUTH_CIRCUIT');
+    expect(fetchMock.mock.calls.length).toBe(beforeMap);
+    expect(firecrawlCalls()).toBeLessThanOrEqual(1);
   });
 });

@@ -9,6 +9,7 @@
 import { tavilyService } from '../../search/tavilyService';
 import { localSerpService } from '../../search/localSerpService';
 import { configService } from '../../configService';
+import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { BusinessDNA } from '../../../types';
 
@@ -48,6 +49,20 @@ export class SerpRadarAgent {
     const tavilyKey = configService.getTavilyKey();
     const localSerpEnabled = configService.isLocalSerpEnabled();
     const serpEvidence: SerpEvidenceItem[] = [];
+
+    if (hostedAuthBlocked()) {
+      emit({
+        id: `serp-auth-skip-${Date.now()}`,
+        timestamp: Date.now(),
+        agentRole: 'serp_radar',
+        agentName: this.name,
+        phase: 'radar_complete',
+        message: 'Search providers skipped after an authentication failure. Citation rate and share of voice were not measured. Add your own key in Settings or sign in.',
+        status: 'completed',
+        evidenceSnippet: 'No live search snippets. Citation rate is not measured.',
+      });
+      return { serpEvidence, citationRatePercent: null, shareOfVoiceScore: null };
+    }
 
     if (tavilyKey) {
       const responses = await Promise.all(

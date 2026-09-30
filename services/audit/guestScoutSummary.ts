@@ -28,6 +28,10 @@ export interface GuestScoutSummary {
   /** Allow-listed codes sent when minting a public teaser. */
   failureCodes: TeaserFailureCode[];
   evidenceEmpty: boolean;
+  /** True when metrics must not be shown as live measurements. */
+  degraded: boolean;
+  /** Set when the run cannot show live scores. Includes the BYOK or sign-in step. */
+  banner?: string;
 }
 
 export interface GuestScoutSummaryInput {
@@ -50,6 +54,34 @@ function hostLabel(targetUrl: string): string {
   const raw = String(targetUrl || '').trim();
   const host = raw.replace(/^https?:\/\//i, '').split(/[/?#]/)[0]?.replace(/:\d+$/, '') || raw;
   return host || 'this site';
+}
+
+export const LIVE_DATA_UNAVAILABLE_COPY =
+  'Live data unavailable. Sample / not measured. Add your own keys in Settings, or sign in.';
+
+const DEGRADED_FAILURE_CODES = new Set<string>(['provider_failed', 'search_empty', 'page_fetch_empty']);
+
+export function isDegradedScout(input: {
+  measurementStatus: 'measured' | 'not_measured';
+  evidenceEmpty: boolean;
+  failureCodes: readonly string[];
+}): boolean {
+  if (input.measurementStatus === 'not_measured' || input.evidenceEmpty) return true;
+  return input.failureCodes.some((code) => DEGRADED_FAILURE_CODES.has(code));
+}
+
+/** Guests do not get a model report when the scout is degraded. Signed-in runs still may. */
+export function shouldGenerateAuditReport(
+  isGuest: boolean,
+  summary: Pick<GuestScoutSummary, 'evidenceEmpty' | 'failureCodes'>,
+  measurementStatus: 'measured' | 'not_measured',
+): boolean {
+  if (!isGuest) return true;
+  return !isDegradedScout({
+    measurementStatus,
+    evidenceEmpty: summary.evidenceEmpty,
+    failureCodes: summary.failureCodes,
+  });
 }
 
 function metricBadge(label: string, value: number | null, suffix: string): ScoutBadge {
@@ -107,11 +139,6 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
       ? 'Do not ship changes from this run. Fetch the homepage and a search sample, then scout again.'
       : 'Ship the first measured gap before adding more pages.');
 
-  const badges: ScoutBadge[] = [
-    metricBadge('Citation rate', input.citationRatePercent, '%'),
-    metricBadge('Share of voice', input.shareOfVoiceScore, '/100'),
-    metricBadge('Page health', input.healthScore, '/100'),
-  ];
   const crawlerChecks = input.llmCrawler?.checks || [];
   const failureCodes = teaserFailureCodes({
     scrapedPageCount: input.scrapedPageCount,
@@ -119,18 +146,39 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     hadProviderError: (input.errors || []).some((err) => err.trim().length > 0),
     crawlerChecks,
   });
+  const degraded = isDegradedScout({
+    measurementStatus: input.measurementStatus,
+    evidenceEmpty,
+    failureCodes,
+  });
   const failed = failureCodes.map((code) => teaserFailureLine(code));
+  let badges: ScoutBadge[] = [
+    metricBadge('Citation rate', input.citationRatePercent, '%'),
+    metricBadge('Share of voice', input.shareOfVoiceScore, '/100'),
+    metricBadge('Page health', input.healthScore, '/100'),
+  ];
+  if (degraded) {
+    badges = badges.map((badge) => ({ label: badge.label, status: 'not_measured' }));
+  }
+
+  if (degraded) {
+    verdict = evidenceEmpty
+      ? `AI mention readiness for ${domain} was not measured. This run collected no page text and no search rows, so there is no citation rate, share of voice, or health score.`
+      : `Live data unavailable for ${domain}. Some signals were not measured. Missing figures are omitted rather than guessed.`;
+  }
 
   return {
     domain,
     verdict,
     evidenceUsed,
     topFix,
-    nextStep: nextStepFor(input.hostedRail, evidenceEmpty),
+    nextStep: nextStepFor(input.hostedRail, degraded || evidenceEmpty),
     badges,
     crawlerChecks,
     failed,
     failureCodes,
     evidenceEmpty,
+    degraded,
+    banner: degraded ? LIVE_DATA_UNAVAILABLE_COPY : undefined,
   };
 }

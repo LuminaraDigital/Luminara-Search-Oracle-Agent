@@ -15,6 +15,7 @@ import {
   type LlmCrawlerReport,
   type LlmCrawlerSnapshot,
 } from '../../audit/llmCrawlerReadiness';
+import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 
 export class PlaybookAuditorAgent {
   public readonly name = 'Playbook Auditor';
@@ -63,20 +64,24 @@ export class PlaybookAuditorAgent {
       });
     }
 
-    // Health and schema rules need a scraped page. SERP rows alone are not a DOM audit.
-    if (!hasPageEvidence) {
+    // Health stays null unless scraped page evidence exists and the run is not globally degraded.
+    // A provider 401/403 must not mint a heuristic base score from a partial page.
+    const globallyDegraded = hostedAuthBlocked();
+    if (!hasPageEvidence || globallyDegraded) {
       emit({
         id: `auditor-unmeasured-${Date.now()}`,
         timestamp: Date.now(),
         agentRole: 'playbook_auditor',
         agentName: this.name,
         phase: 'audit_complete',
-        message: hasSerpEvidence
-          ? 'Compliance audit finished. Health score not measured: no page evidence.'
-          : 'Compliance audit finished. Health score not measured: no page or search evidence.',
+        message: globallyDegraded
+          ? 'Compliance audit finished. Health score not measured: live data unavailable after a provider authentication failure.'
+          : hasSerpEvidence
+            ? 'Compliance audit finished. Health score not measured: no page evidence.'
+            : 'Compliance audit finished. Health score not measured: no page or search evidence.',
         status: 'completed',
       });
-      return { findings, healthScore: null, llmCrawler };
+      return { findings: globallyDegraded ? [] : findings, healthScore: null, llmCrawler };
     }
 
     let baseScore = 85;

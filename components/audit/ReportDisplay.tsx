@@ -33,6 +33,7 @@ import { InteractiveTable } from './InteractiveTable';
 import { CollapsibleSection } from './CollapsibleSection';
 import { canCreateShareLinks, createShareReport } from '../../services/share/shareReportClient';
 import { fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
+import { LIVE_DATA_UNAVAILABLE_COPY } from '../../services/audit/guestScoutSummary';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
 
@@ -55,6 +56,8 @@ interface ReportDisplayProps {
   enterpriseTrust?: EnterpriseTrustPack;
   /** Hide PDF / share / deploy chrome (public share pages). */
   hideAgencyActions?: boolean;
+  /** Crew said this run was not measured. Hide numeric citation, share of voice, and health. */
+  suppressLiveMetrics?: boolean;
 }
 
 export const ReportDisplay: React.FC<ReportDisplayProps> = ({
@@ -75,7 +78,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   sourceGraph,
   enterpriseTrust,
   hideAgencyActions = false,
+  suppressLiveMetrics = false,
 }) => {
+  const hideLiveNumbers = suppressLiveMetrics || empiricalSummary?.measurementStatus === 'not_measured';
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
@@ -246,12 +251,20 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const validSources = sources?.filter(s => s && s.uri);
   const sourceCount = validSources?.length || 0;
   const hasEvidence = Boolean(
-    (empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,
+    (!hideLiveNumbers && empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,
   );
   const reportUnlocked = hideAgencyActions || Boolean(shipCommitment);
+  const evidenceLabel = hideLiveNumbers || empiricalSummary?.citationRatePercent == null
+    ? 'not measured'
+    : `${empiricalSummary.citationRatePercent}%`;
 
   return (
     <div className="w-full text-gray-200 animate-in fade-in duration-500">
+      {hideLiveNumbers && (
+        <p role="status" className="mb-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm leading-relaxed text-gray-200">
+          {LIVE_DATA_UNAVAILABLE_COPY}
+        </p>
+      )}
       {!reportUnlocked && !hideAgencyActions && (
         <ShipActionGate
           domain={targetDomain}
@@ -306,7 +319,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
                 className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-success-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 <ICONS.Radar className="w-4 h-4 text-success-400" />
-                <span>Evidence ({empiricalSummary.measurementStatus === 'not_measured' || empiricalSummary.citationRatePercent == null ? 'not measured' : `${empiricalSummary.citationRatePercent}%`})</span>
+                <span>Evidence ({evidenceLabel})</span>
               </button>
             )}
 
@@ -349,7 +362,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
             className="px-3.5 py-2 rounded-xl glass-morphism border border-success-500/30 text-xs font-mono text-success-200 hover:text-white flex items-center gap-1.5 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             <ICONS.Radar className="w-4 h-4 text-success-400" />
-            Preview evidence ({empiricalSummary.measurementStatus === 'not_measured' || empiricalSummary.citationRatePercent == null ? 'not measured' : `${empiricalSummary.citationRatePercent}%`})
+            Preview evidence ({evidenceLabel})
           </button>
         </div>
       )}
@@ -371,7 +384,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
 
       <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
         <VisibilityTrendsCard domain={targetDomain || remediationPayload?.domain || ''} />
-        <ShareOfVoiceCard summary={shareOfVoice} />
+        {hideLiveNumbers ? null : <ShareOfVoiceCard summary={shareOfVoice} />}
       </div>
 
       {sourceGraph && (

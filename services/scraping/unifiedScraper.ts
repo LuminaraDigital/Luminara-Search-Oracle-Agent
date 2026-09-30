@@ -13,6 +13,7 @@
 import { configService } from '../configService';
 import { patchrightClient } from './patchrightClient';
 import { firecrawlService } from './firecrawlService';
+import { hostedAuthBlocked, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
 import { contentDistiller, DistilledContentResult } from './contentDistiller';
 import { githubCitabilityService } from './githubCitabilityService';
 
@@ -111,10 +112,16 @@ export class UnifiedScraperService {
       }
     }
 
-    // Strategy 2: Firecrawl (if key configured or requested)
-    if (providerPref === 'firecrawl' || (providerPref === 'auto' && configService.getFirecrawlKey())) {
+    // Strategy 2: Firecrawl (if key configured or requested).
+    // A 401/403 opens the run circuit. Do not call sibling Firecrawl map/crawl from here.
+    if (hostedAuthBlocked()) {
+      lastError = 'Firecrawl skipped after an authentication failure. Add your own key in Settings or sign in.';
+    } else if (providerPref === 'firecrawl' || (providerPref === 'auto' && configService.getFirecrawlKey())) {
       try {
         const fcRes = await firecrawlService.scrapeUrl(url, ['markdown', 'html']);
+        if (fcRes.httpStatus === 401 || fcRes.httpStatus === 403) {
+          noteHostedAuthFailure(fcRes.httpStatus, 'firecrawl');
+        }
         if (fcRes.success && (fcRes.markdown || fcRes.html)) {
           const distilled = contentDistiller.distill(fcRes.html || '', fcRes.markdown || '', {
             maxChars: options.maxChars,
@@ -144,7 +151,8 @@ export class UnifiedScraperService {
       }
     }
 
-    // Strategy 3: Jina Reader / Direct Zero-Key Fallback (e.g. https://r.jina.ai/{url})
+    // Strategy 3: Jina Reader. Public non-hosted read (r.jina.ai), not /api/providers.
+    // Kept after a Firecrawl auth failure so a zero-key page read can still succeed.
     if (providerPref === 'jina' || providerPref === 'auto') {
       try {
         const jinaUrl = `https://r.jina.ai/${url.replace(/^https?:\/\//i, 'https://')}`;

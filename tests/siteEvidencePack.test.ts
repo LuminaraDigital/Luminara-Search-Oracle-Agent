@@ -3,6 +3,7 @@ import { siteEvidencePackService } from '../services/scraping/siteEvidencePack';
 import { unifiedScraperService } from '../services/scraping/unifiedScraper';
 import { firecrawlService } from '../services/scraping/firecrawlService';
 import { configService } from '../services/configService';
+import { noteHostedAuthFailure, resetHostedAuthCircuit } from '../services/resilience/hostedAuthCircuit';
 
 function mockPage(url: string, title: string, html: string) {
   return {
@@ -32,6 +33,7 @@ function mockPage(url: string, title: string, html: string) {
 
 describe('siteEvidencePackService', () => {
   beforeEach(() => {
+    resetHostedAuthCircuit();
     vi.restoreAllMocks();
     vi.spyOn(configService, 'getSitewideEvidenceMode').mockReturnValue('smart');
     vi.spyOn(configService, 'getSitewideMaxPages').mockReturnValue(4);
@@ -95,5 +97,21 @@ describe('siteEvidencePackService', () => {
     expect(pack.discovery.source).toBe('firecrawl_map');
     expect(pack.success).toBe(true);
     expect(firecrawlService.mapUrl).toHaveBeenCalled();
+  });
+
+  it('skips Firecrawl map after an authentication failure', async () => {
+    noteHostedAuthFailure(401, 'firecrawl');
+    vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
+    const map = vi.spyOn(firecrawlService, 'mapUrl');
+    const home = mockPage('https://example.com', 'Home', '<h1>Home</h1>');
+    vi.spyOn(unifiedScraperService, 'scrapeAndDistill').mockResolvedValue({
+      ...home,
+      success: false,
+      markdown: '',
+      error: 'Firecrawl HTTP 401',
+    });
+    const pack = await siteEvidencePackService.buildPack('https://example.com', { mode: 'smart', maxPages: 4 });
+    expect(map).not.toHaveBeenCalled();
+    expect(pack.warnings.join(' ')).toMatch(/sign in/i);
   });
 });
