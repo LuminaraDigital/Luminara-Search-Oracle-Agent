@@ -279,10 +279,10 @@ describe('Mission Control copy', () => {
 
 describe('Pricing display labels', () => {
   it('shows locked USD amounts and keeps Stars sublines', () => {
-    expect(pricingTiers.map((tier) => [tier.id, tier.priceLabel, tier.stars])).toEqual([
-      ['starter', 'US$49', '2,500 Stars'],
-      ['growth', 'US$149', '7,500 Stars'],
-      ['agency', 'US$349', '18,000 Stars'],
+    expect(pricingTiers.map((tier) => [tier.id, tier.priceLabel, tier.stars, tier.ton])).toEqual([
+      ['starter', 'US$49', '2,500 Stars', '15 TON'],
+      ['growth', 'US$149', '7,500 Stars', '45 TON'],
+      ['agency', 'US$349', '18,000 Stars', '120 TON'],
     ]);
   });
 });
