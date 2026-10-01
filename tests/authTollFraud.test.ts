@@ -122,7 +122,9 @@ describe('sliding window rateLimiter', () => {
 
 describe('burst + outbound killswitch', () => {
   it('fails closed after 5 requests in one second from one IP', () => {
-    const ip = `198.51.100.${Math.floor(Math.random() * 200)}`;
+    // Fixed and unique: the burst bucket is module-level, so a random address here could
+    // collide with the 198.51.100.x addresses other tests use within the same second.
+    const ip = '192.0.2.250';
     for (let i = 0; i < 5; i++) {
       expect(enforceBurstLimit(ip, 5).ok).toBe(true);
     }
