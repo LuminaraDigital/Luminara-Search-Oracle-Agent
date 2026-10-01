@@ -48,13 +48,14 @@ describe('validateInitData', () => {
   });
 
   it('accepts auth_date within the default 1h TTL', async () => {
-    const authDate = String(Math.floor(Date.now() / 1000) - 3599);
+    // 30s inside the limit: one second inside raced the clock on slow CI runners.
+    const authDate = String(Math.floor(Date.now() / 1000) - 3570);
     const r = await validateInitData(sign({ ...fresh(), auth_date: authDate }), token);
     expect(r.ok).toBe(true);
   });
 
   it('rejects auth_date older than the default 1h TTL', async () => {
-    const authDate = String(Math.floor(Date.now() / 1000) - 3601);
+    const authDate = String(Math.floor(Date.now() / 1000) - 3630);
     const r = await validateInitData(sign({ ...fresh(), auth_date: authDate }), token);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/expired/);
