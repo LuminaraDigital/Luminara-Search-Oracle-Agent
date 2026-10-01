@@ -218,25 +218,48 @@ const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* Loop */}
+      {/* Loop: the steps beside the real Instant Audit screen. */}
       <section className="mkt-section">
-        <div className="max-w-7xl mx-auto">
-          <p className="mkt-eyebrow mb-4">Weekly Decision Loop</p>
-          <h2 className={`${H2} mb-14 max-w-2xl`}>From a domain to the next action.</h2>
-          <ol className="grid grid-cols-1 sm:grid-cols-3 gap-10 list-none mb-10">
-            {HOW_STEPS.map((step, index) => (
-              <li key={step.title} className="min-w-0 border-t border-[var(--color-rule)] pt-5">
-                <p className="text-[12px] font-mono text-[var(--color-accent)] mb-3">
-                  {String(index + 1).padStart(2, '0')}
-                </p>
-                <h3 className="text-xl text-[var(--color-ink)] font-medium mb-2">{step.title}</h3>
-                <p className="mkt-body">{step.body}</p>
-              </li>
-            ))}
-          </ol>
-          <button type="button" onClick={onNavigateInfrastructure} className="mkt-cta-tertiary">
-            How an audit runs
-          </button>
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+          <div className="lg:col-span-5 min-w-0">
+            <p className="mkt-eyebrow mb-4">Weekly Decision Loop</p>
+            <h2 className={`${H2} mb-10`}>From a domain to the next action.</h2>
+            <ol className="space-y-7 list-none mb-10">
+              {HOW_STEPS.map((step, index) => (
+                <li key={step.title} className="min-w-0 border-t border-[var(--color-rule)] pt-5">
+                  <p className="text-[12px] font-mono text-[var(--color-accent)] mb-2">
+                    {String(index + 1).padStart(2, '0')}
+                  </p>
+                  <h3 className="text-xl text-[var(--color-ink)] font-medium mb-1.5">{step.title}</h3>
+                  <p className="mkt-body">{step.body}</p>
+                </li>
+              ))}
+            </ol>
+            <button type="button" onClick={onNavigateInfrastructure} className="mkt-cta-tertiary">
+              How an audit runs
+            </button>
+          </div>
+          <figure className="lg:col-span-7 min-w-0">
+            <button
+              type="button"
+              onClick={() => onNavigateAudit()}
+              className="block w-full border border-[var(--color-rule)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
+              aria-label="Open Instant Audit"
+            >
+              <img
+                src="/brand/instant-audit.webp"
+                alt="The Instant Audit screen: a domain field, SEO, AEO and GEO report types, and focus lenses."
+                width={1440}
+                height={740}
+                loading="lazy"
+                decoding="async"
+                className="block w-full h-auto"
+              />
+            </button>
+            <figcaption className="mt-3 text-[13px] text-[var(--color-ink-2)]">
+              Instant Audit as a guest sees it. Select the image to open it.
+            </figcaption>
+          </figure>
         </div>
       </section>
 

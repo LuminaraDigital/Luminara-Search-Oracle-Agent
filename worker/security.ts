@@ -18,7 +18,7 @@ export { safePublicHostname };
  */
 export const HTML_CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://telegram.org https://www.gstatic.com https://apis.google.com https://*.firebaseio.com https://*.googleapis.com",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://telegram.org https://www.gstatic.com https://apis.google.com https://*.firebaseio.com https://*.googleapis.com https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",

@@ -483,9 +483,26 @@ export function updateQuotaFromHeaders(headers: Headers): void {
   }
 }
 
+/**
+ * App-level sign-in state for account-only endpoints. `null` means auth has not resolved yet,
+ * so calls still go out (a returning user's first request must not be dropped).
+ */
+let accountSignedIn: boolean | null = null;
+
+export function setAccountSignedIn(value: boolean | null): void {
+  accountSignedIn = value;
+}
+
+/** False only when auth has resolved and nobody is signed in. */
+export function accountCallsAllowed(): boolean {
+  return accountSignedIn !== false;
+}
+
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
   const base = apiBase();
   if (!base) return null;
+  // The Worker answers 401 to guests; skip the request instead of logging a failure.
+  if (!accountCallsAllowed()) return null;
   try {
     const r = await workerFetchWithAuthRetry(`${base}/api/auth/quota`);
     if (!r.ok) return null;

@@ -88,7 +88,7 @@ function statusLabel(status: string): string {
     case 'not_measured':
       return 'Not measured';
     default:
-      return 'Idle';
+      return 'Ready';
   }
 }
 
@@ -171,6 +171,12 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
             </button>
           )}
         </div>
+
+        {demo.phase === 'empty' && (
+          <p className="text-[13px] text-[var(--color-ink-2)]">
+            Enter a domain to see a labeled sample result for each engine.
+          </p>
+        )}
 
         {ui.showPresets && (
           <p className="text-[12px] text-[var(--color-ink-2)]">

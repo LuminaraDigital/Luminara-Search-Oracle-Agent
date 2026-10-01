@@ -35,10 +35,11 @@ import { lazyWithReload } from './utils/lazyWithReload';
 import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
-import { apiBase, streamOracleChat } from './services/apiClient';
+import { apiBase, setAccountSignedIn, streamOracleChat } from './services/apiClient';
 import type { AuditHandoff } from './services/activation/auditHandoff';
 import { MarketingChromeContext, type MarketingChrome } from './components/marketing/marketingChrome';
 import { normalizeHandoffUrl } from './services/activation/auditHandoff';
+import { viewAfterSignIn } from './services/activation/postSignInView';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
@@ -372,6 +373,11 @@ const App: React.FC = () => {
 
   const appAuth = useAppAuth();
 
+  // Account-only calls (quota, workspace sync) are skipped for confirmed guests.
+  useEffect(() => {
+    setAccountSignedIn(appAuth.loading ? null : appAuth.authenticated);
+  }, [appAuth.loading, appAuth.authenticated]);
+
   // Hold ref_* until Telegram or Firebase auth exists, then claim once.
   useEffect(() => {
     const referralCode = parseReferralStartParam(getStartParam());
@@ -386,7 +392,7 @@ const App: React.FC = () => {
     if (loginWallMode) {
       setLoginWallMode(null);
       // Signing in from the Probe or from inside Instant Audit returns to the audit, not Home.
-      setView(auditHandoff?.url || view === AppView.INSTANT_AUDIT ? AppView.INSTANT_AUDIT : AppView.DASHBOARD);
+      setView(viewAfterSignIn(auditHandoff?.url, view));
     }
     let cancelled = false;
     void (async () => {

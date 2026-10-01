@@ -2,7 +2,13 @@
  * Syncs product memory (and optional BYOK keys) to the Worker/D1 workspace for the
  * signed-in account so logging back in restores DNA, audits, VFS, chat, and keys.
  */
-import { apiBase, fetchWorkspace, putWorkspaceRemote, type WorkspacePayload } from '../apiClient';
+import {
+  accountCallsAllowed,
+  apiBase,
+  fetchWorkspace,
+  putWorkspaceRemote,
+  type WorkspacePayload,
+} from '../apiClient';
 import {
   encryptKeyBag,
   decryptKeyBag,
@@ -225,6 +231,8 @@ export function scheduleWorkspacePush(delayMs = 2500): void {
 
 export async function flushWorkspacePush(force = false): Promise<void> {
   if (!apiBase() || typeof window === 'undefined') return;
+  // Guests have no account workspace; local state stays local until they sign in.
+  if (!accountCallsAllowed()) return;
   const meta = readMeta();
   const payload = await collectPayload(meta.accountId);
   const updatedAt = Date.now();
