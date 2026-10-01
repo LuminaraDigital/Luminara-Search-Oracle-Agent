@@ -38,7 +38,7 @@ import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, TON_PRICING } from './tonPayment';
 import { resolveChainNetwork } from './chainNetwork';
-import { probeXdcRpc } from './chain/xdcRpc';
+import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
@@ -268,7 +268,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const chainNetwork = resolveChainNetwork(env);
     let xdcRpcOk: boolean | null = null;
     if (chainNetwork && String(env.CHAIN_XDC_RPC_URL || '').trim()) {
-      const probe = await probeXdcRpc(env);
+      // 3 s timeout + 60 s KV cache: a slow or dead RPC must not hang the health check.
+      const probe = await probeXdcRpcCached(env);
       xdcRpcOk = probe.ok;
     }
     return withCors(json({
