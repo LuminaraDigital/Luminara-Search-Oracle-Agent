@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ICONS } from '../../constants';
 import type { BoardFinding } from '../../services/audit/findingBoardService';
 import { patchFindingStatus } from '../../services/audit/findingBoardService';
 import { sampleAiSaidFixtures } from '../../services/audit/sampleAiSaidFixtures';
 import type { ShipCommitment } from '../../services/audit/shipCommitmentService';
+import { upsertWeeklyDecision } from '../../services/privacy/privacyClient';
+import { honestyChipLabel, normalizeMeasurementStatus } from '../../services/wdl/liveHonesty';
 
 interface WeeklyDecisionCardProps {
   domain: string;
@@ -15,6 +17,7 @@ interface WeeklyDecisionCardProps {
 
 /**
  * One weekly decision: action, Why (Sample AI-said or finding), verify hint.
+ * When signed in, commits also persist to D1 via /api/weekly-decisions.
  */
 export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
   domain,
@@ -24,11 +27,36 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
   onFindingUpdated,
 }) => {
   const [busy, setBusy] = useState(false);
+  const [persistNote, setPersistNote] = useState<string | null>(null);
   const aiSaid = useMemo(() => sampleAiSaidFixtures(domain), [domain]);
   const verifyBy = useMemo(() => {
     const base = commitment?.committedAt || Date.now();
     return new Date(base + 14 * 24 * 60 * 60 * 1000).toLocaleDateString();
   }, [commitment?.committedAt]);
+
+  useEffect(() => {
+    if (!commitment || !domain) return;
+    let cancelled = false;
+    void (async () => {
+      const statuses = aiSaid.map((r) => normalizeMeasurementStatus(r.measurementStatus));
+      const hasMeasured = statuses.some((s) => s === 'measured');
+      const row = await upsertWeeklyDecision({
+        domain,
+        title: commitment.label,
+        whyText: primary?.description || '',
+        findingId: primary?.id,
+        commitment,
+        dataFreshness: hasMeasured ? 'mixed' : 'sample',
+        evidence: aiSaid.slice(0, 5),
+      });
+      if (!cancelled) {
+        setPersistNote(row ? 'Saved to account' : 'Session only (sign in to sync)');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [commitment?.actionId, commitment?.committedAt, domain, primary?.id, primary?.description, aiSaid]);
 
   const markInProgress = async () => {
     if (!primary || busy) return;
@@ -51,6 +79,11 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
         <span className="text-[10px] font-black uppercase tracking-[0.35em] text-gold-light">
           This week
         </span>
+        {persistNote && (
+          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500 ml-auto">
+            {persistNote}
+          </span>
+        )}
       </div>
       <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2">
         {commitment?.label || primary?.title || 'Pick one ship move'}
@@ -96,32 +129,35 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
           Why (Sample AI said)
         </h3>
         <ul className="space-y-3">
-          {aiSaid.map((row) => (
-            <li
-              key={row.id}
-              className="rounded-xl border border-white/10 px-4 py-3 text-xs text-gray-300 leading-relaxed"
-            >
-              <div className="flex flex-wrap gap-2 mb-1">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-amber-300/90">
-                  {row.label}
-                </span>
-                <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">
-                  {row.engine}
-                </span>
-                <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">
-                  {row.measurementStatus}
-                </span>
-                <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">
-                  {row.presence}
-                </span>
-              </div>
-              <p className="text-gray-400 mb-1">
-                <span className="text-gray-500">Prompt:</span> {row.prompt}
-              </p>
-              <p className="text-gray-300 mb-1">{row.excerpt}</p>
-              <p className="text-[11px] text-gray-500">{row.note}</p>
-            </li>
-          ))}
+          {aiSaid.map((row) => {
+            const status = normalizeMeasurementStatus(row.measurementStatus);
+            return (
+              <li
+                key={row.id}
+                className="rounded-xl border border-white/10 px-4 py-3 text-xs text-gray-300 leading-relaxed"
+              >
+                <div className="flex flex-wrap gap-2 mb-1">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-amber-300/90">
+                    {row.label}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">
+                    {row.engine}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">
+                    {honestyChipLabel(status)}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">
+                    {row.presence}
+                  </span>
+                </div>
+                <p className="text-gray-400 mb-1">
+                  <span className="text-gray-500">Prompt:</span> {row.prompt}
+                </p>
+                <p className="text-gray-300 mb-1">{row.excerpt}</p>
+                <p className="text-[11px] text-gray-500">{row.note}</p>
+              </li>
+            );
+          })}
         </ul>
       </div>
 
@@ -130,7 +166,9 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
           <ICONS.Radar className="w-3.5 h-3.5 text-gold/80" />
           Verify by {verifyBy}
         </span>
-        <span>{findings.length} finding{findings.length === 1 ? '' : 's'} on board</span>
+        <span>
+          {findings.length} finding{findings.length === 1 ? '' : 's'} on board
+        </span>
       </div>
     </section>
   );

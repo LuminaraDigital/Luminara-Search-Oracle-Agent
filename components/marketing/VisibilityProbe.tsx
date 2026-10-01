@@ -1,6 +1,8 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5
+ * Probe as tool surface: form + engine rows. No glow plate, no constellation bloom.
+ */
 import React, { useEffect, useRef, useState } from 'react';
-import { VisibilityConstellation } from './VisibilityConstellation';
-import { DEMO_PRESETS, DemoEngineId, DemoFocus } from './demo/demoFixtures';
+import { DEMO_PRESETS, DemoEngineId, DemoFocus, DemoPhase } from './demo/demoFixtures';
 import { useDemoPlayback } from './demo/useDemoPlayback';
 import type { AuditHandoff } from '../../services/activation/auditHandoff';
 import type { ReportFocus } from '../../types';
@@ -8,13 +10,72 @@ import type { ReportFocus } from '../../types';
 interface VisibilityProbeProps {
   isAuthenticated?: boolean;
   onOpenAudit: (handoff?: AuditHandoff) => void;
-  onSignIn: () => void;
+  /** Carries the typed domain so sign-in can return to Instant Audit with it. */
+  onSignIn: (handoff?: AuditHandoff) => void;
   onSeePricing: () => void;
-  /** Notify stage when sample results light the field. */
-  onResultsLitChange?: (lit: boolean) => void;
 }
 
 const FOCI: DemoFocus[] = ['SEO', 'AEO', 'GEO'];
+
+/** Pure phase rules for progressive disclosure (unit-tested). */
+export function probeUiForPhase(phase: DemoPhase): {
+  showPresets: boolean;
+  showFocusTune: boolean;
+  showEngineRows: boolean;
+  showReveal: boolean;
+  primaryAction: 'run' | 'open_audit' | 'none';
+} {
+  switch (phase) {
+    case 'empty':
+      return {
+        showPresets: false,
+        showFocusTune: false,
+        showEngineRows: true,
+        showReveal: false,
+        primaryAction: 'run',
+      };
+    case 'typing':
+      return {
+        showPresets: true,
+        showFocusTune: true,
+        showEngineRows: true,
+        showReveal: false,
+        primaryAction: 'run',
+      };
+    case 'analyzing':
+      return {
+        showPresets: false,
+        showFocusTune: false,
+        showEngineRows: true,
+        showReveal: false,
+        primaryAction: 'none',
+      };
+    case 'results_sample':
+      return {
+        showPresets: false,
+        showFocusTune: false,
+        showEngineRows: true,
+        showReveal: true,
+        primaryAction: 'open_audit',
+      };
+    case 'error':
+      return {
+        showPresets: true,
+        showFocusTune: false,
+        showEngineRows: true,
+        showReveal: false,
+        primaryAction: 'run',
+      };
+    default:
+      return {
+        showPresets: false,
+        showFocusTune: false,
+        showEngineRows: true,
+        showReveal: false,
+        primaryAction: 'run',
+      };
+  }
+}
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -31,204 +92,198 @@ function statusLabel(status: string): string {
   }
 }
 
-/**
- * Interactive Instant Audit workbench. Constellation-first immersion;
- * click field nodes to focus engine rows. Sample path only.
- */
 export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
   isAuthenticated,
   onOpenAudit,
   onSignIn,
   onSeePricing,
-  onResultsLitChange,
 }) => {
   const demo = useDemoPlayback();
   const [selected, setSelected] = useState<DemoEngineId | null>(null);
-  const rowRefs = useRef<Partial<Record<DemoEngineId, HTMLLIElement | null>>>({});
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const ui = probeUiForPhase(demo.phase);
   const host =
     demo.fixture?.domain ||
-    (demo.url.trim() ? demo.url.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') : 'your site');
+    (demo.url.trim() ? demo.url.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') : '');
 
   useEffect(() => {
-    onResultsLitChange?.(demo.phase === 'results_sample' || demo.phase === 'analyzing');
-  }, [demo.phase, onResultsLitChange]);
+    const focusInput = () => {
+      inputRef.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener('luminara:focus-probe', focusInput);
+    return () => window.removeEventListener('luminara:focus-probe', focusInput);
+  }, []);
 
-  useEffect(() => {
-    if (!selected) return;
-    rowRefs.current[selected]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [selected]);
+  const currentHandoff = (): AuditHandoff => ({
+    url: demo.fixture?.domain || demo.url.trim() || host || '',
+    focus: (demo.focus || 'AEO') as ReportFocus,
+    sampleSource: true,
+  });
 
-  const selectEngine = (id: DemoEngineId) => {
-    setSelected((prev) => (prev === id ? null : id));
-  };
+  const openLiveAudit = () => onOpenAudit(currentHandoff());
 
-  const openLiveAudit = () => {
-    const focus = (demo.focus || 'AEO') as ReportFocus;
-    const url =
-      demo.fixture?.domain ||
-      demo.url.trim() ||
-      host ||
-      '';
-    onOpenAudit({
-      url,
-      focus,
-      sampleSource: true,
-    });
-  };
+  const runLabel = demo.phase === 'analyzing' ? 'Running…' : 'Run sample scout';
 
   return (
-    <div className="relative border border-[var(--color-rule)] rounded-2xl p-3 sm:p-5 bg-[var(--color-paper-2)]/88 backdrop-blur-[3px] shadow-[0_28px_90px_-36px_rgba(0,0,0,0.9)] min-w-0 ring-1 ring-[var(--color-accent)]/15">
-      <div className="flex items-center justify-between gap-3 mb-3 min-w-0">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-[var(--color-ink)] truncate">Visibility Probe</p>
-          <p className="text-[11px] text-[var(--color-ink-2)] mt-0.5">
-            Instant Audit · click an engine on the field
-          </p>
-        </div>
-        <span className="shrink-0 text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded-md border border-[var(--color-rule)] text-[var(--gold-light)]">
-          {demo.phase === 'results_sample' ? 'Sample UI' : 'Sample until you run'}
-        </span>
+    <div className="relative min-w-0 border border-[var(--color-rule)] bg-[var(--color-paper)]">
+      <div className="flex items-baseline justify-between gap-3 px-4 sm:px-5 pt-4 pb-3 border-b border-[var(--color-rule)]">
+        <p className="text-[12px] font-medium text-[var(--color-ink)]">Visibility Probe</p>
+        <p className="text-[11px] font-mono text-[var(--color-ink-2)] shrink-0">Sample</p>
       </div>
 
-      <VisibilityConstellation
-        engines={demo.engines}
-        domainLabel={host}
-        className="mb-4"
-        size="hero"
-        plateVariant={demo.phase === 'results_sample' ? 'sample' : 'idle'}
-        selectedEngineId={selected}
-        onSelectEngine={selectEngine}
-      />
-
-      <label htmlFor="visibility-probe-url" className="block text-[11px] text-[var(--color-ink-2)] mb-1.5">
-        Domain
-      </label>
-      <div className="flex flex-col sm:flex-row gap-2 mb-3">
-        <input
-          id="visibility-probe-url"
-          type="url"
-          inputMode="url"
-          autoComplete="url"
-          placeholder="yourbrand.com"
-          value={demo.url}
-          onChange={(e) => demo.setUrl(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') demo.runSample();
-          }}
-          className="flex-1 min-w-0 min-h-11 rounded-xl bg-black/50 border border-white/10 px-3.5 text-sm text-white placeholder:text-gray-600 focus:border-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
-        />
-        <button type="button" className="mkt-cta-primary w-full sm:w-auto whitespace-nowrap" onClick={demo.runSample}>
-          {demo.phase === 'analyzing' ? 'Running…' : 'Run quick scout'}
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2 mb-3">
-        {FOCI.map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => demo.setFocus(f)}
-            className={`min-h-9 px-3 rounded-lg text-[11px] font-medium border transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none ${
-              demo.focus === f
-                ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--gold-light)]'
-                : 'border-white/10 text-[var(--color-ink-2)] hover:border-white/25'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-        {DEMO_PRESETS.map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => demo.setUrl(p)}
-            className="min-h-9 px-2.5 rounded-lg text-[10px] font-mono text-gray-500 border border-transparent hover:border-white/10 hover:text-gray-300 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none"
-          >
-            {p}
-          </button>
-        ))}
-      </div>
-
-      {demo.error && (
-        <p className="text-sm text-red-300 mb-3" role="alert">
-          {demo.error}
-        </p>
-      )}
-
-      {demo.phase === 'analyzing' && demo.stageLabel && (
-        <p className="text-[12px] text-[var(--color-ink-2)] mb-3 font-mono" aria-live="polite">
-          {demo.stageLabel}
-        </p>
-      )}
-
-      <ul className="space-y-2 mb-4">
-        {demo.engines.map((row) => {
-          const active = selected === row.id;
-          return (
-            <li
-              key={row.id}
-              ref={(el) => {
-                rowRefs.current[row.id] = el;
-              }}
+      <div className="px-4 sm:px-5 pt-4 pb-5 space-y-4">
+        <label htmlFor="visibility-probe-url" className="sr-only">
+          Domain
+        </label>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            ref={inputRef}
+            id="visibility-probe-url"
+            type="url"
+            inputMode="url"
+            autoComplete="url"
+            placeholder="yourbrand.com"
+            value={demo.url}
+            onChange={(e) => demo.setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && demo.phase !== 'analyzing') demo.runSample();
+            }}
+            disabled={demo.phase === 'analyzing'}
+            className="flex-1 min-w-0 min-h-11 border border-[var(--color-rule)] bg-[var(--color-paper)] px-3.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-2)] focus:border-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] disabled:opacity-60"
+          />
+          {ui.primaryAction === 'run' && (
+            <button
+              type="button"
+              className="mkt-cta-primary w-full sm:w-auto whitespace-nowrap !min-h-11"
+              onClick={demo.runSample}
+              disabled={demo.phase === 'analyzing'}
             >
+              {runLabel}
+            </button>
+          )}
+          {ui.primaryAction === 'open_audit' && (
+            <button
+              type="button"
+              className="mkt-cta-primary w-full sm:w-auto whitespace-nowrap !min-h-11"
+              onClick={openLiveAudit}
+            >
+              Open Instant Audit
+            </button>
+          )}
+        </div>
+
+        {ui.showPresets && (
+          <p className="text-[12px] text-[var(--color-ink-2)]">
+            Try{' '}
+            {DEMO_PRESETS.map((p, i) => (
+              <React.Fragment key={p}>
+                {i > 0 && <span className="text-[var(--color-ink-2)]/40"> · </span>}
+                <button
+                  type="button"
+                  className="text-[var(--color-ink)] underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none"
+                  onClick={() => demo.setUrl(p)}
+                >
+                  {p}
+                </button>
+              </React.Fragment>
+            ))}
+          </p>
+        )}
+
+        {ui.showFocusTune && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1" role="group" aria-label="Scout focus">
+            {FOCI.map((f) => (
               <button
+                key={f}
                 type="button"
-                onClick={() => selectEngine(row.id)}
-                className={`w-full text-left flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 min-w-0 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none ${
-                  active
-                    ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/12'
-                    : 'border-white/[0.06] bg-black/35 hover:border-white/20'
+                onClick={() => demo.setFocus(f)}
+                className={`text-[12px] min-h-8 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none ${
+                  demo.focus === f
+                    ? 'text-[var(--color-ink)]'
+                    : 'text-[var(--color-ink-2)] hover:text-[var(--color-ink)]'
                 }`}
               >
-                <div className="min-w-0">
-                  <p className="text-[12px] text-[var(--color-ink)] truncate">{row.label}</p>
-                  <p className="text-[11px] text-[var(--color-ink-2)] mt-0.5 leading-snug">{row.note}</p>
-                </div>
-                <span className="shrink-0 text-[10px] font-mono uppercase tracking-wider text-gray-500">
-                  {statusLabel(row.status)}
-                </span>
+                {f}
               </button>
-            </li>
-          );
-        })}
-      </ul>
-
-      {demo.fixture && (
-        <div className="rounded-xl border border-[var(--color-rule)] bg-black/40 p-3.5 mb-4 space-y-2">
-          <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--gold-light)]">
-            Sample · illustrative · not live data
-          </p>
-          <p className="text-sm text-[var(--color-ink)] leading-relaxed">{demo.fixture.verdict}</p>
-          <p className="text-sm text-[var(--color-ink-2)]">
-            <span className="text-[var(--color-ink)] font-medium">Ship action: </span>
-            {demo.fixture.shipAction}
-          </p>
-        </div>
-      )}
-
-      <div className="flex flex-col sm:flex-row flex-wrap gap-2">
-        <button type="button" className="mkt-cta-primary w-full sm:w-auto" onClick={openLiveAudit}>
-          Open Instant Audit
-        </button>
-        {!isAuthenticated && (
-          <button type="button" className="mkt-cta-secondary w-full sm:w-auto" onClick={onSignIn}>
-            Sign in to save
-          </button>
+            ))}
+          </div>
         )}
-        <button type="button" className="mkt-cta-secondary w-full sm:w-auto" onClick={onSeePricing}>
-          See pricing
-        </button>
-        {(demo.phase === 'results_sample' || demo.phase === 'error') && (
-          <button type="button" className="mkt-cta-tertiary self-center px-2 py-2" onClick={demo.reset}>
-            Reset sample
+
+        {demo.error && (
+          <p className="text-sm text-red-300" role="alert">
+            {demo.error}
+          </p>
+        )}
+
+        {demo.phase === 'analyzing' && demo.stageLabel && (
+          <p className="text-[12px] font-mono text-[var(--color-ink-2)]" aria-live="polite">
+            {demo.stageLabel}
+          </p>
+        )}
+
+        {ui.showEngineRows && (
+          <ul
+            className="border-t border-[var(--color-rule)] divide-y divide-[var(--color-rule)] -mx-4 sm:-mx-5"
+            aria-live={demo.phase === 'analyzing' ? 'polite' : undefined}
+          >
+            {demo.engines.map((row) => {
+              const active = selected === row.id;
+              return (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelected((prev) => (prev === row.id ? null : row.id))}
+                    className={`w-full text-left flex items-baseline justify-between gap-4 px-4 sm:px-5 py-3 min-h-11 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none ${
+                      active
+                        ? 'text-[var(--color-ink)]'
+                        : 'text-[var(--color-ink-2)] hover:text-[var(--color-ink)]'
+                    }`}
+                  >
+                    <span className="text-sm min-w-0 truncate">{row.label}</span>
+                    <span className="shrink-0 text-[11px] font-mono tracking-wide">
+                      {statusLabel(row.status)}
+                    </span>
+                  </button>
+                  {active && (
+                    <p className="px-4 sm:px-5 pb-3 text-[12px] text-[var(--color-ink-2)] leading-relaxed">
+                      {row.note}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {ui.showReveal && demo.fixture && (
+          <div className="pt-1 space-y-3" aria-live="polite">
+            <p className="text-sm text-[var(--color-ink)] leading-relaxed">{demo.fixture.verdict}</p>
+            <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
+              <span className="text-[var(--color-ink)] font-medium">Next: </span>
+              {demo.fixture.shipAction}
+            </p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px]">
+              {!isAuthenticated && (
+                <button type="button" className="mkt-cta-tertiary" onClick={() => onSignIn(currentHandoff())}>
+                  Sign in
+                </button>
+              )}
+              <button type="button" className="mkt-cta-tertiary" onClick={onSeePricing}>
+                Pricing
+              </button>
+              <button type="button" className="mkt-cta-tertiary" onClick={demo.reset}>
+                Reset
+              </button>
+            </div>
+          </div>
+        )}
+
+        {demo.phase === 'error' && (
+          <button type="button" className="mkt-cta-tertiary" onClick={demo.reset}>
+            Reset
           </button>
         )}
       </div>
-
-      <p className="mt-3 text-[11px] text-[var(--color-ink-2)] leading-relaxed">
-        This stage is a labeled sample. Open Instant Audit to run a live guest scout with your own
-        API keys in Settings. Hosted AI, save, share, and MCP need an account.
-      </p>
     </div>
   );
 };

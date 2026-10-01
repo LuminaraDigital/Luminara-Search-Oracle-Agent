@@ -31,6 +31,7 @@ import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
 import { apiBase, streamOracleChat } from './services/apiClient';
 import type { AuditHandoff } from './services/activation/auditHandoff';
+import { MarketingChromeContext, type MarketingChrome } from './components/marketing/marketingChrome';
 import { normalizeHandoffUrl } from './services/activation/auditHandoff';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
@@ -43,6 +44,8 @@ const InfrastructurePage = lazyWithReload(() => import('./components/Infrastruct
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
 const WhyLuminaraPage = lazyWithReload(() => import('./components/WhyLuminaraPage'));
 const PricingPage = lazyWithReload(() => import('./components/PricingPage'));
+const MethodologyPage = lazyWithReload(() => import('./components/MethodologyPage'));
+const SampleReportPage = lazyWithReload(() => import('./components/SampleReportPage'));
 const InstantAuditView = lazyWithReload(() => import('./components/audit/InstantAuditView').then(m => ({ default: m.InstantAuditView })));
 const BusinessDNAView = lazyWithReload(() => import('./components/suite/BusinessDNAView').then(m => ({ default: m.BusinessDNAView })));
 const BrandMemoryView = lazyWithReload(() => import('./components/suite/BrandMemoryView').then(m => ({ default: m.BrandMemoryView })));
@@ -75,6 +78,8 @@ const MARKETING_VIEWS = new Set<AppView>([
   AppView.INTELLIGENCE,
   AppView.WHY_US,
   AppView.PRICING,
+  AppView.METHODOLOGY,
+  AppView.SAMPLE_REPORT,
 ]);
 
 interface SendOptions {
@@ -212,6 +217,20 @@ const App: React.FC = () => {
     setView(next);
   }, [setView]);
 
+  /** Marketing primary funnel: public Instant Audit (no Oracle login wall). */
+  const enterInstantAudit = useCallback((handoff?: AuditHandoff | null) => {
+    if (handoff?.url) {
+      setAuditHandoff({
+        url: normalizeHandoffUrl(handoff.url) || handoff.url,
+        focus: handoff.focus,
+        sampleSource: handoff.sampleSource !== false,
+      });
+    } else {
+      setAuditHandoff(null);
+    }
+    enterApp(AppView.INSTANT_AUDIT);
+  }, [enterApp]);
+
   /**
    * Leave the product shell: sign out Firebase.
    * Web returns to marketing; Telegram/desktop stay in the native product shell (auth gate).
@@ -321,7 +340,8 @@ const App: React.FC = () => {
     if (!appAuth.authenticated || appAuth.loading) return;
     if (loginWallMode) {
       setLoginWallMode(null);
-      setView(AppView.DASHBOARD);
+      // Signing in from the Probe or from inside Instant Audit returns to the audit, not Home.
+      setView(auditHandoff?.url || view === AppView.INSTANT_AUDIT ? AppView.INSTANT_AUDIT : AppView.DASHBOARD);
     }
     let cancelled = false;
     void (async () => {
@@ -373,6 +393,71 @@ const App: React.FC = () => {
   const [currentTheme, setCurrentTheme] = useState(themingService.getTheme());
   const [activeRemindersCount, setActiveRemindersCount] = useState(reminderService.getActiveReminders().length);
   const [defaultAgentName, setDefaultAgentName] = useState(agentMatrixService.getDefaultAgent().name);
+
+  /** Open the sign-in modal, keeping a Probe domain so the visitor lands back on their audit. */
+  const openLoginWall = (mode: 'signin' | 'signup', handoff?: AuditHandoff) => {
+    if (handoff?.url) {
+      setAuditHandoff({
+        url: normalizeHandoffUrl(handoff.url) || handoff.url,
+        focus: handoff.focus,
+        sampleSource: handoff.sampleSource !== false,
+      });
+    } else if (view !== AppView.INSTANT_AUDIT) {
+      // A plain Sign in from a marketing page must not replay an older Probe domain.
+      setAuditHandoff(null);
+    }
+    setLoginWallMode(mode);
+  };
+
+  const loginWallModal = loginWallMode ? (
+    <AuthRequiredScreen
+      auth={appAuth}
+      initialMode={loginWallMode}
+      isModal
+      onClose={() => setLoginWallMode(null)}
+    />
+  ) : null;
+
+  /** One nav for every marketing page (same links, same CTAs, current page marked). */
+  const marketingChrome: MarketingChrome = {
+    links: [
+      { label: 'Why', onClick: () => setView(AppView.WHY_US), current: view === AppView.WHY_US },
+      { label: 'How it works', onClick: () => setView(AppView.INFRASTRUCTURE), current: view === AppView.INFRASTRUCTURE },
+      { label: 'AI', onClick: () => setView(AppView.INTELLIGENCE), current: view === AppView.INTELLIGENCE },
+      { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
+    ],
+    primaryCta: { label: 'Open Instant Audit', onClick: () => enterInstantAudit() },
+    secondaryCta: appAuth.authenticated
+      ? { label: 'Dashboard', onClick: () => enterApp(AppView.DASHBOARD) }
+      : { label: 'Sign in', onClick: () => openLoginWall('signin') },
+    onHome: () => setView(AppView.LANDING),
+    userLabel: appAuth.authenticated ? appAuth.label || null : null,
+  };
+
+  /** Shared chrome for marketing early returns (paywall + auth must mount here). */
+  const marketingOverlays = (
+    <>
+      {loginWallModal}
+      <Suspense fallback={null}>
+        <PaywallModal onOpenSettings={() => setIsKeyModalOpen(true)} />
+        {isKeyModalOpen && (
+          <ApiKeyModal
+            isOpen={isKeyModalOpen}
+            onClose={() => setIsKeyModalOpen(false)}
+            onKeySaved={() => {}}
+          />
+        )}
+        {isOmnibarOpen && (
+          <OmnibarModal
+            isOpen={isOmnibarOpen}
+            onClose={() => setIsOmnibarOpen(false)}
+            onNavigate={(v) => (MARKETING_VIEWS.has(v) ? setView(v) : enterApp(v))}
+          />
+        )}
+      </Suspense>
+      <NativeFailoverPopup />
+    </>
+  );
 
   // Persistent Strategic Business DNA
   const [dna, setDna] = useState<BusinessDNA | null>(() => {
@@ -825,132 +910,110 @@ const App: React.FC = () => {
   // Landing Page view (marketing site only; Telegram and desktop open straight into the tools)
   if (view === AppView.LANDING && !skipMarketing) {
     return (
-      <>
+      <MarketingChromeContext.Provider value={marketingChrome}>
         {introOverlay}
-        <LandingPage 
-          onEnter={() => {
-            if (!appAuth.authenticated) {
-              setLoginWallMode('signin');
-            } else {
-              enterApp(AppView.ORACLE_AGENT);
-            }
-          }} 
-          onNavigateAudit={(handoff) => {
-            // Slice A: guests open Instant Audit without signup; hosted spend soft-gates later.
-            if (handoff?.url) {
-              setAuditHandoff({
-                url: normalizeHandoffUrl(handoff.url) || handoff.url,
-                focus: handoff.focus,
-                sampleSource: handoff.sampleSource !== false,
-              });
-            } else {
-              setAuditHandoff(null);
-            }
-            enterApp(AppView.INSTANT_AUDIT);
-          }}
-          onNavigateSuite={() => {
-            if (!appAuth.authenticated) {
-              setLoginWallMode('signin');
-            } else {
-              enterApp(AppView.DASHBOARD);
-            }
-          }}
-          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)} 
-          onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)} 
-          onNavigateWhy={() => setView(AppView.WHY_US)}
+        <LandingPage
+          onNavigateAudit={(handoff) => enterInstantAudit(handoff)}
+          onNavigateSuite={() => enterApp(AppView.DASHBOARD)}
+          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
           onNavigatePricing={() => setView(AppView.PRICING)}
+          onNavigateMethodology={() => setView(AppView.METHODOLOGY)}
+          onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
           isAuthenticated={appAuth.authenticated}
-          userLabel={appAuth.label || null}
-          onSignInClick={() => setLoginWallMode('signin')}
-          onSignUpClick={() => setLoginWallMode('signup')}
+          onSignInClick={(handoff) => openLoginWall('signin', handoff)}
+          onSignUpClick={() => openLoginWall('signup')}
         />
-        {loginWallMode && (
-          <AuthRequiredScreen
-            auth={appAuth}
-            initialMode={loginWallMode}
-            isModal
-            onClose={() => setLoginWallMode(null)}
-          />
-        )}
-        <Suspense fallback={null}>
-          {isKeyModalOpen && (
-            <ApiKeyModal 
-              isOpen={isKeyModalOpen} 
-              onClose={() => setIsKeyModalOpen(false)} 
-              onKeySaved={() => {}} 
-            />
-          )}
-          {isOmnibarOpen && (
-            <OmnibarModal
-              isOpen={isOmnibarOpen}
-              onClose={() => setIsOmnibarOpen(false)}
-              onNavigate={(v) => (MARKETING_VIEWS.has(v) ? setView(v) : enterApp(v))}
-            />
-          )}
-        </Suspense>
-        <NativeFailoverPopup />
-      </>
+        {marketingOverlays}
+      </MarketingChromeContext.Provider>
     );
   }
 
   // Institutional Pages
   if (view === AppView.INFRASTRUCTURE) {
     return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
       <Suspense fallback={<ViewLoader label="Loading infrastructure" />}>
         {introOverlay}
-        <InfrastructurePage 
-          onBack={() => setView(AppView.LANDING)} 
-          onTerminal={() => enterApp(AppView.ORACLE_AGENT)} 
-          onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)} 
-          onNavigateWhy={() => setView(AppView.WHY_US)}
-          onNavigatePricing={() => setView(AppView.PRICING)}
+        <InfrastructurePage
+          onTerminal={() => enterInstantAudit()}
+          onNavigateMethodology={() => setView(AppView.METHODOLOGY)}
         />
+        {marketingOverlays}
       </Suspense>
+      </MarketingChromeContext.Provider>
     );
   }
 
   if (view === AppView.INTELLIGENCE) {
     return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
       <Suspense fallback={<ViewLoader label="Loading intelligence" />}>
         {introOverlay}
-        <IntelligencePage 
-          onBack={() => setView(AppView.LANDING)} 
-          onTerminal={() => enterApp(AppView.ORACLE_AGENT)} 
-          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)} 
-          onNavigateWhy={() => setView(AppView.WHY_US)}
-          onNavigatePricing={() => setView(AppView.PRICING)}
+        <IntelligencePage
+          onTerminal={() => enterInstantAudit()}
+          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
         />
+        {marketingOverlays}
       </Suspense>
+      </MarketingChromeContext.Provider>
     );
   }
 
   if (view === AppView.WHY_US) {
     return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
       <Suspense fallback={<ViewLoader label="Loading" />}>
         {introOverlay}
-        <WhyLuminaraPage 
-          onBack={() => setView(AppView.LANDING)} 
-          onTerminal={() => enterApp(AppView.ORACLE_AGENT)} 
-          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
-          onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)}
+        <WhyLuminaraPage
+          onTerminal={() => enterInstantAudit()}
           onNavigatePricing={() => setView(AppView.PRICING)}
         />
+        {marketingOverlays}
       </Suspense>
+      </MarketingChromeContext.Provider>
     );
   }
 
   if (view === AppView.PRICING) {
     return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
       <Suspense fallback={<ViewLoader label="Loading pricing" />}>
         {introOverlay}
-        <PricingPage 
-          onBack={() => setView(AppView.LANDING)} 
-          onTerminal={() => enterApp(AppView.ORACLE_AGENT)} 
-          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
-          onNavigateIntelligence={() => setView(AppView.INTELLIGENCE)}
-          onNavigateWhy={() => setView(AppView.WHY_US)}
-        />
+        <PricingPage onTerminal={() => enterInstantAudit()} />
+        {marketingOverlays}
       </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (view === AppView.METHODOLOGY) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading methodology" />}>
+        {introOverlay}
+        <MethodologyPage
+          onTerminal={() => enterInstantAudit()}
+          onNavigateSample={() => setView(AppView.SAMPLE_REPORT)}
+        />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (view === AppView.SAMPLE_REPORT) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading sample report" />}>
+        {introOverlay}
+        <SampleReportPage
+          onOpenAudit={(handoff) => enterInstantAudit(handoff)}
+          onNavigatePricing={() => setView(AppView.PRICING)}
+          onNavigateMethodology={() => setView(AppView.METHODOLOGY)}
+        />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
     );
   }
 
@@ -958,6 +1021,7 @@ const App: React.FC = () => {
   return (
     <>
     {introOverlay}
+    {loginWallModal}
     <div
       className="flex flex-col bg-black text-ink overflow-x-clip overflow-y-hidden relative selection:bg-gold selection:text-black font-sans"
       style={{
@@ -972,17 +1036,17 @@ const App: React.FC = () => {
     >
       <PremiumAtmosphere intensity="subtle" />
       {/* Universal Top Header - Responsive, guaranteed no overflow */}
-      <header className="flex items-center justify-between gap-2 px-2.5 sm:px-6 py-2 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-black/85 backdrop-blur-xl w-full max-w-full min-w-0">
+      <header className="flex items-center justify-between gap-2 px-2.5 sm:px-6 py-2 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
         {/* Left: Brand Identity */}
         <button
           type="button"
           onClick={() => {
-            if (inTelegram) setView(AppView.DASHBOARD);
-            else void logoutToLanding();
+            if (!skipMarketing) setView(AppView.LANDING);
+            else setView(appAuth.authenticated ? AppView.DASHBOARD : AppView.INSTANT_AUDIT);
           }}
-          className="flex items-center gap-2 sm:gap-3 shrink-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-gold rounded-xl p-1 -m-1 transition-all"
-          title={inTelegram ? 'Dashboard' : 'Log out and return home'}
-          aria-label={inTelegram ? 'Luminara Dashboard' : 'Log out and return home'}
+          className="flex items-center gap-2 sm:gap-3 shrink-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-gold rounded p-1 -m-1 transition-all"
+          title={skipMarketing ? 'Home' : 'Back to luminarasuite.com'}
+          aria-label={skipMarketing ? 'Luminara home' : 'Back to the Luminara Suite website'}
         >
           <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0">
             <ICONS.LuminaraLogo 
@@ -1005,7 +1069,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.ORACLE_AGENT)}
             aria-pressed={view === AppView.ORACLE_AGENT}
-            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.ORACLE_AGENT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1017,11 +1081,11 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.INSTANT_AUDIT)}
             aria-pressed={view === AppView.INSTANT_AUDIT}
-            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
-            Audit
+            Instant Audit
           </Button>
 
           <Button
@@ -1029,7 +1093,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.BRAND_MEMORY)}
             aria-pressed={view === AppView.BRAND_MEMORY}
-            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.BRAND_MEMORY ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1041,7 +1105,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.NOTEBOOK)}
             aria-pressed={view === AppView.NOTEBOOK}
-            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.NOTEBOOK ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
             title="Luminara Studio - Grounded Research Dossiers & Audio Overviews"
@@ -1058,7 +1122,7 @@ const App: React.FC = () => {
               aria-haspopup="menu"
               aria-expanded={showSuiteMenu}
               aria-pressed={[AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
-              className={`px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+              className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
                 [AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)
                   ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
                   : ''
@@ -1069,125 +1133,160 @@ const App: React.FC = () => {
             </Button>
 
             {showSuiteMenu && (
-              <div 
-                className="absolute top-full right-0 sm:left-0 sm:right-auto mt-2 w-[min(18rem,calc(100vw-1.5rem))] max-h-[min(70dvh,28rem)] overflow-y-auto glass-morphism border border-gold/30 rounded-2xl p-2 shadow-2xl z-50 bg-black/95 animate-in fade-in zoom-in-95 duration-200"
-                onMouseLeave={() => setShowSuiteMenu(false)}
-              >
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.DASHBOARD); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-black/70 animate-in fade-in duration-150"
+                  onClick={() => setShowSuiteMenu(false)}
+                  aria-hidden="true"
+                />
+                <div 
+                  className={`z-50 overflow-y-auto border border-[var(--color-rule)] rounded-lg p-2.5 shadow-2xl bg-[var(--color-paper-2)] animate-in fade-in zoom-in-95 duration-200 ${
+                    inTelegram
+                      ? 'fixed bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-3 right-3 max-h-[72dvh] mx-auto max-w-sm'
+                      : 'max-sm:fixed max-sm:bottom-4 max-sm:left-3 max-sm:right-3 max-sm:max-h-[72dvh] max-sm:mx-auto max-sm:max-w-sm sm:absolute sm:top-full sm:right-0 sm:left-0 sm:right-auto sm:mt-2 sm:w-[min(19rem,calc(100vw-1.5rem))] sm:max-h-[min(70dvh,28rem)]'
+                  }`}
+                  onMouseLeave={() => {
+                    if (!inTelegram && typeof window !== 'undefined' && window.innerWidth >= 640) {
+                      setShowSuiteMenu(false);
+                    }
+                  }}
                 >
-                  <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
-                  <span>Home</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.BRAND_MEMORY); setShowSuiteMenu(false); }}
-                  className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
-                  <span>Memory</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
-                  <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
-                    <span className="font-bold truncate">Intelligence Studio</span>
-                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold shrink-0">STUDIO</span>
+                  <div className="sm:hidden flex items-center justify-between px-3 py-1.5 border-b border-white/10 mb-1.5">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-gold-light font-bold">Luminara Suite</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowSuiteMenu(false)}
+                      className="text-gray-400 hover:text-white p-1 text-xs"
+                      aria-label="Close menu"
+                    >
+                      ✕
+                    </button>
                   </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
-                  <span>My business profile</span>
-                </button>
-                {advancedUi && (<>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.HARNESS); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.Terminal className="w-3.5 h-3.5 text-gold-light" />
-                  <div className="flex items-center justify-between flex-1">
-                    <span className="font-bold">Developer harness</span>
-                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-warning-500/20 text-warning-300 font-bold">LAB</span>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.ORACLE_MIND); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.Brain className="w-3.5 h-3.5 text-gold-light" />
-                  <span>OracleMind SLM Studio <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.TIMESFM_FORECAST); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.TimeSeries className="w-3.5 h-3.5 text-gold-light" />
-                  <span>TimesFM Forecaster <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.STRESS_TEST); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.Stress className="w-3.5 h-3.5 text-gold-light" />
-                  <span>Poke holes in my plan</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.DATA_ANALYST); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.Analyst className="w-3.5 h-3.5 text-gold-light" />
-                  <span>Analyse my data</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.ORGANIZER); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
-                  <span>Turn notes into a plan</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.RESEARCH); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.Research className="w-3.5 h-3.5 text-gold-light" />
-                  <span>Research the market</span>
-                </button>
-                </>)}
-                <button
-                  type="button"
-                  onClick={() => { setView(AppView.VISION); setShowSuiteMenu(false); }}
-                  className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />
-                  <span>How Luminara works</span>
-                </button>
-                {!inTelegram && (
                   <button
                     type="button"
-                    onClick={() => { setShowSuiteMenu(false); void logoutToLanding(); }}
-                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-400 hover:text-gold hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    onClick={() => { setView(AppView.DASHBOARD); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
-                    <ICONS.Close className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Log out</span>
+                    <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Home</span>
                   </button>
-                )}
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.BRAND_MEMORY); setShowSuiteMenu(false); }}
+                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Memory</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
+                    <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
+                      <span className="font-bold truncate">Intelligence Studio</span>
+                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold shrink-0">STUDIO</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
+                    <span>My business profile</span>
+                  </button>
+                  {advancedUi && (<>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.HARNESS); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Terminal className="w-3.5 h-3.5 text-gold-light" />
+                    <div className="flex items-center justify-between flex-1">
+                      <span className="font-bold">Developer harness</span>
+                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-warning-500/20 text-warning-300 font-bold">LAB</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.ORACLE_MIND); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Brain className="w-3.5 h-3.5 text-gold-light" />
+                    <span>OracleMind SLM Studio <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.TIMESFM_FORECAST); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.TimeSeries className="w-3.5 h-3.5 text-gold-light" />
+                    <span>TimesFM Forecaster <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.STRESS_TEST); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Stress className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Poke holes in my plan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.DATA_ANALYST); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Analyst className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Analyse my data</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.ORGANIZER); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Turn notes into a plan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.RESEARCH); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Research className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Research the market</span>
+                  </button>
+                  </>)}
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.VISION); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />
+                    <span>How Luminara works</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowSuiteMenu(false); setIsOmnibarOpen(true); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Search className="w-3.5 h-3.5 text-gold-light" />
+                    <span className="truncate">Jump to any tool (Omnibar)</span>
+                    <kbd className="ml-auto hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
+                  </button>
+                  {!inTelegram && appAuth.authenticated && (
+                    <button
+                      type="button"
+                      onClick={() => { setShowSuiteMenu(false); void logoutToLanding(); }}
+                      className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-400 hover:text-gold hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    >
+                      <ICONS.Close className="w-3.5 h-3.5 text-gold-light" />
+                      <span>Log out</span>
+                    </button>
+                  )}
+                </div>
+              </>
             )}
           </div>
 
@@ -1275,7 +1374,7 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsKeyModalOpen(true)}
-            className="p-2.5 min-h-10 min-w-10 rounded-xl glass-morphism border border-gold/40 text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-all shadow-[0_0_12px_rgba(191,149,63,0.18)]"
+            className="p-2.5 min-h-10 min-w-10 rounded border border-[var(--color-rule)] text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-colors"
             title="Settings (AI Keys & Config)"
             aria-label="Settings and AI keys"
           >
@@ -1283,14 +1382,14 @@ const App: React.FC = () => {
           </Button>
 
           {/* Mode Selector - Quick / Thorough */}
-          <div className="hidden sm:flex items-center bg-surface-1 rounded-xl p-0.5 border border-white/10 shrink-0" role="group" aria-label="Answer mode">
+          <div className="hidden sm:flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
             <Button
               variant="ghost"
               size="none"
               onClick={() => setMode(OracleMode.FLASH)}
               aria-pressed={mode === OracleMode.FLASH}
-              className={`px-2.5 sm:px-3 py-1 rounded-lg text-[9px] tracking-widest ${
-                mode === OracleMode.FLASH ? 'bg-gradient-to-br from-gold to-gold-dark text-black hover:text-black hover:bg-transparent shadow-md font-bold' : 'text-gray-500 hover:text-gray-300'
+              className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
+                mode === OracleMode.FLASH ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               Quick
@@ -1300,23 +1399,32 @@ const App: React.FC = () => {
               size="none"
               onClick={() => setMode(OracleMode.DEEP_THINK)}
               aria-pressed={mode === OracleMode.DEEP_THINK}
-              className={`px-2.5 sm:px-3 py-1 rounded-lg text-[9px] tracking-widest ${
-                mode === OracleMode.DEEP_THINK ? 'bg-gradient-to-br from-gold to-gold-dark text-black hover:text-black hover:bg-transparent shadow-md font-bold' : 'text-gray-500 hover:text-gray-300'
+              className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
+                mode === OracleMode.DEEP_THINK ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               Thorough
             </Button>
           </div>
 
-          {!inTelegram && (
+          {!inTelegram && appAuth.authenticated && (
             <Button
               variant="ghost"
               size="none"
               onClick={() => void logoutToLanding()}
-              className="hidden sm:inline-flex px-2.5 sm:px-3 py-1.5 min-h-10 glass-morphism border border-white/5 rounded-xl text-[9px] tracking-widest font-black text-gray-500 hover:text-gold hover:bg-transparent shrink-0 whitespace-nowrap"
+              className="hidden sm:inline-flex px-2.5 sm:px-3 py-1.5 min-h-10 border border-[var(--color-rule)] rounded text-[11px] text-[var(--color-ink-2)] hover:text-[var(--color-ink)] hover:bg-transparent shrink-0 whitespace-nowrap"
             >
               Log out
             </Button>
+          )}
+          {!inTelegram && !appAuth.authenticated && !appAuth.loading && (
+            <button
+              type="button"
+              onClick={() => openLoginWall('signin')}
+              className="mkt-cta-primary !min-h-10 !py-2 !px-4 shrink-0 whitespace-nowrap"
+            >
+              Sign in
+            </button>
           )}
         </div>
       </header>

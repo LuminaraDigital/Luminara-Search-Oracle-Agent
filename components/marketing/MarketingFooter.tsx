@@ -6,19 +6,21 @@ interface MarketingFooterProps {
 }
 
 const LINKS = [
-  { label: 'Privacy', href: '/privacy' },
-  { label: 'Terms', href: '/terms' },
+  { label: 'Pricing', href: '/pricing' },
+  { label: 'Methodology', href: '/methodology' },
+  { label: 'Sample report', href: '/sample-report' },
   { label: 'MCP', href: '/docs/mcp.html' },
   { label: 'Windows app', href: '/desktop' },
-  { label: 'Studio', href: 'https://luminaradigital.io' },
+  { label: 'Privacy', href: '/privacy' },
+  { label: 'Terms', href: '/terms' },
 ] as const;
 
 /** Ft5 Statement footer for marketing pages. */
 export const MarketingFooter: React.FC<MarketingFooterProps> = ({
-  statement = 'Grow with clarity where customers ask.',
+  statement = 'Know where AI recommends you. Fix what matters first.',
 }) => (
   <footer
-    className="relative z-10 py-14 sm:py-16 px-4 sm:px-6 md:px-20 border-t border-white/[0.05]"
+    className="relative z-10 py-14 sm:py-16 px-4 sm:px-6 md:px-20 border-t border-[var(--color-rule)]"
     style={{ paddingBottom: 'max(3.5rem, env(safe-area-inset-bottom, 0px))' }}
   >
     <div className="max-w-5xl mx-auto flex flex-col items-center gap-8 text-center">
@@ -36,15 +38,13 @@ export const MarketingFooter: React.FC<MarketingFooterProps> = ({
           <a
             key={link.label}
             href={link.href}
-            target={link.href.startsWith('http') ? '_blank' : undefined}
-            rel={link.href.startsWith('http') ? 'noopener noreferrer' : undefined}
             className="text-sm text-[var(--color-ink-2)] hover:text-[var(--gold-light)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded py-1"
           >
             {link.label}
           </a>
         ))}
       </nav>
-      <p className="text-[11px] text-gray-500">
+      <p className="text-[12px] text-[var(--color-ink-2)]">
         &copy; {new Date().getFullYear()} Luminara Suite. Produced by{' '}
         <a
           href="https://luminaradigital.io"

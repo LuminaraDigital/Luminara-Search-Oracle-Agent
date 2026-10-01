@@ -1,10 +1,19 @@
 import React from 'react';
-import { PremiumAtmosphere } from '../ui/PremiumAtmosphere';
+import { MarketingCinematicStage } from './MarketingCinematicStage';
 
-type Intensity = 'full' | 'subtle';
+type Intensity = 'hero' | 'page' | 'full' | 'subtle';
 
-/** Marketing atmosphere. Landing uses full; siblings use subtle. */
+/**
+ * Marketing atmosphere entry. Maps legacy full/subtle to cinematic hero/page.
+ * No glass. No gold aurora blobs.
+ */
 export const MarketingAtmosphere: React.FC<{ intensity?: Intensity; className?: string }> = ({
-  intensity = 'full',
+  intensity = 'page',
   className = '',
-}) => <PremiumAtmosphere intensity={intensity} className={className} />;
+}) => {
+  const mapped =
+    intensity === 'full' || intensity === 'hero'
+      ? 'hero'
+      : 'page';
+  return <MarketingCinematicStage intensity={mapped} className={className} />;
+};

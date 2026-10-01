@@ -1,181 +1,366 @@
-import React from 'react';
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5
+ * Claim-led hero + Probe workbench, facts band, alternating split sections.
+ * design-system: design.md · Night Foundry · no glass · no invented metrics
+ */
+import React, { useCallback } from 'react';
 import { MarketingNav } from './MarketingNav';
 import { MarketingAtmosphere } from './marketing/MarketingAtmosphere';
 import { MarketingStage } from './marketing/MarketingStage';
 import { MarketingFooter } from './marketing/MarketingFooter';
-import { VisibilityConstellation } from './marketing/VisibilityConstellation';
+import { MarketingFaq } from './marketing/MarketingFaq';
+import { MarketingSellPoints } from './marketing/MarketingSellPoints';
+import { VisibilityFieldMap } from './marketing/VisibilityFieldMap';
+import { useMarketingChrome } from './marketing/marketingChrome';
 import { SAMPLE_FIXTURE } from './marketing/demo/demoFixtures';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 
 interface LandingPageProps {
-  onEnter: () => void;
-  onNavigateAudit?: (handoff?: AuditHandoff) => void;
-  onNavigateSuite?: () => void;
+  onNavigateAudit: (handoff?: AuditHandoff) => void;
+  onNavigateSuite: () => void;
   onNavigateInfrastructure: () => void;
-  onNavigateIntelligence: () => void;
-  onNavigateWhy: () => void;
   onNavigatePricing: () => void;
+  onNavigateMethodology: () => void;
+  onNavigateSampleReport: () => void;
   isAuthenticated?: boolean;
-  userLabel?: string | null;
-  onSignInClick?: () => void;
-  onSignUpClick?: () => void;
+  onSignInClick: (handoff?: AuditHandoff) => void;
+  onSignUpClick: () => void;
 }
 
-const LandingPage: React.FC<LandingPageProps> = ({
-  onEnter,
-  onNavigateAudit,
-  onNavigateSuite: _onNavigateSuite,
-  onNavigateInfrastructure,
-  onNavigateIntelligence: _onNavigateIntelligence,
-  onNavigateWhy,
-  onNavigatePricing,
-  isAuthenticated,
-  userLabel,
-  onSignInClick,
-  onSignUpClick: _onSignUpClick,
-}) => {
-  const openAudit = (handoff?: AuditHandoff) => {
-    if (onNavigateAudit) onNavigateAudit(handoff);
-    else onEnter();
-  };
-  const signIn = () => {
-    (onSignInClick || onEnter)();
-  };
+function statusCopy(status: string): string {
+  switch (status) {
+    case 'measured':
+      return 'Measured';
+    case 'estimated':
+      return 'Estimated';
+    case 'not_measured':
+      return 'Not measured';
+    default:
+      return status;
+  }
+}
 
-  // S1 nav: Pricing · Why · How (short). Instant Audit stays a CTA, not a nav clutter.
-  const navLinks = [
-    { label: 'Pricing', onClick: onNavigatePricing },
-    { label: 'Why', onClick: onNavigateWhy },
-    { label: 'How', onClick: onNavigateInfrastructure },
-  ];
+/** Product facts, not performance metrics. */
+const FACTS = [
+  {
+    figure: '4',
+    label: 'Answer surfaces in one scout',
+    body: 'Google, AI Overviews, ChatGPT, and Perplexity.',
+  },
+  {
+    figure: '3',
+    label: 'Evidence labels',
+    body: 'Measured, Estimated, or Not measured. Nothing invented.',
+  },
+  {
+    figure: '1',
+    label: 'Next action per report',
+    body: 'A plain-English fix you can ship this week.',
+  },
+] as const;
+
+const HOW_STEPS = [
+  {
+    title: 'Enter a domain',
+    body: 'Run a labeled Sample scout. No card required.',
+  },
+  {
+    title: 'Read engine status',
+    body: 'Each engine is marked Measured, Estimated, or Not measured.',
+  },
+  {
+    title: 'Ship one fix',
+    body: 'Take the Weekly Decision Card: a verdict and one next action. Open Instant Audit for Live results.',
+  },
+] as const;
+
+const EVIDENCE_LABELS = [
+  { term: 'Measured', body: 'Live evidence from a run you are entitled to.' },
+  { term: 'Estimated', body: 'Directional only. Useful for priority, not a KPI.' },
+  { term: 'Not measured', body: 'Gaps stay labeled. We do not invent metrics.' },
+] as const;
+
+const H2 =
+  'font-display text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.08] [overflow-wrap:anywhere]';
+
+const LandingPage: React.FC<LandingPageProps> = ({
+  onNavigateAudit,
+  onNavigateSuite,
+  onNavigateInfrastructure,
+  onNavigatePricing,
+  onNavigateMethodology,
+  onNavigateSampleReport,
+  isAuthenticated,
+  onSignInClick,
+  onSignUpClick,
+}) => {
+  const chrome = useMarketingChrome();
+
+  const scrollToProbe = useCallback(() => {
+    document.getElementById('visibility-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event('luminara:focus-probe'));
+    }, 350);
+  }, []);
 
   return (
     <div className="min-h-[100dvh] bg-[var(--color-paper)] text-[var(--color-ink)] selection:bg-gold selection:text-black font-sans antialiased relative overflow-x-clip">
-      <MarketingAtmosphere />
+      <MarketingAtmosphere intensity="hero" />
       <MarketingNav
         brandLabel="Luminara Suite"
         onBrandClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        links={navLinks}
-        secondaryCta={
-          !isAuthenticated ? { label: 'Sign in', onClick: signIn } : undefined
-        }
-        primaryCta={{
-          label: isAuthenticated ? 'Open Instant Audit' : 'Run sample scout',
-          onClick: isAuthenticated ? onEnter : () => openAudit(),
-        }}
+        links={chrome.links}
+        secondaryCta={chrome.secondaryCta}
+        primaryCta={chrome.primaryCta}
         trailing={
-          isAuthenticated && userLabel ? (
-            <span className="hidden lg:inline-block text-[10px] text-[var(--gold)]/80 font-mono max-w-[140px] truncate">
-              {userLabel}
+          chrome.userLabel ? (
+            <span className="hidden lg:inline-block text-[11px] text-[var(--color-ink-2)] font-mono max-w-[140px] truncate">
+              {chrome.userLabel}
             </span>
           ) : null
         }
       />
 
-      <section className="relative pt-24 sm:pt-28 pb-16 sm:pb-20 px-4 sm:px-6 flex flex-col justify-center z-10 overflow-x-clip">
-        <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
-          <div className="lg:col-span-5 text-center lg:text-left space-y-6 min-w-0">
-            <p className="font-display text-[clamp(2.5rem,10vw,4.5rem)] text-[var(--color-ink)] tracking-tight leading-[0.95] min-w-0 [overflow-wrap:anywhere]">
-              Luminara
-            </p>
-            <h1 className="text-[clamp(1.5rem,5.5vw,2.75rem)] font-light tracking-tight leading-[1.15] text-[var(--color-ink-2)] min-w-0 [overflow-wrap:anywhere]">
-              Replace tool sprawl. Adopt AI{' '}
-              <span className="text-[var(--gold-light)] font-medium">without rebuilding.</span>
+      {/* Hero: the claim is the headline; the Probe is the product. */}
+      <section className="relative z-10 min-h-[min(100dvh,54rem)] flex flex-col justify-center pt-28 sm:pt-32 pb-16 sm:pb-20 px-4 sm:px-6 md:px-10 overflow-x-clip">
+        <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-14 items-center">
+          <div className="lg:col-span-7 min-w-0">
+            <p className="mkt-eyebrow mb-5">Luminara Suite</p>
+            <h1 className="font-display text-[clamp(2.75rem,6.4vw,4.9rem)] text-[var(--color-ink)] tracking-tight leading-[1.02] mb-6 [overflow-wrap:anywhere]">
+              AI is deciding which businesses get discovered.
             </h1>
-            <p className="max-w-xl mx-auto lg:mx-0 text-sm sm:text-base text-[var(--color-ink-2)] font-light leading-relaxed">
-              Cut stack sprawl and ship on what you already run. Instant Audit and Visibility Probe
-              prove answer-engine presence with honest Sample labels; Live follows Instant Audit rules.
+            <p className="max-w-xl text-lg sm:text-xl text-[var(--color-ink-2)] leading-relaxed mb-8">
+              See where you appear across Google, AI Overviews, ChatGPT, and Perplexity. Leave with one
+              prioritised fix, without rebuilding your stack.
             </p>
-            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center lg:justify-start gap-3 pt-1 w-full">
-              <button type="button" onClick={() => openAudit()} className="mkt-cta-primary w-full sm:w-auto">
-                {isAuthenticated ? 'Open Instant Audit' : 'Run sample scout'}
-              </button>
-              <button type="button" onClick={onNavigatePricing} className="mkt-cta-secondary w-full sm:w-auto">
-                See pricing
-              </button>
+            <div className="flex flex-col sm:flex-row flex-wrap gap-3 mb-5">
+              {isAuthenticated ? (
+                <>
+                  <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-primary">
+                    Open Instant Audit
+                  </button>
+                  <button type="button" onClick={onNavigateSuite} className="mkt-cta-secondary">
+                    Open dashboard
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={scrollToProbe} className="mkt-cta-primary">
+                    Run sample scout
+                  </button>
+                  <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-secondary">
+                    Open Instant Audit
+                  </button>
+                </>
+              )}
             </div>
-            <p className="text-[11px] text-[var(--color-ink-2)]">
-              Produced by{' '}
-              <a
-                href="https://luminaradigital.io"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mkt-cta-tertiary"
-              >
-                Luminara Digital
-              </a>
+            <p className="max-w-xl text-[13px] text-[var(--color-ink-2)] leading-relaxed">
+              Sample is labeled. Live results follow Instant Audit rules: sign in, or bring your own AI keys.
+              {!isAuthenticated && (
+                <>
+                  {' '}
+                  <button type="button" onClick={onSignUpClick} className="mkt-cta-tertiary">
+                    Create a free account
+                  </button>
+                </>
+              )}
             </p>
           </div>
 
-          <div className="lg:col-span-7 relative min-w-0">
+          <div id="visibility-workbench" className="lg:col-span-5 relative min-w-0 scroll-mt-28">
             <MarketingStage
               isAuthenticated={isAuthenticated}
-              onOpenAudit={openAudit}
-              onSignIn={signIn}
+              onOpenAudit={onNavigateAudit}
+              onSignIn={onSignInClick}
               onSeePricing={onNavigatePricing}
             />
           </div>
         </div>
       </section>
 
-      <section className="relative py-16 sm:py-24 px-4 sm:px-6 md:px-20 z-10 border-t border-white/[0.05]">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-14 items-center">
-          <div className="min-w-0 order-2 lg:order-1">
-            <p className="text-[11px] font-mono uppercase tracking-wider text-[var(--gold-light)] mb-3">
-              Visibility field
+      {/* Facts band: counts of what the product does, not performance claims. */}
+      <section className="mkt-section mkt-section-alt !py-14 sm:!py-16" aria-label="What one scout covers">
+        <ul className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-10 sm:gap-12 list-none">
+          {FACTS.map((fact) => (
+            <li key={fact.label} className="min-w-0">
+              <p className="font-display text-[clamp(3.5rem,7vw,5rem)] leading-none text-[var(--color-ink)]">
+                {fact.figure}
+              </p>
+              <p className="text-lg text-[var(--color-ink)] font-medium mt-3 mb-1">{fact.label}</p>
+              <p className="text-[15px] text-[var(--color-ink-2)] leading-relaxed">{fact.body}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Category: cost-displacement, visibility as the proof. */}
+      <section className="mkt-section">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 mb-16 sm:mb-20">
+            <div className="lg:col-span-7 min-w-0">
+              <p className="mkt-eyebrow mb-4">Why Luminara</p>
+              <h2 className={H2}>Cut tool sprawl. Adopt AI without rebuilding.</h2>
+            </div>
+            <p className="lg:col-span-5 mkt-body lg:pt-10">
+              Most teams pay for a rank tracker, an audit tool, a retainer, and a chat assistant that never
+              talk to each other. Luminara Suite runs the audit, labels the evidence, and hands you the next
+              action in one place, on the stack you already run.
             </p>
-            <h2 className="font-display text-[clamp(1.75rem,5vw,2.75rem)] text-[var(--color-ink)] tracking-tight leading-tight mb-4 [overflow-wrap:anywhere]">
-              One map of where answers happen.
-            </h2>
-            <p className="text-sm sm:text-base text-[var(--color-ink-2)] font-light leading-relaxed mb-6">
-              Instant Audit models your brand across Google, AI Overviews, ChatGPT, and Perplexity.
-              Sample is labeled; Live follows Instant Audit rules. Brightness means measured or
-              estimated; dim means not measured yet. No invented citation scores.
-            </p>
-            <ul className="space-y-2 text-sm text-[var(--color-ink-2)]">
-              {[
-                'Paste a domain in the Workbench Probe',
-                'Read Measured / Estimated / Not measured honestly',
-                'Ship one owner-first fix, then open Instant Audit',
-              ].map((line) => (
-                <li key={line} className="border-t border-white/[0.08] pt-2">
-                  {line}
-                </li>
-              ))}
-            </ul>
-            {onNavigateInfrastructure && (
-              <button type="button" onClick={onNavigateInfrastructure} className="mkt-cta-secondary mt-8">
-                How it works
-              </button>
-            )}
           </div>
-          <figure className="min-w-0 order-1 lg:order-2 relative overflow-hidden border border-[var(--color-rule)] bg-[var(--color-paper-2)] p-3 sm:p-4">
-            <VisibilityConstellation
-              engines={SAMPLE_FIXTURE.engines}
-              domainLabel={SAMPLE_FIXTURE.domain}
-              size="hero"
-              plateVariant="sample"
-              className="max-h-none"
-            />
-            <figcaption className="mt-2 text-[11px] font-mono text-[var(--color-ink-2)]">
-              Interactive sample field · product metaphor · not a live KPI chart
-            </figcaption>
-          </figure>
+          <MarketingSellPoints heading="" />
         </div>
       </section>
 
-      <section className="relative py-16 sm:py-24 px-4 sm:px-6 z-10 border-t border-white/[0.05] text-center">
-        <div className="max-w-2xl mx-auto space-y-6">
-          <h2 className="font-display text-[clamp(1.75rem,6vw,3rem)] text-[var(--color-ink)] tracking-tight leading-tight [overflow-wrap:anywhere]">
-            Run your first sample scout.
-          </h2>
-          <p className="text-sm sm:text-base text-[var(--color-ink-2)] font-light leading-relaxed">
-            Start labeled Sample, then open Instant Audit when you are ready for Live. Built by
-            Luminara Digital.
-          </p>
-          <button type="button" className="mkt-cta-primary" onClick={() => openAudit()}>
-            {isAuthenticated ? 'Open Instant Audit' : 'Run sample scout'}
+      {/* Map: interactive constellation, separate from the Probe (design.md). */}
+      <section id="visibility-map" className="mkt-section mkt-section-alt scroll-mt-24">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+          <div className="lg:col-span-5 min-w-0">
+            <p className="mkt-eyebrow mb-4">Visibility field</p>
+            <h2 className={`${H2} mb-5`}>One map of where answers happen.</h2>
+            <p className="mkt-body mb-8 max-w-md">
+              Google, AI Overviews, ChatGPT, and Perplexity as lit nodes on one map. Measured stays bright.
+              Gaps stay labeled. Sample data until you run Live.
+            </p>
+            <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-secondary">
+              Open Instant Audit
+            </button>
+          </div>
+          <div className="lg:col-span-7 min-w-0">
+            <VisibilityFieldMap engines={SAMPLE_FIXTURE.engines} domainLabel={SAMPLE_FIXTURE.domain} />
+          </div>
+        </div>
+      </section>
+
+      {/* Loop */}
+      <section className="mkt-section">
+        <div className="max-w-7xl mx-auto">
+          <p className="mkt-eyebrow mb-4">Weekly Decision Loop</p>
+          <h2 className={`${H2} mb-14 max-w-2xl`}>From a domain to the next action.</h2>
+          <ol className="grid grid-cols-1 sm:grid-cols-3 gap-10 list-none mb-10">
+            {HOW_STEPS.map((step, index) => (
+              <li key={step.title} className="min-w-0 border-t border-[var(--color-rule)] pt-5">
+                <p className="text-[12px] font-mono text-[var(--color-accent)] mb-3">
+                  {String(index + 1).padStart(2, '0')}
+                </p>
+                <h3 className="text-xl text-[var(--color-ink)] font-medium mb-2">{step.title}</h3>
+                <p className="mkt-body">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+          <button type="button" onClick={onNavigateInfrastructure} className="mkt-cta-tertiary">
+            How an audit runs
           </button>
+        </div>
+      </section>
+
+      {/* Sample report: visual left, copy right. */}
+      <section id="sample-report" className="mkt-section mkt-section-alt scroll-mt-24">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+          <div className="lg:col-span-6 min-w-0 order-2 lg:order-1 border border-[var(--color-rule)] bg-[var(--color-paper)] p-5 sm:p-7 space-y-5">
+            <div className="flex items-baseline justify-between gap-3 min-w-0">
+              <p className="text-base text-[var(--color-ink)] truncate">{SAMPLE_FIXTURE.domain}</p>
+              <p className="text-[12px] font-mono text-[var(--color-ink-2)] shrink-0">Sample</p>
+            </div>
+            <ul className="divide-y divide-[var(--color-rule)] border-t border-[var(--color-rule)]">
+              {SAMPLE_FIXTURE.engines.map((row) => (
+                <li key={row.id} className="flex items-baseline justify-between gap-4 py-3.5">
+                  <span className="text-base text-[var(--color-ink-2)]">{row.label}</span>
+                  <span className="text-[12px] font-mono tracking-wide text-[var(--color-ink-2)]">
+                    {statusCopy(row.status)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="space-y-2 pt-1">
+              <p className="text-base text-[var(--color-ink)] leading-relaxed">{SAMPLE_FIXTURE.verdict}</p>
+              <p className="text-base text-[var(--color-ink-2)] leading-relaxed">
+                <span className="text-[var(--color-ink)] font-medium">Next: </span>
+                {SAMPLE_FIXTURE.shipAction}
+              </p>
+            </div>
+          </div>
+          <div className="lg:col-span-6 min-w-0 order-1 lg:order-2">
+            <p className="mkt-eyebrow mb-4">The report</p>
+            <h2 className={`${H2} mb-5`}>A verdict and one fix, not a 40-page PDF.</h2>
+            <p className="mkt-body mb-8 max-w-md">
+              Engine status, a plain-English verdict, and one ship-first action. No invented composite score.
+            </p>
+            <button type="button" onClick={onNavigateSampleReport} className="mkt-cta-secondary">
+              Full sample report
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Agent-ready + evidence labels */}
+      <section className="mkt-section">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-16">
+          <div className="lg:col-span-6 min-w-0">
+            <p className="mkt-eyebrow mb-4">Agent-ready</p>
+            <h2 className={`${H2} mb-5`}>The same reports inside Cursor and Claude.</h2>
+            <p className="mkt-body mb-8 max-w-lg">
+              Growth unlocks MCP, so the agents you already use can read your projects, context, and
+              reports, and save their own. Agency adds API access for paid research.
+            </p>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+              <button type="button" onClick={onNavigatePricing} className="mkt-cta-secondary">
+                See plans
+              </button>
+              <a href="/docs/mcp.html" className="mkt-cta-tertiary">
+                MCP setup guide
+              </a>
+            </div>
+          </div>
+          <div className="lg:col-span-6 min-w-0">
+            <p className="mkt-eyebrow mb-4">Labeled evidence</p>
+            <dl className="space-y-5 mb-6">
+              {EVIDENCE_LABELS.map((item) => (
+                <div key={item.term} className="border-t border-[var(--color-rule)] pt-4">
+                  <dt className="text-lg font-medium text-[var(--color-ink)] mb-1">{item.term}</dt>
+                  <dd className="mkt-body">{item.body}</dd>
+                </div>
+              ))}
+            </dl>
+            <button type="button" onClick={onNavigateMethodology} className="mkt-cta-tertiary">
+              How we measure
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <MarketingFaq className="mkt-section-alt" />
+
+      {/* Closing CTA plus the one builder credit (dual-brand lock). */}
+      <section className="mkt-section">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-end">
+          <div className="lg:col-span-7 min-w-0">
+            <h2 className={`${H2} mb-5`}>Run a free sample scout.</h2>
+            <p className="mkt-body mb-8 max-w-lg">
+              Enter your site in the Probe. Open Instant Audit when you want Live results.
+            </p>
+            <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+              <button type="button" className="mkt-cta-primary" onClick={scrollToProbe}>
+                Run sample scout
+              </button>
+              <button type="button" className="mkt-cta-secondary" onClick={() => onNavigateAudit()}>
+                Open Instant Audit
+              </button>
+            </div>
+          </div>
+          <div className="lg:col-span-5 min-w-0 border-t border-[var(--color-rule)] pt-5">
+            <p className="text-lg text-[var(--color-ink)] font-medium mb-2">Visibility is only the beginning.</p>
+            <p className="mkt-body">
+              Built by{' '}
+              <a
+                href="https://luminaradigital.io"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--color-ink)] underline underline-offset-4"
+              >
+                Luminara Digital
+              </a>
+              . Optional implementation and stack review, so you modernise without a rip-and-replace.
+            </p>
+          </div>
         </div>
       </section>
 

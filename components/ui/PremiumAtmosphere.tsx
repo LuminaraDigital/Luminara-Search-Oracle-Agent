@@ -73,12 +73,16 @@ export const PremiumAtmosphere: React.FC<{ intensity?: Intensity; className?: st
         }}
       />
 
-      <div
-        className={`absolute -top-24 left-[12%] h-[42vh] w-[42vw] rounded-full bg-gold/10 blur-[110px] ${reduced ? '' : 'animate-premium-drift'}`}
-      />
-      <div
-        className={`absolute bottom-[-10%] right-[8%] h-[46vh] w-[40vw] rounded-full bg-gold-dark/10 blur-[130px] ${reduced ? '' : 'animate-premium-drift-slow'}`}
-      />
+      {full ? (
+        <>
+          <div
+            className={`absolute -top-24 left-[12%] h-[42vh] w-[42vw] rounded-full bg-gold/10 blur-[110px] ${reduced ? '' : 'animate-premium-drift'}`}
+          />
+          <div
+            className={`absolute bottom-[-10%] right-[8%] h-[46vh] w-[40vw] rounded-full bg-gold-dark/10 blur-[130px] ${reduced ? '' : 'animate-premium-drift-slow'}`}
+          />
+        </>
+      ) : null}
 
       <div
         className="absolute inset-0 opacity-[0.18] mix-blend-overlay"

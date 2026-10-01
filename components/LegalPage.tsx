@@ -6,7 +6,7 @@ interface Props {
   onBack: () => void;
 }
 
-const UPDATED = '10 September 2026';
+const UPDATED = '29 September 2026';
 const CONTROLLER = 'Luminara Digital Agency';
 const PRIVACY_EMAIL = 'privacy@luminarasuite.com';
 const SUPPORT_EMAIL = 'support@luminarasuite.com';
@@ -222,10 +222,12 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
                 remove stored API keys from the device.
               </p>
               <p>
-                Server-side erasure is currently handled by our operations team after email
-                verification (no self-serve delete API yet). We aim to complete verified deletion
-                requests within 30 days, except data we must keep for security, fraud, or legal
-                reasons, and except immutable public blockchain payment records.
+                Signed-in users can self-serve: POST <code className="text-gold-light">/api/privacy/export</code>{' '}
+                for a JSON download (48h token) and POST{' '}
+                <code className="text-gold-light">/api/privacy/delete</code> for soft-delete with a 24h
+                cancel window. You can still email {PRIVACY_EMAIL} for assisted requests. We aim to
+                complete verified deletion within 30 days, except data we must keep for security,
+                fraud, or legal reasons, and except immutable public blockchain payment records.
               </p>
             </section>
 

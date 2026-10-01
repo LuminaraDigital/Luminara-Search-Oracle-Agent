@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ReportDisplay } from './ReportDisplay';
 import { fetchSharedReport, type SharedReportResponse } from '../../services/share/shareReportClient';
 import { Button } from '../ui/Button';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
 
 function tokenFromLocation(): string {
   if (typeof window === 'undefined') return '';
@@ -48,6 +49,7 @@ export const SharedReportView: React.FC<{
     }
     setNeedsPassword(false);
     setPayload(res.report);
+    productTelemetry.track('share_link_opened', { hasPassword: Boolean(pw) });
     setLoading(false);
   };
 

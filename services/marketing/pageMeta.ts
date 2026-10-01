@@ -1,5 +1,7 @@
 /** Shared marketing page meta (browser + Worker). No DOM APIs. */
 
+import { buildFaqPageJsonLd } from './marketingFaqContent';
+
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
 export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/icon-512.png`;
 
@@ -29,7 +31,7 @@ const SOFTWARE_NODE = {
   operatingSystem: 'Web, Windows',
   url: MARKETING_ORIGIN,
   description:
-    'Audits how a brand shows up in Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix first.',
+    'Audits whether AI search recommends your brand across Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix first.',
   publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
   offers: {
     '@type': 'AggregateOffer',
@@ -62,25 +64,40 @@ function pageNode(path: string, name: string, description: string) {
   };
 }
 
-function graph(path: string, name: string, description: string, includeWebsite = false): Record<string, unknown> {
+function graph(
+  path: string,
+  name: string,
+  description: string,
+  includeWebsite = false,
+  extraNodes: Record<string, unknown>[] = [],
+): Record<string, unknown> {
   const nodes = includeWebsite
-    ? [ORG_NODE, WEBSITE_NODE, SOFTWARE_NODE, pageNode(path, name, description)]
-    : [ORG_NODE, SOFTWARE_NODE, pageNode(path, name, description)];
+    ? [ORG_NODE, WEBSITE_NODE, SOFTWARE_NODE, pageNode(path, name, description), ...extraNodes]
+    : [ORG_NODE, SOFTWARE_NODE, pageNode(path, name, description), ...extraNodes];
   return { '@context': 'https://schema.org', '@graph': nodes };
 }
 
 export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/': {
     path: '/',
-    title: 'Luminara Suite | AI search and AEO visibility',
+    title: 'Luminara Suite | AI visibility audit and action plan',
     description:
-      'See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a plain-English list of what to fix first.',
-    jsonLd: graph('/', 'Luminara Suite', 'AI search and AEO visibility for business owners.', true),
+      'Find out whether AI search recommends your business. Audit Google, AI Overviews, ChatGPT and Perplexity, then get a prioritised action plan. No invented scores.',
+    jsonLd: graph(
+      '/',
+      'Luminara Suite',
+      'AI visibility audits across Google, AI Overviews, ChatGPT and Perplexity with a prioritised action plan.',
+      true,
+      [buildFaqPageJsonLd()],
+    ),
     crawlerBody: `
 <section>
   <h1>Luminara Suite</h1>
-  <p>Show up where customers ask. See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a plain-English list of what to fix first.</p>
+  <p>See if AI search recommends you. Luminara audits your website across Google, AI Overviews, ChatGPT and Perplexity, then gives a prioritised action plan so you grow without rebuilding your stack.</p>
+  <p>Sample scouts are labeled Measured, Estimated or Not measured. Live Instant Audit follows account and key rules. No bare composite AI visibility scores.</p>
   <ul>
+    <li><a href="/sample-report">Sample report</a></li>
+    <li><a href="/methodology">Methodology</a></li>
     <li><a href="/how-it-works">How it works</a></li>
     <li><a href="/ai">Our AI</a></li>
     <li><a href="/why">Why Luminara</a></li>
@@ -90,6 +107,43 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     <li><a href="/terms">Terms</a></li>
   </ul>
   <p>Produced by <a href="https://luminaradigital.io">Luminara Digital</a>.</p>
+</section>`,
+  },
+  '/methodology': {
+    path: '/methodology',
+    title: 'Methodology | Luminara Suite',
+    description:
+      'How Luminara labels Measured, Estimated, and Not measured across Google, AI Overviews, ChatGPT and Perplexity. Sample versus Live explained.',
+    jsonLd: graph(
+      '/methodology',
+      'Methodology',
+      'Honest measurement labels for AI visibility audits.',
+      false,
+      [buildFaqPageJsonLd()],
+    ),
+    crawlerBody: `
+<section>
+  <h1>Methodology</h1>
+  <p>Measured means live evidence. Estimated is directional only. Not measured means missing data is labeled, never invented.</p>
+  <p>Sample scouts on the landing Workbench are labeled fixtures. Live Instant Audit follows account and key rules.</p>
+  <p><a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
+</section>`,
+  },
+  '/sample-report': {
+    path: '/sample-report',
+    title: 'Sample report | Luminara Suite',
+    description:
+      'Labeled sample Instant Audit report shape: per-engine status, verdict, and one ship action. Not live data. No invented scores.',
+    jsonLd: graph(
+      '/sample-report',
+      'Sample report',
+      'Labeled sample AI visibility audit report fixture.',
+    ),
+    crawlerBody: `
+<section>
+  <h1>Sample report</h1>
+  <p>Illustrative Sample for luminarasuite.com. Engines show Measured, Estimated, or Not measured. Verdict and ship action match Instant Audit shape.</p>
+  <p><a href="/">Run a scout</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
   '/how-it-works': {

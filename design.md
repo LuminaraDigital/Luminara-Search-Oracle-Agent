@@ -46,8 +46,18 @@ Ban on marketing: gradient wordmarks (`.gold-text`); glassmorphism panels; fake 
 
 ## Craft gates (shipping checklist)
 
-- Brand is hero-level on marketing first viewport
+- The claim is the hero headline at display size. Brand sits in the nav and one eyebrow above the claim
+- Landing hero is cinematic underlay + claim column + Probe workbench (no FieldHero glow plate, no glass)
+- Menu pages share MarketingCinematicStage + MarketingPageShell
+- One nav link set and one footer on every marketing page (MarketingChromeContext, built in App.tsx)
+- Font sizes from tokens use `text-[length:var(--token)]`. A bare `text-[var(--token)]` is parsed as a color and silently drops the size
+- Marketing body copy is `.mkt-body` (17px). No 14px light gray paragraphs
+- Section surfaces alternate paper / paper-2. Eyebrows are the only accent text
+- Honest sell points only: dual surface, evidence labels, operator loop / MCP. No invented customer counts or ROI
+- Marketing pages address operators and owners. No investor-addressed copy on customer pages
+- Marketing and app use the same names: Instant Audit, Ask, Dashboard
 - No default Inter/Roboto/Arial stacks on marketing
 - No purple-on-white / cream-terracotta / broadsheet default clusters
 - Labs and simulated metrics are labeled in UI
 - Prefer edit over inventing new visual systems
+- Ban on marketing: gradient wordmarks; glassmorphism; fake browser chrome; Blender glow underlays behind the Probe; third-party video hotlinks without owned assets

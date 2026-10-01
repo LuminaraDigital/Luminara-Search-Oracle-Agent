@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
-  <title>Luminara Suite | AI search and AEO visibility</title>
-  <meta name="description" content="See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a plain-English list of what to fix first.">
+  <title>Luminara Suite | AI visibility audit and action plan</title>
+  <meta name="description" content="Find out whether AI search recommends your business. Audit Google, AI Overviews, ChatGPT and Perplexity, then get a prioritised action plan. No invented scores.">
   <meta name="theme-color" content="#0a0a0a">
-  <meta property="og:title" content="Luminara Suite | AI search and AEO visibility">
-  <meta property="og:description" content="See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a plain-English list of what to fix first.">
+  <meta property="og:title" content="Luminara Suite | AI visibility audit and action plan">
+  <meta property="og:description" content="Find out whether AI search recommends your business. Audit Google, AI Overviews, ChatGPT and Perplexity, then get a prioritised action plan. No invented scores.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.luminarasuite.com/">
   <meta property="og:image" content="https://www.luminarasuite.com/icon-512.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Luminara Suite | AI search and AEO visibility">
-  <meta name="twitter:description" content="See how your business appears in Google, AI Overviews, ChatGPT and Perplexity. Get a plain-English list of what to fix first.">
+  <meta name="twitter:title" content="Luminara Suite | AI visibility audit and action plan">
+  <meta name="twitter:description" content="Find out whether AI search recommends your business. Audit Google, AI Overviews, ChatGPT and Perplexity, then get a prioritised action plan. No invented scores.">
   <meta name="twitter:image" content="https://www.luminarasuite.com/icon-512.png">
   <link rel="canonical" href="https://www.luminarasuite.com/">
   <script type="application/ld+json" id="luminara-static-jsonld">
@@ -35,7 +35,7 @@
         "applicationCategory": "BusinessApplication",
         "operatingSystems": "Web, Windows",
         "url": "https://www.luminarasuite.com/",
-        "description": "Audits how a brand shows up in Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix first.",
+        "description": "Audits whether AI search recommends your brand across Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix first.",
         "publisher": { "@id": "https://www.luminarasuite.com/#organization" },
         "offers": {
           "@type": "Offer",
@@ -91,12 +91,10 @@
       line-height: 1.2;
       display: inline-block;
     }
+    /* Legacy class name. design.md bans glass: this is now a solid token surface. */
     .glass-morphism {
-      background: rgba(10, 10, 10, 0.72);
-      backdrop-filter: blur(22px) saturate(1.15);
-      -webkit-backdrop-filter: blur(22px) saturate(1.15);
-      border: 1px solid rgba(191, 149, 63, 0.22);
-      box-shadow: inset 0 1px 0 rgba(252, 246, 186, 0.06);
+      background: var(--color-paper-2);
+      border: 1px solid var(--color-rule);
     }
     .glass-premium {
       background: linear-gradient(160deg, rgba(191,149,63,0.08), rgba(10,10,10,0.82) 38%, rgba(0,0,0,0.9));

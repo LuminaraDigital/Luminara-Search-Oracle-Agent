@@ -7,8 +7,11 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { initTelegram } from './services/telegram/tma';
 import { loadServerHealth } from './services/apiClient';
 import { dismissBootSplash } from './services/intro/bootSplash';
+import { initBrowserSentry } from './services/observability/sentryBrowser';
 import './tokens.css';
 import './index.css';
+
+initBrowserSentry();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

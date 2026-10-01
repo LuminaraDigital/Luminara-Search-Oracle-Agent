@@ -15,6 +15,8 @@ const VIEW_TO_SHELL: Partial<Record<AppView, string>> = {
   [AppView.INTELLIGENCE]: '/ai',
   [AppView.WHY_US]: '/why',
   [AppView.PRICING]: '/pricing',
+  [AppView.METHODOLOGY]: '/methodology',
+  [AppView.SAMPLE_REPORT]: '/sample-report',
 };
 
 function ensureMeta(attr: 'name' | 'property', key: string, content: string) {

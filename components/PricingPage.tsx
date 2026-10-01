@@ -1,50 +1,52 @@
 /**
  * Pricing page: entitlement-true tiers. Hero sells Growth (MCP + share).
- * Free is a footnote; Starter is web-audit only (no MCP / share).
- * Payment rails remain Stars / TON inside the app.
+ * Prices are the Stars / TON amounts the Worker charges (worker/telegramBot.ts,
+ * worker/tonPayment.ts). There is no USD price: card checkout does not exist yet.
  */
 import { isInTelegram } from '../services/telegram/tma';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
 import React, { useEffect } from 'react';
-import { ICONS } from '../constants';
 import { openPaywallModal } from '../services/apiClient';
-import { MarketingNav } from './MarketingNav';
-import { PremiumAtmosphere } from './ui/PremiumAtmosphere';
+import { MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 
 interface PricingPageProps {
-  onBack: () => void;
   onTerminal: () => void;
-  onNavigateInfrastructure: () => void;
-  onNavigateIntelligence: () => void;
-  onNavigateWhy: () => void;
 }
 
-const tiers = [
+type PaidTierId = 'starter' | 'growth' | 'agency';
+
+const tiers: { id: PaidTierId; stars: string; ton: string; blurb: string; highlight: boolean }[] = [
   {
-    id: 'starter' as const,
-    priceLabel: 'US$49',
+    id: 'starter',
     stars: '2,500 Stars',
-    blurb: 'Web audits for up to 2 sites. No MCP or public share links.',
+    ton: '15 TON',
+    blurb: 'Web audits for a couple of sites. No MCP or public share links.',
     highlight: false,
   },
   {
-    id: 'growth' as const,
-    priceLabel: 'Growth',
+    id: 'growth',
     stars: '7,500 Stars',
-    blurb: 'MCP tools, shareable reports, 3 seats, weekly re-audits.',
+    ton: '45 TON',
+    blurb: 'The operator plan: MCP tools, shareable reports, weekly re-audits.',
     highlight: true,
   },
   {
-    id: 'agency' as const,
-    priceLabel: 'Agency',
+    id: 'agency',
     stars: '18,000 Stars',
-    blurb: 'API access, 10 client seats, daily Sentinel, white-label PDF.',
+    ton: '120 TON',
+    blurb: 'API access for paid research, client workspaces, daily re-audits.',
     highlight: false,
   },
 ];
 
-function bulletsFor(id: 'starter' | 'growth' | 'agency'): string[] {
+/** One-off runs sold by the Worker alongside the plans. */
+const ONE_OFFS = [
+  { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit with a Proof-of-Audit attestation.' },
+  { title: 'Deep multi-agent crawl', price: '75 Stars', body: 'One deep crawl with competitor gap findings.' },
+] as const;
+
+function bulletsFor(id: PaidTierId): string[] {
   const e = PLAN_ENTITLEMENTS[id];
   const lines = [
     `${e.domainLimit} monitored domains`,
@@ -59,164 +61,122 @@ function bulletsFor(id: 'starter' | 'growth' | 'agency'): string[] {
   return lines;
 }
 
-const PricingPage: React.FC<PricingPageProps> = ({
-  onBack,
-  onTerminal,
-  onNavigateInfrastructure,
-  onNavigateIntelligence,
-  onNavigateWhy,
-}) => {
+const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
+  const inTelegram = isInTelegram();
+  const free = PLAN_ENTITLEMENTS.free;
+
   return (
-    <div className="min-h-[100dvh] bg-[#0a0a0a] text-white selection:bg-gold selection:text-black font-sans antialiased overflow-x-clip">
-      <PremiumAtmosphere intensity="subtle" />
-      <MarketingNav
-        brandLabel="Luminara Suite"
-        brandSub="Pricing"
-        onBrandClick={onBack}
-        links={[
-          { label: 'Home', onClick: onBack },
-          { label: 'Why Us', onClick: onNavigateWhy },
-          { label: 'How It Works', onClick: onNavigateInfrastructure },
-          { label: 'Our AI', onClick: onNavigateIntelligence },
-        ]}
-        primaryCta={{ label: 'Open app', onClick: onTerminal }}
-      />
+    <MarketingPageShell brandSub="Pricing" wide>
+      <section className="mb-14 sm:mb-20 max-w-3xl">
+        <p className="mkt-eyebrow mb-4">Pricing</p>
+        <h1 className="font-display text-[length:var(--text-display)] tracking-tight leading-[1.05] mb-6 [overflow-wrap:anywhere]">
+          Plans for audits, MCP, and share links
+        </h1>
+        <p className="text-lg text-[var(--color-ink-2)] leading-relaxed mb-4">
+          Free covers a Sample scout. Starter is web audits only. Growth is the operator plan: MCP for
+          Cursor and shareable reports. Agency adds API access and client workspaces.
+        </p>
+        <p className="mkt-body mb-8">
+          Every paid plan runs 30 days and is paid with Telegram Stars or TON. Card checkout is not
+          available yet.
+        </p>
+        <button type="button" onClick={onTerminal} className="mkt-cta-primary">
+          Open Instant Audit
+        </button>
+      </section>
 
-      <main className="relative z-10 pt-28 sm:pt-36 pb-20 sm:pb-32 max-w-7xl mx-auto px-4 sm:px-6">
-        <section className="mb-16 sm:mb-24 max-w-3xl">
-          <p className="text-[10px] font-medium tracking-wide text-gold mb-6">Growth plan</p>
-          <h1 className="font-display text-[clamp(2rem,7vw,4.5rem)] tracking-tight leading-[1.05] mb-8 [overflow-wrap:anywhere]">
-            MCP, share links, and weekly audits in one workspace.
-          </h1>
-          <p className="text-base sm:text-xl text-gray-400 font-light leading-relaxed mb-10">
-            Free covers a single scout. Starter is web audits only. Growth unlocks MCP for Cursor and shareable
-            reports. Pay with Telegram Stars or TON inside the app. Card checkout is coming.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <button
-              type="button"
-              onClick={onTerminal}
-              className="mkt-cta-primary w-full sm:w-auto"
+      <section className="mb-10 grid grid-cols-1 lg:grid-cols-3 gap-px bg-[var(--color-rule)] border border-[var(--color-rule)]">
+        {tiers.map((tier) => {
+          const lines = bulletsFor(tier.id);
+          const title = PLAN_ENTITLEMENTS[tier.id].title;
+          return (
+            <div
+              key={tier.id}
+              className={`p-6 sm:p-8 bg-[var(--color-paper)] flex flex-col ${
+                tier.highlight ? 'ring-1 ring-inset ring-[var(--color-accent)]' : ''
+              }`}
             >
-              Open the app
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                openPaywallModal(
-                  'Upgrade to Growth for MCP + share links, or Agency for API access. Stars or TON inside the app.',
-                )
-              }
-              className="mkt-cta-secondary w-full sm:w-auto"
-            >
-              See plans
-            </button>
-          </div>
-          <p className="mt-6 text-xs text-gray-500 font-light leading-relaxed">
-            Free: 1 domain, Instant Audit scout, no MCP and no share links. Promo license keys (when issued) remain
-            the only trial path.
-          </p>
-        </section>
-
-        <section className="mb-20 sm:mb-28 grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
-          {tiers.map((tier) => {
-            const lines = bulletsFor(tier.id);
-            return (
-              <div
-                key={tier.id}
-                className={`p-6 sm:p-8 rounded-2xl border relative flex flex-col ${
-                  tier.highlight
-                    ? 'border-gold/40 bg-gold/5'
-                    : 'border-white/10 bg-black/40'
-                }`}
-              >
-                {tier.highlight ? (
-                  <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-semibold text-[9px] tracking-wide">
-                    Recommended
-                  </div>
-                ) : null}
-                <div className="text-[10px] font-medium tracking-wide text-gray-400 mb-3">
-                  {PLAN_ENTITLEMENTS[tier.id].title}
-                </div>
-                <div className="flex items-baseline gap-2 mb-2">
-                  <span className="text-3xl sm:text-4xl font-light">{tier.priceLabel}</span>
-                  <span className="text-gray-500 text-xs uppercase tracking-widest">/ 30 days</span>
-                </div>
-                <p className="text-sm text-gray-400 font-light leading-relaxed mb-2">{tier.blurb}</p>
-                <p className="text-[11px] text-gold/80 font-mono mb-6">{tier.stars} or TON</p>
-                <ul className="space-y-3 flex-1 mb-8">
-                  {lines.map((line) => (
-                    <li key={line} className="flex gap-3 items-start text-sm text-gray-300">
-                      <span className="shrink-0 w-6 h-6 rounded-md bg-gold/10 border border-gold/20 flex items-center justify-center text-gold mt-0.5">
-                        <ICONS.Check className="w-3.5 h-3.5" />
-                      </span>
-                      <span className="font-light leading-relaxed">{line}</span>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  onClick={() =>
-                    openPaywallModal(
-                      `Choose ${PLAN_ENTITLEMENTS[tier.id].title} with Stars or TON inside the app.`,
-                    )
-                  }
-                  className={`w-full ${tier.highlight ? 'mkt-cta-primary' : 'mkt-cta-secondary'}`}
-                >
-                  Subscribe in app
-                </button>
+              <div className="flex items-baseline justify-between gap-3 mb-4">
+                <h2 className="text-xl font-medium text-[var(--color-ink)]">{title}</h2>
+                {tier.highlight && <p className="mkt-eyebrow">Recommended</p>}
               </div>
-            );
-          })}
-        </section>
-
-        <section className="mb-16 sm:mb-24 border-t border-white/5 pt-14 sm:pt-20 max-w-2xl">
-          {isInTelegram() ? (
-            <TelegramAccountPanel />
-          ) : (
-            <div className="space-y-4">
+              <p className="font-display text-4xl sm:text-5xl leading-none text-[var(--color-ink)] mb-2">
+                {tier.stars}
+              </p>
+              <p className="text-[13px] font-mono text-[var(--color-ink-2)] mb-5">or {tier.ton} / 30 days</p>
+              <p className="mkt-body mb-6">{tier.blurb}</p>
+              <ul className="space-y-2.5 flex-1 mb-8">
+                {lines.map((line) => (
+                  <li
+                    key={line}
+                    className="text-[15px] text-[var(--color-ink-2)] leading-relaxed border-t border-[var(--color-rule)] pt-2.5"
+                  >
+                    {line}
+                  </li>
+                ))}
+              </ul>
               <button
                 type="button"
-                onClick={() =>
-                  openPaywallModal(
-                    'Pay with Telegram Stars or TON inside the app. Card checkout is coming; until then subscriptions activate with Stars or TON.',
-                  )
-                }
-                className="mkt-cta-primary w-full"
+                onClick={() => openPaywallModal(`Choose ${title}. Pay with Telegram Stars or TON.`)}
+                className={`w-full ${tier.highlight ? 'mkt-cta-primary' : 'mkt-cta-secondary'}`}
               >
-                Subscribe: Stars or TON
+                {inTelegram ? `Subscribe to ${title}` : 'See payment options'}
               </button>
-              <TelegramAccountPanel compact />
             </div>
-          )}
-          <p className="text-center text-gray-500 text-[10px] tracking-wide mt-6">
-            Stars or TON inside the app. Card checkout is not available yet. Cancel anytime. Plan limits apply per account.
-          </p>
-        </section>
-      </main>
+          );
+        })}
+      </section>
 
-      <footer
-        className="py-12 px-4 sm:px-6 md:px-20 flex flex-col sm:flex-row items-center justify-between gap-6 border-t border-white/[0.06]"
-        style={{ paddingBottom: 'max(3rem, env(safe-area-inset-bottom, 0px))' }}
-      >
-        <p className="text-[10px] text-gray-500 tracking-wide">&copy; {new Date().getFullYear()} Luminara Suite</p>
-        <div className="flex flex-wrap justify-center gap-6">
-          <a href="/privacy" className="text-[10px] tracking-wide text-gray-500 hover:text-gold">
-            Privacy
-          </a>
-          <a href="/terms" className="text-[10px] tracking-wide text-gray-500 hover:text-gold">
-            Terms
-          </a>
-          <a href="/docs/mcp.html" className="text-[10px] tracking-wide text-gray-500 hover:text-gold">
-            MCP
-          </a>
+      <section className="mb-20 sm:mb-28 grid grid-cols-1 lg:grid-cols-3 gap-10">
+        <div className="min-w-0 border-t border-[var(--color-rule)] pt-5">
+          <h2 className="text-xl font-medium text-[var(--color-ink)] mb-2">{free.title}</h2>
+          <p className="mkt-body">
+            {free.domainLimit} domain, on-demand audits, Sample scouts with no card. No MCP, no public
+            share links. Guests run Live audits with their own AI keys.
+          </p>
         </div>
-      </footer>
-    </div>
+        {ONE_OFFS.map((item) => (
+          <div key={item.title} className="min-w-0 border-t border-[var(--color-rule)] pt-5">
+            <div className="flex items-baseline justify-between gap-3 mb-2">
+              <h2 className="text-xl font-medium text-[var(--color-ink)]">{item.title}</h2>
+              <p className="text-[13px] font-mono text-[var(--color-ink-2)] shrink-0">{item.price}</p>
+            </div>
+            <p className="mkt-body">{item.body} One-off, paid in Telegram.</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="border-t border-[var(--color-rule)] pt-14 sm:pt-20 max-w-2xl">
+        <h2 className="font-display text-[length:var(--text-display-s)] tracking-tight leading-[1.08] mb-4 [overflow-wrap:anywhere]">
+          How payment works
+        </h2>
+        <p className="mkt-body mb-8">
+          Stars checkout runs inside the Luminara Mini App in Telegram. On the web, the payment panel
+          opens Telegram for you, or takes a license key if you have one.
+        </p>
+        {inTelegram ? (
+          <TelegramAccountPanel />
+        ) : (
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={() => openPaywallModal('Pay with Telegram Stars or TON. Card checkout is not available yet.')}
+              className="mkt-cta-primary w-full sm:w-auto"
+            >
+              See payment options
+            </button>
+            <TelegramAccountPanel compact />
+          </div>
+        )}
+        <p className="text-[var(--color-ink-2)] text-[13px] mt-6">
+          Plans run for 30 days. Plan limits apply per account.
+        </p>
+      </section>
+    </MarketingPageShell>
   );
 };
 

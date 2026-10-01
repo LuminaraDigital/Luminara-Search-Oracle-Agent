@@ -10,6 +10,8 @@ import {
   parseApiKeyList,
   redactKey,
 } from './apiKeysTabUtils';
+import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../../services/mcp/cursorMcpSnippet';
+import { productTelemetry } from '../../../services/analytics/productTelemetry';
 
 type CreatedKey = { key: string; name: string };
 
@@ -31,7 +33,9 @@ export const ApiKeysTab: React.FC = () => {
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
   const [created, setCreated] = useState<CreatedKey | null>(null);
   const [copied, setCopied] = useState(false);
+  const [snippetCopied, setSnippetCopied] = useState(false);
   const copyTimer = useRef<number | undefined>(undefined);
+  const snippetTimer = useRef<number | undefined>(undefined);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -66,7 +70,10 @@ export const ApiKeysTab: React.FC = () => {
 
   useEffect(() => {
     void load();
-    return () => window.clearTimeout(copyTimer.current);
+    return () => {
+      window.clearTimeout(copyTimer.current);
+      window.clearTimeout(snippetTimer.current);
+    };
   }, [load]);
 
   const createKey = async () => {
@@ -90,6 +97,7 @@ export const ApiKeysTab: React.FC = () => {
       }
       // Reveal-once: full material goes into the modal, never the row list.
       setCreated({ key: data.key, name: name.trim() || 'MCP key' });
+      productTelemetry.track('mcp_key_created', { source: 'settings' });
       setName('');
       await load();
     } catch (e) {
@@ -129,9 +137,24 @@ export const ApiKeysTab: React.FC = () => {
     }
   };
 
+  const copyCursorSnippet = async () => {
+    if (!created) return;
+    try {
+      const snippet = buildCursorMcpServersJson(mcpHttpUrlFromApiBase(apiBase()), created.key);
+      await navigator.clipboard.writeText(snippet);
+      productTelemetry.track('mcp_snippet_copied', { source: 'settings' });
+      setSnippetCopied(true);
+      window.clearTimeout(snippetTimer.current);
+      snippetTimer.current = window.setTimeout(() => setSnippetCopied(false), 2000);
+    } catch {
+      setError('Copy failed. Select the text and copy it manually.');
+    }
+  };
+
   const closeReveal = () => {
     setCreated(null);
     setCopied(false);
+    setSnippetCopied(false);
   };
 
   return (
@@ -243,9 +266,12 @@ export const ApiKeysTab: React.FC = () => {
                 {created.key}
               </p>
             </div>
-            <div className="px-6 py-4 border-t border-white/5 bg-black/40 flex items-center justify-end gap-3">
+            <div className="px-6 py-4 border-t border-white/5 bg-black/40 flex flex-wrap items-center justify-end gap-3">
               <Button type="button" variant="secondary" size="sm" onClick={copyCreated}>
                 {copied ? 'Copied' : 'Copy key'}
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => void copyCursorSnippet()}>
+                {snippetCopied ? 'Copied snippet' : 'Copy Cursor snippet'}
               </Button>
               <Button type="button" variant="primary" size="sm" onClick={closeReveal}>
                 Done

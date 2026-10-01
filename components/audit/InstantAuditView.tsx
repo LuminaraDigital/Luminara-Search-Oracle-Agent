@@ -191,6 +191,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       setReport(result);
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
       productTelemetry.recordFirstValue('audit');
+      productTelemetry.track('instant_audit_completed', {
+        focus: targetFocus,
+        guest: Boolean(isGuest),
+      });
 
       try {
         const { saveAuditStrategyToProject } = await import('../../services/projects/projectClient');
@@ -202,6 +206,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         });
         if (saved) {
           productTelemetry.recordOnboardingStep('strategy_saved');
+          productTelemetry.track('strategy_saved', { projectIdPrefix: saved.projectId.slice(0, 8) });
           setStrategySaved(true);
           setPersistHint(`Strategy saved to project ${saved.projectId.slice(0, 12)}…`);
         } else {
@@ -288,6 +293,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         throw new Error(data.error || `HTTP ${r.status}`);
       }
       setMcpKey(data.key);
+      productTelemetry.track('mcp_key_created', { source: 'instant_audit' });
     } catch (e) {
       setMcpError(e instanceof Error && e.message ? e.message : 'Could not mint MCP key.');
     } finally {
@@ -304,6 +310,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     try {
       await navigator.clipboard.writeText(text);
       setMcpCopied(kind);
+      if (kind === 'snippet') {
+        productTelemetry.track('mcp_snippet_copied', { source: 'instant_audit' });
+      }
       window.setTimeout(() => setMcpCopied(null), 2000);
     } catch {
       setMcpError('Copy failed. Select the text and copy manually.');
@@ -327,7 +336,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             Prefill from Sample scout. Live measurement starts when you run; Sample labels stay until then.
           </p>
         )}
-        <h1 className="text-[clamp(1.5rem,6vw,3rem)] font-bold text-white tracking-tight mb-3 [overflow-wrap:anywhere]">
+        <h1 className="font-display font-normal text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.08] mb-3 [overflow-wrap:anywhere]">
           Will AI mention your brand?
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed px-1">

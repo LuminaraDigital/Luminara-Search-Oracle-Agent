@@ -36,6 +36,7 @@ import { InteractiveTable } from './InteractiveTable';
 import { CollapsibleSection } from './CollapsibleSection';
 import { canCreateShareLinks, createShareReport } from '../../services/share/shareReportClient';
 import { fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
 
@@ -100,6 +101,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const primaryFinding = useMemo(() => pickPrimaryFinding(boardFindings), [boardFindings]);
 
   const handleCopyShareLink = async () => {
+    productTelemetry.track('share_cta_clicked', { domain: targetDomain || null });
     await loadServerHealth().catch(() => undefined);
     await fetchQuotaStatus().catch(() => null);
     if (!canCreateShareLinks()) {
@@ -139,12 +141,14 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         setShareMessage(res.error || 'Could not create share link');
         return;
       }
+      productTelemetry.track('share_link_created', { domain: targetDomain || null });
       try {
         await navigator.clipboard.writeText(res.url);
         setShareMessage('Share link copied');
       } catch {
         setShareMessage(res.url);
       }
+      window.setTimeout(() => setShareMessage(null), 4000);
     } finally {
       setShareBusy(false);
     }
@@ -265,6 +269,38 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
 
   return (
     <div className="w-full text-gray-200 animate-in fade-in duration-500">
+      {!hideAgencyActions && (
+        <div className="mb-6 rounded-2xl border border-gold/40 p-4 sm:p-5 bg-black/80 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-gold-light mb-1">
+                Next step
+              </p>
+              <p className="text-sm text-gray-100 font-medium">
+                Share this audit with a teammate or client
+              </p>
+              <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                Growth and Agency include public share links. Free insight stays free; share is a paid unlock.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleCopyShareLink()}
+              disabled={shareBusy}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center justify-center gap-1.5 shrink-0 w-full sm:w-auto focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none disabled:opacity-50"
+            >
+              <ICONS.Share className="w-4 h-4 text-black" />
+              <span>{shareBusy ? 'Sharing...' : 'Copy share link'}</span>
+            </button>
+          </div>
+          {shareMessage && (
+            <p className="text-[10px] font-mono text-gold-light mt-3 break-all" role="status">
+              {shareMessage}
+            </p>
+          )}
+        </div>
+      )}
+
       {!reportUnlocked && !hideAgencyActions && (
         <ShipActionGate
           domain={targetDomain}
@@ -314,10 +350,20 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
             <button
               type="button"
-              onClick={() => setShowDeployModal(true)}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center gap-1.5 shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              onClick={() => void handleCopyShareLink()}
+              disabled={shareBusy}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center gap-1.5 shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none disabled:opacity-50"
             >
-              <ICONS.Zap className="w-4 h-4 text-black" />
+              <ICONS.Share className="w-4 h-4 text-black" />
+              <span>{shareBusy ? 'Sharing...' : 'Copy share link'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowDeployModal(true)}
+              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-gold/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+            >
+              <ICONS.Zap className="w-4 h-4 text-gold" />
               <span>1-Click Deploy</span>
             </button>
 
@@ -348,16 +394,6 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
             >
               <ICONS.Download className="w-4 h-4 text-info-400" />
               <span>Agency PDF</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void handleCopyShareLink()}
-              disabled={shareBusy}
-              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-gold/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none disabled:opacity-50"
-            >
-              <ICONS.Share className="w-4 h-4 text-gold" />
-              <span>{shareBusy ? 'Sharing...' : 'Copy share link'}</span>
             </button>
           </div>
           {shareMessage && (
