@@ -339,15 +339,20 @@ describe('TON transaction hash encoding (Toncenter base64 vs TonAPI hex)', () =>
     expect(kv.store.has('sub:user_kv_legacy')).toBe(false);
   });
 
+  // Non-bounceable transfer to an uninitialised wallet: aborted, compute skipped, funds kept.
+  const TONCENTER_UNINIT = { description: { aborted: true, compute_ph: { skipped: true, reason: 'no_state' } } };
+  const TONAPI_UNINIT = { success: false, aborted: true, compute_phase: { skipped: true, skip_reason: 'cskip_no_state' } };
+  const TONCENTER_BOUNCE = { type: 'ok', msg_size: { cells: '1', bits: '0' }, msg_fees: '0', fwd_fees: '0' };
+
   it.each([
-    ['Toncenter description.aborted', 'toncenter', { description: { aborted: true } }, {}],
-    ['Toncenter compute phase failure', 'toncenter', { description: { aborted: false, compute_ph: { skipped: false, success: false } } }, {}],
-    ['Toncenter action phase failure', 'toncenter', { description: { aborted: false, action: { success: false } } }, {}],
-    ['Toncenter bounced in_msg', 'toncenter', {}, { bounced: true }],
-    ['TonAPI success=false', 'tonapi', { success: false }, {}],
-    ['TonAPI aborted', 'tonapi', { aborted: true }, {}],
-    ['TonAPI bounced in_msg', 'tonapi', {}, { bounced: true }],
-  ])('credits nothing for %s', async (_label, provider, txExtra, inMsgExtra) => {
+    ['Toncenter uninit wallet, no bounce phase', 'toncenter', TONCENTER_UNINIT, {}, true],
+    ['Toncenter failed compute and action phases, no bounce phase', 'toncenter', { description: { aborted: true, compute_ph: { skipped: false, success: false }, action: { success: false }, bounce: null } }, {}, true],
+    ['Toncenter uninit wallet with a bounce phase', 'toncenter', { description: { ...TONCENTER_UNINIT.description, bounce: TONCENTER_BOUNCE } }, { bounce: true }, false],
+    ['Toncenter bounced in_msg', 'toncenter', {}, { bounced: true }, false],
+    ['TonAPI uninit wallet, no bounce phase', 'tonapi', TONAPI_UNINIT, {}, true],
+    ['TonAPI uninit wallet with a bounce phase', 'tonapi', { ...TONAPI_UNINIT, bounce_phase: 'TrPhaseBounceOk' }, { bounce: true }, false],
+    ['TonAPI bounced in_msg', 'tonapi', {}, { bounced: true }, false],
+  ])('%s: credited=%s', async (_label, provider, txExtra, inMsgExtra, credited) => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { env, kv } = makeEnv();
     const inv = await createTonInvoice(env, 'user_bounced', 'starter');
@@ -383,9 +388,9 @@ describe('TON transaction hash encoding (Toncenter base64 vs TonAPI hex)', () =>
     });
 
     const res = await verifyTonPayment(env, inv.order.orderId, { fetcher });
-    expect(res.ok).toBe(false);
-    expect(kv.store.has('sub:user_bounced')).toBe(false);
-    expect(env.DB.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(0);
+    expect(res.ok).toBe(credited);
+    expect(kv.store.has('sub:user_bounced')).toBe(credited);
+    expect(env.DB.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(credited ? 1 : 0);
   });
 
   it('still credits a healthy transfer that carries the full Toncenter status fields', async () => {

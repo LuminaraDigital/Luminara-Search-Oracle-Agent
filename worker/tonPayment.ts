@@ -259,25 +259,22 @@ function parseSeqno(tx: any): number | null {
   return null;
 }
 
-function phaseFailed(phase: any): boolean {
-  return Boolean(phase) && typeof phase === 'object' && phase.skipped !== true && phase.success === false;
+function phasePresent(phase: unknown): boolean {
+  return typeof phase === 'string' ? phase.trim() !== '' : Boolean(phase) && typeof phase === 'object';
 }
 
 /**
- * True when the provider reports the transaction as aborted or failed, or the inbound message is
- * itself a bounce. Toncenter v3 nests the flags under `description` (`aborted`, `compute_ph`,
- * `action`); TonAPI v2 puts `success`, `aborted`, `compute_phase`, `action_phase` on the transaction.
+ * True when the inbound value did not stay with the merchant: the inbound message is itself a
+ * bounce, or the transaction has a bounce phase (Toncenter v3 `description.bounce` object,
+ * TonAPI v2 `bounce_phase` string such as `TrPhaseBounceOk`).
+ * `aborted`, `success: false` and a skipped or failed compute/action phase are deliberately not
+ * grounds to reject: a non-bounceable transfer to an uninitialised wallet is aborted with the
+ * compute phase skipped, yet the credit phase keeps the funds.
  */
-function isAbortedOrBounced(tx: any): boolean {
+function inboundValueWasReturned(tx: any): boolean {
   if (tx.in_msg?.bounced === true) return true;
-  if (tx.success === false || tx.aborted === true) return true;
-  if (phaseFailed(tx.compute_phase) || phaseFailed(tx.action_phase)) return true;
-  const description = tx.description;
-  if (description && typeof description === 'object') {
-    if (description.aborted === true) return true;
-    if (phaseFailed(description.compute_ph) || phaseFailed(description.action)) return true;
-  }
-  return false;
+  if (phasePresent(tx.bounce_phase)) return true;
+  return phasePresent(tx.description?.bounce);
 }
 
 function matchInboundTransfer(
@@ -295,8 +292,8 @@ function matchInboundTransfer(
     const comment = extractTonComment(inMsg);
     const value = BigInt(String(inMsg.value || '0'));
     if (!comment.includes(order.memo) || value < minValue) continue;
-    if (isAbortedOrBounced(tx)) {
-      console.warn(`[TON] Transfer matching order ${order.orderId} was aborted or bounced; not crediting.`);
+    if (inboundValueWasReturned(tx)) {
+      console.warn(`[TON] Transfer matching order ${order.orderId} bounced (value returned to sender); not crediting.`);
       continue;
     }
     const hash =
