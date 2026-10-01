@@ -171,7 +171,9 @@ function main() {
   }
 
   const { tokens: listTokens, warnings } = readTokenFile();
-  const identityTokens = resolveIdentityTokens();
+  // On a hosted CI runner the OS user is the runner account (e.g. "runner"), not a
+  // developer identity, and it matches ordinary words. CI sets this to check list tokens only.
+  const identityTokens = process.env.FORBIDDEN_TOKENS_SKIP_IDENTITY === '1' ? [] : resolveIdentityTokens();
   const merged = mergeTokens(listTokens, identityTokens);
 
   for (const w of warnings) console.warn(`token list warning: ${w}`);

@@ -26,9 +26,15 @@ jobs:
 
       - name: Fail if forbidden product tokens leak into the tree
         run: npm run tokens:check
+        env:
+          # The runner's OS user is not a developer identity; check the operator token list only.
+          FORBIDDEN_TOKENS_SKIP_IDENTITY: '1'
 
       - name: Validate environment isolation schema
         run: npm run env:validate
+
+      - name: Validate staging environment schema
+        run: node scripts/validate-env.mjs --staging
 
       - name: Type check (Client + Worker)
         run: npm run typecheck
