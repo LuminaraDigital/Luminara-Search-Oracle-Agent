@@ -38,7 +38,7 @@ import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, TON_PRICING } from './tonPayment';
 import { resolveChainNetwork } from './chainNetwork';
-import { probeXdcRpc } from './chain/xdcRpc';
+import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
@@ -109,6 +109,7 @@ import {
 import { handleMcpOAuthRoute } from './mcpOAuth';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
+import { isCronMapped, jobsForCron } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -268,7 +269,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const chainNetwork = resolveChainNetwork(env);
     let xdcRpcOk: boolean | null = null;
     if (chainNetwork && String(env.CHAIN_XDC_RPC_URL || '').trim()) {
-      const probe = await probeXdcRpc(env);
+      // 3 s timeout + 60 s KV cache: a slow or dead RPC must not hang the health check.
+      const probe = await probeXdcRpcCached(env);
       xdcRpcOk = probe.ok;
     }
     return withCors(json({
@@ -1859,9 +1861,14 @@ export default {
     }
     return withSecurityHeaders(assetResponse);
   },
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runSentinelScan(env));
-    ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).
+    const jobs = jobsForCron(controller.cron);
+    if (!isCronMapped(controller.cron)) {
+      console.error(`[Cron] Cron "${controller.cron}" is not mapped in worker/scheduledJobs.ts; running all jobs (${jobs.join(', ')}).`);
+    }
+    if (jobs.includes('sentinel')) ctx.waitUntil(runSentinelScan(env));
+    if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
   },
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     await processAuditQueueBatch(batch as MessageBatch<{ runId: string; accountId: string; targetUrl: string; projectId?: string | null }>, env);

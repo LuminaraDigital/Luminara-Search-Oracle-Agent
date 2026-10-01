@@ -10,9 +10,11 @@ import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
   merchantAddressMatchesNetwork,
+  normalizeTonTxHash,
   resolveChainNetwork,
   resolveTonApiBases,
   tonExplorerTxUrl,
+  tonTxHashAliases,
   type ChainNetwork,
 } from './chainNetwork';
 import { recordProofAnchorBestEffort } from './proofAnchors';
@@ -257,6 +259,27 @@ function parseSeqno(tx: any): number | null {
   return null;
 }
 
+function phasePresent(phase: unknown): boolean {
+  return typeof phase === 'string' ? phase.trim() !== '' : Boolean(phase) && typeof phase === 'object';
+}
+
+/**
+ * True when the inbound value did not stay with the merchant: the inbound message is itself a
+ * bounce, or the transaction has a bounce phase (Toncenter v3 `description.bounce` object,
+ * TonAPI v2 `bounce_phase` string such as `TrPhaseBounceOk`).
+ * `aborted`, `success: false` and a skipped or failed compute/action phase are deliberately not
+ * grounds to reject: a non-bounceable transfer to an uninitialised wallet is aborted with the
+ * compute phase skipped, yet the credit phase keeps the funds.
+ * An aborted transaction whose inbound message was bounceable is also refused, so a provider
+ * that omits the bounce phase cannot fail open.
+ */
+function inboundValueWasReturned(tx: any): boolean {
+  if (tx.in_msg?.bounced === true) return true;
+  if (phasePresent(tx.bounce_phase)) return true;
+  if (phasePresent(tx.description?.bounce)) return true;
+  return (tx.description?.aborted === true || tx.aborted === true) && tx.in_msg?.bounce === true;
+}
+
 function matchInboundTransfer(
   txs: any[],
   order: TonOrder,
@@ -272,6 +295,10 @@ function matchInboundTransfer(
     const comment = extractTonComment(inMsg);
     const value = BigInt(String(inMsg.value || '0'));
     if (!comment.includes(order.memo) || value < minValue) continue;
+    if (inboundValueWasReturned(tx)) {
+      console.warn(`[TON] Transfer matching order ${order.orderId} bounced (value returned to sender); not crediting.`);
+      continue;
+    }
     const hash =
       typeof tx.hash === 'string'
         ? tx.hash
@@ -282,7 +309,8 @@ function matchInboundTransfer(
       reportHashlessMatch(order);
       continue;
     }
-    return { ok: true, txHash: hash, seqno: parseSeqno(tx), network };
+    // Toncenter returns base64, TonAPI hex: one canonical form feeds the claim, the anchor and the explorer URL.
+    return { ok: true, txHash: normalizeTonTxHash(hash), seqno: parseSeqno(tx), network };
   }
   return null;
 }
@@ -405,8 +433,9 @@ export async function verifyTonPayment(
   if (!match.ok) return match;
 
   const txGuardKey = `ton:tx:${match.txHash}`;
-  const alreadyClaimed = await kv.get(txGuardKey);
-  if (alreadyClaimed && alreadyClaimed !== orderId) {
+  // Guards written before hash normalisation are keyed by the provider's own encoding.
+  const guardOwners = await Promise.all(tonTxHashAliases(match.txHash).map((alias) => kv.get(`ton:tx:${alias}`)));
+  if (guardOwners.some((owner) => owner && owner !== orderId)) {
     return { ok: false, error: 'This on-chain transaction has already been credited to another order.' };
   }
 
@@ -452,6 +481,8 @@ export async function verifyTonPayment(
     console.error(`[TON] KV cache update failed after crediting order ${orderId}: ${err instanceof Error ? err.message : err}`);
   }
 
+  // The credit above stands whether or not the anchor row lands; a lost anchor is logged as
+  // `[Proof] anchor_write_failed` with the tx hash, order id and network by the writer itself.
   await recordProofAnchorBestEffort(env, {
     kind: 'ton_payment',
     orderId,

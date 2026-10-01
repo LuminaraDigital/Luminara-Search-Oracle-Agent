@@ -3,6 +3,7 @@
  * Claim before granting entitlement. Every helper fails closed when DB is unbound or migration 0004
  * is missing; callers must never fall back to KV-only checks for granting.
  */
+import { normalizeTonTxHash, tonTxHashAliases } from './chainNetwork';
 
 export const LEDGER_MIGRATION = 'migrations/0004_payment_atomicity.sql';
 
@@ -199,30 +200,37 @@ export async function claimTonTransaction(
     reportLedgerFault('claimTonTransaction');
     return UNAVAILABLE;
   }
-  const txHash = String(input.txHash || '').trim();
+  const txHash = normalizeTonTxHash(input.txHash);
   const orderId = String(input.orderId || '').trim();
   if (!txHash || !orderId) {
     console.error('[PaymentLedger] claimTonTransaction called without a tx hash or order id. Refusing to grant.');
     return UNAVAILABLE;
   }
 
+  // Rows credited before hashes were normalised hold the provider's encoding (Toncenter base64,
+  // TonAPI hex). The insert is skipped, in the same statement, when any encoding of this hash is
+  // already claimed, so one transaction cannot be credited again under a second spelling.
+  const aliases = tonTxHashAliases(txHash);
+  const aliasMarks = aliases.map(() => '?').join(', ');
+
   try {
     const inserted = await db.prepare(
       `INSERT INTO ton_credited_tx (tx_hash, order_id, account_id, credited_at)
-       VALUES (?, ?, ?, ?)
+       SELECT ?, ?, ?, ?
+       WHERE NOT EXISTS (SELECT 1 FROM ton_credited_tx WHERE tx_hash IN (${aliasMarks}))
        ON CONFLICT DO NOTHING`,
     )
-      .bind(txHash, orderId, input.accountId ?? null, input.now ?? Date.now())
+      .bind(txHash, orderId, input.accountId ?? null, input.now ?? Date.now(), ...aliases)
       .run();
     if (inserted.meta?.changes === 1) return { ok: true };
 
     const existing = await db.prepare(
-      `SELECT tx_hash, order_id FROM ton_credited_tx WHERE tx_hash = ? OR order_id = ?`,
+      `SELECT tx_hash, order_id FROM ton_credited_tx WHERE tx_hash IN (${aliasMarks}) OR order_id = ?`,
     )
-      .bind(txHash, orderId)
+      .bind(...aliases, orderId)
       .all<{ tx_hash: string; order_id: string }>();
     const rows = existing.results || [];
-    if (rows.some((row) => row.tx_hash === txHash && row.order_id !== orderId)) {
+    if (rows.some((row) => aliases.includes(row.tx_hash) && row.order_id !== orderId)) {
       return { ok: false, reason: 'tx_credited_to_other_order' };
     }
     if (rows.some((row) => row.order_id === orderId)) {
@@ -239,7 +247,7 @@ export async function claimTonTransaction(
 export async function releaseTonTransaction(env: LedgerEnv, txHash: string, orderId: string): Promise<void> {
   if (!env.DB) return;
   try {
-    await env.DB.prepare(`DELETE FROM ton_credited_tx WHERE tx_hash = ? AND order_id = ?`).bind(txHash, orderId).run();
+    await env.DB.prepare(`DELETE FROM ton_credited_tx WHERE tx_hash = ? AND order_id = ?`).bind(normalizeTonTxHash(txHash), orderId).run();
   } catch (err) {
     console.error(`[PaymentLedger] releaseTonTransaction failed; order stays marked credited until an operator clears it: ${errorText(err)}`);
   }

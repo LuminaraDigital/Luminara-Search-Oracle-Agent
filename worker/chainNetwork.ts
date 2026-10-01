@@ -79,6 +79,57 @@ export function merchantAddressMatchesNetwork(
   return { ok: true };
 }
 
+const HEX_TX_HASH_RE = /^(?:0x)?([0-9a-fA-F]{64})$/;
+const BASE64_TX_HASH_RE = /^[A-Za-z0-9+/_-]{43}=?$/;
+const CANONICAL_TX_HASH_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * Canonical TON transaction hash: 64 lowercase hex characters.
+ * Toncenter v3 returns the 32-byte hash base64-encoded, TonAPI v2 returns it as hex, so the same
+ * transaction must collapse to one string before it is used as an idempotency key.
+ * Values that are neither 32-byte base64 nor 64 hex are returned trimmed and otherwise unchanged.
+ */
+export function normalizeTonTxHash(hash: unknown): string {
+  const value = typeof hash === 'string' ? hash.trim() : '';
+  const hex = HEX_TX_HASH_RE.exec(value);
+  if (hex) return hex[1].toLowerCase();
+  if (!BASE64_TX_HASH_RE.test(value)) return value;
+  try {
+    const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/').replace(/=$/, ''));
+    if (binary.length !== 32) return value;
+    let out = '';
+    for (let i = 0; i < binary.length; i++) out += binary.charCodeAt(i).toString(16).padStart(2, '0');
+    return out;
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Every string form the same transaction hash may already be stored under (canonical first).
+ * Rows and KV guards written before normalisation hold the provider's own encoding.
+ */
+export function tonTxHashAliases(hash: string): string[] {
+  const canonical = normalizeTonTxHash(hash);
+  if (!CANONICAL_TX_HASH_RE.test(canonical)) return [canonical];
+  let binary = '';
+  for (let i = 0; i < canonical.length; i += 2) {
+    binary += String.fromCharCode(Number.parseInt(canonical.slice(i, i + 2), 16));
+  }
+  const base64 = btoa(binary);
+  const base64Url = base64.replace(/\+/g, '-').replace(/\//g, '_');
+  return [
+    ...new Set([
+      canonical,
+      canonical.toUpperCase(),
+      base64,
+      base64.replace(/=$/, ''),
+      base64Url,
+      base64Url.replace(/=$/, ''),
+    ]),
+  ];
+}
+
 export function tonExplorerTxUrl(network: ChainNetwork, txHash: string): string {
   const host = network === 'testnet' ? 'https://testnet.tonviewer.com' : 'https://tonviewer.com';
   const hash = encodeURIComponent(txHash);
