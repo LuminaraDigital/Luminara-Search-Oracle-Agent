@@ -1,6 +1,6 @@
 # Zoro Concepts Implementation Plan
 
-**Status:** v2.1 - three review rounds applied (section 14); awaiting owner decisions in section 12  
+**Status:** v2.2 - Phase 0 tasks P0-0 to P0-3 complete (2026-10-01, see section 15); owner decisions 1, 2, 4, 5, 6 approved; decision 3 (labellers) still open  
 **Date:** 2026-10-01  
 **Owner:** Luminara Digital  
 **Source:** ZORO whitepaper 1.0 (concepts only)  
@@ -698,3 +698,30 @@ Round 3 findings: non-atomic proof-credit spend (7.1, P4-11); squash merge break
 Closing check on v2.1 by the same reviewer: 12 of 14 fixed, 2 partial (same-run-twice handling in the credit batch; a drainer deadlock in the reconcile rule) plus one missing health field. All three applied. Verdict after those: go for Phases 0-3; go for Phase 4, with the P4-0 spike still gating P4-5.
 
 Round 3 confirmed against code: branch ahead/behind counts and the 15 conflicts; migration filenames on both refs; the `referral_rewards` schema and that the new reasons do not collide; that 4.3 is total; the 7.2 SQL against migration 0017; rule 2.3's commands and database names; that `callHosted` extraction is plausible; sections 10, 11 and 13.
+
+---
+
+## 15. Execution log
+
+### 2026-10-01: P0-0 to P0-3 complete
+
+| Task | Result |
+|---|---|
+| P0-0 | `scripts/d1-backup.mjs` exports the remote database; `artifacts/` ignored. |
+| P0-1 | Both remote databases already record all 20 migration files from both histories (two sets of 0011-0013) and hold every table. No file renamed, nothing pending. Remote backups taken (production 172 KB, 5 user rows; staging 28 KB, 0 user rows) with time-travel bookmarks. |
+| P0-2 | `origin/main` merged (commit `3026500`), 15 conflicted files resolved keeping both feature sets. Independent read-through of the merge against both parents: no lost routes or auth gates; four follow-ups applied. Privacy export/delete and smoke-check cover main's ten tables. |
+| P0-3 | PR #27 merged to `staging`; `staging` fast-forwarded to `main` at `0ee819d`. CI and the deploy workflow are green on both branches for the first time since 29 Sep. |
+
+Verified after deploy, both environments: `/api/referrals/me` and `/api/idea-scout` return 401 (were 404); `/api/findings` 401; `/api/health` ok; `npm run smoke:staging` and `npm run smoke:prod` pass. Production licence keys (rule 2.8): 55 `license:key:*` records, 0 revoked (one record's value could not be read during the check).
+
+Found and fixed on the way:
+- CI had been red on `main` since 29 Sep because one Idea Scout test depended on the calendar date.
+- `tokens:check` failed on CI because the runner's OS user name matched an ordinary word; CI now checks the operator token list only.
+- `npm audit` failed on high-severity advisories in `@grpc/grpc-js` and `dompurify`; patched.
+- robots.txt policy conflict between the two histories resolved as: `/share/` fetchable (pages are served noindex), teaser cards explicitly allowed.
+
+Corrections to this plan from what execution found:
+- Rule 2.5 and P0-2 anticipated renumbering `origin/main`'s migrations to 0018-0020. Not needed: both names sets were already recorded remotely. The next free number is **0018**.
+- Section 1.1 "Staging sign-in": staging health reports `firebase:true`, so Firebase sign-in is available on staging; only the Telegram bot is missing.
+
+Still open in Phase 0: P0-4 to P0-12. Production SKU descriptions still say "verified Proof-of-Audit attestation" and "TON on-chain certification memo" (P0-4).
