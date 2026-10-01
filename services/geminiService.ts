@@ -52,6 +52,12 @@ import { publicApisEnrichmentService, type EnrichedEntityIntelligence } from './
 import { writingQualityService, type WritingQualityReport } from './audit/writingQualityService';
 import { trafficInsightsService, type TrafficImpact } from './analytics/trafficInsightsService';
 import { citationIntegrityService, type CitationIntegrityResult } from './audit/citationIntegrityService';
+import {
+  EVIDENCE_LABEL_INSTRUCTION,
+  buildEmpiricalPromptSection,
+  buildEnrichmentPromptSection,
+  buildIntegrityPromptSection,
+} from './audit/evidencePromptLabels';
 import { aeoTrustPackService, type TrustPackSummary } from './audit/aeoTrustPackService';
 import { schemaSafetyGate } from './deployment/schemaSafetyGate';
 import { shareOfVoiceService, type ShareOfVoiceSummary } from './visibility/shareOfVoiceService';
@@ -640,47 +646,27 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
       }
     }
 
-    // 3. Empirical Multi-LLM & Live SERP Citation Verification
+    // 3. Search-sample citation probe. ESTIMATED: substring match, nothing re-fetched or confirmed.
     let empiricalSummary: EmpiricalCitationSummary | undefined;
-    let empiricalText = '';
     try {
       empiricalSummary = await empiricalCitationService.probeDomainCitations(
         websiteUrl,
         dna?.name,
         dna?.competitors || []
       );
-      if (empiricalSummary.evidenceList.length > 0 && typeof empiricalSummary.citationRatePercent === 'number') {
-        empiricalText = `\n[VERIFIED EMPIRICAL CITATION AUDIT DATA]\nTarget Domain: ${empiricalSummary.targetDomain}\nEmpirical Citation Rate: ${empiricalSummary.citationRatePercent}%\nTop Cited Competitor: ${empiricalSummary.topCitedCompetitor || 'None identified'}\nEvidence Summary:\n` +
-          empiricalSummary.evidenceList.map(e => `- Query "${e.query}" (${e.intent}): ${e.brandCited ? `CITING [Rank #${e.brandRank}]` : `NOT CITED (Competitors: ${e.competitorsCited.join(', ') || 'None'})`} -> Snippet: ${e.snippet}`).join('\n') + '\n';
-      }
     } catch (e) {
       console.warn('[Audit] Empirical citation probe fallback', e);
     }
+    const empiricalText = buildEmpiricalPromptSection(empiricalSummary);
 
-    // 4. Open Public APIs Enrichment (Wikidata, Internet Archive Wayback, Microlink, Security)
+    // 4. Open Public APIs Enrichment (Wikidata, Internet Archive Wayback, Microlink, Security). MEASURED when fetched.
     let enrichedEntity: EnrichedEntityIntelligence | undefined;
-    let enrichmentText = '';
     try {
       enrichedEntity = await publicApisEnrichmentService.enrichAudit(websiteUrl, dna?.name);
-      const parts: string[] = ['\n[VERIFIED PUBLIC APIS & ENTITY INTELLIGENCE]'];
-      if (enrichedEntity.wikidata) {
-        parts.push(`Canonical Wikidata Entity: ${enrichedEntity.wikidata.id} (${enrichedEntity.wikidata.label}) - ${enrichedEntity.wikidata.description || 'Verified'}`);
-        parts.push(`Wikipedia URI: ${enrichedEntity.wikidata.wikipediaUrl}`);
-      }
-      if (enrichedEntity.wayback.hasArchive) {
-        parts.push(`Internet Archive Domain Longevity: Indexed since ${enrichedEntity.wayback.earliestDate} (${enrichedEntity.wayback.archivedYearsAgo} years archived)`);
-      }
-      const sec = enrichedEntity.security;
-      parts.push(
-        `Security Posture: HTTPS ${sec.httpsEnforced ? 'Enforced' : 'Missing'}, HSTS: ${sec.hstsEnabled ? 'Active' : 'Missing'}, CSP: ${sec.cspDetected ? 'Present' : 'Missing'}, security.txt: ${sec.securityTxtPresent ? 'Present' : 'Missing'}, TrustScore: ${sec.trustScore}/100, Measurement: ${sec.measurementConfidence}`
-      );
-      if (enrichedEntity.sameAsUrls.length > 0) {
-        parts.push(`Authoritative sameAs Graph URIs: ${enrichedEntity.sameAsUrls.join(', ')}`);
-      }
-      enrichmentText = parts.join('\n') + '\n';
     } catch (e) {
       console.warn('[Audit] Public APIs enrichment fallback', e);
     }
+    const enrichmentText = buildEnrichmentPromptSection(enrichedEntity);
 
     // 5. Citation integrity (deterministic; runs before LLM)
     let citationIntegrity: CitationIntegrityResult | undefined;
@@ -696,10 +682,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
           domain: enrichedEntity?.domain || displayUrl,
           sameAsUrls: enrichedEntity?.sameAsUrls,
         });
-        integrityText =
-          `\n[AEO CITATION INTEGRITY]\nIntegrityScore: ${citationIntegrity.integrityScore}/100\n` +
-          `DeadCitations: ${citationIntegrity.deadCitationCount}\nSpoofRisk: ${citationIntegrity.spoofRisk}\n` +
-          `sameAsConflict: ${citationIntegrity.sameAsConflict}\n`;
+        integrityText = buildIntegrityPromptSection(citationIntegrity);
       }
     } catch (e) {
       console.warn('[Audit] Citation integrity fallback', e);
@@ -751,6 +734,7 @@ You are Oracle Agent for Luminara Suite. Emotional direction: fog clearing at fi
 Generate an evidence-based audit in Markdown for: "${websiteUrl}".
 Focus: ${mainTopic}. Mode: ${auditMode}.
 ${focusIntro}
+${EVIDENCE_LABEL_INSTRUCTION}
 Cite-or-silence: every rank, citation, or percentage without evidence above must say "not verified".
 Plain English default (about grade 8). Lead with one ship-this-week move.
 Follow the methodology playbooks above. Respect deprecation rules (never recommend HowTo schema;
@@ -793,7 +777,7 @@ Strict Formatting Guidelines:
         "url": websiteUrl
       }, null, 2);
 
-      // Augment schema with verified sameAs URIs (Wikidata / Wikipedia)
+      // Augment schema with sameAs URIs fetched from Wikidata / Wikipedia
       if (enrichedEntity?.sameAsUrls && enrichedEntity.sameAsUrls.length > 0) {
         try {
           const parsed = JSON.parse(schemaJsonLd);

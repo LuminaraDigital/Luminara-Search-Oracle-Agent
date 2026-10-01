@@ -149,7 +149,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers: _head
                                     <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">Brand quoted</span>
                                     <span className={`inline-flex items-center gap-1 font-bold ${mentioned ? 'text-success-400' : 'text-warning-400'}`}>
                                         <span className={`w-1.5 h-1.5 rounded-full ${mentioned ? 'bg-success-400' : 'bg-warning-400'}`}></span>
-                                        {mentioned ? 'Verified cited' : 'Opportunity gap'}
+                                        {mentioned ? 'Cited (estimated)' : 'Opportunity gap'}
                                     </span>
                                 </div>
                                 <div>

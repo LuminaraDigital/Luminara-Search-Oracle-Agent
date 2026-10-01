@@ -61,7 +61,7 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
               <h3 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
                 Empirical Multi-LLM Citation Proof
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gold/20 text-gold-light border border-gold/30">
-                  {citationMeasured ? 'Live SERP Grounded' : 'Not measured'}
+                  {citationMeasured ? 'Estimated from search sample' : 'Not measured'}
                 </span>
               </h3>
               <p className="text-xs text-gray-400">
