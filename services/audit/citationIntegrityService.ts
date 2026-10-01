@@ -42,6 +42,19 @@ export function brandOverlapScore(brandName: string, haystack: string): number {
 }
 
 async function urlAlive(url: string): Promise<boolean> {
+  // Browser-side probe only: scheme/host allowlist (no DoH). Worker SSRF uses fetchPublicUrl.
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    if (u.username || u.password) return false;
+    const host = u.hostname.toLowerCase();
+    if (host === 'localhost' || host.endsWith('.localhost')) return false;
+    if (host === '127.0.0.1' || host === '0.0.0.0' || host === '::1' || host === '[::1]') return false;
+    if (/^(10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) return false;
+    if (/\.(local|internal|intranet|lan|corp|arpa)$/i.test(host)) return false;
+  } catch {
+    return false;
+  }
   try {
     const head = await fetch(url, { method: 'HEAD' }).catch(() => null);
     if (head) {

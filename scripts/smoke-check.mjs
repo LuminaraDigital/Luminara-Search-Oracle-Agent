@@ -19,11 +19,15 @@ const isDryRun = process.argv.includes('--dry-run');
 const targetLabel = isStaging ? 'Staging' : isProd ? 'Production' : 'Pre-Push / Local';
 console.log(`[SmokeCheck] Running smoke tests for: ${targetLabel}`);
 
-/** Suite-10x P1: migration files that Worker budget/governance code expects. */
+/** Suite-10x P1 + industry ops: migration files Worker code expects. */
 const REQUIRED_D1_MIGRATIONS = [
   'migrations/0011_mcp_action_requests.sql',
   'migrations/0012_budget_policies.sql',
   'migrations/0013_mcp_action_requests_kind.sql',
+  'migrations/0014_weekly_decision_loop.sql',
+  'migrations/0015_privacy_observability_memory.sql',
+  'migrations/0016_memory_history.sql',
+  'migrations/0017_proof_ledger.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
@@ -32,6 +36,12 @@ const REQUIRED_D1_TABLES = [
   'cost_events',
   'budget_incidents',
   'audit_findings',
+  'weekly_decisions',
+  'privacy_jobs',
+  'product_analytics_events',
+  'invoice_reconcile_runs',
+  'memory_history',
+  'proof_anchors',
 ];
 
 // 1. Verify build bundle integrity
@@ -68,7 +78,7 @@ for (const rel of REQUIRED_D1_MIGRATIONS) {
     process.exit(1);
   }
 }
-console.log('[SmokeCheck] [PASS] D1 migration files present (0011-0013).');
+console.log('[SmokeCheck] [PASS] D1 migration files present (0011-0017).');
 
 function probeRemoteD1Tables() {
   if (process.env.SMOKE_D1_PREFLIGHT === '0') {

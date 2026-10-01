@@ -80,6 +80,8 @@
   //   ADMIN_SECRET (required for admin routes: /api/admin/users, /api/admin/license/generate,
   //   /api/admin/license/seed, /api/telegram/refund; sent as x-admin-secret header; separate from the webhook secret).
   // Non-secret TON merchant wallet (safe in vars): TON_RECEIVING_ADDRESS
+  // Chain network gate (Phase 0): CHAIN_NETWORK, CHAIN_TON_API_BASE, CHAIN_TON_API_FALLBACK_BASE, CHAIN_XDC_RPC_URL
+  // TON_API_KEY must be network-specific: `wrangler secret put TON_API_KEY --env staging|production`
   "vars": {
     "ENVIRONMENT": "production",
     "WEBAPP_URL": "https://luminarasuite.com/",
@@ -102,6 +104,12 @@
     "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
     // Soft killswitch for outbound Auth emails (password reset). Raise only with monitoring.
     "OUTBOUND_EMAIL_DAILY_LIMIT": "200",
+    "CHAIN_NETWORK": "mainnet",
+    "CHAIN_TON_API_BASE": "https://toncenter.com/api/v3",
+    "CHAIN_TON_API_FALLBACK_BASE": "https://tonapi.io",
+    "CHAIN_XDC_RPC_URL": "https://erpc.xinfin.network",
+    "PROOF_ANCHOR_ENABLED": "false",
+    "PROOF_XDC_ENABLED": "false",
     "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
@@ -112,8 +120,10 @@
     // Paid Oracle tools require invokeTool+confirmTool unless explicitly enabled.
     "ORACLE_AUTO_TOOLS": "false",
     "AUDIT_QUEUE_ENABLED": "true",
-    // Budget hard stops: off | soft | hard. Soft until invoice-validated P0 (suite-10x).
-    "BUDGET_ENFORCEMENT": "soft"
+    // Budget hard stops: off | soft | hard. Production defaults to hard; staging stays soft for dogfood.
+    "BUDGET_ENFORCEMENT": "hard"
+    // Optional secrets (wrangler secret put): SENTRY_DSN, AZURE_AI_SEARCH_KEY, GCP_VERTEX_ACCESS_TOKEN
+    // Optional Vectorize: add vectorize binding MEMORY_VECTORS after `wrangler vectorize create luminara-memory`
   },
 
   "durable_objects": {
@@ -203,7 +213,15 @@
         "REQUIRE_APP_CHECK": "false",
         "FIREBASE_WEB_API_KEY": "",
         "OUTBOUND_EMAIL_DAILY_LIMIT": "100",
-        "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
+        "CHAIN_NETWORK": "testnet",
+        "CHAIN_TON_API_BASE": "https://testnet.toncenter.com/api/v3",
+        "CHAIN_TON_API_FALLBACK_BASE": "https://testnet.tonapi.io",
+        "CHAIN_XDC_RPC_URL": "https://rpc.apothem.network",
+        "PROOF_ANCHOR_ENABLED": "false",
+        "PROOF_XDC_ENABLED": "false",
+        // REPLACE with your funded TON testnet merchant (kQ/0Q) before staging soak.
+        // Synthetic CRC-valid placeholder for CI/validate-env; not a funded wallet.
+        "TON_RECEIVING_ADDRESS": "kQClpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpWTU",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
@@ -278,6 +296,12 @@
         "REQUIRE_APP_CHECK": "false",
         "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
         "OUTBOUND_EMAIL_DAILY_LIMIT": "200",
+        "CHAIN_NETWORK": "mainnet",
+        "CHAIN_TON_API_BASE": "https://toncenter.com/api/v3",
+        "CHAIN_TON_API_FALLBACK_BASE": "https://tonapi.io",
+        "CHAIN_XDC_RPC_URL": "https://erpc.xinfin.network",
+        "PROOF_ANCHOR_ENABLED": "false",
+        "PROOF_XDC_ENABLED": "false",
         "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
@@ -286,7 +310,7 @@
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
         "AUDIT_QUEUE_ENABLED": "true",
-        "BUDGET_ENFORCEMENT": "soft"
+        "BUDGET_ENFORCEMENT": "hard"
       }
     }
   }

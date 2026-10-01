@@ -9,6 +9,8 @@ Allow: /how-it-works
 Allow: /ai
 Allow: /why
 Allow: /pricing
+Allow: /methodology
+Allow: /sample-report
 Allow: /privacy
 Allow: /terms
 Allow: /desktop
@@ -36,6 +38,8 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/ai</loc></url>
   <url><loc>${base}/why</loc></url>
   <url><loc>${base}/pricing</loc></url>
+  <url><loc>${base}/methodology</loc></url>
+  <url><loc>${base}/sample-report</loc></url>
   <url><loc>${base}/privacy</loc></url>
   <url><loc>${base}/terms</loc></url>
   <url><loc>${base}/docs/mcp.html</loc></url>
@@ -49,15 +53,22 @@ export const SITEMAP_XML = buildSitemapXml('https://www.luminarasuite.com');
 
 export const LLMS_TXT = `# Luminara Suite
 
-> Owner-first product for SEO, AEO and GEO visibility. Audits Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix.
+> Find out whether AI search recommends your business. Audits Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix. No invented composite scores.
 
 ## Product
 - Home: https://www.luminarasuite.com/
+- Sample report: https://www.luminarasuite.com/sample-report
+- Methodology: https://www.luminarasuite.com/methodology
 - How it works: https://www.luminarasuite.com/how-it-works
 - Our AI: https://www.luminarasuite.com/ai
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
+
+## Honesty
+- Engine labels: Measured, Estimated, or Not measured
+- Sample scouts are labeled fixtures; Live Instant Audit follows account and key rules
+- Free = insight / sample; Growth = share links + MCP; Agency = API access
 
 ## Agents and MCP
 - MCP docs: https://www.luminarasuite.com/docs/mcp.html

@@ -68,14 +68,32 @@ export async function createMemoryFact(
 
   const id = randomId('mem', 10);
   const createdAt = Date.now();
+  const { upsertMemoryVector, appendMemoryHistory } = await import('./memoryRag');
+  const vector = await upsertMemoryVector(env, accountId, id, text, { source: 'hosted' });
   await env.DB.prepare(
-    `INSERT INTO memory_facts (id, account_id, text, source, created_at) VALUES (?, ?, ?, 'hosted', ?)`,
+    `INSERT INTO memory_facts (id, account_id, text, source, created_at, embedding_provider, vector_id, metadata_json)
+     VALUES (?, ?, ?, 'hosted', ?, ?, ?, ?)`,
   )
-    .bind(id, accountId, text, createdAt)
+    .bind(
+      id,
+      accountId,
+      text,
+      createdAt,
+      vector.provider === 'none' ? null : vector.provider,
+      vector.vectorId,
+      JSON.stringify({ source: 'hosted' }),
+    )
     .run();
+  await appendMemoryHistory(env, {
+    accountId,
+    memoryFactId: id,
+    event: 'ADD',
+    text,
+    metadata: { source: 'hosted', provider: vector.provider },
+  });
 
   return json({
     ok: true,
-    fact: { id, accountId, text, source: 'hosted', createdAt },
+    fact: { id, accountId, text, source: 'hosted', createdAt, provider: vector.provider },
   });
 }

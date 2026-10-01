@@ -97,6 +97,21 @@ export interface Env {
   UMAMI_PASSWORD?: string;
   TON_RECEIVING_ADDRESS?: string;
   TON_API_KEY?: string;
+  /**
+   * Hard network gate for chain payments and proof anchors: `testnet` | `mainnet`.
+   * Must match TON merchant address testnet flag and CHAIN_TON_* / CHAIN_XDC_* hosts.
+   */
+  CHAIN_NETWORK?: string;
+  /** Toncenter Index API base (v3), e.g. https://toncenter.com/api/v3 or testnet equivalent. */
+  CHAIN_TON_API_BASE?: string;
+  /** TonAPI base for the same network, e.g. https://tonapi.io or https://testnet.tonapi.io. */
+  CHAIN_TON_API_FALLBACK_BASE?: string;
+  /** XDC JSON-RPC URL (Apothem or mainnet). */
+  CHAIN_XDC_RPC_URL?: string;
+  /** Feature flag: enable audit citation anchoring writers (`true` / `false`). */
+  PROOF_ANCHOR_ENABLED?: string;
+  /** Feature flag: enable XDC weekly re-check path (`true` / `false`). */
+  PROOF_XDC_ENABLED?: string;
   /** DataForSEO API login (hosted LLM Mentions / SERP). Pair with DATAFORSEO_PASSWORD. */
   DATAFORSEO_LOGIN?: string;
   DATAFORSEO_PASSWORD?: string;
@@ -137,4 +152,37 @@ export interface Env {
   ORACLE_SESSION?: DurableObjectNamespace;
   /** Queue producer for long-running audits. */
   AUDIT_JOBS?: Queue;
+  /** Optional Sentry DSN (Worker exceptions). */
+  SENTRY_DSN?: string;
+  /**
+   * Optional Cloudflare Vectorize index for account memory RAG.
+   * Provision index then bind in wrangler; code falls back to D1 keyword search.
+   */
+  MEMORY_VECTORS?: VectorizeIndex;
+  /** Optional Workers AI binding for embeddings. */
+  AI?: Ai;
+  /** Azure AI Search (vector memory). */
+  AZURE_AI_SEARCH_ENDPOINT?: string;
+  AZURE_AI_SEARCH_KEY?: string;
+  AZURE_AI_SEARCH_INDEX?: string;
+  /** Google Vertex Vector Search REST endpoint + bearer token. */
+  GCP_VERTEX_VECTOR_ENDPOINT?: string;
+  GCP_VERTEX_ACCESS_TOKEN?: string;
+}
+
+/** Minimal Vectorize binding shape (Cloudflare runtime). */
+export interface VectorizeIndex {
+  upsert(
+    vectors: Array<{ id: string; values: number[]; metadata?: Record<string, unknown> }>,
+  ): Promise<unknown>;
+  query(
+    vector: number[],
+    options: { topK: number; returnMetadata?: string; filter?: Record<string, unknown> },
+  ): Promise<{ matches: Array<{ id: string; score: number; metadata?: Record<string, unknown> }> }>;
+  deleteByIds?(ids: string[]): Promise<unknown>;
+}
+
+/** Minimal Workers AI binding. */
+export interface Ai {
+  run(model: string, input: { text: string[] }): Promise<{ data?: number[][] }>;
 }

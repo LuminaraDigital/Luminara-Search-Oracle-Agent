@@ -13,7 +13,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseJsonc } from './lib/jsonc.mjs';
-import { checkProductionTonAddress } from './lib/tonAddress.mjs';
+import { checkProductionTonAddress, validateTonAddress } from './lib/tonAddress.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -68,6 +68,11 @@ if (targetMode === 'production') {
     console.error(`[EnvValidation] ${appCheck.message}`);
     process.exit(1);
   }
+  const chain = checkChainNetworkConfig(config, 'production');
+  if (!chain.ok) {
+    console.error(`[EnvValidation] ${chain.message}`);
+    process.exit(1);
+  }
 }
 
 if (targetMode === 'staging') {
@@ -81,6 +86,11 @@ if (targetMode === 'staging') {
   const appCheck = checkAppCheckConfig(config, 'staging');
   if (!appCheck.ok) {
     console.error(`[EnvValidation] ${appCheck.message}`);
+    process.exit(1);
+  }
+  const chain = checkChainNetworkConfig(config, 'staging');
+  if (!chain.ok) {
+    console.error(`[EnvValidation] ${chain.message}`);
     process.exit(1);
   }
 }
@@ -104,6 +114,79 @@ function checkAppCheckConfig(config, envName) {
         'Worker would return 503 APP_CHECK_MISCONFIGURED.',
     };
   }
+  return { ok: true };
+}
+
+/**
+ * Fail closed if CHAIN_NETWORK / TON API hosts / XDC RPC / merchant address disagree.
+ */
+function checkChainNetworkConfig(config, envName) {
+  const vars =
+    envName === 'staging'
+      ? config?.env?.staging?.vars || {}
+      : { ...(config?.vars || {}), ...(config?.env?.production?.vars || {}) };
+
+  const network = String(vars.CHAIN_NETWORK || '').trim().toLowerCase();
+  if (network !== 'testnet' && network !== 'mainnet') {
+    return { ok: false, message: `${envName}: CHAIN_NETWORK must be testnet or mainnet.` };
+  }
+  if (envName === 'production' && network !== 'mainnet') {
+    return { ok: false, message: 'production: CHAIN_NETWORK must be mainnet.' };
+  }
+  if (envName === 'staging' && network !== 'testnet') {
+    return { ok: false, message: 'staging: CHAIN_NETWORK must be testnet.' };
+  }
+
+  const tonBase = String(vars.CHAIN_TON_API_BASE || '').trim();
+  if (!tonBase) {
+    return { ok: false, message: `${envName}: CHAIN_TON_API_BASE is required.` };
+  }
+  if (network === 'testnet' && !/testnet/i.test(tonBase)) {
+    return { ok: false, message: `${envName}: CHAIN_TON_API_BASE must be a testnet Toncenter host.` };
+  }
+  if (network === 'mainnet' && /testnet/i.test(tonBase)) {
+    return { ok: false, message: `${envName}: CHAIN_TON_API_BASE must not be a testnet host.` };
+  }
+
+  const tonFallback = String(vars.CHAIN_TON_API_FALLBACK_BASE || '').trim();
+  if (tonFallback) {
+    if (network === 'testnet' && !/testnet/i.test(tonFallback)) {
+      return { ok: false, message: `${envName}: CHAIN_TON_API_FALLBACK_BASE must be testnet TonAPI.` };
+    }
+    if (network === 'mainnet' && /testnet/i.test(tonFallback)) {
+      return { ok: false, message: `${envName}: CHAIN_TON_API_FALLBACK_BASE must not be testnet.` };
+    }
+  }
+
+  const xdc = String(vars.CHAIN_XDC_RPC_URL || '').trim();
+  if (!xdc) {
+    return { ok: false, message: `${envName}: CHAIN_XDC_RPC_URL is required.` };
+  }
+  if (network === 'testnet' && !/apothem/i.test(xdc)) {
+    return { ok: false, message: `${envName}: CHAIN_XDC_RPC_URL should point at Apothem (testnet).` };
+  }
+  if (network === 'mainnet' && /apothem/i.test(xdc)) {
+    return { ok: false, message: `${envName}: CHAIN_XDC_RPC_URL must not be Apothem on mainnet.` };
+  }
+
+  const merchant = String(vars.TON_RECEIVING_ADDRESS || '').trim();
+  if (!merchant) {
+    return { ok: false, message: `${envName}: TON_RECEIVING_ADDRESS is required with CHAIN_NETWORK.` };
+  }
+  const address = validateTonAddress(merchant, { production: envName === 'production' });
+  if (!address.ok) {
+    return { ok: false, message: `${envName}: TON_RECEIVING_ADDRESS invalid: ${address.reason}.` };
+  }
+  if (address.format === 'raw') {
+    return { ok: false, message: `${envName}: raw 0:/-1: merchant addresses are not allowed.` };
+  }
+  if (network === 'testnet' && !address.testnet) {
+    return { ok: false, message: `${envName}: CHAIN_NETWORK=testnet requires a kQ/0Q merchant address.` };
+  }
+  if (network === 'mainnet' && address.testnet) {
+    return { ok: false, message: `${envName}: CHAIN_NETWORK=mainnet rejects kQ/0Q merchant addresses.` };
+  }
+
   return { ok: true };
 }
 

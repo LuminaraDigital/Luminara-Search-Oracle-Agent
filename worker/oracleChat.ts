@@ -184,7 +184,16 @@ export async function handleOracleChatSse(
       const oracleSkill = await loadAgentSkill(env, ORACLE_CHAT_SKILL_SLUG, {
         fallbackPrompt: bundledOraclePrompt,
       });
-      const systemPrompt = oracleSkill?.promptBody || bundledOraclePrompt;
+      let systemPrompt = oracleSkill?.promptBody || bundledOraclePrompt;
+      try {
+        const { ragContextForOracle } = await import('./memoryRag');
+        const memoryBlock = await ragContextForOracle(env, billingId(user), message);
+        if (memoryBlock) {
+          systemPrompt = `${systemPrompt}\n\n${memoryBlock}`;
+        }
+      } catch {
+        /* memory RAG is best-effort */
+      }
       const messages = [
         { role: 'system', content: systemPrompt },
         ...historySource,
@@ -268,6 +277,18 @@ export async function handleOracleChatSse(
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ role: 'assistant', content: fullText }),
         });
+      }
+
+      // Chat → facts pipeline (best-effort; high-confidence lines auto-store)
+      try {
+        const { extractFactsFromChat } = await import('./memoryRag');
+        await extractFactsFromChat(env, user, {
+          message,
+          sessionId,
+          autoStore: true,
+        });
+      } catch {
+        /* ignore */
       }
 
       await write('done', {

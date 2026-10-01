@@ -1,5 +1,5 @@
 import type { Env } from './env';
-import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
+import { MAX_SMALL_BODY_BYTES, fetchPublicUrl, readBody, safePublicHostname, resolvesToPublicAddress } from './security';
 import { identify, json } from './workerUtils';
 import { getActiveSubscription } from './quotaMiddleware';
 import { sendTelegramAlert, planCapsFor } from './telegramBot';
@@ -41,7 +41,8 @@ export async function auditSecurityOnEdge(domain: string): Promise<{
   trustScore: number;
   measurementConfidence: 'full' | 'cors_limited' | 'failed';
 }> {
-  const httpsUrl = `https://${domain}`;
+  const clean = safePublicHostname(domain);
+  const httpsUrl = clean ? `https://${clean}` : '';
   let hsts = false;
   let csp = false;
   let referrerPolicy = false;
@@ -50,26 +51,41 @@ export async function auditSecurityOnEdge(domain: string): Promise<{
   let securityTxtPresent = false;
   let fetchWorked = false;
 
+  if (!clean || !httpsUrl) {
+    return {
+      httpsEnforced: true,
+      redirectsToHttps: false,
+      hstsEnabled: false,
+      cspDetected: false,
+      referrerPolicy: false,
+      xFrameOptions: false,
+      securityTxtPresent: false,
+      trustScore: 40,
+      measurementConfidence: 'failed',
+    };
+  }
+
   try {
-    let res = await fetch(httpsUrl, { method: 'HEAD', redirect: 'follow' }).catch(() => null);
-    if (!res || !res.ok) {
-      res = await fetch(httpsUrl, { method: 'GET', redirect: 'follow' }).catch(() => null);
+    let head = await fetchPublicUrl(httpsUrl, { method: 'HEAD' });
+    if (!head.ok || !head.response.ok) {
+      head = await fetchPublicUrl(httpsUrl, { method: 'GET' });
     }
-    if (res) {
+    if (head.ok) {
       fetchWorked = true;
+      const res = head.response;
       hsts = Boolean(res.headers.get('strict-transport-security'));
       csp = Boolean(res.headers.get('content-security-policy'));
       referrerPolicy = Boolean(res.headers.get('referrer-policy'));
       xFrameOptions = Boolean(res.headers.get('x-frame-options'));
     }
 
-    const httpUrl = `http://${domain}`;
-    const redir = await fetch(httpUrl, { method: 'GET', redirect: 'follow' }).catch(() => null);
-    if (redir?.url?.startsWith('https://')) redirectsToHttps = true;
+    const httpUrl = `http://${clean}`;
+    const redir = await fetchPublicUrl(httpUrl, { method: 'GET' });
+    if (redir.ok && redir.finalUrl.startsWith('https://')) redirectsToHttps = true;
 
-    const st = await fetch(`https://${domain}/.well-known/security.txt`, { method: 'GET' }).catch(() => null);
-    if (st && st.ok) {
-      const body = await st.text().catch(() => '');
+    const st = await fetchPublicUrl(`https://${clean}/.well-known/security.txt`, { method: 'GET' });
+    if (st.ok && st.response.ok) {
+      const body = await st.response.text().catch(() => '');
       securityTxtPresent = /contact\s*:/i.test(body) || /canonical\s*:/i.test(body);
     }
   } catch {
@@ -293,6 +309,11 @@ export async function handleSentinelRoute(request: Request, env: Env, path: stri
   const body = (read.value || {}) as Partial<SentinelTarget>;
   const cleanDomain = safePublicHostname(String(body.domain || ''));
   if (!cleanDomain) return json({ error: 'domain must be a public hostname such as example.com' }, 400);
+
+  const publicDns = await resolvesToPublicAddress(cleanDomain);
+  if (!publicDns) {
+    return json({ error: 'domain must resolve to a valid public IP address' }, 400);
+  }
 
   const keywords = Array.isArray(body.keywords)
     ? body.keywords.filter((k): k is string => typeof k === 'string' && k.trim().length > 0).map(k => k.trim().slice(0, 200)).slice(0, 10)

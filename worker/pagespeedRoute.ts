@@ -5,7 +5,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { json } from './workerUtils';
-import { clientIp } from './security';
+import { clientIp, safePublicUrl } from './security';
 import { fetchPagespeedInsights } from '../services/technical/pageSpeedService';
 import { checkHostedQuota } from './quotaMiddleware';
 
@@ -25,6 +25,17 @@ export async function handlePagespeedRoute(
   const url = typeof body.url === 'string' ? body.url.trim() : '';
   if (!url) {
     return json({ ok: false, error: 'url required', code: 'BAD_REQUEST' }, 400);
+  }
+  const publicUrl = safePublicUrl(url);
+  if (!publicUrl) {
+    return json(
+      {
+        ok: false,
+        error: 'url must be a public http(s) hostname (no localhost, private IPs, or credentials)',
+        code: 'BAD_REQUEST',
+      },
+      400,
+    );
   }
 
   const byok = request.headers.get('x-pagespeed-key')?.trim() || null;
@@ -58,7 +69,7 @@ export async function handlePagespeedRoute(
   }
 
   const metrics = await fetchPagespeedInsights({
-    url,
+    url: publicUrl.toString(),
     apiKey,
     strategy: body.strategy === 'desktop' ? 'desktop' : 'mobile',
   });

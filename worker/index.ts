@@ -20,6 +20,11 @@
  *   GET  /api/findings?domain=            signed-in Instant Audit findings board (D1)
  *   POST /api/findings/bulk               upsert crew findings by stable_key (never Oracle validators)
  *   PATCH /api/findings/:id               status / owner / due_at
+ *   POST /api/privacy/export|delete       self-serve GDPR export / soft-delete
+ *   POST /api/analytics/events            server product analytics ingest
+ *   GET/POST /api/weekly-decisions        durable Weekly Decision Card (0014)
+ *   POST /api/memory/search|extract       Vectorize / Azure / GCP RAG + chat→facts
+ *   POST /api/budgets/self/reconcile      invoice reconcile; hard-stop enable gate
  *
  * Provider keys and the bot token live only here (wrangler secrets), never in the client bundle.
  * Firebase ID tokens are verified with Google JWKS (FIREBASE_PROJECT_ID); no Admin private key needed.
@@ -27,10 +32,12 @@
 
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
-import { validateInitData } from './telegramAuth';
+import { validateInitData, createTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, TON_PRICING } from './tonPayment';
+import { resolveChainNetwork } from './chainNetwork';
+import { probeXdcRpc } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
@@ -70,6 +77,9 @@ import {
   buildLogoutCookie,
   verifyWebhookSignature,
   getSessionTokenFromCookie,
+  mintOpaqueSession,
+  revokeOpaqueSession,
+  isOpaqueSessionId,
 } from './authMiddleware';
 import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
@@ -93,6 +103,12 @@ import {
 } from './auditQueue';
 import { handleMcpOAuthRoute } from './mcpOAuth';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
+import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
+import { ingestProductAnalytics } from './productAnalytics';
+import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
+import { handleMemoryRagRoute } from './memoryRag';
+import { handleBudgetReconcileRoute } from './invoiceReconcile';
+import { reportWorkerException } from './sentry';
 import {
   enforceDualRateLimit,
   enforceDualKeySlidingLimit,
@@ -216,6 +232,12 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
     const configured = Object.fromEntries(Object.keys(PROVIDERS).map(id => [id, PROVIDERS[id].auth(env, new Headers(), {}).ok]));
+    const chainNetwork = resolveChainNetwork(env);
+    let xdcRpcOk: boolean | null = null;
+    if (chainNetwork && String(env.CHAIN_XDC_RPC_URL || '').trim()) {
+      const probe = await probeXdcRpc(env);
+      xdcRpcOk = probe.ok;
+    }
     return withCors(json({
       ok: true,
       providers: configured,
@@ -235,6 +257,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       pagespeedHosted: Boolean(String(env.PAGESPEED_API_KEY || '').trim()),
       ton: isTonPaymentConfigured(env),
       tonPricing: TON_PRICING,
+      chainNetwork,
+      xdcRpcOk,
+      proofAnchorEnabled: String(env.PROOF_ANCHOR_ENABLED || '').toLowerCase() === 'true',
+      proofXdcEnabled: String(env.PROOF_XDC_ENABLED || '').toLowerCase() === 'true',
       requireAuth: env.REQUIRE_TG_AUTH === 'true',
       requireSubscription: env.REQUIRE_SUBSCRIPTION === 'true',
       freeDailyLimit: Number(env.FREE_DAILY_LIMIT || 0),
@@ -276,11 +302,51 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (request.method === 'POST') {
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
-      const body = (read.value || {}) as { idToken?: string };
+      const body = (read.value || {}) as { idToken?: string; initData?: string };
+      const rawInitData = typeof body.initData === 'string' ? body.initData.trim() : '';
+
+      if (rawInitData) {
+        if (!env.BOT_TOKEN) return withCors(json({ ok: false, error: 'BOT_TOKEN not configured' }, 503));
+        const v = await validateInitData(rawInitData, env.BOT_TOKEN);
+        if (!v.ok) return withCors(json({ ok: false, error: v.reason }, 401));
+        const fullName = [v.user.first_name, v.user.last_name].filter(Boolean).join(' ') || v.user.username;
+        const tgIdentity: HostedIdentity = {
+          id: String(v.user.id),
+          source: 'telegram',
+          name: fullName,
+        };
+        const stored = await withAccountId(env, tgIdentity);
+        const { org, membership } = await getOrCreateUserOrg(env, stored);
+        const opaqueId = await mintOpaqueSession(env, {
+          uid: `tg:${v.user.id}`,
+          name: fullName,
+        });
+        const sessionToken = opaqueId || (await createTelegramSessionToken(v.user, env.BOT_TOKEN));
+        const cookieHeader = buildSessionCookie(sessionToken);
+        const res = json(
+          {
+            ok: true,
+            user: stored,
+            accountId: billingId(stored),
+            token: sessionToken,
+            org: {
+              id: org.id,
+              name: org.name,
+              slug: org.slug,
+              tier: org.tier,
+              role: membership.role,
+            },
+          },
+          200,
+          { 'Set-Cookie': cookieHeader },
+        );
+        return withCors(res);
+      }
+
       const bearer = bearerFromAuthorization(request.headers.get('authorization'));
       const idToken = String(body.idToken || bearer || '').trim();
       if (!idToken) {
-        return withCors(json({ ok: false, error: 'idToken is required' }, 400));
+        return withCors(json({ ok: false, error: 'idToken or initData is required' }, 400));
       }
       if (!env.FIREBASE_PROJECT_ID) {
         return withCors(json({ ok: false, error: 'FIREBASE_PROJECT_ID not configured' }, 503));
@@ -298,7 +364,15 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const stored = await withAccountId(env, fbIdentity);
       const { org, membership } = await getOrCreateUserOrg(env, stored);
 
-      const cookieHeader = buildSessionCookie(idToken);
+      const opaqueId = await mintOpaqueSession(env, {
+        uid: verified.user.uid,
+        email: verified.user.email,
+        name: verified.user.name,
+      });
+      if (!opaqueId) {
+        return withCors(json({ ok: false, error: 'Session store unavailable' }, 503));
+      }
+      const cookieHeader = buildSessionCookie(opaqueId);
       const res = json({
         ok: true,
         user: stored,
@@ -319,6 +393,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/auth/logout') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const sessionToken = getSessionTokenFromCookie(request);
+    if (sessionToken && isOpaqueSessionId(sessionToken)) {
+      await revokeOpaqueSession(env, sessionToken);
+    }
     const cookieHeader = buildLogoutCookie();
     return withCors(json({ ok: true, message: 'Signed out successfully' }, 200, { 'Set-Cookie': cookieHeader }));
   }
@@ -667,7 +745,19 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const tgIdentity: HostedIdentity = { id: String(v.user.id), source: 'telegram' };
       const sub = await getActiveSubscription(env, tgIdentity);
       const resolvedSub = sub || (env.LUMINARA_KV ? await env.LUMINARA_KV.get(`sub:${v.user.id}`, 'json') : null);
-      return withCors(json({ ok: true, user: v.user, subscription: resolvedSub, startParam: v.startParam }));
+      const fullName = [v.user.first_name, v.user.last_name].filter(Boolean).join(' ') || v.user.username;
+      const opaqueId = await mintOpaqueSession(env, {
+        uid: `tg:${v.user.id}`,
+        name: fullName,
+      });
+      const sessionToken = opaqueId || (await createTelegramSessionToken(v.user, env.BOT_TOKEN));
+      const cookieHeader = buildSessionCookie(sessionToken);
+      const res = json(
+        { ok: true, user: v.user, subscription: resolvedSub, startParam: v.startParam, token: sessionToken },
+        200,
+        { 'Set-Cookie': cookieHeader },
+      );
+      return withCors(res);
     }
     if (typeof plan !== 'string' || !plan) return withCors(json({ error: 'initData and plan required' }, 400));
     const link = await createInvoiceLink(env, v.user.id, normalizePlanId(plan));
@@ -1023,25 +1113,69 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (oauthRes) return withCors(oauthRes);
   }
 
-  // Hosted memory facts (W8 incremental)
-  if (path === '/memory/facts') {
+  // Hosted memory facts (W8 incremental) + RAG / chat→facts
+  if (path === '/memory/facts' || path === '/memory/search' || path === '/memory/extract') {
     const who = await identify(request, env);
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
-    if (request.method === 'GET') return withCors(await listMemoryFacts(env, who.user));
-    if (request.method === 'POST') {
-      const dual = await enforceDualRateLimit(env, {
-        action: 'memory_create',
-        accountId: billingId(who.user),
-        ip,
-        limitPerKey: 20,
-        windowSec: 60,
-      });
-      if (!dual.ok) return withCors(dual.response);
-      return withCors(await createMemoryFact(request, env, who.user));
+    const rag = await handleMemoryRagRoute(request, env, who.user, path);
+    if (rag) return withCors(rag);
+    if (path === '/memory/facts') {
+      if (request.method === 'GET') return withCors(await listMemoryFacts(env, who.user));
+      if (request.method === 'POST') {
+        const dual = await enforceDualRateLimit(env, {
+          action: 'memory_create',
+          accountId: billingId(who.user),
+          ip,
+          limitPerKey: 20,
+          windowSec: 60,
+        });
+        if (!dual.ok) return withCors(dual.response);
+        return withCors(await createMemoryFact(request, env, who.user));
+      }
     }
     return withCors(json({ error: 'Method not allowed' }, 405));
+  }
+
+  // Self-serve privacy (export / delete)
+  if (path.startsWith('/privacy/')) {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dual = await enforceDualRateLimit(env, {
+      action: 'privacy',
+      accountId: billingId(who.user),
+      ip,
+      limitPerKey: 10,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    const privacyRes = await handlePrivacyRoute(request, env, who.user, path);
+    if (privacyRes) return withCors(privacyRes);
+  }
+
+  // Server product analytics (signed-in preferred; anonymous session ok)
+  if (path === '/analytics/events') {
+    const who = await identify(request, env);
+    return withCors(await ingestProductAnalytics(request, env, who.user));
+  }
+
+  // Durable Weekly Decision Loop (0014) + WDL5-8 surfaces
+  if (
+    path.startsWith('/weekly-decisions') ||
+    path.startsWith('/ai-answers') ||
+    path.startsWith('/prepared-assets') ||
+    path.startsWith('/reputation') ||
+    path.startsWith('/thin-stack')
+  ) {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const wdl = await handleWeeklyDecisionsRoute(request, env, who.user, path);
+    if (wdl) return withCors(wdl);
   }
 
   // PageSpeed Insights (BYOK header or hosted PAGESPEED_API_KEY)
@@ -1075,12 +1209,20 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Budget policy self-service (spec 0014). Authz: the caller's own account
   // only; routes are registered in PROTECTED_API_ROUTES so the universal
   // guard authenticates before these handlers run, and identify() re-checks.
-  if (path === '/budgets/self' || path === '/budgets/self/resume') {
+  if (
+    path === '/budgets/self' ||
+    path === '/budgets/self/resume' ||
+    path === '/budgets/self/reconcile' ||
+    path === '/budgets/self/hard-stop'
+  ) {
     const who = await identify(request, env);
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
     const accountId = billingId(who.user);
+
+    const reconcileRes = await handleBudgetReconcileRoute(request, env, accountId, who.user.id, path);
+    if (reconcileRes) return withCors(reconcileRes);
 
     if (path === '/budgets/self' && request.method === 'GET') {
       const status = await getBudgetStatus(env, accountId);
@@ -1462,6 +1604,7 @@ export default {
       } catch (e) {
         // Never echo internal error details (stack traces, upstream messages, env hints) to callers.
         console.error('[api] unhandled error', request.method, url.pathname, e);
+        reportWorkerException(env, e, { path: url.pathname, method: request.method });
         return withSecurityHeaders(json({ error: 'Internal error' }, 500));
       }
     }
@@ -1583,6 +1726,7 @@ export default {
   },
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(runSentinelScan(env));
+    ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
   },
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     await processAuditQueueBatch(batch as MessageBatch<{ runId: string; accountId: string; targetUrl: string; projectId?: string | null }>, env);

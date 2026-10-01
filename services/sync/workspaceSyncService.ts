@@ -28,6 +28,10 @@ const MEMORY_KEYS = [
   'luminara_agency_workspaces_v1',
   'luminara_agency_active_client',
   'luminara_visibility_history_v1',
+  // Mem0 + hosted fact mirrors (cross-device memory completion)
+  'luminara_mem0_facts_v1',
+  'luminara_mem0_relations_v1',
+  'luminara_memory_facts_v1',
 ] as const;
 
 const KEY_BAG_KEYS = [

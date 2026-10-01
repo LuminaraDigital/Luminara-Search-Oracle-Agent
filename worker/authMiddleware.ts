@@ -15,6 +15,18 @@ import { identify, json, secretEquals } from './workerUtils';
 export const SESSION_COOKIE_NAME = '__session';
 export const SESSION_COOKIE_MAX_AGE = 14 * 24 * 3600; // 14 days
 
+// Re-export opaque session helpers so callers can import from authMiddleware.
+export {
+  OPAQUE_SESSION_PREFIX,
+  isOpaqueSessionId,
+  looksLikeJwt,
+  opaqueSessionKvKey,
+  mintOpaqueSession,
+  loadOpaqueSession,
+  revokeOpaqueSession,
+} from './opaqueSession';
+export type { OpaqueSessionRecord } from './opaqueSession';
+
 /**
  * Explicit array of public API routes that bypass compulsory edge authentication.
  * All other /api/* routes default to protected and immediately reject unauthenticated callers.

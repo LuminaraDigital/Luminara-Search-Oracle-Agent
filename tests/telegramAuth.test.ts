@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { validateInitData } from '../worker/telegramAuth';
+import { validateInitData, createTelegramSessionToken, verifyTelegramSessionToken } from '../worker/telegramAuth';
 
 const token = '123456:TEST_TOKEN';
 
@@ -47,6 +47,34 @@ describe('validateInitData', () => {
     if (!r.ok) expect(r.reason).toMatch(/expired/);
   });
 
+  it('accepts auth_date within the default 1h TTL', async () => {
+    const authDate = String(Math.floor(Date.now() / 1000) - 3599);
+    const r = await validateInitData(sign({ ...fresh(), auth_date: authDate }), token);
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects auth_date older than the default 1h TTL', async () => {
+    const authDate = String(Math.floor(Date.now() / 1000) - 3601);
+    const r = await validateInitData(sign({ ...fresh(), auth_date: authDate }), token);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/expired/);
+  });
+
+  it('honours an explicit longer ttlSeconds override', async () => {
+    const authDate = String(Math.floor(Date.now() / 1000) - 5000);
+    const r = await validateInitData(sign({ ...fresh(), auth_date: authDate }), token, 7200);
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects missing hash and tampered user id after signing', async () => {
+    expect((await validateInitData('auth_date=1&user=%7B%22id%22%3A1%7D', token)).ok).toBe(false);
+    const signed = sign(fresh());
+    const params = new URLSearchParams(signed);
+    params.set('user', JSON.stringify({ id: 999, first_name: 'Eve' }));
+    const r = await validateInitData(params.toString(), token);
+    expect(r.ok).toBe(false);
+  });
+
   it('rejects garbage', async () => {
     expect((await validateInitData('', token)).ok).toBe(false);
     expect((await validateInitData('hash=abc', token)).ok).toBe(false);
@@ -77,5 +105,66 @@ describe('validateInitData', () => {
     // Hash still claims to cover signature, so validation must fail.
     const r = await validateInitData(withoutSig, token);
     expect(r.ok).toBe(false);
+  });
+
+  it('rejects duplicate parameters to prevent HTTP parameter pollution', async () => {
+    const valid = sign(fresh());
+    const withDuplicate = `${valid}&auth_date=9999999999`;
+    const r = await validateInitData(withDuplicate, token);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/duplicate parameter/i);
+  });
+});
+
+describe('telegram session tokens', () => {
+  const secret = 'test-signing-secret-at-least-32-chars-long';
+  const user = {
+    id: 12345,
+    first_name: 'Alice',
+    username: 'alice_tma',
+  };
+
+  it('creates and verifies a valid signed session token', async () => {
+    const token = await createTelegramSessionToken(user, secret, 3600);
+    expect(token).toMatch(/^tg_sess_/);
+    const verified = await verifyTelegramSessionToken(token, secret);
+    expect(verified.ok).toBe(true);
+    if (verified.ok) {
+      expect(verified.user.id).toBe(12345);
+      expect(verified.user.username).toBe('alice_tma');
+      expect(verified.user.first_name).toBe('Alice');
+    }
+  });
+
+  it('rejects an expired session token', async () => {
+    const token = await createTelegramSessionToken(user, secret, -10);
+    const verified = await verifyTelegramSessionToken(token, secret);
+    expect(verified.ok).toBe(false);
+    if (!verified.ok) expect(verified.reason).toMatch(/expired/i);
+  });
+
+  it('rejects a session token with tampered payload or signature', async () => {
+    const token = await createTelegramSessionToken(user, secret, 3600);
+    const parts = token.slice('tg_sess_'.length).split('.');
+    const tamperedPayload = Buffer.from(
+      JSON.stringify({ ...user, id: 99999, exp: Math.floor(Date.now() / 1000) + 3600 })
+    ).toString('base64url');
+    const tamperedToken = `tg_sess_${tamperedPayload}.${parts[1]}`;
+    const verified = await verifyTelegramSessionToken(tamperedToken, secret);
+    expect(verified.ok).toBe(false);
+    if (!verified.ok) expect(verified.reason).toMatch(/signature/i);
+  });
+
+  it('rejects a session token verified with wrong secret', async () => {
+    const token = await createTelegramSessionToken(user, secret, 3600);
+    const verified = await verifyTelegramSessionToken(token, 'different-secret-for-verification');
+    expect(verified.ok).toBe(false);
+    if (!verified.ok) expect(verified.reason).toMatch(/signature/i);
+  });
+
+  it('rejects malformed token formats', async () => {
+    expect((await verifyTelegramSessionToken('not-a-token', secret)).ok).toBe(false);
+    expect((await verifyTelegramSessionToken('tg_sess_invalid', secret)).ok).toBe(false);
+    expect((await verifyTelegramSessionToken('tg_sess_.signature', secret)).ok).toBe(false);
   });
 });

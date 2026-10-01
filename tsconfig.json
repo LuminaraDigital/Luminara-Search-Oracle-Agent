@@ -38,6 +38,7 @@
     "open-seo",
     "node_modules",
     "dist",
-    "scratch"
+    "scratch",
+    "qronos-landing"
   ]
 }

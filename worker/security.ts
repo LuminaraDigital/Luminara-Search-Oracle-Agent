@@ -336,3 +336,62 @@ export async function resolvesToPublicAddress(host: string, fetcher: DohFetch = 
   if (addrs.length === 0) return false; // NXDOMAIN or no address records
   return addrs.every(ip => !isPrivateIp(ip));
 }
+
+export type FetchPublicUrlResult =
+  | { ok: true; response: Response; finalUrl: string }
+  | { ok: false; error: string };
+
+const DEFAULT_PUBLIC_FETCH_MAX_REDIRECTS = 5;
+
+/**
+ * Outbound fetch for caller-influenced URLs: http(s) only, public hostname, DoH check on
+ * every hop, manual redirect following with re-validation (blocks rebinding / open-redirect SSRF).
+ */
+export async function fetchPublicUrl(
+  input: string,
+  init?: RequestInit,
+  opts?: {
+    fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
+    dohFetcher?: DohFetch;
+    maxRedirects?: number;
+  },
+): Promise<FetchPublicUrlResult> {
+  const fetcher = opts?.fetcher ?? fetch;
+  const dohFetcher = opts?.dohFetcher ?? (fetcher as DohFetch);
+  const maxRedirects = opts?.maxRedirects ?? DEFAULT_PUBLIC_FETCH_MAX_REDIRECTS;
+
+  let current = safePublicUrl(input);
+  if (!current) return { ok: false, error: 'URL is not a public http(s) target' };
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    if (!(await resolvesToPublicAddress(current.hostname, dohFetcher))) {
+      return { ok: false, error: 'hostname does not resolve to a public address' };
+    }
+
+    let res: Response;
+    try {
+      res = await fetcher(current.toString(), { ...init, redirect: 'manual' });
+    } catch {
+      return { ok: false, error: 'fetch failed' };
+    }
+
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('Location') || res.headers.get('location');
+      if (!loc) return { ok: false, error: 'redirect without Location' };
+      let nextAbs: URL;
+      try {
+        nextAbs = new URL(loc, current);
+      } catch {
+        return { ok: false, error: 'invalid redirect Location' };
+      }
+      const next = safePublicUrl(nextAbs.toString());
+      if (!next) return { ok: false, error: 'redirect target is not a public http(s) URL' };
+      current = next;
+      continue;
+    }
+
+    return { ok: true, response: res, finalUrl: current.toString() };
+  }
+
+  return { ok: false, error: 'too many redirects' };
+}

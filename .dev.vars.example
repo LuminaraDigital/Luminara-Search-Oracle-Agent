@@ -32,6 +32,13 @@ UMAMI_URL=
 UMAMI_API_KEY=
 UMAMI_USERNAME=
 UMAMI_PASSWORD=
-# TON dual-rail (web / desktop). Set merchant wallet + Toncenter API key.
+# TON dual-rail (web / desktop). Merchant wallet + Toncenter API key (network-specific).
 TON_RECEIVING_ADDRESS=
 TON_API_KEY=
+# Chain network gate (must match merchant address + API hosts)
+CHAIN_NETWORK=mainnet
+CHAIN_TON_API_BASE=https://toncenter.com/api/v3
+CHAIN_TON_API_FALLBACK_BASE=https://tonapi.io
+CHAIN_XDC_RPC_URL=https://erpc.xinfin.network
+PROOF_ANCHOR_ENABLED=false
+PROOF_XDC_ENABLED=false

@@ -99,3 +99,6 @@ tmp-*.json
 classic-protection.json
 
 scripts/.license-vault-bulk-*.json
+
+# Third-party landing template kept locally for reference; not part of the product
+qronos-landing/

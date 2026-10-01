@@ -234,9 +234,10 @@ async function installPublicRouteGuard(context) {
     } catch {
       return false;
     }
-    if (hostRoutableCache.has(hostname)) return hostRoutableCache.get(hostname);
+    const cached = hostRoutableCache.get(hostname);
+    if (cached && Date.now() - cached.time < 3000) return cached.verdict;
     const verdict = (await assertPublicTarget(reqUrl)).ok;
-    hostRoutableCache.set(hostname, verdict);
+    hostRoutableCache.set(hostname, { verdict, time: Date.now() });
     return verdict;
   }
   await context.route('**/*', async route => {
@@ -681,9 +682,10 @@ app.post('/scrape', heavyRoute(async (req, res, signal) => {
       } catch {
         return false;
       }
-      if (hostRoutableCache.has(hostname)) return hostRoutableCache.get(hostname);
+      const cached = hostRoutableCache.get(hostname);
+      if (cached && Date.now() - cached.time < 3000) return cached.verdict;
       const verdict = (await assertPublicTarget(reqUrl)).ok;
-      hostRoutableCache.set(hostname, verdict);
+      hostRoutableCache.set(hostname, { verdict, time: Date.now() });
       return verdict;
     }
     await context.route('**/*', async route => {

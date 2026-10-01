@@ -1,5 +1,5 @@
 /**
- * TON settlement: invoice + on-chain verify via Toncenter, then KV subscription.
+ * TON settlement: invoice + on-chain verify via Toncenter v3, then KV subscription.
  * Never trust client BOC alone; confirmation requires a matching on-chain transfer.
  * Crediting is claimed atomically in D1 (worker/paymentLedger.ts) before the subscription is written.
  */
@@ -8,6 +8,14 @@ import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './
 import { PLANS } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
+import {
+  merchantAddressMatchesNetwork,
+  resolveChainNetwork,
+  resolveTonApiBases,
+  tonExplorerTxUrl,
+  type ChainNetwork,
+} from './chainNetwork';
+import { recordProofAnchorBestEffort } from './proofAnchors';
 
 export const TON_PRICING: Record<string, { ton: number; nanoTon: string }> = {
   starter: { ton: 15, nanoTon: '15000000000' },
@@ -36,6 +44,13 @@ export interface TonOrder {
 }
 
 export type TonFetch = (url: string, init?: RequestInit) => Promise<Response>;
+
+export type TonPaymentMatch = {
+  ok: true;
+  txHash: string;
+  seqno: number | null;
+  network: ChainNetwork;
+};
 
 // ---------------------------------------------------------------------------
 // Merchant address validation (mirrored in scripts/lib/tonAddress.mjs)
@@ -119,8 +134,32 @@ function addressForLog(value: string): string {
   return value ? `"${value.slice(0, 4)}…" (${value.length} chars)` : '(unset)';
 }
 
-export function isTonPaymentConfigured(env: Pick<Env, 'TON_RECEIVING_ADDRESS' | 'ENVIRONMENT'>): boolean {
-  return validateTonAddress(env.TON_RECEIVING_ADDRESS, { production: isProductionEnv(env) }).ok;
+type TonConfigEnv = Pick<
+  Env,
+  | 'TON_RECEIVING_ADDRESS'
+  | 'ENVIRONMENT'
+  | 'CHAIN_NETWORK'
+  | 'CHAIN_TON_API_BASE'
+  | 'CHAIN_TON_API_FALLBACK_BASE'
+>;
+
+function diagnoseTonConfig(env: TonConfigEnv): { ok: true; network: ChainNetwork } | { ok: false; reason: string } {
+  const network = resolveChainNetwork(env);
+  if (!network) return { ok: false, reason: 'CHAIN_NETWORK must be testnet or mainnet' };
+  if (isProductionEnv(env) && network !== 'mainnet') {
+    return { ok: false, reason: 'ENVIRONMENT=production requires CHAIN_NETWORK=mainnet' };
+  }
+  const bases = resolveTonApiBases(env);
+  if (!bases) return { ok: false, reason: 'CHAIN_TON_API_BASE / fallback host does not match CHAIN_NETWORK' };
+
+  const addressCheck = validateTonAddress(env.TON_RECEIVING_ADDRESS, { production: isProductionEnv(env) });
+  const merchant = merchantAddressMatchesNetwork(addressCheck, network);
+  if (!merchant.ok) return { ok: false, reason: merchant.reason };
+  return { ok: true, network };
+}
+
+export function isTonPaymentConfigured(env: TonConfigEnv): boolean {
+  return diagnoseTonConfig(env).ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,10 +178,10 @@ export async function createTonInvoice(
   }
 
   const recipient = String(env.TON_RECEIVING_ADDRESS || '').trim();
-  const addressCheck = validateTonAddress(recipient, { production: isProductionEnv(env) });
-  if (!addressCheck.ok) {
+  const cfg = diagnoseTonConfig(env);
+  if (!cfg.ok) {
     console.error(
-      `[TON] Invoice refused: TON_RECEIVING_ADDRESS ${addressForLog(recipient)} is not valid for ENVIRONMENT=${env.ENVIRONMENT || 'unset'} (${addressCheck.reason}).`,
+      `[TON] Invoice refused: ${cfg.reason}. TON_RECEIVING_ADDRESS ${addressForLog(recipient)} ENVIRONMENT=${env.ENVIRONMENT || 'unset'} CHAIN_NETWORK=${env.CHAIN_NETWORK || 'unset'}.`,
     );
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
   }
@@ -175,20 +214,26 @@ export async function createTonInvoice(
   return { ok: true, order };
 }
 
-/** Extract comment text from Toncenter / TonAPI shaped messages. */
+/** Extract comment text from Toncenter v3 / TonAPI / legacy v2 shaped messages. */
 export function extractTonComment(msg: any): string {
   if (!msg) return '';
   if (typeof msg.message === 'string' && msg.message) return msg.message;
   if (typeof msg.decoded_body?.text === 'string' && msg.decoded_body.text) return msg.decoded_body.text;
+
+  const decoded = msg.message_content?.decoded;
+  if (decoded && typeof decoded === 'object') {
+    if (typeof decoded.text === 'string' && decoded.text) return decoded.text;
+    if (typeof decoded.comment === 'string' && decoded.comment) return decoded.comment;
+  }
+
   const rawText = msg.msg_data?.text;
   if (typeof rawText === 'string' && rawText) {
     if (rawText.startsWith('LUM:')) return rawText;
-    // Handle base64 encoded text in Toncenter v2
     try {
       if (typeof atob === 'function') {
-        const decoded = atob(rawText);
-        if (decoded && (decoded.includes('LUM:') || /^[\x20-\x7E]+$/.test(decoded))) {
-          return decoded;
+        const decodedText = atob(rawText);
+        if (decodedText && (decodedText.includes('LUM:') || /^[\x20-\x7E]+$/.test(decodedText))) {
+          return decodedText;
         }
       }
     } catch {
@@ -203,23 +248,67 @@ function reportHashlessMatch(order: TonOrder): void {
   console.error(`[TON] Transfer matching order ${order.orderId} has no transaction hash; not crediting without a dedupe key.`);
 }
 
+function parseSeqno(tx: any): number | null {
+  const candidates = [tx?.mc_block_seqno, tx?.mc_seqno, tx?.block_ref?.seqno];
+  for (const c of candidates) {
+    const n = Number(c);
+    if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  return null;
+}
+
+function matchInboundTransfer(
+  txs: any[],
+  order: TonOrder,
+  minValue: bigint,
+  minTimeSec: number,
+  network: ChainNetwork,
+): TonPaymentMatch | null {
+  for (const tx of txs) {
+    const utime = Number(tx.utime ?? tx.now ?? 0);
+    if (utime && utime < minTimeSec) continue;
+    const inMsg = tx.in_msg;
+    if (!inMsg) continue;
+    const comment = extractTonComment(inMsg);
+    const value = BigInt(String(inMsg.value || '0'));
+    if (!comment.includes(order.memo) || value < minValue) continue;
+    const hash =
+      typeof tx.hash === 'string'
+        ? tx.hash
+        : typeof tx.transaction_id?.hash === 'string'
+          ? tx.transaction_id.hash
+          : '';
+    if (!hash) {
+      reportHashlessMatch(order);
+      continue;
+    }
+    return { ok: true, txHash: hash, seqno: parseSeqno(tx), network };
+  }
+  return null;
+}
+
 /**
  * Looks up recent inbound transfers to the merchant wallet and matches memo + amount.
- * Queries Toncenter v2 with seamless fallback to TonAPI for high availability.
+ * Primary: Toncenter Index API v3. Fallback: TonAPI for the same CHAIN_NETWORK.
  */
 export async function findMatchingTonPayment(
   order: TonOrder,
   env: Env,
   fetcher: TonFetch = fetch,
-): Promise<{ ok: true; txHash: string } | { ok: false; error: string }> {
+): Promise<TonPaymentMatch | { ok: false; error: string }> {
+  const bases = resolveTonApiBases(env);
+  if (!bases) {
+    return { ok: false, error: TON_UNAVAILABLE_ERROR };
+  }
+
   const apiKey = String(env.TON_API_KEY || '').trim();
   const minValue = BigInt(order.amountNano);
-  const minTimeSec = Math.floor((order.createdAt - 60_000) / 1000); // 1-minute clock skew allowance
+  const minTimeSec = Math.floor((order.createdAt - 60_000) / 1000);
 
-  // 1. Primary on-chain provider: Toncenter v2
   const toncenterUrl =
-    `https://toncenter.com/api/v2/getTransactions` +
-    `?address=${encodeURIComponent(order.recipientAddress)}&limit=30`;
+    `${bases.toncenter}/transactions` +
+    `?account=${encodeURIComponent(order.recipientAddress)}` +
+    `&limit=30&start_utime=${minTimeSec}`;
   const toncenterHeaders: Record<string, string> = { Accept: 'application/json' };
   if (apiKey) toncenterHeaders['X-API-Key'] = apiKey;
 
@@ -227,24 +316,14 @@ export async function findMatchingTonPayment(
   try {
     const res = await fetcher(toncenterUrl, { headers: toncenterHeaders });
     if (res.ok) {
-      const data = (await res.json()) as { ok?: boolean; result?: any[] };
-      const txs = Array.isArray(data.result) ? data.result : [];
-      for (const tx of txs) {
-        const utime = Number(tx.utime || 0);
-        if (utime && utime < minTimeSec) continue;
-        const inMsg = tx.in_msg;
-        if (!inMsg) continue;
-        const comment = extractTonComment(inMsg);
-        const value = BigInt(String(inMsg.value || '0'));
-        if (comment.includes(order.memo) && value >= minValue) {
-          const hash = typeof tx.transaction_id?.hash === 'string' ? tx.transaction_id.hash : typeof tx.hash === 'string' ? tx.hash : '';
-          if (!hash) {
-            reportHashlessMatch(order);
-            continue;
-          }
-          return { ok: true, txHash: hash };
-        }
-      }
+      const data = (await res.json()) as { transactions?: any[]; result?: any[]; ok?: boolean };
+      const txs = Array.isArray(data.transactions)
+        ? data.transactions
+        : Array.isArray(data.result)
+          ? data.result
+          : [];
+      const match = matchInboundTransfer(txs, order, minValue, minTimeSec, bases.network);
+      if (match) return match;
     } else {
       toncenterFailed = true;
     }
@@ -252,29 +331,15 @@ export async function findMatchingTonPayment(
     toncenterFailed = true;
   }
 
-  // 2. High-availability secondary provider: TonAPI (tonapi.io)
   try {
-    const tonapiUrl = `https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(order.recipientAddress)}/transactions?limit=30`;
+    const tonapiUrl =
+      `${bases.tonapi}/v2/blockchain/accounts/${encodeURIComponent(order.recipientAddress)}/transactions?limit=30`;
     const tonapiRes = await fetcher(tonapiUrl, { headers: { Accept: 'application/json' } });
     if (tonapiRes.ok) {
       const data = (await tonapiRes.json()) as { transactions?: any[] };
       const txs = Array.isArray(data.transactions) ? data.transactions : [];
-      for (const tx of txs) {
-        const utime = Number(tx.utime || 0);
-        if (utime && utime < minTimeSec) continue;
-        const inMsg = tx.in_msg;
-        if (!inMsg) continue;
-        const comment = extractTonComment(inMsg);
-        const value = BigInt(String(inMsg.value || '0'));
-        if (comment.includes(order.memo) && value >= minValue) {
-          const hash = typeof tx.hash === 'string' ? tx.hash : '';
-          if (!hash) {
-            reportHashlessMatch(order);
-            continue;
-          }
-          return { ok: true, txHash: hash };
-        }
-      }
+      const match = matchInboundTransfer(txs, order, minValue, minTimeSec, bases.network);
+      if (match) return match;
     }
   } catch {
     /* ignore fallback network errors */
@@ -321,10 +386,17 @@ export async function verifyTonPayment(
   const plan = PLANS[order.planId];
   if (!plan) return { ok: false, error: 'Invalid plan on order' };
 
+  const cfg = diagnoseTonConfig(env);
+  if (!cfg.ok) {
+    console.error(`[TON] Verify refused for order ${order.orderId}: ${cfg.reason}.`);
+    return { ok: false, error: TON_UNAVAILABLE_ERROR };
+  }
+
   const recipientCheck = validateTonAddress(order.recipientAddress, { production: isProductionEnv(env) });
-  if (!recipientCheck.ok) {
+  const merchant = merchantAddressMatchesNetwork(recipientCheck, cfg.network);
+  if (!merchant.ok) {
     console.error(
-      `[TON] Verify refused for order ${order.orderId}: recipient ${addressForLog(String(order.recipientAddress || ''))} is not valid (${recipientCheck.reason}).`,
+      `[TON] Verify refused for order ${order.orderId}: recipient ${addressForLog(String(order.recipientAddress || ''))} (${merchant.reason}).`,
     );
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
   }
@@ -332,7 +404,6 @@ export async function verifyTonPayment(
   const match = await findMatchingTonPayment(order, env, opts.fetcher || fetch);
   if (!match.ok) return match;
 
-  // Legacy KV guard for transactions credited before the D1 ledger existed.
   const txGuardKey = `ton:tx:${match.txHash}`;
   const alreadyClaimed = await kv.get(txGuardKey);
   if (alreadyClaimed && alreadyClaimed !== orderId) {
@@ -366,7 +437,6 @@ export async function verifyTonPayment(
       expiresAt,
     });
   } catch (err) {
-    // Release so the buyer can retry verify; if the write partly landed, a retry may extend twice, which beats an uncredited payment.
     await releaseTonTransaction(env, match.txHash, orderId);
     console.error(`[TON] Subscription write failed after claim for order ${orderId}; claim released: ${err instanceof Error ? err.message : err}`);
     return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
@@ -382,8 +452,17 @@ export async function verifyTonPayment(
     console.error(`[TON] KV cache update failed after crediting order ${orderId}: ${err instanceof Error ? err.message : err}`);
   }
 
-  // Money event: plan credited via on-chain TON. Best-effort audit; the claim and
-  // subscription write above already committed, so a logging blip must not unwind them.
+  await recordProofAnchorBestEffort(env, {
+    kind: 'ton_payment',
+    orderId,
+    chain: 'ton',
+    network: match.network,
+    txHash: match.txHash,
+    seqno: match.seqno,
+    explorerUrl: tonExplorerTxUrl(match.network, match.txHash),
+    status: 'anchored',
+  });
+
   await recordAuditLogBestEffort(env, {
     org_id: `org_${accountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
     actor_id: order.userId,
@@ -393,6 +472,8 @@ export async function verifyTonPayment(
       tonAmount: order.tonAmount,
       orderId,
       txHash: match.txHash,
+      seqno: match.seqno,
+      network: match.network,
       expiresAt,
     },
   });

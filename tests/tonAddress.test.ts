@@ -103,12 +103,60 @@ describe('validateTonAddress', () => {
 });
 
 describe('isTonPaymentConfigured', () => {
-  it('is true only for an address valid in the current environment', () => {
-    expect(isTonPaymentConfigured({ ENVIRONMENT: 'production', TON_RECEIVING_ADDRESS: EQ })).toBe(true);
-    expect(isTonPaymentConfigured({ ENVIRONMENT: 'production', TON_RECEIVING_ADDRESS: undefined })).toBe(false);
-    expect(isTonPaymentConfigured({ ENVIRONMENT: 'production', TON_RECEIVING_ADDRESS: KQ })).toBe(false);
-    expect(isTonPaymentConfigured({ ENVIRONMENT: 'staging', TON_RECEIVING_ADDRESS: KQ })).toBe(true);
-    expect(isTonPaymentConfigured({ ENVIRONMENT: undefined, TON_RECEIVING_ADDRESS: 'garbage' })).toBe(false);
+  it('is true only when address, ENVIRONMENT, and CHAIN_NETWORK agree', () => {
+    expect(
+      isTonPaymentConfigured({
+        ENVIRONMENT: 'production',
+        TON_RECEIVING_ADDRESS: EQ,
+        CHAIN_NETWORK: 'mainnet',
+        CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',
+      }),
+    ).toBe(true);
+    expect(
+      isTonPaymentConfigured({
+        ENVIRONMENT: 'production',
+        TON_RECEIVING_ADDRESS: undefined,
+        CHAIN_NETWORK: 'mainnet',
+        CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',
+      }),
+    ).toBe(false);
+    expect(
+      isTonPaymentConfigured({
+        ENVIRONMENT: 'production',
+        TON_RECEIVING_ADDRESS: KQ,
+        CHAIN_NETWORK: 'mainnet',
+        CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',
+      }),
+    ).toBe(false);
+    expect(
+      isTonPaymentConfigured({
+        ENVIRONMENT: 'staging',
+        TON_RECEIVING_ADDRESS: KQ,
+        CHAIN_NETWORK: 'testnet',
+        CHAIN_TON_API_BASE: 'https://testnet.toncenter.com/api/v3',
+      }),
+    ).toBe(true);
+    expect(
+      isTonPaymentConfigured({
+        ENVIRONMENT: 'staging',
+        TON_RECEIVING_ADDRESS: KQ,
+        CHAIN_NETWORK: 'mainnet',
+        CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',
+      }),
+    ).toBe(false);
+    expect(
+      isTonPaymentConfigured({
+        ENVIRONMENT: undefined,
+        TON_RECEIVING_ADDRESS: 'garbage',
+        CHAIN_NETWORK: 'mainnet',
+      }),
+    ).toBe(false);
+    expect(
+      isTonPaymentConfigured({
+        ENVIRONMENT: 'production',
+        TON_RECEIVING_ADDRESS: EQ,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -168,19 +216,53 @@ describe('scripts/validate-env.mjs TON gate', () => {
   const dir = mkdtempSync(join(tmpdir(), 'lum-validate-env-'));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  function wranglerWith(address?: string): string {
+  function wranglerWith(opts: {
+    productionAddress?: string | null;
+    stagingAddress?: string | null;
+    omitChain?: boolean;
+  } = {}): string {
     const file = join(dir, `wrangler-${Math.random().toString(36).slice(2)}.jsonc`);
-    const tonLine = address === undefined ? '' : `"TON_RECEIVING_ADDRESS": "${address}", // merchant wallet`;
+    const prodTon =
+      opts.productionAddress === undefined
+        ? `"TON_RECEIVING_ADDRESS": "${UQ}",`
+        : opts.productionAddress === null
+          ? ''
+          : `"TON_RECEIVING_ADDRESS": "${opts.productionAddress}",`;
+    const stagingTon =
+      opts.stagingAddress === undefined
+        ? `"TON_RECEIVING_ADDRESS": "${KQ}",`
+        : opts.stagingAddress === null
+          ? ''
+          : `"TON_RECEIVING_ADDRESS": "${opts.stagingAddress}",`;
+    const chainProd = opts.omitChain
+      ? ''
+      : `"CHAIN_NETWORK": "mainnet",
+              "CHAIN_TON_API_BASE": "https://toncenter.com/api/v3",
+              "CHAIN_TON_API_FALLBACK_BASE": "https://tonapi.io",
+              "CHAIN_XDC_RPC_URL": "https://erpc.xinfin.network",`;
+    const chainStaging = opts.omitChain
+      ? ''
+      : `"CHAIN_NETWORK": "testnet",
+              "CHAIN_TON_API_BASE": "https://testnet.toncenter.com/api/v3",
+              "CHAIN_TON_API_FALLBACK_BASE": "https://testnet.tonapi.io",
+              "CHAIN_XDC_RPC_URL": "https://rpc.apothem.network",`;
     writeFileSync(
       file,
       `{
         // staging.luminarasuite.com lives in "staging"
         "env": {
-          "staging": { "vars": { "WEBAPP_URL": "https://staging.luminarasuite.com/" } },
+          "staging": {
+            "vars": {
+              "WEBAPP_URL": "https://staging.luminarasuite.com/",
+              ${chainStaging}
+              ${stagingTon}
+            }
+          },
           "production": {
             "vars": {
               "WEBAPP_URL": "https://luminarasuite.com/", // trailing comment after a URL
-              ${tonLine}
+              ${chainProd}
+              ${prodTon}
             },
           },
         },
@@ -193,31 +275,34 @@ describe('scripts/validate-env.mjs TON gate', () => {
   const run = (...args: string[]) => spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: 'utf8' });
 
   it('fails production mode when TON_RECEIVING_ADDRESS is missing', () => {
-    const result = run('--prod', `--wrangler=${wranglerWith()}`);
+    const result = run('--prod', `--wrangler=${wranglerWith({ productionAddress: null })}`);
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/TON_RECEIVING_ADDRESS is not set/);
+    expect(result.stderr).toMatch(/TON_RECEIVING_ADDRESS/);
   });
 
   it('fails production mode on a testnet address without printing it', () => {
-    const result = run('--prod', `--wrangler=${wranglerWith(KQ)}`);
+    const result = run('--prod', `--wrangler=${wranglerWith({ productionAddress: KQ })}`);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/testnet/);
     expect(result.stderr + result.stdout).not.toContain(KQ);
   });
 
   it('passes production mode with a valid mainnet address', () => {
-    const result = run('--mode=production', `--wrangler=${wranglerWith(UQ)}`);
+    const result = run('--mode=production', `--wrangler=${wranglerWith({ productionAddress: UQ })}`);
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
   });
 
-  it('--allow-missing-ton downgrades a missing address to a warning', () => {
-    const result = run('--prod', '--allow-missing-ton', `--wrangler=${wranglerWith()}`);
-    expect(result.status).toBe(0);
-    expect(result.stderr).toMatch(/WARNING/);
+  it('--allow-missing-ton still fails when CHAIN_NETWORK requires a merchant', () => {
+    const result = run('--prod', '--allow-missing-ton', `--wrangler=${wranglerWith({ productionAddress: null })}`);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/TON_RECEIVING_ADDRESS/);
   });
 
-  it('staging mode does not require a TON address', () => {
+  it('staging mode requires testnet merchant + Apothem RPC', () => {
     expect(run('--staging', `--wrangler=${wranglerWith()}`).status).toBe(0);
+    const bad = run('--staging', `--wrangler=${wranglerWith({ stagingAddress: UQ })}`);
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toMatch(/kQ\/0Q|testnet/i);
   });
 });

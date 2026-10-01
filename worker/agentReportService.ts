@@ -24,7 +24,7 @@ function utf8Bytes(s: string): number {
   return new TextEncoder().encode(s).length;
 }
 
-function validateHtml(html: string): string | null {
+export function validateHtml(html: string): string | null {
   const trimmed = html.trim();
   if (!trimmed.includes('<html') && !trimmed.includes('<HTML')) {
     return 'HTML must include an <html> element';
@@ -37,6 +37,15 @@ function validateHtml(html: string): string | null {
   }
   if (/<script[\s>]/i.test(trimmed)) {
     return 'Scripts are not allowed in agent reports';
+  }
+  if (/<(iframe|object|embed|applet)[\s>]/i.test(trimmed)) {
+    return 'Embedded frames and objects are not allowed in agent reports';
+  }
+  if (/\son[a-z0-9_-]+\s*=/i.test(trimmed)) {
+    return 'Inline event handlers (e.g. onload, onerror) are not allowed in agent reports';
+  }
+  if (/href\s*=\s*['"]?\s*javascript:/i.test(trimmed) || /src\s*=\s*['"]?\s*javascript:/i.test(trimmed)) {
+    return 'Javascript URIs are not allowed in agent reports';
   }
   const size = utf8Bytes(trimmed);
   if (size > REPORT_HTML_BYTE_CAP) {

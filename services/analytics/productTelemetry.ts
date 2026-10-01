@@ -15,7 +15,15 @@ export type TelemetryEventType =
   | 'core_action_completed'
   | 'error_encountered'
   | 'funnel_abandoned'
-  | 'draft_restored';
+  | 'draft_restored'
+  | 'instant_audit_completed'
+  | 'strategy_saved'
+  | 'share_cta_clicked'
+  | 'share_link_created'
+  | 'share_link_opened'
+  | 'mcp_key_created'
+  | 'mcp_snippet_copied'
+  | 'mcp_first_used';
 
 export interface TelemetryEvent {
   id: string;
@@ -141,6 +149,53 @@ class ProductTelemetryEngine {
     if (type === 'error_encountered') {
       this.summary.totalErrorsEncountered += 1;
       this.saveSummary();
+    }
+
+    this.enqueueServerFlush(event);
+  }
+
+  private pendingFlush: TelemetryEvent[] = [];
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private enqueueServerFlush(event: TelemetryEvent): void {
+    if (typeof window === 'undefined') return;
+    this.pendingFlush.push(event);
+    if (this.pendingFlush.length >= 8) {
+      void this.flushToServer();
+      return;
+    }
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      void this.flushToServer();
+    }, 4000);
+  }
+
+  /** Best-effort POST to Worker product analytics (no PII keys). */
+  public async flushToServer(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    const batch = this.pendingFlush.splice(0, 40);
+    if (!batch.length) return;
+    try {
+      const { apiBase, workerFetchWithAuthRetry } = await import('../apiClient');
+      const base = apiBase();
+      if (!base) return;
+      await workerFetchWithAuthRetry(`${base}/api/analytics/events`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: String(this.sessionStartTime),
+          events: batch.map((e) => ({
+            type: e.type,
+            path: typeof e.data?.view === 'string' ? e.data.view : undefined,
+            data: e.data,
+            timestamp: e.timestamp,
+          })),
+        }),
+      });
+    } catch {
+      // Re-queue once on failure (cap)
+      this.pendingFlush = [...batch.slice(0, 20), ...this.pendingFlush].slice(0, 40);
     }
   }
 

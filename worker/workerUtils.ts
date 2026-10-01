@@ -1,8 +1,13 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
-import { validateInitData } from './telegramAuth';
+import { validateInitData, verifyTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { linkTelegramAndFirebase, withAccountId } from './userStore';
+import {
+  isOpaqueSessionId,
+  loadOpaqueSession,
+  looksLikeJwt,
+} from './opaqueSession';
 
 export const json = (data: unknown, status = 200, extra: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), {
@@ -106,17 +111,22 @@ export function billingId(user: HostedIdentity): string {
 export async function identify(request: Request, env: Env): Promise<{ user: HostedIdentity | null; error?: string }> {
   const initData = request.headers.get('x-telegram-init-data');
   const cookieToken = getSessionCookieToken(request);
-  const bearer = bearerFromAuthorization(request.headers.get('authorization')) || cookieToken;
 
-  // CSRF protection: verify Origin header on state-changing cookie-based mutations
+  // CSRF: cookie-authenticated mutations require an allowlisted Origin (fail closed if missing).
+  // Bearer and Telegram initData paths are not cookie CSRF vectors.
   if (cookieToken && !initData && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+    const secFetchSite = request.headers.get('sec-fetch-site');
+    if (secFetchSite && secFetchSite === 'cross-site') {
+      return { user: null, error: 'CSRF validation failed: Cross-site request rejected' };
+    }
     const origin = request.headers.get('Origin');
-    if (origin) {
-      const allowed = (env.ALLOWED_ORIGINS || env.WEBAPP_URL || '').split(',').map(s => s.trim()).filter(Boolean);
-      const isAllowed = allowed.some(a => origin === a || origin === a.replace(/\/$/, ''));
-      if (!isAllowed) {
-        return { user: null, error: 'CSRF validation failed: Origin header rejected' };
-      }
+    if (!origin) {
+      return { user: null, error: 'CSRF validation failed: Origin header required' };
+    }
+    const allowed = (env.ALLOWED_ORIGINS || env.WEBAPP_URL || '').split(',').map(s => s.trim()).filter(Boolean);
+    const isAllowed = allowed.some(a => origin === a || origin === a.replace(/\/$/, ''));
+    if (!isAllowed) {
+      return { user: null, error: 'CSRF validation failed: Origin header rejected' };
     }
   }
 
@@ -135,8 +145,54 @@ export async function identify(request: Request, env: Env): Promise<{ user: Host
     };
   }
 
-  if (bearer && env.FIREBASE_PROJECT_ID) {
-    const result = await verifyFirebaseIdToken(bearer, env.FIREBASE_PROJECT_ID);
+  // Opaque server session (preferred): cookie holds sid_*, identity resolved from KV.
+  if (cookieToken && isOpaqueSessionId(cookieToken)) {
+    const sess = await loadOpaqueSession(env, cookieToken);
+    if (sess) {
+      if (sess.uid.startsWith('tg:')) {
+        telegramUser = {
+          id: sess.uid.replace(/^tg:/, ''),
+          source: 'telegram',
+          name: sess.name,
+        };
+      } else {
+        firebaseUser = {
+          id: `fb:${sess.uid}`,
+          source: 'firebase',
+          email: sess.email,
+          name: sess.name,
+        };
+      }
+    } else if (!initData && !bearerFromAuthorization(request.headers.get('authorization'))) {
+      return { user: null, error: 'Session expired or revoked' };
+    }
+  }
+
+  // Signed Telegram session token (cookie or Authorization Bearer)
+  const authBearer = bearerFromAuthorization(request.headers.get('authorization'));
+  const tgTokenCandidate =
+    (cookieToken && cookieToken.startsWith('tg_sess_') ? cookieToken : null) ||
+    (authBearer && authBearer.startsWith('tg_sess_') ? authBearer : null);
+  if (tgTokenCandidate && env.BOT_TOKEN && !telegramUser) {
+    const tgVerified = await verifyTelegramSessionToken(tgTokenCandidate, env.BOT_TOKEN);
+    if (tgVerified.ok) {
+      telegramUser = {
+        id: String(tgVerified.user.id),
+        source: 'telegram',
+        name:
+          [tgVerified.user.first_name, tgVerified.user.last_name].filter(Boolean).join(' ') ||
+          tgVerified.user.username,
+      };
+    }
+  }
+
+  // Authorization Bearer, or legacy cookie that still holds a raw Firebase JWT (migration window).
+  const jwtCandidate =
+    bearerFromAuthorization(request.headers.get('authorization')) ||
+    (cookieToken && looksLikeJwt(cookieToken) ? cookieToken : null);
+
+  if (jwtCandidate && env.FIREBASE_PROJECT_ID && !firebaseUser) {
+    const result = await verifyFirebaseIdToken(jwtCandidate, env.FIREBASE_PROJECT_ID);
     if (!result.ok) {
       // Telegram-only callers still succeed when Firebase token is bad/expired.
       if (!telegramUser) return { user: null, error: result.reason };

@@ -16,6 +16,7 @@ import { crc16Xmodem } from '../worker/tonPayment';
 import { sha256Hex } from '../worker/workerUtils';
 import { createSqliteD1 } from './helpers/sqliteD1';
 import { loadKeys, mergeRevocation } from '../scripts/revoke-license-keys.mjs';
+import { validateHtml } from '../worker/agentReportService';
 import { writeFileSync, mkdtempSync, readFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -394,7 +395,15 @@ describe('P1 money/admin audit logging', () => {
     const { verifyTonPayment } = await import('../worker/tonPayment');
     const MERCHANT = syntheticTonAddress(0x11, 0x5a);
     const store = new Map<string, string>();
-    const env = makeEnv({ LUMINARA_KV: kv(store), TON_RECEIVING_ADDRESS: MERCHANT, ENVIRONMENT: 'production' });
+    const env = makeEnv({
+      LUMINARA_KV: kv(store),
+      TON_RECEIVING_ADDRESS: MERCHANT,
+      ENVIRONMENT: 'production',
+      CHAIN_NETWORK: 'mainnet',
+      CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',
+      CHAIN_TON_API_FALLBACK_BASE: 'https://tonapi.io',
+      CHAIN_XDC_RPC_URL: 'https://erpc.xinfin.network',
+    });
 
     const order = {
       orderId: 'ton_audit_1', userId: 'user_ton', planId: 'starter',
@@ -658,5 +667,36 @@ describe('P1 license revocation tooling', () => {
       expect(text).not.toMatch(/LUM-[A-Z0-9]+-\d+D-[A-Z0-9]{4}-[A-Z0-9]{4}/);
     }
     expect(script).not.toMatch(/LUM-[A-Z0-9-]{8,}/);
+  });
+});
+
+describe('report HTML sanitization (defense-in-depth)', () => {
+  it('accepts clean, well-formed HTML reports', () => {
+    const clean = '<!DOCTYPE html><html><head><title>Report</title></head><body><h1>Report</h1><p>Clean text</p></body></html>';
+    expect(validateHtml(clean)).toBeNull();
+  });
+
+  it('rejects HTML missing closing tags or root html element', () => {
+    expect(validateHtml('<div>no html tag</div>')).toMatch(/must include an <html> element/i);
+    expect(validateHtml('<html><body>unclosed')).toMatch(/must end with <\/html>/i);
+  });
+
+  it('rejects scripts and template interpolation', () => {
+    expect(validateHtml('<html><script>alert(1)</script></html>')).toMatch(/scripts are not allowed/i);
+    expect(validateHtml('<html>`${malicious}`</html>')).toMatch(/backticks or \${/i);
+  });
+
+  it('rejects iframes, objects, embeds, and applets', () => {
+    expect(validateHtml('<html><iframe src="https://evil.com"></iframe></html>')).toMatch(/embedded frames and objects/i);
+    expect(validateHtml('<html><object data="evil.swf"></object></html>')).toMatch(/embedded frames and objects/i);
+    expect(validateHtml('<html><embed src="evil.pdf"></html>')).toMatch(/embedded frames and objects/i);
+    expect(validateHtml('<html><applet code="Evil.class"></applet></html>')).toMatch(/embedded frames and objects/i);
+  });
+
+  it('rejects inline event handlers and javascript URIs', () => {
+    expect(validateHtml('<html><img src="x" onerror="alert(1)"></html>')).toMatch(/inline event handlers/i);
+    expect(validateHtml('<html><body onload="track()"></body></html>')).toMatch(/inline event handlers/i);
+    expect(validateHtml('<html><a href="javascript:alert(1)">Click</a></html>')).toMatch(/javascript uris/i);
+    expect(validateHtml('<html><img src="javascript:alert(1)"></html>')).toMatch(/javascript uris/i);
   });
 });

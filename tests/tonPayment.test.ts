@@ -54,16 +54,29 @@ function makeEnv(overrides: Record<string, unknown> = {}) {
     DB: createSqliteD1(),
     TON_RECEIVING_ADDRESS: MERCHANT,
     ENVIRONMENT: 'production',
+    CHAIN_NETWORK: 'mainnet',
+    CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',
+    CHAIN_TON_API_FALLBACK_BASE: 'https://tonapi.io',
+    CHAIN_XDC_RPC_URL: 'https://erpc.xinfin.network',
     ...overrides,
   };
   return { env, kv };
 }
 
-function toncenterResponse(memo: string, amountNano: string, hash = 'abc123') {
+function toncenterResponse(memo: string, amountNano: string, hash = 'abc123', seqno = 96144803) {
   return new Response(
     JSON.stringify({
-      ok: true,
-      result: [{ transaction_id: { hash }, utime: Math.floor(Date.now() / 1000), in_msg: { value: amountNano, message: memo } }],
+      transactions: [
+        {
+          hash,
+          now: Math.floor(Date.now() / 1000),
+          mc_block_seqno: seqno,
+          in_msg: {
+            value: amountNano,
+            message_content: { decoded: { '@type': 'text_comment', text: memo } },
+          },
+        },
+      ],
     }),
     { status: 200 },
   );
@@ -141,7 +154,7 @@ describe('TON Payment Settlement Engine', () => {
     if (!inv.ok) throw new Error('invoice failed');
 
     const fetcher = vi.fn(async (url: string) => {
-      if (url.includes('toncenter.com')) return new Response('Internal Server Error', { status: 500 });
+      if (url.includes('toncenter.com/api/v3')) return new Response('Internal Server Error', { status: 500 });
       if (url.includes('tonapi.io')) {
         return new Response(
           JSON.stringify({
@@ -161,6 +174,53 @@ describe('TON Payment Settlement Engine', () => {
 
     const verifyRes = await verifyTonPayment(env, inv.order.orderId, { expectedUserId: 'user_fallback', fetcher });
     expect(verifyRes.ok).toBe(true);
+  });
+
+  it('queries Toncenter v3 base from env and persists proof_anchors seqno', async () => {
+    const { env } = makeEnv();
+    const inv = await createTonInvoice(env, 'user_v3', 'starter');
+    if (!inv.ok) throw new Error('invoice failed');
+
+    const fetcher = vi.fn(async (url: string) => {
+      expect(url).toContain('https://toncenter.com/api/v3/transactions');
+      expect(url).toContain('start_utime=');
+      return toncenterResponse(inv.order.memo, TON_PRICING.starter.nanoTon, 'v3_hash', 424242);
+    });
+
+    const verifyRes = await verifyTonPayment(env, inv.order.orderId, { fetcher });
+    expect(verifyRes.ok).toBe(true);
+    const row = env.DB.sqlite.prepare('SELECT seqno, network, tx_hash FROM proof_anchors WHERE tx_hash = ?').get('v3_hash');
+    expect(row.seqno).toBe(424242);
+    expect(row.network).toBe('mainnet');
+  });
+
+  it('fail-closed when CHAIN_NETWORK mismatches merchant address', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { env } = makeEnv({ CHAIN_NETWORK: 'testnet', TON_RECEIVING_ADDRESS: MERCHANT });
+    const inv = await createTonInvoice(env, 'user_mismatch', 'starter');
+    expect(inv.ok).toBe(false);
+  });
+
+  it('uses testnet Toncenter host for staging', async () => {
+    const { env } = makeEnv({
+      ENVIRONMENT: 'staging',
+      CHAIN_NETWORK: 'testnet',
+      TON_RECEIVING_ADDRESS: TESTNET_MERCHANT,
+      CHAIN_TON_API_BASE: 'https://testnet.toncenter.com/api/v3',
+      CHAIN_TON_API_FALLBACK_BASE: 'https://testnet.tonapi.io',
+      CHAIN_XDC_RPC_URL: 'https://rpc.apothem.network',
+    });
+    const inv = await createTonInvoice(env, 'user_tn', 'starter');
+    if (!inv.ok) throw new Error('invoice failed');
+    const fetcher = vi.fn(async (url: string) => {
+      expect(url.startsWith('https://testnet.toncenter.com/api/v3/transactions')).toBe(true);
+      expect(url).not.toContain('https://toncenter.com/api/v2');
+      return toncenterResponse(inv.order.memo, TON_PRICING.starter.nanoTon, 'tn_hash', 99);
+    });
+    expect((await verifyTonPayment(env, inv.order.orderId, { fetcher })).ok).toBe(true);
+    const row = env.DB.sqlite.prepare('SELECT network, explorer_url FROM proof_anchors WHERE tx_hash = ?').get('tn_hash');
+    expect(row.network).toBe('testnet');
+    expect(row.explorer_url).toContain('testnet.tonviewer.com');
   });
 
   it('prevents double-spending replay attack with a txHash claimed in legacy KV', async () => {
@@ -200,7 +260,14 @@ describe('TON merchant address fail-closed', () => {
   });
 
   it('allows a testnet address outside production', async () => {
-    const { env } = makeEnv({ TON_RECEIVING_ADDRESS: TESTNET_MERCHANT, ENVIRONMENT: 'staging' });
+    const { env } = makeEnv({
+      TON_RECEIVING_ADDRESS: TESTNET_MERCHANT,
+      ENVIRONMENT: 'staging',
+      CHAIN_NETWORK: 'testnet',
+      CHAIN_TON_API_BASE: 'https://testnet.toncenter.com/api/v3',
+      CHAIN_TON_API_FALLBACK_BASE: 'https://testnet.tonapi.io',
+      CHAIN_XDC_RPC_URL: 'https://rpc.apothem.network',
+    });
     const inv = await createTonInvoice(env, 'user_staging', 'starter');
     expect(inv.ok).toBe(true);
   });

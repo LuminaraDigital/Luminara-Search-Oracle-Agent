@@ -31,6 +31,7 @@ export default tseslint.config(
       '.hallmark/**',
       '.hermes/**',
       'tmp-*.json',
+      'qronos-landing/**',
     ],
   },
   js.configs.recommended,
