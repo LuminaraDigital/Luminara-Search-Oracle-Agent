@@ -100,20 +100,34 @@ review pass. A phase is not closed until review findings are fixed and re-checke
 
 ### L6 - Final verification
 - [x] `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
-- [x] Click-through of every marketing CTA as guest and as signed-in, desktop and 375px.
+- [x] Click-through of every marketing CTA as guest, desktop and 375px.
+- [ ] Signed-in click-through (needs a real account; do on staging, L7 step 4).
 - [x] Independent review of the full diff against this plan and the honesty locks.
 - [x] Update `design.md` craft gates and this checklist.
 
-### L7 - Release (operator go required for each step)
-1. Commit the working tree on the feature branch so production is reproducible from git. Craft and
-   MCP changes are mixed in this tree; split into two commits at minimum (marketing/app craft, and
-   Worker/migrations).
-2. Open the PR; CI must be green (`main` requires PR plus green check).
-3. Apply D1 migrations `0014`-`0017` to staging, then deploy staging. CI does not migrate.
-4. `npm run smoke` against staging; manual click-through of L6 item 2.
-5. Apply migrations to production, then deploy production; smoke again.
-6. Rollback: redeploy the previous Worker version from the Cloudflare dashboard. Migrations
-   `0014`-`0017` are additive, so no schema rollback is needed.
+### L7 - Release
+
+State on 2026-10-01:
+- Committed on `feat/mcp-governance-hardening` as `a010880` (platform), `1496d3b` (marketing and app UI),
+  plus the docs commit. Working tree clean. Not pushed.
+- D1: `wrangler d1 migrations list --remote` reports nothing to apply on production and on staging.
+  Migrations `0014`-`0017` are already live, so there is no migrate step in this release.
+- `origin/main` has 9 commits this branch does not have. Merge `origin/main` into the branch and
+  re-run the gates before opening the PR.
+- CI deploys on push to `staging` (staging Worker) and `main` (production Worker).
+
+Each step below needs operator go.
+
+1. `git fetch origin && git merge origin/main`, resolve, then `npm run typecheck && npm run lint && npm test && npm run build`.
+2. `git push origin feat/mcp-governance-hardening` and open the PR to `main`. CI must be green.
+3. Staging: `git push origin HEAD:staging` (CI deploys), then `npm run smoke:staging`.
+4. Staging click-through, guest and signed-in, desktop and 375px:
+   landing CTAs, Probe to Instant Audit, Probe sign-in returns to Instant Audit with the domain,
+   shell Sign in / Log out, logo returns home while staying signed in, Pricing payment panel.
+5. `npm run db:backup:prod`, merge the PR (CI deploys production), then `npm run smoke:prod`.
+6. Repeat step 4 on production.
+7. Rollback: Cloudflare dashboard, Workers, luminara production, Deployments, roll back to the
+   previous version. No schema rollback is needed.
 
 ## Out of scope
 - Three.js, runtime GLB, Framer, GSAP (locked off in `landing-moat-100x.md`).
