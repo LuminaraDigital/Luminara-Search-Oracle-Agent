@@ -70,7 +70,8 @@ export class EmpiricalCitationService {
   }
 
   /**
-   * Probes live search results to verify whether target brand is cited
+   * Samples live search results and substring-matches the brand or domain.
+   * The result is an estimate: no page is re-fetched and nothing is verified.
    */
   public async probeDomainCitations(
     targetUrl: string,
