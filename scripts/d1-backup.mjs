@@ -30,7 +30,8 @@ const outDir = resolve(root, 'artifacts', 'd1-backups');
 mkdirSync(outDir, { recursive: true });
 const outFile = resolve(outDir, `${dbName}-${stamp}.sql`);
 
-const args = ['d1', 'export', dbName, ...envPart, '--output', outFile];
+// --remote is required: without it wrangler exports the local dev database.
+const args = ['d1', 'export', dbName, '--remote', ...envPart, '--output', outFile];
 console.log(`[d1-backup] wrangler ${args.join(' ')}`);
 const result = spawnSync('npx', ['wrangler', ...args], {
   cwd: root,

@@ -102,3 +102,6 @@ scripts/.license-vault-bulk-*.json
 
 # Third-party landing template kept locally for reference; not part of the product
 qronos-landing/
+
+# D1 backups and other local operator artifacts (never commit database dumps)
+artifacts/
