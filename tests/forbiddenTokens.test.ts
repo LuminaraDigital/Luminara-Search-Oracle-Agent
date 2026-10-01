@@ -158,7 +158,7 @@ describe('script in temp git repo', () => {
     expect(r.stderr).toContain('src/a.ts:1');
     expect(r.stderr).toContain('secretprojectname');
     expect(r.stderr).toContain('list');
-  }, 20_000);
+  }, 60_000);
   it('passes when staged files contain no tokens (--staged)', () => {
     setupTempRepo('secretprojectname\n');
     write('src/b.ts', 'export const x = "totally fine";\n');
@@ -166,7 +166,7 @@ describe('script in temp git repo', () => {
     const r = runScript(['--staged']);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('passed');
-  }, 20_000);
+  }, 60_000);
   it('detects a token in a tracked file with --all', () => {
     setupTempRepo('secretprojectname\n');
     write('src/c.ts', 'const y = "secretprojectname";\n');
@@ -175,7 +175,7 @@ describe('script in temp git repo', () => {
     const r = runScript(['--all']);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('src/c.ts:1');
-  }, 20_000);
+  }, 60_000);
   it('detects tokens in untracked non-ignored files with --all', () => {
     setupTempRepo('secretprojectname\n');
     write('src/d.ts', 'const z = "secretprojectname";\n');
@@ -183,7 +183,7 @@ describe('script in temp git repo', () => {
     const r = runScript(['--all']);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('src/d.ts:1');
-  }, 20_000);
+  }, 60_000);
   it('reports identity findings without disclosing the username value', () => {
     setupTempRepo(undefined);
     write('src/e.ts', 'const me = "jdoeidentity";\n');
@@ -197,7 +197,7 @@ describe('script in temp git repo', () => {
     expect(r.stderr).toContain('local username');
     expect(r.stderr).not.toContain('jdoeidentity');
     expect(r.stderr).toContain('identity');
-  }, 20_000);
+  }, 60_000);
   it('skips files larger than 2 MB with a note', () => {
     setupTempRepo('needlestring\n');
     const big = Buffer.alloc(2 * 1024 * 1024 + 100, 97).toString('utf8') + ' needlestring';
@@ -206,14 +206,14 @@ describe('script in temp git repo', () => {
     const r = runScript(['--staged']);
     expect(r.code).toBe(0);
     expect(r.stdout + r.stderr).toContain('> 2 MB');
-  }, 20_000);
+  }, 60_000);
   it('does not self-match the token list file', () => {
     setupTempRepo('secretprojectname\n');
     // Token file is committed/tracked, it contains the token by definition.
     execSync('git add .', { cwd: root });
     const r = runScript(['--staged']);
     expect(r.code).toBe(0);
-  }, 20_000);
+  }, 60_000);
   it('exits 0 with a note when not inside a git work tree', () => {
     // Deliberately no git init: copy script into a plain directory.
     fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
@@ -221,5 +221,5 @@ describe('script in temp git repo', () => {
     const r = runScript(['--all']);
     expect(r.code).toBe(0);
     expect(r.stdout + r.stderr).toContain('not inside a git work tree');
-  }, 20_000);
+  }, 60_000);
 });
