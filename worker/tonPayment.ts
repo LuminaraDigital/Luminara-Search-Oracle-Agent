@@ -10,9 +10,11 @@ import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
   merchantAddressMatchesNetwork,
+  normalizeTonTxHash,
   resolveChainNetwork,
   resolveTonApiBases,
   tonExplorerTxUrl,
+  tonTxHashAliases,
   type ChainNetwork,
 } from './chainNetwork';
 import { recordProofAnchorBestEffort } from './proofAnchors';
@@ -257,6 +259,27 @@ function parseSeqno(tx: any): number | null {
   return null;
 }
 
+function phaseFailed(phase: any): boolean {
+  return Boolean(phase) && typeof phase === 'object' && phase.skipped !== true && phase.success === false;
+}
+
+/**
+ * True when the provider reports the transaction as aborted or failed, or the inbound message is
+ * itself a bounce. Toncenter v3 nests the flags under `description` (`aborted`, `compute_ph`,
+ * `action`); TonAPI v2 puts `success`, `aborted`, `compute_phase`, `action_phase` on the transaction.
+ */
+function isAbortedOrBounced(tx: any): boolean {
+  if (tx.in_msg?.bounced === true) return true;
+  if (tx.success === false || tx.aborted === true) return true;
+  if (phaseFailed(tx.compute_phase) || phaseFailed(tx.action_phase)) return true;
+  const description = tx.description;
+  if (description && typeof description === 'object') {
+    if (description.aborted === true) return true;
+    if (phaseFailed(description.compute_ph) || phaseFailed(description.action)) return true;
+  }
+  return false;
+}
+
 function matchInboundTransfer(
   txs: any[],
   order: TonOrder,
@@ -272,6 +295,10 @@ function matchInboundTransfer(
     const comment = extractTonComment(inMsg);
     const value = BigInt(String(inMsg.value || '0'));
     if (!comment.includes(order.memo) || value < minValue) continue;
+    if (isAbortedOrBounced(tx)) {
+      console.warn(`[TON] Transfer matching order ${order.orderId} was aborted or bounced; not crediting.`);
+      continue;
+    }
     const hash =
       typeof tx.hash === 'string'
         ? tx.hash
@@ -282,7 +309,8 @@ function matchInboundTransfer(
       reportHashlessMatch(order);
       continue;
     }
-    return { ok: true, txHash: hash, seqno: parseSeqno(tx), network };
+    // Toncenter returns base64, TonAPI hex: one canonical form feeds the claim, the anchor and the explorer URL.
+    return { ok: true, txHash: normalizeTonTxHash(hash), seqno: parseSeqno(tx), network };
   }
   return null;
 }
@@ -405,8 +433,9 @@ export async function verifyTonPayment(
   if (!match.ok) return match;
 
   const txGuardKey = `ton:tx:${match.txHash}`;
-  const alreadyClaimed = await kv.get(txGuardKey);
-  if (alreadyClaimed && alreadyClaimed !== orderId) {
+  // Guards written before hash normalisation are keyed by the provider's own encoding.
+  const guardOwners = await Promise.all(tonTxHashAliases(match.txHash).map((alias) => kv.get(`ton:tx:${alias}`)));
+  if (guardOwners.some((owner) => owner && owner !== orderId)) {
     return { ok: false, error: 'This on-chain transaction has already been credited to another order.' };
   }
 

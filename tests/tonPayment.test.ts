@@ -7,6 +7,8 @@ import {
   crc16Xmodem,
   extractTonComment,
 } from '../worker/tonPayment';
+import { normalizeTonTxHash, tonTxHashAliases } from '../worker/chainNetwork';
+import { claimTonTransaction } from '../worker/paymentLedger';
 import { PLANS } from '../worker/telegramBot';
 import { buildCommentBoc } from '../services/ton/tonService';
 import { createSqliteD1 } from './helpers/sqliteD1';
@@ -234,6 +236,183 @@ describe('TON Payment Settlement Engine', () => {
     const verifyRes = await verifyTonPayment(env, inv.order.orderId, { fetcher });
     expect(verifyRes.ok).toBe(false);
     if (!verifyRes.ok) expect(verifyRes.error).toMatch(/already been credited/i);
+  });
+});
+
+describe('TON transaction hash encoding (Toncenter base64 vs TonAPI hex)', () => {
+  const HASH_BYTES = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 37 + 251) & 0xff));
+  const HASH_BASE64 = HASH_BYTES.toString('base64');
+  const HASH_HEX = HASH_BYTES.toString('hex');
+
+  /** Toncenter is down, TonAPI reports the transfer with its hex hash. */
+  function tonapiOnlyFetcher(memo: string, amountNano: string, hash: string, txExtra: Record<string, unknown> = {}) {
+    return vi.fn(async (url: string) => {
+      if (!url.includes('tonapi.io')) return new Response('Internal Server Error', { status: 500 });
+      return new Response(
+        JSON.stringify({
+          transactions: [
+            {
+              hash,
+              utime: Math.floor(Date.now() / 1000),
+              success: true,
+              aborted: false,
+              in_msg: { value: amountNano, bounced: false, decoded_body: { text: memo } },
+              ...txExtra,
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+  }
+
+  it('normalises both encodings of one hash to lowercase hex and leaves other strings alone', () => {
+    expect(HASH_BASE64).toMatch(/[+/=]/);
+    expect(normalizeTonTxHash(HASH_BASE64)).toBe(HASH_HEX);
+    expect(normalizeTonTxHash(HASH_BYTES.toString('base64url'))).toBe(HASH_HEX);
+    expect(normalizeTonTxHash(HASH_HEX.toUpperCase())).toBe(HASH_HEX);
+    expect(normalizeTonTxHash(`0x${HASH_HEX}`)).toBe(HASH_HEX);
+    expect(normalizeTonTxHash(' v3_hash ')).toBe('v3_hash');
+    expect(tonTxHashAliases(HASH_BASE64)).toEqual(expect.arrayContaining([HASH_HEX, HASH_BASE64]));
+    expect(tonTxHashAliases(HASH_BASE64)[0]).toBe(HASH_HEX);
+    expect(tonTxHashAliases('v3_hash')).toEqual(['v3_hash']);
+  });
+
+  it('credits once when the same tx is seen as base64 via Toncenter and as hex via TonAPI', async () => {
+    const { env, kv } = makeEnv();
+    const invA = await createTonInvoice(env, 'user_b64', 'starter');
+    const invB = await createTonInvoice(env, 'user_hex', 'starter');
+    if (!invA.ok || !invB.ok) throw new Error('invoice failed');
+    const memo = `${invA.order.memo} ${invB.order.memo}`;
+
+    const toncenter = vi.fn(async () => toncenterResponse(memo, TON_PRICING.starter.nanoTon, HASH_BASE64));
+    expect((await verifyTonPayment(env, invA.order.orderId, { fetcher: toncenter })).ok).toBe(true);
+
+    // The D1 ledger alone must refuse the second spelling, so drop the KV guard.
+    await kv.delete(`ton:tx:${HASH_HEX}`);
+    const replay = await verifyTonPayment(env, invB.order.orderId, {
+      fetcher: tonapiOnlyFetcher(memo, TON_PRICING.starter.nanoTon, HASH_HEX),
+    });
+
+    expect(replay.ok).toBe(false);
+    if (!replay.ok) expect(replay.error).toMatch(/already been credited to another order/i);
+    expect(kv.store.has('sub:user_hex')).toBe(false);
+    expect(env.DB.sqlite.prepare('SELECT tx_hash FROM ton_credited_tx').all().map((r: any) => r.tx_hash)).toEqual([HASH_HEX]);
+    const anchor = env.DB.sqlite.prepare("SELECT tx_hash, explorer_url FROM proof_anchors WHERE kind = 'ton_payment'").all();
+    expect(anchor).toHaveLength(1);
+    expect(anchor[0].tx_hash).toBe(HASH_HEX);
+    expect(anchor[0].explorer_url).toBe(`https://tonviewer.com/transaction/${HASH_HEX}`);
+  });
+
+  it('treats a legacy base64 ledger row and its hex form as the same transaction', async () => {
+    const { env, kv } = makeEnv();
+    env.DB.sqlite
+      .prepare('INSERT INTO ton_credited_tx (tx_hash, order_id, account_id, credited_at) VALUES (?, ?, ?, ?)')
+      .run(HASH_BASE64, 'ton_legacy_order', 'user_legacy', Date.now());
+    const inv = await createTonInvoice(env, 'user_after_legacy', 'starter');
+    if (!inv.ok) throw new Error('invoice failed');
+
+    const res = await verifyTonPayment(env, inv.order.orderId, {
+      fetcher: tonapiOnlyFetcher(inv.order.memo, TON_PRICING.starter.nanoTon, HASH_HEX),
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/already been credited to another order/i);
+    expect(kv.store.has('sub:user_after_legacy')).toBe(false);
+    expect(env.DB.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(1);
+    expect(await claimTonTransaction(env, { txHash: HASH_HEX, orderId: 'ton_legacy_order' })).toEqual({
+      ok: false,
+      reason: 'order_already_credited',
+    });
+  });
+
+  it('honours a legacy KV guard stored under the base64 form', async () => {
+    const { env, kv } = makeEnv();
+    await kv.put(`ton:tx:${HASH_BASE64}`, 'ton_order_prior');
+    const inv = await createTonInvoice(env, 'user_kv_legacy', 'starter');
+    if (!inv.ok) throw new Error('invoice failed');
+
+    const res = await verifyTonPayment(env, inv.order.orderId, {
+      fetcher: tonapiOnlyFetcher(inv.order.memo, TON_PRICING.starter.nanoTon, HASH_HEX),
+    });
+    expect(res.ok).toBe(false);
+    expect(kv.store.has('sub:user_kv_legacy')).toBe(false);
+  });
+
+  it.each([
+    ['Toncenter description.aborted', 'toncenter', { description: { aborted: true } }, {}],
+    ['Toncenter compute phase failure', 'toncenter', { description: { aborted: false, compute_ph: { skipped: false, success: false } } }, {}],
+    ['Toncenter action phase failure', 'toncenter', { description: { aborted: false, action: { success: false } } }, {}],
+    ['Toncenter bounced in_msg', 'toncenter', {}, { bounced: true }],
+    ['TonAPI success=false', 'tonapi', { success: false }, {}],
+    ['TonAPI aborted', 'tonapi', { aborted: true }, {}],
+    ['TonAPI bounced in_msg', 'tonapi', {}, { bounced: true }],
+  ])('credits nothing for %s', async (_label, provider, txExtra, inMsgExtra) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { env, kv } = makeEnv();
+    const inv = await createTonInvoice(env, 'user_bounced', 'starter');
+    if (!inv.ok) throw new Error('invoice failed');
+    const now = Math.floor(Date.now() / 1000);
+
+    const fetcher = vi.fn(async (url: string) => {
+      const isTonapi = url.includes('tonapi.io');
+      if (isTonapi !== (provider === 'tonapi')) return new Response('Internal Server Error', { status: 500 });
+      const tx = isTonapi
+        ? {
+            hash: HASH_HEX,
+            utime: now,
+            success: true,
+            aborted: false,
+            in_msg: { value: TON_PRICING.starter.nanoTon, bounced: false, decoded_body: { text: inv.order.memo }, ...inMsgExtra },
+            ...txExtra,
+          }
+        : {
+            hash: HASH_BASE64,
+            now,
+            mc_block_seqno: 1,
+            description: { aborted: false, compute_ph: { skipped: false, success: true }, action: { success: true } },
+            in_msg: {
+              value: TON_PRICING.starter.nanoTon,
+              bounced: false,
+              message_content: { decoded: { '@type': 'text_comment', text: inv.order.memo } },
+              ...inMsgExtra,
+            },
+            ...txExtra,
+          };
+      return new Response(JSON.stringify({ transactions: [tx] }), { status: 200 });
+    });
+
+    const res = await verifyTonPayment(env, inv.order.orderId, { fetcher });
+    expect(res.ok).toBe(false);
+    expect(kv.store.has('sub:user_bounced')).toBe(false);
+    expect(env.DB.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(0);
+  });
+
+  it('still credits a healthy transfer that carries the full Toncenter status fields', async () => {
+    const { env } = makeEnv();
+    const inv = await createTonInvoice(env, 'user_healthy', 'starter');
+    if (!inv.ok) throw new Error('invoice failed');
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          transactions: [
+            {
+              hash: HASH_BASE64,
+              now: Math.floor(Date.now() / 1000),
+              mc_block_seqno: 7,
+              description: { aborted: false, compute_ph: { skipped: false, success: true }, action: { success: true } },
+              in_msg: {
+                value: TON_PRICING.starter.nanoTon,
+                bounced: false,
+                message_content: { decoded: { '@type': 'text_comment', text: inv.order.memo } },
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    expect((await verifyTonPayment(env, inv.order.orderId, { fetcher })).ok).toBe(true);
   });
 });
 
