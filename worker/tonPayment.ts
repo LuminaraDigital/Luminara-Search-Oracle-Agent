@@ -270,11 +270,14 @@ function phasePresent(phase: unknown): boolean {
  * `aborted`, `success: false` and a skipped or failed compute/action phase are deliberately not
  * grounds to reject: a non-bounceable transfer to an uninitialised wallet is aborted with the
  * compute phase skipped, yet the credit phase keeps the funds.
+ * An aborted transaction whose inbound message was bounceable is also refused, so a provider
+ * that omits the bounce phase cannot fail open.
  */
 function inboundValueWasReturned(tx: any): boolean {
   if (tx.in_msg?.bounced === true) return true;
   if (phasePresent(tx.bounce_phase)) return true;
-  return phasePresent(tx.description?.bounce);
+  if (phasePresent(tx.description?.bounce)) return true;
+  return (tx.description?.aborted === true || tx.aborted === true) && tx.in_msg?.bounce === true;
 }
 
 function matchInboundTransfer(

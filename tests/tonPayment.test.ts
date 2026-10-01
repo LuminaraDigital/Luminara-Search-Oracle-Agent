@@ -276,6 +276,40 @@ describe('TON transaction hash encoding (Toncenter base64 vs TonAPI hex)', () =>
     expect(tonTxHashAliases(HASH_BASE64)).toEqual(expect.arrayContaining([HASH_HEX, HASH_BASE64]));
     expect(tonTxHashAliases(HASH_BASE64)[0]).toBe(HASH_HEX);
     expect(tonTxHashAliases('v3_hash')).toEqual(['v3_hash']);
+
+    const unpadded = HASH_BASE64.replace(/=$/, '');
+    expect(unpadded).toHaveLength(43);
+    expect(normalizeTonTxHash(unpadded)).toBe(HASH_HEX);
+
+    // Valid base64 of the wrong length (31 and 33 bytes) is not a tx hash: passed through untouched.
+    for (const size of [31, 33]) {
+      const other = Buffer.alloc(size, 0xab).toString('base64');
+      expect(normalizeTonTxHash(other)).toBe(other);
+      expect(tonTxHashAliases(other)).toEqual([other]);
+    }
+  });
+
+  it('returns the already-credited success when the same order is retried under the other encoding', async () => {
+    const { env, kv } = makeEnv();
+    const inv = await createTonInvoice(env, 'user_retry_enc', 'starter');
+    if (!inv.ok) throw new Error('invoice failed');
+
+    const toncenter = vi.fn(async () => toncenterResponse(inv.order.memo, TON_PRICING.starter.nanoTon, HASH_BASE64));
+    const first = await verifyTonPayment(env, inv.order.orderId, { fetcher: toncenter });
+    expect(first.ok).toBe(true);
+
+    // Force the retry past the confirmed-order short cut and the KV guard, onto the ledger claim.
+    const stored = await kv.get(`ton:order:${inv.order.orderId}`, 'json');
+    await kv.put(`ton:order:${inv.order.orderId}`, JSON.stringify({ ...stored, status: 'pending' }));
+    await kv.delete(`ton:tx:${HASH_HEX}`);
+
+    const retry = await verifyTonPayment(env, inv.order.orderId, {
+      fetcher: tonapiOnlyFetcher(inv.order.memo, TON_PRICING.starter.nanoTon, HASH_HEX),
+    });
+
+    expect(retry.ok).toBe(true);
+    if (first.ok && retry.ok) expect(retry.expiresAt).toBe(first.expiresAt);
+    expect(env.DB.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(1);
   });
 
   it('credits once when the same tx is seen as base64 via Toncenter and as hex via TonAPI', async () => {
@@ -349,6 +383,10 @@ describe('TON transaction hash encoding (Toncenter base64 vs TonAPI hex)', () =>
     ['Toncenter failed compute and action phases, no bounce phase', 'toncenter', { description: { aborted: true, compute_ph: { skipped: false, success: false }, action: { success: false }, bounce: null } }, {}, true],
     ['Toncenter uninit wallet with a bounce phase', 'toncenter', { description: { ...TONCENTER_UNINIT.description, bounce: TONCENTER_BOUNCE } }, { bounce: true }, false],
     ['Toncenter bounced in_msg', 'toncenter', {}, { bounced: true }, false],
+    ['Toncenter aborted, bounceable in_msg, bounce phase omitted', 'toncenter', TONCENTER_UNINIT, { bounce: true }, false],
+    ['Toncenter aborted, in_msg.bounce false', 'toncenter', TONCENTER_UNINIT, { bounce: false }, true],
+    ['TonAPI aborted, bounceable in_msg, bounce phase omitted', 'tonapi', TONAPI_UNINIT, { bounce: true }, false],
+    ['TonAPI aborted, in_msg.bounce false', 'tonapi', TONAPI_UNINIT, { bounce: false }, true],
     ['TonAPI uninit wallet, no bounce phase', 'tonapi', TONAPI_UNINIT, {}, true],
     ['TonAPI uninit wallet with a bounce phase', 'tonapi', { ...TONAPI_UNINIT, bounce_phase: 'TrPhaseBounceOk' }, { bounce: true }, false],
     ['TonAPI bounced in_msg', 'tonapi', {}, { bounced: true }, false],

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveTonApiBases, merchantAddressMatchesNetwork, resolveChainNetwork } from '../worker/chainNetwork';
 import {
@@ -163,7 +164,24 @@ describe('xdcRpc probe', () => {
     expect(first).toEqual({ ok: true, chainId: 51, network: 'testnet' });
     expect(second).toEqual(first);
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(kv.puts).toEqual([{ key: 'health:xdc:testnet', ttl: 60 }]);
+    const urlTag = createHash('sha256').update(XDC_ENV.CHAIN_XDC_RPC_URL).digest('hex').slice(0, 8);
+    expect(kv.puts).toEqual([{ key: `health:xdc:testnet:${urlTag}`, ttl: 60 }]);
+  });
+
+  it('does not serve a cached result after the RPC URL changes', async () => {
+    const kv = createProbeKv();
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: '0x33' }), { status: 200 }),
+    );
+
+    await probeXdcRpcCached({ ...XDC_ENV, LUMINARA_KV: kv } as never, fetcher as never);
+    await probeXdcRpcCached(
+      { ...XDC_ENV, CHAIN_XDC_RPC_URL: 'https://erpc.apothem.network', LUMINARA_KV: kv } as never,
+      fetcher as never,
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(new Set(kv.puts.map((p) => p.key)).size).toBe(2);
   });
 
   it('caches a failed probe too, so a dead RPC is not retried on every health call', async () => {

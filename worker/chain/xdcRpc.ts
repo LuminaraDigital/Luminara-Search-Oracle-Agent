@@ -86,8 +86,15 @@ function isXdcProbeResult(value: unknown): value is XdcProbeResult {
   return v.ok === true ? typeof v.chainId === 'number' : v.ok === false && typeof v.reason === 'string';
 }
 
+/** `health:xdc:<network>:<first 8 hex of SHA-256(rpcUrl)>`: a changed RPC URL never reads the old result. */
+export async function xdcProbeCacheKey(network: ChainNetwork, rpcUrl: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpcUrl)));
+  const urlTag = Array.from(digest.subarray(0, 4), (b) => b.toString(16).padStart(2, '0')).join('');
+  return `health:xdc:${network}:${urlTag}`;
+}
+
 /**
- * probeXdcRpc behind a 60 s KV cache (`health:xdc:<network>`), for callers on a hot path such as
+ * probeXdcRpc behind a 60 s KV cache (see xdcProbeCacheKey), for callers on a hot path such as
  * /api/health. Failures are cached too, so a dead RPC costs one timeout per minute, not per request.
  * Without KV, or when KV errors, it probes directly.
  */
@@ -96,12 +103,14 @@ export async function probeXdcRpcCached(
   fetcher: typeof fetch = fetch,
 ): Promise<XdcProbeResult> {
   const network = resolveChainNetwork(env);
+  const rpcUrl = resolveXdcRpcUrl(env);
   const kv = env.LUMINARA_KV;
   // Config errors are answered without a fetch, so there is nothing worth caching.
-  if (!network || !resolveXdcRpcUrl(env) || !kv) return probeXdcRpc(env, fetcher);
+  if (!network || !rpcUrl || !kv) return probeXdcRpc(env, fetcher);
 
-  const key = `health:xdc:${network}`;
+  let key: string | null = null;
   try {
+    key = await xdcProbeCacheKey(network, rpcUrl);
     const cached = await kv.get(key, 'json');
     if (isXdcProbeResult(cached)) return cached;
   } catch {
@@ -110,7 +119,7 @@ export async function probeXdcRpcCached(
 
   const result = await probeXdcRpc(env, fetcher);
   try {
-    await kv.put(key, JSON.stringify(result), { expirationTtl: XDC_PROBE_CACHE_TTL_SEC });
+    if (key) await kv.put(key, JSON.stringify(result), { expirationTtl: XDC_PROBE_CACHE_TTL_SEC });
   } catch {
     /* cache write is best-effort */
   }

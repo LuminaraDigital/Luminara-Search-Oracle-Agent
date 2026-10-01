@@ -109,7 +109,7 @@ import {
 import { handleMcpOAuthRoute } from './mcpOAuth';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
-import { jobsForCron } from './scheduledJobs';
+import { isCronMapped, jobsForCron } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -1864,9 +1864,8 @@ export default {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).
     const jobs = jobsForCron(controller.cron);
-    if (jobs.length === 0) {
-      console.warn(`[Cron] No jobs mapped for cron "${controller.cron}"; nothing run. Add it to worker/scheduledJobs.ts.`);
-      return;
+    if (!isCronMapped(controller.cron)) {
+      console.error(`[Cron] Cron "${controller.cron}" is not mapped in worker/scheduledJobs.ts; running all jobs (${jobs.join(', ')}).`);
     }
     if (jobs.includes('sentinel')) ctx.waitUntil(runSentinelScan(env));
     if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DAILY_CRON, jobsForCron } from '../worker/scheduledJobs';
+import { ALL_SCHEDULED_JOBS, DAILY_CRON, isCronMapped, jobsForCron } from '../worker/scheduledJobs';
 
 /** Every expression listed under a `"crons": [...]` key in wrangler.jsonc (top level and per env). */
 function configuredCrons(): string[] {
@@ -16,6 +16,7 @@ function configuredCrons(): string[] {
 describe('jobsForCron', () => {
   it('runs Sentinel and the privacy purge on the daily cron, as before', () => {
     expect(DAILY_CRON).toBe('0 8 * * *');
+    expect(isCronMapped('0 8 * * *')).toBe(true);
     expect(jobsForCron('0 8 * * *')).toEqual(['sentinel', 'privacy_purge']);
   });
 
@@ -28,8 +29,10 @@ describe('jobsForCron', () => {
     ['another daily time', '0 9 * * *'],
     ['an empty string', ''],
     ['an object prototype key', 'constructor'],
-  ])('runs nothing for %s', (_label, cron) => {
-    expect(jobsForCron(cron)).toEqual([]);
+  ])('falls back to every job for %s, flagged as unmapped', (_label, cron) => {
+    expect(isCronMapped(cron)).toBe(false);
+    expect(jobsForCron(cron)).toEqual([...ALL_SCHEDULED_JOBS]);
+    expect(jobsForCron(cron)).toEqual(['sentinel', 'privacy_purge']);
   });
 
   it('returns a fresh array so callers cannot mutate the mapping', () => {
@@ -37,9 +40,9 @@ describe('jobsForCron', () => {
     expect(jobsForCron(DAILY_CRON)).toEqual(['sentinel', 'privacy_purge']);
   });
 
-  it('maps every cron configured in wrangler.jsonc to at least one job', () => {
+  it('gives every cron configured in wrangler.jsonc an explicit map entry', () => {
     const crons = configuredCrons();
     expect(crons).toContain(DAILY_CRON);
-    for (const cron of crons) expect(jobsForCron(cron), `cron "${cron}" has no jobs`).not.toEqual([]);
+    for (const cron of crons) expect(isCronMapped(cron), `cron "${cron}" has no explicit map entry`).toBe(true);
   });
 });
