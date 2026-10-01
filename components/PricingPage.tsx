@@ -53,7 +53,7 @@ export const pricingTiers: Array<{
 
 /** One-off runs sold by the Worker alongside the plans. */
 const ONE_OFFS = [
-  { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit with a Proof-of-Audit attestation.' },
+  { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit. Self-reported, not independently checked.' },
   { title: 'Deep multi-agent crawl', price: '75 Stars', body: 'One deep crawl with competitor gap findings.' },
 ] as const;
 

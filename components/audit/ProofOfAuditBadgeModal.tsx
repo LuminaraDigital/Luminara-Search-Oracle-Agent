@@ -1,19 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { AuditAttestation } from '../../services/agentCore/types';
-import { tonAttestationService } from '../../services/agentCore/tonAttestationService';
+import {
+  AUDIT_DIGEST_COVERAGE,
+  AUDIT_DIGEST_DISCLOSURE,
+  PROOF_BADGE_ENABLED,
+  tonAttestationService,
+} from '../../services/agentCore/tonAttestationService';
 
 interface ProofOfAuditBadgeModalProps {
   attestation: AuditAttestation;
   onClose: () => void;
+  /** Test seam. Defaults to PROOF_BADGE_ENABLED (off until Phase 4). */
+  enabled?: boolean;
 }
 
 export const ProofOfAuditBadgeModal: React.FC<ProofOfAuditBadgeModalProps> = ({
   attestation,
   onClose,
+  enabled = PROOF_BADGE_ENABLED,
 }) => {
   const [copied, setCopied] = useState(false);
-  const [memoCopied, setMemoCopied] = useState(false);
-  const embedCode = tonAttestationService.generateBadgeHtml(attestation);
+  const embedCode = tonAttestationService.generateBadgeHtml(attestation, enabled);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -29,11 +36,8 @@ export const ProofOfAuditBadgeModal: React.FC<ProofOfAuditBadgeModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleCopyMemo = () => {
-    navigator.clipboard.writeText(attestation.tonMemo);
-    setMemoCopied(true);
-    setTimeout(() => setMemoCopied(false), 2000);
-  };
+  // Hidden until Phase 4: the /verify/<digest> link has no stored row behind it yet.
+  if (!enabled) return null;
 
   return (
     <div 
@@ -44,7 +48,7 @@ export const ProofOfAuditBadgeModal: React.FC<ProofOfAuditBadgeModalProps> = ({
         className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl relative text-left my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
-        aria-label="Cryptographic Proof-of-Audit"
+        aria-label="Luminara-recorded digest"
       >
         {/* Close button */}
         <button
@@ -62,8 +66,8 @@ export const ProofOfAuditBadgeModal: React.FC<ProofOfAuditBadgeModalProps> = ({
             🛡️
           </div>
           <div>
-            <h3 className="text-lg font-bold text-white">Cryptographic Proof-of-Audit</h3>
-            <p className="text-xs text-slate-400">Verifiable On-Chain Search Authority Attestation</p>
+            <h3 className="text-lg font-bold text-white">Luminara-recorded digest</h3>
+            <p className="text-xs text-slate-400">{AUDIT_DIGEST_DISCLOSURE}</p>
           </div>
         </div>
 
@@ -81,37 +85,16 @@ export const ProofOfAuditBadgeModal: React.FC<ProofOfAuditBadgeModalProps> = ({
             </div>
           </div>
 
-          {/* Cryptographic SHA-256 Digest */}
+          {/* SHA-256 digest */}
           <div>
             <label className="text-xs font-medium text-slate-300 block mb-1">
-              SHA-256 Audit Integrity Digest
+              SHA-256 audit digest
             </label>
             <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 font-mono text-xs text-cyan-300 break-all select-all">
               {attestation.digestHex}
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
-              Deterministic cryptographic fingerprint calculated from raw DOM evidence, SERP citations, and verified schema findings.
-            </p>
-          </div>
-
-          {/* TON Blockchain Anchoring */}
-          <div className="p-3.5 bg-blue-950/30 border border-blue-800/40 rounded-xl">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-blue-300 flex items-center gap-1.5">
-                <span>💎</span> TON Blockchain Memo
-              </span>
-              <button
-                onClick={handleCopyMemo}
-                className="text-[11px] px-2 py-0.5 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 rounded border border-blue-500/30 transition-colors"
-              >
-                {memoCopied ? '✓ Copied' : 'Copy Memo'}
-              </button>
-            </div>
-            <div className="font-mono text-xs text-slate-200 bg-slate-950 p-2 rounded border border-blue-900/50 break-all select-all">
-              {attestation.tonMemo}
-            </div>
-            <p className="text-[11px] text-blue-200/70 mt-2 leading-relaxed">
-              Attach this memo to any TON transfer to anchor your brand&apos;s audit score permanently and immutably on the TON blockchain.
+              {AUDIT_DIGEST_COVERAGE}
             </p>
           </div>
 
@@ -119,7 +102,7 @@ export const ProofOfAuditBadgeModal: React.FC<ProofOfAuditBadgeModalProps> = ({
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-slate-300">
-                Embeddable Trust Badge (HTML)
+                Embeddable digest badge (HTML)
               </label>
               <button
                 onClick={handleCopyEmbed}

@@ -1121,7 +1121,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(json({ ok: true, latest, versions }));
   }
 
-  // Blockchain Proof-of-Audit attestation verification & storage
+  // Audit digest storage and lookup (KV only, self-reported, no chain write)
   if (path === '/agent/attest') {
     return withCors(handleAgentAttestation(request, env));
   }

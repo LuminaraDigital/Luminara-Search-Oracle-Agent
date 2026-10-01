@@ -4,7 +4,9 @@ import { identify, json, secretEquals, sha256Hex } from './workerUtils';
 
 /**
  * Handles GET & POST /api/agent/attest
- * Blockchain Proof-of-Audit attestation verification & storage.
+ * Audit digest storage and lookup in KV. Self-reported by the client: the Worker
+ * re-hashes the submitted fields but does not check the audit itself. No chain write.
+ * No client calls POST yet (badge is hidden until Phase 4 of the zoro concepts plan).
  */
 export async function handleAgentAttestation(request: Request, env: Env): Promise<Response> {
   if (request.method === 'GET') {

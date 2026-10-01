@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchAttestationByDigest } from '../../services/share/shareReportClient';
+import { AUDIT_DIGEST_DISCLOSURE } from '../../services/agentCore/tonAttestationService';
 import { Button } from '../ui/Button';
 
 function digestFromLocation(): string {
@@ -28,7 +29,7 @@ export const VerifyAttestationView: React.FC<{ onBack?: () => void }> = ({ onBac
       const res = await fetchAttestationByDigest(digest);
       if (cancelled) return;
       if (!res.ok || !res.attestation) {
-        setError(res.error || 'Attestation not found');
+        setError(res.error || 'Digest not found');
         setLoading(false);
         return;
       }
@@ -44,8 +45,8 @@ export const VerifyAttestationView: React.FC<{ onBack?: () => void }> = ({ onBac
     <div className="min-h-[100dvh] bg-black text-gray-100">
       <header className="border-b border-white/10 px-4 py-4 flex items-center justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-widest text-gold-light font-mono">Proof of Audit</p>
-          <h1 className="text-lg font-semibold text-white">Attestation verification</h1>
+          <p className="text-[10px] uppercase tracking-widest text-gold-light font-mono">Luminara-recorded digest</p>
+          <h1 className="text-lg font-semibold text-white">Audit digest lookup</h1>
         </div>
         {onBack && (
           <Button variant="secondary" size="sm" onClick={onBack}>
@@ -78,7 +79,7 @@ export const VerifyAttestationView: React.FC<{ onBack?: () => void }> = ({ onBac
               <span className="text-gray-500">Digest: </span>
               <span className="text-gray-300">{digest}</span>
             </p>
-            <p className="text-success-400 pt-2">Verified against Luminara attestation store.</p>
+            <p className="text-gray-400 pt-2">{AUDIT_DIGEST_DISCLOSURE}</p>
           </div>
         )}
       </main>
