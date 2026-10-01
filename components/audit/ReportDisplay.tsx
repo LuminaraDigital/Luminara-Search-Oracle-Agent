@@ -486,7 +486,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
       {validSources && validSources.length > 0 && (
         <div className="mt-8 pt-6 border-t border-white/10">
           <h3 className="text-sm font-bold uppercase tracking-widest text-gold-light mb-4 flex items-center gap-2">
-            <ICONS.Info className="w-4 h-4 text-gold" /> Verified Search Grounding Sources
+            <ICONS.Info className="w-4 h-4 text-gold" /> Search Grounding Sources
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {validSources.map((source, sIdx) => (
