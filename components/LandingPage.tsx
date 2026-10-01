@@ -39,23 +39,15 @@ function statusCopy(status: string): string {
   }
 }
 
-/** Product facts, not performance metrics. */
-const FACTS = [
-  {
-    figure: '4',
-    label: 'Answer surfaces in one scout',
-    body: 'Google, AI Overviews, ChatGPT, and Perplexity.',
-  },
-  {
-    figure: '3',
-    label: 'Evidence labels',
-    body: 'Measured, Estimated, or Not measured. Nothing invented.',
-  },
-  {
-    figure: '1',
-    label: 'Next action per report',
-    body: 'A plain-English fix you can ship this week.',
-  },
+/** The four surfaces one scout covers. */
+const SURFACES = ['Google Search', 'AI Overviews', 'ChatGPT', 'Perplexity'] as const;
+
+/** Free MCP tools exposed to Growth and above (worker MCP server). */
+const MCP_TOOLS = [
+  { name: 'list_projects', note: 'Your sites and clients' },
+  { name: 'get_project_context', note: 'Brand, audience, competitors' },
+  { name: 'list_reports', note: 'Past audits and findings' },
+  { name: 'save_report', note: 'Write a new report back' },
 ] as const;
 
 const HOW_STEPS = [
@@ -71,12 +63,6 @@ const HOW_STEPS = [
     title: 'Ship one fix',
     body: 'Take the Weekly Decision Card: a verdict and one next action. Open Instant Audit for Live results.',
   },
-] as const;
-
-const EVIDENCE_LABELS = [
-  { term: 'Measured', body: 'Live evidence from a run you are entitled to.' },
-  { term: 'Estimated', body: 'Directional only. Useful for priority, not a KPI.' },
-  { term: 'Not measured', body: 'Gaps stay labeled. We do not invent metrics.' },
 ] as const;
 
 const H2 =
@@ -177,19 +163,21 @@ const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* Facts band: counts of what the product does, not performance claims. */}
-      <section className="mkt-section mkt-section-alt !py-14 sm:!py-16" aria-label="What one scout covers">
-        <ul className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-10 sm:gap-12 list-none">
-          {FACTS.map((fact) => (
-            <li key={fact.label} className="min-w-0">
-              <p className="font-display text-[clamp(3.5rem,7vw,5rem)] leading-none text-[var(--color-ink)]">
-                {fact.figure}
-              </p>
-              <p className="text-lg text-[var(--color-ink)] font-medium mt-3 mb-1">{fact.label}</p>
-              <p className="text-[15px] text-[var(--color-ink-2)] leading-relaxed">{fact.body}</p>
-            </li>
-          ))}
-        </ul>
+      {/* Coverage strip: the four surfaces, stated once. */}
+      <section className="mkt-section mkt-section-alt !py-12 sm:!py-14" aria-label="What one scout covers">
+        <div className="max-w-7xl mx-auto">
+          <p className="mkt-eyebrow mb-6">One scout covers</p>
+          <ul className="grid grid-cols-2 lg:grid-cols-4 gap-x-10 gap-y-6 list-none">
+            {SURFACES.map((name) => (
+              <li
+                key={name}
+                className="font-display text-[clamp(1.75rem,3.2vw,2.5rem)] leading-none text-[var(--color-ink)] border-t border-[var(--color-rule)] pt-5"
+              >
+                {name}
+              </li>
+            ))}
+          </ul>
+        </div>
       </section>
 
       {/* Category: cost-displacement, visibility as the proof. */}
@@ -282,7 +270,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <p className="mkt-eyebrow mb-4">The report</p>
             <h2 className={`${H2} mb-5`}>A verdict and one fix, not a 40-page PDF.</h2>
             <p className="mkt-body mb-8 max-w-md">
-              Engine status, a plain-English verdict, and one ship-first action. No invented composite score.
+              Each engine gets a status, the report gives a plain-English verdict, and you leave with
+              the one fix to make first.
             </p>
             <button type="button" onClick={onNavigateSampleReport} className="mkt-cta-secondary">
               Full sample report
@@ -291,9 +280,9 @@ const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* Agent-ready + evidence labels */}
+      {/* Agent-ready: the real MCP tools as the visual. */}
       <section className="mkt-section">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-16">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
           <div className="lg:col-span-6 min-w-0">
             <p className="mkt-eyebrow mb-4">Agent-ready</p>
             <h2 className={`${H2} mb-5`}>The same reports inside Cursor and Claude.</h2>
@@ -308,21 +297,23 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <a href="/docs/mcp.html" className="mkt-cta-tertiary">
                 MCP setup guide
               </a>
+              <button type="button" onClick={onNavigateMethodology} className="mkt-cta-tertiary">
+                How we measure
+              </button>
             </div>
           </div>
-          <div className="lg:col-span-6 min-w-0">
-            <p className="mkt-eyebrow mb-4">Labeled evidence</p>
-            <dl className="space-y-5 mb-6">
-              {EVIDENCE_LABELS.map((item) => (
-                <div key={item.term} className="border-t border-[var(--color-rule)] pt-4">
-                  <dt className="text-lg font-medium text-[var(--color-ink)] mb-1">{item.term}</dt>
-                  <dd className="mkt-body">{item.body}</dd>
-                </div>
+          <div className="lg:col-span-6 min-w-0 border border-[var(--color-rule)] bg-[var(--color-paper-2)]">
+            <p className="px-5 sm:px-6 py-3.5 border-b border-[var(--color-rule)] text-[12px] font-mono text-[var(--color-ink-2)]">
+              luminara MCP server
+            </p>
+            <ul className="divide-y divide-[var(--color-rule)] list-none">
+              {MCP_TOOLS.map((tool) => (
+                <li key={tool.name} className="flex items-baseline justify-between gap-4 px-5 sm:px-6 py-3.5">
+                  <code className="text-[13px] font-mono text-[var(--color-ink)]">{tool.name}</code>
+                  <span className="text-[14px] text-[var(--color-ink-2)] text-right">{tool.note}</span>
+                </li>
               ))}
-            </dl>
-            <button type="button" onClick={onNavigateMethodology} className="mkt-cta-tertiary">
-              How we measure
-            </button>
+            </ul>
           </div>
         </div>
       </section>

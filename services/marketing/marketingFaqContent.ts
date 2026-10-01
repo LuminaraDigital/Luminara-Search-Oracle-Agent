@@ -7,29 +7,29 @@ export interface MarketingFaqItem {
 
 export const MARKETING_FAQ: MarketingFaqItem[] = [
   {
-    question: 'What does Luminara Suite measure?',
+    question: 'What does Luminara Suite check?',
     answer:
-      'Instant Audit checks how a domain shows up across Google, AI Overviews, ChatGPT, and Perplexity, then returns a plain-English verdict and one ship-first action. Each engine is labeled Measured, Estimated, or Not measured. We never invent a bare composite AI visibility score.',
+      'Instant Audit checks how your site shows up on Google, AI Overviews, ChatGPT, and Perplexity. You get a plain-English verdict and one recommended fix. Each engine result is labeled Measured, Estimated, or Not measured, so you can see what is evidence and what is a best guess.',
   },
   {
-    question: 'What is a Sample scout versus Live Instant Audit?',
+    question: 'What is the difference between a sample scout and a live audit?',
     answer:
-      'The landing Workbench Probe is a labeled Sample so you can see the report shape without hosted spend. Live Instant Audit uses your own API keys as a guest, or an account for hosted AI, save, share, and MCP.',
+      'The sample scout on this page uses example data, clearly labeled Sample, so you can see what a report looks like. A live Instant Audit checks your real site. Run it as a guest with your own AI provider keys, or sign in to use hosted AI and to save and share your reports.',
   },
   {
     question: 'Do I need a credit card to try it?',
     answer:
-      'No. Sample scouts need no card. Free insight stays free. Share links and MCP keys require Growth or Agency. Hosted Worker AI spend needs a signed-in account.',
+      'No. The sample scout needs no card and no account. Share links and MCP access are part of the Growth and Agency plans.',
   },
   {
     question: 'How is this different from Semrush or Ahrefs?',
     answer:
-      'Those tools go deep on classic SEO datasets. Luminara focuses on answer-engine presence plus an owner-first action plan, with honest not-measured labels when evidence is missing. Many teams use both.',
+      'Those tools go deep on classic SEO data such as keywords and backlinks. Luminara focuses on whether AI answer engines mention you, and on the one fix to make next. Many teams use both.',
   },
   {
     question: 'Can agencies share reports and connect Cursor?',
     answer:
-      'Growth includes public share links and MCP access for Cursor, Claude, and the Luminara plugin. Agency adds API access and larger client workspaces. Free and Starter do not include share or MCP.',
+      'Yes. Growth includes public share links and MCP access for Cursor and Claude. Agency adds API access and client workspaces. Free and Starter do not include share links or MCP.',
   },
 ];
 

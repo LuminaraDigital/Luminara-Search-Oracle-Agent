@@ -6,8 +6,8 @@ export const MARKETING_SELL_POINTS = [
     body: 'One scout across Google, AI Overviews, ChatGPT, and Perplexity, so classic ranking gaps and answer-engine gaps show up in the same pass.',
   },
   {
-    title: 'Evidence, not theater scores',
-    body: 'Every engine is Measured, Estimated, or Not measured. We do not invent citation rates, visibility composites, or ROI.',
+    title: 'Labeled evidence',
+    body: 'Every engine result is marked Measured, Estimated, or Not measured, so you can tell what is proven from what is a best guess.',
   },
   {
     title: 'One action you can ship',
@@ -31,16 +31,13 @@ export const MarketingSellPoints: React.FC<MarketingSellPointsProps> = ({
         {heading}
       </h2>
     )}
-    <ol className="grid grid-cols-1 md:grid-cols-3 gap-10 list-none">
-      {MARKETING_SELL_POINTS.map((point, index) => (
+    <ul className="grid grid-cols-1 md:grid-cols-3 gap-10 list-none">
+      {MARKETING_SELL_POINTS.map((point) => (
         <li key={point.title} className="min-w-0 border-t border-[var(--color-rule)] pt-5">
-          <p className="text-[12px] font-mono text-[var(--color-accent)] mb-3">
-            {String(index + 1).padStart(2, '0')}
-          </p>
           <h3 className="text-xl text-[var(--color-ink)] font-medium mb-2">{point.title}</h3>
           <p className="mkt-body">{point.body}</p>
         </li>
       ))}
-    </ol>
+    </ul>
   </section>
 );
