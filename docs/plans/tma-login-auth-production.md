@@ -89,7 +89,7 @@ Worker
 
 | Criterion | Evidence |
 |-----------|----------|
-| Server initData HMAC + auth_date TTL | `worker/telegramAuth.ts` (24h); covered by `tests/telegramAuth.test.ts` |
+| Server initData HMAC + auth_date TTL | `worker/telegramAuth.ts` (1h default); covered by `tests/telegramAuth.test.ts` |
 | Auth on hosted APIs | `REQUIRE_TG_AUTH=true`; identify path validates Telegram or Firebase |
 | Secrets not in frontend | `npm run secrets:check` + dist key-shape scan clean |
 | Rate limits + CORS + validation | Worker per-route limits; `ALLOWED_ORIGINS`; body size caps |

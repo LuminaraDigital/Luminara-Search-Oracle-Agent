@@ -11,6 +11,12 @@ Do not log secrets, tokens, or PII.
 
 ## Log
 
+- 2026-10-01: Landing Instant Audit funnel + constellation Map restored; deployed staging+prod from local tree. Branch `feat/mcp-governance-hardening` still has large uncommitted/unpushed delta vs origin. Prod health `xdcRpcOk:false` (XinFin RPC flaky; proof XDC still off) (ops/marketing)
+- 2026-09-30: Security remediations landed (fetchPublicUrl, CSRF fail-closed, opaque sessions, 1h TG TTL, prod budget hard, RAG fence). Still open: git history vault purge (ops), crawler compose binds if exposed, DNS TOCTOU, admin beyond shared secret, CSP connect-src * (security)
+- 2026-09-30: Virality slice ready locally (Share CTA, MCP telemetry, /methodology, /sample-report, FAQ JSON-LD); needs Worker+assets deploy for live crawl (marketing)
+- 2026-09-30: Marketing cinematic stage + sell points + menu shell shipped to staging; hard-refresh staging to see (marketing)
+
+- 2026-09-29: Industry gaps wave: migrations `0014`/`0015`, privacy export/delete APIs, Sentry envelope + analytics ingest, invoice reconcile + hard-stop gate, deploy migrate-before-deploy, D1 DR runbook, mem0 workspace sync + Vectorize/Azure/GCP RAG adapters (ops)
 - 2026-09-18: Staging and prod cannot share one Queues consumer; use `luminara-audit-jobs-staging` for staging (wrangler)
 - 2026-09-18: Root `tsc` pulls `worker/env` via `services/tools`; import CF binding types from `@cloudflare/workers-types` (worker)
 - 2026-09-18: APS plan notes OpenSEO uses Zod; this repo validates at boundaries without adding Zod for MCP v1 (worker)

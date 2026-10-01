@@ -109,7 +109,7 @@ Existing (0005): `audit_runs`, `audit_findings`, `visibility_snapshots`, `shared
 | `reputation_alerts` | severity, reason, ack | Phase 2 (WDL7) |
 | `thin_stack_inventory` | Manual items_json | Phase 2 (WDL8) |
 
-Until 0014 ships, Decision Card may stay client-derived from Instant Audit + `shipCommitmentService` (sessionStorage). `/api/findings` + D1 upsert + Decision Card + Sample AI-said fixtures are **in tree** (2026-09-29).
+Until 0014 ships, Decision Card may stay client-derived from Instant Audit + `shipCommitmentService` (sessionStorage). **`0014_weekly_decision_loop.sql` + `/api/weekly-decisions` are in tree (2026-09-29)**; Card also dual-writes when signed in. `/api/findings` + D1 upsert + Decision Card + Sample AI-said fixtures remain.
 
 ### API sketch
 
@@ -414,7 +414,7 @@ Same as §N. This pass: **zero new product features added.** Only honesty / queu
 | Plan ready to execute **Product** (findings HTTP + Decision Card)? | **Done in tree** - next operator unlock is staging prove |
 | Production-ready / deployment-ready? | **Yes** for Product + staging + prod smoke (2026-09-29). Merge to `main` still needs green CI |
 
-**Operator unlock string:** reply `go staging Worker` (or `deploy staging`) to prove live auth + findings 401 smoke. Prod needs a separate yes.
+**Operator unlock string:** Product/staging/prod smoke green. Remaining: green CI then merge PR to `main`.
 
 ---
 

@@ -1,0 +1,289 @@
+{
+  "page": {
+    "width_mm": 210,
+    "height_mm": 297,
+    "margins_mm": { "top": 22, "bottom": 22, "left": 20, "right": 20 }
+  },
+  "header": "Luminara Suite  |  Confidential Product Requirements  |  Additive PRD",
+  "footer": "Luminara Digital  |  On-Chain Trust & Proof Layer  |  PRD-LS-2026-001",
+  "footer_page_numbers": true,
+  "styles": [
+    { "name": "LumBody", "base": "Normal", "font": "Calibri", "size_pt": 11 },
+    { "name": "LumSmall", "base": "Normal", "font": "Calibri", "size_pt": 9 },
+    { "name": "LumBrand", "base": "Normal", "font": "Calibri", "size_pt": 20, "bold": true, "color": "0B5EA8" },
+    { "name": "LumAccent", "base": "Normal", "font": "Calibri", "size_pt": 12, "bold": true, "color": "0E7C66" }
+  ],
+  "blocks": [
+    { "type": "paragraph", "style": "LumBrand", "runs": [{ "text": "Luminara Suite - On-Chain Trust & Proof Layer" }] },
+    { "type": "paragraph", "style": "LumAccent", "runs": [{ "text": "Product Requirements Document (Additive Module)  |  PRD-LS-2026-001" }] },
+    { "type": "paragraph", "text": "Status: Draft for review  |  Owner: Luminara Digital product & engineering  |  Version: 1.0.0  |  Date: 2026-09-30" },
+    { "type": "paragraph", "style": "LumSmall", "runs": [{ "text": "This is an additive PRD. It extends the existing Luminara Search Oracle Agent codebase rather than replacing it. Every capability below maps to seams that already exist in the repository. No section of this document authorizes a production blockchain deployment; all rollout is testnet-first." }] },
+
+    { "type": "toc" },
+    { "type": "page_break" },
+
+    { "type": "heading", "text": "1. Executive Summary", "level": 1 },
+    { "type": "paragraph", "text": "Luminara Suite already operates as an open-source engine for Answer Engine Optimization (AEO), SEO, and GEO, deployed as a single Cloudflare Worker serving a React 19 frontend, with Telegram Mini App auth, Telegram Stars checkout, TON wallet payments, and a D1-backed findings ledger. What it does not yet do is prove anything. Today the platform reports AI search visibility; it cannot cryptographically demonstrate that a given AI answer engine actually cited a client domain, and it cannot show when or by what logic a finding was produced." },
+    { "type": "paragraph", "text": "The market gap is the classic black-box problem. Centralized audit dashboards can be edited after the fact, LLM reasoning is opaque, and a brand has no independently verifiable artifact it can hand to an investor, client, or regulator. This PRD defines an additive capability, the On-Chain Trust & Proof Layer, that converts Luminara from a descriptive audit tool into the foundational proof infrastructure for the autonomous AI search economy." },
+    { "type": "paragraph", "text": "The strategy is deliberately dual-chain and testnet-first. The Open Network (TON) provides social distribution and consumer micro-payments through Telegram. The XDC Network provides gasless, enterprise-grade settlement through Layer-2 subnets and EVM-compatible smart contracts. We do not introduce any speculative token. We introduce verifiable proofs, and we charge real money for issuing and verifying them." },
+
+    { "type": "heading", "text": "2. Problem Statement", "level": 1 },
+    { "type": "paragraph", "text": "Three concrete failures define the problem space." },
+    { "type": "bullet_list", "items": [
+      "Unverifiable AI citations. Luminara reports that ChatGPT, Perplexity, or Google AI Overviews mentioned a brand, but produces a self-reported score. A brand cannot prove to a third party that the citation happened, when it happened, or that the underlying HTML and LLM reasoning were not fabricated or later altered.",
+      "Mutable audit logs. Findings today live in centralized D1 tables that a privileged operator could in principle edit or delete. There is no immutable, tamper-evident record of what the auditor saw.",
+      "No sovereign agent trust. As AI agents begin transacting on the open web, there is no public ledger binding an agent to a verifiable work history, error rate, or creditworthiness. Investors cannot verify whether an AI project has real search presence or is a vaporware marketing shell."
+    ] },
+    { "type": "paragraph", "text": "Users feel this as a trust deficit, not an engineering problem. The deliverable they are asking for is a cryptographic proof, not another dashboard." },
+
+    { "type": "heading", "text": "3. Solution Overview", "level": 1 },
+    { "type": "paragraph", "text": "Introduce a five-module additive layer, built in strict testnet-to-mainnet phases, that anchors cryptographic evidence on-chain and exposes it through the surfaces users already touch. Each module maps to seams that exist in the repository today: the Cloudflare Worker entry point, the TON payment settlement flow, the D1 migrations, the cron scheduler, and the Telegram Mini App." },
+    { "type": "table", "style": "Table Grid",
+      "header": ["Module", "Chain Role", "Target User", "Value", "Revenue"],
+      "rows": [
+        ["M1 Verifiable Citation Oracle", "TON (Tolk 1.0) + XDC subnet", "Brands, Web3 protocols, PR agencies", "Cryptographic proof of AI search visibility; eliminates citation hallucination", "Verification badge fees + SaaS (~$50/domain/mo)"],
+        ["M2 Sovereign Agent Registry", "TON TEP-85 SBT + Etherspot EIP-7702", "AI developers, investors", "Immutable agent work history, error rate, credit score", "Micro-loan fees + registration staking + 1% protocol fee"],
+        ["M3 Autonomous AEO Remediation", "XDC gasless meta-tx + TON/Stars escrow", "Non-technical business owners", "Intent-driven automated schema/code fixes executed by agents", "Per-finding done-for-you fees ($10-$50 per fix)"],
+        ["M4 Federated Search Data Mesh", "XDC subnets + local Docker crawler nodes", "SEO agencies, enterprises", "Privacy-preserving, GDPR-compliant global AEO trend predictions", "Enterprise B2B tiers ($500-$2,000/mo)"],
+        ["M5 Telegram AEO Radar Engine", "TON Connect + Cloudflare Worker", "400M+ Telegram Mini App users", "Viral social proof, 1-tap brand-vs-brand AEO comparisons", "Telegram Stars + TON micro-payments"]
+      ]
+    },
+
+    { "type": "heading", "text": "4. Current Baseline (Verified Against the Repository)", "level": 1 },
+    { "type": "paragraph", "text": "This PRD is additive because the following foundations already exist and are in production. We extend them; we do not rebuild them." },
+    { "type": "bullet_list", "items": [
+      "TON settlement is live. worker/tonPayment.ts implements memo-coded invoice creation (format LUM:<orderId>:<planId>), merchant-address CRC16 validation, testnet-flag rejection in production, and on-chain verification via Toncenter v2 with a seamless fallback to TonAPI. Crediting is claimed atomically in D1 through worker/paymentLedger.ts before the subscription is written. Pricing lives in TON_PRICING (starter 15 TON, growth 45 TON, agency 120 TON, plus micro SKUs for single_audit and multi_agent_crawl).",
+      "Idempotent payment ledger. migration 0004_payment_atomicity.sql creates ton_credited_tx (tx_hash PRIMARY KEY, order_id UNIQUE, account_id) and stars_credited_charges, giving exactly-once crediting semantics.",
+      "Findings and audit records. migration 0005_visibility_agent_platform.sql creates audit_runs (domain, focus, status, result_json, report_ref) and audit_findings (evidence_json, stable_key, severity) - the natural anchor points for evidence hashing.",
+      "Telegram auth. worker/telegramAuth.ts validates Mini App initData with HMAC-SHA256, and the Worker entry handles /api/telegram/auth and invoice creation for Telegram Stars (worker/telegramBot.ts).",
+      "Worker + scheduler. wrangler.jsonc binds D1, KV, and R2, and registers a daily cron at 08:00 UTC consumed by the scheduled() handler in worker/index.ts. This cron is the scheduling hook for automated weekly proof re-runs.",
+      "TON Connect manifest. public/tonconnect-manifest.json is live at luminarasuite.com, so wallet connect is already wired."
+    ] },
+    { "type": "paragraph", "text": "The gap: no smart contracts, no on-chain registries, no XDC integration, no account abstraction, no federated mesh, and no chain-network gating in worker/env.ts (only TON_RECEIVING_ADDRESS and TON_API_KEY exist today). Phases below add these as new modules behind the existing Worker." },
+
+    { "type": "heading", "text": "5. Goals and Non-Goals", "level": 1 },
+    { "type": "paragraph", "runs": [{"text": "Goals", "bold": true}] },
+    { "type": "bullet_list", "items": [
+      "Issue tamper-evident on-chain proof for every completed audit, verifiable by any third party without trusting Luminara infrastructure.",
+      "Keep consumer onboarding free of RPC configuration, seed phrases, and native gas; users meet the chain only as a proof link.",
+      "Price proofs as recurring SaaS and per-fix fees (not a speculative token).",
+      "Support sovereign/offline LLM deployments (Ollama, isolated NVIDIA NIM) by exposing block-pinned chain state over Model Context Protocol.",
+      "Ship testnet-first: every contract deploys to TON testnet and XDC Apothem before any mainnet promotion."
+    ] },
+    { "type": "paragraph", "runs": [{"text": "Non-Goals", "bold": true}] },
+    { "type": "bullet_list", "items": [
+      "No new L1 blockchain, no new native protocol token, no ICO or token sale.",
+      "No custody of user keys. All signing is TON Connect or Etherspot-managed; the Worker never holds a seed.",
+      "No replacement of the existing Firebase/Telegram auth model or the Stars payment rail.",
+      "No mainnet deployment inside Phase 1-4. Mainnet is a gated, audited promotion (Phase 5).",
+      "No changes to the AGPL open-source licensing posture of the codebase."
+    ] },
+
+    { "type": "heading", "text": "6. Phase 0: Chain Hardening and Network Gating (Now)", "level": 1 },
+    { "type": "paragraph", "text": "Before adding any contract, harden the payment rail that already generates revenue and enforce a hard testnet/mainnet separation. This phase touches only the Worker and configuration; it deploys nothing on-chain." },
+    { "type": "paragraph", "runs": [{"text": "6.1 Chain network gate", "bold": true}] },
+    { "type": "numbered_list", "items": [
+      "Add CHAIN_NETWORK (values: testnet | mainnet) to worker/env.ts and the wrangler envs, plus CHAIN_TON_API_BASE and CHAIN_XDC_RPC_URL per environment.",
+      "Staging wrangler env points at TON testnet (https://testnet.toncenter.com/api/v3) and XDC Apothem (https://rpc.apothem.network). Production env points at TON mainnet (https://toncenter.com/api/v3) and XDC mainnet (https://erpc.xinfin.network). Keys are never shared between environments.",
+      "tonPayment.ts currently hardcodes https://toncenter.com/api/v2 in findMatchingTonPayment. Refactor to read the base URL from env so staging verifies against testnet and production against mainnet. The existing validateTonAddress testnet-flag rejection (kQ/0Q blocked in production) is preserved as the final guard.",
+      "Fail closed: if CHAIN_NETWORK is unset or mismatched with the receiving-address testnet flag, isTonPaymentConfigured returns false and TON_UNAVAILABLE_ERROR is served."
+    ] },
+    { "type": "paragraph", "runs": [{"text": "6.2 Block-pinned verification reads", "bold": true}] },
+    { "type": "numbered_list", "items": [
+      "Migrate verification lookups from toncenter v2 to v3 and capture the masterchain seqno of the matching inbound transfer at confirm time.",
+      "Persist tx_hash, seqno, chain network, receiving address, and UTC timestamp into a new migration 0017_proof_ledger.sql table proof_anchors, keyed by order/audit id.",
+      "Rationale: pinning a block sequence number at confirm time prevents a later stale-cache read from 're-verifying' a payment against a moved state. This is the deterministic-state principle generalized from TON API v4."
+    ] },
+    { "type": "paragraph", "runs": [{"text": "6.3 Acceptance criteria", "bold": true}] },
+    { "type": "bullet_list", "items": [
+      "A staging invoice paid on TON testnet verifies end-to-end and never writes a mainnet explorer link.",
+      "A deliberately testnet-flagged address set in the production env is rejected at invoice creation (unit test in worker).",
+      "proof_anchors row exists for every credited ton_credited_tx row backfilled by migration."
+    ] },
+
+    { "type": "heading", "text": "7. Phase 1: Verifiable AEO Citation Oracle (M1)", "level": 1 },
+    { "type": "paragraph", "text": "The first on-chain module, chosen deliberately because it has the smallest contract surface, the clearest product pull, and rides on the platform's strongest existing assets: the crawler, the audit_runs/audit_findings schema, and the daily cron." },
+    { "type": "paragraph", "runs": [{"text": "7.1 User stories", "bold": true}] },
+    { "type": "numbered_list", "items": [
+      "As a brand operator, I want a tamper-evident, dated proof that an AI engine cited my domain, so that I can show investors and clients my search presence is real.",
+      "As an agency, I want a shareable on-chain badge per client domain, so that my reports carry independent credibility.",
+      "As a compliance reviewer, I want to re-run the evidence hash from the public chain record, so that I can verify the claim without calling Luminara.",
+      "As a sovereign AI deployment, I want block-pinned chain reads over MCP, so that my offline model never hallucinates citation state."
+    ] },
+    { "type": "paragraph", "runs": [{"text": "7.2 Technical design", "bold": true}] },
+    { "type": "paragraph", "text": "Evidence pipeline. When a crawler audit completes and an audit_runs row transitions to a completed status, the Worker computes a canonical SHA-256 evidence hash over the ordered concatenation of: the raw HTML payload digest, the extracted JSON-LD/schema digest, the ordered list of matched citation URLs, and the serialized LLM reasoning trace stored in result_json. The hash is deterministic; the same evidence always produces the same hash." },
+    { "type": "paragraph", "text": "On-chain anchoring (TON, Tolk 1.0). A single CitationRegistry smart contract in Tolk 1.0 stores evidence hashes keyed by (domain_hash, audit_id). Only the platform's designated minter wallet (an ops hot wallet, never user funds) can write. Tolk's lazy cell serialization and automatic message layout reduce on-chain storage fees by roughly 30-50% versus FunC, which is material because one record per audit run is anchored forever." },
+    { "type": "paragraph", "text": "High-frequency path (XDC gasless subnet). Continuous weekly re-checks (driven by the existing 08:00 UTC cron) sign meta-transactions off-chain; an off-chain relayer submits them to a dedicated XDC L2 gasless subnet. Validator fees settle from a pre-funded gas pool, so end users never need TXDC/XDC (average cost ~$0.00002433, finality ~2.49s). Subnet checkpoints commit to XDC mainnet via XDPoS 2.0." },
+    { "type": "paragraph", "text": "Deterministic reads over MCP. A thin @ton/mcp wrapper exposes the CitationRegistry as block-pinned tools (e.g. blockchain_getMasterchainInfo, accounts_getAccount, and a getDomainAttestation(domain, seqno) convenience). Third-party or sovereign agents pin a seqno and always observe the same citation state - eliminating state ambiguity rather than just citing a URL." },
+    { "type": "paragraph", "runs": [{"text": "7.3 Worker endpoints (additive)", "bold": true}] },
+    { "type": "bullet_list", "items": [
+      "POST /api/proof/anchor - internal, triggered on audit completion and by the weekly cron; computes evidence hash, calls the anchoring service, writes proof_anchors row.",
+      "GET /api/proof/verify?domain= - public; returns current attestation status, chain, tx hash, seqno, and explorer link (testnet.tonviewer.com in staging, tonviewer.com in prod).",
+      "POST /api/proof/badge - returns an embeddable badge payload (SVG metadata + verification URL) for the report page and the TMA.",
+      "GET /api/mcp/attestation - machine-readable MCP/JSON-RPC entry point for third-party agents."
+    ] },
+    { "type": "paragraph", "runs": [{"text": "7.4 Data model (migration 0017)", "bold": true}] },
+    { "type": "table", "style": "Table Grid",
+      "header": ["Table", "Purpose", "Key columns"],
+      "rows": [
+        ["proof_anchors", "Tamper-evident record for each anchored proof", "id, audit_run_id, domain, evidence_hash, chain (ton|xdc), network, contract, tx_hash, seqno, anchored_at, status"],
+        ["proof_schedules", "Weekly proof re-run enrollment per domain", "domain, account_id, cadence, next_run_utc, active"],
+        ["chain_invoices", "Invoice for issuing the on-chain attestation, priced like 0004 ledger", "order_id, domain, plan ('domain_proof'), amount_nano, memo, status"]
+      ]
+    },
+    { "type": "paragraph", "runs": [{"text": "7.5 Pricing and monetization", "bold": true}] },
+    { "type": "paragraph", "text": "Domain Proof subscription: approximately $50/month per domain, billable via Square fiat, Telegram Stars, or TON/XDC tokens (reusing TON_PRICING and Stars invoice machinery; add SKU domain_proof: 2 TON testnet). This anchors a proof weekly, maintains the badge, and includes on-demand re-verification." },
+    { "type": "paragraph", "runs": [{"text": "7.6 Test scope", "bold": true}] },
+    { "type": "bullet_list", "items": [
+      "Determinism: same evidence set hashes identically on repeat (property test).",
+      "Tamper detection: mutating one byte of the HTML digest invalidates verification (negative test).",
+      "Replay: a testnet attestation can never validate a mainnet claim; verify endpoint enforces network match.",
+      "End-to-end: audit completion on staging produces a readable proof_anchors row and a resolvable testnet explorer link within 60 seconds."
+    ] },
+
+    { "type": "page_break" },
+    { "type": "heading", "text": "8. Phase 2: Telegram AEO Radar Battles (M5) - Viral Distribution", "level": 1 },
+    { "type": "paragraph", "text": "Phase 2 is sequenced before the heavier contract work because it reuses the live Telegram auth and payment rails, and it is the primary distribution channel. It makes the proofs from Phase 1 socially visible." },
+    { "type": "paragraph", "runs": [{"text": "8.1 Mechanics", "bold": true}] },
+    { "type": "bullet_list", "items": [
+      "1-Tap Visibility Battles: a Telegram group admin runs 'Brand A vs Brand B' inside a chat. The Mini App renders the existing visibility radar for both domains side by side and crowns a winner on AEO health.",
+      "Shareable radar badges: each battle result embeds the Phase 1 on-chain attestation link, so a shared badge is also a cryptographic claim that can be checked on a block explorer.",
+      "Frictionless onboarding: users connect via Telegram @wallet or TON Connect; payment per battle in Telegram Stars or testnet TON. No RPC screens, no seed phrases - the chain appears only as a proof link."
+    ] },
+    { "type": "paragraph", "runs": [{"text": "8.2 Integration seams", "bold": true}] },
+    { "type": "bullet_list", "items": [
+      "Reuses worker/telegramAuth.ts initData HMAC validation and worker/telegramBot.ts handleTelegramUpdate + createInvoiceLink.",
+      "Adds Worker endpoints POST /api/tma/battle and GET /api/tma/battle/:id for persistence, plus badge endpoint reuse from Phase 1.",
+      "Frontend: a new TMA route (React 19) using @tonconnect/ui-react against the existing public/tonconnect-manifest.json.",
+      "Pricing: add TON_PRICING SKUs battle_single (0.02 TON) and battle_pack, mirroring the Stars flow."
+    ] },
+    { "type": "paragraph", "text": "Growth model (per pasted MetaLamp 2025 forecast): capitalize on the shift away from low-utility tap-to-play clickers toward high-utility Web3 micro-business tools inside Telegram. Entrepreneurs launch viral AEO audit bots in minutes using this template; Luminara captures the verification layer beneath them all." },
+
+    { "type": "heading", "text": "9. Phase 3: Sovereign Agent Identity + Gasless Remediation (M2 + M3)", "level": 1 },
+    { "type": "paragraph", "text": "This is the 'change how people see blockchain' layer. It solves the twin trust crisis (AI hallucination plus crypto vaporware) by binding agents to verifiable work and by removing gas friction for mainstream users." },
+    { "type": "paragraph", "runs": [{"text": "9.1 Agent Identity and Credit Registry (M2)", "bold": true}] },
+    { "type": "numbered_list", "items": [
+      "On TON: agent identity as a TEP-85 Soulbound Token bound to the agent public key. SBT cannot transfer; reputation is provably non-launderable.",
+      "On XDC: Etherspot Account Abstraction (EIP-7702) smart accounts with session keys, allowing agents to execute micro-tasks without exposing a master key. Paymasters sponsor gas.",
+      "Work log contract records task success, response latency, and compute usage per agent. A compute credit system grants ~$0.25 micro-loans; on-time repayment raises an on-chain credit score that unlocks larger compute quotas. This is the credit bureau for the machine economy.",
+      "Registration requires a small stake (XDC or TON on testnet first); a 1% protocol fee applies to agent-to-agent micro-loans and service settlements."
+    ] },
+    { "type": "paragraph", "runs": [{"text": "9.2 Autonomous AEO Remediation with escrowed settlement (M3)", "bold": true}] },
+    { "type": "numbered_list", "items": [
+      "Luminara detects an AEO flaw (e.g. missing JSON-LD structured data or stale FAQPage schema, surfaced via audit_findings.stable_key).",
+      "User approves one high-level intent ('Fix schema gaps and re-index'), never a wallet transaction. The 8th-grade Plain English mode explains what will happen.",
+      "Worker dispatches agent(s) to generate the JSON-LD/code fix, open a PR, and (with approval) deploy.",
+      "Funds sit in escrow in the smart account; a Proof-of-Task-Completion verifier node re-crawls and confirms the fix is live before release. Fix and verification are both on-chain."
+    ] },
+    { "type": "paragraph", "runs": [{"text": "9.3 Monetization", "bold": true}] },
+    { "type": "bullet_list", "items": [
+      "Per-finding done-for-you remediation: $10-$50 per structured data deployment, split dynamically between platform treasury, worker-agent developer, and verifier node.",
+      "Agent registry: registration staking + 1% protocol fee on micro-loans/settlements."
+    ] },
+    { "type": "paragraph", "runs": [{"text": "9.4 Security requirements", "bold": true}] },
+    { "type": "bullet_list", "items": [
+      "EIP-7702 paymaster keys are HSM-backed; session keys are scoped, time-boxed, and revocable.",
+      "Escrow release requires an independent verifier signature; no single service can self-confirm.",
+      "Agent SBT revocation path exists for operators found submitting falsified work logs."
+    ] },
+
+    { "type": "heading", "text": "10. Phase 4: Federated Search Intelligence Mesh + Agent Economy (M4)", "level": 1 },
+    { "type": "paragraph", "text": "The heaviest phase, sequenced last because it depends on contracts proven in earlier phases. It turns Luminara into a privacy-preserving data network." },
+    { "type": "bullet_list", "items": [
+      "Local FL nodes: agency clients run the existing crawler containers (crawler/server.mjs) beside self-hosted analytics sidecars, training local ranking models on their own SERP visibility trends. Raw client data never leaves the local node.",
+      "Gradient submission: encrypted model updates are submitted to the XDC gasless subnet; an aggregating smart contract composes them into a global AEO Search Intelligence Model. Token incentives reward high-quality contributions.",
+      "Compliance: GDPR/HIPAA alignment via data sovereignty; Zero-Knowledge Proofs and immutable ledger checkpoints prove provenance without exposing raw data.",
+      "Agent API: the Phase 1 MCP server now exposes the aggregated global index plus per-agent attestations, so third-party agents consume Luminara as their verification-of-record layer."
+    ] },
+    { "type": "paragraph", "text": "Monetization: Enterprise B2B tier $500-$2,000/month for access to the aggregated global AEO Trend Index; zero centralized hosting cost for client data yields high margin." },
+
+    { "type": "page_break" },
+    { "type": "heading", "text": "11. Phase 5: Mainnet Promotion Gate", "level": 1 },
+    { "type": "paragraph", "text": "No contract reaches mainnet without this gate, enforced as both a release checklist and a feature flag in the Worker." },
+    { "type": "numbered_list", "items": [
+      "Third-party security audit of all Tolk 1.0 and Solidity/EIP-7702 contracts, with findings remediated.",
+      "Public bug bounty on testnet for 2-4 weeks with a disclosed reward table.",
+      "Mainnet dress rehearsal in a production-staging environment using Luminara's own funds, verifying end-to-end flows with real keys before any customer value moves.",
+      "Emergency controls: pause function in each contract plus a chain-side feature flag in the Worker (CHAIN_NETWORK + per-module enablement) so a module can be paused without redeploying contracts.",
+      "Rollback runbook and data reconciliation script: if a mainnet anchor must be invalidated, the proof_anchors table records a superseded status with a link to the replacement anchor."
+    ] },
+
+    { "type": "heading", "text": "12. Cross-Cutting Architecture Decisions", "level": 1 },
+    { "type": "table", "style": "Table Grid",
+      "header": ["Decision", "Choice", "Rationale"],
+      "rows": [
+        ["TON language", "Tolk 1.0", "TypeScript-like syntax, automatic serialization, ~30-50% gas savings vs FunC; lower anchoring cost per audit"],
+        ["XDC contracts", "Solidity 0.8.23 + Etherspot EIP-7702", "EVM compatibility plus account abstraction for gasless enterprise UX"],
+        ["Gas abstraction (TON)", "Pre-paid message gas + Telegram Stars conversion", "Consumer never buys native gas"],
+        ["Gas abstraction (XDC)", "L2 gasless subnet + meta-transaction relayers", "High-frequency audit re-checks at ~$0.00002433, ~2.49s finality"],
+        ["Determinism", "TON API v3/v4 block seqno pin at confirm time", "Eliminates stale-cache re-verification and state hallucination"],
+        ["Key custody", "TON Connect / Etherspot-managed only", "Worker never holds a seed phrase; no custodial risk"],
+        ["Network gating", "CHAIN_NETWORK env + address testnet-flag rejection", "Hard testnet/mainnet split, fail-closed"]
+      ]
+    },
+
+    { "type": "heading", "text": "13. Risks and Mitigations", "level": 1 },
+    { "type": "table", "style": "Table Grid",
+      "header": ["Risk", "Likelihood", "Impact", "Mitigation"],
+      "rows": [
+        ["Smart contract defect loses funds or trust", "Medium", "High", "Audit + bounty + pause flag; testnet-first; funds-per-module capped during pilot"],
+        ["TON API outage blocks verification", "Medium", "Medium", "Existing Toncenter->TonAPI fallback pattern extended with v3 and seqno pinning; cached last-known-good attestations"],
+        ["Gasless relayer becomes centralization chokepoint", "Medium", "Medium", "Multi-relayer pool; contract accepts any valid meta-tx signed by the user; published relayer protocol"],
+        ["User confusion between testnet and mainnet badges", "Medium", "Low", "Badge always carries network label; verify endpoint refuses cross-network claims"],
+        ["FL node contribution poisoning", "Low", "Medium", "Gradient-quality scoring, stake slashing, ZKP provenance"], 
+        ["Regulatory concern around token incentives", "Low", "Medium", "Credits are usage vouchers, not transferable securities; legal review before mainnet incentive launch"]
+      ]
+    },
+
+    { "type": "heading", "text": "14. Success Metrics", "level": 1 },
+    { "type": "bullet_list", "items": [
+      "Phase 0: 100% of new TON invoices carry a persisted seqno; zero cross-network crediting incidents in staging soak (4 weeks).",
+      "Phase 1: >= 90% of completed audits anchor within 60s; verify median latency < 800ms; $50/domain/mo tier attach rate >= 15% of paid accounts by end of pilot.",
+      "Phase 2: battle share rate (battles shared to chats / battles run) >= 25%; 1-tap onboarding conversion >= 60%.",
+      "Phase 3: remediation fix-verified rate >= 95%; agent credit repayment default rate < 5%.",
+      "Phase 4: contributing FL nodes >= 25 agencies at exit; global index subscription ARR meets enterprise plan target.",
+      "Phase 5: zero critical findings outstanding in audit; bounty period closed with no undisclosed criticals."
+    ] },
+
+    { "type": "heading", "text": "15. Build Order Justification", "level": 1 },
+    { "type": "paragraph", "text": "Phase 1 ships first because it has the smallest contract surface (one registry contract), rides the strongest existing assets (crawler, D1, daily cron), and produces an immediately sellable artifact (the $50/month Domain Proof). Phase 2 follows because it needs only Phase 1's proof links plus already-live Telegram rails, and it is the distribution channel that makes Phase 1 visible. Phases 3 and 4 depend on escrow, account abstraction, and subnet infrastructure that should only be trusted after Phase 1's contract has been audited and battle-tested in production. Phase 5 is a gate, not a build phase." },
+
+    { "type": "page_break" },
+    { "type": "heading", "text": "16. References", "level": 1 },
+    { "type": "paragraph", "text": "All citations used in producing this strategy, listed alphabetically by source title." },
+    { "type": "numbered_list", "items": [
+      "Blocksscan XDC Explorer - https://xdc.blocksscan.io/",
+      "Etherspot - Modular Wallet SDK and Ecosystem Digest - https://etherspot.io/blog/consensys-web3auth-deal-symbiotic-relay-sdk-berachain-bectra-upgrade-pillarx-soft-launch-openforts-modular-wallet-sdk-xdc-six-year-milestone/",
+      "How to Use XinFin's Open API to Build Your First dApp on XDC Network - https://www.xdc.dev/ruslan_wing/how-to-use-xinfins-open-api-to-build-your-first-dapp-on-xdc-network-mnk",
+      "Luminara Search Oracle Agent - GitHub - https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent",
+      "Luminara Suite - https://luminarasuite.com/",
+      "MetaLamp - Forecasts for TON and TMA in 2025 - https://metalamp.io/magazine/article/forecasts-for-ton-and-tma-in-2025",
+      "TON Center API v2 - https://toncenter.com/api/v2",
+      "TON Center API v3 - https://toncenter.com/api/v3",
+      "TON Center - https://toncenter.com/",
+      "TON Connect Documentation - https://docs.ton.org/v3/guidelines/ton-connect/",
+      "TON Developer Documentation - https://docs.ton.org/",
+      "TON Documentation: Start Here - https://docs.ton.org/start-here",
+      "TON testnet API v2 - https://testnet.toncenter.com/api/v2",
+      "TON testnet API v3 - https://testnet.toncenter.com/api/v3",
+      "TON testnet Center - https://testnet.toncenter.com/",
+      "TON Testnet Faucet (Testgiver Bot) - https://t.me/testgiver_ton_bot",
+      "TON testnet resources - https://test.ton.org/",
+      "Tonscan - https://tonscan.org/",
+      "Tonscan (testnet) - https://testnet.tonscan.org/",
+      "tonviewer - https://tonviewer.com/",
+      "tonviewer (testnet) - https://testnet.tonviewer.com/",
+      "ton-api-mcp - ton-ai-core - https://github.com/ton-ai-core/ton-api-mcp",
+      "XDC Gasless Subnet Technical Paper (arXiv:2409.17176) - https://arxiv.org/pdf/2409.17176",
+      "XDC Network Documentation - https://docs.xdc.network/",
+      "XDC Network Mainnet RPC - https://docs.xdc.network/xdcchain/developers/mainnetrpc/",
+      "XDC Network Mainnet RPC endpoint - https://erpc.xinfin.network",
+      "XDC Network Resources - https://xdc.org/resources",
+      "XDC Apothem Faucet - https://faucet.apothem.network/",
+      "XDC Apothem RPC endpoint - https://rpc.apothem.network",
+      "XDCScan (Apothem testnet) - https://testnet.xdcscan.com/",
+      "XDCScan (mainnet) - https://xdcscan.com/"
+    ] },
+    { "type": "paragraph", "style": "LumSmall", "runs": [{ "text": "Document provenance: synthesized from the three founder note sets (network reference, strategic blueprint, and feature architecture) provided on 2026-09-30, and verified against the live repository state (worker/, migrations/, wrangler.jsonc, public/tonconnect-manifest.json). All secrets remain in wrangler secrets and are referenced here by name only." }] }
+  ]
+}
