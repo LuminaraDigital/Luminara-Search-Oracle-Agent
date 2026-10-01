@@ -65,7 +65,7 @@ export function corsHeaders(env: Env, request: Request): Record<string, string> 
         'Access-Control-Allow-Headers':
           'content-type, accept, authorization, x-telegram-init-data, x-provider-key, x-goog-api-key, x-goog-api-client, x-share-password, mcp-session-id, MCP-Protocol-Version, Mcp-Method, Mcp-Name',
         'Access-Control-Expose-Headers':
-          'x-quota-limit, x-quota-remaining, x-quota-reset, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset, retry-after, mcp-session-id, x-scout-receipt',
+          'x-quota-limit, x-quota-remaining, x-quota-reset, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset, retry-after, mcp-session-id, x-scout-receipt, x-quota-bonus',
         'Access-Control-Allow-Credentials': 'true',
         'Vary': 'Origin',
       }
@@ -106,8 +106,8 @@ export function billingId(user: HostedIdentity): string {
  * 3) Telegram Mini App initData (x-telegram-init-data).
  * Each side is stored on its own account_id. This function never links them.
  * Sharing a plan requires POST /api/auth/link with { confirm: true }.
- * When initData is valid, the returned identity is the Telegram user.
- * Otherwise the Firebase user is returned.
+ * When initData is valid, or the opaque session belongs to a Telegram user,
+ * the returned identity is the Telegram user. Otherwise the Firebase user is returned.
  * Upserts a durable user row when identity succeeds.
  * Returns null when auth is optional and absent.
  */

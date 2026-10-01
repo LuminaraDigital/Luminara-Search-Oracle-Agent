@@ -12,7 +12,7 @@ Suite still had no citeable definition of AEO, no honesty glossary URL, and no s
 
 ## Decision
 
-1. `public/llms.txt` (served by the Worker from `worker/crawlDocuments.ts`) states the method, links the honesty glossary, points at the sitemap, and repeats only published product facts. Agents may cite `/share/teaser/`. Full `/share/` reports stay disallowed. A teaser is a redacted summary, not a verified measurement.
+1. `public/llms.txt` (served by the Worker from `worker/crawlDocuments.ts`) states the method, links the honesty glossary, points at the sitemap, and repeats only published product facts. Agents may cite `/share/teaser/`. Full `/share/` reports are unlisted and served noindex (amended 2026-10-01: robots.txt allows `/share/` so link unfurls can fetch preview HTML). A teaser is a redacted summary, not a verified measurement.
 2. `/docs/what-is-aeo.html` is static HTML, the same pattern as `/docs/mcp.html`, so a crawler receives the definition, the method, the glossary, and the FAQ without running the app. `robots.txt` allows that path. `sitemap.xml` lists it. `/docs/what-is-aeo` and `/docs/what-is-aeo/` redirect to that file so the extensionless URL does not fall through to the app shell.
 3. The Suite GEO checklist on Instant Audit lists Suite's own crawlable assets. Every row is `not_measured` until a caller supplies a probe status for that row. A client scout does not fill the list. The list is not a score.
 4. Instant Audit still fetches robots and `llms.txt` with no redirect follow. It also fetches optional `/ai.txt`. New rows:

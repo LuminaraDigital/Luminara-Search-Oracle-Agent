@@ -54,7 +54,7 @@ const ITEMS: Array<Omit<SuiteCitabilityItem, 'status'>> = [
     id: 'suite_teaser',
     label: 'Redacted teaser path',
     href: '/docs/what-is-aeo.html#methodology',
-    note: 'robots.txt allows /share/teaser/. Full /share/ reports stay disallowed.',
+    note: 'robots.txt allows /share/teaser/. Full /share/ reports are unlisted and served noindex.',
   },
 ];
 

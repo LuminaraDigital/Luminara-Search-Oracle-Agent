@@ -287,16 +287,21 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         setAttestation(crewResult.attestation);
       }
 
-      try {
-        const { ingestCrewFindings } = await import('../../services/audit/findingBoardService');
-        const boarded = await ingestCrewFindings({
-          domain: formattedUrl,
-          findings: crewResult.findings || [],
-          auditRunId: `crew_${Date.now().toString(36)}`,
-        });
-        setBoardFindings(boarded);
-      } catch {
+      // A run that did not measure the site must not feed the findings board or the Weekly Decision card.
+      if (degraded) {
         setBoardFindings([]);
+      } else {
+        try {
+          const { ingestCrewFindings } = await import('../../services/audit/findingBoardService');
+          const boarded = await ingestCrewFindings({
+            domain: formattedUrl,
+            findings: crewResult.findings || [],
+            auditRunId: `crew_${Date.now().toString(36)}`,
+          });
+          setBoardFindings(boarded);
+        } catch {
+          setBoardFindings([]);
+        }
       }
 
       if (seq !== runSeq.current) return;
