@@ -745,3 +745,37 @@ Findings recorded for later phases:
 - TON has no refund path, and `backfillTonPaymentAnchors` copies legacy hashes verbatim.
 
 Still open in Phase 0: P0-6 (with the `UQ` enforcement above), the repo-settings part of P0-10, P0-12.
+
+### 2026-10-01: Phase 1 started (P1-0 re-baseline, label slice of P1-9)
+
+**Shipped as PR #34:** the audit prompt no longer labels search-sample heuristics `VERIFIED`. Blocks carry `ESTIMATED`, `MEASURED` or `NOT_MEASURED`, with one instruction line telling the model how to treat each. Prompt sections live in `services/audit/evidencePromptLabels.ts`; a test asserts no `[VERIFIED` header remains in `services/`.
+
+**Re-baseline of section 4 against merged code.** Corrections that supersede the text above:
+
+| Section 4 item | Correction |
+|---|---|
+| Claim inputs | `EmpiricalEvidence` (`services/audit/empiricalCitationService.ts:8-20`) has `citedUrl`, `targetDomain`, `query` but no brand. The client must send `summary.brandName` with each claim. At most 3 evidence rows per audit, matching the per-request cap. |
+| 4.4 client wiring | The audit flow is sequential (`services/geminiService.ts:639-722`). Fire the verify call after the probe (`:660`) and await it just before the prompt is built (`:722`); the enrichment and integrity awaits in between already give it wall-clock time. No concurrency refactor is needed. |
+| P1-3 / P1-3b | `fetchPublicUrl` is at `worker/security.ts:327-374`. It already re-validates host and DoH resolution on every redirect hop (up to 5). It still has no timeout, size cap or content-type check (P1-3 wrapper). P1-3b reduces to tests, documentation of the residual resolve-twice gap (Workers cannot pin an IP) and closing the papercut. |
+| P1-4 lineage | The Worker has no model list; the client picks the model. P1-4 must add a server-side verifier model list per host and a lineage map. Lineages reachable in code: OpenAI gpt-oss and Qwen (Groq); Llama, DeepSeek, Gemma (NIM); DeepSeek, Qwen, Mistral (Ollama). The audit model defaults to gpt-oss on Groq, so verifiers must come from the others. |
+| `callHosted` | Keeps base-URL resolution, `spec.auth` and the body clamp from `worker/providerRelay.ts:185-386`; skips identify, the tier gate, `checkHostedQuota`, receipt minting and header passthrough; needs its own `AbortSignal` and a non-streamed JSON read. |
+| Status vocabulary | `verified` maps to `measured`; `unverified` maps to `estimated` (or `not_measured` for no URL or reason `self`). `contradicted` has no equivalent in the existing three-value honesty type. Needs a decision (below). |
+| P1-9 | The MEASURED/ESTIMATED labels are done (PR #34). What remains is the per-URL `VERIFIED` / `CONTRADICTED` / `UNVERIFIED` lines, which will need the "no `[VERIFIED`" test narrowed on purpose. |
+
+**Blockers for the rest of Phase 1:**
+
+1. **Staging has no hosted LLM keys.** `/api/health` on staging reports every provider false, so every verify there would return `unverified` and the 7-day soak cannot exercise the verifiers. Production has Groq, NIM and Ollama.
+2. **Verifier model list.** Which model per host acts as V1, V2 and V3 (owner decision 7).
+3. **`contradicted` in the UI.** A fourth display state, or `estimated` plus a reason (owner decision 8).
+4. **Labellers** for the live eval set (owner decision 3, still open).
+
+Added owner decisions:
+
+| # | Decision | Blocks | Default if no answer |
+|---|---|---|---|
+| 7 | Verifier models: V1, V2, V3 host and model | P1-4 | V1 Llama on NIM, V2 DeepSeek on NIM, V3 Qwen on Groq (to be confirmed callable with the hosted keys) |
+| 8 | How `contradicted` is shown | P1-10 | A fourth state, "Contradicted", in the evidence drawer only |
+| 9 | Add hosted LLM keys to staging | Phase 1 soak | None; needs the owner |
+
+Known over-claims left for P1-10: the drawer title "Empirical Multi-LLM Citation Proof" and its hardcoded confidence; `EntityAuthorityCard` "Verified across Google & Cloudflare security standards" when the check was CORS-limited; `mem0MemoryEngine` and `serpRadarAgent` storing the sampled rate at confidence 0.9; `EmpiricalCitationSummary.measurementStatus` reading `measured` for a search sample.
+
