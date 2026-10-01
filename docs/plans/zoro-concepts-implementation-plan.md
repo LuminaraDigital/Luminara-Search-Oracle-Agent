@@ -1,6 +1,6 @@
 # Zoro Concepts Implementation Plan
 
-**Status:** v2.2 - Phase 0 tasks P0-0 to P0-3 complete (2026-10-01, see section 15); owner decisions 1, 2, 4, 5, 6 approved; decision 3 (labellers) still open  
+**Status:** v2.3 - Phase 0 code tasks complete and in production (2026-10-01, section 15). Open in Phase 0: P0-6 and P0-12 (need the owner's testnet wallet and staging bot) and the repo-settings part of P0-10. Owner decisions 1, 2, 4, 5, 6 approved; decision 3 (labellers) still open  
 **Date:** 2026-10-01  
 **Owner:** Luminara Digital  
 **Source:** ZORO whitepaper 1.0 (concepts only)  
@@ -724,4 +724,24 @@ Corrections to this plan from what execution found:
 - Rule 2.5 and P0-2 anticipated renumbering `origin/main`'s migrations to 0018-0020. Not needed: both names sets were already recorded remotely. The next free number is **0018**.
 - Section 1.1 "Staging sign-in": staging health reports `firebase:true`, so Firebase sign-in is available on staging; only the Telegram bot is missing.
 
-Still open in Phase 0: P0-4 to P0-12. Production SKU descriptions still say "verified Proof-of-Audit attestation" and "TON on-chain certification memo" (P0-4).
+### 2026-10-01: P0-4, P0-5, P0-7 to P0-11 complete
+
+| Task | Result |
+|---|---|
+| P0-4, P0-5 | PR #32. On-chain and "verified attestation" wording removed from the badge modal, Mission Control, crew activity, verify page and both one-off SKU descriptions; fake recipient address and its unused invoice code deleted; proof badge hidden behind `PROOF_BADGE_ENABLED = false`. In production at `6f4769f`. |
+| P0-7 | PR #33. Toncenter v3 returns base64 hashes and TonAPI v2 hex (confirmed against both live APIs). Hashes normalise to lowercase hex; the ledger claim checks every encoding in the same statement as the insert, so legacy rows need no rewrite. |
+| P0-7 bounce rule | Reject only when the value was returned: inbound message is a bounce, a bounce phase is present, or the transaction aborted with a bounceable inbound message. **Not** on `aborted` alone. |
+| P0-8 | Failed anchor writes log `[Proof] anchor_write_failed` with tx hash, order id and network. |
+| P0-9 | XDC probe: 3 s timeout, 60 s KV cache keyed by network and RPC URL hash, failures cached. Verified on staging (2.4 s then 0.3 s). |
+| P0-11 | `scheduled()` dispatches on the cron expression. An unmapped expression logs an error and runs all jobs. |
+| P0-10 (part) | Push CI runs on `feat/**`. Required status checks are a repo setting and remain for the owner. |
+
+PR #33 was independently reviewed as go (no blockers or majors; four minors applied) and is in production at `546447e`. Verified after each production deploy: deploy workflow and CI green, `npm run smoke:prod` passes, referrals, Idea Scout and findings routes return 401, 55 licence-key records present. A production backup was taken before each push.
+
+Findings recorded for later phases:
+- **The production merchant wallet has never been used.** Toncenter reports it uninitialised with no transactions. Mainnet TON checkout is configured but unexercised. It works only because the address is configured in its non-bounceable `UQ` form; an `EQ` form before the wallet is deployed would bounce every payment. Nothing in `validateTonAddress` enforces `UQ` (add to P0-6).
+- Section 1.1's "live mainnet TON subscription settlement" should read "configured, not yet exercised".
+- A test suite run from a linked worktree's pre-push hook rewrote the shared `.git/config`; fixed in `tests/forbiddenTokens.test.ts` (commit `8376f30`). Worktree agents now verify `core.bare` and `user.name` after every push.
+- TON has no refund path, and `backfillTonPaymentAnchors` copies legacy hashes verbatim.
+
+Still open in Phase 0: P0-6 (with the `UQ` enforcement above), the repo-settings part of P0-10, P0-12.
