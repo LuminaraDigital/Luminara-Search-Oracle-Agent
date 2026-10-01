@@ -109,6 +109,7 @@ import {
 import { handleMcpOAuthRoute } from './mcpOAuth';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
+import { jobsForCron } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -1860,9 +1861,15 @@ export default {
     }
     return withSecurityHeaders(assetResponse);
   },
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runSentinelScan(env));
-    ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).
+    const jobs = jobsForCron(controller.cron);
+    if (jobs.length === 0) {
+      console.warn(`[Cron] No jobs mapped for cron "${controller.cron}"; nothing run. Add it to worker/scheduledJobs.ts.`);
+      return;
+    }
+    if (jobs.includes('sentinel')) ctx.waitUntil(runSentinelScan(env));
+    if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
   },
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     await processAuditQueueBatch(batch as MessageBatch<{ runId: string; accountId: string; targetUrl: string; projectId?: string | null }>, env);
