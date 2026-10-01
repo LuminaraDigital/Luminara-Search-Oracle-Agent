@@ -14,6 +14,20 @@ import {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT_SRC = path.join(repoRoot, 'scripts', 'check-forbidden-tokens.mjs');
 
+// Inside a git hook (pre-push runs this suite) git exports GIT_DIR and friends. Left in place they
+// point every git call below at the real repository instead of the temp one, which rewrote the
+// shared .git/config and committed on the real branch when the hook ran from a linked worktree.
+for (const key of [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_PREFIX',
+  'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY',
+]) {
+  delete process.env[key];
+}
+
 let root: string;
 
 beforeEach(() => {
