@@ -50,6 +50,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'SHARED_REPORT',
   'VERIFY_ATTESTATION',
   'INSTANT_AUDIT',
+  'IDEA_SCOUT',
 ]);
 
 /** Pure decision helper (tested). Soft-open only when signature was not rejected. */

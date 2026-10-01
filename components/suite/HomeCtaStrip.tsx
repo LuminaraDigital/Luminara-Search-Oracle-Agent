@@ -3,9 +3,11 @@ import { AppView } from '../../types';
 import { ICONS } from '../../constants';
 import {
   HOME_CTA_HEADING,
+  HOME_CTA_IDEA_LABEL,
   HOME_CTA_PRIMARY_LABEL,
   HOME_CTA_SECONDARY_LABEL,
   HOME_CTA_SUB,
+  homeCtaTarget,
 } from './homeCtaStripLogic';
 
 interface HomeCtaStripProps {
@@ -48,6 +50,13 @@ export const HomeCtaStrip: React.FC<HomeCtaStripProps> = ({ onNavigate }) => {
             className="text-[10px] font-bold uppercase tracking-wider text-gold-light hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
           >
             {HOME_CTA_SECONDARY_LABEL}
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate(homeCtaTarget('idea'))}
+            className="text-[10px] font-bold uppercase tracking-wider text-gray-300 hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          >
+            {HOME_CTA_IDEA_LABEL}
           </button>
         </div>
       </div>

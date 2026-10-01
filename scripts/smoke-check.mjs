@@ -21,6 +21,9 @@ console.log(`[SmokeCheck] Running smoke tests for: ${targetLabel}`);
 
 /** Suite-10x P1 + industry ops: migration files Worker code expects. */
 const REQUIRED_D1_MIGRATIONS = [
+  'migrations/0011_share_teasers.sql',
+  'migrations/0012_referrals_missions.sql',
+  'migrations/0013_idea_scout.sql',
   'migrations/0011_mcp_action_requests.sql',
   'migrations/0012_budget_policies.sql',
   'migrations/0013_mcp_action_requests_kind.sql',
@@ -42,6 +45,16 @@ const REQUIRED_D1_TABLES = [
   'invoice_reconcile_runs',
   'memory_history',
   'proof_anchors',
+  'share_teasers',
+  'referral_codes',
+  'referral_attributions',
+  'referral_rewards',
+  'user_progression',
+  'scout_receipts',
+  'user_missions',
+  'idea_scouts',
+  'idea_scout_daily',
+  'niche_pulse_subs',
 ];
 
 // 1. Verify build bundle integrity

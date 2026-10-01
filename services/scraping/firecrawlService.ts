@@ -6,6 +6,14 @@
 
 import { configService } from '../configService';
 import { providerFetch } from '../apiClient';
+import { hostedAuthBlocked, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
+
+const HOSTED_AUTH_SKIP_ERROR =
+  'Hosted provider skipped after an authentication failure. Add your own key in Settings or sign in.';
+
+function noteFirecrawlAuth(status: number | undefined): void {
+  if (status === 401 || status === 403) noteHostedAuthFailure(status, 'firecrawl');
+}
 
 const FIRECRAWL_V1 = 'https://api.firecrawl.dev/v1';
 
@@ -107,6 +115,9 @@ export class FirecrawlService {
     if (!apiKey) {
       return { success: false, error: 'No Firecrawl API Key configured' };
     }
+    if (hostedAuthBlocked()) {
+      return { success: false, error: HOSTED_AUTH_SKIP_ERROR, httpStatus: 401, code: 'HOSTED_AUTH_CIRCUIT' };
+    }
 
     try {
       const response = await providerFetch(
@@ -130,6 +141,7 @@ export class FirecrawlService {
       );
 
       if (!response.ok) {
+        noteFirecrawlAuth(response.status);
         const err = await parseErrorBody(response);
         return { success: false, ...err, httpStatus: response.status };
       }
@@ -162,6 +174,9 @@ export class FirecrawlService {
     if (!apiKey) {
       return { success: false, links: [], error: 'No Firecrawl API Key configured' };
     }
+    if (hostedAuthBlocked()) {
+      return { success: false, links: [], error: HOSTED_AUTH_SKIP_ERROR, httpStatus: 401, code: 'HOSTED_AUTH_CIRCUIT' };
+    }
 
     const limit = Math.max(1, Math.min(options.limit ?? 100, 500));
 
@@ -188,6 +203,7 @@ export class FirecrawlService {
       );
 
       if (!response.ok) {
+        noteFirecrawlAuth(response.status);
         const err = await parseErrorBody(response);
         return { success: false, links: [], ...err, httpStatus: response.status };
       }
@@ -223,6 +239,9 @@ export class FirecrawlService {
     const apiKey = this.apiKey();
     if (!apiKey) {
       return { success: false, pages: [], error: 'No Firecrawl API Key configured' };
+    }
+    if (hostedAuthBlocked()) {
+      return { success: false, pages: [], error: HOSTED_AUTH_SKIP_ERROR, httpStatus: 401, code: 'HOSTED_AUTH_CIRCUIT' };
     }
 
     const limit = Math.max(1, Math.min(options.limit ?? 8, 25));
@@ -265,6 +284,7 @@ export class FirecrawlService {
       );
 
       if (!response.ok) {
+        noteFirecrawlAuth(response.status);
         const err = await parseErrorBody(response);
         return { success: false, pages: [], ...err, httpStatus: response.status };
       }
@@ -294,6 +314,10 @@ export class FirecrawlService {
       return { success: false, pages: [], error: 'No Firecrawl API Key configured' };
     }
 
+    if (hostedAuthBlocked()) {
+      return { success: false, pages: [], error: HOSTED_AUTH_SKIP_ERROR, httpStatus: 401, code: 'HOSTED_AUTH_CIRCUIT' };
+    }
+
     const path = `/crawl/${encodeURIComponent(jobId)}`;
     try {
       const response = await providerFetch(
@@ -310,6 +334,7 @@ export class FirecrawlService {
       );
 
       if (!response.ok) {
+        noteFirecrawlAuth(response.status);
         const err = await parseErrorBody(response);
         return { success: false, pages: [], ...err, httpStatus: response.status };
       }

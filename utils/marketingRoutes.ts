@@ -18,6 +18,7 @@ export const MARKETING_PATH_BY_VIEW: Partial<Record<AppView, string>> = {
 const PATH_ALIASES: Record<string, AppView> = {
   '': AppView.LANDING,
   'how-it-works': AppView.INFRASTRUCTURE,
+  how: AppView.INFRASTRUCTURE,
   infrastructure: AppView.INFRASTRUCTURE,
   modules: AppView.INFRASTRUCTURE,
   ai: AppView.INTELLIGENCE,

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { TonConnectButton, useTonWallet } from '@tonconnect/ui-react';
 import { isInTelegram, getTelegramUserUnsafe, payWithStars, haptic } from '../../services/telegram/tma';
 import { telegramAuth, createStarsInvoice, activateLicenseKey, fetchQuotaStatus, getServerHealthSync, type TelegramSession } from '../../services/apiClient';
+import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 
 interface Props {
   compact?: boolean;
@@ -101,8 +102,20 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       <div className="glass-morphism rounded-2xl border border-white/10 p-5 space-y-3">
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Telegram &amp; TON</p>
         <p className="text-xs text-gray-400 leading-relaxed">
-          Open Luminara inside Telegram to pay with Stars and keep your audits on your account. You can also connect a TON wallet here.
+          Pay with Stars or TON inside the Mini App. Card checkout is unavailable. You can also connect a TON wallet here.
         </p>
+        <p className="text-xs text-gray-400 leading-relaxed">
+          Link Telegram and web account - shares subscription. Open the Mini App, sign in there, and confirm the link. Signing in does not merge plans by itself.
+        </p>
+        <a
+          href={TELEGRAM_MINI_APP_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex text-xs font-bold text-gold underline underline-offset-2 hover:text-gold-light"
+        >
+          Open Mini App in Telegram
+        </a>
+        <p className="text-[10px] font-mono text-gray-500 break-all">{TELEGRAM_MINI_APP_URL}</p>
         <TonConnectButton />
       </div>
     );
@@ -133,6 +146,26 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
 
       {active && (
         <p className="text-[11px] text-gray-400">Active until {new Date(sub!.expiresAt).toLocaleDateString()}.</p>
+      )}
+
+      <p className="text-xs text-gray-400 leading-relaxed">
+        Link Telegram and web account - shares subscription. Use Account above and confirm before plans are shared.
+      </p>
+
+      {!inTg && (
+        <div className="space-y-1">
+          <p className="text-xs text-gray-400 leading-relaxed">
+            Stars checkout opens in the Mini App. Card checkout is unavailable.
+          </p>
+          <a
+            href={TELEGRAM_MINI_APP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex text-xs font-bold text-gold underline underline-offset-2 hover:text-gold-light"
+          >
+            Open Mini App in Telegram
+          </a>
+        </div>
       )}
 
       {Object.keys(plans).length > 0 && (

@@ -21,7 +21,7 @@ leaked internals).
 | `POST /auth/request-otp`, `/auth/verify-otp` | worker/authOtpSms.ts | none | SMS OTP |
 | `POST /auth/send-verification` | worker/index.ts | none | Email verification |
 | `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook |
-| `GET,POST /auth/link` | worker/index.ts | session | Telegram <-> Firebase account linking |
+| `POST /auth/link` | worker/index.ts | Telegram initData + Firebase Bearer | Explicit account link. Body must be `{ confirm: true }` or the route returns 400 and writes nothing. Two distinct accounts that each have an active paid plan return 409 with no merge. `identify()` never links. Success and dual-paid refusal write an audit event |
 | `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag) |
 | `GET /enterprise/audit-logs` | worker/enterpriseStore.ts + auditLog | session + role | Admin/Auditor role required |
 | `GET /auth/quota` | worker/index.ts | session | Daily quota |
@@ -34,7 +34,11 @@ leaked internals).
 | `POST /admin/skills/:slug/versions`, `POST /admin/skills/:slug/enable`, `GET /admin/skills/:slug` | worker/agentSkills.ts | admin | Agent skill versions/enable |
 | `POST /agent/attest` | worker/attestationService.ts | none | Agent attestation |
 | `POST /sentinel/register`, `/sentinel/status` | worker/sentinel.ts | session | Drift Sentinel targets |
-| `GET /share/reports/:id`, POST base | worker/shareReports | session + public GET | Shared audit reports |
+| `GET /share/reports/:token`, `POST /share/reports` | worker/shareService.ts | session + public GET | Full branded reports. Growth+ `shareLinks` |
+| `POST /share/teasers`, `GET /share/teasers/:token` | worker/shareService.ts | session create, public GET | Redacted scout teaser. Not `shareLinks`. 5/day. Public hosts only. Credential-like text rejected. Badges stored as not_measured |
+| `GET /referrals/me`, `POST /referrals/claim`, `POST /referrals/qualify`, `POST /missions/complete` | worker/referrals.ts | session | Opaque `ref_` invites. Qualify pays two-sided credits only with a one-time scout receipt from a signed-in evidence call. Re-scout needs a second honest scout in the current ISO week. Credit consume is compare-and-swap. Needs unapplied D1 `0012_referrals_missions.sql`. Bot `/missions` is opt-in and is not on the Sentinel cron |
+| `POST /idea-scout`, `GET /idea-scout`, `GET /idea-scout/:id`, `PATCH /idea-scout/:id/link`, `POST /idea-scout/pulse` | worker/ideaScout.ts | session | Hypothesis card before a domain exists. Hosted generation needs Telegram or Firebase. The hosted meter is consumed before fetch or the model. Free tier: 2 cards per UTC day via D1 compare-and-swap after the row inserts. A lost slot deletes the row and does not refund the hosted charge. Missing migration 0013 returns before fetch, model, and meters. Anonymous callers are rejected before fetch or model spend. Competitor fetch is title, meta, and headings only. Card schema rejects percentages and measured badges. Needs unapplied D1 `0013_idea_scout.sql` (`idea_scouts`, `idea_scout_daily`, `niche_pulse_subs`). Bot `/pulse` stores a niche tip and is not on the Sentinel cron |
+| `GET /visibility/crawler-files` | worker/llmCrawlerRoute.ts | session | `/robots.txt`, `/llms.txt`, and optional `/ai.txt`. SSRF guarded. No redirect follow. A non-empty file mints `X-Scout-Receipt` for that host |
 | `POST /enrichment/entity` | worker/enrichmentService | session | Entity enrichment |
 | `* /oauth/mcp/*` | worker/mcpOAuth.ts | oauth/token | OAuth 2.1 + PKCE for MCP |
 | `GET,POST /memory/facts` | worker/memoryService.ts | session | Hosted memory facts |
@@ -50,6 +54,12 @@ leaked internals).
 Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 `apikey` = `lm_live_*` MCP key; `oauth` = `mcp_*` OAuth token;
 `admin` = `ADMIN_SECRET` header; `byok` = bring-your-own-key header.
+
+Public document redirects run in `worker/index.ts` before the marketing shell
+and the SPA asset fallback:
+
+- `GET /docs/what-is-aeo` and `/docs/what-is-aeo/` return 301 to `/docs/what-is-aeo.html`.
+- `GET /how` and `/how/` return 301 to `/how-it-works`.
 
 ## Stubbed vs live status
 

@@ -3,6 +3,7 @@ import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { HomeCtaStrip } from './HomeCtaStrip';
+import { VisibilityRetentionCard } from './VisibilityRetentionCard';
 import { auditCountFromStorage, shouldShowHomeCta } from './homeCtaStripLogic';
 import { WeeklyDecisionCard } from '../audit/WeeklyDecisionCard';
 import {
@@ -17,6 +18,7 @@ interface DashboardViewProps {
   dna: BusinessDNA | null;
   onClearDNA?: () => void;
   advancedUi?: boolean;
+  signedIn?: boolean;
 }
 
 type Door = {
@@ -31,7 +33,7 @@ type Door = {
  * Level 4 home: three primary doors only (Ask / Audit / Memory).
  * Secondary and Labs surfaces stay reachable from More tools / Omnibar when needed.
  */
-export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, advancedUi = false }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, advancedUi = false, signedIn = false }) => {
   const auditCount = useMemo(() => auditCountFromStorage(), []);
   const hasAudits = auditCount > 0;
   const hasDna = Boolean(dna);
@@ -132,6 +134,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       badge: dna ? 'Linked' : 'Set up',
     },
     {
+      id: AppView.IDEA_SCOUT,
+      title: 'Idea Scout',
+      desc: 'No domain yet. Turn an idea into a hypothesis card, then hand off to Instant Audit.',
+      icon: ICONS.Zap,
+      badge: 'Idea',
+    },
+    {
       id: AppView.VISION,
       title: 'How Luminara works',
       desc: 'The audit method in plain English.',
@@ -198,6 +207,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
           Audit citation health and pick the next optimization move across Google and AI answer engines.
         </p>
       </div>
+
+      <VisibilityRetentionCard signedIn={signedIn} onNavigate={onNavigate} />
 
       {/* Zero-audit home primary CTA strip */}
       {shouldShowHomeCta(auditCount) && <HomeCtaStrip onNavigate={onNavigate} />}

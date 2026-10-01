@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { AppView } from '../types';
 import {
@@ -21,6 +22,8 @@ describe('marketingRoutes', () => {
   });
 
   it('accepts aliases', () => {
+    expect(marketingViewFromPathname('/how')).toBe(AppView.INFRASTRUCTURE);
+    expect(marketingViewFromPathname('/how/')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/infrastructure')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/why-us')).toBe(AppView.WHY_US);
   });
@@ -58,12 +61,40 @@ describe('marketing crawl documents', () => {
   it('sitemap lists canonical marketing URLs', () => {
     expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/how-it-works');
     expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/llms.txt');
+    expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/docs/what-is-aeo.html');
     expect(SITEMAP_XML).toContain('http://www.sitemaps.org/schemas/sitemap/0.9');
   });
 
-  it('llms.txt lists product and MCP surfaces', () => {
+  it('llms.txt lists product, honesty, pricing, MCP, and the Mini App', () => {
     expect(LLMS_TXT).toContain('/docs/mcp.html');
-    expect(LLMS_TXT).toContain('/pricing');
+    expect(LLMS_TXT).toContain('https://luminarasuite.com/api/mcp');
+    expect(LLMS_TXT).toContain('https://t.me/LuminaraSuiteBot/app');
+    expect(LLMS_TXT).toContain('US$49');
+    expect(LLMS_TXT).toContain('US$149');
+    expect(LLMS_TXT).toContain('US$349');
+    expect(LLMS_TXT).toContain('not_measured');
+    expect(LLMS_TXT).toContain('/docs/what-is-aeo.html#honesty');
+    expect(LLMS_TXT).toContain('https://www.luminarasuite.com/sitemap.xml');
+    expect(LLMS_TXT).toContain('/share/teaser/');
+    expect(LLMS_TXT).not.toContain('\u2014');
+  });
+
+  it('robots.txt names AI crawlers, allows teaser cards, and keeps share URLs fetchable for unfurls', () => {
+    expect(ROBOTS_TXT).toContain('User-agent: GPTBot');
+    expect(ROBOTS_TXT).toContain('User-agent: ClaudeBot');
+    expect(ROBOTS_TXT).toContain('User-agent: PerplexityBot');
+    expect(ROBOTS_TXT).toContain('User-agent: Google-Extended');
+    expect(ROBOTS_TXT).toContain('Allow: /docs/what-is-aeo.html');
+    expect(ROBOTS_TXT).toContain('Allow: /share/teaser/');
+    // Share pages are unlisted and served noindex (worker/marketingShell.ts); robots must not block unfurlers.
+    expect(ROBOTS_TXT).not.toContain('Disallow: /share/');
+    expect(ROBOTS_TXT).toContain('Disallow: /api/');
+  });
+
+  it('public crawl files match the Worker constants', () => {
+    expect(readFileSync('public/robots.txt', 'utf8')).toBe(ROBOTS_TXT);
+    expect(readFileSync('public/llms.txt', 'utf8')).toBe(LLMS_TXT);
+    expect(readFileSync('public/sitemap.xml', 'utf8')).toBe(SITEMAP_XML);
   });
 });
 
@@ -91,6 +122,8 @@ describe('marketing shell injection', () => {
   });
 
   it('resolves shell keys for aliases', () => {
+    expect(marketingShellKey('/how')).toBe('/how-it-works');
+    expect(marketingShellKey('/how/')).toBe('/how-it-works');
     expect(marketingShellKey('/infrastructure')).toBe('/how-it-works');
     expect(marketingShellKey('/pricing/')).toBe('/pricing');
   });

@@ -9,6 +9,13 @@
 
 import { AgentActivityEvent, AuditFinding, ScrapedPageEvidence, SerpEvidenceItem } from '../types';
 import { ReportFocus, BusinessDNA } from '../../../types';
+import {
+  evaluateLlmCrawlerReadiness,
+  unevaluatedLlmCrawlerReport,
+  type LlmCrawlerReport,
+  type LlmCrawlerSnapshot,
+} from '../../audit/llmCrawlerReadiness';
+import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 
 export class PlaybookAuditorAgent {
   public readonly name = 'Playbook Auditor';
@@ -19,8 +26,9 @@ export class PlaybookAuditorAgent {
     scrapedPages: ScrapedPageEvidence[],
     serpEvidence: SerpEvidenceItem[],
     dna: BusinessDNA | null | undefined,
-    emit: (event: AgentActivityEvent) => void
-  ): Promise<{ findings: AuditFinding[]; healthScore: number }> {
+    emit: (event: AgentActivityEvent) => void,
+    crawlerSnapshot?: LlmCrawlerSnapshot | null,
+  ): Promise<{ findings: AuditFinding[]; healthScore: number | null; llmCrawler: LlmCrawlerReport }> {
     emit({
       id: `auditor-start-${Date.now()}`,
       timestamp: Date.now(),
@@ -32,7 +40,52 @@ export class PlaybookAuditorAgent {
     });
 
     const findings: AuditFinding[] = [];
+    const llmCrawler = crawlerSnapshot
+      ? evaluateLlmCrawlerReadiness(crawlerSnapshot)
+      : unevaluatedLlmCrawlerReport();
+    const hasPageEvidence = scrapedPages.some(
+      (p) => p.wordCount > 0 || p.schemasFound.length > 0 || (p.rawTextSnippet || '').trim().length > 0,
+    );
+    const hasSerpEvidence = serpEvidence.length > 0;
+
+    const brandMentions = serpEvidence.filter((s) => s.brandMentioned).length;
+    if (hasSerpEvidence && brandMentions === 0) {
+      findings.push({
+        id: 'finding-zero-citations',
+        category: 'citations',
+        severity: 'critical',
+        title: 'Weak Generative Search Footprint in Live SERP',
+        description: 'Zero third-party search results or AI overview summaries currently cite the brand directly for category queries.',
+        evidenceSource: 'SERP Radar live search probe',
+        howWeKnowItFailed: `0 out of ${serpEvidence.length} search snippets mentioned the brand.`,
+        leadingIndicator: 'Publishing entity-grounded comparison pages increases AI Overview citation rate.',
+        criticVerified: false,
+        criticConfidence: 0.85,
+      });
+    }
+
+    // Health stays null unless scraped page evidence exists and the run is not globally degraded.
+    // A provider 401/403 must not mint a heuristic base score from a partial page.
+    const globallyDegraded = hostedAuthBlocked();
+    if (!hasPageEvidence || globallyDegraded) {
+      emit({
+        id: `auditor-unmeasured-${Date.now()}`,
+        timestamp: Date.now(),
+        agentRole: 'playbook_auditor',
+        agentName: this.name,
+        phase: 'audit_complete',
+        message: globallyDegraded
+          ? 'Compliance audit finished. Health score not measured: live data unavailable after a provider authentication failure.'
+          : hasSerpEvidence
+            ? 'Compliance audit finished. Health score not measured: no page evidence.'
+            : 'Compliance audit finished. Health score not measured: no page or search evidence.',
+        status: 'completed',
+      });
+      return { findings: globallyDegraded ? [] : findings, healthScore: null, llmCrawler };
+    }
+
     let baseScore = 85;
+    if (findings.some((f) => f.id === 'finding-zero-citations')) baseScore -= 15;
 
     // 1. Audit Schemas across scraped pages
     const allSchemas = scrapedPages.flatMap((p) => p.schemasFound);
@@ -90,24 +143,6 @@ export class PlaybookAuditorAgent {
       });
     }
 
-    // 3. Citations & SERP Footprint
-    const brandMentions = serpEvidence.filter((s) => s.brandMentioned).length;
-    if (serpEvidence.length > 0 && brandMentions === 0) {
-      baseScore -= 15;
-      findings.push({
-        id: 'finding-zero-citations',
-        category: 'citations',
-        severity: 'critical',
-        title: 'Weak Generative Search Footprint in Live SERP',
-        description: 'Zero third-party search results or AI overview summaries currently cite the brand directly for category queries.',
-        evidenceSource: 'SERP Radar live search probe',
-        howWeKnowItFailed: '0 out of ${serpEvidence.length} search snippets mentioned the brand.',
-        leadingIndicator: 'Publishing entity-grounded comparison pages increases AI Overview citation rate.',
-        criticVerified: false,
-        criticConfidence: 0.85,
-      });
-    }
-
     const healthScore = Math.max(20, Math.min(100, baseScore));
 
     emit({
@@ -121,7 +156,7 @@ export class PlaybookAuditorAgent {
       confidenceScore: 0.92,
     });
 
-    return { findings, healthScore };
+    return { findings, healthScore, llmCrawler };
   }
 }
 

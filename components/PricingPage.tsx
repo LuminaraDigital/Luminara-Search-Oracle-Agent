@@ -1,7 +1,8 @@
 /**
  * Pricing page: entitlement-true tiers. Hero sells Growth (MCP + share).
  * Prices are the Stars / TON amounts the Worker charges (worker/telegramBot.ts,
- * worker/tonPayment.ts). There is no USD price: card checkout does not exist yet.
+ * worker/tonPayment.ts), mirrored in ./paywall/planPrices. The USD label is a list price only:
+ * card checkout is unavailable.
  */
 import { isInTelegram } from '../services/telegram/tma';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
@@ -9,33 +10,43 @@ import React, { useEffect } from 'react';
 import { openPaywallModal } from '../services/apiClient';
 import { MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
+import { TELEGRAM_MINI_APP_URL } from './paywall/paymentOptions';
+import { PAID_PLAN_PRICES, type PaidPlanId } from './paywall/planPrices';
 
 interface PricingPageProps {
   onTerminal: () => void;
 }
 
-type PaidTierId = 'starter' | 'growth' | 'agency';
-
-const tiers: { id: PaidTierId; stars: string; ton: string; blurb: string; highlight: boolean }[] = [
+export const pricingTiers: Array<{
+  id: PaidPlanId;
+  priceLabel: string;
+  stars: string;
+  ton: string;
+  blurb: string;
+  highlight: boolean;
+}> = [
   {
     id: 'starter',
-    stars: '2,500 Stars',
-    ton: '15 TON',
-    blurb: 'Web audits for a couple of sites. No MCP or public share links.',
+    priceLabel: PAID_PLAN_PRICES.starter.usdLabel,
+    stars: PAID_PLAN_PRICES.starter.starsLabel,
+    ton: PAID_PLAN_PRICES.starter.tonLabel,
+    blurb: 'Web audits for up to 2 sites. No MCP or public share links.',
     highlight: false,
   },
   {
     id: 'growth',
-    stars: '7,500 Stars',
-    ton: '45 TON',
-    blurb: 'The operator plan: MCP tools, shareable reports, weekly re-audits.',
+    priceLabel: PAID_PLAN_PRICES.growth.usdLabel,
+    stars: PAID_PLAN_PRICES.growth.starsLabel,
+    ton: PAID_PLAN_PRICES.growth.tonLabel,
+    blurb: 'The operator plan: MCP tools, shareable reports, 3 seats, weekly re-audits.',
     highlight: true,
   },
   {
     id: 'agency',
-    stars: '18,000 Stars',
-    ton: '120 TON',
-    blurb: 'API access for paid research, client workspaces, daily re-audits.',
+    priceLabel: PAID_PLAN_PRICES.agency.usdLabel,
+    stars: PAID_PLAN_PRICES.agency.starsLabel,
+    ton: PAID_PLAN_PRICES.agency.tonLabel,
+    blurb: 'API access for paid research, 10 client seats, daily re-audits, white-label PDF.',
     highlight: false,
   },
 ];
@@ -46,7 +57,7 @@ const ONE_OFFS = [
   { title: 'Deep multi-agent crawl', price: '75 Stars', body: 'One deep crawl with competitor gap findings.' },
 ] as const;
 
-function bulletsFor(id: PaidTierId): string[] {
+function bulletsFor(id: PaidPlanId): string[] {
   const e = PLAN_ENTITLEMENTS[id];
   const lines = [
     `${e.domainLimit} monitored domains`,
@@ -68,6 +79,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
 
   const inTelegram = isInTelegram();
   const free = PLAN_ENTITLEMENTS.free;
+  const miniAppLinkProps = inTelegram
+    ? { rel: 'noopener noreferrer' as const }
+    : { target: '_blank' as const, rel: 'noopener noreferrer' as const };
 
   return (
     <MarketingPageShell brandSub="Pricing" wide>
@@ -81,16 +95,27 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           Cursor and shareable reports. Agency adds API access and client workspaces.
         </p>
         <p className="mkt-body mb-8">
-          Every paid plan runs 30 days and is paid with Telegram Stars or TON. Card checkout is not
-          available yet.
+          Every paid plan runs 30 days and is paid with Telegram Stars or TON. Card checkout is
+          unavailable.
         </p>
-        <button type="button" onClick={onTerminal} className="mkt-cta-primary">
+        <div className="mb-8 border border-[var(--color-rule)] bg-[var(--color-paper)]/70 p-5 sm:p-6">
+          <p className="mkt-eyebrow mb-3">How to pay</p>
+          <p className="mkt-body mb-4">
+            Open the Mini App in Telegram, then pay with Stars or TON for Starter, Growth, or Agency.
+            Card checkout is unavailable.
+          </p>
+          <a href={TELEGRAM_MINI_APP_URL} {...miniAppLinkProps} className="mkt-cta-primary w-full sm:w-auto">
+            Open Mini App in Telegram
+          </a>
+          <p className="mt-3 text-[13px] text-[var(--color-ink-2)] font-mono break-all">{TELEGRAM_MINI_APP_URL}</p>
+        </div>
+        <button type="button" onClick={onTerminal} className="mkt-cta-secondary">
           Open Instant Audit
         </button>
       </section>
 
       <section className="mb-10 grid grid-cols-1 lg:grid-cols-3 gap-px bg-[var(--color-rule)] border border-[var(--color-rule)]">
-        {tiers.map((tier) => {
+        {pricingTiers.map((tier) => {
           const lines = bulletsFor(tier.id);
           const title = PLAN_ENTITLEMENTS[tier.id].title;
           return (
@@ -107,7 +132,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
               <p className="font-display text-4xl sm:text-5xl leading-none text-[var(--color-ink)] mb-2">
                 {tier.stars}
               </p>
-              <p className="text-[13px] font-mono text-[var(--color-ink-2)] mb-5">or {tier.ton} / 30 days</p>
+              <p className="text-[13px] font-mono text-[var(--color-ink-2)] mb-5">
+                or {tier.ton} / 30 days · list price {tier.priceLabel}
+              </p>
               <p className="mkt-body mb-6">{tier.blurb}</p>
               <ul className="space-y-2.5 flex-1 mb-8">
                 {lines.map((line) => (
@@ -121,7 +148,11 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
               </ul>
               <button
                 type="button"
-                onClick={() => openPaywallModal(`Choose ${title}. Pay with Telegram Stars or TON.`)}
+                onClick={() =>
+                  openPaywallModal(
+                    `Choose ${title}: ${tier.stars} or ${tier.ton} inside the Mini App. Card checkout is unavailable.`,
+                  )
+                }
                 className={`w-full ${tier.highlight ? 'mkt-cta-primary' : 'mkt-cta-secondary'}`}
               >
                 {inTelegram ? `Subscribe to ${title}` : 'See payment options'}
@@ -164,7 +195,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           <div className="space-y-4">
             <button
               type="button"
-              onClick={() => openPaywallModal('Pay with Telegram Stars or TON. Card checkout is not available yet.')}
+              onClick={() => openPaywallModal('Pay with Telegram Stars or TON inside the Mini App. Card checkout is unavailable.')}
               className="mkt-cta-primary w-full sm:w-auto"
             >
               See payment options
@@ -173,7 +204,8 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           </div>
         )}
         <p className="text-[var(--color-ink-2)] text-[13px] mt-6">
-          Plans run for 30 days. Plan limits apply per account.
+          Pay in the Mini App with Stars or TON. Card checkout is unavailable. Plans run for 30 days.
+          Plan limits apply per account.
         </p>
       </section>
     </MarketingPageShell>

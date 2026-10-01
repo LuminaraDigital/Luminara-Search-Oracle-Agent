@@ -66,6 +66,7 @@ describe('Mem0MemoryEngine (4-Tier Memory & Delta Extractor)', () => {
       citationRatePercent: 78,
       shareOfVoiceScore: 82,
       healthScore: 88,
+      measurementStatus: 'measured',
       findings: [
         {
           id: 'f-1',

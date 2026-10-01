@@ -1,5 +1,7 @@
 import type { Env } from './env';
-import { identify, json } from './workerUtils';
+import { billingId, identify, json } from './workerUtils';
+import { mintScoutReceipt } from './referrals';
+import { scoutEvidenceDomain } from '../services/referrals/rules';
 import { isUserSubscribed, checkHostedQuota, type QuotaStatus } from './quotaMiddleware';
 import {
   MAX_BODY_BYTES,
@@ -9,6 +11,7 @@ import {
   clientIp,
   isGeminiModelActionAllowed,
   readBody,
+  safePublicHostname,
   stripUpstreamHeaders,
 } from './security';
 import { dataForSeoBasicAuthHeader, envHasDataForSeo } from '../services/config/runtimeKeys';
@@ -206,6 +209,7 @@ export async function proxyProvider(
   if (declared > MAX_BODY_BYTES) return json({ error: 'Request body too large' }, 413);
 
   let quotaGate: QuotaStatus | null = null;
+  let scoutAccountId: string | null = null;
 
   if (!userKey) {
     const who = await identify(request, env);
@@ -220,6 +224,7 @@ export async function proxyProvider(
     }
     // Production (REQUIRE_TG_AUTH): hosted keys need a signed-in identity.
     // Staging open-auth may meter anonymous hosted use by IP via checkHostedQuota.
+    if (who.user) scoutAccountId = billingId(who.user);
     if (!who.user && env.REQUIRE_TG_AUTH === 'true') {
       return json(
         {
@@ -311,6 +316,15 @@ export async function proxyProvider(
   if (userKey) {
     const r = spec.byok(userKey, headers, body);
     if (r.body !== undefined) body = r.body;
+    const preview = scoutEvidenceDomain({ providerId, subPath, body, hostname: safePublicHostname });
+    if (preview) {
+      try {
+        const who = await identify(request, env);
+        if (who.user) scoutAccountId = billingId(who.user);
+      } catch {
+        scoutAccountId = null;
+      }
+    }
   } else {
     const auth = spec.auth(env, headers, body);
     if (!auth.ok) return json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503);
@@ -352,6 +366,20 @@ export async function proxyProvider(
       out.set('X-Quota-Limit', String(quotaGate.limit));
       out.set('X-Quota-Remaining', String(quotaGate.remaining));
       out.set('X-Quota-Reset', String(quotaGate.resetSec));
+      if (typeof quotaGate.bonusRemaining === 'number') {
+        out.set('X-Quota-Bonus', String(quotaGate.bonusRemaining));
+      }
+    }
+  }
+  if (res.ok && scoutAccountId) {
+    try {
+      const domain = scoutEvidenceDomain({ providerId, subPath, body, hostname: safePublicHostname });
+      if (domain) {
+        const token = await mintScoutReceipt(env, scoutAccountId, domain);
+        if (token) out.set('X-Scout-Receipt', token);
+      }
+    } catch {
+      /* a missed receipt must not fail the provider call */
     }
   }
   return new Response(res.body, { status: res.status, headers: out });

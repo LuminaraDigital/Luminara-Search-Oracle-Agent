@@ -12,6 +12,7 @@ export const HOME_CTA_SUB =
   'Get an honest SEO, AEO and GEO read on one URL in under a minute.';
 export const HOME_CTA_PRIMARY_LABEL = 'Start Instant Audit';
 export const HOME_CTA_SECONDARY_LABEL = 'Set up Business DNA first';
+export const HOME_CTA_IDEA_LABEL = 'No domain yet? Idea Scout';
 
 /** Audit count from the persisted audit history source (localStorage-backed). */
 export function auditCountFromStorage(): number {
@@ -26,9 +27,11 @@ export function shouldShowHomeCta(auditCount: number): boolean {
   return auditCount === 0;
 }
 
-export type HomeCtaAction = 'primary' | 'secondary';
+export type HomeCtaAction = 'primary' | 'secondary' | 'idea';
 
 /** Which app view each CTA navigates to. */
 export function homeCtaTarget(action: HomeCtaAction): AppView {
-  return action === 'primary' ? AppView.INSTANT_AUDIT : AppView.BUSINESS_DNA;
+  if (action === 'primary') return AppView.INSTANT_AUDIT;
+  if (action === 'idea') return AppView.IDEA_SCOUT;
+  return AppView.BUSINESS_DNA;
 }

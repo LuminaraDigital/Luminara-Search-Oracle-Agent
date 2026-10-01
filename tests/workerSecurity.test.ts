@@ -450,6 +450,7 @@ describe('crawl surfaces', () => {
     const text = await res.text();
     expect(text).toContain('Luminara Suite');
     expect(text).toContain('/docs/mcp.html');
+    expect(text).toContain('/docs/what-is-aeo.html');
   });
 
   it('injects pricing meta into the marketing shell HTML', async () => {
@@ -482,6 +483,45 @@ describe('crawl surfaces', () => {
     expect(text).toContain('luminara-crawler-body');
     expect(text).toContain('Growth');
     expect(text).toContain('MCP');
+  });
+
+  it('redirects extensionless What is AEO to the static doc', async () => {
+    const env = makeEnv();
+    for (const path of ['/docs/what-is-aeo', '/docs/what-is-aeo/']) {
+      const res = await worker.fetch(req(`${path}?src=llms`), env, ctx);
+      expect(res.status, path).toBe(301);
+      expect(res.headers.get('Location')).toBe('/docs/what-is-aeo.html?src=llms');
+      const text = await res.text();
+      expect(text).not.toContain('Visibility Probe');
+      expect(text).not.toContain('<title>');
+    }
+  });
+
+  it('serves /docs/what-is-aeo.html from assets, not the marketing shell', async () => {
+    const env = makeEnv({
+      ASSETS: {
+        fetch: async (input: RequestInfo) => {
+          const assetUrl = typeof input === 'string' ? input : input.url;
+          expect(assetUrl).toContain('/docs/what-is-aeo.html');
+          return new Response('<html><body><h2 id="honesty">Honesty glossary</h2></body></html>', {
+            headers: { 'content-type': 'text/html; charset=utf-8' },
+          });
+        },
+      } as unknown as Fetcher,
+    });
+    const res = await worker.fetch(req('/docs/what-is-aeo.html'), env, ctx);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('id="honesty"');
+    expect(text).not.toContain('Luminara Suite | AI search and AEO visibility');
+  });
+
+  it('redirects /how to /how-it-works', async () => {
+    for (const path of ['/how', '/how/']) {
+      const res = await worker.fetch(req(`${path}?ref=nav`), makeEnv(), ctx);
+      expect(res.status, path).toBe(301);
+      expect(res.headers.get('Location')).toBe('/how-it-works?ref=nav');
+    }
   });
 
   it('serves static terms HTML', async () => {

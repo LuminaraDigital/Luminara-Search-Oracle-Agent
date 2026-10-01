@@ -24,11 +24,13 @@ export interface EmpiricalCitationSummary {
   brandName: string;
   totalQueriesTested: number;
   queriesCitedCount: number;
-  citationRatePercent: number;
+  citationRatePercent: number | null;
   topCitedCompetitor: string | null;
   evidenceList: EmpiricalEvidence[];
-  entityClarityScore: number; // 0-100
+  entityClarityScore: number | null;
   lastAudited: number;
+  /** Omitted on older fixtures. not_measured means scores must stay null. */
+  measurementStatus?: 'measured' | 'not_measured';
 }
 
 export class EmpiricalCitationService {
@@ -144,11 +146,12 @@ export class EmpiricalCitationService {
           });
         }
 
-        // If not cited in live results, capture the leading snippet to show what was cited instead
-        if (!brandCited && results.length > 0) {
+        if (results.length === 0) {
+          continue;
+        }
+
+        if (!brandCited) {
           snippet = `Not cited in top ${results.length} search results. Leading citation: "${results[0].title}" (${results[0].url})`;
-        } else if (!results.length) {
-          snippet = `Search query evaluated: "${item.query}". Empirical probe pending live SERP payload.`;
         }
 
         evidenceList.push({
@@ -166,24 +169,25 @@ export class EmpiricalCitationService {
         });
       } catch (err) {
         console.warn(`[EmpiricalCitationService] Failed probe for query: ${item.query}`, err);
-        evidenceList.push({
-          id: `ev-${Date.now()}-err`,
-          query: item.query,
-          intent: item.intent,
-          targetDomain,
-          brandCited: false,
-          brandRank: null,
-          citedUrl: null,
-          snippet: 'Query probe timed out or service unreachable.',
-          competitorsCited: [],
-          citationConfidence: 0,
-          timestamp: Date.now(),
-        });
       }
     }
 
     const queriesCitedCount = evidenceList.filter(e => e.brandCited).length;
-    const citationRatePercent = Math.round((queriesCitedCount / Math.max(1, evidenceList.length)) * 100);
+    if (evidenceList.length === 0) {
+      return {
+        targetDomain,
+        brandName: brand,
+        totalQueriesTested: 0,
+        queriesCitedCount: 0,
+        citationRatePercent: null,
+        topCitedCompetitor: null,
+        evidenceList,
+        entityClarityScore: null,
+        lastAudited: Date.now(),
+        measurementStatus: 'not_measured',
+      };
+    }
+    const citationRatePercent = Math.round((queriesCitedCount / evidenceList.length) * 100);
 
     let topCitedCompetitor: string | null = null;
     let maxCompCount = 0;
@@ -206,6 +210,7 @@ export class EmpiricalCitationService {
       evidenceList,
       entityClarityScore,
       lastAudited: Date.now(),
+      measurementStatus: 'measured',
     };
   }
 }

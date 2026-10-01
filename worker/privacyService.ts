@@ -71,6 +71,36 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     `SELECT id, domain, created_at FROM audit_runs WHERE account_id = ? LIMIT 500`,
     accountId,
   );
+  const shareTeasers = await q<Record<string, unknown>>(
+    `SELECT id, expires_at, revoked_at, created_at FROM share_teasers WHERE owner_account_id = ?`,
+    accountId,
+  );
+  const ideaScouts = await q<Record<string, unknown>>(
+    `SELECT id, idea_text, niche, status, linked_domain, created_at FROM idea_scouts WHERE account_id = ?`,
+    accountId,
+  );
+  const nichePulse = await q<Record<string, unknown>>(`SELECT * FROM niche_pulse_subs WHERE account_id = ?`, accountId);
+  const referralCodes = await q<Record<string, unknown>>(
+    `SELECT code, created_at FROM referral_codes WHERE account_id = ?`,
+    accountId,
+  );
+  // Counterparty account ids are not exported; only this account's side of each attribution.
+  const referralAttributions = await q<Record<string, unknown>>(
+    `SELECT CASE WHEN referred_account_id = ? THEN 'referred' ELSE 'referrer' END AS role, attributed_at, qualified_at
+       FROM referral_attributions WHERE referred_account_id = ? OR referrer_account_id = ?`,
+    accountId,
+    accountId,
+    accountId,
+  );
+  const referralRewards = await q<Record<string, unknown>>(
+    `SELECT kind, amount, remaining, created_at FROM referral_rewards WHERE account_id = ?`,
+    accountId,
+  );
+  const progression = await q<Record<string, unknown>>(`SELECT * FROM user_progression WHERE account_id = ?`, accountId);
+  const missions = await q<Record<string, unknown>>(
+    `SELECT mission_key, week_key, status, created_at, completed_at FROM user_missions WHERE account_id = ?`,
+    accountId,
+  );
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -82,6 +112,14 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'memory_facts',
       'weekly_decisions',
       'audit_runs',
+      'share_teasers',
+      'idea_scouts',
+      'niche_pulse_subs',
+      'referral_codes',
+      'referral_attributions',
+      'referral_rewards',
+      'user_progression',
+      'user_missions',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -100,6 +138,14 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     memoryFacts: facts,
     weeklyDecisions: decisions,
     auditRuns: audits,
+    shareTeasers,
+    ideaScouts,
+    nichePulse,
+    referralCodes,
+    referralAttributions,
+    referralRewards,
+    userProgression: progression,
+    userMissions: missions,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -124,6 +170,22 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   await run('reputation_alerts', `DELETE FROM reputation_alerts WHERE account_id = ?`, accountId);
   await run('thin_stack_inventory', `DELETE FROM thin_stack_inventory WHERE account_id = ?`, accountId);
   await run('weekly_decisions', `DELETE FROM weekly_decisions WHERE account_id = ?`, accountId);
+  await run('share_teasers', `DELETE FROM share_teasers WHERE owner_account_id = ?`, accountId);
+  await run('idea_scouts', `DELETE FROM idea_scouts WHERE account_id = ?`, accountId);
+  await run('idea_scout_daily', `DELETE FROM idea_scout_daily WHERE account_id = ?`, accountId);
+  await run('niche_pulse_subs', `DELETE FROM niche_pulse_subs WHERE account_id = ?`, accountId);
+  await run('user_missions', `DELETE FROM user_missions WHERE account_id = ?`, accountId);
+  await run('user_progression', `DELETE FROM user_progression WHERE account_id = ?`, accountId);
+  await run('scout_receipts', `DELETE FROM scout_receipts WHERE account_id = ?`, accountId);
+  await run('referral_codes', `DELETE FROM referral_codes WHERE account_id = ?`, accountId);
+  // Both sides of an attribution name this account; referrer_account_id is NOT NULL, so the row goes.
+  await run(
+    'referral_attributions',
+    `DELETE FROM referral_attributions WHERE referred_account_id = ? OR referrer_account_id = ?`,
+    accountId,
+    accountId,
+  );
+  await run('referral_rewards', `DELETE FROM referral_rewards WHERE account_id = ?`, accountId);
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
   await run(
     'users_anon',

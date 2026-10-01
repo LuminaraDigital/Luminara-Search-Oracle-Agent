@@ -10,6 +10,7 @@
  *   POST /api/auth/request-otp            IP-throttled OTP (Twilio when enabled; else 501)
  *   POST /api/auth/verify-otp             IP-throttled OTP verify (when SMS enabled)
  *   POST /api/auth/send-verification      Dual-key email verification trigger (neutral body)
+ *   POST /api/auth/link                   explicit Telegram + Firebase link ({ confirm: true })
  *   GET  /api/enrichment/entity           signed-in Wikidata & Wayback Machine edge resolution with KV cache
  *   POST /api/providers/:id/<path>        authenticated proxy to LLM / search / scrape vendors
  *   *    /api/sidecars/:id/<path>         relay to self-hosted helpers: "languagetool" (Writing check)
@@ -52,6 +53,7 @@ import {
   withSecurityHeaders,
 } from './security';
 import {
+  AccountLinkRefusedError,
   linkTelegramAndFirebase,
   getWorkspace,
   putWorkspace,
@@ -65,6 +67,8 @@ import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId } from './workerUtils';
 import { getActiveSubscription, checkHostedQuota, type SubRow } from './quotaMiddleware';
+import { handleReferralRoute, referralBonusRemaining } from './referrals';
+import { handleIdeaScoutRoute } from './ideaScout';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
 import { proxyProvider, PROVIDERS } from './providerRelay';
 import { runSentinelScan, handleSentinelRoute } from './sentinel';
@@ -84,6 +88,7 @@ import {
 import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
 import { handleFindingsRoute } from './findingsService';
+import { handleLlmCrawlerRoute } from './llmCrawlerRoute';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
 import { getBudgetStatus, upsertBudgetPolicy, approveBudgetResume } from './budgets';
 import {
@@ -164,6 +169,34 @@ const RATE_HIGH_COST_EDGE = 20;
  * requires an org_id; this sentinel keeps money/admin events in one reviewable chain.
  */
 const ADMIN_SYSTEM_ORG = 'org_system_admin';
+
+/** Structured console line plus the hash-chained audit row (D1 when bound). */
+async function auditAccountLink(
+  env: Env,
+  request: Request,
+  entry: {
+    action: 'account.link' | 'account.link.refused';
+    actorId: string;
+    targetId?: string;
+    details: Record<string, unknown>;
+  },
+): Promise<void> {
+  console.info(JSON.stringify({
+    audit: entry.action,
+    actorId: entry.actorId,
+    targetId: entry.targetId,
+    ...entry.details,
+  }));
+  await recordAuditLogBestEffort(env, {
+    org_id: `org_${entry.actorId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    actor_id: entry.actorId,
+    action: entry.action,
+    target_id: entry.targetId,
+    details: entry.details,
+    ip_address: clientIp(request),
+    user_agent: request.headers.get('user-agent') || undefined,
+  });
+}
 
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
@@ -497,7 +530,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(json({ ok: true, processed: event || 'unknown' }));
   }
 
-  // Explicit link: send BOTH Telegram initData and Firebase Bearer in one request.
+  // Explicit link: both Telegram initData and Firebase Bearer, plus { confirm: true }.
+  // identify() does not merge accounts. This route is the only merge path.
   if (path === '/auth/link') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
     const hit = limited('auth', RATE_AUTH_PER_MIN);
@@ -513,21 +547,59 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!env.BOT_TOKEN || !env.FIREBASE_PROJECT_ID) {
       return withCors(json({ ok: false, error: 'Server linking is not configured' }, 503));
     }
+    const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!read.ok) return withCors(json({ ok: false, error: read.error }, read.status));
+    const body = read.value;
+    const confirm = body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as { confirm?: unknown }).confirm
+      : undefined;
+    if (confirm !== true) {
+      return withCors(json({
+        ok: false,
+        error: 'Linking needs an explicit confirmation. Send JSON { "confirm": true }.',
+        code: 'CONFIRM_REQUIRED',
+      }, 400));
+    }
     const tg = await validateInitData(initData, env.BOT_TOKEN);
     if (!tg.ok) return withCors(json({ ok: false, error: tg.reason }, 401));
     const fb = await verifyFirebaseIdToken(bearer, env.FIREBASE_PROJECT_ID);
     if (!fb.ok) return withCors(json({ ok: false, error: fb.reason }, 401));
-    const linked = await linkTelegramAndFirebase(
-      env,
-      String(tg.user.id),
-      fb.user.uid,
-      {
-        email: fb.user.email,
-        name: fb.user.name,
-        tgName: [tg.user.first_name, tg.user.last_name].filter(Boolean).join(' ') || tg.user.username,
-      },
-    );
-    return withCors(json({ ok: true, ...linked }));
+    const telegramUserId = String(tg.user.id);
+    const tgName = [tg.user.first_name, tg.user.last_name].filter(Boolean).join(' ') || tg.user.username;
+    try {
+      const linked = await linkTelegramAndFirebase(
+        env,
+        telegramUserId,
+        fb.user.uid,
+        { email: fb.user.email, name: fb.user.name, tgName },
+      );
+      await auditAccountLink(env, request, {
+        action: 'account.link',
+        actorId: telegramUserId,
+        targetId: linked.accountId,
+        details: {
+          accountId: linked.accountId,
+          telegramUserId: linked.telegramUserId,
+          firebaseUserId: linked.firebaseUserId,
+        },
+      });
+      return withCors(json({ ok: true, ...linked }));
+    } catch (err) {
+      if (err instanceof AccountLinkRefusedError) {
+        await auditAccountLink(env, request, {
+          action: 'account.link.refused',
+          actorId: telegramUserId,
+          details: {
+            code: err.code,
+            reason: 'dual_paid',
+            telegramAccountId: err.telegramAccountId,
+            firebaseAccountId: err.firebaseAccountId,
+          },
+        });
+        return withCors(json({ ok: false, error: err.message, code: err.code }, err.status));
+      }
+      throw err;
+    }
   }
 
   // Per-account workspace (DNA, VFS, audits, chat, optional BYOK keys).
@@ -674,6 +746,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
     const day = now.toISOString().slice(0, 10);
     const used = env.LUMINARA_KV ? Number((await env.LUMINARA_KV.get(`quota:${accountId}:${day}`)) || 0) : 0;
+    const bonusRemaining = await referralBonusRemaining(env, accountId);
 
     return withCors(json({
       ok: true,
@@ -683,6 +756,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       limit,
       used,
       remaining: Math.max(0, limit - used),
+      bonusRemaining,
       resetSec,
       isUnlimited: limit <= 0,
     }));
@@ -1057,6 +1131,19 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleSentinelRoute(request, env, path));
   }
 
+  if (
+    path === '/referrals/me' ||
+    path === '/referrals/claim' ||
+    path === '/referrals/qualify' ||
+    path === '/missions/complete'
+  ) {
+    return withCors(handleReferralRoute(request, env, path));
+  }
+
+  if (path === '/idea-scout' || path.startsWith('/idea-scout/')) {
+    return withCors(handleIdeaScoutRoute(request, env, path));
+  }
+
   if (path === '/share/reports' || path.startsWith('/share/reports/')) {
     if (request.method === 'GET' && /^\/share\/reports\/[a-f0-9]{64}$/i.test(path)) {
       const dual = await enforceDualRateLimit(env, {
@@ -1082,6 +1169,32 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
     if (!dualFind.ok) return withCors(dualFind.response);
     return withCors(await handleFindingsRoute(request, env, path));
+  }
+
+  if (path === '/share/teasers' || path.startsWith('/share/teasers/')) {
+    const teaserPublicGet = request.method === 'GET' && /^\/share\/teasers\/[a-f0-9]{64}$/i.test(path);
+    const dual = await enforceDualRateLimit(env, {
+      action: teaserPublicGet ? 'teaser_public_get' : 'teaser_create',
+      accountId: null,
+      ip,
+      limitPerKey: teaserPublicGet ? RATE_SHARE_PUBLIC_PER_MIN : 8,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    return withCors(handleShareRoute(request, env, path));
+  }
+
+  if (path === '/visibility/crawler-files' && request.method === 'GET') {
+    const who = await identify(request, env);
+    const dual = await enforceDualRateLimit(env, {
+      action: 'crawler_files',
+      accountId: who.user ? billingId(who.user) : null,
+      ip,
+      limitPerKey: 20,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    return withCors(handleLlmCrawlerRoute(request, env));
   }
 
   if (path === '/enrichment/entity') {
@@ -1595,6 +1708,17 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   return withCors(json({ error: 'Not found' }, 404));
 }
 
+/** Permanent redirect that keeps the query string. Location is a path, not an open redirect. */
+function permanentRedirect(url: URL, pathname: string): Response {
+  return new Response(null, {
+    status: 301,
+    headers: {
+      Location: `${pathname}${url.search}`,
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -1686,6 +1810,17 @@ export default {
     // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
     if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
       return withSecurityHeaders(await desktopWindowsDownload(env, request));
+    }
+
+    // Extensionless citability URL must not fall through to the SPA home shell.
+    // Canonical file is public/docs/what-is-aeo.html (sitemap and llms.txt).
+    if (url.pathname === '/docs/what-is-aeo' || url.pathname === '/docs/what-is-aeo/') {
+      return withSecurityHeaders(permanentRedirect(url, '/docs/what-is-aeo.html'));
+    }
+
+    // Short marketing alias. Canonical page is /how-it-works.
+    if (url.pathname === '/how' || url.pathname === '/how/') {
+      return withSecurityHeaders(permanentRedirect(url, '/how-it-works'));
     }
 
     // Unlisted share OG HTML (before static marketing shells).

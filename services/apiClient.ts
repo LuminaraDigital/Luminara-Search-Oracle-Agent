@@ -8,6 +8,8 @@
 import { getInitDataRaw } from './telegram/tma';
 import { getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
 import { toUserFacingText } from '../utils/userFacingText';
+import { hostedAuthBlocked, hostedAuthCircuitResponse, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
+import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
 
 export interface ServerHealth {
   ok: boolean;
@@ -314,6 +316,12 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     return fetch(directUrl, init);
   }
 
+  // Run-scoped: after the first hosted 401/403, skip later /api/providers calls.
+  // workerFetchWithAuthRetry still refreshes a Firebase token once on the first 401.
+  if (hostedAuthBlocked()) {
+    return hostedAuthCircuitResponse();
+  }
+
   const headers = new Headers(init.headers || {});
   headers.delete('authorization');
   headers.delete('x-api-key');
@@ -326,6 +334,10 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     res = await workerFetchWithAuthRetry(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
   }
   updateQuotaFromHeaders(res.headers);
+  noteScoutReceipt(res.headers.get('x-scout-receipt'));
+  if (res.status === 401 || res.status === 403) {
+    noteHostedAuthFailure(res.status, providerId);
+  }
   if (res.status === 402) {
     try {
       const clone = res.clone();
@@ -367,6 +379,8 @@ export interface QuotaInfo {
   isUnlimited: boolean;
   plan?: string;
   expiresAt?: number;
+  /** Hosted scout credits from a qualified invite. Separate from the daily cap. */
+  bonusRemaining?: number;
 }
 
 let currentQuota: QuotaInfo | null = null;
@@ -404,11 +418,44 @@ export function hasActivePaidPlanSync(): boolean {
   return false;
 }
 
+/**
+ * Telegram initData or a Firebase ID token. Anonymous browsers are not an identity.
+ * HttpOnly cookies are not readable here; the Worker still rejects hosted calls without one of these.
+ */
+export function clientHasHostedIdentity(): boolean {
+  try {
+    if (getInitDataRaw()) return true;
+  } catch {
+    /* Telegram bridge absent */
+  }
+  try {
+    if (getFirebaseIdTokenSync()) return true;
+  } catch {
+    /* Firebase absent */
+  }
+  return false;
+}
+
+/** Pure gate: free hosted keys need identity; paid hosted keys need an active plan. */
+export function hostedProviderKeyDecision(input: {
+  proxyReady: boolean;
+  paidProvider: boolean;
+  paidPlan: boolean;
+  hasIdentity: boolean;
+}): boolean {
+  if (!input.proxyReady) return false;
+  if (input.paidProvider) return input.paidPlan;
+  return input.hasIdentity;
+}
+
 /** True when the Worker may inject a hosted key for this provider for the current user. */
 export function canUseHostedProviderKey(providerId: string): boolean {
-  if (!isProxyMode() || !isProviderConfiguredOnServer(providerId)) return false;
-  if (isPaidHostedProvider(providerId)) return hasActivePaidPlanSync();
-  return true;
+  return hostedProviderKeyDecision({
+    proxyReady: isProxyMode() && isProviderConfiguredOnServer(providerId),
+    paidProvider: isPaidHostedProvider(providerId),
+    paidPlan: hasActivePaidPlanSync(),
+    hasIdentity: clientHasHostedIdentity(),
+  });
 }
 
 export function updateQuotaFromHeaders(headers: Headers): void {
@@ -421,6 +468,8 @@ export function updateQuotaFromHeaders(headers: Headers): void {
     const remNum = isUnlimited ? -1 : (Number(rem) || 0);
     const resetSec = Number(rst) || 0;
     const used = isUnlimited ? 0 : Math.max(0, limitNum - remNum);
+    const bonusHeader = headers.get('x-quota-bonus');
+    const bonusRemaining = bonusHeader == null || bonusHeader === '' ? undefined : Number(bonusHeader);
     currentQuota = {
       limit: limitNum,
       used,
@@ -428,6 +477,7 @@ export function updateQuotaFromHeaders(headers: Headers): void {
       resetSec,
       isUnlimited,
       plan: isUnlimited ? 'active' : 'free',
+      bonusRemaining: Number.isFinite(bonusRemaining) ? bonusRemaining : undefined,
     };
     quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
   }
@@ -449,6 +499,7 @@ export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
         isUnlimited: data.isUnlimited,
         plan: data.plan,
         expiresAt: data.expiresAt,
+        bonusRemaining: typeof data.bonusRemaining === 'number' ? data.bonusRemaining : undefined,
       };
       quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
       return currentQuota;
@@ -520,15 +571,26 @@ export async function putWorkspaceRemote(input: {
   return { ok: true, accountId: data.accountId, updatedAt: data.updatedAt };
 }
 
-/** Link Telegram Mini App session with Firebase (both auth headers required). */
-export async function linkTelegramFirebaseAccounts(): Promise<{
+/**
+ * Link Telegram Mini App session with Firebase (both auth headers required).
+ * Sends `{ confirm: true }` only when the caller passes `confirm: true` after
+ * the Settings dialog. A missing confirm does not call the Worker.
+ */
+export async function linkTelegramFirebaseAccounts(opts?: { confirm?: boolean }): Promise<{
   ok: boolean;
   accountId?: string;
   error?: string;
 }> {
+  if (opts?.confirm !== true) {
+    return { ok: false, error: 'Confirm the link before accounts are merged.' };
+  }
   const base = apiBase();
   if (!base) return { ok: false, error: 'No API' };
-  const r = await workerFetchWithAuthRetry(`${base}/api/auth/link`, { method: 'POST' });
+  const r = await workerFetchWithAuthRetry(`${base}/api/auth/link`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
+  });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}` };
   return { ok: true, accountId: data.accountId };

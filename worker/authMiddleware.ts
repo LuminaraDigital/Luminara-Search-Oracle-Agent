@@ -50,6 +50,7 @@ export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/auth\/verify-otp$/ },
   { method: 'POST', pattern: /^\/webhooks\/auth$/ },
   { method: 'GET', pattern: /^\/share\/reports\/[a-f0-9]{64}$/i },
+  { method: 'GET', pattern: /^\/share\/teasers\/[a-f0-9]{64}$/i },
   // MCP OAuth: token exchange + discovery (authorize uses session via identify inside handler)
   { method: 'POST', pattern: /^\/oauth\/mcp\/token$/ },
   { method: 'GET', pattern: /^\/oauth\/mcp\/\.well-known\/oauth-authorization-server$/ },
@@ -151,7 +152,9 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/workspace$/, methods: ['GET', 'PUT'] },
   { pattern: /^\/enterprise\/audit-logs$/, methods: ['GET'] },
   { pattern: /^\/auth\/quota$/, methods: ['GET'] },
-  { pattern: /^\/auth\/link$/, methods: ['POST'] },
+  // /auth/link is not guarded here. guardApiRoute calls identify(), which upserts
+  // each login. The link handler must reject a missing { confirm: true } before any
+  // user-store write, then validate both credentials itself.
   { pattern: /^\/auth\/send-verification$/, methods: ['POST'] },
   { pattern: /^\/license\/activate$/, methods: ['POST'] },
   { pattern: /^\/ton\/(invoice|verify)$/, methods: ['POST'] },
@@ -162,6 +165,11 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/findings$/, methods: ['GET'] },
   { pattern: /^\/findings\/bulk$/, methods: ['POST'] },
   { pattern: /^\/findings\/[^/]+$/, methods: ['PATCH'] },
+  { pattern: /^\/share\/teasers$/, methods: ['POST'] },
+  { pattern: /^\/referrals\/(me|claim|qualify)$/ },
+  { pattern: /^\/missions\/complete$/, methods: ['POST'] },
+  { pattern: /^\/idea-scout(\/|$)/ },
+  { pattern: /^\/visibility\/crawler-files$/, methods: ['GET'] },
   // Agency API surfaces (W6+); also gated by requireApiAccess after identify.
   { pattern: /^\/oracle(\/|$)/ },
   { pattern: /^\/audit(\/|$)/ },

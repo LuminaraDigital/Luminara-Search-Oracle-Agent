@@ -58,6 +58,30 @@ describe('MUSE Post-Audit Autonomous Reflection Engine', () => {
     expect(noSchema).toBeDefined();
   });
 
+  it('does not persist Zero Schema when the scrape had no page content', () => {
+    const exp = postAuditReflectionService.reflectOnAudit({
+      domain: 'empty-scrape.example',
+      focus: 'AEO',
+      auditId: 'audit-empty',
+      healthScore: null,
+      scrapedEvidence: {
+        scrapedUrl: 'https://empty-scrape.example',
+        hasContent: false,
+        schemasFound: [],
+        title: 'https://empty-scrape.example',
+        wordCount: 0,
+        rawTextSnippet: '',
+      },
+    });
+
+    expect(exp.proceduralLessons.some((lesson) => lesson.pattern.includes('Zero Schema'))).toBe(false);
+    expect(exp.proceduralLessons).toEqual([]);
+    const prompt = postAuditReflectionService.formatExperienceForPrompt('empty-scrape.example');
+    expect(prompt).not.toContain('Zero Schema');
+    const relations = mem0MemoryEngine.getRelations({ source: 'empty-scrape.example' });
+    expect(relations.some((relation) => relation.target.includes('Zero Schema'))).toBe(false);
+  });
+
   it('generates strategic methodology lessons for low AI citation rates and competitors', () => {
     const exp = postAuditReflectionService.reflectOnAudit({
       domain: 'acmecorp.com',

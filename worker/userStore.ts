@@ -248,8 +248,46 @@ export async function writeSubscriptionRecord(
 }
 
 /**
+ * Thrown when an explicit link would merge two different accounts that each
+ * already have an active paid plan. Nothing is written.
+ */
+export class AccountLinkRefusedError extends Error {
+  readonly code = 'DUAL_PAID';
+  readonly status = 409;
+  readonly telegramAccountId: string;
+  readonly firebaseAccountId: string;
+
+  constructor(telegramAccountId: string, firebaseAccountId: string) {
+    super(
+      'Both Telegram and web accounts have active paid plans. Linking was refused. Ask the account owner or support to approve a merge.',
+    );
+    this.name = 'AccountLinkRefusedError';
+    this.telegramAccountId = telegramAccountId;
+    this.firebaseAccountId = firebaseAccountId;
+  }
+}
+
+async function readStoredUser(env: UserStoreEnv, id: string): Promise<StoredUser | null> {
+  if (env.DB) {
+    const row = await env.DB.prepare(
+      `SELECT id, source, email, display_name as name, telegram_id, firebase_uid, created_at, last_seen_at, account_id
+       FROM users WHERE id = ?`,
+    )
+      .bind(id)
+      .first<StoredUser>();
+    if (!row) return null;
+    if (!row.account_id) row.account_id = row.id;
+    return row;
+  }
+  return readKvUser(env, id);
+}
+
+/**
  * Link Telegram numeric id and Firebase uid so both logins share one account_id.
- * Prefer the account that already has an active paid plan; otherwise keep the older account.
+ * Only call this after explicit consent (`POST /api/auth/link` with `{ confirm: true }`).
+ * If the two sides are different accounts and both have an active paid plan, throws
+ * AccountLinkRefusedError and does not write. Otherwise keep the paid account, or the
+ * older account when neither side is paid.
  */
 export async function linkTelegramAndFirebase(
   env: UserStoreEnv,
@@ -257,13 +295,24 @@ export async function linkTelegramAndFirebase(
   firebaseUid: string,
   meta?: { email?: string; name?: string; tgName?: string },
 ): Promise<{ accountId: string; telegramUserId: string; firebaseUserId: string }> {
+  const firebaseUserId = `fb:${firebaseUid}`;
+  const existingTg = await readStoredUser(env, telegramId);
+  const existingFb = await readStoredUser(env, firebaseUserId);
+  const tgAccountPreview = existingTg?.account_id || telegramId;
+  const fbAccountPreview = existingFb?.account_id || firebaseUserId;
+  const tgPaid = (await hasActiveSub(env, tgAccountPreview)) || (await hasActiveSub(env, telegramId));
+  const fbPaid = (await hasActiveSub(env, fbAccountPreview)) || (await hasActiveSub(env, firebaseUserId));
+  if (tgPaid && fbPaid && tgAccountPreview !== fbAccountPreview) {
+    throw new AccountLinkRefusedError(tgAccountPreview, fbAccountPreview);
+  }
+
   const tgIdentity: HostedIdentity = {
     id: telegramId,
     source: 'telegram',
     name: meta?.tgName,
   };
   const fbIdentity: HostedIdentity = {
-    id: `fb:${firebaseUid}`,
+    id: firebaseUserId,
     source: 'firebase',
     email: meta?.email,
     name: meta?.name,
@@ -273,9 +322,6 @@ export async function linkTelegramAndFirebase(
   const fbRow = await upsertAppUser(env, fbIdentity);
 
   let accountId = tgRow.account_id;
-  const tgPaid = await hasActiveSub(env, tgRow.account_id) || await hasActiveSub(env, telegramId);
-  const fbPaid = await hasActiveSub(env, fbRow.account_id) || await hasActiveSub(env, fbRow.id);
-
   if (fbPaid && !tgPaid) accountId = fbRow.account_id;
   else if (tgPaid && !fbPaid) accountId = tgRow.account_id;
   else if (fbRow.created_at < tgRow.created_at) accountId = fbRow.account_id;

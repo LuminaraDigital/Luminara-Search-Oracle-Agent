@@ -10,6 +10,7 @@
  */
 
 import { ReportFocus, BusinessDNA } from '../../types';
+import type { LlmCrawlerReport } from '../audit/llmCrawlerReadiness';
 
 // ============================================================================
 // 1. Multi-Agent Crew & Roles (CrewAI-inspired)
@@ -142,10 +143,18 @@ export interface AuditStateGraphContext {
   scrapedPages: ScrapedPageEvidence[];
   /** Search evidence gathered by SERP Radar */
   serpEvidence: SerpEvidenceItem[];
-  /** Empirical metrics */
-  citationRatePercent: number;
-  shareOfVoiceScore: number;
-  healthScore: number;
+  /**
+   * Empirical metrics. Null when providers failed or returned no evidence.
+   * Never seed these with placeholder percentages.
+   */
+  citationRatePercent: number | null;
+  shareOfVoiceScore: number | null;
+  healthScore: number | null;
+  /** measured only when citation, share of voice, and health are all numeric. */
+  measurementStatus: 'measured' | 'not_measured';
+  measurementReason?: string;
+  /** pass / fail / not_measured crawler-file checks. Never a numeric score. */
+  llmCrawlerReadiness?: LlmCrawlerReport;
   /** Audit findings evaluated by Playbook Auditor */
   findings: AuditFinding[];
   /** Competitor intelligence */

@@ -4,6 +4,9 @@
  */
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
+import { readRetentionSnapshot } from './referrals';
+import { nichePulseReply } from './ideaScout';
+import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
 import { claimStarsCharge, isStarsLedgerReady, releaseStarsCharge } from './paymentLedger';
@@ -601,6 +604,67 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
+    if (text.startsWith('/missions')) {
+      let nudge = formatWeeklyMissionNudge();
+      if (env.DB && msg.from?.id) {
+        try {
+          const accountId = await resolveAccountId(env, String(msg.from.id));
+          const snapshot = await readRetentionSnapshot(env, accountId);
+          nudge = snapshot.nudge;
+        } catch {
+          /* static copy is enough when progression cannot be read */
+        }
+      }
+      await api(env, 'sendMessage', {
+        chat_id: chatId,
+        text: nudge,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: 'Open this week\'s missions', web_app: { url: `${env.WEBAPP_URL}?startapp=dashboard` } },
+          ]],
+        },
+      });
+      return;
+    }
+
+    if (text.startsWith('/idea')) {
+      await api(env, 'sendMessage', {
+        chat_id: chatId,
+        text:
+          '*Idea Scout*\n\n' +
+          'For a product idea before you have a domain. Describe it in the Mini App and get a hypothesis card. It does not invent search share.',
+        parse_mode: 'Markdown',
+        reply_markup: openAppKeyboard(env, 'idea'),
+      });
+      return;
+    }
+
+    if (text.startsWith('/pulse')) {
+      const arg = text.replace(/^\/pulse(?:@\S+)?/i, '').trim();
+      let accountId: string | null = null;
+      if (msg.from?.id) {
+        try {
+          accountId = await resolveAccountId(env, String(msg.from.id));
+        } catch {
+          accountId = null;
+        }
+      }
+      let reply = 'Send /pulse <niche> to store a reminder, or open Idea Scout. Nothing is sent on a schedule.';
+      try {
+        reply = await nichePulseReply(env, accountId, arg);
+      } catch {
+        reply = 'Niche Pulse storage is not ready yet. Open Idea Scout in the Mini App. Nothing is sent on a schedule.';
+      }
+      await api(env, 'sendMessage', {
+        chat_id: chatId,
+        text: reply,
+        parse_mode: 'Markdown',
+        reply_markup: openAppKeyboard(env, 'idea'),
+      });
+      return;
+    }
+
     if (text.startsWith('/help')) {
       await api(env, 'sendMessage', {
         chat_id: chatId,
@@ -616,6 +680,9 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           '• /privacy - View privacy policy and data rights\n' +
           '• /paysupport - Get help with billing, receipts, or disputes\n' +
           '• /reset - Clear current chat session memory\n' +
+          '• /missions - This week\'s audit missions (you ask; the bot does not blast)\n' +
+          '• /idea - Open Idea Scout (no domain required)\n' +
+          '• /pulse <niche> - Store a Niche Pulse reminder (you ask; the bot does not send it on a schedule)\n' +
           '• /help - Display this command overview\n\n' +
           '*Direct AI Chat:*\n' +
           'You can ask any question, query your competitors, or send a URL directly in this chat! Oracle Agent will answer right here.\n\n' +

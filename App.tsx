@@ -5,7 +5,13 @@ import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
-import { isInTelegram, bindTelegramBackButton, haptic, getStartParam, subscribeTelegramReady, hasTelegramLaunchHints } from './services/telegram/tma';
+import { isInTelegram, bindTelegramBackButton, haptic, getStartParam, getInitDataRaw, subscribeTelegramReady, hasTelegramLaunchHints } from './services/telegram/tma';
+import { resolveTelegramStart } from './services/telegram/startParam';
+import { parseReferralStartParam } from './services/referrals/rules';
+import { holdPendingReferral } from './services/referrals/pendingReferral';
+import { claimStoredReferral } from './services/referrals/referralClient';
+import { resolveHostedScoutRail } from './services/audit/hostedScoutRail';
+import { resolveContinuumIdeaId, continuumEventForViewChange } from './services/ideaScout/continuum';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
 import Waveform from './components/Waveform';
@@ -38,6 +44,7 @@ import { normalizeHandoffUrl } from './services/activation/auditHandoff';
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
 const LegalPage = lazyWithReload(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
 const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
+const TeaserShareView = lazyWithReload(() => import('./components/audit/TeaserShareView').then(m => ({ default: m.TeaserShareView })));
 const VerifyAttestationView = lazyWithReload(() => import('./components/audit/VerifyAttestationView').then(m => ({ default: m.VerifyAttestationView })));
 const AgentReportView = lazyWithReload(() => import('./components/audit/AgentReportView').then(m => ({ default: m.AgentReportView })));
 const InfrastructurePage = lazyWithReload(() => import('./components/InfrastructurePage'));
@@ -50,6 +57,7 @@ const InstantAuditView = lazyWithReload(() => import('./components/audit/Instant
 const BusinessDNAView = lazyWithReload(() => import('./components/suite/BusinessDNAView').then(m => ({ default: m.BusinessDNAView })));
 const BrandMemoryView = lazyWithReload(() => import('./components/suite/BrandMemoryView').then(m => ({ default: m.BrandMemoryView })));
 const DashboardView = lazyWithReload(() => import('./components/suite/DashboardView').then(m => ({ default: m.DashboardView })));
+const IdeaScoutView = lazyWithReload(() => import('./components/suite/IdeaScoutView').then(m => ({ default: m.IdeaScoutView })));
 const StressTestView = lazyWithReload(() => import('./components/suite/StressTestView').then(m => ({ default: m.StressTestView })));
 const DataAnalystView = lazyWithReload(() => import('./components/suite/DataAnalystView').then(m => ({ default: m.DataAnalystView })));
 const OrganizerView = lazyWithReload(() => import('./components/suite/OrganizerView').then(m => ({ default: m.OrganizerView })));
@@ -109,19 +117,18 @@ const viewFromLocation = (): AppView | null => {
   return resolveAppView(window.location.pathname, window.location.hash);
 };
 
-const resolveTelegramStartView = (): AppView => {
-  const sp = (getStartParam() || '').trim().toUpperCase();
-  if (sp === 'AUDIT' || sp === 'SCAN') return AppView.INSTANT_AUDIT;
-  if (sp === 'ORACLE' || sp === 'CHAT' || sp === 'ASK') return AppView.ORACLE_AGENT;
-  if (sp === 'DASHBOARD' || sp === 'HOME') return AppView.DASHBOARD;
-  if (sp === 'HARNESS' || sp === 'DEV') return AppView.HARNESS;
-  if (sp === 'DNA' || sp === 'PROFILE') return AppView.BUSINESS_DNA;
-  if (sp === 'MEMORY' || sp === 'VAULT' || sp === 'BRAND_MEMORY') return AppView.BRAND_MEMORY;
-  if (sp === 'NOTEBOOK' || sp === 'NOTEBOOKS' || sp === 'STUDIO' || sp === 'LM') return AppView.NOTEBOOK;
-  if (sp === 'PRIVACY' || sp === 'PRIVACY_POLICY' || sp === 'LEGAL') return AppView.PRIVACY;
-  if (sp === 'TERMS' || sp === 'TOS') return AppView.TERMS;
-  return (Object.values(AppView) as string[]).includes(sp) ? (sp as AppView) : AppView.INSTANT_AUDIT;
-};
+const resolveTelegramStartView = (): AppView => resolveTelegramStart(getStartParam()).view;
+
+function isTeaserSharePath(): boolean {
+  if (typeof window === 'undefined') return false;
+  return /\/share\/teaser\/[a-f0-9]{64}/i.test(window.location.pathname);
+}
+
+function readTelegramAuditUrl(): string | undefined {
+  const auditUrl = resolveTelegramStart(getStartParam()).auditUrl;
+  if (auditUrl) draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, auditUrl);
+  return auditUrl;
+}
 
 const App: React.FC = () => {
   const [inTelegram, setInTelegram] = useState(() => isInTelegram());
@@ -129,10 +136,13 @@ const App: React.FC = () => {
   const skipMarketing = inTelegram || inDesktop;
   const [view, setViewState] = useState<AppView>(() => {
     const fromLocation = viewFromLocation();
+    const start = resolveTelegramStart(getStartParam());
+    // Bot links are /?startapp=audit_<domain>. That path is the marketing root unless we honour the payload.
+    if (start.auditUrl && (!fromLocation || fromLocation === AppView.LANDING)) return AppView.INSTANT_AUDIT;
+    if (start.view === AppView.IDEA_SCOUT && (!fromLocation || fromLocation === AppView.LANDING)) return AppView.IDEA_SCOUT;
+    if (fromLocation && fromLocation !== AppView.LANDING) return fromLocation;
+    if (isInTelegram() || hasTelegramLaunchHints()) return start.view;
     if (fromLocation) return fromLocation;
-    // Prefer product shell when Telegram already detected OR the bot deep-linked us.
-    if (isInTelegram() || hasTelegramLaunchHints()) return resolveTelegramStartView();
-    // Windows Electron shell: open the product, never the marketing landing.
     if (isDesktopShell()) return AppView.INSTANT_AUDIT;
     return AppView.LANDING;
   });
@@ -140,15 +150,40 @@ const App: React.FC = () => {
     typeof window !== 'undefined' ? parseUrlSwapRoute(window.location.pathname) : null
   );
   const [auditHandoff, setAuditHandoff] = useState<AuditHandoff | null>(null);
+  const [telegramAuditUrl, setTelegramAuditUrl] = useState<string | undefined>(() => readTelegramAuditUrl());
+  const [launchIdeaId, setLaunchIdeaId] = useState<string | undefined>(() => resolveTelegramStart(getStartParam()).ideaId);
+  const [continuumIdeaId, setContinuumIdeaId] = useState<string | undefined>(undefined);
+  const continuumHandoffRef = useRef(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const applyContinuumForView = useCallback((next: AppView) => {
+    if (next === AppView.INSTANT_AUDIT && continuumHandoffRef.current) {
+      continuumHandoffRef.current = false;
+      return;
+    }
+    continuumHandoffRef.current = false;
+    setContinuumIdeaId((current) => resolveContinuumIdeaId(current, continuumEventForViewChange(next)));
+  }, []);
+  const [hasTelegramInitData, setHasTelegramInitData] = useState(() => Boolean(getInitDataRaw()));
 
   // Keep TMA detection in sync after background initTelegram() finishes.
   useEffect(() => {
     return subscribeTelegramReady((inside) => {
       setInTelegram(inside);
+      setHasTelegramInitData(Boolean(getInitDataRaw()));
+      const auditUrl = readTelegramAuditUrl();
+      if (auditUrl) setTelegramAuditUrl(auditUrl);
+      const referralCode = parseReferralStartParam(getStartParam());
+      if (referralCode) holdPendingReferral(referralCode);
+      const ideaId = resolveTelegramStart(getStartParam()).ideaId;
+      if (ideaId) setLaunchIdeaId(ideaId);
       if (!inside) return;
-      setViewState((current) => (current === AppView.LANDING ? resolveTelegramStartView() : current));
+      if (viewRef.current !== AppView.LANDING) return;
+      const next = resolveTelegramStartView();
+      applyContinuumForView(next);
+      setViewState(next);
     });
-  }, []);
+  }, [applyContinuumForView]);
   /** Cinematic brand intro when the product opens (disabled by default for instant load). */
   const [showIntro, setShowIntro] = useState(false);
   const [introPendingView, setIntroPendingView] = useState<AppView | null>(null);
@@ -171,6 +206,7 @@ const App: React.FC = () => {
   // Path deep-links (/share, /verify, /reports) must be cleared when leaving so we do not
   // leave pathname + hash pollution (e.g. /share/TOKEN#landing).
   const setView = useCallback((next: AppView) => {
+    applyContinuumForView(next);
     setViewState(prev => {
       if (prev !== next) setViewHistory(h => [...h.slice(-20), prev]);
       return next;
@@ -192,7 +228,7 @@ const App: React.FC = () => {
     if (!alreadyThere) {
       window.history.pushState(null, '', target);
     }
-  }, []);
+  }, [applyContinuumForView]);
 
   useEffect(() => {
     productTelemetry.trackPageView(view);
@@ -274,9 +310,10 @@ const App: React.FC = () => {
   // Telegram + Windows desktop: marketing views redirect into the functional app
   useEffect(() => {
     if (skipMarketing && MARKETING_VIEWS.has(view)) {
+      applyContinuumForView(AppView.INSTANT_AUDIT);
       setViewState(AppView.INSTANT_AUDIT);
     }
-  }, [skipMarketing, view]);
+  }, [skipMarketing, view, applyContinuumForView]);
 
   // Deep-link trigger for Telegram Stars / TON Paywall
   useEffect(() => {
@@ -334,6 +371,14 @@ const App: React.FC = () => {
   }, []);
 
   const appAuth = useAppAuth();
+
+  // Hold ref_* until Telegram or Firebase auth exists, then claim once.
+  useEffect(() => {
+    const referralCode = parseReferralStartParam(getStartParam());
+    if (referralCode) holdPendingReferral(referralCode);
+    if (!appAuth.authenticated || appAuth.loading) return;
+    void claimStoredReferral();
+  }, [appAuth.authenticated, appAuth.loading]);
 
   // After sign-in, restore DNA / audits / keys / chat from the linked account workspace.
   useEffect(() => {
@@ -492,9 +537,10 @@ const App: React.FC = () => {
     return bindTelegramBackButton(canGoBack ? () => {
       const prev = viewHistory[viewHistory.length - 1];
       setViewHistory(h => h.slice(0, -1));
+      applyContinuumForView(prev);
       setViewState(prev);
     } : null);
-  }, [inTelegram, viewHistory]);
+  }, [inTelegram, viewHistory, applyContinuumForView]);
 
   // Apply theme and global keyboard listener for Omnibar (Cmd+K / Ctrl+K / Super+Alt+Space)
   useEffect(() => {
@@ -527,7 +573,10 @@ const App: React.FC = () => {
         return;
       }
       const next = viewFromLocation();
-      if (next) setViewState(next);
+      if (next) {
+        applyContinuumForView(next);
+        setViewState(next);
+      }
     };
     // #settings / #integrations deep links open the key modal on first load too.
     if (['SETTINGS', 'INTEGRATIONS'].includes(window.location.hash.replace('#', '').toUpperCase())) setIsKeyModalOpen(true);
@@ -543,7 +592,7 @@ const App: React.FC = () => {
       window.removeEventListener('hashchange', handleLocation);
       window.removeEventListener('popstate', handleLocation);
     };
-  }, []);
+  }, [applyContinuumForView]);
 
   const liveServiceRef = useRef<OracleLiveService | null>(null);
 
@@ -851,6 +900,13 @@ const App: React.FC = () => {
   }
 
   if (view === AppView.SHARED_REPORT) {
+    if (isTeaserSharePath()) {
+      return (
+        <Suspense fallback={<ViewLoader label="Loading teaser" />}>
+          <TeaserShareView />
+        </Suspense>
+      );
+    }
     return (
       <Suspense fallback={<ViewLoader label="Loading shared report" />}>
         <SharedReportView
@@ -1079,6 +1135,18 @@ const App: React.FC = () => {
           <Button
             variant="ghost"
             size="none"
+            onClick={() => setView(AppView.IDEA_SCOUT)}
+            aria-pressed={view === AppView.IDEA_SCOUT}
+            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+              view === AppView.IDEA_SCOUT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
+            }`}
+          >
+            Idea
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="none"
             onClick={() => setView(AppView.INSTANT_AUDIT)}
             aria-pressed={view === AppView.INSTANT_AUDIT}
             className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
@@ -1162,6 +1230,14 @@ const App: React.FC = () => {
                       ✕
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Zap className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Idea Scout</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => { setView(AppView.DASHBOARD); setShowSuiteMenu(false); }}
@@ -1445,11 +1521,38 @@ const App: React.FC = () => {
             onNavigateDNA={
               appAuth.authenticated ? () => setView(AppView.BUSINESS_DNA) : undefined
             }
-            initialUrl={auditHandoff?.url || urlSwapParams?.targetUrl}
+            initialUrl={auditHandoff?.url || urlSwapParams?.targetUrl || telegramAuditUrl}
             initialFocus={auditHandoff?.focus || urlSwapParams?.focus}
             sampleSource={Boolean(auditHandoff?.sampleSource)}
             isGuest={!appAuth.authenticated}
             onSeePricing={() => setView(AppView.PRICING)}
+            hostedRail={resolveHostedScoutRail({
+              inTelegram,
+              hasInitData: hasTelegramInitData,
+              signedIn: appAuth.authenticated,
+            })}
+            ideaScoutId={continuumIdeaId}
+            onContinuumSettled={(ok) => {
+              setContinuumIdeaId((current) => resolveContinuumIdeaId(
+                current,
+                ok ? { type: 'link_succeeded' } : { type: 'link_failed' },
+              ));
+            }}
+          />
+        )}
+
+        {view === AppView.IDEA_SCOUT && (
+          <IdeaScoutView
+            launchIdeaId={launchIdeaId}
+            onRunAudit={(host, ideaId) => {
+              draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, host);
+              // A stale Sample handoff must not outrank the Idea Scout host.
+              setAuditHandoff(null);
+              setTelegramAuditUrl(host);
+              continuumHandoffRef.current = true;
+              setContinuumIdeaId(resolveContinuumIdeaId(undefined, { type: 'handoff', ideaId }));
+              setView(AppView.INSTANT_AUDIT);
+            }}
           />
         )}
 
@@ -1461,7 +1564,13 @@ const App: React.FC = () => {
                 <TelegramAccountPanel compact />
               </div>
             )}
-            <DashboardView onNavigate={(v) => setView(v)} dna={dna} onClearDNA={() => setDna(null)} advancedUi={advancedUi} />
+            <DashboardView
+              onNavigate={(v) => setView(v)}
+              dna={dna}
+              onClearDNA={() => setDna(null)}
+              advancedUi={advancedUi}
+              signedIn={appAuth.authenticated}
+            />
           </>
         )}
 

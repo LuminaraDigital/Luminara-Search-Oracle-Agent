@@ -28,6 +28,169 @@ import { tonAttestationService } from './tonAttestationService';
 import { postAuditReflectionService } from '../audit/postAuditReflectionService';
 import { brandMemoryVaultService } from '../memory/brandMemoryVaultService';
 import { ReportFocus, BusinessDNA } from '../../types';
+import { unevaluatedLlmCrawlerReport } from '../audit/llmCrawlerReadiness';
+import { probeLlmCrawlerReadiness } from '../audit/llmCrawlerProbe';
+import { hostedAuthBlocked, resetHostedAuthCircuit } from '../resilience/hostedAuthCircuit';
+
+const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
+
+export function memorySyncPlan(input: {
+  deltaCount: number | null;
+  measurementStatus: 'measured' | 'not_measured';
+  hasEvidence: boolean;
+  authBlocked: boolean;
+}): { skipExtract: boolean; claimSync: boolean; message: string } {
+  const measured = input.measurementStatus === 'measured';
+  const degraded = input.authBlocked || (!measured && !input.hasEvidence);
+  if (degraded) {
+    return { skipExtract: true, claimSync: false, message: MEMORY_SYNC_SKIPPED };
+  }
+  if (input.deltaCount == null) {
+    return { skipExtract: false, claimSync: false, message: MEMORY_SYNC_SKIPPED };
+  }
+  if (input.deltaCount > 0 && (measured || input.hasEvidence)) {
+    return {
+      skipExtract: false,
+      claimSync: true,
+      message: `Synced ${input.deltaCount} autonomous memory delta(s) & MUSE experience heuristics into brand knowledge graph.`,
+    };
+  }
+  return { skipExtract: false, claimSync: false, message: MEMORY_SYNC_SKIPPED };
+}
+
+export async function applyMemorySync(
+  ctx: AuditStateGraphContext,
+  emit: (event: AgentActivityEvent) => void,
+): Promise<void> {
+  const hasEvidence = contextHasLiveEvidence(ctx);
+  const authBlocked = hostedAuthBlocked();
+  const gate = memorySyncPlan({
+    deltaCount: null,
+    measurementStatus: ctx.measurementStatus,
+    hasEvidence,
+    authBlocked,
+  });
+  if (gate.skipExtract) {
+    emit({
+      id: `mem0-skip-${Date.now()}`,
+      timestamp: Date.now(),
+      agentRole: 'executive_translator',
+      agentName: 'Brand Memory Vault',
+      phase: 'memory_skipped',
+      message: gate.message,
+      status: 'completed',
+    });
+    return;
+  }
+
+  const deltas = mem0MemoryEngine.extractAndSyncAuditContext(ctx);
+  const decided = memorySyncPlan({
+    deltaCount: deltas.length,
+    measurementStatus: ctx.measurementStatus,
+    hasEvidence,
+    authBlocked,
+  });
+  if (decided.claimSync) {
+    const cleanDomain = ctx.targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
+    try {
+      const experience = postAuditReflectionService.reflectOnAudit({
+        domain: cleanDomain,
+        focus: String(ctx.focus),
+        auditId: `crew-audit-${Date.now()}`,
+        healthScore: ctx.healthScore,
+        scrapedEvidence: {
+          scrapedUrl: ctx.scrapedPages[0]?.url || ctx.targetUrl,
+          hasContent: ctx.scrapedPages.length > 0,
+          schemasFound: ctx.scrapedPages[0]?.schemasFound.map((s) => s.type) || [],
+          title: ctx.scrapedPages[0]?.title || cleanDomain,
+          wordCount: ctx.scrapedPages[0]?.wordCount || 0,
+          rawTextSnippet: ctx.scrapedPages[0]?.rawTextSnippet || '',
+        },
+        findings: ctx.findings.map((f) => ({
+          title: f.title,
+          category: f.category,
+          severity: f.severity,
+          description: f.description,
+        })),
+        citationRatePercent: ctx.citationRatePercent,
+        topCompetitor: ctx.topCompetitors[0] || null,
+        dna: ctx.dna,
+      });
+      brandMemoryVaultService.ingestAuditExperience(experience);
+    } catch (err) {
+      console.warn('[Crew Orchestrator] Reflection sync error', err);
+    }
+  }
+
+  emit({
+    id: `mem0-sync-${Date.now()}`,
+    timestamp: Date.now(),
+    agentRole: 'executive_translator',
+    agentName: 'Brand Memory Vault',
+    phase: decided.claimSync ? 'memory_synced' : 'memory_skipped',
+    message: decided.message,
+    status: 'completed',
+  });
+}
+
+export function deriveAuditMeasurement(metrics: {
+  citationRatePercent: number | null;
+  shareOfVoiceScore: number | null;
+  healthScore: number | null;
+}): { measurementStatus: 'measured' | 'not_measured'; measurementReason?: string } {
+  const missing: string[] = [];
+  if (typeof metrics.citationRatePercent !== 'number') missing.push('citation rate');
+  if (typeof metrics.shareOfVoiceScore !== 'number') missing.push('share of voice');
+  if (typeof metrics.healthScore !== 'number') missing.push('health score');
+  if (missing.length === 0) return { measurementStatus: 'measured' };
+  return {
+    measurementStatus: 'not_measured',
+    measurementReason: `${missing.join(', ')} not measured`,
+  };
+}
+
+export function criticStartMessage(hasLiveEvidence: boolean): string {
+  if (!hasLiveEvidence) {
+    return 'No page or search evidence to verify. Findings were not measured against live data.';
+  }
+  return 'Cross-examining candidate findings against scraped pages and SERP evidence…';
+}
+
+function contextHasLiveEvidence(ctx: AuditStateGraphContext): boolean {
+  const pageEvidence = ctx.scrapedPages.some(
+    (p) => p.wordCount > 0 || p.schemasFound.length > 0 || (p.rawTextSnippet || '').trim().length > 0,
+  );
+  return pageEvidence || ctx.serpEvidence.length > 0;
+}
+
+export function createInitialAuditContext(
+  targetUrl: string,
+  focus: ReportFocus = 'AEO',
+  dna?: BusinessDNA | null,
+): AuditStateGraphContext {
+  const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
+  return {
+    targetUrl: formattedUrl,
+    focus,
+    dna,
+    scrapedPages: [],
+    serpEvidence: [],
+    citationRatePercent: null,
+    shareOfVoiceScore: null,
+    healthScore: null,
+    measurementStatus: 'not_measured',
+    measurementReason: 'Audit has not measured search or page evidence yet.',
+    llmCrawlerReadiness: unevaluatedLlmCrawlerReport(),
+    findings: [],
+    topCompetitors: [],
+    competitorGaps: [],
+    patches: [],
+    plainEnglishBrief: '',
+    criticRejections: 0,
+    criticPass: false,
+    errors: [],
+  };
+}
 
 export const CREW_PROFILES: Record<AgentRole, AgentProfile> = {
   scout: {
@@ -116,19 +279,42 @@ export class CrewOrchestrator {
         ctx.dna,
         emit
       );
-      return { serpEvidence, citationRatePercent, shareOfVoiceScore };
+      const errors = hostedAuthBlocked()
+        ? [...ctx.errors, 'provider_auth_failed']
+        : ctx.errors;
+      return {
+        serpEvidence,
+        citationRatePercent,
+        shareOfVoiceScore,
+        errors,
+        ...deriveAuditMeasurement({
+          citationRatePercent,
+          shareOfVoiceScore,
+          healthScore: ctx.healthScore,
+        }),
+      };
     });
 
     // Node 3: Playbook Compliance Audit
     graph.addNode('auditor_node', 'Playbook Auditor', async (ctx, emit) => {
+      const llmCrawlerReadiness = await probeLlmCrawlerReadiness(ctx.targetUrl);
       const { findings, healthScore } = await playbookAuditorAgent.execute(
         ctx.focus,
         ctx.scrapedPages,
         ctx.serpEvidence,
         ctx.dna,
-        emit
+        emit,
       );
-      return { findings, healthScore };
+      return {
+        findings,
+        healthScore,
+        llmCrawlerReadiness,
+        ...deriveAuditMeasurement({
+          citationRatePercent: ctx.citationRatePercent,
+          shareOfVoiceScore: ctx.shareOfVoiceScore,
+          healthScore,
+        }),
+      };
     });
 
     // Node 4: Competitor Intelligence
@@ -144,17 +330,18 @@ export class CrewOrchestrator {
 
     // Node 5: Adversarial Critic Verification Gate (AutoGen reflection)
     graph.addNode('critic_gate_node', 'Adversarial Critic Gate', async (ctx, emit) => {
+      const liveEvidence = contextHasLiveEvidence(ctx);
       emit({
         id: `critic-start-${Date.now()}`,
         timestamp: Date.now(),
         agentRole: 'adversarial_critic',
         agentName: 'Adversarial Critic',
         phase: 'adversarial_verification',
-        message: 'Cross-examining candidate findings against ground-truth DOM and SERP evidence…',
+        message: criticStartMessage(liveEvidence),
         status: 'reflecting',
       });
 
-      const { verifiedFindings, rejectedCount, reflectionFeedback, criticConfidence } =
+      const { verifiedFindings, rejectedCount, criticConfidence } =
         criticReflectionEngine.verify(ctx.findings, ctx.patches, ctx.scrapedPages, ctx.serpEvidence);
 
       emit({
@@ -163,23 +350,37 @@ export class CrewOrchestrator {
         agentRole: 'adversarial_critic',
         agentName: 'Adversarial Critic',
         phase: 'verification_complete',
-        message:
-          rejectedCount > 0
+        message: !liveEvidence
+          ? criticStartMessage(false)
+          : rejectedCount > 0
             ? `Adversarial check complete: Corrected ${rejectedCount} false claim(s). Remaining ${verifiedFindings.length} findings verified.`
-            : `All ${verifiedFindings.length} findings 100% verified against ground truth DOM and SERP evidence.`,
+            : `All ${verifiedFindings.length} findings checked against scraped pages and SERP evidence.`,
         status: 'completed',
-        confidenceScore: criticConfidence,
+        confidenceScore: liveEvidence ? criticConfidence : undefined,
       });
 
       return {
         findings: verifiedFindings,
         criticRejections: (ctx.criticRejections || 0) + rejectedCount,
-        criticPass: true,
+        criticPass: liveEvidence,
       };
     });
 
     // Node 6: Code Remediation Generation
     graph.addNode('remediation_node', 'Remediation Architect', async (ctx, emit) => {
+      const degraded = hostedAuthBlocked() || ctx.measurementStatus !== 'measured' || !contextHasLiveEvidence(ctx);
+      if (degraded) {
+        emit({
+          id: `coder-skip-${Date.now()}`,
+          timestamp: Date.now(),
+          agentRole: 'remediation_architect',
+          agentName: 'Remediation Architect',
+          phase: 'code_generation_skipped',
+          message: 'Remediation skipped. Live evidence was not measured, so no patches were generated.',
+          status: 'completed',
+        });
+        return { patches: [] };
+      }
       const patches = await remediationArchitectAgent.execute(ctx.targetUrl, ctx.findings, ctx.dna, emit);
       // Run critic syntax validation on generated patches
       const { verifiedPatches } = criticReflectionEngine.verify([], patches, ctx.scrapedPages, ctx.serpEvidence);
@@ -203,6 +404,18 @@ export class CrewOrchestrator {
     // Node 8: Cryptographic Proof-of-Audit Attestation (TON)
     graph.addNode('attestation_node', 'TON Attestation Generator', async (ctx, emit) => {
       const cleanDomain = ctx.targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
+      if (typeof ctx.healthScore !== 'number' || typeof ctx.citationRatePercent !== 'number') {
+        emit({
+          id: `ton-attest-skip-${Date.now()}`,
+          timestamp: Date.now(),
+          agentRole: 'adversarial_critic',
+          agentName: 'Blockchain Attestation Vault',
+          phase: 'attestation_skipped',
+          message: 'Proof-of-Audit skipped. Health score or citation rate was not measured.',
+          status: 'completed',
+        });
+        return {};
+      }
       const attestation = await tonAttestationService.createAttestation({
         domain: cleanDomain,
         healthScore: ctx.healthScore,
@@ -225,46 +438,7 @@ export class CrewOrchestrator {
 
     // Node 9: Mem0 4-Tier Memory Extraction & Sync + MUSE Reflection
     graph.addNode('memory_sync_node', 'Mem0 Memory Delta Sync', async (ctx, emit) => {
-      const deltas = mem0MemoryEngine.extractAndSyncAuditContext(ctx);
-      const cleanDomain = ctx.targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
-      try {
-        const experience = postAuditReflectionService.reflectOnAudit({
-          domain: cleanDomain,
-          focus: String(ctx.focus),
-          auditId: `crew-audit-${Date.now()}`,
-          healthScore: ctx.healthScore,
-          scrapedEvidence: {
-            scrapedUrl: ctx.scrapedPages[0]?.url || ctx.targetUrl,
-            hasContent: ctx.scrapedPages.length > 0,
-            schemasFound: ctx.scrapedPages[0]?.schemasFound.map((s) => s.type) || [],
-            title: ctx.scrapedPages[0]?.title || cleanDomain,
-            wordCount: ctx.scrapedPages[0]?.wordCount || 0,
-            rawTextSnippet: ctx.scrapedPages[0]?.rawTextSnippet || '',
-          },
-          findings: ctx.findings.map((f) => ({
-            title: f.title,
-            category: f.category,
-            severity: f.severity,
-            description: f.description,
-          })),
-          citationRatePercent: ctx.citationRatePercent,
-          topCompetitor: ctx.topCompetitors[0] || null,
-          dna: ctx.dna,
-        });
-        brandMemoryVaultService.ingestAuditExperience(experience);
-      } catch (err) {
-        console.warn('[Crew Orchestrator] Reflection sync error', err);
-      }
-
-      emit({
-        id: `mem0-sync-${Date.now()}`,
-        timestamp: Date.now(),
-        agentRole: 'executive_translator',
-        agentName: 'Brand Memory Vault',
-        phase: 'memory_synced',
-        message: `Synced ${deltas.length} autonomous memory delta(s) & MUSE experience heuristics into brand knowledge graph.`,
-        status: 'completed',
-      });
+      await applyMemorySync(ctx, emit);
       return {};
     });
 
@@ -292,30 +466,16 @@ export class CrewOrchestrator {
     dna?: BusinessDNA | null,
     onEvent?: (event: AgentActivityEvent) => void
   ): Promise<AuditStateGraphContext> {
-    const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
-
-    const initialContext: AuditStateGraphContext = {
-      targetUrl: formattedUrl,
-      focus,
-      dna,
-      scrapedPages: [],
-      serpEvidence: [],
-      citationRatePercent: 50,
-      shareOfVoiceScore: 50,
-      healthScore: 75,
-      findings: [],
-      topCompetitors: [],
-      competitorGaps: [],
-      patches: [],
-      plainEnglishBrief: '',
-      criticRejections: 0,
-      criticPass: false,
-      errors: [],
-    };
+    resetHostedAuthCircuit();
+    const initialContext = createInitialAuditContext(targetUrl, focus, dna);
 
     const graph = this.buildGraph();
-    const { finalContext } = await graph.run(initialContext, onEvent);
-    return finalContext;
+    try {
+      const { finalContext } = await graph.run(initialContext, onEvent);
+      return finalContext;
+    } finally {
+      resetHostedAuthCircuit();
+    }
   }
 }
 

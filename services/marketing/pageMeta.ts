@@ -98,6 +98,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
     <li><a href="/methodology">Methodology</a></li>
+    <li><a href="/docs/what-is-aeo.html">What is AEO</a></li>
     <li><a href="/how-it-works">How it works</a></li>
     <li><a href="/ai">Our AI</a></li>
     <li><a href="/why">Why Luminara</a></li>
@@ -162,7 +163,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     <li>Schema mapping and competitor comparison</li>
     <li>Impact-ranked action list</li>
   </ul>
-  <p><a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
+  <p><a href="/docs/what-is-aeo.html">What is AEO</a> · <a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
   '/ai': {
@@ -219,7 +220,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 /** Normalize pathname to a marketing shell key, or null. */
 export function marketingShellKey(pathname: string): string | null {
   const clean = pathname.replace(/\/+$/, '') || '/';
-  if (clean === '/infrastructure' || clean === '/modules') return '/how-it-works';
+  if (clean === '/how' || clean === '/infrastructure' || clean === '/modules') return '/how-it-works';
   if (clean === '/intelligence') return '/ai';
   if (clean === '/why-us') return '/why';
   if (MARKETING_SHELL_BY_PATH[clean]) return clean;

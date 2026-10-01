@@ -91,9 +91,16 @@ export class PostAuditReflectionService {
     const textSnippet = (input.scrapedEvidence?.rawTextSnippet || '').toLowerCase();
     const wordCount = input.scrapedEvidence?.wordCount ?? 0;
     const schemas = input.scrapedEvidence?.schemasFound || [];
+    const hasContentFlag = input.scrapedEvidence?.hasContent;
+    // Explicit false means the scrape returned nothing to inspect. Do not infer DOM gaps from an empty schema list.
+    const pageInspected = hasContentFlag === false
+      ? false
+      : hasContentFlag === true || wordCount > 0 || textSnippet.trim().length > 0;
 
     // 1. Procedural Memory: Detect CMS / Frontend Architecture Quirks
-    if (textSnippet.includes('shopify') || textSnippet.includes('cdn.shopify.com')) {
+    if (!pageInspected) {
+      operationalNotes.push('Page content was not measured, so no DOM or schema lessons were recorded.');
+    } else if (textSnippet.includes('shopify') || textSnippet.includes('cdn.shopify.com')) {
       proceduralLessons.push({
         pattern: 'Shopify E-Commerce Architecture',
         heuristic: 'Site uses Shopify. Watch for duplicate collection URL paths (/collections/*/products/*) and ensure canonical link tags point to root /products/* endpoints.',
@@ -113,7 +120,7 @@ export class PostAuditReflectionService {
       });
     }
 
-    if (wordCount > 0 && wordCount < 250) {
+    if (pageInspected && wordCount > 0 && wordCount < 250) {
       proceduralLessons.push({
         pattern: 'Thin Initial DOM Content (<250 words)',
         heuristic: 'Target page has extremely sparse initial text. Search engines may flag this as soft 404 or low-information-gain. Expand substantive copy to at least 450 words.',
@@ -121,7 +128,7 @@ export class PostAuditReflectionService {
       });
     }
 
-    if (schemas.length === 0) {
+    if (pageInspected && schemas.length === 0) {
       proceduralLessons.push({
         pattern: 'Zero Schema.org Structured Data',
         heuristic: 'No JSON-LD schemas identified in DOM. Immediate priority is injecting Organization and WebSite schemas to establish entity disambiguation.',

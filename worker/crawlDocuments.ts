@@ -3,7 +3,23 @@
  * Keep copy factual; no invented metrics.
  */
 
-export const ROBOTS_TXT = `User-agent: *
+export const ROBOTS_TXT = `# Luminara Suite crawl policy
+# Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
+# Share URLs under /share/ are unlisted (not in the sitemap) and served noindex. They are
+# allowed here only so link unfurls can fetch the preview HTML.
+# Attestation verify, API, and OAuth stay disallowed.
+# Named AI crawlers repeat the same rules as User-agent: * so the allow is explicit.
+# User-triggered fetchers may ignore robots.txt. This file does not grant access to /api/ or account data.
+
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Google-Extended
+User-agent: Applebot-Extended
 Allow: /
 Allow: /how-it-works
 Allow: /ai
@@ -15,11 +31,33 @@ Allow: /privacy
 Allow: /terms
 Allow: /desktop
 Allow: /docs/
+Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
 Allow: /sitemap.xml
-# Unlisted share URLs (not in sitemap). Allowed so link unfurls can fetch OG HTML.
 Allow: /share/
+Allow: /share/teaser/
+Disallow: /api/
+Disallow: /verify/
+Disallow: /reports/
+Disallow: /oauth/
 
+User-agent: *
+Allow: /
+Allow: /how-it-works
+Allow: /ai
+Allow: /why
+Allow: /pricing
+Allow: /methodology
+Allow: /sample-report
+Allow: /privacy
+Allow: /terms
+Allow: /desktop
+Allow: /docs/
+Allow: /docs/what-is-aeo.html
+Allow: /llms.txt
+Allow: /sitemap.xml
+Allow: /share/
+Allow: /share/teaser/
 Disallow: /api/
 Disallow: /verify/
 Disallow: /reports/
@@ -40,9 +78,12 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/pricing</loc></url>
   <url><loc>${base}/methodology</loc></url>
   <url><loc>${base}/sample-report</loc></url>
+  <url><loc>${base}/methodology</loc></url>
+  <url><loc>${base}/sample-report</loc></url>
   <url><loc>${base}/privacy</loc></url>
   <url><loc>${base}/terms</loc></url>
   <url><loc>${base}/docs/mcp.html</loc></url>
+  <url><loc>${base}/docs/what-is-aeo.html</loc></url>
   <url><loc>${base}/desktop</loc></url>
   <url><loc>${base}/llms.txt</loc></url>
 </urlset>
@@ -53,32 +94,72 @@ export const SITEMAP_XML = buildSitemapXml('https://www.luminarasuite.com');
 
 export const LLMS_TXT = `# Luminara Suite
 
-> Find out whether AI search recommends your business. Audits Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix. No invented composite scores.
+> Luminara Suite audits how a website shows up in Google, AI Overviews, ChatGPT, and Perplexity, then ranks one next fix. Web app, Windows desktop, and a Telegram Mini App.
+
+## Methodology
+
+Instant Audit fetches a public page and a search sample when the hosted rail or the caller's keys allow it, then ranks one next fix from that evidence. LLM crawler checks read robots.txt, llms.txt, and optional ai.txt. Each check is pass, fail, or not_measured. None of them is a 0-100 score.
+
+Method, honesty glossary, and FAQ: https://www.luminarasuite.com/docs/what-is-aeo.html
+
+Agents may cite redacted teaser cards under /share/teaser/. robots.txt allows that path. Full branded reports under /share/ are unlisted and served noindex. A teaser is a redacted summary, not a verified measurement.
+
+## Honesty glossary
+
+- measured: the figure comes from evidence collected in that run
+- estimated: a labelled estimate, never presented as a measured score
+- not_measured: the provider failed, the sample was empty, or the signal was not collected
+- Glossary: https://www.luminarasuite.com/docs/what-is-aeo.html#honesty
+- Suite does not invent citation percentages, health scores, or share of voice when evidence is missing
+
+## What Instant Audit measures
+
+Instant Audit can report citation rate, share of voice, and page health only when that run collected live page or search evidence.
+
+LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt presence, llms.txt structure (a title and a short summary), common AI crawler directives, cite-path blocks, and optional ai.txt. Structure is a hint, not a score.
+
+## Sitemap
+
+- https://www.luminarasuite.com/sitemap.xml
+
+## Pricing (30 days)
+
+Published USD labels. Telegram Stars or TON can pay inside the app. Card checkout is not available yet.
+
+- Starter: US$49. Up to 2 sites. No MCP. No full public share links.
+- Growth: US$149. MCP, full share links, 3 seats, weekly re-audits.
+- Agency: US$349. API access, 10 client seats, daily Sentinel, white-label PDF.
+- Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
+
+## MCP
+
+- Docs: https://www.luminarasuite.com/docs/mcp.html
+- Endpoint: https://luminarasuite.com/api/mcp
+- MCP access is included on Growth and Agency.
+
+## Telegram Mini App
+
+- https://t.me/LuminaraSuiteBot/app
 
 ## Product
+
 - Home: https://www.luminarasuite.com/
 - Sample report: https://www.luminarasuite.com/sample-report
 - Methodology: https://www.luminarasuite.com/methodology
+- What is AEO: https://www.luminarasuite.com/docs/what-is-aeo.html
 - How it works: https://www.luminarasuite.com/how-it-works
 - Our AI: https://www.luminarasuite.com/ai
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
 
-## Honesty
-- Engine labels: Measured, Estimated, or Not measured
-- Sample scouts are labeled fixtures; Live Instant Audit follows account and key rules
-- Free = insight / sample; Growth = share links + MCP; Agency = API access
-
-## Agents and MCP
-- MCP docs: https://www.luminarasuite.com/docs/mcp.html
-- MCP endpoint: https://luminarasuite.com/api/mcp
-
 ## Studio
+
 - Luminara Digital: https://luminaradigital.io
 - Source: https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent
 
 ## Legal
+
 - Privacy: https://www.luminarasuite.com/privacy
 - Terms: https://www.luminarasuite.com/terms
 `;

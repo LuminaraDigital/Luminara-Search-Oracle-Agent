@@ -31,8 +31,9 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
     );
   }
 
-  const isLow = quota.remaining <= 5;
-  const isOut = quota.remaining <= 0;
+  const bonus = quota.bonusRemaining ?? 0;
+  const isLow = quota.remaining + bonus <= 5;
+  const isOut = quota.remaining <= 0 && bonus <= 0;
 
   return (
     <button
@@ -44,12 +45,12 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
           ? 'bg-warning-500/10 text-warning-300 border-warning-500/30'
           : 'bg-white/5 text-gray-300 border-white/10 hover:border-gold/40 hover:text-white'
       } ${className}`}
-      title={`${quota.remaining} of ${quota.limit} free daily queries remaining today. Click to upgrade.`}
+      title={`${quota.remaining} of ${quota.limit} free daily queries remaining today.${bonus > 0 ? ` Invite credits left: ${bonus}.` : ''} Click to upgrade.`}
     >
       {showIcon && (
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOut ? 'bg-danger-400' : isLow ? 'bg-warning-400' : 'bg-gold'}`} />
       )}
-      <span>{quota.remaining}/{quota.limit} Daily Queries</span>
+      <span>{quota.remaining}/{quota.limit} Daily{bonus > 0 ? ` + ${bonus} invite` : ''}</span>
       <span className="text-[9px] font-black text-gold uppercase tracking-widest ml-0.5">Upgrade</span>
     </button>
   );
