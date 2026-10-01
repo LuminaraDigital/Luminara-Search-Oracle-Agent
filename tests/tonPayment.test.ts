@@ -569,6 +569,29 @@ describe('Atomic TON crediting (D1 ledger)', () => {
     expect(errors.mock.calls.flat().join(' ')).toMatch(/0004_payment_atomicity/);
   });
 
+  it('logs a [Proof] alert line and still credits when the proof anchor insert fails', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { env, kv } = makeEnv();
+    const inv = await createTonInvoice(env, 'user_anchor_fail', 'starter');
+    if (!inv.ok) throw new Error('invoice failed');
+    const fetcher = vi.fn(async () => toncenterResponse(inv.order.memo, TON_PRICING.starter.nanoTon, 'tx_anchor_fail'));
+    env.DB.sqlite.exec('DROP TABLE proof_anchors');
+
+    const res = await verifyTonPayment(env, inv.order.orderId, { fetcher });
+
+    expect(res.ok).toBe(true);
+    expect((await kv.get('sub:user_anchor_fail', 'json')).plan).toBe('starter');
+    expect(env.DB.sqlite.prepare('SELECT order_id FROM ton_credited_tx WHERE tx_hash = ?').get('tx_anchor_fail').order_id).toBe(
+      inv.order.orderId,
+    );
+    const proofLines = errors.mock.calls.map((call) => String(call[0])).filter((line) => line.startsWith('[Proof] anchor_write_failed'));
+    expect(proofLines).toHaveLength(1);
+    expect(proofLines[0]).toContain('tx_hash=tx_anchor_fail');
+    expect(proofLines[0]).toContain(`order_id=${inv.order.orderId}`);
+    expect(proofLines[0]).toContain('network=mainnet');
+    expect(proofLines[0]).toMatch(/no such table/i);
+  });
+
   it('releases the tx claim when the subscription write fails so verify can be retried', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { env, kv } = makeEnv();

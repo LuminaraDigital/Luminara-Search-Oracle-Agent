@@ -481,6 +481,8 @@ export async function verifyTonPayment(
     console.error(`[TON] KV cache update failed after crediting order ${orderId}: ${err instanceof Error ? err.message : err}`);
   }
 
+  // The credit above stands whether or not the anchor row lands; a lost anchor is logged as
+  // `[Proof] anchor_write_failed` with the tx hash, order id and network by the writer itself.
   await recordProofAnchorBestEffort(env, {
     kind: 'ton_payment',
     orderId,

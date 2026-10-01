@@ -31,17 +31,32 @@ function stablePaymentAnchorId(txHash: string): string {
   return `pa_ton_${safe || newId('anon')}`;
 }
 
-/** Best-effort insert; never throws into payment settlement. Idempotent for ton_payment tx hashes. */
+/** One alertable line per lost anchor: the `[Proof] anchor_write_failed` prefix is the alert key. */
+function reportAnchorWriteFailure(input: ProofAnchorInput, cause: unknown): void {
+  console.error(
+    `[Proof] anchor_write_failed kind=${input.kind} chain=${input.chain} network=${input.network} ` +
+      `tx_hash=${input.txHash ?? 'none'} order_id=${input.orderId ?? 'none'}: ${cause instanceof Error ? cause.message : cause}`,
+  );
+}
+
+/**
+ * Best-effort insert; never throws into payment settlement. Idempotent for ton_payment tx hashes.
+ * A failed write is reported through reportAnchorWriteFailure, so callers on the payment path
+ * need not act on the boolean.
+ */
 export async function recordProofAnchorBestEffort(env: Pick<Env, 'DB'>, input: ProofAnchorInput): Promise<boolean> {
   const db = env.DB;
-  if (!db) return false;
-  const id =
-    input.id ||
-    (input.kind === 'ton_payment' && input.txHash ? stablePaymentAnchorId(input.txHash) : newId('pa'));
-  const createdAt = new Date().toISOString();
-  const status = input.status || 'anchored';
-  const anchoredAt = input.anchoredAt ?? (status === 'anchored' ? createdAt : null);
+  if (!db) {
+    reportAnchorWriteFailure(input, 'D1 binding DB is not configured');
+    return false;
+  }
   try {
+    const id =
+      input.id ||
+      (input.kind === 'ton_payment' && input.txHash ? stablePaymentAnchorId(input.txHash) : newId('pa'));
+    const createdAt = new Date().toISOString();
+    const status = input.status || 'anchored';
+    const anchoredAt = input.anchoredAt ?? (status === 'anchored' ? createdAt : null);
     await db
       .prepare(
         `INSERT INTO proof_anchors (
@@ -77,9 +92,7 @@ export async function recordProofAnchorBestEffort(env: Pick<Env, 'DB'>, input: P
       .run();
     return true;
   } catch (err) {
-    console.error(
-      `[Proof] recordProofAnchorBestEffort failed: ${err instanceof Error ? err.message : err}`,
-    );
+    reportAnchorWriteFailure(input, err);
     return false;
   }
 }
