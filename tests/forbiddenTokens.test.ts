@@ -47,11 +47,14 @@ function setupTempRepo(tokenFileContent?: string) {
 }
 
 function runScript(args: string[], env: NodeJS.ProcessEnv = {}) {
+  // The host account name (e.g. "runner" on CI) is an identity token and can match ordinary
+  // words in the temp repo. Only the identity test, which sets USER, scans identity tokens.
+  const identity = { FORBIDDEN_TOKENS_SKIP_IDENTITY: 'USER' in env ? '' : '1' };
   try {
     const out = execSync(`node scripts/check-forbidden-tokens.mjs ${args.join(' ')}`, {
       cwd: root,
       encoding: 'utf8',
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...identity, ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return { code: 0, stdout: out, stderr: '' };
