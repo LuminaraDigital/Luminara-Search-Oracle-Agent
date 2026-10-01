@@ -82,7 +82,7 @@ export const PLANS: Record<string, PlanMeta> = {
   },
   single_audit: {
     title: 'Single Autonomous Audit Run',
-    description: 'On-demand 7-agent autonomous search audit with verified Proof-of-Audit attestation.',
+    description: 'On-demand 7-agent autonomous search audit. Self-reported audit, not independently checked.',
     stars: 25,
     days: 1,
     domainLimit: 1,
@@ -94,8 +94,8 @@ export const PLANS: Record<string, PlanMeta> = {
     mcpAccess: false,
   },
   multi_agent_crawl: {
-    title: 'Deep Multi-Agent Crawl & Proof',
-    description: 'On-demand deep crawl and competitor gap intelligence with TON on-chain certification memo.',
+    title: 'Deep Multi-Agent Crawl',
+    description: 'On-demand deep crawl and competitor gap intelligence. Self-reported audit, not independently checked.',
     stars: 75,
     days: 1,
     domainLimit: 1,

@@ -1,23 +1,34 @@
 /**
- * Blockchain / TON Proof-of-Audit Attestation Service
- * 
- * Senior Web3 & Blockchain Engineering:
- * 1. Computes deterministic SHA-256 cryptographic digests of verified audit reports
- * 2. Formats standard TON comment memos for on-chain anchoring via TON Connect
- * 3. Provides verifiable Proof-of-Audit certificates and badge embeds for non-developers
- * 4. Powers autonomous pay-per-run micro-settlements (0.05 TON)
+ * Audit digest service.
+ *
+ * Computes a SHA-256 digest of an audit summary in the browser. Nothing here
+ * is sent to any blockchain, and the digest is self-reported: it shows the
+ * summary has not changed since it was computed, not that the audit is correct.
+ * Real TON testnet anchoring is planned in Phase 4 of
+ * docs/plans/zoro-concepts-implementation-plan.md.
  */
 
-import { AuditAttestation, TonMicroInvoice, AuditFinding } from './types';
+import { AuditAttestation, AuditFinding } from './types';
 
-export const TON_MICRO_PRICING = {
-  singleAudit: { ton: 0.05, nanoTon: '50000000' },
-  deepMultiAgentCrawl: { ton: 0.15, nanoTon: '150000000' },
-};
+/**
+ * Gates every Proof-of-Audit badge entry point: the Mission Control button,
+ * the badge modal, and the embeddable badge HTML with its /verify/<digest> link.
+ * Off because no client writes the digest to the Worker store yet, so the link
+ * would 404. Phase 4 (P4-7) of docs/plans/zoro-concepts-implementation-plan.md
+ * re-enables it against real rows.
+ */
+export const PROOF_BADGE_ENABLED: boolean = false;
+
+/** The one honest label for the digest. Reused by the badge, modal and verify page. */
+export const AUDIT_DIGEST_DISCLOSURE = 'Recorded by Luminara. Self-reported audit, not independently checked.';
+
+/** States exactly which fields the digest covers (see createAttestation). */
+export const AUDIT_DIGEST_COVERAGE =
+  'SHA-256 digest of the domain, health score, citation rate, number of findings, timestamp, and the id, severity and title of each finding. It does not cover page content or search results.';
 
 export class TonAttestationService {
   /**
-   * Computes a SHA-256 cryptographic hash of arbitrary string data using Web Crypto API
+   * Computes a SHA-256 hash of arbitrary string data using Web Crypto API
    */
   public async computeSha256Hex(data: string): Promise<string> {
     const encoder = new TextEncoder();
@@ -28,7 +39,8 @@ export class TonAttestationService {
   }
 
   /**
-   * Generates an immutable Proof-of-Audit cryptographic attestation
+   * Builds the audit digest record. Keep AUDIT_DIGEST_COVERAGE in sync with
+   * the canonical payload below.
    */
   public async createAttestation(payload: {
     domain: string;
@@ -48,7 +60,7 @@ export class TonAttestationService {
     });
 
     const digestHex = await this.computeSha256Hex(canonicalPayload);
-    // TON memos have standard text limits (typically up to 128-512 chars in simple transactions)
+    // Short reference string. Not sent anywhere today; reserved for Phase 4.
     const tonMemo = `LUM:POA:${payload.domain}:${payload.healthScore}:${digestHex.slice(0, 16)}`;
 
     const attestation: AuditAttestation = {
@@ -66,33 +78,17 @@ export class TonAttestationService {
   }
 
   /**
-   * Generates a 1-click TON micro-invoice for an autonomous audit run
+   * HTML embed badge linking to /verify/<digest>. Returns an empty string
+   * while the badge is disabled, so no caller can emit a dead link.
    */
-  public createRunInvoice(domain: string, runType: 'singleAudit' | 'deepMultiAgentCrawl' = 'singleAudit'): TonMicroInvoice {
-    const pricing = TON_MICRO_PRICING[runType];
-    const orderId = `ton_run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const memo = `LUM:AGENT:${orderId}:${domain.slice(0, 24)}`;
-
-    return {
-      orderId,
-      amountNano: pricing.nanoTon,
-      tonAmount: pricing.ton,
-      memo,
-      recipientAddress: 'EQB_Luminara_Attestation_Vault_Treasury',
-      status: 'pending',
-    };
-  }
-
-  /**
-   * Generate HTML embed badge for non-developers to paste on their website
-   */
-  public generateBadgeHtml(attestation: AuditAttestation): string {
+  public generateBadgeHtml(attestation: AuditAttestation, enabled: boolean = PROOF_BADGE_ENABLED): string {
+    if (!enabled) return '';
     const scoreColor = attestation.healthScore >= 80 ? '#10b981' : attestation.healthScore >= 60 ? '#f59e0b' : '#ef4444';
-    return `<!-- Luminara AEO Verified Audit Badge -->
+    return `<!-- Luminara audit digest badge -->
 <a href="https://luminarasuite.com/verify/${attestation.digestHex}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:#0f172a;color:#f8fafc;border-radius:8px;font-family:sans-serif;font-size:12px;text-decoration:none;border:1px solid #334155;">
   <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${scoreColor};"></span>
   <span>AEO Health: <strong>${attestation.healthScore}/100</strong></span>
-  <span style="color:#64748b;">| Verified on TON</span>
+  <span style="color:#64748b;">| Recorded by Luminara. Self-reported.</span>
 </a>`;
   }
 

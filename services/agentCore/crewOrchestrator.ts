@@ -6,7 +6,7 @@
  * - AutoGen: Adversarial critic reflection loops
  * - LangGraph: Cyclic StateGraph edge execution
  * - Mem0: 4-tier memory and delta updates
- * - TON Web3: Cryptographic Proof-of-Audit attestation
+ * - Audit digest: self-reported SHA-256 summary digest (no chain write)
  */
 
 import { StateGraph, END_NODE } from './stateGraph';
@@ -401,17 +401,17 @@ export class CrewOrchestrator {
       return { plainEnglishBrief };
     });
 
-    // Node 8: Cryptographic Proof-of-Audit Attestation (TON)
-    graph.addNode('attestation_node', 'TON Attestation Generator', async (ctx, emit) => {
+    // Node 8: Audit digest (self-reported, nothing is sent to a chain)
+    graph.addNode('attestation_node', 'Audit Digest Generator', async (ctx, emit) => {
       const cleanDomain = ctx.targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
       if (typeof ctx.healthScore !== 'number' || typeof ctx.citationRatePercent !== 'number') {
         emit({
           id: `ton-attest-skip-${Date.now()}`,
           timestamp: Date.now(),
           agentRole: 'adversarial_critic',
-          agentName: 'Blockchain Attestation Vault',
+          agentName: 'Audit Digest',
           phase: 'attestation_skipped',
-          message: 'Proof-of-Audit skipped. Health score or citation rate was not measured.',
+          message: 'Audit digest skipped. Health score or citation rate was not measured.',
           status: 'completed',
         });
         return {};
@@ -427,9 +427,9 @@ export class CrewOrchestrator {
         id: `ton-attest-${Date.now()}`,
         timestamp: Date.now(),
         agentRole: 'adversarial_critic',
-        agentName: 'Blockchain Attestation Vault',
+        agentName: 'Audit Digest',
         phase: 'attestation_generated',
-        message: `Generated SHA-256 Proof-of-Audit digest: ${attestation.digestHex.slice(0, 16)}… Ready for TON anchoring.`,
+        message: `Computed SHA-256 audit digest: ${attestation.digestHex.slice(0, 16)}… Self-reported audit, not independently checked.`,
         status: 'completed',
       });
 

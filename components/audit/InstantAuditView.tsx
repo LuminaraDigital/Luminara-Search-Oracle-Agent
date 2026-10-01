@@ -13,6 +13,7 @@ import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/fi
 import { useConfirm } from '../ui/ConfirmModal';
 import { AgentMissionControl } from './AgentMissionControl';
 import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
+import { PROOF_BADGE_ENABLED } from '../../services/agentCore/tonAttestationService';
 import { crewOrchestrator } from '../../services/agentCore/crewOrchestrator';
 import { AgentActivityEvent, AuditAttestation, AuditStateGraphContext } from '../../services/agentCore/types';
 import { toUserFacingText } from '../../utils/userFacingText';
@@ -707,13 +708,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           events={crewEvents}
           isComplete={!loading && crewMeasurement != null}
           measurementStatus={crewMeasurement}
-          hasAttestation={Boolean(attestation)}
+          hasAttestation={PROOF_BADGE_ENABLED && Boolean(attestation)}
           onViewAttestation={() => setShowAttestationModal(true)}
         />
       )}
 
-      {/* Proof of Audit Modal */}
-      {showAttestationModal && attestation && (
+      {/* Audit digest modal. Hidden until Phase 4 (PROOF_BADGE_ENABLED). */}
+      {PROOF_BADGE_ENABLED && showAttestationModal && attestation && (
         <ProofOfAuditBadgeModal
           attestation={attestation}
           onClose={() => setShowAttestationModal(false)}

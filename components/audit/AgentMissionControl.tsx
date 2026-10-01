@@ -1,12 +1,15 @@
 import React from 'react';
 import { AgentActivityEvent, AgentRole, AgentStatus } from '../../services/agentCore/types';
 import { CREW_PROFILES } from '../../services/agentCore/crewOrchestrator';
+import { PROOF_BADGE_ENABLED } from '../../services/agentCore/tonAttestationService';
 
 interface AgentMissionControlProps {
   events: AgentActivityEvent[];
   isComplete: boolean;
   onViewAttestation?: () => void;
   hasAttestation?: boolean;
+  /** Test seam. Defaults to PROOF_BADGE_ENABLED (off until Phase 4). */
+  proofBadgeEnabled?: boolean;
   /** measured only when citation, share of voice, and health all came from evidence. */
   measurementStatus?: 'measured' | 'not_measured' | null;
 }
@@ -50,6 +53,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
   isComplete,
   onViewAttestation,
   hasAttestation,
+  proofBadgeEnabled = PROOF_BADGE_ENABLED,
   measurementStatus = null,
 }) => {
   // Find latest status for each role
@@ -107,13 +111,13 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
         </div>
 
         {/* Action badge */}
-        {isComplete && hasAttestation && onViewAttestation && (
+        {proofBadgeEnabled && isComplete && hasAttestation && onViewAttestation && (
           <button
             onClick={onViewAttestation}
             className="self-start sm:self-auto inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-medium transition-colors"
           >
             <span>🛡️</span>
-            <span>View Verified On-Chain Attestation</span>
+            <span>View Luminara-recorded digest</span>
           </button>
         )}
       </div>

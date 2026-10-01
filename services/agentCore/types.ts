@@ -6,7 +6,7 @@
  * - CrewAI: Specialized role-playing agents and autonomous pipelines
  * - AutoGen: Society-of-Mind reflection and adversarial critic gates
  * - Mem0: 4-tier memory hierarchy and semantic delta extraction
- * - Blockchain / TON: Cryptographic Proof-of-Audit attestation & micropayments
+ * - Audit digest: self-reported SHA-256 summary digest (no chain write)
  */
 
 import { ReportFocus, BusinessDNA } from '../../types';
@@ -167,7 +167,7 @@ export interface AuditStateGraphContext {
   /** Critic validation records */
   criticRejections: number;
   criticPass: boolean;
-  /** On-chain Proof-of-Audit attestation (TON) */
+  /** Self-reported audit digest. Not sent to any chain. */
   attestation?: AuditAttestation;
   /** Errors encountered */
   errors: string[];
@@ -231,26 +231,18 @@ export interface MemoryRelationDelta {
 }
 
 // ============================================================================
-// 5. Blockchain Proof-of-Audit Attestation (TON Web3)
+// 5. Audit digest (self-reported, computed in the browser)
 // ============================================================================
 
 export interface AuditAttestation {
-  digestHex: string;          // SHA-256 hex digest of verified audit payload
+  digestHex: string;          // SHA-256 hex digest of the audit summary fields
   domain: string;
   healthScore: number;
   citationRatePercent: number;
   timestamp: number;
-  tonMemo: string;            // Standard TON memo payload for on-chain anchoring
-  tonTxHash?: string;         // Filled when anchored on TON blockchain
+  tonMemo: string;            // Short reference string. Not sent anywhere today (Phase 4)
+  tonTxHash?: string;         // Unused today. Reserved for Phase 4 testnet anchoring
   explorerUrl?: string;       // TonScan or TonViewer URL
   verifiedAt?: number;
 }
 
-export interface TonMicroInvoice {
-  orderId: string;
-  amountNano: string;
-  tonAmount: number;
-  memo: string;
-  recipientAddress: string;
-  status: 'pending' | 'confirmed' | 'expired';
-}
