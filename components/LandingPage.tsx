@@ -12,6 +12,7 @@ import { MarketingSellPoints } from './marketing/MarketingSellPoints';
 import { VisibilityFieldMap } from './marketing/VisibilityFieldMap';
 import { useMarketingChrome } from './marketing/marketingChrome';
 import { SAMPLE_FIXTURE } from './marketing/demo/demoFixtures';
+import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 
 interface LandingPageProps {
@@ -23,7 +24,7 @@ interface LandingPageProps {
   onNavigateSampleReport: () => void;
   isAuthenticated?: boolean;
   onSignInClick: (handoff?: AuditHandoff) => void;
-  onSignUpClick: () => void;
+  onSignUpClick: (handoff?: AuditHandoff) => void;
 }
 
 function statusCopy(status: string): string {
@@ -57,11 +58,11 @@ const HOW_STEPS = [
   },
   {
     title: 'Read engine status',
-    body: 'Each engine is marked Measured, Estimated, or Not measured.',
+    body: 'Each engine is marked Measured, Estimated, or Not measured. Sample never claims Measured without a Live run.',
   },
   {
     title: 'Ship one fix',
-    body: 'Take the Weekly Decision Card: a verdict and one next action. Open Instant Audit for Live results.',
+    body: 'Take the Weekly Decision Card: a verdict and one next action. Create a free account to run Live Instant Audit.',
   },
 ] as const;
 
@@ -133,20 +134,22 @@ const LandingPage: React.FC<LandingPageProps> = ({
                   <button type="button" onClick={scrollToProbe} className="mkt-cta-primary">
                     Run sample scout
                   </button>
-                  <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-secondary">
-                    Open Instant Audit
+                  <button type="button" onClick={() => onSignUpClick()} className="mkt-cta-secondary">
+                    Create free account
                   </button>
                 </>
               )}
             </div>
             <p className="max-w-xl text-[13px] text-[var(--color-ink-2)] leading-relaxed">
-              Sample is labeled. Live results follow Instant Audit rules: sign in, or bring your own AI keys.
+              Sample is labeled. Live Instant Audit is free with an account (daily hosted allowance).
               {!isAuthenticated && (
                 <>
                   {' '}
-                  <button type="button" onClick={onSignUpClick} className="mkt-cta-tertiary">
-                    Create a free account
-                  </button>
+                  Guests can still{' '}
+                  <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-tertiary">
+                    open Instant Audit
+                  </button>{' '}
+                  with their own keys.
                 </>
               )}
             </p>
@@ -157,6 +160,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               isAuthenticated={isAuthenticated}
               onOpenAudit={onNavigateAudit}
               onSignIn={onSignInClick}
+              onSignUp={onSignUpClick}
               onSeePricing={onNavigatePricing}
             />
           </div>
@@ -208,8 +212,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
               Google, AI Overviews, ChatGPT, and Perplexity as lit nodes on one map. Measured stays bright.
               Gaps stay labeled. Sample data until you run Live.
             </p>
-            <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-secondary">
-              Open Instant Audit
+            <button type="button" onClick={() => (isAuthenticated ? onNavigateAudit() : onSignUpClick())} className="mkt-cta-secondary">
+              {isAuthenticated ? 'Open Instant Audit' : 'Create free account'}
             </button>
           </div>
           <div className="lg:col-span-7 min-w-0">
@@ -268,24 +272,26 @@ const LandingPage: React.FC<LandingPageProps> = ({
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
           <div className="lg:col-span-6 min-w-0 order-2 lg:order-1 border border-[var(--color-rule)] bg-[var(--color-paper)] p-5 sm:p-7 space-y-5">
             <div className="flex items-baseline justify-between gap-3 min-w-0">
-              <p className="text-base text-[var(--color-ink)] truncate">{SAMPLE_FIXTURE.domain}</p>
-              <p className="text-[12px] font-mono text-[var(--color-ink-2)] shrink-0">Sample</p>
+              <p className="text-base text-[var(--color-ink)] truncate">{LIVE_SAMPLE_SNAPSHOT.domain}</p>
+              <p className="text-[12px] font-mono text-[var(--color-accent)] shrink-0">
+                {LIVE_SAMPLE_SNAPSHOT.label} · {LIVE_SAMPLE_SNAPSHOT.measuredAt}
+              </p>
             </div>
             <ul className="divide-y divide-[var(--color-rule)] border-t border-[var(--color-rule)]">
-              {SAMPLE_FIXTURE.engines.map((row) => (
+              {LIVE_SAMPLE_SNAPSHOT.rows.map((row) => (
                 <li key={row.id} className="flex items-baseline justify-between gap-4 py-3.5">
                   <span className="text-base text-[var(--color-ink-2)]">{row.label}</span>
-                  <span className="text-[12px] font-mono tracking-wide text-[var(--color-ink-2)]">
+                  <span className="text-[12px] font-mono tracking-wide text-[var(--color-ink)]">
                     {statusCopy(row.status)}
                   </span>
                 </li>
               ))}
             </ul>
             <div className="space-y-2 pt-1">
-              <p className="text-base text-[var(--color-ink)] leading-relaxed">{SAMPLE_FIXTURE.verdict}</p>
+              <p className="text-base text-[var(--color-ink)] leading-relaxed">{LIVE_SAMPLE_SNAPSHOT.verdict}</p>
               <p className="text-base text-[var(--color-ink-2)] leading-relaxed">
                 <span className="text-[var(--color-ink)] font-medium">Next: </span>
-                {SAMPLE_FIXTURE.shipAction}
+                {LIVE_SAMPLE_SNAPSHOT.shipAction}
               </p>
             </div>
           </div>
@@ -303,22 +309,22 @@ const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* Agent-ready: the real MCP tools as the visual. */}
+      {/* IDE access: Growth tooling as the visual. */}
       <section className="mkt-section">
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
           <div className="lg:col-span-6 min-w-0">
-            <p className="mkt-eyebrow mb-4">Agent-ready</p>
+            <p className="mkt-eyebrow mb-4">Growth and above</p>
             <h2 className={`${H2} mb-5`}>The same reports inside Cursor and Claude.</h2>
             <p className="mkt-body mb-8 max-w-lg">
-              Growth unlocks MCP, so the agents you already use can read your projects, context, and
-              reports, and save their own. Agency adds API access for paid research.
+              Growth unlocks IDE connectors so the agents you already use can read your projects, context,
+              and reports, and save their own. Agency adds API access for paid research.
             </p>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
               <button type="button" onClick={onNavigatePricing} className="mkt-cta-secondary">
                 See plans
               </button>
               <a href="/docs/mcp.html" className="mkt-cta-tertiary">
-                MCP setup guide
+                IDE setup guide
               </a>
               <button type="button" onClick={onNavigateMethodology} className="mkt-cta-tertiary">
                 How we measure
@@ -327,7 +333,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
           <div className="lg:col-span-6 min-w-0 border border-[var(--color-rule)] bg-[var(--color-paper-2)]">
             <p className="px-5 sm:px-6 py-3.5 border-b border-[var(--color-rule)] text-[12px] font-mono text-[var(--color-ink-2)]">
-              luminara MCP server
+              luminara IDE tools
             </p>
             <ul className="divide-y divide-[var(--color-rule)] list-none">
               {MCP_TOOLS.map((tool) => (
@@ -349,14 +355,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
           <div className="lg:col-span-7 min-w-0">
             <h2 className={`${H2} mb-5`}>Run a free sample scout.</h2>
             <p className="mkt-body mb-8 max-w-lg">
-              Enter your site in the Probe. Open Instant Audit when you want Live results.
+              Enter your site in the Probe. Create a free account when you want Live Instant Audit.
             </p>
             <div className="flex flex-col sm:flex-row flex-wrap gap-3">
               <button type="button" className="mkt-cta-primary" onClick={scrollToProbe}>
                 Run sample scout
               </button>
-              <button type="button" className="mkt-cta-secondary" onClick={() => onNavigateAudit()}>
-                Open Instant Audit
+              <button
+                type="button"
+                className="mkt-cta-secondary"
+                onClick={() => (isAuthenticated ? onNavigateAudit() : onSignUpClick())}
+              >
+                {isAuthenticated ? 'Open Instant Audit' : 'Create free account'}
               </button>
             </div>
           </div>

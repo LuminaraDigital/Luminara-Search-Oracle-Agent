@@ -5,12 +5,14 @@ import { MarketingFaq } from './marketing/MarketingFaq';
 interface MethodologyPageProps {
   onTerminal: () => void;
   onNavigateSample: () => void;
+  onSignUp?: () => void;
+  isAuthenticated?: boolean;
 }
 
 const ENUMS = [
   {
     title: 'Measured',
-    body: 'Live evidence from a run you are entitled to. Tied to the engines and prompts in that audit. Shown only when data was actually collected.',
+    body: 'Live evidence from a run you signed in for (or paid for). Tied to the engines and prompts in that audit. Shown only when data was actually collected.',
   },
   {
     title: 'Estimated',
@@ -25,6 +27,8 @@ const ENUMS = [
 const MethodologyPage: React.FC<MethodologyPageProps> = ({
   onTerminal,
   onNavigateSample,
+  onSignUp,
+  isAuthenticated,
 }) => {
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -59,16 +63,24 @@ const MethodologyPage: React.FC<MethodologyPageProps> = ({
           Sample versus Live
         </h2>
         <p className="mkt-body">
-          The landing Probe is a labeled Sample fixture. Live Instant Audit follows account and key rules:
-          guests use BYOK; hosted Worker AI, save, share, and MCP need entitlement. Public share previews
-          never invent scores.
+          The landing Probe shows Sample engine rows (always Not measured) and may add a Live crawl check
+          for robots.txt and llms.txt. Instant Audit measures answer engines after you create a free
+          account (hosted daily allowance) or sign in. Public share previews never invent scores.
         </p>
         <div className="flex flex-col sm:flex-row flex-wrap gap-3 pt-2">
           <button type="button" className="mkt-cta-primary" onClick={onNavigateSample}>
             View sample report
           </button>
-          <button type="button" className="mkt-cta-secondary" onClick={onTerminal}>
-            Open Instant Audit
+          <button
+            type="button"
+            className="mkt-cta-secondary"
+            onClick={() => {
+              if (isAuthenticated) onTerminal();
+              else if (onSignUp) onSignUp();
+              else onTerminal();
+            }}
+          >
+            {isAuthenticated ? 'Open Instant Audit' : 'Create free account'}
           </button>
         </div>
       </section>

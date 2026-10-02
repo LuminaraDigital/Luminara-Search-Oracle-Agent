@@ -6,6 +6,7 @@ interface MarketingStageProps {
   isAuthenticated?: boolean;
   onOpenAudit: (handoff?: AuditHandoff) => void;
   onSignIn: (handoff?: AuditHandoff) => void;
+  onSignUp?: (handoff?: AuditHandoff) => void;
   onSeePricing: () => void;
 }
 

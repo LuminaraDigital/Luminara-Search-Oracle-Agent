@@ -1,6 +1,6 @@
 /**
  * Sample Instant Audit playback for the landing Visibility Probe.
- * Fixtures only. Never invent live SEO metrics.
+ * Fixtures only. Never invent live SEO metrics. Never mark engines Measured.
  */
 
 export type DemoPhase =
@@ -10,7 +10,7 @@ export type DemoPhase =
   | 'results_sample'
   | 'error';
 
-export type DemoEngineId = 'web_serp' | 'google_aio' | 'chatgpt' | 'perplexity';
+export type DemoEngineId = 'crawl_readiness' | 'web_serp' | 'google_aio' | 'chatgpt' | 'perplexity';
 
 export type DemoEngineStatus = 'idle' | 'pending' | 'measured' | 'estimated' | 'not_measured';
 
@@ -33,36 +33,37 @@ export interface DemoFixture {
 
 export const DEMO_PRESETS = ['luminarasuite.com', 'example.com', 'yourbrand.com'] as const;
 
+/** Sample-only fixture: every engine is not_measured. Measured requires a Live collection. */
 export const SAMPLE_FIXTURE: DemoFixture = {
   domain: 'luminarasuite.com',
   focus: 'AEO',
   verdict:
-    'Sample scout: classic search signals look clearer than AI answer presence. Entity and citation clarity usually need work before ChatGPT or Perplexity mention you.',
-  shipAction: 'Clarify the brand entity on the homepage and add one citable FAQ block.',
+    'Sample scout only: this is the shape of a report, not Live evidence for the domain you typed. Run a free Live Instant Audit to measure engines for your site.',
+  shipAction: 'Create a free account and run Instant Audit on your domain for Measured engine rows.',
   engines: [
     {
       id: 'web_serp',
       label: 'Google + SERP',
-      status: 'measured',
-      note: 'Sample · illustrative presence in classic results',
+      status: 'not_measured',
+      note: 'Sample · not measured. Run Live Instant Audit to collect this engine.',
     },
     {
       id: 'google_aio',
       label: 'AI Overviews',
       status: 'not_measured',
-      note: 'Sample · not measured in this fixture',
+      note: 'Sample · not measured. Run Live Instant Audit to collect this engine.',
     },
     {
       id: 'chatgpt',
       label: 'ChatGPT',
       status: 'not_measured',
-      note: 'Sample · not measured until a live scout runs',
+      note: 'Sample · not measured. Run Live Instant Audit to collect this engine.',
     },
     {
       id: 'perplexity',
       label: 'Perplexity',
-      status: 'estimated',
-      note: 'Sample · illustrative gap only, not a product KPI',
+      status: 'not_measured',
+      note: 'Sample · not measured. Run Live Instant Audit to collect this engine.',
     },
   ],
 };
@@ -89,9 +90,23 @@ export function normalizeDemoUrl(raw: string): { ok: true; host: string } | { ok
 
 export function idleEngines(): DemoEngineRow[] {
   return [
+    {
+      id: 'crawl_readiness',
+      label: 'Crawl readiness',
+      status: 'idle',
+      note: 'Not measured until run',
+    },
     { id: 'web_serp', label: 'Google + SERP', status: 'idle', note: 'Not measured until run' },
     { id: 'google_aio', label: 'AI Overviews', status: 'idle', note: 'Not measured until run' },
     { id: 'chatgpt', label: 'ChatGPT', status: 'idle', note: 'Not measured until run' },
     { id: 'perplexity', label: 'Perplexity', status: 'idle', note: 'Not measured until run' },
   ];
+}
+
+/** Sample fixture engines (no crawl row). Engines stay not_measured. */
+export function sampleEngineRowsForHost(host: string): DemoEngineRow[] {
+  return SAMPLE_FIXTURE.engines.map((row) => ({
+    ...row,
+    note: row.note.replace('the domain you typed', host),
+  }));
 }

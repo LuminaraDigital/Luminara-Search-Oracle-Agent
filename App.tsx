@@ -477,7 +477,9 @@ const App: React.FC = () => {
       { label: 'AI', onClick: () => setView(AppView.INTELLIGENCE), current: view === AppView.INTELLIGENCE },
       { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
     ],
-    primaryCta: { label: 'Open Instant Audit', onClick: () => enterInstantAudit() },
+    primaryCta: appAuth.authenticated
+      ? { label: 'Open Instant Audit', onClick: () => enterInstantAudit() }
+      : { label: 'Create free account', onClick: () => openLoginWall('signup') },
     secondaryCta: appAuth.authenticated
       ? { label: 'Dashboard', onClick: () => enterApp(AppView.DASHBOARD) }
       : { label: 'Sign in', onClick: () => openLoginWall('signin') },
@@ -983,7 +985,7 @@ const App: React.FC = () => {
           onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
           isAuthenticated={appAuth.authenticated}
           onSignInClick={(handoff) => openLoginWall('signin', handoff)}
-          onSignUpClick={() => openLoginWall('signup')}
+          onSignUpClick={(handoff) => openLoginWall('signup', handoff)}
         />
         {marketingOverlays}
       </MarketingChromeContext.Provider>
@@ -1027,7 +1029,7 @@ const App: React.FC = () => {
       <Suspense fallback={<ViewLoader label="Loading" />}>
         {introOverlay}
         <WhyLuminaraPage
-          onTerminal={() => enterInstantAudit()}
+          onTerminal={() => (appAuth.authenticated ? enterInstantAudit() : openLoginWall('signup'))}
           onNavigatePricing={() => setView(AppView.PRICING)}
         />
         {marketingOverlays}
@@ -1056,6 +1058,8 @@ const App: React.FC = () => {
         <MethodologyPage
           onTerminal={() => enterInstantAudit()}
           onNavigateSample={() => setView(AppView.SAMPLE_REPORT)}
+          onSignUp={() => openLoginWall('signup')}
+          isAuthenticated={appAuth.authenticated}
         />
         {marketingOverlays}
       </Suspense>
@@ -1072,6 +1076,8 @@ const App: React.FC = () => {
           onOpenAudit={(handoff) => enterInstantAudit(handoff)}
           onNavigatePricing={() => setView(AppView.PRICING)}
           onNavigateMethodology={() => setView(AppView.METHODOLOGY)}
+          onSignUp={() => openLoginWall('signup')}
+          isAuthenticated={appAuth.authenticated}
         />
         {marketingOverlays}
       </Suspense>

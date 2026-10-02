@@ -89,6 +89,7 @@ import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
 import { handleFindingsRoute } from './findingsService';
 import { handleLlmCrawlerRoute } from './llmCrawlerRoute';
+import { handleProbeCrawlRoute } from './probeCrawlRoute';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
 import { getBudgetStatus, upsertBudgetPolicy, approveBudgetResume } from './budgets';
 import {
@@ -1184,6 +1185,18 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
     if (!dual.ok) return withCors(dual.response);
     return withCors(handleShareRoute(request, env, path));
+  }
+
+  if (path === '/visibility/probe-crawl' && request.method === 'GET') {
+    const dual = await enforceDualRateLimit(env, {
+      action: 'probe_crawl',
+      accountId: null,
+      ip,
+      limitPerKey: 10,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    return withCors(handleProbeCrawlRoute(request, env));
   }
 
   if (path === '/visibility/crawler-files' && request.method === 'GET') {

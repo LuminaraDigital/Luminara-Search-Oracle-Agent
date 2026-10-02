@@ -11,7 +11,7 @@ export const MARKETING_SELL_POINTS = [
   },
   {
     title: 'One action you can ship',
-    body: 'Sample scout to Instant Audit to a plain-English next step. Growth adds MCP for Cursor and shareable report links.',
+    body: 'Sample scout to Instant Audit to a plain-English next step. Growth adds shareable report links and IDE access.',
   },
 ] as const;
 
