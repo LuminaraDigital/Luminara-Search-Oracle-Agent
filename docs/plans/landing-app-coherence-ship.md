@@ -107,6 +107,8 @@ review pass. A phase is not closed until review findings are fixed and re-checke
 
 ### L7 - Release
 
+**Gate (2026-10-02):** Do not run L7 until [`conversion-honesty-ship.md`](./conversion-honesty-ship.md) phases **C0** and **C2** are green on staging. Coherence polish alone is not conversion-ready (Probe Measured-on-fixture + guest keys wall).
+
 State on 2026-10-01:
 - Committed on `feat/mcp-governance-hardening` as `a010880` (platform), `1496d3b` (marketing and app UI),
   plus the docs commit. Working tree clean. Not pushed.

@@ -11,7 +11,7 @@ const contrasts = [
   { label: 'Delivery', manual: 'Weeks of back-and-forth', luminara: 'Audit in the app when you need it' },
   { label: 'Evidence', manual: 'Slide decks and opinion', luminara: 'Search-grounded where keys allow' },
   { label: 'Priority', manual: 'Long unordered lists', luminara: 'Impact-ordered actions' },
-  { label: 'Cost model', manual: 'Retainer or project fees', luminara: 'Subscription or BYOK usage' },
+  { label: 'Cost model', manual: 'Retainer or project fees', luminara: 'Subscription or your own AI keys' },
 ] as const;
 
 const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
@@ -30,16 +30,16 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
     >
       <header className="mb-14 sm:mb-20 max-w-3xl">
         <h1 className="font-display text-[length:var(--text-display)] tracking-tight leading-[1.05] mb-6 [overflow-wrap:anywhere]">
-          Replace tool sprawl with one operator loop.
+          Replace tool sprawl with one clear plan.
         </h1>
         <p className="text-lg text-[var(--color-ink-2)] leading-relaxed mb-8">
           Luminara Suite is for founders and small teams who need a clear plan for Google and AI answers
-          without buying a full agency engagement or rebuilding their stack. One loop: audit, labeled
-          evidence, one next action, and MCP access from the tools you already use.
+          without buying a full agency engagement or rebuilding their stack. Audit, labeled evidence, one
+          next action, and optional IDE access when you grow into Growth.
         </p>
         <div className="flex flex-col sm:flex-row gap-3">
           <button type="button" onClick={onTerminal} className="mkt-cta-primary">
-            Open Instant Audit
+            Create free account
           </button>
           <button type="button" onClick={onNavigatePricing} className="mkt-cta-secondary">
             View pricing
@@ -83,11 +83,11 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
           Start with one site audit
         </h2>
         <p className="mkt-body mb-8">
-          Run Instant Audit on the URL that matters most. Sign in to save the result, or bring your own
-          AI keys as a guest.
+          Run Instant Audit on the URL that matters most. Create a free account to save results and use the
+          hosted daily allowance, or bring your own AI keys as a guest.
         </p>
         <button type="button" onClick={onTerminal} className="mkt-cta-primary">
-          Open Instant Audit
+          Create free account
         </button>
       </section>
     </MarketingPageShell>

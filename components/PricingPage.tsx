@@ -1,5 +1,5 @@
 /**
- * Pricing page: entitlement-true tiers. Hero sells Growth (MCP + share).
+ * Pricing page: entitlement-true tiers. Hero sells Growth (IDE access + share).
  * Prices are the Stars / TON amounts the Worker charges (worker/telegramBot.ts,
  * worker/tonPayment.ts), mirrored in ./paywall/planPrices. The USD label is a list price only:
  * card checkout is unavailable.
@@ -30,7 +30,7 @@ export const pricingTiers: Array<{
     priceLabel: PAID_PLAN_PRICES.starter.usdLabel,
     stars: PAID_PLAN_PRICES.starter.starsLabel,
     ton: PAID_PLAN_PRICES.starter.tonLabel,
-    blurb: 'Web audits for up to 2 sites. No MCP or public share links.',
+    blurb: 'Web audits for up to 2 sites. No IDE connectors or public share links.',
     highlight: false,
   },
   {
@@ -38,7 +38,7 @@ export const pricingTiers: Array<{
     priceLabel: PAID_PLAN_PRICES.growth.usdLabel,
     stars: PAID_PLAN_PRICES.growth.starsLabel,
     ton: PAID_PLAN_PRICES.growth.tonLabel,
-    blurb: 'The operator plan: MCP tools, shareable reports, 3 seats, weekly re-audits.',
+    blurb: 'The growth plan: IDE access, shareable reports, 3 seats, weekly re-audits.',
     highlight: true,
   },
   {
@@ -63,11 +63,11 @@ function bulletsFor(id: PaidPlanId): string[] {
     `${e.domainLimit} monitored domains`,
     e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audits`,
     e.whiteLabelPdf ? 'Branded PDF exports' : 'Standard exports',
-    e.mcpAccess ? 'MCP access (Cursor / Claude / Codex)' : 'No MCP (web app only)',
+    e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',
     e.shareLinks ? 'Public share links' : 'No public share links',
     `${e.teamSeats} team seat${e.teamSeats === 1 ? '' : 's'}`,
   ];
-  if (e.apiAccess) lines.push('MCP paid research (Agency API or BYOK DataForSEO)');
+  if (e.apiAccess) lines.push('Paid research API (Agency plan or your own DataForSEO login)');
   if (e.agencyClientLimit > 0) lines.push(`${e.agencyClientLimit} client workspaces`);
   return lines;
 }
@@ -88,21 +88,21 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
       <section className="mb-14 sm:mb-20 max-w-3xl">
         <p className="mkt-eyebrow mb-4">Pricing</p>
         <h1 className="font-display text-[length:var(--text-display)] tracking-tight leading-[1.05] mb-6 [overflow-wrap:anywhere]">
-          Plans for audits, MCP, and share links
+          Plans for audits, share links, and team seats
         </h1>
         <p className="text-lg text-[var(--color-ink-2)] leading-relaxed mb-4">
-          Free covers a Sample scout. Starter is web audits only. Growth is the operator plan: MCP for
-          Cursor and shareable reports. Agency adds API access and client workspaces.
+          Free covers Sample scouts and a daily hosted Instant Audit allowance after you create an account.
+          Starter is web audits only. Growth adds IDE access and shareable reports. Agency adds API access
+          and client workspaces.
         </p>
         <p className="mkt-body mb-8">
-          Every paid plan runs 30 days and is paid with Telegram Stars or TON. Card checkout is
-          unavailable.
+          Every paid plan runs 30 days. Pay with Telegram Stars or TON in the Mini App. USD amounts are list
+          prices only. Card checkout is unavailable.
         </p>
         <div className="mb-8 border border-[var(--color-rule)] bg-[var(--color-paper)]/70 p-5 sm:p-6">
           <p className="mkt-eyebrow mb-3">How to pay</p>
           <p className="mkt-body mb-4">
             Open the Mini App in Telegram, then pay with Stars or TON for Starter, Growth, or Agency.
-            Card checkout is unavailable.
           </p>
           <a href={TELEGRAM_MINI_APP_URL} {...miniAppLinkProps} className="mkt-cta-primary w-full sm:w-auto">
             Open Mini App in Telegram
@@ -150,7 +150,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 type="button"
                 onClick={() =>
                   openPaywallModal(
-                    `Choose ${title}: ${tier.stars} or ${tier.ton} inside the Mini App. Card checkout is unavailable.`,
+                    `Choose ${title}: ${tier.stars} or ${tier.ton} inside the Mini App.`,
                   )
                 }
                 className={`w-full ${tier.highlight ? 'mkt-cta-primary' : 'mkt-cta-secondary'}`}
@@ -166,8 +166,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         <div className="min-w-0 border-t border-[var(--color-rule)] pt-5">
           <h2 className="text-xl font-medium text-[var(--color-ink)] mb-2">{free.title}</h2>
           <p className="mkt-body">
-            {free.domainLimit} domain, on-demand audits, Sample scouts with no card. No MCP, no public
-            share links. Guests run Live audits with their own AI keys.
+            {free.domainLimit} domain, on-demand audits, Sample scouts with no card. Free accounts get a
+            daily hosted Instant Audit allowance. No IDE access, no public share links. Guests may still
+            bring their own AI keys.
           </p>
         </div>
         {ONE_OFFS.map((item) => (
@@ -195,7 +196,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           <div className="space-y-4">
             <button
               type="button"
-              onClick={() => openPaywallModal('Pay with Telegram Stars or TON inside the Mini App. Card checkout is unavailable.')}
+              onClick={() => openPaywallModal('Pay with Telegram Stars or TON inside the Mini App.')}
               className="mkt-cta-primary w-full sm:w-auto"
             >
               See payment options
@@ -204,8 +205,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           </div>
         )}
         <p className="text-[var(--color-ink-2)] text-[13px] mt-6">
-          Pay in the Mini App with Stars or TON. Card checkout is unavailable. Plans run for 30 days.
-          Plan limits apply per account.
+          Pay in the Mini App with Stars or TON. Plans run for 30 days. Plan limits apply per account.
         </p>
       </section>
     </MarketingPageShell>

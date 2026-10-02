@@ -10,8 +10,9 @@ import type { ReportFocus } from '../../types';
 interface VisibilityProbeProps {
   isAuthenticated?: boolean;
   onOpenAudit: (handoff?: AuditHandoff) => void;
-  /** Carries the typed domain so sign-in can return to Instant Audit with it. */
+  /** Carries the typed domain so sign-in / sign-up can return to Instant Audit with it. */
   onSignIn: (handoff?: AuditHandoff) => void;
+  onSignUp?: (handoff?: AuditHandoff) => void;
   onSeePricing: () => void;
 }
 
@@ -96,6 +97,7 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
   isAuthenticated,
   onOpenAudit,
   onSignIn,
+  onSignUp,
   onSeePricing,
 }) => {
   const demo = useDemoPlayback();
@@ -114,21 +116,47 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
     return () => window.removeEventListener('luminara:focus-probe', focusInput);
   }, []);
 
-  const currentHandoff = (): AuditHandoff => ({
+  const liveHandoff = (): AuditHandoff => ({
     url: demo.fixture?.domain || demo.url.trim() || host || '',
     focus: (demo.focus || 'AEO') as ReportFocus,
-    sampleSource: true,
+    sampleSource: false,
   });
 
-  const openLiveAudit = () => onOpenAudit(currentHandoff());
+  const openLiveAudit = () => onOpenAudit(liveHandoff());
+  const openFreeAccount = () => {
+    const handoff = liveHandoff();
+    if (onSignUp) onSignUp(handoff);
+    else onSignIn(handoff);
+  };
 
   const runLabel = demo.phase === 'analyzing' ? 'Running…' : 'Run sample scout';
+  const badge =
+    demo.phase === 'results_sample' && demo.resultKind === 'live_crawl'
+      ? 'Live crawl'
+      : demo.phase === 'results_sample' && demo.resultKind === 'mixed'
+        ? 'Mixed'
+        : 'Sample';
+  const primaryResultsLabel = isAuthenticated
+    ? host
+      ? `Run Instant Audit on ${host}`
+      : 'Open Instant Audit'
+    : host
+      ? `Run it live on ${host}: free account`
+      : 'Create a free account';
 
   return (
     <div className="relative min-w-0 border border-[var(--color-rule)] bg-[var(--color-paper)]">
       <div className="flex items-baseline justify-between gap-3 px-4 sm:px-5 pt-4 pb-3 border-b border-[var(--color-rule)]">
-        <p className="text-[12px] font-medium text-[var(--color-ink)]">Visibility Probe</p>
-        <p className="text-[11px] font-mono text-[var(--color-ink-2)] shrink-0">Sample</p>
+        <p className="text-[13px] font-medium text-[var(--color-ink)]">Visibility Probe</p>
+        <p
+          className={`shrink-0 text-[12px] font-mono tracking-wide ${
+            badge === 'Sample'
+              ? 'text-[var(--color-ink)] border border-[var(--color-rule)] px-2 py-0.5'
+              : 'text-[var(--color-accent)] border border-[var(--color-accent)]/40 px-2 py-0.5'
+          }`}
+        >
+          {badge}
+        </p>
       </div>
 
       <div className="px-4 sm:px-5 pt-4 pb-5 space-y-4">
@@ -165,16 +193,16 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
             <button
               type="button"
               className="mkt-cta-primary w-full sm:w-auto whitespace-nowrap !min-h-11"
-              onClick={openLiveAudit}
+              onClick={isAuthenticated ? openLiveAudit : openFreeAccount}
             >
-              Open Instant Audit
+              {primaryResultsLabel}
             </button>
           )}
         </div>
 
         {demo.phase === 'empty' && (
           <p className="text-[13px] text-[var(--color-ink-2)]">
-            Enter a domain to see a labeled sample result for each engine.
+            Enter a domain for a Sample engine layout plus a Live crawl check when available.
           </p>
         )}
 
@@ -203,7 +231,7 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
                 key={f}
                 type="button"
                 onClick={() => demo.setFocus(f)}
-                className={`text-[12px] min-h-8 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none ${
+                className={`text-[12px] min-h-10 px-1 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none ${
                   demo.focus === f
                     ? 'text-[var(--color-ink)]'
                     : 'text-[var(--color-ink-2)] hover:text-[var(--color-ink)]'
@@ -239,19 +267,19 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
                   <button
                     type="button"
                     onClick={() => setSelected((prev) => (prev === row.id ? null : row.id))}
-                    className={`w-full text-left flex items-baseline justify-between gap-4 px-4 sm:px-5 py-3 min-h-11 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none ${
+                    className={`w-full text-left flex items-baseline justify-between gap-4 px-4 sm:px-5 py-3.5 min-h-11 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none ${
                       active
                         ? 'text-[var(--color-ink)]'
                         : 'text-[var(--color-ink-2)] hover:text-[var(--color-ink)]'
                     }`}
                   >
                     <span className="text-sm min-w-0 truncate">{row.label}</span>
-                    <span className="shrink-0 text-[11px] font-mono tracking-wide">
+                    <span className="shrink-0 text-[12px] font-mono tracking-wide text-[var(--color-ink)]">
                       {statusLabel(row.status)}
                     </span>
                   </button>
                   {active && (
-                    <p className="px-4 sm:px-5 pb-3 text-[12px] text-[var(--color-ink-2)] leading-relaxed">
+                    <p className="px-4 sm:px-5 pb-3 text-[13px] text-[var(--color-ink-2)] leading-relaxed">
                       {row.note}
                     </p>
                   )}
@@ -268,16 +296,21 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
               <span className="text-[var(--color-ink)] font-medium">Next: </span>
               {demo.fixture.shipAction}
             </p>
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px]">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
               {!isAuthenticated && (
-                <button type="button" className="mkt-cta-tertiary" onClick={() => onSignIn(currentHandoff())}>
+                <button type="button" className="mkt-cta-tertiary min-h-10" onClick={() => onSignIn(liveHandoff())}>
                   Sign in
                 </button>
               )}
-              <button type="button" className="mkt-cta-tertiary" onClick={onSeePricing}>
+              {isAuthenticated && (
+                <button type="button" className="mkt-cta-tertiary min-h-10" onClick={openLiveAudit}>
+                  Instant Audit
+                </button>
+              )}
+              <button type="button" className="mkt-cta-tertiary min-h-10" onClick={onSeePricing}>
                 Pricing
               </button>
-              <button type="button" className="mkt-cta-tertiary" onClick={demo.reset}>
+              <button type="button" className="mkt-cta-tertiary min-h-10" onClick={demo.reset}>
                 Reset
               </button>
             </div>
@@ -285,7 +318,7 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
         )}
 
         {demo.phase === 'error' && (
-          <button type="button" className="mkt-cta-tertiary" onClick={demo.reset}>
+          <button type="button" className="mkt-cta-tertiary min-h-10" onClick={demo.reset}>
             Reset
           </button>
         )}

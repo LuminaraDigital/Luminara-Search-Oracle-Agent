@@ -14,12 +14,12 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
   {
     question: 'What is the difference between a sample scout and a live audit?',
     answer:
-      'The sample scout on this page uses example data, clearly labeled Sample, so you can see what a report looks like. A live Instant Audit checks your real site. Run it as a guest with your own AI provider keys, or sign in to use hosted AI and to save and share your reports.',
+      'The sample scout on this page uses labeled example engine rows (Not measured). A Live crawl check may confirm robots.txt and llms.txt for the domain you typed. Instant Audit measures answer engines after you create a free account (hosted daily allowance) or sign in. Guests can also bring their own AI keys.',
   },
   {
     question: 'Do I need a credit card to try it?',
     answer:
-      'No. The sample scout needs no card and no account. Share links and MCP access are part of the Growth and Agency plans.',
+      'No. The sample scout needs no card and no account. Create a free account to run Live Instant Audit with a daily hosted allowance. Share links and IDE access are part of the Growth and Agency plans.',
   },
   {
     question: 'How is this different from Semrush or Ahrefs?',

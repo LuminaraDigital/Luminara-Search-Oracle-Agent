@@ -16,7 +16,7 @@ const noop = () => {};
 
 const FALLBACK_CHROME: MarketingChrome = {
   links: [],
-  primaryCta: { label: 'Open Instant Audit', onClick: noop },
+  primaryCta: { label: 'Create free account', onClick: noop },
   secondaryCta: { label: 'Sign in', onClick: noop },
   onHome: noop,
 };
