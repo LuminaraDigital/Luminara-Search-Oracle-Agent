@@ -42,3 +42,8 @@ CHAIN_TON_API_FALLBACK_BASE=https://tonapi.io
 CHAIN_XDC_RPC_URL=https://erpc.xinfin.network
 PROOF_ANCHOR_ENABLED=false
 PROOF_XDC_ENABLED=false
+# SMB Launchpad (spec 0015). Unset = on in local dev only; staging/prod need true. Explicit false always disables.
+# LAUNCHPAD_ENABLED=true
+LAUNCHPAD_MAINNET_ENABLED=false
+# Testnet-only: skip on-chain deployment check at registration while no factory is deployed
+# LAUNCHPAD_SKIP_CHAIN_VERIFY=true

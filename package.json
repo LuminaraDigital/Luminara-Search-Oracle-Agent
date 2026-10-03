@@ -74,7 +74,8 @@
     "jose": "^6.2.12",
     "marked": "^15.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "viem": "^2.57.2"
   },
   "overrides": {
     "valibot": "1.4.2",

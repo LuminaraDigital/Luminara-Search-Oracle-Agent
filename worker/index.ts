@@ -113,6 +113,7 @@ import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService
 import { isCronMapped, jobsForCron } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
+import { handleLaunchpadRoute } from './launchpadService';
 import { handleMemoryRagRoute } from './memoryRag';
 import { handleBudgetReconcileRoute } from './invoiceReconcile';
 import { reportWorkerException } from './sentry';
@@ -1304,6 +1305,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
     const wdl = await handleWeeklyDecisionsRoute(request, env, who.user, path);
     if (wdl) return withCors(wdl);
+  }
+
+  // SMB Launchpad (0018). Feature-flagged; see worker/launchpadService.ts.
+  if (path === '/launchpad' || path.startsWith('/launchpad/')) {
+    const who = await identify(request, env);
+    const launchpadRes = await handleLaunchpadRoute(request, env, who, path);
+    if (launchpadRes) return withCors(launchpadRes);
   }
 
   // PageSpeed Insights (BYOK header or hosted PAGESPEED_API_KEY)
