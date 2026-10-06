@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPanel';
 import { validateAuditTargetUrl } from '../services/audit/auditTargetUrl';
-import { buildGuestScoutSummary, liveDataUnavailableCopy } from '../services/audit/guestScoutSummary';
+import { buildGuestScoutSummary, liveDataUnavailableCopy, shouldGenerateAuditReport } from '../services/audit/guestScoutSummary';
 import { hostedProviderKeyDecision } from '../services/apiClient';
 import { hostedAuthRecoveryHint, hostedScoutPreRunCopy, resolveHostedScoutRail } from '../services/audit/hostedScoutRail';
 import { hostedAuthSkipError } from '../services/resilience/hostedAuthCircuit';
@@ -194,6 +194,95 @@ describe('signed-in degraded copy', () => {
     }));
     expect(html).toContain('Live search or page fetch did not run');
     expect(html.toLowerCase()).not.toContain('sign in');
+  });
+});
+
+describe('audit report LLM gate', () => {
+  it('skips the report for a guest degraded run', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 0,
+      serpCount: 0,
+      findings: [],
+      errors: ['provider_auth_failed'],
+      hostedRail: 'byok_or_signin',
+    });
+    expect(summary.degraded).toBe(true);
+    expect(shouldGenerateAuditReport(true, summary, 'not_measured')).toBe(false);
+  });
+
+  it('generates the report for a guest run that was measured', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'measured',
+      citationRatePercent: 12,
+      shareOfVoiceScore: 20,
+      healthScore: 80,
+      scrapedPageCount: 1,
+      serpCount: 4,
+      findings: [{ title: 'Add Organization schema' }],
+      hostedRail: 'byok_or_signin',
+    });
+    expect(summary.degraded).toBe(false);
+    expect(shouldGenerateAuditReport(true, summary, 'measured')).toBe(true);
+  });
+
+  it('generates the report for a signed-in run that was measured', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'measured',
+      citationRatePercent: 12,
+      shareOfVoiceScore: 20,
+      healthScore: 80,
+      scrapedPageCount: 1,
+      serpCount: 4,
+      findings: [{ title: 'Add Organization schema' }],
+      hostedRail: 'signed_in_hosted',
+    });
+    expect(summary.badges.find((badge) => badge.label === 'Citation rate')?.value).toBe('12%');
+    expect(shouldGenerateAuditReport(false, summary, 'measured')).toBe(true);
+  });
+
+  it('skips the report for a signed-in run that was not measured', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com/pricing',
+      measurementStatus: 'not_measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 0,
+      serpCount: 0,
+      findings: [],
+      errors: ['Firecrawl HTTP 401'],
+      hostedRail: 'signed_in_hosted',
+    });
+    expect(summary.degraded).toBe(true);
+    expect(summary.evidenceEmpty).toBe(true);
+    expect(summary.badges.every((badge) => badge.status === 'not_measured' && !badge.value)).toBe(true);
+    expect(JSON.stringify(summary)).not.toMatch(/\d+%/);
+    expect(shouldGenerateAuditReport(false, summary, 'not_measured')).toBe(false);
+  });
+
+  it('skips the report when a signed-in run is degraded by an empty search', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured',
+      citationRatePercent: 45,
+      shareOfVoiceScore: 43,
+      healthScore: 73,
+      scrapedPageCount: 1,
+      serpCount: 0,
+      findings: [],
+      errors: ['provider_auth_failed'],
+      hostedRail: 'signed_in_hosted',
+    });
+    expect(summary.degraded).toBe(true);
+    expect(summary.badges.every((badge) => badge.status === 'not_measured' && !badge.value)).toBe(true);
+    expect(shouldGenerateAuditReport(false, summary, 'not_measured')).toBe(false);
   });
 });
 

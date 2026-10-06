@@ -362,8 +362,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (seq !== runSeq.current) return;
 
       // 2. Generate full enriched report.
-      // Guest degraded runs stay on the honest summary. The full report model
-      // can still invent citation language when providers returned nothing.
+      // Degraded runs stay on the honest summary for guests and signed-in sessions.
+      // The report model can invent citation language when nothing was measured.
       const result = await generateAuditReportUnlessDegraded({
         isGuest,
         summary,
