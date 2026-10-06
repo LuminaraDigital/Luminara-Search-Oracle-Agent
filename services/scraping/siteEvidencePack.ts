@@ -11,6 +11,8 @@
  */
 
 import { configService } from '../configService';
+import { clientHasHostedIdentity } from '../apiClient';
+import { hostedAuthRecoveryHint } from '../audit/hostedScoutRail';
 import { hostedAuthBlocked } from '../resilience/hostedAuthCircuit';
 import { contentDistiller } from './contentDistiller';
 import { firecrawlService } from './firecrawlService';
@@ -140,7 +142,7 @@ export class SiteEvidencePackService {
 
     if (hostedAuthBlocked()) {
       warnings.push(
-        'Live data unavailable after a provider authentication failure. Add your own key in Settings or sign in. Further hosted provider calls were skipped.',
+        `Live data unavailable after a provider authentication failure. ${hostedAuthRecoveryHint({ signedIn: clientHasHostedIdentity() })} Further hosted provider calls were skipped.`,
       );
       return this.finalize({
         rootUrl,

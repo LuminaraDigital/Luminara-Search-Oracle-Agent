@@ -11,10 +11,11 @@
  */
 
 import { configService } from '../configService';
-import { formatPageFetchClause, hostedProviderDecisionReason } from '../apiClient';
+import { clientHasHostedIdentity, formatPageFetchClause, hostedProviderDecisionReason } from '../apiClient';
 import { patchrightClient } from './patchrightClient';
 import { firecrawlService } from './firecrawlService';
 import { hostedAuthBlocked, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
+import { hostedAuthRecoveryHint } from '../audit/hostedScoutRail';
 import { contentDistiller, DistilledContentResult } from './contentDistiller';
 import { githubCitabilityService } from './githubCitabilityService';
 
@@ -138,7 +139,7 @@ export class UnifiedScraperService {
     // A 401/403 opens the run circuit. Do not call sibling Firecrawl map/crawl from here.
     let firecrawlSkipNote: string | undefined;
     if (hostedAuthBlocked()) {
-      lastError = 'Firecrawl skipped after an authentication failure. Add your own key in Settings or sign in.';
+      lastError = `Firecrawl skipped after an authentication failure. ${hostedAuthRecoveryHint({ signedIn: clientHasHostedIdentity() })}`;
     } else if (providerPref === 'firecrawl' || (providerPref === 'auto' && configService.getFirecrawlKey())) {
       try {
         const fcRes = await firecrawlService.scrapeUrl(url, ['markdown', 'html']);

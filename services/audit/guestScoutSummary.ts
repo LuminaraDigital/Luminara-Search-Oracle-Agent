@@ -4,7 +4,7 @@
  */
 import { isProviderDecisionRecord } from '../apiClient';
 import type { LlmCrawlerCheck, LlmCrawlerReport } from './llmCrawlerReadiness';
-import type { HostedScoutRail } from './hostedScoutRail';
+import { hostedAuthRecoveryHint, type HostedScoutRail } from './hostedScoutRail';
 import { teaserFailureCodes, teaserFailureLine, type TeaserFailureCode } from './teaserFailureCodes';
 
 export type EvidenceBadgeStatus = 'measured' | 'estimated' | 'not_measured';
@@ -31,7 +31,7 @@ export interface GuestScoutSummary {
   evidenceEmpty: boolean;
   /** True when metrics must not be shown as live measurements. */
   degraded: boolean;
-  /** Set when the run cannot show live scores. Includes the BYOK or sign-in step. */
+  /** Set when the run cannot show live scores. Wording follows hostedRail. */
   banner?: string;
 }
 
@@ -57,8 +57,13 @@ function hostLabel(targetUrl: string): string {
   return host || 'this site';
 }
 
-export const LIVE_DATA_UNAVAILABLE_COPY =
-  'Live data unavailable. Sample / not measured. Add your own keys in Settings, or sign in.';
+/** Degraded Instant Audit banner. Signed-in and Telegram rails never ask the user to sign in. */
+export function liveDataUnavailableCopy(hostedRail: HostedScoutRail): string {
+  if (hostedRail === 'byok_or_signin') {
+    return 'Live data unavailable. Sample / not measured. Add your own keys in Settings, or sign in.';
+  }
+  return `Live search or page fetch did not run. ${hostedAuthRecoveryHint({ rail: hostedRail })}`;
+}
 
 const DEGRADED_FAILURE_CODES = new Set<string>(['provider_failed', 'search_empty', 'page_fetch_empty']);
 
@@ -180,6 +185,6 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     failureCodes,
     evidenceEmpty,
     degraded,
-    banner: degraded ? LIVE_DATA_UNAVAILABLE_COPY : undefined,
+    banner: degraded ? liveDataUnavailableCopy(input.hostedRail) : undefined,
   };
 }

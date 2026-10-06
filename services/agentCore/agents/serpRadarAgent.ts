@@ -9,8 +9,9 @@
 import { tavilyService } from '../../search/tavilyService';
 import { localSerpService } from '../../search/localSerpService';
 import { configService } from '../../configService';
-import { formatSearchSkipReason, hostedProviderDecisionReason } from '../../apiClient';
+import { clientHasHostedIdentity, formatSearchSkipReason, hostedProviderDecisionReason } from '../../apiClient';
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
+import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
 import { isSampleSearchRow } from '../auditEvidenceGate';
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { BusinessDNA } from '../../../types';
@@ -59,7 +60,7 @@ export class SerpRadarAgent {
         agentRole: 'serp_radar',
         agentName: this.name,
         phase: 'radar_complete',
-        message: 'Search providers skipped after an authentication failure. Citation rate and share of voice were not measured. Add your own key in Settings or sign in.',
+        message: `Search providers skipped after an authentication failure. Citation rate and share of voice were not measured. ${hostedAuthRecoveryHint({ signedIn: clientHasHostedIdentity() })}`,
         status: 'completed',
         evidenceSnippet: 'No live search snippets. Citation rate is not measured.',
       });
