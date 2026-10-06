@@ -1,9 +1,13 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPanel';
 import { validateAuditTargetUrl } from '../services/audit/auditTargetUrl';
-import { buildGuestScoutSummary, liveDataUnavailableCopy, shouldGenerateAuditReport } from '../services/audit/guestScoutSummary';
+import { buildGuestScoutSummary, liveDataUnavailableCopy, plainScoutVerdict, shouldGenerateAuditReport } from '../services/audit/guestScoutSummary';
+import { executiveTranslatorAgent } from '../services/agentCore/agents/executiveTranslatorAgent';
+import type { AuditFinding } from '../services/agentCore/types';
+import { renderMarkdown } from '../utils/markdown';
+import * as markdownUtils from '../utils/markdown';
 import { hostedProviderKeyDecision } from '../services/apiClient';
 import { hostedAuthRecoveryHint, hostedScoutPreRunCopy, resolveHostedScoutRail } from '../services/audit/hostedScoutRail';
 import { hostedAuthSkipError } from '../services/resilience/hostedAuthCircuit';
@@ -120,6 +124,127 @@ describe('guest scout summary honesty', () => {
     expect(liveDataUnavailableCopy('byok_or_signin')).toMatch(/sign in/i);
     expect(hostedAuthRecoveryHint({ rail: 'byok_or_signin' })).toMatch(/sign in/i);
     expect(hostedAuthRecoveryHint({ signedIn: false })).toMatch(/sign in/i);
+  });
+
+  it('keeps the full measured brief for the card and a plain verdict for share', async () => {
+    const finding: AuditFinding = {
+      id: 'org',
+      category: 'schema',
+      severity: 'critical',
+      title: 'Missing Organization',
+      description: 'No Organization node on the homepage.',
+      evidenceSource: 'homepage',
+      howWeKnowItFailed: 'No JSON-LD Organization node.',
+      leadingIndicator: 'entity',
+      criticVerified: true,
+      criticConfidence: 0.9,
+    };
+    const brief = await executiveTranslatorAgent.execute(
+      'https://seamossvibes.com.au',
+      75,
+      56,
+      [finding],
+      [],
+      null,
+      () => {},
+    );
+    const actionThree = '3. **Add an AI Navigation Guide (`llms.txt`):** Help AI bots find your most important products without getting lost in menu links.';
+    expect(brief).toContain(actionThree);
+    expect(brief.length).toBeGreaterThan(600);
+    expect(brief.indexOf('without getting lost in menu links.')).toBeGreaterThan(600);
+
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://seamossvibes.com.au',
+      measurementStatus: 'measured',
+      citationRatePercent: 56,
+      shareOfVoiceScore: 61,
+      healthScore: 75,
+      scrapedPageCount: 4,
+      serpCount: 9,
+      findings: [{ title: 'Missing Organization / Brand Entity Schema' }],
+      plainEnglishBrief: brief,
+      hostedRail: 'signed_in_hosted',
+    });
+
+    expect(summary.degraded).toBe(false);
+    expect(summary.verdictMarkdown).toBe(brief.trim());
+    expect(summary.verdictMarkdown.length).toBeGreaterThan(600);
+    expect(summary.verdictMarkdown).toContain(actionThree);
+    expect(summary.verdictMarkdown.endsWith('competitors.')).toBe(true);
+    expect(summary.verdict).not.toMatch(/#{2,}/);
+    expect(summary.verdict).not.toContain('**');
+    expect(summary.verdict).not.toContain('__');
+    expect(summary.verdict).toContain('without getting lost in menu links.');
+    expect(summary.verdict).toContain('Add an AI Navigation Guide (llms.txt)');
+    expect(summary.verdict).toContain('Bottom Line:');
+    expect(summary.verdict).not.toMatch(/(^|\s)\*[A-Za-z]/);
+    expect(plainScoutVerdict(summary.verdict)).toBe(summary.verdict);
+
+    const collapsed = brief.replace(/\s+/g, ' ').trim().slice(0, 600);
+    expect(collapsed).not.toContain('without getting lost in menu links.');
+    expect(plainScoutVerdict(collapsed)).not.toMatch(/#{2,}/);
+    expect(plainScoutVerdict(collapsed)).not.toContain('**');
+
+    const spy = vi.spyOn(markdownUtils, 'renderMarkdown');
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
+    expect(spy).toHaveBeenCalledWith(summary.verdictMarkdown);
+    expect(html).toContain('markdown-content');
+    expect(html).toContain('scout-brief');
+    expect(html).not.toContain('###');
+    expect(html).not.toContain('**');
+    expect(html).not.toContain('<script');
+    spy.mockRestore();
+  });
+
+  it('does not put a translator brief on a degraded card', () => {
+    const brief = [
+      '### What This Means',
+      '',
+      'Right now the score is **75/100** and citations are **56%**.',
+      '',
+      '1. **Claim Your Brand Identity:** Add the tag.',
+      '2. **Answer Customer Questions Directly:** Write the answers.',
+      '3. **Add an AI Navigation Guide:** This third action must stay off the card.',
+    ].join('\n');
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'measured',
+      citationRatePercent: 56,
+      shareOfVoiceScore: 10,
+      healthScore: 75,
+      scrapedPageCount: 1,
+      serpCount: 0,
+      findings: [],
+      errors: ['provider_auth_failed'],
+      plainEnglishBrief: brief,
+      hostedRail: 'signed_in_hosted',
+    });
+    expect(summary.degraded).toBe(true);
+    expect(summary.verdictMarkdown).toBe(summary.verdict);
+    expect(summary.verdictMarkdown).not.toContain('###');
+    expect(summary.verdictMarkdown).not.toContain('**');
+    expect(summary.verdictMarkdown).not.toContain('75/100');
+    expect(summary.verdictMarkdown).not.toContain('56%');
+    expect(summary.verdictMarkdown).not.toContain('third action');
+    expect(summary.badges.every((badge) => badge.status === 'not_measured' && !badge.value)).toBe(true);
+    expect(summary.verdict).toMatch(/not measured/i);
+    expect(summary.banner).toMatch(/provider status/i);
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
+    expect(html).toContain('provider status');
+    expect(html).not.toContain('75/100');
+    expect(html).not.toContain('56%');
+    expect(html).not.toContain('**');
+    expect(html).not.toContain('What This Means');
+    expect(html).not.toContain('third action');
+  });
+
+  it('does not return raw markup from renderMarkdown without a DOM sanitizer', () => {
+    const dirty = '### Ok\n\n<script>alert(1)</script>\n\n<img src=x onerror="alert(1)">\n\n**bold**';
+    const html = renderMarkdown(dirty);
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('onerror');
+    expect(html).not.toContain('**');
+    expect(html).not.toContain('###');
   });
 });
 

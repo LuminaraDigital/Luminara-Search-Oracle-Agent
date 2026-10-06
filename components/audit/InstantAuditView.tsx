@@ -26,7 +26,7 @@ import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services
 import { Button } from '../ui/Button';
 import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
 import { SuiteCitabilityChecklist } from './SuiteCitabilityChecklist';
-import { buildGuestScoutSummary, isDegradedScout, shouldGenerateAuditReport, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { buildGuestScoutSummary, isDegradedScout, plainScoutVerdict, shouldGenerateAuditReport, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
 import { hostedScoutPreRunCopy, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import { canMintTeaserShare, createShareTeaser } from '../../services/share/shareReportClient';
@@ -454,7 +454,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (canMintTeaserShare()) {
         const minted = await createShareTeaser({
           domain: scoutSummary.domain,
-          verdict: scoutSummary.verdict,
+          verdict: plainScoutVerdict(scoutSummary.verdict),
           topFix: scoutSummary.topFix,
           evidenceNote: scoutSummary.evidenceUsed,
           badges: scoutSummary.badges.map((badge) => ({
@@ -476,7 +476,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       } else if (mode === 'share') {
         setShareNote('Public teaser links need Telegram or a signed-in session. Sharing the Mini App link instead.');
       }
-      const text = `${scoutSummary.verdict} Next: ${scoutSummary.topFix}`;
+      const text = `${plainScoutVerdict(scoutSummary.verdict)} Next: ${scoutSummary.topFix}`;
       if (mode === 'copy') {
         try {
           await navigator.clipboard.writeText(`${text}\n${url}`);
