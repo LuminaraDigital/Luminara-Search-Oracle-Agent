@@ -73,12 +73,23 @@ export async function generateAuditReportUnlessDegraded(input: {
   targetFocus: ReportFocus;
   dna: BusinessDNA | null;
   lenses: AuditLens[];
+  scrapedPages?: AuditStateGraphContext['scrapedPages'];
+  serpEvidence?: AuditStateGraphContext['serpEvidence'];
 }): Promise<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null> {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
   }
   await ensureHostedProviderReady();
-  return geminiService.generateAuditReport(input.formattedUrl, input.targetFocus, input.dna, input.lenses);
+  return geminiService.generateAuditReport(
+    input.formattedUrl,
+    input.targetFocus,
+    input.dna,
+    input.lenses,
+    {
+      scrapedPages: input.scrapedPages,
+      serpEvidence: input.serpEvidence,
+    },
+  );
 }
 
 function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
@@ -361,6 +372,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         targetFocus,
         dna,
         lenses,
+        scrapedPages: crewResult.scrapedPages,
+        serpEvidence: crewResult.serpEvidence,
       });
       if (seq !== runSeq.current) return;
       if (!result) {
