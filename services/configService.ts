@@ -13,6 +13,10 @@ export interface ProviderStatus {
 }
 
 import { canUseHostedProviderKey, isSidecarConfiguredOnServer, loadServerHealth, providerFetch, sidecarFetch } from './apiClient';
+import { isDesktopShell } from './desktop/desktopShell';
+
+/** Default sidecar origin for the desktop app and pages served from localhost. */
+const LOCAL_SIDECAR_DEFAULT = 'http://localhost:3001';
 import { toUserFacingText } from '../utils/userFacingText';
 import {
   CHAT_MODEL_PREF_KEY,
@@ -168,8 +172,58 @@ export class ConfigService {
     this.setKey('luminara_sitewide_max_pages', String(clamped));
   }
 
+  private readOptionalUrl(storageKey: string, envKey: string, viteKey: string): string {
+    try {
+      return this.getKey(storageKey, envKey, viteKey).key.trim();
+    } catch {
+      return '';
+    }
+  }
+
+  /** Scraper URL saved in Settings or baked in via VITE_PATCHRIGHT_URL. Empty when unset. */
+  public getConfiguredPatchrightUrl(): string {
+    return this.readOptionalUrl('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL');
+  }
+
+  /** Local SERP URL saved in Settings or baked in via VITE_LOCAL_SERP_URL. Empty when unset. */
+  public getConfiguredLocalSerpUrl(): string {
+    return this.readOptionalUrl('luminara_local_serp_url', 'LOCAL_SERP_URL', 'VITE_LOCAL_SERP_URL');
+  }
+
+  private isLoopbackHostname(hostname: string | undefined | null): boolean {
+    const host = (hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }
+
+  /** True when this page was served from the developer's machine. */
+  public isPageServedLocally(): boolean {
+    try {
+      if (typeof window === 'undefined' || !window.location) return false;
+      return this.isLoopbackHostname(window.location.hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Local scraper / SERP sidecars may be contacted only for the desktop app,
+   * a page served from localhost, or an explicit scraper / local-search URL.
+   * Hosted luminarasuite.com with empty Settings must not assume localhost:3001.
+   */
+  public isLocalSidecarAllowed(): boolean {
+    if (isDesktopShell()) return true;
+    if (this.isPageServedLocally()) return true;
+    if (this.getConfiguredPatchrightUrl() || this.getConfiguredLocalSerpUrl()) return true;
+    return false;
+  }
+
+  private implicitLocalSidecarUrl(): string {
+    if (isDesktopShell() || this.isPageServedLocally()) return LOCAL_SIDECAR_DEFAULT;
+    return '';
+  }
+
   public getPatchrightUrl(): string {
-    return this.getKey('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL').key || 'http://localhost:3001';
+    return this.getConfiguredPatchrightUrl() || this.implicitLocalSidecarUrl();
   }
 
   public setPatchrightUrl(url: string): void {
@@ -177,7 +231,7 @@ export class ConfigService {
   }
 
   public getLocalSerpUrl(): string {
-    return this.getKey('luminara_local_serp_url', 'LOCAL_SERP_URL', 'VITE_LOCAL_SERP_URL').key || this.getPatchrightUrl() || 'http://localhost:3001';
+    return this.getConfiguredLocalSerpUrl() || this.getConfiguredPatchrightUrl() || this.implicitLocalSidecarUrl();
   }
 
   public setLocalSerpUrl(url: string): void {
@@ -185,13 +239,15 @@ export class ConfigService {
   }
 
   public isLocalSerpEnabled(): boolean {
+    // A stale luminara_local_serp_enabled=true is not enough on hosted web.
+    if (!this.isLocalSidecarAllowed()) return false;
     try {
       if (typeof window !== 'undefined' || typeof localStorage !== 'undefined') {
         const stored = localStorage.getItem('luminara_local_serp_enabled');
         if (stored !== null) return stored === 'true';
       }
-    } catch {}
-    return true; // Enabled by default as an additive zero-key fallback
+    } catch { /* ignore */ }
+    return true;
   }
 
   public setLocalSerpEnabled(enabled: boolean): void {
@@ -613,7 +669,14 @@ export class ConfigService {
   }
 
   public async testPatchright(): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const url = this.getPatchrightUrl();
+    const url = this.getPatchrightUrl().trim();
+    if (!url) {
+      return {
+        success: false,
+        message: 'Set a runner URL in Settings. Hosted web does not call localhost until you save one.',
+        latencyMs: 0,
+      };
+    }
     const start = Date.now();
     try {
       const controller = new AbortController();
@@ -633,7 +696,14 @@ export class ConfigService {
   }
 
   public async testLocalSerp(): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const url = this.getLocalSerpUrl();
+    const url = this.getLocalSerpUrl().trim();
+    if (!url) {
+      return {
+        success: false,
+        message: 'Set a sidecar URL in Settings. Hosted web does not call localhost until you save one.',
+        latencyMs: 0,
+      };
+    }
     const start = Date.now();
     try {
       const controller = new AbortController();

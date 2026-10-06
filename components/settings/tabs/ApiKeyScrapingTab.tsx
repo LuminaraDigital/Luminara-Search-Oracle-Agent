@@ -69,13 +69,13 @@ export const ApiKeyScrapingTab: React.FC<ApiKeyScrapingTabProps> = ({
           onChange={e => setCrawlerProvider(e.target.value as any)}
           className="w-full bg-black/70 border border-white/15 focus:border-gold rounded-xl px-3 py-2 text-xs text-white focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
         >
-          <option value="auto">Auto-Resolve (Patchright Stealth → Firecrawl → Jina Fallback)</option>
+          <option value="auto">Auto-Resolve (local crawler when configured, then Firecrawl, then Jina)</option>
           <option value="patchright">Patchright Stealth Runner (Local / Docker Sidecar)</option>
           <option value="firecrawl">Firecrawl Managed Cloud API</option>
           <option value="jina">Jina Reader (Direct Zero-Key Fallback)</option>
         </select>
         <p className="text-[10px] text-gray-400">
-          Auto-resolve prioritizes the zero-cost local stealth crawler, then falls back to Firecrawl and direct reading.
+          Auto-resolve uses the local stealth crawler in the desktop app, on localhost, or after you save a runner URL. On hosted luminarasuite.com, leave the URL blank and audits use Firecrawl or Jina.
         </p>
       </div>
 
@@ -140,7 +140,7 @@ export const ApiKeyScrapingTab: React.FC<ApiKeyScrapingTabProps> = ({
             className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           />
           <p className="text-[10px] text-gray-400 mt-1">
-            Connects to your local or Docker container running AST-patched stealth Chromium (evades Cloudflare Turnstile & DataDome).
+            Self-hosters: save the crawler URL here (usually http://localhost:3001). Hosted web does not call localhost until this field is saved. The desktop app and local dev still default to that address.
           </p>
         </div>
 
