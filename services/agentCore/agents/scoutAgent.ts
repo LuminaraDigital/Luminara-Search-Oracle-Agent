@@ -8,8 +8,9 @@
 
 import { siteEvidencePackService } from '../../scraping/siteEvidencePack';
 import { unifiedScraperService, type ScrapedPageEvidence as ProviderPage } from '../../scraping/unifiedScraper';
-import { formatFirecrawlSkipDetail, hostedProviderDecisionReason } from '../../apiClient';
+import { clientHasHostedIdentity, formatFirecrawlSkipDetail, hostedProviderDecisionReason } from '../../apiClient';
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
+import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
 import { AgentActivityEvent, ScrapedPageEvidence } from '../types';
 
 function withFallbackNote(message: string, note: string): string {
@@ -96,7 +97,7 @@ export class ScoutAgent {
         agentName: this.name,
         phase: 'crawling_complete',
         message: hostedAuthBlocked()
-          ? 'Page fetch failed. On-page evidence not measured. Add your own key in Settings or sign in.'
+          ? `Page fetch failed. On-page evidence not measured. ${hostedAuthRecoveryHint({ signedIn: clientHasHostedIdentity() })}`
           : withFallbackNote('Page fetch failed. On-page evidence not measured.', skipDetail),
         status: 'completed',
         evidenceSnippet: 'Scraper returned no page text, headings, or schema.',

@@ -343,7 +343,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   // Run-scoped: after the first hosted 401/403, skip later /api/providers calls.
   // workerFetchWithAuthRetry still refreshes a Firebase token once on the first 401.
   if (hostedAuthBlocked()) {
-    return hostedAuthCircuitResponse();
+    return hostedAuthCircuitResponse(clientHasHostedIdentity());
   }
 
   const headers = new Headers(init.headers || {});

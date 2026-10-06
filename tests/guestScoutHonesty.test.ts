@@ -3,9 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPanel';
 import { validateAuditTargetUrl } from '../services/audit/auditTargetUrl';
-import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
+import { buildGuestScoutSummary, liveDataUnavailableCopy } from '../services/audit/guestScoutSummary';
 import { hostedProviderKeyDecision } from '../services/apiClient';
-import { hostedScoutPreRunCopy, resolveHostedScoutRail } from '../services/audit/hostedScoutRail';
+import { hostedAuthRecoveryHint, hostedScoutPreRunCopy, resolveHostedScoutRail } from '../services/audit/hostedScoutRail';
+import { hostedAuthSkipError } from '../services/resilience/hostedAuthCircuit';
+import { instantAuditPersistHint } from '../components/audit/InstantAuditView';
+import { ReportDisplay } from '../components/audit/ReportDisplay';
 import { evaluateLlmCrawlerReadiness } from '../services/audit/llmCrawlerReadiness';
 import { playbookAuditorAgent } from '../services/agentCore/agents/playbookAuditorAgent';
 
@@ -88,6 +91,36 @@ describe('guest scout summary honesty', () => {
     expect(html).not.toContain('45');
     expect(html).not.toContain('73');
   });
+
+  it('never tells a signed-in rail to sign in when live data is unavailable', () => {
+    for (const hostedRail of ['signed_in_hosted', 'tma_hosted'] as const) {
+      const copy = liveDataUnavailableCopy(hostedRail);
+      const summary = buildGuestScoutSummary({
+        targetUrl: 'https://example.com',
+        measurementStatus: 'not_measured',
+        citationRatePercent: null,
+        shareOfVoiceScore: null,
+        healthScore: null,
+        scrapedPageCount: 0,
+        serpCount: 0,
+        findings: [],
+        errors: ['Firecrawl HTTP 401'],
+        hostedRail,
+      });
+      expect(copy.toLowerCase()).not.toContain('sign in');
+      expect(summary.banner).toBe(copy);
+      expect(JSON.stringify(summary).toLowerCase()).not.toContain('sign in');
+      expect(summary.banner).toMatch(/Settings → provider status/);
+      const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
+      expect(html.toLowerCase()).not.toContain('sign in');
+    }
+  });
+
+  it('keeps a sign-in step on the guest degraded banner', () => {
+    expect(liveDataUnavailableCopy('byok_or_signin')).toMatch(/sign in/i);
+    expect(hostedAuthRecoveryHint({ rail: 'byok_or_signin' })).toMatch(/sign in/i);
+    expect(hostedAuthRecoveryHint({ signedIn: false })).toMatch(/sign in/i);
+  });
 });
 
 describe('Instant Audit public target', () => {
@@ -106,7 +139,12 @@ describe('hosted scout rail', () => {
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: true })).toBe('signed_in_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: false })).toBe('byok_or_signin');
     expect(hostedScoutPreRunCopy('byok_or_signin').toLowerCase()).toContain('anonymous');
+    expect(hostedScoutPreRunCopy('byok_or_signin')).toMatch(/sign in/i);
     expect(hostedScoutPreRunCopy('tma_hosted').toLowerCase()).toContain('no api key');
+    expect(hostedScoutPreRunCopy('signed_in_hosted').toLowerCase()).not.toContain('sign in');
+    expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: false })).toMatch(/off for this session/i);
+    expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: false }).toLowerCase()).not.toContain('sign in');
+    expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: true })).toMatch(/daily free allowance/);
   });
 
   it('refuses free hosted keys without identity', () => {
@@ -128,6 +166,34 @@ describe('hosted scout rail', () => {
       paidPlan: false,
       hasIdentity: true,
     })).toBe(false);
+  });
+});
+
+describe('signed-in degraded copy', () => {
+  it('does not tell a signed-in user to sign in when strategy was not saved', () => {
+    expect(instantAuditPersistHint(true, 'unsaved').toLowerCase()).not.toContain('sign in');
+    expect(instantAuditPersistHint(true, 'unmeasured').toLowerCase()).not.toContain('sign in');
+    expect(instantAuditPersistHint(false, 'unsaved')).toMatch(/Sign in to save a project/);
+    expect(instantAuditPersistHint(false, 'unmeasured')).toMatch(/Sign in to save a project/);
+  });
+
+  it('drops the sign-in suffix from hosted auth skips when the session exists', () => {
+    expect(hostedAuthSkipError(true).toLowerCase()).not.toContain('sign in');
+    expect(hostedAuthSkipError(true)).toMatch(/provider status/);
+    expect(hostedAuthSkipError(false)).toMatch(/or sign in/);
+    expect(hostedAuthRecoveryHint({ rail: 'signed_in_hosted' }).toLowerCase()).not.toContain('sign in');
+    expect(hostedAuthRecoveryHint({ rail: 'tma_hosted' }).toLowerCase()).not.toContain('sign in');
+  });
+
+  it('hides the sign-in banner on a signed-in report that was not measured', () => {
+    const html = renderToStaticMarkup(createElement(ReportDisplay, {
+      markdownText: 'Scout notes without a live score.',
+      hideAgencyActions: true,
+      suppressLiveMetrics: true,
+      hostedRail: 'signed_in_hosted',
+    }));
+    expect(html).toContain('Live search or page fetch did not run');
+    expect(html.toLowerCase()).not.toContain('sign in');
   });
 });
 
