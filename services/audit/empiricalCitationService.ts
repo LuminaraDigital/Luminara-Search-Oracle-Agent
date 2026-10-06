@@ -33,6 +33,13 @@ export interface EmpiricalCitationSummary {
   measurementStatus?: 'measured' | 'not_measured';
 }
 
+/** Search rows already in hand. Scoring them does not call a search provider. */
+export interface PrefetchedCitationGroup {
+  query: string;
+  intent: QueryIntent;
+  results: Array<{ url: string; title: string; content: string }>;
+}
+
 export class EmpiricalCitationService {
   private static instance: EmpiricalCitationService;
 
@@ -70,107 +77,75 @@ export class EmpiricalCitationService {
   }
 
   /**
-   * Samples live search results and substring-matches the brand or domain.
-   * The result is an estimate: no page is re-fetched and nothing is verified.
+   * Scores search rows already collected (for example SERP Radar).
+   * Same substring estimate as the live probe: no page is re-fetched and nothing is verified.
+   * Does not call Tavily or the local SERP sidecar. Empty input stays not_measured.
    */
-  public async probeDomainCitations(
+  public summarizePrefetchedCitations(
     targetUrl: string,
-    brandName?: string,
+    brandName: string | undefined,
     knownCompetitors: string[] = [],
-    customQueries?: Array<{ query: string; intent: QueryIntent }>
-  ): Promise<EmpiricalCitationSummary> {
+    groups: PrefetchedCitationGroup[] = [],
+  ): EmpiricalCitationSummary {
     const targetDomain = extractDomain(targetUrl) || targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
     const brand = (brandName && brandName.trim()) || targetDomain.split('.')[0];
-    const queriesToTest = customQueries && customQueries.length > 0 
-      ? customQueries 
-      : this.generateTestQueries(targetDomain, brand);
-
     const evidenceList: EmpiricalEvidence[] = [];
     const competitorCounts: Record<string, number> = {};
 
-    for (const item of queriesToTest) {
-      try {
-        const tavilyKey = configService.getTavilyKey();
-        let results: Array<{ url: string; title: string; content: string }> = [];
+    for (const item of groups) {
+      const results = item.results || [];
+      if (results.length === 0) continue;
 
-        if (tavilyKey) {
-          const searchRes = await tavilyService.search(item.query, { maxResults: 6 });
-          results = searchRes.results || [];
+      let brandCited = false;
+      let brandRank: number | null = null;
+      let citedUrl: string | null = null;
+      let snippet = '';
+      const competitorsFound: string[] = [];
+
+      results.forEach((res, idx) => {
+        const resDomain = extractDomain(res.url);
+        const contentLower = (res.content + ' ' + res.title).toLowerCase();
+        const brandLower = brand.toLowerCase();
+        const targetDomainLower = targetDomain.toLowerCase();
+
+        const isMatch = (resDomain && resDomain.includes(targetDomainLower)) ||
+                        contentLower.includes(targetDomainLower) ||
+                        contentLower.includes(brandLower);
+
+        if (isMatch && !brandCited) {
+          brandCited = true;
+          brandRank = idx + 1;
+          citedUrl = res.url;
+          snippet = res.content ? res.content.slice(0, 240) + '...' : res.title;
         }
 
-        // Additive zero-key / quota fallback: Local SERP scraper
-        if (results.length === 0 && configService.isLocalSerpEnabled()) {
-          try {
-            const serpRes = await localSerpService.search(item.query, { num: 6 });
-            if (serpRes.results?.length) {
-              results = serpRes.results.map(r => ({ url: r.url, title: r.title, content: r.snippet }));
+        knownCompetitors.forEach(comp => {
+          if (comp && contentLower.includes(comp.toLowerCase())) {
+            if (!competitorsFound.includes(comp)) {
+              competitorsFound.push(comp);
+              competitorCounts[comp] = (competitorCounts[comp] || 0) + 1;
             }
-          } catch {
-            // Non-blocking fallback
           }
-        }
-
-        let brandCited = false;
-        let brandRank: number | null = null;
-        let citedUrl: string | null = null;
-        let snippet = '';
-        const competitorsFound: string[] = [];
-
-        if (results.length > 0) {
-          results.forEach((res, idx) => {
-            const resDomain = extractDomain(res.url);
-            const contentLower = (res.content + ' ' + res.title).toLowerCase();
-            const brandLower = brand.toLowerCase();
-            const targetDomainLower = targetDomain.toLowerCase();
-
-            // Check if brand is cited or ranks
-            const isMatch = (resDomain && resDomain.includes(targetDomainLower)) ||
-                            contentLower.includes(targetDomainLower) ||
-                            contentLower.includes(brandLower);
-
-            if (isMatch && !brandCited) {
-              brandCited = true;
-              brandRank = idx + 1;
-              citedUrl = res.url;
-              snippet = res.content ? res.content.slice(0, 240) + '...' : res.title;
-            }
-
-            // Check known competitors
-            knownCompetitors.forEach(comp => {
-              if (comp && contentLower.includes(comp.toLowerCase())) {
-                if (!competitorsFound.includes(comp)) {
-                  competitorsFound.push(comp);
-                  competitorCounts[comp] = (competitorCounts[comp] || 0) + 1;
-                }
-              }
-            });
-          });
-        }
-
-        if (results.length === 0) {
-          continue;
-        }
-
-        if (!brandCited) {
-          snippet = `Not cited in top ${results.length} search results. Leading citation: "${results[0].title}" (${results[0].url})`;
-        }
-
-        evidenceList.push({
-          id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          query: item.query,
-          intent: item.intent,
-          targetDomain,
-          brandCited,
-          brandRank,
-          citedUrl,
-          snippet,
-          competitorsCited: competitorsFound,
-          citationConfidence: brandCited ? (brandRank === 1 ? 95 : Math.max(60, 90 - (brandRank || 5) * 5)) : 20,
-          timestamp: Date.now(),
         });
-      } catch (err) {
-        console.warn(`[EmpiricalCitationService] Failed probe for query: ${item.query}`, err);
+      });
+
+      if (!brandCited) {
+        snippet = `Not cited in top ${results.length} search results. Leading citation: "${results[0].title}" (${results[0].url})`;
       }
+
+      evidenceList.push({
+        id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        query: item.query,
+        intent: item.intent,
+        targetDomain,
+        brandCited,
+        brandRank,
+        citedUrl,
+        snippet,
+        competitorsCited: competitorsFound,
+        citationConfidence: brandCited ? (brandRank === 1 ? 95 : Math.max(60, 90 - (brandRank || 5) * 5)) : 20,
+        timestamp: Date.now(),
+      });
     }
 
     const queriesCitedCount = evidenceList.filter(e => e.brandCited).length;
@@ -213,6 +188,56 @@ export class EmpiricalCitationService {
       lastAudited: Date.now(),
       measurementStatus: 'measured',
     };
+  }
+
+  /**
+   * Samples live search results and substring-matches the brand or domain.
+   * The result is an estimate: no page is re-fetched and nothing is verified.
+   */
+  public async probeDomainCitations(
+    targetUrl: string,
+    brandName?: string,
+    knownCompetitors: string[] = [],
+    customQueries?: Array<{ query: string; intent: QueryIntent }>
+  ): Promise<EmpiricalCitationSummary> {
+    const targetDomain = extractDomain(targetUrl) || targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
+    const brand = (brandName && brandName.trim()) || targetDomain.split('.')[0];
+    const queriesToTest = customQueries && customQueries.length > 0
+      ? customQueries
+      : this.generateTestQueries(targetDomain, brand);
+
+    const groups: PrefetchedCitationGroup[] = [];
+
+    for (const item of queriesToTest) {
+      try {
+        const tavilyKey = configService.getTavilyKey();
+        let results: Array<{ url: string; title: string; content: string }> = [];
+
+        if (tavilyKey) {
+          const searchRes = await tavilyService.search(item.query, { maxResults: 6 });
+          results = searchRes.results || [];
+        }
+
+        // Additive zero-key / quota fallback: Local SERP scraper
+        if (results.length === 0 && configService.isLocalSerpEnabled()) {
+          try {
+            const serpRes = await localSerpService.search(item.query, { num: 6 });
+            if (serpRes.results?.length) {
+              results = serpRes.results.map(r => ({ url: r.url, title: r.title, content: r.snippet }));
+            }
+          } catch {
+            // Non-blocking fallback
+          }
+        }
+
+        if (results.length === 0) continue;
+        groups.push({ query: item.query, intent: item.intent, results });
+      } catch (err) {
+        console.warn(`[EmpiricalCitationService] Failed probe for query: ${item.query}`, err);
+      }
+    }
+
+    return this.summarizePrefetchedCitations(targetUrl, brandName, knownCompetitors, groups);
   }
 }
 
