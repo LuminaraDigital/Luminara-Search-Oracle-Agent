@@ -26,6 +26,7 @@ function toCrewPage(p: ProviderPage, fallbackUrl: string): ScrapedPageEvidence {
     wordCount: markdown.trim() ? markdown.trim().split(/\s+/).filter(Boolean).length : 0,
     loadTimeMs: p.latencyMs,
     rawTextSnippet: markdown ? markdown.slice(0, 1500) : '',
+    source: p.providerUsed,
   };
 }
 

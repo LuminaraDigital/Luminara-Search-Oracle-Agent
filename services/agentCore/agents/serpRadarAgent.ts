@@ -10,6 +10,7 @@ import { tavilyService } from '../../search/tavilyService';
 import { localSerpService } from '../../search/localSerpService';
 import { configService } from '../../configService';
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
+import { isSampleSearchRow } from '../auditEvidenceGate';
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { BusinessDNA } from '../../../types';
 
@@ -122,8 +123,10 @@ export class SerpRadarAgent {
       }
     }
 
-    const totalItems = serpEvidence.length;
-    const mentionedItems = serpEvidence.filter((e) => e.brandMentioned).length;
+    const sawSample = serpEvidence.some((row) => isSampleSearchRow(row));
+    const liveEvidence = serpEvidence.filter((row) => !isSampleSearchRow(row));
+    const totalItems = liveEvidence.length;
+    const mentionedItems = liveEvidence.filter((e) => e.brandMentioned).length;
     const citationRatePercent = totalItems > 0 ? Math.round((mentionedItems / totalItems) * 100) : null;
     const shareOfVoiceScore =
       citationRatePercent == null
@@ -138,7 +141,9 @@ export class SerpRadarAgent {
       phase: 'radar_complete',
       message:
         citationRatePercent == null
-          ? `Analyzed 0 SERP results. Citation rate and share of voice were not measured.`
+          ? sawSample
+            ? 'Analyzed 0 SERP results. Citation rate and share of voice were not measured. Search evidence was a sample.'
+            : 'Analyzed 0 SERP results. Citation rate and share of voice were not measured.'
           : `Analyzed ${totalItems} SERP results. Empirical citation rate: ${citationRatePercent}%, Share-of-Voice: ${shareOfVoiceScore}/100.`,
       status: 'completed',
       evidenceSnippet:
@@ -149,7 +154,7 @@ export class SerpRadarAgent {
     });
 
     return {
-      serpEvidence,
+      serpEvidence: liveEvidence,
       citationRatePercent,
       shareOfVoiceScore,
     };

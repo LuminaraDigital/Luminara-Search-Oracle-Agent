@@ -19,14 +19,13 @@ import {
   deriveAuditMeasurement,
   memorySyncPlan,
 } from '../../services/agentCore/crewOrchestrator';
-import type { AgentActivityEvent, AgentRole, ScrapedPageEvidence } from '../../services/agentCore/types';
+import type { AgentActivityEvent, AgentRole, ScrapedPageEvidence, SerpEvidenceItem } from '../../services/agentCore/types';
 import { empiricalCitationService } from '../../services/audit/empiricalCitationService';
 import { buildGuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { geminiService } from '../../services/geminiService';
 import { configService } from '../../services/configService';
 import { mem0MemoryEngine } from '../../services/agentCore/mem0MemoryEngine';
-import { classifyProviderFailure } from '../../services/resilience/failureClassification';
-import { noteHostedAuthFailure, resetHostedAuthCircuit } from '../../services/resilience/hostedAuthCircuit';
+import { hostedAuthBlocked, noteHostedAuthFailure, resetHostedAuthCircuit } from '../../services/resilience/hostedAuthCircuit';
 import { firecrawlService } from '../../services/scraping/firecrawlService';
 import { patchrightClient } from '../../services/scraping/patchrightClient';
 import { siteEvidencePackService } from '../../services/scraping/siteEvidencePack';
@@ -35,6 +34,30 @@ import { localSerpService } from '../../services/search/localSerpService';
 import { tavilyService } from '../../services/search/tavilyService';
 
 const noop = () => {};
+
+function livePage(partial: Partial<ScrapedPageEvidence> = {}): ScrapedPageEvidence {
+  return {
+    url: 'https://example.com',
+    title: 'Example',
+    h1s: ['Example'],
+    schemasFound: [{ type: 'Organization', rawJson: '{}', isValid: true }],
+    wordCount: 400,
+    rawTextSnippet: 'Example publishes enough product detail for a real page audit.',
+    source: 'patchright',
+    ...partial,
+  };
+}
+
+function liveSerp(brandMentioned = true): SerpEvidenceItem {
+  return {
+    query: 'example official',
+    engine: 'tavily',
+    title: 'Example official site',
+    url: 'https://example.com/about',
+    snippet: 'Example publishes product detail.',
+    brandMentioned,
+  };
+}
 
 function installHostedWeb(storage: Record<string, string> = {}): void {
   const store: Record<string, string> = { ...storage };
@@ -173,17 +196,197 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(text).not.toMatch(/\/100/);
   });
 
-  it('scores health when a scraped page has real content', async () => {
-    const page: ScrapedPageEvidence = {
-      url: 'https://example.com',
-      title: 'Example',
-      h1s: ['Example'],
-      schemasFound: [{ type: 'Organization', rawJson: '{}', isValid: true }],
-      wordCount: 400,
-      rawTextSnippet: 'Example publishes enough product detail for a real page audit.',
-    };
-    const result = await playbookAuditorAgent.execute('AEO', [page], [], null, noop);
+  it('does not invent a 73 health score when search evidence is empty', async () => {
+    const events: { message: string }[] = [];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({ schemasFound: [] })],
+      [],
+      null,
+      (event) => {
+        events.push(event);
+      },
+    );
+    expect(result.healthScore).toBeNull();
+    const text = events.map((event) => event.message).join(' ');
+    expect(text).toContain('not measured');
+    expect(text).not.toMatch(/\/100/);
+    expect(text).not.toContain('73');
+    expect(missionControlCardBadge('completed', text)).toBe('not_measured');
+    const withSchema = await playbookAuditorAgent.execute('AEO', [livePage()], [], null, noop);
+    expect(withSchema.healthScore).toBeNull();
+  });
+
+  it('does not invent a 73 health score from Jina-only page text', async () => {
+    const events: AgentActivityEvent[] = [];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({
+        url: 'https://seamossvibes.com.au',
+        title: 'Sea Moss Vibes',
+        schemasFound: [],
+        wordCount: 420,
+        source: 'jina',
+        rawTextSnippet: 'Sea moss product copy returned by a reader fallback with no JSON-LD.',
+      })],
+      [],
+      null,
+      (event) => {
+        events.push(event);
+      },
+    );
+    expect(result.healthScore).toBeNull();
+    expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(false);
+    const text = events.map((event) => event.message).join(' ');
+    expect(text).toContain('Jina-only');
+    expect(text).toContain('not measured');
+    expect(text).not.toMatch(/\/100/);
+    expect(text).not.toContain('73');
+    const html = renderToStaticMarkup(createElement(AgentMissionControl, {
+      events,
+      isComplete: true,
+      measurementStatus: 'not_measured',
+    }));
+    expect(html).toContain('Not measured');
+    expect(html).toContain('Jina-only');
+    expect(html).not.toMatch(/\/100/);
+    expect(html).not.toContain('73');
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://seamossvibes.com.au',
+      measurementStatus: 'not_measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: result.healthScore,
+      scrapedPageCount: 1,
+      serpCount: 0,
+      findings: result.findings.map((finding) => ({ title: finding.title })),
+      hostedRail: 'byok_or_signin',
+    });
+    expect(summary.badges.find((badge) => badge.label === 'Page health')).toEqual({
+      label: 'Page health',
+      status: 'not_measured',
+    });
+    expect(JSON.stringify(summary)).not.toContain('73');
+
+    const withLiveSearch = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({
+        url: 'https://seamossvibes.com.au',
+        schemasFound: [],
+        wordCount: 420,
+        source: 'jina',
+        rawTextSnippet: 'Sea moss product copy returned by a reader fallback with no JSON-LD.',
+      })],
+      [liveSerp()],
+      null,
+      noop,
+    );
+    expect(withLiveSearch.healthScore).toBeNull();
+    expect(withLiveSearch.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(false);
+  });
+
+  it('does not invent health, citation, or share of voice from SAMPLE search rows', async () => {
+    vi.spyOn(configService, 'getTavilyKey').mockReturnValue('test-key');
+    vi.spyOn(tavilyService, 'search').mockImplementation(async (query: string) => ({
+      query,
+      results: [{
+        title: 'SAMPLE competitor',
+        url: 'https://other.example/why-SAMPLE',
+        content: 'why-SAMPLE fixture, not a live result',
+        score: 0.4,
+      }],
+    }));
+    const serpEvents: { message: string }[] = [];
+    const serp = await serpRadarAgent.execute('example.com', null, (event) => {
+      serpEvents.push(event);
+    });
+    expect(serp.serpEvidence).toEqual([]);
+    expect(serp.citationRatePercent).toBeNull();
+    expect(serp.shareOfVoiceScore).toBeNull();
+    const serpText = serpEvents.map((event) => event.message).join(' ');
+    expect(serpText).toContain('not measured');
+    expect(serpText).not.toMatch(/Share-of-Voice: \d+/);
+    expect(serpText).not.toMatch(/\d+%/);
+
+    const events: { message: string }[] = [];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({ schemasFound: [] })],
+      [{
+        ...liveSerp(false),
+        sample: true,
+        title: 'SAMPLE result',
+        url: 'https://other.example/why-SAMPLE',
+        snippet: 'why-SAMPLE fixture',
+      }],
+      null,
+      (event) => {
+        events.push(event);
+      },
+    );
+    expect(result.healthScore).toBeNull();
+    const text = events.map((event) => event.message).join(' ');
+    expect(text).toContain('not measured');
+    expect(text).not.toMatch(/\/100/);
+    expect(text).not.toContain('73');
+  });
+
+  it('scores health when a live scrape and live search are both present', async () => {
+    const result = await playbookAuditorAgent.execute('AEO', [livePage()], [liveSerp()], null, noop);
     expect(result.healthScore).toBe(85);
+  });
+
+  it('still applies a real schema penalty when live scrape and live search are both present', async () => {
+    const events: { message: string }[] = [];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({ schemasFound: [] })],
+      [liveSerp()],
+      null,
+      (event) => {
+        events.push(event);
+      },
+    );
+    expect(result.healthScore).toBe(73);
+    expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(true);
+    expect(events.map((event) => event.message).join(' ')).toContain('73/100');
+  });
+
+  it('keeps a connection-refused Jina fallback from inventing a health score', async () => {
+    vi.spyOn(siteEvidencePackService, 'buildPack').mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:3001'));
+    vi.spyOn(unifiedScraperService, 'scrapeAndDistill').mockResolvedValue({
+      success: true,
+      providerUsed: 'jina',
+      url: 'https://seamossvibes.com.au',
+      statusCode: 200,
+      title: 'Sea Moss Vibes',
+      description: '',
+      markdown: 'Sea moss gel for daily drinks. '.repeat(40),
+      distilled: {
+        title: 'Sea Moss Vibes',
+        description: '',
+        openGraph: {},
+        schemas: [],
+        schemaTypes: [],
+        headings: [],
+        distilledText: 'Sea moss gel for daily drinks.',
+        formattedEvidence: '',
+        stats: { rawChars: 200, distilledChars: 40, compressionRatio: 0.2 },
+      },
+      formattedEvidence: '',
+      latencyMs: 30,
+    });
+    const pages = await scoutAgent.execute('https://seamossvibes.com.au', noop);
+    expect(pages).toHaveLength(1);
+    expect(pages[0]?.source).toBe('jina');
+    expect(hostedAuthBlocked()).toBe(false);
+    const events: { message: string }[] = [];
+    const result = await playbookAuditorAgent.execute('AEO', pages, [], null, (event) => {
+      events.push(event);
+    });
+    expect(result.healthScore).toBeNull();
+    expect(events.map((event) => event.message).join(' ')).not.toMatch(/\/100/);
+    expect(events.map((event) => event.message).join(' ')).not.toContain('73');
   });
 
   it('does not pretend a failed scrape discovered a page', async () => {

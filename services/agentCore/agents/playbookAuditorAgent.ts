@@ -15,6 +15,12 @@ import {
   type LlmCrawlerReport,
   type LlmCrawlerSnapshot,
 } from '../../audit/llmCrawlerReadiness';
+import {
+  healthScoreBlockReason,
+  liveSearchRows,
+  pageSupportsHealthScore,
+  unmeasuredHealthMessage,
+} from '../auditEvidenceGate';
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 
 export class PlaybookAuditorAgent {
@@ -43,13 +49,31 @@ export class PlaybookAuditorAgent {
     const llmCrawler = crawlerSnapshot
       ? evaluateLlmCrawlerReadiness(crawlerSnapshot)
       : unevaluatedLlmCrawlerReport();
-    const hasPageEvidence = scrapedPages.some(
-      (p) => p.wordCount > 0 || p.schemasFound.length > 0 || (p.rawTextSnippet || '').trim().length > 0,
-    );
-    const hasSerpEvidence = serpEvidence.length > 0;
+    const livePages = scrapedPages.filter(pageSupportsHealthScore);
+    const liveSerp = liveSearchRows(serpEvidence);
 
-    const brandMentions = serpEvidence.filter((s) => s.brandMentioned).length;
-    if (hasSerpEvidence && brandMentions === 0) {
+    // Hosted 401/403 still blocks every numeric score. Jina-only text, empty search,
+    // and SAMPLE rows do too: they are not enough to mint a /100 health score.
+    const blockReason = healthScoreBlockReason({
+      pages: scrapedPages,
+      serp: serpEvidence,
+      authBlocked: hostedAuthBlocked(),
+    });
+    if (blockReason === 'auth') {
+      emit({
+        id: `auditor-unmeasured-${Date.now()}`,
+        timestamp: Date.now(),
+        agentRole: 'playbook_auditor',
+        agentName: this.name,
+        phase: 'audit_complete',
+        message: unmeasuredHealthMessage('auth'),
+        status: 'completed',
+      });
+      return { findings: [], healthScore: null, llmCrawler };
+    }
+
+    const brandMentions = liveSerp.filter((s) => s.brandMentioned).length;
+    if (liveSerp.length > 0 && brandMentions === 0) {
       findings.push({
         id: 'finding-zero-citations',
         category: 'citations',
@@ -57,91 +81,84 @@ export class PlaybookAuditorAgent {
         title: 'Weak Generative Search Footprint in Live SERP',
         description: 'Zero third-party search results or AI overview summaries currently cite the brand directly for category queries.',
         evidenceSource: 'SERP Radar live search probe',
-        howWeKnowItFailed: `0 out of ${serpEvidence.length} search snippets mentioned the brand.`,
+        howWeKnowItFailed: `0 out of ${liveSerp.length} search snippets mentioned the brand.`,
         leadingIndicator: 'Publishing entity-grounded comparison pages increases AI Overview citation rate.',
         criticVerified: false,
         criticConfidence: 0.85,
       });
     }
 
-    // Health stays null unless scraped page evidence exists and the run is not globally degraded.
-    // A provider 401/403 must not mint a heuristic base score from a partial page.
-    const globallyDegraded = hostedAuthBlocked();
-    if (!hasPageEvidence || globallyDegraded) {
+    // Schema and thin-content findings come from live scrapes only.
+    // Jina markdown cannot prove a missing entity, so it never starts the 85-minus-penalty formula.
+    if (livePages.length > 0) {
+      const allSchemas = livePages.flatMap((p) => p.schemasFound);
+      const schemaTypes = new Set(allSchemas.map((s) => s.type.toLowerCase()));
+
+      if (!schemaTypes.has('organization') && !schemaTypes.has('corporation') && !schemaTypes.has('localbusiness')) {
+        findings.push({
+          id: 'finding-schema-org',
+          category: 'schema',
+          severity: 'critical',
+          title: 'Missing Organization / Brand Entity Schema',
+          description: 'No Schema.org Organization markup was detected on primary pages. AI answer engines (ChatGPT, Perplexity) rely on this entity root for brand authority verification.',
+          evidenceSource: 'DOM Scrape JSON-LD inspection',
+          howWeKnowItFailed: 'Zero schema blocks with @type "Organization" or "Corporation" in page HTML.',
+          leadingIndicator: 'Direct knowledge graph attribution and entity disambiguation in AI Overviews.',
+          criticVerified: false,
+          criticConfidence: 0.9,
+        });
+      }
+
+      if (schemaTypes.has('howto')) {
+        findings.push({
+          id: 'finding-deprecated-howto',
+          category: 'schema',
+          severity: 'medium',
+          title: 'Deprecated HowTo Schema Detected',
+          description: 'Google officially deprecated HowTo rich results for desktop and mobile. Continuing to rely on HowTo schema yields zero SERP visibility boost.',
+          evidenceSource: 'Schema.org Playbook Rule',
+          howWeKnowItFailed: 'Presence of @type "HowTo" in structured data.',
+          leadingIndicator: 'Deprecation cleanup prevents crawler budget waste.',
+          criticVerified: false,
+          criticConfidence: 0.95,
+        });
+      }
+
+      const lowWordCountPages = livePages.filter((p) => p.wordCount > 0 && p.wordCount < 250);
+      if (lowWordCountPages.length > 0) {
+        findings.push({
+          id: 'finding-thin-content',
+          category: 'content_quality',
+          severity: 'high',
+          title: 'Thin Content Detected on Critical Landing Page(s)',
+          description: `${lowWordCountPages.length} scanned page(s) contain fewer than 250 words, presenting insufficient semantic depth for LLM retrieval.`,
+          evidenceSource: 'Scout DOM word count counter',
+          howWeKnowItFailed: `Pages: ${lowWordCountPages.map((p) => p.url).join(', ')} have < 250 words.`,
+          leadingIndicator: 'Increasing informational density expands chunk indexing in RAG pipelines.',
+          criticVerified: false,
+          criticConfidence: 0.88,
+        });
+      }
+    }
+
+    if (blockReason) {
       emit({
         id: `auditor-unmeasured-${Date.now()}`,
         timestamp: Date.now(),
         agentRole: 'playbook_auditor',
         agentName: this.name,
         phase: 'audit_complete',
-        message: globallyDegraded
-          ? 'Compliance audit finished. Health score not measured: live data unavailable after a provider authentication failure.'
-          : hasSerpEvidence
-            ? 'Compliance audit finished. Health score not measured: no page evidence.'
-            : 'Compliance audit finished. Health score not measured: no page or search evidence.',
+        message: unmeasuredHealthMessage(blockReason),
         status: 'completed',
       });
-      return { findings: globallyDegraded ? [] : findings, healthScore: null, llmCrawler };
+      return { findings, healthScore: null, llmCrawler };
     }
 
     let baseScore = 85;
     if (findings.some((f) => f.id === 'finding-zero-citations')) baseScore -= 15;
-
-    // 1. Audit Schemas across scraped pages
-    const allSchemas = scrapedPages.flatMap((p) => p.schemasFound);
-    const schemaTypes = new Set(allSchemas.map((s) => s.type.toLowerCase()));
-
-    // Rule: Organization schema
-    if (!schemaTypes.has('organization') && !schemaTypes.has('corporation') && !schemaTypes.has('localbusiness')) {
-      baseScore -= 12;
-      findings.push({
-        id: 'finding-schema-org',
-        category: 'schema',
-        severity: 'critical',
-        title: 'Missing Organization / Brand Entity Schema',
-        description: 'No Schema.org Organization markup was detected on primary pages. AI answer engines (ChatGPT, Perplexity) rely on this entity root for brand authority verification.',
-        evidenceSource: 'DOM Scrape JSON-LD inspection',
-        howWeKnowItFailed: 'Zero schema blocks with @type "Organization" or "Corporation" in page HTML.',
-        leadingIndicator: 'Direct knowledge graph attribution and entity disambiguation in AI Overviews.',
-        criticVerified: false,
-        criticConfidence: 0.9,
-      });
-    }
-
-    // Rule: Deprecated HowTo or FAQPage
-    if (schemaTypes.has('howto')) {
-      baseScore -= 5;
-      findings.push({
-        id: 'finding-deprecated-howto',
-        category: 'schema',
-        severity: 'medium',
-        title: 'Deprecated HowTo Schema Detected',
-        description: 'Google officially deprecated HowTo rich results for desktop and mobile. Continuing to rely on HowTo schema yields zero SERP visibility boost.',
-        evidenceSource: 'Schema.org Playbook Rule',
-        howWeKnowItFailed: 'Presence of @type "HowTo" in structured data.',
-        leadingIndicator: 'Deprecation cleanup prevents crawler budget waste.',
-        criticVerified: false,
-        criticConfidence: 0.95,
-      });
-    }
-
-    // 2. Technical & Content Quality
-    const lowWordCountPages = scrapedPages.filter((p) => p.wordCount > 0 && p.wordCount < 250);
-    if (lowWordCountPages.length > 0) {
-      baseScore -= 8;
-      findings.push({
-        id: 'finding-thin-content',
-        category: 'content_quality',
-        severity: 'high',
-        title: 'Thin Content Detected on Critical Landing Page(s)',
-        description: `${lowWordCountPages.length} scanned page(s) contain fewer than 250 words, presenting insufficient semantic depth for LLM retrieval.`,
-        evidenceSource: 'Scout DOM word count counter',
-        howWeKnowItFailed: `Pages: ${lowWordCountPages.map((p) => p.url).join(', ')} have < 250 words.`,
-        leadingIndicator: 'Increasing informational density expands chunk indexing in RAG pipelines.',
-        criticVerified: false,
-        criticConfidence: 0.88,
-      });
-    }
+    if (findings.some((f) => f.id === 'finding-schema-org')) baseScore -= 12;
+    if (findings.some((f) => f.id === 'finding-deprecated-howto')) baseScore -= 5;
+    if (findings.some((f) => f.id === 'finding-thin-content')) baseScore -= 8;
 
     const healthScore = Math.max(20, Math.min(100, baseScore));
 
