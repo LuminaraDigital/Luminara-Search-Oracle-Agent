@@ -2,6 +2,8 @@
 
 Luminara can use [FreeLLMAPI](https://github.com/tashfeenahmed/freellmapi) as a **personal / self-host OpenAI-compatible gateway**. This is not the multi-tenant production brain for luminarasuite.com. Hosted Worker keys (Groq/NIM/etc.) stay unchanged.
 
+Hosted luminarasuite.com does not call the default `http://localhost:3001/v1` until you save a different base URL. The desktop app and a page served from localhost still use that default when the field is empty.
+
 ## What you get
 
 | Goal | How |

@@ -67,22 +67,25 @@ export class OllamaNativeProvider extends BaseAIProvider {
       };
     }
 
-    // 1. Probe local or remote Ollama daemon at configured endpoint
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1200);
-      const res = await fetch(`${endpoint}/api/tags`, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        const models = (data.models || []).map((m: any) => m.name || m.model).filter(Boolean);
-        this.cachedIsLocal = true;
-        this.cachedModels = models;
-        this.lastProbeTime = now;
-        return { available: true, isLocal: true, endpoint, models };
+    // 1. Probe local or remote Ollama only when this page may reach it.
+    // Hosted luminarasuite.com skips the implicit 127.0.0.1:11434 timeout.
+    if (configService.isOllamaDaemonProbeAllowed()) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1200);
+        const res = await fetch(`${endpoint}/api/tags`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          const models = (data.models || []).map((m: any) => m.name || m.model).filter(Boolean);
+          this.cachedIsLocal = true;
+          this.cachedModels = models;
+          this.lastProbeTime = now;
+          return { available: true, isLocal: true, endpoint, models };
+        }
+      } catch {
+        // Local not running or blocked by CORS
       }
-    } catch {
-      // Local not running or blocked by CORS
     }
 
     // 2. Cloud Ollama (BYOK or hosted with an active plan) - list every available model
