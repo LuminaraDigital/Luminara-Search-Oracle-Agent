@@ -31,6 +31,7 @@ import { ReportFocus, BusinessDNA } from '../../types';
 import { unevaluatedLlmCrawlerReport } from '../audit/llmCrawlerReadiness';
 import { probeLlmCrawlerReadiness } from '../audit/llmCrawlerProbe';
 import { hostedAuthBlocked, resetHostedAuthCircuit } from '../resilience/hostedAuthCircuit';
+import { liveSearchRows, pageSupportsHealthScore } from './auditEvidenceGate';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
 
@@ -157,10 +158,8 @@ export function criticStartMessage(hasLiveEvidence: boolean): string {
 }
 
 function contextHasLiveEvidence(ctx: AuditStateGraphContext): boolean {
-  const pageEvidence = ctx.scrapedPages.some(
-    (p) => p.wordCount > 0 || p.schemasFound.length > 0 || (p.rawTextSnippet || '').trim().length > 0,
-  );
-  return pageEvidence || ctx.serpEvidence.length > 0;
+  const pageEvidence = ctx.scrapedPages.some(pageSupportsHealthScore);
+  return pageEvidence || liveSearchRows(ctx.serpEvidence).length > 0;
 }
 
 export function createInitialAuditContext(
