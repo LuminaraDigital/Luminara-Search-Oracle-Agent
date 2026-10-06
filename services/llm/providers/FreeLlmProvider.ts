@@ -37,12 +37,20 @@ export class FreeLlmProvider extends BaseAIProvider {
     return configService.getFreeLlmKey();
   }
 
+  private requireBaseUrl(): string {
+    const base = configService.getFreeLlmBaseUrl();
+    if (!base) {
+      throw new Error('FreeLLMAPI base URL is not set. Save a non-default URL in Settings. Hosted web does not call localhost:3001 until then.');
+    }
+    return base;
+  }
+
   private chatUrl(): string {
-    return `${configService.getFreeLlmBaseUrl()}/chat/completions`;
+    return `${this.requireBaseUrl()}/chat/completions`;
   }
 
   async isAvailable(): Promise<boolean> {
-    return Boolean(this.getActiveApiKey());
+    return Boolean(this.getActiveApiKey() && configService.getFreeLlmBaseUrl());
   }
 
   async generateText(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {

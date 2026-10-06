@@ -206,6 +206,47 @@ export class ConfigService {
   }
 
   /**
+   * Desktop shell or a page served from loopback.
+   * Hosted luminarasuite.com is neither, so implicit localhost LLM defaults stay off.
+   * A saved scraper URL (isLocalSidecarAllowed) does not count: crawler settings must not turn on Ollama or FreeLLM.
+   */
+  public isImplicitLocalLlmAllowed(): boolean {
+    return isDesktopShell() || this.isPageServedLocally();
+  }
+
+  /** Implicit Ollama daemon: loopback port 11434 with no path. A saved copy is not a custom endpoint. */
+  private isDefaultOllamaDaemonUrl(endpoint: string): boolean {
+    try {
+      const url = new URL(endpoint);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+      const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+      if (port !== '11434') return false;
+      const path = (url.pathname || '/').replace(/\/+$/, '') || '/';
+      if (path !== '/') return false;
+      if (url.search || url.hash) return false;
+      return this.isLoopbackHostname(url.hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Implicit FreeLLMAPI base: loopback port 3001 path /v1. A saved copy is not a custom base. */
+  private isDefaultFreeLlmBaseUrl(endpoint: string): boolean {
+    try {
+      const url = new URL(endpoint);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+      const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+      if (port !== '3001') return false;
+      const path = (url.pathname || '/').replace(/\/+$/, '') || '/';
+      if (path !== '/v1') return false;
+      if (url.search || url.hash) return false;
+      return this.isLoopbackHostname(url.hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Local scraper / SERP sidecars may be contacted only for the desktop app,
    * a page served from localhost, or an explicit scraper / local-search URL.
    * Hosted luminarasuite.com with empty Settings must not assume localhost:3001.
@@ -373,7 +414,14 @@ export class ConfigService {
   }
 
   public setOllamaEndpoint(endpoint: string): void {
-    this.setKey('luminara_ollama_endpoint', endpoint);
+    const cleaned = (endpoint || '').trim().replace(/\/+$/, '');
+    // Saving the implicit default from the prefilled Settings field must not
+    // opt hosted web back into the 127.0.0.1:11434 probe.
+    if (!cleaned || this.isDefaultOllamaDaemonUrl(cleaned)) {
+      this.clearKey('luminara_ollama_endpoint');
+      return;
+    }
+    this.setKey('luminara_ollama_endpoint', cleaned);
   }
 
   public getOpenRouterKey(): string {
@@ -394,17 +442,34 @@ export class ConfigService {
   }
 
   /**
-   * OpenAI-compatible base URL for FreeLLMAPI (default local sidecar).
-   * Includes the `/v1` suffix, e.g. `http://localhost:3001/v1`.
+   * Saved or env-baked FreeLLMAPI base, including a stored copy of the local default.
+   * Empty when unset. Callers that should skip the implicit localhost default use getFreeLlmBaseUrl.
    */
-  public getFreeLlmBaseUrl(): string {
+  public getConfiguredFreeLlmBaseUrl(): string {
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('luminara_freellm_base_url');
-      if (stored && stored.trim()) return stored.trim().replace(/\/+$/, '');
+      try {
+        const stored = localStorage.getItem('luminara_freellm_base_url');
+        if (stored && stored.trim()) return stored.trim().replace(/\/+$/, '');
+      } catch { /* ignore */ }
     }
     const envVal = this.readEnv('FREELLM_BASE_URL', 'VITE_FREELLM_BASE_URL');
     if (envVal && envVal.trim()) return envVal.trim().replace(/\/+$/, '');
-    return 'http://localhost:3001/v1';
+    return '';
+  }
+
+  /**
+   * OpenAI-compatible base URL for FreeLLMAPI.
+   * Includes the `/v1` suffix when set, e.g. `http://localhost:3001/v1`.
+   * The implicit localhost:3001 default is used only for the desktop app or a page served locally.
+   * Hosted web returns empty until a non-default base URL is saved.
+   */
+  public getFreeLlmBaseUrl(): string {
+    const configured = this.getConfiguredFreeLlmBaseUrl();
+    if (configured && (this.isImplicitLocalLlmAllowed() || !this.isDefaultFreeLlmBaseUrl(configured))) {
+      return configured;
+    }
+    if (this.isImplicitLocalLlmAllowed()) return 'http://localhost:3001/v1';
+    return '';
   }
 
   public setFreeLlmBaseUrl(url: string): void {
@@ -831,28 +896,32 @@ export class ConfigService {
 
   public async testOllama(overrideEndpoint?: string, overrideKey?: string): Promise<{ success: boolean; isLocal: boolean; message: string; latencyMs: number; models?: string[] }> {
     const start = Date.now();
-    const targetEndpoint = (overrideEndpoint && overrideEndpoint.trim()) ? overrideEndpoint.trim().replace(/\/+$/, '') : this.getOllamaEndpoint();
-    // 1. Probe local/remote Ollama daemon at configured endpoint
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch(`${targetEndpoint}/api/tags`, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      const latencyMs = Date.now() - start;
-      if (res.ok) {
-        const data = await res.json();
-        const models = parseOllamaTagsList(data);
-        const hostName = targetEndpoint.includes('127.0.0.1') || targetEndpoint.includes('localhost') ? 'Local' : targetEndpoint;
-        return {
-          success: true,
-          isLocal: true,
-          message: `Connected to ${hostName} Ollama (${models.length} model${models.length === 1 ? '' : 's'} installed)`,
-          latencyMs,
-          models,
-        };
+    const explicitEndpoint = Boolean(overrideEndpoint && overrideEndpoint.trim());
+    const targetEndpoint = explicitEndpoint ? overrideEndpoint!.trim().replace(/\/+$/, '') : this.getOllamaEndpoint();
+    // 1. Probe local/remote Ollama daemon. Automatic calls (no override) follow the
+    // same hosted skip as OllamaNativeProvider.probeStatus. An explicit Ping still runs.
+    if (explicitEndpoint || this.isOllamaDaemonProbeAllowed()) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(`${targetEndpoint}/api/tags`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const latencyMs = Date.now() - start;
+        if (res.ok) {
+          const data = await res.json();
+          const models = parseOllamaTagsList(data);
+          const hostName = targetEndpoint.includes('127.0.0.1') || targetEndpoint.includes('localhost') ? 'Local' : targetEndpoint;
+          return {
+            success: true,
+            isLocal: true,
+            message: `Connected to ${hostName} Ollama (${models.length} model${models.length === 1 ? '' : 's'} installed)`,
+            latencyMs,
+            models,
+          };
+        }
+      } catch {
+        // Local/remote endpoint not running or blocked by CORS, proceed to check Ollama Cloud
       }
-    } catch {
-      // Local/remote endpoint not running or blocked by CORS, proceed to check Ollama Cloud
     }
 
     // 2. Check Ollama Cloud via Worker BYOK (or hosted) when a cloud key / plan is available
@@ -929,12 +998,29 @@ export class ConfigService {
     return 'http://127.0.0.1:11434';
   }
 
-  public getOllamaEndpoint(): string {
-    if (typeof window !== 'undefined') {
+  /** Saved Ollama base. Empty when the user has not stored one. */
+  public getConfiguredOllamaEndpoint(): string {
+    if (typeof window === 'undefined') return '';
+    try {
       const custom = localStorage.getItem('luminara_ollama_endpoint');
-      if (custom && custom.trim()) return custom.trim();
-    }
-    return this.getOllamaLocalEndpoint();
+      if (custom && custom.trim()) return custom.trim().replace(/\/+$/, '');
+    } catch { /* ignore */ }
+    return '';
+  }
+
+  /**
+   * Probe the local Ollama daemon only for the desktop app, a page served locally,
+   * or a saved endpoint other than the implicit 127.0.0.1:11434 default.
+   * Hosted luminarasuite.com must not spend the tags timeout on that default.
+   */
+  public isOllamaDaemonProbeAllowed(): boolean {
+    if (this.isImplicitLocalLlmAllowed()) return true;
+    const configured = this.getConfiguredOllamaEndpoint();
+    return Boolean(configured) && !this.isDefaultOllamaDaemonUrl(configured);
+  }
+
+  public getOllamaEndpoint(): string {
+    return this.getConfiguredOllamaEndpoint() || this.getOllamaLocalEndpoint();
   }
 
   public async testOpenRouter(overrideKey?: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
@@ -1015,6 +1101,13 @@ export class ConfigService {
     const key = this.getFreeLlmKey();
     if (!key) return { success: false, message: 'No FreeLLMAPI unified key found', latencyMs: 0 };
     const base = this.getFreeLlmBaseUrl();
+    if (!base) {
+      return {
+        success: false,
+        message: 'No FreeLLMAPI base URL. Hosted web does not call localhost:3001 until you save a non-default URL. Desktop and local dev use http://localhost:3001/v1.',
+        latencyMs: 0,
+      };
+    }
     const start = Date.now();
     try {
       const controller = new AbortController();
