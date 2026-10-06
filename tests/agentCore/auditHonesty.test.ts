@@ -622,6 +622,11 @@ describe('Instant Audit degraded provider failures', () => {
     expect(loopbackCalls).toEqual([]);
     expect(localScrape).not.toHaveBeenCalled();
 
+    const decision = events.find((event) => event.phase === 'provider_decisions');
+    expect(decision?.message).toMatch(/Page fetch:/);
+    expect(decision?.message).toMatch(/Search/);
+    expect(result.errors.some((err) => err.startsWith('provider_decisions '))).toBe(true);
+
     const joined = events.map((event) => event.message).join('\n');
     expect(joined).not.toMatch(/Synced \d+ autonomous memory/);
     expect(joined).not.toMatch(/production-grade/i);

@@ -54,6 +54,21 @@ describe('siteEvidencePackService', () => {
     expect(pack.discovery.source).toBe('homepage_only');
   });
 
+  it('keeps one Firecrawl skip note from the homepage scrape', async () => {
+    vi.spyOn(configService, 'getSitewideEvidenceMode').mockReturnValue('off');
+    vi.spyOn(unifiedScraperService, 'scrapeAndDistill').mockResolvedValueOnce({
+      ...mockPage('https://example.com', 'Home', '<html><body><h1>Home</h1></body></html>'),
+      providerUsed: 'jina',
+      fallbackNote: 'Page fetch: Jina (Firecrawl: no identity)',
+    });
+
+    const pack = await siteEvidencePackService.buildPack('https://example.com', { mode: 'off' });
+    expect(pack.warnings.filter((warning) => warning.includes('no identity'))).toEqual([
+      'Page fetch: Jina (Firecrawl: no identity)',
+    ]);
+    expect(pack.formattedEvidence).toContain('Firecrawl: no identity');
+  });
+
   it('expands from homepage links without Firecrawl', async () => {
     const homeHtml = `
       <html><body>

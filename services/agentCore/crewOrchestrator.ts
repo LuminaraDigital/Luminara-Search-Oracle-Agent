@@ -31,7 +31,12 @@ import { ReportFocus, BusinessDNA } from '../../types';
 import { unevaluatedLlmCrawlerReport } from '../audit/llmCrawlerReadiness';
 import { probeLlmCrawlerReadiness } from '../audit/llmCrawlerProbe';
 import { hostedAuthBlocked, resetHostedAuthCircuit } from '../resilience/hostedAuthCircuit';
-import { ensureHostedProviderReady } from '../apiClient';
+import {
+  ensureHostedProviderReady,
+  formatInstantAuditProviderSummary,
+  PROVIDER_DECISIONS_RECORD_PREFIX,
+  providerDecisionsErrorRecord,
+} from '../apiClient';
 import { liveSearchRows, pageSupportsHealthScore } from './auditEvidenceGate';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
@@ -267,8 +272,21 @@ export class CrewOrchestrator {
 
     // Node 1: Scout Crawl
     graph.addNode('scout_node', 'Scout Site Crawl', async (ctx, emit) => {
+      emit({
+        id: `provider-decisions-${Date.now()}`,
+        timestamp: Date.now(),
+        agentRole: 'scout',
+        agentName: CREW_PROFILES.scout.name,
+        phase: 'provider_decisions',
+        message: formatInstantAuditProviderSummary(),
+        status: 'running',
+      });
       const scrapedPages = await scoutAgent.execute(ctx.targetUrl, emit);
-      return { scrapedPages };
+      const record = providerDecisionsErrorRecord();
+      const errors = ctx.errors.some((err) => err.startsWith(PROVIDER_DECISIONS_RECORD_PREFIX))
+        ? ctx.errors
+        : [...ctx.errors, record];
+      return { scrapedPages, errors };
     });
 
     // Node 2: SERP Radar Probe

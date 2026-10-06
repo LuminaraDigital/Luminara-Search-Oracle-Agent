@@ -82,6 +82,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
   }, [events]);
 
   const latestEvent = events.length > 0 ? events[events.length - 1] : null;
+  const providerDecision = events.find((event) => event.phase === 'provider_decisions');
   const completedCount = Object.values(roleStatuses).filter((r) => r.status === 'completed').length;
   const progressPercent = Math.min(100, Math.round((completedCount / 7) * 100));
 
@@ -108,6 +109,9 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
           <p className="text-xs text-slate-400 mt-0.5">
             {missionControlHeadline(isComplete, measurementStatus)}
           </p>
+          {providerDecision && (
+            <p className="text-xs text-slate-200 mt-1">{providerDecision.message}</p>
+          )}
         </div>
 
         {/* Action badge */}
