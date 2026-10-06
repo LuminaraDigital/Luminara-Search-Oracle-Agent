@@ -97,11 +97,13 @@ export class SiteEvidencePackService {
     const maxPages = Math.max(1, Math.min(options.maxPages ?? configService.getSitewideMaxPages(), 12));
     const warnings: string[] = [];
     let upgradeRequired = false;
+    unifiedScraperService.resetFirecrawlSkipNotice();
 
     // 1) Always scrape the root.
     const home = await unifiedScraperService.scrapeAndDistill(rootUrl, {
       maxChars: PER_PAGE_BUDGET.home,
     });
+    if (home.fallbackNote) warnings.push(home.fallbackNote);
 
     // If target is a GitHub repo, finalize immediately with the single repo citability pack.
     if (githubCitabilityService.parseGitHubUrl(rootUrl)) {
@@ -249,6 +251,7 @@ export class SiteEvidencePackService {
     });
 
     for (const res of scraped) {
+      if (res.fallbackNote && !warnings.includes(res.fallbackNote)) warnings.push(res.fallbackNote);
       if (res.success) pages.push(res);
       else if (res.error) warnings.push(`${res.url}: ${res.error}`);
     }

@@ -2,6 +2,7 @@
  * Plain guest (and signed-in) scout summary.
  * Null metrics stay not_measured. This builder never invents a percentage.
  */
+import { isProviderDecisionRecord } from '../apiClient';
 import type { LlmCrawlerCheck, LlmCrawlerReport } from './llmCrawlerReadiness';
 import type { HostedScoutRail } from './hostedScoutRail';
 import { teaserFailureCodes, teaserFailureLine, type TeaserFailureCode } from './teaserFailureCodes';
@@ -143,7 +144,7 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
   const failureCodes = teaserFailureCodes({
     scrapedPageCount: input.scrapedPageCount,
     serpCount: input.serpCount,
-    hadProviderError: (input.errors || []).some((err) => err.trim().length > 0),
+    hadProviderError: (input.errors || []).some((err) => err.trim().length > 0 && !isProviderDecisionRecord(err)),
     crawlerChecks,
   });
   const degraded = isDegradedScout({

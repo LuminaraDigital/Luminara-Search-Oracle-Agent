@@ -485,6 +485,145 @@ export function canUseHostedProviderKey(providerId: string): boolean {
   });
 }
 
+/**
+ * Why Instant Audit will or will not use a provider.
+ * Order matches ConfigService.getKey, then canUseHostedProviderKey:
+ * local/env key, proxy health, Worker provider list, paid plan, signed-in identity.
+ */
+export type HostedProviderDecisionReason =
+  | 'byok'
+  | 'hosted'
+  | 'no_health'
+  | 'not_configured'
+  | 'no_identity'
+  | 'paid_required';
+
+/** Storage and Vite env slots. Keep aligned with ConfigService.getKey accessors. */
+const PROVIDER_BYOK_SLOTS: Record<string, { storageKey: string; viteKey: string }> = {
+  groq: { storageKey: 'luminara_groq_key', viteKey: 'VITE_GROQ_API_KEY' },
+  nim: { storageKey: 'luminara_nvidia_key', viteKey: 'VITE_NVIDIA_API_KEY' },
+  ollama: { storageKey: 'luminara_ollama_key', viteKey: 'VITE_OLLAMA_API_KEY' },
+  openrouter: { storageKey: 'luminara_openrouter_key', viteKey: 'VITE_OPENROUTER_API_KEY' },
+  gemini: { storageKey: 'luminara_api_key', viteKey: 'VITE_GEMINI_API_KEY' },
+  tavily: { storageKey: 'luminara_tavily_key', viteKey: 'VITE_TAVILY_API_KEY' },
+  exa: { storageKey: 'luminara_exa_key', viteKey: 'VITE_EXA_API_KEY' },
+  firecrawl: { storageKey: 'luminara_firecrawl_key', viteKey: 'VITE_FIRECRAWL_API_KEY' },
+};
+
+function readStoredKey(storageKey: string): string {
+  try {
+    if (typeof window === 'undefined') return '';
+    const stored = localStorage.getItem(storageKey);
+    return stored && stored.trim() ? stored.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function readViteKey(viteKey: string): string {
+  try {
+    const env = (import.meta as { env?: Record<string, unknown> }).env;
+    const val = env ? env[viteKey] : '';
+    return typeof val === 'string' && val.trim() ? val.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+/** True when a real local or baked-in key is present. The hosted 'proxy' sentinel is not a BYOK key. */
+function hasByokProviderKey(providerId: string): boolean {
+  if (providerId === 'dataforseo') {
+    if (readStoredKey('luminara_dataforseo_key')) return true;
+    return Boolean(readStoredKey('luminara_dataforseo_login') && readStoredKey('luminara_dataforseo_password'));
+  }
+  const slot = PROVIDER_BYOK_SLOTS[providerId];
+  if (!slot) return false;
+  return Boolean(readStoredKey(slot.storageKey) || readViteKey(slot.viteKey));
+}
+
+export function hostedProviderDecisionReason(providerId: string): HostedProviderDecisionReason {
+  if (hasByokProviderKey(providerId)) return 'byok';
+  if (!isProxyMode()) return 'no_health';
+  if (!isProviderConfiguredOnServer(providerId)) return 'not_configured';
+  if (isPaidHostedProvider(providerId)) {
+    return hasActivePaidPlanSync() ? 'hosted' : 'paid_required';
+  }
+  return clientHasHostedIdentity() ? 'hosted' : 'no_identity';
+}
+
+function firecrawlSkipDetail(reason: HostedProviderDecisionReason): string {
+  switch (reason) {
+    case 'no_identity': return 'no identity';
+    case 'no_health': return 'provider status not ready';
+    case 'not_configured': return 'not configured';
+    case 'paid_required': return 'paid plan required';
+    case 'byok': return 'your key';
+    case 'hosted': return 'hosted';
+  }
+}
+
+/** Short Firecrawl clause. Empty when a key or the hosted proxy will be used. */
+export function formatFirecrawlSkipDetail(reason: HostedProviderDecisionReason): string {
+  if (reason === 'hosted' || reason === 'byok') return '';
+  return `Firecrawl: ${firecrawlSkipDetail(reason)}`;
+}
+
+export function formatPageFetchClause(reason: HostedProviderDecisionReason): string {
+  if (reason === 'hosted') return 'Page fetch: hosted Firecrawl';
+  if (reason === 'byok') return 'Page fetch: your Firecrawl key';
+  return `Page fetch: Jina (Firecrawl: ${firecrawlSkipDetail(reason)})`;
+}
+
+export function formatSearchSkipReason(reason: HostedProviderDecisionReason): string {
+  switch (reason) {
+    case 'no_identity': return 'Search off: sign-in token not ready.';
+    case 'no_health': return 'Search off: provider status not ready.';
+    case 'not_configured': return 'Search off: Tavily is not configured.';
+    case 'paid_required': return 'Search off: a paid plan is required.';
+    case 'byok': return 'Search: your Tavily key.';
+    case 'hosted': return 'Search: hosted Tavily.';
+  }
+}
+
+function formatModelClause(reason: HostedProviderDecisionReason): string {
+  switch (reason) {
+    case 'hosted':
+    case 'byok':
+      return '';
+    case 'no_identity': return 'Model off: sign-in token not ready';
+    case 'no_health': return 'Model off: provider status not ready';
+    case 'not_configured': return 'Model off: Groq is not configured';
+    case 'paid_required': return 'Model off: a paid plan is required';
+  }
+}
+
+/** One Mission Control line for Firecrawl, Tavily, and Groq. Groq is included only when it will not run. */
+export function formatInstantAuditProviderSummary(): string {
+  const page = formatPageFetchClause(hostedProviderDecisionReason('firecrawl'));
+  const tavily = hostedProviderDecisionReason('tavily');
+  const search = tavily === 'hosted'
+    ? 'Search: hosted Tavily'
+    : tavily === 'byok'
+      ? 'Search: your Tavily key'
+      : formatSearchSkipReason(tavily).replace(/\.$/, '');
+  const model = formatModelClause(hostedProviderDecisionReason('groq'));
+  return model ? `${page} · ${search} · ${model}` : `${page} · ${search}`;
+}
+
+/** Crew error record. Not a provider failure: guest teasers ignore this prefix. */
+export const PROVIDER_DECISIONS_RECORD_PREFIX = 'provider_decisions ';
+
+export function providerDecisionsErrorRecord(): string {
+  const parts = ['firecrawl', 'tavily', 'groq'].map(
+    (id) => `${id}=${hostedProviderDecisionReason(id)}`,
+  );
+  return `${PROVIDER_DECISIONS_RECORD_PREFIX}${parts.join(' ')}`;
+}
+
+export function isProviderDecisionRecord(err: string): boolean {
+  return err.trim().startsWith(PROVIDER_DECISIONS_RECORD_PREFIX);
+}
+
 export interface HostedProviderReady {
   healthOk: boolean;
   hasIdentity: boolean;
