@@ -20,7 +20,7 @@ import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
-import { apiBase, getCurrentQuotaSync, hasActivePaidPlanSync, workerFetchWithAuthRetry } from '../../services/apiClient';
+import { apiBase, ensureHostedProviderReady, getCurrentQuotaSync, hasActivePaidPlanSync, workerFetchWithAuthRetry } from '../../services/apiClient';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
 import { Button } from '../ui/Button';
@@ -54,6 +54,7 @@ export async function generateAuditReportUnlessDegraded(input: {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
   }
+  await ensureHostedProviderReady();
   return geminiService.generateAuditReport(input.formattedUrl, input.targetFocus, input.dna, input.lenses);
 }
 
@@ -220,6 +221,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
     try {
       const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
+
+      // Health and the ID token must be current before the crew or the report reads hosted keys.
+      await ensureHostedProviderReady();
 
       // 1. Run the Autonomous Multi-Agent Search Crew with real-time streaming
       const crewResult = await crewOrchestrator.runAuditCrew(

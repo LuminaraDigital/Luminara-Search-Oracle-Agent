@@ -31,6 +31,7 @@ import { ReportFocus, BusinessDNA } from '../../types';
 import { unevaluatedLlmCrawlerReport } from '../audit/llmCrawlerReadiness';
 import { probeLlmCrawlerReadiness } from '../audit/llmCrawlerProbe';
 import { hostedAuthBlocked, resetHostedAuthCircuit } from '../resilience/hostedAuthCircuit';
+import { ensureHostedProviderReady } from '../apiClient';
 import { liveSearchRows, pageSupportsHealthScore } from './auditEvidenceGate';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
@@ -466,6 +467,9 @@ export class CrewOrchestrator {
     onEvent?: (event: AgentActivityEvent) => void
   ): Promise<AuditStateGraphContext> {
     resetHostedAuthCircuit();
+    // Boot loads /api/health once. Recheck it and await the Firebase ID token
+    // before this run resolves Firecrawl, Tavily, or Groq.
+    await ensureHostedProviderReady();
     const initialContext = createInitialAuditContext(targetUrl, focus, dna);
 
     const graph = this.buildGraph();
