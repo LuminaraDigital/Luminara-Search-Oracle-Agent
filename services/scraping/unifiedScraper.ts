@@ -2,7 +2,7 @@
  * Unified Scraping & Crawling Orchestrator
  * 
  * Provides resilient, multi-tier web extraction with automated failover:
- * Tier 1: Patchright Stealth Runner (Zero-cost, anti-bot resilient via AST-patched CDP)
+ * Tier 1: Patchright Stealth Runner, only when a local sidecar is allowed
  * Tier 2: Firecrawl Managed API (High-fidelity cloud scraping)
  * Tier 3: Jina Reader / Direct Fetch (Zero-configuration lightweight fallback)
  * 
@@ -77,8 +77,12 @@ export class UnifiedScraperService {
       }
     }
 
-    // Strategy 1: Explicit Patchright or Auto
-    if (providerPref === 'patchright' || providerPref === 'auto') {
+    // Strategy 1: Explicit Patchright, or Auto only when a sidecar is allowed.
+    // Hosted web must not probe http://localhost:3001 before Firecrawl / Jina.
+    const tryLocalSidecar =
+      providerPref === 'patchright' ||
+      (providerPref === 'auto' && configService.isLocalSidecarAllowed());
+    if (tryLocalSidecar) {
       try {
         const prRes = await patchrightClient.scrape(url, { waitFor: options.waitFor });
         if (prRes.success && (prRes.markdown || prRes.html)) {

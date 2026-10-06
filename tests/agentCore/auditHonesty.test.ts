@@ -31,9 +31,33 @@ import { firecrawlService } from '../../services/scraping/firecrawlService';
 import { patchrightClient } from '../../services/scraping/patchrightClient';
 import { siteEvidencePackService } from '../../services/scraping/siteEvidencePack';
 import { unifiedScraperService } from '../../services/scraping/unifiedScraper';
+import { localSerpService } from '../../services/search/localSerpService';
 import { tavilyService } from '../../services/search/tavilyService';
 
 const noop = () => {};
+
+function installHostedWeb(storage: Record<string, string> = {}): void {
+  const store: Record<string, string> = { ...storage };
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => (Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null),
+    setItem: (key: string, value: string) => { store[key] = value; },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { for (const key of Object.keys(store)) delete store[key]; },
+  });
+  vi.stubGlobal('window', {
+    location: {
+      hostname: 'luminarasuite.com',
+      host: 'luminarasuite.com',
+      origin: 'https://luminarasuite.com',
+      protocol: 'https:',
+      href: 'https://luminarasuite.com/',
+      search: '',
+    },
+    dispatchEvent: () => true,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  });
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -57,8 +81,12 @@ describe('Instant Audit honesty on empty evidence', () => {
   });
 
   it('does not invent citation rate or share of voice when SERP evidence is empty', async () => {
+    installHostedWeb();
+    expect(configService.isLocalSerpEnabled()).toBe(false);
+    expect(configService.getPatchrightUrl()).toBe('');
+    expect(configService.getLocalSerpUrl()).toBe('');
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
+    const localSearch = vi.spyOn(localSerpService, 'search');
     const events: { message: string }[] = [];
     const result = await serpRadarAgent.execute('example.com', null, (event) => {
       events.push(event);
@@ -70,11 +98,11 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(done).toContain('not measured');
     expect(done).not.toContain('45%');
     expect(done).not.toMatch(/Share-of-Voice: \d+/);
+    expect(localSearch).not.toHaveBeenCalled();
   });
 
   it('does not invent metrics when a configured search provider returns no rows', async () => {
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('test-key');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
     vi.spyOn(tavilyService, 'search').mockResolvedValue({ query: 'q', results: [] });
     const result = await serpRadarAgent.execute('example.com', null, noop);
     expect(result.citationRatePercent).toBeNull();
@@ -83,7 +111,6 @@ describe('Instant Audit honesty on empty evidence', () => {
 
   it('calculates citation rate only from returned SERP rows', async () => {
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('test-key');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
     vi.spyOn(tavilyService, 'search').mockImplementation(async (query: string) => ({
       query,
       results: [
@@ -200,13 +227,16 @@ describe('Instant Audit honesty on empty evidence', () => {
   });
 
   it('returns not_measured citation summary when every search probe is empty', async () => {
+    installHostedWeb({ luminara_local_serp_enabled: 'true' });
+    expect(configService.isLocalSerpEnabled()).toBe(false);
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
+    const localSearch = vi.spyOn(localSerpService, 'search');
     const summary = await empiricalCitationService.probeDomainCitations('https://example.com', 'Example');
     expect(summary.measurementStatus).toBe('not_measured');
     expect(summary.citationRatePercent).toBeNull();
     expect(summary.entityClarityScore).toBeNull();
     expect(summary.evidenceList).toEqual([]);
+    expect(localSearch).not.toHaveBeenCalled();
   });
 });
 
@@ -356,16 +386,13 @@ describe('Instant Audit degraded provider failures', () => {
   });
 
   it('returns null metrics after Firecrawl, Tavily, and Jina 401s and hides invented scores', async () => {
+    installHostedWeb();
+    expect(configService.isLocalSerpEnabled()).toBe(false);
     vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('tv-test-key');
     vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
     vi.spyOn(configService, 'getSitewideEvidenceMode').mockReturnValue('smart');
-    vi.spyOn(patchrightClient, 'scrape').mockResolvedValue({
-      success: false,
-      url: 'https://example.com',
-      error: 'runner offline',
-    });
+    const localScrape = vi.spyOn(patchrightClient, 'scrape');
     const mapSpy = vi.spyOn(firecrawlService, 'mapUrl');
     const tavilySpy = vi.spyOn(tavilyService, 'search');
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'unauthorized' }), {
@@ -388,6 +415,9 @@ describe('Instant Audit degraded provider failures', () => {
     expect(tavilySpy).not.toHaveBeenCalled();
     const firecrawlCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('firecrawl.dev')).length;
     expect(firecrawlCalls).toBeLessThanOrEqual(1);
+    const loopbackCalls = fetchMock.mock.calls.filter((call) => /localhost|127\.0\.0\.1/i.test(String(call[0])));
+    expect(loopbackCalls).toEqual([]);
+    expect(localScrape).not.toHaveBeenCalled();
 
     const joined = events.map((event) => event.message).join('\n');
     expect(joined).not.toMatch(/Synced \d+ autonomous memory/);

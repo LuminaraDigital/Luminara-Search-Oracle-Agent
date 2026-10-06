@@ -205,7 +205,7 @@ export const ApiKeySearchTab: React.FC<ApiKeySearchTabProps> = ({
               Local Google SERP Scraper
             </span>
             <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-success-500/20 text-success-400 border border-success-500/30">
-              Zero-Key Fallback
+              Optional sidecar
             </span>
           </div>
           <label className="relative inline-flex items-center cursor-pointer">
@@ -222,7 +222,7 @@ export const ApiKeySearchTab: React.FC<ApiKeySearchTabProps> = ({
         </div>
 
         <p className="text-[10px] text-gray-400">
-          Fast HTTP Google SERP scraper inspired by <code className="text-gold-light">christophebe/serp</code> with automatic Patchright stealth fallback. Extracts AEO snippets, PAA, and organic positions when Tavily or Exa keys are absent.
+          Optional Google result sidecar for when Tavily or Exa keys are absent. On hosted luminarasuite.com this stays off until you save a sidecar URL. The desktop app and localhost dev use http://localhost:3001 when the URL is blank. Turning the toggle on without a saved URL does not enable it on hosted web.
         </p>
 
         <div className="space-y-1">

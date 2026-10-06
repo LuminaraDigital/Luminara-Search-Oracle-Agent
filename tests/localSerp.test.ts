@@ -17,6 +17,8 @@ if (!globalThis.localStorage) {
 describe('LocalSerpService', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    mockLocalStorage.clear();
   });
 
   it('is exported as a singleton instance', () => {
@@ -27,6 +29,15 @@ describe('LocalSerpService', () => {
   });
 
   it('handles sidecar offline / fetch failure gracefully without throwing', async () => {
+    vi.stubGlobal('window', {
+      location: {
+        hostname: 'localhost',
+        search: '',
+        protocol: 'http:',
+        origin: 'http://localhost:3000',
+        href: 'http://localhost:3000/',
+      },
+    });
     vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Connection refused'));
 
     const res = await localSerpService.search('test query');
@@ -96,7 +107,16 @@ describe('LocalSerpService', () => {
     expect(health.message).toContain('active');
   });
 
-  it('toggles local SERP setting in configService', () => {
+  it('toggles local SERP setting in configService when the sidecar is allowed', () => {
+    vi.stubGlobal('window', {
+      location: {
+        hostname: 'localhost',
+        search: '',
+        protocol: 'http:',
+        origin: 'http://localhost:3000',
+        href: 'http://localhost:3000/',
+      },
+    });
     configService.setLocalSerpEnabled(false);
     expect(configService.isLocalSerpEnabled()).toBe(false);
 

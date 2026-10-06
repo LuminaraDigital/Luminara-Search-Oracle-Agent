@@ -55,6 +55,7 @@ describe('UnifiedScraperService', () => {
 
   it('fails over to Firecrawl when Patchright encounters an error in auto mode', async () => {
     vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
+    vi.spyOn(configService, 'isLocalSidecarAllowed').mockReturnValue(true);
     vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
 
     // Patchright fails (e.g. runner offline or blocked)
@@ -92,6 +93,7 @@ describe('UnifiedScraperService', () => {
 
     vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
     vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
+    vi.spyOn(configService, 'isLocalSidecarAllowed').mockReturnValue(true);
     vi.spyOn(patchrightClient, 'scrape').mockResolvedValue({
       success: false,
       url: 'https://example.com',

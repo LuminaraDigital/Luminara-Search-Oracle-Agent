@@ -32,11 +32,21 @@ export class LocalSerpService {
     return LocalSerpService.instance;
   }
 
+  private resolveEndpoint(customEndpoint?: string): string | null {
+    const raw = (customEndpoint || configService.getLocalSerpUrl() || '').trim();
+    if (!raw) return null;
+    return raw.replace(/\/$/, '');
+  }
+
   /**
    * Health check to test if the local SERP scraper endpoint is reachable.
+   * Returns not-configured without fetching when no endpoint is allowed.
    */
   public async checkHealth(customEndpoint?: string): Promise<{ ok: boolean; message: string; latencyMs: number }> {
-    const endpoint = (customEndpoint || configService.getLocalSerpUrl() || 'http://localhost:3001').replace(/\/$/, '');
+    const endpoint = this.resolveEndpoint(customEndpoint);
+    if (!endpoint) {
+      return { ok: false, message: 'Local SERP sidecar is not configured', latencyMs: 0 };
+    }
     const startTime = performance.now();
 
     try {
@@ -88,7 +98,15 @@ export class LocalSerpService {
       timeout?: number;
     } = {}
   ): Promise<LocalSerpResponse> {
-    const endpoint = (configService.getLocalSerpUrl() || 'http://localhost:3001').replace(/\/$/, '');
+    const endpoint = this.resolveEndpoint();
+    if (!endpoint) {
+      return {
+        success: false,
+        query,
+        results: [],
+        error: 'Local SERP sidecar is not configured',
+      };
+    }
 
     try {
       const controller = new AbortController();

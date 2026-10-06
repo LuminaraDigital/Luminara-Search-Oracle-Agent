@@ -51,13 +51,13 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
   const [pagespeedKey, setPagespeedKey] = useState('');
   const [dataForSeoLogin, setDataForSeoLogin] = useState('');
   const [dataForSeoPassword, setDataForSeoPassword] = useState('');
-  const [localSerpUrl, setLocalSerpUrl] = useState('http://localhost:3001');
-  const [localSerpEnabled, setLocalSerpEnabled] = useState(true);
+  const [localSerpUrl, setLocalSerpUrl] = useState(() => configService.getLocalSerpUrl());
+  const [localSerpEnabled, setLocalSerpEnabled] = useState(() => configService.isLocalSerpEnabled());
   const [firecrawlKey, setFirecrawlKey] = useState('');
   const [crawlerProvider, setCrawlerProvider] = useState<'auto' | 'patchright' | 'firecrawl' | 'jina'>('auto');
   const [sitewideMode, setSitewideMode] = useState<'off' | 'smart' | 'deep'>('smart');
   const [sitewideMaxPages, setSitewideMaxPages] = useState(6);
-  const [patchrightUrl, setPatchrightUrl] = useState('http://localhost:3001');
+  const [patchrightUrl, setPatchrightUrl] = useState(() => configService.getPatchrightUrl());
   const [crawlerProxy, setCrawlerProxy] = useState('');
   const [crawlerToken, setCrawlerToken] = useState('');
   const [tinkerKey, setTinkerKey] = useState('');
