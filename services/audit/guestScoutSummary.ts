@@ -76,13 +76,16 @@ export function isDegradedScout(input: {
   return input.failureCodes.some((code) => DEGRADED_FAILURE_CODES.has(code));
 }
 
-/** Guests do not get a model report when the scout is degraded. Signed-in runs still may. */
+/**
+ * Skip the report model when the scout is degraded or not measured.
+ * Guests and signed-in runs share this gate. The guest flag stays so callers
+ * can pass the session they already have. It does not reopen a degraded run.
+ */
 export function shouldGenerateAuditReport(
-  isGuest: boolean,
+  _isGuest: boolean,
   summary: Pick<GuestScoutSummary, 'evidenceEmpty' | 'failureCodes'>,
   measurementStatus: 'measured' | 'not_measured',
 ): boolean {
-  if (!isGuest) return true;
   return !isDegradedScout({
     measurementStatus,
     evidenceEmpty: summary.evidenceEmpty,

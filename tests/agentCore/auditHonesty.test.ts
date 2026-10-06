@@ -743,4 +743,66 @@ describe('Instant Audit degraded provider failures', () => {
     expect(html).toContain('Run quick scout');
     expect(html).not.toContain('disabled');
   });
+
+  it('does not call generateAuditReport for a signed-in degraded run', async () => {
+    const reportSpy = vi.spyOn(geminiService, 'generateAuditReport').mockResolvedValue({
+      text: 'invented 45%',
+      sources: [],
+    } as Awaited<ReturnType<typeof geminiService.generateAuditReport>>);
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 0,
+      serpCount: 0,
+      findings: [],
+      errors: ['provider_auth_failed'],
+      hostedRail: 'signed_in_hosted',
+    });
+    expect(summary.degraded).toBe(true);
+    expect(summary.badges.every((badge) => badge.status === 'not_measured' && badge.value == null)).toBe(true);
+    const report = await generateAuditReportUnlessDegraded({
+      isGuest: false,
+      summary,
+      measurementStatus: 'not_measured',
+      formattedUrl: 'https://example.com',
+      targetFocus: 'AEO',
+      dna: null,
+      lenses: [],
+    });
+    expect(report).toBeNull();
+    expect(reportSpy).not.toHaveBeenCalled();
+  });
+
+  it('calls generateAuditReport for a signed-in measured run', async () => {
+    const reportSpy = vi.spyOn(geminiService, 'generateAuditReport').mockResolvedValue({
+      text: 'measured brief',
+      sources: [],
+    } as Awaited<ReturnType<typeof geminiService.generateAuditReport>>);
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'measured',
+      citationRatePercent: 12,
+      shareOfVoiceScore: 20,
+      healthScore: 80,
+      scrapedPageCount: 1,
+      serpCount: 4,
+      findings: [{ title: 'Add Organization schema' }],
+      hostedRail: 'signed_in_hosted',
+    });
+    expect(summary.degraded).toBe(false);
+    const report = await generateAuditReportUnlessDegraded({
+      isGuest: false,
+      summary,
+      measurementStatus: 'measured',
+      formattedUrl: 'https://example.com',
+      targetFocus: 'AEO',
+      dna: null,
+      lenses: [],
+    });
+    expect(report?.text).toBe('measured brief');
+    expect(reportSpy).toHaveBeenCalledTimes(1);
+  });
 });
