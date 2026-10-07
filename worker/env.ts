@@ -131,6 +131,18 @@ export interface Env {
   LAUNCHPAD_FACTORY_POLYGON_TESTNET?: string;
   /** Testnet-only dev escape hatch: skip the on-chain deployment check at registration (`true`). Ignored on mainnet. */
   LAUNCHPAD_SKIP_CHAIN_VERIFY?: string;
+  /**
+   * Trust Network (docs/plans/trust-network-additive-plan.md). Flags follow the
+   * Launchpad rule: `true` / `false`; unset is on in local dev only.
+   */
+  TRUST_RECEIPTS_ENABLED?: string;
+  DOMAIN_VERIFY_ENABLED?: string;
+  /** Secret. Ed25519 private JWK (JSON) that signs Trust Receipts. Generate with `npm run keys:receipt`. */
+  RECEIPT_SIGNING_KEY?: string;
+  /** JSON array of retired Ed25519 public JWKs still published so old receipts verify. */
+  RECEIPT_RETIRED_PUBLIC_KEYS?: string;
+  /** DNS-over-HTTPS JSON endpoint for domain verification. Default https://cloudflare-dns.com/dns-query. */
+  DOMAIN_VERIFY_DOH_URL?: string;
   /** DataForSEO API login (hosted LLM Mentions / SERP). Pair with DATAFORSEO_PASSWORD. */
   DATAFORSEO_LOGIN?: string;
   DATAFORSEO_PASSWORD?: string;

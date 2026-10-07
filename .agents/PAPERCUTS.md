@@ -54,3 +54,5 @@ Do not log secrets, tokens, or PII.
 
 - 2026-10-03: `tests/` is excluded from every tsconfig, so test fixtures can use wrong types silently (a launchpad test passed a HostedIdentity with nonexistent fields). Consider a `tsconfig.tests.json` in `npm run typecheck`.
 - 2026-10-03: `@nomicfoundation/hardhat-toolbox@5` peers (typescript, ts-node, chai@4, typechain, solidity-coverage, etc.) are not auto-installed on npm 11; `hardhat compile` crashed in ts-node until they were listed explicitly in `contracts/package.json` (contracts)
+- 2026-10-07: `BusinessDNA` has no domain field, so the Trust view prefills from the Instant Audit URL draft instead of the active project (trust)
+- 2026-10-07: Worker gives no way to re-read DNS/file/meta instructions for a pending domain after the start response; the UI offers "New token" (re-issues) instead (trust)

@@ -110,6 +110,9 @@
     "CHAIN_XDC_RPC_URL": "https://erpc.xinfin.network",
     "PROOF_ANCHOR_ENABLED": "false",
     "PROOF_XDC_ENABLED": "false",
+    // Trust Network (migration 0020). Off until staging soak; RECEIPT_SIGNING_KEY is a secret.
+    "TRUST_RECEIPTS_ENABLED": "false",
+    "DOMAIN_VERIFY_ENABLED": "false",
     "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
@@ -219,6 +222,9 @@
         "CHAIN_XDC_RPC_URL": "https://rpc.apothem.network",
         "PROOF_ANCHOR_ENABLED": "false",
         "PROOF_XDC_ENABLED": "false",
+        // Trust Network (migration 0020). Off until staging soak; RECEIPT_SIGNING_KEY is a secret.
+        "TRUST_RECEIPTS_ENABLED": "false",
+        "DOMAIN_VERIFY_ENABLED": "false",
         // REPLACE with your funded TON testnet merchant (kQ/0Q) before staging soak.
         // Synthetic CRC-valid placeholder for CI/validate-env; not a funded wallet.
         "TON_RECEIVING_ADDRESS": "kQClpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpWTU",
@@ -302,6 +308,9 @@
         "CHAIN_XDC_RPC_URL": "https://erpc.xinfin.network",
         "PROOF_ANCHOR_ENABLED": "false",
         "PROOF_XDC_ENABLED": "false",
+        // Trust Network (migration 0020). Off until staging soak; RECEIPT_SIGNING_KEY is a secret.
+        "TRUST_RECEIPTS_ENABLED": "false",
+        "DOMAIN_VERIFY_ENABLED": "false",
         "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",

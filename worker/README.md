@@ -41,6 +41,10 @@ leaked internals).
 | `GET /visibility/crawler-files` | worker/llmCrawlerRoute.ts | session | `/robots.txt`, `/llms.txt`, and optional `/ai.txt`. SSRF guarded. No redirect follow. A non-empty file mints `X-Scout-Receipt` for that host |
 | `POST /launchpad/scan-compliance`, `GET,POST /launchpad/campaigns`, `GET /launchpad/campaigns/:id`, `PUT /launchpad/campaigns/:id/contract`, `GET /launchpad/campaigns/:id/onchain`, `GET /launchpad/config`, `POST /launchpad/vouchers`, `GET /launchpad/vouchers/:code`, `POST /launchpad/vouchers/redeem` | worker/launchpadService.ts | none (scan, public list/detail) / session (rest) | SMB Launchpad, spec 0015. 404 unless `LAUNCHPAD_ENABLED=true` (local dev with no `ENVIRONMENT` is on). Non-custodial: stores copy, the merchant-registered contract address and voucher records only, never keys or balances, and has no "raised" column. Campaign copy must pass the rule-based screen in `services/launchpad/compliance.ts` (422 otherwise). Drafts are private; a campaign is public only after its owner registers a contract (one address per campaign, unique per chain+network). Registration requires the deployment `txHash` and is verified over JSON-RPC: the tx must be a successful call to OUR factory (`services/launchpad/contracts.ts`, or `LAUNCHPAD_FACTORY_<CHAIN>_TESTNET` on testnet only) that emitted the matching deployment event for that address; with no factory configured, registration returns 409. `LAUNCHPAD_SKIP_CHAIN_VERIFY=true` skips the check on testnet only. `/onchain` reads live escrow figures over `LAUNCHPAD_RPC_<CHAIN>_<NETWORK>` (public RPC fallback) and returns `not_measured` if the RPC fails; nothing is stored. Mainnet needs `LAUNCHPAD_MAINNET_ENABLED=true`. Voucher issue, lookup and redeem are owner-only with no cross-merchant enumeration; redeem is a compare-and-swap on `status='issued'` and unexpired. Voucher expiry is null or at least 36 months. Needs unapplied D1 `0018_smb_launchpad_loyalty.sql` |
 | `POST /enrichment/entity` | worker/enrichmentService | session | Entity enrichment |
+| `GET /trust/audit-chain/verify` | worker/index.ts + auditLog | session + role | Walks the org's hash chain from genesis by `prev_hash` links. Reports `hash_mismatch`, `fork`, or `orphan` with `brokenAtId`. Legacy raw-accountId rows are a separate chain, verified separately. Over 5000 rows returns `truncated: true` and `ok: false` |
+| `GET /trust/keys` | worker/trustReceipts.ts | none | Ed25519 public key set for offline receipt verification. 404 unless `TRUST_RECEIPTS_ENABLED` |
+| `GET /trust/receipts`, `GET /trust/receipts/:id`, `POST /trust/receipts/:id/visibility`, `POST /trust/receipts/:id/revoke` | worker/trustReceipts.ts | session (list, mutate) / public GET when `visibility='public'` | Trust Network TN1. No mint route: only Worker verifiers call `issueTrustReceipt`. Private receipts 404 to non-owners (no existence leak). Revoked receipts that were once public stay readable as revoked. Needs D1 `0020_trust_receipts_domain_verify.sql` |
+| `GET,POST /trust/domains`, `POST /trust/domains/:domain/check`, `DELETE /trust/domains/:domain` | worker/domainVerification.ts | session | Trust Network TN2. 404 unless `DOMAIN_VERIFY_ENABLED`. Token stored hashed; proof by DNS TXT (`_luminara-verify.<domain>` or apex), `/.well-known/luminara-verify.txt`, or home page meta tag. HTTP proof must come from the domain or its www twin after SSRF-guarded redirects. Resolver or network failure is `unreachable` (`not_measured`), never a failed check. Success issues a `domain_control` receipt when signing is configured, else reports `receiptIssued:false`. Daily cron re-checks each verified domain every 7 days; 2 consecutive misses lapse it and revoke the receipt. 30/min per IP |
 | `* /oauth/mcp/*` | worker/mcpOAuth.ts | oauth/token | OAuth 2.1 + PKCE for MCP |
 | `GET,POST /memory/facts` | worker/memoryService.ts | session | Hosted memory facts |
 | `POST /pagespeed` | worker/pagespeedRoute.ts | session | Hosted PageSpeed |
@@ -73,6 +77,26 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 - **Every paid call is metered.** MCP and Oracle chat `confirmTool` both check
   `isBudgetHalted` first and write `cost_events` with `credential_kind` /
   `credential_id` (`oracle` for chat). New paid surfaces must do the same.
+
+## Audit chain and Trust Network invariants (TN0-TN2)
+
+- **Append is fork-proof.** `recordAuditLog` inserts with `INSERT ... SELECT ... WHERE
+  head = prev_hash` and retries with jittered backoff. The head is the last row by
+  `rowid` (insertion order), never `created_at`. `created_at` is kept monotonic along
+  the chain. Never write `org_audit_logs` with a plain `INSERT`.
+- **Verification follows links,** not timestamps (`verifyAuditChain`). Rows forked
+  before this fix are reported as `fork`, never rewritten.
+- **Receipts are minted only by Worker verifiers.** No route accepts a client-built
+  receipt. `level` is mandatory: `worker_verified`, `registry_verified`, or
+  `self_reported`; UI must never present `self_reported` as verified.
+- **The signed bytes are `payload_json`.** Verify against the stored canonical JSON
+  (`services/trust/receiptCrypto.ts`), never a re-serialisation. Key id is derived
+  from the public key. Rotation moves the old public JWK into
+  `RECEIPT_RETIRED_PUBLIC_KEYS`; never delete a published key while receipts use it.
+- **Revocation is a column, never a delete** (except account deletion, which removes
+  the account's receipts and domain rows).
+- **A missing signing key never fakes a receipt.** Verifiers report
+  `receiptIssued: false` with the reason.
 
 Public document redirects run in `worker/index.ts` before the marketing shell
 and the SPA asset fallback:

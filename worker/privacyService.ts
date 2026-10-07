@@ -101,6 +101,15 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     `SELECT mission_key, week_key, status, created_at, completed_at FROM user_missions WHERE account_id = ?`,
     accountId,
   );
+  const trustReceipts = await q<Record<string, unknown>>(
+    `SELECT id, subject_kind, subject_id, claim, level, payload_json, signature, kid, visibility, revoked_at, revoked_reason, created_at
+       FROM trust_receipts WHERE account_id = ?`,
+    accountId,
+  );
+  const domainVerifications = await q<Record<string, unknown>>(
+    `SELECT domain, method, status, receipt_id, verified_at, last_checked_at, created_at FROM domain_verifications WHERE account_id = ?`,
+    accountId,
+  );
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -120,6 +129,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'referral_rewards',
       'user_progression',
       'user_missions',
+      'trust_receipts',
+      'domain_verifications',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -146,6 +157,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     referralRewards,
     userProgression: progression,
     userMissions: missions,
+    trustReceipts,
+    domainVerifications,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -186,6 +199,9 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
     accountId,
   );
   await run('referral_rewards', `DELETE FROM referral_rewards WHERE account_id = ?`, accountId);
+  // Trust Network (0020). Deleting receipts makes their public /verify links 404.
+  await run('trust_receipts', `DELETE FROM trust_receipts WHERE account_id = ?`, accountId);
+  await run('domain_verifications', `DELETE FROM domain_verifications WHERE account_id = ?`, accountId);
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
   await run(
     'users_anon',

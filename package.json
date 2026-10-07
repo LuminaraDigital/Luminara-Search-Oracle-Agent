@@ -32,6 +32,7 @@
     "keys:seed-vault": "node scripts/seed-license-vault.mjs",
     "keys:seed-vault:apply": "node scripts/seed-license-vault.mjs --apply",
     "keys:revoke": "node scripts/revoke-license-keys.mjs",
+    "keys:receipt": "node scripts/generate-receipt-key.mjs",
     "test": "vitest run",
     "evals": "node evals/run-evals.mjs",
     "test:watch": "vitest",
