@@ -5,6 +5,7 @@ import {
   marketingViewFromHash,
   marketingViewFromPathname,
   pathForMarketingView,
+  receiptIdFromLocation,
   resolveAppView,
   urlForView,
 } from '../utils/marketingRoutes';
@@ -46,6 +47,20 @@ describe('marketingRoutes', () => {
     expect(resolveAppView('/pricing', '')).toBe(AppView.PRICING);
     expect(resolveAppView('/', '#pricing')).toBe(AppView.PRICING);
     expect(resolveAppView('/', '#settings')).toBe(null);
+  });
+
+  it('routes /verify/r/<id> to the receipt view without breaking /verify/<digest>', () => {
+    const id = 'rcpt_0123456789abcdef01234567';
+    const digest = 'ab'.repeat(32);
+    expect(resolveAppView(`/verify/r/${id}`, '')).toBe(AppView.VERIFY_RECEIPT);
+    expect(resolveAppView(`/verify/r/${id}/`, '')).toBe(AppView.VERIFY_RECEIPT);
+    expect(resolveAppView('/', `#verify/r/${id}`)).toBe(AppView.VERIFY_RECEIPT);
+    expect(resolveAppView(`/verify/${digest}`, '')).toBe(AppView.VERIFY_ATTESTATION);
+    expect(resolveAppView('/', `#verify/${digest}`)).toBe(AppView.VERIFY_ATTESTATION);
+    expect(receiptIdFromLocation(`/verify/r/${id}`, '')).toBe(id);
+    expect(receiptIdFromLocation('/', `#verify/r/${id}`)).toBe(id);
+    expect(receiptIdFromLocation(`/verify/${digest}`, '')).toBe('');
+    expect(receiptIdFromLocation('/verify/r/%E0%A4%A', '')).toBe('');
   });
 });
 

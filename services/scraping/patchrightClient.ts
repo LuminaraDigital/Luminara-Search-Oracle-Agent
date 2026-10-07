@@ -65,9 +65,13 @@ export class PatchrightClient {
 
   /**
    * Health check to test if the Patchright crawler sidecar is reachable.
+   * Returns not-configured without fetching when no endpoint is allowed.
    */
   public async checkHealth(customEndpoint?: string): Promise<PatchrightHealthResponse> {
-    const endpoint = (customEndpoint || configService.getPatchrightUrl() || 'http://localhost:3001').replace(/\/$/, '');
+    const endpoint = this.resolveEndpoint(customEndpoint);
+    if (!endpoint) {
+      return { ok: false, message: 'Local scraper is not configured', latencyMs: 0 };
+    }
     const startTime = performance.now();
 
     try {
@@ -119,7 +123,10 @@ export class PatchrightClient {
       timeoutMs?: number;
     } = {}
   ): Promise<PatchrightScrapeResponse> {
-    const endpoint = (options.customEndpoint || configService.getPatchrightUrl() || 'http://localhost:3001').replace(/\/$/, '');
+    const endpoint = this.resolveEndpoint(options.customEndpoint);
+    if (!endpoint) {
+      return { success: false, url, error: 'Local scraper is not configured' };
+    }
     const startTime = performance.now();
     const timeoutMs = options.timeoutMs || 25000;
 
@@ -179,8 +186,19 @@ export class PatchrightClient {
     }
   }
 
-  private resolveEndpoint(customEndpoint?: string): string {
-    return (customEndpoint || configService.getPatchrightUrl() || 'http://localhost:3001').replace(/\/$/, '');
+  private resolveEndpoint(customEndpoint?: string): string | null {
+    const raw = (customEndpoint || configService.getPatchrightUrl() || '').trim();
+    if (!raw) return null;
+    return raw.replace(/\/$/, '');
+  }
+
+  private scraperNotConfigured(extra: Partial<PatchrightSessionResponse> = {}): PatchrightSessionResponse {
+    return {
+      success: false,
+      error: 'Local scraper is not configured',
+      code: 'BROWSER_UNAVAILABLE',
+      ...extra,
+    };
   }
 
   /**
@@ -194,6 +212,7 @@ export class PatchrightClient {
     timeoutMs?: number;
   }): Promise<PatchrightSessionResponse> {
     const endpoint = this.resolveEndpoint(opts.customEndpoint);
+    if (!endpoint) return this.scraperNotConfigured();
     const startTime = performance.now();
     const timeoutMs = opts.timeoutMs || 60_000;
     try {
@@ -246,6 +265,7 @@ export class PatchrightClient {
     options: { screenshot?: boolean; customEndpoint?: string; timeoutMs?: number } = {},
   ): Promise<PatchrightSessionResponse> {
     const endpoint = this.resolveEndpoint(options.customEndpoint);
+    if (!endpoint) return this.scraperNotConfigured({ sessionId });
     const startTime = performance.now();
     const timeoutMs = options.timeoutMs || 30_000;
     try {
@@ -302,6 +322,7 @@ export class PatchrightClient {
     },
   ): Promise<PatchrightSessionResponse> {
     const endpoint = this.resolveEndpoint(opts.customEndpoint);
+    if (!endpoint) return this.scraperNotConfigured({ sessionId });
     const startTime = performance.now();
     const timeoutMs = opts.timeoutMs || 45_000;
     try {
@@ -359,6 +380,7 @@ export class PatchrightClient {
     options: { customEndpoint?: string; timeoutMs?: number } = {},
   ): Promise<PatchrightSessionResponse> {
     const endpoint = this.resolveEndpoint(options.customEndpoint);
+    if (!endpoint) return this.scraperNotConfigured({ sessionId });
     const startTime = performance.now();
     const timeoutMs = options.timeoutMs || 15_000;
     try {

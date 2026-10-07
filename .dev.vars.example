@@ -42,3 +42,14 @@ CHAIN_TON_API_FALLBACK_BASE=https://tonapi.io
 CHAIN_XDC_RPC_URL=https://erpc.xinfin.network
 PROOF_ANCHOR_ENABLED=false
 PROOF_XDC_ENABLED=false
+# SMB Launchpad (spec 0015). Unset = on in local dev only; staging/prod need true. Explicit false always disables.
+# LAUNCHPAD_ENABLED=true
+# Trust Network (docs/plans/trust-network-additive-plan.md). Unset = on in local dev only.
+# TRUST_RECEIPTS_ENABLED=true
+# DOMAIN_VERIFY_ENABLED=true
+# Secret: Ed25519 private JWK from `npm run keys:receipt` (wrangler secret put RECEIPT_SIGNING_KEY).
+# RECEIPT_SIGNING_KEY=
+# RECEIPT_RETIRED_PUBLIC_KEYS=[]
+LAUNCHPAD_MAINNET_ENABLED=false
+# Testnet-only: skip on-chain deployment check at registration while no factory is deployed
+# LAUNCHPAD_SKIP_CHAIN_VERIFY=true

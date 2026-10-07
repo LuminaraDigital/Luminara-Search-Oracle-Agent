@@ -72,7 +72,7 @@ Open http://localhost:3000, click the gear icon, and paste a key from one of:
 |---|---|---|
 | Groq | https://console.groq.com/keys | Fastest. Default model `openai/gpt-oss-120b`. |
 | NVIDIA NIM | https://build.nvidia.com/settings/api-keys | NVIDIA's API blocks browsers, so calls are relayed through the Worker with your key (never stored). Needs `npm run cf:dev` or the hosted site. |
-| Ollama | Local daemon at `http://127.0.0.1:11434` needs no key. Cloud keys: https://ollama.com/settings/keys | Local runs fully offline. |
+| Ollama | Local daemon at `http://127.0.0.1:11434` on the desktop app or localhost. Hosted web does not probe that address unless you save a different endpoint. Cloud keys: https://ollama.com/settings/keys | Local runs fully offline. |
 | Google Gemini (optional) | https://aistudio.google.com/apikey | Fallback model, Google Search grounding, and Live Voice. |
 | Tavily (optional) | https://tavily.com | Live SERP evidence for audits and chat. |
 | Firecrawl (optional) | https://firecrawl.dev | Scrapes the audited site for real on-page evidence. |

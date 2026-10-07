@@ -51,3 +51,10 @@ Do not log secrets, tokens, or PII.
 - 2026-09-26: Teaser credential scan is pattern-based (bearer, sk-, gsk_, AIza, and similar). A secret shape outside those patterns can still be stored (share)
 - 2026-09-28: `.githooks/pre-commit` is not executable, so git skips it (`hint: hook was ignored`) (git)
 - 2026-09-29: Niche Pulse cron is not wired; `/pulse` is opt-in only (idea scout)
+
+- 2026-10-03: `tests/` is excluded from every tsconfig, so test fixtures can use wrong types silently (a launchpad test passed a HostedIdentity with nonexistent fields). Consider a `tsconfig.tests.json` in `npm run typecheck`.
+- 2026-10-03: `@nomicfoundation/hardhat-toolbox@5` peers (typescript, ts-node, chai@4, typechain, solidity-coverage, etc.) are not auto-installed on npm 11; `hardhat compile` crashed in ts-node until they were listed explicitly in `contracts/package.json` (contracts)
+- 2026-10-07: `BusinessDNA` has no domain field, so the Trust view prefills from the Instant Audit URL draft instead of the active project (trust)
+- 2026-10-07: Worker gives no way to re-read DNS/file/meta instructions for a pending domain after the start response; the UI offers "New token" (re-issues) instead (trust)
+
+- 2026-10-07: Local `.env` VITE_* provider keys leak into vitest via import.meta.env and fail 14 tests (unifiedScraper, localSidecarGate, etc.). CI is clean. Tests should stub import.meta.env or vitest should not load .env. Also hostedProviderReady 'awaits...' test flakes under full-suite load, passes alone.

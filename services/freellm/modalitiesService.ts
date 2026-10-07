@@ -13,10 +13,11 @@ export type FreeLlmModality =
 
 function assertConfigured(): { base: string; key: string } {
   const key = configService.getFreeLlmKey();
-  if (!key) {
-    throw new Error('FreeLLMAPI is not configured. Add your unified key in Settings → LLM.');
+  const base = configService.getFreeLlmBaseUrl();
+  if (!key || !base) {
+    throw new Error('FreeLLMAPI is not configured. Add your unified key and a base URL in Settings → LLM. Hosted web does not call localhost:3001 until a non-default base URL is saved.');
   }
-  return { base: configService.getFreeLlmBaseUrl(), key };
+  return { base, key };
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
@@ -73,7 +74,7 @@ export class FreeLlmModalitiesService {
   }
 
   public isAvailable(): boolean {
-    return Boolean(configService.getFreeLlmKey());
+    return Boolean(configService.getFreeLlmKey() && configService.getFreeLlmBaseUrl());
   }
 
   /**

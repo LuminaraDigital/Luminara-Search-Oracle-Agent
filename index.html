@@ -270,6 +270,66 @@
       margin: 3rem 0;
     }
 
+    /* Instant Scout card: full brief, tighter than the long-form report styles above. */
+    .markdown-content.scout-brief {
+      max-width: 42rem;
+      font-size: 0.9375rem;
+      line-height: 1.65;
+      color: #e5e7eb;
+    }
+    .markdown-content.scout-brief h1,
+    .markdown-content.scout-brief h2,
+    .markdown-content.scout-brief h3,
+    .markdown-content.scout-brief h4 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--gold-light);
+      margin-top: 1.15rem;
+      margin-bottom: 0.45rem;
+      letter-spacing: -0.01em;
+      text-transform: none;
+      border: 0;
+      padding: 0;
+      line-height: 1.35;
+    }
+    .markdown-content.scout-brief h1:first-child,
+    .markdown-content.scout-brief h2:first-child,
+    .markdown-content.scout-brief h3:first-child,
+    .markdown-content.scout-brief h4:first-child {
+      margin-top: 0;
+    }
+    .markdown-content.scout-brief p {
+      margin-bottom: 0.75rem;
+    }
+    .markdown-content.scout-brief p:last-child {
+      margin-bottom: 0;
+    }
+    .markdown-content.scout-brief ul,
+    .markdown-content.scout-brief ol {
+      margin: 0.35rem 0 0.85rem;
+      padding-left: 1.5rem;
+    }
+    .markdown-content.scout-brief ol {
+      list-style: decimal;
+    }
+    .markdown-content.scout-brief ul {
+      list-style: none;
+    }
+    .markdown-content.scout-brief li {
+      margin-bottom: 0.45rem;
+    }
+    .markdown-content.scout-brief strong {
+      color: #fff;
+      font-weight: 600;
+    }
+    .markdown-content.scout-brief em {
+      color: #d1d5db;
+    }
+    .markdown-content.scout-brief code {
+      font-size: 0.92em;
+      color: var(--gold-light);
+    }
+
     /* Audit-Specific Classes */
     .impact-high {
       background: rgba(191, 149, 63, 0.2);

@@ -59,6 +59,9 @@ const BusinessDNAView = lazyWithReload(() => import('./components/suite/Business
 const BrandMemoryView = lazyWithReload(() => import('./components/suite/BrandMemoryView').then(m => ({ default: m.BrandMemoryView })));
 const DashboardView = lazyWithReload(() => import('./components/suite/DashboardView').then(m => ({ default: m.DashboardView })));
 const IdeaScoutView = lazyWithReload(() => import('./components/suite/IdeaScoutView').then(m => ({ default: m.IdeaScoutView })));
+const MerchantLaunchpadView = lazyWithReload(() => import('./components/launchpad/MerchantLaunchpadView').then(m => ({ default: m.MerchantLaunchpadView })));
+const TrustCenterView = lazyWithReload(() => import('./components/trust/TrustCenterView').then(m => ({ default: m.TrustCenterView })));
+const VerifyReceiptView = lazyWithReload(() => import('./components/trust/VerifyReceiptView').then(m => ({ default: m.VerifyReceiptView })));
 const StressTestView = lazyWithReload(() => import('./components/suite/StressTestView').then(m => ({ default: m.StressTestView })));
 const DataAnalystView = lazyWithReload(() => import('./components/suite/DataAnalystView').then(m => ({ default: m.DataAnalystView })));
 const OrganizerView = lazyWithReload(() => import('./components/suite/OrganizerView').then(m => ({ default: m.OrganizerView })));
@@ -948,6 +951,14 @@ const App: React.FC = () => {
     );
   }
 
+  if (view === AppView.VERIFY_RECEIPT) {
+    return (
+      <Suspense fallback={<ViewLoader label="Loading receipt" />}>
+        <VerifyReceiptView onBack={() => setView(AppView.LANDING)} />
+      </Suspense>
+    );
+  }
+
   if (view === AppView.VERIFY_ATTESTATION) {
     return (
       <Suspense fallback={<ViewLoader label="Verifying attestation" />}>
@@ -1249,6 +1260,25 @@ const App: React.FC = () => {
                   >
                     <ICONS.Zap className="w-3.5 h-3.5 text-gold-light" />
                     <span>Idea Scout</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.LAUNCHPAD); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Zap className="w-3.5 h-3.5 text-gold" />
+                    <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
+                      <span className="font-semibold truncate">SMB Launchpad</span>
+                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold shrink-0">WEB3</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.TRUST_CENTER); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.CheckCircle className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Trust</span>
                   </button>
                   <button
                     type="button"
@@ -1670,6 +1700,23 @@ const App: React.FC = () => {
         {/* VIEW: Luminara Intelligence Studio */}
         {view === AppView.NOTEBOOK && (
           <NotebookView dna={dna} />
+        )}
+
+        {/* VIEW: Oceania SMB Web3 Launchpad & Loyalty */}
+        {view === AppView.LAUNCHPAD && (
+          <MerchantLaunchpadView
+            onRunAudit={(host) => {
+              draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, host);
+              setAuditHandoff(null);
+              setTelegramAuditUrl(host);
+              setView(AppView.INSTANT_AUDIT);
+            }}
+          />
+        )}
+
+        {/* VIEW: Trust (domain verification + signed receipts) */}
+        {view === AppView.TRUST_CENTER && (
+          <TrustCenterView initialDomain={draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL)} />
         )}
         </Suspense>
 

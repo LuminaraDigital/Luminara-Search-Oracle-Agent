@@ -155,7 +155,7 @@ export const ApiKeyLlmTab: React.FC<ApiKeyLlmTabProps> = ({
           </span>
         </label>
         <p className="text-[10px] text-gray-400">
-          Runs in your browser against your sidecar only. Same base URL + key can power Cursor, Claude Code, and Codex. See docs/freellmapi.md.
+          Runs in your browser against your sidecar only. Hosted web does not call the default http://localhost:3001/v1 until you save a different base URL. The desktop app and local dev still use that address when this field is empty. Same base URL + key can power Cursor, Claude Code, and Codex. See docs/freellmapi.md.
         </p>
       </div>
 
@@ -482,7 +482,7 @@ export const ApiKeyLlmTab: React.FC<ApiKeyLlmTabProps> = ({
             </p>
           )}
           <p className="text-[10px] text-gray-400 mt-1">
-            Local daemon at <code className="text-gold-light">{ollamaEndpoint || 'http://127.0.0.1:11434'}</code> is auto-detected without a key.
+            Local daemon at <code className="text-gold-light">{ollamaEndpoint || 'http://127.0.0.1:11434'}</code> is auto-detected on the desktop app and when this page is served from localhost. Hosted luminarasuite.com skips that probe unless you save a different endpoint.
             With an Ollama Cloud key, Ping lists every cloud model for the composer picker. Cloud chat uses the Worker BYOK relay in production.
           </p>
         </div>

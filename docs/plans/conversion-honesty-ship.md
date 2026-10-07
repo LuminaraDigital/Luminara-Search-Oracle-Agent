@@ -1,7 +1,7 @@
 # Conversion honesty ship (C0-C4 + L7 gate)
 
 **Date:** 2026-10-02  
-**Status:** C0 + C1 + C2 implemented locally (2026-10-02). Typecheck + targeted Probe/crawl tests green. L7 release still needs operator go (merge main, staging smoke, signed-in click-through). C3 Stripe deferred. C4 Field polish not started.  
+**Status:** C0 + C1 + C2 shipped to staging and production (2026-10-02). PR #37 merged (`5cbfcad`). Staging + prod CI smoke green; probe-crawl verified on both. C3 Stripe deferred. C4 Field polish / full browser click-through still open for operators.  
 **Owner:** CEO craft loop + full-stack + payments + AI honesty  
 **Companions:** [`landing-app-coherence-ship.md`](./landing-app-coherence-ship.md) (L0-L6 done; L7 blocked until C0+C2 on staging), [`landing-moat-100x.md`](./landing-moat-100x.md) (honesty locks), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md) (APS), [`virality-activation-loops.md`](./virality-activation-loops.md)  
 **Reviews:** CEO plan review (2026-10-02), Worker Probe architecture explore, payments surface explore, CEO double-check PASS (post-fix). Implementation review pending this session.

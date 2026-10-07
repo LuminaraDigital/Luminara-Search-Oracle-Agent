@@ -1,5 +1,6 @@
 import React from 'react';
 import type { GuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { renderMarkdown } from '../../utils/markdown';
 
 const badgeClass: Record<string, string> = {
   measured: 'border-gold/40 text-gold-light bg-gold/10',
@@ -33,7 +34,10 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       <h2 className="mt-3 text-[clamp(1.6rem,4vw,2.4rem)] font-semibold tracking-tight text-white [overflow-wrap:anywhere]">
         {summary.domain}
       </h2>
-      <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-gray-200">{summary.verdict}</p>
+      <div
+        className="markdown-content scout-brief mt-4 max-w-2xl text-[15px] leading-relaxed text-gray-200"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(summary.verdictMarkdown || summary.verdict) }}
+      />
       {summary.banner && (
         <p role="status" className="mt-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm leading-relaxed text-gray-200">
           {summary.banner}

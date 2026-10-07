@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { plainScoutVerdict } from '../../services/audit/guestScoutSummary';
 import { fetchShareTeaser, type TeaserPublic } from '../../services/share/shareReportClient';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 
@@ -68,7 +69,7 @@ export const TeaserShareView: React.FC<{ onOpenApp?: () => void }> = ({ onOpenAp
           <article>
             <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Redacted teaser, not a verified measurement</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white [overflow-wrap:anywhere]">{teaser.domain}</h2>
-            <p className="mt-5 text-[15px] leading-relaxed text-gray-200">{teaser.verdict}</p>
+            <p className="mt-5 text-[15px] leading-relaxed text-gray-200">{plainScoutVerdict(teaser.verdict)}</p>
             <h3 className="mt-8 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Your next move</h3>
             <p className="mt-2 text-sm text-white">{teaser.topFix}</p>
             <h3 className="mt-8 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Evidence</h3>

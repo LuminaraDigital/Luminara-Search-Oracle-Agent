@@ -6,7 +6,7 @@
  * and can be forced for local Vite dev with VITE_API_BASE=http://localhost:8787.
  */
 import { getInitDataRaw } from './telegram/tma';
-import { getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
+import { ensureFirebaseIdTokenCached, getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
 import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
@@ -31,6 +31,8 @@ export interface ServerHealth {
   ton?: boolean;
   tonPricing?: Record<string, unknown>;
   tiers?: { free?: string[]; paid?: string[] };
+  /** Trust Receipts / domain verification flags. Absent on older Workers (treat as off). */
+  trust?: { receiptsEnabled?: boolean; receiptSigningConfigured?: boolean; domainVerifyEnabled?: boolean };
 }
 
 const EMPTY_HEALTH: ServerHealth = { ok: false, providers: {}, telegram: false, requireAuth: false, plans: {} };
@@ -51,6 +53,10 @@ export const BYOK_PROVIDER_IDS = [
 let healthCache: ServerHealth | null = null;
 let healthPromise: Promise<ServerHealth> | null = null;
 let healthFailedAt = 0;
+let healthSeq = 0;
+/** Last successful ensureHostedProviderReady health recheck. Avoids a second fetch in the same run. */
+let hostedReadyAt = 0;
+const HOSTED_READY_TTL_MS = 15_000;
 
 export function apiBase(): string {
   const forced = (import.meta as any).env?.VITE_API_BASE as string | undefined;
@@ -82,7 +88,28 @@ export function canRelayWithOwnKey(providerId: string): boolean {
   return (BYOK_PROVIDER_IDS as readonly string[]).includes(providerId);
 }
 
-/** Fetches /api/health; retries after failures instead of caching a permanent miss. */
+function commitServerHealth(seq: number, h: ServerHealth | null): ServerHealth {
+  if (seq !== healthSeq) return healthCache || EMPTY_HEALTH;
+  if (h?.ok) {
+    healthCache = h;
+    healthFailedAt = 0;
+    return healthCache;
+  }
+  // A failed recheck must not wipe a previous good snapshot.
+  if (!healthCache?.ok) {
+    healthCache = EMPTY_HEALTH;
+    healthFailedAt = Date.now();
+    return healthCache;
+  }
+  healthFailedAt = Date.now();
+  return healthCache;
+}
+
+/**
+ * Fetches /api/health. Retries after failures instead of caching a permanent miss.
+ * `force` bypasses the success cache and the short failure cooldown so Instant Audit
+ * can recover when the boot probe failed.
+ */
 export async function loadServerHealth(opts: { force?: boolean } = {}): Promise<ServerHealth> {
   if (!apiBase()) {
     healthCache = EMPTY_HEALTH;
@@ -95,25 +122,24 @@ export async function loadServerHealth(opts: { force?: boolean } = {}): Promise<
     healthCache?.ok === false && healthFailedAt > 0 && Date.now() - healthFailedAt < 5_000;
   if (!opts.force && recentlyFailed) return healthCache as ServerHealth;
 
+  if (opts.force && healthPromise) {
+    await healthPromise;
+    if (healthPromise) return healthPromise;
+  }
+
+  const seq = ++healthSeq;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = controller ? setTimeout(() => controller.abort(), 5000) : null;
-  healthPromise = fetch(`${apiBase()}/api/health`, { signal: controller?.signal })
-    .then(r => (r.ok ? r.json() : EMPTY_HEALTH))
-    .then((h: ServerHealth) => {
-      healthCache = h?.ok ? h : EMPTY_HEALTH;
-      healthFailedAt = healthCache.ok ? 0 : Date.now();
-      return healthCache;
-    })
-    .catch(() => {
-      healthCache = EMPTY_HEALTH;
-      healthFailedAt = Date.now();
-      return EMPTY_HEALTH;
-    })
+  const promise = fetch(`${apiBase()}/api/health`, { signal: controller?.signal })
+    .then((r) => (r.ok ? r.json() : EMPTY_HEALTH))
+    .then((h: ServerHealth) => commitServerHealth(seq, h))
+    .catch(() => commitServerHealth(seq, null))
     .finally(() => {
       if (timer) clearTimeout(timer);
-      healthPromise = null;
+      if (healthPromise === promise) healthPromise = null;
     });
-  return healthPromise;
+  healthPromise = promise;
+  return promise;
 }
 
 export function getServerHealthSync(): ServerHealth { return healthCache || EMPTY_HEALTH; }
@@ -319,7 +345,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   // Run-scoped: after the first hosted 401/403, skip later /api/providers calls.
   // workerFetchWithAuthRetry still refreshes a Firebase token once on the first 401.
   if (hostedAuthBlocked()) {
-    return hostedAuthCircuitResponse();
+    return hostedAuthCircuitResponse(clientHasHostedIdentity());
   }
 
   const headers = new Headers(init.headers || {});
@@ -448,7 +474,10 @@ export function hostedProviderKeyDecision(input: {
   return input.hasIdentity;
 }
 
-/** True when the Worker may inject a hosted key for this provider for the current user. */
+/**
+ * True when the Worker may inject a hosted key for this provider for the current user.
+ * Sync only. Call ensureHostedProviderReady() before Instant Audit resolves keys.
+ */
 export function canUseHostedProviderKey(providerId: string): boolean {
   return hostedProviderKeyDecision({
     proxyReady: isProxyMode() && isProviderConfiguredOnServer(providerId),
@@ -456,6 +485,182 @@ export function canUseHostedProviderKey(providerId: string): boolean {
     paidPlan: hasActivePaidPlanSync(),
     hasIdentity: clientHasHostedIdentity(),
   });
+}
+
+/**
+ * Why Instant Audit will or will not use a provider.
+ * Order matches ConfigService.getKey, then canUseHostedProviderKey:
+ * local/env key, proxy health, Worker provider list, paid plan, signed-in identity.
+ */
+export type HostedProviderDecisionReason =
+  | 'byok'
+  | 'hosted'
+  | 'no_health'
+  | 'not_configured'
+  | 'no_identity'
+  | 'paid_required';
+
+/** Storage and Vite env slots. Keep aligned with ConfigService.getKey accessors. */
+const PROVIDER_BYOK_SLOTS: Record<string, { storageKey: string; viteKey: string }> = {
+  groq: { storageKey: 'luminara_groq_key', viteKey: 'VITE_GROQ_API_KEY' },
+  nim: { storageKey: 'luminara_nvidia_key', viteKey: 'VITE_NVIDIA_API_KEY' },
+  ollama: { storageKey: 'luminara_ollama_key', viteKey: 'VITE_OLLAMA_API_KEY' },
+  openrouter: { storageKey: 'luminara_openrouter_key', viteKey: 'VITE_OPENROUTER_API_KEY' },
+  gemini: { storageKey: 'luminara_api_key', viteKey: 'VITE_GEMINI_API_KEY' },
+  tavily: { storageKey: 'luminara_tavily_key', viteKey: 'VITE_TAVILY_API_KEY' },
+  exa: { storageKey: 'luminara_exa_key', viteKey: 'VITE_EXA_API_KEY' },
+  firecrawl: { storageKey: 'luminara_firecrawl_key', viteKey: 'VITE_FIRECRAWL_API_KEY' },
+};
+
+function readStoredKey(storageKey: string): string {
+  try {
+    if (typeof window === 'undefined') return '';
+    const stored = localStorage.getItem(storageKey);
+    return stored && stored.trim() ? stored.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function readViteKey(viteKey: string): string {
+  try {
+    const env = (import.meta as { env?: Record<string, unknown> }).env;
+    const val = env ? env[viteKey] : '';
+    return typeof val === 'string' && val.trim() ? val.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+/** True when a real local or baked-in key is present. The hosted 'proxy' sentinel is not a BYOK key. */
+function hasByokProviderKey(providerId: string): boolean {
+  if (providerId === 'dataforseo') {
+    if (readStoredKey('luminara_dataforseo_key')) return true;
+    return Boolean(readStoredKey('luminara_dataforseo_login') && readStoredKey('luminara_dataforseo_password'));
+  }
+  const slot = PROVIDER_BYOK_SLOTS[providerId];
+  if (!slot) return false;
+  return Boolean(readStoredKey(slot.storageKey) || readViteKey(slot.viteKey));
+}
+
+export function hostedProviderDecisionReason(providerId: string): HostedProviderDecisionReason {
+  if (hasByokProviderKey(providerId)) return 'byok';
+  if (!isProxyMode()) return 'no_health';
+  if (!isProviderConfiguredOnServer(providerId)) return 'not_configured';
+  if (isPaidHostedProvider(providerId)) {
+    return hasActivePaidPlanSync() ? 'hosted' : 'paid_required';
+  }
+  return clientHasHostedIdentity() ? 'hosted' : 'no_identity';
+}
+
+function firecrawlSkipDetail(reason: HostedProviderDecisionReason): string {
+  switch (reason) {
+    case 'no_identity': return 'no identity';
+    case 'no_health': return 'provider status not ready';
+    case 'not_configured': return 'not configured';
+    case 'paid_required': return 'paid plan required';
+    case 'byok': return 'your key';
+    case 'hosted': return 'hosted';
+  }
+}
+
+/** Short Firecrawl clause. Empty when a key or the hosted proxy will be used. */
+export function formatFirecrawlSkipDetail(reason: HostedProviderDecisionReason): string {
+  if (reason === 'hosted' || reason === 'byok') return '';
+  return `Firecrawl: ${firecrawlSkipDetail(reason)}`;
+}
+
+export function formatPageFetchClause(reason: HostedProviderDecisionReason): string {
+  if (reason === 'hosted') return 'Page fetch: hosted Firecrawl';
+  if (reason === 'byok') return 'Page fetch: your Firecrawl key';
+  return `Page fetch: Jina (Firecrawl: ${firecrawlSkipDetail(reason)})`;
+}
+
+export function formatSearchSkipReason(reason: HostedProviderDecisionReason): string {
+  switch (reason) {
+    case 'no_identity': return 'Search off: sign-in token not ready.';
+    case 'no_health': return 'Search off: provider status not ready.';
+    case 'not_configured': return 'Search off: Tavily is not configured.';
+    case 'paid_required': return 'Search off: a paid plan is required.';
+    case 'byok': return 'Search: your Tavily key.';
+    case 'hosted': return 'Search: hosted Tavily.';
+  }
+}
+
+function formatModelClause(reason: HostedProviderDecisionReason): string {
+  switch (reason) {
+    case 'hosted':
+    case 'byok':
+      return '';
+    case 'no_identity': return 'Model off: sign-in token not ready';
+    case 'no_health': return 'Model off: provider status not ready';
+    case 'not_configured': return 'Model off: Groq is not configured';
+    case 'paid_required': return 'Model off: a paid plan is required';
+  }
+}
+
+/** One Mission Control line for Firecrawl, Tavily, and Groq. Groq is included only when it will not run. */
+export function formatInstantAuditProviderSummary(): string {
+  const page = formatPageFetchClause(hostedProviderDecisionReason('firecrawl'));
+  const tavily = hostedProviderDecisionReason('tavily');
+  const search = tavily === 'hosted'
+    ? 'Search: hosted Tavily'
+    : tavily === 'byok'
+      ? 'Search: your Tavily key'
+      : formatSearchSkipReason(tavily).replace(/\.$/, '');
+  const model = formatModelClause(hostedProviderDecisionReason('groq'));
+  return model ? `${page} · ${search} · ${model}` : `${page} · ${search}`;
+}
+
+/** Crew error record. Not a provider failure: guest teasers ignore this prefix. */
+export const PROVIDER_DECISIONS_RECORD_PREFIX = 'provider_decisions ';
+
+export function providerDecisionsErrorRecord(): string {
+  const parts = ['firecrawl', 'tavily', 'groq'].map(
+    (id) => `${id}=${hostedProviderDecisionReason(id)}`,
+  );
+  return `${PROVIDER_DECISIONS_RECORD_PREFIX}${parts.join(' ')}`;
+}
+
+export function isProviderDecisionRecord(err: string): boolean {
+  return err.trim().startsWith(PROVIDER_DECISIONS_RECORD_PREFIX);
+}
+
+export interface HostedProviderReady {
+  healthOk: boolean;
+  hasIdentity: boolean;
+  groq: boolean;
+  tavily: boolean;
+  firecrawl: boolean;
+}
+
+function readHostedProviderReady(): HostedProviderReady {
+  return {
+    healthOk: getServerHealthSync().ok === true,
+    hasIdentity: clientHasHostedIdentity(),
+    groq: canUseHostedProviderKey('groq'),
+    tavily: canUseHostedProviderKey('tavily'),
+    firecrawl: canUseHostedProviderKey('firecrawl'),
+  };
+}
+
+/**
+ * Recheck Worker /api/health and await a Firebase ID token so the sync cache is
+ * populated when a session exists. Call this before Instant Audit resolves
+ * Firecrawl, Tavily, or Groq. A repeat call in the same few seconds reuses a
+ * successful health snapshot and still awaits a missing token.
+ */
+export async function ensureHostedProviderReady(): Promise<HostedProviderReady> {
+  const healthFresh =
+    hostedReadyAt > 0 &&
+    Date.now() - hostedReadyAt < HOSTED_READY_TTL_MS &&
+    getServerHealthSync().ok === true;
+  await Promise.all([
+    healthFresh ? Promise.resolve(getServerHealthSync()) : loadServerHealth({ force: true }),
+    ensureFirebaseIdTokenCached(),
+  ]);
+  if (getServerHealthSync().ok === true) hostedReadyAt = Date.now();
+  return readHostedProviderReady();
 }
 
 export function updateQuotaFromHeaders(headers: Headers): void {

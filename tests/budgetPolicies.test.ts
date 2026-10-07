@@ -297,7 +297,7 @@ describe('hard stop and approve-once resume', () => {
 
   it('enforcement fails open when the budget tables are missing (H1)', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const env = makeEnv(new Map(), { DB: createSqliteD1({ skipMigrations: ['0012', '0013'] }) });
+    const env = makeEnv(new Map(), { DB: createSqliteD1({ skipMigrations: ['0012', '0013', '0019'] }) });
     expect(await isBudgetHalted(env, 'acct_x', MAY_15)).toBe(false);
   });
 
@@ -361,7 +361,7 @@ describe('MCP gate integration', () => {
     const audit = await env.DB!.prepare(
       `SELECT action, target_id FROM org_audit_logs WHERE org_id = ? ORDER BY created_at DESC LIMIT 1`,
     )
-      .bind('acct_gate')
+      .bind('org_acct_gate')
       .first<{ action: string; target_id: string }>();
     expect(audit?.action).toBe('mcp_tool_block');
     expect(audit?.target_id).toBe('get_pagespeed_summary');
@@ -459,7 +459,7 @@ describe('MCP gate integration', () => {
     const alertAudit = await env.DB!.prepare(
       `SELECT COUNT(*) AS n FROM org_audit_logs WHERE org_id = ? AND action = 'budget_soft_alert'`,
     )
-      .bind('acct_gate')
+      .bind('org_acct_gate')
       .first<{ n: number }>();
     expect(alertAudit?.n).toBe(1);
   });

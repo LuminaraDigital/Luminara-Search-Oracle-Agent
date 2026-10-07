@@ -9,7 +9,10 @@
 import { tavilyService } from '../../search/tavilyService';
 import { localSerpService } from '../../search/localSerpService';
 import { configService } from '../../configService';
+import { clientHasHostedIdentity, formatSearchSkipReason, hostedProviderDecisionReason } from '../../apiClient';
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
+import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
+import { isSampleSearchRow } from '../auditEvidenceGate';
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { BusinessDNA } from '../../../types';
 
@@ -57,7 +60,7 @@ export class SerpRadarAgent {
         agentRole: 'serp_radar',
         agentName: this.name,
         phase: 'radar_complete',
-        message: 'Search providers skipped after an authentication failure. Citation rate and share of voice were not measured. Add your own key in Settings or sign in.',
+        message: `Search providers skipped after an authentication failure. Citation rate and share of voice were not measured. ${hostedAuthRecoveryHint({ signedIn: clientHasHostedIdentity() })}`,
         status: 'completed',
         evidenceSnippet: 'No live search snippets. Citation rate is not measured.',
       });
@@ -122,8 +125,14 @@ export class SerpRadarAgent {
       }
     }
 
-    const totalItems = serpEvidence.length;
-    const mentionedItems = serpEvidence.filter((e) => e.brandMentioned).length;
+    const sawSample = serpEvidence.some((row) => isSampleSearchRow(row));
+    const searchSkipped = !tavilyKey && !localSerpEnabled;
+    const searchSkipReason = searchSkipped
+      ? formatSearchSkipReason(hostedProviderDecisionReason('tavily'))
+      : '';
+    const liveEvidence = serpEvidence.filter((row) => !isSampleSearchRow(row));
+    const totalItems = liveEvidence.length;
+    const mentionedItems = liveEvidence.filter((e) => e.brandMentioned).length;
     const citationRatePercent = totalItems > 0 ? Math.round((mentionedItems / totalItems) * 100) : null;
     const shareOfVoiceScore =
       citationRatePercent == null
@@ -138,7 +147,11 @@ export class SerpRadarAgent {
       phase: 'radar_complete',
       message:
         citationRatePercent == null
-          ? `Analyzed 0 SERP results. Citation rate and share of voice were not measured.`
+          ? sawSample
+            ? 'Analyzed 0 SERP results. Citation rate and share of voice were not measured. Search evidence was a sample.'
+            : searchSkipReason
+              ? `Analyzed 0 SERP results. Citation rate and share of voice were not measured. ${searchSkipReason}`
+              : 'Analyzed 0 SERP results. Citation rate and share of voice were not measured.'
           : `Analyzed ${totalItems} SERP results. Empirical citation rate: ${citationRatePercent}%, Share-of-Voice: ${shareOfVoiceScore}/100.`,
       status: 'completed',
       evidenceSnippet:
@@ -149,7 +162,7 @@ export class SerpRadarAgent {
     });
 
     return {
-      serpEvidence,
+      serpEvidence: liveEvidence,
       citationRatePercent,
       shareOfVoiceScore,
     };

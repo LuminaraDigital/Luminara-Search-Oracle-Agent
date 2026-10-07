@@ -87,6 +87,7 @@ docs/internal/
 coverage/
 .cursor/
 tasks/
+Claude outputs/
 
 # Local agent / IDE residue (never publish as product surface)
 .hallmark/

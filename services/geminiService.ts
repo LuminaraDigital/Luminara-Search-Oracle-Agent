@@ -46,6 +46,13 @@ export interface StreamQueryOptions {
 }
 
 import { empiricalCitationService, type EmpiricalCitationSummary } from './audit/empiricalCitationService';
+import {
+  formatCrewPagesForReport,
+  formatCrewSerpForReport,
+  serpRowsToCitationGroups,
+  type AuditReportCrewEvidence,
+} from './audit/reuseCrewEvidence';
+export type { AuditReportCrewEvidence };
 import { cmsDeploymentService, type RemediationPayload } from './deployment/cmsDeploymentService';
 import { aeoCorpusService } from './corpus/aeoCorpusService';
 import { publicApisEnrichmentService, type EnrichedEntityIntelligence } from './enrichment/publicApisEnrichmentService';
@@ -194,6 +201,11 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
     rationale: plan.rationale,
   };
 }
+
+/** Audit-report search fetch. Calls go through this object so tests can spy without touching chat search. */
+export const auditReportEvidenceFetch = {
+  gatherSearchEvidence,
+};
 
 export class ProviderUnavailableError extends Error {
   constructor(message = 'No native LLM responded. Check your NVIDIA NIM, Groq, or Ollama connection in Settings.') {
@@ -544,13 +556,15 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
   }
 
   /**
-   * Generates a structured Markdown audit report with live Firecrawl scraping and Tavily SERP search
+   * Generates a structured Markdown audit report with live Firecrawl scraping and Tavily SERP search.
+   * When Instant Audit passes usable crew pages or SERP rows, those are reused and the matching fetch is skipped.
    */
   async generateAuditReport(
     websiteUrl: string,
     focus: ReportFocus = 'SEO',
     dna?: BusinessDNA | null,
-    lenses: AuditLens[] = []
+    lenses: AuditLens[] = [],
+    crewEvidence?: AuditReportCrewEvidence,
   ): Promise<AuditReportResult> {
     const dnaContext = this.getDNAContext(dna);
     const allLenses = [...new Set([...lenses, ...inferLenses(dna)])];
@@ -585,26 +599,33 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
       focusIntro = `Specialized analysis of the repository's visibility across Answer Engines (Perplexity, ChatGPT, Claude), llms.txt readiness, and README answer extractability.`;
     }
 
-    // 1. Live sitewide evidence pack (homepage + smart map/links or deep Firecrawl crawl)
+    // 1. Live sitewide evidence pack (homepage + smart map/links or deep Firecrawl crawl).
+    // Crew pages with observable text or schema skip this second pack.
     let scrapedContent = '';
     let scrapedText = '';
-    try {
-      const pack = await siteEvidencePackService.buildPack(websiteUrl, {
-        focusHint: dna?.industry || dna?.name || focus,
-      });
-      if (pack.success && pack.formattedEvidence) {
-        scrapedContent = `\n${pack.formattedEvidence}\n`;
-        scrapedText = pack.combinedText || '';
-      } else {
-        // Hard fallback: single-page scrape if pack failed entirely.
-        const scrapeRes = await unifiedScraperService.scrapeAndDistill(websiteUrl, { maxChars: 8000 });
-        if (scrapeRes.success && scrapeRes.formattedEvidence) {
-          scrapedContent = `\n${scrapeRes.formattedEvidence}\n`;
-          scrapedText = scrapeRes.distilled?.distilledText || '';
+    const reusedPages = formatCrewPagesForReport(websiteUrl, crewEvidence?.scrapedPages);
+    if (reusedPages) {
+      scrapedContent = `\n${reusedPages.formattedEvidence}\n`;
+      scrapedText = reusedPages.combinedText;
+    } else {
+      try {
+        const pack = await siteEvidencePackService.buildPack(websiteUrl, {
+          focusHint: dna?.industry || dna?.name || focus,
+        });
+        if (pack.success && pack.formattedEvidence) {
+          scrapedContent = `\n${pack.formattedEvidence}\n`;
+          scrapedText = pack.combinedText || '';
+        } else {
+          // Hard fallback: single-page scrape if pack failed entirely.
+          const scrapeRes = await unifiedScraperService.scrapeAndDistill(websiteUrl, { maxChars: 8000 });
+          if (scrapeRes.success && scrapeRes.formattedEvidence) {
+            scrapedContent = `\n${scrapeRes.formattedEvidence}\n`;
+            scrapedText = scrapeRes.distilled?.distilledText || '';
+          }
         }
+      } catch (e) {
+        console.warn('[Audit] Site evidence pack skipped', e);
       }
-    } catch (e) {
-      console.warn('[Audit] Site evidence pack skipped', e);
     }
 
     // 1b. Writing check (page copy) + Results tracking (measured traffic) - best-effort, in parallel.
@@ -630,13 +651,18 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
       console.warn('[Audit] Results tracking skipped', trafficSettled.reason);
     }
 
-    // 2. Real SERP search via Tavily / Local SERP Sidecar
+    // 2. Real SERP search via Tavily / Local SERP Sidecar.
+    // Live crew SERP rows skip this second search.
     let searchGrounding = '';
     const sources: Array<{ uri: string; title: string }> = [{ uri: websiteUrl, title: `${displayUrl} (Target Domain)` }];
-    if (configService.getTavilyKey() || configService.isLocalSerpEnabled()) {
+    const reusedSerp = formatCrewSerpForReport(crewEvidence?.serpEvidence);
+    if (reusedSerp) {
+      searchGrounding = `\n${reusedSerp.contextText}\n`;
+      sources.push(...reusedSerp.sources);
+    } else if (configService.getTavilyKey() || configService.isLocalSerpEnabled()) {
       try {
         const brand = dna?.name || displayUrl.split('.')[0];
-        const evidence = await gatherSearchEvidence(`${brand} ${displayUrl} reviews competitors alternatives ${focus === 'SEO' ? 'ranking' : 'AI Overviews citation'}`, dna, 8);
+        const evidence = await auditReportEvidenceFetch.gatherSearchEvidence(`${brand} ${displayUrl} reviews competitors alternatives ${focus === 'SEO' ? 'ranking' : 'AI Overviews citation'}`, dna, 8);
         if (evidence.contextText) {
           searchGrounding = `\n${evidence.contextText}\n`;
           sources.push(...evidence.sources);
@@ -647,15 +673,32 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     }
 
     // 3. Search-sample citation probe. ESTIMATED: substring match, nothing re-fetched or confirmed.
+    // Live crew SERP rows are scored in place. A not_measured reuse falls back to the live probe.
     let empiricalSummary: EmpiricalCitationSummary | undefined;
     try {
-      empiricalSummary = await empiricalCitationService.probeDomainCitations(
-        websiteUrl,
-        dna?.name,
-        dna?.competitors || []
-      );
+      const citationGroups = serpRowsToCitationGroups(crewEvidence?.serpEvidence);
+      if (citationGroups.length > 0) {
+        const reused = empiricalCitationService.summarizePrefetchedCitations(
+          websiteUrl,
+          dna?.name,
+          dna?.competitors || [],
+          citationGroups,
+        );
+        if (reused.measurementStatus !== 'not_measured') empiricalSummary = reused;
+      }
     } catch (e) {
-      console.warn('[Audit] Empirical citation probe fallback', e);
+      console.warn('[Audit] Reused citation rows skipped', e);
+    }
+    if (!empiricalSummary) {
+      try {
+        empiricalSummary = await empiricalCitationService.probeDomainCitations(
+          websiteUrl,
+          dna?.name,
+          dna?.competitors || []
+        );
+      } catch (e) {
+        console.warn('[Audit] Empirical citation probe fallback', e);
+      }
     }
     const empiricalText = buildEmpiricalPromptSection(empiricalSummary);
 

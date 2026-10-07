@@ -20,13 +20,13 @@ import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
-import { apiBase, getCurrentQuotaSync, hasActivePaidPlanSync, workerFetchWithAuthRetry } from '../../services/apiClient';
+import { apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry } from '../../services/apiClient';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
 import { Button } from '../ui/Button';
 import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
 import { SuiteCitabilityChecklist } from './SuiteCitabilityChecklist';
-import { buildGuestScoutSummary, isDegradedScout, shouldGenerateAuditReport, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { buildGuestScoutSummary, isDegradedScout, plainScoutVerdict, shouldGenerateAuditReport, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
 import { hostedScoutPreRunCopy, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import { canMintTeaserShare, createShareTeaser } from '../../services/share/shareReportClient';
@@ -42,6 +42,29 @@ export function instantAuditPrimaryLabel(crewRunning: boolean, isFullAudit: bool
   return isFullAudit ? 'Run full audit' : 'Run quick scout';
 }
 
+export type InstantAuditPersistOutcome = 'unmeasured' | 'unsaved';
+
+/** Save-status line under Instant Audit. Signed-in sessions are never told to sign in. */
+export function instantAuditPersistHint(signedIn: boolean, outcome: InstantAuditPersistOutcome): string {
+  if (!signedIn) {
+    if (outcome === 'unmeasured') {
+      return 'Scout finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.';
+    }
+    return 'Scout finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.';
+  }
+  if (outcome === 'unmeasured') {
+    return 'Scout finished. Use the summary above. This run did not measure the site, so no full report was generated. Strategy was not saved. Retry, or check Settings → provider status.';
+  }
+  return 'Audit complete. Strategy was not saved to a project. Retry, or check Settings for share links and MCP on your plan.';
+}
+
+/** Undefined until provider health is known. False when signed-in hosted Firecrawl and Tavily are both closed. */
+export function signedInHostedGateOpen(rail: HostedScoutRail): boolean | undefined {
+  if (rail !== 'signed_in_hosted') return undefined;
+  if (!getServerHealthSync().ok) return undefined;
+  return canUseHostedProviderKey('firecrawl') || canUseHostedProviderKey('tavily');
+}
+
 export async function generateAuditReportUnlessDegraded(input: {
   isGuest: boolean;
   summary: GuestScoutSummary;
@@ -50,11 +73,23 @@ export async function generateAuditReportUnlessDegraded(input: {
   targetFocus: ReportFocus;
   dna: BusinessDNA | null;
   lenses: AuditLens[];
+  scrapedPages?: AuditStateGraphContext['scrapedPages'];
+  serpEvidence?: AuditStateGraphContext['serpEvidence'];
 }): Promise<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null> {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
   }
-  return geminiService.generateAuditReport(input.formattedUrl, input.targetFocus, input.dna, input.lenses);
+  await ensureHostedProviderReady();
+  return geminiService.generateAuditReport(
+    input.formattedUrl,
+    input.targetFocus,
+    input.dna,
+    input.lenses,
+    {
+      scrapedPages: input.scrapedPages,
+      serpEvidence: input.serpEvidence,
+    },
+  );
 }
 
 function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
@@ -158,6 +193,21 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [mcpError, setMcpError] = useState<string | null>(null);
   const [mcpCopied, setMcpCopied] = useState<'key' | 'snippet' | null>(null);
   const isFullAudit = Boolean(dna);
+  const [preRunGate, setPreRunGate] = useState<boolean | undefined>(() => signedInHostedGateOpen(hostedRail));
+
+  useEffect(() => {
+    let cancelled = false;
+    const apply = () => {
+      if (!cancelled) setPreRunGate(signedInHostedGateOpen(hostedRail));
+    };
+    apply();
+    if (hostedRail === 'signed_in_hosted' && !getServerHealthSync().ok) {
+      void loadServerHealth().then(apply);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [hostedRail]);
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runSeq = useRef(0);
@@ -189,6 +239,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   };
 
   const handleExecuteAudit = async (targetUrl: string, targetFocus: ReportFocus) => {
+    const sessionSignedIn = !isGuest || hostedRail === 'signed_in_hosted';
     if (loading) return;
     const validationErr = validateAuditTargetUrl(targetUrl);
     if (validationErr) {
@@ -220,6 +271,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
     try {
       const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
+
+      // Health and the ID token must be current before the crew or the report reads hosted keys.
+      await ensureHostedProviderReady();
 
       // 1. Run the Autonomous Multi-Agent Search Crew with real-time streaming
       const crewResult = await crewOrchestrator.runAuditCrew(
@@ -308,8 +362,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (seq !== runSeq.current) return;
 
       // 2. Generate full enriched report.
-      // Guest degraded runs stay on the honest summary. The full report model
-      // can still invent citation language when providers returned nothing.
+      // Degraded runs stay on the honest summary for guests and signed-in sessions.
+      // The report model can invent citation language when nothing was measured.
       const result = await generateAuditReportUnlessDegraded({
         isGuest,
         summary,
@@ -318,13 +372,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         targetFocus,
         dna,
         lenses,
+        scrapedPages: crewResult.scrapedPages,
+        serpEvidence: crewResult.serpEvidence,
       });
       if (seq !== runSeq.current) return;
       if (!result) {
         setStrategySaved(false);
-        setPersistHint(withInvite(
-          'Scout finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.',
-        ));
+        setPersistHint(withInvite(instantAuditPersistHint(sessionSignedIn, 'unmeasured')));
         return;
       }
       if (crewResult.plainEnglishBrief && !result.plainEnglishBrief) {
@@ -353,22 +407,14 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           setPersistHint(withInvite(`Strategy saved to project ${saved.projectId.slice(0, 12)}…`));
         } else if (isGuest) {
           setStrategySaved(false);
-          setPersistHint(withInvite(
-            'Scout finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.',
-          ));
+          setPersistHint(withInvite(instantAuditPersistHint(false, 'unsaved')));
         } else {
           setStrategySaved(false);
-          setPersistHint(withInvite(
-            'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
-          ));
+          setPersistHint(withInvite(instantAuditPersistHint(true, 'unsaved')));
         }
       } catch {
         setStrategySaved(false);
-        setPersistHint(withInvite(
-          isGuest
-            ? 'Scout finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.'
-            : 'Audit complete. Sign in to save strategy to a project, create share links, or connect MCP.',
-        ));
+        setPersistHint(withInvite(instantAuditPersistHint(sessionSignedIn, 'unsaved')));
       }
 
       try {
@@ -408,7 +454,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (canMintTeaserShare()) {
         const minted = await createShareTeaser({
           domain: scoutSummary.domain,
-          verdict: scoutSummary.verdict,
+          verdict: plainScoutVerdict(scoutSummary.verdict),
           topFix: scoutSummary.topFix,
           evidenceNote: scoutSummary.evidenceUsed,
           badges: scoutSummary.badges.map((badge) => ({
@@ -430,7 +476,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       } else if (mode === 'share') {
         setShareNote('Public teaser links need Telegram or a signed-in session. Sharing the Mini App link instead.');
       }
-      const text = `${scoutSummary.verdict} Next: ${scoutSummary.topFix}`;
+      const text = `${plainScoutVerdict(scoutSummary.verdict)} Next: ${scoutSummary.topFix}`;
       if (mode === 'copy') {
         try {
           await navigator.clipboard.writeText(`${text}\n${url}`);
@@ -549,7 +595,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       </div>
 
       <div className="mb-4 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-gray-300 leading-relaxed">
-        {hostedScoutPreRunCopy(hostedRail)}
+        {hostedScoutPreRunCopy(hostedRail, { hostedGateOpen: preRunGate })}
         {isGuest && hostedRail === 'byok_or_signin' && (
           <span className="block mt-1 text-gray-400">
             Saving a project strategy and full branded share links still need sign-in. Growth and Agency include those share links.
@@ -915,6 +961,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             trustPack={report.trustPack}
             shareOfVoice={report.shareOfVoice}
             suppressLiveMetrics={crewMeasurement === 'not_measured'}
+            hostedRail={hostedRail}
             sourceGraph={report.sourceGraph}
             enterpriseTrust={report.enterpriseTrust}
             boardFindings={boardFindings}

@@ -23,6 +23,8 @@ export interface Env {
   /** Override GitHub repo slug for desktop download fallback (owner/name). */
   DESKTOP_GITHUB_REPO?: string;
   BOT_TOKEN?: string;
+  /** Optional Telegram bot token alias used for alert dispatches. */
+  TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
   /**
    * Dedicated secret for admin API routes (/admin/users, /admin/license/generate,
@@ -112,6 +114,35 @@ export interface Env {
   PROOF_ANCHOR_ENABLED?: string;
   /** Feature flag: enable XDC weekly re-check path (`true` / `false`). */
   PROOF_XDC_ENABLED?: string;
+  /**
+   * Feature flag: SMB Launchpad routes (`true` / `false`). Required in staging and production;
+   * routes return 404 without it. Unset in local dev (ENVIRONMENT unset) is on; explicit `false` always disables.
+   */
+  LAUNCHPAD_ENABLED?: string;
+  /** Feature flag: allow mainnet contract registration (`true` / `false`). Off until contract audit + legal sign-off. */
+  LAUNCHPAD_MAINNET_ENABLED?: string;
+  /** Launchpad RPC endpoints (https). Fall back to public RPCs; set a provider with an SLA in production. */
+  LAUNCHPAD_RPC_XDC_TESTNET?: string;
+  LAUNCHPAD_RPC_XDC_MAINNET?: string;
+  LAUNCHPAD_RPC_POLYGON_TESTNET?: string;
+  LAUNCHPAD_RPC_POLYGON_MAINNET?: string;
+  /** Testnet-only factory address overrides (mainnet addresses must be committed in services/launchpad/contracts.ts). */
+  LAUNCHPAD_FACTORY_XDC_TESTNET?: string;
+  LAUNCHPAD_FACTORY_POLYGON_TESTNET?: string;
+  /** Testnet-only dev escape hatch: skip the on-chain deployment check at registration (`true`). Ignored on mainnet. */
+  LAUNCHPAD_SKIP_CHAIN_VERIFY?: string;
+  /**
+   * Trust Network (docs/plans/trust-network-additive-plan.md). Flags follow the
+   * Launchpad rule: `true` / `false`; unset is on in local dev only.
+   */
+  TRUST_RECEIPTS_ENABLED?: string;
+  DOMAIN_VERIFY_ENABLED?: string;
+  /** Secret. Ed25519 private JWK (JSON) that signs Trust Receipts. Generate with `npm run keys:receipt`. */
+  RECEIPT_SIGNING_KEY?: string;
+  /** JSON array of retired Ed25519 public JWKs still published so old receipts verify. */
+  RECEIPT_RETIRED_PUBLIC_KEYS?: string;
+  /** DNS-over-HTTPS JSON endpoint for domain verification. Default https://cloudflare-dns.com/dns-query. */
+  DOMAIN_VERIFY_DOH_URL?: string;
   /** DataForSEO API login (hosted LLM Mentions / SERP). Pair with DATAFORSEO_PASSWORD. */
   DATAFORSEO_LOGIN?: string;
   DATAFORSEO_PASSWORD?: string;
