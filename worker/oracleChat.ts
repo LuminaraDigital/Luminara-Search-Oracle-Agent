@@ -11,6 +11,13 @@ import { getActiveSubscription } from './quotaMiddleware';
 import { hasDataForSeoCredentials } from '../services/config/runtimeKeys';
 import { startRun, completeRun } from './runProvenance';
 import { loadAgentSkill } from './agentSkills';
+import {
+  BYOK_PAID_CALL_COST_CENTS,
+  HOSTED_PAID_CALL_COST_CENTS,
+  isBudgetHalted,
+  recordCostEvent,
+} from './budgets';
+import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { runAllValidators, summarizeFindings } from './agentOutputValidators';
 import {
   buildOracleSystemPrompt,
@@ -137,7 +144,26 @@ export async function handleOracleChatSse(
         confirmTool: Boolean(body.confirmTool),
       });
 
-      if (body.projectId && caps.apiAccess && toolDecision.invoke && toolDecision.seed) {
+      const wantsPaidTool = Boolean(body.projectId && caps.apiAccess && toolDecision.invoke && toolDecision.seed);
+      const toolNow = Date.now();
+      const budgetHalted = wantsPaidTool ? await isBudgetHalted(env, accountId, toolNow) : false;
+
+      if (wantsPaidTool && budgetHalted) {
+        // Same budget gate as MCP callTool: the account hard stop wins over chat confirmTool.
+        await recordAuditLogBestEffort(env, {
+          org_id: auditOrgIdFor(accountId),
+          actor_id: user.id,
+          action: 'oracle_tool_block',
+          target_id: 'research_keywords',
+          details: { tool: 'research_keywords', decision: 'block', reason: 'budget_exhausted', projectId: body.projectId },
+        });
+        await write('tool', {
+          tool: 'research_keywords',
+          stage: 'blocked',
+          reason: 'budget_exhausted',
+          hint: 'Monthly budget hard stop reached. Resume or raise the budget in Settings.',
+        });
+      } else if (wantsPaidTool && toolDecision.seed) {
         const rt = buildPaidToolRuntime({
           env,
           accountId,
@@ -159,6 +185,30 @@ export async function handleOracleChatSse(
         );
         hadToolEvidence = true;
         toolNote = `\n\n${fenceToolResult('research_keywords', toolResult.text)}`;
+        if (!toolResult.isError) {
+          const billedCents = dfsCred ? BYOK_PAID_CALL_COST_CENTS : HOSTED_PAID_CALL_COST_CENTS;
+          if (billedCents > 0) {
+            await recordCostEvent(env, {
+              accountId,
+              toolName: 'research_keywords',
+              billedCents,
+              projectId: body.projectId ?? null,
+              creditClass: 'paid',
+              source: 'credit_class',
+              runId: runHandle?.runId ?? null,
+              credentialKind: 'oracle',
+              credentialId: null,
+              now: toolNow,
+            }).catch((err) => console.error('[budgets] oracle recordCostEvent failed:', err));
+          }
+          await recordAuditLogBestEffort(env, {
+            org_id: auditOrgIdFor(accountId),
+            actor_id: user.id,
+            action: 'oracle_tool_allow',
+            target_id: 'research_keywords',
+            details: { tool: 'research_keywords', projectId: body.projectId, byok: Boolean(dfsCred) },
+          });
+        }
         await write('tool', {
           tool: 'research_keywords',
           stage: 'done',

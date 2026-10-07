@@ -13,6 +13,16 @@ import { redactForAudit } from './logRedaction';
 const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
 /**
+ * Audit chain id for an account's personal org. Must match the id minted by
+ * getOrCreateUserOrg (worker/enterpriseStore.ts) so GET /enterprise/audit-logs
+ * can read agent, budget, and privacy events. Writers must never pass a raw
+ * accountId as org_id.
+ */
+export function auditOrgIdFor(accountId: string): string {
+  return `org_${String(accountId).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+/**
  * Non-secret fingerprint of a license key for audit metadata: first 12 hex chars
  * of SHA-256(key). Never log or store the raw key in audit details.
  */
@@ -205,26 +215,30 @@ export async function recordAuditLog(
 export async function getAuditLogs(
   env: UserStoreEnv,
   orgId: string,
-  options?: { limit?: number; offset?: number },
+  options?: { limit?: number; offset?: number; legacyOrgIds?: string[] },
 ): Promise<{ entries: AuditLogEntry[]; total: number }> {
   const limit = Math.min(Math.max(Number(options?.limit || 50), 1), 200);
   const offset = Math.max(Number(options?.offset || 0), 0);
+  // Legacy rows (pre auditOrgIdFor) used the raw accountId as org_id. They are
+  // merged on read, never rewritten: rewriting org_id would break the hash chain.
+  const orgIds = [orgId, ...(options?.legacyOrgIds || []).filter((id) => id && id !== orgId)].slice(0, 5);
+  const placeholders = orgIds.map(() => '?').join(', ');
 
   if (env.DB) {
     const countRow = await env.DB.prepare(
-      `SELECT COUNT(*) as total FROM org_audit_logs WHERE org_id = ?`,
+      `SELECT COUNT(*) as total FROM org_audit_logs WHERE org_id IN (${placeholders})`,
     )
-      .bind(orgId)
+      .bind(...orgIds)
       .first<{ total: number }>();
 
     const { results } = await env.DB.prepare(
       `SELECT id, org_id, actor_id, action, target_id, details, ip_address, user_agent, prev_hash, hash, created_at
        FROM org_audit_logs
-       WHERE org_id = ?
+       WHERE org_id IN (${placeholders})
        ORDER BY created_at DESC
        LIMIT ? OFFSET ?`,
     )
-      .bind(orgId, limit, offset)
+      .bind(...orgIds, limit, offset)
       .all<AuditLogEntry>();
 
     return {

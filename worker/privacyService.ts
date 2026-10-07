@@ -5,7 +5,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
-import { recordAuditLogBestEffort } from './auditLog';
+import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 
 const EXPORT_TTL_MS = 48 * 60 * 60 * 1000;
 const DELETE_CANCEL_MS = 24 * 60 * 60 * 1000;
@@ -232,7 +232,7 @@ export async function createPrivacyJob(
     .run();
 
   await recordAuditLogBestEffort(env, {
-    org_id: accountId,
+    org_id: auditOrgIdFor(accountId),
     actor_id: user.id,
     action: kind === 'export' ? 'privacy_export_requested' : 'privacy_delete_requested',
     target_id: id,
@@ -394,7 +394,7 @@ export async function cancelPrivacyDelete(
     .bind(Date.now(), jobId)
     .run();
   await recordAuditLogBestEffort(env, {
-    org_id: accountId,
+    org_id: auditOrgIdFor(accountId),
     actor_id: user.id,
     action: 'privacy_delete_cancelled',
     target_id: jobId,

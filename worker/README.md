@@ -56,6 +56,24 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 `apikey` = `lm_live_*` MCP key; `oauth` = `mcp_*` OAuth token;
 `admin` = `ADMIN_SECRET` header; `byok` = bring-your-own-key header.
 
+## Agent Passport invariants (K0)
+
+- **Audit chain id.** Account-scoped audit writes use `auditOrgIdFor(accountId)`
+  (`org_<sanitized accountId>`, same id `getOrCreateUserOrg` mints). Never pass a
+  raw accountId as `org_id`. Rows written before this rule keep their raw id (the
+  hash chain forbids rewrites); `GET /enterprise/audit-logs` merges them via
+  `getAuditLogs(..., { legacyOrgIds })` for personal orgs.
+- **Credential on every MCP call.** `resolveMcpUser` returns `{ user, credential }`
+  (`McpCredential` in `userTypes.ts`): `api_key` (id = `api_keys.id`), `oauth`, or
+  `session`. `scopes: null` means unrestricted.
+- **Scope gate.** Hosted paid MCP tools require `mcp:research` on the credential
+  (`SCOPE_INSUFFICIENT` otherwise). BYOK calls pass with `mcp:free`. OAuth tokens
+  minted before enforcement lack `scopeEnforced` and stay unrestricted until their
+  30-day TTL drains. Authorize without `scope` requests both; plan caps decide.
+- **Every paid call is metered.** MCP and Oracle chat `confirmTool` both check
+  `isBudgetHalted` first and write `cost_events` with `credential_kind` /
+  `credential_id` (`oracle` for chat). New paid surfaces must do the same.
+
 Public document redirects run in `worker/index.ts` before the marketing shell
 and the SPA asset fallback:
 

@@ -62,7 +62,7 @@ import {
   upsertAppUser,
 } from './userStore';
 import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
-import { recordAuditLog, getAuditLogs, recordAuditLogBestEffort } from './auditLog';
+import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort } from './auditLog';
 import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId } from './workerUtils';
@@ -691,7 +691,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const limit = Math.min(Number(url.searchParams.get('limit') || 50), 200);
     const offset = Math.max(Number(url.searchParams.get('offset') || 0), 0);
 
-    const logs = await getAuditLogs(env, org.id, { limit, offset });
+    const accountIdForLegacy = billingId(who.user);
+    const legacyOrgIds = org.id === auditOrgIdFor(accountIdForLegacy) ? [accountIdForLegacy] : [];
+    const logs = await getAuditLogs(env, org.id, { limit, offset, legacyOrgIds });
     return withCors(json({
       ok: true,
       orgId: org.id,
@@ -1380,7 +1382,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
           createdBy: who.user.id,
         });
         await recordAuditLogBestEffort(env, {
-          org_id: accountId,
+          org_id: auditOrgIdFor(accountId),
           actor_id: who.user.id,
           action: 'budget_policy_upsert',
           target_id: policy.id,
@@ -1399,7 +1401,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         return withCors(json({ ok: false, error: 'Budget store unavailable', code: 'BUDGET_UNAVAILABLE' }, 503));
       }
       await recordAuditLogBestEffort(env, {
-        org_id: accountId,
+        org_id: auditOrgIdFor(accountId),
         actor_id: who.user.id,
         action: 'budget_resume',
         target_id: resume.id,
@@ -1450,7 +1452,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         return withCors(json({ ok: false, error: 'Could not update action request', code: 'UPDATE_FAILED' }, 409));
       }
       await recordAuditLogBestEffort(env, {
-        org_id: accountId,
+        org_id: auditOrgIdFor(accountId),
         actor_id: who.user.id,
         action: decision === 'approve' ? 'mcp_action_approve' : 'mcp_action_deny',
         target_id: requestId,
@@ -1474,7 +1476,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       windowSec: 60,
     });
     if (!dual.ok) return withCors(dual.response);
-    return withCors(handleMcpRequest(request, env, resolved.user));
+    return withCors(handleMcpRequest(request, env, resolved.user, resolved.credential));
   }
 
   // APS: projects + context

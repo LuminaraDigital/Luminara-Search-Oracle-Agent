@@ -284,7 +284,7 @@ describe('mcp integration', () => {
     const audit = await env.DB.prepare(
       `SELECT action FROM org_audit_logs WHERE org_id = ? ORDER BY created_at DESC LIMIT 1`,
     )
-      .bind('acct_gov')
+      .bind('org_acct_gov')
       .first<{ action: string }>();
     expect(audit?.action).toBe('mcp_tool_allow');
   });

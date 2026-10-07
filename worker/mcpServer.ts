@@ -3,7 +3,8 @@
  * Implements initialize, tools/list, tools/call without vendoring the full MCP SDK.
  */
 import type { Env } from './env';
-import type { HostedIdentity } from './userTypes';
+import type { HostedIdentity, McpCredential } from './userTypes';
+import { SESSION_MCP_CREDENTIAL, credentialAllowsResearch } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { getActiveSubscription } from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
@@ -34,7 +35,7 @@ import {
   recordBudgetIncident,
   recordCostEvent,
 } from './budgets';
-import { recordAuditLogBestEffort } from './auditLog';
+import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { redactSensitive } from './logRedaction';
 
 export type McpToolDef = {
@@ -53,6 +54,8 @@ export type McpToolContext = {
   caps: ReturnType<typeof planCapsFor>;
   /** Optional BYOK DataForSEO credential from header x-provider-key */
   dataForSeoCredential: string | null;
+  /** Which credential authenticated this call (api key, OAuth token, or cookie session). */
+  credential: McpCredential;
 };
 
 export type McpToolResult = {
@@ -85,7 +88,12 @@ function requireString(args: Record<string, unknown>, key: string): string | nul
   return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
-async function buildCtx(env: Env, user: HostedIdentity, request: Request): Promise<McpToolContext> {
+async function buildCtx(
+  env: Env,
+  user: HostedIdentity,
+  request: Request,
+  credential: McpCredential,
+): Promise<McpToolContext> {
   const sub = await getActiveSubscription(env, user);
   const planId = sub?.plan || 'free';
   const caps = planCapsFor(planId);
@@ -99,6 +107,7 @@ async function buildCtx(env: Env, user: HostedIdentity, request: Request): Promi
     planId,
     caps,
     dataForSeoCredential,
+    credential,
   };
 }
 
@@ -433,7 +442,7 @@ async function callTool(
   // budget-halted the budget block wins over every governance outcome.
   if (await isBudgetHalted(ctx.env, ctx.accountId, now)) {
     await recordAuditLogBestEffort(ctx.env, {
-      org_id: ctx.accountId,
+      org_id: auditOrgIdFor(ctx.accountId),
       actor_id: ctx.user.id,
       action: 'mcp_tool_block',
       target_id: name,
@@ -468,7 +477,7 @@ async function callTool(
   );
 
   await recordAuditLogBestEffort(ctx.env, {
-    org_id: ctx.accountId,
+    org_id: auditOrgIdFor(ctx.accountId),
     actor_id: ctx.user.id,
     action: `mcp_tool_${decision.action}`,
     target_id: name,
@@ -502,6 +511,15 @@ async function callTool(
   }
 
   if (!tool) return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);
+  // Scope gate: hosted paid research needs mcp:research on the credential. BYOK
+  // calls spend the caller's own DataForSEO account, so mcp:free is enough.
+  if (tool.creditClass === 'paid' && !ctx.dataForSeoCredential && !credentialAllowsResearch(ctx.credential)) {
+    return textResult(
+      'Paid tool blocked: this connection was authorized with mcp:free only. Reconnect with scope "mcp:free mcp:research" (Agency plan) or pass DataForSEO BYOK as x-provider-key.',
+      { code: 'SCOPE_INSUFFICIENT', requiredScope: 'mcp:research', grantedScopes: ctx.credential.scopes },
+      true,
+    );
+  }
   if (tool.creditClass === 'paid' && !canUsePaid(ctx)) {
     return textResult(
       'Paid tool blocked. Upgrade to Agency or pass DataForSEO BYOK as x-provider-key (login:password).',
@@ -533,6 +551,8 @@ async function callTool(
           projectId,
           creditClass: 'paid',
           source: 'credit_class',
+          credentialKind: ctx.credential.kind,
+          credentialId: ctx.credential.id,
           now,
         });
       } catch (err) {
@@ -546,7 +566,7 @@ async function callTool(
         const alert = await evaluateSoftAlerts(ctx.env, ctx.accountId, status, now);
         if (alert?.recorded) {
           await recordAuditLogBestEffort(ctx.env, {
-            org_id: ctx.accountId,
+            org_id: auditOrgIdFor(ctx.accountId),
             actor_id: ctx.user.id,
             action: 'budget_soft_alert',
             target_id: name,
@@ -579,6 +599,7 @@ export async function handleMcpRequest(
   request: Request,
   env: Env,
   user: HostedIdentity,
+  credential: McpCredential = SESSION_MCP_CREDENTIAL,
 ): Promise<Response> {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: MCP_CORS });
@@ -599,7 +620,7 @@ export async function handleMcpRequest(
     return mcpJson({ error: 'Method not allowed' }, 405);
   }
 
-  const ctx = await buildCtx(env, user, request);
+  const ctx = await buildCtx(env, user, request, credential);
   let body: unknown;
   try {
     body = await request.json();
