@@ -88,6 +88,11 @@ export interface ScrapedPageEvidence {
   wordCount: number;
   loadTimeMs?: number;
   rawTextSnippet: string;
+  /**
+   * Scrape provider. `jina` is a markdown fallback and cannot support a health score.
+   * Omitted means the caller already built a live page.
+   */
+  source?: 'patchright' | 'firecrawl' | 'jina' | 'direct';
 }
 
 export interface SerpEvidenceItem {
@@ -99,6 +104,8 @@ export interface SerpEvidenceItem {
   score?: number;
   aiOverviewText?: string;
   brandMentioned: boolean;
+  /** True when the row is a SAMPLE or why-SAMPLE fixture, not a live result. */
+  sample?: boolean;
 }
 
 /** Work-item lifecycle for finding cards (W2 board). Defaults to open when omitted. */

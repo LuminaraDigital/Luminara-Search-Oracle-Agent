@@ -11,6 +11,7 @@ describe('UnifiedScraperService', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     resetHostedAuthCircuit();
+    unifiedScraperService.resetFirecrawlSkipNotice();
   });
 
   afterEach(() => {
@@ -55,6 +56,7 @@ describe('UnifiedScraperService', () => {
 
   it('fails over to Firecrawl when Patchright encounters an error in auto mode', async () => {
     vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
+    vi.spyOn(configService, 'isLocalSidecarAllowed').mockReturnValue(true);
     vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
 
     // Patchright fails (e.g. runner offline or blocked)
@@ -92,6 +94,7 @@ describe('UnifiedScraperService', () => {
 
     vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
     vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
+    vi.spyOn(configService, 'isLocalSidecarAllowed').mockReturnValue(true);
     vi.spyOn(patchrightClient, 'scrape').mockResolvedValue({
       success: false,
       url: 'https://example.com',
@@ -113,5 +116,22 @@ describe('UnifiedScraperService', () => {
     expect(mapped.code).toBe('HOSTED_AUTH_CIRCUIT');
     expect(fetchMock.mock.calls.length).toBe(beforeMap);
     expect(firecrawlCalls()).toBeLessThanOrEqual(1);
+  });
+
+  it('records the Firecrawl skip reason once when the key is empty and Jina is used', async () => {
+    vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
+    vi.spyOn(configService, 'isLocalSidecarAllowed').mockReturnValue(false);
+    vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('');
+    const page = `${'# Example\n'}${'visible page text '.repeat(12)}`;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(page, { status: 200 })));
+
+    const first = await unifiedScraperService.scrapeAndDistill('https://example.com');
+    const second = await unifiedScraperService.scrapeAndDistill('https://example.com/about');
+
+    expect(first.success).toBe(true);
+    expect(first.providerUsed).toBe('jina');
+    expect(first.fallbackNote).toBe('Page fetch: Jina (Firecrawl: provider status not ready)');
+    expect(second.success).toBe(true);
+    expect(second.fallbackNote).toBeUndefined();
   });
 });

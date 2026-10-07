@@ -7,6 +7,7 @@
  * Jina Reader (r.jina.ai) is a public non-hosted fallback and does not trip this circuit.
  */
 
+import { hostedAuthRecoveryHint } from '../audit/hostedScoutRail';
 import { classifyProviderFailure } from './failureClassification';
 import {
   createAdaptiveCircuit,
@@ -15,10 +16,10 @@ import {
   type AdaptiveCircuit,
 } from './adaptiveCircuit';
 
-const AUTH_SKIP_BODY = {
-  error: 'Hosted provider skipped after an authentication failure. Add your own key in Settings or sign in.',
-  code: 'HOSTED_AUTH_CIRCUIT',
-};
+/** User-facing body when a later hosted call is skipped after the first 401/403. */
+export function hostedAuthSkipError(signedIn: boolean): string {
+  return `Hosted provider skipped after an authentication failure. ${hostedAuthRecoveryHint({ signedIn })}`;
+}
 
 let circuit: AdaptiveCircuit = createAdaptiveCircuit();
 let skipCount = 0;
@@ -56,9 +57,12 @@ export function noteHostedAuthSkip(): void {
   skipCount += 1;
 }
 
-export function hostedAuthCircuitResponse(): Response {
+export function hostedAuthCircuitResponse(signedIn = false): Response {
   noteHostedAuthSkip();
-  return new Response(JSON.stringify(AUTH_SKIP_BODY), {
+  return new Response(JSON.stringify({
+    error: hostedAuthSkipError(signedIn),
+    code: 'HOSTED_AUTH_CIRCUIT',
+  }), {
     status: 401,
     headers: {
       'content-type': 'application/json',

@@ -175,6 +175,46 @@ export async function getFirebaseIdToken(forceRefresh = false): Promise<string |
   return token;
 }
 
+type AuthWithReady = Auth & { authStateReady?: () => Promise<void> };
+
+/** Wait until persisted auth has settled, without clearing a token that arrives late. */
+async function waitForAuthUser(a: Auth): Promise<User | null> {
+  const ready = (a as AuthWithReady).authStateReady;
+  if (typeof ready === 'function') {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 8_000);
+      Promise.resolve()
+        .then(() => ready.call(a))
+        .then(() => {
+          clearTimeout(timer);
+          resolve();
+        }, () => {
+          clearTimeout(timer);
+          resolve();
+        });
+    });
+  }
+  return a.currentUser;
+}
+
+/**
+ * Ensure the sync ID-token cache is filled when Firebase already has a session.
+ * Hosted key checks read that cache synchronously; quota and crawler routes await a token.
+ */
+export async function ensureFirebaseIdTokenCached(): Promise<string | null> {
+  const cached = getFirebaseIdTokenSync();
+  if (cached) return cached;
+  if (!isFirebaseConfigured()) return null;
+  try {
+    const a = ensureAuth();
+    const user = await waitForAuthUser(a);
+    if (!user) return getFirebaseIdTokenSync();
+    return await getFirebaseIdToken(false);
+  } catch {
+    return getFirebaseIdTokenSync();
+  }
+}
+
 type WorkerCredentialOk = {
   ok: true;
   idToken: string;

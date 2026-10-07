@@ -35,9 +35,10 @@ import { MetricModal } from './MetricModal';
 import { InteractiveTable } from './InteractiveTable';
 import { CollapsibleSection } from './CollapsibleSection';
 import { canCreateShareLinks, createShareReport } from '../../services/share/shareReportClient';
-import { fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
+import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
-import { LIVE_DATA_UNAVAILABLE_COPY } from '../../services/audit/guestScoutSummary';
+import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
+import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
 
@@ -64,6 +65,8 @@ interface ReportDisplayProps {
   hideAgencyActions?: boolean;
   /** Crew said this run was not measured. Hide numeric citation, share of voice, and health. */
   suppressLiveMetrics?: boolean;
+  /** Instant Audit rail. When omitted, a live session still avoids a sign-in CTA. */
+  hostedRail?: HostedScoutRail;
 }
 
 export const ReportDisplay: React.FC<ReportDisplayProps> = ({
@@ -86,6 +89,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   boardFindings: boardFindingsProp,
   hideAgencyActions = false,
   suppressLiveMetrics = false,
+  hostedRail,
 }) => {
   const hideLiveNumbers = suppressLiveMetrics || empiricalSummary?.measurementStatus === 'not_measured';
   const [showDiffModal, setShowDiffModal] = useState(false);
@@ -274,12 +278,15 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const evidenceLabel = hideLiveNumbers || empiricalSummary?.citationRatePercent == null
     ? 'not measured'
     : `${empiricalSummary.citationRatePercent}%`;
+  const unavailableCopy = liveDataUnavailableCopy(
+    hostedRail ?? (clientHasHostedIdentity() ? 'signed_in_hosted' : 'byok_or_signin'),
+  );
 
   return (
     <div className="w-full text-gray-200 animate-in fade-in duration-500">
       {hideLiveNumbers && (
         <p role="status" className="mb-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm leading-relaxed text-gray-200">
-          {LIVE_DATA_UNAVAILABLE_COPY}
+          {unavailableCopy}
         </p>
       )}
       {!hideAgencyActions && (

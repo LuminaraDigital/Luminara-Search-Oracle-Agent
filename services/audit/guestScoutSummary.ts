@@ -1,9 +1,13 @@
 /**
  * Plain guest (and signed-in) scout summary.
  * Null metrics stay not_measured. This builder never invents a percentage.
+ * The Instant Scout card keeps the full brief in verdictMarkdown.
+ * Share, teaser, and clipboard use verdict: the same text with heading
+ * and emphasis markers removed. The worker still clips that plain field.
  */
+import { isProviderDecisionRecord } from '../apiClient';
 import type { LlmCrawlerCheck, LlmCrawlerReport } from './llmCrawlerReadiness';
-import type { HostedScoutRail } from './hostedScoutRail';
+import { hostedAuthRecoveryHint, type HostedScoutRail } from './hostedScoutRail';
 import { teaserFailureCodes, teaserFailureLine, type TeaserFailureCode } from './teaserFailureCodes';
 
 export type EvidenceBadgeStatus = 'measured' | 'estimated' | 'not_measured';
@@ -17,7 +21,10 @@ export interface ScoutBadge {
 
 export interface GuestScoutSummary {
   domain: string;
+  /** Plain text for teaser, share, and clipboard. No heading or emphasis markers. */
   verdict: string;
+  /** Full brief for the Instant Scout card. Newlines stay. Never sliced mid-string. */
+  verdictMarkdown: string;
   evidenceUsed: string;
   topFix: string;
   nextStep: string;
@@ -30,7 +37,7 @@ export interface GuestScoutSummary {
   evidenceEmpty: boolean;
   /** True when metrics must not be shown as live measurements. */
   degraded: boolean;
-  /** Set when the run cannot show live scores. Includes the BYOK or sign-in step. */
+  /** Set when the run cannot show live scores. Wording follows hostedRail. */
   banner?: string;
 }
 
@@ -56,8 +63,13 @@ function hostLabel(targetUrl: string): string {
   return host || 'this site';
 }
 
-export const LIVE_DATA_UNAVAILABLE_COPY =
-  'Live data unavailable. Sample / not measured. Add your own keys in Settings, or sign in.';
+/** Degraded Instant Audit banner. Signed-in and Telegram rails never ask the user to sign in. */
+export function liveDataUnavailableCopy(hostedRail: HostedScoutRail): string {
+  if (hostedRail === 'byok_or_signin') {
+    return 'Live data unavailable. Sample / not measured. Add your own keys in Settings, or sign in.';
+  }
+  return `Live search or page fetch did not run. ${hostedAuthRecoveryHint({ rail: hostedRail })}`;
+}
 
 const DEGRADED_FAILURE_CODES = new Set<string>(['provider_failed', 'search_empty', 'page_fetch_empty']);
 
@@ -70,13 +82,16 @@ export function isDegradedScout(input: {
   return input.failureCodes.some((code) => DEGRADED_FAILURE_CODES.has(code));
 }
 
-/** Guests do not get a model report when the scout is degraded. Signed-in runs still may. */
+/**
+ * Skip the report model when the scout is degraded or not measured.
+ * Guests and signed-in runs share this gate. The guest flag stays so callers
+ * can pass the session they already have. It does not reopen a degraded run.
+ */
 export function shouldGenerateAuditReport(
-  isGuest: boolean,
+  _isGuest: boolean,
   summary: Pick<GuestScoutSummary, 'evidenceEmpty' | 'failureCodes'>,
   measurementStatus: 'measured' | 'not_measured',
 ): boolean {
-  if (!isGuest) return true;
   return !isDegradedScout({
     measurementStatus,
     evidenceEmpty: summary.evidenceEmpty,
@@ -89,6 +104,25 @@ function metricBadge(label: string, value: number | null, suffix: string): Scout
     return { label, status: 'not_measured' };
   }
   return { label, status: 'measured', value: `${value}${suffix}` };
+}
+
+/**
+ * Plain text for public teasers. Heading markers, emphasis, and tags come off.
+ * Already-plain sentences stay readable. This is not the card renderer.
+ */
+export function plainScoutVerdict(source: string): string {
+  return source
+    .replace(/\r\n/g, '\n')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/(^|\s)#{1,6}\s+/g, '$1')
+    .replace(/\*\*|__|~~/g, '')
+    .replace(/(^|[\s(])[*_~](?=\S)([\s\S]*?\S)[*_~](?=[\s).,;:!?]|$)/g, '$1$2')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function nextStepFor(rail: HostedScoutRail, evidenceEmpty: boolean): string {
@@ -113,20 +147,29 @@ function nextStepFor(rail: HostedScoutRail, evidenceEmpty: boolean): string {
 export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScoutSummary {
   const domain = hostLabel(input.targetUrl);
   const evidenceEmpty = input.scrapedPageCount === 0 && input.serpCount === 0;
-  const brief = (input.plainEnglishBrief || '').replace(/\s+/g, ' ').trim();
+  const rawBrief = (input.plainEnglishBrief || '').replace(/\r\n/g, '\n').trim();
 
   let verdict: string;
-  if (evidenceEmpty || (input.measurementStatus === 'not_measured' && input.citationRatePercent == null && input.serpCount === 0 && input.scrapedPageCount === 0)) {
+  let verdictMarkdown: string;
+  const notMeasuredEmpty = input.measurementStatus === 'not_measured'
+    && input.citationRatePercent == null
+    && input.serpCount === 0
+    && input.scrapedPageCount === 0;
+  if (evidenceEmpty || notMeasuredEmpty) {
     verdict = `AI mention readiness for ${domain} was not measured. This run collected no page text and no search rows, so there is no citation rate, share of voice, or health score.`;
+    verdictMarkdown = verdict;
   } else if (input.measurementStatus === 'not_measured') {
     const reason = (input.measurementReason || '').trim();
     verdict = reason
       ? `Some signals for ${domain} were not measured. ${reason}.`
       : `Some signals for ${domain} were not measured. Missing figures are omitted rather than guessed.`;
-  } else if (brief) {
-    verdict = brief.slice(0, 600);
+    verdictMarkdown = verdict;
+  } else if (rawBrief) {
+    verdictMarkdown = rawBrief;
+    verdict = plainScoutVerdict(rawBrief) || `Live evidence was collected for ${domain}. Use the badges to see what was measured.`;
   } else {
     verdict = `Live evidence was collected for ${domain}. Use the badges to see what was measured.`;
+    verdictMarkdown = verdict;
   }
 
   const evidenceUsed = evidenceEmpty
@@ -143,7 +186,7 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
   const failureCodes = teaserFailureCodes({
     scrapedPageCount: input.scrapedPageCount,
     serpCount: input.serpCount,
-    hadProviderError: (input.errors || []).some((err) => err.trim().length > 0),
+    hadProviderError: (input.errors || []).some((err) => err.trim().length > 0 && !isProviderDecisionRecord(err)),
     crawlerChecks,
   });
   const degraded = isDegradedScout({
@@ -165,11 +208,13 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     verdict = evidenceEmpty
       ? `AI mention readiness for ${domain} was not measured. This run collected no page text and no search rows, so there is no citation rate, share of voice, or health score.`
       : `Live data unavailable for ${domain}. Some signals were not measured. Missing figures are omitted rather than guessed.`;
+    verdictMarkdown = verdict;
   }
 
   return {
     domain,
     verdict,
+    verdictMarkdown,
     evidenceUsed,
     topFix,
     nextStep: nextStepFor(input.hostedRail, degraded || evidenceEmpty),
@@ -179,6 +224,6 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     failureCodes,
     evidenceEmpty,
     degraded,
-    banner: degraded ? LIVE_DATA_UNAVAILABLE_COPY : undefined,
+    banner: degraded ? liveDataUnavailableCopy(input.hostedRail) : undefined,
   };
 }

@@ -120,5 +120,5 @@ curl -s -X POST http://127.0.0.1:3001/session -H "content-type: application/json
 In the Luminara web interface:
 1. Open **Settings** (gear icon) -> **Web Crawling**.
 2. Select **Auto-Resolve** or **Patchright Stealth Runner**.
-3. Point the endpoint URL to `http://localhost:3001`.
+3. Point the endpoint URL to `http://localhost:3001` and save it. Hosted luminarasuite.com does not call that address until the URL is saved. The desktop app and a page served from localhost still default to it.
 4. Click **Test Runner** to verify connectivity.

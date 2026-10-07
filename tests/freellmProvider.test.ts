@@ -38,14 +38,17 @@ describe('FreeLLMAPI BYOK gateway', () => {
     expect(provider.capabilities.audio).toBe(true);
   });
 
-  it('is available only when unified key is set', async () => {
+  it('is available when a unified key and a reachable base URL are set', async () => {
     expect(await provider.isAvailable()).toBe(false);
     configService.setFreeLlmKey('freellmapi-test-key');
+    // This file has no local page, so the implicit localhost:3001 default stays off.
+    expect(await provider.isAvailable()).toBe(false);
+    configService.setFreeLlmBaseUrl('https://llm.example.test/v1');
     expect(await provider.isAvailable()).toBe(true);
   });
 
-  it('defaults base URL to local FreeLLMAPI /v1', () => {
-    expect(configService.getFreeLlmBaseUrl()).toBe('http://localhost:3001/v1');
+  it('does not assume the local FreeLLMAPI default when the page is not local', () => {
+    expect(configService.getFreeLlmBaseUrl()).toBe('');
     configService.setFreeLlmBaseUrl('http://127.0.0.1:4000/v1/');
     expect(configService.getFreeLlmBaseUrl()).toBe('http://127.0.0.1:4000/v1');
   });
@@ -67,7 +70,7 @@ describe('FreeLLMAPI BYOK gateway', () => {
 
   it('posts chat completions to configured FreeLLMAPI base', async () => {
     configService.setFreeLlmKey('freellmapi-test-key');
-    configService.setFreeLlmBaseUrl('http://localhost:3001/v1');
+    configService.setFreeLlmBaseUrl('http://127.0.0.1:4000/v1');
 
     let requestUrl = '';
     let requestBody: any = null;
@@ -84,7 +87,7 @@ describe('FreeLLMAPI BYOK gateway', () => {
 
     try {
       const result = await provider.generateText('ping', { model: 'auto:fast' });
-      expect(requestUrl).toBe('http://localhost:3001/v1/chat/completions');
+      expect(requestUrl).toBe('http://127.0.0.1:4000/v1/chat/completions');
       expect(requestBody.model).toBe('auto:fast');
       expect(result.text).toBe('Gateway routed OK');
     } finally {

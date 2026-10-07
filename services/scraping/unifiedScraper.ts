@@ -2,7 +2,7 @@
  * Unified Scraping & Crawling Orchestrator
  * 
  * Provides resilient, multi-tier web extraction with automated failover:
- * Tier 1: Patchright Stealth Runner (Zero-cost, anti-bot resilient via AST-patched CDP)
+ * Tier 1: Patchright Stealth Runner, only when a local sidecar is allowed
  * Tier 2: Firecrawl Managed API (High-fidelity cloud scraping)
  * Tier 3: Jina Reader / Direct Fetch (Zero-configuration lightweight fallback)
  * 
@@ -11,9 +11,11 @@
  */
 
 import { configService } from '../configService';
+import { clientHasHostedIdentity, formatPageFetchClause, hostedProviderDecisionReason } from '../apiClient';
 import { patchrightClient } from './patchrightClient';
 import { firecrawlService } from './firecrawlService';
 import { hostedAuthBlocked, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
+import { hostedAuthRecoveryHint } from '../audit/hostedScoutRail';
 import { contentDistiller, DistilledContentResult } from './contentDistiller';
 import { githubCitabilityService } from './githubCitabilityService';
 
@@ -33,12 +35,29 @@ export interface ScrapedPageEvidence {
   latencyMs: number;
   antiBotBypassed?: boolean;
   error?: string;
+  /** Set once per pack when auto mode skips Firecrawl because no key is available. */
+  fallbackNote?: string;
 }
 
 export class UnifiedScraperService {
   private static instance: UnifiedScraperService;
+  /** Stops a multi-page pack from repeating the same Firecrawl skip reason. */
+  private firecrawlSkipAnnounced = false;
 
   private constructor() {}
+
+  /** Allow the next empty-key fallback to record its reason. Call once per evidence pack. */
+  public resetFirecrawlSkipNotice(): void {
+    this.firecrawlSkipAnnounced = false;
+  }
+
+  private announceEmptyFirecrawlSkip(): string | undefined {
+    if (this.firecrawlSkipAnnounced) return undefined;
+    const reason = hostedProviderDecisionReason('firecrawl');
+    if (reason === 'byok' || reason === 'hosted') return undefined;
+    this.firecrawlSkipAnnounced = true;
+    return formatPageFetchClause(reason);
+  }
 
   public static getInstance(): UnifiedScraperService {
     if (!UnifiedScraperService.instance) {
@@ -77,8 +96,12 @@ export class UnifiedScraperService {
       }
     }
 
-    // Strategy 1: Explicit Patchright or Auto
-    if (providerPref === 'patchright' || providerPref === 'auto') {
+    // Strategy 1: Explicit Patchright, or Auto only when a sidecar is allowed.
+    // Hosted web must not probe http://localhost:3001 before Firecrawl / Jina.
+    const tryLocalSidecar =
+      providerPref === 'patchright' ||
+      (providerPref === 'auto' && configService.isLocalSidecarAllowed());
+    if (tryLocalSidecar) {
       try {
         const prRes = await patchrightClient.scrape(url, { waitFor: options.waitFor });
         if (prRes.success && (prRes.markdown || prRes.html)) {
@@ -114,8 +137,9 @@ export class UnifiedScraperService {
 
     // Strategy 2: Firecrawl (if key configured or requested).
     // A 401/403 opens the run circuit. Do not call sibling Firecrawl map/crawl from here.
+    let firecrawlSkipNote: string | undefined;
     if (hostedAuthBlocked()) {
-      lastError = 'Firecrawl skipped after an authentication failure. Add your own key in Settings or sign in.';
+      lastError = `Firecrawl skipped after an authentication failure. ${hostedAuthRecoveryHint({ signedIn: clientHasHostedIdentity() })}`;
     } else if (providerPref === 'firecrawl' || (providerPref === 'auto' && configService.getFirecrawlKey())) {
       try {
         const fcRes = await firecrawlService.scrapeUrl(url, ['markdown', 'html']);
@@ -149,6 +173,8 @@ export class UnifiedScraperService {
       if (providerPref === 'firecrawl') {
         return this.buildFailureResult(url, 'firecrawl', lastError, startTime);
       }
+    } else if (providerPref === 'auto') {
+      firecrawlSkipNote = this.announceEmptyFirecrawlSkip();
     }
 
     // Strategy 3: Jina Reader. Public non-hosted read (r.jina.ai), not /api/providers.
@@ -186,6 +212,7 @@ export class UnifiedScraperService {
               distilled,
               formattedEvidence: this.buildEvidenceBlock('Jina Reader (Zero-Key Fallback)', url, distilled),
               latencyMs: Math.round(performance.now() - startTime),
+              ...(firecrawlSkipNote ? { fallbackNote: firecrawlSkipNote } : {}),
             };
           }
         }
@@ -195,7 +222,7 @@ export class UnifiedScraperService {
       }
     }
 
-    return this.buildFailureResult(url, 'auto', lastError || 'All scraping strategies exhausted', startTime);
+    return this.buildFailureResult(url, 'auto', lastError || 'All scraping strategies exhausted', startTime, firecrawlSkipNote);
   }
 
   private buildEvidenceBlock(providerName: string, url: string, distilled: DistilledContentResult): string {
@@ -210,7 +237,8 @@ ${distilled.formattedEvidence}--------------------------------------------------
     url: string,
     provider: any,
     error: string,
-    startTime: number
+    startTime: number,
+    fallbackNote?: string,
   ): ScrapedPageEvidence {
     return {
       success: false,
@@ -233,6 +261,7 @@ ${distilled.formattedEvidence}--------------------------------------------------
       formattedEvidence: '',
       latencyMs: Math.round(performance.now() - startTime),
       error,
+      ...(fallbackNote ? { fallbackNote } : {}),
     };
   }
 }

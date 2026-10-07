@@ -96,23 +96,24 @@ describe('Live NVIDIA + Ollama model catalogs', () => {
 
   it('lists Ollama Cloud models through BYOK relay when a cloud key is saved', async () => {
     localStorage.setItem('luminara_ollama_key', 'ollama_cloud_test_key');
-    // Local daemon miss
-    vi.spyOn(globalThis, 'fetch')
-      .mockRejectedValueOnce(new Error('connection refused'))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            models: [
-              { name: 'gpt-oss:120b' },
-              { name: 'kimi-k2.6' },
-            ],
-          }),
-          { status: 200 },
-        ),
-      );
+    // Non-local page: do not spend a timeout on 127.0.0.1:11434 before cloud.
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          models: [
+            { name: 'gpt-oss:120b' },
+            { name: 'kimi-k2.6' },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
 
     const models = await configService.listOllamaModels();
     expect(models).toEqual(['gpt-oss:120b', 'kimi-k2.6']);
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('127.0.0.1:11434'))).toBe(false);
+    expect(urls.some((url) => url.includes('ollama.com'))).toBe(true);
   });
 
   it('allows Ollama /v1/models on the Worker proxy allowlist', () => {

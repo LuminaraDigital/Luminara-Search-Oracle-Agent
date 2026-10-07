@@ -19,21 +19,68 @@ import {
   deriveAuditMeasurement,
   memorySyncPlan,
 } from '../../services/agentCore/crewOrchestrator';
-import type { AgentActivityEvent, AgentRole, ScrapedPageEvidence } from '../../services/agentCore/types';
+import type { AgentActivityEvent, AgentRole, ScrapedPageEvidence, SerpEvidenceItem } from '../../services/agentCore/types';
 import { empiricalCitationService } from '../../services/audit/empiricalCitationService';
 import { buildGuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { geminiService } from '../../services/geminiService';
 import { configService } from '../../services/configService';
 import { mem0MemoryEngine } from '../../services/agentCore/mem0MemoryEngine';
-import { classifyProviderFailure } from '../../services/resilience/failureClassification';
-import { noteHostedAuthFailure, resetHostedAuthCircuit } from '../../services/resilience/hostedAuthCircuit';
+import { hostedAuthBlocked, noteHostedAuthFailure, resetHostedAuthCircuit } from '../../services/resilience/hostedAuthCircuit';
 import { firecrawlService } from '../../services/scraping/firecrawlService';
 import { patchrightClient } from '../../services/scraping/patchrightClient';
 import { siteEvidencePackService } from '../../services/scraping/siteEvidencePack';
 import { unifiedScraperService } from '../../services/scraping/unifiedScraper';
+import { localSerpService } from '../../services/search/localSerpService';
 import { tavilyService } from '../../services/search/tavilyService';
 
 const noop = () => {};
+
+function livePage(partial: Partial<ScrapedPageEvidence> = {}): ScrapedPageEvidence {
+  return {
+    url: 'https://example.com',
+    title: 'Example',
+    h1s: ['Example'],
+    schemasFound: [{ type: 'Organization', rawJson: '{}', isValid: true }],
+    wordCount: 400,
+    rawTextSnippet: 'Example publishes enough product detail for a real page audit.',
+    source: 'patchright',
+    ...partial,
+  };
+}
+
+function liveSerp(brandMentioned = true): SerpEvidenceItem {
+  return {
+    query: 'example official',
+    engine: 'tavily',
+    title: 'Example official site',
+    url: 'https://example.com/about',
+    snippet: 'Example publishes product detail.',
+    brandMentioned,
+  };
+}
+
+function installHostedWeb(storage: Record<string, string> = {}): void {
+  const store: Record<string, string> = { ...storage };
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => (Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null),
+    setItem: (key: string, value: string) => { store[key] = value; },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { for (const key of Object.keys(store)) delete store[key]; },
+  });
+  vi.stubGlobal('window', {
+    location: {
+      hostname: 'luminarasuite.com',
+      host: 'luminarasuite.com',
+      origin: 'https://luminarasuite.com',
+      protocol: 'https:',
+      href: 'https://luminarasuite.com/',
+      search: '',
+    },
+    dispatchEvent: () => true,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  });
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -57,8 +104,12 @@ describe('Instant Audit honesty on empty evidence', () => {
   });
 
   it('does not invent citation rate or share of voice when SERP evidence is empty', async () => {
+    installHostedWeb();
+    expect(configService.isLocalSerpEnabled()).toBe(false);
+    expect(configService.getPatchrightUrl()).toBe('');
+    expect(configService.getLocalSerpUrl()).toBe('');
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
+    const localSearch = vi.spyOn(localSerpService, 'search');
     const events: { message: string }[] = [];
     const result = await serpRadarAgent.execute('example.com', null, (event) => {
       events.push(event);
@@ -70,11 +121,11 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(done).toContain('not measured');
     expect(done).not.toContain('45%');
     expect(done).not.toMatch(/Share-of-Voice: \d+/);
+    expect(localSearch).not.toHaveBeenCalled();
   });
 
   it('does not invent metrics when a configured search provider returns no rows', async () => {
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('test-key');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
     vi.spyOn(tavilyService, 'search').mockResolvedValue({ query: 'q', results: [] });
     const result = await serpRadarAgent.execute('example.com', null, noop);
     expect(result.citationRatePercent).toBeNull();
@@ -83,7 +134,6 @@ describe('Instant Audit honesty on empty evidence', () => {
 
   it('calculates citation rate only from returned SERP rows', async () => {
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('test-key');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
     vi.spyOn(tavilyService, 'search').mockImplementation(async (query: string) => ({
       query,
       results: [
@@ -146,17 +196,197 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(text).not.toMatch(/\/100/);
   });
 
-  it('scores health when a scraped page has real content', async () => {
-    const page: ScrapedPageEvidence = {
-      url: 'https://example.com',
-      title: 'Example',
-      h1s: ['Example'],
-      schemasFound: [{ type: 'Organization', rawJson: '{}', isValid: true }],
-      wordCount: 400,
-      rawTextSnippet: 'Example publishes enough product detail for a real page audit.',
-    };
-    const result = await playbookAuditorAgent.execute('AEO', [page], [], null, noop);
+  it('does not invent a 73 health score when search evidence is empty', async () => {
+    const events: { message: string }[] = [];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({ schemasFound: [] })],
+      [],
+      null,
+      (event) => {
+        events.push(event);
+      },
+    );
+    expect(result.healthScore).toBeNull();
+    const text = events.map((event) => event.message).join(' ');
+    expect(text).toContain('not measured');
+    expect(text).not.toMatch(/\/100/);
+    expect(text).not.toContain('73');
+    expect(missionControlCardBadge('completed', text)).toBe('not_measured');
+    const withSchema = await playbookAuditorAgent.execute('AEO', [livePage()], [], null, noop);
+    expect(withSchema.healthScore).toBeNull();
+  });
+
+  it('does not invent a 73 health score from Jina-only page text', async () => {
+    const events: AgentActivityEvent[] = [];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({
+        url: 'https://seamossvibes.com.au',
+        title: 'Sea Moss Vibes',
+        schemasFound: [],
+        wordCount: 420,
+        source: 'jina',
+        rawTextSnippet: 'Sea moss product copy returned by a reader fallback with no JSON-LD.',
+      })],
+      [],
+      null,
+      (event) => {
+        events.push(event);
+      },
+    );
+    expect(result.healthScore).toBeNull();
+    expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(false);
+    const text = events.map((event) => event.message).join(' ');
+    expect(text).toContain('Jina-only');
+    expect(text).toContain('not measured');
+    expect(text).not.toMatch(/\/100/);
+    expect(text).not.toContain('73');
+    const html = renderToStaticMarkup(createElement(AgentMissionControl, {
+      events,
+      isComplete: true,
+      measurementStatus: 'not_measured',
+    }));
+    expect(html).toContain('Not measured');
+    expect(html).toContain('Jina-only');
+    expect(html).not.toMatch(/\/100/);
+    expect(html).not.toContain('73');
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://seamossvibes.com.au',
+      measurementStatus: 'not_measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: result.healthScore,
+      scrapedPageCount: 1,
+      serpCount: 0,
+      findings: result.findings.map((finding) => ({ title: finding.title })),
+      hostedRail: 'byok_or_signin',
+    });
+    expect(summary.badges.find((badge) => badge.label === 'Page health')).toEqual({
+      label: 'Page health',
+      status: 'not_measured',
+    });
+    expect(JSON.stringify(summary)).not.toContain('73');
+
+    const withLiveSearch = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({
+        url: 'https://seamossvibes.com.au',
+        schemasFound: [],
+        wordCount: 420,
+        source: 'jina',
+        rawTextSnippet: 'Sea moss product copy returned by a reader fallback with no JSON-LD.',
+      })],
+      [liveSerp()],
+      null,
+      noop,
+    );
+    expect(withLiveSearch.healthScore).toBeNull();
+    expect(withLiveSearch.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(false);
+  });
+
+  it('does not invent health, citation, or share of voice from SAMPLE search rows', async () => {
+    vi.spyOn(configService, 'getTavilyKey').mockReturnValue('test-key');
+    vi.spyOn(tavilyService, 'search').mockImplementation(async (query: string) => ({
+      query,
+      results: [{
+        title: 'SAMPLE competitor',
+        url: 'https://other.example/why-SAMPLE',
+        content: 'why-SAMPLE fixture, not a live result',
+        score: 0.4,
+      }],
+    }));
+    const serpEvents: { message: string }[] = [];
+    const serp = await serpRadarAgent.execute('example.com', null, (event) => {
+      serpEvents.push(event);
+    });
+    expect(serp.serpEvidence).toEqual([]);
+    expect(serp.citationRatePercent).toBeNull();
+    expect(serp.shareOfVoiceScore).toBeNull();
+    const serpText = serpEvents.map((event) => event.message).join(' ');
+    expect(serpText).toContain('not measured');
+    expect(serpText).not.toMatch(/Share-of-Voice: \d+/);
+    expect(serpText).not.toMatch(/\d+%/);
+
+    const events: { message: string }[] = [];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({ schemasFound: [] })],
+      [{
+        ...liveSerp(false),
+        sample: true,
+        title: 'SAMPLE result',
+        url: 'https://other.example/why-SAMPLE',
+        snippet: 'why-SAMPLE fixture',
+      }],
+      null,
+      (event) => {
+        events.push(event);
+      },
+    );
+    expect(result.healthScore).toBeNull();
+    const text = events.map((event) => event.message).join(' ');
+    expect(text).toContain('not measured');
+    expect(text).not.toMatch(/\/100/);
+    expect(text).not.toContain('73');
+  });
+
+  it('scores health when a live scrape and live search are both present', async () => {
+    const result = await playbookAuditorAgent.execute('AEO', [livePage()], [liveSerp()], null, noop);
     expect(result.healthScore).toBe(85);
+  });
+
+  it('still applies a real schema penalty when live scrape and live search are both present', async () => {
+    const events: { message: string }[] = [];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [livePage({ schemasFound: [] })],
+      [liveSerp()],
+      null,
+      (event) => {
+        events.push(event);
+      },
+    );
+    expect(result.healthScore).toBe(73);
+    expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(true);
+    expect(events.map((event) => event.message).join(' ')).toContain('73/100');
+  });
+
+  it('keeps a connection-refused Jina fallback from inventing a health score', async () => {
+    vi.spyOn(siteEvidencePackService, 'buildPack').mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:3001'));
+    vi.spyOn(unifiedScraperService, 'scrapeAndDistill').mockResolvedValue({
+      success: true,
+      providerUsed: 'jina',
+      url: 'https://seamossvibes.com.au',
+      statusCode: 200,
+      title: 'Sea Moss Vibes',
+      description: '',
+      markdown: 'Sea moss gel for daily drinks. '.repeat(40),
+      distilled: {
+        title: 'Sea Moss Vibes',
+        description: '',
+        openGraph: {},
+        schemas: [],
+        schemaTypes: [],
+        headings: [],
+        distilledText: 'Sea moss gel for daily drinks.',
+        formattedEvidence: '',
+        stats: { rawChars: 200, distilledChars: 40, compressionRatio: 0.2 },
+      },
+      formattedEvidence: '',
+      latencyMs: 30,
+    });
+    const pages = await scoutAgent.execute('https://seamossvibes.com.au', noop);
+    expect(pages).toHaveLength(1);
+    expect(pages[0]?.source).toBe('jina');
+    expect(hostedAuthBlocked()).toBe(false);
+    const events: { message: string }[] = [];
+    const result = await playbookAuditorAgent.execute('AEO', pages, [], null, (event) => {
+      events.push(event);
+    });
+    expect(result.healthScore).toBeNull();
+    expect(events.map((event) => event.message).join(' ')).not.toMatch(/\/100/);
+    expect(events.map((event) => event.message).join(' ')).not.toContain('73');
   });
 
   it('does not pretend a failed scrape discovered a page', async () => {
@@ -200,13 +430,16 @@ describe('Instant Audit honesty on empty evidence', () => {
   });
 
   it('returns not_measured citation summary when every search probe is empty', async () => {
+    installHostedWeb({ luminara_local_serp_enabled: 'true' });
+    expect(configService.isLocalSerpEnabled()).toBe(false);
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
+    const localSearch = vi.spyOn(localSerpService, 'search');
     const summary = await empiricalCitationService.probeDomainCitations('https://example.com', 'Example');
     expect(summary.measurementStatus).toBe('not_measured');
     expect(summary.citationRatePercent).toBeNull();
     expect(summary.entityClarityScore).toBeNull();
     expect(summary.evidenceList).toEqual([]);
+    expect(localSearch).not.toHaveBeenCalled();
   });
 });
 
@@ -356,16 +589,13 @@ describe('Instant Audit degraded provider failures', () => {
   });
 
   it('returns null metrics after Firecrawl, Tavily, and Jina 401s and hides invented scores', async () => {
+    installHostedWeb();
+    expect(configService.isLocalSerpEnabled()).toBe(false);
     vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('tv-test-key');
     vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
-    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
     vi.spyOn(configService, 'getSitewideEvidenceMode').mockReturnValue('smart');
-    vi.spyOn(patchrightClient, 'scrape').mockResolvedValue({
-      success: false,
-      url: 'https://example.com',
-      error: 'runner offline',
-    });
+    const localScrape = vi.spyOn(patchrightClient, 'scrape');
     const mapSpy = vi.spyOn(firecrawlService, 'mapUrl');
     const tavilySpy = vi.spyOn(tavilyService, 'search');
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'unauthorized' }), {
@@ -388,6 +618,14 @@ describe('Instant Audit degraded provider failures', () => {
     expect(tavilySpy).not.toHaveBeenCalled();
     const firecrawlCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('firecrawl.dev')).length;
     expect(firecrawlCalls).toBeLessThanOrEqual(1);
+    const loopbackCalls = fetchMock.mock.calls.filter((call) => /localhost|127\.0\.0\.1/i.test(String(call[0])));
+    expect(loopbackCalls).toEqual([]);
+    expect(localScrape).not.toHaveBeenCalled();
+
+    const decision = events.find((event) => event.phase === 'provider_decisions');
+    expect(decision?.message).toMatch(/Page fetch:/);
+    expect(decision?.message).toMatch(/Search/);
+    expect(result.errors.some((err) => err.startsWith('provider_decisions '))).toBe(true);
 
     const joined = events.map((event) => event.message).join('\n');
     expect(joined).not.toMatch(/Synced \d+ autonomous memory/);
@@ -504,5 +742,67 @@ describe('Instant Audit degraded provider failures', () => {
     expect(html).not.toContain('Scanning');
     expect(html).toContain('Run quick scout');
     expect(html).not.toContain('disabled');
+  });
+
+  it('does not call generateAuditReport for a signed-in degraded run', async () => {
+    const reportSpy = vi.spyOn(geminiService, 'generateAuditReport').mockResolvedValue({
+      text: 'invented 45%',
+      sources: [],
+    } as Awaited<ReturnType<typeof geminiService.generateAuditReport>>);
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 0,
+      serpCount: 0,
+      findings: [],
+      errors: ['provider_auth_failed'],
+      hostedRail: 'signed_in_hosted',
+    });
+    expect(summary.degraded).toBe(true);
+    expect(summary.badges.every((badge) => badge.status === 'not_measured' && badge.value == null)).toBe(true);
+    const report = await generateAuditReportUnlessDegraded({
+      isGuest: false,
+      summary,
+      measurementStatus: 'not_measured',
+      formattedUrl: 'https://example.com',
+      targetFocus: 'AEO',
+      dna: null,
+      lenses: [],
+    });
+    expect(report).toBeNull();
+    expect(reportSpy).not.toHaveBeenCalled();
+  });
+
+  it('calls generateAuditReport for a signed-in measured run', async () => {
+    const reportSpy = vi.spyOn(geminiService, 'generateAuditReport').mockResolvedValue({
+      text: 'measured brief',
+      sources: [],
+    } as Awaited<ReturnType<typeof geminiService.generateAuditReport>>);
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'measured',
+      citationRatePercent: 12,
+      shareOfVoiceScore: 20,
+      healthScore: 80,
+      scrapedPageCount: 1,
+      serpCount: 4,
+      findings: [{ title: 'Add Organization schema' }],
+      hostedRail: 'signed_in_hosted',
+    });
+    expect(summary.degraded).toBe(false);
+    const report = await generateAuditReportUnlessDegraded({
+      isGuest: false,
+      summary,
+      measurementStatus: 'measured',
+      formattedUrl: 'https://example.com',
+      targetFocus: 'AEO',
+      dna: null,
+      lenses: [],
+    });
+    expect(report?.text).toBe('measured brief');
+    expect(reportSpy).toHaveBeenCalledTimes(1);
   });
 });
