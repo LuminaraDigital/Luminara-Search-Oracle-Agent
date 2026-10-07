@@ -62,7 +62,7 @@ import {
   upsertAppUser,
 } from './userStore';
 import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
-import { recordAuditLog, getAuditLogs, recordAuditLogBestEffort } from './auditLog';
+import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, getAuditChainEntries, verifyAuditChain } from './auditLog';
 import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId } from './workerUtils';
@@ -113,6 +113,10 @@ import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService
 import { isCronMapped, jobsForCron } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
+import { handleLaunchpadRoute } from './launchpadService';
+import { handleTrustReceiptsRoute, isTrustReceiptsEnabled } from './trustReceipts';
+import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
+import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
 import { handleBudgetReconcileRoute } from './invoiceReconcile';
 import { reportWorkerException } from './sentry';
@@ -297,6 +301,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       xdcRpcOk,
       proofAnchorEnabled: String(env.PROOF_ANCHOR_ENABLED || '').toLowerCase() === 'true',
       proofXdcEnabled: String(env.PROOF_XDC_ENABLED || '').toLowerCase() === 'true',
+      trust: {
+        receiptsEnabled: isTrustReceiptsEnabled(env),
+        receiptSigningConfigured: isReceiptSigningConfigured(env),
+        domainVerifyEnabled: isDomainVerifyEnabled(env),
+      },
       requireAuth: env.REQUIRE_TG_AUTH === 'true',
       requireSubscription: env.REQUIRE_SUBSCRIPTION === 'true',
       freeDailyLimit: Number(env.FREE_DAILY_LIMIT || 0),
@@ -690,7 +699,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const limit = Math.min(Number(url.searchParams.get('limit') || 50), 200);
     const offset = Math.max(Number(url.searchParams.get('offset') || 0), 0);
 
-    const logs = await getAuditLogs(env, org.id, { limit, offset });
+    const accountIdForLegacy = billingId(who.user);
+    const legacyOrgIds = org.id === auditOrgIdFor(accountIdForLegacy) ? [accountIdForLegacy] : [];
+    const logs = await getAuditLogs(env, org.id, { limit, offset, legacyOrgIds });
     return withCors(json({
       ok: true,
       orgId: org.id,
@@ -699,6 +710,28 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       total: logs.total,
       entries: logs.entries,
     }));
+  }
+
+  // Trust Network TN0-2: verify the account's hash-chained audit log end to end.
+  if (path === '/trust/audit-chain/verify') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const who = await identify(request, env);
+    if (who.error || !who.user) return withCors(json({ ok: false, error: who.error || 'Sign in required' }, 401));
+    const { org, membership } = await getOrCreateUserOrg(env, who.user);
+    if (!hasPermission(membership.role, 'canViewLogs')) {
+      return withCors(json({ ok: false, error: 'Forbidden: Auditor or Admin role required' }, 403));
+    }
+    const accountIdForLegacy = billingId(who.user);
+    // Legacy rows keyed by the raw accountId form their own chain; verify each chain separately.
+    const chainIds = org.id === auditOrgIdFor(accountIdForLegacy) ? [org.id, accountIdForLegacy] : [org.id];
+    const chains = [];
+    for (const chainId of chainIds) {
+      const { entries, truncated } = await getAuditChainEntries(env, chainId);
+      if (entries.length === 0 && chainId !== org.id) continue;
+      const result = await verifyAuditChain(entries);
+      chains.push({ chainId, legacy: chainId !== org.id, truncated, ...result });
+    }
+    return withCors(json({ ok: chains.every((c) => c.verified && !c.truncated), orgId: org.id, chains }));
   }
 
   if (path === '/auth/quota') {
@@ -1306,6 +1339,25 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (wdl) return withCors(wdl);
   }
 
+  // SMB Launchpad (0018). Feature-flagged; see worker/launchpadService.ts.
+  if (path === '/launchpad' || path.startsWith('/launchpad/')) {
+    const who = await identify(request, env);
+    const launchpadRes = await handleLaunchpadRoute(request, env, who, path);
+    if (launchpadRes) return withCors(launchpadRes);
+  }
+
+  // Trust Network TN1/TN2 (migration 0020). Flag-gated inside each handler.
+  if (path === '/trust/keys' || path.startsWith('/trust/receipts')) {
+    const res = await handleTrustReceiptsRoute(request, env, path);
+    if (res) return withCors(res);
+  }
+  if (path === '/trust/domains' || path.startsWith('/trust/domains/')) {
+    const hit = limited('trust_domains', 30);
+    if (hit) return hit;
+    const res = await handleDomainVerificationRoute(request, env, path);
+    if (res) return withCors(res);
+  }
+
   // PageSpeed Insights (BYOK header or hosted PAGESPEED_API_KEY)
   if (path === '/pagespeed') {
     const who = await identify(request, env);
@@ -1372,7 +1424,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
           createdBy: who.user.id,
         });
         await recordAuditLogBestEffort(env, {
-          org_id: accountId,
+          org_id: auditOrgIdFor(accountId),
           actor_id: who.user.id,
           action: 'budget_policy_upsert',
           target_id: policy.id,
@@ -1391,7 +1443,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         return withCors(json({ ok: false, error: 'Budget store unavailable', code: 'BUDGET_UNAVAILABLE' }, 503));
       }
       await recordAuditLogBestEffort(env, {
-        org_id: accountId,
+        org_id: auditOrgIdFor(accountId),
         actor_id: who.user.id,
         action: 'budget_resume',
         target_id: resume.id,
@@ -1442,7 +1494,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         return withCors(json({ ok: false, error: 'Could not update action request', code: 'UPDATE_FAILED' }, 409));
       }
       await recordAuditLogBestEffort(env, {
-        org_id: accountId,
+        org_id: auditOrgIdFor(accountId),
         actor_id: who.user.id,
         action: decision === 'approve' ? 'mcp_action_approve' : 'mcp_action_deny',
         target_id: requestId,
@@ -1466,7 +1518,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       windowSec: 60,
     });
     if (!dual.ok) return withCors(dual.response);
-    return withCors(handleMcpRequest(request, env, resolved.user));
+    return withCors(handleMcpRequest(request, env, resolved.user, resolved.credential));
   }
 
   // APS: projects + context
@@ -1882,6 +1934,7 @@ export default {
     }
     if (jobs.includes('sentinel')) ctx.waitUntil(runSentinelScan(env));
     if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
+    if (jobs.includes('domain_recheck')) ctx.waitUntil(recheckVerifiedDomains(env).then(() => undefined));
   },
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     await processAuditQueueBatch(batch as MessageBatch<{ runId: string; accountId: string; targetUrl: string; projectId?: string | null }>, env);

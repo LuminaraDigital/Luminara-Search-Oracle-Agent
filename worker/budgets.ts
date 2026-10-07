@@ -123,6 +123,10 @@ export type CostEventInput = {
   provider?: string;
   creditClass?: 'free' | 'paid';
   source?: string;
+  /** Agent Passport tier 2: which credential spent ('api_key' | 'oauth' | 'session' | 'oracle'). */
+  credentialKind?: string | null;
+  /** api_keys.id when credentialKind is 'api_key'. Never a secret. */
+  credentialId?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -295,8 +299,9 @@ export async function recordCostEvent(
   const id = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO cost_events
-       (id, account_id, project_id, tool_name, provider, billed_cents, credit_class, source, run_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, account_id, project_id, tool_name, provider, billed_cents, credit_class, source, run_id,
+        credential_kind, credential_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
@@ -308,6 +313,8 @@ export async function recordCostEvent(
       params.creditClass ?? 'paid',
       params.source ?? 'rate_card',
       params.runId ?? null,
+      params.credentialKind ?? null,
+      params.credentialId ?? null,
       now,
     )
     .run();

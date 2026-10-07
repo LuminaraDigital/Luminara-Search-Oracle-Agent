@@ -31,6 +31,8 @@ export interface ServerHealth {
   ton?: boolean;
   tonPricing?: Record<string, unknown>;
   tiers?: { free?: string[]; paid?: string[] };
+  /** Trust Receipts / domain verification flags. Absent on older Workers (treat as off). */
+  trust?: { receiptsEnabled?: boolean; receiptSigningConfigured?: boolean; domainVerifyEnabled?: boolean };
 }
 
 const EMPTY_HEALTH: ServerHealth = { ok: false, providers: {}, telegram: false, requireAuth: false, plans: {} };

@@ -77,12 +77,32 @@ function isRootPathname(pathname: string): boolean {
   return clean === '';
 }
 
+/** Matches `verify/r/<id>` (path or hash body). Must be checked before the generic `verify/` attestation route. */
+const VERIFY_RECEIPT_RE = /^verify\/r\/([^/?#]+)$/i;
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return '';
+  }
+}
+
+/** Receipt id from a /verify/r/<id> path or #verify/r/<id> hash, or '' when absent. */
+export function receiptIdFromLocation(pathname: string, hash: string): string {
+  const fromPath = pathname.replace(/^\/+|\/+$/g, '').match(VERIFY_RECEIPT_RE);
+  if (fromPath?.[1]) return safeDecode(fromPath[1]);
+  const fromHash = hash.replace(/^#\/?/, '').replace(/\/+$/, '').match(VERIFY_RECEIPT_RE);
+  return fromHash?.[1] ? safeDecode(fromHash[1]) : '';
+}
+
 /** Resolve the initial app view from pathname + hash (cold-load deep links). */
 export function resolveAppView(pathname: string, hash: string): AppView | null {
   const rawPath = pathname.replace(/^\/|\/$/g, '');
   const path = rawPath.toLowerCase();
 
   if (path.startsWith('share/')) return AppView.SHARED_REPORT;
+  if (path.startsWith('verify/r/')) return AppView.VERIFY_RECEIPT;
   if (path.startsWith('verify/')) return AppView.VERIFY_ATTESTATION;
   if (path.startsWith('reports/')) return AppView.AGENT_REPORT;
 
@@ -94,6 +114,7 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
     if (h) {
       if (h === 'SETTINGS' || h === 'INTEGRATIONS' || h === 'KEYS') return null;
       if (h.startsWith('SHARE/')) return AppView.SHARED_REPORT;
+      if (h.startsWith('VERIFY/R/')) return AppView.VERIFY_RECEIPT;
       if (h.startsWith('VERIFY/')) return AppView.VERIFY_ATTESTATION;
       if (h.startsWith('HARNESS')) return AppView.HARNESS;
       if (h.startsWith('ORACLE_AGENT')) return AppView.ORACLE_AGENT;

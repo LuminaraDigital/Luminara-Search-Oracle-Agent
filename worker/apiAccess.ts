@@ -3,7 +3,8 @@
  * MCP free tools use guardMcpAccess (Growth+) instead.
  */
 import type { Env } from './env';
-import type { HostedIdentity } from './userTypes';
+import type { HostedIdentity, McpCredential } from './userTypes';
+import { SESSION_MCP_CREDENTIAL } from './userTypes';
 import { getActiveSubscription } from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
 import { identify, json } from './workerUtils';
@@ -99,20 +100,22 @@ export async function guardApiAccessRoute(
 export async function resolveMcpUser(
   request: Request,
   env: Env,
-): Promise<{ user: HostedIdentity } | { response: Response }> {
+): Promise<{ user: HostedIdentity; credential: McpCredential } | { response: Response }> {
   const bearer = bearerFromAuthorization(request.headers.get('authorization'));
   const apiUser = await identifyApiKey(env, bearer);
   if (apiUser) {
     const denied = await requireMcpAccess(env, apiUser);
     if (denied) return { response: denied };
-    return { user: apiUser };
+    const keyId = apiUser.id.startsWith('apk:') ? apiUser.id.slice(4) : null;
+    return { user: apiUser, credential: { kind: 'api_key', id: keyId, scopes: null } };
   }
 
   const oauth = bearer ? await identifyMcpOAuthToken(env, bearer) : null;
   if (oauth) {
     const denied = await requireMcpAccess(env, oauth.user);
     if (denied) return { response: denied };
-    return { user: oauth.user };
+    const scopes = oauth.scopeEnforced ? oauth.scope.split(/\s+/).filter(Boolean) : null;
+    return { user: oauth.user, credential: { kind: 'oauth', id: null, scopes } };
   }
 
   const who = await identify(request, env);
@@ -131,7 +134,7 @@ export async function resolveMcpUser(
   }
   const denied = await requireMcpAccess(env, who.user);
   if (denied) return { response: denied };
-  return { user: who.user };
+  return { user: who.user, credential: SESSION_MCP_CREDENTIAL };
 }
 
 export async function guardMcpAccessRoute(

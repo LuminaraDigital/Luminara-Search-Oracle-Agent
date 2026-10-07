@@ -5,7 +5,7 @@
 import type { Env } from './env';
 import { countWindowSpend, budgetWindowFor, getBudgetPolicy } from './budgets';
 import { json } from './workerUtils';
-import { recordAuditLogBestEffort } from './auditLog';
+import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 
 export type ReconcileStatus = 'ok' | 'warn' | 'fail' | 'reconciliation_required';
 
@@ -72,7 +72,7 @@ export async function recordInvoiceReconcile(
 
   if (opts.actorId) {
     await recordAuditLogBestEffort(env, {
-      org_id: opts.accountId,
+      org_id: auditOrgIdFor(opts.accountId),
       actor_id: opts.actorId,
       action: 'invoice_reconcile',
       target_id: id,
@@ -129,7 +129,7 @@ export async function enableHardStopAfterReconcile(
     .run();
 
   await recordAuditLogBestEffort(env, {
-    org_id: accountId,
+    org_id: auditOrgIdFor(accountId),
     actor_id: actorId,
     action: 'budget_hard_stop_enabled',
     target_id: existing.id,

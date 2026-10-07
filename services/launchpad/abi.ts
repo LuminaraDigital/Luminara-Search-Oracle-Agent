@@ -1,0 +1,90 @@
+/**
+ * Human-readable ABIs for the three launchpad contracts, kept in sync with `contracts/src`.
+ * `tests/launchpadAbi.test.ts` fails if a function or event here drifts from the compiled artifacts.
+ */
+import { parseAbi } from 'viem';
+
+export const FACTORY_ABI = parseAbi([
+  'function owner() view returns (address)',
+  'function platformFeeRecipient() view returns (address)',
+  'function deploymentFee() view returns (uint256)',
+  'function defaultPlatformFeeBps() view returns (uint16)',
+  'function accruedFees() view returns (uint256)',
+  'function withdrawFees()',
+  'function deployLoyaltyToken(string name, string symbol, uint256 initialSupply, uint256 maxSupply) payable returns (address)',
+  'function deployPreorderEscrow(uint256 softCap, uint256 hardCap, uint256 fundingDuration, uint256 deliveryDeadline, uint256 challengeWindow, uint16[] milestoneBps) payable returns (address)',
+  'event LoyaltyTokenDeployed(address indexed tokenAddress, address indexed merchant, string name, string symbol, uint256 maxSupply)',
+  'event PreorderEscrowDeployed(address indexed escrowAddress, address indexed merchant, uint256 softCap, uint256 hardCap, uint256 fundingDeadline, uint256 deliveryDeadline, uint256 challengeWindow)',
+  'error Unauthorized()',
+  'error ZeroAddress()',
+  'error IncorrectFee()',
+  'error FeeTooHigh()',
+  'error InvalidDuration()',
+  'error InvalidChallengeWindow()',
+  'error InvalidMilestones()',
+  'error NothingToWithdraw()',
+  'error TransferFailed()',
+]);
+
+export const ESCROW_ABI = parseAbi([
+  'function merchant() view returns (address)',
+  'function platformFeeBps() view returns (uint16)',
+  'function softCap() view returns (uint256)',
+  'function hardCap() view returns (uint256)',
+  'function fundingDeadline() view returns (uint256)',
+  'function deliveryDeadline() view returns (uint256)',
+  'function challengeWindow() view returns (uint256)',
+  'function state() view returns (uint8)',
+  'function totalPledged() view returns (uint256)',
+  'function totalDisbursed() view returns (uint256)',
+  'function totalRefunded() view returns (uint256)',
+  'function currentMilestone() view returns (uint256)',
+  'function milestoneCount() view returns (uint256)',
+  'function milestones(uint256) view returns (uint16 payoutBps, bool submitted, bool disbursed, uint64 challengeEndsAt, bytes32 proofHash, uint256 objectionWeight, string proofUri)',
+  'function pledges(address) view returns (uint256)',
+  'function withdrawable(address) view returns (uint256)',
+  'function refundableAmount(address backer) view returns (uint256)',
+  'function hasObjected(uint256, address) view returns (bool)',
+  'function pledge() payable',
+  'function finalizeFunding()',
+  'function submitMilestoneProof(uint256 milestoneIndex, string proofUri, bytes32 proofHash)',
+  'function object(uint256 milestoneIndex)',
+  'function disburseMilestone(uint256 milestoneIndex)',
+  'function markFailed()',
+  'function claimRefund()',
+  'function withdraw()',
+  'error Unauthorized()',
+  'error InvalidState()',
+  'error FundingClosed()',
+  'error FundingStillOpen()',
+  'error HardCapExceeded()',
+  'error MilestoneAlreadySubmitted()',
+  'error MilestoneNotSubmitted()',
+  'error MilestonePending()',
+  'error DeliveryDeadlinePassed()',
+  'error DeliveryDeadlineNotReached()',
+  'error ChallengeWindowOpen()',
+  'error ChallengeWindowClosed()',
+  'error NotBacker()',
+  'error AlreadyObjected()',
+  'error AlreadyRefunded()',
+  'error NothingToRefund()',
+  'error NothingToWithdraw()',
+  'error TransferFailed()',
+  'error ZeroAmount()',
+  'error InvalidMilestones()',
+]);
+
+export const TOKEN_ABI = parseAbi([
+  'function balanceOf(address) view returns (uint256)',
+  'function totalSupply() view returns (uint256)',
+  'function maxSupply() view returns (uint256)',
+  'function merchant() view returns (address)',
+  'function redeem(uint256 amount, string voucherCode) returns (bool)',
+  'function mint(address recipient, uint256 amount) returns (bool)',
+  'function transfer(address to, uint256 amount) returns (bool)',
+  'event VoucherRedeemed(address indexed customer, uint256 amount, string voucherCode, uint256 timestamp)',
+]);
+
+export const CAMPAIGN_STATES = ['Funding', 'Active', 'Completed', 'Failed'] as const;
+export type CampaignStateName = (typeof CAMPAIGN_STATES)[number];

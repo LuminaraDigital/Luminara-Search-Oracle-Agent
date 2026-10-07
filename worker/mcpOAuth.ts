@@ -155,7 +155,8 @@ async function authorize(request: Request, env: Env): Promise<Response> {
   const state = url.searchParams.get('state') || '';
   const codeChallenge = url.searchParams.get('code_challenge') || '';
   const method = url.searchParams.get('code_challenge_method') || 'S256';
-  const scope = url.searchParams.get('scope') || 'mcp:free';
+  // Absent scope requests everything; the plan cap below decides what is granted.
+  const scope = url.searchParams.get('scope') || 'mcp:free mcp:research';
 
   if (!redirectUri || !codeChallenge || method !== 'S256') {
     return json({ error: 'invalid_request', error_description: 'redirect_uri and S256 code_challenge required' }, 400);
@@ -189,10 +190,8 @@ async function authorize(request: Request, env: Env): Promise<Response> {
     return json({ error: 'access_denied', error_description: 'Growth+ plan required for MCP' }, 403);
   }
 
+  // Research scope is granted only on Agency (apiAccess); Growth gets mcp:free.
   const scopes = scope.split(/\s+/).filter(Boolean);
-  if (scopes.includes('mcp:research') && !caps.apiAccess) {
-    // Research scope only for Agency; Growth still gets mcp:free
-  }
 
   const code = randomId('oc', 16);
   const record: AuthCodeRecord = {
@@ -262,6 +261,7 @@ async function token(request: Request, env: Env): Promise<Response> {
     userId: record.userId,
     plan: record.plan,
     scope: record.scope,
+    scopeEnforced: true,
     createdAt: Date.now(),
   };
   // Store under the SHA-256 hex of the token so the raw bearer value never lands in KV.
@@ -282,14 +282,18 @@ type StoredTokenRecord = {
   userId: string;
   plan: string;
   scope: string;
+  /** Set on tokens minted after scope enforcement shipped; absent on legacy tokens. */
+  scopeEnforced?: boolean;
   createdAt?: number;
 };
+
+export type McpOAuthIdentity = { user: HostedIdentity; plan: string; scope: string; scopeEnforced: boolean };
 
 /** Resolve Bearer mcp_* OAuth token to a HostedIdentity-like identity. */
 export async function identifyMcpOAuthToken(
   env: Env,
   token: string,
-): Promise<{ user: HostedIdentity; plan: string; scope: string } | null> {
+): Promise<McpOAuthIdentity | null> {
   if (!token.startsWith('mcp_') || !env.LUMINARA_KV) return null;
 
   // Primary path: hashed record.
@@ -314,7 +318,7 @@ export async function identifyMcpOAuthToken(
   return parsed;
 }
 
-function parseTokenRecord(raw: string): { user: HostedIdentity; plan: string; scope: string } | null {
+function parseTokenRecord(raw: string): McpOAuthIdentity | null {
   try {
     const record = JSON.parse(raw) as StoredTokenRecord;
     if (!record?.accountId || !record?.scope) return null;
@@ -324,7 +328,7 @@ function parseTokenRecord(raw: string): { user: HostedIdentity; plan: string; sc
       accountId: record.accountId,
       name: 'MCP OAuth',
     };
-    return { user, plan: record.plan, scope: record.scope };
+    return { user, plan: record.plan, scope: record.scope, scopeEnforced: record.scopeEnforced === true };
   } catch {
     return null;
   }

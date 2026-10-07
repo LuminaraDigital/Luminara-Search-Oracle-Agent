@@ -151,6 +151,11 @@ export type ProtectedRouteSpec = {
 export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/workspace$/, methods: ['GET', 'PUT'] },
   { pattern: /^\/enterprise\/audit-logs$/, methods: ['GET'] },
+  // Trust Network. /trust/receipts/:id GET and /trust/keys are public reads (handler enforces visibility).
+  { pattern: /^\/trust\/audit-chain\/verify$/, methods: ['GET'] },
+  { pattern: /^\/trust\/receipts$/, methods: ['GET'] },
+  { pattern: /^\/trust\/receipts\/[^/]+\/(visibility|revoke)$/, methods: ['POST'] },
+  { pattern: /^\/trust\/domains(\/|$)/ },
   { pattern: /^\/auth\/quota$/, methods: ['GET'] },
   // /auth/link is not guarded here. guardApiRoute calls identify(), which upserts
   // each login. The link handler must reject a missing { confirm: true } before any
