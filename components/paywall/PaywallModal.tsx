@@ -546,14 +546,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </button>
           </div>
 
-          {/* Pro / Agency Plan */}
+          {/* Agency Plan */}
           <div className="p-5 rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/10 to-transparent flex flex-col justify-between space-y-4 hover:border-gold transition-all relative sm:col-span-2">
             <div className="absolute -top-2.5 left-4 px-2.5 py-0.5 rounded-full bg-white text-black font-black text-[9px] uppercase tracking-widest">
               Moat
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-gold-light">Pro / Agency</span>
+                <span className="text-sm font-bold text-gold-light">Agency Plan</span>
                 <span className="text-xs font-mono text-gold font-bold">
                   {planPriceLabel('agency')}
                 </span>
@@ -621,7 +621,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
         {/* Telegram Stars Terms & Support Notice */}
         {tab === 'stars' && (
-          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-6 text-center text-[10px] text-gray-400 space-y-1">
+          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-4 text-center text-[10px] text-gray-400 space-y-1">
             <p>
               By purchasing with Telegram Stars, you agree to our{' '}
               <a href="#terms" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Terms of Service</a>
@@ -633,6 +633,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </p>
           </div>
         )}
+
+        {/* Card checkout guidance */}
+        <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[10px] text-gray-400">
+          <p>
+            Card checkout is in onboarding for closed beta. For credit card payments or corporate invoicing, email{' '}
+            <a href="mailto:support@luminarasuite.com" className="text-gold underline hover:text-gold-light">support@luminarasuite.com</a>.
+          </p>
+        </div>
 
         {/* Status / Feedback message */}
         {statusMessage && (

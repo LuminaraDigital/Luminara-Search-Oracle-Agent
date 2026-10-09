@@ -10,7 +10,7 @@ export type SampleAiSaidRow = {
   prompt: string;
   excerpt: string;
   presence: 'absent' | 'mentioned' | 'recommended';
-  measurementStatus: 'estimated';
+  measurementStatus: 'not_measured';
   note: string;
 };
 
@@ -31,7 +31,7 @@ export function sampleAiSaidFixtures(domain: string): SampleAiSaidRow[] {
       prompt: `Best providers like ${brand} for ${host} customers`,
       excerpt: `Sample answer (not Live): competitors are named first. ${brand} is absent or only vaguely related.`,
       presence: 'absent',
-      measurementStatus: 'estimated',
+      measurementStatus: 'not_measured',
       note: 'Labeled Sample. Live Instant Audit may measure this engine when keys are connected.',
     },
     {
@@ -41,8 +41,8 @@ export function sampleAiSaidFixtures(domain: string): SampleAiSaidRow[] {
       prompt: `${brand} vs alternatives for AI search visibility`,
       excerpt: `Sample answer (not Live): a rival is recommended; ${host} is not cited as a source.`,
       presence: 'mentioned',
-      measurementStatus: 'estimated',
-      note: 'Mention without recommendation. Treat as estimated until Live probes run.',
+      measurementStatus: 'not_measured',
+      note: 'Mention without recommendation. Sample row, not measured.',
     },
     {
       id: 'sample-aio-trust',
@@ -51,7 +51,7 @@ export function sampleAiSaidFixtures(domain: string): SampleAiSaidRow[] {
       prompt: `Is ${brand} reputable for ${host.replace(/\.\w+$/, '')} services?`,
       excerpt: 'Sample answer (not Live): overview leans on third-party directories; owned pages are not the primary citation.',
       presence: 'absent',
-      measurementStatus: 'estimated',
+      measurementStatus: 'not_measured',
       note: 'Sample only. Do not report as measured citation rate.',
     },
   ];

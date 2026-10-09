@@ -187,8 +187,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           How payment works
         </h2>
         <p className="mkt-body mb-8">
-          Stars checkout runs inside the Luminara Mini App in Telegram. On the web, the payment panel
-          opens Telegram for you, or takes a license key if you have one.
+          Stars and TON checkout runs inside the Luminara Mini App in Telegram. On the web, the payment panel
+          opens Telegram for you, or takes a license key. Card checkout is in onboarding for the closed beta:
+          for card payments or corporate invoicing, email support@luminarasuite.com.
         </p>
         {inTelegram ? (
           <TelegramAccountPanel />
@@ -205,7 +206,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           </div>
         )}
         <p className="text-[var(--color-ink-2)] text-[13px] mt-6">
-          Pay in the Mini App with Stars or TON. Plans run for 30 days. Plan limits apply per account.
+          Pay in the Mini App with Stars or TON. Plans run for 30 days. Plan limits apply per account. Credit card checkout is available on request during closed beta.
         </p>
       </section>
     </MarketingPageShell>

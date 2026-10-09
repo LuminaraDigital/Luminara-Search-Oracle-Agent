@@ -40,9 +40,24 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
     });
   }, [domain, evidence, rawSources]);
 
-  const velocityLabel = mindshare.velocityPercentWoW >= 0
-    ? `+${mindshare.velocityPercentWoW}% WoW`
-    : `${mindshare.velocityPercentWoW}% WoW`;
+  if (!evidence || evidence.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-black/60 p-5 shadow-xl mb-6">
+        <div className="flex items-center justify-between text-xs font-mono text-gray-400">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-gray-500" />
+            <span className="font-black uppercase tracking-[0.2em] text-white">AEO Mindshare Radar</span>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-gray-400 border border-white/10">Not measured</span>
+        </div>
+        <p className="text-xs text-gray-400 mt-3">Live search citation evidence is required to calculate brand attention share. Sample scans do not invent mindshare scores.</p>
+      </div>
+    );
+  }
+
+  const velocityLabel = mindshare.velocityPercentWoW !== 0
+    ? (mindshare.velocityPercentWoW > 0 ? `+${mindshare.velocityPercentWoW}% WoW` : `${mindshare.velocityPercentWoW}% WoW`)
+    : 'Baseline';
 
   return (
     <div className="rounded-2xl border border-white/10 bg-black/60 p-6 shadow-xl mb-6">

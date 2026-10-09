@@ -128,6 +128,8 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
   const marketing = marketingViewFromPathname(pathname);
   if (marketing) return marketing;
 
+  if (!isRootPathname(pathname)) return AppView.NOT_FOUND;
+
   return null;
 }
 

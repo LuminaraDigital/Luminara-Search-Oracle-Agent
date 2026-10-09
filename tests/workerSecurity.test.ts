@@ -485,15 +485,24 @@ describe('crawl surfaces', () => {
     expect(text).toContain('MCP');
   });
 
-  it('redirects extensionless What is AEO to the static doc', async () => {
-    const env = makeEnv();
+  it('serves extensionless What is AEO from static doc directly without redirect loop', async () => {
+    const env = makeEnv({
+      ASSETS: {
+        fetch: async (input: RequestInfo) => {
+          const assetUrl = typeof input === 'string' ? input : input.url;
+          expect(assetUrl).toContain('/docs/what-is-aeo.html');
+          return new Response('<html><body><h2 id="honesty">Honesty glossary</h2></body></html>', {
+            headers: { 'content-type': 'text/html; charset=utf-8' },
+          });
+        },
+      } as unknown as Fetcher,
+    });
     for (const path of ['/docs/what-is-aeo', '/docs/what-is-aeo/']) {
       const res = await worker.fetch(req(`${path}?src=llms`), env, ctx);
-      expect(res.status, path).toBe(301);
-      expect(res.headers.get('Location')).toBe('/docs/what-is-aeo.html?src=llms');
+      expect(res.status, path).toBe(200);
       const text = await res.text();
+      expect(text).toContain('id="honesty"');
       expect(text).not.toContain('Visibility Probe');
-      expect(text).not.toContain('<title>');
     }
   });
 

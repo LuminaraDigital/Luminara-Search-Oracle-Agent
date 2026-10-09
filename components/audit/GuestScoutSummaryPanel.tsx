@@ -30,7 +30,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       aria-label="Scout summary"
       className="mb-8 rounded-2xl border border-white/10 bg-black px-5 py-6 sm:px-8 sm:py-8 shadow-2xl"
     >
-      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gold-light">Instant Scout</p>
+      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gold-light">Instant Audit</p>
       <h2 className="mt-3 text-[clamp(1.6rem,4vw,2.4rem)] font-semibold tracking-tight text-white [overflow-wrap:anywhere]">
         {summary.domain}
       </h2>

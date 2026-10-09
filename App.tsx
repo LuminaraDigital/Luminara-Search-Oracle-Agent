@@ -44,6 +44,7 @@ import { viewAfterSignIn } from './services/activation/postSignInView';
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
 const LegalPage = lazyWithReload(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
+const NotFoundPage = lazyWithReload(() => import('./components/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
 const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
 const TeaserShareView = lazyWithReload(() => import('./components/audit/TeaserShareView').then(m => ({ default: m.TeaserShareView })));
 const VerifyAttestationView = lazyWithReload(() => import('./components/audit/VerifyAttestationView').then(m => ({ default: m.VerifyAttestationView })));
@@ -911,6 +912,14 @@ const App: React.FC = () => {
 
   const introOverlay = showIntro ? <Suspense fallback={null}><AppIntroOverlay onComplete={completeIntro} /></Suspense> : null;
 
+  if (view === AppView.NOT_FOUND) {
+    return (
+      <Suspense fallback={<ViewLoader label="Loading page" />}>
+        <NotFoundPage onHome={() => setView(AppView.LANDING)} />
+      </Suspense>
+    );
+  }
+
   if (view === AppView.PRIVACY || view === AppView.TERMS) {
     return (
       <Suspense fallback={<ViewLoader label="Loading document" />}>
@@ -1251,11 +1260,6 @@ const App: React.FC = () => {
                       ? 'fixed bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-3 right-3 max-h-[72dvh] mx-auto max-w-sm'
                       : 'max-sm:fixed max-sm:bottom-4 max-sm:left-3 max-sm:right-3 max-sm:max-h-[72dvh] max-sm:mx-auto max-sm:max-w-sm sm:absolute sm:top-full sm:right-0 sm:left-0 sm:right-auto sm:mt-2 sm:w-[min(19rem,calc(100vw-1.5rem))] sm:max-h-[min(70dvh,28rem)]'
                   }`}
-                  onMouseLeave={() => {
-                    if (!inTelegram && typeof window !== 'undefined' && window.innerWidth >= 640) {
-                      setShowSuiteMenu(false);
-                    }
-                  }}
                 >
                   <div className="sm:hidden flex items-center justify-between px-3 py-1.5 border-b border-white/10 mb-1.5">
                     <span className="text-[10px] font-mono uppercase tracking-widest text-gold-light font-bold">Luminara Suite</span>

@@ -46,20 +46,8 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
 
   const mappedEvidence: EmpiricalEvidence[] = useMemo(() => {
     if (evidence && evidence.length > 0) return evidence;
-    return aiSaid.map((r, i) => ({
-      id: r.id || `ev-${i}`,
-      query: r.prompt,
-      intent: 'commercial' as const,
-      targetDomain: domain,
-      brandCited: r.presence !== 'absent',
-      brandRank: r.presence === 'recommended' ? 1 : null,
-      citedUrl: r.presence !== 'absent' ? `https://${domain}` : null,
-      snippet: r.excerpt,
-      competitorsCited: ['Competitor Rival'],
-      citationConfidence: r.presence === 'recommended' ? 80 : 30,
-      timestamp: Date.now(),
-    }));
-  }, [evidence, aiSaid, domain]);
+    return [];
+  }, [evidence]);
 
   useEffect(() => {
     if (!commitment || !domain) return;

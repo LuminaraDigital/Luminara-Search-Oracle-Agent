@@ -1948,10 +1948,14 @@ export default {
       return withSecurityHeaders(await desktopWindowsDownload(env, request));
     }
 
-    // Extensionless citability URL must not fall through to the SPA home shell.
+    // Extensionless citability URL: fetch static doc directly without redirect loop.
     // Canonical file is public/docs/what-is-aeo.html (sitemap and llms.txt).
     if (url.pathname === '/docs/what-is-aeo' || url.pathname === '/docs/what-is-aeo/') {
-      return withSecurityHeaders(permanentRedirect(url, '/docs/what-is-aeo.html'));
+      const docUrl = new URL('/docs/what-is-aeo.html', request.url);
+      docUrl.search = url.search;
+      const docRequest = new Request(docUrl.toString(), request);
+      const docRes = await env.ASSETS.fetch(docRequest);
+      return withSecurityHeaders(docRes);
     }
 
     // Short marketing alias. Canonical page is /how-it-works.
