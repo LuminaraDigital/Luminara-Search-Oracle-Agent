@@ -7,6 +7,7 @@
  */
 
 import "@stdlib/gas-payments"
+import "@stdlib/tvm-dicts"
 
 struct ProofRecord {
     evidenceHash: uint256
@@ -193,11 +194,12 @@ get fun get_proof(domainHash: uint256, auditIdHash: uint256): (uint256, uint8, u
     if (!found) {
         return (0, 0, 0, 0, 0, false);
     }
-    val evidenceHash = slice.loadUint(256);
-    val healthScore = slice.loadUint(8);
-    val citationRate = slice.loadUint(8);
-    val findingsCount = slice.loadUint(16);
-    val anchoredAt = slice.loadUint(32);
+    val recordSlice = slice!;
+    val evidenceHash = recordSlice.loadUint(256);
+    val healthScore = recordSlice.loadUint(8);
+    val citationRate = recordSlice.loadUint(8);
+    val findingsCount = recordSlice.loadUint(16);
+    val anchoredAt = recordSlice.loadUint(32);
     return (evidenceHash, healthScore, citationRate, findingsCount, anchoredAt, true);
 }
 
