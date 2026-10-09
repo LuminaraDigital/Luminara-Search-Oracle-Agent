@@ -78,7 +78,7 @@ fun packProofRecord(record: ProofRecord): cell {
  */
 fun onInternalMessage(inMsg: InMessage) {
     val body = inMsg.body;
-    if (body.remainingBits() < 32) {
+    if (body.remainingBitsCount() < 32) {
         return; // Plain transfer / top-up
     }
 
@@ -126,7 +126,7 @@ fun onInternalMessage(inMsg: InMessage) {
  * Handles incoming external messages (direct broadcast signed by ops minter).
  */
 fun onExternalMessage(inMsgBody: slice) {
-    assert (inMsgBody.remainingBits() >= 512 + 32 + 32 + 32) throw ERR_INVALID_SIGNATURE;
+    assert (inMsgBody.remainingBitsCount() >= 512 + 32 + 32 + 32) throw ERR_INVALID_SIGNATURE;
     val signature = inMsgBody.loadBits(512);
     val signedSlice = inMsgBody;
 
