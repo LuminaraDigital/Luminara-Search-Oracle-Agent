@@ -667,21 +667,257 @@ async function upsertPulse(request: Request, env: Env, accountId: string): Promi
   });
 }
 
+export interface CommunityIdeaCard {
+  id: string;
+  ideaText: string;
+  niche: string | null;
+  card: IdeaScoutCard | unknown;
+  upvotes: number;
+  sharedAt: number;
+  accountId?: string;
+}
+
+export const SEED_COMMUNITY_FEED: CommunityIdeaCard[] = [
+  {
+    id: 'is_seed_offline_crm',
+    ideaText: 'Local-first CRM for independent plumbers and electricians',
+    niche: 'Trades and Services',
+    card: {
+      problem: 'Independent tradespeople struggle with complex CRMs requiring constant connectivity on job sites.',
+      whoAsksAi: {
+        label: 'model_inference',
+        persona: 'Self-employed trade contractor',
+        promptPatterns: ['best offline crm for plumbers', 'simple customer tracker for trades'],
+      },
+      contentBets: [
+        { label: 'hypothesis', hypothesis: 'Guides comparing local storage vs cloud sync on work sites.' },
+        { label: 'hypothesis', hypothesis: 'Downloadable invoice and job estimation templates.' },
+        { label: 'hypothesis', hypothesis: 'Job costing calculators tailored for plumbing and electrical work.' },
+      ],
+      fetchStatus: 'not_measured',
+    },
+    upvotes: 12,
+    sharedAt: 1728000000000,
+  },
+  {
+    id: 'is_seed_indie_tracker',
+    ideaText: 'Discovery engine and release tracker for solo indie game developers',
+    niche: 'Gaming and Creators',
+    card: {
+      problem: 'Solo developers lack visibility on algorithmic game discovery platforms.',
+      whoAsksAi: {
+        label: 'model_inference',
+        persona: 'Indie game developer',
+        promptPatterns: ['how to get my indie game noticed', 'steam algorithm launch checklist'],
+      },
+      contentBets: [
+        { label: 'hypothesis', hypothesis: 'Case studies analyzing successful Steam launches.' },
+        { label: 'hypothesis', hypothesis: 'Interactive launch timing calendars by genre.' },
+        { label: 'hypothesis', hypothesis: 'Trailer pacing and steam page optimization breakdowns.' },
+      ],
+      fetchStatus: 'not_measured',
+    },
+    upvotes: 8,
+    sharedAt: 1728050000000,
+  },
+];
+
+const memoryCommunityFeed: CommunityIdeaCard[] = [];
+
+export async function loadCommunityFeed(env: Env): Promise<CommunityIdeaCard[]> {
+  if (env.LUMINARA_KV) {
+    try {
+      const stored = await env.LUMINARA_KV.get('idea_scout:community_feed', 'json');
+      if (Array.isArray(stored) && stored.length > 0) return stored as CommunityIdeaCard[];
+    } catch {
+      // Non-blocking fallback
+    }
+  }
+  if (memoryCommunityFeed.length > 0) {
+    return [...memoryCommunityFeed];
+  }
+  return [...SEED_COMMUNITY_FEED];
+}
+
+export async function saveCommunityFeed(env: Env, feed: CommunityIdeaCard[]): Promise<void> {
+  memoryCommunityFeed.length = 0;
+  memoryCommunityFeed.push(...feed);
+  if (env.LUMINARA_KV) {
+    try {
+      await env.LUMINARA_KV.put('idea_scout:community_feed', JSON.stringify(feed));
+    } catch {
+      // Non-blocking fallback
+    }
+  }
+}
+
+export async function getCommunityFeed(request: Request, env: Env): Promise<Response> {
+  const feed = await loadCommunityFeed(env);
+  const url = new URL(request.url);
+  const sort = url.searchParams.get('sort');
+  if (sort === 'top') {
+    feed.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
+  } else if (sort === 'recent') {
+    feed.sort((a, b) => (b.sharedAt || 0) - (a.sharedAt || 0));
+  }
+  return json({
+    ok: true,
+    feed,
+    cards: feed,
+  });
+}
+
+export async function shareIdeaToFeed(request: Request, env: Env, callerAccountId?: string): Promise<Response> {
+  const who = await identify(request, env);
+  const accountId = callerAccountId || (who.user ? billingId(who.user) : 'anonymous');
+  const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!read.ok) return json({ ok: false, error: read.error }, read.status);
+  const body = (read.value && typeof read.value === 'object' && !Array.isArray(read.value))
+    ? (read.value as Record<string, unknown>)
+    : {};
+
+  const targetId = String(body.id || body.ideaId || '').trim();
+  let ideaText = typeof body.ideaText === 'string' ? body.ideaText : typeof body.idea === 'string' ? body.idea : '';
+  let niche = typeof body.niche === 'string' ? body.niche : null;
+  let card: unknown = body.card || null;
+
+  if (targetId && env.DB) {
+    try {
+      const row = await env.DB.prepare(
+        `SELECT id, idea_text, niche, card_json FROM idea_scouts WHERE id = ?`
+      ).bind(targetId).first<{ id: string; idea_text: string; niche: string | null; card_json: string }>();
+      if (row) {
+        ideaText = ideaText || row.idea_text;
+        niche = niche || row.niche;
+        if (!card) {
+          card = cardFromRow(row.card_json);
+        }
+      }
+    } catch {
+      // Non-blocking fallback
+    }
+  }
+
+  if (card && typeof card === 'object') {
+    const verdict = validateIdeaScoutCard(card);
+    if (!verdict.ok) {
+      return json({ ok: false, error: verdict.error, code: verdict.code }, 400);
+    }
+    card = verdict.card;
+  } else if (ideaText) {
+    card = buildIdeaScoutCard({
+      idea: ideaText,
+      niche: niche || null,
+      snapshots: [],
+    });
+  }
+
+  if (!card || !ideaText) {
+    return json({
+      ok: false,
+      error: 'Send an existing idea card id or card content to publish to the community feed.',
+      code: 'BAD_REQUEST',
+    }, 400);
+  }
+
+  const feed = await loadCommunityFeed(env);
+  const id = targetId || ('is_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16));
+
+  const existing = feed.find((item) => item.id === id);
+  if (existing) {
+    return json({
+      ok: true,
+      card: existing,
+      id: existing.id,
+      alreadyShared: true,
+    });
+  }
+
+  const communityCard: CommunityIdeaCard = {
+    id,
+    ideaText,
+    niche: niche || null,
+    card,
+    upvotes: 0,
+    sharedAt: Date.now(),
+    accountId,
+  };
+
+  feed.unshift(communityCard);
+  await saveCommunityFeed(env, feed);
+
+  return json({
+    ok: true,
+    card: communityCard,
+    id: communityCard.id,
+    alreadyShared: false,
+  });
+}
+
+export async function voteCommunityIdea(request: Request, env: Env): Promise<Response> {
+  const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!read.ok) return json({ ok: false, error: read.error }, read.status);
+  const body = (read.value && typeof read.value === 'object' && !Array.isArray(read.value))
+    ? (read.value as Record<string, unknown>)
+    : {};
+
+  const targetId = String(body.id || body.ideaId || '').trim();
+  if (!targetId) {
+    return json({
+      ok: false,
+      error: 'Send an idea card ID to upvote.',
+      code: 'BAD_ID',
+    }, 400);
+  }
+
+  const feed = await loadCommunityFeed(env);
+  const card = feed.find((item) => item.id === targetId);
+  if (!card) {
+    return json({
+      ok: false,
+      error: 'Unknown community idea card.',
+      code: 'NOT_FOUND',
+    }, 404);
+  }
+
+  card.upvotes = (card.upvotes || 0) + 1;
+  await saveCommunityFeed(env, feed);
+
+  return json({
+    ok: true,
+    id: card.id,
+    upvotes: card.upvotes,
+  });
+}
+
 export async function handleIdeaScoutRoute(request: Request, env: Env, path: string, deps: IdeaScoutDeps = {}): Promise<Response> {
+  const normPath = path.startsWith('/api/') ? path.slice(4) : path;
+
+  if (normPath === '/idea-scout/feed' && request.method === 'GET') {
+    return getCommunityFeed(request, env);
+  }
+  if (normPath === '/idea-scout/vote' && request.method === 'POST') {
+    return voteCommunityIdea(request, env);
+  }
+
   const auth = await requireUser(request, env);
   if (auth instanceof Response) return auth;
   const { user, accountId } = auth;
 
-  if (path === '/idea-scout' && request.method === 'POST') return createIdea(request, env, user, accountId, deps);
-  if (path === '/idea-scout' && request.method === 'GET') return listIdeas(env, accountId);
-  if (path === '/idea-scout/pulse' && request.method === 'POST') return upsertPulse(request, env, accountId);
+  if (normPath === '/idea-scout/share' && request.method === 'POST') {
+    return shareIdeaToFeed(request, env, accountId);
+  }
 
-  const link = /^\/idea-scout\/(is_[a-f0-9]{16})\/link$/.exec(path);
+  if (normPath === '/idea-scout' && request.method === 'POST') return createIdea(request, env, user, accountId, deps);
+  if (normPath === '/idea-scout' && request.method === 'GET') return listIdeas(env, accountId);
+  if (normPath === '/idea-scout/pulse' && request.method === 'POST') return upsertPulse(request, env, accountId);
+
+  const link = /^\/idea-scout\/(is_[a-f0-9]{16})\/link$/.exec(normPath);
   if (link) {
     if (request.method !== 'PATCH') return json({ ok: false, error: 'Method not allowed' }, 405);
     return linkIdea(request, env, accountId, link[1]);
   }
-  const one = /^\/idea-scout\/(is_[a-f0-9]{16})$/.exec(path);
+  const one = /^\/idea-scout\/(is_[a-f0-9]{16})$/.exec(normPath);
   if (one) {
     if (request.method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405);
     return getIdea(env, accountId, one[1]);

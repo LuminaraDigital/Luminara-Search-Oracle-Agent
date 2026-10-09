@@ -3,6 +3,7 @@ import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
 import { isUserSubscribed, checkHostedQuota, type QuotaStatus } from './quotaMiddleware';
+import { runWorkersAiChatFallback } from './workersAiFallback';
 import {
   MAX_BODY_BYTES,
   clampHostedChatCompletionsBody,
@@ -184,6 +185,39 @@ export const PROVIDERS: Record<string, ProviderSpec> = {
   },
 };
 
+function makeFallbackResponse(
+  aiResult: unknown,
+  isStreaming: boolean,
+  quotaGate: QuotaStatus | null,
+): Response {
+  const fallbackHeaders: Record<string, string> = {
+    'X-Provider-Fallback': 'workers-ai',
+  };
+  if (quotaGate) {
+    if (quotaGate.isUnlimited) {
+      fallbackHeaders['X-Quota-Limit'] = 'unlimited';
+      fallbackHeaders['X-Quota-Remaining'] = 'unlimited';
+    } else if (quotaGate.limit > 0) {
+      fallbackHeaders['X-Quota-Limit'] = String(quotaGate.limit);
+      fallbackHeaders['X-Quota-Remaining'] = String(quotaGate.remaining);
+      fallbackHeaders['X-Quota-Reset'] = String(quotaGate.resetSec);
+      if (typeof quotaGate.bonusRemaining === 'number') {
+        fallbackHeaders['X-Quota-Bonus'] = String(quotaGate.bonusRemaining);
+      }
+    }
+  }
+  if (isStreaming) {
+    const streamHeaders = new Headers({
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      ...fallbackHeaders,
+    });
+    return new Response(aiResult as BodyInit, { status: 200, headers: streamHeaders });
+  }
+  return json(aiResult, 200, fallbackHeaders);
+}
+
 export async function proxyProvider(
   request: Request,
   env: Env,
@@ -329,7 +363,23 @@ export async function proxyProvider(
     }
   } else {
     const auth = spec.auth(env, headers, body);
-    if (!auth.ok) return json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503);
+    if (!auth.ok) {
+      if (isChatCompletionsPath(providerId, subPath) && env.AI) {
+        if (request.method !== 'GET') {
+          const clamped = clampHostedChatCompletionsBody(body);
+          if (!clamped.ok) return json({ error: clamped.error }, 400);
+          body = clamped.body;
+        }
+        try {
+          const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
+          const aiResult = await runWorkersAiChatFallback(env.AI, body);
+          return makeFallbackResponse(aiResult, isStreaming, quotaGate);
+        } catch (aiErr) {
+          console.warn('[Workers AI fallback error for unconfigured provider]', aiErr);
+        }
+      }
+      return json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503);
+    }
     if (auth.body !== undefined) body = auth.body;
 
     // Cost caps apply only to hosted keys (BYOK keeps caller-chosen limits).
@@ -378,11 +428,25 @@ export async function proxyProvider(
     }
   }
 
-  let res = await fetch(upstream.toString(), {
-    method: request.method,
-    headers,
-    body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(upstream.toString(), {
+      method: request.method,
+      headers,
+      body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+    });
+  } catch (networkErr) {
+    if (!userKey && isChatCompletionsPath(providerId, subPath) && env.AI) {
+      try {
+        const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
+        const aiResult = await runWorkersAiChatFallback(env.AI, body);
+        return makeFallbackResponse(aiResult, isStreaming, quotaGate);
+      } catch (aiErr) {
+        console.warn('[Workers AI fallback error after network throw]', aiErr);
+      }
+    }
+    return json({ error: `Upstream connection failed: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}` }, 502);
+  }
 
   // Seamless Groq failover if hosted primary key hits billing (402), auth (401), or rate limit (429)
   if (!userKey && providerId === 'groq' && (res.status === 401 || res.status === 402 || res.status === 429) && env.GROQ_API_KEY_FALLBACK) {
@@ -403,6 +467,17 @@ export async function proxyProvider(
       } catch (err) {
         console.warn('[Groq failover error]', err);
       }
+    }
+  }
+
+  // Fallback to Cloudflare Workers AI edge model if hosted chat completions upstream fails
+  if (!userKey && isChatCompletionsPath(providerId, subPath) && env.AI && (!res.ok || res.status >= 400)) {
+    try {
+      const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
+      const aiResult = await runWorkersAiChatFallback(env.AI, body);
+      return makeFallbackResponse(aiResult, isStreaming, quotaGate);
+    } catch (aiErr) {
+      console.warn('[Workers AI fallback error]', aiErr);
     }
   }
 

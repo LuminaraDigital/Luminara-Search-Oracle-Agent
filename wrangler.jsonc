@@ -49,6 +49,11 @@
     { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases" }
   ],
 
+  // Cloudflare Workers AI binding for chat completions fallback and embeddings.
+  "ai": {
+    "binding": "AI"
+  },
+
   // Cloudflare Workers Rate Limiting (GA). Edge-local per colo; complements KV dual limits.
   // See docs/plans/three-tier-rate-limiting.md and https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
   "ratelimits": [
@@ -205,6 +210,9 @@
           }
         ]
       },
+      "ai": {
+        "binding": "AI"
+      },
       "vars": {
         "ENVIRONMENT": "staging",
         "WEBAPP_URL": "https://staging.luminarasuite.com/",
@@ -290,6 +298,9 @@
             "dead_letter_queue": "luminara-audit-jobs-dlq"
           }
         ]
+      },
+      "ai": {
+        "binding": "AI"
       },
       "vars": {
         "ENVIRONMENT": "production",

@@ -1254,6 +1254,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     path === '/referrals/me' ||
     path === '/referrals/claim' ||
     path === '/referrals/qualify' ||
+    path === '/referrals/checkin' ||
     path === '/missions/complete'
   ) {
     return withCors(handleReferralRoute(request, env, path));

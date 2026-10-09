@@ -13,6 +13,7 @@ import {
   WEEKLY_MISSIONS,
   assessHonestScout,
   attributionDecision,
+  calculateLumens,
   clientMissionKey,
   formatWeeklyMissionNudge,
   generateReferralCode,
@@ -22,9 +23,13 @@ import {
   normalizeReferralCode,
   visibilityLevel,
   visibilityLevelLabel,
+  type LumensBreakdown,
+  type LumensRank,
   type MissionKey,
   type VisibilityLevel,
 } from '../services/referrals/rules';
+
+export { calculateLumens, type LumensBreakdown, type LumensRank };
 
 type ProgRow = {
   streak_weeks: number;
@@ -272,6 +277,7 @@ export interface RetentionSnapshot {
   inviteUrl: string | null;
   bonusRemaining: number;
   creditsPerSide: number;
+  lumens: LumensBreakdown;
   progression: {
     visibilityLevel: VisibilityLevel;
     label: string;
@@ -286,6 +292,22 @@ export interface RetentionSnapshot {
     clientCompletable: boolean;
   }>;
   nudge: string;
+}
+
+export async function dailyCheckinPoints(env: Env, accountId: string): Promise<number> {
+  if (!env.DB || !accountId) return 0;
+  try {
+    const row = await env.DB.prepare(
+      `SELECT COALESCE(SUM(remaining), 0) AS total
+       FROM referral_rewards
+       WHERE account_id = ? AND kind = 'daily_checkin'`,
+    )
+      .bind(accountId)
+      .first<{ total: number }>();
+    return Math.max(0, Number(row?.total || 0));
+  } catch {
+    return 0;
+  }
 }
 
 export async function readRetentionSnapshot(env: Env, accountId: string, code?: string | null): Promise<RetentionSnapshot> {
@@ -309,12 +331,22 @@ export async function readRetentionSnapshot(env: Env, accountId: string, code?: 
     }
   }
   const resolvedCode = code ?? null;
+  const bonus = await referralBonusRemaining(env, accountId);
+  const checkins = await dailyCheckinPoints(env, accountId);
+  const lumens = calculateLumens({
+    honestScoutCount: prog?.honest_scout_count || 0,
+    missionsCompleted,
+    streakWeeks: prog?.streak_weeks || 0,
+    bonusRemaining: bonus,
+    checkinPoints: checkins,
+  });
   return {
     code: resolvedCode,
     startParam: resolvedCode ? `ref_${resolvedCode}` : null,
     inviteUrl: resolvedCode ? inviteUrlForCode(resolvedCode) : null,
-    bonusRemaining: await referralBonusRemaining(env, accountId),
+    bonusRemaining: bonus,
     creditsPerSide: REFERRAL_SCOUT_CREDITS,
+    lumens,
     progression: {
       visibilityLevel: level,
       label: visibilityLevelLabel(level),
@@ -597,6 +629,78 @@ function requireIdentity(user: HostedIdentity | null, error?: string): Response 
   return null;
 }
 
+export async function handleDailyCheckin(
+  env: Env,
+  accountId: string,
+): Promise<{ ok: true; alreadyCheckedIn: boolean; awardedLumens?: number; lumens: LumensBreakdown }> {
+  const now = Date.now();
+  const today = utcDay(now);
+  const checkinReason = `checkin:${today}`;
+  const kvKey = `checkin:${accountId}:${today}`;
+
+  if (env.LUMINARA_KV) {
+    const cached = await env.LUMINARA_KV.get(kvKey);
+    if (cached) {
+      const snapshot = await readRetentionSnapshot(env, accountId);
+      return {
+        ok: true,
+        alreadyCheckedIn: true,
+        lumens: snapshot.lumens,
+      };
+    }
+  }
+
+  const existing = await env.DB!.prepare(
+    `SELECT id FROM referral_rewards WHERE account_id = ? AND reason = ?`,
+  )
+    .bind(accountId, checkinReason)
+    .first<{ id: string }>();
+
+  if (existing) {
+    if (env.LUMINARA_KV) {
+      await env.LUMINARA_KV.put(kvKey, '1', { expirationTtl: 86400 * 2 });
+    }
+    const snapshot = await readRetentionSnapshot(env, accountId);
+    return {
+      ok: true,
+      alreadyCheckedIn: true,
+      lumens: snapshot.lumens,
+    };
+  }
+
+  try {
+    await env.DB!.prepare(
+      `INSERT INTO referral_rewards (id, account_id, kind, amount, remaining, reason, created_at)
+       VALUES (?, ?, 'daily_checkin', 25, 25, ?, ?)`,
+    )
+      .bind(randomId('rwd'), accountId, checkinReason, now)
+      .run();
+  } catch {
+    const snapshot = await readRetentionSnapshot(env, accountId);
+    return {
+      ok: true,
+      alreadyCheckedIn: true,
+      lumens: snapshot.lumens,
+    };
+  }
+
+  if (env.LUMINARA_KV) {
+    await env.LUMINARA_KV.put(kvKey, '1', { expirationTtl: 86400 * 2 });
+  }
+
+  const prog = await loadProgression(env, accountId);
+  const missionsCompleted = await completedMissionCount(env, accountId);
+  await saveProgression(env, accountId, prog, missionsCompleted);
+
+  const snapshot = await readRetentionSnapshot(env, accountId);
+  return {
+    ok: true,
+    alreadyCheckedIn: false,
+    awardedLumens: 25,
+    lumens: snapshot.lumens,
+  };
+}
+
 export async function handleReferralRoute(request: Request, env: Env, path: string): Promise<Response> {
   const who = await identify(request, env);
   const denied = requireIdentity(who.user, who.error);
@@ -604,8 +708,9 @@ export async function handleReferralRoute(request: Request, env: Env, path: stri
   const user = who.user!;
   if (!env.DB) return json({ ok: false, error: 'Referral store is not configured.', code: 'NO_DB' }, 503);
   const accountId = billingId(user);
+  const normPath = path.startsWith('/api/') ? path.slice(4) : path;
 
-  if (path === '/referrals/me' && request.method === 'GET') {
+  if (normPath === '/referrals/me' && request.method === 'GET') {
     try {
       const code = await ensureReferralCode(env, accountId);
       const snapshot = await readRetentionSnapshot(env, accountId, code);
@@ -620,7 +725,12 @@ export async function handleReferralRoute(request: Request, env: Env, path: stri
   if (!read.ok) return json({ error: read.error }, read.status);
   const body = (read.value && typeof read.value === 'object' ? read.value : {}) as Record<string, unknown>;
 
-  if (path === '/referrals/claim') {
+  if (normPath === '/referrals/checkin') {
+    const result = await handleDailyCheckin(env, accountId);
+    return json(result);
+  }
+
+  if (normPath === '/referrals/claim') {
     const result = await claimReferral(env, { accountId, code: String(body.code || '') });
     if (!result.ok && result.status === 'rate_limited') {
       return json({ ok: false, error: result.error, code: 'RATE_LIMITED' }, 429);
@@ -630,7 +740,7 @@ export async function handleReferralRoute(request: Request, env: Env, path: stri
     return json({ ok: true, status: result.status });
   }
 
-  if (path === '/referrals/qualify') {
+  if (normPath === '/referrals/qualify') {
     const result = await qualifyReferral(env, { accountId, body });
     if (!result.ok) {
       const status = result.code === 'RATE_LIMITED' ? 429 : result.code === 'NO_DB' || result.code === 'GRANT_FAILED' ? 503 : 400;
@@ -639,7 +749,7 @@ export async function handleReferralRoute(request: Request, env: Env, path: stri
     return json(result);
   }
 
-  if (path === '/missions/complete') {
+  if (normPath === '/missions/complete') {
     const result = await completeClientMission(env, { accountId, missionKey: body.missionKey });
     if (!result.ok) return json({ ok: false, error: result.error, code: result.code }, 400);
     return json({ ok: true, created: result.created });

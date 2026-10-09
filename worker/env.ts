@@ -223,5 +223,14 @@ export interface VectorizeIndex {
 
 /** Minimal Workers AI binding. */
 export interface Ai {
-  run(model: string, input: { text: string[] }): Promise<{ data?: number[][] }>;
+  run(
+    model: string,
+    input: {
+      messages?: Array<{ role: string; content: string }>;
+      prompt?: string;
+      stream?: boolean;
+      max_tokens?: number;
+      temperature?: number;
+    } | { text: string[] },
+  ): Promise<any>;
 }

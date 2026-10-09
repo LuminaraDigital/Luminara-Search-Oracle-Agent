@@ -249,3 +249,69 @@ export function clientMissionKey(raw: unknown): MissionKey | null {
   const found = WEEKLY_MISSIONS.find((mission) => mission.key === key && mission.clientCompletable);
   return found ? found.key : null;
 }
+
+export type LumensRank = 'Bronze' | 'Silver' | 'Gold' | 'Diamond' | 'Apex';
+
+export interface LumensBreakdown {
+  total: number;
+  rank: LumensRank;
+  nextMilestone: number;
+  honestScoutPoints: number;
+  missionPoints: number;
+  streakPoints: number;
+  bonusCreditPoints: number;
+  checkinPoints?: number;
+}
+
+export function calculateLumens(input: {
+  honestScoutCount: number;
+  missionsCompleted: number;
+  streakWeeks: number;
+  bonusRemaining?: number;
+  checkinPoints?: number;
+}): LumensBreakdown {
+  const honestScoutPoints = Math.max(0, Math.floor(Number(input.honestScoutCount) || 0)) * 50;
+  const missionPoints = Math.max(0, Math.floor(Number(input.missionsCompleted) || 0)) * 30;
+  const streakPoints = Math.max(0, Math.floor(Number(input.streakWeeks) || 0)) * 200;
+  const bonusCreditPoints = Math.max(0, Math.floor(Number(input.bonusRemaining) || 0)) * 100;
+  const checkinPoints = Math.max(0, Math.floor(Number(input.checkinPoints) || 0));
+
+  const total = honestScoutPoints + missionPoints + streakPoints + bonusCreditPoints + checkinPoints;
+
+  let rank: LumensRank;
+  let nextMilestone: number;
+
+  if (total < 250) {
+    rank = 'Bronze';
+    nextMilestone = 250;
+  } else if (total < 750) {
+    rank = 'Silver';
+    nextMilestone = 750;
+  } else if (total < 2000) {
+    rank = 'Gold';
+    nextMilestone = 2000;
+  } else if (total < 5000) {
+    rank = 'Diamond';
+    nextMilestone = 5000;
+  } else {
+    rank = 'Apex';
+    nextMilestone = 10000;
+  }
+
+  const breakdown: LumensBreakdown = {
+    total,
+    rank,
+    nextMilestone,
+    honestScoutPoints,
+    missionPoints,
+    streakPoints,
+    bonusCreditPoints,
+  };
+
+  if (checkinPoints > 0) {
+    breakdown.checkinPoints = checkinPoints;
+  }
+
+  return breakdown;
+}
+
