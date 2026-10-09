@@ -6,6 +6,8 @@
  * Supports gasless internal sponsored anchoring and signed external anchoring.
  */
 
+import "@stdlib/gas-payments"
+
 struct ProofRecord {
     evidenceHash: uint256
     healthScore: uint8
