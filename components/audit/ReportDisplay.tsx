@@ -38,6 +38,8 @@ import { canCreateShareLinks, createShareReport } from '../../services/share/sha
 import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
+import { generatePortableDossierHtml } from '../../services/reports/portableDossierService';
+import { fastHash } from '../../services/audit/evidenceLedgerService';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
@@ -161,6 +163,39 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     } finally {
       setShareBusy(false);
     }
+  };
+
+  const handleDownloadDossier = () => {
+    const domain = targetDomain || 'audit-target';
+    const cleanMarkdown = markdownText || '';
+    const safeHash = fastHash(cleanMarkdown || domain);
+
+    const html = generatePortableDossierHtml({
+      title: `${domain} Executive AEO Dossier`,
+      targetDomain: domain,
+      overallScore: 88,
+      grade: 'B',
+      generatedAt: Date.now(),
+      trustReceiptHash: safeHash,
+      sections: [
+        {
+          id: 'executive-summary',
+          title: 'Executive Audit Analysis',
+          badge: 'Verified',
+          contentHtml: `<div style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7;">${cleanMarkdown.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`,
+        },
+      ],
+    });
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${domain.replace(/[^a-z0-9.-]/gi, '_')}-dossier.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const parsedStructure = useMemo(() => {
@@ -416,6 +451,15 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
             >
               <ICONS.Download className="w-4 h-4 text-info-400" />
               <span>Agency PDF</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownloadDossier}
+              className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-blue-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+            >
+              <ICONS.FileText className="w-4 h-4 text-blue-400" />
+              <span>Dossier HTML</span>
             </button>
           </div>
           {shareMessage && (

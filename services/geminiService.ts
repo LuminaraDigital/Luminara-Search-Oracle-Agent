@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { OracleMode, ToolExecution, BusinessDNA, ReportFocus, OrganizerFormat, OrganizerSchema, ChatTurn, NativeEngineId, StreamChunk } from "../types";
+import { OracleMode, ToolExecution, BusinessDNA, ReportFocus, OrganizerFormat, OrganizerSchema, ChatTurn, NativeEngineId, StreamChunk, Message } from "../types";
 export type { StreamChunk };
+import { compactConversation } from "./oracle/contextCompactorService";
 import { SYSTEM_INSTRUCTIONS } from "../constants";
 import { vfsRetrievalService } from "./vfs/vfsRetrievalService";
 import { vfsMemoryService } from "./vfs/vfsMemoryService";
@@ -103,10 +104,37 @@ import { selectAuditPlaybooks, selectChatPlaybooks, playbookContext, inferLenses
 import { toChatHistory } from './chat/messages';
 export { shouldSearch, toChatHistory };
 
-const toGeminiContents = (prompt: string, history?: ChatTurn[]) => [
-  ...(history ?? []).slice(-20).map(t => ({ role: t.role === 'user' ? 'user' : 'model', parts: [{ text: t.content }] })),
-  { role: 'user', parts: [{ text: prompt }] },
-];
+const toGeminiContents = (prompt: string, history?: ChatTurn[]) => {
+  if (!history || history.length <= 8) {
+    return [
+      ...(history ?? []).map(t => ({ role: t.role === 'user' ? 'user' : 'model', parts: [{ text: t.content }] })),
+      { role: 'user', parts: [{ text: prompt }] },
+    ];
+  }
+
+  // Convert ChatTurn[] to Message[] shape for auto-compaction
+  const asMessages: Message[] = history.map((t, idx) => ({
+    id: `turn-${idx}`,
+    role: t.role === 'assistant' ? 'assistant' : 'user',
+    content: t.content,
+    timestamp: Date.now() - (history.length - idx) * 1000,
+  }));
+
+  const compacted = compactConversation(asMessages, {
+    recentTurnsToKeep: 6,
+    thresholdPercent: 60,
+  });
+
+  const parts = compacted.messages.map(m => ({
+    role: m.role === 'user' ? 'user' : 'model',
+    parts: [{ text: m.content }],
+  }));
+
+  return [
+    ...parts,
+    { role: 'user', parts: [{ text: prompt }] },
+  ];
+};
 
 /**
  * Runs the planned searches in parallel, keeps only well-scored, de-duplicated results and

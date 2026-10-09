@@ -9,6 +9,7 @@ import { honestyChipLabel, normalizeMeasurementStatus } from '../../services/wdl
 
 import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
 import { MindshareRadarCard } from '../visibility/MindshareRadarCard';
+import { PerceptionMatrix } from '../visibility/PerceptionMatrix';
 
 interface WeeklyDecisionCardProps {
   domain: string;
@@ -155,6 +156,12 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
         evidence={mappedEvidence}
         rawSources={rawSources}
         onSelectAction={onSelectAction}
+      />
+
+      <PerceptionMatrix
+        domain={domain}
+        evidence={mappedEvidence}
+        onTakeAction={onSelectAction}
       />
 
       <div className="mb-4">
