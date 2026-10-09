@@ -62,7 +62,7 @@ function bulletsFor(id: PaidPlanId): string[] {
   const lines = [
     `${e.domainLimit} monitored domains`,
     e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audits`,
-    e.whiteLabelPdf ? 'Branded PDF exports' : 'Standard exports',
+    id === 'agency' ? 'White-label PDF exports' : id === 'growth' ? 'Branded PDF exports' : 'Standard PDF exports',
     e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',
     e.shareLinks ? 'Public share links' : 'No public share links',
     `${e.teamSeats} team seat${e.teamSeats === 1 ? '' : 's'}`,

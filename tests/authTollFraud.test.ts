@@ -626,6 +626,94 @@ describe('Worker-mediated sign-up / sign-in', () => {
     expect(blocked.status).toBe(429);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it('locks out an account after 5 failed sign-in attempts within the lockout window', async () => {
+    const store = new Map<string, string>();
+    const env = {
+      LUMINARA_KV: mockKv(store),
+      FIREBASE_WEB_API_KEY: 'k',
+      REQUIRE_TG_AUTH: 'true',
+    } as Env;
+    const badPass = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'INVALID_PASSWORD' } }), { status: 400 }),
+    );
+
+    // 5 failed attempts from different IPs (testing account lockout independent of IP)
+    for (let i = 1; i <= 5; i++) {
+      const res = await handleSignIn(credReq('victim@example.com', 'wrongpass'), env, `203.0.113.${80 + i}`, {
+        fetchImpl: badPass as unknown as typeof fetch,
+        minLatencyMs: 0,
+      });
+      expect(res.status).toBe(401);
+    }
+    expect(badPass).toHaveBeenCalledTimes(5);
+
+    // 6th attempt is rejected by account-level lockout before hitting Identity Toolkit
+    const lockedRes = await handleSignIn(credReq('victim@example.com', 'wrongpass'), env, '203.0.113.99', {
+      fetchImpl: badPass as unknown as typeof fetch,
+      minLatencyMs: 0,
+    });
+    expect(lockedRes.status).toBe(429);
+    const body = (await lockedRes.json()) as { ok?: boolean; code?: string; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe('ACCOUNT_RATE_LIMITED');
+    expect(body.error).toContain('locked');
+    expect(lockedRes.headers.get('retry-after')).toBeTruthy();
+    // Toolkit must not have been called a 6th time
+    expect(badPass).toHaveBeenCalledTimes(5);
+  });
+
+  it('clears failed sign-in counter upon successful authentication', async () => {
+    const store = new Map<string, string>();
+    const env = {
+      LUMINARA_KV: mockKv(store),
+      FIREBASE_WEB_API_KEY: 'k',
+      REQUIRE_TG_AUTH: 'true',
+    } as Env;
+
+    const badPass = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'INVALID_PASSWORD' } }), { status: 400 }),
+    );
+    const successAuth = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            idToken: 'tok',
+            refreshToken: 'ref',
+            localId: 'uid1',
+            email: 'user@example.com',
+            expiresIn: '3600',
+          }),
+          { status: 200 },
+        ),
+    );
+
+    // 4 failed attempts (1 below the 5-failure threshold)
+    for (let i = 1; i <= 4; i++) {
+      const res = await handleSignIn(credReq('user@example.com', 'wrongpass'), env, `203.0.113.${120 + i}`, {
+        fetchImpl: badPass as unknown as typeof fetch,
+        minLatencyMs: 0,
+      });
+      expect(res.status).toBe(401);
+    }
+
+    // 5th attempt is successful -> should clear the failure counter
+    const successRes = await handleSignIn(credReq('user@example.com', 'correctpass'), env, '203.0.113.125', {
+      fetchImpl: successAuth as unknown as typeof fetch,
+      minLatencyMs: 0,
+    });
+    expect(successRes.status).toBe(200);
+
+    // Subsequent failed attempt starts counter fresh, does not get locked out
+    const subsequent = await handleSignIn(credReq('user@example.com', 'wrongagain'), env, '203.0.113.126', {
+      fetchImpl: badPass as unknown as typeof fetch,
+      minLatencyMs: 0,
+    });
+    expect(subsequent.status).toBe(401);
+    expect(badPass).toHaveBeenCalledTimes(5);
+  });
 });
 
 describe('SMS OTP when enabled', () => {

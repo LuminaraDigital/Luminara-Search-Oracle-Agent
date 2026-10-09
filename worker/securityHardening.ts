@@ -472,13 +472,91 @@ export const signUpIpLimiter = rateLimiter({
   failClosedWithoutKv: true,
 });
 
-/** Sign-in: max 20 / 15 minutes per IP (brute-force flooding). */
+/** Sign-in: max 10 / 15 minutes per IP (brute-force flooding). */
 export const signInIpLimiter = rateLimiter({
-  maxRequests: 20,
+  maxRequests: 10,
   windowSeconds: 15 * 60,
   keyPrefix: 'rl:signin',
   failClosedWithoutKv: true,
 });
+
+export const MAX_SIGN_IN_ACCOUNT_FAILURES = 5;
+export const SIGN_IN_LOCKOUT_WINDOW_SEC = 15 * 60;
+
+/**
+ * Checks whether an account (keyed by email hash) has exceeded consecutive failed sign-in attempts.
+ * Returns ok: true when within limits, or ok: false with HTTP 429 when locked out.
+ */
+export async function checkAccountLockout(
+  env: Env,
+  emailHash: string,
+): Promise<DualRateLimitResult> {
+  if (!env.LUMINARA_KV) return { ok: true, headers: {} };
+  const key = `rl:signin_fail:${emailHash}`;
+  const now = Date.now();
+  const windowMs = SIGN_IN_LOCKOUT_WINDOW_SEC * 1000;
+  const cutoff = now - windowMs;
+  const prior = (await readSlidingBucket(env.LUMINARA_KV, key)).filter((t) => t > cutoff);
+
+  if (prior.length >= MAX_SIGN_IN_ACCOUNT_FAILURES) {
+    const oldest = Math.min(...prior);
+    const retryAfterSec = Math.max(1, Math.ceil((oldest + windowMs - now) / 1000));
+    const retryMin = Math.ceil(retryAfterSec / 60);
+    return {
+      ok: false,
+      response: json(
+        {
+          ok: false,
+          error: `Too many failed sign-in attempts. Sign-in for this account is temporarily locked. Try again in ${retryMin} minute${retryMin > 1 ? 's' : ''} or reset your password.`,
+          code: 'ACCOUNT_RATE_LIMITED',
+        },
+        429,
+        {
+          'Retry-After': String(retryAfterSec),
+          'X-RateLimit-Limit': String(MAX_SIGN_IN_ACCOUNT_FAILURES),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(Math.ceil((oldest + windowMs) / 1000)),
+        },
+      ),
+    };
+  }
+
+  return {
+    ok: true,
+    headers: rateLimitHeaders({
+      limit: MAX_SIGN_IN_ACCOUNT_FAILURES,
+      remaining: Math.max(0, MAX_SIGN_IN_ACCOUNT_FAILURES - prior.length),
+      windowSec: SIGN_IN_LOCKOUT_WINDOW_SEC,
+    }),
+  };
+}
+
+/**
+ * Records a failed sign-in attempt for an account in KV sliding bucket.
+ */
+export async function recordFailedSignIn(env: Env, emailHash: string): Promise<void> {
+  if (!env.LUMINARA_KV) return;
+  const key = `rl:signin_fail:${emailHash}`;
+  const now = Date.now();
+  const windowMs = SIGN_IN_LOCKOUT_WINDOW_SEC * 1000;
+  const cutoff = now - windowMs;
+  const prior = (await readSlidingBucket(env.LUMINARA_KV, key)).filter((t) => t > cutoff);
+  const next = [...prior, now];
+  await env.LUMINARA_KV.put(
+    key,
+    JSON.stringify({ timestamps: next } satisfies SlidingBucket),
+    { expirationTtl: SIGN_IN_LOCKOUT_WINDOW_SEC + 60 },
+  );
+}
+
+/**
+ * Clears failed sign-in attempts for an account upon successful authentication.
+ */
+export async function clearFailedSignIn(env: Env, emailHash: string): Promise<void> {
+  if (!env.LUMINARA_KV) return;
+  const key = `rl:signin_fail:${emailHash}`;
+  await env.LUMINARA_KV.delete(key);
+}
 
 /**
  * Dual-key sliding window: reject if either `uid:<id>` or `ip:<ip>` bucket is exhausted.

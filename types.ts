@@ -1159,6 +1159,7 @@ export interface NotebookSource {
   addedAt: number;
   selected: boolean;
   keyEntities?: string[];
+  isDemo?: boolean;
 }
 
 export interface NotebookCitation {
@@ -1229,4 +1230,5 @@ export interface Notebook {
   notes: NotebookNote[];
   createdAt: number;
   updatedAt: number;
+  isDemo?: boolean;
 }

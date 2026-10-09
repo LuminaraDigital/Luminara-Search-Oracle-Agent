@@ -89,8 +89,8 @@ export class GroqProvider extends BaseAIProvider {
       let apiKey = key || fallbackKey;
       try {
         response = await doFetch(apiKey, model);
-        if (response.status === 429 && fallbackKey && key !== fallbackKey) {
-          console.warn('[Groq] Rate limit hit on primary key, rotating to fallback key...');
+        if ((response.status === 429 || response.status === 402 || response.status === 401) && fallbackKey && key !== fallbackKey) {
+          console.warn(`[Groq] Received status ${response.status} on primary key, rotating to fallback key...`);
           response = await doFetch(fallbackKey, model);
           apiKey = fallbackKey;
         }
@@ -164,6 +164,19 @@ export class GroqProvider extends BaseAIProvider {
         },
         body: JSON.stringify(body),
       }, { userKey: key });
+
+      const fallbackKey = configService.getGroqFallbackKey();
+      if ((response.status === 429 || response.status === 402 || response.status === 401) && fallbackKey && key !== fallbackKey) {
+        console.warn(`[Groq] Stream received status ${response.status} on primary key, rotating to fallback key...`);
+        response = await providerFetch('groq', '/chat/completions', this.config.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${fallbackKey}`,
+          },
+          body: JSON.stringify(body),
+        }, { userKey: fallbackKey });
+      }
 
       if (response.ok && response.body) break;
       lastErrText = await response.text();

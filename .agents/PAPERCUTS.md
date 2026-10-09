@@ -11,6 +11,7 @@ Do not log secrets, tokens, or PII.
 
 ## Log
 
+- 2026-10-09: Pentest remediations: /api/auth/sign-in per-IP and account-lockout backoff rate limiting, App Check production enforcement, /api/health trimmed to {ok:true} (anti-recon), CSP tightened (removed unsafe-inline, eliminated connect-src *) (security)
 - 2026-10-07: TMA open hang: `await viewport.mount()` never settles on macOS/WebK; ready now finishes without awaiting viewport + failsafe timer (telegram)
 - 2026-10-01: Landing Instant Audit funnel + constellation Map restored; deployed staging+prod from local tree. Branch `feat/mcp-governance-hardening` still has large uncommitted/unpushed delta vs origin. Prod health `xdcRpcOk:false` (XinFin RPC flaky; proof XDC still off) (ops/marketing)
 - 2026-09-30: Security remediations landed (fetchPublicUrl, CSRF fail-closed, opaque sessions, 1h TG TTL, prod budget hard, RAG fence). Still open: git history vault purge (ops), crawler compose binds if exposed, DNS TOCTOU, admin beyond shared secret, CSP connect-src * (security)

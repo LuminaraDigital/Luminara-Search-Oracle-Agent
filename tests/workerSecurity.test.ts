@@ -62,17 +62,25 @@ describe('security headers', () => {
     expect(HTML_CSP).toContain('https://fonts.gstatic.com');
     expect(HTML_CSP).toContain("'wasm-unsafe-eval'");
     expect(HTML_CSP).toContain("object-src 'none'");
+    expect(HTML_CSP).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(HTML_CSP).not.toContain('connect-src *');
+    expect(HTML_CSP).toContain("connect-src 'self' https: wss:");
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
     expect(res.headers.get('permissions-policy')).toContain('camera=()');
     expect(res.headers.get('strict-transport-security')).toContain('max-age=');
   });
 
-  it('adds hardening headers but no CSP to JSON API responses', async () => {
+  it('adds hardening headers and returns trimmed payload on public /api/health', async () => {
     const res = await worker.fetch(req('/api/health'), makeEnv(), ctx);
     expect(res.status).toBe(200);
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('content-security-policy')).toBeNull();
+    const data = await res.json();
+    expect(data).toEqual({ ok: true });
+    expect(data.providers).toBeUndefined();
+    expect(data.tonPricing).toBeUndefined();
+    expect(data.jettonPricing).toBeUndefined();
   });
 
   it('withSecurityHeaders only applies CSP to text/html', () => {
@@ -620,3 +628,110 @@ describe('proof-of-audit attest route', () => {
     expect(((await found.json()) as { attestation?: { domain?: string } }).attestation?.domain).toBe('example.com');
   });
 });
+
+describe('Server-side SSRF re-validation and auth rate limiting', () => {
+  it('blocks cloud metadata, localhost, and loopback IPs on /api/audit/run', async () => {
+    const { enqueueAuditRun } = await import('../worker/auditQueue');
+    const mockDb = {
+      prepare: () => ({
+        bind: () => ({ run: async () => {}, first: async () => null }),
+      }),
+    };
+    const mockQueue = { send: async () => {} };
+    const env = makeEnv({ DB: mockDb as any, AUDIT_JOBS: mockQueue as any });
+    const user = { uid: 'u_test', email: 'test@example.com' };
+
+    for (const badTarget of [
+      'http://169.254.169.254/latest/meta-data/',
+      'http://localhost:8080/',
+      'http://127.0.0.1/private',
+      'http://[::1]/',
+      'http://intranet.local/',
+    ]) {
+      const res = await enqueueAuditRun(
+        new Request('https://luminarasuite.com/api/audit/run', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ targetUrl: badTarget }),
+        }),
+        env,
+        user,
+      );
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as { code?: string; error?: string };
+      expect(data.code).toBe('SSRF_BLOCKED');
+    }
+  });
+
+  it('blocks DNS rebinding to private addresses on /api/audit/run', async () => {
+    const { enqueueAuditRun } = await import('../worker/auditQueue');
+    const mockDb = {
+      prepare: () => ({
+        bind: () => ({ run: async () => {}, first: async () => null }),
+      }),
+    };
+    const mockQueue = { send: async () => {} };
+    const env = makeEnv({ DB: mockDb as any, AUDIT_JOBS: mockQueue as any });
+    const user = { uid: 'u_test', email: 'test@example.com' };
+
+    const fakePrivateDoh = async () =>
+      new Response(JSON.stringify({ Status: 0, Answer: [{ type: 1, data: '10.0.0.1' }] }), {
+        headers: { 'content-type': 'application/dns-json' },
+      });
+
+    const res = await enqueueAuditRun(
+      new Request('https://luminarasuite.com/api/audit/run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ targetUrl: 'https://rebind.attacker.com' }),
+      }),
+      env,
+      user,
+      { dohFetcher: fakePrivateDoh },
+    );
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { code?: string };
+    expect(data.code).toBe('SSRF_BLOCKED');
+  });
+
+  it('blocks SSRF targets in Firecrawl provider relay', async () => {
+    const env = makeEnv({ FIRECRAWL_API_KEY: 'fc-test' });
+    const res = await worker.fetch(
+      req('/api/providers/firecrawl/scrape', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-provider-key': 'fc-test-byok',
+        },
+        body: JSON.stringify({ url: 'http://169.254.169.254/latest/meta-data/' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { code?: string };
+    expect(data.code).toBe('SSRF_BLOCKED');
+  });
+
+  it('rate-limits /api/auth/sign-in after 5 attempts', async () => {
+    const env = makeEnv({ FIREBASE_WEB_API_KEY: 'AIzaFakeKey' });
+    let lastRes: Response | null = null;
+    for (let i = 0; i < 6; i++) {
+      lastRes = await worker.fetch(
+        req(
+          '/api/auth/sign-in',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email: 'user@example.com', password: 'WrongPassword123!' }),
+          },
+          '203.0.113.88',
+        ),
+        env,
+        ctx,
+      );
+    }
+    expect(lastRes!.status).toBe(429);
+  });
+});
+

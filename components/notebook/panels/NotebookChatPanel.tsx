@@ -2,6 +2,7 @@ import React from 'react';
 import { Notebook, NotebookMessage, NotebookCitation } from '../../../types';
 import { ICONS } from '../../../constants';
 import { renderMarkdown } from '../../../utils/markdown';
+import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, type QuotaInfo } from '../../../services/apiClient';
 
 interface NotebookChatPanelProps {
   activeNotebook: Notebook;
@@ -28,6 +29,11 @@ export const NotebookChatPanel: React.FC<NotebookChatPanelProps> = ({
   onSelectCitation,
   messagesEndRef,
 }) => {
+  const [quota, setQuota] = React.useState<QuotaInfo | null>(() => getCurrentQuotaSync());
+  React.useEffect(() => {
+    return subscribeQuota(q => setQuota(q));
+  }, []);
+
   // Helper to render message with interactive clickable citation badges [1], [2]
   const renderMessageContent = (msg: NotebookMessage) => {
     const rawHtml = renderMarkdown(msg.content);
@@ -85,6 +91,20 @@ export const NotebookChatPanel: React.FC<NotebookChatPanelProps> = ({
           Strict Attribution Standard
         </span>
       </div>
+
+      {/* Demo Data Disclaimer Banner */}
+      {activeNotebook.isDemo && (
+        <div className="shrink-0 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between text-xs text-amber-200">
+          <div className="flex items-center gap-2">
+            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold uppercase">
+              Demo Workspace
+            </span>
+            <span className="text-[11px]">
+              Pre-loaded with illustrative sample benchmark sources. Rates and scores are mock data for demonstration.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Conversation Feed */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar">
@@ -196,6 +216,20 @@ export const NotebookChatPanel: React.FC<NotebookChatPanelProps> = ({
 
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Daily Quota Limit Banner */}
+      {quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0) && (
+        <div className="px-4 py-2 bg-danger-500/10 border-t border-danger-500/20 flex items-center justify-between text-xs text-danger-200">
+          <span>Daily free limit reached ({quota.limit}/{quota.limit} used). Upgrade for unlimited Studio queries or bring your own API key in Settings.</span>
+          <button
+            type="button"
+            onClick={() => openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`)}
+            className="px-2.5 py-1 rounded bg-gold text-black font-semibold text-[11px] hover:bg-gold-light transition-colors whitespace-nowrap cursor-pointer"
+          >
+            Upgrade
+          </button>
+        </div>
+      )}
 
       {/* Chat Input Bar */}
       <div className="p-4 border-t border-white/10 bg-black/60">

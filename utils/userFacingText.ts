@@ -4,7 +4,22 @@
  * and callers accidentally render the object instead of a string.
  */
 export function toUserFacingText(value: unknown, fallback = 'Something went wrong'): string {
-  return coerce(value, fallback, 0);
+  const raw = coerce(value, fallback, 0);
+  return sanitizeErrorMessage(raw, fallback);
+}
+
+function sanitizeErrorMessage(msg: string, fallback: string): string {
+  if (!msg) return fallback;
+  if (msg.includes('402') || msg.includes('HOSTED_PROVIDER_DEPLETED') || /payment required/i.test(msg)) {
+    return 'The AI provider is temporarily unavailable due to upstream credit limits. Add your own API key in Settings to continue.';
+  }
+  if (msg.includes('FreeLLMAPI') || (msg.includes('native inference providers') && msg.includes('failed'))) {
+    return 'AI services are currently busy or unavailable. Please try again shortly or configure an API key in Settings.';
+  }
+  if (/Groq inference error/i.test(msg)) {
+    return 'The hosted Groq service is temporarily unavailable. Please try again in a moment or add your own key in Settings.';
+  }
+  return msg;
 }
 
 function coerce(value: unknown, fallback: string, depth: number): string {

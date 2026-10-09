@@ -34,6 +34,15 @@ const PATH_ALIASES: Record<string, AppView> = {
   terms: AppView.TERMS,
   'terms-of-service': AppView.TERMS,
   tos: AppView.TERMS,
+  verify: AppView.TRUST_CENTER,
+  trust: AppView.TRUST_CENTER,
+  'trust-center': AppView.TRUST_CENTER,
+  labs: AppView.ECOSYSTEM_HUB,
+  lab: AppView.ECOSYSTEM_HUB,
+  launchpad: AppView.LAUNCHPAD,
+  'smb-launchpad': AppView.LAUNCHPAD,
+  onboarding: AppView.BUSINESS_DNA,
+  desktop: AppView.LANDING,
 };
 
 /** Legacy hash fragments that used to drive marketing views. */
@@ -50,6 +59,13 @@ const HASH_TO_VIEW: Record<string, AppView> = {
   TERMS: AppView.TERMS,
   'TERMS-OF-SERVICE': AppView.TERMS,
   TOS: AppView.TERMS,
+  VERIFY: AppView.TRUST_CENTER,
+  TRUST: AppView.TRUST_CENTER,
+  'TRUST-CENTER': AppView.TRUST_CENTER,
+  LABS: AppView.ECOSYSTEM_HUB,
+  LAUNCHPAD: AppView.LAUNCHPAD,
+  'SMB-LAUNCHPAD': AppView.LAUNCHPAD,
+  ONBOARDING: AppView.BUSINESS_DNA,
 };
 
 export function isMarketingView(view: AppView): boolean {
@@ -101,6 +117,7 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
   const rawPath = pathname.replace(/^\/|\/$/g, '');
   const path = rawPath.toLowerCase();
 
+  if (path === 'verify') return AppView.TRUST_CENTER;
   if (path.startsWith('share/')) return AppView.SHARED_REPORT;
   if (path.startsWith('verify/r/')) return AppView.VERIFY_RECEIPT;
   if (path.startsWith('verify/')) return AppView.VERIFY_ATTESTATION;

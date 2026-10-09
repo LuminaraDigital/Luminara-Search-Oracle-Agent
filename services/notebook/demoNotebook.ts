@@ -2,15 +2,17 @@ import { Notebook } from '../../types';
 
 export const DEMO_NOTEBOOK: Notebook = {
   id: 'demo-notebook-aeo',
-  title: 'Competitor AEO & Search Visibility Benchmark',
-  description: 'Grounded intelligence comparing top ranking competitors, entity graph authority, and generative AI search presence.',
+  title: '[Sample] Competitor AEO & Search Visibility Benchmark',
+  description: '[Sample Demonstration] Grounded intelligence comparing mock competitor entities, schema authority, and generative AI search presence for feature demonstration.',
+  isDemo: true,
   createdAt: 1726000000000,
   updatedAt: 1726000000000,
   sources: [
     {
       id: 'src-1',
-      title: 'Luminara AEO Playbook & Entity Guidelines',
+      title: '[Sample Playbook] Luminara AEO Guidelines',
       type: 'text',
+      isDemo: true,
       content: `# Luminara Answer Engine Optimization (AEO) Playbook
 
 ## Core Principles
@@ -28,22 +30,24 @@ Answer Engine Optimization (AEO) focuses on securing brand mentions and citation
     },
     {
       id: 'src-2',
-      title: 'Competitor Intelligence: ApexRank & SearchPilot Audit',
+      title: '[Sample Data] ApexRank & SearchPilot Benchmark (Demo Data)',
       type: 'audit',
-      content: `# Competitor Audit Report: ApexRank.io vs SearchPilot.com
+      isDemo: true,
+      content: `# [Sample Demonstration Data] Competitor Audit Report: ApexRank.io vs SearchPilot.com
+> [!NOTE] This is sample demonstration data pre-loaded for Studio preview. The metrics and rates below are illustrative benchmark examples, not live measurements.
 
-## ApexRank.io Analysis
-- Overall Visibility Score: 64/100
-- AI Overviews Citation Rate: 28%
+## ApexRank.io Analysis (Illustrative Sample)
+- Overall Visibility Score: 64/100 (Sample benchmark)
+- AI Overviews Citation Rate: 28% (Sample rate)
 - Entity Graph Status: Incomplete (Missing sameAs links to Wikidata, orphaned Product nodes)
 - Key Vulnerability: Heavy reliance on legacy 2021-style keyword stuffing. No direct FAQ or HowTo markup. Average reading level grade 14 (too dense for concise AI retrieval).
 
-## SearchPilot.com Analysis
-- Overall Visibility Score: 82/100
-- AI Overviews Citation Rate: 65%
+## SearchPilot.com Analysis (Illustrative Sample)
+- Overall Visibility Score: 82/100 (Sample benchmark)
+- AI Overviews Citation Rate: 65% (Sample rate)
 - Entity Graph Status: Robust JSON-LD Organization graph with founder mentions and verified credentials.
 - Winning Play: Publishes weekly A/B testing statistical data which generative engines frequently quote as primary source evidence.`,
-      summary: 'Audit of two leading competitors highlighting entity schema strengths and weaknesses.',
+      summary: 'Sample audit of two leading competitors highlighting entity schema strengths and weaknesses.',
       wordCount: 114,
       addedAt: 1726000100000,
       selected: true,
@@ -51,8 +55,9 @@ Answer Engine Optimization (AEO) focuses on securing brand mentions and citation
     },
     {
       id: 'src-3',
-      title: 'Google AI Overviews & Perplexity Algorithm Shifts',
+      title: '[Sample Reference] Google AI Overviews & Perplexity Algorithm Shifts',
       type: 'url',
+      isDemo: true,
       url: 'https://developers.google.com/search/docs/fundamentals/ai-search',
       content: `# Grounding & Retrieval Shifts in Generative Search Engines
 
@@ -80,7 +85,7 @@ Recent evaluations of Google AI Overviews and Perplexity Pro indicate:
     {
       id: 'msg-demo-2',
       role: 'assistant',
-      content: `Based on your analyzed sources, your main strategic advantage over ApexRank is that ApexRank suffers from an incomplete entity graph and an overly dense 14th-grade reading level, leading to a weak 28% AI citation rate [2]. 
+      content: `Based on your analyzed sample demonstration sources, your main strategic advantage over ApexRank is that ApexRank suffers from an incomplete entity graph and an overly dense 14th-grade reading level, leading to a weak 28% AI citation rate [2]. 
 
 To capitalize on this, you should ship two moves immediately:
 1. **Direct Answer Structuring**: Format your core service pages with 40–60 word definitive answers directly under H2 headers [1].
@@ -89,19 +94,19 @@ To capitalize on this, you should ship two moves immediately:
       citations: [
         {
           sourceId: 'src-2',
-          sourceTitle: 'Competitor Intelligence: ApexRank & SearchPilot Audit',
+          sourceTitle: '[Sample Data] ApexRank & SearchPilot Benchmark (Demo Data)',
           citationNumber: 2,
           quote: 'ApexRank.io: AI Overviews Citation Rate: 28% ... Missing sameAs links to Wikidata ... Average reading level grade 14',
         },
         {
           sourceId: 'src-1',
-          sourceTitle: 'Luminara AEO Playbook & Entity Guidelines',
+          sourceTitle: '[Sample Playbook] Luminara AEO Guidelines',
           citationNumber: 1,
           quote: 'Content structured with concise 40-60 word definitive answers directly under H2 headers wins 73% more AI Overviews citations',
         },
         {
           sourceId: 'src-3',
-          sourceTitle: 'Google AI Overviews & Perplexity Algorithm Shifts',
+          sourceTitle: '[Sample Reference] Google AI Overviews & Perplexity Algorithm Shifts',
           citationNumber: 3,
           quote: 'Queries triggering AI Overviews synthesize answers from an average of 3.4 distinct sources.',
         },

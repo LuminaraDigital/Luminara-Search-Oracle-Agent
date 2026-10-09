@@ -419,10 +419,19 @@ describe('referral ledger', () => {
       user: JSON.stringify({ id: 4242, first_name: 'Scout' }),
     });
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => new Response(JSON.stringify({ data: { markdown: '# Stripe' } }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const urlStr = typeof input === 'string' ? input : 'url' in input ? (input as any).url : String(input);
+      if (urlStr.includes('cloudflare-dns.com')) {
+        return new Response(JSON.stringify({ Status: 0, Answer: [{ type: 1, data: '93.184.216.34' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/dns-json' },
+        });
+      }
+      return new Response(JSON.stringify({ data: { markdown: '# Stripe' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as any;
     try {
       const scrape = await proxyProvider(
         new Request('https://luminarasuite.com/api/providers/firecrawl/scrape', {

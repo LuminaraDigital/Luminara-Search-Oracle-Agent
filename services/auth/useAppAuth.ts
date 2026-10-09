@@ -13,6 +13,7 @@ import {
   isFirebaseConfigured,
   subscribeFirebaseUser,
   startFirebaseAuthListener,
+  whenFirebaseAuthReady,
   type User,
 } from './firebaseAuthService';
 import { telegramAuth } from '../apiClient';
@@ -53,6 +54,8 @@ export const PUBLIC_APP_VIEWS = new Set([
   'INSTANT_AUDIT',
   'IDEA_SCOUT',
   'ECOSYSTEM_HUB',
+  'TRUST_CENTER',
+  'LAUNCHPAD',
 ]);
 
 /** Pure decision helper (tested). Soft-open only when signature was not rejected. */
@@ -95,11 +98,25 @@ export function useAppAuth(): AppAuthState {
       setFirebaseReady(true);
       return;
     }
-    startFirebaseAuthListener();
-    return subscribeFirebaseUser((u) => {
-      setFirebaseUser(u);
+    let cancelled = false;
+    // Cold-load protection: await persisted auth settlement from IndexedDB before marking ready.
+    void whenFirebaseAuthReady().then((u) => {
+      if (cancelled) return;
+      if (u) setFirebaseUser(u);
       setFirebaseReady(true);
     });
+
+    startFirebaseAuthListener();
+    const unsub = subscribeFirebaseUser((u) => {
+      if (cancelled) return;
+      setFirebaseUser(u);
+      if (u) setFirebaseReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   useEffect(() => {

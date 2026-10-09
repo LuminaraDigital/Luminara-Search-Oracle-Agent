@@ -71,10 +71,17 @@ if (!present.length) {
   process.exit(1);
 }
 
+const targetEnvArgIdx = process.argv.indexOf('--env');
+const targetEnv = targetEnvArgIdx !== -1 ? process.argv[targetEnvArgIdx + 1] : 'production';
+
 let failed = 0;
 for (const name of present) {
   const value = env[name];
-  const r = spawnSync('npx', ['wrangler', 'secret', 'put', name], {
+  const args = ['wrangler', 'secret', 'put', name];
+  if (targetEnv) {
+    args.push('--env', targetEnv);
+  }
+  const r = spawnSync('npx', args, {
     cwd: root,
     input: value,
     encoding: 'utf8',

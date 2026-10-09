@@ -198,6 +198,19 @@ async function waitForAuthUser(a: Auth): Promise<User | null> {
 }
 
 /**
+ * Resolves with the current authenticated user after persisted auth has settled.
+ */
+export async function whenFirebaseAuthReady(): Promise<User | null> {
+  if (!isFirebaseConfigured()) return null;
+  try {
+    const a = ensureAuth();
+    return await waitForAuthUser(a);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ensure the sync ID-token cache is filled when Firebase already has a session.
  * Hosted key checks read that cache synchronously; quota and crawler routes await a token.
  */

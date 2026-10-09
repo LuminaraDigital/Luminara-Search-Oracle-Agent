@@ -49,6 +49,15 @@ function stubEdgeProbes() {
     'fetch',
     vi.fn(async (input: unknown) => {
       const url = typeof input === 'string' ? input : String((input as { url?: string })?.url || '');
+      if (url.includes('cloudflare-dns.com')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/dns-json' },
+          json: async () => ({ Status: 0, Answer: [{ type: 1, data: '93.184.216.34' }] }),
+          text: async () => JSON.stringify({ Status: 0, Answer: [{ type: 1, data: '93.184.216.34' }] }),
+        } as unknown as Response;
+      }
       return {
         ok: true,
         url: url.replace(/^http:\/\//i, 'https://'),

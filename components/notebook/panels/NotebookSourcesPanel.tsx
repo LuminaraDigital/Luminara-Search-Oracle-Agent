@@ -92,6 +92,11 @@ export const NotebookSourcesPanel: React.FC<NotebookSourcesPanelProps> = ({
                     <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/10 text-gray-300 font-bold uppercase">
                       [{idx + 1}] {source.type}
                     </span>
+                    {(source.isDemo || activeNotebook.isDemo) && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold uppercase">
+                        Sample Data
+                      </span>
+                    )}
                     <span className="text-[9px] text-gray-500 font-mono">
                       {source.wordCount} words
                     </span>

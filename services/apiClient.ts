@@ -149,7 +149,10 @@ export async function loadServerHealth(opts: { force?: boolean } = {}): Promise<
 export function getServerHealthSync(): ServerHealth { return healthCache || EMPTY_HEALTH; }
 
 export function isProviderConfiguredOnServer(id: string): boolean {
-  return Boolean(healthCache?.providers?.[id]);
+  if (healthCache?.providers && typeof healthCache.providers === 'object') {
+    return Boolean(healthCache.providers[id]);
+  }
+  return Boolean(healthCache?.ok);
 }
 
 // ---- Sidecars (self-hosted helper services) ------------------------------------------------
@@ -372,23 +375,22 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     try {
       const clone = res.clone();
       const body = await clone.json();
-      // Tier gates (hosted NIM/Ollama/OpenRouter) must not interrupt BYOK or auto-failover.
-      // Quota exhaustion still opens the paywall so the user can upgrade.
-      if (body?.code === 'TIER_UPGRADE_REQUIRED') {
-        return res;
-      }
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('luminara-open-paywall', {
-          detail: {
-            reason: toUserFacingText(body.error, 'Daily free limit reached'),
-            code: body.code,
-            requiredTier: body.requiredTier,
-            provider: body.provider,
-            limit: body.limit,
-            used: body.used,
-            remaining: body.remaining,
-          }
-        }));
+      // Only true quota exhaustion triggers the paywall modal.
+      // Upstream provider billing failures, tier checks, and custom BYOK 402s must not trigger it.
+      if (body?.code === 'PAYWALL_EXCEEDED' || body?.code === 'QUOTA_EXCEEDED') {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('luminara-open-paywall', {
+            detail: {
+              reason: toUserFacingText(body.error, 'Daily free limit reached'),
+              code: body.code,
+              requiredTier: body.requiredTier,
+              provider: body.provider,
+              limit: body.limit,
+              used: body.used,
+              remaining: body.remaining,
+            }
+          }));
+        }
       }
     } catch {}
   }

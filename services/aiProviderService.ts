@@ -578,7 +578,7 @@ export class AIProviderService {
       }
     }
 
-    throw lastError || new Error('No native AI providers (Groq, NVIDIA NIM, Ollama, FreeLLMAPI) available or responsive.');
+    throw lastError || new Error('No AI inference providers available or responsive.');
   }
 
   /**
@@ -662,7 +662,7 @@ export class AIProviderService {
     }
 
     if (!streamSucceeded) {
-      throw lastError || new Error('All native inference providers (Groq, NVIDIA NIM, Ollama, FreeLLMAPI) failed.');
+      throw lastError || new Error('All AI inference providers failed.');
     }
   }
 }

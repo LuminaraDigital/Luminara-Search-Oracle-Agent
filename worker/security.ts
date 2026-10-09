@@ -13,18 +13,18 @@ export { safePublicHostname };
  * CSP for the SPA shell. The app loads the Telegram Web App bridge from telegram.org and fonts
  * from Google Fonts; index.html carries an inline <style>, and React components set inline styles.
  * 'wasm-unsafe-eval' is required for Forme PDF (WebAssembly) without opening full 'unsafe-eval'.
- * connect-src stays open because users can point the app at their own Ollama / crawler /
- * LanguageTool / Umami URLs, and the browser calls vendor APIs directly with user-held keys.
+ * Script execution is locked to 'self', trusted Telegram, and Google/Firebase CDN endpoints (no unsafe-inline).
+ * connect-src is constrained to 'self', HTTPS, secure WebSockets, local dev/Ollama ports, and data/blob.
  */
 export const HTML_CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://telegram.org https://www.gstatic.com https://apis.google.com https://*.firebaseio.com https://*.googleapis.com https://static.cloudflareinsights.com",
+  "script-src 'self' 'wasm-unsafe-eval' https://telegram.org https://www.gstatic.com https://www.google.com https://apis.google.com https://*.firebaseio.com https://*.googleapis.com https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
-  "connect-src * data: blob:",
+  "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* data: blob:",
   "worker-src 'self' blob:",
-  "frame-src 'self' https: https://*.firebaseapp.com https://accounts.google.com",
+  "frame-src 'self' https: https://*.firebaseapp.com https://accounts.google.com https://www.google.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

@@ -7,10 +7,13 @@
  * hitting Identity Toolkit with the public web API key alone.
  */
 import type { Env } from './env';
-import { json } from './workerUtils';
+import { json, sha256Hex } from './workerUtils';
 import {
+  checkAccountLockout,
+  clearFailedSignIn,
   enforceBurstLimit,
   enforceEdgeBindingLimit,
+  recordFailedSignIn,
   signInIpLimiter,
   signUpIpLimiter,
   withRateLimitHeaders,
@@ -307,6 +310,15 @@ export async function handleSignIn(
     return appCheckGate.response;
   }
 
+  // Account-level lockout and backoff protection (anti-brute-force)
+  const emailNorm = normalizeResetEmail(parsed.email);
+  const emailHash = await sha256Hex(`account:${emailNorm}`);
+  const accountGate = await checkAccountLockout(env, emailHash);
+  if (!accountGate.ok) {
+    await padMinLatency(started, minLatency);
+    return accountGate.response;
+  }
+
   const result = await callIdentityAuth(
     env,
     IDENTITY_SIGN_IN,
@@ -317,6 +329,7 @@ export async function handleSignIn(
   await padMinLatency(started, minLatency);
 
   if (result.ok) {
+    await clearFailedSignIn(env, emailHash);
     return withRateLimitHeaders(
       json({
         ok: true,
@@ -342,6 +355,10 @@ export async function handleSignIn(
   if (result.kind === 'invalid_email') {
     return json({ ok: false, error: 'Enter a valid email address.', code: 'INVALID_EMAIL' }, 400);
   }
+
+  // Record failed sign-in attempt to trigger progressive account lockout
+  await recordFailedSignIn(env, emailHash);
+
   // Constant failure for missing user / wrong password / provider blips (no enumeration).
   return withRateLimitHeaders(
     json({ ok: false, error: SIGN_IN_FAILURE_MESSAGE, code: 'SIGN_IN_FAILED' }, 401),

@@ -33,13 +33,6 @@ type PendingProof = {
   instructions: DomainInstructions;
 };
 
-const COMING_NEXT = [
-  { title: 'Business register', detail: 'Match your ABN or NZBN against the official register.' },
-  { title: 'Linked profiles', detail: 'Prove the social and directory profiles that belong to you.' },
-  { title: 'Team members', detail: 'Confirm the people who work on this business.' },
-  { title: 'Public profile page', detail: 'One page that lists every public receipt.' },
-];
-
 function normaliseDomain(input: string): string {
   return input
     .trim()
@@ -349,13 +342,11 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
       </header>
 
       {/* Universal Brand Passport */}
-      {(hasVerifiedDomain || receipts.length > 0 || domains.length > 0) && (
-        <section aria-label="Universal Brand Passport">
-          <UniversalBrandPassportView
-            passport={buildBrandPassport(activeDomain || 'yourdomain.com', savedDna, receipts)}
-          />
-        </section>
-      )}
+      <section aria-label="Universal Brand Passport">
+        <UniversalBrandPassportView
+          passport={buildBrandPassport(activeDomain || 'yourdomain.com', savedDna, receipts)}
+        />
+      </section>
 
       {loadError && (
         <p role="alert" className="text-sm text-danger-400">
@@ -582,19 +573,42 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
           </ul>
         )}
 
-        <div className="space-y-2" aria-label="Coming next">
-          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">Coming next</p>
-          <ul className="divide-y divide-white/5 rounded-2xl border border-dashed border-white/10">
-            {COMING_NEXT.map((item) => (
-              <li key={item.title} className="flex items-start gap-3 p-4 text-gray-500" aria-disabled="true">
-                <span className="mt-1 h-3 w-3 shrink-0 rounded-full border border-white/20" aria-hidden="true" />
-                <div>
-                  <p className="text-sm">{item.title}</p>
-                  <p className="text-xs text-gray-600">{item.detail}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+        <div className="space-y-3 rounded-2xl border border-white/10 bg-surface-1/40 p-5" aria-label="Cryptographic Trust Protocol">
+          <p className="text-[10px] uppercase tracking-widest text-gold-light font-mono font-bold">Cryptographic Trust Protocol</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="space-y-1">
+              <h4 className="font-semibold text-white flex items-center gap-1.5">
+                <span className="text-gold">1.</span> Domain Control
+              </h4>
+              <p className="text-gray-400 leading-relaxed">
+                Prove website ownership through DNS TXT records or /.well-known token challenge without sharing credentials.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-semibold text-white flex items-center gap-1.5">
+                <span className="text-gold">2.</span> Signed Attestation Receipts
+              </h4>
+              <p className="text-gray-400 leading-relaxed">
+                Every verified audit and citation check generates an immutable Ed25519 cryptographic receipt signed by Luminara.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-semibold text-white flex items-center gap-1.5">
+                <span className="text-gold">3.</span> Public Verifiability
+              </h4>
+              <p className="text-gray-400 leading-relaxed">
+                Anyone can independently verify your brand claims via public link at /verify or via programmatic MCP tools.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-semibold text-white flex items-center gap-1.5">
+                <span className="text-gold">4.</span> Entity Graph Export
+              </h4>
+              <p className="text-gray-400 leading-relaxed">
+                Seamlessly injects into Schema.org JSON-LD to anchor entity recognition in Google Knowledge Graph and ChatGPT.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
     </div>

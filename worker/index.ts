@@ -49,6 +49,7 @@ import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
 import {
+  MAX_BODY_BYTES,
   MAX_SMALL_BODY_BYTES,
   RateLimiter,
   clientIp,
@@ -292,6 +293,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    // Public unauthenticated health check: trimmed to { ok: true } to prevent recon/information leakage.
+    const adminCheck = isAdminAuthorized(env, request);
+    if (!adminCheck.ok) {
+      return withCors(json({ ok: true }));
+    }
+
+    // Full provider inventory and pricing internals available only to authorized admin requests.
     const configured = Object.fromEntries(Object.keys(PROVIDERS).map(id => [id, PROVIDERS[id].auth(env, new Headers(), {}).ok]));
     const chainNetwork = resolveChainNetwork(env);
     let xdcRpcOk: boolean | null = null;
@@ -488,7 +496,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
   if (path === '/auth/sign-in') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
-    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    const hit = limited('auth_signin', 5);
     if (hit) return hit;
     return withCors(handleSignIn(request, env, ip));
   }
@@ -660,12 +668,12 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         action: 'workspace_put',
         accountId,
         ip,
-        limitPerKey: 30,
+        limitPerKey: 90,
         windowSec: 60,
       });
       if (!writeLimit.ok) return withCors(writeLimit.response);
 
-      const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+      const read = await readBody(request, MAX_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
       const body = (read.value || {}) as { updatedAt?: number; payload?: unknown; force?: boolean };
       const clientUpdatedAt = Number(body.updatedAt || 0);
@@ -673,7 +681,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!sanitized.ok) return withCors(json({ ok: false, error: sanitized.error, code: 'INVALID_PAYLOAD' }, 400));
       const payload = sanitized.payload;
       const existing = await getWorkspace(env, accountId);
-      if (existing && !body.force && existing.updatedAt > clientUpdatedAt) {
+      // 409 Conflict: only trigger if existing record is newer by more than a 15-second clock skew tolerance
+      if (existing && !body.force && clientUpdatedAt > 0 && (existing.updatedAt - clientUpdatedAt) > 15_000) {
         return withCors(json({
           ok: false,
           conflict: true,
@@ -1965,6 +1974,15 @@ export default {
     // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
     if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
       return withSecurityHeaders(await desktopWindowsDownload(env, request));
+    }
+
+    // Windows desktop landing page: fetch static doc directly without SPA fallback loop.
+    if (url.pathname === '/desktop' || url.pathname === '/desktop/') {
+      const docUrl = new URL('/desktop/index.html', request.url);
+      docUrl.search = url.search;
+      const docRequest = new Request(docUrl.toString(), request);
+      const docRes = await env.ASSETS.fetch(docRequest);
+      return withSecurityHeaders(docRes);
     }
 
     // Extensionless citability URL: fetch static doc directly without redirect loop.

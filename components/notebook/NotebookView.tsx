@@ -13,6 +13,8 @@ import { SourceModal } from './SourceModal';
 import { CitationPopover } from './CitationPopover';
 import { ICONS } from '../../constants';
 import { downloadBlob } from '../../utils/download';
+import { toUserFacingText } from '../../utils/userFacingText';
+import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, type QuotaInfo } from '../../services/apiClient';
 import {
   NotebookSourcesPanel,
   NotebookChatPanel,
@@ -45,7 +47,12 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
   const [query, setQuery] = useState('');
   const [isQuerying, setIsQuerying] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [quota, setQuota] = useState<QuotaInfo | null>(() => getCurrentQuotaSync());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    return subscribeQuota(q => setQuota(q));
+  }, []);
 
   // Audio Podcast state
   const [isGeneratingPodcast, setIsGeneratingPodcast] = useState(false);
@@ -109,6 +116,11 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
   const handleSendMessage = async (userText: string) => {
     if (!userText.trim() || isQuerying) return;
+    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+      openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
+      setQueryError(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`);
+      return;
+    }
     setIsQuerying(true);
     setQueryError(null);
     setQuery('');
@@ -118,7 +130,7 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
       refreshNotebooks();
     } catch (err: any) {
       console.error('[Notebook] Query error', err);
-      setQueryError(err?.message || 'Failed to generate grounded answer');
+      setQueryError(toUserFacingText(err, 'Failed to generate grounded answer. Please try again shortly.'));
     } finally {
       setIsQuerying(false);
     }
@@ -126,12 +138,17 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
   const handleGeneratePodcast = async () => {
     if (isGeneratingPodcast) return;
+    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+      openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
+      alert(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`);
+      return;
+    }
     setIsGeneratingPodcast(true);
     try {
       await audioOverviewService.generatePodcast(activeNotebook.id);
       refreshNotebooks();
     } catch (err: any) {
-      alert(err?.message || 'Failed to generate Audio Overview');
+      alert(toUserFacingText(err, 'Failed to generate Audio Overview. Please try again shortly.'));
     } finally {
       setIsGeneratingPodcast(false);
     }
@@ -139,13 +156,18 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
   const handleGenerateArtifact = async (type: StudioArtifactType) => {
     if (generatingArtifactType) return;
+    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+      openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
+      alert(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`);
+      return;
+    }
     setGeneratingArtifactType(type);
     try {
       const art = await notebookService.generateArtifact(activeNotebook.id, type);
       refreshNotebooks();
       setSelectedArtifact(art);
     } catch (err: any) {
-      alert(err?.message || 'Failed to generate studio artifact');
+      alert(toUserFacingText(err, 'Failed to generate studio artifact. Please try again shortly.'));
     } finally {
       setGeneratingArtifactType(null);
     }

@@ -1202,7 +1202,7 @@ const App: React.FC = () => {
               view === AppView.IDEA_SCOUT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
-            Idea
+            Idea Scout
           </Button>
 
           <Button

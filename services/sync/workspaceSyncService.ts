@@ -221,7 +221,7 @@ export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?:
 }
 
 /** Debounced push of local memory + keys to the account workspace. */
-export function scheduleWorkspacePush(delayMs = 2500): void {
+export function scheduleWorkspacePush(delayMs = 3000): void {
   if (!apiBase() || typeof window === 'undefined') return;
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
@@ -229,13 +229,19 @@ export function scheduleWorkspacePush(delayMs = 2500): void {
   }, delayMs);
 }
 
+let lastPushFailedAt = 0;
+
 export async function flushWorkspacePush(force = false): Promise<void> {
   if (!apiBase() || typeof window === 'undefined') return;
   // Guests have no account workspace; local state stays local until they sign in.
   if (!accountCallsAllowed()) return;
+  // If recently rate-limited (within 10s), back off
+  if (Date.now() - lastPushFailedAt < 10_000 && !force) return;
+
   const meta = readMeta();
   const payload = await collectPayload(meta.accountId);
-  const updatedAt = Date.now();
+  // Ensure monotonic timestamp to avoid clock-skew conflicts
+  const updatedAt = Math.max(Date.now(), (meta.updatedAt || 0) + 1);
   const result = await putWorkspaceRemote({ updatedAt, payload, force });
   if (result.conflict && result.payload) {
     await applyPayload(result.payload, result.accountId || meta.accountId);
@@ -243,7 +249,10 @@ export async function flushWorkspacePush(force = false): Promise<void> {
     return;
   }
   if (result.ok) {
+    lastPushFailedAt = 0;
     writeMeta({ updatedAt: result.updatedAt || updatedAt, accountId: result.accountId });
+  } else {
+    lastPushFailedAt = Date.now();
   }
 }
 

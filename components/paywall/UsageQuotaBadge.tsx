@@ -50,7 +50,7 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
       {showIcon && (
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOut ? 'bg-danger-400' : isLow ? 'bg-warning-400' : 'bg-gold'}`} />
       )}
-      <span>{quota.remaining}/{quota.limit} Daily{bonus > 0 ? ` + ${bonus} invite` : ''}</span>
+      <span>{isOut ? `0 left of ${quota.limit} (Limit reached)` : `${quota.remaining} left of ${quota.limit} Daily`}{bonus > 0 ? ` + ${bonus} invite` : ''}</span>
       <span className="text-[9px] font-black text-gold uppercase tracking-widest ml-0.5">Upgrade</span>
     </button>
   );

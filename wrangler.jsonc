@@ -300,7 +300,7 @@
         "FREE_DAILY_LIMIT": "25",
         "FIREBASE_PROJECT_ID": "luminara-suite",
         "FIREBASE_PROJECT_NUMBER": "274315225068",
-        "REQUIRE_APP_CHECK": "false",
+        "REQUIRE_APP_CHECK": "true",
         "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
         "OUTBOUND_EMAIL_DAILY_LIMIT": "200",
         "CHAIN_NETWORK": "mainnet",

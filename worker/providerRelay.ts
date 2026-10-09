@@ -12,6 +12,8 @@ import {
   isGeminiModelActionAllowed,
   readBody,
   safePublicHostname,
+  safePublicUrl,
+  resolvesToPublicAddress,
   stripUpstreamHeaders,
 } from './security';
 import { dataForSeoBasicAuthHeader, envHasDataForSeo } from '../services/config/runtimeKeys';
@@ -348,11 +350,61 @@ export async function proxyProvider(
     }
   }
 
-  const res = await fetch(upstream.toString(), {
+  // Server-side SSRF validation for crawling/scraping targets
+  if (providerId === 'firecrawl' && body && typeof body === 'object') {
+    const fcBody = body as { url?: unknown; urls?: unknown };
+    const targets: string[] = [];
+    if (typeof fcBody.url === 'string' && fcBody.url.trim()) targets.push(fcBody.url.trim());
+    if (Array.isArray(fcBody.urls)) {
+      for (const u of fcBody.urls) {
+        if (typeof u === 'string' && u.trim()) targets.push(u.trim());
+      }
+    }
+    for (const target of targets) {
+      const parsed = safePublicUrl(target);
+      if (!parsed) {
+        return json(
+          { error: 'Target URL is invalid or targets a private/local host (SSRF blocked)', code: 'SSRF_BLOCKED' },
+          400,
+        );
+      }
+      const isPublic = await resolvesToPublicAddress(parsed.hostname);
+      if (!isPublic) {
+        return json(
+          { error: 'Target hostname does not resolve to a public address (SSRF blocked)', code: 'SSRF_BLOCKED' },
+          400,
+        );
+      }
+    }
+  }
+
+  let res = await fetch(upstream.toString(), {
     method: request.method,
     headers,
     body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
   });
+
+  // Seamless Groq failover if hosted primary key hits billing (402), auth (401), or rate limit (429)
+  if (!userKey && providerId === 'groq' && (res.status === 401 || res.status === 402 || res.status === 429) && env.GROQ_API_KEY_FALLBACK) {
+    const fallbackKey = env.GROQ_API_KEY_FALLBACK.trim();
+    const currentKey = (headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    if (fallbackKey && fallbackKey !== currentKey) {
+      const fallbackHeaders = new Headers(headers);
+      fallbackHeaders.set('Authorization', `Bearer ${fallbackKey}`);
+      try {
+        const retryRes = await fetch(upstream.toString(), {
+          method: request.method,
+          headers: fallbackHeaders,
+          body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+        });
+        if (retryRes.ok || retryRes.status < 400) {
+          res = retryRes;
+        }
+      } catch (err) {
+        console.warn('[Groq failover error]', err);
+      }
+    }
+  }
 
   // Stream the upstream body straight through (SSE for chat completions works unchanged).
   // Vendor CORS headers and cookies are dropped: our own CORS policy is applied by handleApi.
@@ -382,5 +434,26 @@ export async function proxyProvider(
       /* a missed receipt must not fail the provider call */
     }
   }
+
+  // If the upstream provider returned 402 Payment Required (e.g. out of credits on Groq/Firecrawl/Tavily),
+  // distinguish server hosted key depletion (503) from caller BYOK key depletion (402) so the user's paywall isn't triggered.
+  if (!userKey && res.status === 402) {
+    return json({
+      ok: false,
+      error: `The hosted ${providerId} service is temporarily unavailable due to upstream provider credit limits. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`,
+      code: 'HOSTED_PROVIDER_DEPLETED',
+      provider: providerId,
+    }, 503, Object.fromEntries(out.entries()));
+  }
+
+  if (userKey && res.status === 402) {
+    return json({
+      ok: false,
+      error: `Your custom ${providerId} API key returned 402 Payment Required. Please check your account credits or billing on ${providerId}.`,
+      code: 'BYOK_PAYMENT_REQUIRED',
+      provider: providerId,
+    }, 402, Object.fromEntries(out.entries()));
+  }
+
   return new Response(res.body, { status: res.status, headers: out });
 }

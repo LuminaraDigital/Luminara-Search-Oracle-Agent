@@ -8,6 +8,7 @@ import { randomId } from '../services/projects/projectUtils';
 import { buildPaidToolRuntime, executePaidTool } from '../services/tools/registry';
 import { getProject } from './projectService';
 import { startRun, completeRun } from './runProvenance';
+import { safePublicUrl, resolvesToPublicAddress, type DohFetch } from './security';
 
 export function isAuditQueueEnabled(env: Env): boolean {
   return String(env.AUDIT_QUEUE_ENABLED || '').toLowerCase() === 'true';
@@ -97,6 +98,7 @@ export async function enqueueAuditRun(
   request: Request,
   env: Env,
   user: HostedIdentity,
+  opts?: { dohFetcher?: DohFetch },
 ): Promise<Response> {
   if (!env.DB) return json({ ok: false, error: 'Database unavailable', code: 'NO_DB' }, 503);
   if (!env.AUDIT_JOBS) {
@@ -111,6 +113,29 @@ export async function enqueueAuditRun(
   const targetUrl = typeof body.targetUrl === 'string' ? body.targetUrl.trim() : '';
   if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
     return json({ ok: false, error: 'targetUrl must be http(s)', code: 'BAD_REQUEST' }, 400);
+  }
+
+  const parsedTarget = safePublicUrl(targetUrl);
+  if (!parsedTarget) {
+    return json(
+      {
+        ok: false,
+        error: 'targetUrl must be a valid public http(s) URL (local hosts, private IPs, and metadata addresses are blocked)',
+        code: 'SSRF_BLOCKED',
+      },
+      400,
+    );
+  }
+  const isPublicTarget = await resolvesToPublicAddress(parsedTarget.hostname, opts?.dohFetcher);
+  if (!isPublicTarget) {
+    return json(
+      {
+        ok: false,
+        error: 'targetUrl hostname does not resolve to a public address (SSRF blocked)',
+        code: 'SSRF_BLOCKED',
+      },
+      400,
+    );
   }
 
   const accountId = billingId(user);
@@ -201,11 +226,28 @@ async function markRun(
 /**
  * Worker-safe v1 audit: domain overview via DFS when projectId present, else not_measured shell.
  */
-export async function processAuditJob(env: Env, msg: AuditJobMessage): Promise<void> {
+export async function processAuditJob(
+  env: Env,
+  msg: AuditJobMessage,
+  opts?: { dohFetcher?: DohFetch },
+): Promise<void> {
   await markRun(env, msg.runId, 'running', null, null);
   let provenanceRunId = msg.provenanceRunId ?? null;
   try {
-    const host = new URL(msg.targetUrl).hostname.replace(/^www\./, '');
+    const parsedTarget = safePublicUrl(msg.targetUrl);
+    if (!parsedTarget) {
+      await markRun(env, msg.runId, 'failed', null, 'Target URL failed server-side SSRF validation: private or local host blocked');
+      if (provenanceRunId) await completeRun(env, provenanceRunId, 'failed');
+      return;
+    }
+    const isPublic = await resolvesToPublicAddress(parsedTarget.hostname, opts?.dohFetcher);
+    if (!isPublic) {
+      await markRun(env, msg.runId, 'failed', null, 'Target URL failed server-side SSRF validation: hostname does not resolve to a public address');
+      if (provenanceRunId) await completeRun(env, provenanceRunId, 'failed');
+      return;
+    }
+
+    const host = parsedTarget.hostname.replace(/^www\./, '');
     // Direct queue producers (e.g. the sentinel cron) enqueue without an HTTP
     // pass through enqueueAuditJob, so open the provenance run here instead.
     if (!provenanceRunId) {
