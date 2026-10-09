@@ -70,10 +70,12 @@ function saveEvents(events: BrandMemoryEvent[]): void {
   }
 }
 
+let eventSeq = 0;
+
 function pushEvent(partial: Omit<BrandMemoryEvent, 'id' | 'createdAt'>): BrandMemoryEvent {
   const ev: BrandMemoryEvent = {
     ...partial,
-    id: `bm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: `bm-${Date.now()}-${(++eventSeq).toString(36)}`,
     createdAt: Date.now(),
   };
   const all = loadEvents();
@@ -92,6 +94,7 @@ export interface IngestAuditVaultInput {
   focus: string;
   reportText: string;
   title?: string;
+  healthScore?: number | null;
   citationRatePercent?: number | null;
   topCompetitor?: string | null;
   dna?: BusinessDNA | null;
@@ -112,6 +115,7 @@ export function ingestAudit(input: IngestAuditVaultInput): {
     focus: input.focus,
     reportText: linkedReport,
     title: input.title,
+    healthScore: input.healthScore,
     citationRatePercent: input.citationRatePercent,
     topCompetitor: input.topCompetitor,
     dnaCompetitors: competitors,

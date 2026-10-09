@@ -9,6 +9,7 @@ import { WeeklyDecisionCard } from '../audit/WeeklyDecisionCard';
 import {
   listLocalFindings,
   pickPrimaryFinding,
+  readLastBoardDomain,
   type BoardFinding,
 } from '../../services/audit/findingBoardService';
 import { auditHistoryService } from '../../services/audit/auditHistoryService';
@@ -34,11 +35,12 @@ type Door = {
  * Secondary and Labs surfaces stay reachable from More tools / Omnibar when needed.
  */
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, advancedUi = false, signedIn = false }) => {
-  const auditCount = useMemo(() => auditCountFromStorage(), []);
-  const hasAudits = auditCount > 0;
-  const hasDna = Boolean(dna);
   const telemetrySummary = productTelemetry.getSummary();
-  const hasChatOrMemory = telemetrySummary.totalChatsSent > 0 || hasAudits;
+  const completedSteps = telemetrySummary.completedOnboardingSteps || [];
+  const auditCount = auditCountFromStorage();
+  const hasRunAudit = auditCount > 0 || completedSteps.includes('quick_scout') || Boolean(readLastBoardDomain());
+  const hasProfile = Boolean(dna) || completedSteps.includes('business_dna');
+  const hasSavedProject = completedSteps.includes('strategy_saved') || completedSteps.includes('brand_memory') || (signedIn && hasRunAudit);
 
   const homeSeed = useMemo(() => {
     try {
@@ -62,7 +64,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       id: 'step_scout',
       title: '1. Run Instant Audit',
       desc: 'Paste your site URL and get a ranked list of search and AI visibility fixes.',
-      done: hasAudits,
+      done: hasRunAudit,
       view: AppView.INSTANT_AUDIT,
       cta: 'Run audit',
     },
@@ -70,7 +72,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       id: 'step_dna',
       title: '2. Set business profile',
       desc: 'Add your mission and USP so full audits match what you sell.',
-      done: hasDna,
+      done: hasProfile,
       view: AppView.BUSINESS_DNA,
       cta: 'Set profile',
     },
@@ -78,7 +80,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       id: 'step_save_project',
       title: '3. Save to a project',
       desc: 'Sign in to keep strategy and reports on the hosted project, not only in this browser.',
-      done: hasChatOrMemory && hasDna,
+      done: hasSavedProject,
       view: AppView.INSTANT_AUDIT,
       cta: 'Continue in audit',
     },

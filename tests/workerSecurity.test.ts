@@ -88,6 +88,14 @@ describe('security headers', () => {
     const resChunk = await worker.fetch(req('/assets/missing-chunk.js'), makeEnv(), ctx);
     expect(resChunk.status).toBe(404);
   });
+
+  it('returns HTTP 404 with HTML body for made-up SPA URLs', async () => {
+    const res = await worker.fetch(req('/some-made-up-page'), makeEnv(), ctx);
+    expect(res.status).toBe(404);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const body = await res.text();
+    expect(body).toContain('app');
+  });
 });
 
 describe('CORS', () => {

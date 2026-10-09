@@ -102,7 +102,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       <div className="rounded-xl bg-[var(--color-paper-2)] border border-[var(--color-rule)] p-5 space-y-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-gold">Telegram &amp; TON</p>
         <p className="text-xs text-gray-400 leading-relaxed">
-          Pay with Stars or TON inside the Mini App. Card checkout is unavailable. You can also connect a TON wallet here.
+          Pay with Stars or TON inside the Mini App. Card checkout is available on request. You can also connect a TON wallet here.
         </p>
         <p className="text-xs text-gray-400 leading-relaxed">
           Link Telegram and web account - shares subscription. Open the Mini App, sign in there, and confirm the link. Signing in does not merge plans by itself.
@@ -155,7 +155,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       {!inTg && (
         <div className="space-y-1">
           <p className="text-xs text-gray-400 leading-relaxed">
-            Stars checkout opens in the Mini App. Card checkout is unavailable.
+            Stars checkout opens in the Mini App. Card checkout is available on request.
           </p>
           <a
             href={TELEGRAM_MINI_APP_URL}

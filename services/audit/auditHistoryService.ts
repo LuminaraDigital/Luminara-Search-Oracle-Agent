@@ -103,6 +103,7 @@ export interface RecordAuditInput {
   focus: string;
   reportText: string;
   title?: string;
+  healthScore?: number | null;
   citationRatePercent?: number | null;
   topCompetitor?: string | null;
   dnaCompetitors?: string[];
@@ -110,6 +111,8 @@ export interface RecordAuditInput {
   planId?: PlanId | string | null;
   measuredAt?: number;
 }
+
+let auditSeq = 0;
 
 export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
   const domain = normalizeDomain(input.domain);
@@ -122,11 +125,11 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
     text.slice(0, 240);
 
   const entry: AuditHistoryEntry = {
-    id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `audit-${Date.now()}-${(++auditSeq).toString(36)}`,
     domain,
     focus: input.focus,
     measuredAt: input.measuredAt ?? Date.now(),
-    healthScore: extractHealthScore(text),
+    healthScore: input.healthScore !== undefined ? input.healthScore : extractHealthScore(text),
     citationRatePercent:
       typeof input.citationRatePercent === 'number' ? Math.round(input.citationRatePercent) : null,
     schemaGapCount: extractSchemaGaps(text),

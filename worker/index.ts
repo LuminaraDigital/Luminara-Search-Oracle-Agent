@@ -46,6 +46,8 @@ import { TERMS_HTML } from './termsPolicy';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML, buildSitemapXml } from './crawlDocuments';
 import { maybeServeMarketingHtml, maybeServeShareHtml } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
+import { resolveAppView } from '../utils/marketingRoutes';
+import { AppView } from '../types';
 import {
   MAX_SMALL_BODY_BYTES,
   RateLimiter,
@@ -171,6 +173,23 @@ const RATE_AUDIT_PER_MIN = 5;
 const RATE_ENRICHMENT_PER_MIN = 20;
 const RATE_SHARE_PUBLIC_PER_MIN = 30;
 const RATE_HIGH_COST_EDGE = 20;
+
+/** Known static public HTML documents served directly from the asset bucket. */
+const STATIC_PUBLIC_HTML_PATHS = new Set([
+  '/desktop',
+  '/desktop/',
+  '/desktop/index.html',
+  '/docs/mcp',
+  '/docs/mcp/',
+  '/docs/mcp.html',
+  '/docs/what-is-aeo',
+  '/docs/what-is-aeo/',
+  '/docs/what-is-aeo.html',
+  '/googlea4923385090ac2c5.html',
+  '/privacy',
+  '/privacy/',
+  '/privacy.html',
+]);
 
 /**
  * System org bucket for admin-actor audit events (key mint/seed, user dump, refunds).
@@ -1992,6 +2011,25 @@ export default {
           status: 404,
           headers: {
             'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+        }),
+      );
+    }
+
+    if (
+      !isStaticFile &&
+      !STATIC_PUBLIC_HTML_PATHS.has(url.pathname) &&
+      contentType.includes('text/html') &&
+      resolveAppView(url.pathname, '') === AppView.NOT_FOUND
+    ) {
+      const html = request.method === 'HEAD' ? null : (assetResponse.ok ? await assetResponse.text() : 'Not Found');
+      return withSecurityHeaders(
+        new Response(html, {
+          status: 404,
+          statusText: 'Not Found',
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
             'Cache-Control': 'no-store',
           },
         }),

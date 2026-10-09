@@ -41,7 +41,7 @@ describe('pricing page discoverability', () => {
     expect(html).toContain(`href="${TELEGRAM_MINI_APP_URL}"`);
     expect(html).toContain('https://t.me/LuminaraSuiteBot/app');
     expect(html).toContain('Open Mini App in Telegram');
-    expect(html).toContain('Card checkout is unavailable');
+    expect(html).toContain('Card checkout is available on request');
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
     expect(html).toContain('2,500 Stars');
@@ -61,7 +61,7 @@ describe('Settings Telegram and TON section', () => {
     expect(html).toContain('Telegram');
     expect(html).toContain(`href="${TELEGRAM_MINI_APP_URL}"`);
     expect(html).toContain('Open Mini App in Telegram');
-    expect(html).toContain('Card checkout is unavailable');
+    expect(html).toContain('Card checkout is available on request');
     expect(html).toContain('Link Telegram and web account - shares subscription');
   });
 });

@@ -34,10 +34,11 @@ export interface BrandMindshareSummary {
   totalAttentionSlots: number;
   brandCitations: number;
   competitorCitations: number;
+  hasCompetitorEvidence: boolean;
   narratives: NarrativeCluster[];
   topSurgingNarrative?: NarrativeCluster;
   underperformingNarrative?: NarrativeCluster;
-  method: 'observed';
+  method: 'observed' | 'uncontested';
 }
 
 const DEFAULT_NARRATIVE_TEMPLATES = [
@@ -89,7 +90,17 @@ export function buildBrandMindshare(opts: {
 
   const totalCompetitorCitations = [...competitorMap.values()].reduce((a, b) => a + b, 0);
   const totalSlots = brandCitations + totalCompetitorCitations;
-  const overallMindsharePercent = totalSlots > 0 ? Math.round((brandCitations / totalSlots) * 100) : 0;
+  const hasCompetitorEvidence = totalCompetitorCitations > 0;
+
+  // Never flash 100% brand mindshare when no competitor signals were measured in the sample.
+  let overallMindsharePercent = 0;
+  if (hasCompetitorEvidence) {
+    overallMindsharePercent = totalSlots > 0 ? Math.round((brandCitations / totalSlots) * 100) : 0;
+  } else if (list.length > 1) {
+    overallMindsharePercent = Math.round((brandCitations / list.length) * 100);
+  } else {
+    overallMindsharePercent = brandCitations > 0 ? 50 : 0;
+  }
 
   // Compute velocity from previous historical point if available (7 days back)
   let velocityPercentWoW = 0;
@@ -162,9 +173,10 @@ export function buildBrandMindshare(opts: {
     totalAttentionSlots: totalSlots,
     brandCitations,
     competitorCitations: totalCompetitorCitations,
+    hasCompetitorEvidence,
     narratives,
     topSurgingNarrative,
     underperformingNarrative,
-    method: 'observed',
+    method: hasCompetitorEvidence ? 'observed' : 'uncontested',
   };
 }

@@ -353,6 +353,20 @@ const App: React.FC = () => {
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const { requestConfirm, confirmModal } = useConfirm();
   const [showSuiteMenu, setShowSuiteMenu] = useState(false);
+  const moreBtnContainerRef = useRef<HTMLDivElement>(null);
+  const [suiteMenuPos, setSuiteMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (showSuiteMenu && moreBtnContainerRef.current) {
+      const rect = moreBtnContainerRef.current.getBoundingClientRect();
+      const left = Math.max(12, Math.min(rect.left, window.innerWidth - 320));
+      setSuiteMenuPos({
+        top: rect.bottom + 6,
+        left,
+      });
+    }
+  }, [showSuiteMenu]);
+
   const [advancedUi, setAdvancedUi] = useState<boolean>(() => {
     try { return localStorage.getItem('luminara_advanced_ui') === '1'; } catch { return false; }
   });
@@ -1229,7 +1243,7 @@ const App: React.FC = () => {
           </Button>
 
           {/* Command Suite Dropdown */}
-          <div className="relative shrink-0">
+          <div className="relative shrink-0" ref={moreBtnContainerRef}>
             <Button
               variant="ghost"
               size="none"
@@ -1255,10 +1269,11 @@ const App: React.FC = () => {
                   aria-hidden="true"
                 />
                 <div 
-                  className={`z-50 overflow-y-auto border border-[var(--color-rule)] rounded-lg p-2.5 shadow-2xl bg-[var(--color-paper-2)] animate-in fade-in zoom-in-95 duration-200 ${
+                  style={suiteMenuPos && !inTelegram && typeof window !== 'undefined' && window.innerWidth >= 640 ? { top: suiteMenuPos.top, left: suiteMenuPos.left } : undefined}
+                  className={`z-50 overflow-y-auto border border-[var(--color-rule)] rounded-lg p-2.5 shadow-2xl bg-[var(--color-paper-2)] animate-in fade-in zoom-in-95 duration-200 fixed ${
                     inTelegram
-                      ? 'fixed bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-3 right-3 max-h-[72dvh] mx-auto max-w-sm'
-                      : 'max-sm:fixed max-sm:bottom-4 max-sm:left-3 max-sm:right-3 max-sm:max-h-[72dvh] max-sm:mx-auto max-sm:max-w-sm sm:absolute sm:top-full sm:right-0 sm:left-0 sm:right-auto sm:mt-2 sm:w-[min(19rem,calc(100vw-1.5rem))] sm:max-h-[min(70dvh,28rem)]'
+                      ? 'bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-3 right-3 max-h-[72dvh] mx-auto max-w-sm'
+                      : 'max-sm:bottom-4 max-sm:left-3 max-sm:right-3 max-sm:max-h-[72dvh] max-sm:mx-auto max-sm:max-w-sm sm:w-[min(19rem,calc(100vw-1.5rem))] sm:max-h-[min(70dvh,28rem)]'
                   }`}
                 >
                   <div className="sm:hidden flex items-center justify-between px-3 py-1.5 border-b border-white/10 mb-1.5">
@@ -1279,17 +1294,6 @@ const App: React.FC = () => {
                   >
                     <ICONS.Zap className="w-3.5 h-3.5 text-gold-light" />
                     <span>Idea Scout</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.LAUNCHPAD); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Zap className="w-3.5 h-3.5 text-gold" />
-                    <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
-                      <span className="font-semibold truncate">SMB Launchpad</span>
-                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold shrink-0">WEB3</span>
-                    </div>
                   </button>
                   <button
                     type="button"

@@ -32,7 +32,12 @@ Extract the brand's 'Strategic DNA'. Return strictly a valid JSON object matchin
   "competitors": ["Competitor1", "Competitor2", "Competitor3"],
   "perceivedGaps": ["Gap 1", "Gap 2", "Gap 3"],
   "rawContext": "A condensed 2-3 paragraph summary of the entire strategic profile."
-}`;
+}
+Competitor rules:
+- Competitors must be direct commercial business rivals in the brand's industry and geographic market.
+- Exclude review directories, aggregators, and platforms (e.g. Trustpilot, Yelp, ProductReview, Yellow Pages).
+- Exclude general medical websites, encyclopedias, and directories (e.g. WebMD, Healthline, Mayo Clinic, Wikipedia).
+- Exclude general search engines and social platforms (e.g. Google, Amazon, Reddit, Quora).`;
 }
 
 export interface StreamQueryOptions {
@@ -839,7 +844,7 @@ Strict Formatting Guidelines:
    Include 3 high-intent queries (informational, commercial, comparative). Use "not verified" when evidence is missing.
 7. Competitor Reality Map: Markdown table with strictly these columns:
    | Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) | Trust Signal Strength (Low/Med/High) |
-   Include the target brand and 3-4 actual competitors found via search.
+   Include the target brand and 3-4 actual competitors found via search. Competitors must be direct commercial rivals in the same region/niche. Exclude review aggregators (Trustpilot, Yelp), medical/reference encyclopedias (WebMD, Wikipedia), and directory platforms.
 8. Under "## 1. One move this week" or "## 3. Fix list", include one practical JSON-LD or schema code block when useful.
 9. Tone: direct, calm, no hype, no "neural core" or fake document IDs. Label every estimate "(estimate)".
 10. If measured traffic / AI-referral data is present above, cite it in "## 2. Plain verdict" as measured.
@@ -924,6 +929,7 @@ Strict Formatting Guidelines:
           focus: String(focus),
           reportText: text,
           title: reportTitle,
+          healthScore: trustPack?.citeWorthiness ?? null,
           citationRatePercent: empiricalSummary?.citationRatePercent ?? null,
           topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
           dna,

@@ -146,11 +146,13 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
         onSelectAction={onSelectAction}
       />
 
-      <PerceptionMatrix
-        domain={domain}
-        evidence={mappedEvidence}
-        onTakeAction={onSelectAction}
-      />
+      {mappedEvidence.some((e) => Boolean((e as { engine?: string }).engine)) && (
+        <PerceptionMatrix
+          domain={domain}
+          evidence={mappedEvidence}
+          onTakeAction={onSelectAction}
+        />
+      )}
 
       <div className="mb-4">
         <h3 className="text-[11px] font-mono uppercase tracking-wider text-gray-500 mb-3">

@@ -400,7 +400,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-white">Client workspaces</h3>
           <p className="text-[11px] text-gray-400">
-            Pro / Agency unlocks up to {entitlements.agencyClientLimit || 10} isolated clients (DNA + history).
+            Agency unlocks up to {entitlements.agencyClientLimit || 10} isolated clients (DNA + history).
             Current plan allows {entitlements.agencyClientLimit}.
           </p>
           <div className="flex gap-2">
@@ -467,7 +467,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
               onClick={() => onOpenPaywall?.()}
               className="w-full py-3 rounded-xl border border-gold/40 text-gold text-xs font-black uppercase tracking-wider focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
-              Upgrade to Pro / Agency
+              Upgrade to Agency
             </button>
           )}
         </div>

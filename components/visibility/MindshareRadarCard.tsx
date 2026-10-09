@@ -68,7 +68,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
             AEO Mindshare & Attention Radar
           </h3>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-gray-400 border border-white/10">
-            Observed
+            {mindshare.hasCompetitorEvidence ? 'Observed' : 'Baseline'}
           </span>
         </div>
         <div className="flex items-center gap-4 text-xs font-mono">

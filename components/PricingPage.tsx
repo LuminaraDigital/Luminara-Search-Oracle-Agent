@@ -97,7 +97,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         </p>
         <p className="mkt-body mb-8">
           Every paid plan runs 30 days. Pay with Telegram Stars or TON in the Mini App. USD amounts are list
-          prices only. Card checkout is unavailable.
+          prices only. Credit card checkout is available on request during closed beta (email support@luminarasuite.com).
         </p>
         <div className="mb-8 border border-[var(--color-rule)] bg-[var(--color-paper)]/70 p-5 sm:p-6">
           <p className="mkt-eyebrow mb-3">How to pay</p>

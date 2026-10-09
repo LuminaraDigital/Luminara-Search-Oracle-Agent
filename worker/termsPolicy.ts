@@ -46,7 +46,7 @@ export const TERMS_HTML = `<!DOCTYPE html>
     <h2>Your keys and accounts</h2>
     <p>You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. If you enable workspace sync while signed in, workspace content and optional key bags may be stored on our Cloudflare backend for that account.</p>
     <h2>Plans and payments</h2>
-    <p>Plans bought with Telegram Stars run for the stated number of days from purchase and do not renew automatically. TON payments are verified on-chain against the order memo you are shown. Refunds for Stars follow Telegram's policy; for billing problems contact support@luminarasuite.com.</p>
+    <p>Plans bought with Telegram Stars run for the stated number of days from purchase and do not renew automatically. TON payments (including TON native currency and supported Jettons such as USDT and $LORA) are verified on-chain against the order memo you are shown. Credit card checkout and corporate invoicing are available on request during closed beta (email support@luminarasuite.com). Refunds for Stars follow Telegram's policy; on-chain digital asset transactions are non-refundable once settled. For billing questions or issues, contact support@luminarasuite.com.</p>
     <h2>Acceptable use</h2>
     <p>Do not use the service to attack, scrape abusively, or misrepresent third parties, and do not attempt to extract hosted credentials. We may suspend access for abuse.</p>
     <h2>Open source and trademarks</h2>
