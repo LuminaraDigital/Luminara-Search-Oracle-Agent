@@ -126,10 +126,11 @@ fun onInternalMessage(inMsg: InMessage) {
 /**
  * Handles incoming external messages (direct broadcast signed by ops minter).
  */
-fun onExternalMessage(var inMsgBody: slice) {
-    assert (inMsgBody.remainingBitsCount() >= 512 + 32 + 32 + 32) throw ERR_INVALID_SIGNATURE;
-    val signature = inMsgBody.loadBits(512);
-    var signedSlice = inMsgBody;
+fun onExternalMessage(inMsgBody: slice) {
+    var s = inMsgBody;
+    assert (s.remainingBitsCount() >= 512 + 32 + 32 + 32) throw ERR_INVALID_SIGNATURE;
+    val signature = s.loadBits(512);
+    var signedSlice = s;
 
     var storage = Storage.load();
     assert (!storage.isPaused) throw ERR_CONTRACT_PAUSED;
