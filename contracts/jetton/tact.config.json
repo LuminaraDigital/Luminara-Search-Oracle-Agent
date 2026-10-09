@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tact-lang/tact/main/src/config/configSchema.json",
+  "projects": [
+    {
+      "name": "LuminaraJetton",
+      "path": "./contracts/jetton_master.tact",
+      "output": "./build",
+      "mode": "full",
+      "options": {
+        "debug": false,
+        "external": false,
+        "optimizations": {
+          "internalExternalReceiversOutsideMethodsMap": false
+        }
+      }
+    }
+  ]
+}

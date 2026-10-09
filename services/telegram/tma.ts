@@ -21,6 +21,17 @@ import {
   shareURL,
 } from '@telegram-apps/sdk-react';
 
+/** Telegram sometimes parks launch params in the hash (`#tgWebAppData=...`). */
+function hasTelegramHashHints(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const hash = window.location.hash || '';
+    return /tgWebAppData=|tgWebAppVersion=|tgWebAppPlatform=/i.test(hash);
+  } catch {
+    return false;
+  }
+}
+
 function detectTelegramSync(): boolean {
   if (typeof window === 'undefined') return false;
   try {
@@ -29,6 +40,7 @@ function detectTelegramSync(): boolean {
   try {
     const w = window as any;
     if (w.TelegramWebviewProxy) return true;
+    if (hasTelegramHashHints()) return true;
     const wa = w.Telegram?.WebApp;
     if (!wa) return false;
     // Real Mini App sessions always carry signed initData; the script alone is not enough
@@ -38,6 +50,36 @@ function detectTelegramSync(): boolean {
     if (platform && platform !== 'unknown') return true;
   } catch { /* ignore */ }
   return false;
+}
+
+function raceTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`[TMA] ${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
+/** Best-effort viewport setup. Never block Mini App open (macOS / WebK hang on mount). */
+async function mountViewportBestEffort(timeoutMs = 800): Promise<void> {
+  try {
+    if (viewport.mount.isAvailable()) {
+      await raceTimeout(
+        Promise.resolve().then(() => viewport.mount() as Promise<unknown>),
+        timeoutMs,
+        'viewport.mount',
+      );
+    }
+    if (viewport.bindCssVars.isAvailable()) viewport.bindCssVars();
+    if (viewport.expand.isAvailable()) viewport.expand();
+  } catch (e) {
+    console.warn('[TMA] viewport mount skipped; expanding via native bridge if present', e);
+    try {
+      (window as any)?.Telegram?.WebApp?.expand?.();
+    } catch { /* ignore */ }
+  }
 }
 
 let insideTelegram = detectTelegramSync();
@@ -50,6 +92,7 @@ const readyPromise = new Promise<boolean>((resolve) => {
 const readyListeners = new Set<(inside: boolean) => void>();
 
 function finishReady(inside: boolean): boolean {
+  if (readySettled) return insideTelegram;
   insideTelegram = inside;
   readySettled = true;
   resolveReady?.(inside);
@@ -84,7 +127,8 @@ export async function waitForInitDataRaw(opts?: {
   attempts?: number;
   intervalMs?: number;
 }): Promise<string> {
-  const attempts = opts?.attempts ?? 6;
+  // Slow Android / desktop clients can inject initData a few hundred ms after ready.
+  const attempts = opts?.attempts ?? 20;
   const intervalMs = opts?.intervalMs ?? 50;
   const inside = await whenTelegramReady();
   if (!inside) return '';
@@ -122,8 +166,20 @@ export async function initTelegram(timeoutMs = 1200): Promise<boolean> {
   initStarted = true;
 
   const syncHit = detectTelegramSync();
+  // Absolute failsafe: readyPromise must never hang (auth gate waits on it).
+  const failsafeMs = Math.max(timeoutMs + 600, 2000);
+  const failsafe = setTimeout(() => {
+    if (readySettled) return;
+    console.warn('[TMA] init failsafe fired; forcing ready');
+    finishReady(detectTelegramSync() || Boolean(nativeInitData()) || syncHit);
+  }, failsafeMs);
+  const settle = (inside: boolean): boolean => {
+    clearTimeout(failsafe);
+    return finishReady(inside);
+  };
+
   if (!syncHit) {
-    return finishReady(false);
+    return settle(false);
   }
 
   // Never demote a sync-detected Mini App to "web" on a slow isTMA() race.
@@ -137,7 +193,7 @@ export async function initTelegram(timeoutMs = 1200): Promise<boolean> {
   } catch {
     insideTelegram = syncHit;
   }
-  if (!insideTelegram) return finishReady(false);
+  if (!insideTelegram) return settle(false);
 
   try {
     sdkInit();
@@ -152,16 +208,10 @@ export async function initTelegram(timeoutMs = 1200): Promise<boolean> {
       if (miniApp.setBackgroundColor.isAvailable()) miniApp.setBackgroundColor('#000000');
       if (miniApp.setBottomBarColor.isAvailable()) miniApp.setBottomBarColor('#000000');
     }
-    if (viewport.mount.isAvailable()) {
-      await viewport.mount();
-      viewport.bindCssVars();
-      if (viewport.expand.isAvailable()) viewport.expand();
-      try {
-        if ((viewport as any).requestFullscreen?.isAvailable?.()) {
-          (viewport as any).requestFullscreen();
-        }
-      } catch { /* ignore older TMA versions */ }
-    }
+    // Tell Telegram the shell is alive before viewport work. viewport.mount can hang
+    // forever on macOS Desktop and some WebK builds (tma.js #694 / issues #79).
+    if (miniApp.ready.isAvailable()) miniApp.ready();
+
     // Chat-style scrolling inside the app should not swipe the Mini App closed.
     if (swipeBehavior.mount.isAvailable()) {
       swipeBehavior.mount();
@@ -171,15 +221,21 @@ export async function initTelegram(timeoutMs = 1200): Promise<boolean> {
       closingBehavior.mount();
       if (closingBehavior.enableConfirmation.isAvailable()) closingBehavior.enableConfirmation();
     }
-    if (miniApp.ready.isAvailable()) miniApp.ready();
+
+    // Never await viewport before finishReady: a hang bricks auth + marketing remap.
+    void mountViewportBestEffort(Math.min(800, timeoutMs));
   } catch (e) {
     console.warn('[TMA] init failed; keeping Telegram mode if native initData exists', e);
+    try {
+      (window as any)?.Telegram?.WebApp?.ready?.();
+      (window as any)?.Telegram?.WebApp?.expand?.();
+    } catch { /* ignore */ }
     if (nativeInitData() || syncHit) {
-      return finishReady(true);
+      return settle(true);
     }
-    return finishReady(false);
+    return settle(false);
   }
-  return finishReady(true);
+  return settle(true);
 }
 
 /** Raw signed launch context; send this to the server, never trust its fields on the client. */
@@ -213,7 +269,8 @@ export function hasTelegramLaunchHints(): boolean {
   if (typeof window === 'undefined') return false;
   try {
     const q = new URLSearchParams(window.location.search);
-    return Boolean(q.get('tgWebAppStartParam') || q.get('startapp') || q.get('tgWebAppData'));
+    if (q.get('tgWebAppStartParam') || q.get('startapp') || q.get('tgWebAppData')) return true;
+    return hasTelegramHashHints();
   } catch {
     return false;
   }

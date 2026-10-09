@@ -7,12 +7,18 @@ import type { ShipCommitment } from '../../services/audit/shipCommitmentService'
 import { upsertWeeklyDecision } from '../../services/privacy/privacyClient';
 import { honestyChipLabel, normalizeMeasurementStatus } from '../../services/wdl/liveHonesty';
 
+import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
+import { MindshareRadarCard } from '../visibility/MindshareRadarCard';
+
 interface WeeklyDecisionCardProps {
   domain: string;
   primary: BoardFinding | null;
   findings: BoardFinding[];
   commitment: ShipCommitment | null;
   onFindingUpdated?: (f: BoardFinding) => void;
+  evidence?: EmpiricalEvidence[];
+  rawSources?: Array<{ uri: string; title: string }>;
+  onSelectAction?: (actionId: string, label: string) => void;
 }
 
 /**
@@ -25,6 +31,9 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
   findings,
   commitment,
   onFindingUpdated,
+  evidence,
+  rawSources,
+  onSelectAction,
 }) => {
   const [busy, setBusy] = useState(false);
   const [persistNote, setPersistNote] = useState<string | null>(null);
@@ -33,6 +42,23 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     const base = commitment?.committedAt || Date.now();
     return new Date(base + 14 * 24 * 60 * 60 * 1000).toLocaleDateString();
   }, [commitment?.committedAt]);
+
+  const mappedEvidence: EmpiricalEvidence[] = useMemo(() => {
+    if (evidence && evidence.length > 0) return evidence;
+    return aiSaid.map((r, i) => ({
+      id: r.id || `ev-${i}`,
+      query: r.prompt,
+      intent: 'commercial' as const,
+      targetDomain: domain,
+      brandCited: r.presence !== 'absent',
+      brandRank: r.presence === 'recommended' ? 1 : null,
+      citedUrl: r.presence !== 'absent' ? `https://${domain}` : null,
+      snippet: r.excerpt,
+      competitorsCited: ['Competitor Rival'],
+      citationConfidence: r.presence === 'recommended' ? 80 : 30,
+      timestamp: Date.now(),
+    }));
+  }, [evidence, aiSaid, domain]);
 
   useEffect(() => {
     if (!commitment || !domain) return;
@@ -123,6 +149,13 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
           </button>
         </div>
       )}
+
+      <MindshareRadarCard
+        domain={domain}
+        evidence={mappedEvidence}
+        rawSources={rawSources}
+        onSelectAction={onSelectAction}
+      />
 
       <div className="mb-4">
         <h3 className="text-[11px] font-mono uppercase tracking-wider text-gray-500 mb-3">

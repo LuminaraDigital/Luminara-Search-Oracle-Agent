@@ -338,6 +338,8 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           primary={primaryFinding}
           findings={boardFindings}
           commitment={shipCommitment}
+          evidence={empiricalSummary?.evidenceList}
+          rawSources={sources}
           onFindingUpdated={(f) => {
             setBoardFindings((prev) => {
               const i = prev.findIndex((x) => x.id === f.id || x.stableKey === f.stableKey);

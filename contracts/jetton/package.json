@@ -1,0 +1,37 @@
+{
+  "name": "luminara-jetton",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Fixed-supply TON Jetton for Luminara Suite (TEP-74, TEP-64, TEP-89) with a local sandbox and test suite.",
+  "type": "module",
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+  },
+  "scripts": {
+    "build": "tact --config tact.config.json",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run build --silent",
+    "test": "vitest run",
+    "test:mutation": "node scripts/mutation-check.mjs",
+    "pin": "npm run build --silent && tsx scripts/pin.ts",
+    "sandbox": "npm run build --silent && tsx scripts/sandbox.ts",
+    "verify": "npm run build --silent && tsx scripts/verify.ts",
+    "deploy:testnet": "npm run build --silent && tsx scripts/deploy.ts --testnet",
+    "deploy:mainnet": "npm run build --silent && tsx scripts/deploy.ts --mainnet"
+  },
+  "dependencies": {
+    "@tact-lang/compiler": "1.6.13",
+    "@ton/core": "^0.63.1",
+    "@ton/crypto": "^3.3.0",
+    "@ton/sandbox": "^0.45.0",
+    "@ton/test-utils": "^0.12.0",
+    "@ton/ton": "^15.4.0",
+    "@tonconnect/ui": "3.0.2",
+    "tsx": "^4.19.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^5.8.2",
+    "vitest": "^5.0.3"
+  }
+}

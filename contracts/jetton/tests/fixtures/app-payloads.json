@@ -1,0 +1,15 @@
+{
+  "note": "Transfer and burn message bodies for one Luminara invoice, exactly as the app's TEP-74 builders produce them. contracts/jetton/tests/app-flow.spec.ts decodes these bytes and sends them to the contract. The app's own test (tests/jettonContract.test.ts at the repository root, part of the checkout code) rebuilds them with the app's builders and fails if they differ. To regenerate after an intended change, run that test and copy the values it prints.",
+  "payer": "0:1111111111111111111111111111111111111111111111111111111111111111",
+  "merchant": "0:2222222222222222222222222222222222222222222222222222222222222222",
+  "orderId": "ton_1759860000000_ab12cd",
+  "planId": "single_audit",
+  "memo": "LUM:ton_1759860000000_ab12cd:single_audit",
+  "amountUnits": "1000000000",
+  "forwardTonAmount": "50000000",
+  "attachedTon": "80000000",
+  "burnRatePercent": 15,
+  "burnUnits": "150000000",
+  "transferBoc": "te6cckEBAgEAigABsA+KfqUAAAAAAAAAAEO5rKAIAERERERERERERERERERERERERERERERERERERERERERFAARERERERERERERERERERERERERERERERERERERERERESAX14QEBAFoAAAAATFVNOnRvbl8xNzU5ODYwMDAwMDAwX2FiMTJjZDpzaW5nbGVfYXVkaXSxS/xS",
+  "burnBoc": "te6cckEBAQEANAAAZFlfB7wAAAAAAAAAAECPDRgIAERERERERERERERERERERERERERERERERERERERERERE2SPegQ=="
+}

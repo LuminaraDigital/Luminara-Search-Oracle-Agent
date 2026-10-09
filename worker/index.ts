@@ -36,7 +36,8 @@ import type { HostedIdentity } from './userTypes';
 import { validateInitData, createTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
-import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, TON_PRICING } from './tonPayment';
+import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
+import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE, Q402_NOT_LIVE_ERROR } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
@@ -65,7 +66,7 @@ import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
 import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, getAuditChainEntries, verifyAuditChain } from './auditLog';
 import { isAdminAuthorized } from './adminAuth';
 
-import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId } from './workerUtils';
+import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
 import { getActiveSubscription, checkHostedQuota, type SubRow } from './quotaMiddleware';
 import { handleReferralRoute, referralBonusRemaining } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
@@ -74,6 +75,7 @@ import { proxyProvider, PROVIDERS } from './providerRelay';
 import { runSentinelScan, handleSentinelRoute } from './sentinel';
 import { handleEntityEnrichment } from './enrichmentService';
 import { handleAgentAttestation } from './attestationService';
+import { recordAuditProof, verifyAuditProof, generateBadgeResponse } from './proofService';
 import { checkTelegramUpdateThrottle } from './webhookThrottle';
 import {
   guardApiRoute,
@@ -108,6 +110,7 @@ import {
   processAuditQueueBatch,
 } from './auditQueue';
 import { handleMcpOAuthRoute } from './mcpOAuth';
+import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
 import { isCronMapped, jobsForCron } from './scheduledJobs';
@@ -297,6 +300,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       pagespeedHosted: Boolean(String(env.PAGESPEED_API_KEY || '').trim()),
       ton: isTonPaymentConfigured(env),
       tonPricing: TON_PRICING,
+      jettonPricing: JETTON_PRICING,
+      jettonCheckout: JETTON_CHECKOUT_LIVE,
+      q402: Q402_SETTLEMENT_LIVE,
       chainNetwork,
       xdcRpcOk,
       proofAnchorEnabled: String(env.PROOF_ANCHOR_ENABLED || '').toLowerCase() === 'true',
@@ -930,11 +936,15 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!read.ok) return withCors(json({ error: read.error }, read.status));
 
     if (path === '/ton/invoice') {
-      const { planId } = (read.value || {}) as { planId?: string };
+      const { planId, asset, userWalletAddress } = (read.value || {}) as {
+        planId?: string;
+        asset?: 'TON' | 'USDT' | 'LORA';
+        userWalletAddress?: string;
+      };
       if (!planId) return withCors(json({ error: 'planId required' }, 400));
       const who = await identify(request, env);
       if (!who.user) return withCors(json({ error: who.error || 'Sign in required' }, 401));
-      const result = await createTonInvoice(env, who.user.id, planId);
+      const result = await createTonInvoice(env, who.user.id, planId, { asset, userWalletAddress });
       return withCors(result.ok ? json(result) : json({ error: result.error }, 400));
     }
 
@@ -946,6 +956,22 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const result = await verifyTonPayment(env, orderId, { expectedUserId: who.user.id });
       return withCors(result.ok ? json(result) : json({ error: result.error }, 400));
     }
+  }
+
+  // Q402 (x402-style pay-per-call on TON). Discovery is public; settlement is fail-closed
+  // until on-chain verification exists (see Q402_SETTLEMENT_LIVE in worker/q402/facilitator.ts).
+  if (path.startsWith('/q402/')) {
+    if (path === '/q402/supported') {
+      if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+      return withCors(json(getQ402SupportedCatalog(env)));
+    }
+    if (path === '/q402/verify' || path === '/q402/settle' || path === '/q402/audit') {
+      if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+      if (!Q402_SETTLEMENT_LIVE) {
+        return withCors(json({ ok: false, code: 'Q402_NOT_LIVE', error: Q402_NOT_LIVE_ERROR }, 503));
+      }
+    }
+    return withCors(json({ ok: false, error: 'Not found' }, 404));
   }
 
   // Temporary License Key Activation (growth trial passes & enterprise licenses)
@@ -1160,6 +1186,35 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Audit digest storage and lookup (KV only, self-reported, no chain write)
   if (path === '/agent/attest') {
     return withCors(handleAgentAttestation(request, env));
+  }
+
+  // Verifiable Citation Oracle (TON proof anchors)
+  if (path.startsWith('/proof/')) {
+    if (path === '/proof/anchor') {
+      if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+      const who = await identify(request, env);
+      if (!who.user) return withCors(json({ error: who.error || 'Sign in required' }, 401));
+      const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+      if (!read.ok) return withCors(json({ error: read.error }, read.status));
+      const body = read.value as Record<string, unknown>;
+      const result = await recordAuditProof(env, { ...body, actorId: who.user.id } as any);
+      return withCors(json(result, result.ok ? 200 : 400));
+    }
+    if (path === '/proof/verify') {
+      if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+      const evidenceHash = url.searchParams.get('evidenceHash') || url.searchParams.get('digest') || undefined;
+      const domain = url.searchParams.get('domain') || undefined;
+      const auditRunId = url.searchParams.get('auditRunId') || undefined;
+      const result = await verifyAuditProof(env, { evidenceHash, domain, auditRunId });
+      return withCors(json(result, result.ok ? 200 : 404));
+    }
+    if (path === '/proof/badge') {
+      if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+      const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+      if (!read.ok) return withCors(json({ error: read.error }, read.status));
+      const body = read.value as Record<string, unknown>;
+      return withCors(generateBadgeResponse(body as any));
+    }
   }
 
   // Drift Sentinel targets
@@ -1750,6 +1805,20 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const who = await identify(request, env);
     if (who.error || !who.user) return withCors(json({ error: who.error || 'Unauthorized' }, 401));
     return withCors(await getAuditRun(env, who.user, decodeURIComponent(auditGet[1]!)));
+  }
+
+  // ZetaChain Track ZP: Universal Oracle Gateway (Pattern 1 & 2)
+  if (path === '/gateway/execute' && request.method === 'POST') {
+    const who = await identify(request, env);
+    const body = await readBody(request, MAX_SMALL_BODY_BYTES);
+    if (!body.ok) return withCors(json({ error: body.error }, body.status));
+    let reqData: OracleGatewayRequest;
+    try {
+      reqData = JSON.parse(body.text || '{}') as OracleGatewayRequest;
+    } catch {
+      return withCors(json({ ok: false, error: 'Invalid JSON body', code: 'INVALID_JSON' }, 400));
+    }
+    return withCors(await executeOracleGatewayTask(env, who.user, reqData, request.headers));
   }
 
   if (

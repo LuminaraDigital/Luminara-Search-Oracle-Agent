@@ -78,6 +78,9 @@ import { ViewSkeleton } from './components/ui/Skeleton';
 const AppIntroOverlay = lazyWithReload(() => import('./components/intro/AppIntroOverlay').then(m => ({ default: m.AppIntroOverlay })));
 const TelegramAccountPanel = lazyWithReload(() => import('./components/telegram/TelegramAccountPanel').then(m => ({ default: m.TelegramAccountPanel })));
 const NotebookView = lazyWithReload(() => import('./components/notebook/NotebookView').then(m => ({ default: m.NotebookView })));
+const EcosystemHubView = lazyWithReload(() => import('./components/hub/EcosystemHubView').then(m => ({ default: m.EcosystemHubView })));
+const VaultManagerModal = lazyWithReload(() => import('./components/vault/VaultManagerModal').then(m => ({ default: m.VaultManagerModal })));
+import { LockScreenOverlay } from './components/security/LockScreenOverlay';
 
 const ViewLoader: React.FC<{ label?: string }> = ({ label = 'workspace' }) => (
   <ViewSkeleton viewName={label} />
@@ -204,7 +207,14 @@ const App: React.FC = () => {
   });
   const [loginWallMode, setLoginWallMode] = useState<'signin' | 'signup' | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const handleOpenVault = () => setIsVaultModalOpen(true);
+    window.addEventListener('luminara-open-vault', handleOpenVault);
+    return () => window.removeEventListener('luminara-open-vault', handleOpenVault);
+  }, []);
 
   // Keep the URL in sync: marketing views use real paths; product shells keep hashes.
   // Path deep-links (/share, /verify, /reports) must be cleared when leaving so we do not
@@ -1104,13 +1114,18 @@ const App: React.FC = () => {
     <div
       className="flex flex-col bg-black text-ink overflow-x-clip overflow-y-hidden relative selection:bg-gold selection:text-black font-sans"
       style={{
-        height: inTelegram ? 'var(--tg-viewport-stable-height, 100dvh)' : '100dvh',
+        // Prefer stable height; fall back to 100dvh when viewport CSS vars never bind (macOS hang path).
+        height: inTelegram
+          ? 'var(--tg-viewport-stable-height, var(--tg-viewport-height, 100dvh))'
+          : '100dvh',
         paddingTop: inTelegram
-          ? 'var(--tg-viewport-content-safe-area-inset-top, var(--tg-viewport-safe-area-inset-top, 0px))'
+          ? 'var(--tg-viewport-content-safe-area-inset-top, var(--tg-viewport-safe-area-inset-top, env(safe-area-inset-top, 0px)))'
           : 'env(safe-area-inset-top, 0px)',
-        paddingBottom: inTelegram ? 'var(--tg-viewport-safe-area-inset-bottom, 0px)' : undefined,
-        paddingLeft: 'env(safe-area-inset-left, 0px)',
-        paddingRight: 'env(safe-area-inset-right, 0px)',
+        paddingBottom: inTelegram
+          ? 'var(--tg-viewport-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))'
+          : undefined,
+        paddingLeft: 'var(--tg-viewport-safe-area-inset-left, env(safe-area-inset-left, 0px))',
+        paddingRight: 'var(--tg-viewport-safe-area-inset-right, env(safe-area-inset-right, 0px))',
       }}
     >
       <PremiumAtmosphere intensity="subtle" />
@@ -1718,6 +1733,20 @@ const App: React.FC = () => {
         {view === AppView.TRUST_CENTER && (
           <TrustCenterView initialDomain={draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL)} />
         )}
+
+        {/* VIEW: Ecosystem & Playbook Hub */}
+        {view === AppView.ECOSYSTEM_HUB && (
+          <EcosystemHubView
+            onSelectView={(v) => {
+              if (MARKETING_VIEWS.has(v)) {
+                setView(v);
+              } else {
+                enterApp(v);
+              }
+            }}
+            onOpenVaultManager={() => setIsVaultModalOpen(true)}
+          />
+        )}
         </Suspense>
 
         {/* VIEW: Oracle Agent Terminal */}
@@ -1855,10 +1884,19 @@ const App: React.FC = () => {
 
         {/* Global Dual-Rail Paywall Modal (Stars + TON) */}
         <PaywallModal onOpenSettings={() => setIsKeyModalOpen(true)} />
+
+        {/* Encrypted Brand Vault Modal */}
+        {isVaultModalOpen && (
+          <VaultManagerModal
+            isOpen={isVaultModalOpen}
+            onClose={() => setIsVaultModalOpen(false)}
+          />
+        )}
       </Suspense>
 
       {/* Real-time Native LLM Failover Floating Pop-up */}
       <NativeFailoverPopup />
+      <LockScreenOverlay />
       {confirmModal}
     </div>
     </>

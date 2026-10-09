@@ -164,6 +164,7 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/license\/activate$/, methods: ['POST'] },
   { pattern: /^\/ton\/(invoice|verify)$/, methods: ['POST'] },
   { pattern: /^\/agent\/attest$/, methods: ['POST'] },
+  { pattern: /^\/proof\/anchor$/, methods: ['POST'] },
   { pattern: /^\/sentinel\/(register|status)$/ },
   { pattern: /^\/share\/reports$/, methods: ['POST'] },
   { pattern: /^\/share\/reports\/[^/]+$/, methods: ['DELETE'] },

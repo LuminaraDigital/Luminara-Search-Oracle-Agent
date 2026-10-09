@@ -2,10 +2,19 @@ import {
   BusinessDNA, 
   VfsMemoryCategory, 
   VfsMemoryItem, 
-  VfsMemorySyncResult, 
-  VfsNode 
+  VfsMemorySyncResult 
 } from '../../types';
 import { vfsStorageService } from './vfsStorageService';
+import { sanitizePii } from '../trust/piiSanitizer';
+
+export interface SanitizedMemoryProjection {
+  writingTone: string;
+  whoMatters: string[];
+  activeInitiatives: string[];
+  neverBringUp: string[];
+  sanitizedPromptBlock: string;
+  redactionsCount: number;
+}
 
 export class VfsMemoryService {
   private categoryPaths: Record<VfsMemoryCategory, string> = {
@@ -14,7 +23,8 @@ export class VfsMemoryService {
     entities: 'viking://user/default/.memories/entities',
     events: 'viking://user/default/.memories/events',
     cases: 'viking://user/default/.memories/cases',
-    patterns: 'viking://user/default/.memories/patterns'
+    patterns: 'viking://user/default/.memories/patterns',
+    constraints: 'viking://user/default/.memories/constraints'
   };
 
   /**
@@ -23,7 +33,7 @@ export class VfsMemoryService {
   public getMemoryItems(category?: VfsMemoryCategory): VfsMemoryItem[] {
     const categories: VfsMemoryCategory[] = category 
       ? [category] 
-      : ['profiles', 'preferences', 'entities', 'events', 'cases', 'patterns'];
+      : ['profiles', 'preferences', 'entities', 'events', 'cases', 'patterns', 'constraints'];
 
     const items: VfsMemoryItem[] = [];
 
@@ -164,11 +174,93 @@ ${dna.perceivedGaps.map((g, i) => `• [GAP-${i + 1}] ${g}`).join('\n')}
       nodesCreated++;
     }
 
+    // 4. Negative Constraints (ZetaChain Track ZP Pattern 1: WHAT TO NEVER BRING UP)
+    if (dna.negativeConstraints && dna.negativeConstraints.length > 0) {
+      for (const [i, constraint] of dna.negativeConstraints.entries()) {
+        const cSlug = `constraint_${i + 1}`;
+        vfsStorageService.createNode({
+          uri: `${this.categoryPaths.constraints}/${cSlug}.md`,
+          name: `${cSlug}.md`,
+          type: 'memory',
+          content: `# Negative Constraint: ${constraint}\n\nStrict instruction: Never bring up, claim, or promote this topic.`,
+          description: constraint,
+          tags: ['dna', 'constraint', 'never-bring-up'],
+          domainFocus: 'STRATEGY'
+        });
+        nodesCreated++;
+      }
+      syncedCategories.push('constraints');
+    }
+
     return {
       syncedCategories,
       itemsCount: this.getMemoryItems().length,
       nodesCreated,
       timestamp: Date.now()
+    };
+  }
+
+  /**
+   * Dual-Representation Private Memory Projection (ZetaChain Track ZP Pattern 1 & 2).
+   *
+   * Projects raw local memories (Writing style, Entities, Initiatives, Negative constraints)
+   * into a sanitized, PII-redacted prompt instruction block safe for external LLM dispatch.
+   */
+  public getSanitizedMemoryProjection(): SanitizedMemoryProjection {
+    const rawItems = this.getMemoryItems();
+    let writingTone = '';
+    const whoMatters: string[] = [];
+    const activeInitiatives: string[] = [];
+    const neverBringUp: string[] = [];
+
+    for (const item of rawItems) {
+      if (item.category === 'preferences' || item.category === 'profiles') {
+        if (!writingTone && (item.detailL1 || item.summaryL0)) {
+          writingTone = item.detailL1 || item.summaryL0;
+        }
+      } else if (item.category === 'entities') {
+        whoMatters.push(item.title);
+      } else if (item.category === 'cases' || item.category === 'events') {
+        activeInitiatives.push(item.title);
+      } else if (item.category === 'constraints') {
+        neverBringUp.push(item.title);
+      }
+    }
+
+    // Construct structured prompt instruction
+    const promptParts: string[] = [];
+    if (writingTone) {
+      promptParts.push(`BRAND CONTEXT & WRITING PREFERENCES:\n${writingTone}`);
+    }
+    if (whoMatters.length > 0) {
+      const lines = rawItems
+        .filter((i) => i.category === 'entities')
+        .map((i) => (i.detailL1 ? `• ${i.title}: ${i.detailL1}` : `• ${i.title}`));
+      promptParts.push(`RECOGNIZED ENTITIES & PARTNERS:\n${lines.join('\n')}`);
+    }
+    if (activeInitiatives.length > 0) {
+      const lines = rawItems
+        .filter((i) => i.category === 'cases' || i.category === 'events')
+        .map((i) => (i.detailL1 ? `• ${i.title}: ${i.detailL1}` : `• ${i.title}`));
+      promptParts.push(`ACTIVE INITIATIVES & CASES:\n${lines.join('\n')}`);
+    }
+    if (neverBringUp.length > 0) {
+      const lines = rawItems
+        .filter((i) => i.category === 'constraints')
+        .map((i) => (i.detailL1 ? `• ${i.title}: ${i.detailL1}` : `• ${i.title}`));
+      promptParts.push(`STRICT NEGATIVE CONSTRAINTS (NEVER BRING UP):\n${lines.join('\n')}`);
+    }
+
+    const rawPromptBlock = promptParts.join('\n\n');
+    const sanitizedResult = sanitizePii(rawPromptBlock);
+
+    return {
+      writingTone,
+      whoMatters,
+      activeInitiatives,
+      neverBringUp,
+      sanitizedPromptBlock: sanitizedResult.sanitized,
+      redactionsCount: sanitizedResult.redactionsCount,
     };
   }
 

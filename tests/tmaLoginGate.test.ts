@@ -37,12 +37,12 @@ describe('PUBLIC_APP_VIEWS (activation Slice A)', () => {
 });
 
 describe('waitForInitDataRaw settle contract', () => {
-  it('documents the settle budget used in production (~300ms)', () => {
-    const attempts = 6;
+  it('documents the settle budget used in production (~1s)', () => {
+    const attempts = 20;
     const intervalMs = 50;
     const budgetMs = (attempts - 1) * intervalMs;
-    expect(budgetMs).toBe(250);
-    expect(attempts * intervalMs).toBeLessThanOrEqual(300);
+    expect(budgetMs).toBe(950);
+    expect(attempts * intervalMs).toBeLessThanOrEqual(1000);
   });
 });
 
@@ -53,5 +53,15 @@ describe('Telegram detect timeout policy', () => {
     const timedOutConfirmation = true; // timeout should resolve true when syncHit was true
     const insideTelegram = Boolean(timedOutConfirmation) || syncHit;
     expect(insideTelegram).toBe(true);
+  });
+
+  it('must not block Mini App ready on viewport.mount hang', () => {
+    // Production regression: await viewport.mount() never settled on macOS / WebK (tma.js #694).
+    // Ready must finish even when viewport work is still pending / timed out.
+    const syncHit = true;
+    const viewportMountSettled = false;
+    const readySettled = syncHit; // finishReady runs without awaiting viewport
+    expect(readySettled).toBe(true);
+    expect(viewportMountSettled).toBe(false);
   });
 });

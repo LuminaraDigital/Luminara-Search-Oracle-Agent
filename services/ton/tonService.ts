@@ -7,6 +7,7 @@ import { apiBase } from '../apiClient';
 import { getInitDataRaw } from '../telegram/tma';
 import { getFirebaseIdTokenSync } from '../auth/firebaseAuthService';
 import { beginCell } from '@ton/core';
+import { planTonPayment } from './transactionPlan';
 
 export interface TonInvoiceResponse {
   ok: boolean;
@@ -19,6 +20,9 @@ export interface TonInvoiceResponse {
     memo: string;
     recipientAddress: string;
     status: string;
+    asset?: 'TON' | 'USDT' | 'LORA';
+    jettonMaster?: string;
+    userJettonWallet?: string;
   };
   error?: string;
 }
@@ -105,16 +109,30 @@ export async function executeTonPayment(
   }
 
   const { order } = invoiceRes;
-  onStatusChange?.(`Please approve ${order.tonAmount} TON transaction in your wallet…`);
+
+  // Pre-flight (wallet-core plan-before-sign): refuse before the wallet prompt when the wallet is
+  // on the wrong network or the invoice is malformed, so nothing uncreditable is ever sent.
+  const planned = planTonPayment({
+    order,
+    walletChain: tonConnectUI.wallet?.account?.chain,
+    walletConnected: Boolean(tonConnectUI.wallet),
+  });
+  if (!planned.ok) {
+    return { ok: false, error: planned.error };
+  }
+  const { plan } = planned;
+  onStatusChange?.(
+    `Please approve ${plan.amountDisplay} TON in your wallet (keep about ${plan.feeReserveDisplay} TON extra for the network fee)…`,
+  );
 
   try {
-    const payloadBoc = buildCommentBoc(order.memo);
+    const payloadBoc = buildCommentBoc(plan.memo);
     const tx = {
-      validUntil: Math.floor(Date.now() / 1000) + 600, // 10 minutes
+      validUntil: plan.validUntil,
       messages: [
         {
-          address: order.recipientAddress,
-          amount: order.amountNano,
+          address: plan.recipient,
+          amount: plan.amountNano.toString(),
           payload: payloadBoc,
         },
       ],

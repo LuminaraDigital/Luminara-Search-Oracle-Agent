@@ -37,6 +37,7 @@ export enum AppView {
   LAUNCHPAD = 'LAUNCHPAD',
   TRUST_CENTER = 'TRUST_CENTER',
   VERIFY_RECEIPT = 'VERIFY_RECEIPT',
+  ECOSYSTEM_HUB = 'ECOSYSTEM_HUB',
 }
 
 /**
@@ -125,6 +126,7 @@ export interface BusinessDNA {
   perceivedGaps: string[];
   rawContext: string; // Condensed summary for LLM context
   industry?: string;
+  negativeConstraints?: string[]; // Topics to never bring up, blacklisted competitors, or banned claims
 }
 
 export interface ToolExecution {
@@ -636,7 +638,8 @@ export type VfsMemoryCategory =
   | 'entities'
   | 'events'
   | 'cases'
-  | 'patterns';
+  | 'patterns'
+  | 'constraints';
 
 export interface VfsMemoryItem {
   id: string;

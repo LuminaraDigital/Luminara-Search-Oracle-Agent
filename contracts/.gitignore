@@ -5,3 +5,7 @@ coverage/
 coverage.json
 typechain-types/
 .env
+
+# Tact compiler output embeds local absolute paths; regenerate with npm run jetton:build
+jetton/build/
+jetton/**/build/

@@ -22,6 +22,15 @@
     "db:migrate:local": "wrangler d1 migrations apply luminara-users --local",
     "db:backup:staging": "node scripts/d1-backup.mjs --staging",
     "db:backup:prod": "node scripts/d1-backup.mjs --prod",
+    "ton:build": "cd contracts/ton && acton build",
+    "ton:test": "cd contracts/ton && acton test",
+    "jetton:build": "npm --prefix contracts/jetton run build",
+    "jetton:test": "npm --prefix contracts/jetton test",
+    "jetton:test:mutation": "npm --prefix contracts/jetton run test:mutation --",
+    "jetton:sandbox": "npm --prefix contracts/jetton run sandbox --",
+    "jetton:verify": "npm --prefix contracts/jetton run verify --",
+    "jetton:deploy:testnet": "npm --prefix contracts/jetton run deploy:testnet --",
+    "jetton:deploy:mainnet": "npm --prefix contracts/jetton run deploy:mainnet --",
     "budget:reconcile-golden": "node scripts/invoice-reconcile-golden.mjs",
     "env:validate": "node scripts/validate-env.mjs",
     "smoke": "node scripts/smoke-check.mjs",
@@ -59,7 +68,9 @@
     "grounding:gate": "node --experimental-strip-types services/grounding/cli.ts",
     "grounding:score": "node --experimental-strip-types services/grounding/cli.ts",
     "constellation:bake": "node scripts/constellation/bake.mjs",
-    "constellation:bake:check": "node scripts/constellation/bake.mjs --check-only"
+    "constellation:bake:check": "node scripts/constellation/bake.mjs --check-only",
+    "rl:transmute": "node scripts/rl/transmute-datasets.mjs",
+    "rl:dpo": "node --experimental-strip-types scripts/rl/dpo-alignment-orchestrator.mjs"
   },
   "dependencies": {
     "@formepdf/core": "^0.20.1",

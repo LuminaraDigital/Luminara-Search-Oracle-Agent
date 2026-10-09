@@ -4,7 +4,9 @@ import { AuthPanel } from '../../auth/AuthPanel';
 import { TelegramAccountPanel } from '../../telegram/TelegramAccountPanel';
 import { DesktopUpdatesPanel } from '../../desktop/DesktopUpdatesPanel';
 import { McpUsageStrip } from '../McpUsageStrip';
+import { RouterTelemetryBoard } from '../RouterTelemetryBoard';
 import { Button } from '../../ui/Button';
+import { autoLockService, type AutoLockTimeout } from '../../../services/security/autoLockService';
 
 export interface ApiKeyOverviewTabProps {
   statuses: ProviderStatus[];
@@ -19,6 +21,9 @@ export const ApiKeyOverviewTab: React.FC<ApiKeyOverviewTabProps> = ({
   testingId,
   onRunPingTest,
 }) => {
+  const [autoLockTimeout, setAutoLockTimeout] = React.useState<AutoLockTimeout>(() => autoLockService.getTimeout());
+  const [hasPin, setHasPin] = React.useState<boolean>(() => autoLockService.hasPinSet());
+
   return (
     <div className="space-y-3">
       <AuthPanel compact />
@@ -26,6 +31,82 @@ export const ApiKeyOverviewTab: React.FC<ApiKeyOverviewTabProps> = ({
       <p className="text-xs text-gray-400 leading-relaxed">
         Luminara needs one AI key to work (Groq is the easiest to start with). Add a live-search key to ground answers in real search results. Your keys stay on this device and work without signing in. Sign in above only if you want Luminara-hosted keys, synced workspace, or paid plans.
       </p>
+
+      {/* Brand Vault & Security Controls */}
+      <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-gray-200">Brand Vault & Session Security</span>
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-wider font-bold bg-gold/15 text-gold border border-gold/30">
+              AES-256
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="xs"
+            onClick={() => window.dispatchEvent(new CustomEvent('luminara-open-vault'))}
+            className="font-mono text-xs border-gold/40 text-gold hover:bg-gold/10"
+          >
+            Manage .luminara-vault
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-gray-400">Inactivity Auto-Lock:</span>
+            <select
+              value={autoLockTimeout}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10) as AutoLockTimeout;
+                setAutoLockTimeout(val);
+                autoLockService.setTimeout(val);
+              }}
+              className="rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-xs font-mono text-gray-200 outline-none focus:border-gold"
+            >
+              <option value="0">Disabled</option>
+              <option value="300">5 minutes</option>
+              <option value="900">15 minutes</option>
+              <option value="1800">30 minutes</option>
+              <option value="3600">60 minutes</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-gray-400">Lock PIN:</span>
+            {hasPin ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono text-success-400">Configured</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    autoLockService.clearPin();
+                    setHasPin(false);
+                  }}
+                  className="text-[11px] font-mono text-danger-400 hover:underline"
+                >
+                  Clear PIN
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  const p = window.prompt('Enter new 4+ digit lock PIN:');
+                  if (p && p.trim().length >= 4) {
+                    await autoLockService.setPin(p.trim());
+                    setHasPin(true);
+                  }
+                }}
+                className="text-[11px] font-mono text-gold hover:underline"
+              >
+                Set Lock PIN
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
         <span className="text-xs text-gray-300">Show developer tools (engine status, themes, Labs previews)</span>
         <input
@@ -41,6 +122,7 @@ export const ApiKeyOverviewTab: React.FC<ApiKeyOverviewTabProps> = ({
 
       <DesktopUpdatesPanel />
       <McpUsageStrip />
+      <RouterTelemetryBoard />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-2">
         {statuses.map(s => {
