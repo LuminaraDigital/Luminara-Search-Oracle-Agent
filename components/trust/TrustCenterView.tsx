@@ -21,6 +21,9 @@ import {
   type DomainVerificationStatus,
 } from '../../services/trust/trustClient';
 import { RECEIPT_CLAIM_LABELS, type TrustReceiptView } from '../../services/trust/receiptTypes';
+import { buildBrandPassport } from '../../services/trust/brandPassport';
+import { UniversalBrandPassportView } from './UniversalBrandPassportView';
+import type { BusinessDNA } from '../../types';
 
 type SectionState = 'loading' | 'ready' | 'disabled' | 'error';
 
@@ -319,6 +322,20 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
   const hasVerifiedDomain = domains.some((d) => d.status === 'verified');
   const pendingCheck = pending ? checkResults[pending.domain] : undefined;
 
+  const savedDna = React.useMemo<BusinessDNA | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem('luminara_business_dna');
+        if (raw) return JSON.parse(raw) as BusinessDNA;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }, []);
+
+  const activeDomain = domains.find((d) => d.status === 'verified')?.domain || domains[0]?.domain || domainInput;
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-10">
       {confirmModal}
@@ -330,6 +347,15 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
           receipt says so.
         </p>
       </header>
+
+      {/* Universal Brand Passport */}
+      {(hasVerifiedDomain || receipts.length > 0 || domains.length > 0) && (
+        <section aria-label="Universal Brand Passport">
+          <UniversalBrandPassportView
+            passport={buildBrandPassport(activeDomain || 'yourdomain.com', savedDna, receipts)}
+          />
+        </section>
+      )}
 
       {loadError && (
         <p role="alert" className="text-sm text-danger-400">

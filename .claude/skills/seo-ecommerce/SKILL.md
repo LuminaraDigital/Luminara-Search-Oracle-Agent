@@ -361,14 +361,12 @@ UCP itself is live; what's early is broad merchant adoption. Flag a literal
 ```
 ## E-commerce SEO Report: [URL or Keyword]
 
-### Overall Score: XX/100
-
-### Product Page SEO
-- Schema Completeness: XX/100
-- Title & Meta: XX/100
-- Image Optimization: XX/100
-- Content Quality: XX/100
-- Internal Linking: XX/100
+### Product Page SEO Assessment
+- Schema Completeness: [Observed status]
+- Title & Meta: [Observed status]
+- Image Optimization: [Observed status]
+- Content Quality: [Observed status]
+- Internal Linking: [Observed status]
 
 ### Marketplace Intelligence (if DataForSEO available)
 - Google Shopping Listings: N products found

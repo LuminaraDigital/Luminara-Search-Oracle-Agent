@@ -3,10 +3,12 @@ import { useTonConnectUI, useTonWallet, TonConnectButton } from '@tonconnect/ui-
 import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma';
 import { createStarsInvoice, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
 import { executeTonPayment } from '../../services/ton/tonService';
+import { executeJettonPayment } from '../../services/ton/jettonService';
 import {
   effectiveTab,
   formatEngineList,
   isFreeEngineConfigured,
+  isJettonCheckoutAvailable,
   paidEngineLabels,
   resolvePaymentOptions,
   TELEGRAM_MINI_APP_URL,
@@ -39,6 +41,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   const [showLicenseInput, setShowLicenseInput] = useState(false);
   const [licenseKeyInput, setLicenseKeyInput] = useState('');
   const [activatingLicense, setActivatingLicense] = useState(false);
+  const [selectedAsset, setTonAsset] = useState<'TON' | 'USDT' | 'LORA'>('TON');
+  const jettonLive = isJettonCheckoutAvailable(health);
+  const tonAsset = jettonLive ? selectedAsset : 'TON';
 
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
@@ -191,6 +196,90 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     }
   };
 
+  const handleJettonCheckout = async (planId: string, asset: 'USDT' | 'LORA') => {
+    setBusyPlan(planId);
+    setStatusMessage(null);
+    try {
+      const res = await executeJettonPayment(
+        tonConnectUI,
+        '', // Derived on-chain from master + user wallet in executeJettonPayment
+        planId,
+        asset,
+        msg => setStatusMessage(msg),
+      );
+      if (res.ok) {
+        haptic('success');
+        setIsSuccess(true);
+        setStatusMessage(`${asset} Jetton payment confirmed! Subscription is now active.`);
+        setTimeout(async () => {
+          await fetchQuotaStatus();
+          handleClose();
+        }, 2000);
+      } else {
+        haptic('error');
+        setStatusMessage(toUserFacingText(res.error, `${asset} transfer could not be completed.`));
+      }
+    } catch (err: any) {
+      haptic('error');
+      setStatusMessage(toUserFacingText(err, `Could not finish ${asset} checkout.`));
+    } finally {
+      setBusyPlan(null);
+    }
+  };
+
+  const handlePlanCheckout = (planId: 'starter' | 'growth' | 'agency') => {
+    if (tab === 'stars') {
+      return handleStarsCheckout(planId);
+    }
+    if (tonAsset === 'TON') {
+      return handleTonCheckout(planId);
+    }
+    return handleJettonCheckout(planId, tonAsset);
+  };
+
+  const planPriceLabel = (plan: 'starter' | 'growth' | 'agency') => {
+    if (tab === 'stars') {
+      if (plan === 'starter') return '2,500 ⭐';
+      if (plan === 'growth') return '7,500 ⭐';
+      return '18,000 ⭐';
+    }
+    if (tonAsset === 'TON') {
+      if (plan === 'starter') return '15 TON';
+      if (plan === 'growth') return '45 TON';
+      return '120 TON';
+    }
+    if (tonAsset === 'USDT') {
+      if (plan === 'starter') return '29 USDT';
+      if (plan === 'growth') return '79 USDT';
+      return '199 USDT';
+    }
+    if (plan === 'starter') return '29 LORA (15% Burn)';
+    if (plan === 'growth') return '79 LORA (15% Burn)';
+    return '199 LORA (15% Burn)';
+  };
+
+  const planButtonLabel = (plan: 'starter' | 'growth' | 'agency') => {
+    if (busyPlan === plan) return 'Processing…';
+    if (tab === 'stars') {
+      if (plan === 'starter') return inTg ? 'Pay 2,500 Stars · 30 days' : 'Open in Telegram · 2,500 Stars';
+      if (plan === 'growth') return inTg ? 'Pay 7,500 Stars · 30 days' : 'Open in Telegram · 7,500 Stars';
+      return inTg ? 'Pay 18,000 Stars · 30 days' : 'Open in Telegram · 18,000 Stars';
+    }
+    if (tonAsset === 'TON') {
+      if (plan === 'starter') return 'Pay 15 TON · 30 days';
+      if (plan === 'growth') return 'Pay 45 TON · 30 days';
+      return 'Pay 120 TON · 30 days';
+    }
+    if (tonAsset === 'USDT') {
+      if (plan === 'starter') return 'Pay 29 USDT · 30 days';
+      if (plan === 'growth') return 'Pay 79 USDT · 30 days';
+      return 'Pay 199 USDT · 30 days';
+    }
+    if (plan === 'starter') return 'Pay 29 LORA (15% Burn) · 30 days';
+    if (plan === 'growth') return 'Pay 79 LORA (15% Burn) · 30 days';
+    return 'Pay 199 LORA (15% Burn) · 30 days';
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -336,6 +425,45 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           <p className="mb-6 text-center text-[10px] text-gray-400">TON payments are coming soon.</p>
         )}
 
+        {/* Jetton Asset Selector: only when the server reports Jetton checkout live */}
+        {tab === 'ton' && paymentOptions.tonAvailable && jettonLive && (
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/10 mb-6">
+            <button
+              type="button"
+              onClick={() => setTonAsset('TON')}
+              className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${
+                tonAsset === 'TON'
+                  ? 'bg-gold/20 text-gold border border-gold/40 shadow-sm'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span>💎 Native TON</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTonAsset('USDT')}
+              className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${
+                tonAsset === 'USDT'
+                  ? 'bg-gold/20 text-gold border border-gold/40 shadow-sm'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span>💵 USDT (Jetton)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTonAsset('LORA')}
+              className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${
+                tonAsset === 'LORA'
+                  ? 'bg-gold/20 text-gold border border-gold/40 shadow-sm'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span>🔥 $LORA (Burn)</span>
+            </button>
+          </div>
+        )}
+
         {/* Plans Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           {/* Starter Plan */}
@@ -344,7 +472,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-bold text-gold-light">Starter Plan</span>
                 <span className="text-xs font-mono text-gold font-bold">
-                  {tab === 'stars' ? '2,500 ⭐' : '15 TON'}
+                  {planPriceLabel('starter')}
                 </span>
               </div>
               <p className="text-[11px] text-gray-400 leading-relaxed">
@@ -370,15 +498,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </div>
             <button
               type="button"
-              onClick={() => (tab === 'stars' ? handleStarsCheckout('starter') : handleTonCheckout('starter'))}
+              onClick={() => handlePlanCheckout('starter')}
               disabled={busyPlan !== null}
               className="w-full py-3 rounded-xl bg-gold text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
-              {busyPlan === 'starter'
-                ? 'Processing…'
-                : tab === 'stars'
-                ? inTg ? 'Pay 2,500 Stars · 30 days' : 'Open in Telegram · 2,500 Stars'
-                : 'Pay 15 TON · 30 days'}
+              {planButtonLabel('starter')}
             </button>
           </div>
 
@@ -391,7 +515,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-bold text-white">Growth Plan</span>
                 <span className="text-xs font-mono text-gold font-bold">
-                  {tab === 'stars' ? '7,500 ⭐' : '45 TON'}
+                  {planPriceLabel('growth')}
                 </span>
               </div>
               <p className="text-[11px] text-gray-400 leading-relaxed">
@@ -414,28 +538,24 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </div>
             <button
               type="button"
-              onClick={() => (tab === 'stars' ? handleStarsCheckout('growth') : handleTonCheckout('growth'))}
+              onClick={() => handlePlanCheckout('growth')}
               disabled={busyPlan !== null}
               className="w-full py-3 rounded-xl bg-white text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
-              {busyPlan === 'growth'
-                ? 'Processing…'
-                : tab === 'stars'
-                ? inTg ? 'Pay 7,500 Stars · 30 days' : 'Open in Telegram · 7,500 Stars'
-                : 'Pay 45 TON · 30 days'}
+              {planButtonLabel('growth')}
             </button>
           </div>
 
-          {/* Pro / Agency Plan */}
+          {/* Agency Plan */}
           <div className="p-5 rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/10 to-transparent flex flex-col justify-between space-y-4 hover:border-gold transition-all relative sm:col-span-2">
             <div className="absolute -top-2.5 left-4 px-2.5 py-0.5 rounded-full bg-white text-black font-black text-[9px] uppercase tracking-widest">
               Moat
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-gold-light">Pro / Agency</span>
+                <span className="text-sm font-bold text-gold-light">Agency Plan</span>
                 <span className="text-xs font-mono text-gold font-bold">
-                  {tab === 'stars' ? '18,000 ⭐' : '120 TON'}
+                  {planPriceLabel('agency')}
                 </span>
               </div>
               <p className="text-[11px] text-gray-400 leading-relaxed">
@@ -458,15 +578,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </div>
             <button
               type="button"
-              onClick={() => (tab === 'stars' ? handleStarsCheckout('agency') : handleTonCheckout('agency'))}
+              onClick={() => handlePlanCheckout('agency')}
               disabled={busyPlan !== null}
               className="w-full py-3 rounded-xl bg-gold text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
-              {busyPlan === 'agency'
-                ? 'Processing…'
-                : tab === 'stars'
-                ? inTg ? 'Pay 18,000 Stars · 30 days' : 'Open in Telegram · 18,000 Stars'
-                : 'Pay 120 TON · 30 days'}
+              {planButtonLabel('agency')}
             </button>
           </div>
         </div>
@@ -505,7 +621,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
         {/* Telegram Stars Terms & Support Notice */}
         {tab === 'stars' && (
-          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-6 text-center text-[10px] text-gray-400 space-y-1">
+          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-4 text-center text-[10px] text-gray-400 space-y-1">
             <p>
               By purchasing with Telegram Stars, you agree to our{' '}
               <a href="#terms" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Terms of Service</a>
@@ -517,6 +633,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </p>
           </div>
         )}
+
+        {/* Card checkout guidance */}
+        <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[10px] text-gray-400">
+          <p>
+            Card checkout is in onboarding for closed beta. For credit card payments or corporate invoicing, email{' '}
+            <a href="mailto:support@luminarasuite.com" className="text-gold underline hover:text-gold-light">support@luminarasuite.com</a>.
+          </p>
+        </div>
 
         {/* Status / Feedback message */}
         {statusMessage && (

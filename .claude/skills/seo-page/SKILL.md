@@ -61,15 +61,15 @@ metadata:
 
 ## Output
 
-### Page Score Card
+### Page Audit Summary
 ```
-Overall Score: XX/100
+Status: Healthy | Needs Work | Action Required
 
-On-Page SEO:     XX/100  ████████░░
-Content Quality: XX/100  ██████████
-Technical:       XX/100  ███████░░░
-Schema:          XX/100  █████░░░░░
-Images:          XX/100  ████████░░
+On-Page SEO:     [Observed finding]
+Content Quality: [Observed finding]
+Technical:       [Observed finding]
+Schema:          [Observed finding]
+Images:          [Observed finding]
 ```
 
 ### Issues Found

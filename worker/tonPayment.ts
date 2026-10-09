@@ -18,6 +18,13 @@ import {
   type ChainNetwork,
 } from './chainNetwork';
 import { recordProofAnchorBestEffort } from './proofAnchors';
+import {
+  findMatchingJettonPayment,
+  jettonPriceUnits,
+  parseAddressSafe,
+  resolveMerchantJettonWallet,
+  type JettonAsset,
+} from './jettonSettlement';
 
 export const TON_PRICING: Record<string, { ton: number; nanoTon: string }> = {
   starter: { ton: 15, nanoTon: '15000000000' },
@@ -26,6 +33,39 @@ export const TON_PRICING: Record<string, { ton: number; nanoTon: string }> = {
   single_audit: { ton: 0.05, nanoTon: '50000000' },
   multi_agent_crawl: { ton: 0.15, nanoTon: '150000000' },
 };
+
+export const USDT_DECIMALS = 6;
+export const LORA_DECIMALS = 9;
+
+export const JETTON_PRICING: Record<string, { amount: number; units: string }> = {
+  starter: { amount: 29, units: '29000000' },
+  growth: { amount: 79, units: '79000000' },
+  agency: { amount: 199, units: '199000000' },
+  single_audit: { amount: 1, units: '1000000' },
+  multi_agent_crawl: { amount: 3, units: '3000000' },
+};
+
+/**
+ * Jetton (USDT / $LORA) checkout is live backed by the TEP-74 verifier in ./jettonSettlement.ts.
+ * The verifier derives the merchant's canonical jetton wallet on-chain via get_wallet_address,
+ * decodes transfer_notification (op 0x7362d096), checks exact memo match, and enforces decimals.
+ */
+export const JETTON_CHECKOUT_LIVE = true;
+
+/** Empty string = not configured. Never ship invented addresses. */
+export const JETTON_MASTERS: Record<string, { USDT: string; LORA: string }> = {
+  mainnet: {
+    USDT: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+    LORA: '',
+  },
+  testnet: {
+    USDT: 'kQD5l75tbhYoCcYMAPzlD1GRTAIdJZ9y-fgI-5xTnEeVIitl',
+    LORA: '',
+  },
+};
+
+export const JETTON_UNAVAILABLE_ERROR =
+  'USDT and $LORA checkout is not available yet. Pay with TON or Telegram Stars.';
 
 export const TON_UNAVAILABLE_ERROR =
   'TON payments are not available right now. Use Telegram Stars in the Telegram app or a license key.';
@@ -43,6 +83,10 @@ export interface TonOrder {
   createdAt: number;
   confirmedAt?: number;
   txHash?: string;
+  asset?: 'TON' | 'USDT' | 'LORA';
+  burnAmount?: string;
+  jettonMaster?: string;
+  userJettonWallet?: string;
 }
 
 export type TonFetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -172,11 +216,20 @@ export async function createTonInvoice(
   env: Env,
   userId: string,
   planId: string,
+  opts: { asset?: 'TON' | 'USDT' | 'LORA'; userWalletAddress?: string } = {},
 ): Promise<{ ok: true; order: TonOrder } | { ok: false; error: string }> {
   const plan = PLANS[planId];
   const price = TON_PRICING[planId];
   if (!plan || !price) {
     return { ok: false, error: `Invalid plan "${planId}". Available: ${Object.keys(PLANS).join(', ')}` };
+  }
+
+  const requestedAsset = opts.asset ?? 'TON';
+  if (requestedAsset !== 'TON' && requestedAsset !== 'USDT' && requestedAsset !== 'LORA') {
+    return { ok: false, error: 'Invalid asset. Use TON.' };
+  }
+  if (requestedAsset !== 'TON' && !JETTON_CHECKOUT_LIVE) {
+    return { ok: false, error: JETTON_UNAVAILABLE_ERROR };
   }
 
   const recipient = String(env.TON_RECEIVING_ADDRESS || '').trim();
@@ -198,17 +251,60 @@ export async function createTonInvoice(
 
   const orderId = `ton_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const memo = `LUM:${orderId}:${planId}`;
+  const asset = requestedAsset;
+
+  let amountNano = price.nanoTon;
+  let tonAmount = price.ton;
+  let jettonMaster: string | undefined;
+  let userJettonWallet: string | undefined;
+
+  if (asset !== 'TON') {
+    jettonMaster = JETTON_MASTERS[cfg.network]?.[asset as 'USDT' | 'LORA'];
+    if (!jettonMaster) {
+      return { ok: false, error: `${asset} checkout is not available on ${cfg.network}.` };
+    }
+    const jettonPrice = JETTON_PRICING[planId];
+    if (!jettonPrice) {
+      return { ok: false, error: `Invalid plan "${planId}". Available: ${Object.keys(PLANS).join(', ')}` };
+    }
+    const unitsBigInt = jettonPriceUnits(asset as JettonAsset, jettonPrice.amount);
+    if (!unitsBigInt) {
+      return { ok: false, error: `Failed to calculate pricing for ${asset}.` };
+    }
+    amountNano = unitsBigInt.toString();
+    tonAmount = jettonPrice.amount;
+
+    if (opts.userWalletAddress) {
+      const bases = resolveTonApiBases(env);
+      if (bases) {
+        const parsedMaster = parseAddressSafe(jettonMaster);
+        const parsedUser = parseAddressSafe(opts.userWalletAddress);
+        if (parsedMaster && parsedUser) {
+          const resolved = await resolveMerchantJettonWallet(
+            env,
+            { master: parsedMaster, owner: parsedUser, network: bases.network, toncenter: bases.toncenter, tonapi: bases.tonapi },
+          );
+          if (resolved.ok) {
+            userJettonWallet = resolved.wallet.toString({ bounceable: true, testOnly: bases.network === 'testnet' });
+          }
+        }
+      }
+    }
+  }
 
   const order: TonOrder = {
     orderId,
     userId,
     planId,
-    amountNano: price.nanoTon,
-    tonAmount: price.ton,
+    amountNano,
+    tonAmount,
     memo,
     recipientAddress: recipient,
     status: 'pending',
     createdAt: Date.now(),
+    asset,
+    jettonMaster,
+    userJettonWallet,
   };
 
   await env.LUMINARA_KV.put(`ton:order:${orderId}`, JSON.stringify(order), { expirationTtl: 7200 });
@@ -294,7 +390,11 @@ function matchInboundTransfer(
     if (!inMsg) continue;
     const comment = extractTonComment(inMsg);
     const value = BigInt(String(inMsg.value || '0'));
-    if (!comment.includes(order.memo) || value < minValue) continue;
+    // Jetton orders cannot be proven from a native inbound message (memo text is spoofable and
+    // `value` is TON, not jetton units). Never credit them here; see JETTON_CHECKOUT_LIVE.
+    if (order.asset && order.asset !== 'TON') return null;
+    if (!comment.includes(order.memo)) continue;
+    if (value < minValue) continue;
     if (inboundValueWasReturned(tx)) {
       console.warn(`[TON] Transfer matching order ${order.orderId} bounced (value returned to sender); not crediting.`);
       continue;
@@ -429,7 +529,28 @@ export async function verifyTonPayment(
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
   }
 
-  const match = await findMatchingTonPayment(order, env, opts.fetcher || fetch);
+  const match = await (async () => {
+    if (order.asset && order.asset !== 'TON') {
+      const expectedMaster = JETTON_MASTERS[cfg.network]?.[order.asset as 'USDT' | 'LORA'];
+      if (!expectedMaster) {
+        return { ok: false as const, error: `${order.asset} master not configured for ${cfg.network}.` };
+      }
+      return findMatchingJettonPayment(
+        {
+          orderId: order.orderId,
+          memo: order.memo,
+          amountUnits: order.amountNano,
+          recipientAddress: order.recipientAddress,
+          jettonMaster: order.jettonMaster || expectedMaster,
+          createdAt: order.createdAt,
+        },
+        env,
+        { expectedMaster, fetcher: opts.fetcher || fetch },
+      );
+    }
+    return findMatchingTonPayment(order, env, opts.fetcher || fetch);
+  })();
+
   if (!match.ok) return match;
 
   const txGuardKey = `ton:tx:${match.txHash}`;
@@ -487,6 +608,7 @@ export async function verifyTonPayment(
     kind: 'ton_payment',
     orderId,
     chain: 'ton',
+    contract: order.jettonMaster || null,
     network: match.network,
     txHash: match.txHash,
     seqno: match.seqno,
@@ -497,10 +619,11 @@ export async function verifyTonPayment(
   await recordAuditLogBestEffort(env, {
     org_id: `org_${accountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
     actor_id: order.userId,
-    action: 'ton.credit',
+    action: order.asset && order.asset !== 'TON' ? 'ton.jetton.credit' : 'ton.credit',
     details: {
       plan: order.planId,
       tonAmount: order.tonAmount,
+      asset: order.asset || 'TON',
       orderId,
       txHash: match.txHash,
       seqno: match.seqno,

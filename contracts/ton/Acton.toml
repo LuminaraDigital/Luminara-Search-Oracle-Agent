@@ -1,0 +1,34 @@
+[package]
+name = "LuminaraCitationRegistry"
+description = "Verifiable on-chain citation oracle registry for Luminara Suite on TON"
+version = "1.0.0"
+license = "MIT"
+
+[toolchain]
+acton = "1.2.0"
+
+[contracts.CitationRegistry]
+name = "CitationRegistry"
+src = "contracts/CitationRegistry.tolk"
+output = "build/CitationRegistry.boc"
+
+[build]
+output-fift = "build/fift"
+
+[test]
+
+[fmt]
+width = 120
+
+[scripts]
+deploy-testnet = "acton script scripts/deploy.tolk --net testnet"
+deploy-mainnet = "acton script scripts/deploy.tolk --net mainnet"
+
+[lint.rules]
+name-case-checker = "allow"
+
+[import-mappings]
+acton = ".acton"
+contracts = "contracts"
+tests = "tests"
+wrappers = "wrappers"

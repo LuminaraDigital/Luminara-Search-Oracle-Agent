@@ -110,8 +110,16 @@ export interface Env {
   CHAIN_TON_API_FALLBACK_BASE?: string;
   /** XDC JSON-RPC URL (Apothem or mainnet). */
   CHAIN_XDC_RPC_URL?: string;
+  /** Merchant XDC receiving address for micro-settlement. */
+  XDC_RECEIVING_ADDRESS?: string;
+  /** Feature flag: enable live Q402 micro-settlement (`true` / `false`). */
+  Q402_LIVE?: string;
   /** Feature flag: enable audit citation anchoring writers (`true` / `false`). */
   PROOF_ANCHOR_ENABLED?: string;
+  /** Optional TON CitationRegistry contract address override. */
+  TON_CITATION_CONTRACT_ADDRESS?: string;
+  /** Secret. TON operations hot wallet private key for on-chain anchoring. */
+  TON_MINTER_PRIVATE_KEY?: string;
   /** Feature flag: enable XDC weekly re-check path (`true` / `false`). */
   PROOF_XDC_ENABLED?: string;
   /**

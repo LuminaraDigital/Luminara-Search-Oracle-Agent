@@ -47,6 +47,7 @@ describe('marketingRoutes', () => {
     expect(resolveAppView('/pricing', '')).toBe(AppView.PRICING);
     expect(resolveAppView('/', '#pricing')).toBe(AppView.PRICING);
     expect(resolveAppView('/', '#settings')).toBe(null);
+    expect(resolveAppView('/random-made-up-page', '')).toBe(AppView.NOT_FOUND);
   });
 
   it('routes /verify/r/<id> to the receipt view without breaking /verify/<digest>', () => {

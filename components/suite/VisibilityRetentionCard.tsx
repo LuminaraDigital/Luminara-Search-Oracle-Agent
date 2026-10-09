@@ -118,7 +118,7 @@ export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = (
             aria-label="Invite link"
           />
           <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
-            You both get {profile.creditsPerSide} extra hosted scouts after their first honest Instant Scout. Empty runs do not count.
+            You both get {profile.creditsPerSide} extra hosted audits after their first honest Instant Audit. Empty runs do not count.
           </p>
         </label>
       )}
@@ -142,7 +142,7 @@ export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = (
                   onClick={() => onNavigate(AppView.INSTANT_AUDIT)}
                   className="w-full py-2 rounded-lg border border-white/15 text-[10px] font-bold uppercase tracking-wider text-gray-200 hover:border-gold/40 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                 >
-                  Open Instant Scout
+                  Open Instant Audit
                 </button>
               )}
               {mission.status !== 'completed' && mission.key === 'view_delta' && (

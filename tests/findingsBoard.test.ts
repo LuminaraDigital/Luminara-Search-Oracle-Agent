@@ -199,12 +199,12 @@ describe('WDL findings API', () => {
     expect(afterBody.findings[0].status).toBe('in_progress');
   });
 
-  it('sample AI-said fixtures are labeled Sample and estimated', () => {
+  it('sample AI-said fixtures are labeled Sample and not_measured', () => {
     const rows = sampleAiSaidFixtures('https://www.brand.test/path');
     expect(rows.length).toBeGreaterThanOrEqual(2);
     for (const row of rows) {
       expect(row.label).toBe('Sample');
-      expect(row.measurementStatus).toBe('estimated');
+      expect(row.measurementStatus).toBe('not_measured');
     }
   });
 

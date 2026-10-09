@@ -1,0 +1,14 @@
+{
+  "name": "Luminara",
+  "symbol": "LUMI",
+  "description": "Official in-house utility and real-yield currency for Luminara Suite and Search Oracle Agent on The Open Network (TON). 100M fixed supply, 3% transfer tax engine (1% burn, 1% stakers, 1% POL), and deflationary audit sinks.",
+  "decimals": "9",
+  "image": "https://raw.githubusercontent.com/ton-blockchain/token-resources/main/ton-symbol.png",
+  "social": [
+    "https://t.me/luminara_suite",
+    "https://luminarasuite.com"
+  ],
+  "websites": [
+    "https://luminarasuite.com"
+  ]
+}

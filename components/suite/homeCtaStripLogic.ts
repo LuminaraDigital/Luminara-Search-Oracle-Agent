@@ -9,7 +9,7 @@ import { auditHistoryService } from '../../services/audit/auditHistoryService';
 
 export const HOME_CTA_HEADING = 'Run your first audit';
 export const HOME_CTA_SUB =
-  'Get an honest SEO, AEO and GEO read on one URL in under a minute.';
+  'Get an honest SEO, AEO and GEO read on one URL in ~1-2 minutes.';
 export const HOME_CTA_PRIMARY_LABEL = 'Start Instant Audit';
 export const HOME_CTA_SECONDARY_LABEL = 'Set up Business DNA first';
 export const HOME_CTA_IDEA_LABEL = 'No domain yet? Idea Scout';

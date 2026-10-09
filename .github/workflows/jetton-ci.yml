@@ -1,0 +1,98 @@
+name: Jetton CI
+
+# The LORA Jetton package is self-contained: it has its own lockfile and does
+# not import app code. These jobs run only when it changes.
+on:
+  push:
+    branches: [main, staging, 'feature/**', 'feat/**']
+    paths:
+      - 'contracts/jetton/**'
+      - '.github/workflows/jetton-ci.yml'
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - 'contracts/jetton/**'
+      - '.github/workflows/jetton-ci.yml'
+  workflow_dispatch:
+    inputs:
+      mutation:
+        description: 'Also run the mutation check (four jobs side by side)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jetton-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build, pin check and sandbox tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: contracts/jetton
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: contracts/jetton/package-lock.json
+
+      # Install scripts are switched off: nothing here needs one, and it keeps
+      # third-party code from running during the install.
+      - name: Install (exact versions from the lockfile)
+        run: npm ci --ignore-scripts
+
+      # Compiles the Tact contracts, then runs every suite in the local TON
+      # sandbox. One of the tests fails unless the compiled code hashes equal
+      # code-hashes.json, so a Linux build that differs from the reviewed
+      # build is caught here.
+      - name: Build and test
+        run: npm test
+
+      - name: Report compiled code hashes
+        run: npx tsx scripts/pin.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Deploys to an in-memory chain and runs the payment and burn flow.
+      - name: Sandbox run
+        run: npx tsx scripts/sandbox.ts
+
+  mutation:
+    name: Mutation check ${{ matrix.shard }}/4 (tests catch deliberate breaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Slow, so it runs on pull requests (this workflow only triggers when the
+    # Jetton package changes) and when asked for, not on every push. The list
+    # of breaks is dealt out over four jobs that run side by side.
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.mutation)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: contracts/jetton
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: contracts/jetton/package-lock.json
+
+      - run: npm ci --ignore-scripts
+
+      - run: npm run build
+
+      - name: Break the contracts on purpose and check the tests notice
+        run: npm run test:mutation -- --shard=${{ matrix.shard }}/4

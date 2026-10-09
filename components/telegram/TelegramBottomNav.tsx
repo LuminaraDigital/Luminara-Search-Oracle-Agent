@@ -10,6 +10,65 @@ interface TelegramBottomNavProps {
   onOpenTools: () => void;
 }
 
+const TOOL_VIEWS: AppView[] = [
+  AppView.NOTEBOOK,
+  AppView.BUSINESS_DNA,
+  AppView.STRESS_TEST,
+  AppView.DATA_ANALYST,
+  AppView.TIMESFM_FORECAST,
+  AppView.ORACLE_MIND,
+  AppView.ORGANIZER,
+  AppView.RESEARCH,
+  AppView.VISION,
+  AppView.HARNESS,
+  AppView.TRUST_CENTER,
+];
+
+function NavItem({
+  label,
+  active,
+  onClick,
+  children,
+  emphasize,
+}: {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  emphasize?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-current={active ? 'page' : undefined}
+      className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 rounded-lg ${
+        emphasize
+          ? 'text-gold'
+          : active
+            ? 'text-gold-light'
+            : 'text-gray-500 hover:text-gray-200'
+      }`}
+    >
+      <div
+        className={`p-1.5 rounded-xl transition-colors ${
+          emphasize
+            ? 'bg-gold/15 border border-gold/30 text-gold'
+            : active
+              ? 'bg-gold/15 text-gold-light'
+              : 'text-inherit'
+        }`}
+      >
+        {children}
+      </div>
+      <span className={`text-[10px] mt-0.5 tracking-tight truncate max-w-full px-0.5 ${active || emphasize ? 'font-semibold' : 'font-medium'}`}>
+        {label}
+      </span>
+    </button>
+  );
+}
+
 export const TelegramBottomNav: React.FC<TelegramBottomNavProps> = ({
   currentView,
   onNavigate,
@@ -21,123 +80,69 @@ export const TelegramBottomNav: React.FC<TelegramBottomNavProps> = ({
     onNavigate(view);
   };
 
-  const isToolsActive = [
-    AppView.NOTEBOOK,
-    AppView.BUSINESS_DNA,
-    AppView.STRESS_TEST,
-    AppView.DATA_ANALYST,
-    AppView.TIMESFM_FORECAST,
-    AppView.ORACLE_MIND,
-    AppView.ORGANIZER,
-    AppView.RESEARCH,
-    AppView.VISION,
-    AppView.HARNESS,
-  ].includes(currentView);
+  const isToolsActive = TOOL_VIEWS.includes(currentView);
 
   return (
     <nav
       aria-label="Telegram navigation"
-      className="md:hidden shrink-0 z-40 bg-black/95 backdrop-blur-xl border-t border-gold/20 flex items-center justify-around px-2 pt-2 transition-all"
+      className="md:hidden shrink-0 z-40 bg-[var(--color-paper)]/95 backdrop-blur-md border-t border-[var(--color-rule)] flex items-stretch justify-around px-1 pt-1.5"
       style={{
         paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 8px) + 2px)',
       }}
     >
-      <button
+      <NavItem
+        label="Idea"
+        active={currentView === AppView.IDEA_SCOUT}
         onClick={() => handleNav(AppView.IDEA_SCOUT)}
-        aria-label="Idea Scout"
-        className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
-          currentView === AppView.IDEA_SCOUT
-            ? 'text-gold-light scale-105 font-bold'
-            : 'text-gray-400 hover:text-gray-200'
-        }`}
       >
-        <div className={`p-1 rounded-xl transition-all ${currentView === AppView.IDEA_SCOUT ? 'bg-gold/20 text-gold-light shadow-[0_0_10px_rgba(191,149,63,0.3)]' : ''}`}>
-          <ICONS.Zap className="w-5 h-5" />
-        </div>
-        <span className="text-[10px] mt-0.5 tracking-tight font-medium">Idea</span>
-      </button>
+        <ICONS.Zap className="w-5 h-5" />
+      </NavItem>
 
-      {/* Instant Audit */}
-      <button
+      <NavItem
+        label="Audit"
+        active={currentView === AppView.INSTANT_AUDIT}
         onClick={() => handleNav(AppView.INSTANT_AUDIT)}
-        aria-label="Audit"
-        className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
-          currentView === AppView.INSTANT_AUDIT
-            ? 'text-gold-light scale-105 font-bold'
-            : 'text-gray-400 hover:text-gray-200'
-        }`}
       >
-        <div className={`p-1 rounded-xl transition-all ${currentView === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light shadow-[0_0_10px_rgba(191,149,63,0.3)]' : ''}`}>
-          <ICONS.Search className="w-5 h-5" />
-        </div>
-        <span className="text-[10px] mt-0.5 tracking-tight font-medium">Audit</span>
-      </button>
+        <ICONS.Search className="w-5 h-5" />
+      </NavItem>
 
-      {/* 2. Ask Oracle */}
-      <button
+      <NavItem
+        label="Oracle"
+        active={currentView === AppView.ORACLE_AGENT}
         onClick={() => handleNav(AppView.ORACLE_AGENT)}
-        aria-label="Ask Oracle"
-        className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
-          currentView === AppView.ORACLE_AGENT
-            ? 'text-gold-light scale-105 font-bold'
-            : 'text-gray-400 hover:text-gray-200'
-        }`}
       >
-        <div className={`p-1 rounded-xl transition-all ${currentView === AppView.ORACLE_AGENT ? 'bg-gold/20 text-gold-light shadow-[0_0_10px_rgba(191,149,63,0.3)]' : ''}`}>
-          <ICONS.Sparkle className="w-5 h-5" />
-        </div>
-        <span className="text-[10px] mt-0.5 tracking-tight font-medium">Oracle</span>
-      </button>
+        <ICONS.Sparkle className="w-5 h-5" />
+      </NavItem>
 
-      {/* 3. Dashboard */}
-      <button
+      <NavItem
+        label="Home"
+        active={currentView === AppView.DASHBOARD}
         onClick={() => handleNav(AppView.DASHBOARD)}
-        aria-label="Dashboard"
-        className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
-          currentView === AppView.DASHBOARD
-            ? 'text-gold-light scale-105 font-bold'
-            : 'text-gray-400 hover:text-gray-200'
-        }`}
       >
-        <div className={`p-1 rounded-xl transition-all ${currentView === AppView.DASHBOARD ? 'bg-gold/20 text-gold-light shadow-[0_0_10px_rgba(191,149,63,0.3)]' : ''}`}>
-          <ICONS.Shield className="w-5 h-5" />
-        </div>
-        <span className="text-[10px] mt-0.5 tracking-tight font-medium">Dashboard</span>
-      </button>
+        <ICONS.Shield className="w-5 h-5" />
+      </NavItem>
 
-      {/* 4. Strategy & Tools */}
-      <button
+      <NavItem
+        label="Tools"
+        active={isToolsActive}
         onClick={() => {
           haptic('light');
           onOpenTools();
         }}
-        aria-label="Tools"
-        className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
-          isToolsActive
-            ? 'text-gold-light scale-105 font-bold'
-            : 'text-gray-400 hover:text-gray-200'
-        }`}
       >
-        <div className={`p-1 rounded-xl transition-all ${isToolsActive ? 'bg-gold/20 text-gold-light shadow-[0_0_10px_rgba(191,149,63,0.3)]' : ''}`}>
-          <ICONS.DNA className="w-5 h-5" />
-        </div>
-        <span className="text-[10px] mt-0.5 tracking-tight font-medium">Tools</span>
-      </button>
+        <ICONS.DNA className="w-5 h-5" />
+      </NavItem>
 
-      {/* 5. Subscription Plan / Stars */}
-      <button
+      <NavItem
+        label="Plan"
+        emphasize
         onClick={() => {
           haptic('light');
           onOpenPaywall();
         }}
-        aria-label="Subscription Plan"
-        className="flex flex-col items-center justify-center flex-1 py-1 text-gold hover:text-gold-light transition-all"
       >
-        <div className="p-1 rounded-xl bg-gold/15 text-gold border border-gold/30 shadow-[0_0_8px_rgba(191,149,63,0.2)]">
-          <span className="text-xs font-bold leading-none">⭐</span>
-        </div>
-        <span className="text-[10px] mt-0.5 tracking-tight font-bold text-gold">Plan</span>
-      </button>
+        <ICONS.Layers className="w-5 h-5" />
+      </NavItem>
     </nav>
   );
 };

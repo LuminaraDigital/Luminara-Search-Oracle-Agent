@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deploy Luminara Jetton</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --card: #ffffff;
+        --text: #15181d;
+        --muted: #5b6472;
+        --line: #dfe3e8;
+        --accent: #0b6bcb;
+        --pass: #17703a;
+        --warn: #8a5a00;
+        --fail: #b3261e;
+        --testnet-bg: #fff4d6;
+        --testnet-text: #6b4a00;
+        --mainnet-bg: #fde7e5;
+        --mainnet-text: #8c1d18;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111418;
+          --card: #1a1f25;
+          --text: #eef1f5;
+          --muted: #a3adba;
+          --line: #2c333c;
+          --accent: #6cb2ff;
+          --pass: #62d38a;
+          --warn: #f0c060;
+          --fail: #ff8a80;
+          --testnet-bg: #3a2f10;
+          --testnet-text: #f6d98a;
+          --mainnet-bg: #43201d;
+          --mainnet-text: #ffb4ab;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin: 12px 0 8px;
+      }
+      h2 {
+        font-size: 1.1rem;
+        margin: 0 0 12px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        letter-spacing: 0.06em;
+      }
+      .badge.testnet {
+        background: var(--testnet-bg);
+        color: var(--testnet-text);
+      }
+      .badge.mainnet {
+        background: var(--mainnet-bg);
+        color: var(--mainnet-text);
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px;
+        margin: 16px 0;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: minmax(120px, 170px) 1fr;
+        gap: 8px 16px;
+        margin: 0;
+      }
+      dt {
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      code,
+      .mono {
+        font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+        font-size: 0.9em;
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        padding: 10px 18px;
+        border-radius: 10px;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+      @media (prefers-color-scheme: dark) {
+        button {
+          color: #08131f;
+        }
+      }
+      button[disabled] {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button.secondary {
+        background: transparent;
+        color: var(--accent);
+      }
+      label.confirm {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        margin: 8px 0;
+      }
+      ul.checks {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      ul.checks li {
+        display: grid;
+        grid-template-columns: 52px 1fr;
+        gap: 4px 12px;
+        padding: 8px 0;
+        border-top: 1px solid var(--line);
+      }
+      ul.checks li:first-child {
+        border-top: 0;
+      }
+      .status {
+        font-weight: 700;
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+      }
+      .status.pass {
+        color: var(--pass);
+      }
+      .status.warn {
+        color: var(--warn);
+      }
+      .status.fail {
+        color: var(--fail);
+      }
+      .detail {
+        grid-column: 2;
+        color: var(--muted);
+        font-size: 0.9rem;
+        overflow-wrap: anywhere;
+      }
+      .notice {
+        border-left: 4px solid var(--warn);
+        padding: 8px 12px;
+        margin: 12px 0;
+        background: var(--testnet-bg);
+        color: var(--testnet-text);
+        border-radius: 6px;
+      }
+      .notice.danger {
+        border-left-color: var(--fail);
+        background: var(--mainnet-bg);
+        color: var(--mainnet-text);
+      }
+      #error:empty {
+        display: none;
+      }
+      a {
+        color: var(--accent);
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin: 8px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="badge" id="network">LOADING</span>
+        <h1 id="title">Deploy the Jetton</h1>
+        <p class="muted">
+          Nothing on this page can spend your Toncoin. Each transaction is shown in your wallet app first and only happens if
+          you approve it there. This page never asks for a recovery phrase or a private key. If anything asks you for one,
+          stop.
+        </p>
+      </header>
+
+      <p class="notice danger" id="error" role="alert"></p>
+
+      <section aria-labelledby="token-heading">
+        <h2 id="token-heading">The token</h2>
+        <dl id="token"></dl>
+      </section>
+
+      <section aria-labelledby="connect-heading">
+        <h2 id="connect-heading">1. Connect the wallet that will own the token</h2>
+        <p class="muted" id="connect-help">
+          The connected wallet becomes the admin and receives the whole supply. The contract only lets its admin launch it, so
+          the supply cannot end up at an address nobody controls.
+        </p>
+        <div id="connect"></div>
+        <p id="wallet-status" class="muted" style="margin-top: 12px"></p>
+      </section>
+
+      <section aria-labelledby="deploy-heading" id="step-deploy" hidden>
+        <h2 id="deploy-heading">2. Review and deploy</h2>
+        <dl id="summary"></dl>
+        <div id="mainnet-confirm" hidden>
+          <p class="notice danger">
+            This is mainnet. A deployed Jetton cannot be changed, renamed at its address, or recalled. Read each line before
+            you tick it.
+          </p>
+          <label class="confirm"
+            ><input type="checkbox" class="confirm-box" /> The admin address above is my own wallet, and its recovery phrase is
+            stored offline where I can find it.</label
+          >
+          <label class="confirm"
+            ><input type="checkbox" class="confirm-box" /> I checked the token name, symbol, supply and logo above.</label
+          >
+          <label class="confirm"
+            ><input type="checkbox" class="confirm-box" /> I understand the supply and the contract code can never be changed
+            after this.</label
+          >
+        </div>
+        <p style="margin-top: 16px">
+          <button id="deploy" type="button">Deploy</button>
+        </p>
+        <p class="muted" id="deploy-status"></p>
+      </section>
+
+      <section aria-labelledby="verify-heading" id="step-verify" hidden>
+        <h2 id="verify-heading">3. Check what is on-chain</h2>
+        <p id="verify-status" class="muted"></p>
+        <ul class="checks" id="checks"></ul>
+        <p style="margin-top: 16px">
+          <button id="recheck" type="button" class="secondary">Check again</button>
+          <a id="explorer" target="_blank" rel="noreferrer" style="margin-left: 12px"></a>
+        </p>
+      </section>
+
+      <section aria-labelledby="rehearsal-heading" id="step-rehearsal" hidden>
+        <h2 id="rehearsal-heading">4. Rehearse a transfer and a burn</h2>
+        <p class="muted" id="rehearsal-help"></p>
+        <p>
+          <button id="rehearse" type="button">Run the rehearsal</button>
+        </p>
+        <p class="muted" id="rehearsal-status"></p>
+      </section>
+
+      <section aria-labelledby="next-heading" id="step-next" hidden>
+        <h2 id="next-heading">Next</h2>
+        <div id="next"></div>
+      </section>
+    </main>
+    <script src="/tonconnect-ui.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

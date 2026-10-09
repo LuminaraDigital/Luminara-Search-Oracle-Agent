@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { OracleMode, ToolExecution, BusinessDNA, ReportFocus, OrganizerFormat, OrganizerSchema, ChatTurn, NativeEngineId, StreamChunk } from "../types";
+import { OracleMode, ToolExecution, BusinessDNA, ReportFocus, OrganizerFormat, OrganizerSchema, ChatTurn, NativeEngineId, StreamChunk, Message } from "../types";
 export type { StreamChunk };
+import { compactConversation } from "./oracle/contextCompactorService";
 import { SYSTEM_INSTRUCTIONS } from "../constants";
 import { vfsRetrievalService } from "./vfs/vfsRetrievalService";
 import { vfsMemoryService } from "./vfs/vfsMemoryService";
@@ -103,10 +104,37 @@ import { selectAuditPlaybooks, selectChatPlaybooks, playbookContext, inferLenses
 import { toChatHistory } from './chat/messages';
 export { shouldSearch, toChatHistory };
 
-const toGeminiContents = (prompt: string, history?: ChatTurn[]) => [
-  ...(history ?? []).slice(-20).map(t => ({ role: t.role === 'user' ? 'user' : 'model', parts: [{ text: t.content }] })),
-  { role: 'user', parts: [{ text: prompt }] },
-];
+const toGeminiContents = (prompt: string, history?: ChatTurn[]) => {
+  if (!history || history.length <= 8) {
+    return [
+      ...(history ?? []).map(t => ({ role: t.role === 'user' ? 'user' : 'model', parts: [{ text: t.content }] })),
+      { role: 'user', parts: [{ text: prompt }] },
+    ];
+  }
+
+  // Convert ChatTurn[] to Message[] shape for auto-compaction
+  const asMessages: Message[] = history.map((t, idx) => ({
+    id: `turn-${idx}`,
+    role: t.role === 'assistant' ? 'assistant' : 'user',
+    content: t.content,
+    timestamp: Date.now() - (history.length - idx) * 1000,
+  }));
+
+  const compacted = compactConversation(asMessages, {
+    recentTurnsToKeep: 6,
+    thresholdPercent: 60,
+  });
+
+  const parts = compacted.messages.map(m => ({
+    role: m.role === 'user' ? 'user' : 'model',
+    parts: [{ text: m.content }],
+  }));
+
+  return [
+    ...parts,
+    { role: 'user', parts: [{ text: prompt }] },
+  ];
+};
 
 /**
  * Runs the planned searches in parallel, keeps only well-scored, de-duplicated results and
@@ -568,7 +596,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
   ): Promise<AuditReportResult> {
     const dnaContext = this.getDNAContext(dna);
     const allLenses = [...new Set([...lenses, ...inferLenses(dna)])];
-    const methodology = playbookContext(selectAuditPlaybooks(focus, allLenses), 26000);
+    const methodology = playbookContext(selectAuditPlaybooks(focus, allLenses), 4500);
     const displayUrl = websiteUrl.replace(/^https?:\/\//i, '');
     let mainTopic = '';
     let reportTitle = '';
@@ -760,6 +788,13 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
       console.warn('[Audit] Preliminary trust pack fallback', e);
     }
 
+    if (scrapedContent.length > 4000) {
+      scrapedContent = scrapedContent.slice(0, 4000) + '\n[...content truncated for token budget]';
+    }
+    if (searchGrounding.length > 3500) {
+      searchGrounding = searchGrounding.slice(0, 3500) + '\n[...search evidence truncated for token budget]';
+    }
+
     const auditMode = dna?.name ? 'Full audit' : 'Quick scout';
     const pastExperienceText = postAuditReflectionService.formatExperienceForPrompt(displayUrl);
     const prompt = `
@@ -782,7 +817,7 @@ Cite-or-silence: every rank, citation, or percentage without evidence above must
 Plain English default (about grade 8). Lead with one ship-this-week move.
 Follow the methodology playbooks above. Respect deprecation rules (never recommend HowTo schema;
 FAQPage earns no Google rich result; use INP, never FID). Grade only what scraped page and search
-evidence support. Anything unobserved is "not measured".
+evidence support. Anything unobserved is "not measured". Never invent composite scores (e.g. XX/100).
 When Trust Pack findings are present, reflect Critical/High items in the fix list.
 
 Strict Formatting Guidelines:
@@ -798,9 +833,9 @@ Strict Formatting Guidelines:
    ## 7. Sources
 4. ## 1. One move this week: one concrete action, why it helps citation odds, how to tell it worked.
 5. ## 3. Fix list: Markdown table with columns:
-   | Task | Plain issue | Impact (1-100) | Priority |
+   | Task | Plain issue | Expected Impact | Priority |
 6. AI & Search Visibility Radar: Markdown table with strictly these columns:
-   | Query | Intent | Brand Cited (Yes/No) | Key Competitors | Est. Organic Rank | Rich Results | AI Overview Status | Visibility Score (0-100) |
+   | Query | Intent | Brand Cited (Yes/No) | Key Competitors | Est. Organic Rank | Rich Results | AI Overview Status | Citation Status (Cited/Not Cited/Not Measured) |
    Include 3 high-intent queries (informational, commercial, comparative). Use "not verified" when evidence is missing.
 7. Competitor Reality Map: Markdown table with strictly these columns:
    | Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) | Trust Signal Strength (Low/Med/High) |
@@ -982,6 +1017,8 @@ Strict Formatting Guidelines:
       };
     };
 
+    let lastError: unknown = null;
+
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama with auto-failover
     try {
       const best = await aiProviderService.getBestAvailableProvider();
@@ -999,6 +1036,7 @@ Strict Formatting Guidelines:
         return buildReportResult(text);
       }
     } catch (e) {
+      lastError = e;
       console.warn('Native Trinity generateAuditReport failed, falling back to secondary...', e);
     }
 
@@ -1033,11 +1071,17 @@ Strict Formatting Guidelines:
 
         return buildReportResult(text);
       } catch (error) {
+        if (!lastError) lastError = error;
         console.warn("Audit Generation Gemini error:", error);
       }
     }
 
-    throw new ProviderUnavailableError();
+    const detail = toUserFacingText(lastError, '');
+    throw new ProviderUnavailableError(
+      detail
+        ? `No native LLM responded. ${detail}`
+        : undefined,
+    );
   }
 
   /**

@@ -18,8 +18,14 @@ const ENGINE_LABELS: Record<string, string> = {
 interface HealthLike {
   ok?: boolean;
   ton?: boolean;
+  jettonCheckout?: boolean;
   providers?: Record<string, boolean>;
   tiers?: { free?: string[]; paid?: string[] };
+}
+
+/** USDT / $LORA rails show only when health loaded, TON is configured, and the server says Jetton checkout is live. */
+export function isJettonCheckoutAvailable(health: HealthLike | null | undefined): boolean {
+  return Boolean(health?.ok && health.ton === true && health.jettonCheckout === true);
 }
 
 export interface PaymentOptions {

@@ -52,6 +52,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'VERIFY_RECEIPT',
   'INSTANT_AUDIT',
   'IDEA_SCOUT',
+  'ECOSYSTEM_HUB',
 ]);
 
 /** Pure decision helper (tested). Soft-open only when signature was not rejected. */

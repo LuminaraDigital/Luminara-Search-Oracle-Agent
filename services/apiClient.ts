@@ -30,6 +30,10 @@ export interface ServerHealth {
   /** True only when the Worker has a valid TON receiving address; absent means unavailable. */
   ton?: boolean;
   tonPricing?: Record<string, unknown>;
+  /** USDT / $LORA checkout can settle (server-verified). Absent or false = hide Jetton rails. */
+  jettonCheckout?: boolean;
+  /** Q402 pay-per-call settlement is live. */
+  q402?: boolean;
   tiers?: { free?: string[]; paid?: string[] };
   /** Trust Receipts / domain verification flags. Absent on older Workers (treat as off). */
   trust?: { receiptsEnabled?: boolean; receiptSigningConfigured?: boolean; domainVerifyEnabled?: boolean };

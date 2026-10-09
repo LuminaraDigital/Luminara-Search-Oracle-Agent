@@ -40,6 +40,7 @@
     "dist",
     "scratch",
     "qronos-landing",
-    "contracts"
+    "contracts",
+    "tmp"
   ]
 }

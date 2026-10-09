@@ -109,6 +109,14 @@ export class NvidiaNimProvider extends BaseAIProvider {
         console.warn(`[NIM] Model ${model} unavailable (${response.status}); trying next candidate...`);
         continue;
       }
+      if (response.status === 402) {
+        let msg = 'The NVIDIA NIM engine requires a paid plan or your own API key in Settings.';
+        try {
+          const parsed = JSON.parse(lastErr);
+          if (parsed.error) msg = parsed.error;
+        } catch { /* use default */ }
+        throw new Error(msg);
+      }
       throw new Error(`NVIDIA NIM error (${response.status}): ${lastErr}`);
     }
 
@@ -166,6 +174,14 @@ export class NvidiaNimProvider extends BaseAIProvider {
       if (isMissingModelStatus(response.status, lastErr) && model !== models[models.length - 1]) {
         console.warn(`[NIM] Model ${model} unavailable (${response.status}); trying next candidate...`);
         continue;
+      }
+      if (response.status === 402) {
+        let msg = 'The NVIDIA NIM engine requires a paid plan or your own API key in Settings.';
+        try {
+          const parsed = JSON.parse(lastErr);
+          if (parsed.error) msg = parsed.error;
+        } catch { /* use default */ }
+        throw new Error(msg);
       }
       throw new Error(`NVIDIA NIM stream error (${response.status}): ${lastErr}`);
     }

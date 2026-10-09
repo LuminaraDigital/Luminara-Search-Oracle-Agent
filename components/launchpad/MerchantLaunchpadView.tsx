@@ -19,12 +19,13 @@ import {
 } from '../../services/launchpad/launchpadClient';
 import { DeployPanel } from './DeployPanel';
 import { EscrowPanel } from './EscrowPanel';
+import { watchOnlyService } from '../../services/launchpad/watchOnlyService';
 
 interface MerchantLaunchpadViewProps {
   onRunAudit?: (hostname: string) => void;
 }
 
-type Tab = 'explore' | 'create' | 'mine' | 'redeem';
+type Tab = 'explore' | 'watched' | 'create' | 'mine' | 'redeem';
 
 const inputCls = 'w-full bg-surface border border-rule rounded-lg px-3 py-2 text-sm text-ink focus:border-gold outline-none';
 const labelCls = 'block text-xs font-mono text-ink-2 mb-1';
@@ -40,16 +41,35 @@ function ErrorLine({ text }: { text: string | null }) {
   return <p role="alert" className="p-3 bg-surface border border-red-500/40 rounded-lg text-red-400 text-xs font-mono">{text}</p>;
 }
 
-function CampaignCard({ c, onRunAudit, footer }: { c: LaunchpadCampaign; onRunAudit?: (h: string) => void; footer?: React.ReactNode }) {
+function CampaignCard({
+  c,
+  onRunAudit,
+  footer,
+  isWatched,
+  onToggleWatch,
+}: {
+  c: LaunchpadCampaign;
+  onRunAudit?: (h: string) => void;
+  footer?: React.ReactNode;
+  isWatched?: boolean;
+  onToggleWatch?: () => void;
+}) {
   const chainCfg = LAUNCHPAD_CHAINS[c.chain][c.network];
   return (
     <article className="bg-surface-1 border border-rule rounded-xl p-5 flex flex-col justify-between gap-4">
       <div>
         <div className="flex items-center justify-between text-xs font-mono text-ink-2 mb-1 gap-2">
           <span className="text-gold uppercase truncate">{c.business_name}</span>
-          <span className="px-2 py-0.5 rounded bg-surface border border-rule text-[10px] shrink-0">
-            {c.campaign_type === 'closed_loop_loyalty' ? 'Loyalty voucher' : 'Pre-order'}
-          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isWatched && (
+              <span className="px-1.5 py-0.5 rounded bg-gold/15 border border-gold/40 text-[10px] text-gold font-mono">
+                Watching
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded bg-surface border border-rule text-[10px]">
+              {c.campaign_type === 'closed_loop_loyalty' ? 'Loyalty voucher' : 'Pre-order'}
+            </span>
+          </div>
         </div>
         <h3 className="text-base font-semibold text-ink line-clamp-2">{c.title}</h3>
         <p className="text-xs text-ink-2 mt-2 line-clamp-4">{c.description}</p>
@@ -71,6 +91,15 @@ function CampaignCard({ c, onRunAudit, footer }: { c: LaunchpadCampaign; onRunAu
         )}
       </dl>
       <div className="flex flex-wrap items-center gap-2">
+        {onToggleWatch && (
+          <button
+            type="button"
+            className={`${ghostBtn} ${isWatched ? 'border-gold/50 text-gold' : ''}`}
+            onClick={onToggleWatch}
+          >
+            {isWatched ? 'Watched' : 'Watch'}
+          </button>
+        )}
         {c.domain && onRunAudit && (
           <button type="button" className={ghostBtn} onClick={() => onRunAudit(c.domain!)}>Audit {c.domain}</button>
         )}
@@ -82,6 +111,13 @@ function CampaignCard({ c, onRunAudit, footer }: { c: LaunchpadCampaign; onRunAu
 
 export const MerchantLaunchpadView: React.FC<MerchantLaunchpadViewProps> = ({ onRunAudit }) => {
   const [tab, setTab] = useState<Tab>('explore');
+  const [watchedCampaignIds, setWatchedCampaignIds] = useState<string[]>(() => watchOnlyService.getWatchedCampaigns());
+
+  useEffect(() => {
+    return watchOnlyService.subscribe(() => {
+      setWatchedCampaignIds(watchOnlyService.getWatchedCampaigns());
+    });
+  }, []);
 
   // Explore + mine
   const [publicCampaigns, setPublicCampaigns] = useState<LaunchpadCampaign[] | null>(null);
@@ -214,7 +250,13 @@ export const MerchantLaunchpadView: React.FC<MerchantLaunchpadViewProps> = ({ on
     else setRedeemError(r.error);
   }
 
-  const tabs: Array<[Tab, string]> = [['explore', 'Explore'], ['create', 'Create campaign'], ['mine', 'My campaigns'], ['redeem', 'Redeem at counter']];
+  const tabs: Array<[Tab, string]> = [
+    ['explore', 'Explore'],
+    ['watched', `Watch-Only (${watchedCampaignIds.length})`],
+    ['create', 'Create campaign'],
+    ['mine', 'My campaigns'],
+    ['redeem', 'Redeem at counter'],
+  ];
   const factoryReady = (config?.factories?.[chain]?.testnet ?? LAUNCHPAD_CHAINS[chain].testnet.factoryAddress) !== null;
 
   return (
@@ -248,12 +290,51 @@ export const MerchantLaunchpadView: React.FC<MerchantLaunchpadViewProps> = ({ on
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {publicCampaigns.map((c) => (
-                <CampaignCard key={c.id} c={c} onRunAudit={onRunAudit}
-                  footer={c.campaign_type === 'milestone_preorder' ? <EscrowPanel campaign={c} /> : undefined} />
+                <CampaignCard
+                  key={c.id}
+                  c={c}
+                  onRunAudit={onRunAudit}
+                  isWatched={watchedCampaignIds.includes(c.id)}
+                  onToggleWatch={() => watchOnlyService.toggleWatchCampaign(c.id)}
+                  footer={c.campaign_type === 'milestone_preorder' ? <EscrowPanel campaign={c} /> : undefined}
+                />
               ))}
             </div>
           )}
           <p className="text-[11px] text-ink-2 max-w-3xl">{LAUNCHPAD_DISCLAIMER}</p>
+        </section>
+      )}
+
+      {tab === 'watched' && (
+        <section className="space-y-4">
+          <div className="rounded-xl border border-gold/30 bg-gold/10 p-4">
+            <h2 className="text-sm font-semibold text-gold">Watch-Only Campaign Monitor</h2>
+            <p className="mt-1 text-xs text-ink-2">
+              Inspired by Qubic self-custody watch-only architecture. Track milestone escrows, raised pledges, and voucher activity without connecting a wallet or holding private keys.
+            </p>
+          </div>
+          {publicCampaigns === null ? (
+            <p className="p-8 text-center text-ink-2 font-mono text-sm">Loading campaigns...</p>
+          ) : publicCampaigns.filter((c) => watchedCampaignIds.includes(c.id)).length === 0 ? (
+            <p className="p-8 text-center bg-surface-1 border border-rule rounded-xl text-ink-2 font-mono text-sm">
+              No campaigns currently watched. Click "Watch" on any campaign in Explore to monitor it here.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {publicCampaigns
+                .filter((c) => watchedCampaignIds.includes(c.id))
+                .map((c) => (
+                  <CampaignCard
+                    key={c.id}
+                    c={c}
+                    onRunAudit={onRunAudit}
+                    isWatched={true}
+                    onToggleWatch={() => watchOnlyService.toggleWatchCampaign(c.id)}
+                    footer={c.campaign_type === 'milestone_preorder' ? <EscrowPanel campaign={c} /> : undefined}
+                  />
+                ))}
+            </div>
+          )}
         </section>
       )}
 

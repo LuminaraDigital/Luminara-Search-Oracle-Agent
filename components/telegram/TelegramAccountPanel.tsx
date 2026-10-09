@@ -75,14 +75,14 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       const res = await activateLicenseKey(licenseKey.trim());
       if (res.ok) {
         haptic('success');
-        setStatus(`✅ Key activated! Plan: ${res.plan?.toUpperCase()} (${res.durationDays} days)`);
+        setStatus(`Key activated. Plan: ${res.plan?.toUpperCase()} (${res.durationDays} days)`);
         await refresh();
         await fetchQuotaStatus();
         setLicenseKey('');
         setShowLicense(false);
       } else {
         haptic('error');
-        setStatus(`❌ ${res.error || 'Invalid key'}`);
+        setStatus(res.error || 'Invalid key');
       }
     } catch (e: any) {
       haptic('error');
@@ -99,8 +99,8 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
 
   if (!inTg && !wallet) {
     return (
-      <div className="glass-morphism rounded-2xl border border-white/10 p-5 space-y-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Telegram &amp; TON</p>
+      <div className="rounded-xl bg-[var(--color-paper-2)] border border-[var(--color-rule)] p-5 space-y-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-gold">Telegram &amp; TON</p>
         <p className="text-xs text-gray-400 leading-relaxed">
           Pay with Stars or TON inside the Mini App. Card checkout is unavailable. You can also connect a TON wallet here.
         </p>
@@ -122,24 +122,24 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
   }
 
   return (
-    <div className={`glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
+    <div className={`rounded-xl bg-[var(--color-paper-2)] border border-gold/25 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           {user?.photo_url ? (
-            <img src={user.photo_url} alt="" className="w-9 h-9 rounded-full border border-gold/40" />
+            <img src={user.photo_url} alt="" className="w-10 h-10 rounded-full border border-gold/40 object-cover" />
           ) : (
-            <div className="w-9 h-9 rounded-full bg-gold/20 border border-gold/40 flex items-center justify-center text-[11px] font-black text-gold-light">
+            <div className="w-10 h-10 rounded-full bg-gold/15 border border-gold/40 flex items-center justify-center text-[12px] font-bold text-gold-light">
               {(user?.first_name || 'T').slice(0, 1).toUpperCase()}
             </div>
           )}
           <div className="min-w-0">
-            <p className="text-sm font-bold text-white truncate">{user?.first_name || 'Telegram user'}{user?.username ? <span className="text-gray-500 font-normal"> @{user.username}</span> : null}</p>
-            <p className="text-[10px] font-mono uppercase tracking-widest text-gray-500">
-              {session ? 'Verified by server' : 'Signing in…'}
+            <p className="text-sm font-semibold text-white truncate">{user?.first_name || 'Telegram user'}{user?.username ? <span className="text-gray-500 font-normal"> @{user.username}</span> : null}</p>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">
+              {session ? 'Verified session' : 'Signing in…'}
             </p>
           </div>
         </div>
-        <span className={`shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${active ? 'bg-success-500/10 border-success-500/30 text-success-400' : 'bg-white/5 border-white/10 text-gray-400'}`}>
+        <span className={`shrink-0 px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider border ${active ? 'bg-success-500/10 border-success-500/30 text-success-400' : 'bg-white/5 border-white/10 text-gray-400'}`}>
           {active ? plans[sub!.plan]?.title || sub!.plan : 'Free'}
         </span>
       </div>
@@ -179,7 +179,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-gold-light">{p.title}</span>
-                <span className="text-[11px] font-mono text-gold">{p.stars.toLocaleString()} ⭐</span>
+                <span className="text-[11px] font-mono text-gold">{p.stars.toLocaleString()} Stars</span>
               </div>
               <p className="text-[10px] text-gray-500 mt-1 leading-snug">{p.description}</p>
               <p className="text-[9px] uppercase tracking-widest font-black text-gold mt-2">{busyPlan === id ? 'Opening checkout…' : `${active && sub!.plan === id ? 'Extend' : 'Subscribe'} · ${p.days} days`}</p>
@@ -196,10 +196,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
           onClick={() => setShowLicense(!showLicense)}
           className="w-full flex items-center justify-between text-[11px] font-bold text-gold hover:text-gold-light transition-colors py-1"
         >
-          <span className="flex items-center gap-1.5">
-            <span>🔑</span>
-            <span>Redeem License Key / 3-Day Pass</span>
-          </span>
+          <span>Redeem license key / 3-day pass</span>
           <span className="text-[9px] uppercase font-mono px-2 py-0.5 rounded bg-white/5 text-gray-400">
             {showLicense ? 'Hide' : 'Enter Key'}
           </span>
