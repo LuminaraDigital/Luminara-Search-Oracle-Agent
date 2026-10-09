@@ -78,7 +78,7 @@ fun packProofRecord(record: ProofRecord): cell {
  * Handles incoming internal messages (gasless sponsored anchor from minter wallet).
  */
 fun onInternalMessage(inMsg: InMessage) {
-    val body = inMsg.body;
+    var body = inMsg.body;
     if (body.remainingBitsCount() < 32) {
         return; // Plain transfer / top-up
     }
@@ -93,7 +93,7 @@ fun onInternalMessage(inMsg: InMessage) {
 
     // Check signature on internal sponsored payload if signed, or verify minter key
     val signature = body.loadBits(512);
-    val signedPayload = body;
+    var signedPayload = body;
     assert (isSignatureValid(signedPayload.hash(), signature, storage.minterPublicKey)) throw ERR_INVALID_SIGNATURE;
 
     val domainHash = signedPayload.loadUint(256);
@@ -126,10 +126,10 @@ fun onInternalMessage(inMsg: InMessage) {
 /**
  * Handles incoming external messages (direct broadcast signed by ops minter).
  */
-fun onExternalMessage(inMsgBody: slice) {
+fun onExternalMessage(var inMsgBody: slice) {
     assert (inMsgBody.remainingBitsCount() >= 512 + 32 + 32 + 32) throw ERR_INVALID_SIGNATURE;
     val signature = inMsgBody.loadBits(512);
-    val signedSlice = inMsgBody;
+    var signedSlice = inMsgBody;
 
     var storage = Storage.load();
     assert (!storage.isPaused) throw ERR_CONTRACT_PAUSED;
@@ -194,7 +194,7 @@ get fun get_proof(domainHash: uint256, auditIdHash: uint256): (uint256, uint8, u
     if (!found) {
         return (0, 0, 0, 0, 0, false);
     }
-    val recordSlice = slice!;
+    var recordSlice = slice!;
     val evidenceHash = recordSlice.loadUint(256);
     val healthScore = recordSlice.loadUint(8);
     val citationRate = recordSlice.loadUint(8);
