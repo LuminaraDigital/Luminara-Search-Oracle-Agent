@@ -1014,6 +1014,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/stripe/create-checkout-session') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
     return withCors(handleCreateStripeCheckoutSession(request, env));
   }
 

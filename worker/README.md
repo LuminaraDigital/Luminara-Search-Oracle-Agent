@@ -119,6 +119,77 @@ and the SPA asset fallback:
   credited end to end on staging (spec 0018), with a review, and with `tests/moneyInvariants.test.ts`
   changed in the same pull request. `LORA_CHECKOUT_LIVE` is a second, separate switch for $LORA.
 
+## Stripe card rail invariants (`worker/stripePayment.ts`, pinned in `tests/stripePayment.test.ts`)
+
+The rail is off. These hold for the day it is switched on.
+
+- **Only a signed-in web buyer can start a checkout.** `POST /stripe/create-checkout-session` is a
+  protected route and the handler calls `identify()` again: no user means 401 and no call to
+  Stripe. There is no guest checkout. A request with Telegram init data, or an identity that
+  came from Telegram, is refused (Stars only inside Telegram).
+- **The Stripe mode must match the environment.** `ENVIRONMENT=production` needs a live secret
+  key; every other environment needs a test key. Anything else closes the rail and public
+  `/health` reports `stripeCheckout: false`. The webhook acts only on an event whose `livemode`
+  matches, so card 4242 can never buy a production plan.
+- **Nobody pays while the payment could not be credited.** No session is created unless
+  `isStripeLedgerReady` passes (migrations 0021 and 0024 applied) and KV is bound.
+- **The grant is decided by the server's own numbers.** Only `checkout.session.completed` with
+  `mode=payment`, `payment_status=paid`, `currency=usd`, a `payment_intent`, and `amount_total`
+  equal to `STRIPE_PLAN_CONFIG[plan].amountCents` is credited, to `metadata.userId` only.
+  `invoice.payment_succeeded` and `client_reference_id` are not honoured. Turning on Stripe Tax
+  or coupons changes `amount_total` and must change this check in the same PR. A session that
+  fails a check is logged with `NOT credited` and nothing is refunded automatically: refund it by
+  hand. A session can be paid for one hour, so a price change needs an hour before sessions
+  opened at the old price are gone.
+- **A full refund or a dispute takes back the days that charge granted, once.** The ledger row
+  stores `payment_intent`, the paying login, the days granted and when they end
+  (`granted_until`). `charge.refunded` (full refunds only; a partial refund leaves the plan
+  alone), `charge.dispute.created` and `charge.dispute.funds_withdrawn` claim the reversal in D1
+  before the subscription is rewritten. An inquiry (dispute status `warning_*`) changes nothing.
+  Only the days still ahead come off, so a card month that has run out cannot shorten a plan
+  bought another way. A dispute that is later won is not re-credited automatically.
+- **A reversed upgrade does not leave the higher plan behind.** After a reversal the plan is the
+  highest of: the account's other card charges still standing, and the plan it held before its
+  run of card purchases began (`prev_plan`). If another rail has written the record since, that
+  purchase set the plan and the name is left alone.
+- **Events may arrive in any order.** A refund or dispute that arrives before its session was
+  credited leaves a marker row (`reversed:<payment_intent>`), and the late session is not credited.
+- **Plan rank (Track SW, SW0a-4).** A lower plan never replaces a higher active one: it is refused
+  before payment (409 `LOWER_PLAN_REFUSED`). If a lower-plan session opened earlier is paid
+  anyway, plan and expiry stay as they are and the Worker refunds the payment through Stripe
+  (the only place the Worker moves money on this rail). The same plan extends the expiry. A
+  higher plan adds its days to the current expiry and replaces the plan name: this is today's
+  rule on every rail, and Track SW decision 31 is whether to keep it (see below).
+- **The payer returns to the Luminara site.** Both return URLs are built from `WEBAPP_URL`. The
+  request body and the `Origin` header are never used. The client sends the plan id and nothing else.
+- **Webhook hygiene.** Body capped at `MAX_SMALL_BODY_BYTES` before the HMAC is computed; a
+  non-numeric `t` in the signature header is malformed; a failed write releases its D1 claim and
+  the request fails, so Stripe redelivers. A retried session finds itself in `stripeSessions`
+  on the record and is neither added again nor refused.
+
+Known limits, each to be settled before the rail is switched on:
+
+- **Days bought cheaply become days of the higher plan on upgrade (decision 31).** Twelve Starter
+  months and then one Agency month is thirteen months of Agency. The card rail makes this easy
+  to do on purpose. It is the same on Stars, TON and licence keys today.
+- **Two events for one account at the same moment can lose an update.** The subscription is one
+  KV record that each rail reads and then writes. Three charges disputed in the same second can
+  end with one month removed instead of three. Fixing it means keeping the plan in D1 or a
+  Durable Object, for every rail.
+- **A Worker that is cut off between the D1 claim and the KV write leaves a claim with no
+  grant**, and later deliveries are answered as duplicates. A caught failure releases the claim;
+  a cancelled request does not. The ledger needs an "applied" state to close this.
+- **The run of card purchases is remembered on the KV record.** A purchase on another rail writes
+  a fresh record, so a card retry or reversal after it is judged without that memory.
+
+Before `STRIPE_CHECKOUT_LIVE` is set to true (its own PR, with `tests/moneyInvariants.test.ts`):
+subscribe the Stripe endpoint to exactly `checkout.session.completed`, `charge.refunded`,
+`charge.dispute.created` and `charge.dispute.funds_withdrawn`; on staging, prove one test-mode
+purchase (also once with a `+location_FR` email, to see `currency` stay `usd` under Adaptive
+Pricing), one refund, one dispute and one refused lower plan; add the two migrations and
+`stripe_credited_sessions` to `scripts/smoke-check.mjs`; and give the buyer a confirmation when
+they land on `/?payment=success` (nothing reads it today).
+
 ## Payment rail invariants (pinned in `tests/moneyInvariants.test.ts`)
 
 - **Inside Telegram the only rail is Stars.** `POST /ton/invoice` refuses a request that carries
