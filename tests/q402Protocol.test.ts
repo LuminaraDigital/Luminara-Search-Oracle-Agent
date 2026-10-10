@@ -6,7 +6,6 @@ import {
   verifyQ402Payment,
   settleQ402Payment,
   getQ402SupportedCatalog,
-  QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT,
   type Q402SignedPayload,
 } from '../worker/q402';
 import {
@@ -59,13 +58,13 @@ describe('Q402 Protocol & Jetton Facilitator', () => {
     expect(data.accepts[1].scheme).toBe('ton/jetton-transfer');
     expect(data.accepts[1].asset).toBe('USDT');
 
-    // Option 3: LORA Jetton (Qubic deflationary burn)
+    // Option 3: LORA Jetton. Nothing is burned on a payment, so the challenge must not say so.
     expect(data.accepts[2].scheme).toBe('ton/jetton-transfer');
     expect(data.accepts[2].asset).toBe('LORA');
-    expect(data.accepts[2].extra?.burnRatePercent).toBe(QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT);
+    expect(JSON.stringify(data)).not.toMatch(/burn|deflation/i);
   });
 
-  it('provides a supported catalog describing networks, assets, and Qubic burn rates', () => {
+  it('provides a supported catalog describing networks and assets, with no burn claim', () => {
     const env = mockEnv();
     const catalog = getQ402SupportedCatalog(env);
 
@@ -73,7 +72,8 @@ describe('Q402 Protocol & Jetton Facilitator', () => {
     expect(catalog.networks).toContain('mainnet');
     expect(catalog.assets.TON.decimals).toBe(9);
     expect(catalog.assets.USDT.decimals).toBe(6);
-    expect(catalog.assets.LORA.deflationaryBurnRatePercent).toBe(15);
+    expect(catalog.assets.LORA.decimals).toBe(9);
+    expect(JSON.stringify(catalog)).not.toMatch(/burn|deflation/i);
     expect(catalog.endpoints.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -107,7 +107,7 @@ describe('Q402 Protocol & Jetton Facilitator', () => {
     expect(badAmount.isValid).toBe(false);
   });
 
-  it('settles payments in D1 and executes Qubic 15% Supply Watcher burn on LORA Jettons', async () => {
+  it('settles a LORA payment in D1 once, and reports no burn, because none happens', async () => {
     const env = mockEnv();
 
     const payload: Q402SignedPayload = {
@@ -125,8 +125,8 @@ describe('Q402 Protocol & Jetton Facilitator', () => {
     expect(settled.success).toBe(true);
     expect(settled.txHash).toBe(sampleTxHash);
 
-    // 15% of 10,000,000,000 is 1,500,000,000
-    expect(settled.burnAmount).toBe('1500000000');
+    expect(settled.amount).toBe('10000000000');
+    expect(settled).not.toHaveProperty('burnAmount');
 
     // Attempting to settle the exact same txHash again MUST be rejected (Double Spend Prevention)
     const doubleSpend = await settleQ402Payment(env, { ...payload, orderId: 'q402_order_test_2' });
@@ -297,7 +297,7 @@ describe('Client-Side Jetton Serialization (TEP-74 & TEP-64)', () => {
     expect(comment).toBe('LUM:order_123:single_audit');
   });
 
-  it('builds valid TEP-74 TokenBurn cell for Supply Watcher deflationary burn', () => {
+  it('builds a valid TEP-74 TokenBurn cell (a holder burning their own tokens)', () => {
     const burnCell = buildJettonBurnPayload(1_500_000n, dummyOwner);
     const slice = burnCell.beginParse();
 

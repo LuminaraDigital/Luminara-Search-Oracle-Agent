@@ -1,8 +1,8 @@
 /**
  * Q402 Facilitator for TON & XDC Dual-Chain Payments.
  *
- * Provides challenge generation, on-chain verification, atomic single-use
- * settlement in D1, and Qubic-inspired deflationary burn accounting.
+ * Provides challenge generation, on-chain verification, and atomic single-use
+ * settlement in D1.
  */
 
 import type { Env } from '../env';
@@ -37,14 +37,10 @@ export interface SettlementResult {
   payer?: string;
   amount?: string;
   asset?: Q402Asset;
-  burnAmount?: string;
   error?: string;
   explorerUrl?: string;
   chain?: 'ton' | 'xdc';
 }
-
-/** Default Qubic-style Supply Watcher burn rate for native utility Jetton ($LORA) */
-export const QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT = 15;
 
 /**
  * Q402 pay-per-call settlement default flag (fail closed unless enabled via Q402_LIVE).
@@ -210,13 +206,6 @@ export async function settleQ402Payment(
     return { success: false, error: 'Failed to claim transaction in payment ledger' };
   }
 
-  let burnAmount: string | undefined;
-  if (payload.asset === 'LORA') {
-    const rawAmount = BigInt(payload.amount);
-    const burnCoins = (rawAmount * BigInt(QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT)) / 100n;
-    burnAmount = burnCoins.toString();
-  }
-
   const tonNet: ChainNetwork = network === 'testnet' ? 'testnet' : 'mainnet';
   const explorerUrl = tonExplorerTxUrl(tonNet, normHash);
 
@@ -226,7 +215,6 @@ export async function settleQ402Payment(
     payer: payload.payerAddress || '0:unknown',
     amount: payload.amount,
     asset: payload.asset,
-    burnAmount,
     explorerUrl,
     chain: 'ton',
   };
@@ -267,7 +255,6 @@ export function getQ402SupportedCatalog(env: Env) {
         name: 'Luminara Oracle Token',
         decimals: LORA_DECIMALS,
         master: JETTON_MASTERS[network]?.LORA || '',
-        deflationaryBurnRatePercent: QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT,
       },
       XDC: {
         symbol: 'XDC',
@@ -291,7 +278,6 @@ export function getQ402SupportedCatalog(env: Env) {
           LORA: {
             amount: JETTON_PRICING.single_audit.units,
             display: `${JETTON_PRICING.single_audit.amount} LORA`,
-            burnEstimate: `${(JETTON_PRICING.single_audit.amount * 0.15).toFixed(2)} LORA`,
           },
           XDC: {
             amount: XDC_PRICING.single_audit.wei,
@@ -314,7 +300,6 @@ export function getQ402SupportedCatalog(env: Env) {
           LORA: {
             amount: JETTON_PRICING.multi_agent_crawl.units,
             display: `${JETTON_PRICING.multi_agent_crawl.amount} LORA`,
-            burnEstimate: `${(JETTON_PRICING.multi_agent_crawl.amount * 0.15).toFixed(2)} LORA`,
           },
           XDC: {
             amount: XDC_PRICING.multi_agent_crawl.wei,

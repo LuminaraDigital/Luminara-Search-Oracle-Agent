@@ -1,8 +1,8 @@
 /**
  * Luminara Q402 TON Chain Adapter
  *
- * Implements micro-settlement verification, atomic claim, deflationary burn accounting,
- * and proof anchoring for The Open Network (native TON and TEP-74 Jettons).
+ * Implements micro-settlement verification, atomic claim, and proof anchoring for
+ * The Open Network (native TON and TEP-74 Jettons).
  */
 
 import type { Env } from '../env';
@@ -31,7 +31,6 @@ import {
   type ChainNetwork,
 } from '../chainNetwork';
 import { recordProofAnchorBestEffort } from '../proofAnchors';
-import { QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT } from './facilitator';
 
 export class TonChainAdapter implements ChainAdapter {
   readonly chain = 'ton' as const;
@@ -66,7 +65,6 @@ export class TonChainAdapter implements ChainAdapter {
           memo,
           decimals,
           jettonMaster: master,
-          burnRatePercent: asset === 'LORA' ? QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT : undefined,
           displayAmount: `${price.amount} ${asset}`,
         },
       };
@@ -175,15 +173,7 @@ export class TonChainAdapter implements ChainAdapter {
       return { success: false, error: 'Failed to claim transaction in payment ledger' };
     }
 
-    // 5. Calculate deflationary burn if LORA Jetton
-    let burnAmount: string | undefined;
-    if (payload.asset === 'LORA') {
-      const rawAmount = BigInt(payload.amount);
-      const burnCoins = (rawAmount * BigInt(QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT)) / 100n;
-      burnAmount = burnCoins.toString();
-    }
-
-    // 6. Record proof anchor in D1
+    // 5. Record proof anchor in D1
     const explorerUrl = tonExplorerTxUrl(network, normHash);
     await recordProofAnchorBestEffort(env, {
       kind: 'ton_payment',
@@ -202,7 +192,6 @@ export class TonChainAdapter implements ChainAdapter {
       payer: payload.payerAddress || '0:unknown',
       amount: payload.amount,
       asset: payload.asset,
-      burnAmount,
       explorerUrl,
     };
   }
