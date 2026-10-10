@@ -103,11 +103,11 @@ export interface Env {
   STRIPE_WEBHOOK_SECRET?: string;
   TON_RECEIVING_ADDRESS?: string;
   /**
-   * "true" only after the owner has confirmed in their own wallet app that TON_RECEIVING_ADDRESS
-   * is theirs. Anything else keeps TON checkout closed: no invoice is issued and public health
-   * reports `ton: false`.
+   * The TON address the owner has confirmed, in their own wallet app, to be theirs. TON checkout
+   * is open only while this equals TON_RECEIVING_ADDRESS exactly. Empty, or different, keeps it
+   * closed: no invoice is issued and public health reports `ton: false`.
    */
-  TON_ADDRESS_CONFIRMED?: string;
+  TON_CONFIRMED_ADDRESS?: string;
   TON_API_KEY?: string;
   /**
    * Hard network gate for chain payments and proof anchors: `testnet` | `mainnet`.

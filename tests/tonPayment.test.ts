@@ -55,7 +55,6 @@ function makeEnv(overrides: Record<string, unknown> = {}) {
     LUMINARA_KV: kv,
     DB: createSqliteD1(),
     TON_RECEIVING_ADDRESS: MERCHANT,
-    TON_ADDRESS_CONFIRMED: 'true',
     ENVIRONMENT: 'production',
     CHAIN_NETWORK: 'mainnet',
     CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',
@@ -63,6 +62,8 @@ function makeEnv(overrides: Record<string, unknown> = {}) {
     CHAIN_XDC_RPC_URL: 'https://erpc.xinfin.network',
     ...overrides,
   };
+  // The owner has confirmed whichever address this test uses, unless the test says otherwise.
+  if (!('TON_CONFIRMED_ADDRESS' in overrides)) env.TON_CONFIRMED_ADDRESS = env.TON_RECEIVING_ADDRESS;
   return { env, kv };
 }
 

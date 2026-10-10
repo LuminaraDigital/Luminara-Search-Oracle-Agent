@@ -18,6 +18,9 @@ import {
 } from '../worker/tonPayment';
 import { STRIPE_CHECKOUT_LIVE } from '../worker/stripePayment';
 import { railsOffered, resolvePaymentOptions } from '../components/paywall/paymentOptions';
+import { PLANS } from '../worker/telegramBot';
+import { Q402_SETTLEMENT_LIVE } from '../worker/q402';
+import { parseJsonc } from '../scripts/lib/jsonc.mjs';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 /**
@@ -41,6 +44,9 @@ function syntheticTonAddress(tag: number, fill: number): string {
   return Buffer.from(bytes).toString('base64url');
 }
 
+const MERCHANT = syntheticTonAddress(0x11, 0x5a);
+const OTHER_ADDRESS = syntheticTonAddress(0x11, 0x3c);
+
 function makeEnv(overrides: Record<string, unknown> = {}) {
   const store = new Map<string, string>();
   const kv = {
@@ -60,8 +66,8 @@ function makeEnv(overrides: Record<string, unknown> = {}) {
   const env: any = {
     LUMINARA_KV: kv,
     DB: createSqliteD1(),
-    TON_RECEIVING_ADDRESS: syntheticTonAddress(0x11, 0x5a),
-    TON_ADDRESS_CONFIRMED: 'true',
+    TON_RECEIVING_ADDRESS: MERCHANT,
+    TON_CONFIRMED_ADDRESS: MERCHANT,
     ENVIRONMENT: 'production',
     CHAIN_NETWORK: 'mainnet',
     CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',
@@ -129,16 +135,29 @@ describe('money invariants', () => {
 });
 
 describe('the TON merchant address must be confirmed by the owner before it takes money', () => {
-  it('only the string "true" counts as confirmed', () => {
-    for (const v of [undefined, '', 'false', 'TRUE', 'yes', '1', ' maybe ']) {
-      expect(isTonAddressConfirmed({ TON_ADDRESS_CONFIRMED: v as string })).toBe(false);
+  it('confirmed means the confirmed address equals the receiving address, exactly', () => {
+    const is = (confirmed: unknown, receiving: unknown = MERCHANT) =>
+      isTonAddressConfirmed({ TON_CONFIRMED_ADDRESS: confirmed as string, TON_RECEIVING_ADDRESS: receiving as string });
+    for (const v of [undefined, '', 'true', 'false', 'yes', OTHER_ADDRESS, MERCHANT.toLowerCase(), MERCHANT.slice(0, -1)]) {
+      expect(is(v)).toBe(false);
     }
-    expect(isTonAddressConfirmed({ TON_ADDRESS_CONFIRMED: 'true' })).toBe(true);
-    expect(isTonAddressConfirmed({ TON_ADDRESS_CONFIRMED: ' true ' })).toBe(true);
+    expect(is(MERCHANT)).toBe(true);
+    expect(is(` ${MERCHANT} `)).toBe(true);
+    // No receiving address at all is never "confirmed", even if both are empty.
+    expect(is('', '')).toBe(false);
+    expect(is(undefined, undefined)).toBe(false);
   });
 
-  it.each([undefined, 'false'])('with TON_ADDRESS_CONFIRMED=%s no TON invoice is issued and no order is stored', async (value) => {
-    const { env, kv } = makeEnv({ TON_ADDRESS_CONFIRMED: value });
+  it('changing the receiving address without confirming the new one closes checkout again', async () => {
+    const { env, kv } = makeEnv({ TON_RECEIVING_ADDRESS: OTHER_ADDRESS });
+    expect(isTonCheckoutOpen(env)).toBe(false);
+    const inv = await createTonInvoice(env, 'user_1', 'starter');
+    expect(inv.ok).toBe(false);
+    expect(kv.store.size).toBe(0);
+  });
+
+  it.each([undefined, '', 'true'])('with TON_CONFIRMED_ADDRESS=%s no TON invoice is issued and no order is stored', async (value) => {
+    const { env, kv } = makeEnv({ TON_CONFIRMED_ADDRESS: value });
     expect(isTonCheckoutOpen(env)).toBe(false);
     const inv = await createTonInvoice(env, 'user_1', 'starter');
     expect(inv.ok).toBe(false);
@@ -146,19 +165,33 @@ describe('the TON merchant address must be confirmed by the owner before it take
     expect(kv.store.size).toBe(0);
   });
 
+  it('a confirmed address does issue an invoice, to that address', async () => {
+    const { env } = makeEnv();
+    const inv = await createTonInvoice(env, 'user_1', 'starter');
+    expect(inv.ok).toBe(true);
+    expect((inv as { order: { recipientAddress: string } }).order.recipientAddress).toBe(MERCHANT);
+  });
+
   it('public health reports ton false until the address is confirmed, and true after', async () => {
-    const closed = await worker.fetch(new Request('https://luminarasuite.com/api/health'), makeEnv({ TON_ADDRESS_CONFIRMED: 'false' }).env, ctx);
+    const closed = await worker.fetch(new Request('https://luminarasuite.com/api/health'), makeEnv({ TON_CONFIRMED_ADDRESS: '' }).env, ctx);
     expect(((await closed.json()) as { ton?: boolean }).ton).toBe(false);
     const open = await worker.fetch(new Request('https://luminarasuite.com/api/health'), makeEnv().env, ctx);
     expect(((await open.json()) as { ton?: boolean }).ton).toBe(true);
   });
 
-  it('the shipped config keeps TON closed in every environment until the owner confirms', () => {
-    const cfg = readFileSync(join(ROOT, 'wrangler.jsonc'), 'utf8');
-    const values = [...cfg.matchAll(/"TON_ADDRESS_CONFIRMED":\s*"([^"]*)"/g)].map((m) => m[1]);
-    expect(values.length).toBe(3);
-    // Changing one of these to "true" is the owner's confirmation and belongs in its own pull request.
-    expect(values).toEqual(['false', 'false', 'false']);
+  it('the shipped config keeps TON closed in all three environments until the owner confirms', () => {
+    const cfg = parseJsonc(readFileSync(join(ROOT, 'wrangler.jsonc'), 'utf8')) as {
+      vars: Record<string, string>;
+      env: Record<string, { vars: Record<string, string> }>;
+    };
+    const blocks = { top: cfg.vars, staging: cfg.env.staging.vars, production: cfg.env.production.vars };
+    for (const [name, vars] of Object.entries(blocks)) {
+      expect(vars, name).toHaveProperty('TON_CONFIRMED_ADDRESS');
+      // Filling one of these in is the owner's confirmation. It belongs in its own pull request,
+      // with this test changed beside it and the address read back to the owner character by character.
+      expect(vars.TON_CONFIRMED_ADDRESS, name).toBe('');
+      expect(isTonAddressConfirmed(vars), name).toBe(false);
+    }
   });
 });
 
@@ -181,18 +214,32 @@ describe('Stars is the only way to pay inside Telegram', () => {
     expect([...kv.store.keys()].filter((k) => k.startsWith('ton:order:'))).toEqual([]);
   });
 
-  it('init data that does not verify gets no invoice either', async () => {
-    const { env, kv } = makeEnv({ BOT_TOKEN });
+  it('a Telegram session without the header is still refused: the identity came from Telegram', async () => {
+    const { env, kv } = makeEnv({ BOT_TOKEN, WEBAPP_URL: 'https://luminarasuite.com/' });
+    // Sign in the way the Mini App does, to be given a session cookie.
+    const auth = await worker.fetch(
+      new Request('https://luminarasuite.com/api/telegram/auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://luminarasuite.com' },
+        body: JSON.stringify({ initData: signInitData(4243) }),
+      }),
+      env,
+      ctx,
+    );
+    expect(auth.status).toBe(200);
+    const cookie = (auth.headers.get('set-cookie') || '').split(';')[0];
+    expect(cookie).toMatch(/=/);
     const res = await worker.fetch(
       new Request('https://luminarasuite.com/api/ton/invoice', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-telegram-init-data': 'user=%7B%22id%22%3A1%7D&hash=00' },
+        headers: { 'content-type': 'application/json', origin: 'https://luminarasuite.com', cookie },
         body: JSON.stringify({ planId: 'starter' }),
       }),
       env,
       ctx,
     );
-    expect(res.ok).toBe(false);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code?: string }).code).toBe('TON_NOT_IN_TELEGRAM');
     expect([...kv.store.keys()].filter((k) => k.startsWith('ton:order:'))).toEqual([]);
   });
 
@@ -204,6 +251,9 @@ describe('Stars is the only way to pay inside Telegram', () => {
   it('the bot does not point buyers at other ways to pay', () => {
     const bot = readFileSync(join(ROOT, 'worker/telegramBot.ts'), 'utf8');
     expect(bot).not.toMatch(/every payment option/i);
+    expect(bot).not.toMatch(/TON blockchain/i);
+    expect(bot).not.toMatch(/pay (with|in|by|via) (TON|USDT|card|crypto)/i);
+    expect(bot).not.toMatch(/USDT|\$LORA/);
   });
 });
 
@@ -212,5 +262,42 @@ describe('the card rail stays off until its own review', () => {
     // An audit on 2026-10-10 found it unsafe to switch on: a buyer who is not signed in is charged
     // and credited to a made-up guest id, and a test key in production grants real plans.
     expect(STRIPE_CHECKOUT_LIVE).toBe(false);
+  });
+});
+
+describe('public health carries the Stars catalogue and nothing private', () => {
+  it('lists the three 30-day plans with their Stars price, so the Mini App account panel can draw them', async () => {
+    const res = await worker.fetch(new Request('https://luminarasuite.com/api/health'), makeEnv().env, ctx);
+    const body = (await res.json()) as { plans?: Record<string, { title: string; description: string; stars: number; days: number }> } & Record<string, unknown>;
+    expect(Object.keys(body.plans || {}).sort()).toEqual(['agency', 'growth', 'starter']);
+    for (const id of ['starter', 'growth', 'agency'] as const) {
+      expect(body.plans![id]).toEqual({ title: PLANS[id].title, description: PLANS[id].description, stars: PLANS[id].stars, days: PLANS[id].days });
+      expect(body.plans![id].stars).toBeGreaterThan(0);
+    }
+    expect(Object.keys(body).sort()).toEqual(['jettonCheckout', 'ok', 'plans', 'stripeCheckout', 'ton']);
+  });
+});
+
+describe('Q402 is off, and while it is off none of its routes answer', () => {
+  it('settlement is off', () => {
+    expect(Q402_SETTLEMENT_LIVE).toBe(false);
+  });
+
+  it.each([
+    ['GET', '/api/q402/supported'],
+    ['POST', '/api/q402/verify'],
+    ['POST', '/api/q402/settle'],
+    ['POST', '/api/q402/audit'],
+    ['GET', '/api/q402/anything-else'],
+  ])('%s %s is a 404 and publishes no address or price', async (method, route) => {
+    const res = await worker.fetch(
+      new Request(`https://luminarasuite.com${route}`, { method, headers: { 'content-type': 'application/json' }, body: method === 'POST' ? '{}' : undefined }),
+      makeEnv().env,
+      ctx,
+    );
+    expect(res.status).toBe(404);
+    const text = await res.text();
+    expect(text).not.toContain(MERCHANT);
+    expect(text).not.toMatch(/USDT|LORA|burn/i);
   });
 });

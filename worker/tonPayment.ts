@@ -75,7 +75,7 @@ export const JETTON_MASTERS: Record<string, { USDT: string; LORA: string }> = {
 };
 
 export const JETTON_UNAVAILABLE_ERROR =
-  'USDT and $LORA checkout is not available yet. Pay with TON or Telegram Stars.';
+  'USDT and $LORA checkout is not available. Pay with Telegram Stars in the Telegram app.';
 
 export const TON_UNAVAILABLE_ERROR =
   'TON payments are not available right now. Use Telegram Stars in the Telegram app or a license key.';
@@ -193,7 +193,7 @@ function addressForLog(value: string): string {
 type TonConfigEnv = Pick<
   Env,
   | 'TON_RECEIVING_ADDRESS'
-  | 'TON_ADDRESS_CONFIRMED'
+  | 'TON_CONFIRMED_ADDRESS'
   | 'ENVIRONMENT'
   | 'CHAIN_NETWORK'
   | 'CHAIN_TON_API_BASE'
@@ -221,11 +221,17 @@ export function isTonPaymentConfigured(env: TonConfigEnv): boolean {
 
 /**
  * The owner has confirmed, in their own wallet app, that TON_RECEIVING_ADDRESS is their address.
- * Only the string "true" counts. A valid-looking address nobody has confirmed must not take money:
- * on 2026-10-10 the production address had never had a transaction on any network.
+ * TON_CONFIRMED_ADDRESS holds the address they confirmed, and the two must be the same string.
+ * A bare yes/no would let a later edit of the receiving address inherit the old confirmation;
+ * this way a changed address is unconfirmed until the owner confirms it again.
+ *
+ * A valid-looking address nobody has confirmed must not take money: on 2026-10-10 the production
+ * address had never had a transaction on any network.
  */
-export function isTonAddressConfirmed(env: Pick<Env, 'TON_ADDRESS_CONFIRMED'>): boolean {
-  return String(env.TON_ADDRESS_CONFIRMED ?? '').trim() === 'true';
+export function isTonAddressConfirmed(env: Pick<Env, 'TON_CONFIRMED_ADDRESS' | 'TON_RECEIVING_ADDRESS'>): boolean {
+  const confirmed = String(env.TON_CONFIRMED_ADDRESS ?? '').trim();
+  const receiving = String(env.TON_RECEIVING_ADDRESS ?? '').trim();
+  return confirmed !== '' && confirmed === receiving;
 }
 
 /**
@@ -277,7 +283,7 @@ export async function createTonInvoice(
   }
   if (!isTonAddressConfirmed(env)) {
     console.error(
-      `[TON] Invoice refused: TON_ADDRESS_CONFIRMED is not "true". The owner has not confirmed that ${addressForLog(recipient)} is their wallet.`,
+      `[TON] Invoice refused: TON_CONFIRMED_ADDRESS does not equal TON_RECEIVING_ADDRESS. The owner has not confirmed that ${addressForLog(recipient)} is their wallet.`,
     );
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
   }

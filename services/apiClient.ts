@@ -27,7 +27,10 @@ export interface ServerHealth {
   requireSubscription?: boolean;
   freeDailyLimit?: number;
   plans: Record<string, { title: string; description: string; stars: number; days: number }>;
-  /** True only when the Worker has a valid TON receiving address; absent means unavailable. */
+  /**
+   * True only when TON checkout is open: the Worker has a valid receiving address AND the owner
+   * has confirmed it is theirs. Absent or false means no TON rail is drawn.
+   */
   ton?: boolean;
   tonPricing?: Record<string, unknown>;
   /** USDT / $LORA checkout can settle (server-verified). Absent or false = hide Jetton rails. */
@@ -97,7 +100,9 @@ export function canRelayWithOwnKey(providerId: string): boolean {
 function commitServerHealth(seq: number, h: ServerHealth | null): ServerHealth {
   if (seq !== healthSeq) return healthCache || EMPTY_HEALTH;
   if (h?.ok) {
-    healthCache = h;
+    // Public health is deliberately small. Fields a caller reads without checking must always
+    // exist, or one missing key throws at render (the Mini App account panel did exactly that).
+    healthCache = { ...EMPTY_HEALTH, ...h, ok: true, providers: h.providers ?? {}, plans: h.plans ?? {} };
     healthFailedAt = 0;
     return healthCache;
   }

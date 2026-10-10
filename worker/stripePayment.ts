@@ -121,7 +121,7 @@ export async function handleCreateStripeCheckoutSession(request: Request, env: E
     return json(
       {
         ok: false,
-        error: 'Card checkout is not live yet. Pay with Telegram Stars or TON, or email support@luminarasuite.com.',
+        error: 'Card checkout is not live yet. Pay with Telegram Stars in the Telegram app.',
         code: 'STRIPE_NOT_LIVE',
       },
       503,

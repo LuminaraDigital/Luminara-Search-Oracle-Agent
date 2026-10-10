@@ -455,29 +455,29 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             )}
           </button>
           {paymentOptions.showTonTab && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('ton')}
-            disabled={!paymentOptions.tonAvailable}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
-              tab === 'ton'
-                ? 'bg-gold text-black shadow-lg shadow-gold/20'
-                : paymentOptions.tonAvailable
-                ? 'text-gray-400 hover:text-white hover:bg-white/5'
-                : 'text-gray-500 cursor-not-allowed'
-            }`}
-          >
-            <span>TON</span>
-            {!paymentOptions.tonAvailable ? (
-              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-black">
-                Soon
-              </span>
-            ) : wallet && (
-              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
-                Connected
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('ton')}
+              disabled={!paymentOptions.tonAvailable}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
+                tab === 'ton'
+                  ? 'bg-gold text-black shadow-lg shadow-gold/20'
+                  : paymentOptions.tonAvailable
+                  ? 'text-gray-400 hover:text-white hover:bg-white/5'
+                  : 'text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              <span>TON</span>
+              {!paymentOptions.tonAvailable ? (
+                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-black">
+                  Soon
+                </span>
+              ) : wallet && (
+                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
+                  Connected
+                </span>
+              )}
+            </button>
           )}
         </div>
 

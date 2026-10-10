@@ -119,6 +119,19 @@ and the SPA asset fallback:
   credited end to end on staging (spec 0018), with a review, and with `tests/moneyInvariants.test.ts`
   changed in the same pull request. `LORA_CHECKOUT_LIVE` is a second, separate switch for $LORA.
 
+## Payment rail invariants (pinned in `tests/moneyInvariants.test.ts`)
+
+- **Inside Telegram the only rail is Stars.** `POST /ton/invoice` refuses a request that carries
+  Telegram init data and any caller whose identity came from Telegram. The paywall draws no TON
+  tab, no Jetton selector, no card tab and no "email us" line there.
+- **TON checkout is open only for an address the owner has confirmed.** `TON_CONFIRMED_ADDRESS`
+  must equal `TON_RECEIVING_ADDRESS`. Until it does, no invoice is issued and public
+  `/health` reports `ton: false`. Orders that already exist can still be verified.
+- **Q402 is off, and while it is off every `/q402/*` path is a 404**, including discovery.
+- **The Stripe card rail is off** (`STRIPE_CHECKOUT_LIVE`) until its own review.
+- Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
+  catalogue: title, description, price in Stars, days). Nothing else.
+
 ## Stubbed vs live status
 
 - `worker/auditQueue.ts`: v1 queue is live; when a full node payload is not
