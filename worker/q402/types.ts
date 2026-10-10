@@ -33,7 +33,6 @@ export interface Q402PaymentRequirement {
     memo: string;
     decimals: number;
     jettonMaster?: string;
-    burnRatePercent?: number; // Deflationary burn rate for utility token
     displayAmount: string;
   };
 }
@@ -63,7 +62,6 @@ export interface Q402ExecutionResponse {
   payer: string;
   amount: string;
   asset: Q402Asset;
-  burnAmount?: string;
   evidenceHash?: string;
   explorerUrl?: string;
   chain?: 'ton' | 'xdc';

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Address } from '@ton/core';
 import { buildJettonBurnPayload, buildJettonTransferPayload } from '../services/ton/jettonService';
-import { getQ402SupportedCatalog, QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT } from '../worker/q402';
+import { getQ402SupportedCatalog } from '../worker/q402';
 import { LORA_DECIMALS } from '../worker/tonPayment';
 import token from '../contracts/jetton/token.json';
 import fixture from '../contracts/jetton/tests/fixtures/app-payloads.json';
@@ -43,9 +43,10 @@ describe('Luminara Jetton: the app and the contract agree', () => {
     expect(body.toBoc().toString('base64')).toBe(fixture.burnBoc);
   });
 
-  it('uses the invoice memo format and the Supply Watcher burn rate', () => {
+  it('uses the invoice memo format, and the fixture agrees with itself', () => {
     expect(fixture.memo).toBe(`LUM:${fixture.orderId}:${fixture.planId}`);
-    expect(fixture.burnRatePercent).toBe(QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT);
+    // The contract suite burns this share of one payment in its own test. The app burns nothing
+    // on a payment and no longer carries the rate, so this only checks the fixture's arithmetic.
     expect(BigInt(fixture.burnUnits)).toBe((BigInt(fixture.amountUnits) * BigInt(fixture.burnRatePercent)) / 100n);
   });
 

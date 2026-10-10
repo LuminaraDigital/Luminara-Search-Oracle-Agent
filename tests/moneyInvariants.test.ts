@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -317,6 +317,25 @@ describe('payment copy makes no burn, tax-on-transfer or yield claim', () => {
   ])('%s', (rel) => {
     const src = readFileSync(join(ROOT, rel), 'utf8');
     expect(src).not.toMatch(/\bburn|deflation|\byield\b|\bstaking\b|\bAPY\b/i);
+  });
+
+  it('no file a buyer or an API client reads from says burn or deflation (the search in the task\'s acceptance)', () => {
+    // components/paywall, worker/q402, worker/tonPayment.ts and worker/termsPolicy.ts, whole files:
+    // a field or a comment left behind is how the wording came back last time.
+    const files = [
+      ...readdirSync(join(ROOT, 'components/paywall')).map((f) => `components/paywall/${f}`),
+      ...readdirSync(join(ROOT, 'worker/q402')).map((f) => `worker/q402/${f}`),
+      'worker/tonPayment.ts',
+      'worker/termsPolicy.ts',
+    ].filter((f) => /\.(ts|tsx)$/.test(f));
+    expect(files.length).toBeGreaterThan(8);
+    const hits = files.flatMap((rel) =>
+      readFileSync(join(ROOT, rel), 'utf8')
+        .split('\n')
+        .map((line, i) => (/burn|deflation/i.test(line) ? `${rel}:${i + 1}` : ''))
+        .filter(Boolean),
+    );
+    expect(hits).toEqual([]);
   });
 
   it('the Terms do not name USDT or $LORA as a way to pay while both are off', () => {
