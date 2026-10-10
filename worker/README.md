@@ -144,12 +144,17 @@ and the SPA asset fallback:
   `not_measured` or "not verified" when data is missing; numeric claims
   without tool evidence are rejected. Live.
 - `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
-  nothing. Before a reply is stored in history or sent, each sentence that pairs a
-  number with a site-metric word (visibility, rank, citations, traffic, score, share)
-  is replaced by one "not measured" sentence; Stars prices, plan allowances and dates
-  are not counted. Status comes from the claim ledger (`services/evidenceBound`).
-  Business DNA enters the prompt only inside an untrusted-content fence, and the
-  reply is sent with no `parse_mode`. English only, pattern based. Live.
+  nothing, and its only prices are the ones in `PLANS`. The prompt gets a price block
+  built from `PLANS` on every turn. Before a reply is stored in history or sent, a
+  sentence with a plan price that differs from `PLANS` (wrong Stars amount, wrong
+  term, or any other currency) becomes the true price line, and a sentence that
+  states a number as a fact beside a site-metric word (visibility, rank, position,
+  citations, mentions, backlinks, traffic, score, share, authority) becomes one
+  "not measured" sentence. An instruction with a count ("Add 3 FAQ questions")
+  passes. Status comes from the claim ledger (`services/evidenceBound`). Business
+  DNA enters the prompt only inside an untrusted-content fence, and the reply is
+  sent with no `parse_mode`. The filter is a backstop, English only and pattern
+  based; the prompt rules are the main control. Live.
 - DataForSEO / Umami sidecars: live when env-bound; the front-end traffic
   path returns `not_configured` when unreachable. See `services/competitors/README.md`.
 - Telegram webhook, license service, sentinel scan: live when bindings exist.

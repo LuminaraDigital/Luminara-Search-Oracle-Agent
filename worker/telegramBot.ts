@@ -6,7 +6,7 @@ import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
-import { businessDnaPromptBlock, replaceUnmeasuredSiteMetrics, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
+import { businessDnaPromptBlock, filterChatReply, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
 import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
@@ -881,18 +881,20 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + dnaPromptAddition + domainPromptAddition },
+      // Prices in the prompt are built from PLANS on every turn, never typed by hand.
+      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(PLANS) + dnaPromptAddition + domainPromptAddition },
       ...history.slice(-6),
       { role: 'user', content: text },
     ];
 
     // 6. Generate AI response via configured worker providers
     const modelReply = await generateOracleChatResponse(env, messages);
-    // Nothing in this chat measures a site, so a sentence that puts a number beside a site-metric
-    // word is replaced here, before the reply is stored in history or sent.
-    const honest = modelReply ? replaceUnmeasuredSiteMetrics(modelReply) : null;
-    if (honest && honest.claims.length > 0) {
-      console.warn(`[Telegram Bot] chat reply carried ${honest.claims.length} unmeasured site-metric sentence(s); replaced`);
+    // Before the reply is stored in history or sent: a plan price that differs from PLANS becomes
+    // the true price line, and a number stated as a fact beside a site-metric word is replaced,
+    // because nothing in this chat measures a site.
+    const honest = modelReply ? filterChatReply(modelReply, PLANS) : null;
+    if (honest && (honest.claims.length > 0 || honest.priceCorrections > 0)) {
+      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured site-metric sentence(s), ${honest.priceCorrections} plan price sentence(s) replaced`);
     }
     const aiResponse = honest ? honest.text : null;
 
