@@ -629,10 +629,24 @@ function requireIdentity(user: HostedIdentity | null, error?: string): Response 
   return null;
 }
 
+export async function dailyStreakCount(env: Env, accountId: string): Promise<number> {
+  if (!env.DB || !accountId) return 1;
+  try {
+    const row = await env.DB.prepare(
+      `SELECT COUNT(id) AS cnt FROM referral_rewards WHERE account_id = ? AND kind = 'daily_checkin'`,
+    )
+      .bind(accountId)
+      .first<{ cnt: number }>();
+    return Math.max(1, Number(row?.cnt || 1));
+  } catch {
+    return 1;
+  }
+}
+
 export async function handleDailyCheckin(
   env: Env,
   accountId: string,
-): Promise<{ ok: true; alreadyCheckedIn: boolean; awardedLumens?: number; lumens: LumensBreakdown }> {
+): Promise<{ ok: true; alreadyCheckedIn: boolean; streakDays: number; awardedLumens?: number; lumens: LumensBreakdown }> {
   const now = Date.now();
   const today = utcDay(now);
   const checkinReason = `checkin:${today}`;
@@ -642,9 +656,11 @@ export async function handleDailyCheckin(
     const cached = await env.LUMINARA_KV.get(kvKey);
     if (cached) {
       const snapshot = await readRetentionSnapshot(env, accountId);
+      const streakDays = await dailyStreakCount(env, accountId);
       return {
         ok: true,
         alreadyCheckedIn: true,
+        streakDays,
         lumens: snapshot.lumens,
       };
     }
@@ -661,9 +677,11 @@ export async function handleDailyCheckin(
       await env.LUMINARA_KV.put(kvKey, '1', { expirationTtl: 86400 * 2 });
     }
     const snapshot = await readRetentionSnapshot(env, accountId);
+    const streakDays = await dailyStreakCount(env, accountId);
     return {
       ok: true,
       alreadyCheckedIn: true,
+      streakDays,
       lumens: snapshot.lumens,
     };
   }
@@ -677,9 +695,11 @@ export async function handleDailyCheckin(
       .run();
   } catch {
     const snapshot = await readRetentionSnapshot(env, accountId);
+    const streakDays = await dailyStreakCount(env, accountId);
     return {
       ok: true,
       alreadyCheckedIn: true,
+      streakDays,
       lumens: snapshot.lumens,
     };
   }
@@ -693,9 +713,11 @@ export async function handleDailyCheckin(
   await saveProgression(env, accountId, prog, missionsCompleted);
 
   const snapshot = await readRetentionSnapshot(env, accountId);
+  const streakDays = await dailyStreakCount(env, accountId);
   return {
     ok: true,
     alreadyCheckedIn: false,
+    streakDays,
     awardedLumens: 25,
     lumens: snapshot.lumens,
   };

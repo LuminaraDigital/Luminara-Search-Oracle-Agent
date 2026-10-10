@@ -196,5 +196,76 @@ describe('Stripe Payments & Webhook Verification', () => {
       expect(body2.received).toBe(true);
       expect(body2.duplicate).toBe(true);
     });
+
+    it('enforces rank-guard so Starter does not overwrite an active Agency plan', async () => {
+      // Seed active agency plan expiring in 15 days
+      const now = Date.now();
+      const agencyExpiry = now + 15 * 86400_000;
+      mockKv.set('sub:acc_agency_user', JSON.stringify({
+        plan: 'agency',
+        startedAt: now - 15 * 86400_000,
+        expiresAt: agencyExpiry,
+      }));
+
+      const payload = JSON.stringify({
+        id: 'evt_starter_purchase',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_test_starter_clobber',
+            amount_total: 4900,
+            currency: 'usd',
+            metadata: {
+              plan: 'starter',
+              accountId: 'acc_agency_user',
+            },
+          },
+        },
+      });
+
+      const sigHeader = await generateValidSignatureHeader(payload, secret);
+      const req = new Request('https://api.luminara.ai/api/stripe/webhook', {
+        method: 'POST',
+        headers: {
+          'stripe-signature': sigHeader,
+        },
+        body: payload,
+      });
+
+      const res = await handleStripeWebhook(req, env);
+      expect(res.status).toBe(200);
+
+      // Verify rank guard: plan is preserved as agency and duration is extended
+      const rawSub = mockKv.get('sub:acc_agency_user');
+      expect(rawSub).toBeDefined();
+      const sub = JSON.parse(rawSub!);
+      expect(sub.plan).toBe('agency');
+      expect(sub.expiresAt).toBeGreaterThan(agencyExpiry);
+    });
+
+    it('handles charge.refunded event gracefully', async () => {
+      const payload = JSON.stringify({
+        id: 'evt_refund_1',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_test_123',
+            customer: 'cus_test_123',
+          },
+        },
+      });
+      const sigHeader = await generateValidSignatureHeader(payload, secret);
+      const req = new Request('https://api.luminara.ai/api/stripe/webhook', {
+        method: 'POST',
+        headers: { 'stripe-signature': sigHeader },
+        body: payload,
+      });
+
+      const res = await handleStripeWebhook(req, env);
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.received).toBe(true);
+      expect(body.refund_logged).toBe(true);
+    });
   });
 });

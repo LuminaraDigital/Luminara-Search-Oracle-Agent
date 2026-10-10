@@ -114,7 +114,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
           <div className="lg:col-span-7 min-w-0">
             <p className="mkt-eyebrow mb-5">Luminara Suite</p>
             <h1 className="font-display text-[clamp(2.75rem,6.4vw,4.9rem)] text-[var(--color-ink)] tracking-tight leading-[1.02] mb-6 [overflow-wrap:anywhere]">
-              See if AI recommends your business - and fix it in 15 minutes.
+              See if AI recommends your business, and fix it.
             </h1>
             <p className="max-w-xl text-lg sm:text-xl text-[var(--color-ink-2)] leading-relaxed mb-8">
               Check whether ChatGPT, Perplexity, and Google AI Overviews mention your business when customers search. Leave with an actionable fix list to get cited.

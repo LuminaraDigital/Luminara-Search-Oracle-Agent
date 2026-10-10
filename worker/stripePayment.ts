@@ -175,11 +175,12 @@ export async function handleCreateStripeCheckoutSession(request: Request, env: E
     /* caller might be a guest filling checkout */
   }
 
-  if (!userId && body.userId) {
-    userId = String(body.userId).trim();
-  }
   if (!userId) {
-    userId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    if (body.userId && typeof body.userId === 'string' && body.userId.startsWith('guest_')) {
+      userId = body.userId.trim();
+    } else {
+      userId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
   }
   if (!accountId && env.LUMINARA_KV) {
     accountId = await resolveAccountId(env, userId);
@@ -268,6 +269,13 @@ export async function handleStripeWebhook(request: Request, env: Env): Promise<R
   }
 
   const type = String(event.type || '');
+  if (type === 'charge.refunded') {
+    const charge = event.data?.object || {};
+    const customerId = charge.customer ? String(charge.customer) : null;
+    console.warn(`[Stripe Webhook] charge.refunded event received for customer ${customerId}`);
+    return json({ received: true, refund_logged: true });
+  }
+
   if (type === 'checkout.session.completed' || type === 'invoice.payment_succeeded') {
     const session = event.data?.object || {};
     const sessionId = String(session.id || '');
@@ -302,11 +310,25 @@ export async function handleStripeWebhook(request: Request, env: Env): Promise<R
       }
 
       const existing = env.LUMINARA_KV
-        ? ((await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null)
+        ? ((await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null)
         : null;
-      const base = existing?.expiresAt && existing.expiresAt > now ? existing.expiresAt : now;
+
+      const PLAN_RANK: Record<string, number> = {
+        starter: 1,
+        growth: 2,
+        agency: 3,
+      };
+
+      const existingActive = Boolean(existing?.expiresAt && existing.expiresAt > now);
+      const existingRank = existingActive ? (PLAN_RANK[String(existing?.plan || '').toLowerCase()] || 0) : 0;
+      const newRank = PLAN_RANK[planId] || 0;
+
+      // Rank-guard: If user already has an active higher-tier plan (e.g. Agency), do not overwrite with Starter
+      const effectivePlan = existingActive && existingRank > newRank ? String(existing?.plan) : planId;
+      const base = existingActive && existing?.expiresAt ? existing.expiresAt : now;
+
       const record = {
-        plan: planId,
+        plan: effectivePlan,
         amountTotal,
         currency,
         sessionId,

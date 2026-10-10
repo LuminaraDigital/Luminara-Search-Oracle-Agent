@@ -97,18 +97,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
 
   const doors: Door[] = [
     {
-      id: AppView.ORACLE_AGENT,
-      title: 'Ask a question',
-      desc: 'Get a cited answer about your brand in search and AI answers.',
-      icon: ICONS.Terminal,
-      badge: 'Ask',
-    },
-    {
       id: AppView.INSTANT_AUDIT,
       title: 'Audit my website',
       desc: 'See whether Google and AI answers mention you, then pick one fix.',
       icon: ICONS.Radar,
       badge: 'Audit',
+    },
+    {
+      id: AppView.ORACLE_AGENT,
+      title: 'Ask a question',
+      desc: 'Get a cited answer about your brand in search and AI answers.',
+      icon: ICONS.Terminal,
+      badge: 'Ask',
     },
     {
       id: AppView.BRAND_MEMORY,
@@ -117,6 +117,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       icon: ICONS.Shield,
       badge: 'Memory',
     },
+  ];
+
+  const secondary: Door[] = [
     {
       id: AppView.NOTEBOOK,
       title: 'Intelligence Studio',
@@ -124,9 +127,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       icon: ICONS.Notebook,
       badge: 'Studio',
     },
-  ];
-
-  const secondary: Door[] = [
     {
       id: AppView.BUSINESS_DNA,
       title: 'My business profile',
