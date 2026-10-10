@@ -311,10 +311,15 @@ tests/*.spec.ts               the sandbox test suite
 ## Dependencies
 
 The deployed contract has no dependencies: it is the compiled bytecode pinned
-in `code-hashes.json`. The npm packages here are build and test tools.
-`npm audit` reports advisories in two of them (`protobufjs`, pulled in by the
-Tact compiler, and the `vitest` test runner). Neither is part of the contract
-or ever runs with a key. They are listed in the ship plan.
+in `code-hashes.json`. The npm packages here are build and test tools. None is
+part of the contract or ever runs with a key.
+
+The Tact compiler pulls in `protobufjs` 6.x (through `ipfs-unixfs`), which has
+open advisories and no patched 6.x release. An `overrides` entry in
+`package.json` holds it at a patched 7.x. The compiler version is pinned, so
+the override stays until the compiler is replaced. `deployment.spec.ts` is the
+check that it does not change the build: the compiled hashes must still equal
+`code-hashes.json`.
 
 ## Before mainnet
 
