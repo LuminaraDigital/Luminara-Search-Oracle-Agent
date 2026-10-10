@@ -482,6 +482,102 @@ describe('after an admin has answered', () => {
   });
 });
 
+describe('what the second review asked for', () => {
+  const fromBot = (text: string) => ({ from: { id: 123456, is_bot: true }, text });
+
+  it("a Telegram reply to the bot's own acknowledgement reaches the request after the 10 minutes, for its sender only", async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db, 'first');
+    const ack = fromBot(`Received. A person will answer here. Your request id is ${id}. Anything else you send in the next 10 minutes is added to it.`);
+    travel(SUPPORT_WINDOW_MS + 5 * MINUTE);
+
+    await say(env, 'not mine', STRANGER, { reply_to_message: ack });
+    expect(net.model).toHaveLength(1);
+    expect(rows(db)[0].message).toBe('first');
+
+    await say(env, 'forgot the receipt: ch_9', BUYER, { reply_to_message: ack });
+    expect(net.model).toHaveLength(1);
+    expect(rows(db)[0]).toMatchObject({ id, status: 'open', message: 'first\nforgot the receipt: ch_9', follow_ups: 1 });
+    expect(net.textsTo(ADMIN_A).at(-1)).toContain('forgot the receipt: ch_9');
+  });
+
+  it('with two answered requests, a typed reply goes to the one answered last, and the other stops waiting for one', async () => {
+    const { env, db } = makeEnv();
+    const first = await openRequest(env, db, 'request A');
+    travel(SUPPORT_WINDOW_MS + MINUTE);
+    const second = await openRequest(env, db, 'request B');
+    const byId = (id: string) => rows(db).find((r) => r.id === id);
+
+    await say(env, `/reply ${second} answer to B`, ADMIN_A);
+    travel(MINUTE);
+    await say(env, `/reply ${first} answer to A`, ADMIN_A);
+    travel(MINUTE);
+
+    // A was answered last, although B was opened last.
+    await say(env, 'thanks, about A');
+    expect(byId(first)).toMatchObject({ status: 'open', message: 'request A\nthanks, about A' });
+    expect(byId(second)).toMatchObject({ status: 'answered', message: 'request B' });
+    expect(net.model).toHaveLength(0);
+
+    // The buyer was told the next message goes to the assistant, and it does.
+    await say(env, 'what is GEO');
+    expect(net.model).toHaveLength(1);
+    expect(byId(second)).toMatchObject({ status: 'answered', message: 'request B' });
+
+    // B can still be reached by pointing at its answer.
+    await say(env, 'and about B', BUYER, { reply_to_message: fromBot(`Luminara support, about your request ${second}:\n\nanswer to B`) });
+    expect(byId(second)).toMatchObject({ status: 'open', message: 'request B\nand about B' });
+    expect(net.model).toHaveLength(1);
+  });
+
+  it('closing an answered request tells the buyer, who had been told their next message would come back', async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db);
+    await say(env, `/reply ${id} done`, ADMIN_A);
+    await say(env, `/close ${id}`, ADMIN_A);
+
+    expect(net.textsTo(BUYER).at(-1)).toBe(`Your payment support request ${id} is now closed. To write to us again, send /paysupport.`);
+    expect(net.textsTo(ADMIN_A).at(-1)).toBe(`Request ${id} is closed. The buyer was told, because their next message would have come back here.`);
+    expect(rows(db)[0].status).toBe('closed');
+  });
+
+  it('closing a request nobody answered sends the buyer nothing', async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db);
+    const before = net.textsTo(BUYER).length;
+    await say(env, `/close ${id}`, ADMIN_A);
+    expect(net.textsTo(BUYER)).toHaveLength(before);
+    expect(net.textsTo(ADMIN_A).at(-1)).toBe(`Request ${id} is closed. The buyer was not messaged.`);
+  });
+
+  it('a message of a thousand short lines still arrives with the lines that say how to answer it', async () => {
+    const { env, db } = makeEnv();
+    await say(env, '/paysupport');
+    await say(env, Array(1000).fill('a').join('\n'));
+    const id = rows(db)[0].id;
+    const notice = net.textsTo(ADMIN_A)[0];
+
+    expect(notice.length).toBeLessThanOrEqual(4000);
+    expect(notice.endsWith(`Answer: /reply ${id} your answer\nClose without answering: /close ${id}`)).toBe(true);
+    expect(notice).toContain('(shortened here to fit one message; the stored request has the rest)');
+    // What is stored is whole.
+    expect(rows(db)[0].message).toHaveLength(1999);
+  });
+
+  it('a request waits from its last message: one the buyer reopened a moment ago is not overdue', async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db);
+    await say(env, `/reply ${id} done`, ADMIN_A);
+    travel(SUPPORT_REMIND_AFTER_MS + 60 * MINUTE);
+    await say(env, 'it happened again');
+    expect(rows(db)[0].status).toBe('open');
+
+    expect(await runPaymentSupportSweep(env)).toMatchObject({ open: 1, overdue: 0 });
+    travel(SUPPORT_REMIND_AFTER_MS + MINUTE);
+    expect(await runPaymentSupportSweep(env)).toMatchObject({ open: 1, overdue: 1 });
+  });
+});
+
 describe('what a buyer cannot do to the admins', () => {
   it(`only ${SUPPORT_MAX_FOLLOW_UPS} more messages are added to a request and forwarded; the next is refused, and is not chat`, async () => {
     const { env, db } = makeEnv();
@@ -930,7 +1026,7 @@ describe('each change is one conditional update', () => {
       .prepare(
         `EXPLAIN QUERY PLAN SELECT id FROM payment_support_requests
          WHERE payer_tg_id = ? AND status IN ('awaiting','open','answered') AND expires_at > ?
-         ORDER BY created_at DESC, id DESC LIMIT 1`,
+         ORDER BY updated_at DESC, id DESC LIMIT 1`,
       )
       .all(BUYER, 0)
       .map((step: { detail: string }) => step.detail)

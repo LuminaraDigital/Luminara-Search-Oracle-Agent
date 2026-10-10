@@ -220,13 +220,16 @@ message and the reply went to the model chat.
   (`> `), so they cannot pass for the bot's own lines. An attachment (a picture, a file, a
   contact, a location) is copied to each admin; if no copy arrives, both sides are told.
 - **An admin answers in the bot, in a private chat.** `/reply <id> <text>` is relayed to the
-  buyer and marks the request `answered`; `/close <id>` closes it without a message;
-  `/requests` lists what is waiting. Anyone else who sends these is refused, and in a group
-  they do nothing but say where to use them.
+  buyer and marks the request `answered`; `/close <id>` closes it; `/requests` lists what is
+  waiting. Anyone else who sends these is refused, and in a group they do nothing but say where
+  to use them. Closing sends the buyer nothing, except when an answer had told them their next
+  message would come back: then they are told it is closed.
 - **After an answer, the buyer's next message goes back to the same request**, for 72 hours,
-  and puts it back in the queue. Only that one message: the one after it is chat again. A
-  message sent with Telegram's own reply to a support answer returns to that request at any
-  time, for the buyer it belongs to. A closed request takes nothing more.
+  and puts it back in the queue. Only that one message: the one after it is chat again. With
+  several answered requests it goes to the one answered last, and the others stop waiting for
+  one. A message sent with Telegram's own reply to anything the bot said about a request (the
+  answer, or an acknowledgement that names it) returns to that request at any time, for the
+  buyer it belongs to. A closed request takes nothing more.
 - **What a buyer writes here never reaches a model.** The window check sits above the chat in
   `handleTelegramUpdate`; a captured message is not put in a prompt and not kept in
   `tg:chat:<id>`. When the window cannot be checked (the database does not answer), the message
@@ -237,7 +240,8 @@ message and the reply went to the model chat.
 - `GET /api/admin/payment-support?status=open|answered|closed` lists requests (`ADMIN_SECRET`).
 - The daily `payment_support_sweep` removes windows nobody wrote into, removes answered and
   closed requests 12 months after they were last touched, and reminds the admins of requests
-  that have waited more than a day. A request nobody has answered is never removed by it.
+  that have waited more than a day since their last message. A request nobody has answered is
+  never removed by it.
 - Requests are exported with the account, moved when two sign-ins are linked, and deleted with it.
 - The table differs from the plan's first draft in two places, both from review: a
   `follow_ups` column, and one index on `(payer_tg_id, status, expires_at)` for the lookup that

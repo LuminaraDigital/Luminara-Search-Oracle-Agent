@@ -943,6 +943,10 @@ const SUPPORT_TOO_MANY_TEXT =
 const SUPPORT_NOT_READ_TEXT =
   'Something went wrong on our side, so this message was not read. Please send it again in a minute.';
 
+/** One notice to an admin, under Telegram's 4,096 characters and under what sendPlain sends. */
+const SUPPORT_NOTICE_MAX = 3900;
+const SUPPORT_SHORTENED_NOTE = '\n> (shortened here to fit one message; the stored request has the rest)';
+
 /** The longest answer relayed to a buyer. Telegram's own limit is 4,096 with our two lines around it. */
 const SUPPORT_ANSWER_MAX = 3800;
 
@@ -972,14 +976,16 @@ function quoteForAdmins(text: string): string {
 }
 
 /**
- * The request a message answers, when the buyer used Telegram's own reply on a support answer.
- * The id is only a pointer: it is looked up together with the sender.
+ * The request a message answers, when the buyer used Telegram's own reply on something the bot
+ * said about it: the support answer, or an acknowledgement that names the request. The id is
+ * only a pointer: it is looked up together with the sender, so quoting somebody else's id, or a
+ * message the bot sent to an admin, finds nothing.
  */
 function repliedRequestId(msg: any): string | undefined {
   const original = msg?.reply_to_message;
   if (!original?.from?.is_bot || typeof original.text !== 'string') return undefined;
-  const found = original.text.match(/^Luminara support, about your request (ps_[0-9a-f]{10}):/);
-  return found ? found[1] : undefined;
+  const found = original.text.match(/\bps_[0-9a-f]{10}\b/);
+  return found ? found[0] : undefined;
 }
 
 function describeSender(from: any): string {
@@ -1059,10 +1065,14 @@ async function receiveSupportMessage(env: Env, msg: any, content: string): Promi
         `Account: ${row.account_id ?? 'not known'}\n` +
         `Most recent Stars charge: ${row.charge_id ?? 'none on record'}`
       : `More on payment support request ${row.id}, from ${describeSender(msg.from)}`;
-  const notice =
-    `${header}\n\n${quoteForAdmins(clipSupportMessage(text).text)}` +
-    (taken.cut ? `\n\n(Longer than ${SUPPORT_MESSAGE_MAX.toLocaleString('en-US')} characters. What is stored stops at the limit.)` : '') +
-    `\n\nAnswer: /reply ${row.id} your answer\nClose without answering: /close ${row.id}`;
+  const footer = `\n\nAnswer: /reply ${row.id} your answer\nClose without answering: /close ${row.id}`;
+  const cutNote = taken.cut ? `\n\n(Longer than ${SUPPORT_MESSAGE_MAX.toLocaleString('en-US')} characters. What is stored stops at the limit.)` : '';
+  // Marking each line adds to the length. The buyer's words give way, never the lines that
+  // tell the admin how to answer.
+  const quoted = quoteForAdmins(clipSupportMessage(text).text);
+  const room = SUPPORT_NOTICE_MAX - header.length - cutNote.length - footer.length - SUPPORT_SHORTENED_NOTE.length - 2;
+  const shown = quoted.length > room ? quoted.slice(0, room) + SUPPORT_SHORTENED_NOTE : quoted;
+  const notice = `${header}\n\n${shown}${cutNote}${footer}`;
   const sent = await sendToAdmins(
     env,
     notice,
@@ -1153,7 +1163,7 @@ async function handleSupportAdminCommand(env: Env, msg: any, text: string): Prom
       }
       const now = Date.now();
       const lines = waiting.map(
-        (r) => `${r.id} · ${ageText(now - r.created_at)} · Telegram id ${r.payer_tg_id}\n${String(r.message ?? '').slice(0, 160)}`,
+        (r) => `${r.id} · ${ageText(now - r.updated_at)} · Telegram id ${r.payer_tg_id}\n${String(r.message ?? '').slice(0, 160)}`,
       );
       await sendPlain(
         env,
@@ -1184,7 +1194,24 @@ async function handleSupportAdminCommand(env: Env, msg: any, text: string): Prom
 
     if (command === 'close') {
       const closed = await closeSupportRequest(env, id);
-      await sendPlain(env, chatId, closed ? `Request ${id} is closed. The buyer was not messaged.` : `Request ${id} could not be closed. Try again.`);
+      // The answer told the buyer their next message would come back here. Closing takes that
+      // away, so they are told, or their reply to a person would go to the assistant unannounced.
+      const promised = row.status === 'answered' && Number(row.expires_at ?? 0) > Date.now();
+      const told =
+        closed && promised
+          ? await sendPlain(env, row.payer_tg_id, `Your payment support request ${id} is now closed. To write to us again, send /paysupport.`)
+          : false;
+      await sendPlain(
+        env,
+        chatId,
+        !closed
+          ? `Request ${id} could not be closed. Try again.`
+          : told
+            ? `Request ${id} is closed. The buyer was told, because their next message would have come back here.`
+            : promised
+              ? `Request ${id} is closed. The buyer could not be told; their next message will go to the assistant.`
+              : `Request ${id} is closed. The buyer was not messaged.`,
+      );
       if (closed) {
         await recordAuditLogBestEffort(env, { org_id: orgId, actor_id: `tg:${adminId}`, action: 'support.close', details: { requestId: id } });
       }

@@ -163,7 +163,7 @@ export async function takeSupportMessage(
         found = await env.DB.prepare(
           `SELECT ${COLUMNS} FROM payment_support_requests
            WHERE payer_tg_id = ? AND status IN ('awaiting','open','answered') AND expires_at > ?
-           ORDER BY created_at DESC, id DESC LIMIT 1`,
+           ORDER BY updated_at DESC, id DESC LIMIT 1`,
         )
           .bind(payerTgId, now)
           .first<SupportRequestRow>();
@@ -219,6 +219,15 @@ export async function takeSupportMessage(
         .bind(clipped.text, now, now, found.id, ...windowBind)
         .run();
       if (Number(reopened.meta?.changes ?? 0) === 1) {
+        // The buyer is about to read that what they send next goes to the assistant. Another
+        // answered request with a live window would take it instead, so those windows end here.
+        // Each can still be reached with Telegram's reply, or with /paysupport.
+        await env.DB.prepare(
+          `UPDATE payment_support_requests SET expires_at = ? WHERE payer_tg_id = ? AND status = 'answered' AND id != ? AND expires_at > ?`,
+        )
+          .bind(now, payerTgId, found.id, now)
+          .run()
+          .catch((err) => console.error(`[Support] Could not end the other reply windows of a payer: ${errorText(err)}`));
         return {
           kind: 'reopened',
           cut,
@@ -320,7 +329,7 @@ export async function sweepSupportRequests(env: PaymentSupportEnv, now: number =
     .run();
   summary.purged = Number(purged.meta?.changes ?? 0);
   const counted = await env.DB.prepare(
-    `SELECT COUNT(*) AS open, COALESCE(SUM(CASE WHEN created_at < ? THEN 1 ELSE 0 END), 0) AS overdue
+    `SELECT COUNT(*) AS open, COALESCE(SUM(CASE WHEN updated_at < ? THEN 1 ELSE 0 END), 0) AS overdue
      FROM payment_support_requests WHERE status = 'open'`,
   )
     .bind(now - SUPPORT_REMIND_AFTER_MS)
