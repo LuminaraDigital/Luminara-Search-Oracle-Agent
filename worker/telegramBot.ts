@@ -896,7 +896,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     const honest = modelReply
       ? filterChatReply(modelReply, {
           plans: PLANS,
-          userTexts: [...history.filter((turn) => turn.role === 'user').map((turn) => turn.content), text],
+          userTexts: [...history.filter((turn) => turn?.role === 'user').map((turn) => String(turn.content ?? '')), text],
           allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
         })
       : null;

@@ -729,6 +729,15 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(sends[0].text).toBe(reply);
   });
 
+  it('still answers when the stored history holds a broken entry', async () => {
+    await chat.kv.put('tg:chat:100', JSON.stringify([null, { role: 'user' }, { role: 'user', content: 'I get 900 visits a month.' }]));
+
+    const { sends } = await chat.chatTurn('What next?', 'You said 900 visits a month. Add FAQ schema.');
+
+    expect(sends).toHaveLength(1);
+    expect(sends[0].text).toBe('You said 900 visits a month. Add FAQ schema.');
+  });
+
   it('sends the chat reply with no parse_mode and with link previews off', async () => {
     const reply = 'Use *one clear claim per page and link it [here.';
     const { sends } = await chat.chatTurn('Any quick tip?', reply);
