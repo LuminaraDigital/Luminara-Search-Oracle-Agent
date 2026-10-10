@@ -132,6 +132,39 @@ and the SPA asset fallback:
 - Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
   catalogue: title, description, price in Stars, days). Nothing else.
 
+## Stars charges (pinned in `tests/starsCharges.test.ts`)
+
+Telegram does not send a paid update again once the webhook has answered 200, so:
+
+- **A payment update is handled before the webhook answers.** `pre_checkout_query`,
+  `successful_payment` and `refunded_payment` never go through `waitUntil` or the throttle.
+- **The first write for a payment is its row in `stars_charges`** (migration 0023,
+  `worker/starsCharges.ts`). The webhook answers 503, so Telegram sends the update again, in
+  exactly one case: that row could not be written. Once the row exists the answer is 200.
+- **A charge always ends `credited` or `refunded`.** A failed grant refunds the payer and tells
+  them. "It threw" is not taken to mean "nothing was granted": the code checks for the receipt
+  (`stars:charge:<id>`) or a subscription record that lists the charge in `appliedCharges`.
+- **A refund only ever goes to the Telegram account that paid** (`payer_tg_id`), never to an id
+  read from the invoice payload or typed by an operator.
+- **Manual refunds go through the ledger** (`/refund` in the bot, `POST /telegram/refund`), so
+  the ledger never says `credited` for Stars that went back.
+- **A refund is finished only when the plan has gone back too.** `stars_returned` records that
+  the Stars are with the payer. If taking back what the charge gave fails, the row stays
+  `refund_due` and the sweep retries that part alone; Telegram is not asked to refund twice.
+- **A refund takes back what that charge gave, no more.** Its days come off; if it was the last
+  thing applied, the plan returns to what the record said before it. The subscription record keeps
+  `appliedCharges` and `chargeLinks` (the plan before each charge, and the charge before it) for
+  this.
+- **The daily sweep** (`stars_charge_sweep`) settles rows a webhook left undecided, retries
+  refunds (5 attempts, then `refund_failed` and an alert to `TELEGRAM_ADMIN_ID`), and compares
+  Telegram's own transaction list with the ledger. It never grants.
+- `scripts/telegram-setup.mjs` keeps pending updates unless `DROP_PENDING_UPDATES=true`: a
+  dropped update can be a paid one.
+- Known limits: the sweep is daily until the 15-minute ops cron exists; two charges for one
+  account in the same instant can lose one of them (KV has no compare-and-set); and a record
+  written before the ledger that stacked an upgrade names only its last charge, so refunding that
+  charge keeps the upgraded plan name for the days the earlier charge paid for.
+
 ## Stubbed vs live status
 
 - `worker/auditQueue.ts`: v1 queue is live; when a full node payload is not

@@ -110,6 +110,16 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     `SELECT domain, method, status, receipt_id, verified_at, last_checked_at, created_at FROM domain_verifications WHERE account_id = ?`,
     accountId,
   );
+  // Payments made with Telegram Stars (0023). Kept as a financial record after deletion, without the account id.
+  // Guarded: a database that does not have the table yet must not fail the whole export.
+  const starsCharges = await q<Record<string, unknown>>(
+    `SELECT charge_id, purpose, ref_id, stars, status, refund_reason, created_at, updated_at FROM stars_charges WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    // Only a database from before the table is let through. Any other failure fails the export.
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -131,6 +141,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'user_missions',
       'trust_receipts',
       'domain_verifications',
+      'stars_charges',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -159,6 +170,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     userMissions: missions,
     trustReceipts,
     domainVerifications,
+    starsCharges,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -202,6 +214,14 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   // Trust Network (0020). Deleting receipts makes their public /verify links 404.
   await run('trust_receipts', `DELETE FROM trust_receipts WHERE account_id = ?`, accountId);
   await run('domain_verifications', `DELETE FROM domain_verifications WHERE account_id = ?`, accountId);
+  // Stars charges are a financial record: the row stays, the account id goes. The payer's
+  // Telegram id stays too, because a refund can only be sent to it.
+  // Guarded, so a database without the table yet cannot stop the deletion before the login rows are anonymized.
+  await run('stars_charges_unlinked', `UPDATE stars_charges SET account_id = NULL WHERE account_id = ?`, accountId).catch((err) => {
+    // Only a database from before the table is let through. Any other failure fails the job, so
+    // it cannot report an account deleted while its charge rows still name it.
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
   await run(
     'users_anon',
