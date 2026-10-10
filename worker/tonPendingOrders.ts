@@ -13,6 +13,10 @@ export const TON_PENDING_ORDERS_MIGRATION = 'migrations/0025_ton_pending_orders.
 
 /** How long an unpaid order can still be credited. */
 export const TON_PENDING_ORDER_TTL_MS = 48 * 60 * 60_000;
+/** How long a closed order row is kept after that, so support can tie a quoted order id to an account. */
+export const TON_PENDING_ORDER_SUPPORT_MS = 30 * 24 * 60 * 60_000;
+/** One account cannot hold more open orders than this, so unpaid ones cannot crowd the table. */
+export const TON_MAX_OPEN_ORDERS_PER_ACCOUNT = 10;
 
 export type TonPendingOrdersEnv = { DB?: D1Database };
 
@@ -128,9 +132,24 @@ export async function listOpenTonPendingOrders(
   return found.results ?? [];
 }
 
-/** Rows are kept for 48 hours and no longer, credited or not. Returns how many were removed. */
-export async function deleteExpiredTonPendingOrders(env: TonPendingOrdersEnv, now: number): Promise<number> {
+/** How many orders this account has open (unpaid and inside their 48 hours). */
+export async function countOpenTonPendingOrders(env: TonPendingOrdersEnv, accountId: string, now: number): Promise<number> {
   if (!env.DB) return 0;
-  const result = await env.DB.prepare(`DELETE FROM ton_pending_orders WHERE expires_at <= ?`).bind(now).run();
-  return Number(result.meta?.changes ?? 0);
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM ton_pending_orders WHERE account_id = ? AND status = 'pending' AND expires_at > ?`,
+  )
+    .bind(accountId, now)
+    .first<{ n: number }>();
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Closes what has run out: an unpaid order past its 48 hours becomes 'expired' and can no longer
+ * be credited, and a row 30 days past its 48 hours is removed.
+ */
+export async function closeExpiredTonPendingOrders(env: TonPendingOrdersEnv, now: number): Promise<{ expired: number; deleted: number }> {
+  if (!env.DB) return { expired: 0, deleted: 0 };
+  const expired = await env.DB.prepare(`UPDATE ton_pending_orders SET status = 'expired' WHERE status = 'pending' AND expires_at <= ?`).bind(now).run();
+  const deleted = await env.DB.prepare(`DELETE FROM ton_pending_orders WHERE expires_at <= ?`).bind(now - TON_PENDING_ORDER_SUPPORT_MS).run();
+  return { expired: Number(expired.meta?.changes ?? 0), deleted: Number(deleted.meta?.changes ?? 0) };
 }

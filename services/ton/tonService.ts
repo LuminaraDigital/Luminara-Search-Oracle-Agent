@@ -143,7 +143,8 @@ export async function checkPendingTonPayment(
     forgetPendingTonOrder();
     return res;
   }
-  if (/not found or expired/i.test(res.error || '')) {
+  const error = res.error || '';
+  if (/not found or expired/i.test(error)) {
     forgetPendingTonOrder();
     return {
       ok: false,
@@ -151,7 +152,12 @@ export async function checkPendingTonPayment(
       error: `That order is older than 48 hours and is no longer checked. If you paid for it, email support@luminarasuite.com with this order id: ${orderId}`,
     };
   }
-  return { ok: false, error: TON_STILL_PENDING_NOTICE };
+  // "It will be credited" is only said when the Worker looked and the transfer is not showing yet.
+  if (/not found yet|could not reach ton network/i.test(error)) {
+    return { ok: false, error: TON_STILL_PENDING_NOTICE };
+  }
+  // Anything else (signed out, a different account, the service being unavailable) is said as it is.
+  return { ok: false, error: error || 'Could not check the payment. Try again in a minute.' };
 }
 
 /**
@@ -189,39 +195,39 @@ export async function executeTonPayment(
     `Please approve ${plan.amountDisplay} TON in your wallet (keep about ${plan.feeReserveDisplay} TON extra for the network fee)…`,
   );
 
+  let tx: { validUntil: number; messages: Array<{ address: string; amount: string; payload: string }> };
   try {
-    const payloadBoc = buildCommentBoc(plan.memo);
-    const tx = {
+    tx = {
       validUntil: plan.validUntil,
-      messages: [
-        {
-          address: plan.recipient,
-          amount: plan.amountNano.toString(),
-          payload: payloadBoc,
-        },
-      ],
+      messages: [{ address: plan.recipient, amount: plan.amountNano.toString(), payload: buildCommentBoc(plan.memo) }],
     };
-
-    await tonConnectUI.sendTransaction(tx);
-    // From here a transfer may be on its way. The order is remembered until it is seen as paid.
-    rememberPendingTonOrder(order.orderId);
-    onStatusChange?.('Transaction submitted. Verifying payment on TON network…');
-
-    // Poll on-chain verification (Toncenter) up to ~20s
-    for (let i = 0; i < 10; i++) {
-      await new Promise(r => setTimeout(r, 2000));
-      const verifyRes = await verifyTonPayment(order.orderId);
-      if (verifyRes.ok) {
-        forgetPendingTonOrder();
-        onStatusChange?.('Payment verified! Subscription activated.');
-        return verifyRes;
-      }
-    }
-
-    // The Worker keeps the order creditable for 48 hours and re-checks it on its own.
-    return { ok: false, pendingOrderId: order.orderId, error: TON_PENDING_NOTICE };
   } catch (err: any) {
-    const msg = err?.message || 'Transaction was rejected or cancelled.';
-    return { ok: false, error: msg };
+    return { ok: false, error: err?.message || 'Could not prepare the transfer.' };
   }
+
+  // Remembered before the wallet is asked, so a wallet hand-off that reloads this page still
+  // leaves "Check my payment". Forgotten again if the wallet refuses or the buyer cancels.
+  rememberPendingTonOrder(order.orderId);
+  try {
+    await tonConnectUI.sendTransaction(tx);
+  } catch (err: any) {
+    forgetPendingTonOrder();
+    return { ok: false, error: err?.message || 'Transaction was rejected or cancelled.' };
+  }
+  onStatusChange?.('Transaction submitted. Verifying payment on TON network…');
+
+  // Poll on-chain verification up to ~20s. A check that fails is not a payment that failed:
+  // the transfer is on its way either way.
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const verifyRes = await verifyTonPayment(order.orderId).catch(() => null);
+    if (verifyRes?.ok) {
+      forgetPendingTonOrder();
+      onStatusChange?.('Payment verified! Subscription activated.');
+      return verifyRes;
+    }
+  }
+
+  // The Worker keeps the order creditable for 48 hours and re-checks it on its own.
+  return { ok: false, pendingOrderId: order.orderId, error: TON_PENDING_NOTICE };
 }

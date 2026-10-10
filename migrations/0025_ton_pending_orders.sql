@@ -2,7 +2,9 @@
 -- The KV copy of an order expires after 2 hours. A transfer the chain index shows late was then
 -- paid and never credited. This row holds what the verifier needs after the KV copy has gone,
 -- so the buyer's own retry and the daily sweep can still credit it.
--- Rows are deleted at expires_at (48 hours after creation), and with the account.
+-- An unpaid order becomes 'expired' at expires_at (48 hours after creation) and can no longer be
+-- credited. Its row is removed 30 days later, so that for a while support can still tie an order
+-- id a buyer quotes to an account. Rows are also deleted with the account.
 
 CREATE TABLE IF NOT EXISTS ton_pending_orders (
   order_id TEXT PRIMARY KEY,

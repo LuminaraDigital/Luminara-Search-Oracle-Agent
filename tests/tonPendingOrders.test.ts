@@ -3,8 +3,17 @@ import { resolve } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTonInvoice, sweepTonPendingOrders, verifyTonPayment, TON_PRICING, TON_UNAVAILABLE_ERROR, crc16Xmodem } from '../worker/tonPayment';
-import { TON_PENDING_ORDER_TTL_MS } from '../worker/tonPendingOrders';
+import { Address } from '@ton/core';
+import {
+  createTonInvoice,
+  sweepTonPendingOrders,
+  verifyTonPayment,
+  TON_PRICING,
+  TON_TOO_MANY_OPEN_ORDERS_ERROR,
+  TON_UNAVAILABLE_ERROR,
+  crc16Xmodem,
+} from '../worker/tonPayment';
+import { TON_MAX_OPEN_ORDERS_PER_ACCOUNT, TON_PENDING_ORDER_SUPPORT_MS, TON_PENDING_ORDER_TTL_MS } from '../worker/tonPendingOrders';
 import { linkTelegramAndFirebase } from '../worker/userStore';
 import { createPrivacyJob } from '../worker/privacyService';
 import type { HostedIdentity } from '../worker/userTypes';
@@ -41,6 +50,7 @@ import {
   TON_PENDING_ORDER_WINDOW_MS,
   TON_STILL_PENDING_NOTICE,
   checkPendingTonPayment,
+  executeTonPayment,
   forgetPendingTonOrder,
   readPendingTonOrder,
   rememberPendingTonOrder,
@@ -162,6 +172,70 @@ describe('the comment must equal the order memo', () => {
   });
 });
 
+type IndexedTx = { hash: string; now: number; lt: number; comment: string; value: string };
+
+/** A chain index that filters and pages the way the two real ones are asked to. */
+function chainIndex(txs: IndexedTx[], opts: { toncenterDown?: boolean; tonapiDown?: boolean; allDown?: boolean } = {}) {
+  const calls: string[] = [];
+  const shape = (t: IndexedTx) => ({
+    hash: t.hash,
+    now: t.now,
+    utime: t.now,
+    lt: String(t.lt),
+    mc_block_seqno: 1,
+    in_msg: { value: t.value, message_content: { decoded: { '@type': 'text_comment', text: t.comment } } },
+  });
+  const fetcher = vi.fn(async (url: string) => {
+    calls.push(url);
+    if (opts.allDown) return new Response('down', { status: 503 });
+    const u = new URL(url);
+    const limit = Number(u.searchParams.get('limit') || 30);
+    if (u.searchParams.has('account')) {
+      // Toncenter v3.
+      if (opts.toncenterDown) return new Response('down', { status: 503 });
+      const since = Number(u.searchParams.get('start_utime') || 0);
+      const offset = Number(u.searchParams.get('offset') || 0);
+      const asc = u.searchParams.get('sort') === 'asc';
+      const list = txs.filter((t) => t.now >= since).sort((a, b) => (asc ? a.lt - b.lt : b.lt - a.lt));
+      return new Response(JSON.stringify({ transactions: list.slice(offset, offset + limit).map(shape) }), { status: 200 });
+    }
+    // TonAPI: newest first, paged back by logical time.
+    if (opts.tonapiDown) return new Response('down', { status: 503 });
+    const before = u.searchParams.get('before_lt');
+    const list = txs.filter((t) => (before ? t.lt < Number(before) : true)).sort((a, b) => b.lt - a.lt);
+    return new Response(JSON.stringify({ transactions: list.slice(0, limit).map(shape) }), { status: 200 });
+  });
+  return { fetcher, calls, txs };
+}
+
+/** Lets a test make chosen statements fail, the way a database that stops answering would. */
+function faultyDb(db: SqliteD1, failure: (sql: string) => string | false): D1Database {
+  const guard = (sql: string) => {
+    const message = failure(sql);
+    if (message) throw new Error(message);
+  };
+  const wrap = (stmt: any, sql: string): any => ({
+    bind: (...args: unknown[]) => wrap(stmt.bind(...args), sql),
+    execute: () => stmt.execute(),
+    first: async (...args: unknown[]) => {
+      guard(sql);
+      return stmt.first(...args);
+    },
+    all: async () => {
+      guard(sql);
+      return stmt.all();
+    },
+    run: async () => {
+      guard(sql);
+      return stmt.run();
+    },
+  });
+  return { prepare: (sql: string) => wrap(db.prepare(sql), sql), batch: (s: any[]) => db.batch(s) } as unknown as D1Database;
+}
+
+const nowSec = () => Math.floor(Date.now() / 1000);
+const creditedCount = (db: SqliteD1) => db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n as number;
+
 describe('an order is remembered for 48 hours', () => {
   it('an invoice writes the order to D1 with what the verifier needs', async () => {
     const { env, db } = makeEnv();
@@ -188,6 +262,19 @@ describe('an order is remembered for 48 hours', () => {
     expect([...kv.store.keys()].filter((k) => k.startsWith('ton:order:'))).toEqual([]);
   });
 
+  it('one account cannot hold more than ten open orders, and paying one frees a place', async () => {
+    const { env } = makeEnv();
+    const orders = [];
+    for (let i = 0; i < TON_MAX_OPEN_ORDERS_PER_ACCOUNT; i += 1) orders.push(await invoice(env, 'user_many'));
+    expect(await createTonInvoice(env, 'user_many', 'starter')).toEqual({ ok: false, error: TON_TOO_MANY_OPEN_ORDERS_ERROR });
+    // Somebody else is not affected.
+    expect((await createTonInvoice(env, 'user_other', 'starter')).ok).toBe(true);
+
+    const paid = await verifyTonPayment(env, orders[0].orderId, { fetcher: showing(orders[0].memo, TON_PRICING.starter.nanoTon, 'tx_frees_a_place') });
+    expect(paid.ok).toBe(true);
+    expect((await createTonInvoice(env, 'user_many', 'starter')).ok).toBe(true);
+  });
+
   it("the buyer's own retry still works after the 2-hour KV copy has gone", async () => {
     const { env, kv, db } = makeEnv();
     const order = await invoice(env);
@@ -205,6 +292,19 @@ describe('an order is remembered for 48 hours', () => {
     expect(rowOf(db, order.orderId).status).toBe('credited');
   });
 
+  it('a database that cannot be read is not reported as an order that has expired', async () => {
+    const { env, kv, db } = makeEnv();
+    const order = await invoice(env);
+    kv.store.delete(`ton:order:${order.orderId}`);
+    env.DB = faultyDb(db, (sql) => (/FROM ton_pending_orders WHERE order_id/.test(sql) ? 'D1_ERROR: Network connection lost.' : false));
+    const res = await verifyTonPayment(env, order.orderId, { fetcher: showing(order.memo, TON_PRICING.starter.nanoTon, 'tx_blind') });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toMatch(/temporarily unavailable/i);
+      expect(res.error).not.toMatch(/not found or expired/i);
+    }
+  });
+
   it('an order remembered for another network is not verified', async () => {
     const { env, kv, db } = makeEnv();
     const order = await invoice(env);
@@ -215,7 +315,18 @@ describe('an order is remembered for 48 hours', () => {
     expect(kv.store.has('sub:user_a')).toBe(false);
   });
 
-  it('after 48 hours the order is no longer creditable and its row is removed', async () => {
+  it('an order is payable only to the wallet configured now: after the address is replaced, a transfer to the old one grants nothing', async () => {
+    const { env, kv } = makeEnv();
+    const order = await invoice(env);
+    const replacement = syntheticTonAddress(0x11, 0x3c);
+    env.TON_RECEIVING_ADDRESS = replacement;
+    env.TON_CONFIRMED_ADDRESS = replacement;
+    const res = await verifyTonPayment(env, order.orderId, { fetcher: showing(order.memo, TON_PRICING.starter.nanoTon, 'tx_old_wallet') });
+    expect(res).toEqual({ ok: false, error: TON_UNAVAILABLE_ERROR });
+    expect(kv.store.has('sub:user_a')).toBe(false);
+  });
+
+  it('after 48 hours the order is closed; its row is kept 30 days for support, then removed', async () => {
     const { env, kv, db } = makeEnv();
     const order = await invoice(env);
     kv.store.delete(`ton:order:${order.orderId}`);
@@ -224,8 +335,13 @@ describe('an order is remembered for 48 hours', () => {
     const res = await verifyTonPayment(env, order.orderId, { fetcher: showing(order.memo, TON_PRICING.starter.nanoTon, 'tx_too_late') });
     expect(res).toEqual({ ok: false, error: 'Order not found or expired' });
 
-    const summary = await sweepTonPendingOrders(env, { fetcher: empty() });
-    expect(summary).toMatchObject({ deleted: 1, examined: 0 });
+    expect(await sweepTonPendingOrders(env, { fetcher: empty() })).toMatchObject({ expired: 1, deleted: 0, examined: 0 });
+    expect(rowOf(db, order.orderId)).toMatchObject({ status: 'expired', account_id: 'user_a' });
+    // Expired is final: a transfer that shows up now is not credited.
+    expect((await verifyTonPayment(env, order.orderId, { fetcher: showing(order.memo, TON_PRICING.starter.nanoTon, 'tx_after_close') })).ok).toBe(false);
+
+    travel(TON_PENDING_ORDER_SUPPORT_MS);
+    expect(await sweepTonPendingOrders(env, { fetcher: empty() })).toMatchObject({ deleted: 1 });
     expect(rowOf(db, order.orderId)).toBeNull();
   });
 });
@@ -233,49 +349,141 @@ describe('an order is remembered for 48 hours', () => {
 describe('the sweep credits late instead of never', () => {
   it('an order paid at minute 1 and shown by the index at minute 5 is credited by the next sweep, with no user action', async () => {
     const { env, kv, db } = makeEnv();
+    const index = chainIndex([]);
     const order = await invoice(env);
+    const paidAt = nowSec() + 60;
 
     // Too young: the buyer's own polling is still running.
-    expect(await sweepTonPendingOrders(env, { fetcher: empty() })).toMatchObject({ examined: 0 });
+    expect(await sweepTonPendingOrders(env, { fetcher: index.fetcher })).toMatchObject({ examined: 0 });
 
     travel(3 * 60_000);
-    // The index has not caught up yet.
-    expect(await sweepTonPendingOrders(env, { fetcher: empty() })).toMatchObject({ examined: 1, credited: 0, stillPending: 1 });
+    // The transfer was made at minute 1; the index has not caught up yet.
+    expect(await sweepTonPendingOrders(env, { fetcher: index.fetcher })).toMatchObject({ examined: 1, credited: 0, stillPending: 1 });
     expect(kv.store.has('sub:user_a')).toBe(false);
 
-    // Hours later the KV copy is gone and the index shows the transfer.
+    // Hours later the KV copy is gone and the index shows it, dated minute 1.
     travel(3 * 60 * 60_000);
     kv.store.delete(`ton:order:${order.orderId}`);
-    const summary = await sweepTonPendingOrders(env, { fetcher: showing(order.memo, TON_PRICING.starter.nanoTon, 'tx_indexed_late') });
-    expect(summary).toMatchObject({ examined: 1, credited: 1, stillPending: 0, errors: 0 });
+    index.txs.push({ hash: 'tx_indexed_late', now: paidAt, lt: 1, comment: order.memo, value: TON_PRICING.starter.nanoTon });
+    expect(await sweepTonPendingOrders(env, { fetcher: index.fetcher })).toMatchObject({ examined: 1, credited: 1, stillPending: 0, errors: 0 });
     expect(JSON.parse(kv.store.get('sub:user_a') as string)).toMatchObject({ plan: 'starter', paymentMethod: 'ton' });
     expect(rowOf(db, order.orderId).status).toBe('credited');
   });
 
-  it('an order is never credited twice, by the sweep or by a retry after it', async () => {
-    const { env, kv, db } = makeEnv();
-    const order = await invoice(env);
+  it('a paid order behind twenty-five older unpaid ones is credited in the same run, with one read of the wallet', async () => {
+    const { env, kv } = makeEnv();
+    for (let i = 0; i < 25; i += 1) await invoice(env, `abandoned_${i}`);
+    travel(60_000);
+    const paid = await invoice(env, 'user_paid');
+    const index = chainIndex([{ hash: 'tx_behind_the_queue', now: nowSec() + 30, lt: 7, comment: paid.memo, value: TON_PRICING.starter.nanoTon }]);
     travel(3 * 60_000);
-    const index = showing(order.memo, TON_PRICING.starter.nanoTon, 'tx_once');
 
-    expect((await sweepTonPendingOrders(env, { fetcher: index })).credited).toBe(1);
-    const expiry = JSON.parse(kv.store.get('sub:user_a') as string).expiresAt;
-
-    // The row is credited, so the next sweep does not look at it again.
-    expect(await sweepTonPendingOrders(env, { fetcher: index })).toMatchObject({ examined: 0, credited: 0 });
-    // The buyer pressing "Check my payment" afterwards is told it is paid, and gains nothing more.
-    expect((await verifyTonPayment(env, order.orderId, { expectedUserId: 'user_a', fetcher: index })).ok).toBe(true);
-
-    expect(JSON.parse(kv.store.get('sub:user_a') as string).expiresAt).toBe(expiry);
-    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(1);
+    const summary = await sweepTonPendingOrders(env, { fetcher: index.fetcher });
+    expect(summary).toMatchObject({ examined: 26, credited: 1, stillPending: 25, errors: 0 });
+    expect(kv.store.has('sub:user_paid')).toBe(true);
+    // One read of each index for the wallet, however many orders are open.
+    expect(index.calls).toHaveLength(2);
   });
 
-  it('one run looks at a bounded number of orders, oldest first', async () => {
-    const { env } = makeEnv();
-    for (let i = 0; i < 6; i += 1) await invoice(env, `user_${i}`);
+  it.each([
+    ['Toncenter alone, with TonAPI down', { tonapiDown: true }],
+    ['TonAPI alone, with Toncenter down', { toncenterDown: true }],
+    ['both answering', {}],
+  ])('a transfer is found on a wallet that has received hundreds of others since the invoice (%s)', async (_name, opts) => {
+    const { env, kv } = makeEnv();
+    const order = await invoice(env);
+    const t0 = nowSec();
+    const dust = (i: number): IndexedTx => ({ hash: `dust_${i}`, now: t0 + i, lt: i, comment: `hello ${i}`, value: '1' });
+    const index = chainIndex(
+      [
+        ...Array.from({ length: 150 }, (_, i) => dust(i + 1)),
+        { hash: 'tx_deep_in_history', now: t0 + 200, lt: 200, comment: order.memo, value: TON_PRICING.starter.nanoTon },
+        ...Array.from({ length: 150 }, (_, i) => dust(i + 201)),
+      ],
+      opts,
+    );
+    travel(60 * 60_000);
+
+    const res = await verifyTonPayment(env, order.orderId, { expectedUserId: 'user_a', fetcher: index.fetcher });
+    expect(res.ok).toBe(true);
+    expect(kv.store.has('sub:user_a')).toBe(true);
+    // It took more than one page to reach it.
+    expect(index.calls.length).toBeGreaterThan(1);
+  });
+
+  it('an order is never credited twice, even when the sweep is made to look at a credited order again', async () => {
+    const { env, kv, db } = makeEnv();
+    const order = await invoice(env);
+    const index = chainIndex([{ hash: 'tx_once', now: nowSec() + 30, lt: 3, comment: order.memo, value: TON_PRICING.starter.nanoTon }]);
     travel(3 * 60_000);
-    const index = empty();
-    expect(await sweepTonPendingOrders(env, { fetcher: index, limit: 4 })).toMatchObject({ examined: 4, stillPending: 4 });
+
+    expect((await sweepTonPendingOrders(env, { fetcher: index.fetcher })).credited).toBe(1);
+    const expiry = JSON.parse(kv.store.get('sub:user_a') as string).expiresAt;
+    expect(await sweepTonPendingOrders(env, { fetcher: index.fetcher })).toMatchObject({ examined: 0, credited: 0 });
+
+    // Put everything back as if nothing had been recorded except the ledger claim: the row is
+    // pending again and both KV copies are gone. Only ton_credited_tx stands between this and a
+    // second credit.
+    db.sqlite.prepare(`UPDATE ton_pending_orders SET status = 'pending' WHERE order_id = ?`).run(order.orderId);
+    for (const key of [...kv.store.keys()]) if (key.startsWith('ton:order:') || key.startsWith('ton:tx:')) kv.store.delete(key);
+    await sweepTonPendingOrders(env, { fetcher: index.fetcher });
+    await verifyTonPayment(env, order.orderId, { expectedUserId: 'user_a', fetcher: index.fetcher });
+
+    expect(JSON.parse(kv.store.get('sub:user_a') as string).expiresAt).toBe(expiry);
+    expect(creditedCount(db)).toBe(1);
+  });
+
+  it('the sweep and the buyer checking at the same moment credit the order once', async () => {
+    const { env, kv, db } = makeEnv();
+    const order = await invoice(env);
+    const index = chainIndex([{ hash: 'tx_raced', now: nowSec() + 30, lt: 3, comment: order.memo, value: TON_PRICING.starter.nanoTon }]);
+    travel(3 * 60_000);
+    const before = Date.now();
+
+    await Promise.all([
+      sweepTonPendingOrders(env, { fetcher: index.fetcher }),
+      verifyTonPayment(env, order.orderId, { expectedUserId: 'user_a', fetcher: index.fetcher }),
+    ]);
+
+    expect(creditedCount(db)).toBe(1);
+    const sub = JSON.parse(kv.store.get('sub:user_a') as string);
+    expect(sub.expiresAt).toBeLessThanOrEqual(before + 30 * DAY + 5_000);
+  });
+
+  it('an order whose claim is held by another verifier is not marked credited by this one', async () => {
+    const { env, db } = makeEnv();
+    const order = await invoice(env);
+    // Another verifier holds the claim for this order and has not written the plan yet (it may still fail and release it).
+    db.sqlite.prepare(`INSERT INTO ton_credited_tx (tx_hash, order_id, account_id, credited_at) VALUES ('tx_held', ?, 'user_a', ?)`).run(order.orderId, Date.now());
+    const res = await verifyTonPayment(env, order.orderId, { fetcher: showing(order.memo, TON_PRICING.starter.nanoTon, 'tx_held') });
+    expect(res.ok).toBe(true);
+    expect(rowOf(db, order.orderId).status).toBe('pending');
+  });
+
+  it('looks at the oldest orders first when a run is bounded', async () => {
+    const { env, kv } = makeEnv();
+    const orders = [];
+    for (let i = 0; i < 6; i += 1) {
+      orders.push(await invoice(env, `user_${i}`));
+      travel(1_000);
+    }
+    travel(3 * 60_000);
+    const index = chainIndex([
+      { hash: 'tx_oldest', now: nowSec() - 60, lt: 1, comment: orders[0].memo, value: TON_PRICING.starter.nanoTon },
+      { hash: 'tx_newest', now: nowSec() - 60, lt: 2, comment: orders[5].memo, value: TON_PRICING.starter.nanoTon },
+    ]);
+    expect(await sweepTonPendingOrders(env, { fetcher: index.fetcher, limit: 4 })).toMatchObject({ examined: 4, credited: 1 });
+    expect(kv.store.has('sub:user_0')).toBe(true);
+    expect(kv.store.has('sub:user_5')).toBe(false);
+  });
+
+  it('when neither index answers, nothing is decided and nothing is lost', async () => {
+    const { env, db } = makeEnv();
+    const order = await invoice(env);
+    travel(3 * 60_000);
+    const summary = await sweepTonPendingOrders(env, { fetcher: chainIndex([], { allDown: true }).fetcher });
+    expect(summary).toMatchObject({ examined: 1, credited: 0, stillPending: 1, errors: 1 });
+    expect(rowOf(db, order.orderId).status).toBe('pending');
   });
 
   it('runs on the daily cron', async () => {
@@ -362,6 +570,14 @@ describe('what the buyer is told when the index is slow', () => {
     expect(closed.error).toContain('ton_3_ghi');
     expect(readPendingTonOrder()).toBeNull();
 
+    // Signed out, or the service being unavailable, is said as it is, and the order is not forgotten.
+    rememberPendingTonOrder('ton_3b_mno');
+    answer(401, { error: 'Sign in required' });
+    expect(await checkPendingTonPayment('ton_3b_mno')).toEqual({ ok: false, error: 'Sign in required' });
+    answer(400, { error: 'Payment verification is temporarily unavailable. Please try again in a few minutes.' });
+    expect((await checkPendingTonPayment('ton_3b_mno')).error).toMatch(/temporarily unavailable/);
+    expect(readPendingTonOrder()).toBe('ton_3b_mno');
+
     rememberPendingTonOrder('ton_4_jkl');
     answer(200, { ok: true, plan: 'starter', expiresAt: 123 });
     expect(await checkPendingTonPayment('ton_4_jkl')).toMatchObject({ ok: true, plan: 'starter' });
@@ -384,5 +600,78 @@ describe('what the buyer is told when the index is slow', () => {
     state.inTelegram = true;
     expect(paywall()).not.toContain('Check my payment');
     state.inTelegram = false;
+  });
+});
+
+describe('the client payment flow', () => {
+  const MAINNET_ADDR = new Address(0, Buffer.alloc(32, 0x5a)).toString({ bounceable: true, testOnly: false });
+  const clientOrder = {
+    orderId: 'ton_9_xyz',
+    planId: 'starter',
+    amountNano: '15000000000',
+    tonAmount: 15,
+    memo: 'LUM:ton_9_xyz:starter',
+    recipientAddress: MAINNET_ADDR,
+    status: 'pending',
+    createdAt: 0,
+  };
+  const storage = () => {
+    const store = new Map<string, string>();
+    return {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+  };
+  /** The Worker as the client sees it: an invoice, then whatever `verify` does. */
+  const api = (verify: () => Promise<Response>) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: unknown) =>
+        String(url).endsWith('/api/ton/invoice') ? new Response(JSON.stringify({ ok: true, order: clientOrder }), { status: 200 }) : verify(),
+      ),
+    );
+
+  it('the order is remembered before the wallet is asked, and forgotten if the wallet refuses', async () => {
+    vi.stubGlobal('localStorage', storage());
+    api(async () => new Response('{}', { status: 400 }));
+    let rememberedWhileAsking: string | null = null;
+    const wallet = {
+      wallet: { account: { chain: '-239' } },
+      sendTransaction: vi.fn(async () => {
+        rememberedWhileAsking = readPendingTonOrder();
+        throw new Error('User rejected the request');
+      }),
+    };
+    const res = await executeTonPayment(wallet, 'starter');
+    expect(rememberedWhileAsking).toBe('ton_9_xyz');
+    expect(res).toEqual({ ok: false, error: 'User rejected the request' });
+    expect(readPendingTonOrder()).toBeNull();
+  });
+
+  it('a check that fails while polling is not shown as a failed payment', async () => {
+    vi.stubGlobal('localStorage', storage());
+    api(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    const wallet = { wallet: { account: { chain: '-239' } }, sendTransaction: vi.fn(async () => ({})) };
+    const pending = executeTonPayment(wallet, 'starter');
+    await vi.advanceTimersByTimeAsync(25_000);
+    const res = await pending;
+    expect(wallet.sendTransaction).toHaveBeenCalledTimes(1);
+    expect(res).toEqual({ ok: false, pendingOrderId: 'ton_9_xyz', error: TON_PENDING_NOTICE });
+    expect(readPendingTonOrder()).toBe('ton_9_xyz');
+  });
+
+  it('a transfer seen while polling ends the wait and clears the reminder', async () => {
+    vi.stubGlobal('localStorage', storage());
+    api(async () => new Response(JSON.stringify({ ok: true, plan: 'starter', expiresAt: 5 }), { status: 200 }));
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    const wallet = { wallet: { account: { chain: '-239' } }, sendTransaction: vi.fn(async () => ({})) };
+    const pending = executeTonPayment(wallet, 'starter');
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(await pending).toMatchObject({ ok: true, plan: 'starter' });
+    expect(readPendingTonOrder()).toBeNull();
   });
 });
