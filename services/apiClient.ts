@@ -100,9 +100,11 @@ export function canRelayWithOwnKey(providerId: string): boolean {
 function commitServerHealth(seq: number, h: ServerHealth | null): ServerHealth {
   if (seq !== healthSeq) return healthCache || EMPTY_HEALTH;
   if (h?.ok) {
-    // Public health is deliberately small. Fields a caller reads without checking must always
-    // exist, or one missing key throws at render (the Mini App account panel did exactly that).
-    healthCache = { ...EMPTY_HEALTH, ...h, ok: true, providers: h.providers ?? {}, plans: h.plans ?? {} };
+    // Public health is deliberately small, so `plans` may be absent; the Mini App account panel
+    // threw at render when it was. Fill in `plans` only. `providers` must stay absent when the
+    // server did not send it: isProviderConfiguredOnServer reads "absent" as "trust health.ok"
+    // and reads an empty object as "nothing is configured", which would switch every hosted key off.
+    healthCache = { ...h, ok: true, plans: h.plans ?? {} };
     healthFailedAt = 0;
     return healthCache;
   }
