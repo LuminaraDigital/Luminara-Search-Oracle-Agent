@@ -31,7 +31,8 @@ const clean = (value: unknown): string => String(value ?? '').trim();
  * A staging build (`vite build --mode staging`) uses only its own VITE_FIREBASE_* values and never
  * falls back to the production project. The staging Worker verifies tokens for its own Firebase
  * project, so a token minted for production would be refused there after the user had typed
- * their password; with no staging values, sign-in says it is not configured instead.
+ * their password; with no staging values, sign-in says it is not configured instead. The same
+ * holds when the values name the production project, as a local .env written for production would.
  */
 export function resolveFirebaseWebConfig(env: Record<string, unknown>): FirebaseWebConfig | null {
   const staging = clean(env.MODE) === 'staging';
@@ -41,6 +42,7 @@ export function resolveFirebaseWebConfig(env: Record<string, unknown>): Firebase
   const projectId = pick('VITE_FIREBASE_PROJECT_ID', FIREBASE_PUBLIC_CONFIG.projectId);
   const appId = pick('VITE_FIREBASE_APP_ID', FIREBASE_PUBLIC_CONFIG.appId);
   if (!apiKey || !authDomain || !projectId || !appId) return null;
+  if (staging && projectId === FIREBASE_PUBLIC_CONFIG.projectId) return null;
   return {
     apiKey,
     authDomain,

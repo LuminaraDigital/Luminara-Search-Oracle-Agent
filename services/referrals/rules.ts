@@ -12,11 +12,18 @@ export const PRODUCTION_MINI_APP_URL = 'https://t.me/LuminaraSuiteBot/app';
 
 /**
  * A Mini App link from configuration. Only a t.me link to a bot (with an optional app name) is
- * accepted; anything else, including nothing, gives the production link.
+ * accepted; anything else, including nothing, gives the production link. A bot's username ends
+ * in "bot", which keeps out other t.me paths such as /share/url and /joinchat/x.
  */
 export function resolveMiniAppUrl(candidate: unknown): string {
   const value = typeof candidate === 'string' ? candidate.trim() : '';
-  return /^https:\/\/t\.me\/[A-Za-z][A-Za-z0-9_]{4,31}(\/[A-Za-z0-9_]{1,64})?$/.test(value) ? value : PRODUCTION_MINI_APP_URL;
+  const match = /^https:\/\/t\.me\/([A-Za-z][A-Za-z0-9_]{4,31})(\/[A-Za-z0-9_]{1,64})?$/.exec(value);
+  return match && /bot$/i.test(match[1]!) ? value : PRODUCTION_MINI_APP_URL;
+}
+
+/** The bot's username in a Mini App link, without the @. A link that is not accepted names the production bot. */
+export function botUsernameFromMiniAppUrl(candidate: unknown): string {
+  return resolveMiniAppUrl(candidate).slice('https://t.me/'.length).split('/')[0]!;
 }
 
 /**

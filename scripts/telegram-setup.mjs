@@ -2,11 +2,15 @@
 /**
  * One-time Telegram bot wiring. Run after `npm run deploy`:
  *
- *   BOT_TOKEN=123:abc TELEGRAM_WEBHOOK_SECRET=long-random WEBAPP_URL=https://luminarasuite.com/ node scripts/telegram-setup.mjs
+ *   EXPECT_BOT_USERNAME=LuminaraSuiteBot BOT_TOKEN=123:abc TELEGRAM_WEBHOOK_SECRET=long-random WEBAPP_URL=https://luminarasuite.com/ node scripts/telegram-setup.mjs
  *
  * Sets the webhook (with secret token), the chat menu button that opens the Mini App,
  * the command list, and prints the direct link.
  * Still done by hand in @BotFather: /newapp (Main Mini App), bot name, description, avatar.
+ *
+ * Pending updates are kept. One of them can be a paid Stars update waiting to be delivered again,
+ * and dropping it would lose the payment. Set DROP_PENDING_UPDATES=true only when you know the
+ * queue holds nothing you need.
  */
 const { BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, WEBAPP_URL = 'https://luminarasuite.com/' } = process.env;
 if (!BOT_TOKEN) {
@@ -26,11 +30,28 @@ async function call(method, payload) {
   return data;
 }
 
+// Name the bot before anything is changed. A token pasted for the wrong bot would otherwise move
+// that bot's webhook. EXPECT_BOT_USERNAME is the bot you mean, with or without the leading @.
+const expectedBot = String(process.env.EXPECT_BOT_USERNAME || '').trim().replace(/^@/, '').toLowerCase();
+if (!expectedBot) {
+  console.error('EXPECT_BOT_USERNAME is required: the username of the bot this token should belong to. Nothing was changed.');
+  process.exit(1);
+}
+const me = await call('getMe', {});
+const botUsername = me.ok && typeof me.result?.username === 'string' ? me.result.username : '';
+if (!botUsername || botUsername.toLowerCase() !== expectedBot) {
+  console.error(
+    `This token belongs to ${botUsername ? `@${botUsername}` : 'no bot Telegram could name'}, not to @${expectedBot}. Nothing was changed.`,
+  );
+  process.exit(1);
+}
+console.log(`Matched bot: @${botUsername}`);
+
 await call('setWebhook', {
   url: `${origin}/api/telegram/webhook`,
   secret_token: TELEGRAM_WEBHOOK_SECRET || undefined,
   allowed_updates: ['message', 'pre_checkout_query', 'callback_query'],
-  drop_pending_updates: true,
+  drop_pending_updates: process.env.DROP_PENDING_UPDATES === 'true',
 });
 
 await call('setChatMenuButton', {
@@ -49,8 +70,5 @@ await call('setMyCommands', {
   ],
 });
 
-const me = await call('getMe', {});
-if (me.ok) {
-  console.log(`\nDirect link: https://t.me/${me.result.username}`);
-  console.log(`Mini App link (after /newapp in BotFather): https://t.me/${me.result.username}/app`);
-}
+console.log(`\nDirect link: https://t.me/${botUsername}`);
+console.log(`Mini App link (after /newapp in BotFather): https://t.me/${botUsername}/app`);

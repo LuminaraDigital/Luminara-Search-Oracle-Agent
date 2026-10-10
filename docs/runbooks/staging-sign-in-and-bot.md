@@ -35,7 +35,7 @@ With none of the four required values set, the staging build shows sign-in as no
 
 ## 4. Cloudflare: the staging Worker's secrets
 
-From a fresh terminal, in the repository:
+From a fresh terminal, in the repository. These two commands are the same in bash and in PowerShell, and each one asks for the value at a prompt, so the value never appears on a command line:
 
 ```bash
 npx wrangler secret put BOT_TOKEN --env staging
@@ -47,17 +47,40 @@ npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --env staging
 
 Paste the staging bot's token for the first. For the second, use a long random value you generate for staging only.
 
-Then set the Worker's own link to the staging bot: in `wrangler.jsonc`, staging `vars`, set `TELEGRAM_MINI_APP_URL` to the same link as the GitHub variable. That is a one-line pull request to `staging`.
+Then set two values in `wrangler.jsonc`, staging `vars`. That is one pull request to `staging`, one line each:
+
+| Variable | Value |
+|---|---|
+| `TELEGRAM_MINI_APP_URL` | the Worker's own link to the staging bot: the same link as the GitHub variable |
+| `FIREBASE_WEB_API_KEY` | the staging Firebase web API key from step 1: the same value as `VITE_FIREBASE_API_KEY`. It is a public value, not a secret |
+
+Email sign-in and sign-up go through the Worker, and the Worker answers 503 to both while `FIREBASE_WEB_API_KEY` is empty.
 
 ## 5. Point the staging bot at the staging Worker
 
-From the same fresh terminal, with the staging values only:
+From the same fresh terminal, with the staging values only. `EXPECT_BOT_USERNAME` is the staging bot's username, with or without the `@`. The script asks Telegram which bot the token belongs to before it changes anything, and stops if that is not the bot you named.
+
+A value typed on a command line stays in the shell's history. That includes the bot token below. Clear it afterwards, or revoke the token in @BotFather and set the new one if the history may have been read.
+
+bash:
 
 ```bash
-BOT_TOKEN=<staging bot token> TELEGRAM_WEBHOOK_SECRET=<the staging value> WEBAPP_URL=https://staging.luminarasuite.com/ node scripts/telegram-setup.mjs
+EXPECT_BOT_USERNAME=<staging bot username> BOT_TOKEN=<staging bot token> TELEGRAM_WEBHOOK_SECRET=<the staging value> WEBAPP_URL=https://staging.luminarasuite.com/ node scripts/telegram-setup.mjs
 ```
 
-The script prints the bot's username. Check that it is the staging bot before you trust anything else it printed. It keeps pending updates unless `DROP_PENDING_UPDATES=true` is set.
+PowerShell (Windows). An inline `VAR=value command` does not work there; set each value on its own line first:
+
+```powershell
+$env:EXPECT_BOT_USERNAME = '<staging bot username>'
+$env:BOT_TOKEN = '<staging bot token>'
+$env:TELEGRAM_WEBHOOK_SECRET = '<the staging value>'
+$env:WEBAPP_URL = 'https://staging.luminarasuite.com/'
+node scripts/telegram-setup.mjs
+```
+
+In PowerShell the four values stay set in that window until it is closed. Close the window when you are done.
+
+The script prints `Matched bot: @<username>` before it sets the webhook. If the token belongs to a different bot it prints which one, changes nothing, and exits with an error. It keeps pending updates unless `DROP_PENDING_UPDATES=true` is set.
 
 ## 6. Check
 
@@ -68,5 +91,5 @@ The script prints the bot's username. Check that it is the staging bot before yo
 ## What not to do
 
 - Do not reuse the production bot token or webhook secret on staging.
-- Do not run `scripts/telegram-setup.mjs` with a production token in the shell: it resets the production bot's webhook.
+- Do not run `scripts/telegram-setup.mjs` with a production token in the shell. The `EXPECT_BOT_USERNAME` check stops it only when the name you gave is the staging bot's; with the production bot's name and token it moves the production webhook.
 - Do not put any of these values in a file that is committed.
