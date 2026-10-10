@@ -13,6 +13,19 @@ import { claimStarsCharge, isStarsLedgerReady, releaseStarsCharge } from './paym
 import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
+  SUPPORT_MESSAGE_MAX,
+  clipSupportMessage,
+  closeSupportRequest,
+  latestStarsChargeId,
+  listSupportRequests,
+  markSupportAnswered,
+  openSupportWindow,
+  readSupportRequest,
+  sweepSupportRequests,
+  takeSupportMessage,
+  type SupportSweepSummary,
+} from './paymentSupport';
+import {
   isStarsChargesReady,
   leaseStarsCharge,
   markStarsChargeCredited,
@@ -467,20 +480,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/paysupport') || text.startsWith('/support')) {
-      await api(env, 'sendMessage', {
-        chat_id: chatId,
-        text:
-          '*Payment & Dispute Support*\n' +
-          'We handle Stars purchase issues and billing directly. Telegram Support does not resolve merchant purchases.\n\n' +
-          'To request billing support or report a payment issue, reply with:\n' +
-          '1. Your Telegram username (@handle)\n' +
-          '2. The plan purchased (Starter, Growth, or Pro/Agency)\n' +
-          '3. Date of purchase and Receipt ID from your /status message\n' +
-          '4. What went wrong\n\n' +
-          'Check /status to see your active plan and receipt ID.',
-        parse_mode: 'Markdown',
-        reply_markup: openAppKeyboard(env),
-      });
+      // Opens a window: the sender's next message goes to a person, never to the chat below.
+      await handlePaySupportCommand(env, msg, text);
       return;
     }
 
@@ -676,6 +677,9 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
+    // /reply, /close and /requests: how an admin answers a payment support request.
+    if (await handleSupportAdminCommand(env, msg, text)) return;
+
     if (text.startsWith('/')) {
       await api(env, 'sendMessage', {
         chat_id: chatId,
@@ -684,6 +688,10 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       });
       return;
     }
+
+    // A message sent inside a payment support window is for a person. It stops here: it is not
+    // put in a prompt and not kept in the chat history. This has to stay above the chat.
+    if (await receiveSupportMessage(env, msg, text || String(msg.caption || ''))) return;
 
     // Interactive conversational session with Oracle Agent (Hermes-like agentic loop)
     // 1. Send typing action so user gets immediate visual feedback
@@ -910,6 +918,348 @@ export async function refundStarPayment(
   });
 
   return { ok: true, revoked: revoked.ok };
+}
+
+// ---------------------------------------------------------------------------
+// Payment support (Track SW, SW0a-16): a buyer's billing message reaches a person.
+// worker/paymentSupport.ts holds the requests; this section does the talking. Every message here
+// is plain text, so nothing a buyer or an admin types is read as formatting.
+// ---------------------------------------------------------------------------
+
+const SUPPORT_EMAIL = 'support@luminarasuite.com';
+
+const SUPPORT_PROMPT_TEXT =
+  'Payment support\n\n' +
+  'Send your next message here within 10 minutes. It goes to a person, not to the assistant.\n\n' +
+  'Say what went wrong and, if you have it, include the receipt ID from /status. You can attach a screenshot.\n\n' +
+  'We handle purchases made through this bot ourselves. Telegram Support does not resolve them.';
+
+const SUPPORT_UNAVAILABLE_TEXT =
+  `We could not open a support request just now. Please send /paysupport again in a minute, or email ${SUPPORT_EMAIL} with the receipt ID from /status.`;
+
+const SUPPORT_TOO_MANY_TEXT =
+  `Your earlier requests are saved and waiting for a person, who will answer here. To add something now, email ${SUPPORT_EMAIL}.`;
+
+const SUPPORT_NOT_READ_TEXT =
+  'Something went wrong on our side, so this message was not read. Please send it again in a minute.';
+
+/** One notice to an admin, under Telegram's 4,096 characters and under what sendPlain sends. */
+const SUPPORT_NOTICE_MAX = 3900;
+const SUPPORT_SHORTENED_NOTE = '\n> (shortened here to fit one message; the stored request has the rest)';
+
+/** The longest answer relayed to a buyer. Telegram's own limit is 4,096 with our two lines around it. */
+const SUPPORT_ANSWER_MAX = 3800;
+
+function adminChatIds(env: Env): string[] {
+  return (env.TELEGRAM_ADMIN_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** A private chat's id is the user's own id. Billing is not discussed anywhere else. */
+function isPrivateChat(msg: any): boolean {
+  return Boolean(msg?.from?.id) && msg?.chat?.id === msg.from.id;
+}
+
+/** Anything in a message that is not its text: it can be copied to an admin, and it has no words to store. */
+function hasAttachment(msg: any): boolean {
+  return Boolean(
+    msg?.photo || msg?.document || msg?.video || msg?.voice || msg?.audio || msg?.video_note || msg?.animation || msg?.sticker ||
+      msg?.contact || msg?.location || msg?.venue || msg?.poll,
+  );
+}
+
+/** The buyer's words, marked line by line, so nothing in them can pass for the bot's own lines. */
+function quoteForAdmins(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+}
+
+/**
+ * The request a message answers, when the buyer used Telegram's own reply on something the bot
+ * said about it: the support answer, or an acknowledgement that names the request. The id is
+ * only a pointer: it is looked up together with the sender, so quoting somebody else's id, or a
+ * message the bot sent to an admin, finds nothing.
+ */
+function repliedRequestId(msg: any): string | undefined {
+  const original = msg?.reply_to_message;
+  if (!original?.from?.is_bot || typeof original.text !== 'string') return undefined;
+  const found = original.text.match(/\bps_[0-9a-f]{10}\b/);
+  return found ? found[0] : undefined;
+}
+
+function describeSender(from: any): string {
+  const name = [from?.first_name, from?.last_name].filter(Boolean).join(' ').trim();
+  const handle = from?.username ? `@${from.username}` : '';
+  const known = [handle, name].filter(Boolean).join(', ');
+  return `Telegram id ${from?.id}${known ? ` (${known})` : ''}`;
+}
+
+function ageText(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+}
+
+async function sendPlain(env: Env, chatId: number | string, text: string): Promise<boolean> {
+  const sent = await api(env, 'sendMessage', { chat_id: chatId, text: text.slice(0, 4000) });
+  return sent.ok === true;
+}
+
+/**
+ * Sends to every admin id. Says how many got the text and, when there is an attachment, how many
+ * got the copy. An admin whose copy failed is told that something was attached.
+ */
+async function sendToAdmins(
+  env: Env,
+  text: string,
+  attachment?: { fromChatId: number; messageId: number },
+): Promise<{ reached: number; copied: number }> {
+  let reached = 0;
+  let copied = 0;
+  for (const id of adminChatIds(env)) {
+    if (!(await sendPlain(env, id, text))) continue;
+    reached += 1;
+    if (!attachment) continue;
+    const copy = await api(env, 'copyMessage', { chat_id: id, from_chat_id: attachment.fromChatId, message_id: attachment.messageId });
+    if (copy.ok) copied += 1;
+    else await sendPlain(env, id, 'An attachment came with that message and could not be copied here.');
+  }
+  return { reached, copied };
+}
+
+/**
+ * Gives a message to the sender's open support window, if there is one. True when the message
+ * was dealt with here and must go no further; false when it is ordinary chat.
+ */
+async function receiveSupportMessage(env: Env, msg: any, content: string): Promise<boolean> {
+  if (!isPrivateChat(msg)) return false;
+  const attached = hasAttachment(msg);
+  const text = content.trim() || (attached ? '[attachment, no text]' : '');
+  if (!text) return false;
+
+  const chatId = msg.chat.id;
+  const taken = await takeSupportMessage(env, Number(msg.from.id), text, Date.now(), { replyTo: repliedRequestId(msg) });
+  if (taken.kind === 'none') return false;
+  if (taken.kind === 'unavailable') {
+    // Not knowing is not a reason to let a billing message into a prompt.
+    await sendPlain(env, chatId, SUPPORT_NOT_READ_TEXT);
+    return true;
+  }
+  const { row } = taken;
+  if (taken.kind === 'full') {
+    // Not stored and not forwarded, so one buyer cannot fill the admins' chats. Not chat either.
+    await sendPlain(
+      env,
+      chatId,
+      `Request ${row.id} already holds your messages, so this one was not added. A person will answer here. To send more, wait for the answer or email ${SUPPORT_EMAIL}.`,
+    );
+    return true;
+  }
+
+  const header =
+    taken.kind === 'opened'
+      ? `Payment support request ${row.id}\n` +
+        `From: ${describeSender(msg.from)}\n` +
+        `Account: ${row.account_id ?? 'not known'}\n` +
+        `Most recent Stars charge: ${row.charge_id ?? 'none on record'}`
+      : `More on payment support request ${row.id}, from ${describeSender(msg.from)}`;
+  const footer = `\n\nAnswer: /reply ${row.id} your answer\nClose without answering: /close ${row.id}`;
+  const cutNote = taken.cut ? `\n\n(Longer than ${SUPPORT_MESSAGE_MAX.toLocaleString('en-US')} characters. What is stored stops at the limit.)` : '';
+  // Marking each line adds to the length. The buyer's words give way, never the lines that
+  // tell the admin how to answer.
+  const quoted = quoteForAdmins(clipSupportMessage(text).text);
+  const room = SUPPORT_NOTICE_MAX - header.length - cutNote.length - footer.length - SUPPORT_SHORTENED_NOTE.length - 2;
+  const shown = quoted.length > room ? quoted.slice(0, room) + SUPPORT_SHORTENED_NOTE : quoted;
+  const notice = `${header}\n\n${shown}${cutNote}${footer}`;
+  const sent = await sendToAdmins(
+    env,
+    notice,
+    attached && msg.message_id ? { fromChatId: chatId, messageId: msg.message_id } : undefined,
+  );
+
+  if (sent.reached === 0) {
+    console.error(
+      `[Support] ALERT: payment support request ${row.id} was saved and no admin could be told. Check TELEGRAM_ADMIN_ID; open requests are listed at GET /api/admin/payment-support.`,
+    );
+    await sendPlain(
+      env,
+      chatId,
+      `Received and saved as request ${row.id}. We could not alert our team just now, so please also email ${SUPPORT_EMAIL} and quote that id.`,
+    );
+    return true;
+  }
+
+  const received =
+    taken.kind === 'opened'
+      ? `Received. A person will answer here. Your request id is ${row.id}. Anything else you send in the next 10 minutes is added to it.`
+      : taken.kind === 'added'
+        ? `Added to request ${row.id}.`
+        : `Sent to support as a follow-up to request ${row.id}. A person will answer here. To add more, send /paysupport first. Anything else you send now goes to the assistant.`;
+  // The words arrived. An attachment that no admin received is said, not left to be assumed.
+  const attachmentLost =
+    attached && sent.copied === 0 ? ` Your attachment did not come through. Please describe it in words, or email it to ${SUPPORT_EMAIL}.` : '';
+  await sendPlain(env, chatId, received + attachmentLost);
+  return true;
+}
+
+async function handlePaySupportCommand(env: Env, msg: any, text: string): Promise<void> {
+  const chatId = msg.chat.id;
+  if (!isPrivateChat(msg)) {
+    await sendPlain(env, chatId, 'Billing help is private. Open a chat with this bot and send /paysupport there.');
+    return;
+  }
+  const payerTgId = Number(msg.from.id);
+  let accountId = String(payerTgId);
+  try {
+    accountId = await resolveAccountId(env, String(payerTgId));
+  } catch {
+    /* the Telegram id is enough to answer */
+  }
+  let chargeId = await latestStarsChargeId(env, payerTgId);
+  if (!chargeId && env.LUMINARA_KV) {
+    // A purchase from before the charge ledger names its charge on the subscription record.
+    const sub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json').catch(() => null)) as { chargeId?: unknown } | null;
+    if (typeof sub?.chargeId === 'string' && sub.chargeId) chargeId = sub.chargeId;
+  }
+
+  const opened = await openSupportWindow(env, { payerTgId, accountId, chargeId });
+  if (!opened.ok) {
+    await sendPlain(env, chatId, opened.reason === 'too_many' ? SUPPORT_TOO_MANY_TEXT : SUPPORT_UNAVAILABLE_TEXT);
+    return;
+  }
+
+  // "/paysupport my plan did not start" is the request itself.
+  const inline = text.replace(/^\/\S*\s*/, '');
+  if ((inline.trim() || hasAttachment(msg)) && (await receiveSupportMessage(env, msg, inline))) return;
+
+  await sendPlain(env, chatId, SUPPORT_PROMPT_TEXT);
+}
+
+/** /reply, /close and /requests. True when the text was one of them, whoever sent it. */
+async function handleSupportAdminCommand(env: Env, msg: any, text: string): Promise<boolean> {
+  const parsed = text.match(/^\/(reply|close|requests)(?:@\S+)?(?:\s+([\s\S]*))?$/i);
+  if (!parsed) return false;
+  const chatId = msg.chat.id;
+  const command = parsed[1].toLowerCase();
+  const adminId = String(msg.from?.id ?? '');
+  if (!adminId || !adminChatIds(env).includes(adminId)) {
+    await sendPlain(env, chatId, 'Unauthorized. Only configured bot administrators can answer support requests.');
+    return true;
+  }
+  if (!isPrivateChat(msg)) {
+    // A list of requests, or an answer, would show buyers' ids and words to everyone in the chat.
+    await sendPlain(env, chatId, 'Use this command in a private chat with the bot.');
+    return true;
+  }
+
+  try {
+    if (command === 'requests') {
+      const waiting = await listSupportRequests(env, { status: 'open', limit: 10 });
+      if (waiting.length === 0) {
+        await sendPlain(env, chatId, 'No payment support requests are waiting for an answer.');
+        return true;
+      }
+      const now = Date.now();
+      const lines = waiting.map(
+        (r) => `${r.id} · ${ageText(now - r.updated_at)} · Telegram id ${r.payer_tg_id}\n${String(r.message ?? '').slice(0, 160)}`,
+      );
+      await sendPlain(
+        env,
+        chatId,
+        `Payment support requests waiting for an answer, oldest first (up to 10):\n\n${lines.join('\n\n')}\n\nAnswer: /reply <id> your answer\nClose without answering: /close <id>`,
+      );
+      return true;
+    }
+
+    const args = (parsed[2] || '').trim().match(/^(\S+)(?:\s+([\s\S]+))?$/);
+    const id = args?.[1] ?? '';
+    const answer = (args?.[2] ?? '').trim();
+    if (!id || (command === 'reply' && !answer)) {
+      await sendPlain(env, chatId, command === 'reply' ? 'Use: /reply <request id> <your answer>' : 'Use: /close <request id>');
+      return true;
+    }
+
+    const row = await readSupportRequest(env, id);
+    if (!row || row.status === 'awaiting') {
+      await sendPlain(env, chatId, `No support request with the id ${id}.`);
+      return true;
+    }
+    if (row.status === 'closed') {
+      await sendPlain(env, chatId, `Request ${id} is closed.`);
+      return true;
+    }
+    const orgId = `org_${String(row.account_id ?? row.payer_tg_id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+    if (command === 'close') {
+      const closed = await closeSupportRequest(env, id);
+      // The answer told the buyer their next message would come back here. Closing takes that
+      // away, so they are told, or their reply to a person would go to the assistant unannounced.
+      const promised = row.status === 'answered' && Number(row.expires_at ?? 0) > Date.now();
+      const told =
+        closed && promised
+          ? await sendPlain(env, row.payer_tg_id, `Your payment support request ${id} is now closed. To write to us again, send /paysupport.`)
+          : false;
+      await sendPlain(
+        env,
+        chatId,
+        !closed
+          ? `Request ${id} could not be closed. Try again.`
+          : told
+            ? `Request ${id} is closed. The buyer was told, because their next message would have come back here.`
+            : promised
+              ? `Request ${id} is closed. The buyer could not be told; their next message will go to the assistant.`
+              : `Request ${id} is closed. The buyer was not messaged.`,
+      );
+      if (closed) {
+        await recordAuditLogBestEffort(env, { org_id: orgId, actor_id: `tg:${adminId}`, action: 'support.close', details: { requestId: id } });
+      }
+      return true;
+    }
+
+    const relayed = answer.slice(0, SUPPORT_ANSWER_MAX);
+    const sent = await api(env, 'sendMessage', {
+      chat_id: row.payer_tg_id,
+      text: `Luminara support, about your request ${id}:\n\n${relayed}\n\nYour next message here, within 3 days, goes back to support.`,
+    });
+    if (!sent.ok) {
+      await sendPlain(env, chatId, `Not delivered to the buyer: ${sent.description || 'Telegram refused the message'}. Request ${id} is still ${row.status}.`);
+      return true;
+    }
+    const marked = await markSupportAnswered(env, id);
+    await sendPlain(
+      env,
+      chatId,
+      (marked ? `Sent to the buyer. Request ${id} is marked answered.` : `Sent to the buyer. Request ${id} could not be marked answered.`) +
+        (relayed.length < answer.length ? ` Your answer was longer than ${SUPPORT_ANSWER_MAX.toLocaleString('en-US')} characters and was cut there.` : ''),
+    );
+    await recordAuditLogBestEffort(env, { org_id: orgId, actor_id: `tg:${adminId}`, action: 'support.reply', details: { requestId: id } });
+  } catch (err) {
+    console.error(`[Support] ${command} failed: ${err instanceof Error ? err.message : err}`);
+    await sendPlain(env, chatId, 'The support requests could not be read just now. Nothing was sent. Try again in a minute.');
+  }
+  return true;
+}
+
+/** Daily: removes windows nobody wrote into and reminds the admins of requests that waited a day. */
+export async function runPaymentSupportSweep(env: Env): Promise<SupportSweepSummary | null> {
+  try {
+    const summary = await sweepSupportRequests(env);
+    if (summary.overdue > 0) {
+      await sendToAdmins(
+        env,
+        `${summary.overdue} payment support request${summary.overdue === 1 ? ' has' : 's have'} waited more than a day for an answer (${summary.open} open in all). Send /requests to read them.`,
+      );
+    }
+    console.log(`[Support] sweep: ${JSON.stringify(summary)}`);
+    return summary;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // A database from before the migration has nothing to sweep.
+    if (!/no such table/i.test(message)) console.error(`[Support] sweep failed: ${message}`);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0017_proof_ledger.sql',
   'migrations/0023_stars_charges.sql',
   'migrations/0025_ton_pending_orders.sql',
+  'migrations/0026_payment_support.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
@@ -59,6 +60,7 @@ const REQUIRED_D1_TABLES = [
   'niche_pulse_subs',
   'stars_charges',
   'ton_pending_orders',
+  'payment_support_requests',
 ];
 
 // 1. Verify build bundle integrity

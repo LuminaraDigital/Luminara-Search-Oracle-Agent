@@ -452,15 +452,18 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       expect(body.text).toContain('Terms and Conditions');
       expect(body.text).toContain('/paysupport');
 
-      // /paysupport
+      // /paysupport. This environment has no table for support requests, so no window can be
+      // opened: the buyer is given the address to write to instead of a promise nobody keeps.
+      // What it does with the table is pinned in tests/paymentSupport.test.ts.
       mockFetch.mockClear();
       await handleTelegramUpdate(
         { message: { chat: { id: 100 }, from: { id: 100 }, text: '/paysupport' } },
         env,
       );
       body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.text).toContain('Payment & Dispute Support');
-      expect(body.text).toContain('Telegram Support does not resolve merchant purchases');
+      expect(body.text).toContain('We could not open a support request just now');
+      expect(body.text).toContain('support@luminarasuite.com');
+      expect(body).not.toHaveProperty('parse_mode');
     });
 
     it('enforces admin authorization on /refund command', async () => {

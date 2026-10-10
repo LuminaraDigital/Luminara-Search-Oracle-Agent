@@ -42,12 +42,14 @@ import {
   createInvoiceLink,
   refundStarsCharge,
   runStarsChargeSweep,
+  runPaymentSupportSweep,
   normalizePlanId,
   PLANS,
   planCapsFor,
   publicPlanCatalogue,
 } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, sweepTonPendingOrders, isTonPaymentConfigured, isTonAddressConfirmed, isTonCheckoutOpen, TON_IN_TELEGRAM_ERROR, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
+import { listSupportRequests } from './paymentSupport';
 import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
@@ -988,6 +990,40 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       total: users.length,
       users: users.map(projectAdminUser),
     }));
+  }
+
+  if (path === '/admin/payment-support') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+
+    // Admin route: ADMIN_SECRET only. What buyers wrote to payment support, for a person to read.
+    const admin = isAdminAuthorized(env, request);
+    if (!admin.ok) return withCors(admin.response);
+
+    const asked = url.searchParams.get('status') || 'open';
+    if (asked !== 'open' && asked !== 'answered' && asked !== 'closed') {
+      return withCors(json({ error: 'status must be open, answered or closed' }, 400));
+    }
+    let requests;
+    try {
+      requests = await listSupportRequests(env, { status: asked, limit: Number(url.searchParams.get('limit')) || 50 });
+    } catch (err) {
+      console.error(`[Support] admin list failed: ${err instanceof Error ? err.message : err}`);
+      return withCors(json({ error: 'Payment support requests could not be read.' }, 503));
+    }
+
+    // Buyers' own words leave the database here: record that an operator read them, not the rows.
+    await recordAuditLogBestEffort(env, {
+      org_id: ADMIN_SYSTEM_ORG,
+      actor_id: 'admin',
+      action: 'admin.payment_support.list',
+      details: { status: asked, count: requests.length },
+      ip_address: clientIp(request),
+      user_agent: request.headers.get('user-agent') || undefined,
+    });
+
+    return withCors(json({ ok: true, status: asked, total: requests.length, requests }));
   }
 
   if (path === '/ton/invoice' || path === '/ton/verify') {
@@ -2130,6 +2166,7 @@ export default {
     if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
     if (jobs.includes('domain_recheck')) ctx.waitUntil(recheckVerifiedDomains(env).then(() => undefined));
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
+    if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
     if (jobs.includes('ton_pending_sweep')) {
       ctx.waitUntil(
         sweepTonPendingOrders(env)
