@@ -60,7 +60,8 @@ describe('CmsDeploymentService', () => {
     };
 
     const script = cmsDeploymentService.generateClientScriptTag(payload);
-    expect(script).toContain('<!-- Luminara AEO Autonomous Injector (Zero-Code) -->');
+    expect(script).toContain('<!-- Luminara AEO Injector (Zero-Code) -->');
+    expect(script).not.toMatch(/autonomous|verified/i);
     expect(script).toContain('application/ld+json');
     expect(script).toContain('decodeURIComponent(atob(');
     expect(script).toContain('CSP:');
@@ -81,24 +82,6 @@ describe('CmsDeploymentService', () => {
     expect(res.validationErrors?.some((i) => i.severity === 'critical')).toBe(true);
   });
 
-  it('reports failure when WordPress fetch returns null (no fake success)', async () => {
-    const { vi } = await import('vitest');
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(null as any);
-    const payload: RemediationPayload = {
-      domain: 'ok.example',
-      title: 'Ok',
-      schemaJsonLd: JSON.stringify({
-        '@context': 'https://schema.org',
-        '@type': 'Organization',
-        name: 'Ok',
-      }),
-    };
-    const res = await cmsDeploymentService.deployToWordPress(
-      { platform: 'wordpress', authToken: 'user:pass', endpoint: 'https://ok-site.com' },
-      payload
-    );
-    expect(res.success).toBe(false);
-  });
 });
 
 const validPayload = (name = 'Acme'): RemediationPayload => ({
@@ -175,19 +158,17 @@ describe('CMS endpoint steering protection', () => {
     expect(validateCmsEndpoint(input)).toEqual({ ok: true, url: normalized });
   });
 
-  it('sends the canonical, HTML-escaped schema only to the explicit endpoint', async () => {
+  // No Luminara server is reachable in this file, so the page cannot be read before the request.
+  // What WordPress is sent, and when it counts as deployed, is covered in tests/deployScreenTruth.test.ts.
+  it('sends nothing to WordPress, not even to a valid endpoint, when the page cannot be read first', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
     const res = await cmsDeploymentService.deployToWordPress(
       { platform: 'wordpress', authToken: 'user:pass', endpoint: 'https://my-site.com/' },
       validPayload('Scripts & <Co>')
     );
-    expect(res.success).toBe(true);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe('https://my-site.com/wp-json/wp/v2/settings');
-    const sent = JSON.parse(String((init as RequestInit).body)).luminara_aeo_schema as string;
-    expect(sent).not.toMatch(/[<>&]/);
-    expect(JSON.parse(sent).name).toBe('Scripts & <Co>');
+    expect(res.success).toBe(false);
+    expect(res.message).toMatch(/^Nothing was sent to WordPress\./);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('Webflow custom code cannot contain a script breakout', async () => {

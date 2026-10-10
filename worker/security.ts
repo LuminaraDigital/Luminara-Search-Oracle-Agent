@@ -265,6 +265,9 @@ export function isPrivateIp(ip: string): boolean {
       const tail = raw.slice(7);
       return parseIpv4(tail) ? isPrivateIp(tail) : true;
     }
+    // A zero first hextet (":..." or "0:...") is refused. That range is reserved and holds the
+    // deprecated IPv4-compatible form, where ::7f00:1 is 127.0.0.1.
+    if (/^(:|0{1,4}:)/.test(raw)) return true;
     if (/^fe[89ab]/.test(raw)) return true; // link-local fe80::/10
     if (/^f[cd]/.test(raw)) return true; // unique local fc00::/7
     if (/^ff/.test(raw)) return true; // multicast
