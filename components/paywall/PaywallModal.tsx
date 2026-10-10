@@ -289,9 +289,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       if (plan === 'growth') return '79 USDT';
       return '199 USDT';
     }
-    if (plan === 'starter') return '29 LORA (15% Burn)';
-    if (plan === 'growth') return '79 LORA (15% Burn)';
-    return '199 LORA (15% Burn)';
+    if (plan === 'starter') return '29 LORA';
+    if (plan === 'growth') return '79 LORA';
+    return '199 LORA';
   };
 
   const planButtonLabel = (plan: 'starter' | 'growth' | 'agency') => {
@@ -316,9 +316,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       if (plan === 'growth') return 'Pay 79 USDT · 30 days';
       return 'Pay 199 USDT · 30 days';
     }
-    if (plan === 'starter') return 'Pay 29 LORA (15% Burn) · 30 days';
-    if (plan === 'growth') return 'Pay 79 LORA (15% Burn) · 30 days';
-    return 'Pay 199 LORA (15% Burn) · 30 days';
+    if (plan === 'starter') return 'Pay 29 LORA · 30 days';
+    if (plan === 'growth') return 'Pay 79 LORA · 30 days';
+    return 'Pay 199 LORA · 30 days';
   };
 
   if (!isOpen) return null;
@@ -515,7 +515,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <span>🔥 $LORA (Burn)</span>
+              <span>$LORA</span>
             </button>
           </div>
         )}
