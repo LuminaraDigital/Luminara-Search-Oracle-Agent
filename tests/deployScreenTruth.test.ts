@@ -88,11 +88,14 @@ function memoryStorage() {
     setItem: (k: string, v: string) => void data.set(k, String(v)),
     removeItem: (k: string) => void data.delete(k),
     clear: () => data.clear(),
+    /** Everything this browser has stored, as one string. */
+    dump: () => JSON.stringify([...data.entries()]),
   };
 }
 
 /** The app as a browser tab on luminarasuite.com. Signed in means a Telegram Mini App session. */
 function openApp(opts: { signedIn: boolean }) {
+  const storage = memoryStorage();
   vi.stubGlobal('window', {
     location: {
       protocol: 'https:',
@@ -104,7 +107,8 @@ function openApp(opts: { signedIn: boolean }) {
     },
     ...(opts.signedIn ? { Telegram: { WebApp: { initData: signInitData(4242), platform: 'tdesktop' } } } : {}),
   });
-  vi.stubGlobal('localStorage', memoryStorage());
+  vi.stubGlobal('localStorage', storage);
+  return storage;
 }
 
 const payload = (name = 'Acme'): RemediationPayload => ({
@@ -114,8 +118,9 @@ const payload = (name = 'Acme'): RemediationPayload => ({
 });
 
 const wpConfig: DeploymentConfig = { platform: 'wordpress', endpoint: 'https://my-site.com', authToken: WP_PASSWORD };
-const webflowConfig: DeploymentConfig = { platform: 'webflow', authToken: 't', siteId: 'site123' };
+const webflowConfig: DeploymentConfig = { platform: 'webflow', authToken: 'wf-token-for-tests', siteId: 'site123' };
 
+const ldScript = (json: string) => `<script type="application/ld+json">${json}</script>`;
 const homePage = (head: string) =>
   `<!doctype html><html><head><title>My site</title>${head}</head><body><h1>Hello</h1></body></html>`;
 
@@ -145,16 +150,28 @@ function fakeNetwork(routes: Record<string, Handler>) {
   });
 }
 
-/** A WordPress site. With the plugin, the setting it is sent ends up in the page head. */
-function fakeWordPress(opts: { pluginRegistersSetting: boolean }): Record<string, Handler> {
-  let stored = '';
-  return {
+/**
+ * A WordPress site. With the plugin, the setting it is sent ends up in the page head. `onPage`
+ * is a schema the page carries from the start. `received` is what the settings endpoint was sent.
+ */
+function fakeWordPress(opts: { pluginRegistersSetting: boolean; onPage?: string }) {
+  const site = { onPage: opts.onPage ?? '', received: [] as string[] };
+  const routes: Record<string, Handler> = {
     [WP_SETTINGS]: (init) => {
-      if (opts.pluginRegistersSetting) stored = JSON.parse(String(init?.body)).luminara_aeo_schema;
+      const sent = JSON.parse(String(init?.body)).luminara_aeo_schema as string;
+      site.received.push(sent);
+      if (opts.pluginRegistersSetting) site.onPage = sent;
       return new Response('{}', { status: 200 });
     },
-    [SITE_HOME]: () => new Response(homePage(stored ? `<script type="application/ld+json">${stored}</script>` : '')),
+    [SITE_HOME]: () => new Response(homePage(site.onPage ? ldScript(site.onPage) : '')),
   };
+  return { routes, site };
+}
+
+/** Answers with each response in turn, then keeps giving the last one. */
+function inTurn(...answers: Array<() => Response>): Handler {
+  let calls = 0;
+  return () => answers[Math.min(calls++, answers.length - 1)]();
 }
 
 const renderResult = (result: DeploymentResult) => renderToStaticMarkup(createElement(DeploymentResultAlert, { result }));
@@ -165,13 +182,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('WordPress: deployed only when the page was read back and holds the schema', () => {
+describe('WordPress: deployed only when the schema was absent before the request and present after it', () => {
   beforeEach(() => openApp({ signedIn: true }));
 
   it('is not a success when the site answers 200 and serves an unchanged page', async () => {
-    fakeNetwork(fakeWordPress({ pluginRegistersSetting: false }));
+    const wp = fakeWordPress({ pluginRegistersSetting: false });
+    fakeNetwork(wp.routes);
     const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload());
 
+    expect(wp.site.received).toHaveLength(1);
     expect(res.success).toBe(false);
     expect(res.seenInPageSource).toBe(false);
     expect(res.message).toBe(
@@ -185,17 +204,40 @@ describe('WordPress: deployed only when the page was read back and holds the sch
     expect(html).not.toMatch(UNCHECKED_WORDS);
   });
 
-  it('is a success when the page now contains the schema', async () => {
-    fakeNetwork(fakeWordPress({ pluginRegistersSetting: true }));
+  it('is a success when the page did not hold the schema and now does', async () => {
+    const wp = fakeWordPress({ pluginRegistersSetting: true });
+    fakeNetwork(wp.routes);
     const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload('Scripts & <Co>'));
 
     expect(res.success).toBe(true);
     expect(res.seenInPageSource).toBe(true);
-    expect(res.message).toBe('Deployed. A fresh fetch of https://my-site.com/ found the schema in the page source.');
+    expect(res.alreadyOnPage).toBeUndefined();
+    expect(res.message).toBe(
+      'Deployed. The schema was not on https://my-site.com/ before the request, and a fresh fetch found it in the page source afterwards.',
+    );
+    // What WordPress was sent cannot break out of a script tag, and is still the same schema.
+    expect(wp.site.received[0]).not.toMatch(/[<>&]/);
+    expect(JSON.parse(wp.site.received[0]).name).toBe('Scripts & <Co>');
 
     const html = renderResult(res);
     expect(html).toContain('>Deployed<');
     expect(html).not.toMatch(UNCHECKED_WORDS);
+  });
+
+  // The setting is dropped here too. Without the first read this was reported as "Deployed".
+  it('says the schema is already on the page, sends nothing to WordPress and does not call it a deployment', async () => {
+    const wp = fakeWordPress({ pluginRegistersSetting: false, onPage: payload().schemaJsonLd });
+    fakeNetwork(wp.routes);
+    const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload());
+
+    expect(res.message).toBe('This schema is already on the page. Nothing was changed.');
+    expect(res.alreadyOnPage).toBe(true);
+    expect(wp.site.received).toEqual([]);
+    expect(res.diffSummary).toEqual({ linesAdded: 0, linesRemoved: 0 });
+
+    const html = renderResult(res);
+    expect(html).toContain('>Already On The Page<');
+    expect(html).not.toMatch(SAYS_LIVE);
   });
 
   it.each([
@@ -206,9 +248,29 @@ describe('WordPress: deployed only when the page was read back and holds the sch
         throw new Error('connection reset');
       },
     ],
-  ])('says the page could not be read back, not that it is unchanged, when the site %s', async (_label, serve) => {
-    fakeNetwork({ ...fakeWordPress({ pluginRegistersSetting: true }), [SITE_HOME]: serve });
+  ])('sends nothing to WordPress when the page cannot be read first because the site %s', async (_label, serve) => {
+    const wp = fakeWordPress({ pluginRegistersSetting: true });
+    fakeNetwork({ ...wp.routes, [SITE_HOME]: serve });
     const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload());
+
+    expect(wp.site.received).toEqual([]);
+    expect(res.success).toBe(false);
+    expect(res.message).toMatch(/^Nothing was sent to WordPress\..*The page could not be read\.$/);
+    expect(renderResult(res)).not.toMatch(SAYS_LIVE);
+  });
+
+  it('says the page could not be read back, not that it is unchanged, when only the second read fails', async () => {
+    const wp = fakeWordPress({ pluginRegistersSetting: true });
+    fakeNetwork({
+      ...wp.routes,
+      [SITE_HOME]: inTurn(
+        () => new Response(homePage('')),
+        () => new Response('error', { status: 500 }),
+      ),
+    });
+    const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload());
+
+    expect(wp.site.received).toHaveLength(1);
     expect(res.success).toBe(false);
     expect(res.seenInPageSource).toBe(false);
     expect(res.message).toMatch(/could not be read back, so nothing is confirmed/);
@@ -216,20 +278,32 @@ describe('WordPress: deployed only when the page was read back and holds the sch
     expect(renderResult(res)).not.toMatch(SAYS_LIVE);
   });
 
-  it('is not a success when WordPress refuses the request, even if the page already holds the schema', async () => {
-    const alreadyThere = `<script type="application/ld+json">${payload().schemaJsonLd}</script>`;
-    fakeNetwork({
-      [WP_SETTINGS]: () => new Response('{}', { status: 401 }),
-      [SITE_HOME]: () => new Response(homePage(alreadyThere)),
-    });
+  it.each([
+    [
+      'answers HTTP 401',
+      () => new Response('{}', { status: 401 }),
+      'WordPress did not accept the request: https://my-site.com answered HTTP 401.',
+    ],
+    [
+      'cannot be reached',
+      () => {
+        throw new Error('connection reset');
+      },
+      'WordPress did not accept the request: https://my-site.com could not be reached.',
+    ],
+  ])('is not a success, and says so in plain words, when WordPress %s', async (_label, settings, message) => {
+    const wp = fakeWordPress({ pluginRegistersSetting: true });
+    fakeNetwork({ ...wp.routes, [WP_SETTINGS]: settings });
     const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload());
+
     expect(res.success).toBe(false);
-    expect(res.message).toMatch(/did not accept the payload.*HTTP 401/);
+    expect(res.message).toBe(message);
     expect(renderResult(res)).not.toMatch(SAYS_LIVE);
   });
 
   it('sends the WordPress password to WordPress only, never to the read-back route', async () => {
-    const spy = fakeNetwork(fakeWordPress({ pluginRegistersSetting: true }));
+    const wp = fakeWordPress({ pluginRegistersSetting: true });
+    const spy = fakeNetwork(wp.routes);
     const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload());
     expect(res.success).toBe(true);
 
@@ -244,47 +318,77 @@ describe('WordPress: deployed only when the page was read back and holds the sch
     }
   });
 
+  const notOnPage = () => new Response(JSON.stringify({ ok: true, found: false }), { status: 200 });
+
   it.each([
     ['an answer with no verdict', () => new Response(JSON.stringify({ ok: true }), { status: 200 })],
     ['a verdict that is not a boolean', () => new Response(JSON.stringify({ ok: true, found: 'true' }), { status: 200 })],
     ['found on an error status', () => new Response(JSON.stringify({ ok: true, found: true }), { status: 500 })],
     ['a page of HTML', () => new Response('<html>ok</html>', { status: 200 })],
-  ])('is not a success when the read-back returns %s', async (_label, answer) => {
-    fakeNetwork({ ...fakeWordPress({ pluginRegistersSetting: true }), [READBACK]: answer });
+  ])('is not a success when the read-back after the request returns %s', async (_label, answer) => {
+    const wp = fakeWordPress({ pluginRegistersSetting: true });
+    fakeNetwork({ ...wp.routes, [READBACK]: inTurn(notOnPage, answer) });
     const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload());
+
     expect(res.success).toBe(false);
     expect(res.seenInPageSource).toBe(false);
-    expect(res.message).toMatch(/could not be read back/);
+    expect(res.message).toMatch(/could not be read back, so nothing is confirmed/);
     expect(renderResult(res)).not.toMatch(SAYS_LIVE);
+  });
+
+  it('sends nothing to WordPress when the first read-back gives no clear answer', async () => {
+    const wp = fakeWordPress({ pluginRegistersSetting: true });
+    fakeNetwork({ ...wp.routes, [READBACK]: () => new Response(JSON.stringify({ ok: true, found: 'false' }), { status: 200 }) });
+    const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload());
+
+    expect(wp.site.received).toEqual([]);
+    expect(res.success).toBe(false);
+    expect(res.message).toMatch(/^Nothing was sent to WordPress\./);
   });
 });
 
 describe('WordPress: a guest gets no "deployed"', () => {
-  it('says to sign in when nobody is signed in, even if the page holds the schema', async () => {
+  it('says to sign in and sends the password nowhere when nobody is signed in', async () => {
     openApp({ signedIn: false });
-    fakeNetwork(fakeWordPress({ pluginRegistersSetting: true }));
+    const wp = fakeWordPress({ pluginRegistersSetting: true });
+    fakeNetwork(wp.routes);
     const res = await cmsDeploymentService.deployToWordPress(wpConfig, payload());
 
+    expect(wp.site.received).toEqual([]);
     expect(res.success).toBe(false);
-    expect(res.message).toMatch(/could not be read back, so nothing is confirmed\. Sign in/);
+    expect(res.message).toMatch(/^Nothing was sent to WordPress\..*Sign in so the page can be read back\.$/);
     expect(renderResult(res)).not.toMatch(SAYS_LIVE);
   });
 });
 
-describe('Webflow: added to custom code is not published', () => {
-  it('says the site still has to be published', async () => {
-    openApp({ signedIn: true });
+describe('Webflow: an accepted request is not a published site', () => {
+  beforeEach(() => openApp({ signedIn: true }));
+
+  it('says Webflow accepted the request and the site still has to be published', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
     const res = await cmsDeploymentService.deployToWebflow(webflowConfig, payload());
 
     expect(res.success).toBe(true);
     expect(res.seenInPageSource).toBeUndefined();
-    expect(res.message).toContain("added to the site's custom code; publish the site to make it live");
+    expect(res.message).toBe('Webflow accepted the request for site site123; publish the site to make it live.');
 
     const html = renderResult(res);
     expect(html).toContain('>Request Completed<');
     expect(html).not.toMatch(SAYS_LIVE);
     expect(html).not.toMatch(UNCHECKED_WORDS);
+  });
+
+  it.each([
+    ['answers HTTP 403', () => Promise.resolve(new Response('{}', { status: 403 })), 'Webflow did not accept the request: its API answered HTTP 403.'],
+    ['cannot be reached', () => Promise.reject(new Error('connection reset')), 'Webflow did not accept the request: its API could not be reached.'],
+  ])('shows no added lines, and a plain reason, when Webflow %s', async (_label, answer, message) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(answer);
+    const res = await cmsDeploymentService.deployToWebflow(webflowConfig, payload());
+
+    expect(res.success).toBe(false);
+    expect(res.message).toBe(message);
+    expect(res.diffSummary.linesAdded).toBe(0);
+    expect(renderResult(res)).toContain('+0 lines');
   });
 });
 
@@ -302,19 +406,32 @@ describe('Pull request: the body states what was added, and the file is written 
 
   type StoredFile = { sha: string; bytes: Buffer };
   type Pull = { title: string; body: string; head: string; base: string };
+  type Faults = { refuseCommit?: boolean; refusePull?: boolean; mainMovesAfterRefRead?: Record<string, Buffer> };
 
   /**
-   * A GitHub repository with the rules that matter here: a branch is cut from a commit that
-   * exists, replacing a file needs its current sha, a path that does not exist yet is created by
-   * a PUT, and a pull request needs both branches. Tests read the repository afterwards.
+   * A GitHub repository with the rules that matter here: a branch points at a commit, a new
+   * branch is cut from a commit that exists, a file can be read at a branch or at a commit,
+   * replacing a file needs its current sha, a path that does not exist yet is created by a PUT,
+   * and a pull request needs both branches. Tests read the repository afterwards.
    */
-  function fakeGitHubRepo(files: Record<string, Buffer>, faults: { refuseCommit?: boolean; refusePull?: boolean } = {}) {
-    const branches = new Map<string, Map<string, StoredFile>>();
-    branches.set('main', new Map(Object.entries(files).map(([path, bytes]) => [path, { sha: `sha-of-${path}`, bytes }])));
+  function fakeGitHubRepo(files: Record<string, Buffer>, faults: Faults = {}) {
+    const commits = new Map<string, Map<string, StoredFile>>();
+    const heads = new Map<string, string>();
     const pulls: Pull[] = [];
+    const commit = (tree: Map<string, StoredFile>) => {
+      const sha = `commit-${commits.size + 1}`;
+      commits.set(sha, tree);
+      return sha;
+    };
+    const tree = (source: Record<string, Buffer>, version: string) =>
+      new Map(Object.entries(source).map(([path, bytes]) => [path, { sha: `blob-${version}-${path}`, bytes }]));
+    const filesAt = (ref: string) => commits.get(heads.get(ref) ?? ref);
     const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
     /** GitHub returns file content as base64 broken into lines. */
     const githubBase64 = (bytes: Buffer) => bytes.toString('base64').replace(/(.{60})/g, '$1\n');
+
+    heads.set('main', commit(tree(files, 'v1')));
+    let mainMove = faults.mainMovesAfterRefRead;
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
@@ -326,34 +443,41 @@ describe('Pull request: the body states what was added, and the file is written 
       const body = init?.body ? JSON.parse(String(init.body)) : {};
 
       if (method === 'GET' && path.startsWith('/git/ref/heads/')) {
-        const name = path.slice('/git/ref/heads/'.length);
-        return branches.has(name) ? json({ object: { sha: `head-of-${name}` } }) : json({ message: 'Not Found' }, 404);
+        const sha = heads.get(path.slice('/git/ref/heads/'.length));
+        if (!sha) return json({ message: 'Not Found' }, 404);
+        if (mainMove) {
+          // Somebody pushes to main right after its head was read.
+          heads.set('main', commit(tree(mainMove, 'v2')));
+          mainMove = undefined;
+        }
+        return json({ object: { sha } });
       }
       if (method === 'POST' && path === '/git/refs') {
-        const from = [...branches.keys()].find((name) => `head-of-${name}` === body.sha);
-        if (!from) return json({ message: 'Object does not exist' }, 422);
-        branches.set(String(body.ref).replace('refs/heads/', ''), new Map(branches.get(from)));
+        if (!commits.has(body.sha)) return json({ message: 'Object does not exist' }, 422);
+        heads.set(String(body.ref).replace('refs/heads/', ''), body.sha);
         return json({}, 201);
       }
       if (path.startsWith('/contents/')) {
         const filePath = decodeURIComponent(path.slice('/contents/'.length));
         if (method === 'GET') {
-          const file = branches.get(url.searchParams.get('ref') || 'main')?.get(filePath);
+          const file = filesAt(url.searchParams.get('ref') || 'main')?.get(filePath);
           if (!file) return json({ message: 'Not Found' }, 404);
           return json({ type: 'file', encoding: 'base64', sha: file.sha, content: githubBase64(file.bytes) });
         }
         if (method === 'PUT') {
-          const branch = branches.get(body.branch);
-          if (!branch) return json({ message: 'Branch not found' }, 404);
+          const current = heads.has(body.branch) ? filesAt(body.branch) : undefined;
+          if (!current) return json({ message: 'Branch not found' }, 404);
           if (faults.refuseCommit) return json({ message: 'Conflict' }, 409);
-          const existing = branch.get(filePath);
+          const existing = current.get(filePath);
           if (existing && body.sha !== existing.sha) return json({ message: 'sha does not match' }, 409);
-          branch.set(filePath, { sha: 'sha-after-commit', bytes: Buffer.from(body.content, 'base64') });
+          const next = new Map(current);
+          next.set(filePath, { sha: `blob-committed-${filePath}`, bytes: Buffer.from(body.content, 'base64') });
+          heads.set(body.branch, commit(next));
           return json({}, existing ? 200 : 201);
         }
       }
       if (method === 'POST' && path === '/pulls') {
-        if (faults.refusePull || !branches.has(body.head) || !branches.has(body.base)) {
+        if (faults.refusePull || !heads.has(body.head) || !heads.has(body.base)) {
           return json({ message: 'Validation Failed' }, 422);
         }
         pulls.push(body);
@@ -364,8 +488,8 @@ describe('Pull request: the body states what was added, and the file is written 
 
     return {
       pulls,
-      newBranches: () => [...branches.keys()].filter((name) => name !== 'main'),
-      text: (branch: string, filePath: string) => branches.get(branch)?.get(filePath)?.bytes.toString('utf8'),
+      newBranches: () => [...heads.keys()].filter((name) => name !== 'main'),
+      text: (branch: string, filePath: string) => filesAt(branch)?.get(filePath)?.bytes.toString('utf8'),
     };
   }
 
@@ -392,6 +516,21 @@ describe('Pull request: the body states what was added, and the file is written 
     const json = added.replace('<script type="application/ld+json">', '').replace('</script>', '');
     expect(JSON.parse(json)).toEqual(JSON.parse(payload().schemaJsonLd));
     expect(res.diffSummary.linesAdded).toBe(committed.split('\n').length - originalHtml.split('\n').length);
+  });
+
+  it('builds the commit on the file as it was where the branch was cut, when main moves in between', async () => {
+    const movedHtml = originalHtml.replace('Bonjour', 'Bonsoir');
+    const repo = fakeGitHubRepo(
+      { 'index.html': Buffer.from(originalHtml, 'utf8') },
+      { mainMovesAfterRefRead: { 'index.html': Buffer.from(movedHtml, 'utf8') } },
+    );
+    const res = await cmsDeploymentService.deployToGitHubPR(prConfig('index.html'), payload());
+
+    expect(res.success).toBe(true);
+    const committed = repo.text(repo.newBranches()[0], 'index.html')!;
+    expect(committed).toContain('Bonjour');
+    expect(committed).toContain('application/ld+json');
+    expect(repo.text('main', 'index.html')).toBe(movedHtml);
   });
 
   it('writes a JSX script element into a .tsx layout and leaves the rest of the file alone', async () => {
@@ -433,7 +572,7 @@ describe('Pull request: the body states what was added, and the file is written 
   });
 
   it.each([
-    ['is missing from the branch', 'index.html', null, /could not be read on branch "main" \(HTTP 404\)/],
+    ['is missing from the branch', 'index.html', null, /could not be read on branch "main": GitHub answered HTTP 404\./],
     ['has no closing head tag', 'index.html', Buffer.from('<div>fragment only</div>\n', 'utf8'), /has no closing <\/head> tag/],
     ['is not text', 'index.html', Buffer.from([0xff, 0xfe, 0x00, 0x3c, 0x2f, 0x68]), /could not be read as a text file/],
     ['is empty', 'app/layout.tsx', Buffer.alloc(0), /could not be read as a text file/],
@@ -457,7 +596,7 @@ describe('Pull request: the body states what was added, and the file is written 
     const res = await cmsDeploymentService.deployToGitHubPR(prConfig('index.html'), payload());
 
     expect(res.success).toBe(false);
-    expect(res.message).toMatch(/Nothing was written to index\.html: GitHub refused the commit \(HTTP 409\)/);
+    expect(res.message).toMatch(/Nothing was written to index\.html: GitHub answered HTTP 409 to the commit\./);
     expect(repo.newBranches().map((b) => repo.text(b, 'index.html'))).toEqual([originalHtml]);
     expect(repo.pulls).toEqual([]);
     expect(res.prUrl).toBeUndefined();
@@ -470,10 +609,54 @@ describe('Pull request: the body states what was added, and the file is written 
     expect(res.success).toBe(false);
     expect(repo.pulls).toEqual([]);
     expect(res.prUrl).toBeUndefined();
-    expect(res.message).toMatch(/was committed to branch luminara\/aeo-schema-\d+, but GitHub did not confirm a pull request \(HTTP 422\)/);
+    expect(res.message).toMatch(/was committed to branch luminara\/aeo-schema-\d+, but no pull request was confirmed: GitHub answered HTTP 422\./);
     const html = renderResult(res);
     expect(html).not.toContain('View Pull Request');
     expect(html).toContain('>Deployment Error<');
+  });
+});
+
+describe('the modal: what it offers and what it stores', () => {
+  // No real WordPress site has passed the read-back, and no plugin here registers the setting.
+  it('does not offer WordPress, or any field for a WordPress password', () => {
+    openApp({ signedIn: true });
+    const html = renderModal();
+
+    expect(html).toContain('>Webflow<');
+    expect(html).toContain('>GitHub PR<');
+    expect(html).toContain('>Script Tag<');
+    expect(html).not.toContain('WordPress');
+    expect(html).not.toContain('cms-wp-endpoint');
+    expect(html).not.toContain('Application Password');
+  });
+
+  it('names the script tag option for what it does, with no CDN', () => {
+    openApp({ signedIn: true });
+    const html = renderModal();
+    expect(html).toContain('Copy and paste');
+    expect(html).not.toContain('CDN');
+  });
+
+  it('leaves "remember on this device" off until the user ticks it', () => {
+    openApp({ signedIn: true });
+    const html = renderModal();
+    expect(html).toContain('Remember on this device');
+    expect(html).toContain('type="checkbox"');
+    expect(html).not.toContain('checked=""');
+  });
+
+  it('stores no token unless the user asked, and forgets a stored one when they stop asking', () => {
+    const storage = openApp({ signedIn: true });
+
+    cmsDeploymentService.rememberConfig('webflow', webflowConfig, false);
+    expect(storage.dump()).not.toContain('wf-token-for-tests');
+    expect(cmsDeploymentService.getSavedConfig('webflow')).toEqual({});
+
+    cmsDeploymentService.rememberConfig('webflow', webflowConfig, true);
+    expect(cmsDeploymentService.getSavedConfig('webflow').authToken).toBe('wf-token-for-tests');
+
+    cmsDeploymentService.rememberConfig('webflow', webflowConfig, false);
+    expect(storage.dump()).not.toContain('wf-token-for-tests');
   });
 });
 
@@ -513,7 +696,7 @@ describe('the modal: no "autonomous", no "verified", and "deployed" only after a
     expect(html).not.toMatch(SAYS_LIVE);
   });
 
-  it('heads a result "Deployed" only when the read-back saw the schema', () => {
+  it('heads a result "Deployed" only when the read-back saw the schema appear', () => {
     const accepted: DeploymentResult = {
       success: true,
       platform: 'webflow',
@@ -524,6 +707,7 @@ describe('the modal: no "autonomous", no "verified", and "deployed" only after a
     };
     expect(deploymentResultHeading({ ...accepted, seenInPageSource: true })).toBe('Deployed');
     expect(deploymentResultHeading(accepted)).toBe('Request Completed');
+    expect(deploymentResultHeading({ ...accepted, seenInPageSource: true, alreadyOnPage: true })).toBe('Already On The Page');
     expect(deploymentResultHeading({ ...accepted, success: false, seenInPageSource: true })).toBe('Deployment Error');
   });
 

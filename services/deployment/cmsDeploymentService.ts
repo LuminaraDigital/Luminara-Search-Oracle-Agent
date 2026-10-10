@@ -2,9 +2,10 @@
  * Luminara 1-Click CMS & GitHub Deployment Service
  * Sends remediated Schema.org markup to a CMS, or opens a pull request with it.
  *
- * A result reports only what was checked. A WordPress deploy is a success when the page was
- * read back and the schema was in its source, not when the API answered 200. Webflow and the
- * pull request path say what was added and what still has to happen before it reaches the site.
+ * A result reports only what was checked. A WordPress deploy is "deployed" when the page was
+ * read before and after the request and the schema appeared in its source, not when the API
+ * answered 200. Webflow says its API accepted the request. The pull request path says what
+ * was added. Both say what still has to happen before anything reaches the site.
  */
 
 import {
@@ -51,6 +52,8 @@ export interface DeploymentResult {
   message: string;
   /** True only when a read-back fetch found the schema in the page source. */
   seenInPageSource?: boolean;
+  /** True when the schema was on the page before anything was sent, so nothing was sent. */
+  alreadyOnPage?: boolean;
   targetRef?: string;
   liveUrl?: string;
   prUrl?: string;
@@ -72,6 +75,9 @@ const STORAGE_KEY_CREDS = 'luminara_cms_credentials';
 // v2: entries written before the read-back existed recorded deployments nobody had checked,
 // so the history list starts again rather than repeat them.
 const STORAGE_KEY_HISTORY = 'luminara_deployment_history_v2';
+
+/** What a call that was not accepted did, in words a user can read. */
+const outcome = (res: Response | null): string => (res ? `answered HTTP ${res.status}` : 'could not be reached');
 
 function utf8ToBase64(text: string): string {
   const bytes = new TextEncoder().encode(text);
@@ -123,6 +129,26 @@ export class CmsDeploymentService {
       localStorage.setItem(STORAGE_KEY_CREDS, JSON.stringify(all));
     } catch (e) {
       console.warn('Failed to save CMS config', e);
+    }
+  }
+
+  /**
+   * The token and the rest of the form stay in memory unless the user asked for them to be
+   * remembered on this device. Without that, nothing is stored and an earlier copy is removed.
+   */
+  public rememberConfig(platform: CmsPlatform, config: Partial<DeploymentConfig>, remember: boolean): void {
+    if (remember) {
+      this.saveConfig(platform, config);
+      return;
+    }
+    if (typeof window === 'undefined') return;
+    try {
+      const all = JSON.parse(localStorage.getItem(STORAGE_KEY_CREDS) || '{}');
+      if (!(platform in all)) return;
+      delete all[platform];
+      localStorage.setItem(STORAGE_KEY_CREDS, JSON.stringify(all));
+    } catch (e) {
+      console.warn('Failed to clear CMS config', e);
     }
   }
 
@@ -208,16 +234,18 @@ export class CmsDeploymentService {
       if (res.ok && data?.ok === true && typeof data.found === 'boolean') {
         return { status: data.found ? 'found' : 'not_found' };
       }
-      const reason = typeof data?.error === 'string' && data.error ? data.error : `The read-back answered HTTP ${res.status}.`;
+      const reason = typeof data?.error === 'string' && data.error ? data.error : 'The page check gave no answer.';
       return { status: 'unreadable', reason };
     } catch {
-      return { status: 'unreadable', reason: 'The read-back request failed.' };
+      return { status: 'unreadable', reason: 'The page check could not be reached.' };
     }
   }
 
   /**
-   * Sends the schema to WordPress via REST API, then reads the page back.
-   * Success means the schema was seen in the page source.
+   * Reads the page, sends the schema to WordPress via REST API, then reads the page again.
+   * "Deployed" needs both reads: the schema absent before the request and present after it.
+   * If the first read fails nothing is sent, because a change could not be told apart from
+   * a schema that was there all along.
    */
   public async deployToWordPress(config: DeploymentConfig, payload: RemediationPayload): Promise<DeploymentResult> {
     const gate = this.assertSafeToDeploy(payload);
@@ -247,6 +275,39 @@ export class CmsDeploymentService {
         throw new Error('WordPress Application Password or Basic Auth Token is required.');
       }
 
+      const pageUrl = `${baseEndpoint}/`;
+      const finish = (fields: Pick<DeploymentResult, 'success' | 'message'> & Partial<DeploymentResult>): DeploymentResult => {
+        const result: DeploymentResult = {
+          platform: 'wordpress',
+          deploymentId: `wp-${Date.now()}`,
+          diffSummary: { linesAdded: 0, linesRemoved: 0 },
+          timestamp: Date.now(),
+          gateSeverity: gate.severity,
+          validationErrors: gate.issues.length ? gate.issues : undefined,
+          ...fields,
+        };
+        this.recordDeployment(result);
+        return result;
+      };
+
+      // The page as it is now. Without it, a schema that was already there would read as deployed.
+      const before = await this.readBackSchema(pageUrl, schemaJson);
+      if (before.status === 'unreadable') {
+        return finish({
+          success: false,
+          seenInPageSource: false,
+          message: `Nothing was sent to WordPress. The page has to be read before and after the request to confirm a change, and it could not be read. ${before.reason}`,
+        });
+      }
+      if (before.status === 'found') {
+        return finish({
+          success: true,
+          seenInPageSource: true,
+          alreadyOnPage: true,
+          message: 'This schema is already on the page. Nothing was changed.',
+        });
+      }
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         Authorization: `Basic ${btoa(token)}`,
@@ -260,45 +321,37 @@ export class CmsDeploymentService {
         }),
       }).catch(() => null);
 
-      // A 200 says WordPress took the request. WordPress drops a setting that no plugin
-      // registered, so only the page itself can say whether anything changed.
-      const accepted = Boolean(response?.ok);
-      const pageUrl = `${baseEndpoint}/`;
-      const readBack: SchemaReadBack | null = accepted ? await this.readBackSchema(pageUrl, schemaJson) : null;
-      const success = readBack?.status === 'found';
-
-      let message: string;
-      if (!readBack) {
-        message = `WordPress endpoint did not accept the payload (${baseEndpoint}). HTTP ${response?.status ?? 'unreachable'}.`;
-      } else if (readBack.status === 'found') {
-        message = `Deployed. A fresh fetch of ${pageUrl} found the schema in the page source.`;
-      } else if (readBack.status === 'not_found') {
-        message = 'WordPress accepted the request and the page did not change. This needs a plugin that registers the setting.';
-      } else {
-        message = `WordPress accepted the request, but the page could not be read back, so nothing is confirmed. ${readBack.reason}`;
+      if (!response?.ok) {
+        return finish({
+          success: false,
+          seenInPageSource: false,
+          message: `WordPress did not accept the request: ${baseEndpoint} ${outcome(response)}.`,
+        });
       }
 
-      const deploymentId = `wp-${Date.now()}`;
-      const result: DeploymentResult = {
-        success,
-        seenInPageSource: success,
-        platform: 'wordpress',
-        deploymentId,
-        message,
-        liveUrl: success ? pageUrl : undefined,
-        diffSummary: success
-          ? {
-              linesAdded: payload.schemaJsonLd.split('\n').length,
-              linesRemoved: (payload.originalSchema || '').split('\n').filter(Boolean).length,
-            }
-          : { linesAdded: 0, linesRemoved: 0 },
-        timestamp: Date.now(),
-        gateSeverity: gate.severity,
-        validationErrors: gate.issues.length ? gate.issues : undefined,
-      };
-
-      this.recordDeployment(result);
-      return result;
+      // A 200 says WordPress took the request. WordPress drops a setting that no plugin
+      // registered, so only the page itself can say whether anything changed.
+      const after = await this.readBackSchema(pageUrl, schemaJson);
+      if (after.status === 'found') {
+        return finish({
+          success: true,
+          seenInPageSource: true,
+          message: `Deployed. The schema was not on ${pageUrl} before the request, and a fresh fetch found it in the page source afterwards.`,
+          liveUrl: pageUrl,
+          diffSummary: {
+            linesAdded: payload.schemaJsonLd.split('\n').length,
+            linesRemoved: (payload.originalSchema || '').split('\n').filter(Boolean).length,
+          },
+        });
+      }
+      return finish({
+        success: false,
+        seenInPageSource: false,
+        message:
+          after.status === 'not_found'
+            ? 'WordPress accepted the request and the page did not change. This needs a plugin that registers the setting.'
+            : `WordPress accepted the request, but the page could not be read back, so nothing is confirmed. ${after.reason}`,
+      });
     } catch (e: any) {
       return {
         success: false,
@@ -314,8 +367,9 @@ export class CmsDeploymentService {
   }
 
   /**
-   * Adds the schema to a Webflow site's custom code via Webflow REST API v2.
-   * Custom code reaches visitors only after the site is published, which this does not do.
+   * Asks Webflow's REST API v2 to add the schema to a site's custom code.
+   * A 2xx is all that is known: the result says Webflow accepted the request, not that the
+   * code is in place. Custom code reaches visitors only after the site is published.
    */
   public async deployToWebflow(config: DeploymentConfig, payload: RemediationPayload): Promise<DeploymentResult> {
     const gate = this.assertSafeToDeploy(payload);
@@ -368,10 +422,10 @@ export class CmsDeploymentService {
         platform: 'webflow',
         deploymentId,
         message: success
-          ? `Schema.org markup added to the site's custom code; publish the site to make it live. Webflow site: ${siteId || payload.domain}.`
-          : `Webflow API rejected or unreachable. HTTP ${res?.status ?? 'unreachable'}.`,
+          ? `Webflow accepted the request for site ${siteId || payload.domain}; publish the site to make it live.`
+          : `Webflow did not accept the request: its API ${outcome(res)}.`,
         diffSummary: {
-          linesAdded: payload.schemaJsonLd.split('\n').length,
+          linesAdded: success ? payload.schemaJsonLd.split('\n').length : 0,
           linesRemoved: 0,
         },
         timestamp: Date.now(),
@@ -446,21 +500,23 @@ export class CmsDeploymentService {
     try {
       // 1. Read the base branch and the target file. Nothing is written until both are in hand.
       const refRes = await fetch(`${repoApi}/git/ref/heads/${branch}`, { headers }).catch(() => null);
-      if (!refRes?.ok) {
-        return stop(`Nothing was written. Branch "${branch}" could not be read in ${owner}/${repo} (HTTP ${refRes?.status ?? 'unreachable'}).`);
+      const baseSha = refRes?.ok ? (await refRes.json().catch(() => null))?.object?.sha : undefined;
+      if (typeof baseSha !== 'string' || !baseSha) {
+        return stop(`Nothing was written. Branch "${branch}" could not be read in ${owner}/${repo}: GitHub ${outcome(refRes)}.`);
       }
-      const baseSha = (await refRes.json().catch(() => null))?.object?.sha;
 
-      const fileRes = await fetch(`${contentsUrl}?ref=${encodeURIComponent(branch)}`, { headers }).catch(() => null);
+      // The file is read at the commit the new branch is cut from, so the two cannot disagree
+      // if the base branch moves in between.
+      const fileRes = await fetch(`${contentsUrl}?ref=${encodeURIComponent(baseSha)}`, { headers }).catch(() => null);
       if (!fileRes?.ok) {
         return stop(
-          `Nothing was written. ${filePath} could not be read on branch "${branch}" (HTTP ${fileRes?.status ?? 'unreachable'}). The schema is only added to a file that already exists.`,
+          `Nothing was written. ${filePath} could not be read on branch "${branch}": GitHub ${outcome(fileRes)}. The schema is only added to a file that already exists.`,
         );
       }
       const file = await fileRes.json().catch(() => null);
       const original =
         file?.encoding === 'base64' && typeof file.content === 'string' && file.content ? base64ToUtf8(file.content) : null;
-      if (typeof baseSha !== 'string' || typeof file?.sha !== 'string' || original === null) {
+      if (typeof file?.sha !== 'string' || original === null) {
         return stop(`Nothing was written. ${filePath} could not be read as a text file.`);
       }
       const headClose = original.search(/<\/head\s*>/i);
@@ -503,7 +559,7 @@ export class CmsDeploymentService {
       }).catch(() => null);
       if (!branchRes?.ok) {
         return stop(
-          `Nothing was committed. GitHub did not confirm the new branch (HTTP ${branchRes?.status ?? 'unreachable'}). Check that the token can write to ${owner}/${repo}.`,
+          `Nothing was committed. The new branch was not created: GitHub ${outcome(branchRes)}. Check that the token can write to ${owner}/${repo}.`,
         );
       }
 
@@ -524,7 +580,7 @@ export class CmsDeploymentService {
       }
       if (!commitRes.ok) {
         return stop(
-          `Nothing was written to ${filePath}: GitHub refused the commit (HTTP ${commitRes.status}). Branch ${prBranchName} was created and holds no change.`,
+          `Nothing was written to ${filePath}: GitHub ${outcome(commitRes)} to the commit. Branch ${prBranchName} was created and holds no change.`,
         );
       }
 
@@ -541,7 +597,7 @@ export class CmsDeploymentService {
       const prUrl = prRes?.ok ? (await prRes.json().catch(() => null))?.html_url : undefined;
       if (typeof prUrl !== 'string' || !prUrl) {
         return stop(
-          `The schema was committed to branch ${prBranchName}, but GitHub did not confirm a pull request (HTTP ${prRes?.status ?? 'unreachable'}). If none exists, open it from https://github.com/${owner}/${repo}/pull/new/${prBranchName}`,
+          `The schema was committed to branch ${prBranchName}, but no pull request was confirmed: GitHub ${outcome(prRes)}. If none exists, open it from https://github.com/${owner}/${repo}/pull/new/${prBranchName}`,
         );
       }
 
@@ -573,7 +629,8 @@ export class CmsDeploymentService {
   }
 
   /**
-   * Generates a zero-code dynamic CDN script tag that auto-injects the schema
+   * Generates an inline script tag that adds the schema when the page loads.
+   * Nothing is hosted anywhere: the tag carries the schema itself.
    */
   public generateClientScriptTag(payload: RemediationPayload): string {
     const encoded = btoa(encodeURIComponent(payload.schemaJsonLd));

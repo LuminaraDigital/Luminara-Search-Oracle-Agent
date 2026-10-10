@@ -17,8 +17,18 @@ interface CmsDeploymentModalProps {
   remediationPayload?: RemediationPayload;
 }
 
-/** Only a result whose read-back fetch saw the schema in the page source is called deployed. */
+/**
+ * The WordPress option stays hidden until one real WordPress site the owner controls has passed
+ * the read-back: schema absent before the request, present in the page source after it. Record
+ * that trial in section 1.1 of docs/plans/founder-swarm-business-brain-additive-plan.md, then
+ * set this to true. Nothing in this repo registers the `luminara_aeo_schema` setting, so a stock
+ * WordPress site cannot pass today, and the option asks for an admin application password.
+ */
+export const WORDPRESS_TRIAL_PASSED: boolean = false;
+
+/** Only a result whose read-back fetch saw the schema appear in the page source is called deployed. */
 export function deploymentResultHeading(result: DeploymentResult): string {
+  if (result.alreadyOnPage) return 'Already On The Page';
   if (!result.success) return 'Deployment Error';
   return result.seenInPageSource ? 'Deployed' : 'Request Completed';
 }
@@ -68,8 +78,9 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
   onClose,
   remediationPayload,
 }) => {
-  const [platform, setPlatform] = useState<CmsPlatform>('wordpress');
-  const [saveCreds, setSaveCreds] = useState(true);
+  const [platform, setPlatform] = useState<CmsPlatform>(WORDPRESS_TRIAL_PASSED ? 'wordpress' : 'webflow');
+  // Off unless the user asks: tokens stay in memory and are not written to this browser's storage.
+  const [saveCreds, setSaveCreds] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [result, setResult] = useState<DeploymentResult | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -98,6 +109,8 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
     setRepoName(cfg.repoName || '');
     setTargetBranch(cfg.targetBranch || 'main');
     setFilePath(cfg.filePath || (platform === 'github_pr' ? 'app/layout.tsx' : ''));
+    // The box shows what is stored: ticked only when a token is already saved for this option.
+    setSaveCreds(Boolean(cfg.authToken));
     setResult(null);
   }, [platform, isOpen]);
 
@@ -194,9 +207,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
       filePath: filePath.trim() || 'app/layout.tsx',
     };
 
-    if (saveCreds) {
-      cmsDeploymentService.saveConfig(platform, config);
-    }
+    cmsDeploymentService.rememberConfig(platform, config, saveCreds);
 
     try {
       let res: DeploymentResult;
@@ -318,12 +329,12 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
             <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
               Target CMS / Infrastructure
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className={`grid grid-cols-2 ${WORDPRESS_TRIAL_PASSED ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-2`}>
               {[
-                { id: 'wordpress', label: 'WordPress', hint: 'REST API' },
+                ...(WORDPRESS_TRIAL_PASSED ? [{ id: 'wordpress', label: 'WordPress', hint: 'REST API' }] : []),
                 { id: 'webflow', label: 'Webflow', hint: 'Sites API v2' },
                 { id: 'github_pr', label: 'GitHub PR', hint: 'Automated PR' },
-                { id: 'script_tag', label: 'Script Tag', hint: 'Zero-Code CDN' },
+                { id: 'script_tag', label: 'Script Tag', hint: 'Copy and paste' },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -344,7 +355,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
           </div>
 
           {/* Form Configuration based on platform */}
-          {platform === 'wordpress' && (
+          {WORDPRESS_TRIAL_PASSED && platform === 'wordpress' && (
             <div className="space-y-4 glass-morphism p-4 rounded-xl border border-white/10">
               <div>
                 <label htmlFor="cms-wp-endpoint" className="block text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-1">
@@ -569,7 +580,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
                 onChange={(e) => setSaveCreds(e.target.checked)}
                 className="rounded border-white/20 bg-black text-gold focus:ring-0"
               />
-              <span>Remember configuration credentials locally in this browser</span>
+              <span>Remember on this device. Stores these details and the token in this browser. Leave it off to keep them in memory only.</span>
             </label>
           )}
 
