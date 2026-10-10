@@ -40,18 +40,22 @@ describe('worker/oracleGateway', () => {
       ok: boolean;
       state: string;
       targetDomain: string;
-      healthScore: number;
+      healthScore: number | null;
       verdict: string;
       oneMoveThisWeek: string;
+      evidence: {
+        measurementStatus: string;
+      };
       diagnostics: string[];
     };
 
     expect(body.ok).toBe(true);
     expect(body.state).toBe('settled');
     expect(body.targetDomain).toBe('example.com');
-    expect(body.healthScore).toBe(74);
-    expect(body.verdict).toContain('Organization schema');
-    expect(body.oneMoveThisWeek).toContain('JSON-LD');
+    expect(body.healthScore).toBeNull();
+    expect(body.evidence.measurementStatus).toBe('not_measured');
+    expect(body.verdict).toContain('not_measured');
+    expect(body.oneMoveThisWeek).toContain('probe crawl');
     expect(body.diagnostics.length).toBeGreaterThan(0);
   });
 

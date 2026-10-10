@@ -119,11 +119,8 @@ export async function executeOracleGatewayTask(
 
       const evidenceClassification = classifyEvidenceStatus({
         scrapedUrl: targetUrl,
-        httpStatus: 200,
-        contentLength: 2500,
-        sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-        hasVerifiedSelectors: true,
-        sourcesCount,
+        httpStatus: 0,
+        contentLength: 0,
       });
 
       ctx.diagnostics.push(
@@ -155,9 +152,8 @@ export async function executeOracleGatewayTask(
               {
                 ref: 'target_homepage',
                 url: targetUrl,
-                sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
                 fetchedAt: new Date().toISOString(),
-                httpStatus: 200,
+                httpStatus: 0,
               },
             ],
             measurementStatus: evidenceClassification.status,
