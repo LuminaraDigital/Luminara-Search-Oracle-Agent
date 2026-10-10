@@ -773,6 +773,7 @@ CREATE TABLE IF NOT EXISTS stars_charges (
     CHECK (status IN ('received','credited','refund_due','refunded','refund_failed')),
   refund_reason TEXT,
   attempts INTEGER NOT NULL DEFAULT 0,
+  stars_returned INTEGER NOT NULL DEFAULT 0 CHECK (stars_returned IN (0, 1)),
   lease_until INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -848,6 +849,8 @@ received -> refund_due -> refunded
 - **Why a list.** The subscription record holds one charge id today (`worker/telegramBot.ts:369-377`), and any later purchase on any rail overwrites it. "The record names the charge" would then stop being true for a charge that was honestly granted, and the sweep would refund it. SW0a-3 makes it `appliedCharges`, the last 20 ids applied to that record.
 - **Manual refunds go through the ledger.** Two paths refund by hand today and call Telegram directly: the bot's `/refund` command (`worker/telegramBot.ts:738-757`) and `POST /telegram/refund` (`worker/index.ts:919`). After SW0a-3 each moves the charge to `refund_due` and the sweep refunds it, so the ledger never says `credited` for money that went back. A charge older than the table is refunded directly, as today, and recorded as `refunded`.
 - A refund always goes to `payer_tg_id`, the account that paid, never to an id read from the invoice payload.
+- **A refund is finished only when the plan has gone back too.** `stars_returned` (added while building SW0a-3, after its second review) records that the Stars are with the payer. A row can stay `refund_due` after that while what the charge gave is still being taken back; the sweep retries that part alone and never asks Telegram to refund twice, so nothing depends on the wording of its answer to a second refund.
+- **The plan before each charge is kept with the record.** Beside `appliedCharges` the subscription record holds `chargeLinks`: for each applied charge, the plan the record had before it and the Stars charge applied just before it. A refund of the last charge applied puts that plan back; a refund of an earlier one re-links the charge that followed it. Without this a refunded upgrade kept the higher plan name.
 - Payment and refund messages are sent whatever the account's notice settings say (section 6.5 covers optional notices only).
 - `purpose = 'job'` is used from SW6 (section 11.2), which adds no second charge table.
 - **Rule 2.6.** `account_id` is NULL when the payer has no account row. Rows are exported by `account_id`. On account deletion a charge row is kept as a financial record with `account_id` set to NULL; `payer_tg_id` stays, because a refund can only be sent to it. How long such rows are kept is asked with decision 16. `ton_pending_orders` rows are deleted with the account, and otherwise at their `expires_at`, which is 48 hours after they are created. A support request is deleted with the account, or 12 months after it is closed.
@@ -1747,6 +1750,14 @@ Nothing has been executed. No file outside this document was changed by writing 
 - **SW0a-3 is written** and is draft PR #63, with migration `0023_stars_charges.sql`. It is not merged: it waits for release #59, and for the staging bot drills (SW0a-14).
 - **A payment audit of every rail** found: the card rail is not safe to switch on (a guest can be charged with no plan to credit, no live-mode check, the grant is read from metadata alone, refunds and disputes are ignored, redirect URLs come from the request); a one-day pass undercuts Starter (30 passes cost 750 Stars against 2,500); and Telegram's `refunded_payment` message fell through to the chat model (fixed in SW0a-3). Task chips exist for the card rail and the pass price.
 - **Not verified.** Cloudflare Workers Builds is connected to this repository for two Workers and reports a check on every pull request. Whether it also deploys production on a push to `main`, outside the GitHub workflow's migration and smoke gates, was not checked; the owner can see it under the Worker's Settings, Builds.
+
+2026-10-10, evening: more SW0a progress, as it stood at `origin/staging` = `92078f9`.
+
+- **Release PR #59 passed a CEO gate: go, with conditions that do not hold the merge.** Its wording conditions were met by #68 (copy outside the paywall names Stars alone while TON and card checkout are closed; the pricing page follows what the server reports) and by #71 for two strings the re-check found. Left to the owner: the pricing page, the paywall and the Terms say card checkout is available on request, which is true only if the owner invoices by hand.
+- **SW0a-3 (draft PR #63) went through two independent review passes, no blocker in either.** The fixes changed the design in two places, written into section 5.1 above: the `stars_returned` column, and `chargeLinks` on the subscription record. Known limits kept for now: the daily sweep (a charge whose handler was killed mid-grant waits for it), and two charges for one account in the same instant can lose one's days, because KV has no compare-and-set.
+- **SW0a-14, code half (PR #70).** A staging build uses only its own Firebase web config and never falls back to the production project; the Mini App link comes from configuration (`VITE_TELEGRAM_MINI_APP_URL` for the web build, `TELEGRAM_MINI_APP_URL` for links the Worker writes). The owner's half is in `docs/runbooks/staging-sign-in-and-bot.md`: a staging Firebase web app, the GitHub `staging` environment's variables, a separate staging bot and its two secrets.
+- **Other sessions, started by the owner from this plan's task chips:** the card rail's defects (branch `fix/stripe-card-rail-hardening`, migration `0024`), the one-day pass price, and the dependency alerts (#65, #66, #67, #69, held until the release). The card-rail session keeps its own rank guard until SW0a-4 moves the rule into `writeSubscriptionRecord`; its refund path writes a lower plan on purpose and will need an explicit way past that rule.
+- **Still open at `main`:** pull request #62 targets `main` directly from a branch cut before the hotfix, and touches the paywall and the Worker's payment files. Decision 27 (include administrators in `main`'s protection) is unanswered.
 
 ---
 
