@@ -7,7 +7,9 @@ import {
   buildEmpiricalPromptSection,
   buildEnrichmentPromptSection,
   buildIntegrityPromptSection,
+  buildPreliminaryTrustPromptSection,
 } from '../services/audit/evidencePromptLabels';
+import { aeoTrustPackService } from '../services/audit/aeoTrustPackService';
 import type { EmpiricalCitationSummary } from '../services/audit/empiricalCitationService';
 import type { EnrichedEntityIntelligence } from '../services/enrichment/publicApisEnrichmentService';
 
@@ -166,6 +168,42 @@ describe('audit prompt evidence labels', () => {
     expect(src).toContain('buildEnrichmentPromptSection(enrichedEntity)');
     expect(src).toContain('buildIntegrityPromptSection(citationIntegrity)');
     expect(src).toContain('${EVIDENCE_LABEL_INSTRUCTION}');
+  });
+
+  // SW0a-7: the preliminary trust block carries no cite-worthiness value.
+  it('labels the preliminary trust pack ESTIMATED and prints no cite-worthiness value or formula', () => {
+    // A failed security check caps the composite at 50. The raw value (30 + 30 + 20 = 80) is above it,
+    // so the pack holds the finding that quotes the raw composite.
+    const pack = aeoTrustPackService.build({
+      security: { ...entity('failed').security, trustScore: 100 },
+      empirical: { ...summary, entityClarityScore: 100 },
+      integrity: { integrityScore: 100, deadCitationCount: 0, spoofRisk: 'low', sameAsConflict: false, details: [], measuredAt: 1 },
+      reportText: 'Acme makes anvils',
+      brandName: 'Acme',
+      domain: 'acme.example',
+    });
+    expect(pack.findings.some((finding) => /Raw weighted score \d+/.test(finding.detail))).toBe(true);
+
+    const text = buildPreliminaryTrustPromptSection(pack);
+    expect(text).toContain('[ESTIMATED: AEO TRUST PACK, PRELIMINARY]');
+    expect(text).toContain('Cite-worthiness: not measured at this stage.');
+    expect(text).not.toMatch(/cite-?worthiness\s*[:=]\s*\d/i);
+    expect(text).not.toContain('Raw weighted score');
+    expect(text).not.toContain(String(pack.citeWorthiness));
+    expect(text).not.toContain('Formula');
+    expect(text).not.toContain('0.30*');
+    expect(text).not.toMatch(/verified/i);
+    // The security check failed, so its sub-signal is not printed as a number.
+    expect(text).toContain('securityTrust: not measured');
+    expect(text).toContain('citationIntegrity: 100/100');
+    expect(text).toContain('entityClarity: 100/100');
+  });
+
+  it('prints not measured, never a zero, for trust signals nothing collected', () => {
+    const text = buildPreliminaryTrustPromptSection(aeoTrustPackService.build({ domain: 'acme.example' }));
+    expect(text).toContain('securityTrust: not measured, citationIntegrity: not measured, entityClarity: not measured');
+    expect(text).not.toMatch(/\d+\/100/);
+    expect(text).toContain('Findings:\n- none');
   });
 
   it('has no VERIFIED evidence header anywhere in services/', () => {

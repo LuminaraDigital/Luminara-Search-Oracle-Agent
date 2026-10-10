@@ -407,10 +407,15 @@ export class CrewOrchestrator {
 
     // Node 7: Plain English Executive Briefing
     graph.addNode('executive_translator_node', 'Executive Translator', async (ctx, emit) => {
+      // The brief quotes counts of live search rows, never a percentage of AI answers.
+      const liveRows = liveSearchRows(ctx.serpEvidence);
+      const webMentions = typeof ctx.citationRatePercent === 'number' && liveRows.length > 0
+        ? { mentioned: liveRows.filter((row) => row.brandMentioned).length, total: liveRows.length }
+        : null;
       const plainEnglishBrief = await executiveTranslatorAgent.execute(
         ctx.targetUrl,
         ctx.healthScore,
-        ctx.citationRatePercent,
+        webMentions,
         ctx.findings,
         ctx.patches,
         ctx.dna,

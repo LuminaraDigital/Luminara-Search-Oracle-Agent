@@ -29,10 +29,21 @@ export function parseRadarItemScore(raw: string | undefined): number | null {
     return Number.isNaN(val) ? null : val;
 }
 
-export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers: _headers, rows }) => {
+/**
+ * Index of the first header that matches, or -1.
+ * A cell is drawn only when the table carries its column. New audit reports carry
+ * no rank or AI Overview column, so nothing is shown in their place.
+ */
+export function radarColumnIndex(headers: string[], pattern: RegExp): number {
+    return headers.findIndex((header) => pattern.test(header));
+}
+
+export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows }) => {
     const [scanActive, setScanActive] = useState(true);
     const [score, setScore] = useState<number | null>(null);
     const measuredAvg = computeRadarAverage(rows);
+    const rankCol = radarColumnIndex(headers, /organic rank/i);
+    const aiOverviewCol = radarColumnIndex(headers, /ai overview/i);
 
     useEffect(() => {
         if (measuredAvg === null) {
@@ -120,8 +131,9 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers: _head
                     const intent = row[1]?.replace(/[*_`]/g, '') || 'General';
                     const mentioned = row[2]?.toLowerCase().includes('yes');
                     const competitors = row[3]?.replace(/[*_`]/g, '') || 'None';
-                    const organicRank = row[4]?.replace(/[*_`]/g, '') || '-';
-                    const aiOverview = row[6]?.toLowerCase().includes('yes') || row[6]?.toLowerCase().includes('active');
+                    const organicRank = row[rankCol]?.replace(/[*_`]/g, '') || '-';
+                    const aiOverviewCell = row[aiOverviewCol]?.toLowerCase() || '';
+                    const aiOverview = aiOverviewCell.includes('yes') || aiOverviewCell.includes('active');
                     const itemScore = parseRadarItemScore(row[7]);
 
                     return (
@@ -152,16 +164,20 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers: _head
                                         {mentioned ? 'Cited (estimated)' : 'Opportunity gap'}
                                     </span>
                                 </div>
-                                <div>
-                                    <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">Organic rank</span>
-                                    <span className="font-mono text-gray-200">{organicRank}</span>
-                                </div>
-                                <div>
-                                    <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">AI engine status</span>
-                                    <span className={`font-medium ${aiOverview ? 'text-gold-light' : 'text-gray-400'}`}>
-                                        {aiOverview ? 'AI Overview active' : 'Traditional SERP'}
-                                    </span>
-                                </div>
+                                {rankCol >= 0 && (
+                                    <div>
+                                        <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">Organic rank</span>
+                                        <span className="font-mono text-gray-200">{organicRank}</span>
+                                    </div>
+                                )}
+                                {aiOverviewCol >= 0 && (
+                                    <div>
+                                        <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">AI engine status</span>
+                                        <span className={`font-medium ${aiOverview ? 'text-gold-light' : 'text-gray-400'}`}>
+                                            {aiOverview ? 'AI Overview active' : 'Traditional SERP'}
+                                        </span>
+                                    </div>
+                                )}
                                 <div>
                                     <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">Top rival citations</span>
                                     <span className="text-gray-300 truncate block" title={competitors}>{competitors}</span>

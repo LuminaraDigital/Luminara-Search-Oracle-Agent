@@ -9,6 +9,15 @@
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
 
+/**
+ * Counts of the live web search rows this run collected.
+ * The brief quotes the two counts. It never turns them into a share of AI answers.
+ */
+export interface WebMentionCounts {
+  mentioned: number;
+  total: number;
+}
+
 export class ExecutiveTranslatorAgent {
   public readonly name = 'Executive Translator';
   public readonly role = 'executive_translator';
@@ -16,7 +25,7 @@ export class ExecutiveTranslatorAgent {
   public async execute(
     domain: string,
     healthScore: number | null,
-    citationRate: number | null,
+    webMentions: WebMentionCounts | null,
     findings: AuditFinding[],
     patches: CodeRemediationPatch[],
     dna: BusinessDNA | null | undefined,
@@ -36,18 +45,31 @@ export class ExecutiveTranslatorAgent {
     const brandName = dna?.name || cleanDomain;
     const criticalCount = findings.filter((f) => f.severity === 'critical').length;
     const healthKnown = typeof healthScore === 'number';
-    const citationKnown = typeof citationRate === 'number';
+    // Counts that cannot be a count of rows are treated as not measured.
+    const mentions =
+      webMentions != null &&
+      Number.isInteger(webMentions.mentioned) &&
+      Number.isInteger(webMentions.total) &&
+      webMentions.total > 0 &&
+      webMentions.mentioned >= 0 &&
+      webMentions.mentioned <= webMentions.total
+        ? webMentions
+        : null;
+    const citationKnown = mentions != null;
+    const mentionPhrase = mentions
+      ? `**mentioned in ${mentions.mentioned} of ${mentions.total} web results**`
+      : '';
     const scoreLine = healthKnown && citationKnown
-      ? `Right now, your AI Search Health Score is **${healthScore}/100**, and your brand is cited in about **${citationRate}%** of relevant AI search answers.`
+      ? `Right now, your AI Search Health Score is **${healthScore}/100**, and your brand is ${mentionPhrase} this run collected.`
       : healthKnown
         ? `Right now, your AI Search Health Score is **${healthScore}/100**. Citation rate was not measured.`
         : citationKnown
-          ? `Right now, your brand is cited in about **${citationRate}%** of relevant AI search answers. Health score was not measured.`
+          ? `Right now, your brand is ${mentionPhrase} this run collected. Health score was not measured.`
           : 'Right now, health score and citation rate were not measured. Search or page providers did not return evidence for this run.';
     const takeaway = criticalCount > 0
       ? `⚠️ **The Big Takeaway:** Search engines and AI tools like ChatGPT and Perplexity are having trouble understanding your brand because ${criticalCount === 1 ? 'there is 1 key missing identity record' : `there are ${criticalCount} key identity records missing`} on your website.`
       : healthKnown
-        ? `✅ **The Big Takeaway:** Your site has solid baseline technical health, but can double its citations by adding structured comparison pages.`
+        ? `✅ **The Big Takeaway:** Your site has solid baseline technical health.`
         : '**The takeaway:** This run did not measure enough page or search evidence to judge technical health.';
 
     const sections = [

@@ -14,6 +14,7 @@ import type { MeasurementStatus } from '../tools/types';
 import type { EmpiricalCitationSummary } from './empiricalCitationService';
 import type { CitationIntegrityResult } from './citationIntegrityService';
 import type { EnrichedEntityIntelligence } from '../enrichment/publicApisEnrichmentService';
+import type { SignalStatus, TrustPackSummary } from './aeoTrustPackService';
 
 export const EVIDENCE_PROMPT_LABEL: Record<MeasurementStatus, string> = {
   measured: 'MEASURED',
@@ -94,5 +95,39 @@ export function buildIntegrityPromptSection(integrity: CitationIntegrityResult |
     `IntegrityScore: ${integrity.integrityScore}/100\n` +
     `DeadCitations: ${integrity.deadCitationCount}\nSpoofRisk: ${integrity.spoofRisk}\n` +
     `sameAsConflict: ${integrity.sameAsConflict}\n`
+  );
+}
+
+function trustSignalLine(name: string, value: number, status: SignalStatus): string {
+  return status === 'not_measured' ? `${name}: not measured` : `${name}: ${value}/100`;
+}
+
+/** The finding that quotes a raw composite. It is kept out of the preliminary prompt block. */
+const COMPOSITE_CAP_FINDING = /^cite-worthiness capped/i;
+
+/**
+ * Trust pack built before schema extraction. ESTIMATED: the sub-signals are browser
+ * heuristics and a search sample. The block carries no cite-worthiness value and no
+ * formula for one, because the composite needs a schema check that has not run yet.
+ */
+export function buildPreliminaryTrustPromptSection(
+  pack: Pick<TrustPackSummary, 'ymylTier' | 'securityTrust' | 'citationIntegrity' | 'entityClarity' | 'signalStatus' | 'findings'>,
+): string {
+  const findings = pack.findings
+    .filter((f) => !COMPOSITE_CAP_FINDING.test(f.title))
+    .slice(0, 5)
+    .map((f) => `- [${f.severity}] ${f.title}: ${f.detail}`);
+  const signals = [
+    trustSignalLine('securityTrust', pack.securityTrust, pack.signalStatus.security),
+    trustSignalLine('citationIntegrity', pack.citationIntegrity, pack.signalStatus.integrity),
+    trustSignalLine('entityClarity', pack.entityClarity, pack.signalStatus.entityClarity),
+  ];
+  return (
+    `\n[${ESTIMATED}: AEO TRUST PACK, PRELIMINARY]\n` +
+    `Method: browser heuristics and the search sample, before schema extraction.\n` +
+    `Cite-worthiness: not measured at this stage. Schema is not checked yet.\n` +
+    `ymylTier: ${pack.ymylTier}\n` +
+    `${signals.join(', ')}\n` +
+    `Findings:\n${findings.join('\n') || '- none'}\n`
   );
 }

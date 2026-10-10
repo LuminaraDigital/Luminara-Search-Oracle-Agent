@@ -22,6 +22,7 @@ import {
   serpRowsToCitationGroups,
 } from '../services/audit/reuseCrewEvidence';
 import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
+import { isUnmeasuredReportColumn } from '../services/audit/reportColumnGate';
 import { citationIntegrityService } from '../services/audit/citationIntegrityService';
 import { publicApisEnrichmentService } from '../services/enrichment/publicApisEnrichmentService';
 import { writingQualityService } from '../services/audit/writingQualityService';
@@ -277,6 +278,83 @@ describe('generateAuditReport crew evidence', () => {
     expect(result.empiricalSummary?.citationRatePercent).toBeNull();
     expect(result.empiricalSummary?.entityClarityScore).toBeNull();
     expect(prompt()).toContain('via jina');
+  });
+
+  // SW0a-7: the report prompt asks for no column an evidence block cannot fill.
+  it('asks the model for no rank, impact, rich result, AI Overview or trust signal column', async () => {
+    await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+    const rules = prompt().slice(prompt().indexOf('Strict Formatting Guidelines:'));
+    expect(rules).toContain('## AI & Search Visibility Radar');
+
+    for (const label of ['Expected Impact', 'Est. Organic Rank', 'Rich Results', 'AI Overview Status', 'Trust Signal Strength']) {
+      expect(rules.toLowerCase(), label).not.toContain(label.toLowerCase());
+    }
+    const requestedColumns = rules
+      .split('\n')
+      .filter((line) => line.trim().startsWith('|'))
+      .flatMap((line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim()));
+    expect(requestedColumns).toEqual([
+      'Task', 'Plain issue', 'Priority',
+      'Query', 'Intent', 'Brand Cited (Yes/No)', 'Key Competitors', 'Citation Status (Cited/Not Cited/Not Measured)',
+      'Entity', 'AI Perception (Tone/Claims)', 'Top Cited Page Types', 'Content Advantage (vs You)',
+    ]);
+    expect(requestedColumns.filter((column) => isUnmeasuredReportColumn(column))).toEqual([]);
+  });
+
+  it('does not invite the model to add figures labelled as estimates', async () => {
+    await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+    const rules = prompt().slice(prompt().indexOf('Strict Formatting Guidelines:'));
+    expect(rules).not.toContain('(estimate)');
+    expect(rules).not.toMatch(/label every estimate/i);
+    expect(rules).toContain('Do not add figures of your own.');
+  });
+
+  it('puts no cite-worthiness value or formula in the prompt and marks the trust block estimated', async () => {
+    await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+    const text = prompt();
+    const block = text.slice(text.indexOf('AEO TRUST PACK'));
+    expect(text).toContain('[ESTIMATED: AEO TRUST PACK, PRELIMINARY]');
+    expect(block).toContain('Cite-worthiness: not measured at this stage.');
+    expect(text).not.toMatch(/cite-?worthiness\s*[:=]\s*\d/i);
+    expect(text).not.toContain('Formula:');
+    expect(text).not.toContain('0.30*securityTrust');
+  });
+
+  it('returns a report with no rank or impact column even when the model writes them', async () => {
+    generate.mockResolvedValue({
+      text: [
+        '# Luminara: Will AI mention Example?',
+        '',
+        '## 3. Fix list',
+        '| Task | Plain issue | Expected Impact | Priority |',
+        '|------|-------------|-----------------|----------|',
+        '| Add Organization schema | AI cannot tell who you are | +40% citations | High |',
+        '',
+        '## AI & Search Visibility Radar',
+        '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Est. Organic Rank | Rich Results | AI Overview Status | Citation Status (Cited/Not Cited/Not Measured) |',
+        '|---|---|---|---|---|---|---|---|',
+        '| what is example.com | informational | Yes | none measured | Position 3 | FAQ snippet | Active | Cited |',
+        '',
+        '## Competitor Reality Map',
+        '| Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) | Trust Signal Strength (Low/Med/High) |',
+        '|---|---|---|---|---|',
+        '| Example | Clear | Homepage | None | Medium-High |',
+      ].join('\n'),
+    } as never);
+
+    const result = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+
+    const lines = result.text.split('\n');
+    const headerCells = lines
+      .filter((line, index) => line.trim().startsWith('|') && (lines[index + 1] || '').includes('---'))
+      .flatMap((line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim()));
+    expect(headerCells).toHaveLength(12);
+    expect(headerCells.filter((cell) => /rank|impact|rich result|ai overview|trust signal/i.test(cell))).toEqual([]);
+    for (const invented of ['+40% citations', 'Position 3', 'FAQ snippet', 'Active', 'Medium-High']) {
+      expect(result.text).not.toContain(invented);
+    }
+    expect(result.text).toContain('Add Organization schema');
+    expect(result.text).toContain('what is example.com');
   });
 
   it('passes crew pages and SERP rows from Instant Audit into the report', async () => {

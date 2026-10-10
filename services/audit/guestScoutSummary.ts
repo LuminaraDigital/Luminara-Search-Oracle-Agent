@@ -53,6 +53,7 @@ export interface GuestScoutSummaryInput {
   measurementStatus: 'measured' | 'not_measured';
   measurementReason?: string;
   citationRatePercent: number | null;
+  /** Count of the serpCount search rows that mention the brand. Not a 0-100 score. */
   shareOfVoiceScore: number | null;
   healthScore: number | null;
   scrapedPageCount: number;
@@ -111,6 +112,22 @@ function metricBadge(label: string, value: number | null, suffix: string): Scout
     return { label, status: 'not_measured' };
   }
   return { label, status: 'measured', value: `${value}${suffix}` };
+}
+
+/**
+ * A value that cannot be a count of the rows collected is treated as not measured.
+ * That covers a 0-100 score stored before share of voice became a count.
+ */
+function mentionCountOf(count: number | null, total: number): number | null {
+  if (typeof count !== 'number' || !Number.isInteger(count)) return null;
+  if (!Number.isInteger(total) || total <= 0 || count < 0 || count > total) return null;
+  return count;
+}
+
+/** Share of voice is shown as the count it is: rows that mention the brand, of rows collected. */
+function mentionCountBadge(label: string, count: number | null, total: number): ScoutBadge {
+  if (count == null) return { label, status: 'not_measured' };
+  return { label, status: 'measured', value: `mentioned in ${count} of ${total} web results` };
 }
 
 /**
@@ -202,9 +219,12 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     failureCodes,
   });
   const failed = failureCodes.map((code) => teaserFailureLine(code));
+  const mentionCount = mentionCountOf(input.shareOfVoiceScore, input.serpCount);
+  // Share of the collected rows, 0 to 100. Read only by the platform check below, never shown.
+  const mentionShare = mentionCount == null ? null : (mentionCount / input.serpCount) * 100;
   let badges: ScoutBadge[] = [
     metricBadge('Citation rate', input.citationRatePercent, '%'),
-    metricBadge('Share of voice', input.shareOfVoiceScore, '/100'),
+    mentionCountBadge('Share of voice', mentionCount, input.serpCount),
     metricBadge('Page health', input.healthScore, '/100'),
   ];
   if (degraded) {
@@ -238,18 +258,18 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     },
     {
       platform: 'Perplexity',
-      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.shareOfVoiceScore == null)
+      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || mentionShare == null)
         ? 'not_measured'
-        : input.shareOfVoiceScore >= 50
+        : mentionShare >= 50
           ? 'recommended'
-          : input.shareOfVoiceScore > 0
+          : mentionShare > 0
             ? 'cited'
             : 'not_cited',
-      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.shareOfVoiceScore == null)
+      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || mentionShare == null)
         ? 'Search evidence was not measured in this run.'
-        : input.shareOfVoiceScore >= 50
+        : mentionShare >= 50
           ? 'High domain citation density in Perplexity answer synthesis.'
-          : input.shareOfVoiceScore > 0
+          : mentionShare > 0
             ? 'Secondary source citations detected in answers.'
             : 'Not cited in Perplexity answers for category queries.',
     },

@@ -142,7 +142,7 @@ describe('guest scout summary honesty', () => {
     const brief = await executiveTranslatorAgent.execute(
       'https://seamossvibes.com.au',
       75,
-      56,
+      { mentioned: 5, total: 9 },
       [finding],
       [],
       null,
@@ -157,7 +157,7 @@ describe('guest scout summary honesty', () => {
       targetUrl: 'https://seamossvibes.com.au',
       measurementStatus: 'measured',
       citationRatePercent: 56,
-      shareOfVoiceScore: 61,
+      shareOfVoiceScore: 5,
       healthScore: 75,
       scrapedPageCount: 4,
       serpCount: 9,

@@ -38,8 +38,7 @@ import { canCreateShareLinks, createShareReport } from '../../services/share/sha
 import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
-import { generatePortableDossierHtml } from '../../services/reports/portableDossierService';
-import { fastHash } from '../../services/audit/evidenceLedgerService';
+import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
@@ -167,24 +166,10 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
 
   const handleDownloadDossier = () => {
     const domain = targetDomain || 'audit-target';
-    const cleanMarkdown = markdownText || '';
-    const safeHash = fastHash(cleanMarkdown || domain);
-
-    const html = generatePortableDossierHtml({
-      title: `${domain} Executive AEO Dossier`,
-      targetDomain: domain,
-      overallScore: 88,
-      grade: 'B',
+    const html = buildAuditDossierHtml({
+      domain,
+      markdownText: markdownText || '',
       generatedAt: Date.now(),
-      trustReceiptHash: safeHash,
-      sections: [
-        {
-          id: 'executive-summary',
-          title: 'Executive Audit Analysis',
-          badge: 'Verified',
-          contentHtml: `<div style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7;">${cleanMarkdown.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`,
-        },
-      ],
     });
 
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });

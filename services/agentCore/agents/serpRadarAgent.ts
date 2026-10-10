@@ -27,6 +27,7 @@ export class SerpRadarAgent {
   ): Promise<{
     serpEvidence: SerpEvidenceItem[];
     citationRatePercent: number | null;
+    /** Count of returned serpEvidence rows that mention the brand. Not a 0-100 score. */
     shareOfVoiceScore: number | null;
   }> {
     const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
@@ -136,12 +137,8 @@ export class SerpRadarAgent {
     const totalItems = liveEvidence.length;
     const mentionedItems = liveEvidence.filter((e) => e.brandMentioned).length;
     const citationRatePercent = totalItems > 0 ? Math.round((mentionedItems / totalItems) * 100) : null;
-    const shareOfVoiceScore =
-      citationRatePercent == null
-        ? null
-        : citationRatePercent === 0
-          ? 0
-          : Math.min(100, Math.round(citationRatePercent * 0.85 + (totalItems > 5 ? 15 : 5)));
+    // A count of live rows that mention the brand. No weighting and no added constant.
+    const shareOfVoiceScore = totalItems > 0 ? mentionedItems : null;
 
     emit({
       id: `serp-done-${Date.now()}`,
@@ -156,7 +153,7 @@ export class SerpRadarAgent {
             : searchSkipReason
               ? `Analyzed 0 SERP results. Citation rate and share of voice were not measured. ${searchSkipReason}`
               : 'Analyzed 0 SERP results. Citation rate and share of voice were not measured.'
-          : `Analyzed ${totalItems} SERP results (${mentionedItems}/${totalItems} mentions). Empirical citation rate: ${citationRatePercent}%, Share-of-Voice: ${shareOfVoiceScore}/100.`,
+          : `Analyzed ${totalItems} SERP results. Brand mentioned in ${mentionedItems} of ${totalItems}. Empirical citation rate: ${citationRatePercent}%.`,
       status: 'completed',
       evidenceSnippet:
         citationRatePercent == null

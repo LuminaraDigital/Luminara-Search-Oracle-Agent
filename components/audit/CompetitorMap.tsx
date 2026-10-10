@@ -7,6 +7,8 @@ interface CompetitorMapProps {
 }
 
 export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) => {
+    // New audit reports carry no trust signal column. The block is drawn only for a table that has one.
+    const trustCol = headers.findIndex((header) => /trust signal/i.test(header));
     return (
         <div className="my-8 glass-morphism rounded-2xl border border-gold/30 overflow-hidden shadow-2xl animate-in fade-in duration-700">
             <div className="bg-gradient-to-r from-gold/20 via-black to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between">
@@ -30,7 +32,8 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
                     const perception = row[1]?.replace(/[*_`]/g, '') || 'Neutral visibility';
                     const topPages = row[2]?.replace(/[*_`]/g, '') || 'Homepage, Case Studies';
                     const contentAdvantage = row[3]?.replace(/[*_`]/g, '') || 'None identified';
-                    const trustStrength = row[4]?.replace(/[*_`]/g, '').toLowerCase() || 'medium';
+                    // No default label: an empty or missing cell shows nothing.
+                    const trustStrength = row[trustCol]?.replace(/[*_`]/g, '').trim().toLowerCase() || '';
                     const isUser = idx === 0;
 
                     return (
@@ -83,6 +86,7 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
                                 </div>
 
                                 {/* Trust Signal Strength */}
+                                {trustStrength && (
                                 <div className="lg:w-44 border-t lg:border-t-0 lg:border-l border-white/5 lg:pl-6 pt-4 lg:pt-0 flex flex-col justify-between">
                                     <div>
                                         <span className="block text-[9px] uppercase tracking-widest text-gray-500 mb-1">Trust Signal Strength</span>
@@ -102,6 +106,7 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
                                         ></div>
                                     </div>
                                 </div>
+                                )}
                             </div>
                         </div>
                     );
