@@ -817,17 +817,20 @@ CREATE TABLE IF NOT EXISTS payment_support_requests (
   charge_id TEXT,
   message TEXT CHECK (message IS NULL OR length(message) BETWEEN 1 AND 2000),
   status TEXT NOT NULL DEFAULT 'awaiting' CHECK (status IN ('awaiting','open','answered','closed')),
+  follow_ups INTEGER NOT NULL DEFAULT 0 CHECK (follow_ups >= 0),
   expires_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   CHECK (status = 'awaiting' OR message IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_payment_support_open ON payment_support_requests(created_at) WHERE status = 'open';
-CREATE INDEX IF NOT EXISTS idx_payment_support_awaiting ON payment_support_requests(payer_tg_id) WHERE status = 'awaiting';
+CREATE INDEX IF NOT EXISTS idx_payment_support_payer ON payment_support_requests(payer_tg_id, status, expires_at);
 CREATE INDEX IF NOT EXISTS idx_payment_support_account ON payment_support_requests(account_id);
 ```
 
 `/paysupport` writes an `awaiting` row that expires in 10 minutes; that row is the window. The buyer's next message inside it fills `message` and moves the row to `open` in one conditional update. An `awaiting` row past its `expires_at` is deleted by the sweep.
+
+As built (draft PR #81), from review: `expires_at` is the end of whichever window the row is in. For an `open` row it is the 10 minutes in which up to 5 further messages are added and forwarded (`follow_ups` counts them; a sixth is refused, so one buyer cannot fill the admins' chats). For an `answered` row it is the 72 hours in which the buyer's next message returns to the request, so that a reply to a person is not answered by a model. The partial index on awaiting rows became one index on `(payer_tg_id, status, expires_at)`, because the lookup made for every chat message asks for three statuses. An answered or closed row is deleted 12 months after it was last touched; this plan names no period for the table, and 12 months is its rule for leads.
 
 How a Stars charge moves. Every arrow is one conditional update that must change exactly one row (rule 2.8).
 
@@ -1758,6 +1761,20 @@ Nothing has been executed. No file outside this document was changed by writing 
 - **SW0a-14, code half (PR #70).** A staging build uses only its own Firebase web config and never falls back to the production project; the Mini App link comes from configuration (`VITE_TELEGRAM_MINI_APP_URL` for the web build, `TELEGRAM_MINI_APP_URL` for links the Worker writes). The owner's half is in `docs/runbooks/staging-sign-in-and-bot.md`: a staging Firebase web app, the GitHub `staging` environment's variables, a separate staging bot and its two secrets.
 - **Other sessions, started by the owner from this plan's task chips:** the card rail's defects (branch `fix/stripe-card-rail-hardening`, migration `0024`), the one-day pass price, and the dependency alerts (#65, #66, #67, #69, held until the release). The card-rail session keeps its own rank guard until SW0a-4 moves the rule into `writeSubscriptionRecord`; its refund path writes a lower plan on purpose and will need an explicit way past that rule.
 - **Still open at `main`:** pull request #62 targets `main` directly from a branch cut before the hotfix, and touches the paywall and the Worker's payment files. Decision 27 (include administrators in `main`'s protection) is unanswered.
+
+2026-10-11, early hours: more SW0a progress, as it stood at `origin/staging` = `50e1dab` and `origin/main` = `467a044`. Nothing below is merged. Release PR #59 still waits for the owner's yes.
+
+- **SW0a-5 (draft PR #74, stacked on #63).** A TON transfer is matched by a comment that equals the order's memo. An order is remembered in D1 for 48 hours (`ton_pending_orders`, migration `0025`; `0024` belongs to the card-rail session), and a daily sweep that works from the transfers credits a payment the chain index shows late. Three independent review passes. Before TON checkout opens, one real testnet transfer has to be credited through each chain index: how they page their answers is taken from their documentation.
+- **SW0a-4 (draft PR #75, stacked on #74).** The rank rule is inside `writeSubscriptionRecord` as specified, and each rail refuses a lower plan before payment where it can. Two independent reviews; the second passed it. What review changed: a TON payment that arrives for an order the Worker will not apply is put on a list for the owner under `sub_pending:ton:<order>` (keyed by the order, so an account link cannot hide it) before its transfer is claimed; that list is read first on every check, so a held order can never read as confirmed; and the owner is told by Telegram message. A subscription whose expiry was stored as text is protected too.
+- **SW0a-16 (draft PR #81, stacked on #75).** Built, with migration `0026_payment_support.sql`. Its first review asked for fixes, now made and described under the table in section 5.1. The largest: a buyer who simply typed back to an admin's answer was talking to the model again, the original hazard one step later.
+- **SW0a-2, second half (PR #80).** The burn accounting inside `worker/q402/*` is removed, and the task's acceptance search is pinned as a test. Review: OK. Left alone: the contract suite's own fixture and spec, which burn a share in a test and describe a flow the app does not perform.
+- **SW0a-9 step one and SW0a-10 (PR #73):** review OK. **SW0a-14, code half (PR #70):** three review passes, OK. The setup script now refuses to move a webhook unless the bot and the site belong together, and needs `ALLOW_PRODUCTION_WEBHOOK=yes` for the production bot. A production build ignores Firebase overrides unless a self-hosting switch is set.
+- **SW0a-15 (PR #76):** review OK after fixes. The gateway route issues no receipt at all. Still open for the owner: the read-only count of gateway-issued receipts in both databases. Zero is likely (the receipts flag is "false" in all three environments and was added that way two days before the gateway route), not proven; any count above zero means rotating the receipt signing key, because revoking marks the row and the public page and does not unsign a copy somebody saved.
+- **SW0a-17 (PR #78):** review OK after fixes. The WordPress option is hidden, which is this plan's own condition until one real site passes the read-back, and no CMS credential is saved to the browser unless the user ticks a box.
+- **SW0a-7 (PR #79) and SW0a-8 (PR #77)** each failed a first independent review and are being reworked. SW0a-8's premise in this plan was wrong: the chat prompt carried no plan table, so prices came from the model, and "Starter is 250 Stars a month" would have passed although Starter is 2,500. The rework removes any sentence about the product's own prices or offers and puts a block built from `PLANS` in its place. Found there as well, and live today: `/buy_single_audit` and `/buy_multi_agent_crawl` answer "Unknown command", because the command pattern stops at the underscore. The Mini App's invoice link is not affected. The fix is in #77.
+- **Started:** SW0a-11 (Workers AI fallback), and SW0a-12 (the agent's part) with SW0a-13 (the deploy workflow), each on its own branch from `staging`.
+- **Found while checking for overlap.** The shared checkout holds another session's uncommitted edits on `feat/web3-oracle-agent-100x`, the branch behind PR #62, which targets `main`. They touch the Workers AI fallback, the report files of SW0a-7, the paywall, and the quota and auth middleware. The fallback edits clip a long prompt without saying so and answer an upstream 429 with a 503; SW0a-11 says the opposite on both. This session did not touch them, and the owner was told.
+- **An interruption.** The session reached its usage limit during the night. Four agents stopped with uncommitted work in their own worktrees and were resumed from it. Nothing was lost.
 
 ---
 
