@@ -19,7 +19,7 @@ export const DEMO_NOTEBOOK: Notebook = {
 Answer Engine Optimization (AEO) focuses on securing brand mentions and citations across generative AI engines (ChatGPT, Google AI Overviews, Perplexity, Gemini). 
 
 1. Entity Authority: AI engines resolve brands via Schema.org entity graphs. An unambiguous Organization schema linked to Wikidata and Crunchbase is the highest-leverage asset.
-2. Direct Answer Architecture: Content structured with concise 40-60 word definitive answers directly under H2 headers wins 73% more AI Overviews citations than long-form narrative.
+2. Direct Answer Architecture: Content structured with concise 40-60 word definitive answers directly under H2 headers systematically earns higher AI Overviews citations than diffuse narrative (illustrative sample playbook).
 3. Plain English Defensibility: Content scored at an 8th-grade reading level outperforms complex jargon because LLMs prefer clear, unhedged factual statements.
 4. Information Gain: Generative search engines penalize regurgitated content. Original benchmark statistics, proprietary methodology, and first-party case studies are prioritized for citation.`,
       summary: 'Guidelines for winning AI citations through Schema entity graphs and direct answer architecture.',
@@ -102,7 +102,7 @@ To capitalize on this, you should ship two moves immediately:
           sourceId: 'src-1',
           sourceTitle: '[Sample Playbook] Luminara AEO Guidelines',
           citationNumber: 1,
-          quote: 'Content structured with concise 40-60 word definitive answers directly under H2 headers wins 73% more AI Overviews citations',
+          quote: 'Content structured with concise 40-60 word definitive answers directly under H2 headers systematically earns higher AI Overviews citations',
         },
         {
           sourceId: 'src-3',

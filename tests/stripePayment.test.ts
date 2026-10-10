@@ -1,7 +1,10 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import {
   verifyStripeSignature,
   STRIPE_PLAN_CONFIG,
+  STRIPE_CHECKOUT_LIVE,
+  isStripeSecretsConfigured,
+  isStripeCheckoutLive,
   handleStripeWebhook,
   handleCreateStripeCheckoutSession,
 } from '../worker/stripePayment';
@@ -268,4 +271,47 @@ describe('Stripe Payments & Webhook Verification', () => {
       expect(body.refund_logged).toBe(true);
     });
   });
+
+  describe('Stripe Checkout Session & Gate Helpers', () => {
+    it('isStripeSecretsConfigured returns true only when both secrets are present', () => {
+      expect(isStripeSecretsConfigured({} as Env)).toBe(false);
+      expect(isStripeSecretsConfigured({ STRIPE_SECRET_KEY: 'sk_test_123' } as Env)).toBe(false);
+      expect(isStripeSecretsConfigured({ STRIPE_WEBHOOK_SECRET: 'whsec_123' } as Env)).toBe(false);
+      expect(
+        isStripeSecretsConfigured({
+          STRIPE_SECRET_KEY: 'sk_test_123',
+          STRIPE_WEBHOOK_SECRET: 'whsec_123',
+        } as Env)
+      ).toBe(true);
+    });
+
+    it('isStripeCheckoutLive enforces STRIPE_CHECKOUT_LIVE constant safety gate', () => {
+      const liveEnv = {
+        STRIPE_SECRET_KEY: 'sk_test_123',
+        STRIPE_WEBHOOK_SECRET: 'whsec_123',
+      } as Env;
+      // Until STRIPE_CHECKOUT_LIVE is toggled to true, isStripeCheckoutLive must remain false
+      expect(isStripeCheckoutLive(liveEnv)).toBe(STRIPE_CHECKOUT_LIVE);
+    });
+
+    it('handleCreateStripeCheckoutSession returns 503 STRIPE_NOT_LIVE when checkout is not live', async () => {
+      const env = {
+        STRIPE_SECRET_KEY: 'sk_test_123',
+        STRIPE_WEBHOOK_SECRET: 'whsec_123',
+      } as Env;
+
+      const req = new Request('https://api.luminara.ai/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: 'growth' }),
+      });
+
+      const res = await handleCreateStripeCheckoutSession(req, env);
+      expect(res.status).toBe(503);
+      const body = await res.json() as any;
+      expect(body.ok).toBe(false);
+      expect(body.code).toBe('STRIPE_NOT_LIVE');
+    });
+  });
 });
+

@@ -4,7 +4,7 @@
  */
 import type { Env } from './env';
 import { identify, json } from './workerUtils';
-import { claimStripeSession, isStripeLedgerReady, releaseStripeSession } from './paymentLedger';
+import { claimStripeSession, releaseStripeSession } from './paymentLedger';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 
 /**
@@ -47,14 +47,6 @@ export const STRIPE_PLAN_CONFIG: Record<
   },
 };
 
-/** Convert hex string to Uint8Array */
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
-}
 
 /** Timing-safe equality check between two hex strings */
 function timingSafeEqualHex(a: string, b: string): boolean {

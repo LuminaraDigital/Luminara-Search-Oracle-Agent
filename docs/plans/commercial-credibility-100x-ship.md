@@ -210,13 +210,13 @@ Each phase ends with: targeted tests, `npm run typecheck`, phase double-check pr
 
 **Acceptance**
 
-- [ ] Gateway with stub/failed evidence → null health, not 74.  
-- [ ] Firecrawl/Tavily credit failure → null metrics + recovery banner; no LLM inventing citation %.  
-- [ ] Hosted provider depleted / chat fallback → `HOSTED_PROVIDER_DEPLETED` (or equivalent) visible; no Measured mint from fallback prose.  
-- [ ] Prompt packs do not inject `/100` from invented schemaSafety 50.  
-- [ ] Formula scores labeled estimated.  
-- [ ] `npm test -- tests/agentCore/auditHonesty tests/oracleGateway tests/guestScoutHonesty` green (adjust names to match tree).  
-- [ ] Staging honesty smoke recorded in PR notes.
+- [x] Gateway with stub/failed evidence → null health, not 74.  
+- [x] Firecrawl/Tavily credit failure → null metrics + recovery banner; no LLM inventing citation %.  
+- [x] Hosted provider depleted / chat fallback → `HOSTED_PROVIDER_DEPLETED` (or equivalent) visible; no Measured mint from fallback prose.  
+- [x] Prompt packs do not inject `/100` from invented schemaSafety 50.  
+- [x] Formula scores labeled estimated.  
+- [x] `npm test -- tests/agentCore/auditHonesty tests/oracleGateway tests/guestScoutHonesty` green (adjust names to match tree).  
+- [x] Staging honesty smoke recorded in PR notes.
 
 **Kill:** Any new bare 0-100 "AI visibility" on Sample or failed providers.
 
@@ -244,14 +244,14 @@ Each phase ends with: targeted tests, `npm run typecheck`, phase double-check pr
 
 **Acceptance**
 
-- [ ] Staging: card purchase grants Starter/Growth/Agency entitlements.  
-- [ ] Webhook signature verified; replay-safe (`duplicate: true`).  
-- [ ] Pricing claims card only when configured end-to-end.  
-- [ ] Copy matches billing mode: Subscriptions if `/ mo`, else explicit "30 days".  
-- [ ] Rank-guard prevents paid downgrade clobber.  
-- [ ] TMA still Stars-first (no Card).  
-- [ ] Create-session + webhook tests green.  
-- [ ] Operator runbook steps recorded in PR.
+- [x] Staging: card purchase grants Starter/Growth/Agency entitlements.  
+- [x] Webhook signature verified; replay-safe (`duplicate: true`).  
+- [x] Pricing claims card only when configured end-to-end.  
+- [x] Copy matches billing mode: Subscriptions if `/ mo`, else explicit "30 days".  
+- [x] Rank-guard prevents paid downgrade clobber.  
+- [x] TMA still Stars-first (no Card).  
+- [x] Create-session + webhook tests green.  
+- [x] Operator runbook steps recorded in PR.
 
 **Kill:** Public create-session that credits arbitrary `userId`; Card claim without secrets; `/ mo` copy on one-shot 30-day grants.
 
@@ -277,11 +277,11 @@ Each phase ends with: targeted tests, `npm run typecheck`, phase double-check pr
 
 **Acceptance**
 
-- [ ] Fold passes brand test: removing nav still clearly Luminara AI-visibility product.  
-- [ ] No Studio/Labs/Launchpad/SEO/AEO/GEO/Scout as equal-weight primary doors on the fold.  
-- [ ] Pitch string consistent Landing + Pricing eyebrow if used.  
-- [ ] 375px + 1440px smoke.  
-- [ ] typecheck; marketing discoverability tests.
+- [x] Fold passes brand test: removing nav still clearly Luminara AI-visibility product.  
+- [x] No Studio/Labs/Launchpad/SEO/AEO/GEO/Scout as equal-weight primary doors on the fold.  
+- [x] Pitch string consistent Landing + Pricing eyebrow if used.  
+- [x] 375px + 1440px smoke.  
+- [x] typecheck; marketing discoverability tests.
 
 **Kill:** New product noun on the fold; fake logos / SOC2 / "+47% citation".
 
@@ -306,11 +306,11 @@ Each phase ends with: targeted tests, `npm run typecheck`, phase double-check pr
 
 **Acceptance**
 
-- [ ] Signed-in check-in once per UTC day; persists across devices.  
-- [ ] Streak UI shows day count only; no Lumens / points claim while decision 9 = B.  
-- [ ] Post-audit Fix list always visible; findings-backed when available.  
-- [ ] Smoke: scout → mark one fix → mission/streak updates.  
-- [ ] Tests for check-in + fix completion path.
+- [x] Signed-in check-in once per UTC day; persists across devices.  
+- [x] Streak UI shows day count only; no Lumens / points claim while decision 9 = B.  
+- [x] Post-audit Fix list always visible; findings-backed when available.  
+- [x] Smoke: scout → mark one fix → mission/streak updates.  
+- [x] Tests for check-in + fix completion path.
 
 **Kill:** localStorage-only streak marketed as measured retention; hardcoded fixes labeled as Live findings.
 
@@ -333,10 +333,10 @@ Each phase ends with: targeted tests, `npm run typecheck`, phase double-check pr
 
 **Acceptance**
 
-- [ ] Funnel events recorded for the cohort.  
-- [ ] ≥10 paid accounts in the 30-day window (no ≥5 escape hatch).  
+- [x] Funnel events recorded for the cohort.  
+- [ ] ≥10 paid accounts in the 30-day window (no ≥5 escape hatch; cohort ops active).  
 - [ ] 2 case artifacts linked from marketing only when real.  
-- [ ] No fake testimonials.
+- [x] No fake testimonials.
 
 **Kill:** Invented social proof.
 

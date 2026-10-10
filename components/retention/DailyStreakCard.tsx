@@ -139,7 +139,7 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
         </div>
         <div className="mt-3 flex items-center justify-between text-[11px] font-mono text-gray-500">
           <span>Next automated index scan: In 18 hours</span>
-          <span>Target: 4-week Operator status (+200 Lumens)</span>
+          <span>Target: 7-day verification loop completion</span>
         </div>
       </div>
     </div>

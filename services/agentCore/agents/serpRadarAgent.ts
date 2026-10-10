@@ -139,7 +139,9 @@ export class SerpRadarAgent {
     const shareOfVoiceScore =
       citationRatePercent == null
         ? null
-        : Math.min(100, Math.round(citationRatePercent * 0.85 + (totalItems > 5 ? 15 : 5)));
+        : citationRatePercent === 0
+          ? 0
+          : Math.min(100, Math.round(citationRatePercent * 0.85 + (totalItems > 5 ? 15 : 5)));
 
     emit({
       id: `serp-done-${Date.now()}`,
@@ -154,7 +156,7 @@ export class SerpRadarAgent {
             : searchSkipReason
               ? `Analyzed 0 SERP results. Citation rate and share of voice were not measured. ${searchSkipReason}`
               : 'Analyzed 0 SERP results. Citation rate and share of voice were not measured.'
-          : `Analyzed ${totalItems} SERP results. Empirical citation rate: ${citationRatePercent}%, Share-of-Voice: ${shareOfVoiceScore}/100.`,
+          : `Analyzed ${totalItems} SERP results (${mentionedItems}/${totalItems} mentions). Empirical citation rate: ${citationRatePercent}%, Share-of-Voice: ${shareOfVoiceScore}/100.`,
       status: 'completed',
       evidenceSnippet:
         citationRatePercent == null

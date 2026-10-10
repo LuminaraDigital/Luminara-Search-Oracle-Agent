@@ -48,4 +48,15 @@ describe('productTelemetry', () => {
     productTelemetry.recordError('InstantAuditView', 'Invalid domain provided');
     expect(productTelemetry.getSummary().totalErrorsEncountered).toBe(1);
   });
+
+  it('tracks commercial conversion funnel events without error', () => {
+    expect(() => {
+      productTelemetry.track('probe_completed', { domain: 'example.com', cited: true });
+      productTelemetry.track('signup_completed', { method: 'guest_email' });
+      productTelemetry.track('paywall_viewed', { plan: 'growth', rail: 'card' });
+      productTelemetry.track('checkout_started', { planId: 'growth', method: 'stripe' });
+      productTelemetry.track('payment_completed', { planId: 'growth', method: 'stripe', status: 'confirmed' });
+    }).not.toThrow();
+  });
 });
+
