@@ -3,15 +3,15 @@ import React from 'react';
 export const MARKETING_SELL_POINTS = [
   {
     title: 'Search and AI answers together',
-    body: 'One scout across Google, AI Overviews, ChatGPT, and Perplexity, so classic ranking gaps and answer-engine gaps show up in the same pass.',
+    body: 'One pass across Google, AI Overviews, ChatGPT, and Perplexity, so classic search rankings and AI answer citations appear on the same workbench.',
   },
   {
-    title: 'Labeled evidence',
-    body: 'Every engine result is marked Measured, Estimated, or Not measured, so you can tell what is proven from what is a best guess.',
+    title: 'Evidence-bound honesty',
+    body: 'Every engine result is strictly labeled Measured, Estimated, or Not measured. No synthetic 0-100 vanity scores or invented metrics.',
   },
   {
-    title: 'One action you can ship',
-    body: 'Sample scout to Instant Audit to a plain-English next step. Growth adds shareable report links and IDE access.',
+    title: 'Closed-loop fix engine',
+    body: 'Turns audit gaps into a prioritized 1-3 fix list. Growth tier connects directly to Cursor and Claude via MCP so AI agents write the code fixes.',
   },
 ] as const;
 

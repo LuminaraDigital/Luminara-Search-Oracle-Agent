@@ -8,10 +8,36 @@ interface WhyLuminaraPageProps {
 }
 
 const contrasts = [
-  { label: 'Delivery', manual: 'Weeks of back-and-forth', luminara: 'Audit in the app when you need it' },
-  { label: 'Evidence', manual: 'Slide decks and opinion', luminara: 'Search-grounded where keys allow' },
-  { label: 'Priority', manual: 'Long unordered lists', luminara: 'Impact-ordered actions' },
-  { label: 'Cost model', manual: 'Retainer or project fees', luminara: 'Subscription or your own AI keys' },
+  {
+    label: 'Primary Focus',
+    legacy: '10 Blue links, keyword search volume, backlink spam metrics',
+    trackers: 'Scraping prompt mentions and sentiment across LLMs',
+    luminara: 'Closed-loop discovery across Google, AI Overviews, ChatGPT, and Perplexity',
+  },
+  {
+    label: 'Actionability',
+    legacy: '10,000 raw keyword rows and complex data tables',
+    trackers: 'Passive alerts ("You are missing from 65% of prompts")',
+    luminara: 'Ordered 1-3 Fix List: Schema entity graph, 40-60 word answer units, and llms.txt',
+  },
+  {
+    label: 'Developer Workflow',
+    legacy: 'Siloed web dashboard; CSV exports',
+    trackers: 'Siloed web dashboard or read-only BI connectors',
+    luminara: 'Native MCP server for Cursor, Claude Code, and Windsurf to write fixes directly into code',
+  },
+  {
+    label: 'Evidence Integrity',
+    legacy: 'Proprietary vanity metrics (Domain Authority, Keyword Difficulty)',
+    trackers: 'Synthetic 0-100 composite scores from small prompt samples',
+    luminara: 'Evidence-bound labels: Measured, Estimated, or Not measured. Zero score theater',
+  },
+  {
+    label: 'Pricing & Cost Model',
+    legacy: '$139 to $499/mo with seat add-ons and annual commitments',
+    trackers: '$99 to $500+/mo, plus $35 to $85/mo per extra engine add-on',
+    luminara: 'Flat 30-day tiers ($49 Starter, $149 Growth). All core engines included, no lock-in',
+  },
 ] as const;
 
 const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
@@ -33,9 +59,9 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
           Replace tool sprawl with one clear plan.
         </h1>
         <p className="text-lg text-[var(--color-ink-2)] leading-relaxed mb-8">
-          Luminara Suite is for founders and small teams who need a clear plan for Google and AI answers
-          without buying a full agency engagement or rebuilding their stack. Audit, labeled evidence, one
-          next action, and optional IDE access when you grow into Growth.
+          Luminara Suite is for founders, modern engineering teams, and agencies who need to be recommended
+          by Google and AI answer engines without hiring an expensive retainer or rebuilding their stack.
+          Audit, labeled evidence, an actionable 1-3 fix list, and native IDE access via MCP.
         </p>
         <div className="flex flex-col sm:flex-row gap-3">
           <button type="button" onClick={onTerminal} className="mkt-cta-primary">
@@ -51,26 +77,28 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
 
       <section className="mb-20 sm:mb-28">
         <h2 className="font-display text-[length:var(--text-display-s)] tracking-tight mb-3 [overflow-wrap:anywhere]">
-          Compared to a manual SEO project
+          How Luminara compares
         </h2>
         <p className="text-sm text-[var(--color-ink-2)] font-light mb-8 max-w-2xl">
-          Qualitative differences only. We do not invent conversion rates or customer counts.
+          Architectural and qualitative comparison. We do not invent customer numbers or speculative ROI.
         </p>
         <div className="overflow-x-auto border border-[var(--color-rule)] bg-[var(--color-paper)]/70">
-          <table className="w-full text-left min-w-[32rem]">
+          <table className="w-full text-left min-w-[48rem]">
             <thead>
               <tr className="border-b border-[var(--color-rule)]">
-                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--gold-light)]">Dimension</th>
-                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--color-ink-2)]">Manual project</th>
-                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--color-ink)]">Luminara Suite</th>
+                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--gold-light)] w-1/5">Dimension</th>
+                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--color-ink-2)] w-1/4">Legacy SEO (Semrush/Ahrefs)</th>
+                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--color-ink-2)] w-1/4">Passive AI Trackers</th>
+                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--color-ink)] w-3/10">Luminara Suite</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-rule)]">
               {contrasts.map((row) => (
                 <tr key={row.label}>
-                  <td className="p-4 sm:p-5 text-sm text-[var(--color-ink)]">{row.label}</td>
-                  <td className="p-4 sm:p-5 text-sm text-[var(--color-ink-2)] font-light">{row.manual}</td>
-                  <td className="p-4 sm:p-5 text-sm text-[var(--gold-light)] font-light">{row.luminara}</td>
+                  <td className="p-4 sm:p-5 text-sm font-medium text-[var(--color-ink)] align-top">{row.label}</td>
+                  <td className="p-4 sm:p-5 text-sm text-[var(--color-ink-2)] font-light align-top">{row.legacy}</td>
+                  <td className="p-4 sm:p-5 text-sm text-[var(--color-ink-2)] font-light align-top">{row.trackers}</td>
+                  <td className="p-4 sm:p-5 text-sm text-[var(--gold-light)] font-light align-top">{row.luminara}</td>
                 </tr>
               ))}
             </tbody>
