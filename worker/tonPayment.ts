@@ -5,6 +5,7 @@
  */
 import type { Env } from './index';
 import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './paymentLedger';
+import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { PLANS } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
@@ -262,6 +263,8 @@ export const TON_IN_TELEGRAM_ERROR = 'Inside Telegram, plans are paid with Teleg
 export const TON_TOO_MANY_OPEN_ORDERS_ERROR =
   `You have ${TON_MAX_OPEN_ORDERS_PER_ACCOUNT} unpaid TON orders open. If you paid one of them, use "Check my payment". ` +
   'Otherwise each one closes 48 hours after it was opened; until then you can pay with Telegram Stars in the Mini App.';
+export const TON_PAID_NOT_APPLIED_ERROR =
+  'Your payment arrived and was not applied, because the account already has a higher plan. Email support@luminarasuite.com with the order id to have it returned.';
 export const TON_ORDER_WALLET_REPLACED_ERROR =
   'This order was issued for a wallet that is no longer in use, so it cannot be confirmed here. If you paid it, email support@luminarasuite.com with the order id.';
 
@@ -316,6 +319,20 @@ export async function createTonInvoice(
   }
 
   const accountId = await resolveAccountId(env, userId);
+
+  // No invoice for a plan that would replace a higher one still running (Track SW, SW0a-4).
+  const running = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
+  if (wouldDowngrade(running, planId)) {
+    return {
+      ok: false,
+      error: downgradeRefusalText({
+        currentTitle: PLANS[String(running?.plan)]?.title || String(running?.plan),
+        currentExpiresAt: Number(running?.expiresAt),
+        requestedTitle: plan.title,
+        outcome: 'so no invoice was issued.',
+      }),
+    };
+  }
 
   const orderId = `ton_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const memo = `LUM:${orderId}:${planId}`;
@@ -880,6 +897,8 @@ export async function verifyTonPayment(
       return { ok: false, error: 'This on-chain transaction has already been credited to another order.' };
     }
     if (claim.reason === 'order_already_credited') {
+      const held = await kv.get(`sub_pending:${accountId}:${orderId}`, 'json').catch(() => null) as { message?: string } | null;
+      if (held) return { ok: false, error: held.message || TON_PAID_NOT_APPLIED_ERROR };
       // Not marked credited here: the verifier that holds the claim may still fail and release it.
       return { ok: true, plan: order.planId, expiresAt: await currentExpiry() };
     }
@@ -901,6 +920,48 @@ export async function verifyTonPayment(
       expiresAt,
     });
   } catch (err) {
+    if (err instanceof PlanDowngradeRefusedError) {
+      // The buyer took a higher plan after this invoice was issued. The transfer is real and the
+      // Worker holds no key to send it back, so the claim stays (this transaction is spent), the
+      // order is put on a list for the owner, and the buyer is told plainly.
+      const message =
+        downgradeRefusalText({
+          currentTitle: PLANS[err.currentPlan]?.title || err.currentPlan,
+          currentExpiresAt: err.currentExpiresAt,
+          requestedTitle: plan.title,
+          outcome: 'so your payment was not applied.',
+        }) + ` Email support@luminarasuite.com with the order id ${orderId} to have it returned.`;
+      try {
+        await kv.put(
+          `sub_pending:${accountId}:${orderId}`,
+          JSON.stringify({
+            orderId,
+            accountId,
+            planId: order.planId,
+            asset: order.asset || 'TON',
+            amountNano: order.amountNano,
+            txHash: match.txHash,
+            network: match.network,
+            reason: 'plan_downgrade_refused',
+            currentPlan: err.currentPlan,
+            heldAt: now,
+            message,
+          }),
+        );
+      } catch (putErr) {
+        console.error(`[TON] Held order ${orderId} could not be listed: ${putErr instanceof Error ? putErr.message : putErr}`);
+      }
+      console.error(
+        `[TON] ALERT: order ${orderId} was paid (tx ${match.txHash}) and not applied, because the account already has the higher plan "${err.currentPlan}". The owner returns it by hand.`,
+      );
+      await recordAuditLogBestEffort(env, {
+        org_id: `org_${accountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+        actor_id: order.userId,
+        action: 'ton.paid_not_applied',
+        details: { orderId, plan: order.planId, currentPlan: err.currentPlan, txHash: match.txHash, network: match.network },
+      });
+      return { ok: false, error: message };
+    }
     await releaseTonTransaction(env, match.txHash, orderId);
     console.error(`[TON] Subscription write failed after claim for order ${orderId}; claim released: ${err instanceof Error ? err.message : err}`);
     return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };

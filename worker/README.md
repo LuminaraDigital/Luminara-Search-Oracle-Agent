@@ -132,6 +132,19 @@ and the SPA asset fallback:
 - Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
   catalogue: title, description, price in Stars, days). Nothing else.
 
+## A purchase never downgrades a plan (pinned in `tests/planDowngrade.test.ts`)
+
+- `worker/planRank.ts` ranks the plans: the two one-day passes lowest and equal, then Starter,
+  Growth, Agency. `writeSubscriptionRecord` refuses to write a lower plan over a higher one that is
+  still running, so every rail inherits the rule; the test lists the files that call it.
+- Each rail also refuses before payment where it can: the Stars invoice link, `/buy` and
+  pre-checkout; `createTonInvoice`; licence redemption (the key stays unused).
+- A Stars payment that arrives anyway is refunded with the reason. A TON payment that arrives
+  anyway cannot be sent back by the Worker: it is listed under `sub_pending:<account>:<order>` for
+  the owner to return by hand, and the buyer is told.
+- The same plan again extends it. A higher plan replaces it and keeps the days already there.
+- A caller that takes a plan away on purpose (a reversed card payment) passes `allowLowerPlan`.
+
 ## Stars charges (pinned in `tests/starsCharges.test.ts`)
 
 Telegram does not send a paid update again once the webhook has answered 200, so:
