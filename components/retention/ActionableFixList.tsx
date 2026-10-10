@@ -1,4 +1,16 @@
 import React, { useState } from 'react';
+import { completeWeeklyMission } from '../../services/referrals/referralClient';
+
+export interface ActionableFixInputFinding {
+  id: string;
+  title: string;
+  category?: string;
+  severity?: string;
+  description?: string;
+  remediationSnippet?: string;
+  targetEngine?: string;
+  filename?: string;
+}
 
 interface FixItem {
   id: string;
@@ -13,10 +25,11 @@ interface FixItem {
 
 interface ActionableFixListProps {
   domain: string;
+  findings?: ActionableFixInputFinding[];
   onFixCompleted?: (fixId: string) => void;
 }
 
-export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, onFixCompleted }) => {
+export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, findings, onFixCompleted }) => {
   const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') || 'yourdomain.com';
   const brandName = cleanDomain.split('.')[0] ? cleanDomain.split('.')[0].charAt(0).toUpperCase() + cleanDomain.split('.')[0].slice(1) : 'YourBrand';
 
@@ -31,7 +44,7 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, on
     }
   });
 
-  const fixes: FixItem[] = [
+  const defaultFixes: FixItem[] = [
     {
       id: 'fix-llms-txt',
       title: 'Deploy /llms.txt Machine-Readable Summary',
@@ -102,6 +115,20 @@ Sitemap: https://${cleanDomain}/sitemap.xml
     },
   ];
 
+  const mappedFindings: FixItem[] = (findings || []).map((f) => ({
+    id: f.id,
+    title: f.title,
+    targetEngine: f.targetEngine || 'AI Answer Engines & Search',
+    timeEstimate: '5 min',
+    difficulty: f.severity === 'critical' ? 'Medium' : 'Easy',
+    description: f.description || 'Actionable finding identified in audit.',
+    filename: f.filename || (f.id.includes('schema') ? 'JSON-LD <head>' : f.id.includes('llms') ? '/llms.txt' : '/robots.txt'),
+    snippet: f.remediationSnippet || `// Remediation for ${f.title}\n// Apply to ${cleanDomain}`,
+  }));
+
+  const isAuditDerived = mappedFindings.length > 0;
+  const activeFixes: FixItem[] = isAuditDerived ? mappedFindings : defaultFixes;
+
   const handleCopy = async (id: string, text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -120,8 +147,11 @@ Sitemap: https://${cleanDomain}/sitemap.xml
       } catch {
         // ignore
       }
-      if (next[id] && onFixCompleted) {
-        onFixCompleted(id);
+      if (next[id]) {
+        completeWeeklyMission('checklist_fix').catch(() => {});
+        if (onFixCompleted) {
+          onFixCompleted(id);
+        }
       }
       return next;
     });
@@ -136,11 +166,13 @@ Sitemap: https://${cleanDomain}/sitemap.xml
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-gold animate-pulse" />
             <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-gold-light">
-              Actionable Fix List ({completedCount}/{fixes.length} Shipped)
+              {isAuditDerived ? 'Audit-Derived Fix List' : 'Starter Checklist'} ({completedCount}/{activeFixes.length} Shipped)
             </h3>
           </div>
           <p className="text-xs text-gray-400 mt-1">
-            Deploy these 3 fixes to increase AI recommendation citations across ChatGPT, Perplexity, and Google.
+            {isAuditDerived
+              ? `Prioritized findings from your latest audit for ${cleanDomain}.`
+              : `Baseline starter checklist for ${cleanDomain}. Run an audit to generate findings-backed fixes.`}
           </p>
         </div>
         <div className="text-[11px] font-mono text-gray-500">
@@ -149,7 +181,7 @@ Sitemap: https://${cleanDomain}/sitemap.xml
       </div>
 
       <div className="space-y-4">
-        {fixes.map((fix) => {
+        {activeFixes.map((fix) => {
           const isDone = Boolean(completedFixes[fix.id]);
           return (
             <div
