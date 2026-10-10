@@ -7,18 +7,19 @@
  * must be mapped here explicitly.
  */
 
-export type ScheduledJobName = 'sentinel' | 'privacy_purge' | 'domain_recheck';
+export type ScheduledJobName = 'sentinel' | 'privacy_purge' | 'domain_recheck' | 'stars_charge_sweep';
 
-export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = ['sentinel', 'privacy_purge', 'domain_recheck'];
+export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = ['sentinel', 'privacy_purge', 'domain_recheck', 'stars_charge_sweep'];
 
 /**
- * Daily 08:00 UTC: Drift Sentinel scan, the expired privacy-delete purge, and the
- * Trust Network domain re-check (each verified domain is re-checked every 7 days).
+ * Daily 08:00 UTC: Drift Sentinel scan, the expired privacy-delete purge, the
+ * Trust Network domain re-check (each verified domain is re-checked every 7 days), and the
+ * Stars charge sweep (settles charges a webhook left undecided and retries refunds).
  */
 export const DAILY_CRON = '0 8 * * *';
 
 const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
-  [DAILY_CRON]: ['sentinel', 'privacy_purge', 'domain_recheck'],
+  [DAILY_CRON]: ['sentinel', 'privacy_purge', 'domain_recheck', 'stars_charge_sweep'],
 };
 
 function cronKey(cron: string): string {

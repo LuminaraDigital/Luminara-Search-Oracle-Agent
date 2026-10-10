@@ -7,6 +7,10 @@
  * Sets the webhook (with secret token), the chat menu button that opens the Mini App,
  * the command list, and prints the direct link.
  * Still done by hand in @BotFather: /newapp (Main Mini App), bot name, description, avatar.
+ *
+ * Pending updates are kept. One of them can be a paid Stars update waiting to be delivered again,
+ * and dropping it would lose the payment. Set DROP_PENDING_UPDATES=true only when you know the
+ * queue holds nothing you need.
  */
 const { BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, WEBAPP_URL = 'https://luminarasuite.com/' } = process.env;
 if (!BOT_TOKEN) {
@@ -30,7 +34,7 @@ await call('setWebhook', {
   url: `${origin}/api/telegram/webhook`,
   secret_token: TELEGRAM_WEBHOOK_SECRET || undefined,
   allowed_updates: ['message', 'pre_checkout_query', 'callback_query'],
-  drop_pending_updates: true,
+  drop_pending_updates: process.env.DROP_PENDING_UPDATES === 'true',
 });
 
 await call('setChatMenuButton', {

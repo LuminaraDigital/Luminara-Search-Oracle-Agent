@@ -35,7 +35,18 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { validateInitData, createTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
-import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS, planCapsFor, publicPlanCatalogue } from './telegramBot';
+import {
+  handleTelegramUpdate,
+  handleTelegramPaymentUpdate,
+  isTelegramPaymentUpdate,
+  createInvoiceLink,
+  refundStarsCharge,
+  runStarsChargeSweep,
+  normalizePlanId,
+  PLANS,
+  planCapsFor,
+  publicPlanCatalogue,
+} from './telegramBot';
 import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, isTonAddressConfirmed, isTonCheckoutOpen, TON_IN_TELEGRAM_ERROR, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
 import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
@@ -880,6 +891,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!secretEquals(secret, env.TELEGRAM_WEBHOOK_SECRET)) return json({ error: 'bad secret' }, 401);
     const read = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!read.ok) return json({ error: read.error }, read.status);
+    // A payment update is handled before the webhook answers, and is never throttled. Telegram
+    // does not send an update again once it has a 200, so a paid charge must be on record
+    // first. A 503 here, and only here, asks Telegram to send it again.
+    if (isTelegramPaymentUpdate(read.value)) {
+      const outcome = await handleTelegramPaymentUpdate(read.value, env);
+      return json({ ok: outcome.status === 200 }, outcome.status);
+    }
     const throttle = checkTelegramUpdateThrottle(read.value, telegramLimiter);
     if (!throttle.allowed) {
       console.warn('[telegram] webhook update throttled', throttle.key);
@@ -940,7 +958,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const { userId, chargeId } = (read.value || {}) as { userId?: number | string; chargeId?: string };
     if (!userId || !chargeId) return withCors(json({ error: 'userId and chargeId are required' }, 400));
 
-    const result = await refundStarPayment(env, Number(userId), String(chargeId));
+    const result = await refundStarsCharge(env, Number(userId), String(chargeId), 'admin_http_refund');
     return withCors(json(result, result.ok ? 200 : 400));
   }
 
@@ -2111,6 +2129,7 @@ export default {
     if (jobs.includes('sentinel')) ctx.waitUntil(runSentinelScan(env));
     if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
     if (jobs.includes('domain_recheck')) ctx.waitUntil(recheckVerifiedDomains(env).then(() => undefined));
+    if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
   },
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     await processAuditQueueBatch(batch as MessageBatch<{ runId: string; accountId: string; targetUrl: string; projectId?: string | null }>, env);

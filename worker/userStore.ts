@@ -239,7 +239,16 @@ export async function writeSubscriptionRecord(
 ): Promise<{ accountId: string }> {
   const accountId = await resolveAccountId(env, String(loginUserId));
   if (!env.LUMINARA_KV) return { accountId };
-  const body = JSON.stringify(record);
+  // A purchase on another rail must not erase which Stars charges an active record was built
+  // from: the charge sweep and refunds read that list to tell a granted charge from a lost one.
+  let toWrite = record;
+  if (!Array.isArray(record.appliedCharges)) {
+    const existing = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { expiresAt?: number; appliedCharges?: unknown } | null;
+    if (existing?.expiresAt && existing.expiresAt > Date.now() && Array.isArray(existing.appliedCharges) && existing.appliedCharges.length > 0) {
+      toWrite = { ...record, appliedCharges: existing.appliedCharges };
+    }
+  }
+  const body = JSON.stringify(toWrite);
   await env.LUMINARA_KV.put(`sub:${accountId}`, body);
   if (accountId !== String(loginUserId)) {
     await env.LUMINARA_KV.put(`sub:${loginUserId}`, body);
@@ -352,6 +361,19 @@ export async function linkTelegramAndFirebase(
       name: meta?.name ?? fbRow.name,
       last_seen_at: now,
     });
+  }
+
+  // Stars charge rows follow the account that survives the link. Its own statement, so a
+  // database without the table yet cannot fail the link.
+  if (env.DB) {
+    const losing = [tgRow.account_id, fbRow.account_id].filter((id) => id && id !== accountId);
+    for (const from of losing) {
+      try {
+        await env.DB.prepare(`UPDATE stars_charges SET account_id = ? WHERE account_id = ?`).bind(accountId, from).run();
+      } catch (err) {
+        console.error('[UserStore] Stars charge rows were not moved to the linked account', err);
+      }
+    }
   }
 
   await mirrorSubscriptionToAccount(env, accountId, [
