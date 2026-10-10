@@ -13,7 +13,8 @@ import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
 
 export interface ServerHealth {
   ok: boolean;
-  providers: Record<string, boolean>;
+  /** Absent from public health; present once the signed-in health call has answered. */
+  providers?: Record<string, boolean>;
   /** Providers the Worker can relay with a caller-supplied key. */
   byok?: string[];
   /** Self-hosted helper services the Worker can reach (writing check, results tracking). */

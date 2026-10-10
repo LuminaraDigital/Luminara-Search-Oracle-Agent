@@ -168,7 +168,8 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
         </div>
       )}
 
-      {Object.keys(plans).length > 0 && (
+      {/* A Stars invoice can only be opened inside Telegram, so the buttons are drawn only there. */}
+      {inTg && Object.keys(plans).length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {Object.entries(plans).map(([id, p]) => (
             <button
