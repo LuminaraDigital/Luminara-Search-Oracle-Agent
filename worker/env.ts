@@ -208,7 +208,11 @@ export interface Env {
    * Provision index then bind in wrangler; code falls back to D1 keyword search.
    */
   MEMORY_VECTORS?: VectorizeIndex;
-  /** Optional Workers AI binding for embeddings. */
+  /**
+   * Optional Workers AI binding. Bound for the hosted Groq chat fallback only
+   * (worker/workersAiFallback.ts). Memory embeddings stay off while no vector index is
+   * configured: worker/memoryRag.ts embeds nothing then.
+   */
   AI?: Ai;
   /** Azure AI Search (vector memory). */
   AZURE_AI_SEARCH_ENDPOINT?: string;
