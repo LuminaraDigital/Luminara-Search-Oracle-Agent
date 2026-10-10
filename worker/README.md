@@ -108,15 +108,16 @@ and the SPA asset fallback:
 
 - `worker/jettonSettlement.ts` credits a jetton payment only when the inbound message source
   equals the merchant's jetton wallet, derived from `get_wallet_address(owner)` on the configured
-  master. The body must decode as `transfer_notification` (`0x7362d096`) with amount >= price, and
+  master. The body must decode as `transfer_notification` (`0x7362d09c`, TEP-74) with amount >= price, and
   its forward comment must equal the order memo exactly.
 - A memo in a plain TON comment is never proof of a jetton payment.
 - Indexer wallet listings are never trusted for ownership. If the two providers disagree on the
   derived wallet, the check fails closed.
 - Price jetton units per asset with `jettonPriceUnits`; never reuse one asset's unit string.
 - Each tx hash is still claimed once in D1 (`paymentLedger`).
-- `JETTON_CHECKOUT_LIVE` stays false until `verifyTonPayment` routes jetton orders through
-  `findMatchingJettonPayment` and that path is tested.
+- `JETTON_CHECKOUT_LIVE` is false. It goes back on only after one real testnet USDT transfer has been
+  credited end to end on staging (spec 0018), with a review, and with `tests/moneyInvariants.test.ts`
+  changed in the same pull request. `LORA_CHECKOUT_LIVE` is a second, separate switch for $LORA.
 
 ## Stubbed vs live status
 

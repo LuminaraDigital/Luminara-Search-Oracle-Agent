@@ -22,7 +22,7 @@ Three additive modules, adapted from patterns in Trust Wallet Core (`trustwallet
 A jetton payment is credited only when all four hold:
 
 1. The inbound message source equals the merchant's jetton wallet. That wallet is derived by running `get_wallet_address(owner)` on the configured master contract: Toncenter v3 `runGetMethod`, with TonAPI as the fallback. If both providers answer, they must agree. The result is cached in KV for 24 h.
-2. The body decodes as `transfer_notification` (`0x7362d096`), and its amount in elementary units is at least the price.
+2. The body decodes as `transfer_notification` (`0x7362d09c`, the TEP-74 opcode; this document said `0x7362d096` until 2026-10-10, which matched no real transfer), and its amount in elementary units is at least the price.
 3. The forward-payload text comment equals the order memo exactly (after trimming).
 4. The inbound message is not a bounce, and the transaction has a hash.
 
