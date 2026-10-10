@@ -11,12 +11,13 @@ import { recordAuditLogBestEffort } from './auditLog';
 import {
   TON_MAX_OPEN_ORDERS_PER_ACCOUNT,
   closeExpiredTonPendingOrders,
-  countOpenTonPendingOrders,
+  deleteTonPendingOrder,
+  findOpenTonPendingOrdersByMemo,
   isTonPendingOrdersReady,
-  listOpenTonPendingOrders,
   markTonPendingOrderCredited,
   readTonPendingOrder,
   recordTonPendingOrder,
+  summarizeOpenTonPendingOrders,
 } from './tonPendingOrders';
 import {
   merchantAddressMatchesNetwork,
@@ -256,7 +257,10 @@ export function isTonCheckoutOpen(env: TonConfigEnv): boolean {
 /** Telegram requires digital goods inside a bot or Mini App to be sold for Stars. */
 export const TON_IN_TELEGRAM_ERROR = 'Inside Telegram, plans are paid with Telegram Stars.';
 export const TON_TOO_MANY_OPEN_ORDERS_ERROR =
-  'You have several unpaid TON orders open. Pay one of them, or use "Check my payment" if you already did. They close by themselves after 48 hours.';
+  `You have ${TON_MAX_OPEN_ORDERS_PER_ACCOUNT} unpaid TON orders open. If you paid one of them, use "Check my payment". ` +
+  'Otherwise each one closes 48 hours after it was opened; until then you can pay with Telegram Stars in the Mini App.';
+export const TON_ORDER_WALLET_REPLACED_ERROR =
+  'This order was issued for a wallet that is no longer in use, so it cannot be confirmed here. If you paid it, email support@luminarasuite.com with the order id.';
 
 // ---------------------------------------------------------------------------
 // Invoice + verification
@@ -309,14 +313,6 @@ export async function createTonInvoice(
   }
 
   const accountId = await resolveAccountId(env, userId);
-  try {
-    if ((await countOpenTonPendingOrders(env, accountId, Date.now())) >= TON_MAX_OPEN_ORDERS_PER_ACCOUNT) {
-      return { ok: false, error: TON_TOO_MANY_OPEN_ORDERS_ERROR };
-    }
-  } catch (err) {
-    console.error(`[TON] Invoice refused: open orders could not be counted: ${err instanceof Error ? err.message : err}`);
-    return { ok: false, error: TON_UNAVAILABLE_ERROR };
-  }
 
   const orderId = `ton_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const memo = `LUM:${orderId}:${planId}`;
@@ -376,10 +372,9 @@ export async function createTonInvoice(
     userJettonWallet,
   };
 
-  await env.LUMINARA_KV.put(`ton:order:${orderId}`, JSON.stringify(order), { expirationTtl: 7200 });
-
-  // The KV copy lasts 2 hours. The D1 row keeps the order creditable for 48, by the buyer's own
-  // retry or by the sweep. No row, no invoice: an order nobody remembers must not be paid.
+  // The D1 row comes first. It keeps the order creditable for 48 hours (the KV copy lasts 2), and
+  // its insert is also what holds one account to a bounded number of open orders. No row, no
+  // invoice: an order nobody remembers must not be paid.
   const remembered = await recordTonPendingOrder(env, {
     orderId,
     memo,
@@ -392,8 +387,14 @@ export async function createTonInvoice(
     network: cfg.network,
     createdAt: order.createdAt,
   });
-  if (!remembered) {
-    await env.LUMINARA_KV.delete(`ton:order:${orderId}`).catch(() => undefined);
+  if (remembered === 'too_many') return { ok: false, error: TON_TOO_MANY_OPEN_ORDERS_ERROR };
+  if (remembered !== 'recorded') return { ok: false, error: TON_UNAVAILABLE_ERROR };
+
+  try {
+    await env.LUMINARA_KV.put(`ton:order:${orderId}`, JSON.stringify(order), { expirationTtl: 7200 });
+  } catch (err) {
+    await deleteTonPendingOrder(env, orderId);
+    console.error(`[TON] Invoice refused: the order could not be stored: ${err instanceof Error ? err.message : err}`);
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
   }
 
@@ -506,8 +507,8 @@ function matchInboundTransfer(
 }
 
 const TON_TX_PAGE = 100;
-/** Bounds one read of a wallet's history: 500 transfers since the oldest order being checked. */
-const TON_TX_MAX_PAGES = 5;
+/** Bounds one read of a wallet's history: 1,000 transfers since the oldest order being checked. */
+const TON_TX_MAX_PAGES = 10;
 /** A chain index that does not answer inside this long counts as not answering. */
 const TON_INDEX_TIMEOUT_MS = 8_000;
 
@@ -565,7 +566,8 @@ async function readTonapiSince(tonapiBase: string, recipient: string, sinceSec: 
         `${tonapiBase}/v2/blockchain/accounts/${encodeURIComponent(recipient)}/transactions?limit=${TON_TX_PAGE}` +
         (beforeLt ? `&before_lt=${encodeURIComponent(beforeLt)}` : '');
       const res = await fetcher(url, indexFetchInit({ Accept: 'application/json' }));
-      if (!res.ok) return { txs: page === 0 ? null : txs, truncated: false };
+      // A later page that fails leaves a partial read, and says so.
+      if (!res.ok) return page === 0 ? { txs: null, truncated: false } : { txs, truncated: true };
       const data = (await res.json()) as { transactions?: any[] };
       const batch = Array.isArray(data.transactions) ? data.transactions : [];
       txs.push(...batch);
@@ -577,7 +579,7 @@ async function readTonapiSince(tonapiBase: string, recipient: string, sinceSec: 
     }
     return { txs, truncated: true };
   } catch {
-    return { txs: txs.length > 0 ? txs : null, truncated: false };
+    return txs.length > 0 ? { txs, truncated: true } : { txs: null, truncated: false };
   }
 }
 
@@ -672,18 +674,18 @@ async function loadTonOrder(env: Env, kv: KVNamespace, orderId: string): Promise
 
 /** An order younger than this is left to the buyer's own polling. */
 const TON_SWEEP_MIN_AGE_MS = 2 * 60_000;
-/** Every open order is looked at in one run; this only bounds a table that has grown beyond reason. */
-const TON_SWEEP_MAX_ORDERS = 500;
 
 export type TonPendingSweepSummary = {
-  examined: number;
+  /** Open orders old enough to check, and how many of them had a transfer carrying their memo. */
+  open: number;
+  matched: number;
   credited: number;
-  stillPending: number;
   errors: number;
-  /** Orders that passed 48 hours unpaid in this run, and rows removed after their support window. */
+  /** Rows brought in step with the ledger, orders closed at 48 hours, and rows removed after their support window. */
+  reconciled: number;
   expired: number;
   deleted: number;
-  /** True when a wallet had more history than one bounded read covers. */
+  /** True when a wallet's history could not be read in full (too long, or a page failed). */
   truncated: boolean;
 };
 
@@ -691,16 +693,14 @@ export type TonPendingSweepSummary = {
  * Re-checks unpaid orders that are still inside their 48 hours, so a transfer the chain index
  * shows late is credited without the buyer doing anything.
  *
- * Each wallet's transfers are read once and matched against every open order, so one run costs a
- * few calls to the index however many orders are open, and old unpaid orders cannot keep a paid
- * one from being looked at. Crediting goes through verifyTonPayment, so the ton_credited_tx claim
- * still stops a second credit.
+ * It works from the transfers, not from the orders. Each wallet's history is read once; the memos
+ * seen on its transfers select the orders to check. So a run costs a few calls to the index and
+ * one verification per order that somebody may have paid, however many unpaid orders are open,
+ * and unpaid orders cannot keep a paid one from being looked at. Crediting goes through
+ * verifyTonPayment, so the ton_credited_tx claim still stops a second credit.
  */
-export async function sweepTonPendingOrders(
-  env: Env,
-  opts: { now?: number; limit?: number; fetcher?: TonFetch } = {},
-): Promise<TonPendingSweepSummary> {
-  const summary: TonPendingSweepSummary = { examined: 0, credited: 0, stillPending: 0, errors: 0, expired: 0, deleted: 0, truncated: false };
+export async function sweepTonPendingOrders(env: Env, opts: { now?: number; fetcher?: TonFetch } = {}): Promise<TonPendingSweepSummary> {
+  const summary: TonPendingSweepSummary = { open: 0, matched: 0, credited: 0, errors: 0, reconciled: 0, expired: 0, deleted: 0, truncated: false };
   if (!env.DB) {
     console.error('[TON] pending-order sweep skipped: D1 binding DB is not configured.');
     summary.errors += 1;
@@ -709,6 +709,7 @@ export async function sweepTonPendingOrders(
   const now = opts.now ?? Date.now();
   try {
     const closed = await closeExpiredTonPendingOrders(env, now);
+    summary.reconciled = closed.reconciled;
     summary.expired = closed.expired;
     summary.deleted = closed.deleted;
   } catch (err) {
@@ -716,46 +717,53 @@ export async function sweepTonPendingOrders(
     console.error(`[TON] pending-order sweep could not close expired orders: ${err instanceof Error ? err.message : err}`);
   }
 
-  let rows: Awaited<ReturnType<typeof listOpenTonPendingOrders>> = [];
+  let wallets: Awaited<ReturnType<typeof summarizeOpenTonPendingOrders>> = [];
   try {
-    rows = await listOpenTonPendingOrders(env, {
-      now,
-      minAgeMs: TON_SWEEP_MIN_AGE_MS,
-      limit: Math.max(1, Math.min(opts.limit ?? TON_SWEEP_MAX_ORDERS, TON_SWEEP_MAX_ORDERS)),
-    });
+    wallets = await summarizeOpenTonPendingOrders(env, { now, minAgeMs: TON_SWEEP_MIN_AGE_MS });
   } catch (err) {
     summary.errors += 1;
     console.error(`[TON] pending-order sweep could not list open orders: ${err instanceof Error ? err.message : err}`);
   }
 
-  // One read per wallet, from just before its oldest open order.
-  const byRecipient = new Map<string, typeof rows>();
-  for (const row of rows) byRecipient.set(row.recipient, [...(byRecipient.get(row.recipient) ?? []), row]);
-  for (const [recipient, orders] of byRecipient) {
-    const sinceSec = Math.floor((Math.min(...orders.map((o) => o.created_at)) - 60_000) / 1000);
+  for (const wallet of wallets) {
+    summary.open += wallet.open;
+    // One read per wallet, from just before its oldest open order.
+    const sinceSec = Math.floor((wallet.oldest - 60_000) / 1000);
     let history: TonInboundHistory | null = null;
     try {
-      history = await readTonInboundHistory(env, recipient, sinceSec, opts.fetcher || fetch);
+      history = await readTonInboundHistory(env, wallet.recipient, sinceSec, opts.fetcher || fetch);
     } catch (err) {
       console.error(`[TON] pending-order sweep could not read the wallet history: ${err instanceof Error ? err.message : err}`);
     }
     if (!history || (history.toncenter === null && history.tonapi === null)) {
       // Neither index answered. Nothing is decided; the next run looks again.
       summary.errors += 1;
-      summary.examined += orders.length;
-      summary.stillPending += orders.length;
       continue;
     }
     if (history.truncated) {
       summary.truncated = true;
-      console.error(`[TON] pending-order sweep: the wallet has more than ${TON_TX_PAGE * TON_TX_MAX_PAGES} transfers since its oldest open order; older ones were not read.`);
+      console.error('[TON] pending-order sweep: the wallet history was not read in full; a transfer in the part not read is not seen by this run.');
+    }
+
+    const memos = new Set<string>();
+    for (const tx of [...(history.toncenter ?? []), ...(history.tonapi ?? [])]) {
+      const comment = extractTonComment(tx?.in_msg).trim();
+      if (comment.startsWith('LUM:')) memos.add(comment);
+    }
+    if (memos.size === 0) continue;
+
+    let orders: Awaited<ReturnType<typeof findOpenTonPendingOrdersByMemo>> = [];
+    try {
+      orders = await findOpenTonPendingOrdersByMemo(env, { recipient: wallet.recipient, memos: [...memos], now, minAgeMs: TON_SWEEP_MIN_AGE_MS });
+    } catch (err) {
+      summary.errors += 1;
+      console.error(`[TON] pending-order sweep could not look up the orders that were paid: ${err instanceof Error ? err.message : err}`);
     }
     for (const row of orders) {
-      summary.examined += 1;
+      summary.matched += 1;
       try {
         const result = await verifyTonPayment(env, row.order_id, { fetcher: opts.fetcher, known: history });
         if (result.ok) summary.credited += 1;
-        else summary.stillPending += 1;
       } catch (err) {
         summary.errors += 1;
         console.error(`[TON] pending-order sweep could not check order ${row.order_id}: ${err instanceof Error ? err.message : err}`);
@@ -819,7 +827,7 @@ export async function verifyTonPayment(
   // settles it by hand.
   if (String(env.TON_RECEIVING_ADDRESS || '').trim() !== order.recipientAddress) {
     console.error(`[TON] Verify refused for order ${order.orderId}: its recipient is no longer the configured merchant address.`);
-    return { ok: false, error: TON_UNAVAILABLE_ERROR };
+    return { ok: false, error: TON_ORDER_WALLET_REPLACED_ERROR };
   }
 
   const recipientCheck = validateTonAddress(order.recipientAddress, { production: isProductionEnv(env) });

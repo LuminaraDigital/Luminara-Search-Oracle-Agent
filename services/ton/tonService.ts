@@ -116,6 +116,24 @@ export function forgetPendingTonOrder(): void {
   }
 }
 
+/** The stored value as it is, so a refused attempt can put back exactly what was there. */
+function readStoredPendingTonOrder(): string | null {
+  try {
+    return localStorage.getItem(PENDING_ORDER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function restoreStoredPendingTonOrder(stored: string | null): void {
+  try {
+    if (stored === null) localStorage.removeItem(PENDING_ORDER_KEY);
+    else localStorage.setItem(PENDING_ORDER_KEY, stored);
+  } catch {
+    // ignore
+  }
+}
+
 /** The order still waiting for its transfer to show, or null. Forgotten after 48 hours. */
 export function readPendingTonOrder(now: number = Date.now()): string | null {
   try {
@@ -206,12 +224,15 @@ export async function executeTonPayment(
   }
 
   // Remembered before the wallet is asked, so a wallet hand-off that reloads this page still
-  // leaves "Check my payment". Forgotten again if the wallet refuses or the buyer cancels.
+  // leaves "Check my payment". If the wallet refuses or the buyer cancels, whatever was remembered
+  // before this attempt is put back.
+  const earlier = readStoredPendingTonOrder();
   rememberPendingTonOrder(order.orderId);
   try {
     await tonConnectUI.sendTransaction(tx);
   } catch (err: any) {
-    forgetPendingTonOrder();
+    // Back to what was remembered before this attempt: an earlier order may be paid and waiting.
+    restoreStoredPendingTonOrder(earlier);
     return { ok: false, error: err?.message || 'Transaction was rejected or cancelled.' };
   }
   onStatusChange?.('Transaction submitted. Verifying payment on TON network…');

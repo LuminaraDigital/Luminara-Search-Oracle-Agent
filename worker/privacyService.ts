@@ -120,7 +120,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
-  // TON orders still inside their 48 hours (0025). Deleted with the account, and at 48 hours anyway.
+  // TON orders the Worker remembers (0025): open for 48 hours, kept 30 days more for support, deleted with the account.
   const tonPendingOrders = await q<Record<string, unknown>>(
     `SELECT order_id, plan_id, asset, amount_nano, network, status, created_at, expires_at FROM ton_pending_orders WHERE account_id = ?`,
     accountId,
