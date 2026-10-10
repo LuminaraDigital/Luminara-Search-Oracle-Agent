@@ -102,5 +102,5 @@ The script prints `Matched bot: @<username>`, then `About to point @<username> a
 ## What not to do
 
 - Do not reuse the production bot token or webhook secret on staging.
-- Do not run `scripts/telegram-setup.mjs` with production values in the shell. The script refuses a token that is not the bot you named, and refuses to point the production bot at any site but production, or any other bot at production. It cannot tell a mistake from intent when the name, the token and `WEBAPP_URL` are all production's: that run sets the production webhook again, with whatever `TELEGRAM_WEBHOOK_SECRET` is in the shell.
+- Do not run `scripts/telegram-setup.mjs` with production values in the shell. The script refuses a token that is not the bot you named, and refuses to point the production bot at any site but production, or any other bot at production. It changes the production bot only when `ALLOW_PRODUCTION_WEBHOOK=yes` is also set; the staging steps never need that variable, so do not set it in this terminal.
 - Do not put any of these values in a file that is committed.

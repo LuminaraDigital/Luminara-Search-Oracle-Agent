@@ -185,11 +185,46 @@ describe('the Firebase web config a build signs in with', () => {
         const { config, seen } = warnings(env);
         expect(config).toEqual(PRODUCTION_CONFIG);
         expect(seen).toHaveLength(1);
-        expect(seen[0]).toContain('VITE_FIREBASE_PROJECT_ID names the staging project');
+        expect(seen[0]).toContain('VITE_FIREBASE_PROJECT_ID');
+        expect(seen[0]).toContain('of a Luminara Firebase project');
       }
       const wrangler = parseJsonc(readFileSync(resolve(root, 'wrangler.jsonc'), 'utf8')) as any;
       expect(STAGING_FIREBASE_PROJECT_ID).toBe(wrangler.env.staging.vars.FIREBASE_PROJECT_ID);
       expect(STAGING.VITE_FIREBASE_PROJECT_ID).toBe(STAGING_FIREBASE_PROJECT_ID);
+    });
+
+    // One Luminara value among the operator's own is a mix, and a mix can sign in against the wrong
+    // project: the API key alone picks it. Every such mix falls back, with the one warning.
+    it.each([
+      ['VITE_FIREBASE_API_KEY', FIREBASE_PUBLIC_CONFIG.apiKey],
+      ['VITE_FIREBASE_AUTH_DOMAIN', FIREBASE_PUBLIC_CONFIG.authDomain],
+      ['VITE_FIREBASE_AUTH_DOMAIN', 'luminara-suite.web.app'],
+      ['VITE_FIREBASE_AUTH_DOMAIN', 'luminara-suite-staging.firebaseapp.com'],
+      ['VITE_FIREBASE_AUTH_DOMAIN', 'Luminara-Suite-Staging.web.app'],
+      ['VITE_FIREBASE_PROJECT_ID', FIREBASE_PUBLIC_CONFIG.projectId],
+      ['VITE_FIREBASE_PROJECT_ID', STAGING_FIREBASE_PROJECT_ID],
+      ['VITE_FIREBASE_APP_ID', FIREBASE_PUBLIC_CONFIG.appId],
+    ])('a mix is refused: the operator own values with %s set to the Luminara value %s', (name, luminaraValue) => {
+      const { config, seen } = warnings({ ...SELF_HOSTED, [name]: luminaraValue });
+      expect(config).toEqual(PRODUCTION_CONFIG);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toContain(`${name} is a value of a Luminara Firebase project`);
+      expect(seen[0]).not.toContain(luminaraValue);
+    });
+
+    it('a mix the other way round is refused too: a foreign API key over production other three values', () => {
+      const { config, seen } = warnings({
+        MODE: 'production',
+        VITE_FIREBASE_SELF_HOSTED: 'true',
+        VITE_FIREBASE_API_KEY: 'a-staging-or-any-other-web-api-value',
+        VITE_FIREBASE_AUTH_DOMAIN: FIREBASE_PUBLIC_CONFIG.authDomain,
+        VITE_FIREBASE_PROJECT_ID: FIREBASE_PUBLIC_CONFIG.projectId,
+        VITE_FIREBASE_APP_ID: FIREBASE_PUBLIC_CONFIG.appId,
+      });
+      expect(config).toEqual(PRODUCTION_CONFIG);
+      expect(seen).toEqual([
+        'VITE_FIREBASE_SELF_HOSTED is set but VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_APP_ID are values of a Luminara Firebase project. A self-hosted build needs all four of its own. Using the built-in production Firebase config.',
+      ]);
     });
 
     it('the switch changes nothing outside a production build', () => {
@@ -221,6 +256,41 @@ describe('the Firebase web config a build signs in with', () => {
   it.each(['development', 'test', undefined])('a %s build keeps its overrides', (mode) => {
     const env = { MODE: mode, VITE_FIREBASE_PROJECT_ID: 'other', VITE_FIREBASE_STORAGE_BUCKET: 'other.example' };
     expect(resolveFirebaseWebConfig(env)).toEqual({ ...PRODUCTION_CONFIG, projectId: 'other', storageBucket: 'other.example' });
+    // The dev server and the test runner say PROD is false.
+    expect(resolveFirebaseWebConfig({ ...env, PROD: false, DEV: true })).toEqual({ ...PRODUCTION_CONFIG, projectId: 'other', storageBucket: 'other.example' });
+  });
+
+  // Vite sets PROD for every `vite build`, whatever --mode is passed. The protection follows that,
+  // not the spelling of the mode.
+  it.each(['production', 'Production', 'PRODUCTION', 'prod', 'live', 'development'])(
+    'a production-kind build called "%s" ignores every override, like production',
+    (mode) => {
+      const leftOver = { ...STAGING, VITE_FIREBASE_PROJECT_ID: 'other', VITE_FIREBASE_STORAGE_BUCKET: 'other.example', MODE: mode, PROD: true };
+      const warned: string[] = [];
+      expect(resolveFirebaseWebConfig(leftOver, (message) => warned.push(message))).toEqual(PRODUCTION_CONFIG);
+      expect(warned).toEqual([]);
+    },
+  );
+
+  it('a mode spelled "Production" is protected even when the build flag is not passed in', () => {
+    for (const mode of ['Production', 'PRODUCTION', ' production ']) {
+      expect(resolveFirebaseWebConfig({ MODE: mode, VITE_FIREBASE_PROJECT_ID: 'other' }), mode).toEqual(PRODUCTION_CONFIG);
+    }
+  });
+
+  it('a staging build keeps its own config although Vite sets PROD for it too', () => {
+    const stagingBuild = { ...STAGING, PROD: true };
+    expect(resolveFirebaseWebConfig(stagingBuild)).toEqual({
+      apiKey: 'staging-web-api-value',
+      authDomain: 'luminara-suite-staging.firebaseapp.com',
+      projectId: 'luminara-suite-staging',
+      appId: '1:1:web:staging',
+    });
+    expect(resolveFirebaseWebConfig({ MODE: 'staging', PROD: true })).toBeNull();
+    expect(resolveFirebaseWebConfig({ ...stagingBuild, MODE: 'Staging' })?.projectId).toBe('luminara-suite-staging');
+    // deploy:staging is what makes that build.
+    const scripts = (JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
+    expect(scripts['deploy:staging']).toContain('--mode staging');
   });
 
   it('a staging build with its own values signs in against the staging project', () => {
@@ -534,16 +604,23 @@ describe('the Telegram setup script', () => {
     expect(matchedAt).toBeGreaterThan(getMeAt);
     expect(setWebhookAt).toBeGreaterThan(matchedAt);
 
-    // The site is the whole origin as new URL() reads it, compared for equality, never by a prefix.
+    // The site is read with new URL() and compared for equality, never by a prefix.
     expect(script.slice(0, getMeAt)).toContain('const origin = new URL(WEBAPP_URL).origin;');
     expect(afterNameCheck).toContain("const PRODUCTION_BOT = 'luminarasuitebot';");
+    expect(afterNameCheck).toContain("const PRODUCTION_HOST = 'luminarasuite.com';");
     expect(afterNameCheck).toContain("const PRODUCTION_ORIGIN = 'https://luminarasuite.com';");
     expect(afterNameCheck).toContain('const productionBot = botUsername.toLowerCase() === PRODUCTION_BOT;');
-    expect(afterNameCheck).toContain('const productionOrigin = origin === PRODUCTION_ORIGIN;');
     expect(script).not.toMatch(/startsWith|endsWith|\.includes\(|\.indexOf\(|\.match\(/);
 
-    // Both production, or neither: one without the other stops, and the message names the bot and the site.
-    const stop = /if \(productionBot !== productionOrigin\) \{\n([\s\S]*?)process\.exit\(1\);\n\}\n/.exec(afterNameCheck);
+    // "Is the production site" goes by hostname, with trailing dots removed and lower-cased, so
+    // https://luminarasuite.com./ and https://luminarasuite.com:8443 are the production host too.
+    expect(afterNameCheck).toContain("const siteHost = new URL(WEBAPP_URL).hostname.replace(/\\.+$/, '').toLowerCase();");
+    expect(afterNameCheck).toContain('const productionHost = siteHost === PRODUCTION_HOST || siteHost === `www.${PRODUCTION_HOST}`;');
+    // The production bot needs the exact production origin; any other bot is refused a production host.
+    expect(afterNameCheck).toContain('const paired = productionBot ? origin === PRODUCTION_ORIGIN : !productionHost;');
+
+    // An unpaired run stops, and the message names the bot and the site.
+    const stop = /if \(!paired\) \{\n([\s\S]*?)process\.exit\(1\);\n\}\n/.exec(afterNameCheck);
     expect(stop).not.toBeNull();
     const messages = stop![1]!.split('\n').filter((line) => line.includes('Nothing was changed.'));
     expect(messages).toHaveLength(2);
@@ -558,6 +635,44 @@ describe('the Telegram setup script', () => {
     expect(afterNameCheck.slice(afterNameCheck.indexOf(announce) + announce.length).trim()).toBe('');
     // The webhook goes to that same origin.
     expect(script.slice(setWebhookAt)).toContain('url: `${origin}/api/telegram/webhook`,');
+  });
+
+  it('every production route of the Worker counts as the production site', () => {
+    const wrangler = parseJsonc(readFileSync(resolve(root, 'wrangler.jsonc'), 'utf8')) as any;
+    const productionRoutes = (wrangler.env.production.routes as Array<{ pattern: string }>).map((route) => route.pattern).sort();
+    expect(productionRoutes).toEqual(['luminarasuite.com', 'www.luminarasuite.com']);
+    // Those two are exactly what the script calls a production host.
+    expect(script).toContain('const productionHost = siteHost === PRODUCTION_HOST || siteHost === `www.${PRODUCTION_HOST}`;');
+    // The staging host is not one of them, so the staging bot can be pointed at it.
+    expect((wrangler.env.staging.routes as Array<{ pattern: string }>).map((route) => route.pattern)).toEqual(['staging.luminarasuite.com']);
+  });
+
+  it('stops before any call when the webhook secret is empty', () => {
+    const beforeGetMe = script.slice(0, getMeAt);
+    const stop = /if \(!String\(TELEGRAM_WEBHOOK_SECRET \|\| ''\)\.trim\(\)\) \{\n([^}]*)process\.exit\(1\);\n\}/.exec(beforeGetMe);
+    expect(stop).not.toBeNull();
+    expect(stop![1]).toContain('TELEGRAM_WEBHOOK_SECRET is required');
+    expect(stop![1]).toContain('Nothing was changed.');
+  });
+
+  it('changes the production bot only with ALLOW_PRODUCTION_WEBHOOK=yes, and otherwise says what it would do and stops', () => {
+    const pairedAt = script.indexOf('if (!paired) {');
+    const announceAt = script.indexOf('console.log(`About to point @${botUsername} at ${origin}`);');
+    const gate = script.slice(pairedAt, announceAt);
+    expect(pairedAt).toBeGreaterThan(getMeAt);
+    expect(announceAt).toBeGreaterThan(pairedAt);
+    expect(setWebhookAt).toBeGreaterThan(announceAt);
+
+    const stop = /if \(productionBot && process\.env\.ALLOW_PRODUCTION_WEBHOOK !== 'yes'\) \{\n([\s\S]*?)process\.exit\(1\);\n\}\n/.exec(gate);
+    expect(stop).not.toBeNull();
+    // What would be done: which bot, which webhook, what happens to pending updates, the menu button.
+    for (const part of ['@${botUsername}', '${origin}/api/telegram/webhook', "process.env.DROP_PENDING_UPDATES === 'true' ? 'drop' : 'keep'", '${WEBAPP_URL}', 'Nothing was changed.']) {
+      expect(stop![1]).toContain(part);
+    }
+    // The secret itself is never printed.
+    expect(script).not.toMatch(/console\.(log|error)\([^;]*\$\{(TELEGRAM_WEBHOOK_SECRET|BOT_TOKEN)\}/);
+    // The usage line for production carries the variable.
+    expect(script).toContain('ALLOW_PRODUCTION_WEBHOOK=yes EXPECT_BOT_USERNAME=LuminaraSuiteBot BOT_TOKEN=123:abc');
   });
 
   it('keeps pending updates unless told otherwise, because one of them can be a paid update', () => {
@@ -593,9 +708,12 @@ describe('the staging runbook', () => {
     expect(runbook).toContain('closing the window does not clear that file');
   });
 
-  it('says what the setup script still cannot catch', () => {
+  it('says how the setup script is kept away from the production bot', () => {
     expect(runbook).toContain('The production bot goes only with `https://luminarasuite.com`.');
-    expect(runbook).toContain('It cannot tell a mistake from intent when the name, the token and `WEBAPP_URL` are all production');
+    expect(runbook).toContain('It changes the production bot only when `ALLOW_PRODUCTION_WEBHOOK=yes` is also set');
+    expect(runbook).toContain('the staging steps never need that variable');
+    // No command in the runbook sets it.
+    expect(runbook).not.toMatch(/ALLOW_PRODUCTION_WEBHOOK=yes [A-Z_]+=|\$env:ALLOW_PRODUCTION_WEBHOOK/);
   });
 
   it('tells the owner to set the staging Firebase web API key the Worker signs in with', () => {
