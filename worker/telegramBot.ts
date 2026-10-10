@@ -6,6 +6,7 @@ import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
+import { businessDnaPromptBlock, filterChatReply, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
 import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
@@ -199,7 +200,9 @@ Style guidelines:
 - Lead with what matters to revenue and what action to ship.
 - Ground advice in search principles: Schema.org JSON-LD structured data, technical crawlability, brand citation velocity, and authoritative third-party references.
 - Keep responses concise (typically 2-4 focused paragraphs or punchy bullet points) suitable for Telegram mobile reading.
-- When an in-depth audit, radar chart, or competitor diff is relevant, remind them they can tap the "Open Luminara Suite" button below for the full visual suite.`;
+- When an in-depth audit, radar chart, or competitor diff is relevant, remind them they can tap the "Open Luminara Suite" button below for the full visual suite.
+
+${TELEGRAM_CHAT_HONESTY_RULES}`;
 
 export async function generateOracleChatResponse(
   env: Env,
@@ -467,7 +470,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
-    const buyMatch = text.match(/^\/buy(?:_|\s+)([a-z]+)/i);
+    const buyMatch = text.match(/^\/buy(?:_|\s+)([a-z_]+)/i);
     if (buyMatch) {
       const planId = normalizePlanId(buyMatch[1]);
       const plan = PLANS[planId];
@@ -733,17 +736,18 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         const joined = new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         const minutesAgo = Math.max(0, Math.round((Date.now() - u.last_seen_at) / 60000));
         const activeStr = minutesAgo < 60 ? `${minutesAgo}m ago` : `${Math.round(minutesAgo / 60)}h ago`;
-        return `${i + 1}. *${label}*\n   ${sourceBadge} · Joined: ${joined} · Active: ${activeStr}`;
+        return `${i + 1}. ${label}\n   ${sourceBadge} · Joined: ${joined} · Active: ${activeStr}`;
       });
 
+      // Plain text, no parse_mode: the names and emails in this list are set by users, and an
+      // underscore or asterisk in one of them would break or restyle a Markdown message.
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
-          `📊 *Luminara User Signups & Sign-Ins*\n\n` +
-          `*Total Registered Users:* ${users.length}\n\n` +
+          `📊 Luminara User Signups & Sign-Ins\n\n` +
+          `Total Registered Users: ${users.length}\n\n` +
           (lines.length ? lines.join('\n\n') : 'No registered users found yet.') +
-          `\n\n_Use /refund <userId> <chargeId> to issue a Stars refund._`,
-        parse_mode: 'Markdown',
+          `\n\nUse /refund <userId> <chargeId> to issue a Stars refund.`,
       });
       return;
     }
@@ -852,7 +856,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         if (dnaRaw) {
           const dna = JSON.parse(dnaRaw);
           if (dna && typeof dna === 'object') {
-            dnaPromptAddition = `\n\nKnown User Business DNA Memory:\n- Company: ${dna.companyName || dna.name || 'Unknown'}\n- Primary Domain: ${dna.domain || dna.primaryDomain || 'Unknown'}\n- USP: ${dna.uniqueSellingPoint || dna.usp || 'N/A'}\n- Known Competitors: ${Array.isArray(dna.competitors) ? dna.competitors.join(', ') : 'N/A'}`;
+            // Saved profile text is untrusted: it reaches the prompt only inside a fence.
+            dnaPromptAddition = businessDnaPromptBlock(dna);
           }
         }
       } catch {
@@ -861,7 +866,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     const domainPromptAddition = targetDomain
-      ? `\n\nDetected Target Domain in query: "${targetDomain}". If the user is asking to inspect or audit this domain, deliver an Instant Scout diagnostic covering: AI visibility readiness, entity schema status, and 1 highest-priority ship move this week.`
+      ? `\n\nDetected Target Domain in query: "${targetDomain}". This chat has not fetched or measured that site. Do not describe its current state and do not give it a diagnostic, a rating or any number. Give general guidance only, and tell the user that the Full Visual Audit button under this reply opens the audit screen in the app.`
       : '';
 
     // 5. Multi-turn session memory
@@ -877,13 +882,28 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + dnaPromptAddition + domainPromptAddition },
+      // Plan facts in the prompt are built from PLANS on every turn, never typed by hand.
+      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(PLANS) + dnaPromptAddition + domainPromptAddition },
       ...history.slice(-6),
       { role: 'user', content: text },
     ];
 
     // 6. Generate AI response via configured worker providers
-    const aiResponse = await generateOracleChatResponse(env, messages);
+    const modelReply = await generateOracleChatResponse(env, messages);
+    // Before the reply is stored in history or sent (worker/chatHonesty.ts): anything it says about
+    // our plans, prices or offers gives way to one block built from PLANS, a measurement nobody
+    // made is replaced, and a link to a host that is neither ours nor the user's is spelled out.
+    const honest = modelReply
+      ? filterChatReply(modelReply, {
+          plans: PLANS,
+          userTexts: [...history.filter((turn) => turn?.role === 'user').map((turn) => String(turn.content ?? '')), text],
+          allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
+        })
+      : null;
+    if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.linksRemoved > 0)) {
+      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan or price sentence(s), ${honest.linksRemoved} link(s)`);
+    }
+    const aiResponse = honest ? honest.text : null;
 
     // Dynamic action keyboard (Hermes-like deep actions)
     const replyKeyboard = targetDomain
@@ -919,20 +939,18 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
     }
 
-    // 8. Deliver response
+    // 8. Deliver response. No parse_mode: model text is not valid Markdown, and Telegram
+    // rejects the whole message when the markup does not parse. No link preview: model text
+    // must not unfurl a page.
     const sendResult = await api(env, 'sendMessage', {
       chat_id: chatId,
       text: aiResponse,
-      parse_mode: 'Markdown',
+      link_preview_options: { is_disabled: true },
       reply_markup: replyKeyboard,
     });
 
     if (!sendResult.ok) {
-      await api(env, 'sendMessage', {
-        chat_id: chatId,
-        text: aiResponse,
-        reply_markup: replyKeyboard,
-      });
+      console.error('[Telegram Bot] chat reply was not delivered', sendResult.description);
     }
   } catch (e) {
     console.error('telegram update failed', e);
