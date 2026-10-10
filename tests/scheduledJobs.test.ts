@@ -29,10 +29,14 @@ describe('jobsForCron', () => {
     ['another daily time', '0 9 * * *'],
     ['an empty string', ''],
     ['an object prototype key', 'constructor'],
-  ])('falls back to every job for %s, flagged as unmapped', (_label, cron) => {
+  ])('runs no job for %s, flagged as unmapped', (_label, cron) => {
     expect(isCronMapped(cron)).toBe(false);
-    expect(jobsForCron(cron)).toEqual([...ALL_SCHEDULED_JOBS]);
-    expect(jobsForCron(cron)).toEqual(['sentinel', 'privacy_purge', 'domain_recheck']);
+    expect(jobsForCron(cron)).toEqual([]);
+  });
+
+  it('gives every known job an owner among the configured crons, now that an unmapped cron runs none', () => {
+    const owned = new Set(configuredCrons().flatMap((cron) => jobsForCron(cron)));
+    expect([...owned].sort()).toEqual([...ALL_SCHEDULED_JOBS].sort());
   });
 
   it('returns a fresh array so callers cannot mutate the mapping', () => {

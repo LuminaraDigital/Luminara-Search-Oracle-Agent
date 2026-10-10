@@ -110,8 +110,8 @@ import {
   enqueueAuditRun,
   getAuditRun,
   isAuditQueueEnabled,
-  processAuditQueueBatch,
 } from './auditQueue';
+import { dispatchQueueBatch } from './queueDispatch';
 import { handleMcpOAuthRoute } from './mcpOAuth';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
@@ -2106,13 +2106,15 @@ export default {
     // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).
     const jobs = jobsForCron(controller.cron);
     if (!isCronMapped(controller.cron)) {
-      console.error(`[Cron] Cron "${controller.cron}" is not mapped in worker/scheduledJobs.ts; running all jobs (${jobs.join(', ')}).`);
+      console.error(`[Cron] Cron "${controller.cron}" is not mapped in worker/scheduledJobs.ts; no job was run.`);
+      return;
     }
     if (jobs.includes('sentinel')) ctx.waitUntil(runSentinelScan(env));
     if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
     if (jobs.includes('domain_recheck')) ctx.waitUntil(recheckVerifiedDomains(env).then(() => undefined));
   },
   async queue(batch: MessageBatch, env: Env): Promise<void> {
-    await processAuditQueueBatch(batch as MessageBatch<{ runId: string; accountId: string; targetUrl: string; projectId?: string | null }>, env);
+    // Each queue runs only the handler that owns it; an unknown queue is acknowledged and reported (worker/queueDispatch.ts).
+    await dispatchQueueBatch(batch, env);
   },
 } satisfies ExportedHandler<Env>;
