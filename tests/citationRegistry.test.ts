@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import {
+  ANCHOR_NO_SIGNER_ERROR,
   OP_INTERNAL_ANCHOR,
   OP_EXTERNAL_ANCHOR,
   buildCitationPayloadHex,
@@ -93,37 +94,39 @@ describe('TON CitationRegistry', () => {
     expect(mockFetcher).not.toHaveBeenCalled();
   });
 
-  it('reports the hash the chain API returned, and only that hash', async () => {
-    const mockFetcher = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ message_hash: 'b'.repeat(64) }),
-    });
+  it.each([
+    ['a hash, which the old client stored as anchored', { message_hash: 'b'.repeat(64) }],
+    ['no hash, for which the old client made one up', {}],
+  ])('with the flag on and a contract set it makes no outbound request (a chain API that would answer 200 with %s)', async (_label, reply) => {
+    const mockFetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => reply });
+    const globalFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => reply });
+    vi.stubGlobal('fetch', globalFetch);
+    try {
+      const withFetcher = await anchorAuditCitation(anchoringEnv, samplePayload, mockFetcher as unknown as typeof fetch);
+      const withDefault = await anchorAuditCitation(anchoringEnv, samplePayload);
 
-    const res = await anchorAuditCitation(anchoringEnv, samplePayload, mockFetcher as unknown as typeof fetch);
-    expect(res.ok).toBe(true);
-    expect(mockFetcher).toHaveBeenCalled();
-    const calledUrl = mockFetcher.mock.calls[0][0];
-    expect(calledUrl).toBe('https://testnet.toncenter.com/api/v3/message');
-    expect(res.txHash).toBe('b'.repeat(64));
+      // Exactly this: no hash, no explorer link, no contract, nothing a caller could store as anchored.
+      expect(withFetcher).toEqual({ ok: false, error: ANCHOR_NO_SIGNER_ERROR });
+      expect(withDefault).toEqual({ ok: false, error: ANCHOR_NO_SIGNER_ERROR });
+      expect(mockFetcher).not.toHaveBeenCalled();
+      expect(globalFetch).not.toHaveBeenCalled();
+
+      // Neither the chain API's hash nor the old made-up one (the SHA-256 of the payload) comes back.
+      const invented = createHash('sha256').update(await buildCitationPayloadHex(samplePayload)).digest('hex');
+      expect(JSON.stringify(withFetcher)).not.toContain(invented);
+      expect(JSON.stringify(withFetcher)).not.toContain('b'.repeat(64));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
-  it.each([
-    ['an empty object', {}],
-    ['an empty hash', { message_hash: '', hash: '   ' }],
-    ['a null hash', { message_hash: null }],
-  ])('returns no transaction hash when the chain API answers 200 with %s', async (_label, reply) => {
-    const mockFetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => reply });
-
-    const res = await anchorAuditCitation(anchoringEnv, samplePayload, mockFetcher as unknown as typeof fetch);
-    expect(mockFetcher).toHaveBeenCalledTimes(1);
-    expect(res.ok).toBe(false);
-    expect(res.txHash).toBeUndefined();
-    expect(res.explorerUrl).toBeUndefined();
-    expect(res.error).toContain('no message hash');
-
-    // The old fallback: the SHA-256 of the payload the Worker built itself.
-    const invented = createHash('sha256').update(await buildCitationPayloadHex(samplePayload)).digest('hex');
-    expect(JSON.stringify(res)).not.toContain(invented);
+  it('has no code that posts a message to the chain API', () => {
+    const client = readFileSync(resolve(__dirname, '..', 'worker', 'chain', 'ton', 'citationRegistry.ts'), 'utf8');
+    expect(client).not.toContain('/message');
+    expect(client).not.toMatch(/\bboc\b\s*:/);
+    // The one request left is the read of a recorded proof.
+    expect(Array.from(client.matchAll(/\bfetcher\(/g))).toHaveLength(1);
+    expect(client).toContain('/runGetMethod');
   });
 
   it('has no slot for a chain signing key, in the Worker environment or the registry client', () => {

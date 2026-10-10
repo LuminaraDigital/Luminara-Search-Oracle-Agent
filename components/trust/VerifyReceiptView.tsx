@@ -6,12 +6,16 @@ import {
   fetchReceipt,
   isTrustDisabledError,
   receiptLevelSentence,
+  receiptSignatureNotice,
+  revokedReasonSentence,
   verifyReceiptOffline,
   type OfflineVerifyResult,
+  type ReceiptSignatureNotice,
+  type ReceiptSignatureState,
 } from '../../services/trust/trustClient';
 import { RECEIPT_CLAIM_LABELS, type TrustReceiptPayload, type TrustReceiptView } from '../../services/trust/receiptTypes';
 
-type SigState = 'checking' | 'valid' | 'invalid' | 'key_not_found';
+type SigState = ReceiptSignatureState;
 
 function sigStateFrom(result: OfflineVerifyResult): SigState {
   if (!result.kidFound) return 'key_not_found';
@@ -55,23 +59,12 @@ const SmallCopy: React.FC<{ value: string; label: string }> = ({ value, label })
   );
 };
 
-const SIG_COPY: Record<SigState, { label: string; detail: string; className: string }> = {
-  checking: { label: 'Checking signature', detail: 'Verifying in your browser with the published key.', className: 'border-white/15 text-gray-300' },
-  valid: {
-    label: 'Valid signature',
-    detail: 'Checked in your browser. This receipt was signed by Luminara and has not been altered.',
-    className: 'border-gold/50 text-gold-light',
-  },
-  invalid: {
-    label: 'Invalid signature',
-    detail: 'The signature does not match the receipt contents. Do not rely on this receipt.',
-    className: 'border-danger-500/50 text-danger-300',
-  },
-  key_not_found: {
-    label: 'Key not found',
-    detail: 'The signing key for this receipt is not in the published key set, so it cannot be checked.',
-    className: 'border-danger-500/50 text-danger-300',
-  },
+/** Gold is for a receipt that stands. A withdrawn one is shown in the warning style, never in gold. */
+const SIG_TONE_CLASS: Record<ReceiptSignatureNotice['tone'], string> = {
+  neutral: 'border-white/15 text-gray-300',
+  valid: 'border-gold/50 text-gold-light',
+  withdrawn: 'border-danger-500/50 text-danger-300',
+  danger: 'border-danger-500/50 text-danger-300',
 };
 
 const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
@@ -123,7 +116,7 @@ export const VerifyReceiptView: React.FC<{ onBack?: () => void }> = ({ onBack })
 
   const payload = receipt ? signedPayload(receipt) : null;
   const idMismatch = Boolean(receipt && payload && payload.id !== receipt.id);
-  const sigCopy = SIG_COPY[idMismatch ? 'invalid' : sig];
+  const sigCopy = receiptSignatureNotice(idMismatch ? 'invalid' : sig, Boolean(receipt?.revokedAt));
   const selfReported = payload?.level === 'self_reported';
 
   return (
@@ -152,8 +145,8 @@ export const VerifyReceiptView: React.FC<{ onBack?: () => void }> = ({ onBack })
           <>
             {receipt.revokedAt && (
               <div role="alert" className="rounded-xl border border-danger-500/50 bg-danger-500/10 px-4 py-3 text-sm text-danger-200">
-                Revoked {formatDateTime(receipt.revokedAt)}
-                {receipt.revokedReason ? `: ${receipt.revokedReason}` : '.'} This receipt no longer stands.
+                Withdrawn {formatDateTime(receipt.revokedAt)}. {revokedReasonSentence(receipt.revokedReason)} This receipt no
+                longer stands.
               </div>
             )}
 
@@ -167,7 +160,7 @@ export const VerifyReceiptView: React.FC<{ onBack?: () => void }> = ({ onBack })
               <div
                 role="status"
                 aria-live="polite"
-                className={`rounded-xl border px-4 py-3 text-sm ${sigCopy.className}`}
+                className={`rounded-xl border px-4 py-3 text-sm ${SIG_TONE_CLASS[sigCopy.tone]}`}
               >
                 <p className="font-semibold">{sigCopy.label}</p>
                 <p className="text-gray-400">{idMismatch ? 'The signed receipt id does not match this link.' : sigCopy.detail}</p>

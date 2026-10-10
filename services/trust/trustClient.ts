@@ -13,6 +13,52 @@ export function receiptLevelSentence(level: TrustReceiptLevel): string {
   return /[.!?]$/.test(label) ? label : `${label}.`;
 }
 
+/** A revoke reason as a full sentence. Reasons are stored as short phrases, most without a full stop. */
+export function revokedReasonSentence(reason: string | null | undefined): string {
+  const text = String(reason || '').trim();
+  if (!text) return '';
+  const sentence = text.charAt(0).toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
+export type ReceiptSignatureState = 'checking' | 'valid' | 'invalid' | 'key_not_found';
+export type ReceiptSignatureNotice = { label: string; detail: string; tone: 'neutral' | 'valid' | 'withdrawn' | 'danger' };
+
+const SIGNATURE_NOTICES: Record<ReceiptSignatureState, ReceiptSignatureNotice> = {
+  checking: { label: 'Checking signature', detail: 'Verifying in your browser with the published key.', tone: 'neutral' },
+  valid: {
+    label: 'Valid signature',
+    detail: 'Checked in your browser. This receipt was signed by Luminara and has not been altered.',
+    tone: 'valid',
+  },
+  invalid: {
+    label: 'Invalid signature',
+    detail: 'The signature does not match the receipt contents. Do not rely on this receipt.',
+    tone: 'danger',
+  },
+  key_not_found: {
+    label: 'Key not found',
+    detail: 'The signing key for this receipt is not in the published key set, so it cannot be checked.',
+    tone: 'danger',
+  },
+};
+
+/**
+ * What the receipt page says about the signature. A withdrawn receipt never gets the
+ * "Valid signature" success notice: its signature still checks out, and that must
+ * not read as "this receipt stands".
+ */
+export function receiptSignatureNotice(state: ReceiptSignatureState, revoked: boolean): ReceiptSignatureNotice {
+  if (revoked && state === 'valid') {
+    return {
+      label: 'Withdrawn',
+      detail: 'Luminara signed this receipt and later withdrew it. The signature is genuine, but the receipt no longer stands. Do not rely on it.',
+      tone: 'withdrawn',
+    };
+  }
+  return SIGNATURE_NOTICES[state];
+}
+
 export type TrustFeatureFlags = {
   receiptsEnabled: boolean;
   receiptSigningConfigured: boolean;

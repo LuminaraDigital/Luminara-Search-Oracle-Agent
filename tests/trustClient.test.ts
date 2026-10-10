@@ -1,7 +1,14 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { bytesToBase64Url, canonicalJson, receiptKeyId, type ReceiptPublicJwk } from '../services/trust/receiptCrypto';
 import type { TrustReceiptPayload } from '../services/trust/receiptTypes';
-import { receiptLevelSentence, verifyReceiptOffline } from '../services/trust/trustClient';
+import {
+  receiptLevelSentence,
+  receiptSignatureNotice,
+  revokedReasonSentence,
+  verifyReceiptOffline,
+} from '../services/trust/trustClient';
 
 let publicJwk: ReceiptPublicJwk;
 let otherJwk: ReceiptPublicJwk;
@@ -83,5 +90,53 @@ describe('receiptLevelSentence', () => {
   it('never renders self_reported as verified', () => {
     expect(receiptLevelSentence('self_reported')).toMatch(/did not verify/i);
     expect(receiptLevelSentence('worker_verified').endsWith('.')).toBe(true);
+  });
+});
+
+describe('receiptSignatureNotice', () => {
+  it('shows a genuine signature in the success style only while the receipt stands', () => {
+    expect(receiptSignatureNotice('valid', false)).toMatchObject({ label: 'Valid signature', tone: 'valid' });
+  });
+
+  it('shows a withdrawn receipt as withdrawn, never as a valid signature in the success style', () => {
+    const notice = receiptSignatureNotice('valid', true);
+    expect(notice.label).toBe('Withdrawn');
+    expect(notice.tone).toBe('withdrawn');
+    expect(notice.tone).not.toBe('valid');
+    expect(`${notice.label} ${notice.detail}`).not.toContain('Valid signature');
+    expect(notice.detail).toContain('no longer stands');
+  });
+
+  it('is where the receipt page gets its notice, with the withdrawn state passed in', () => {
+    const view = readFileSync(resolve(__dirname, '..', 'components', 'trust', 'VerifyReceiptView.tsx'), 'utf8');
+    expect(view).toContain('receiptSignatureNotice(');
+    expect(view).toContain('Boolean(receipt?.revokedAt)');
+    expect(view).toContain('revokedReasonSentence(receipt.revokedReason)');
+    // The page keeps no copy of its own that could show the success notice for a withdrawn receipt.
+    expect(view).not.toContain('Valid signature');
+  });
+
+  it('keeps the warnings and the checking state for a withdrawn receipt', () => {
+    for (const state of ['checking', 'invalid', 'key_not_found'] as const) {
+      expect(receiptSignatureNotice(state, true), state).toEqual(receiptSignatureNotice(state, false));
+      expect(receiptSignatureNotice(state, true).tone, state).not.toBe('valid');
+    }
+  });
+});
+
+describe('revokedReasonSentence', () => {
+  it('ends every stored reason with a full stop and starts it with a capital', () => {
+    expect(revokedReasonSentence('domain removed by owner')).toBe('Domain removed by owner.');
+    expect(revokedReasonSentence('superseded by a newer domain check')).toBe('Superseded by a newer domain check.');
+    expect(revokedReasonSentence('  no longer ours  ')).toBe('No longer ours.');
+  });
+
+  it('leaves a reason that is already a sentence alone, and says nothing when there is none', () => {
+    expect(revokedReasonSentence('This receipt was issued without a check and has been withdrawn.')).toBe(
+      'This receipt was issued without a check and has been withdrawn.',
+    );
+    expect(revokedReasonSentence('Why?')).toBe('Why?');
+    expect(revokedReasonSentence(null)).toBe('');
+    expect(revokedReasonSentence('   ')).toBe('');
   });
 });

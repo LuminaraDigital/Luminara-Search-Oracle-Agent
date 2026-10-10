@@ -46,9 +46,8 @@ export interface OracleGatewayResult {
   verdict: string;
   oneMoveThisWeek: string;
   healthScore: number | null;
+  /** No page is fetched and no source is read here, so there is no URL or source count to report. */
   evidence: {
-    scrapedUrl: string;
-    sourcesCount: number;
     measurementStatus: 'measured' | 'estimated' | 'not_measured';
   };
   /** Always false: this route verifies nothing, so it never issues a Trust Receipt. */
@@ -115,7 +114,6 @@ export async function executeOracleGatewayTask(
 
       // Evidence synthesis
       const targetUrl = `https://${domain}`;
-      const sourcesCount = resourcesRes.resources.search.primary === 'tavily' ? 6 : 3;
 
       const readiness = evaluateCrawlReadiness(domain, {
         https: true,
@@ -154,8 +152,6 @@ export async function executeOracleGatewayTask(
         oneMoveThisWeek,
         healthScore,
         evidence: {
-          scrapedUrl: targetUrl,
-          sourcesCount,
           measurementStatus: evidenceClassification.status,
         },
         receiptIssued: false,

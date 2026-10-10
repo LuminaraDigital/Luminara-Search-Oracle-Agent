@@ -85,72 +85,66 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
     expect(tampered).not.toBe(hash1);
   });
 
-  it('records proof anchor in D1 and KV with TON on-chain broadcast', async () => {
+  it('with anchoring switched on it makes no outbound request and stores nothing as anchored', async () => {
+    // beforeEach sets PROOF_ANCHOR_ENABLED to "true" and a contract address. A chain API
+    // that would answer 200 with a hash is what the old client stored as "anchored".
     const mockFetcher = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ message_hash: 'c'.repeat(64) }),
     });
+    const globalFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message_hash: 'c'.repeat(64) }) });
+    vi.stubGlobal('fetch', globalFetch);
 
-    const result = await recordAuditProof(
-      env,
-      {
-        domain: 'acme.org',
-        auditRunId: 'run_abc_123',
-        healthScore: 90,
-        citationRatePercent: 82,
-        findings: [{ id: 'f1', severity: 'low', title: 'Minor schema warning' }],
-        actorId: 'usr_789',
-      },
-      mockFetcher as unknown as typeof fetch,
-    );
+    let result: Awaited<ReturnType<typeof recordAuditProof>>;
+    try {
+      result = await recordAuditProof(
+        env,
+        {
+          domain: 'acme.org',
+          auditRunId: 'run_abc_123',
+          healthScore: 90,
+          citationRatePercent: 82,
+          findings: [{ id: 'f1', severity: 'low', title: 'Minor schema warning' }],
+          actorId: 'usr_789',
+        },
+        mockFetcher as unknown as typeof fetch,
+      );
+      // And once more through the default fetcher, as the route calls it.
+      await recordAuditProof(env, { domain: 'second.org', auditRunId: 'run_abc_124', healthScore: 60, citationRatePercent: 30 });
+      expect(mockFetcher).not.toHaveBeenCalled();
+      expect(globalFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
 
     expect(result.ok).toBe(true);
-    expect(result.status).toBe('anchored');
-    expect(result.txHash).toBeDefined();
-    expect(result.explorerUrl).toContain('testnet.tonviewer.com/transaction/');
+    expect(result.status).toBe('off_chain');
+    expect(result.txHash).toBeNull();
+    expect(result.explorerUrl).toBeNull();
     expect(result.network).toBe('testnet');
     expect(result.chain).toBe('ton');
 
-    // Confirm stored in D1
+    // The proof is recorded in D1, with no hash and not as anchored.
     const d1Row = await db
-      .prepare('SELECT * FROM proof_anchors WHERE evidence_hash = ?')
+      .prepare('SELECT domain, status, tx_hash, explorer_url FROM proof_anchors WHERE evidence_hash = ?')
       .bind(result.evidenceHash)
-      .first<any>();
-    expect(d1Row).not.toBeNull();
-    expect(d1Row.domain).toBe('acme.org');
-    expect(d1Row.status).toBe('anchored');
-    expect(d1Row.tx_hash).toBe(result.txHash);
+      .first<{ domain: string; status: string; tx_hash: string | null; explorer_url: string | null }>();
+    expect(d1Row).toEqual({ domain: 'acme.org', status: 'pending', tx_hash: null, explorer_url: null });
+    const anchored = await db
+      .prepare(`SELECT COUNT(*) AS n FROM proof_anchors WHERE status = 'anchored' OR tx_hash IS NOT NULL`)
+      .first<{ n: number }>();
+    expect(anchored?.n).toBe(0);
 
     // Confirm stored in KV
     const kvVal = await kv.get(`poa:${result.evidenceHash}`, 'json');
     expect(kvVal).not.toBeNull();
     expect(kvVal.domain).toBe('acme.org');
-  });
 
-  it('records an off-chain proof, with no transaction hash, when the chain API returns no hash', async () => {
-    const mockFetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
-
-    const result = await recordAuditProof(
-      env,
-      { domain: 'no-hash.org', auditRunId: 'run_no_hash_1', healthScore: 70, citationRatePercent: 40 },
-      mockFetcher as unknown as typeof fetch,
-    );
-
-    expect(mockFetcher).toHaveBeenCalledTimes(1);
-    expect(result.ok).toBe(true);
-    expect(result.status).toBe('off_chain');
-    expect(result.txHash).toBeNull();
-    expect(result.explorerUrl).toBeNull();
-
-    const row = await db
-      .prepare('SELECT status, tx_hash, explorer_url FROM proof_anchors WHERE evidence_hash = ?')
-      .bind(result.evidenceHash)
-      .first<{ status: string; tx_hash: string | null; explorer_url: string | null }>();
-    expect(row).toEqual({ status: 'pending', tx_hash: null, explorer_url: null });
-
+    // So verification never says "on-chain" for it.
     const verify = await verifyAuditProof(env, { evidenceHash: result.evidenceHash });
     expect(verify.source).toBe('off_chain_digest');
     expect(verify.disclosure).toContain('Self-reported, off-chain digest');
+    expect(verify.disclosure).not.toContain('on-chain');
   });
 
   it('records honest off-chain proof in D1 and KV when the TON contract is unconfigured', async () => {
@@ -190,7 +184,7 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
     expect(result.error).toContain('does not match');
   });
 
-  it('verifies audit proof from D1 with on-chain disclosure', async () => {
+  it('verifies a recorded proof from D1 as an off-chain digest, by hash and by domain and run', async () => {
     const mockFetcher = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ message_hash: 'd'.repeat(64) }),
@@ -207,16 +201,16 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
       mockFetcher as unknown as typeof fetch,
     );
 
-    const verify = await verifyAuditProof(env, {
-      evidenceHash: recorded.evidenceHash,
-    });
-
-    expect(verify.ok).toBe(true);
-    expect(verify.verified).toBe(true);
-    expect(verify.domain).toBe('verify-me.com');
-    expect(verify.source).toBe('on_chain');
-    expect(verify.disclosure).toContain('Anchored on TON testnet');
-    expect(verify.explorerUrl).toContain('testnet.tonviewer.com');
+    for (const query of [{ evidenceHash: recorded.evidenceHash }, { domain: 'verify-me.com', auditRunId: 'audit_run_999' }]) {
+      const verify = await verifyAuditProof(env, query);
+      expect(verify.ok).toBe(true);
+      expect(verify.verified).toBe(true);
+      expect(verify.domain).toBe('verify-me.com');
+      expect(verify.source).toBe('off_chain_digest');
+      expect(verify.disclosure).toBe('Recorded by Luminara. Self-reported, off-chain digest.');
+      expect(verify.txHash).toBeNull();
+      expect(verify.explorerUrl).toBeNull();
+    }
   });
 
   it('verifies off-chain digest from KV with honest disclosure when D1 row is absent', async () => {

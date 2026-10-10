@@ -121,7 +121,7 @@ import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
 import { handleLaunchpadRoute } from './launchpadService';
-import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts } from './trustReceipts';
+import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -1165,7 +1165,23 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const revokeAdmin = isAdminAuthorized(env, request);
     if (!revokeAdmin.ok) return withCors(revokeAdmin.response);
     if (!env.DB) return withCors(json({ ok: false, error: 'Trust receipts need D1', code: 'D1_UNAVAILABLE' }, 503));
-    return withCors(json({ ok: true, ...(await revokeGatewayIssuedReceipts(env)) }));
+    let swept: { revoked: number; remaining: number };
+    try {
+      swept = await revokeGatewayIssuedReceipts(env);
+    } catch (err) {
+      if (!(err instanceof TrustReceiptsTableMissing)) throw err;
+      return withCors(json({ ok: false, error: err.message, code: 'TRUST_RECEIPTS_TABLE_MISSING' }, 503));
+    }
+    // Recorded on every run, a run that found nothing included, so the sweep leaves a trace.
+    await recordAuditLogBestEffort(env, {
+      org_id: ADMIN_SYSTEM_ORG,
+      actor_id: 'admin',
+      action: 'admin.trust.revoke_gateway_receipts',
+      details: swept,
+      ip_address: clientIp(request),
+      user_agent: request.headers.get('user-agent') || undefined,
+    });
+    return withCors(json({ ok: true, ...swept }));
   }
 
   // Admin: runtime agent skill catalog (versioned methodology prompts in D1)

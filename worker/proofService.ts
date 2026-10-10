@@ -3,7 +3,8 @@
  *
  * Implements the Verifiable Citation Oracle (Phase 1).
  * Computes canonical evidence hashes, records tamper-evident rows in D1 proof_anchors,
- * dispatches on-chain anchors to TON CitationRegistry when PROOF_ANCHOR_ENABLED=true,
+ * asks the TON CitationRegistry client for an anchor (which sends nothing and answers
+ * `ok: false` while the Worker holds no signer, so every proof is recorded off-chain),
  * and serves public verification and embed badges.
  */
 

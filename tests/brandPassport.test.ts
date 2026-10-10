@@ -5,6 +5,7 @@ import {
   generateOrganizationJsonLd,
 } from '../services/trust/brandPassport';
 import type { TrustReceiptView } from '../services/trust/receiptTypes';
+import { normalizeVerifiableDomain } from '../worker/domainVerification';
 
 describe('services/trust/brandPassport', () => {
   it('generates valid Schema.org Organization JSON-LD markup', () => {
@@ -118,19 +119,51 @@ describe('services/trust/brandPassport', () => {
     }
   });
 
-  it('counts and trusts only the receipts for the domain it shows', () => {
+  // The mirror of the test above: the shown domain stays fixed and the receipt's subject
+  // varies. A match by suffix, prefix or substring passes the test above and fails here.
+  it.each([
+    ['a longer name that ends with it', 'notexample.com'],
+    ['a sub-domain of it', 'sub.example.com'],
+    ['its www host', 'www.example.com'],
+    ['a name that starts with it', 'example.com.evil.net'],
+    ['a name it starts with', 'example.co'],
+    ['a name one letter short', 'xample.com'],
+  ])('example.com is not verified by a receipt for %s (%s)', (_label, subject) => {
+    const passport = buildBrandPassport('example.com', null, [domainReceipt(subject)]);
+    expect(passport.domain).toBe('example.com');
+    expect(passport.isVerified).toBe(false);
+    expect(passport.receiptsCount).toBe(0);
+    expect(passport.embedBadgeSnippet).not.toContain('Verified by Luminara');
+
+    // The receipt itself is good: it verifies the passport of its own domain.
+    expect(buildBrandPassport(subject, null, [domainReceipt(subject)]).isVerified).toBe(true);
+  });
+
+  it('counts and trusts only the live receipts for the domain it shows', () => {
     const receipts = [domainReceipt('example.com'), domainReceipt('other.org'), domainReceipt('third.net')];
 
     const passport = buildBrandPassport('other.org', null, receipts);
     expect(passport.isVerified).toBe(true);
     expect(passport.receiptsCount).toBe(1);
 
-    // The receipt for the shown domain is revoked: the live ones for other domains do not stand in.
+    // The receipt for the shown domain is revoked: the live ones for other domains do not
+    // stand in, and the revoked one is not counted.
     const revoked = [
       domainReceipt('example.com'),
       domainReceipt('other.org', { revokedAt: '2026-10-10T01:00:00.000Z', revokedReason: 'test' }),
     ];
-    expect(buildBrandPassport('other.org', null, revoked).isVerified).toBe(false);
+    const afterRevoke = buildBrandPassport('other.org', null, revoked);
+    expect(afterRevoke.isVerified).toBe(false);
+    expect(afterRevoke.receiptsCount).toBe(0);
+
+    // One revoked and one live receipt for the same domain: one counts.
+    const mixed = [
+      domainReceipt('other.org', { id: 'rcpt_old', revokedAt: '2026-10-10T01:00:00.000Z', revokedReason: 'superseded' }),
+      domainReceipt('other.org'),
+    ];
+    const reissued = buildBrandPassport('other.org', null, mixed);
+    expect(reissued.isVerified).toBe(true);
+    expect(reissued.receiptsCount).toBe(1);
   });
 
   it('does not treat a receipt about a non-domain subject with the same id as domain proof', () => {
@@ -141,11 +174,36 @@ describe('services/trust/brandPassport', () => {
     expect(passport.receiptsCount).toBe(0);
   });
 
-  it('still matches the same domain written with a scheme, www, a path or capitals', () => {
+  it('calls two spellings the same domain exactly when domain verification does', () => {
     const receipts = [domainReceipt('example.com')];
-    for (const shown of ['https://www.Example.com/pricing', 'EXAMPLE.COM', 'http://example.com']) {
-      expect(buildBrandPassport(shown, null, receipts).isVerified, shown).toBe(true);
+    const spellings = [
+      'example.com',
+      'EXAMPLE.COM',
+      'http://example.com',
+      'https://Example.com/pricing?x=1',
+      'example.com:8443',
+      'example.com.',
+      '  example.com  ',
+      'www.example.com',
+      'https://www.Example.com/pricing',
+      'sub.example.com',
+      'notexample.com',
+      'example',
+      'localhost',
+      '',
+    ];
+    for (const shown of spellings) {
+      // normalizeVerifiableDomain is the name a verification, and so a receipt, is stored under.
+      const sameDomain = normalizeVerifiableDomain(shown) === 'example.com';
+      expect(buildBrandPassport(shown, null, receipts).isVerified, JSON.stringify(shown)).toBe(sameDomain);
     }
-    expect(buildBrandPassport('example.com', null, [domainReceipt('www.example.com')]).isVerified).toBe(true);
+    // Verification keeps `www.`, so the www host and the bare domain are two domains, both ways.
+    expect(normalizeVerifiableDomain('www.example.com')).toBe('www.example.com');
+    expect(buildBrandPassport('www.example.com', null, receipts).isVerified).toBe(false);
+    expect(buildBrandPassport('www.example.com', null, [domainReceipt('www.example.com')])).toMatchObject({
+      domain: 'www.example.com',
+      isVerified: true,
+      receiptsCount: 1,
+    });
   });
 });

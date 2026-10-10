@@ -20,6 +20,7 @@ import {
   GATEWAY_RECEIPT_REVOKED_REASON,
   GATEWAY_REVOKE_BATCH,
   ReceiptNotVerified,
+  TrustReceiptsTableMissing,
   handleTrustReceiptsRoute,
   issueTrustReceipt,
   revokeGatewayIssuedReceipts,
@@ -149,7 +150,8 @@ function receiptInput(level: string, verifierResult: unknown, overrides: Record<
 }
 
 describe('issueTrustReceipt needs a typed verifier result for a verified level', () => {
-  const notAResult: Array<[string, unknown]> = [
+  /** [what is wrong, the verifier result, and where needed the receipt fields changed to agree with it] */
+  const notAResult: Array<[string, unknown, Record<string, unknown>?]> = [
     ['no verifier result', undefined],
     ['a null verifier result', null],
     ['an empty object', {}],
@@ -162,16 +164,59 @@ describe('issueTrustReceipt needs a typed verifier result for a verified level',
     ['evidence the receipt does not carry', passedCheck({ evidenceSha256: 'b'.repeat(64) })],
     ['evidence read from somewhere else', passedCheck({ evidenceUrl: 'https://victim.org/' })],
     ['an evidence hash that is not a SHA-256', passedCheck({ evidenceSha256: 'not-a-hash' })],
+    // From here on the receipt agrees with the result, so only the rule named can refuse it.
+    [
+      'no evidence hash on either side (two missing values are equal)',
+      passedCheck({ evidenceSha256: undefined }),
+      { evidence: [{ ref: 'proof', url: PROOF_URL }] },
+    ],
+    [
+      'the same text that is not a hash on both sides',
+      passedCheck({ evidenceSha256: 'not-a-hash' }),
+      { evidence: [{ ref: 'proof', url: PROOF_URL, sha256: 'not-a-hash' }] },
+    ],
+    [
+      'no evidence location on either side',
+      passedCheck({ evidenceUrl: undefined }),
+      { evidence: [{ ref: 'proof', sha256: PROOF_SHA }] },
+    ],
+    [
+      'an empty evidence location on both sides',
+      passedCheck({ evidenceUrl: '' }),
+      { evidence: [{ ref: 'proof', url: '', sha256: PROOF_SHA }] },
+    ],
+    [
+      'the gateway method on both sides, which no verifier returns',
+      passedCheck({ method: GATEWAY_RECEIPT_METHOD }),
+      { method: GATEWAY_RECEIPT_METHOD },
+    ],
+    ['a made-up method on both sides', passedCheck({ method: 'http_200' }), { method: 'http_200' }],
+    ['a claim no verifier checks, on both sides', passedCheck({ claim: 'audit_run' }), { claim: 'audit_run' }],
   ];
 
   for (const level of [VERIFIED_LEVEL, 'registry_verified']) {
-    it.each(notAResult)(`refuses ${level} with %s, and stores nothing`, async (_label, verifierResult) => {
+    it.each(notAResult)(`refuses ${level} with %s, and stores nothing`, async (_label, verifierResult, receiptFields) => {
       const env = makeEnv();
-      await expect(issueTrustReceipt(env, receiptInput(level, verifierResult))).rejects.toBeInstanceOf(ReceiptNotVerified);
+      await expect(issueTrustReceipt(env, receiptInput(level, verifierResult, receiptFields))).rejects.toBeInstanceOf(ReceiptNotVerified);
       expect(await storedReceipts(env)).toEqual([]);
       expect(await auditCount(env, 'trust_receipt_issued')).toBe(0);
     });
   }
+
+  // The three ways the domain check in worker/domainVerification.ts can pass (its DomainProofMethod).
+  it.each(['dns_txt', 'well_known', 'meta_tag'])('accepts the domain check method %s', async (method) => {
+    const env = makeEnv();
+    const receipt = await issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, passedCheck({ method }), { method }));
+    expect(receipt.payload).toMatchObject({ level: VERIFIED_LEVEL, claim: 'domain_control', method });
+  });
+
+  it('refuses registry_verified even with a complete, matching result: no registry verifier exists', async () => {
+    const env = makeEnv();
+    await expect(issueTrustReceipt(env, receiptInput('registry_verified', passedCheck()))).rejects.toThrow(
+      'no verifier checks this claim by this method at this level',
+    );
+    expect(await storedReceipts(env)).toEqual([]);
+  });
 
   it('refuses the exact receipt the gateway route used to build from constants', async () => {
     const env = makeEnv();
@@ -222,6 +267,8 @@ describe('the gateway route issues no receipt', () => {
     expect(body.receiptNote).toBe(GATEWAY_NO_RECEIPT_NOTE);
     expect(body).not.toHaveProperty('receiptId');
     expect(body).not.toHaveProperty('receiptSignature');
+    // It fetched nothing, so it reports no scraped URL and no count of sources.
+    expect(body.evidence).toEqual({ measurementStatus: 'not_measured' });
 
     // Nothing was stored: not at the verified level, not at any level.
     const stored = await storedReceipts(env);
@@ -244,6 +291,8 @@ describe('the verified level literal is written only where a verifier result is 
   };
   /** Files that issue it. Each one must hand issueTrustReceipt a verifier result in the same call. */
   const ISSUERS = ['worker/domainVerification.ts'];
+  /** The guard itself: it names the level once, as the key of its list of real verifiers. */
+  const GUARD = 'worker/trustReceipts.ts';
   const SOURCE_DIRS = ['worker', 'services', 'components', 'utils', 'hooks', 'constants', 'electron', 'bin', 'scripts', 'plugins', 'crawler', 'evals'];
   const SOURCE_FILE_RE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
@@ -291,7 +340,16 @@ describe('the verified level literal is written only where a verifier result is 
   }
 
   it('appears in no source file outside the reviewed list', () => {
-    expect([...withLiteral.keys()].sort()).toEqual([...Object.keys(READ_ONLY), ...ISSUERS].sort());
+    expect([...withLiteral.keys()].sort()).toEqual([...Object.keys(READ_ONLY), ...ISSUERS, GUARD].sort());
+  });
+
+  it('the guard names it once, as a key of the verifier list, and never writes it as a value', () => {
+    const text = withLiteral.get(GUARD) || '';
+    expect(positions(text, VERIFIED_LEVEL)).toHaveLength(1);
+    // The key of VERIFIER_METHODS, whose only entry is the domain check.
+    expect(text).toMatch(new RegExp(`\\s${VERIFIED_LEVEL}: \\{ domain_control: Object\\.keys\\(DOMAIN_PROOF_METHODS\\) \\},`));
+    // A quoted occurrence would be a value somebody could store. There is none.
+    expect(text).not.toMatch(new RegExp(`['"\`]${VERIFIED_LEVEL}['"\`]`));
   });
 
   it('the gateway route does not write it', () => {
@@ -474,9 +532,20 @@ describe('revokeGatewayIssuedReceipts', () => {
   describe('POST /api/admin/trust/revoke-gateway-receipts', () => {
     const call = (env: Env, init: RequestInit = { method: 'POST' }) =>
       worker.fetch(apiRequest('/api/admin/trust/revoke-gateway-receipts', init), env, ctx);
-    const asAdmin = { method: 'POST', headers: { 'x-admin-secret': ADMIN_SECRET } };
+    const asAdmin = { method: 'POST', headers: { 'x-admin-secret': ADMIN_SECRET, 'user-agent': 'sweep-test/1.0' } };
+    const SWEEP_ACTION = 'admin.trust.revoke_gateway_receipts';
 
-    it('refuses a caller without the admin secret and revokes nothing', async () => {
+    type SweepLog = { org_id: string; actor_id: string; details: string; ip_address: string | null; user_agent: string | null };
+    async function sweepLogs(env: Env): Promise<SweepLog[]> {
+      const { results } = await env.DB!.prepare(
+        'SELECT org_id, actor_id, details, ip_address, user_agent FROM org_audit_logs WHERE action = ? ORDER BY rowid',
+      )
+        .bind(SWEEP_ACTION)
+        .all<SweepLog>();
+      return results;
+    }
+
+    it('refuses a caller without the admin secret, revokes nothing and logs no sweep', async () => {
       const env = makeEnv({ ADMIN_SECRET });
       const id = await seedGatewayReceipt(env);
       principal.accountId = 'acct_a'; // a signed-in user is not an admin
@@ -485,6 +554,7 @@ describe('revokeGatewayIssuedReceipts', () => {
       expect((await call(env, { method: 'POST', headers: { 'x-admin-secret': 'wrong' } })).status).toBe(401);
       expect((await call(makeEnv({ ADMIN_SECRET: undefined }), asAdmin)).status).toBe(503);
       expect(byId(await storedReceipts(env), id).revoked_at).toBeNull();
+      expect(await sweepLogs(env)).toEqual([]);
     });
 
     it('revokes for the admin, also while receipts are switched off, and can be repeated', async () => {
@@ -505,10 +575,48 @@ describe('revokeGatewayIssuedReceipts', () => {
       expect(byId(rows, real.id).revoked_at).toBeNull();
     });
 
+    it('writes one admin audit entry per run, with the counts, the IP and the user agent, also when nothing was revoked', async () => {
+      const env = makeEnv({ ADMIN_SECRET });
+      await seedGatewayReceipt(env);
+
+      await call(env, asAdmin); // revokes one
+      await call(env, asAdmin); // finds nothing
+
+      const logs = await sweepLogs(env);
+      expect(logs).toHaveLength(2);
+      expect(logs.map((l) => JSON.parse(l.details))).toEqual([
+        { revoked: 1, remaining: 0 },
+        { revoked: 0, remaining: 0 },
+      ]);
+      for (const log of logs) {
+        expect(log.org_id).toBe('org_system_admin');
+        expect(log.actor_id).toBe('admin');
+        expect(log.ip_address).toMatch(/^10\.15\.\d+\.\d+$/);
+        expect(log.user_agent).toBe('sweep-test/1.0');
+      }
+    });
+
     it('answers 405 to a GET and 503 without D1', async () => {
       const env = makeEnv({ ADMIN_SECRET });
       expect((await call(env, { method: 'GET', headers: { 'x-admin-secret': ADMIN_SECRET } })).status).toBe(405);
       expect((await call(makeEnv({ ADMIN_SECRET, DB: undefined }), asAdmin)).status).toBe(503);
+    });
+
+    it('answers 503 with a clear message, not a bare 500, when the receipts table is missing', async () => {
+      const env = makeEnv({ ADMIN_SECRET });
+      (env.DB as unknown as { sqlite: { exec: (sql: string) => void } }).sqlite.exec('DROP TABLE trust_receipts');
+
+      await expect(revokeGatewayIssuedReceipts(env)).rejects.toBeInstanceOf(TrustReceiptsTableMissing);
+
+      const res = await call(env, asAdmin);
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as { ok: boolean; code: string; error: string };
+      expect(body.ok).toBe(false);
+      expect(body.code).toBe('TRUST_RECEIPTS_TABLE_MISSING');
+      expect(body.error).toContain('migration 0020');
+      expect(body.error).toContain('nothing to revoke');
+      // Nothing ran, so no sweep is on record.
+      expect(await sweepLogs(env)).toEqual([]);
     });
   });
 });

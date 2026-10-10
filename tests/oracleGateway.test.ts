@@ -55,6 +55,9 @@ describe('worker/oracleGateway', () => {
     expect(body.targetDomain).toBe('example.com');
     expect(body.healthScore).toBeNull();
     expect(body.evidence.measurementStatus).toBe('not_measured');
+    // Nothing is fetched, so the response names no scraped URL and no source count.
+    expect(body.evidence).toEqual({ measurementStatus: 'not_measured' });
+    expect(JSON.stringify(body)).not.toMatch(/scrapedUrl|sourcesCount/);
     expect(body.verdict).toContain('not_measured');
     expect(body.oneMoveThisWeek).toContain('probe crawl');
     expect(body.diagnostics.length).toBeGreaterThan(0);
