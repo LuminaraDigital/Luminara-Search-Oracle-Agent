@@ -52,6 +52,7 @@ function makeEnv() {
     LUMINARA_KV: kv,
     DB: createSqliteD1(),
     TON_RECEIVING_ADDRESS: MERCHANT,
+    TON_ADDRESS_CONFIRMED: 'true',
     ENVIRONMENT: 'production',
     CHAIN_NETWORK: 'mainnet',
     CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',

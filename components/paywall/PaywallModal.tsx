@@ -454,6 +454,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </span>
             )}
           </button>
+          {paymentOptions.showTonTab && (
           <button
             type="button"
             onClick={() => setActiveTab('ton')}
@@ -477,6 +478,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </span>
             )}
           </button>
+          )}
         </div>
 
         {/* Jetton Asset Selector: only when the server reports Jetton checkout live */}
@@ -700,8 +702,8 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </div>
         )}
 
-        {/* Card checkout guidance when Card rail is not live */}
-        {!paymentOptions.cardAvailable && (
+        {/* Card checkout guidance when Card rail is not live. Never inside Telegram, where only Stars may be offered. */}
+        {paymentOptions.showCardGuidance && (
           <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[10px] text-gray-400">
             <p>
               Card checkout is available on request during closed beta. For credit card payments or corporate invoicing, email{' '}

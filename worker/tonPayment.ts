@@ -193,6 +193,7 @@ function addressForLog(value: string): string {
 type TonConfigEnv = Pick<
   Env,
   | 'TON_RECEIVING_ADDRESS'
+  | 'TON_ADDRESS_CONFIRMED'
   | 'ENVIRONMENT'
   | 'CHAIN_NETWORK'
   | 'CHAIN_TON_API_BASE'
@@ -217,6 +218,27 @@ function diagnoseTonConfig(env: TonConfigEnv): { ok: true; network: ChainNetwork
 export function isTonPaymentConfigured(env: TonConfigEnv): boolean {
   return diagnoseTonConfig(env).ok;
 }
+
+/**
+ * The owner has confirmed, in their own wallet app, that TON_RECEIVING_ADDRESS is their address.
+ * Only the string "true" counts. A valid-looking address nobody has confirmed must not take money:
+ * on 2026-10-10 the production address had never had a transaction on any network.
+ */
+export function isTonAddressConfirmed(env: Pick<Env, 'TON_ADDRESS_CONFIRMED'>): boolean {
+  return String(env.TON_ADDRESS_CONFIRMED ?? '').trim() === 'true';
+}
+
+/**
+ * New TON invoices are issued only when the config is valid and the address is confirmed.
+ * Verification of orders that already exist does not use this, so an order created before a
+ * switch-off can still be credited.
+ */
+export function isTonCheckoutOpen(env: TonConfigEnv): boolean {
+  return isTonAddressConfirmed(env) && diagnoseTonConfig(env).ok;
+}
+
+/** Telegram requires digital goods inside a bot or Mini App to be sold for Stars. */
+export const TON_IN_TELEGRAM_ERROR = 'Inside Telegram, plans are paid with Telegram Stars.';
 
 // ---------------------------------------------------------------------------
 // Invoice + verification
@@ -250,6 +272,12 @@ export async function createTonInvoice(
   if (!cfg.ok) {
     console.error(
       `[TON] Invoice refused: ${cfg.reason}. TON_RECEIVING_ADDRESS ${addressForLog(recipient)} ENVIRONMENT=${env.ENVIRONMENT || 'unset'} CHAIN_NETWORK=${env.CHAIN_NETWORK || 'unset'}.`,
+    );
+    return { ok: false, error: TON_UNAVAILABLE_ERROR };
+  }
+  if (!isTonAddressConfirmed(env)) {
+    console.error(
+      `[TON] Invoice refused: TON_ADDRESS_CONFIRMED is not "true". The owner has not confirmed that ${addressForLog(recipient)} is their wallet.`,
     );
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
   }

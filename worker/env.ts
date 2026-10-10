@@ -102,6 +102,12 @@ export interface Env {
   /** Stripe webhook endpoint secret (whsec_...). */
   STRIPE_WEBHOOK_SECRET?: string;
   TON_RECEIVING_ADDRESS?: string;
+  /**
+   * "true" only after the owner has confirmed in their own wallet app that TON_RECEIVING_ADDRESS
+   * is theirs. Anything else keeps TON checkout closed: no invoice is issued and public health
+   * reports `ton: false`.
+   */
+  TON_ADDRESS_CONFIRMED?: string;
   TON_API_KEY?: string;
   /**
    * Hard network gate for chain payments and proof anchors: `testnet` | `mainnet`.

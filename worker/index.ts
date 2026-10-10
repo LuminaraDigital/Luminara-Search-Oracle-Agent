@@ -36,7 +36,7 @@ import type { HostedIdentity } from './userTypes';
 import { validateInitData, createTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
-import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
+import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, isTonAddressConfirmed, isTonCheckoutOpen, TON_IN_TELEGRAM_ERROR, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
 import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE, Q402_NOT_LIVE_ERROR } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
@@ -300,8 +300,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!adminCheck.ok) {
       return withCors(json({
         ok: true,
-        ton: isTonPaymentConfigured(env),
-        jettonCheckout: JETTON_CHECKOUT_LIVE && isTonPaymentConfigured(env),
+        // ton is true only when the config is valid AND the owner has confirmed the merchant address.
+        ton: isTonCheckoutOpen(env),
+        jettonCheckout: JETTON_CHECKOUT_LIVE && isTonCheckoutOpen(env),
         stripeCheckout: isStripeCheckoutLive(env),
       }));
     }
@@ -333,6 +334,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       mcpOAuthConfigured: Boolean(String(env.MCP_OAUTH_SECRET || '').trim()),
       pagespeedHosted: Boolean(String(env.PAGESPEED_API_KEY || '').trim()),
       ton: isTonPaymentConfigured(env),
+      tonAddressConfirmed: isTonAddressConfirmed(env),
+      tonCheckoutOpen: isTonCheckoutOpen(env),
       tonPricing: TON_PRICING,
       jettonPricing: JETTON_PRICING,
       jettonCheckout: JETTON_CHECKOUT_LIVE,
@@ -978,6 +981,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         userWalletAddress?: string;
       };
       if (!planId) return withCors(json({ error: 'planId required' }, 400));
+      // Telegram requires digital goods inside a bot or Mini App to be sold for Stars. The Mini App is
+      // the only client that sends this header, so its presence alone refuses a TON invoice.
+      if (request.headers.get('x-telegram-init-data')) {
+        return withCors(json({ error: TON_IN_TELEGRAM_ERROR, code: 'TON_NOT_IN_TELEGRAM' }, 400));
+      }
       const who = await identify(request, env);
       if (!who.user) return withCors(json({ error: who.error || 'Sign in required' }, 401));
       const result = await createTonInvoice(env, who.user.id, planId, { asset, userWalletAddress });

@@ -443,7 +443,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         text:
           `*Luminara Suite Subscription Plans (Telegram Stars)*\n\n` +
           lines.join('\n\n') +
-          `\n\nTap /buy_starter, /buy_growth, or /buy_agency to pay directly in chat, or open the app to see every payment option.`,
+          `\n\nTap /buy_starter, /buy_growth, or /buy_agency to pay directly in chat, or open the app to pay with Stars in one tap.`,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[

@@ -398,6 +398,7 @@ describe('P1 money/admin audit logging', () => {
     const env = makeEnv({
       LUMINARA_KV: kv(store),
       TON_RECEIVING_ADDRESS: MERCHANT,
+      TON_ADDRESS_CONFIRMED: 'true',
       ENVIRONMENT: 'production',
       CHAIN_NETWORK: 'mainnet',
       CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',

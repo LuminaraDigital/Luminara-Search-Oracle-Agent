@@ -7,6 +7,7 @@ import {
   isTonAvailable,
   paidEngineLabels,
   PREMIUM_ENGINES_FALLBACK,
+  railsOffered,
   resolvePaymentOptions,
   TELEGRAM_MINI_APP_URL,
 } from '../components/paywall/paymentOptions';
@@ -16,12 +17,34 @@ const tonOn = { ok: true, ton: true, providers: {} };
 const tonOff = { ok: true, ton: false, providers: {} };
 const stripeOn = { ok: true, ton: true, stripeCheckout: true, providers: {} };
 
+describe('Stars is the only rail inside Telegram', () => {
+  it('offers exactly Stars on a Telegram surface, whatever the server reports', () => {
+    for (const health of [tonOn, tonOff, stripeOn, { ok: true, ton: true, jettonCheckout: true, stripeCheckout: true }, null]) {
+      const opts = resolvePaymentOptions({ inTelegram: true, health });
+      expect(railsOffered(opts)).toEqual(['stars']);
+      expect(opts.showTonTab).toBe(false);
+      expect(opts.showCardGuidance).toBe(false);
+      expect(effectiveTab('ton', opts)).toBe('stars');
+      expect(effectiveTab('card', opts)).toBe('stars');
+    }
+  });
+
+  it('on the web, TON and Card appear only when the server reports them', () => {
+    expect(railsOffered(resolvePaymentOptions({ inTelegram: false, health: tonOn }))).toEqual(['stars', 'ton']);
+    expect(railsOffered(resolvePaymentOptions({ inTelegram: false, health: stripeOn }))).toEqual(['card', 'stars', 'ton']);
+    expect(railsOffered(resolvePaymentOptions({ inTelegram: false, health: tonOff }))).toEqual(['stars']);
+    expect(resolvePaymentOptions({ inTelegram: false, health: stripeOn }).showCardGuidance).toBe(false);
+  });
+});
+
 describe('resolvePaymentOptions', () => {
   it('defaults to Stars inside Telegram regardless of TON or Stripe', () => {
     expect(resolvePaymentOptions({ inTelegram: true, health: tonOn })).toEqual({
-      tonAvailable: true,
+      tonAvailable: false,
       starsInline: true,
       cardAvailable: false,
+      showTonTab: false,
+      showCardGuidance: false,
       defaultTab: 'stars',
     });
     expect(resolvePaymentOptions({ inTelegram: true, health: stripeOn }).cardAvailable).toBe(false);
@@ -35,6 +58,8 @@ describe('resolvePaymentOptions', () => {
       tonAvailable: false,
       starsInline: false,
       cardAvailable: false,
+      showTonTab: true,
+      showCardGuidance: true,
       defaultTab: 'stars',
     });
   });

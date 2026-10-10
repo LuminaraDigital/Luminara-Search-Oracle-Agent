@@ -34,6 +34,9 @@ UMAMI_USERNAME=
 UMAMI_PASSWORD=
 # TON dual-rail (web / desktop). Merchant wallet + Toncenter API key (network-specific).
 TON_RECEIVING_ADDRESS=
+# "true" only after the owner has confirmed, in their own wallet app, that TON_RECEIVING_ADDRESS is theirs.
+# Anything else keeps TON checkout closed.
+TON_ADDRESS_CONFIRMED=false
 TON_API_KEY=
 # Chain network gate (must match merchant address + API hosts)
 CHAIN_NETWORK=mainnet

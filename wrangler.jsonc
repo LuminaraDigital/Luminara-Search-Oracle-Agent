@@ -120,6 +120,9 @@
     "TRUST_RECEIPTS_ENABLED": "false",
     "DOMAIN_VERIFY_ENABLED": "false",
     "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
+    // "true" only after the owner has confirmed in their own wallet app that the address above is theirs.
+    // Until then TON checkout stays closed: no invoice is issued and public health reports ton: false.
+    "TON_ADDRESS_CONFIRMED": "false",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
     "LANGUAGETOOL_URL": "",
@@ -237,6 +240,9 @@
         // REPLACE with your funded TON testnet merchant (kQ/0Q) before staging soak.
         // Synthetic CRC-valid placeholder for CI/validate-env; not a funded wallet.
         "TON_RECEIVING_ADDRESS": "kQClpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpWTU",
+        // "true" only after the owner has confirmed in their own wallet app that the address above is theirs.
+        // Until then TON checkout stays closed: no invoice is issued and public health reports ton: false.
+        "TON_ADDRESS_CONFIRMED": "false",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
@@ -324,6 +330,9 @@
         "TRUST_RECEIPTS_ENABLED": "false",
         "DOMAIN_VERIFY_ENABLED": "false",
         "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
+        // "true" only after the owner has confirmed in their own wallet app that the address above is theirs.
+        // Until then TON checkout stays closed: no invoice is issued and public health reports ton: false.
+        "TON_ADDRESS_CONFIRMED": "false",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
