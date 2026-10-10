@@ -941,7 +941,7 @@ const SUPPORT_TOO_MANY_TEXT =
   `Your earlier requests are saved and waiting for a person, who will answer here. To add something now, email ${SUPPORT_EMAIL}.`;
 
 const SUPPORT_NOT_READ_TEXT =
-  'We could not check for an open support request just now, so this message was not read. Please send it again in a minute.';
+  'Something went wrong on our side, so this message was not read. Please send it again in a minute.';
 
 /** The longest answer relayed to a buyer. Telegram's own limit is 4,096 with our two lines around it. */
 const SUPPORT_ANSWER_MAX = 3800;
@@ -955,8 +955,31 @@ function isPrivateChat(msg: any): boolean {
   return Boolean(msg?.from?.id) && msg?.chat?.id === msg.from.id;
 }
 
+/** Anything in a message that is not its text: it can be copied to an admin, and it has no words to store. */
 function hasAttachment(msg: any): boolean {
-  return Boolean(msg?.photo || msg?.document || msg?.video || msg?.voice || msg?.audio || msg?.video_note || msg?.animation || msg?.sticker);
+  return Boolean(
+    msg?.photo || msg?.document || msg?.video || msg?.voice || msg?.audio || msg?.video_note || msg?.animation || msg?.sticker ||
+      msg?.contact || msg?.location || msg?.venue || msg?.poll,
+  );
+}
+
+/** The buyer's words, marked line by line, so nothing in them can pass for the bot's own lines. */
+function quoteForAdmins(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+}
+
+/**
+ * The request a message answers, when the buyer used Telegram's own reply on a support answer.
+ * The id is only a pointer: it is looked up together with the sender.
+ */
+function repliedRequestId(msg: any): string | undefined {
+  const original = msg?.reply_to_message;
+  if (!original?.from?.is_bot || typeof original.text !== 'string') return undefined;
+  const found = original.text.match(/^Luminara support, about your request (ps_[0-9a-f]{10}):/);
+  return found ? found[1] : undefined;
 }
 
 function describeSender(from: any): string {
@@ -978,16 +1001,26 @@ async function sendPlain(env: Env, chatId: number | string, text: string): Promi
   return sent.ok === true;
 }
 
-/** Sends to every admin id and says how many were reached. An attachment is copied after the text. */
-async function sendToAdmins(env: Env, text: string, attachment?: { fromChatId: number; messageId: number }): Promise<number> {
+/**
+ * Sends to every admin id. Says how many got the text and, when there is an attachment, how many
+ * got the copy. An admin whose copy failed is told that something was attached.
+ */
+async function sendToAdmins(
+  env: Env,
+  text: string,
+  attachment?: { fromChatId: number; messageId: number },
+): Promise<{ reached: number; copied: number }> {
   let reached = 0;
+  let copied = 0;
   for (const id of adminChatIds(env)) {
-    if (await sendPlain(env, id, text)) reached += 1;
-    if (attachment) {
-      await api(env, 'copyMessage', { chat_id: id, from_chat_id: attachment.fromChatId, message_id: attachment.messageId });
-    }
+    if (!(await sendPlain(env, id, text))) continue;
+    reached += 1;
+    if (!attachment) continue;
+    const copy = await api(env, 'copyMessage', { chat_id: id, from_chat_id: attachment.fromChatId, message_id: attachment.messageId });
+    if (copy.ok) copied += 1;
+    else await sendPlain(env, id, 'An attachment came with that message and could not be copied here.');
   }
-  return reached;
+  return { reached, copied };
 }
 
 /**
@@ -1001,15 +1034,24 @@ async function receiveSupportMessage(env: Env, msg: any, content: string): Promi
   if (!text) return false;
 
   const chatId = msg.chat.id;
-  const taken = await takeSupportMessage(env, Number(msg.from.id), text);
+  const taken = await takeSupportMessage(env, Number(msg.from.id), text, Date.now(), { replyTo: repliedRequestId(msg) });
   if (taken.kind === 'none') return false;
   if (taken.kind === 'unavailable') {
     // Not knowing is not a reason to let a billing message into a prompt.
     await sendPlain(env, chatId, SUPPORT_NOT_READ_TEXT);
     return true;
   }
-
   const { row } = taken;
+  if (taken.kind === 'full') {
+    // Not stored and not forwarded, so one buyer cannot fill the admins' chats. Not chat either.
+    await sendPlain(
+      env,
+      chatId,
+      `Request ${row.id} already holds your messages, so this one was not added. A person will answer here. To send more, wait for the answer or email ${SUPPORT_EMAIL}.`,
+    );
+    return true;
+  }
+
   const header =
     taken.kind === 'opened'
       ? `Payment support request ${row.id}\n` +
@@ -1018,16 +1060,16 @@ async function receiveSupportMessage(env: Env, msg: any, content: string): Promi
         `Most recent Stars charge: ${row.charge_id ?? 'none on record'}`
       : `More on payment support request ${row.id}, from ${describeSender(msg.from)}`;
   const notice =
-    `${header}\n\n${clipSupportMessage(text).text}` +
+    `${header}\n\n${quoteForAdmins(clipSupportMessage(text).text)}` +
     (taken.cut ? `\n\n(Longer than ${SUPPORT_MESSAGE_MAX.toLocaleString('en-US')} characters. What is stored stops at the limit.)` : '') +
     `\n\nAnswer: /reply ${row.id} your answer\nClose without answering: /close ${row.id}`;
-  const reached = await sendToAdmins(
+  const sent = await sendToAdmins(
     env,
     notice,
     attached && msg.message_id ? { fromChatId: chatId, messageId: msg.message_id } : undefined,
   );
 
-  if (reached === 0) {
+  if (sent.reached === 0) {
     console.error(
       `[Support] ALERT: payment support request ${row.id} was saved and no admin could be told. Check TELEGRAM_ADMIN_ID; open requests are listed at GET /api/admin/payment-support.`,
     );
@@ -1038,13 +1080,17 @@ async function receiveSupportMessage(env: Env, msg: any, content: string): Promi
     );
     return true;
   }
-  await sendPlain(
-    env,
-    chatId,
+
+  const received =
     taken.kind === 'opened'
       ? `Received. A person will answer here. Your request id is ${row.id}. Anything else you send in the next 10 minutes is added to it.`
-      : `Added to request ${row.id}.`,
-  );
+      : taken.kind === 'added'
+        ? `Added to request ${row.id}.`
+        : `Sent to support as a follow-up to request ${row.id}. A person will answer here. To add more, send /paysupport first. Anything else you send now goes to the assistant.`;
+  // The words arrived. An attachment that no admin received is said, not left to be assumed.
+  const attachmentLost =
+    attached && sent.copied === 0 ? ` Your attachment did not come through. Please describe it in words, or email it to ${SUPPORT_EMAIL}.` : '';
+  await sendPlain(env, chatId, received + attachmentLost);
   return true;
 }
 
@@ -1090,6 +1136,11 @@ async function handleSupportAdminCommand(env: Env, msg: any, text: string): Prom
   const adminId = String(msg.from?.id ?? '');
   if (!adminId || !adminChatIds(env).includes(adminId)) {
     await sendPlain(env, chatId, 'Unauthorized. Only configured bot administrators can answer support requests.');
+    return true;
+  }
+  if (!isPrivateChat(msg)) {
+    // A list of requests, or an answer, would show buyers' ids and words to everyone in the chat.
+    await sendPlain(env, chatId, 'Use this command in a private chat with the bot.');
     return true;
   }
 
@@ -1143,7 +1194,7 @@ async function handleSupportAdminCommand(env: Env, msg: any, text: string): Prom
     const relayed = answer.slice(0, SUPPORT_ANSWER_MAX);
     const sent = await api(env, 'sendMessage', {
       chat_id: row.payer_tg_id,
-      text: `Luminara support, about your request ${id}:\n\n${relayed}\n\nTo write back, send /paysupport and then your message.`,
+      text: `Luminara support, about your request ${id}:\n\n${relayed}\n\nYour next message here, within 3 days, goes back to support.`,
     });
     if (!sent.ok) {
       await sendPlain(env, chatId, `Not delivered to the buyer: ${sent.description || 'Telegram refused the message'}. Request ${id} is still ${row.status}.`);

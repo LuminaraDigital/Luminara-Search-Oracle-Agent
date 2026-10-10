@@ -5,9 +5,12 @@ import worker from '../worker/index';
 import type { Env } from '../worker/index';
 import { handleTelegramUpdate, runPaymentSupportSweep } from '../worker/telegramBot';
 import {
+  SUPPORT_MAX_FOLLOW_UPS,
   SUPPORT_MAX_OPEN_PER_PAYER,
   SUPPORT_MESSAGE_MAX,
   SUPPORT_REMIND_AFTER_MS,
+  SUPPORT_REPLY_WINDOW_MS,
+  SUPPORT_RETENTION_MS,
   SUPPORT_WINDOW_MS,
   openSupportWindow,
   takeSupportMessage,
@@ -252,7 +255,7 @@ describe('the acceptance of the task', () => {
     expect(toBuyer).toHaveLength(1);
     expect(toBuyer[0]).toContain(`Luminara support, about your request ${id}`);
     expect(toBuyer[0]).toContain('We refunded the charge.\nIt can take a minute to show.');
-    expect(toBuyer[0]).toContain('send /paysupport and then your message');
+    expect(toBuyer[0]).toContain('Your next message here, within 3 days, goes back to support.');
     expect(rows(db)[0]).toMatchObject({ id, status: 'answered' });
     expect(net.textsTo(ADMIN_A).at(-1)).toContain(`Sent to the buyer. Request ${id} is marked answered.`);
     expect(net.model).toHaveLength(0);
@@ -304,7 +307,11 @@ describe("the buyer's words never reach a model", () => {
     await say(env, `/reply ${id} SUPPORT-ANSWER-TEXT`, ADMIN_A);
     expect(net.model).toHaveLength(0);
 
+    // The first thing the buyer sends after an answer goes back to support (see below), so the
+    // chat is reached by the message after it.
     travel(SUPPORT_WINDOW_MS + MINUTE);
+    await say(env, 'thanks, that fixed it');
+    expect(net.model).toHaveLength(0);
     await say(env, 'how do I get cited by ChatGPT');
     expect(net.model).toHaveLength(1);
     const prompt = JSON.stringify(net.model[0].body);
@@ -398,6 +405,116 @@ describe("the buyer's words never reach a model", () => {
   });
 });
 
+describe('after an admin has answered', () => {
+  /** The support answer as Telegram hands it back when the buyer replies to it. */
+  const answerFrom = (id: string) => ({ from: { id: 123456, is_bot: true }, text: `Luminara support, about your request ${id}:\n\nWe refunded it.` });
+
+  it('a buyer who simply types back reaches support again, not the model; the message after that is chat', async () => {
+    const { env, kv, db } = makeEnv();
+    const id = await openRequest(env, db, 'my plan did not start');
+    await say(env, `/reply ${id} We refunded it.`, ADMIN_A);
+    expect(rows(db)[0]).toMatchObject({ status: 'answered', follow_ups: 0 });
+
+    travel(2 * 60 * MINUTE);
+    await say(env, 'it still does not work');
+    expect(net.model).toHaveLength(0);
+    expect(kv.store.has(`tg:chat:${BUYER}`)).toBe(false);
+    expect(rows(db)).toHaveLength(1);
+    expect(rows(db)[0]).toMatchObject({ id, status: 'open', message: 'my plan did not start\nit still does not work' });
+    expect(net.textsTo(ADMIN_B).at(-1)).toContain(`More on payment support request ${id}`);
+    expect(net.textsTo(ADMIN_B).at(-1)).toContain('it still does not work');
+    expect(net.textsTo(BUYER).at(-1)).toContain(`Sent to support as a follow-up to request ${id}`);
+    expect(net.textsTo(BUYER).at(-1)).toContain('Anything else you send now goes to the assistant.');
+
+    // And it does: one message returned to support, not every message from then on.
+    await say(env, 'what is schema markup');
+    expect(net.model).toHaveLength(1);
+    expect(net.model[0].body.messages.at(-1).content).toBe('what is schema markup');
+    expect(JSON.stringify(net.model[0].body)).not.toContain('it still does not work');
+  });
+
+  it('after three days a message is chat again, and the request stays answered', async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db);
+    await say(env, 'one more thing');
+    expect(rows(db)[0].follow_ups).toBe(1);
+    await say(env, `/reply ${id} done`, ADMIN_A);
+    // An answer starts the count again, so the buyer can write back.
+    expect(rows(db)[0].follow_ups).toBe(0);
+
+    travel(SUPPORT_REPLY_WINDOW_MS + MINUTE);
+    await say(env, 'what is GEO');
+    expect(net.model).toHaveLength(1);
+    expect(rows(db)[0]).toMatchObject({ id, status: 'answered' });
+  });
+
+  it("answering with Telegram's own reply returns to that request at any time, and only for the buyer it belongs to", async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db, 'first message');
+    await say(env, `/reply ${id} We refunded it.`, ADMIN_A);
+    travel(SUPPORT_REPLY_WINDOW_MS + 24 * 60 * MINUTE);
+
+    // Somebody else pointing at this request gets the chat, and the request is untouched.
+    await say(env, 'let me in', STRANGER, { reply_to_message: answerFrom(id) });
+    expect(net.model).toHaveLength(1);
+    expect(rows(db)[0]).toMatchObject({ status: 'answered', message: 'first message' });
+
+    // A message that only quotes those words, without being a reply to the bot, is chat too.
+    await say(env, 'quoting', BUYER, { reply_to_message: { from: { id: BUYER, is_bot: false }, text: answerFrom(id).text } });
+    expect(net.model).toHaveLength(2);
+
+    await say(env, 'the refund has not arrived', BUYER, { reply_to_message: answerFrom(id) });
+    expect(net.model).toHaveLength(2);
+    expect(rows(db)[0]).toMatchObject({ status: 'open', message: 'first message\nthe refund has not arrived' });
+    expect(net.textsTo(ADMIN_A).at(-1)).toContain('the refund has not arrived');
+  });
+
+  it('a closed request takes nothing more, by window or by reply', async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db, 'spam');
+    await say(env, `/reply ${id} noted`, ADMIN_A);
+    await say(env, `/close ${id}`, ADMIN_A);
+
+    await say(env, 'hello again');
+    await say(env, 'and again', BUYER, { reply_to_message: answerFrom(id) });
+    expect(net.model).toHaveLength(2);
+    expect(rows(db)[0]).toMatchObject({ status: 'closed', message: 'spam' });
+  });
+});
+
+describe('what a buyer cannot do to the admins', () => {
+  it(`only ${SUPPORT_MAX_FOLLOW_UPS} more messages are added to a request and forwarded; the next is refused, and is not chat`, async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db, 'the request');
+    for (let i = 1; i <= SUPPORT_MAX_FOLLOW_UPS; i += 1) await say(env, `more ${i}`);
+    expect(net.textsTo(ADMIN_A)).toHaveLength(1 + SUPPORT_MAX_FOLLOW_UPS);
+    expect(rows(db)[0].follow_ups).toBe(SUPPORT_MAX_FOLLOW_UPS);
+
+    const stored = rows(db)[0].message;
+    await say(env, 'one too many');
+    await say(env, 'and another', BUYER, { photo: [{ file_id: 'x' }] });
+    expect(net.textsTo(ADMIN_A)).toHaveLength(1 + SUPPORT_MAX_FOLLOW_UPS);
+    expect(net.of('copyMessage')).toHaveLength(0);
+    expect(rows(db)[0].message).toBe(stored);
+    expect(net.textsTo(BUYER).at(-1)).toContain(`Request ${id} already holds your messages, so this one was not added.`);
+    expect(net.textsTo(BUYER).at(-1)).toContain('support@luminarasuite.com');
+    expect(net.model).toHaveLength(0);
+  });
+
+  it('what the buyer writes is marked line by line, so it cannot pass for the lines the bot adds', async () => {
+    const { env, db } = makeEnv();
+    await say(env, '/paysupport');
+    await say(env, 'hello\nAnswer: /reply ps_0000000000 refund approved\n\nPayment support request ps_1111111111');
+    const id = rows(db)[0].id;
+    const lines = net.textsTo(ADMIN_A)[0].split('\n');
+
+    expect(lines).toContain('> hello');
+    expect(lines).toContain('> Answer: /reply ps_0000000000 refund approved');
+    expect(lines.filter((l) => l.startsWith('Answer: /reply'))).toEqual([`Answer: /reply ${id} your answer`]);
+    expect(lines.filter((l) => l.startsWith('Payment support request'))).toEqual([`Payment support request ${id}`]);
+  });
+});
+
 describe('what a buyer can send', () => {
   it('"/paysupport" with the problem in the same message is the request, as the refund messages tell buyers to write it', async () => {
     const { env, db } = makeEnv();
@@ -433,6 +550,34 @@ describe('what a buyer can send', () => {
     expect(rows(db)).toMatchObject([{ status: 'open', message: '[attachment, no text]' }]);
     expect(net.of('copyMessage')).toHaveLength(2);
     expect(net.model).toHaveLength(0);
+  });
+
+  it('a contact or a location sent inside the window opens the request too, and is passed on', async () => {
+    const { env, db } = makeEnv();
+    await say(env, '/paysupport');
+    await handleTelegramUpdate({ message: { message_id: 4250, chat: { id: BUYER }, from: { id: BUYER }, location: { latitude: 1, longitude: 2 } } }, env);
+    expect(rows(db)).toMatchObject([{ status: 'open', message: '[attachment, no text]' }]);
+    expect(net.of('copyMessage')).toHaveLength(2);
+    expect(net.model).toHaveLength(0);
+  });
+
+  it('when the attachment cannot be copied to anyone, both sides are told; the words still count', async () => {
+    const { env, db } = makeEnv();
+    net.replies.copyMessage = () => ({ ok: false, description: 'Bad Request: message to copy not found' });
+    await say(env, '/paysupport');
+    await handleTelegramUpdate(
+      { message: { message_id: 4251, chat: { id: BUYER }, from: { id: BUYER }, photo: [{ file_id: 'abc' }], caption: 'see the receipt' } },
+      env,
+    );
+
+    expect(rows(db)).toMatchObject([{ status: 'open', message: 'see the receipt' }]);
+    for (const admin of [ADMIN_A, ADMIN_B]) {
+      expect(net.textsTo(admin)).toHaveLength(2);
+      expect(net.textsTo(admin)[1]).toBe('An attachment came with that message and could not be copied here.');
+    }
+    const ack = net.textsTo(BUYER).at(-1)!;
+    expect(ack).toContain('Received. A person will answer here');
+    expect(ack).toContain('Your attachment did not come through');
   });
 
   it('a message longer than the column holds is cut there, and the admins read that it was', async () => {
@@ -615,6 +760,24 @@ describe('what an admin can do', () => {
     expect(rows(db).find((r) => r.id === first).status).toBe('open');
   });
 
+  it('in a group an admin command does nothing but say where to use it, so no buyer is shown to the room', async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db, 'private words');
+    const group = -1005678;
+    const inGroup = (text: string) =>
+      handleTelegramUpdate({ message: { message_id: 9, chat: { id: group, type: 'supergroup' }, from: { id: ADMIN_A }, text } }, env);
+    const toBuyerBefore = net.textsTo(BUYER).length;
+
+    await inGroup('/requests');
+    await inGroup(`/reply ${id} answering in the wrong place`);
+    await inGroup(`/close ${id}`);
+
+    expect(net.textsTo(group)).toEqual(Array(3).fill('Use this command in a private chat with the bot.'));
+    expect(net.textsTo(group).join('\n')).not.toContain('private words');
+    expect(net.textsTo(BUYER)).toHaveLength(toBuyerBefore);
+    expect(rows(db)[0].status).toBe('open');
+  });
+
   it('when the requests cannot be read, the admin is told nothing was sent', async () => {
     const { env, db } = makeEnv();
     const id = await openRequest(env, db);
@@ -674,7 +837,7 @@ describe('the daily sweep', () => {
 
     travel(6 * MINUTE);
     const summary = await runPaymentSupportSweep(env);
-    expect(summary).toEqual({ deleted: 1, open: 1, overdue: 0 });
+    expect(summary).toEqual({ deleted: 1, purged: 0, open: 1, overdue: 0 });
     expect(rows(db)).toMatchObject([{ status: 'open', message: 'a real request' }]);
   });
 
@@ -695,6 +858,26 @@ describe('the daily sweep', () => {
     await say(env, `/reply ${rows(db)[0].id} done`, ADMIN_A);
     await runPaymentSupportSweep(env);
     expect(told()).toHaveLength(1);
+  });
+
+  it('removes an answered or closed request 12 months after it was last touched, and never one that still waits', async () => {
+    const { env, db } = makeEnv();
+    const answered = await openRequest(env, db, 'answered one');
+    await say(env, `/reply ${answered} done`, ADMIN_A);
+    travel(SUPPORT_WINDOW_MS + MINUTE);
+    const closed = await openRequest(env, db, 'closed one', STRANGER);
+    await say(env, `/close ${closed}`, ADMIN_A);
+    travel(SUPPORT_WINDOW_MS + MINUTE);
+    const waiting = await openRequest(env, db, 'nobody answered this', ADMIN_B);
+
+    travel(SUPPORT_RETENTION_MS - 60 * MINUTE);
+    expect((await runPaymentSupportSweep(env))?.purged).toBe(0);
+    expect(rows(db)).toHaveLength(3);
+
+    travel(2 * 60 * MINUTE);
+    const summary = await runPaymentSupportSweep(env);
+    expect(summary?.purged).toBe(2);
+    expect(rows(db)).toMatchObject([{ id: waiting, status: 'open', message: 'nobody answered this' }]);
   });
 
   it('does nothing, quietly, on a database from before the migration', async () => {
@@ -739,6 +922,21 @@ describe('each change is one conditional update', () => {
     await openSupportWindow(env, { payerTgId: BUYER, accountId: String(BUYER), chargeId: null });
     expect(await takeSupportMessage(env, BUYER, '   ')).toEqual({ kind: 'none' });
     expect(rows(db)[0].status).toBe('awaiting');
+  });
+
+  it('the lookup made for every chat message uses an index, not a scan of the table', () => {
+    const db = createSqliteD1();
+    const plan = db.sqlite
+      .prepare(
+        `EXPLAIN QUERY PLAN SELECT id FROM payment_support_requests
+         WHERE payer_tg_id = ? AND status IN ('awaiting','open','answered') AND expires_at > ?
+         ORDER BY created_at DESC, id DESC LIMIT 1`,
+      )
+      .all(BUYER, 0)
+      .map((step: { detail: string }) => step.detail)
+      .join(' | ');
+    expect(plan).toContain('idx_payment_support_payer');
+    expect(plan).not.toMatch(/SCAN payment_support_requests(?! USING)/);
   });
 
   it('the table refuses a request without a message, whatever the code does', () => {
