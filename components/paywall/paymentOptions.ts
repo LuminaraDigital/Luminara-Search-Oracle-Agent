@@ -47,6 +47,10 @@ export interface PaymentOptions {
   starsInline: boolean;
   /** Card tab only when Stripe is live and not in Telegram. */
   cardAvailable: boolean;
+  /** The TON tab is drawn at all only outside Telegram. Inside it there is no tab, not even a disabled one. */
+  showTonTab: boolean;
+  /** The line that invites card payment or an invoice by email. Never inside Telegram. */
+  showCardGuidance: boolean;
   defaultTab: PaymentRail;
 }
 
@@ -61,7 +65,9 @@ export function resolvePaymentOptions({
   inTelegram: boolean;
   health: HealthLike | null | undefined;
 }): PaymentOptions {
-  const tonAvailable = isTonAvailable(health);
+  // Telegram requires digital goods inside a bot or Mini App to be sold for Stars, so inside
+  // Telegram the only rail is Stars, whatever the server reports.
+  const tonAvailable = !inTelegram && isTonAvailable(health);
   const cardAvailable = isStripeCheckoutAvailable(health, inTelegram);
   let defaultTab: PaymentRail = 'stars';
   if (inTelegram) {
@@ -75,8 +81,19 @@ export function resolvePaymentOptions({
     tonAvailable,
     starsInline: inTelegram,
     cardAvailable,
+    showTonTab: !inTelegram,
+    showCardGuidance: !inTelegram && !cardAvailable,
     defaultTab,
   };
+}
+
+/** The rails a buyer can actually pay with on this surface. Inside Telegram this is exactly Stars. */
+export function railsOffered(options: PaymentOptions): PaymentRail[] {
+  const rails: PaymentRail[] = [];
+  if (options.cardAvailable) rails.push('card');
+  rails.push('stars');
+  if (options.tonAvailable) rails.push('ton');
+  return rails;
 }
 
 export function effectiveTab(requested: PaymentRail, options: PaymentOptions): PaymentRail {

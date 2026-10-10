@@ -52,6 +52,7 @@ function makeEnv() {
     LUMINARA_KV: kv,
     DB: createSqliteD1(),
     TON_RECEIVING_ADDRESS: MERCHANT,
+    TON_CONFIRMED_ADDRESS: MERCHANT,
     ENVIRONMENT: 'production',
     CHAIN_NETWORK: 'mainnet',
     CHAIN_TON_API_BASE: 'https://toncenter.com/api/v3',
@@ -76,7 +77,7 @@ describe('Jetton checkout fails closed', () => {
     expect(kv.store.size).toBe(0);
   });
 
-  it('refuses unconfigured Jetton masters and stores no order', async () => {
+  it('refuses a LORA invoice (both switches are off, and its master is unset) and stores no order', async () => {
     const { env, kv } = makeEnv();
     const inv = await createTonInvoice(env, 'user_1', 'starter', { asset: 'LORA' });
     expect(inv.ok).toBe(false);
@@ -150,7 +151,7 @@ describe('Q402 settlement fails closed', () => {
     expect(getQ402SupportedCatalog(env).settlementLive).toBe(false);
   });
 
-  it.each(['/api/q402/verify', '/api/q402/settle', '/api/q402/audit'])('%s returns 503 Q402_NOT_LIVE', async (route) => {
+  it.each(['/api/q402/verify', '/api/q402/settle', '/api/q402/audit'])('%s is a 404 while Q402 is off, and returns no audit', async (route) => {
     const { env } = makeEnv();
     const payment = JSON.stringify({
       x402Version: 1,
@@ -169,9 +170,8 @@ describe('Q402 settlement fails closed', () => {
       env,
       ctx,
     );
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(404);
     const body = (await res.json()) as { code?: string; audit?: unknown };
-    expect(body.code).toBe('Q402_NOT_LIVE');
     expect(body.audit).toBeUndefined();
   });
 });
