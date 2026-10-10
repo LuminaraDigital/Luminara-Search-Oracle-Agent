@@ -195,7 +195,7 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
       </div>
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        Web accounts use Firebase. Open the Mini App in Telegram and confirm "Link Telegram and web account - shares subscription" so Stars and website TON share one plan.
+        Web accounts use Firebase. Open the Mini App in Telegram and confirm "Link Telegram and web account - shares subscription" so Telegram and the website share one plan.
       </p>
 
       <form

@@ -51,6 +51,13 @@ export const pricingTiers: Array<{
   },
 ];
 
+/** The line the paywall opens with when a plan is chosen here. TON is named only while its checkout is open. */
+export function planChoiceLine(title: string, tier: { stars: string; ton: string }, tonOpen: boolean): string {
+  return tonOpen
+    ? `Choose ${title}: ${tier.stars} inside the Mini App, or ${tier.ton} on the web.`
+    : `Choose ${title}: ${tier.stars} inside the Mini App.`;
+}
+
 /** One-off runs sold by the Worker alongside the plans. */
 const ONE_OFFS = [
   { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit. Self-reported, not independently checked.' },
@@ -169,9 +176,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
               <button
                 type="button"
                 onClick={() =>
-                  openPaywallModal(
-                    `Choose ${title}: ${tier.stars} or ${tier.ton} inside the Mini App.`,
-                  )
+                  openPaywallModal(planChoiceLine(title, tier, tonOpen))
                 }
                 className={`w-full ${tier.highlight ? 'mkt-cta-primary' : 'mkt-cta-secondary'}`}
               >
