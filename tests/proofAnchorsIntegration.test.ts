@@ -6,6 +6,7 @@ import {
   generateBadgeResponse,
   buildFindingsFingerprint,
 } from '../worker/proofService';
+import { recordProofAnchorBestEffort } from '../worker/proofAnchors';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
 import type { Env } from '../worker/env';
 import worker from '../worker/index';
@@ -211,6 +212,99 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
       expect(verify.txHash).toBeNull();
       expect(verify.explorerUrl).toBeNull();
     }
+  });
+
+  it('never reports an audit citation as on-chain, even a row an older build stored as anchored', async () => {
+    // What the old registry client could leave behind: status "anchored", a hash and an explorer link.
+    const legacyHash = '1'.repeat(64);
+    const legacyTx = '9'.repeat(64);
+    const legacyLink = `https://testnet.tonviewer.com/transaction/${legacyTx}`;
+    expect(
+      await recordProofAnchorBestEffort(env, {
+        id: 'pa_legacy_audit_1',
+        kind: 'audit_citation',
+        auditRunId: 'run_legacy_1',
+        domain: 'legacy.org',
+        evidenceHash: legacyHash,
+        chain: 'ton',
+        network: 'testnet',
+        contract: 'kQC_test_contract_address',
+        txHash: legacyTx,
+        explorerUrl: legacyLink,
+        status: 'anchored',
+      }),
+    ).toBe(true);
+
+    const viaRoute = await worker.fetch(new Request(`https://example.com/api/proof/verify?evidenceHash=${legacyHash}`), env);
+    expect(viaRoute.status).toBe(200);
+    const answers = [
+      await verifyAuditProof(env, { evidenceHash: legacyHash }),
+      await verifyAuditProof(env, { domain: 'legacy.org', auditRunId: 'run_legacy_1' }),
+      (await viaRoute.json()) as Awaited<ReturnType<typeof verifyAuditProof>>,
+    ];
+    for (const verify of answers) {
+      expect(verify.ok).toBe(true);
+      expect(verify.domain).toBe('legacy.org');
+      expect(verify.source).toBe('off_chain_digest');
+      expect(verify.disclosure).toBe('Recorded off-chain. Not anchored on TON.');
+      expect(verify.txHash).toBeNull();
+      expect(verify.explorerUrl).toBeNull();
+      expect(verify.record).toMatchObject({ kind: 'audit_citation', status: 'pending', tx_hash: null, explorer_url: null, anchored_at: null });
+      // Nothing in the answer hands out the stored hash, the link, or the old wording.
+      const text = JSON.stringify(verify);
+      expect(text).not.toContain(legacyTx);
+      expect(text).not.toContain('tonviewer');
+      expect(text).not.toContain('Verifiable on-chain');
+      expect(text).not.toContain('Anchored on TON');
+    }
+
+    // Reading it changed nothing in the database.
+    const stored = await db
+      .prepare('SELECT status, tx_hash, explorer_url FROM proof_anchors WHERE id = ?')
+      .bind('pa_legacy_audit_1')
+      .first<{ status: string; tx_hash: string; explorer_url: string }>();
+    expect(stored).toEqual({ status: 'anchored', tx_hash: legacyTx, explorer_url: legacyLink });
+  });
+
+  it('still reports a payment anchor as on-chain, with its transaction hash and explorer link', async () => {
+    const paymentDigest = '2'.repeat(64);
+    const paymentTx = '8'.repeat(64);
+    const paymentLink = `https://testnet.tonviewer.com/transaction/${paymentTx}`;
+    expect(
+      await recordProofAnchorBestEffort(env, {
+        kind: 'ton_payment',
+        orderId: 'ord_payment_1',
+        evidenceHash: paymentDigest,
+        chain: 'ton',
+        network: 'testnet',
+        txHash: paymentTx,
+        explorerUrl: paymentLink,
+        status: 'anchored',
+      }),
+    ).toBe(true);
+
+    const verify = await verifyAuditProof(env, { evidenceHash: paymentDigest });
+    expect(verify.ok).toBe(true);
+    expect(verify.source).toBe('on_chain');
+    expect(verify.disclosure).toBe('Anchored on TON testnet. Verifiable on-chain.');
+    expect(verify.txHash).toBe(paymentTx);
+    expect(verify.explorerUrl).toBe(paymentLink);
+    expect(verify.record).toMatchObject({ kind: 'ton_payment', status: 'anchored', tx_hash: paymentTx, explorer_url: paymentLink });
+
+    // A payment anchor that is not anchored yet reads as before, too.
+    await recordProofAnchorBestEffort(env, {
+      id: 'pa_payment_pending_1',
+      kind: 'ton_payment',
+      orderId: 'ord_payment_2',
+      evidenceHash: '3'.repeat(64),
+      chain: 'ton',
+      network: 'testnet',
+      status: 'pending',
+    });
+    const pending = await verifyAuditProof(env, { evidenceHash: '3'.repeat(64) });
+    expect(pending.source).toBe('off_chain_digest');
+    expect(pending.disclosure).toBe('Recorded by Luminara. Self-reported, off-chain digest.');
+    expect(pending.record).toMatchObject({ kind: 'ton_payment', status: 'pending' });
   });
 
   it('verifies off-chain digest from KV with honest disclosure when D1 row is absent', async () => {

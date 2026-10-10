@@ -7,8 +7,12 @@ import { apiBase, loadServerHealth, workerFetchWithAuthRetry } from '../apiClien
 import { verifyReceiptSignature, type ReceiptPublicJwk } from './receiptCrypto';
 import { RECEIPT_LEVEL_LABELS, type TrustReceiptLevel, type TrustReceiptView } from './receiptTypes';
 
-/** Level label as a full sentence (labels do not all end with a period). */
-export function receiptLevelSentence(level: TrustReceiptLevel): string {
+/**
+ * Level label as a full sentence (labels do not all end with a period). A withdrawn
+ * receipt gets no level sentence such as "Checked by Luminara.": it no longer says so.
+ */
+export function receiptLevelSentence(level: TrustReceiptLevel, revoked = false): string {
+  if (revoked) return 'Withdrawn.';
   const label = RECEIPT_LEVEL_LABELS[level] ?? String(level);
   return /[.!?]$/.test(label) ? label : `${label}.`;
 }
@@ -19,6 +23,15 @@ export function revokedReasonSentence(reason: string | null | undefined): string
   if (!text) return '';
   const sentence = text.charAt(0).toUpperCase() + text.slice(1);
   return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
+/**
+ * "Revoked 10 Oct 2026." and then the reason as its own sentence. Each sentence ends
+ * with one full stop, whether the stored reason is a phrase or already a sentence.
+ */
+export function revokedLine(dateText: string, reason: string | null | undefined, verb = 'Revoked'): string {
+  const why = revokedReasonSentence(reason);
+  return why ? `${verb} ${dateText}. ${why}` : `${verb} ${dateText}.`;
 }
 
 export type ReceiptSignatureState = 'checking' | 'valid' | 'invalid' | 'key_not_found';
@@ -52,7 +65,7 @@ export function receiptSignatureNotice(state: ReceiptSignatureState, revoked: bo
   if (revoked && state === 'valid') {
     return {
       label: 'Withdrawn',
-      detail: 'Luminara signed this receipt and later withdrew it. The signature is genuine, but the receipt no longer stands. Do not rely on it.',
+      detail: 'Luminara signed this receipt. It was later withdrawn. The signature is genuine, but the receipt no longer stands. Do not rely on it.',
       tone: 'withdrawn',
     };
   }

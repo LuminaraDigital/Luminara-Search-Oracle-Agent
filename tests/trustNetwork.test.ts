@@ -202,7 +202,13 @@ describe('TN1 trust receipts', () => {
 });
 
 /** Fake DNS + web for one domain. */
-function fakeNet(opts: { txt?: Record<string, string[]>; files?: Record<string, string>; dnsDown?: boolean; webDown?: boolean }): DomainCheckDeps {
+function fakeNet(opts: {
+  txt?: Record<string, string[]>;
+  files?: Record<string, string>;
+  redirects?: Record<string, string>;
+  dnsDown?: boolean;
+  webDown?: boolean;
+}): DomainCheckDeps {
   const fetcher = async (input: string) => {
     const url = new URL(input);
     if (url.hostname === 'cloudflare-dns.com') {
@@ -216,6 +222,8 @@ function fakeNet(opts: { txt?: Record<string, string[]>; files?: Record<string, 
       return Response.json({ Status: 0, Answer: values.map((v) => ({ type: 16, data: `"${v}"` })) });
     }
     if (opts.webDown) throw new Error('web down');
+    const movedTo = opts.redirects?.[url.toString()];
+    if (movedTo) return new Response(null, { status: 301, headers: { Location: movedTo } });
     const body = opts.files?.[url.toString()];
     return body === undefined ? new Response('nope', { status: 404 }) : new Response(body, { status: 200 });
   };
@@ -276,6 +284,65 @@ describe('TN2 domain verification', () => {
     expect(row?.status).toBe('lapsed');
     const receipt = await env.DB!.prepare(`SELECT revoked_at FROM trust_receipts WHERE id = ?`).bind(checked.receiptId).first<{ revoked_at: string | null }>();
     expect(receipt?.revoked_at).toBeTruthy();
+  });
+
+  // The receipt guard holds a receipt's evidence to the place its method reads. These run the
+  // real check, so the locations are the ones it really reports, the www twin after a redirect included.
+  it.each([
+    ['dns_txt', 'the _luminara-verify label', (token: string) => ({ txt: { '_luminara-verify.example.com': [`luminara-verify=${token}`] } }), 'dns:TXT:_luminara-verify.example.com'],
+    ['dns_txt', 'the domain itself', (token: string) => ({ txt: { 'example.com': [`luminara-verify=${token}`] } }), 'dns:TXT:example.com'],
+    [
+      'well_known',
+      'the domain',
+      (token: string) => ({ files: { 'https://example.com/.well-known/luminara-verify.txt': `${token}\n` } }),
+      'https://example.com/.well-known/luminara-verify.txt',
+    ],
+    [
+      'well_known',
+      'its www twin after a redirect',
+      (token: string) => ({
+        redirects: { 'https://example.com/.well-known/luminara-verify.txt': 'https://www.example.com/.well-known/luminara-verify.txt' },
+        files: { 'https://www.example.com/.well-known/luminara-verify.txt': `${token}\n` },
+      }),
+      'https://www.example.com/.well-known/luminara-verify.txt',
+    ],
+    [
+      'meta_tag',
+      'the home page',
+      (token: string) => ({ files: { 'https://example.com/': `<html><head><meta name="luminara-verify" content="${token}"></head></html>` } }),
+      'https://example.com/',
+    ],
+    [
+      'meta_tag',
+      'the www home page after a redirect',
+      (token: string) => ({
+        redirects: { 'https://example.com/': 'https://www.example.com/' },
+        files: { 'https://www.example.com/': `<html><head><meta name="luminara-verify" content="${token}"></head></html>` },
+      }),
+      'https://www.example.com/',
+    ],
+  ] as const)('a %s proof on %s issues a verified receipt whose evidence is where it was read', async (method, _where, net, location) => {
+    const env = makeEnv();
+    await asUser(`acct_${method}`);
+    const start = await handleDomainVerificationRoute(req('/trust/domains', 'POST', { domain: 'example.com' }), env, '/trust/domains');
+    const { token } = (await start!.json()) as { token: string };
+
+    const check = await handleDomainVerificationRoute(
+      req('/trust/domains/example.com/check', 'POST'),
+      env,
+      '/trust/domains/example.com/check',
+      fakeNet(net(token)),
+    );
+    const checked = (await check!.json()) as { status: string; method: string; receiptId: string; receiptIssued: boolean };
+    expect(checked).toMatchObject({ status: 'verified', method, receiptIssued: true });
+
+    const row = await env.DB!.prepare(`SELECT level, payload_json FROM trust_receipts WHERE id = ?`)
+      .bind(checked.receiptId)
+      .first<{ level: string; payload_json: string }>();
+    const stored = JSON.parse(row!.payload_json) as { method: string; subject: { id: string }; evidence: Array<{ url: string }> };
+    expect(row!.level).toBe('worker_verified');
+    expect(stored).toMatchObject({ method, subject: { id: 'example.com' } });
+    expect(stored.evidence[0].url).toBe(location);
   });
 
   it('verifies without a signing key but says no receipt was issued', async () => {

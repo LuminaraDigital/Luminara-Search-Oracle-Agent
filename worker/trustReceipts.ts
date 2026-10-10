@@ -15,7 +15,8 @@
 import type { Env } from './env';
 import type { DomainProofMethod } from './domainVerification';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
-import { MAX_SMALL_BODY_BYTES, readBody } from './security';
+import { MAX_SMALL_BODY_BYTES, readBody, safePublicUrl } from './security';
+import { wwwTwin } from '../services/security/publicHostname';
 import { billingId, identify, json } from './workerUtils';
 import {
   ReceiptSigningUnavailable,
@@ -131,19 +132,52 @@ export class ReceiptNotVerified extends Error {
 
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 
-/** Typed against the domain verifier, so a method it cannot produce does not compile here. */
-const DOMAIN_PROOF_METHODS: Record<DomainProofMethod, true> = { dns_txt: true, well_known: true, meta_tag: true };
+type ReceiptSubject = { kind: TrustReceiptSubjectKind; id: string };
+/** True when `location` is where this method reads its proof for this subject. */
+type ProofLocationRule = (subject: ReceiptSubject, location: string) => boolean;
 
 /**
- * The verifiers that exist, by level, then claim, then the methods that verifier can
- * return. Today that is one: the domain check in domainVerification.ts. A verified
- * receipt for any other level, claim or method is refused, because nothing in the
- * Worker could have checked it. Add an entry here in the change that ships a verifier.
+ * An HTTP proof as fetchFromDomain in domainVerification.ts reports it: the final URL
+ * after redirects, which it accepts only from the domain or its www twin. The path is
+ * not held to anything, because a redirect may change it.
  */
-const VERIFIER_METHODS: Record<Exclude<TrustReceiptLevel, 'self_reported'>, Partial<Record<TrustReceiptClaim, readonly string[]>>> = {
-  worker_verified: { domain_control: Object.keys(DOMAIN_PROOF_METHODS) },
+const servedByTheDomain: ProofLocationRule = (subject, location) => {
+  const url = safePublicUrl(location);
+  if (!url || subject.kind !== 'domain') return false;
+  const host = url.hostname.toLowerCase();
+  return host === subject.id || host === wwwTwin(subject.id);
+};
+
+/**
+ * Where each method of the domain check reads its proof, in the form checkDomainProof
+ * puts in `evidenceUrl`. Typed against DomainProofMethod, so a method the verifier
+ * cannot return does not compile here, and a new one must be given its rule.
+ */
+const DOMAIN_PROOF_LOCATIONS: Record<DomainProofMethod, ProofLocationRule> = {
+  // `dns:TXT:${name}`, where name is the `_luminara-verify.` label or the domain itself.
+  dns_txt: (subject, location) =>
+    subject.kind === 'domain' &&
+    (location === `dns:TXT:_luminara-verify.${subject.id}` || location === `dns:TXT:${subject.id}`),
+  well_known: servedByTheDomain,
+  meta_tag: servedByTheDomain,
+};
+
+/**
+ * The verifiers that exist, by level, then claim, then method. Today that is one: the
+ * domain check in domainVerification.ts. A verified receipt for any other level, claim
+ * or method is refused, because nothing in the Worker could have checked it, and so is
+ * one whose evidence is not where that method reads. Add an entry here in the change
+ * that ships a verifier.
+ */
+const VERIFIER_METHODS: Record<Exclude<TrustReceiptLevel, 'self_reported'>, Partial<Record<TrustReceiptClaim, Record<string, ProofLocationRule>>>> = {
+  worker_verified: { domain_control: DOMAIN_PROOF_LOCATIONS },
   registry_verified: {},
 };
+
+/** A key the table itself holds. `constructor`, `toString` and the like are on every object and must not count. */
+function own<T>(table: Record<string, T> | undefined, key: string): T | undefined {
+  return table && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
+}
 
 /**
  * The runtime half of the IssueReceiptInput type: a cast or a JavaScript caller cannot
@@ -163,7 +197,8 @@ function assertVerifierResult(input: IssueReceiptInput): void {
   ) {
     throw new ReceiptNotVerified('the verifier result is for a different subject, claim or method');
   }
-  if (!VERIFIER_METHODS[input.level]?.[input.claim]?.includes(input.method)) {
+  const readsProofAt = own(own(own(VERIFIER_METHODS, input.level), input.claim), input.method);
+  if (!readsProofAt) {
     throw new ReceiptNotVerified('no verifier checks this claim by this method at this level');
   }
   // Both must be real values before they are compared: two missing fields are equal too.
@@ -171,6 +206,9 @@ function assertVerifierResult(input: IssueReceiptInput): void {
   const url = result.evidenceUrl;
   if (typeof sha256 !== 'string' || !SHA256_HEX_RE.test(sha256) || typeof url !== 'string' || !url) {
     throw new ReceiptNotVerified('the verifier result does not say what was read, or its hash is not a SHA-256');
+  }
+  if (!readsProofAt(input.subject, url)) {
+    throw new ReceiptNotVerified('the evidence is not where this method reads its proof for this subject');
   }
   if (!input.evidence.some((e) => e.sha256 === sha256 && e.url === url)) {
     throw new ReceiptNotVerified('the receipt does not carry the evidence the verifier read');

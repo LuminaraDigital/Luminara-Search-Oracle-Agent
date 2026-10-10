@@ -149,6 +149,19 @@ function receiptInput(level: string, verifierResult: unknown, overrides: Record<
   } as unknown as IssueReceiptInput;
 }
 
+/** The verifier result and the receipt fields for `method` with its evidence at `location`, agreeing with each other. */
+function proofAt(method: string, location: string): [VerifierResult, Record<string, unknown>] {
+  return [
+    passedCheck({ method, evidenceUrl: location }),
+    { method, evidence: [{ ref: 'proof', url: location, sha256: PROOF_SHA }] },
+  ];
+}
+
+/** One refusal case: the result and the receipt agree, so only the location rule can refuse it. */
+function evidenceElsewhere(method: string, location: string, what: string): Array<[string, unknown, Record<string, unknown>]> {
+  return [[`${method} evidence at ${what} (${location})`, ...proofAt(method, location)]];
+}
+
 describe('issueTrustReceipt needs a typed verifier result for a verified level', () => {
   /** [what is wrong, the verifier result, and where needed the receipt fields changed to agree with it] */
   const notAResult: Array<[string, unknown, Record<string, unknown>?]> = [
@@ -192,6 +205,18 @@ describe('issueTrustReceipt needs a typed verifier result for a verified level',
     ],
     ['a made-up method on both sides', passedCheck({ method: 'http_200' }), { method: 'http_200' }],
     ['a claim no verifier checks, on both sides', passedCheck({ claim: 'audit_run' }), { claim: 'audit_run' }],
+    // Names every object has must not pass for a claim or a method.
+    ['the claim "constructor" on both sides', passedCheck({ claim: 'constructor' }), { claim: 'constructor' }],
+    ['the method "toString" on both sides', passedCheck({ method: 'toString' }), { method: 'toString' }],
+    // A real method with evidence that is not where that method reads its proof for example.com.
+    ...evidenceElsewhere('dns_txt', 'https://victim.org/', 'a web page on another site'),
+    ...evidenceElsewhere('dns_txt', 'dns:TXT:_luminara-verify.victim.org', "another domain's DNS record"),
+    ...evidenceElsewhere('dns_txt', 'https://example.com/', 'a web page, which is not a DNS record'),
+    ...evidenceElsewhere('well_known', 'https://victim.org/.well-known/luminara-verify.txt', 'the file on another site'),
+    ...evidenceElsewhere('well_known', PROOF_URL, 'a DNS record, which is not a file'),
+    ...evidenceElsewhere('meta_tag', 'https://example.com.evil.net/', 'a look-alike host'),
+    ...evidenceElsewhere('meta_tag', 'https://sub.example.com/', 'a sub-domain'),
+    ...evidenceElsewhere('meta_tag', 'ftp://example.com/', 'a location that is not a web address'),
   ];
 
   for (const level of [VERIFIED_LEVEL, 'registry_verified']) {
@@ -203,11 +228,29 @@ describe('issueTrustReceipt needs a typed verifier result for a verified level',
     });
   }
 
-  // The three ways the domain check in worker/domainVerification.ts can pass (its DomainProofMethod).
-  it.each(['dns_txt', 'well_known', 'meta_tag'])('accepts the domain check method %s', async (method) => {
+  // The three ways the domain check in worker/domainVerification.ts can pass, each with the
+  // location it reports: `dns:TXT:<name>` for the label or the domain itself, and for the two
+  // HTTP methods the final URL, on the domain or its www twin. tests/trustNetwork.test.ts runs
+  // the real check for each and issues from what it returns.
+  it.each([
+    ['dns_txt', 'dns:TXT:_luminara-verify.example.com'],
+    ['dns_txt', 'dns:TXT:example.com'],
+    ['well_known', 'https://example.com/.well-known/luminara-verify.txt'],
+    ['well_known', 'https://www.example.com/.well-known/luminara-verify.txt'],
+    ['meta_tag', 'https://example.com/'],
+    ['meta_tag', 'https://www.example.com/'],
+  ])('accepts the domain check method %s with its evidence at %s', async (method, location) => {
     const env = makeEnv();
-    const receipt = await issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, passedCheck({ method }), { method }));
+    const receipt = await issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, ...proofAt(method, location)));
     expect(receipt.payload).toMatchObject({ level: VERIFIED_LEVEL, claim: 'domain_control', method });
+    expect(receipt.payload.evidence[0].url).toBe(location);
+  });
+
+  it('names the location rule when the evidence is in the wrong place', async () => {
+    const env = makeEnv();
+    await expect(issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, ...proofAt('dns_txt', 'https://victim.org/')))).rejects.toThrow(
+      'the evidence is not where this method reads its proof for this subject',
+    );
   });
 
   it('refuses registry_verified even with a complete, matching result: no registry verifier exists', async () => {
@@ -347,7 +390,7 @@ describe('the verified level literal is written only where a verifier result is 
     const text = withLiteral.get(GUARD) || '';
     expect(positions(text, VERIFIED_LEVEL)).toHaveLength(1);
     // The key of VERIFIER_METHODS, whose only entry is the domain check.
-    expect(text).toMatch(new RegExp(`\\s${VERIFIED_LEVEL}: \\{ domain_control: Object\\.keys\\(DOMAIN_PROOF_METHODS\\) \\},`));
+    expect(text).toMatch(new RegExp(`\\s${VERIFIED_LEVEL}: \\{ domain_control: DOMAIN_PROOF_LOCATIONS \\},`));
     // A quoted occurrence would be a value somebody could store. There is none.
     expect(text).not.toMatch(new RegExp(`['"\`]${VERIFIED_LEVEL}['"\`]`));
   });

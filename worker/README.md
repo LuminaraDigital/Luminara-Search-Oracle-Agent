@@ -95,15 +95,19 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
   a passed check for the same subject, claim and method, whose evidence hash and
   location the receipt carries. The level, claim and method must also be ones a
   verifier in the Worker can return (`VERIFIER_METHODS`): today only `worker_verified`
-  `domain_control` by `dns_txt`, `well_known` or `meta_tag`. The guard checks the
-  result's shape and that it matches; it cannot prove who built it, so only a verifier
-  may build one. `POST /gateway/execute` checks nothing about a domain, so it issues
+  `domain_control` by `dns_txt`, `well_known` or `meta_tag`. The evidence must be where
+  that method reads its proof for that subject: `dns:TXT:_luminara-verify.<domain>` or
+  `dns:TXT:<domain>` for `dns_txt`, and for the other two an http(s) URL on the domain
+  or its www twin, as the domain check reports it. The guard checks the result's shape
+  and that it matches; it cannot prove who built it, so only a verifier may build one. `POST /gateway/execute` checks nothing about a domain, so it issues
   no receipt and says so (`receiptIssued: false`). `tests/receiptsNeedVerifier.test.ts`
   lists the only files allowed to write the level.
 - **The Worker holds no chain signing key and sends nothing to a chain.**
   `anchorAuditCitation` makes no outbound request and answers `ok: false`, also with
   `PROOF_ANCHOR_ENABLED` on, so it can store nothing as `anchored`
-  (`worker/chain/ton/citationRegistry.ts`).
+  (`worker/chain/ton/citationRegistry.ts`). `/proof/verify` never reports an
+  `audit_citation` row as on-chain, not even one an older build stored as `anchored`;
+  payment anchors, which carry a transaction hash, are reported as before.
 - **The signed bytes are `payload_json`.** Verify against the stored canonical JSON
   (`services/trust/receiptCrypto.ts`), never a re-serialisation. Key id is derived
   from the public key. Rotation moves the old public JWK into
