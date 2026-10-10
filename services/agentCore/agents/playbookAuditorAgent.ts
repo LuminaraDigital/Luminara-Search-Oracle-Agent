@@ -168,7 +168,7 @@ export class PlaybookAuditorAgent {
       agentRole: 'playbook_auditor',
       agentName: this.name,
       phase: 'audit_complete',
-      message: `Completed compliance audit. Identified ${findings.length} actionable findings. Overall Health Score: ${healthScore}/100.`,
+      message: `Completed compliance audit. Identified ${findings.length} actionable findings. Overall Health Score: ${healthScore}/100 (estimated).`,
       status: 'completed',
       confidenceScore: 0.92,
     });
