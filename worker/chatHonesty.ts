@@ -145,13 +145,15 @@ const ORDINARY_BEFORE: Record<string, RegExp> = {
   growth: /\b(?:organic|revenue|traffic|business|sustainable|steady|fast|faster|rapid|slow|future|long[- ]term|audience|sales|user|customer|brand|market|economic|compound|real|more|their|his|her|its|your|our)\s+$/i,
   agency: /\b(?:a|an|your|their|marketing|seo|pr|creative|digital|ad|advertising|design|own|another|any)\s+$/i,
 };
-// At the start of a sentence a capital proves nothing, so the word needs company. For "Growth"
-// that is a plan-like verb or mark plus a number, a price word or a plan feature. For the
-// other names any such cue in the rest of the sentence will do.
+// At the start of a sentence a capital proves nothing, so the word needs company: a plan-like
+// verb or mark right after it ("Starter is ...", "Starter: ...", "Starter (..."), or a weaker
+// link ("Starter for ...") beside a number or a price word. "Growth" starts many ordinary
+// sentences, so it also needs a number, a price word or a plan feature after it.
 const NEEDS_VERB_AND_CUE_AT_START = new Set(['growth']);
-const NEEDS_CUE_AT_START = new Set(['starter', 'pro', 'agency']);
+const NEEDS_VERB_AT_START = new Set(['starter', 'pro', 'agency']);
 const PLAN_VERB_AFTER_RE =
-  /^(?:\s*[:(,/&-]|\s+(?:is|are|was|costs?|cuesta|includes|covers|comes\s+with|unlocks|adds|gives|lets|has|gets\s+you|runs|starts|at|for|and|or)\b)/i;
+  /^(?:\s*[:(/&-]|\s+(?:is|are|was|costs?|cuesta|includes|covers|comes\s+with|unlocks|adds|gives|lets|has|gets\s+you|offers|runs|starts|suits|fits)\b)/i;
+const PLAN_LINK_AFTER_RE = /^\s+(?:for|at|with|on)\b/i;
 const PLAN_FEATURE_RE = /\b(?:sites?|domains?|workspaces?|re-?audits?|audits?|sentinel|api\s+access|white[- ]label|share\s+links?)\b/i;
 
 // Words of buying, paying and offers.
@@ -223,9 +225,14 @@ function namesPlan(s: string, names: PlanNames): boolean {
       if (ORDINARY_AFTER[key]?.test(after) || ORDINARY_BEFORE[key]?.test(before)) continue;
       const midSentence = /[A-Za-z0-9]/.test(before);
       if (midSentence) return true;
+      const verb = PLAN_VERB_AFTER_RE.test(after);
+      const link = PLAN_LINK_AFTER_RE.test(after);
       if (NEEDS_VERB_AND_CUE_AT_START.has(key)) {
-        if (PLAN_VERB_AFTER_RE.test(after) && hasPlanCue(after)) return true;
-      } else if (!NEEDS_CUE_AT_START.has(key) || hasPlanCue(after) || !/[A-Za-z0-9]/.test(after)) {
+        if ((verb || link) && hasPlanCue(after)) return true;
+      } else if (NEEDS_VERB_AT_START.has(key)) {
+        const standsAlone = !/[A-Za-z0-9]/.test(after);
+        if (verb || standsAlone || (link && hasPriceCue(after))) return true;
+      } else {
         return true;
       }
     }
@@ -253,6 +260,8 @@ function asksAboutPlans(text: string, names: PlanNames): boolean {
     STARS_WORD_RE.test(text) ||
     mentionsOurPlanWord(text) ||
     /\b(?:you|your|yours)\b/i.test(text) ||
+    /\bmy\s+(?:subscription|plan|membership|account|payment|invoice|receipt|trial|refund|renewal|stars)\b/i.test(text) ||
+    /\bi\s+(?:paid|bought|subscribed|upgraded|cancel(?:led|ed)?|renewed)\b/i.test(text) ||
     text.trim().split(/\s+/).length <= 5
   );
 }
