@@ -41,7 +41,6 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
       CHAIN_TON_API_BASE: 'https://testnet.toncenter.com/api/v3',
       PROOF_ANCHOR_ENABLED: 'true',
       TON_CITATION_CONTRACT_ADDRESS: 'kQC_test_contract_address',
-      TON_MINTER_PRIVATE_KEY: 'test_minter_key',
       WEBAPP_URL: 'https://luminarasuite.com',
     } as unknown as Env;
   });
@@ -128,11 +127,36 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
     expect(kvVal.domain).toBe('acme.org');
   });
 
-  it('records honest off-chain proof in D1 and KV when TON minter is unconfigured', async () => {
+  it('records an off-chain proof, with no transaction hash, when the chain API returns no hash', async () => {
+    const mockFetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+
+    const result = await recordAuditProof(
+      env,
+      { domain: 'no-hash.org', auditRunId: 'run_no_hash_1', healthScore: 70, citationRatePercent: 40 },
+      mockFetcher as unknown as typeof fetch,
+    );
+
+    expect(mockFetcher).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe('off_chain');
+    expect(result.txHash).toBeNull();
+    expect(result.explorerUrl).toBeNull();
+
+    const row = await db
+      .prepare('SELECT status, tx_hash, explorer_url FROM proof_anchors WHERE evidence_hash = ?')
+      .bind(result.evidenceHash)
+      .first<{ status: string; tx_hash: string | null; explorer_url: string | null }>();
+    expect(row).toEqual({ status: 'pending', tx_hash: null, explorer_url: null });
+
+    const verify = await verifyAuditProof(env, { evidenceHash: result.evidenceHash });
+    expect(verify.source).toBe('off_chain_digest');
+    expect(verify.disclosure).toContain('Self-reported, off-chain digest');
+  });
+
+  it('records honest off-chain proof in D1 and KV when the TON contract is unconfigured', async () => {
     const unconfiguredEnv = {
       ...env,
       TON_CITATION_CONTRACT_ADDRESS: undefined,
-      TON_MINTER_PRIVATE_KEY: undefined,
     } as unknown as Env;
 
     const result = await recordAuditProof(unconfiguredEnv, {

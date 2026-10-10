@@ -287,6 +287,15 @@ async function issueDomainReceipt(
       subject: { kind: 'domain', id: domain },
       claim: 'domain_control',
       level: 'worker_verified',
+      // The check that just passed. issueTrustReceipt refuses a verified level without it.
+      verifierResult: {
+        passed: true,
+        subject: { kind: 'domain', id: domain },
+        claim: 'domain_control',
+        method: found.method,
+        evidenceUrl: found.evidenceUrl,
+        evidenceSha256: found.evidenceSha256,
+      },
       method: found.method,
       evidence: [
         {

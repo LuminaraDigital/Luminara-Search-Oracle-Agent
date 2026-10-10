@@ -6,8 +6,9 @@
  *   call into the same standardized entry point.
  * - Managed through TaskLifecycleEngine (UTXO-style atomic state with onRevert).
  * - Multi-provider gas/resource abstraction through Universal Resource Tank.
- * - Observer-Attester pipeline: deterministic evidence gathering produces
- *   cryptographic Ed25519 Trust Receipts when verified.
+ * - No Trust Receipt is issued here. This route fetches nothing and checks nothing
+ *   about the domain, and a receipt needs a verifier result (worker/trustReceipts.ts).
+ *   The response says so in `receiptIssued` and `receiptNote`.
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
@@ -19,7 +20,6 @@ import {
   type TaskLifecycleContext,
 } from './taskLifecycle';
 import { resolveExecutionResources } from './resourceTank';
-import { isTrustReceiptsEnabled, issueTrustReceipt } from './trustReceipts';
 import {
   evaluateCrawlReadiness,
   classifyEvidenceStatus,
@@ -51,10 +51,14 @@ export interface OracleGatewayResult {
     sourcesCount: number;
     measurementStatus: 'measured' | 'estimated' | 'not_measured';
   };
-  receiptId?: string;
-  receiptSignature?: string;
+  /** Always false: this route verifies nothing, so it never issues a Trust Receipt. */
+  receiptIssued: false;
+  receiptNote: string;
   diagnostics: string[];
 }
+
+export const GATEWAY_NO_RECEIPT_NOTE =
+  'No trust receipt was issued: this route does not verify anything about the domain. A receipt comes only from a verifier check, such as domain verification.';
 
 function sanitizeDomain(raw: string): string {
   try {
@@ -136,36 +140,9 @@ export async function executeOracleGatewayTask(
       const verdict = decision.verdict;
       const oneMoveThisWeek = decision.oneMoveThisWeek;
 
-      // Phase C: Attester (Issue Trust Receipt if eligible and enabled)
-      let receiptId: string | undefined;
-      let receiptSignature: string | undefined;
-
-      if (isTrustReceiptsEnabled(env) && user && env.DB) {
-        try {
-          const receipt = await issueTrustReceipt(env, {
-            accountId,
-            subject: { kind: 'domain', id: domain },
-            claim: 'domain_control',
-            level: 'worker_verified',
-            method: 'gateway_oracle_audit_v1',
-            evidence: [
-              {
-                ref: 'target_homepage',
-                url: targetUrl,
-                fetchedAt: new Date().toISOString(),
-                httpStatus: 0,
-              },
-            ],
-            measurementStatus: evidenceClassification.status,
-            visibility: 'public',
-          });
-          receiptId = receipt.id;
-          receiptSignature = receipt.signature;
-          ctx.diagnostics.push(`[attester] Minted Trust Receipt ${receipt.id}`);
-        } catch (receiptErr) {
-          ctx.diagnostics.push(`[attester] Trust Receipt issuance skipped: ${String(receiptErr)}`);
-        }
-      }
+      // Phase C: Attester. Nothing above fetched the domain or checked who controls it,
+      // so there is no verifier result and no Trust Receipt is issued, at any level.
+      ctx.diagnostics.push('[attester] No Trust Receipt issued: this route does not verify the domain');
 
       return {
         taskId: ctx.taskId,
@@ -181,8 +158,8 @@ export async function executeOracleGatewayTask(
           sourcesCount,
           measurementStatus: evidenceClassification.status,
         },
-        receiptId,
-        receiptSignature,
+        receiptIssued: false,
+        receiptNote: GATEWAY_NO_RECEIPT_NOTE,
         diagnostics: ctx.diagnostics,
       };
     },

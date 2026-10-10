@@ -58,17 +58,29 @@ export function generateEmbedBadgeHtml(domain: string, isVerified: boolean): str
   return `<a href="https://luminarasuite.com/verify/${encodeURIComponent(domain)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:9999px;background:#090d16;border:1px solid ${color};color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;font-size:12px;text-decoration:none;"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color};"></span><span>${statusLabel}</span></a>`;
 }
 
+/** One spelling per site: no scheme, no `www.`, no path, lower case. */
+function passportHost(value: string): string {
+  return value.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
+}
+
 /**
  * Builds a unified Brand Passport entity.
+ *
+ * `receipts` may be every receipt the account holds, for several domains. Only a
+ * receipt whose subject is this passport's domain counts, so a receipt for one
+ * domain never marks another verified or adds to its count.
  */
 export function buildBrandPassport(
   domain: string,
   dna: BusinessDNA | null,
   receipts: TrustReceiptView[] = [],
 ): BrandPassport {
-  const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
+  const cleanDomain = passportHost(domain);
   const brandName = dna?.name?.trim() || cleanDomain;
-  const isVerified = receipts.some(
+  const ownReceipts = receipts.filter(
+    (r) => r.payload.subject?.kind === 'domain' && passportHost(String(r.payload.subject.id || '')) === cleanDomain,
+  );
+  const isVerified = ownReceipts.some(
     (r) =>
       r.payload.claim === 'domain_control' &&
       r.payload.level === 'worker_verified' &&
@@ -88,7 +100,7 @@ export function buildBrandPassport(
     domain: cleanDomain,
     brandName,
     isVerified,
-    receiptsCount: receipts.length,
+    receiptsCount: ownReceipts.length,
     industry: dna?.industry || undefined,
     description,
     sameAsUrls,

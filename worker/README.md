@@ -31,6 +31,7 @@ leaked internals).
 | `POST /ton/invoice`, `/ton/verify` | worker/tonAttestationService | none | TON payments |
 | `POST /license/activate` | worker/licenseService | session | License activation |
 | `POST /admin/license/generate`, `/admin/license/seed` | worker/licenseService | admin | License ops |
+| `POST /admin/trust/revoke-gateway-receipts` | worker/trustReceipts.ts | admin | Revokes receipts whose signed method is `gateway_oracle_audit_v1` (issued by the gateway route before it stopped issuing). Up to 10 per call; returns `{ revoked, remaining }`. Idempotent. Works while `TRUST_RECEIPTS_ENABLED` is off |
 | `POST /admin/skills/:slug/versions`, `POST /admin/skills/:slug/enable`, `GET /admin/skills/:slug` | worker/agentSkills.ts | admin | Agent skill versions/enable |
 | `POST /agent/attest` | worker/attestationService.ts | none | Agent attestation |
 | `POST /sentinel/register`, `/sentinel/status` | worker/sentinel.ts | session | Drift Sentinel targets |
@@ -89,6 +90,14 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 - **Receipts are minted only by Worker verifiers.** No route accepts a client-built
   receipt. `level` is mandatory: `worker_verified`, `registry_verified`, or
   `self_reported`; UI must never present `self_reported` as verified.
+- **A verified level needs a verifier result.** `issueTrustReceipt` refuses
+  `worker_verified` and `registry_verified` unless the call carries a `VerifierResult`:
+  a passed check for the same subject, claim and method, whose evidence hash the
+  receipt carries. `POST /gateway/execute` checks nothing about a domain, so it issues
+  no receipt and says so (`receiptIssued: false`). `tests/receiptsNeedVerifier.test.ts`
+  lists the only files allowed to write the level.
+- **The Worker holds no chain signing key,** and reports a transaction hash only when a
+  chain API returned it (`worker/chain/ton/citationRegistry.ts`).
 - **The signed bytes are `payload_json`.** Verify against the stored canonical JSON
   (`services/trust/receiptCrypto.ts`), never a re-serialisation. Key id is derived
   from the public key. Rotation moves the old public JWK into

@@ -126,12 +126,12 @@ export async function anchorAuditCitation(
   const contractAddress = resolveCitationContract(env);
   const network = bases.network;
 
-  // Fail closed honestly: never fabricate or simulate on-chain transactions
-  const minterKey = String(env.TON_MINTER_PRIVATE_KEY || '').trim();
-  if (!contractAddress || !minterKey) {
+  // Fail closed honestly: never fabricate or simulate on-chain transactions.
+  // The Worker holds no chain signing key, so there is no key to look for here.
+  if (!contractAddress) {
     return {
       ok: false,
-      error: 'TON citation contract or minter key not configured',
+      error: 'TON citation contract not configured',
     };
   }
 
@@ -160,7 +160,12 @@ export async function anchorAuditCitation(
     }
 
     const data = (await res.json()) as { message_hash?: string; hash?: string };
-    const txHash = data.message_hash || data.hash || (await sha256Hex(payloadHex));
+    // Only a hash the chain API returned is reported. Without one nothing was anchored,
+    // and a hash computed here would point at a transaction that does not exist.
+    const txHash = String(data.message_hash || data.hash || '').trim();
+    if (!txHash) {
+      return { ok: false, error: 'Toncenter returned no message hash; nothing is recorded as anchored' };
+    }
     const normalizedHash = normalizeTonTxHash(txHash);
 
     return {
