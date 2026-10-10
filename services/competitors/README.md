@@ -36,7 +36,7 @@ in-app; Telegram delivery goes through the Worker Sentinel keywords.
 | --- | --- | --- |
 | Watchlist CRUD + alerts (localStorage) | Live | `competitorWatchlistService.ts` |
 | Citation delta detection | Live, uses measured audit history | `evaluateCitationDeltas` -> `listAudits` |
-| Share of Voice | Live from empirical citation probes; `method: 'observed'` in every summary | `shareOfVoiceService.ts`, `tests/shareOfVoice.test.ts` |
+| Share of Voice | Counts from one audit's search sample: the sampled queries whose results name the brand, and each competitor. No percentage, no share and no change between audits. Only a summary `buildShareOfVoice` made counts as measured (`isMeasuredShareOfVoice`) | `shareOfVoiceService.ts`, `tests/shareOfVoice.test.ts` |
 | Traffic insights (umami sidecar) | Conditional: returns `not_configured` when no sidecar is reachable, `no_website` when the domain is untracked, `ready` only with real stats | `trafficInsightsService.ts:13,237`, `tests/trafficInsights.test.ts` |
 | Telegram delivery of competitor alerts | Worker Sentinel path; unverified end-to-end in this README | `sentinel` Worker route |
 

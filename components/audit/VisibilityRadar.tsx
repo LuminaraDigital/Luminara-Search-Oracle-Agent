@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React from 'react';
 import { ICONS } from '../../constants';
 
 interface VisibilityRadarProps {
@@ -6,73 +6,66 @@ interface VisibilityRadarProps {
     rows: string[][];
 }
 
-/** Pure helper: average of trailing numeric cells, or null when none measured. */
-export function computeRadarAverage(rows: string[][]): number | null {
-    let total = 0;
-    let count = 0;
-    for (const row of rows) {
-        const scoreStr = row[row.length - 1]?.replace(/[^0-9]/g, '');
-        const val = parseInt(scoreStr || '', 10);
-        if (!Number.isNaN(val)) {
-            total += val;
-            count++;
-        }
-    }
-    if (count === 0) return null;
-    return Math.round(total / count);
+/**
+ * Index of the column whose header matches, or -1 when the table does not carry it.
+ * A table that came with no headers at all is read by the report's own column order.
+ */
+function columnIndex(headers: string[], pattern: RegExp, position: number): number {
+    if (headers.length === 0) return position;
+    return headers.findIndex((header) => pattern.test(String(header)));
 }
 
-export function parseRadarItemScore(raw: string | undefined): number | null {
-    const digits = raw?.replace(/[^0-9]/g, '') || '';
-    if (!digits) return null;
-    const val = parseInt(digits, 10);
-    return Number.isNaN(val) ? null : val;
+function plain(cell: unknown): string {
+    return String(cell ?? '').replace(/[*_`]/g, '').trim();
 }
 
-export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers: _headers, rows }) => {
-    const [scanActive, setScanActive] = useState(true);
-    const [score, setScore] = useState<number | null>(null);
-    const measuredAvg = computeRadarAverage(rows);
+export type RadarReading = 'yes' | 'no' | 'not_measured';
 
-    useEffect(() => {
-        if (measuredAvg === null) {
-            setScore(null);
-            setScanActive(false);
-            return;
-        }
+/**
+ * Reads the "Brand Cited" cell. Only a plain yes or no counts.
+ * "not measured", "not verified", an empty cell and anything else read as not measured.
+ */
+export function readBrandCited(cell: unknown): RadarReading {
+    const text = plain(cell).toLowerCase();
+    if (/^(yes|cited)\b/.test(text)) return 'yes';
+    if (/^(no|not cited)\b/.test(text)) return 'no';
+    return 'not_measured';
+}
 
-        const duration = 1200;
-        const startTime = performance.now();
-        let rafId = 0;
-        setScanActive(true);
+export type RadarStatus = 'cited' | 'not_cited' | 'not_measured';
 
-        const animate = (currentTime: number) => {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+/**
+ * Reads the "Citation Status" cell. The column has three values: Cited, Not Cited,
+ * Not Measured. The cell is read for the one it starts with and nothing after it is
+ * shown, so "Cited, rank #3, AI Overview active" reads as cited and prints "Cited".
+ */
+export function readCitationStatus(cell: unknown): RadarStatus {
+    const text = plain(cell).toLowerCase();
+    if (/^cited\b/.test(text)) return 'cited';
+    if (/^not cited\b/.test(text)) return 'not_cited';
+    return 'not_measured';
+}
 
-            setScore(Math.floor(measuredAvg * easeOutQuart));
+const STATUS_TEXT: Record<RadarStatus, string> = {
+    cited: 'Cited',
+    not_cited: 'Not cited',
+    not_measured: 'Not measured',
+};
 
-            if (progress < 1) {
-                rafId = requestAnimationFrame(animate);
-            } else {
-                setScanActive(false);
-            }
-        };
-
-        rafId = requestAnimationFrame(animate);
-        return () => cancelAnimationFrame(rafId);
-    }, [rows, measuredAvg]);
-
-    const displayScore = score;
-    const ringOffset = displayScore === null ? 100 : 100 - displayScore;
+/**
+ * Draws the report's visibility table as cards.
+ * It shows what the table says and nothing else: no score is worked out from the
+ * cells, and a cell that does not give a reading prints "Not measured".
+ */
+export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows }) => {
+    const queryCol = columnIndex(headers, /query/i, 0);
+    const intentCol = columnIndex(headers, /intent/i, 1);
+    const citedCol = columnIndex(headers, /brand cited/i, 2);
+    const competitorsCol = columnIndex(headers, /competitor/i, 3);
+    const statusCol = columnIndex(headers, /status/i, 4);
 
     return (
         <div className="my-8 rounded-2xl border border-gold/25 bg-black/60 overflow-hidden shadow-xl relative animate-in fade-in duration-700">
-            {scanActive && (
-                <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent via-gold/10 to-transparent z-0 animate-pulse"></div>
-            )}
-
             <div className="bg-gradient-to-r from-gold/15 via-black to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between relative z-10">
                 <div className="flex items-center gap-3">
                     <div className="p-2.5 rounded-xl bg-gold/10 border border-gold/30 text-gold-light">
@@ -80,49 +73,18 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers: _head
                     </div>
                     <div>
                         <h3 className="text-base font-semibold tracking-tight text-gold-light">AI and search visibility</h3>
-                        <p className="text-[11px] font-mono text-gray-400">
-                          {measuredAvg === null ? 'No measured scores in this table' : 'Measured from report evidence'}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                    <div className="text-right">
-                        <div className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">
-                          {measuredAvg === null ? 'Status' : 'Blended authority'}
-                        </div>
-                        <div className="text-2xl font-semibold font-mono text-gold-light">
-                            {displayScore === null ? 'not_measured' : `${displayScore}/100`}
-                        </div>
-                    </div>
-                    <div className="w-12 h-12 rounded-full border border-gold/30 relative flex items-center justify-center bg-black/40">
-                        <svg className="absolute inset-0 -rotate-90 w-full h-full p-1" aria-hidden="true">
-                            <circle cx="20" cy="20" r="16" stroke="rgba(255,255,255,0.1)" strokeWidth="3" fill="transparent" />
-                            <circle
-                                cx="20"
-                                cy="20"
-                                r="16"
-                                stroke="#BF953F"
-                                strokeWidth="3"
-                                fill="transparent"
-                                strokeDasharray={100}
-                                strokeDashoffset={ringOffset}
-                                className="transition-all duration-1000 ease-out"
-                            />
-                        </svg>
+                        <p className="text-[11px] font-mono text-gray-400">As written in the report table. Not a score.</p>
                     </div>
                 </div>
             </div>
 
             <div className="p-6 grid gap-4 relative z-10">
                 {rows.map((row, idx) => {
-                    const query = row[0]?.replace(/[*_`]/g, '') || 'Query';
-                    const intent = row[1]?.replace(/[*_`]/g, '') || 'General';
-                    const mentioned = row[2]?.toLowerCase().includes('yes');
-                    const competitors = row[3]?.replace(/[*_`]/g, '') || 'None';
-                    const organicRank = row[4]?.replace(/[*_`]/g, '') || '-';
-                    const aiOverview = row[6]?.toLowerCase().includes('yes') || row[6]?.toLowerCase().includes('active');
-                    const itemScore = parseRadarItemScore(row[7]);
+                    const query = plain(row[queryCol]) || 'Query';
+                    const intent = plain(row[intentCol]);
+                    const cited = readBrandCited(row[citedCol]);
+                    const competitors = plain(row[competitorsCol]) || 'Not measured';
+                    const status = STATUS_TEXT[readCitationStatus(row[statusCol])];
 
                     return (
                         <div
@@ -131,35 +93,27 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers: _head
                         >
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
                                 <div className="flex items-center gap-2">
-                                    <span className="px-2.5 py-0.5 rounded-full bg-gold/10 border border-gold/30 text-[9px] font-semibold tracking-wide text-gold-light">
-                                        {intent}
-                                    </span>
+                                    {intent && (
+                                        <span className="px-2.5 py-0.5 rounded-full bg-gold/10 border border-gold/30 text-[9px] font-semibold tracking-wide text-gold-light">
+                                            {intent}
+                                        </span>
+                                    )}
                                     <span className="text-sm font-semibold text-white tracking-tight">"{query}"</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-mono text-gray-500">Radar score:</span>
+                                    <span className="text-[10px] font-mono text-gray-500">Citation status:</span>
                                     <span className="text-xs font-mono font-bold text-gold-light bg-black/60 px-2 py-0.5 rounded border border-gold/20">
-                                        {itemScore === null ? 'not_measured' : `${itemScore}%`}
+                                        {status}
                                     </span>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-white/5">
+                            <div className="grid grid-cols-2 gap-3 text-xs pt-2 border-t border-white/5">
                                 <div>
                                     <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">Brand quoted</span>
-                                    <span className={`inline-flex items-center gap-1 font-bold ${mentioned ? 'text-success-400' : 'text-warning-400'}`}>
-                                        <span className={`w-1.5 h-1.5 rounded-full ${mentioned ? 'bg-success-400' : 'bg-warning-400'}`}></span>
-                                        {mentioned ? 'Cited (estimated)' : 'Opportunity gap'}
-                                    </span>
-                                </div>
-                                <div>
-                                    <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">Organic rank</span>
-                                    <span className="font-mono text-gray-200">{organicRank}</span>
-                                </div>
-                                <div>
-                                    <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">AI engine status</span>
-                                    <span className={`font-medium ${aiOverview ? 'text-gold-light' : 'text-gray-400'}`}>
-                                        {aiOverview ? 'AI Overview active' : 'Traditional SERP'}
+                                    <span className={`inline-flex items-center gap-1 font-bold ${cited === 'yes' ? 'text-success-400' : cited === 'no' ? 'text-warning-400' : 'text-gray-400'}`}>
+                                        <span className={`w-1.5 h-1.5 rounded-full ${cited === 'yes' ? 'bg-success-400' : cited === 'no' ? 'bg-warning-400' : 'bg-gray-500'}`}></span>
+                                        {cited === 'yes' ? 'Cited (estimated)' : cited === 'no' ? 'Opportunity gap' : 'Not measured'}
                                     </span>
                                 </div>
                                 <div>

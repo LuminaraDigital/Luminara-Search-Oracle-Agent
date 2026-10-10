@@ -3,27 +3,42 @@
  *
  * Compiles audit and citation intelligence into a self-contained, editorial HTML document.
  * Zero external scripts, zero CDN fonts, zero tracking pixels.
- * Supports auto-generated sticky TOC, system themes, print CSS, and cryptographic trust seals.
+ * Supports auto-generated sticky TOC, system themes, print CSS, and a content fingerprint line.
  * Inspired by the Odysseus visual report generator (`src/visual_report.py`).
  *
  * Invariant: No em dashes (U+2014) in copy or code comments. Use '-', ':', or '.'.
+ * Invariant: the dossier prints no score, grade or badge. No caller can pass one: nothing
+ * in the product measures an overall score for a report today, so the score line always
+ * reads "Not measured". If a measured score is added later, it must arrive as a typed
+ * input built by the code that measures it, never as a number or a label a caller types in.
+ * The fingerprint is a checksum, not a signature.
  */
+
+import { fastHash } from '../audit/evidenceLedgerService';
+import { gateReportText } from '../audit/reportColumnGate';
 
 export interface DossierSection {
   id: string;
   title: string;
-  badge?: string;
   contentHtml: string;
 }
 
 export interface PortableDossierData {
   title: string;
   targetDomain: string;
-  overallScore: number;
-  grade: 'A' | 'B' | 'C' | 'D' | 'F';
   generatedAt: number;
-  trustReceiptHash: string;
+  /** Short non-cryptographic checksum of the report text. Omitted: the line is left out. */
+  contentFingerprint?: string;
   sections: DossierSection[];
+}
+
+/** What the audit report screen has when a founder downloads the dossier. */
+export interface AuditDossierInput {
+  domain: string;
+  markdownText: string;
+  generatedAt: number;
+  /** Columns the calling screen holds measured data for. Passed straight to the report gate. */
+  measuredColumns?: readonly string[];
 }
 
 function escapeHtml(str: string): string {
@@ -42,7 +57,13 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
   const formattedDate = new Date(data.generatedAt).toUTCString();
   const safeTitle = escapeHtml(data.title);
   const safeDomain = escapeHtml(data.targetDomain);
-  const safeHash = escapeHtml(data.trustReceiptHash);
+  const fingerprintBlock = data.contentFingerprint
+    ? `
+        <div style="margin-top: 1rem;">
+          <div style="font-size: 0.75rem; color: var(--text-secondary);">Content fingerprint (a short checksum of the report text, not a signature):</div>
+          <div class="content-fingerprint">${escapeHtml(data.contentFingerprint)}</div>
+        </div>`
+    : '';
 
   // Generate Table of Contents items
   const tocItems = data.sections
@@ -54,14 +75,10 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
   // Generate Sections
   const sectionBlocks = data.sections
     .map(sec => {
-      const badgeHtml = sec.badge
-        ? `<span class="section-badge">${escapeHtml(sec.badge)}</span>`
-        : '';
       return `
       <section id="${escapeHtml(sec.id)}" class="card">
         <div class="card-header">
           <h2>${escapeHtml(sec.title)}</h2>
-          ${badgeHtml}
         </div>
         <div class="card-body">
           ${sec.contentHtml}
@@ -211,15 +228,7 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
       font-size: 1.25rem;
     }
 
-    .section-badge {
-      font-size: 0.75rem;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      background: var(--surface-border);
-      color: var(--text-secondary);
-    }
-
-    .trust-seal {
+    .content-fingerprint {
       font-family: monospace;
       font-size: 0.75rem;
       background: var(--bg);
@@ -264,15 +273,11 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
         <p style="color: var(--text-secondary); margin-top: 0.5rem;">Target Entity: <strong>${safeDomain}</strong></p>
         <div class="hero-meta">
           <div>
-            <span>Verified Score: </span>
-            <span class="score-badge">${data.overallScore}/100 (Grade ${data.grade})</span>
+            <span>Score: </span>
+            <span class="score-badge">Not measured</span>
           </div>
           <div>${formattedDate}</div>
-        </div>
-        <div style="margin-top: 1rem;">
-          <div style="font-size: 0.75rem; color: var(--text-secondary);">Trust Receipt Cryptographic Hash:</div>
-          <div class="trust-seal">${safeHash}</div>
-        </div>
+        </div>${fingerprintBlock}
       </div>
 
       ${sectionBlocks}
@@ -280,4 +285,28 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
   </div>
 </body>
 </html>`;
+}
+
+/**
+ * Builds the dossier a founder downloads from an audit report.
+ * The report carries no measured overall score, so the score line says "Not measured".
+ * The section has no badge: nothing checked the text after the model wrote it.
+ */
+export function buildAuditDossierHtml(input: AuditDossierInput): string {
+  // The download gets the same gated text as the screen, whoever calls this.
+  const text = gateReportText(input.markdownText || '', { measuredColumns: input.measuredColumns });
+  return generatePortableDossierHtml({
+    title: `${input.domain} Executive AEO Dossier`,
+    targetDomain: input.domain,
+    generatedAt: input.generatedAt,
+    // fastHash repeats one 16-character value four times. Print it once.
+    contentFingerprint: fastHash(text || input.domain).slice(0, 16),
+    sections: [
+      {
+        id: 'executive-summary',
+        title: 'Executive Audit Analysis',
+        contentHtml: `<div style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7;">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`,
+      },
+    ],
+  });
 }

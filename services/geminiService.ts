@@ -71,7 +71,9 @@ import {
   buildEmpiricalPromptSection,
   buildEnrichmentPromptSection,
   buildIntegrityPromptSection,
+  buildPreliminaryTrustPromptSection,
 } from './audit/evidencePromptLabels';
+import { MEASURED_TRAFFIC_COLUMNS, gateReportText, reportTableHeader } from './audit/reportColumnGate';
 import { aeoTrustPackService, type TrustPackSummary } from './audit/aeoTrustPackService';
 import { schemaSafetyGate } from './deployment/schemaSafetyGate';
 import { shareOfVoiceService, type ShareOfVoiceSummary } from './visibility/shareOfVoiceService';
@@ -715,6 +717,9 @@ Respect these consolidated business memories and historical recommendation outco
     } else {
       console.warn('[Audit] Results tracking skipped', trafficSettled.reason);
     }
+    // The gate keeps the measured traffic table only in a run where the site's own
+    // analytics block was fetched and is in the prompt. Nowhere else is a column measured.
+    const reportGate = { measuredColumns: trafficText ? [...MEASURED_TRAFFIC_COLUMNS] : [] };
 
     // 2. Real SERP search via Tavily / Local SERP Sidecar.
     // Live crew SERP rows skip this second search.
@@ -796,7 +801,8 @@ Respect these consolidated business memories and historical recommendation outco
       console.warn('[Audit] Citation integrity fallback', e);
     }
 
-    // Preliminary trust pack (schema not measured yet; use 50 default in prompt cite-worthiness)
+    // Preliminary trust pack. The prompt carries no cite-worthiness value and no formula for one:
+    // schema is not extracted yet, so the composite cannot be computed. The sub-signals are heuristics.
     let preliminaryTrustText = '';
     try {
       const prelim = aeoTrustPackService.build({
@@ -807,13 +813,7 @@ Respect these consolidated business memories and historical recommendation outco
         brandName: dna?.name,
         domain: displayUrl,
       });
-      preliminaryTrustText =
-        `\n[AEO TRUST PACK]\nciteWorthiness: not_measured (preliminary; schemaSafety not_measured until schema extraction)\n` +
-        `ymylTier: ${prelim.ymylTier}\n` +
-        `securityTrust: ${prelim.securityTrust}, citationIntegrity: ${prelim.citationIntegrity}, entityClarity: ${prelim.entityClarity}\n` +
-        `Formula: ${prelim.formula}\nFindings:\n` +
-        prelim.findings.slice(0, 5).map((f) => `- [${f.severity}] ${f.title}: ${f.detail}`).join('\n') +
-        '\n';
+      preliminaryTrustText = buildPreliminaryTrustPromptSection(prelim);
     } catch (e) {
       console.warn('[Audit] Preliminary trust pack fallback', e);
     }
@@ -862,21 +862,27 @@ Strict Formatting Guidelines:
    ## 6. Budget notes
    ## 7. Sources
 4. ## 1. One move this week: one concrete action, why it helps citation odds, how to tell it worked.
-5. ## 3. Fix list: Markdown table with columns:
-   | Task | Plain issue | Expected Impact | Priority |
+5. ## 3. Fix list: Markdown table with strictly these columns:
+   ${reportTableHeader('fixList')}
 6. AI & Search Visibility Radar: Markdown table with strictly these columns:
-   | Query | Intent | Brand Cited (Yes/No) | Key Competitors | Est. Organic Rank | Rich Results | AI Overview Status | Citation Status (Cited/Not Cited/Not Measured) |
+   ${reportTableHeader('visibilityRadar')}
    Include 3 high-intent queries (informational, commercial, comparative). Use "not verified" when evidence is missing.
 7. Competitor Reality Map: Markdown table with strictly these columns:
-   | Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) | Trust Signal Strength (Low/Med/High) |
+   ${reportTableHeader('competitorMap')}
    Include the target brand and 3-4 actual competitors found via search. Competitors must be direct commercial rivals in the same region/niche. Exclude review aggregators (Trustpilot, Yelp), medical/reference encyclopedias (WebMD, Wikipedia), and directory platforms.
+   Keep the header names in rules 5 to 7 exactly as written, in English. Add no other column, and no other table except one that rule 10 allows. A column needs an evidence block above that supplies its values.
 8. Under "## 1. One move this week" or "## 3. Fix list", include one practical JSON-LD or schema code block when useful.
-9. Tone: direct, calm, no hype, no "neural core" or fake document IDs. Label every estimate "(estimate)".
-10. If measured traffic / AI-referral data is present above, cite it in "## 2. Plain verdict" as measured.
+9. Tone: direct, calm, no hype, no "neural core" or fake document IDs. Do not add figures of your own. A number appears only when an evidence block above supplies it.
+10. ${trafficText
+  ? `Measured traffic / AI-referral data is present above. Cite it in "## 2. Plain verdict" as measured. If you show it as a table, use exactly these columns and copy every figure from that block: | ${MEASURED_TRAFFIC_COLUMNS.join(' | ')} |`
+  : 'No measured traffic data is present above. State no traffic figure.'}
 11. ${WIKI_LINK_PROMPT_HINT}
 `;
 
-    const buildReportResult = (text: string): AuditReportResult => {
+    const buildReportResult = (modelText: string): AuditReportResult => {
+      // Only the report's own table columns pass. No evidence block fills any other.
+      // The copy each provider path writes to memory goes through the same gate.
+      const text = gateReportText(modelText, reportGate);
       const schemaMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"@type"[\s\S]*?\})\s*```/);
       let schemaJsonLd = schemaMatch ? schemaMatch[1].trim() : JSON.stringify({
         "@context": "https://schema.org",
@@ -1077,7 +1083,7 @@ Strict Formatting Guidelines:
         });
         const text = result.text;
         try {
-          vfsMemoryService.ingestAuditAsResource(text, websiteUrl);
+          vfsMemoryService.ingestAuditAsResource(gateReportText(text, reportGate), websiteUrl);
         } catch (e) {
           console.warn('VFS audit ingestion fallback', e);
         }
@@ -1112,7 +1118,7 @@ Strict Formatting Guidelines:
         }
 
         try {
-          vfsMemoryService.ingestAuditAsResource(text, websiteUrl);
+          vfsMemoryService.ingestAuditAsResource(gateReportText(text, reportGate), websiteUrl);
         } catch (e) {
           console.warn('VFS audit ingestion fallback', e);
         }
@@ -1132,7 +1138,7 @@ Strict Formatting Guidelines:
       });
       if (fallbackResult && fallbackResult.text && fallbackResult.text.trim()) {
         try {
-          vfsMemoryService.ingestAuditAsResource(fallbackResult.text, websiteUrl);
+          vfsMemoryService.ingestAuditAsResource(gateReportText(fallbackResult.text, reportGate), websiteUrl);
         } catch (e) {
           console.warn('VFS audit ingestion fallback', e);
         }

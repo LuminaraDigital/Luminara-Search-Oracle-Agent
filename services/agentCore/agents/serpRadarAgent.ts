@@ -2,8 +2,9 @@
  * SERP Radar Agent: Live Search & Empirical Citation Specialist
  * 
  * CrewAI Role: Radar Scout
- * Goal: Autonomously query live search engines (Google, Perplexity, Tavily),
- * evaluate generative AI search presence, and measure empirical citation rate.
+ * Goal: Run a few web searches through Tavily, or through the local search sidecar
+ * when no Tavily key is set, and count the results that mention the brand.
+ * It queries no other engine and no AI answer product.
  */
 
 import { tavilyService } from '../../search/tavilyService';
@@ -27,20 +28,11 @@ export class SerpRadarAgent {
   ): Promise<{
     serpEvidence: SerpEvidenceItem[];
     citationRatePercent: number | null;
+    /** Count of returned serpEvidence rows that mention the brand. Not a 0-100 score. */
     shareOfVoiceScore: number | null;
   }> {
     const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
     const brandName = dna?.name || cleanDomain.split('.')[0];
-
-    emit({
-      id: `serp-start-${Date.now()}`,
-      timestamp: Date.now(),
-      agentRole: 'serp_radar',
-      agentName: this.name,
-      phase: 'probing_engines',
-      message: `Probing Google, Perplexity & AI Overviews for "${brandName}" search footprint…`,
-      status: 'running',
-    });
 
     // Formulate targeted queries
     const queries = [
@@ -52,6 +44,20 @@ export class SerpRadarAgent {
     const tavilyKey = configService.getTavilyKey();
     const localSerpEnabled = configService.isLocalSerpEnabled();
     const serpEvidence: SerpEvidenceItem[] = [];
+    // Name the one search source this run can use, and nothing it does not query.
+    const searchSource = tavilyKey ? 'Tavily web search' : localSerpEnabled ? 'the local search sidecar' : '';
+
+    emit({
+      id: `serp-start-${Date.now()}`,
+      timestamp: Date.now(),
+      agentRole: 'serp_radar',
+      agentName: this.name,
+      phase: 'probing_engines',
+      message: searchSource
+        ? `Checking web search results for "${brandName}" through ${searchSource}…`
+        : `Checking web search results for "${brandName}"…`,
+      status: 'running',
+    });
 
     if (hostedAuthBlocked()) {
       emit({
@@ -136,12 +142,8 @@ export class SerpRadarAgent {
     const totalItems = liveEvidence.length;
     const mentionedItems = liveEvidence.filter((e) => e.brandMentioned).length;
     const citationRatePercent = totalItems > 0 ? Math.round((mentionedItems / totalItems) * 100) : null;
-    const shareOfVoiceScore =
-      citationRatePercent == null
-        ? null
-        : citationRatePercent === 0
-          ? 0
-          : Math.min(100, Math.round(citationRatePercent * 0.85 + (totalItems > 5 ? 15 : 5)));
+    // A count of live rows that mention the brand. No weighting and no added constant.
+    const shareOfVoiceScore = totalItems > 0 ? mentionedItems : null;
 
     emit({
       id: `serp-done-${Date.now()}`,
@@ -156,7 +158,7 @@ export class SerpRadarAgent {
             : searchSkipReason
               ? `Analyzed 0 SERP results. Citation rate and share of voice were not measured. ${searchSkipReason}`
               : 'Analyzed 0 SERP results. Citation rate and share of voice were not measured.'
-          : `Analyzed ${totalItems} SERP results (${mentionedItems}/${totalItems} mentions). Empirical citation rate: ${citationRatePercent}%, Share-of-Voice: ${shareOfVoiceScore}/100.`,
+          : `Analyzed ${totalItems} SERP results. Brand mentioned in ${mentionedItems} of ${totalItems}.`,
       status: 'completed',
       evidenceSnippet:
         citationRatePercent == null

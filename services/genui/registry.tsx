@@ -7,25 +7,38 @@ import { ShipActionGate } from '../../components/audit/ShipActionGate';
 import { ShareOfVoiceCard } from '../../components/audit/ShareOfVoiceCard';
 import { MetricBadge } from './components/MetricBadge';
 import { ActionCard } from './components/ActionCard';
-import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
+import { isMeasuredShareOfVoice } from '../../services/visibility/shareOfVoiceService';
+import { REPORT_TABLES, isReportColumn } from '../audit/reportColumnGate';
 
-const DEFAULT_RADAR_HEADERS = [
-  'Query',
-  'Intent',
-  'Brand cited',
-  'Competitors',
-  'Organic rank',
-  'AI Overview',
-  'Status',
-];
+// The cards take the report's own columns. A chat model supplies the rows, so the
+// same rule as the report gate applies: a column that is not one of the report's
+// own is dropped, and a row that cannot be lined up under the headers is dropped.
+const DEFAULT_RADAR_HEADERS: string[] = [...REPORT_TABLES.visibilityRadar];
+const DEFAULT_COMPETITOR_HEADERS: string[] = [...REPORT_TABLES.competitorMap];
 
-const DEFAULT_COMPETITOR_HEADERS = [
-  'Brand',
-  'How AI talks about them',
-  'Pages that win citations',
-  'Content Advantage',
-  'Trust Signals',
-];
+/** Reads (rows, headers?) or (headers, rows) from the model's arguments and gates the columns. */
+export function gatedTableArgs(resolvedArgs: any[], defaultHeaders: string[]): { headers: string[]; rows: string[][] } {
+  let rows: unknown[] = [];
+  let headers: unknown[] = defaultHeaders;
+
+  if (Array.isArray(resolvedArgs[0])) {
+    if (resolvedArgs[0].length > 0 && Array.isArray(resolvedArgs[0][0])) {
+      rows = resolvedArgs[0];
+      if (Array.isArray(resolvedArgs[1])) headers = resolvedArgs[1];
+    } else if (resolvedArgs.length > 1 && Array.isArray(resolvedArgs[1])) {
+      headers = resolvedArgs[0];
+      rows = resolvedArgs[1];
+    }
+  }
+
+  const names = headers.map((header) => String(header ?? ''));
+  const keep = names.map((_, index) => index).filter((index) => isReportColumn(names[index]));
+  const aligned = rows.filter((row): row is unknown[] => Array.isArray(row) && row.length === names.length);
+  return {
+    headers: keep.map((index) => names[index]),
+    rows: aligned.map((row) => keep.map((index) => String(row[index] ?? ''))),
+  };
+}
 
 export const LUMINARA_GENUI_REGISTRY: ComponentRegistry = {
   // Composite Layouts
@@ -61,46 +74,15 @@ export const LUMINARA_GENUI_REGISTRY: ComponentRegistry = {
   // High-Density Domain Components
   VisibilityRadar: {
     component: VisibilityRadar,
-    adapter: (node, resolvedArgs) => {
-      let rows: string[][] = [];
-      let headers: string[] = DEFAULT_RADAR_HEADERS;
-
-      if (Array.isArray(resolvedArgs[0])) {
-        // If first arg is an array of arrays: rows
-        if (resolvedArgs[0].length > 0 && Array.isArray(resolvedArgs[0][0])) {
-          rows = resolvedArgs[0];
-          if (Array.isArray(resolvedArgs[1])) headers = resolvedArgs[1];
-        } else if (resolvedArgs.length > 1 && Array.isArray(resolvedArgs[1])) {
-          headers = resolvedArgs[0];
-          rows = resolvedArgs[1];
-        }
-      }
-
-      return { headers, rows };
-    },
-    signature: 'VisibilityRadar(rows: string[][], headers?: string[])',
-    description: 'Live SERP and AI Overview visibility radar mapping query rankings and citations.',
+    adapter: (node, resolvedArgs) => gatedTableArgs(resolvedArgs, DEFAULT_RADAR_HEADERS),
+    signature: 'VisibilityRadar(rows: [query, intent, brandCited, keyCompetitors, citationStatus][])',
+    description: 'Visibility table: one row per query with brand cited (Yes/No/not measured), key competitors and citation status.',
   },
 
   CompetitorMap: {
     component: CompetitorMap,
-    adapter: (node, resolvedArgs) => {
-      let rows: string[][] = [];
-      let headers: string[] = DEFAULT_COMPETITOR_HEADERS;
-
-      if (Array.isArray(resolvedArgs[0])) {
-        if (resolvedArgs[0].length > 0 && Array.isArray(resolvedArgs[0][0])) {
-          rows = resolvedArgs[0];
-          if (Array.isArray(resolvedArgs[1])) headers = resolvedArgs[1];
-        } else if (resolvedArgs.length > 1 && Array.isArray(resolvedArgs[1])) {
-          headers = resolvedArgs[0];
-          rows = resolvedArgs[1];
-        }
-      }
-
-      return { headers, rows };
-    },
-    signature: 'CompetitorMap(rows: string[][], headers?: string[])',
+    adapter: (node, resolvedArgs) => gatedTableArgs(resolvedArgs, DEFAULT_COMPETITOR_HEADERS),
+    signature: 'CompetitorMap(rows: [entity, aiPerception, topCitedPageTypes, contentAdvantage][])',
     description: 'Comparative perception and content advantage map for market rivals.',
   },
 
@@ -147,44 +129,14 @@ export const LUMINARA_GENUI_REGISTRY: ComponentRegistry = {
 
   ShareOfVoiceCard: {
     component: ShareOfVoiceCard,
-    adapter: (node, resolvedArgs) => {
-      if (resolvedArgs[0] && typeof resolvedArgs[0] === 'object' && 'slices' in resolvedArgs[0]) {
-        return { summary: resolvedArgs[0] as ShareOfVoiceSummary };
-      }
-
-      // Convert tuples like [["Luminara", 65], ["Competitor", 35]]
-      const title = typeof resolvedArgs[0] === 'string' ? resolvedArgs[0] : 'Brand Share of Voice';
-      const pairs = Array.isArray(resolvedArgs[1]) ? resolvedArgs[1] : [];
-
-      const slices = pairs.map((pair: any, idx: number) => {
-        const label = Array.isArray(pair) ? String(pair[0]) : `Entity ${idx + 1}`;
-        const pct = Array.isArray(pair) ? Number(pair[1]) || 0 : 0;
-        return {
-          label,
-          kind: idx === 0 ? ('brand' as const) : ('competitor' as const),
-          mentionCount: 1,
-          citationCount: 1,
-          citationSharePercent: pct,
-          mentionSharePercent: pct,
-        };
-      });
-
-      const summary: ShareOfVoiceSummary = {
-        targetDomain: 'target.domain',
-        brandName: title,
-        measuredAt: Date.now(),
-        totalPrompts: 1,
-        mentionCoveragePercent: slices[0]?.mentionSharePercent ?? 0,
-        citationCoveragePercent: slices[0]?.citationSharePercent ?? 0,
-        brandCitationSharePercent: slices[0]?.citationSharePercent ?? 0,
-        slices,
-        formula: 'empirical_probe',
-        method: 'observed',
-      };
-
-      return { summary };
-    },
-    signature: 'ShareOfVoiceCard(brandName: string, distribution: [string, number][])',
-    description: 'Share of voice comparison card showing brand vs rival citation coverage.',
+    // Share of voice numbers come only from the code that counted them. Anything a
+    // chat model writes here, numbers or a whole summary object, is not shown: the
+    // card gets no summary and renders nothing. The entry stays so a stored chat
+    // reply that names the card still loads.
+    adapter: (node, resolvedArgs) => ({
+      summary: isMeasuredShareOfVoice(resolvedArgs[0]) ? resolvedArgs[0] : null,
+    }),
+    signature: 'ShareOfVoiceCard(summary)',
+    description: 'Share of voice counts from an audit. Filled by the app, not by the model.',
   },
 };

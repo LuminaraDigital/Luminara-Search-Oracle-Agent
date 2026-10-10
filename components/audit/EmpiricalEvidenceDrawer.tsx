@@ -81,11 +81,11 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
         {/* Top Summary Metrics Bar */}
         <div className={`grid gap-3 p-4 bg-black/40 border-b border-white/5 ${integrity ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
           <div className="glass-morphism p-3 rounded-xl border border-white/10 text-center">
-            <span className="block text-[10px] uppercase font-mono text-gray-400">Citation Rate</span>
-            <span className={`text-xl font-bold font-mono ${citationMeasured && (summary.citationRatePercent ?? 0) >= 60 ? 'text-success-400' : 'text-warning-400'}`}>
-              {citationMeasured ? `${summary.citationRatePercent}%` : 'not measured'}
+            <span className="block text-[10px] uppercase font-mono text-gray-400">Brand mentions</span>
+            <span className="text-xl font-bold font-mono text-gold-light">
+              {citationMeasured ? `${summary.queriesCitedCount} of ${summary.totalQueriesTested}` : 'not measured'}
             </span>
-            <span className="text-[9px] text-gray-500">{summary.queriesCitedCount}/{summary.totalQueriesTested} queries cited</span>
+            <span className="text-[9px] text-gray-500">sampled queries whose results name the brand</span>
           </div>
 
           <div className="glass-morphism p-3 rounded-xl border border-white/10 text-center">

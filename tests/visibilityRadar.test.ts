@@ -1,25 +1,60 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { computeRadarAverage, parseRadarItemScore } from '../components/audit/VisibilityRadar';
+import * as radar from '../components/audit/VisibilityRadar';
+import { VisibilityRadar, readBrandCited, readCitationStatus } from '../components/audit/VisibilityRadar';
+
+const HEADERS = ['Query', 'Intent', 'Brand Cited (Yes/No)', 'Key Competitors', 'Citation Status (Cited/Not Cited/Not Measured)'];
 
 describe('VisibilityRadar honesty', () => {
-  it('averages measured trailing scores', () => {
-    expect(
-      computeRadarAverage([
-        ['q1', 'i', 'yes', 'r', '1', 'x', 'no', '40'],
-        ['q2', 'i', 'no', 'r', '2', 'x', 'yes', '60'],
-      ]),
-    ).toBe(50);
+  it('no longer averages digits found in the last cell into a score', () => {
+    // "Cited (2 of 5)" used to become "Blended authority 25/100".
+    expect('computeRadarAverage' in radar).toBe(false);
+    expect('parseRadarItemScore' in radar).toBe(false);
+    const html = renderToStaticMarkup(createElement(VisibilityRadar, {
+      headers: HEADERS,
+      rows: [
+        ['q1', 'informational', 'Yes', 'Rival', 'Cited (2 of 5)'],
+        ['q2', 'commercial', 'No', 'Rival', 'Not cited'],
+      ],
+    }));
+    expect(html).not.toMatch(/\d+\s*\/\s*100/);
+    expect(html).not.toMatch(/\d+%/);
+    expect(html).not.toContain('Blended authority');
+    // The status prints as its reading. The rest of the cell is not shown.
+    expect(html).toMatch(/>Cited</);
+    expect(html).not.toContain('(2 of 5)');
   });
 
-  it('returns null instead of inventing a default score', () => {
-    expect(computeRadarAverage([['q', 'i', 'yes', 'r', '-', 'x', 'no', 'n/a']])).toBeNull();
-    expect(computeRadarAverage([])).toBeNull();
+  it('shows the citation status the table gives, and "Not measured" when it gives none', () => {
+    const html = renderToStaticMarkup(createElement(VisibilityRadar, {
+      headers: HEADERS,
+      rows: [['q1', 'informational', 'not measured', 'Rival', '']],
+    }));
+    expect(html).toContain('Citation status:');
+    expect(html).not.toContain('Radar score');
+    expect(html).not.toContain('not_measured');
+    expect((html.match(/Not measured/g) || []).length).toBe(2);
   });
 
-  it('does not invent per-row scores', () => {
-    expect(parseRadarItemScore(undefined)).toBeNull();
-    expect(parseRadarItemScore('')).toBeNull();
-    expect(parseRadarItemScore('n/a')).toBeNull();
-    expect(parseRadarItemScore('72%')).toBe(72);
+  it('reads the citation status by what the cell starts with', () => {
+    expect(readCitationStatus('Cited')).toBe('cited');
+    expect(readCitationStatus('cited (estimated)')).toBe('cited');
+    expect(readCitationStatus('Not Cited')).toBe('not_cited');
+    expect(readCitationStatus('Not Measured')).toBe('not_measured');
+    expect(readCitationStatus('not verified')).toBe('not_measured');
+    expect(readCitationStatus('Citedly')).toBe('not_measured');
+    expect(readCitationStatus(undefined)).toBe('not_measured');
+  });
+
+  it('reads only a plain yes or no as a reading', () => {
+    expect(readBrandCited('Yes')).toBe('yes');
+    expect(readBrandCited('yes (estimated)')).toBe('yes');
+    expect(readBrandCited('No')).toBe('no');
+    expect(readBrandCited('Not cited')).toBe('no');
+    expect(readBrandCited('not measured')).toBe('not_measured');
+    expect(readBrandCited('not verified')).toBe('not_measured');
+    expect(readBrandCited('None')).toBe('not_measured');
+    expect(readBrandCited(undefined)).toBe('not_measured');
   });
 });

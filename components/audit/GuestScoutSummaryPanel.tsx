@@ -61,36 +61,6 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
         </div>
       </div>
 
-      {summary.aiPlatforms && summary.aiPlatforms.length > 0 && (
-        <div className="mt-8 border-t border-white/10 pt-6">
-          <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-light">AI Engine Recommendation Status</h3>
-          <p className="mt-1 text-[11px] text-gray-400">Direct observation across ChatGPT, Perplexity, Google AI Overviews, and Search.</p>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {summary.aiPlatforms.map((p) => {
-              const isPositive = p.status === 'recommended' || p.status === 'cited';
-              const isNegative = p.status === 'not_cited';
-              return (
-                <div key={p.platform} className="rounded-xl border border-white/10 bg-white/[0.03] p-4 flex flex-col justify-between">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold text-sm text-white">{p.platform}</span>
-                    <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                      isPositive
-                        ? 'border-gold/40 text-gold-light bg-gold/10'
-                        : isNegative
-                          ? 'border-white/20 text-gray-300 bg-white/5'
-                          : 'border-white/15 text-gray-400 bg-transparent'
-                    }`}>
-                      {p.status === 'recommended' ? 'Recommended' : p.status === 'cited' ? 'Cited' : p.status === 'not_cited' ? 'Not Cited' : 'Not Measured'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400 leading-relaxed">{p.detail}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       <h3 className="mt-8 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Signals</h3>
       <ul className="mt-3 flex flex-wrap gap-2">
         {summary.badges.map((badge) => (

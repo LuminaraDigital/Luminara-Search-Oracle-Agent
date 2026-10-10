@@ -37,7 +37,7 @@ import {
   PROVIDER_DECISIONS_RECORD_PREFIX,
   providerDecisionsErrorRecord,
 } from '../apiClient';
-import { liveSearchRows, pageSupportsHealthScore } from './auditEvidenceGate';
+import { healthChecklist, liveSearchRows, pageSupportsHealthScore } from './auditEvidenceGate';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
 
@@ -213,7 +213,7 @@ export const CREW_PROFILES: Record<AgentRole, AgentProfile> = {
     avatar: '📡',
     tagline: 'Live Search & Citation Radar',
     goal: 'Probe search engines and measure empirical citation rates.',
-    backstory: 'Search engine intelligence specialist monitoring Google, Perplexity, and AI Overviews.',
+    backstory: 'Runs web searches through Tavily or the local search sidecar and counts the results that mention the brand.',
     preferredModelRole: 'efficient',
   },
   playbook_auditor: {
@@ -407,10 +407,17 @@ export class CrewOrchestrator {
 
     // Node 7: Plain English Executive Briefing
     graph.addNode('executive_translator_node', 'Executive Translator', async (ctx, emit) => {
+      // The brief quotes counts of live search rows, never a percentage of AI answers.
+      const liveRows = liveSearchRows(ctx.serpEvidence);
+      const webMentions = typeof ctx.citationRatePercent === 'number' && liveRows.length > 0
+        ? { mentioned: liveRows.filter((row) => row.brandMentioned).length, total: liveRows.length }
+        : null;
+      // The brief says how many of the site checks passed. It does not print the checklist number.
+      const healthChecks = typeof ctx.healthScore === 'number' ? healthChecklist(ctx.findings) : null;
       const plainEnglishBrief = await executiveTranslatorAgent.execute(
         ctx.targetUrl,
-        ctx.healthScore,
-        ctx.citationRatePercent,
+        healthChecks,
+        webMentions,
         ctx.findings,
         ctx.patches,
         ctx.dna,
