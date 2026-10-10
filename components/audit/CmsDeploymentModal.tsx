@@ -17,6 +17,52 @@ interface CmsDeploymentModalProps {
   remediationPayload?: RemediationPayload;
 }
 
+/** Only a result whose read-back fetch saw the schema in the page source is called deployed. */
+export function deploymentResultHeading(result: DeploymentResult): string {
+  if (!result.success) return 'Deployment Error';
+  return result.seenInPageSource ? 'Deployed' : 'Request Completed';
+}
+
+/** The result box under the form. Its wording comes from the result, which says what was checked. */
+export const DeploymentResultAlert: React.FC<{ result: DeploymentResult }> = ({ result }) => (
+  <div
+    className={`p-4 rounded-xl border text-xs animate-in fade-in duration-300 ${
+      result.success
+        ? 'bg-success-950/40 border-success-500/40 text-success-200'
+        : 'bg-danger-950/40 border-danger-500/40 text-danger-200'
+    }`}
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-2.5">
+        {result.success ? (
+          <ICONS.CheckCircle className="w-5 h-5 text-success-400 shrink-0 mt-0.5" />
+        ) : (
+          <ICONS.AlertTriangle className="w-5 h-5 text-danger-400 shrink-0 mt-0.5" />
+        )}
+        <div>
+          <strong className="block text-sm font-bold text-white mb-0.5">
+            {deploymentResultHeading(result)}
+          </strong>
+          <p className="leading-relaxed">{result.message}</p>
+          {result.prUrl && (
+            <a
+              href={result.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1 text-gold-light hover:underline font-mono text-[11px]"
+            >
+              View Pull Request on GitHub &rarr;
+            </a>
+          )}
+        </div>
+      </div>
+      <span className="text-[10px] font-mono opacity-60 shrink-0">
+        +{result.diffSummary.linesAdded} lines
+      </span>
+    </div>
+  </div>
+);
+
 export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
   isOpen,
   onClose,
@@ -172,7 +218,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
             platform: 'script_tag',
             deploymentId: `cdn-${Date.now()}`,
             message: schemaGate.okToDeploy
-              ? 'Zero-code CDN script generated and verified ready for site insertion.'
+              ? 'Script tag generated. Nothing changes on your site until you paste it into the site header.'
               : `Script generated with Critical schema issues: ${schemaGate.issues
                   .filter((i) => i.severity === 'critical')
                   .map((i) => i.code)
@@ -227,10 +273,10 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
-                1-Click CMS & GitHub Autonomous Deployment
+                1-Click CMS & GitHub Deployment
               </h3>
               <p className="text-xs text-gray-400">
-                Deploy remediated Schema.org markup directly into production code.
+                Send remediated Schema.org markup to your CMS, or open a pull request with it.
               </p>
             </div>
           </div>
@@ -528,44 +574,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
           )}
 
           {/* Result Alert */}
-          {result && (
-            <div
-              className={`p-4 rounded-xl border text-xs animate-in fade-in duration-300 ${
-                result.success
-                  ? 'bg-success-950/40 border-success-500/40 text-success-200'
-                  : 'bg-danger-950/40 border-danger-500/40 text-danger-200'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-2.5">
-                  {result.success ? (
-                    <ICONS.CheckCircle className="w-5 h-5 text-success-400 shrink-0 mt-0.5" />
-                  ) : (
-                    <ICONS.AlertTriangle className="w-5 h-5 text-danger-400 shrink-0 mt-0.5" />
-                  )}
-                  <div>
-                    <strong className="block text-sm font-bold text-white mb-0.5">
-                      {result.success ? 'Autonomous Action Dispatched' : 'Deployment Error'}
-                    </strong>
-                    <p className="leading-relaxed">{result.message}</p>
-                    {result.prUrl && (
-                      <a
-                        href={result.prUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1 text-gold-light hover:underline font-mono text-[11px]"
-                      >
-                        View Pull Request on GitHub &rarr;
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <span className="text-[10px] font-mono opacity-60 shrink-0">
-                  +{result.diffSummary.linesAdded} lines
-                </span>
-              </div>
-            </div>
-          )}
+          {result && <DeploymentResultAlert result={result} />}
 
           {/* Past History Accordion */}
           {history.length > 0 && (
@@ -574,7 +583,7 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
                 onClick={() => setHistoryOpen(!historyOpen)}
                 className="flex items-center justify-between w-full text-xs font-bold text-gray-400 hover:text-white uppercase tracking-wider"
               >
-                <span>Recent Autonomous Deployments ({history.length})</span>
+                <span>Recent Deployment Attempts ({history.length})</span>
                 <ICONS.ChevronDown className={`w-4 h-4 transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
               </button>
 

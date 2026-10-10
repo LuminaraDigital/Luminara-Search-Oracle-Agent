@@ -60,7 +60,8 @@ describe('CmsDeploymentService', () => {
     };
 
     const script = cmsDeploymentService.generateClientScriptTag(payload);
-    expect(script).toContain('<!-- Luminara AEO Autonomous Injector (Zero-Code) -->');
+    expect(script).toContain('<!-- Luminara AEO Injector (Zero-Code) -->');
+    expect(script).not.toMatch(/autonomous|verified/i);
     expect(script).toContain('application/ld+json');
     expect(script).toContain('decodeURIComponent(atob(');
     expect(script).toContain('CSP:');
@@ -181,7 +182,10 @@ describe('CMS endpoint steering protection', () => {
       { platform: 'wordpress', authToken: 'user:pass', endpoint: 'https://my-site.com/' },
       validPayload('Scripts & <Co>')
     );
-    expect(res.success).toBe(true);
+    // No Luminara server is reachable in this test, so nothing reads the page back.
+    // A 200 from WordPress alone is not a deployment (tests/deployScreenTruth.test.ts covers the read-back).
+    expect(res.success).toBe(false);
+    expect(res.message).toMatch(/could not be read back/i);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://my-site.com/wp-json/wp/v2/settings');

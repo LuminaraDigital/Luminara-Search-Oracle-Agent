@@ -48,6 +48,7 @@ leaked internals).
 | `* /oauth/mcp/*` | worker/mcpOAuth.ts | oauth/token | OAuth 2.1 + PKCE for MCP |
 | `GET,POST /memory/facts` | worker/memoryService.ts | session | Hosted memory facts |
 | `POST /pagespeed` | worker/pagespeedRoute.ts | session | Hosted PageSpeed |
+| `POST /deploy/readback` | worker/deployReadback.ts | session | Deploy read-back for the CMS deploy screen. Body `{ url, schemaJsonLd }`. Fetches the page through `fetchPublicUrl` (public http(s) only; private, loopback and link-local addresses refused, DNS re-checked on every redirect hop) and answers `{ ok: true, found }`: whether a JSON-LD block equal to the schema is in the page source. Never returns the page. A page that could not be read is 422, never `found: false`. 10/min per account and per IP |
 | `* /mcp`, `/mcp/*` | worker/mcpServer.ts | session/apikey/oauth | MCP tool calls |
 | `GET,POST /projects`, `/projects/:id` | worker/projectService.ts + projectContextService.ts | session | Project memory CRUD |
 | `GET,POST /reports`, `/reports/:id` | worker/agentReportService.ts | session | Agent reports |
