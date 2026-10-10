@@ -137,6 +137,32 @@ export interface ToolExecution {
   output: string;
 }
 
+export interface VerifyStep {
+  id: string;
+  label: string;
+  status: 'running' | 'passed' | 'failed';
+  detail?: string;
+}
+
+export interface VerifyCardData {
+  title: string;
+  verdict: string;
+  actionText: string;
+  actionType: 'copy_fix' | 'run_audit' | 'view_report' | 'grounded_remediation';
+  actionPayload?: string;
+  reportUrl?: string;
+  steps: VerifyStep[];
+}
+
+export type AgentRosterRole =
+  | 'scout'
+  | 'serp_radar'
+  | 'playbook_auditor'
+  | 'competitor_strategist'
+  | 'remediation_architect'
+  | 'executive_translator'
+  | 'adversarial_critic';
+
 export interface Message {
   id: string;
   role: 'user' | 'model' | 'assistant' | 'system';
@@ -151,6 +177,8 @@ export interface Message {
   groundingUrls?: Array<{ uri: string; title: string }>;
   toolExecutions?: ToolExecution[];
   sources?: any[];
+  agentRole?: AgentRosterRole;
+  verifyCard?: VerifyCardData;
 }
 
 export interface SearchGroundingChunk {

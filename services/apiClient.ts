@@ -341,6 +341,57 @@ export async function destroySessionCookie(): Promise<boolean> {
 export interface ProviderFetchOptions {
   /** The user's own key. When set and a Worker is reachable, the request is relayed with this key. */
   userKey?: string;
+  /** Explicit action ID for idempotency (e.g. audit or question run). */
+  actionId?: string;
+}
+
+let activeActionId: string | null = null;
+
+export function setActiveActionId(id: string | null): void {
+  activeActionId = id;
+}
+
+export function getActiveActionId(): string | null {
+  return activeActionId;
+}
+
+export function generateActionId(kind: 'audit' | 'ask' | 'artifact' | 'idea' = 'ask'): string {
+  return `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export async function withActionId<T>(
+  kind: 'audit' | 'ask' | 'artifact' | 'idea',
+  fn: () => Promise<T>,
+): Promise<T> {
+  const existing = getActiveActionId();
+  if (existing) {
+    return fn();
+  }
+  const id = generateActionId(kind);
+  setActiveActionId(id);
+  try {
+    return await fn();
+  } finally {
+    setActiveActionId(null);
+  }
+}
+
+export async function* withActionIdStream<T>(
+  kind: 'audit' | 'ask' | 'artifact' | 'idea',
+  fn: () => AsyncGenerator<T, void, unknown>,
+): AsyncGenerator<T, void, unknown> {
+  const existing = getActiveActionId();
+  if (existing) {
+    yield* fn();
+    return;
+  }
+  const id = generateActionId(kind);
+  setActiveActionId(id);
+  try {
+    yield* fn();
+  } finally {
+    setActiveActionId(null);
+  }
 }
 
 export async function providerFetch(providerId: string, path: string, directUrl: string, init: RequestInit, opts: ProviderFetchOptions = {}): Promise<Response> {
@@ -361,6 +412,12 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   headers.delete('authorization');
   headers.delete('x-api-key');
   headers.delete('nv-organization-id');
+
+  const actionId = opts.actionId || activeActionId;
+  if (actionId) {
+    headers.set('x-luminara-action-id', actionId);
+  }
+
   let res: Response;
   if (relayOwnKey) {
     headers.set('x-provider-key', opts.userKey as string);
@@ -383,7 +440,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('luminara-open-paywall', {
             detail: {
-              reason: toUserFacingText(body.error, 'Daily free limit reached'),
+              reason: toUserFacingText(body.error, 'Daily limit reached'),
               code: body.code,
               requiredTier: body.requiredTier,
               provider: body.provider,
@@ -411,6 +468,8 @@ export interface QuotaInfo {
   remaining: number;
   resetSec: number;
   isUnlimited: boolean;
+  fairUse?: boolean;
+  unit?: string;
   plan?: string;
   expiresAt?: number;
   /** Hosted scout credits from a qualified invite. Separate from the daily cap. */
@@ -675,12 +734,14 @@ export function updateQuotaFromHeaders(headers: Headers): void {
   const rem = headers.get('x-quota-remaining');
   const lim = headers.get('x-quota-limit');
   const rst = headers.get('x-quota-reset');
+  const fairUseHeader = headers.get('x-quota-fair-use');
+  const isFairUse = fairUseHeader === 'true';
   if (rem !== null || lim !== null) {
-    const isUnlimited = rem === 'unlimited' || lim === 'unlimited';
-    const limitNum = isUnlimited ? -1 : (Number(lim) || 0);
-    const remNum = isUnlimited ? -1 : (Number(rem) || 0);
+    const isUnlimited = (rem === 'unlimited' || lim === 'unlimited') || isFairUse;
+    const limitNum = (rem === 'unlimited' || lim === 'unlimited') && !isFairUse ? -1 : (Number(lim) || 0);
+    const remNum = (rem === 'unlimited' || lim === 'unlimited') && !isFairUse ? -1 : (Number(rem) || 0);
     const resetSec = Number(rst) || 0;
-    const used = isUnlimited ? 0 : Math.max(0, limitNum - remNum);
+    const used = (rem === 'unlimited' || lim === 'unlimited') && !isFairUse ? 0 : Math.max(0, limitNum - remNum);
     const bonusHeader = headers.get('x-quota-bonus');
     const bonusRemaining = bonusHeader == null || bonusHeader === '' ? undefined : Number(bonusHeader);
     currentQuota = {
@@ -689,8 +750,11 @@ export function updateQuotaFromHeaders(headers: Headers): void {
       remaining: remNum,
       resetSec,
       isUnlimited,
-      plan: isUnlimited ? 'active' : 'free',
-      bonusRemaining: Number.isFinite(bonusRemaining) ? bonusRemaining : undefined,
+      fairUse: isFairUse,
+      unit: 'audits/questions',
+      plan: currentQuota?.plan ?? (isUnlimited ? 'active' : 'free'),
+      expiresAt: currentQuota?.expiresAt,
+      bonusRemaining: Number.isFinite(bonusRemaining) ? bonusRemaining : currentQuota?.bonusRemaining,
     };
     quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
   }
@@ -727,6 +791,8 @@ export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
         remaining: data.remaining,
         resetSec: data.resetSec,
         isUnlimited: data.isUnlimited,
+        fairUse: Boolean(data.fairUse),
+        unit: data.unit || 'audits/questions',
         plan: data.plan,
         expiresAt: data.expiresAt,
         bonusRemaining: typeof data.bonusRemaining === 'number' ? data.bonusRemaining : undefined,

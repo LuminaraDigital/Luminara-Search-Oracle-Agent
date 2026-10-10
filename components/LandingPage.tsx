@@ -116,7 +116,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               See if AI recommends your business, and fix it.
             </h1>
             <p className="max-w-xl text-lg sm:text-xl text-[var(--color-ink-2)] leading-relaxed mb-8">
-              Check whether ChatGPT, Perplexity, and Google AI Overviews mention your business when customers search. Leave with an actionable fix list to get cited.
+              Check whether ChatGPT, Perplexity, and Google AI Overviews mention your business when customers search. Leave with an actionable 1-3 fix list and IDE connectors to get cited.
             </p>
             <div className="flex flex-col sm:flex-row flex-wrap gap-3 mb-5">
               {isAuthenticated ? (
@@ -198,6 +198,46 @@ const LandingPage: React.FC<LandingPageProps> = ({
             </p>
           </div>
           <MarketingSellPoints heading="" />
+
+          {/* Competitor contrast grid */}
+          <div className="mt-16 sm:mt-20 pt-12 sm:pt-16 border-t border-[var(--color-rule)]">
+            <p className="mkt-eyebrow mb-3">The landscape</p>
+            <h3 className="font-display text-2xl sm:text-3xl text-[var(--color-ink)] tracking-tight mb-8">
+              Why modern teams choose Luminara over legacy tools.
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
+              <div className="p-6 border border-[var(--color-rule)] bg-[var(--color-paper-2)]/60 flex flex-col justify-between">
+                <div>
+                  <p className="text-xs font-mono text-[var(--color-ink-2)] uppercase tracking-wider mb-2">Legacy SEO Suites</p>
+                  <h4 className="text-lg font-medium text-[var(--color-ink)] mb-3">Semrush / Ahrefs</h4>
+                  <p className="text-sm text-[var(--color-ink-2)] leading-relaxed mb-6">
+                    Built 15 years ago for 10 blue links and keyword counts. Overwhelming 40-tab dashboards that leave you blind to generative AI answers and provide no code fixes.
+                  </p>
+                </div>
+                <p className="text-xs font-mono text-[var(--color-ink-2)] border-t border-[var(--color-rule)] pt-3">$139 to $499/mo · Annual lock-in</p>
+              </div>
+              <div className="p-6 border border-[var(--color-rule)] bg-[var(--color-paper-2)]/60 flex flex-col justify-between">
+                <div>
+                  <p className="text-xs font-mono text-[var(--color-ink-2)] uppercase tracking-wider mb-2">Passive AI Trackers</p>
+                  <h4 className="text-lg font-medium text-[var(--color-ink)] mb-3">Otterly / Profound</h4>
+                  <p className="text-sm text-[var(--color-ink-2)] leading-relaxed mb-6">
+                    Prompt-scraping dashboards that alert you when citations are missing, but stop there. They invent synthetic 0-100 vanity scores and offer no IDE remediation.
+                  </p>
+                </div>
+                <p className="text-xs font-mono text-[var(--color-ink-2)] border-t border-[var(--color-rule)] pt-3">$99 to $500+/mo · Model add-on fees</p>
+              </div>
+              <div className="p-6 border border-[var(--color-accent)] bg-[var(--color-paper)] relative flex flex-col justify-between shadow-sm">
+                <div>
+                  <p className="text-xs font-mono text-[var(--color-accent)] uppercase tracking-wider mb-2">The Closed-Loop Engine</p>
+                  <h4 className="text-lg font-medium text-[var(--color-ink)] mb-3">Luminara Suite</h4>
+                  <p className="text-sm text-[var(--color-ink-2)] leading-relaxed mb-6">
+                    Audits Google and AI engines together with strict evidence labeling. Delivers an ordered 1-3 fix list with code snippets and native Cursor/Claude MCP integration.
+                  </p>
+                </div>
+                <p className="text-xs font-mono text-[var(--color-accent)] border-t border-[var(--color-rule)] pt-3">$49 to $149 flat 30-day tiers · No lock-in</p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -227,7 +267,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
           <div className="lg:col-span-5 min-w-0">
             <p className="mkt-eyebrow mb-4">Weekly Decision Loop</p>
             <h2 className={`${H2} mb-10`}>From a domain to the next action.</h2>
-            <ol className="space-y-7 list-none mb-10">
+            <ol className="space-y-7 list-none mb-8">
               {HOW_STEPS.map((step, index) => (
                 <li key={step.title} className="min-w-0 border-t border-[var(--color-rule)] pt-5">
                   <p className="text-[12px] font-mono text-[var(--color-accent)] mb-2">
@@ -238,6 +278,29 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 </li>
               ))}
             </ol>
+
+            {/* Actionable Fix List visual preview */}
+            <div className="border border-[var(--color-rule)] bg-[var(--color-paper-2)]/60 p-4 sm:p-5 mb-8">
+              <p className="text-[11px] font-mono text-[var(--color-accent)] uppercase tracking-wider mb-2">Output: Actionable 1-3 Fix List</p>
+              <div className="space-y-2 text-xs font-mono">
+                <div className="flex items-center justify-between p-2 bg-[var(--color-paper)] border border-[var(--color-rule)]">
+                  <span className="text-[var(--color-ink)] truncate mr-2">1. /llms.txt Machine-Readable Summary</span>
+                  <span className="text-[var(--color-accent)] shrink-0">Perplexity</span>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-[var(--color-paper)] border border-[var(--color-rule)]">
+                  <span className="text-[var(--color-ink)] truncate mr-2">2. Schema.org Entity Graph Injection</span>
+                  <span className="text-[var(--color-accent)] shrink-0">Google AIO</span>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-[var(--color-paper)] border border-[var(--color-rule)]">
+                  <span className="text-[var(--color-ink)] truncate mr-2">3. 40-60 Word Extractable Answer Block</span>
+                  <span className="text-[var(--color-accent)] shrink-0">ChatGPT</span>
+                </div>
+              </div>
+              <p className="text-[12px] text-[var(--color-ink-2)] mt-3">
+                Ship one fix today, re-check tomorrow. Build an evidence-backed daily streak.
+              </p>
+            </div>
+
             <button type="button" onClick={onNavigateInfrastructure} className="mkt-cta-tertiary">
               How an audit runs
             </button>
@@ -313,10 +376,11 @@ const LandingPage: React.FC<LandingPageProps> = ({
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
           <div className="lg:col-span-6 min-w-0">
             <p className="mkt-eyebrow mb-4">Growth and above</p>
-            <h2 className={`${H2} mb-5`}>The same reports inside Cursor and Claude.</h2>
+            <h2 className={`${H2} mb-5`}>Turn AI visibility audits into Git pull requests.</h2>
             <p className="mkt-body mb-8 max-w-lg">
-              Growth unlocks IDE connectors so the agents you already use can read your projects, context,
-              and reports, and save their own. Agency adds API access for paid research.
+              Growth unlocks our native Model Context Protocol (MCP) server so Cursor, Claude Code, Cline,
+              and Windsurf can read your projects, brand context, and audit findings, and generate the schema
+              and code fixes directly in your codebase. Agency adds API access for paid research.
             </p>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
               <button type="button" onClick={onNavigatePricing} className="mkt-cta-secondary">
@@ -332,7 +396,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
           <div className="lg:col-span-6 min-w-0 border border-[var(--color-rule)] bg-[var(--color-paper-2)]">
             <p className="px-5 sm:px-6 py-3.5 border-b border-[var(--color-rule)] text-[12px] font-mono text-[var(--color-ink-2)]">
-              luminara IDE tools
+              luminara IDE tools (MCP server)
             </p>
             <ul className="divide-y divide-[var(--color-rule)] list-none">
               {MCP_TOOLS.map((tool) => (

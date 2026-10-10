@@ -6,7 +6,12 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
 
-const ALLOWED_TYPES = new Set([
+/**
+ * Event types the browser may post. Keep in step with TelemetryEventType in
+ * services/analytics/productTelemetry.ts (tests/productAnalyticsParity.test.ts enforces it).
+ * `payment_completed` is deliberately absent: only worker/paymentAnalytics.ts writes it.
+ */
+export const ALLOWED_TYPES = new Set([
   'session_started',
   'page_view',
   'onboarding_started',
@@ -22,7 +27,6 @@ const ALLOWED_TYPES = new Set([
   'instant_audit_completed',
   'paywall_viewed',
   'checkout_started',
-  'payment_completed',
   'strategy_saved',
   'share_cta_clicked',
   'share_link_created',

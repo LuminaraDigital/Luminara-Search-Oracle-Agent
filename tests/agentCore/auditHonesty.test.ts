@@ -333,7 +333,8 @@ describe('Instant Audit honesty on empty evidence', () => {
 
   it('scores health when a live scrape and live search are both present', async () => {
     const result = await playbookAuditorAgent.execute('AEO', [livePage()], [liveSerp()], null, noop);
-    expect(result.healthScore).toBe(85);
+    expect(result.checks?.passed).toBe(11);
+    expect(result.checks?.total).toBe(11);
   });
 
   it('still applies a real schema penalty when live scrape and live search are both present', async () => {
@@ -347,9 +348,11 @@ describe('Instant Audit honesty on empty evidence', () => {
         events.push(event);
       },
     );
-    expect(result.healthScore).toBe(73);
+    expect(result.checks?.passed).toBe(10);
+    expect(result.checks?.total).toBe(11);
     expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(true);
-    expect(events.map((event) => event.message).join(' ')).toContain('73/100');
+    expect(events.map((event) => event.message).join(' ')).toContain('10 of 11 checks passed');
+    expect(events.map((event) => event.message).join(' ')).not.toContain('73/100');
   });
 
   it('keeps a connection-refused Jina fallback from inventing a health score', async () => {

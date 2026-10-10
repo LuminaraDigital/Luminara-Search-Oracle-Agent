@@ -89,12 +89,16 @@ function pushEvent(partial: Omit<BrandMemoryEvent, 'id' | 'createdAt'>): BrandMe
   return ev;
 }
 
+import type { AuditChecksSummary, AuditCitationSummary } from '../audit/auditMetrics';
+
 export interface IngestAuditVaultInput {
   domain: string;
   focus: string;
   reportText: string;
   title?: string;
   healthScore?: number | null;
+  checks?: AuditChecksSummary | null;
+  citation?: AuditCitationSummary | null;
   citationRatePercent?: number | null;
   topCompetitor?: string | null;
   dna?: BusinessDNA | null;
@@ -116,6 +120,8 @@ export function ingestAudit(input: IngestAuditVaultInput): {
     reportText: linkedReport,
     title: input.title,
     healthScore: input.healthScore,
+    checks: input.checks,
+    citation: input.citation,
     citationRatePercent: input.citationRatePercent,
     topCompetitor: input.topCompetitor,
     dnaCompetitors: competitors,

@@ -38,13 +38,13 @@ Answer Engine Optimization (AEO) focuses on securing brand mentions and citation
 
 ## ApexRank.io Analysis (Illustrative Sample)
 - Overall Visibility Score: 64/100 (Sample benchmark)
-- AI Overviews Citation Rate: 28% (Sample rate)
+- AI Overviews Citation Rate: 28% (sample data)
 - Entity Graph Status: Incomplete (Missing sameAs links to Wikidata, orphaned Product nodes)
 - Key Vulnerability: Heavy reliance on legacy 2021-style keyword stuffing. No direct FAQ or HowTo markup. Average reading level grade 14 (too dense for concise AI retrieval).
 
 ## SearchPilot.com Analysis (Illustrative Sample)
 - Overall Visibility Score: 82/100 (Sample benchmark)
-- AI Overviews Citation Rate: 65% (Sample rate)
+- AI Overviews Citation Rate: 65% (sample data)
 - Entity Graph Status: Robust JSON-LD Organization graph with founder mentions and verified credentials.
 - Winning Play: Publishes weekly A/B testing statistical data which generative engines frequently quote as primary source evidence.`,
       summary: 'Sample audit of two leading competitors highlighting entity schema strengths and weaknesses.',
@@ -85,18 +85,21 @@ Recent evaluations of Google AI Overviews and Perplexity Pro indicate:
     {
       id: 'msg-demo-2',
       role: 'assistant',
-      content: `Based on your analyzed sample demonstration sources, your main strategic advantage over ApexRank is that ApexRank suffers from an incomplete entity graph and an overly dense 14th-grade reading level, leading to a weak 28% AI citation rate [2]. 
+      content: `> [!NOTE]
+> Example data, not your site. All benchmark numbers below are illustrative sample data.
+
+Based on your analyzed sample demonstration sources, your main strategic advantage over ApexRank is that ApexRank suffers from an incomplete entity graph and an overly dense 14th-grade reading level, leading to a weak 28% (sample data) AI citation rate [2]. 
 
 To capitalize on this, you should ship two moves immediately:
-1. **Direct Answer Structuring**: Format your core service pages with 40–60 word definitive answers directly under H2 headers [1].
-2. **Proprietary Benchmark Data**: Like SearchPilot (who achieves a 65% citation rate [2]), publish first-party empirical statistics to trigger multi-source consensus in AI Overviews [1], [3].`,
+1. **Direct Answer Structuring**: Format your core service pages with 40-60 word definitive answers directly under H2 headers [1].
+2. **Proprietary Benchmark Data**: Like SearchPilot (who achieves a 65% (sample data) citation rate [2]), publish first-party empirical statistics to trigger multi-source consensus in AI Overviews [1], [3].`,
       timestamp: 1726000310000,
       citations: [
         {
           sourceId: 'src-2',
           sourceTitle: '[Sample Data] ApexRank & SearchPilot Benchmark (Demo Data)',
           citationNumber: 2,
-          quote: 'ApexRank.io: AI Overviews Citation Rate: 28% ... Missing sameAs links to Wikidata ... Average reading level grade 14',
+          quote: 'ApexRank.io: AI Overviews Citation Rate: 28% (sample data) ... Missing sameAs links to Wikidata ... Average reading level grade 14',
         },
         {
           sourceId: 'src-1',

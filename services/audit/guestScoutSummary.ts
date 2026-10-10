@@ -55,6 +55,7 @@ export interface GuestScoutSummaryInput {
   citationRatePercent: number | null;
   shareOfVoiceScore: number | null;
   healthScore: number | null;
+  checks?: { passed: number; total: number; summary: string } | null;
   scrapedPageCount: number;
   serpCount: number;
   findings: Array<{ title: string }>;
@@ -205,7 +206,13 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
   let badges: ScoutBadge[] = [
     metricBadge('Citation rate', input.citationRatePercent, '%'),
     metricBadge('Share of voice', input.shareOfVoiceScore, '/100'),
-    metricBadge('Page health', input.healthScore, '/100'),
+    input.checks
+      ? {
+          label: 'Checks passed',
+          status: 'measured',
+          value: `${input.checks.passed}/${input.checks.total}`,
+        }
+      : metricBadge('Page health', input.healthScore, '/100'),
   ];
   if (degraded) {
     badges = badges.map((badge) => ({ label: badge.label, status: 'not_measured' }));

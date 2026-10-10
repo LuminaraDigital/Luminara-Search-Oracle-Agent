@@ -127,7 +127,23 @@ export async function executeDreamRun(
   let pendingReviewCount = 0;
   const createdProposals: DreamProposal[] = [];
 
-  for (const p of agentOutput.proposals) {
+  const pendingEventIds = new Set(pendingEvents.map((e) => e.id));
+  const validProposals = agentOutput.proposals.filter((p) => {
+    if (!p.title || !p.content || !p.rationale) return false;
+    if (p.rationale.trim().length < 10) return false;
+    const lowerRationale = p.rationale.toLowerCase();
+    if (
+      lowerRationale.includes('no competitor') ||
+      lowerRationale.includes('none identified') ||
+      lowerRationale.includes('no evidence')
+    ) {
+      return false;
+    }
+    const refs = (p.sourceRefs || []).filter((id) => pendingEventIds.has(id));
+    return refs.length > 0;
+  });
+
+  for (const p of validProposals) {
     const proposalId = `dprop_${crypto.randomUUID()}`;
     let previousSnapshot: Partial<BusinessMemoryItem> | null = null;
 
@@ -533,6 +549,17 @@ export async function handleDreamingRoute(
       .bind(accountId, domain.toLowerCase())
       .first<DreamRunRow>();
 
+    const formattedLastRun = lastRun
+      ? {
+          ...lastRun,
+          proposalsCount:
+            (lastRun as any).proposals_count ?? (lastRun as any).proposalsCount ?? 0,
+          eventsCount: (lastRun as any).events_count ?? (lastRun as any).eventsCount ?? 0,
+          consolidatedCount:
+            (lastRun as any).consolidated_count ?? (lastRun as any).consolidatedCount ?? 0,
+        }
+      : null;
+
     return json({
       ok: true,
       domain,
@@ -540,7 +567,7 @@ export async function handleDreamingRoute(
       pendingEventsCount: pendingEvents.length,
       activeMemoriesCount: activeMemories.length,
       pendingProposalsCount: pendingProposalsCountRow?.c || 0,
-      lastRun: lastRun || null,
+      lastRun: formattedLastRun,
     });
   }
 

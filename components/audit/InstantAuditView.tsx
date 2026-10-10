@@ -20,7 +20,7 @@ import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
-import { apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
+import { apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, withActionId, type QuotaInfo } from '../../services/apiClient';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
 import { Button } from '../ui/Button';
@@ -75,6 +75,7 @@ export async function generateAuditReportUnlessDegraded(input: {
   lenses: AuditLens[];
   scrapedPages?: AuditStateGraphContext['scrapedPages'];
   serpEvidence?: AuditStateGraphContext['serpEvidence'];
+  checks?: AuditStateGraphContext['checks'];
 }): Promise<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null> {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
@@ -88,6 +89,7 @@ export async function generateAuditReportUnlessDegraded(input: {
     {
       scrapedPages: input.scrapedPages,
       serpEvidence: input.serpEvidence,
+      checks: input.checks,
     },
   );
 }
@@ -100,6 +102,7 @@ function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRa
     citationRatePercent: crew.citationRatePercent,
     shareOfVoiceScore: crew.shareOfVoiceScore,
     healthScore: crew.healthScore,
+    checks: crew.checks,
     scrapedPageCount: crew.scrapedPages.length,
     serpCount: crew.serpEvidence.length,
     findings: crew.findings.map((finding) => ({ title: finding.title })),
@@ -286,14 +289,16 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       await ensureHostedProviderReady();
 
       // 1. Run the Autonomous Multi-Agent Search Crew with real-time streaming
-      const crewResult = await crewOrchestrator.runAuditCrew(
-        formattedUrl,
-        targetFocus,
-        dna,
-        (ev) => {
-          setCrewEvents((prev) => [...prev, ev]);
-          setProgressStage(ev.message);
-        }
+      const crewResult = await withActionId('audit', () =>
+        crewOrchestrator.runAuditCrew(
+          formattedUrl,
+          targetFocus,
+          dna,
+          (ev) => {
+            setCrewEvents((prev) => [...prev, ev]);
+            setProgressStage(ev.message);
+          }
+        )
       );
       if (seq !== runSeq.current) return;
 
@@ -384,6 +389,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         lenses,
         scrapedPages: crewResult.scrapedPages,
         serpEvidence: crewResult.serpEvidence,
+        checks: crewResult.checks,
       });
       if (seq !== runSeq.current) return;
       if (!result) {

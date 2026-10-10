@@ -34,6 +34,8 @@ export interface Env {
    */
   ADMIN_SECRET?: string;
   AUTH_WEBHOOK_SECRET?: string;
+  /** Secret authorizing external webhook ingress (CI/CD, CMS, monitors). */
+  INGRESS_WEBHOOK_SECRET?: string;
   TELEGRAM_ADMIN_ID?: string;
   WEBAPP_URL: string;
   /** "production" | "staging" | unset (local dev). */

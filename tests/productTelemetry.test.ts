@@ -55,7 +55,6 @@ describe('productTelemetry', () => {
       productTelemetry.track('signup_completed', { method: 'guest_email' });
       productTelemetry.track('paywall_viewed', { plan: 'growth', rail: 'card' });
       productTelemetry.track('checkout_started', { planId: 'growth', method: 'stripe' });
-      productTelemetry.track('payment_completed', { planId: 'growth', method: 'stripe', status: 'confirmed' });
     }).not.toThrow();
   });
 });

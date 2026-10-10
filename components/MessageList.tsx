@@ -4,6 +4,8 @@ import { ICONS } from '../constants';
 import { renderMarkdown } from '../utils/markdown';
 import { ReportDisplay } from './audit/ReportDisplay';
 import { HybridMessageBody } from './genui/HybridMessageBody';
+import { ActionApprovalCard, extractVerifyCardFromContent } from './audit/ActionApprovalCard';
+import { CREW_PROFILES } from '../services/agentCore/crewOrchestrator';
 
 interface MessageListProps {
   messages: Message[];
@@ -87,6 +89,15 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                 <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center shadow-xl border ${msg.role === 'user' ? 'bg-surface-2 border-white/10' : 'glass-morphism mt-2 sm:mt-4'}`}>
                   {msg.role === 'user' ? (
                      <span className="text-[9px] font-black text-gray-400 tracking-widest">USR</span>
+                  ) : msg.agentRole && CREW_PROFILES[msg.agentRole] ? (
+                    <div className="flex flex-col items-center justify-center text-center">
+                      <span className="text-base sm:text-lg leading-none" role="img" aria-label={CREW_PROFILES[msg.agentRole].name}>
+                        {CREW_PROFILES[msg.agentRole].avatar}
+                      </span>
+                      <span className="text-[7px] sm:text-[8px] font-bold text-gold uppercase mt-0.5 tracking-tighter truncate max-w-[36px]">
+                        {CREW_PROFILES[msg.agentRole].name.split(' ')[0]}
+                      </span>
+                    </div>
                   ) : (
                     <ICONS.LuminaraLogo className="w-8 h-8 sm:w-10 sm:h-10" isThinking={showStreamingIndicator} />
                   )}
@@ -166,20 +177,36 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
 
                   {msg.role === 'model' ? (
                     (() => {
+                      const { cleanContent, verifyCard: extractedCard } = extractVerifyCardFromContent(msg.content);
+                      const activeVerifyCard = msg.verifyCard || extractedCard;
+                      const agentProfile = msg.agentRole ? CREW_PROFILES[msg.agentRole] : null;
+
                       // Only route to the structured report viewer once the stream has finished;
                       // a half-streamed table would otherwise flicker between renderers.
-                      const isAuditReport = !showStreamingIndicator && msg.content.includes('# ') && 
-                        (msg.content.includes('Visibility Radar') || msg.content.includes('Strategic Intelligence Report') || msg.content.includes('Diagnostic Scan') || msg.content.includes('Competitor Reality Map'));
-
-                      if (isAuditReport) {
-                        return <ReportDisplay markdownText={msg.content} sources={msg.groundingUrls} />;
-                      }
+                      const isAuditReport = !showStreamingIndicator && cleanContent.includes('# ') && 
+                        (cleanContent.includes('Visibility Radar') || cleanContent.includes('Strategic Intelligence Report') || cleanContent.includes('Diagnostic Scan') || cleanContent.includes('Competitor Reality Map'));
 
                       return (
-                        <HybridMessageBody
-                          content={msg.content}
-                          isStreaming={showStreamingIndicator}
-                        />
+                        <>
+                          {agentProfile && (
+                            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gold/15">
+                              <span className="text-sm">{agentProfile.avatar}</span>
+                              <span className="text-xs font-semibold text-gold-light tracking-wide">{agentProfile.name}</span>
+                              <span className="text-[10px] text-gray-400">· {agentProfile.tagline}</span>
+                            </div>
+                          )}
+                          {isAuditReport ? (
+                            <ReportDisplay markdownText={cleanContent} sources={msg.groundingUrls} />
+                          ) : (
+                            <HybridMessageBody
+                              content={cleanContent}
+                              isStreaming={showStreamingIndicator}
+                            />
+                          )}
+                          {activeVerifyCard && !showStreamingIndicator && (
+                            <ActionApprovalCard card={activeVerifyCard} />
+                          )}
+                        </>
                       );
                     })()
                   ) : (

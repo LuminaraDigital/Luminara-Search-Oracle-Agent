@@ -50,4 +50,38 @@ describe('toUserFacingText', () => {
       expect(out.length).toBeGreaterThan(0);
     }
   });
+
+  it('strips raw JSON and returns sanitized message', () => {
+    const rawJson = '{"error":{"message":"Request too large for model","type":"invalid_request_error"}}';
+    const text = toUserFacingText(rawJson);
+    expect(text).not.toContain('{"error"');
+    expect(text).toContain('too long for the engine');
+  });
+
+  it('sanitizes Groq inference errors without mentioning Groq or raw JSON', () => {
+    const groq402 = 'Groq inference error (402): {"error":{"message":"Payment Required"}}';
+    const text402 = toUserFacingText(groq402);
+    expect(text402).not.toContain('Groq');
+    expect(text402).not.toContain('402');
+    expect(text402).toContain('credit limits');
+
+    const groq413 = 'Groq inference error (413): {"error":{"message":"Rate limit reached for model on tokens per minute (TPM): Limit 8000, Used 8693"}}';
+    const text413 = toUserFacingText(groq413);
+    expect(text413).not.toContain('Groq');
+    expect(text413).not.toContain('8693');
+    expect(text413).toContain('too long for the engine');
+  });
+
+  it('sanitizes FreeLLMAPI strings', () => {
+    const freeLlm = 'FreeLLMAPI error: native inference providers failed';
+    const text = toUserFacingText(freeLlm);
+    expect(text).not.toContain('FreeLLMAPI');
+    expect(text).toContain('busy or unavailable');
+  });
+
+  it('formats AI_UNAVAILABLE as zero-charge friendly message', () => {
+    const err = { error: { code: 'AI_UNAVAILABLE', message: 'Luminara could not answer right now. Nothing was charged. Try again in a minute.' } };
+    expect(toUserFacingText(err)).toBe('Luminara could not answer right now. Nothing was charged. Try again in a minute.');
+  });
 });
+

@@ -112,28 +112,7 @@
         luminarasuite.com download.
       </p>
     </main>
-    <script>
-      (async function () {
-        const versionPill = document.getElementById("versionPill");
-        const sourcePill = document.getElementById("sourcePill");
-        const githubFallback = document.getElementById("githubFallback");
-        try {
-          const res = await fetch("/api/desktop/latest", { cache: "no-store" });
-          if (!res.ok) throw new Error("status " + res.status);
-          const data = await res.json();
-          versionPill.textContent = data.version ? "Version " + data.version : "Latest release";
-          sourcePill.textContent = data.mirroredOnR2
-            ? "CDN: Cloudflare R2"
-            : "CDN: GitHub redirect";
-          if (data.githubLatest) githubFallback.href = data.githubLatest;
-          if (data.fileName) {
-            document.getElementById("downloadBtn").setAttribute("download", data.fileName);
-          }
-        } catch (err) {
-          versionPill.textContent = "Version unavailable";
-          sourcePill.textContent = "CDN status unknown";
-        }
-      })();
-    </script>
+    <!-- External script: keeps the page compliant with script-src 'self' (no inline JS, no CSP nonce needed). -->
+    <script src="/desktop/desktop.js" defer></script>
   </body>
 </html>

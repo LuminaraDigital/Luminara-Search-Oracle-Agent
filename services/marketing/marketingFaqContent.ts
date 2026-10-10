@@ -27,6 +27,16 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
       'Those tools go deep on classic SEO data such as keywords and backlinks. Luminara focuses on whether AI answer engines mention you, and on the one fix to make next. Many teams use both.',
   },
   {
+    question: 'How is Luminara different from AI trackers like Otterly.ai or Profound?',
+    answer:
+      'Those platforms provide passive monitoring: they alert you when your brand is missing from prompt responses, but stop there. Luminara is a closed-loop remediation tool: it diagnoses the technical root causes (Schema entity graphs, extractable answer targets, crawler permissions) and delivers an ordered fix list. On Growth and Agency plans, our MCP server lets Cursor and Claude implement the fixes directly in your code.',
+  },
+  {
+    question: 'Why does Luminara avoid single 0-100 visibility scores?',
+    answer:
+      'Composite scores in generative search are unverifiable guesses. Luminara uses an evidence-bound approach: each engine is marked Measured, Estimated, or Not measured. If a provider fails or credits are exhausted, we display Not measured instead of fabricating a vanity score.',
+  },
+  {
     question: 'Can agencies share reports and connect Cursor?',
     answer:
       'Yes. Growth includes public share links and MCP access for Cursor and Claude. Agency adds API access and client workspaces. Free and Starter do not include share links or MCP.',

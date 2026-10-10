@@ -76,6 +76,8 @@ dist-electron/
 # Vendored third-party repositories (reference only, each has its own .git)
 /open-seo/
 /Switchyard/
+/ponytail/
+/pstack/
 scratch/
 
 # Internal planning docs (not part of the public release)
@@ -95,6 +97,26 @@ Claude outputs/
 .agents/skills/**
 !.agents/skills/deslop/
 !.agents/skills/deslop/**
+!.agents/skills/ponytail/
+!.agents/skills/ponytail/**
+!.agents/skills/ponytail-*
+!.agents/skills/ponytail-*/**
+!.agents/skills/pstack/
+!.agents/skills/pstack/**
+!.agents/skills/poteto-mode/
+!.agents/skills/poteto-mode/**
+!.agents/skills/thermo-nuclear-code-quality-review/
+!.agents/skills/thermo-nuclear-code-quality-review/**
+!.agents/skills/principle-*
+!.agents/skills/principle-*/**
+!.agents/skills/unslop/
+!.agents/skills/unslop/**
+!.agents/skills/tdd/
+!.agents/skills/tdd/**
+!.agents/skills/typescript-best-practices/
+!.agents/skills/typescript-best-practices/**
+!.agents/skills/setup-pstack/
+!.agents/skills/setup-pstack/**
 skills-lock.json
 tmp-*.json
 classic-protection.json

@@ -53,9 +53,9 @@ describe('Cloudflare Workers AI Edge Fallback', () => {
         temperature: 0.5,
       });
 
-      expect(capturedModel).toBe('@cf/meta/llama-3.1-8b-instruct');
+      expect(capturedModel).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
       expect(capturedInput.temperature).toBe(0.7);
-      expect(capturedInput.max_tokens).toBe(2048);
+      expect(capturedInput.max_tokens).toBe(1024);
       expect(capturedInput.stream).toBe(false);
       expect(capturedInput.messages).toEqual([
         { role: 'user', content: 'What is the capital of France?' },
@@ -64,7 +64,7 @@ describe('Cloudflare Workers AI Edge Fallback', () => {
       expect(result.id).toMatch(/^chatcmpl-cf-\d+$/);
       expect(result.object).toBe('chat.completion');
       expect(typeof result.created).toBe('number');
-      expect(result.model).toBe('@cf/meta/llama-3.1-8b-instruct');
+      expect(result.model).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
       expect(result.choices).toHaveLength(1);
       expect(result.choices[0]).toEqual({
         index: 0,
@@ -149,7 +149,7 @@ describe('Cloudflare Workers AI Edge Fallback', () => {
 
       expect(foundDone).toBe(true);
       expect(parsedChunks[0].object).toBe('chat.completion.chunk');
-      expect(parsedChunks[0].model).toBe('@cf/meta/llama-3.1-8b-instruct');
+      expect(parsedChunks[0].model).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
       expect(parsedChunks[0].choices[0].delta.content).toBe('Edge');
       expect(parsedChunks[1].choices[0].delta.content).toBe(' AI');
       expect(parsedChunks[parsedChunks.length - 1].choices[0].finish_reason).toBe('stop');
@@ -243,9 +243,85 @@ describe('Cloudflare Workers AI Edge Fallback', () => {
       expect(res.status).toBe(200);
       expect(res.headers.get('x-provider-fallback')).toBe('workers-ai');
       const data = (await res.json()) as any;
-      expect(data.model).toBe('@cf/meta/llama-3.1-8b-instruct');
+      expect(data.model).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
       expect(data.choices[0].message.content).toBe('Recovered via Workers AI on 402');
       expect(mockAi.run).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to Workers AI when hosted Groq returns 413 (Request Too Large)', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: 'Rate limit reached for model on tokens per minute (TPM): Limit 8000, Used 8693' } }), {
+          status: 413,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+      const mockAi: Ai = {
+        run: vi.fn().mockResolvedValue({ response: 'Recovered via Workers AI on 413' }),
+      };
+
+      const env = createTestEnv({ AI: mockAi });
+
+      const req = new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-telegram-init-data': validInitData,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: 'Long question' }],
+        }),
+      });
+
+      const res = await proxyProvider(req, env, 'groq', '/chat/completions');
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('x-provider-fallback')).toBe('workers-ai');
+      const data = (await res.json()) as any;
+      expect(data.choices[0].message.content).toBe('Recovered via Workers AI on 413');
+    });
+
+    it('returns normalized friendly error and refunds quota when Workers AI fallback throws', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: 'Upstream out of memory' } }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+      const mockAi: Ai = {
+        run: vi.fn().mockRejectedValue(new Error('Workers AI model overloaded')),
+      };
+
+      const env = createTestEnv({ AI: mockAi });
+
+      // Simulate prior quota state
+      const day = new Date().toISOString().slice(0, 10);
+      await kv.put(`quota:999:${day}`, '1');
+
+      const req = new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-telegram-init-data': validInitData,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: 'Will fail completely' }],
+        }),
+      });
+
+      const res = await proxyProvider(req, env, 'groq', '/chat/completions');
+
+      expect(res.status).toBe(503);
+      const data = (await res.json()) as any;
+      expect(data.error.code).toBe('AI_UNAVAILABLE');
+      expect(data.error.message).toContain('Nothing was charged');
+
+      // Check quota was refunded
+      const usedAfter = Number(await kv.get(`quota:999:${day}`));
+      expect(usedAfter).toBe(1); // Quota was incremented by checkHostedQuota, then refunded back to 1
     });
 
     it('falls back to Workers AI when hosted Groq returns 429', async () => {

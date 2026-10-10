@@ -255,9 +255,23 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
                   <span className="text-gray-400 font-mono">{new Date(a.measuredAt).toLocaleString()}</span>
                 </div>
                 <p className="text-[11px] text-gray-400 mt-2 line-clamp-2">{a.summary}</p>
-                <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-gray-400">
-                  <span>Score {a.healthScore ?? 'n/a'}</span>
-                  <span>Citation {a.citationRatePercent ?? 'n/a'}%</span>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-gray-400">
+                  {a.checks ? (
+                    <span className="text-gold-light font-medium px-2 py-0.5 rounded bg-gold/10 border border-gold/20">
+                      {a.checks.summary}
+                    </span>
+                  ) : a.healthScore != null ? (
+                    <span className="text-gray-400">Score {a.healthScore}/100 (legacy)</span>
+                  ) : (
+                    <span className="text-gray-500">Checks: not measured</span>
+                  )}
+                  <span>
+                    {a.citation?.label
+                      ? a.citation.label
+                      : a.citationRatePercent != null
+                        ? `Citation ${a.citationRatePercent}%`
+                        : 'Citation: not measured'}
+                  </span>
                   {a.competitorsMentioned.slice(0, 4).map((c) => (
                     <span key={c} className="text-gold/80">
                       [[{c}]]
