@@ -807,15 +807,8 @@ Respect these consolidated business memories and historical recommendation outco
         brandName: dna?.name,
         domain: displayUrl,
       });
-      const schemaSafetyDefault = 50;
-      const citePrelim = Math.round(
-        0.3 * prelim.securityTrust +
-          0.3 * prelim.citationIntegrity +
-          0.2 * prelim.entityClarity +
-          0.2 * schemaSafetyDefault
-      );
       preliminaryTrustText =
-        `\n[AEO TRUST PACK]\nciteWorthiness: ${citePrelim}/100 (preliminary; schemaSafety=${schemaSafetyDefault} not_measured)\n` +
+        `\n[AEO TRUST PACK]\nciteWorthiness: not_measured (preliminary; schemaSafety not_measured until schema extraction)\n` +
         `ymylTier: ${prelim.ymylTier}\n` +
         `securityTrust: ${prelim.securityTrust}, citationIntegrity: ${prelim.citationIntegrity}, entityClarity: ${prelim.entityClarity}\n` +
         `Formula: ${prelim.formula}\nFindings:\n` +
