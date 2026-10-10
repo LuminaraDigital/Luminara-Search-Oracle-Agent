@@ -6,7 +6,7 @@
 **Status:** Implemented (pending deploy approval) - B0-B5 complete; offline ≥5× protocol-unit gate green on fixture  
 
 **Pattern library:** [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast) (MIT; do not fork into product tree)  
-**Companion plans:** `agent-mcp-product-surface.md`, `gui-grounding-pointerbench.md`, `e2e-visibility-agent-platform.md`
+**Companion plans:** `agent-mcp-product-surface.md`, `gui-grounding-pointerbench.md`, `e2e-visibility-agent-platform.md`, [`evidence-bound-decision-100x.md`](./evidence-bound-decision-100x.md) (honesty spine; rejects fail-fast as the product win)
 
 ---
 

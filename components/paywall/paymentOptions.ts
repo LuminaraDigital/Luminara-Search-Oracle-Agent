@@ -1,4 +1,4 @@
-export type PaymentRail = 'stars' | 'ton';
+export type PaymentRail = 'card' | 'stars' | 'ton';
 
 /** Published Mini App link (see public/privacy.html and worker/privacyPolicy.ts). */
 export const TELEGRAM_MINI_APP_URL = 'https://t.me/LuminaraSuiteBot/app';
@@ -19,6 +19,7 @@ interface HealthLike {
   ok?: boolean;
   ton?: boolean;
   jettonCheckout?: boolean;
+  stripeCheckout?: boolean;
   providers?: Record<string, boolean>;
   tiers?: { free?: string[]; paid?: string[] };
 }
@@ -28,10 +29,24 @@ export function isJettonCheckoutAvailable(health: HealthLike | null | undefined)
   return Boolean(health?.ok && health.ton === true && health.jettonCheckout === true);
 }
 
+/**
+ * Card (Stripe) only on web when the Worker reports stripeCheckout live.
+ * Never inside Telegram Mini App (Stars for digital goods).
+ */
+export function isStripeCheckoutAvailable(
+  health: HealthLike | null | undefined,
+  inTelegram: boolean,
+): boolean {
+  if (inTelegram) return false;
+  return health?.ok === true && health.stripeCheckout === true;
+}
+
 export interface PaymentOptions {
   tonAvailable: boolean;
   /** Stars can be paid in place only inside the Mini App; on the web we hand off to Telegram. */
   starsInline: boolean;
+  /** Card tab only when Stripe is live and not in Telegram. */
+  cardAvailable: boolean;
   defaultTab: PaymentRail;
 }
 
@@ -47,15 +62,31 @@ export function resolvePaymentOptions({
   health: HealthLike | null | undefined;
 }): PaymentOptions {
   const tonAvailable = isTonAvailable(health);
+  const cardAvailable = isStripeCheckoutAvailable(health, inTelegram);
+  let defaultTab: PaymentRail = 'stars';
+  if (inTelegram) {
+    defaultTab = 'stars';
+  } else if (cardAvailable) {
+    defaultTab = 'card';
+  } else if (tonAvailable) {
+    defaultTab = 'ton';
+  }
   return {
     tonAvailable,
     starsInline: inTelegram,
-    defaultTab: !inTelegram && tonAvailable ? 'ton' : 'stars',
+    cardAvailable,
+    defaultTab,
   };
 }
 
 export function effectiveTab(requested: PaymentRail, options: PaymentOptions): PaymentRail {
-  return requested === 'ton' && !options.tonAvailable ? 'stars' : requested;
+  if (requested === 'card' && !options.cardAvailable) {
+    return options.tonAvailable ? 'ton' : 'stars';
+  }
+  if (requested === 'ton' && !options.tonAvailable) {
+    return options.cardAvailable ? 'card' : 'stars';
+  }
+  return requested;
 }
 
 export function paidEngineLabels(health: HealthLike | null | undefined): string[] {

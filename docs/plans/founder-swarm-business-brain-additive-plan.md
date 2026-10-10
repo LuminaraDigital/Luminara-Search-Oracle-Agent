@@ -1,11 +1,30 @@
 # Founder Swarm and Business Brain: additive plan (Track SW)
 
-**Status:** v0.1 - draft under review (section 22). No code written. Nothing in this plan is implemented.  
+**Status:** v0.3 - the one plan for this brief. A second plan written the same day from the same brief (Track BB) was folded in by owner decision on 2026-10-10 (v0.2). v0.3 applies review round 2: five reviewers and an independent SQL and citation pass by the session that wrote v0.1 (section 22). Closing review pending. No code in this plan is written. Nothing in it is approved until the owner answers section 20.  
 **Date:** 2026-10-10  
 **Owner:** Luminara Digital (owner gate before every production step)  
-**Sources:** owner brief of 2026-10-10 (AI at the foundation, agents that do the work, a business brain, agent swarms, a services marketplace run by AI, a fun founder community, desktop where it fits); three research notes supplied with it (fit against five YC requests, an open-source pattern list, an x402 batch); seven read-only audits run on 2026-10-10 (backend and D1, AI stack, payments and chain, front end and desktop, deploy, existing plans, external standards)  
-**Baseline:** `main`, `origin/main` and `origin/staging` all at `88547dc`. The working tree on `main` carries another session's uncommitted files (section 1.1).  
+**Sources:** owner brief of 2026-10-10 (AI at the foundation, agents that do the work, a business brain, agent swarms, a services marketplace run by AI, a fun founder community, desktop where it fits); three research notes supplied with it (fit against five YC requests, an open-source pattern list, an x402 batch); seven read-only audits run on 2026-10-10 (backend and D1, AI stack, payments and chain, front end and desktop, deploy, existing plans, external standards); from Track BB: the same owner brief with three lists of reference projects (community mechanics, business workspace, agent patterns), eight more read-only audits, and one review round by five independent reviewers (section 22)  
+**Baseline:** written against `88547dc`, then re-baselined on 2026-10-10 to `42880f5`, which is `main` and `origin/main` and is deployed to production (deploy run of 2026-10-09T23:27Z succeeded). `origin/staging` is still `88547dc`: production is ahead of staging. `42880f5` committed the files this plan first described as another session's uncommitted work (section 1.1).  
 **Companions (binding):** [`zoro-concepts-implementation-plan.md`](./zoro-concepts-implementation-plan.md) (its section 2 rules bind this plan), [`verifiable-flow-memory-10x-ship.md`](./verifiable-flow-memory-10x-ship.md) (V: run ledger, scoped memory), [`oracle-operations-layer-additive-plan.md`](./oracle-operations-layer-additive-plan.md) (Ops: Sign-off Desk, Beacon, Sealed Lane, flag helper), [`trust-network-additive-plan.md`](./trust-network-additive-plan.md) (TN: receipts, Agent Jobs), [`allora-concepts-implementation-plan.md`](./allora-concepts-implementation-plan.md) (retest loop), [`lora-jetton-production-ship.md`](./lora-jetton-production-ship.md) (rules J1 to J7), `specs/0009`, `specs/0015`, `specs/0016`, `specs/0017`, APS invariants in `AGENTS.md`.
+
+---
+
+## Files in this plan
+
+Track SW is four files. Section numbers are the same in all of them, so "section 11" means one place whichever file you are reading.
+
+| File | Holds | For |
+|---|---|---|
+| [`founder-swarm-owner-brief.md`](./founder-swarm-owner-brief.md) | The Owner brief, and section 20: every decision, grouped by when it is needed | The owner. Start here |
+| `founder-swarm-business-brain-additive-plan.md` (this file) | Sections 0 to 9, 14, 16, 18, 19 and 21 to 23: the argument, the baseline, the rules, what other plans owe, the design, and every phase that is specified to task level | Whoever builds it |
+| [`founder-swarm-later-phases.md`](./founder-swarm-later-phases.md) | Sections 10 to 13 and 15: SW5 to SW8 and SW10. Designs; each starts with a re-baseline. One part of it is in the launch cut: the Auditor-only slice of section 13 | Whoever builds those phases |
+| [`founder-swarm-appendix.md`](./founder-swarm-appendix.md) | Section 17 (threat model and test plan), section 19.1 (the edits to make in other plans), and section 24 (the Track BB merge and both review rounds, finding by finding) | Reviewers |
+
+---
+
+## Owner brief
+
+**The Owner brief and section 20 (owner decisions)** are in [`founder-swarm-owner-brief.md`](./founder-swarm-owner-brief.md). It says what is true today, what needs the owner first, what the launch cut is and how big it is.
 
 ---
 
@@ -57,11 +76,13 @@ flowchart LR
 
 | Concept in the brief | Decision | Lands in | Note |
 |---|---|---|---|
-| AI does the work, not helps with it | Take | SW1, SW2 | Server-side runs that end in a deliverable and a check |
-| Named roster (Auditor, Scout, Coach) | Take, renamed where it collides | SW2 | "Scout" already names a Visibility Level, a crew role and a view (decision 8) |
+| AI does the work, not helps with it | Adapt, and say so | SW1, SW2 | Server-side runs that end in a deliverable and a check. At launch the Auditor audits and the Fixer drafts, both as code over fetched evidence; the founder ships. The app already has a screen where a founder applies a fix with one click (hazard 20); whether an agent may start that itself after one approval, and where, is decision 18 |
+| Built for AI agents, with little for the human to do | Take | SW1, SW2, SW5 | Other agents start and read runs over MCP (SW1), act under a passport with caps (SW2), and pay per audit with no account (SW5). The founder signs in and approves |
+| Agent swarms | Adapt | SW2 | Two or more agents handing bounded work to each other on the server (section 4.2, handoff). Not a claim before SW2 ships (section 0.3, item 1) |
+| Named roster (Auditor, Scout, Coach) | Take, renamed where it collides | SW2 | "Scout" already names a Visibility Level, a crew role and a view (decision 24) |
 | elizaOS character files and plugins | Adapt: idea only | SW2 | MIT, but Node 24 or Bun only, with no workerd build. Roster entries are typed data in our own shape |
 | OpenAI Agents SDK guardrails | Adapt: idea only | SW2 | Its Workers support is labelled experimental. The three guardrail points are implemented natively |
-| Cloudflare Agents SDK to run agents | Decide by spike | SW1-0 | `agents` 0.28.0 is still 0.x. Default: use the platform Durable Object APIs directly |
+| Cloudflare Agents SDK to run agents | Not for the run engine; re-check at SW7 | SW1-0 (spike B, done), SW7 | Spike B on `agents` 0.28.0 (published 2026-10-09; 13 releases in 90 days). Its `Agent` class owns the object's one alarm, adds about 428 KiB gzip and ten tables to every object, and stops the node test suites loading without an alias; it removed two `setAlarm` calls. `SwarmRun` uses the platform Durable Object APIs, which `Agent` itself extends. The owner's brief names this SDK, so this "no" and what would reverse it are in section 4.1 |
 | Hermes and OpenClaw memory patterns | Adapt | SW4 | Through V3 scoped memory. No second store |
 | Business Brain: ideas and data in one place | Take | SW4 | Typed rows in D1. No graph store (V non-goal stands) |
 | Google Analytics "and more" | Take Search Console and GA4 first | SW4 | OAuth, read-only scopes, encrypted refresh tokens |
@@ -73,30 +94,45 @@ flowchart LR
 | OpenCove war-room canvas | Adapt: a grid, not a canvas | SW7 | Idea only |
 | A Fiverr replacement for our categories | Adapt: first-party Jobs | SW6 | TN6 already decided this shape. Third-party sellers stay legal-gated |
 | "Always results" | Take, as a rule | SW6 | Money is kept only when the acceptance check passes |
-| x402 pay-per-audit for AI agents | Take | SW5 | USDC `exact` scheme through a facilitator. The Worker holds no key |
+| x402 pay-per-audit for AI agents | Take, later | SW5 | USDC `exact` scheme through a facilitator. The Worker holds no key. After Jobs, and only on a demand trigger (section 19) |
 | ClawRouter | Skip | none | A local model router for the paying side. Nothing in it for a seller |
 | A founder's agent pays within a cap | Split | SW2, SW10 | Inside Luminara: yes, caps on hosted spend. Paying third parties from the founder's own funds needs a key that can move money, so it is gated |
 | Bounties in Stars or TON between founders | Defer, design recorded | SW10 | Stars cannot be paid out to another user; a peer marketplace needs the legal review TN decision D5 already requires |
-| TON Acton for contracts | Keep for later | SW10 | Already the toolchain in `contracts/ton` (`Acton.toml:8`). It has no native Windows build: WSL or CI only |
+| TON Acton for contracts | Keep for later | SW10 | Already the toolchain in `contracts/ton` (`contracts/ton/Acton.toml:8`). It has no native Windows build: WSL or CI only |
 | TonWeb for Worker-side checks | Skip | none | Unmaintained since 2024. The repo already uses `@ton/core` and verifies over HTTP APIs |
 | TON soulbound badges | Split | SW9, SW10 | Badges as signed receipts now; an on-chain TEP-85 item later, gated |
 | Zealy-style quests and streaks | Take, on existing tables | SW9 | `user_missions` and the streak already exist |
-| Guild-style gating | Reference only | TN8 | Gated groups are TN8 Circles, parked at TN decision D6 |
+| Guild-style gating | Take one chat, decision-gated | SW9 (14.3) | One builders chat, entered by doing real work. TN8 Circles as a whole stay parked at TN decision D6; decision 19 un-parks this one room |
 | BuidlGuidl builder ladder | Adapt | SW9 | One ladder: the existing four levels gain verified inputs |
+| XP, leaderboards | Owner decision | SW9 (14.4) | A points total ("Lumens") and a daily check-in shipped on 2026-10-10 with no spec (hazard 9). They are API routes with no screen yet. Decision 9 offers three specified ways forward. `specs/0009` says "Duels and leaderboards stay later phases", so a board is deferred, not refused |
+| Devfolio-style project pages and Demo Day | Take TN3; recognition only | SW9 (14.5) | The public profile TN3 already designs, with project fields. Demo Day gives recognition, never a prize pool |
+| Community voting, one person one vote | Adapt | SW9 (14.5) | One account one vote, advisory. A wallet cannot be the unit: wallets are free to create |
+| Notcoin and Hamster Kombat mechanics, minus the token | Covered | exists; SW9 | The two-sided invite already exists (`specs/0009`). No reward for opening the app, and nothing to cash out, which is what emptied those games after their payouts |
+| Wallet sign-in | Adapt: link, not sign-in | SW10 | A wallet links to an existing account by `ton_proof` (decision 21). As a third way to sign in it would let free wallets farm invite credits |
+| BookStack-style playbook library | Take, small | SW3-8 | Public pages built from the compiled playbooks, one per playbook, linked from findings. Licence check first |
+| LangGraph-style resumable steps | Covered | SW1 | The run engine claims each step before it acts and resumes from the last claim (section 4.1) |
+| CrewAI reviewer, Pydantic-style typed outputs | Adapt: ideas only | SW1, SW2 | The output check and the typed deliverable (section 4.3). Both projects are Python |
+| OpenMausBot, OpenDots, OpenWorker patterns | Adapt: ideas only | SW2 | An approve or deny card for each risky step; read-only steps run alone; every run ends in a deliverable with a log. None of their code is used (section 24.2) |
 | XMTP payment requests | Skip | none | No Telegram or TON relevance found; its decentralised network is not confirmed live |
 | Desktop-specific agents | Adapt | SW8 | The server does the work. Desktop adds notifications, tray status and save-to-folder |
 | The compliance pivot and "proving you are human" (YC list) | Skip | none | One is a pivot, not a feature; receipts prove domain control, not humanity |
 
 ### 0.3 Corrections to the brief
 
-1. **A swarm today would be theatre.** The crew is seven labels over deterministic steps (`crewOrchestrator.ts:200`). That is not a weakness to hide: deterministic steps are cheap and checkable. SW1 ships the first unattended run with exactly one model call, the summary. Model-planned steps arrive in SW2 behind evals. Product copy does not say "swarm" until two agents hand work to each other on the server.
+1. **A swarm today would be theatre.** The crew is seven labels over deterministic steps (`services/agentCore/crewOrchestrator.ts:200`). That is not a weakness to hide: deterministic steps are cheap and checkable. The first unattended run ships with no model call at all (SW1a); a model-written summary and quote-backed suggestions follow behind a live gate (SW1b); agents that hand work to each other arrive in SW2. Product copy does not say "swarm" until two agents hand work to each other on the server.
 2. **Stars bounties between founders cannot be built as described.** The Bot API has no method that sends Stars to an arbitrary user and no escrow or split primitive. The only money-out call is a refund of one specific charge to its payer (`worker/telegramBot.ts:956-970`). A gift sent by a bot cannot be converted to Stars.
 3. **Telegram constrains the rails.** Its bot developer terms require digital goods and services sold in a Mini App to be sold for Stars (section 6.2), and require Mini Apps with crypto features to use TON only and not promote other chains' assets (section 7). So Jobs are Stars-only inside Telegram, and the x402 rail (USDC on Base) is an API surface that never appears in the Mini App.
-4. **x402 has moved on from what the notes describe.** The current version is 2: headers `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE` and `PAYMENT-RESPONSE`, with CAIP-2 network ids. It is governed by the x402 Foundation under the Linux Foundation. The public `x402.org` facilitator is testnet-only. The existing `worker/q402` code is version-1 shaped with custom TON and XDC schemes (`worker/q402/types.ts:8-17`), which is not what an outside agent's client speaks.
+4. **x402 has moved on from what the notes describe.** The current version is 2: headers `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE` and `PAYMENT-RESPONSE`, with CAIP-2 network ids. It is maintained in the x402 Foundation's repository (`github.com/x402-foundation/x402`). The public `x402.org` facilitator is testnet-only. The existing `worker/q402` code is version-1 shaped with custom TON and XDC schemes (`worker/q402/types.ts:8-17`), which is not what an outside agent's client speaks.
 5. **A cap is only real where the system can enforce it.** Inside Luminara the cost ledger can enforce one. For payments to third parties out of the founder's own money, something would have to hold a key, and rule J1 forbids that. That part is gated (SW10).
 6. **The goal is not a massive database.** It is a small typed one that an agent can cite. Every number an agent reports must point at a row with a source and a fetch time (APS invariant 5).
-7. **Scale honesty.** Zoro's log recorded 5 user rows in production and 0 on staging on 2026-10-01 (`zoro-concepts-implementation-plan.md:711`). Marketplace, multiplayer and community features mean nothing without users, so horizon 2 does not start until horizon 1 is in use (section 0.5).
+7. **Scale honesty.** Zoro's log recorded 5 user rows in production and 0 on staging on 2026-10-01 (`docs/plans/zoro-concepts-implementation-plan.md:711`). Marketplace, multiplayer and community features mean nothing without users, so horizon 2 does not start until horizon 1 is in use (section 0.5).
 8. **This plan stands on unfinished work in five other plans.** Section 3 lists every dependency with its state on `main` today, and the shortest path through them to the first unattended result.
+9. **Telegram's Stars rule applies today, not from SW6.** The paywall offers a TON rail inside the Mini App whenever the server reports TON as available (`components/paywall/paymentOptions.ts:42-55`), and the server issues TON invoices to Telegram sessions (`worker/index.ts:966-977`). The rail reads "Soon" today only because public health stopped reporting `ton` (hazard 2, confirmed live on 2026-10-10), which is an accident, not a rule. SW0a makes it a rule.
+10. **Fixes come before features, and they do not wait for this plan.** The audits found defects in payment, honesty and release paths that are on `main` now (section 1.2, hazards 9 to 20). SW0a (section 5.1) ships them on a plain "yes, fix it".
+11. **Progress cannot be for sale.** A quest, a level, a vote or a seat in the builders chat that can be bought is a price list, not a community, and it moves the product toward stored value. No paid event counts toward any of them (section 14).
+12. **Statements here about custody, stored value, securities, tax and Google's data policy are an engineering reading, not legal advice.** Where one of them decides a design, the decision names counsel.
+13. **The audit itself has to grow.** Every phase in v0.1 built around the same four rules. A weekly re-run of four checks usually finds nothing new. SW1-14 adds deterministic checks from the nine compiled playbooks, and a scheduled run tells the founder only when something changed.
+14. **This plan does not measure what AI engines answer.** That is the README's headline and it belongs to the weekly decision loop (WDL2 answer capture, WDL6b same-prompt retest) and to Zoro Phase 1. Nothing here claims it. A server run checks the founder's pages, and every result says so.
 
 ### 0.4 Earlier decisions this plan asks the owner to reverse or confirm
 
@@ -104,53 +140,115 @@ Nothing here is reversed silently. Each row is an owner decision in section 20, 
 
 | # | Earlier decision | Where | What the brief needs | Handling here | Decision |
 |---|---|---|---|---|---|
-| 1 | "No marketplace, community forum, partner directory" | `virality-activation-loops.md:21`, `:264` | A Jobs catalogue and community quests | Jobs stay first-party, the shape TN section 0.2 approved on 2026-10-07 | 1 |
+| 1 | "No marketplace, community forum, partner directory" | `docs/plans/virality-activation-loops.md:21`, `:264` | A Jobs catalogue and community quests | Jobs stay first-party, the shape TN section 0.2 approved on 2026-10-07 | 1 |
 | 2 | x402 settlement "Rejected for now" | `specs/0016-agent-passport.md:39` | Pay-per-audit | Receive-only, settled by a facilitator, outside the Mini App | 5 |
-| 3 | "No new chain" | `trust-network-additive-plan.md:83`; Zoro non-goals (`:34`) | USDC on Base | No contract, no key in the Worker, no anchoring | 5 |
-| 4 | "Tap-to-earn or a visible coin balance: rejected" | `specs/0009-referrals-and-retention.md:30` | "A fun place to be" | This plan adds no balance. Another session's uncommitted work adds one (section 1.2, hazard 9) | 9 |
-| 5 | "Team seats / invite UI" is a non-goal | `virality-activation-loops.md:265` | Multiplayer | Minimal invites, scoped to live rooms | 10 |
+| 3 | "No new chain" | `docs/plans/trust-network-additive-plan.md:83`; `docs/plans/zoro-concepts-implementation-plan.md:34` | USDC on Base | No contract, no key in the Worker, no anchoring | 5 |
+| 4 | "Tap-to-earn or a visible coin balance: rejected" | `specs/0009-referrals-and-retention.md:30` | "A fun place to be" | This plan adds no balance. A points total and a daily check-in shipped to production on 2026-10-10 in `42880f5` as API routes with no spec and no screen (section 1.2, hazard 9), so the spec and production now disagree | 9 |
+| 5 | "Team seats / invite UI" is a non-goal | `docs/plans/virality-activation-loops.md:265` | Multiplayer | Minimal invites, scoped to live rooms | 10 |
 | 6 | Server-side audit execution is "Not a work order" | V plan `:528`, decision 5 (`:603`) | Unattended audits | SW1 delivers it on a Durable Object instead of the queue | 3 |
-| 7 | Preload IPC is "version, openExternal, update events" | `desktop-windows-electron.md:19` | Desktop surfaces | Three narrow additions. No local runner | 12 |
+| 7 | Preload IPC is "version, openExternal, update events" | `docs/plans/desktop-windows-electron.md:19` | Desktop surfaces | Three narrow additions. No local runner | 12 |
 | 8 | Watches parked until Ops Phase 2 exits | Ops plan `:180` | Scheduled runs | Not reversed. SW8 waits for the same controls | none |
 | 9 | Bounties "Defer"; third-party marketplace "Legal review first, no build" | TN plan `:267-268` | Bounties | Not reversed. Design recorded in SW10 | 13 |
 | 10 | Agent SBT paused; "no custom contract" | Zoro plan `:7`, `:34` | Soulbound badges | Not reversed. Receipts now; chain later, gated | 14 |
+| 11 | Auto-publish Execute mode by default is refused: "Default **Prepare**; Execute = Agency/Digital + approval" | `docs/plans/weekly-decision-loop-10x-ship.md:32` | "AI doing the work", not only preparing it | Prepare stays the default. One narrow agent-started path is offered: a pull request, after one bound approval. The click-to-deploy screen a founder already has is a separate thing (hazard 20) | 18 |
+| 12 | Gated groups parked until 50 verified profiles | TN plan decision D6 | A place founders join at launch | One builders chat, with a low entry bar | 19 |
+| 13 | "The Sentinel cron does not send mission nudges"; "A blast can be added later with an explicit send policy" | `specs/0009-referrals-and-retention.md:18`, `:29` | Telling a founder their run finished | The explicit send policy the spec asks for: opt-in, transactional, capped. No nudge to return | 20 |
+| 14 | "Duels and leaderboards stay later phases" | `specs/0009-referrals-and-retention.md:5` | Leaderboards | Not reversed now. A count-based board has a trigger (section 14.4) | 9 |
+| 15 | Watches parked until Ops Phase 2 exits | Ops plan `:180` | "Agents work while I am away" at launch | Row 8 stands for every agent but one: the read-only Auditor may run on a schedule earlier | 22 |
 
 ### 0.5 Phases and horizons
 
 | Phase | Ships | Migration (by name) | Flag | Horizon |
 |---|---|---|---|---|
-| SW0 | Decisions, platform facts, hazards fixed, prerequisites landed | none | none | 1 |
-| SW1 | Run engine and the server-side Auditor | `swarm_runs` | `SWARM_RUNS_ENABLED` | 1 |
-| SW2 | Roster; per-agent caps and sessions (spec 0016 K1, K2); approvals inside runs; handoffs; Fixer and Coach | `agent_passport_k1` | `SWARM_ROSTER_ENABLED`; Ops's `AGENT_SEATS` and `AGENT_SEAT_CAPS` for outside keys | 1 |
-| SW3 | Workbench: Fix Board, Ship Log, Leads | `ship_log`, `leads_pipeline` | `SHIP_LOG_ENABLED`, `LEADS_ENABLED` | 1 |
+| SW0a | Money, honesty and release-safety fixes found on `main`. Starts now, on its own approval (section 5.1) | `stars_charges`, `community_feed` | `COMMUNITY_FEED_ENABLED`, `LUMENS_ENABLED` | 1 |
+| SW0 | Decisions, platform facts, hazards fixed, prerequisites landed | `token_meter` (one column) | none | 1 |
+| SW1a | Run engine; the server-side Auditor with a code-built summary and a larger rule set; Fixer drafts; Coach's proposal; the run-finished notice. No model call | `swarm_runs`, `run_notices` | `SWARM_RUNS_ENABLED`, `RUN_NOTICES_ENABLED` | 1 |
+| SW1b | The model-written summary and quote-backed suggestions, behind a live gate | none | `SWARM_MODEL_SUMMARY_ENABLED` | 1 |
+| SW2 | Roster; per-agent caps and sessions (spec 0016 K1, K2); approvals for writes that leave the account; handoffs; Fixer and Coach with one typed model call each | `agent_passport_k1` | `SWARM_ROSTER_ENABLED`; Ops's `AGENT_SEATS` and `AGENT_SEAT_CAPS` for outside keys | 1 |
+| SW3 | Workbench: Fix Board, Ship Log, playbook pages; Leads later | `ship_log`, `leads_pipeline` | `SHIP_LOG_ENABLED`, `LEADS_ENABLED` | 1 |
 | SW4 | Business Brain: connectors, snapshots, Analyst, Brain view | `brain_connectors` | `CONNECTORS_ENABLED`, `BRAIN_ENABLED` | 1 |
-| SW5 | Pay-per-audit for outside agents (x402) | `x402_payments` | `X402_AUDIT_ENABLED` | 2 |
 | SW6 | Jobs: fixed-price work, money kept only on a passed check (implements TN6) | `agent_jobs` | `AGENT_JOBS_ENABLED` (TN's name) | 2 |
 | SW7 | Live rooms, org invites, agency war room | `live_rooms` | `LIVE_ROOMS_ENABLED`, `ORG_INVITES_ENABLED` | 2 |
 | SW8 | Watches (scheduled runs) and desktop surfaces | `swarm_watches` | `SWARM_WATCHES_ENABLED` | 2 |
-| SW9 | Quests and badge receipts | none | `QUESTS_ENABLED` | 2 |
+| SW9 | Quests, badge receipts, the builders chat | `builders_chat` (14.3) | `QUESTS_ENABLED`, `BUILDERS_CHAT_ENABLED` | 2 |
+| SW5 | Pay-per-audit for outside agents (x402). After SW6, on a demand trigger | `x402_payments` | `X402_AUDIT_ENABLED` | 2 |
 | SW10 | Gated designs: bounties, on-chain badges, third-party sellers, outward agent payments, desktop folder bridge | design only | decision-gated | 3 |
 
-**Horizon rule.** Horizon 1 is specified to task level. Each horizon 2 phase starts with a re-baseline task and does not start until horizon 1's promotion criteria hold in production (sections 6 to 9). Horizon 3 is design, not a work order.
+**Horizon rule.** Horizon 1 is specified to task level. Each horizon 2 phase starts with a re-baseline task and does not start until horizon 1's promotion criteria hold in production (sections 6 to 9). Horizon 3 is design, not a work order. The launch cut takes a few named slices out of horizon 2 (below); the horizon rule does not apply to those slices.
 
-**Lanes.** SW3 is mostly front end and can start as soon as SW0 exits, in parallel with SW1. SW5 needs only SW1.
+**Lanes.** SW3 is mostly front end and can start as soon as SW0 exits, in parallel with SW1a. The connector half of SW4 (SW4-1 to SW4-5 and SW4-8) needs neither SW1 nor the run engine and can run beside SW1a once decision 4 is answered; only the Analyst waits for SW1b. The SW1-0 spikes start on day one in a scratch branch, in parallel with SW0a.
 
+**Launch cut.** What must be in production before the product is announced as "agents do the work, and there is a place to join":
+
+| Part | Tasks | Needs |
+|---|---|---|
+| Fixes and safe releases | SW0a (all) | Decision 25 |
+| Unblockers | SW0 (all) | Decisions 3 and 7 |
+| The Auditor on the server | SW1-0 to SW1-6, SW1-8 to SW1-11, SW1-14 (rule pack), SW1-17 (first run from a domain) | P2, P5, P7, P8, P16, P17 |
+| Being told it finished | SW1-12 | Decision 20 |
+| Fixer drafts | SW1-15, SW1-16 | SW1-14 |
+| The server re-check | Allora CL0 to CL2, done by this team under Allora's ids (P15) | Decision 28 |
+| Coach's proposal | SW1-18 | The weekly decision loop, which exists |
+| Where it is worked | SW3-1 to SW3-3 | P16 |
+| The Auditor comes back | The Auditor-only slice of SW8-1 and SW8-2 | Decision 22 |
+| A reason to return | SW9-0 to SW9-2 (the quests whose prerequisite is live) | Decision 9 |
+| A place to join | SW9-6 to SW9-9 | Decision 19 |
+
+Apart from those named slices of SW8 and SW9, nothing in horizons 2 and 3 is part of it. SW1b, SW2, SW4 and SW6 follow the launch in that order.
+
+**The first chain, as one acceptance test.** On staging, signed in as a new account in the Mini App: type a domain and tap once; close the app; receive one notice; open the Fix Board and find findings from the server run, each with evidence; open a finding that has a template and find a draft that passed its check; mark it shipped after deploying it to the test site; tap "Retest now" and read "issue no longer found in page source" with the server's date; see Coach's proposed next action name another open finding. Every step has a task above. The launch is not announced until this passes for a real site the owner controls.
+
+**Time to first result.** A new founder's first run starts from the first screen with a domain and one tap (SW1-17), and the run-finished notice carries them back. SW1-11 records the time from tap to findings on the board with n; a target is set from that measurement, not before it.
 ### 0.6 Non-goals (locked)
 
 - **No custody.** The Worker holds no key that can move funds and never releases funds between users (TN section 0.4). The one existing money-out path stays as it is: the bot token can refund a Stars charge to the account that paid it.
 - **No token mechanics.** LORA has no role in this plan. J5 stands: checkout stays off. No yield, no staking, no point with a cash value.
 - **No "verified" label without a Worker verifier.** No invented number, score, rank or uplift. A missing number reads `not_measured`.
-- **No second budget system, approval table, facts table or findings table** (Ops section 13; V section 0.6).
+- **No second budget system, approval table, facts table or findings table** (budget and approvals: Ops section 13; facts and findings: this plan's own rule).
 - **No "hire an agent" or org-chart metaphor in copy** (Ops section 5).
 - **No Telegram message the user did not opt into.** No blasts from a cron (`specs/0009-referrals-and-retention.md:18`, `:29`).
 - **No router rewrite of `worker/index.ts` and no state-library migration of `App.tsx`.**
 - **No local agent runner on the desktop** (Ops section 13).
 - **No x402, USDC or Base surface inside the Telegram Mini App.**
-- **No autonomous publishing to a founder's site.** Agents prepare; the founder ships. The schema already forbids a `published` asset (`migrations/0014_weekly_decision_loop.sql:65-66`).
+- **No agent publishes to a founder's site by itself.** Agents prepare; the founder ships. The schema already forbids a `published` asset (`migrations/0014_weekly_decision_loop.sql:65-66`). A founder can already apply a fix with one click from the deploy screen (hazard 20); that is the founder acting, and SW0a-17 makes its result honest. The only agent-started write this plan offers is decision 18, whose default is no: a pull request opened after one bound, single-use approval, which the founder still has to merge.
+- **No purchasable credits.** Hosted credits are earned or included in a plan, never sold (Zoro P2-4 and P2-5 are not taken).
+- **Nothing that looks like progress can be bought, spent, transferred or converted.** No quest, level, badge, vote, board position or chat entry is earned by a payment. No points total converts to LORA, credits, Stars or anything else, now or later.
+- **Luminara never holds or releases money between two users,** on Stars, TON or any Jetton.
+- **No selling inside Telegram for anything but Stars** (Telegram's rule for digital goods and services).
+- **No code copied from a project whose licence does not allow it** (section 24.2). Patterns are written independently.
 
 ### 0.7 What "ready" means here
 
-SW0 to SW4 are specified to task level against code read on 2026-10-10 and checked by independent review (section 22). Every later phase begins with a re-baseline task that re-checks its citations before code is written. Every SQL block in this plan was executed on SQLite with migrations 0001 to 0020 applied, and again with V's `run_ledger` and `scoped_memory` applied first. No latency, cost or conversion number is claimed anywhere in this plan: each is measured by a named task before it gates anything.
+SW0a, SW0 and SW1a are specified to task level against code read on 2026-10-10; review round 2 read them (section 22). SW1b to SW4 are specified to task level and each starts with a re-baseline. Every later phase begins with a re-baseline task that re-checks its citations before code is written. Every SQL block in this plan was executed on SQLite with migrations 0001 to 0020 applied, and again with V's `run_ledger` and `scoped_memory` applied first. No latency, cost or conversion number is claimed anywhere in this plan: each is measured by a named task before it gates anything.
+
+v0.2 added three SQL blocks (sections 5.1, 6.5, 14.3) and changed three (8.2 `ship_notes`, 9.2 `brain_connectors`, 11.2 `agent_jobs`). v0.3 added two small blocks (5.1 `stars_charges`, 5 `token_meter`) and changed five (6.2, 6.5, 9.2, 10.2, 11.2). Section 22 records each re-run. Review round 2 re-read every citation against `42880f5`; the ones it corrected are corrected here.
+
+### 0.8 Why this can win, and how each phase is judged
+
+The brief says software sold by the seat is ending and Luminara must survive the largest software companies. Much of what this plan builds is a commodity that a large platform can give away: a Search Console table, a task board, a JSON-LD or `llms.txt` generator, a research brief. Effort there is kept small on purpose. The parts that are hard to copy are these.
+
+| What is hard to copy | Why | Where |
+|---|---|---|
+| A fix that was checked | The loop from finding, to prepared fix, to a server re-check of the live page is the product's proof. A generator stops at the draft | Allora retest (P15); Fixer drafts (SW1-15); receipts |
+| Output bound to evidence | Every number an agent reports points at a fetched page or a measured row, or it reads `not_measured`. Trust is the scarce thing when every tool can write fluent text | Section 4.3; rule 2.9 |
+| Paying for an outcome, not a seat | A job states its check before payment and refunds itself in full when the check fails | SW6 |
+| The founder's own record | Findings, decisions, what shipped, measured numbers and facts, per project, accumulated week after week. It is the switching cost, and it is theirs to export | SW3, SW4 |
+| A surface other agents can use and pay | MCP tools, a passport with limits, pay-per-audit with no account | SW1, SW2, SW5 |
+| A record of what AI engines actually answer, per vertical, week after week | The README names this dataset as the moat. It is the one thing here that compounds across customers | Not in this plan (section 0.3, item 14). It belongs to WDL2 and Zoro Phase 1, and nothing here should be read as building it |
+| Distribution where founders already are | The bot and Mini App, Stars checkout, a chat entered by doing the work | SW1-12, SW6, section 14.3 |
+
+One product metric per phase, read from `product_analytics_events` and the ledgers, never shown to users as a score:
+
+| Phase | The question | Metric |
+|---|---|---|
+| SW1 | Does a new founder get a result without watching? | Share of new signed-in accounts with one completed server run in their first session; share of invited accounts that complete a first run |
+| SW3 | Do they come back to act on it? | Share of those accounts that change a finding's status or add a note in the following 7 days |
+| Launch chain | Does the loop close? | Fixes that passed a retest, per active founder per month; taps from finding to "no longer found" |
+| SW4 | Is the brain used? | Accounts with a connected source that opened a digest in the last 7 days |
+| SW6 | Is a job worth buying twice? | Refund rate; repeat purchase rate |
+| Section 14.3 | Does the room have people in it? | Members, read from Telegram's own count. The bot does not read group messages (SW9-6), so posting is not measured |
+
+Each is recorded with its n. With 5 accounts none of them is evidence yet; they are the instruments, installed before the users arrive.
 
 ---
 
@@ -158,14 +256,15 @@ SW0 to SW4 are specified to task level against code read on 2026-10-10 and check
 
 ### 1.1 Verified
 
-Rows marked **D** were read directly while writing this plan. The rest come from the specialist audits and were re-checked by the technical review (section 22).
+Rows marked **D** were read directly while writing this plan. The rest come from the specialist audits. Review rounds 1 and 2 re-read the citations against the tree (section 22); a citation is evidence of what a file said on 2026-10-10, not a promise that it still does.
 
 | Area | Finding | Evidence |
 |---|---|---|
-| Branches **D** | `main`, `origin/main` and `origin/staging` are all at `88547dc`. Ten linked worktrees exist under `.claude/worktrees/` | `git log`, `git worktree list` |
-| Working tree **D** | `main` carries uncommitted work from another session: `services/referrals/rules.ts`, `worker/env.ts`, `worker/ideaScout.ts`, `worker/index.ts`, `worker/providerRelay.ts`, `worker/referrals.ts`, `wrangler.jsonc`; untracked `worker/workersAiFallback.ts`, two tests and `docs/plans/gamified-builder-ecosystem-tma-plan.md` | `git status --short` |
+| Branches **D** | `main` and `origin/main` are at `42880f5`, which is deployed to production. `origin/staging` is at `88547dc`, one commit behind `main` (SW0a-0 levels it). Local `staging` is 91 commits behind `origin/staging`. Ten linked worktrees exist under `.claude/worktrees/`. `feat/v0-verifiable-flow` holds 23 commits that are not on `main` (V0-1 to V0-9, with their own review record); `claude/nervous-murdock-568385` holds 3 | `git log`, `git rev-list --left-right --count`, `git worktree list`, 2026-10-10 |
+| Commit `42880f5` **D** | Pushed straight to `main` on 2026-10-10 with one parent and no pull request. Its production deploy succeeded; staging never ran it. It committed what v0.1 of this plan described as another session's uncommitted work: Lumens ranks and a daily check-in (`services/referrals/rules.ts`, `worker/referrals.ts`, route in `worker/index.ts`), a community feed (`worker/ideaScout.ts`), a Workers AI chat fallback with an `ai` binding in all three blocks (`worker/providerRelay.ts`, `worker/workersAiFallback.ts`, `worker/env.ts`, `wrangler.jsonc`), two test files, and three plan documents including this one. It changed no file under `components/` and no client code calls the new routes, so they are reachable by API only. The working tree holds two uncommitted edits, both plan files (this one and the Track BB pointer) | `git show --stat 42880f5`; `gh run list`; `git status --short` |
+| Branch protection **D** | `main` requires the "Build, Test & Smoke Validation" check and a pull request with zero approving reviews, but `enforce_admins` is false, so an administrator can push directly. The last three commits on `main` (`4bac71d`, `88547dc`, `42880f5`) each have one parent and no pull request. `staging` is not protected at all | `gh api repos/LuminaraDigital/Luminara-Search-Oracle-Agent/branches/main/protection` and `.../staging/protection`, 2026-10-10 |
 | Identity **D** | The tenant key is `users.account_id`; `billingId()` returns `accountId || id`. Linking rewrites only `users.account_id`, so rows keyed by the losing account are orphaned in every other table | `worker/workerUtils.ts:98-100`; `worker/userStore.ts:330-338` |
-| Orgs **D** | Each account gets a personal org `org_<accountId>` with the user as `owner`. Roles `owner, admin, analyst, auditor, viewer` exist in schema. No invite or join route exists | `worker/enterpriseStore.ts:76-91`; `migrations/0003_enterprise_orgs_rbac.sql:13-21` |
+| Orgs **D** | Each account gets a personal org `org_<accountId>` with the user as `owner`. Roles `owner, admin, analyst, auditor, viewer` exist in schema. No invite or join route exists. `getOrCreateUserOrg` returns the account's earliest active membership, not its personal org by id, which is only right while every account has exactly one membership (SW7-2) | `worker/enterpriseStore.ts:53-61`, `:76-91`; `migrations/0003_enterprise_orgs_rbac.sql:13-21` |
 | Plans **D** | Tiers are free, starter, growth, agency. `scheduledReaudit` is none, monthly, weekly, daily; `teamSeats` is 1, 1, 3, 10 and is client display only. The Worker mirror has no `teamSeats` | `services/plans/planEntitlements.ts:16`, `:23`, `:35-85`; `worker/telegramBot.ts:128-149` |
 | Route guards **D** | `PROTECTED_API_ROUTES` requires identity; a second pattern list sends `/oracle`, `/audit`, `/tools` to the Agency check | `worker/authMiddleware.ts:151-192`; `worker/apiAccess.ts:16-20` |
 | Background work **D** | One cron (`0 8 * * *`) mapped to `sentinel`, `privacy_purge`, `domain_recheck`; an unmapped cron runs every job. One queue whose handler treats every batch as an audit job. One Durable Object class that stores chat turns | `wrangler.jsonc:11-13`, `:138-158`; `worker/scheduledJobs.ts:10-36`; `worker/index.ts:2059-2071`; `worker/oracleSession.ts:1-40` |
@@ -195,7 +294,12 @@ Rows marked **D** were read directly while writing this plan. The rest come from
 | Tests **D** | Vitest; D1 tests run on `node:sqlite` with every file in `migrations/` applied in sorted order; coverage floors 35/35/25/35 | `tests/helpers/sqliteD1.ts:26-32`; `vitest.config.ts:49-54` |
 | Front end **D** | No router: one view enum. Telegram bottom nav and the public-view set are separate lists a new view must join | `components/telegram/TelegramBottomNav.tsx:13-25`; `services/auth/useAppAuth.ts:41-59` |
 | Roster-like UI **D** | `AgentMissionControl` renders one card per crew profile from in-memory events. `BrandMemoryView` has six tabs | `components/audit/AgentMissionControl.tsx:156-160`; `components/suite/BrandMemoryView.tsx:166-173` |
-| Desktop **D** | The preload exposes seven calls and one event. IPC handlers ignore the sender | `electron/preload.cjs:8-21`; `electron/main.cjs:309-330` |
+| Deploy screen **D** | A modal titled "1-Click CMS & GitHub Autonomous Deployment" exists today. Its WordPress path posts a setting named `luminara_aeo_schema` to the site's settings endpoint and reports the deploy as done on HTTP 200. Nothing is read back, and WordPress ignores a setting no plugin registered (hazard 20) | `components/audit/CmsDeploymentModal.tsx:230`; `services/deployment/cmsDeploymentService.ts:161-240` |
+| Bot commands **D** | `/idea` already exists: it opens Idea Scout in the Mini App. `/paysupport` sends one canned message asking the buyer to reply; the reply goes to the model chat, not to a person. The update handler returns at `if (!msg) return`, before any `callback_query` or `chat_join_request` could be handled; the two payment branches end just before `const text` | `worker/telegramBot.ts:320-321`, `:420`, `:551-567`, `:631-641` |
+| Sentinel messages **D** | The daily job sends "It is time for your check" to any target with a cadence and a chat id. It enqueues an audit only when it saw drift, so the scheduled message asks the founder to open the app and run the audit by hand | `worker/sentinel.ts:233-249`, `:253-262` |
+| Other sessions **D** | The checkout is shared. On 2026-10-10, besides this plan's two files, `git status` showed another session's uncommitted work on `main`: edits to `AGENTS.md`, `worker/oracleChat.ts`, `services/browserAction/`, `crawler/server.mjs` and `services/skills/playbooks.generated.json`; new `services/evidenceBound/` (a claim ledger and a citation check), `specs/0019-evidence-bound-decisions.md` and two plan files. Later the same day a card rail through Stripe appeared, also uncommitted: `worker/stripePayment.ts`, `migrations/0021_stripe_payments.sql`, two `/stripe/*` routes and a "Card (Stripe)" tab in the paywall. It is a fourth way to pay, so SW0a-4 and SW0a-6 name it. Citations in this plan are against `HEAD`. The claim ledger overlaps section 4.3's output check: SW0a-8 and SW1-7 use it if it has landed and covers the rules there, and do not build a second one | `git status --short`, 2026-10-10 |
+| Webhook throttle **D** | Telegram updates are throttled by kind; `chat_join_request`, `chat_member` and `my_chat_member` are allowed 5 a minute per chat | `worker/webhookThrottle.ts:51-53` |
+| Desktop **D** | The preload exposes seven calls and one event. IPC handlers ignore the sender | `electron/preload.cjs:8-21`; `electron/main.cjs:301-330` |
 | CSP **D** | `connect-src` already allows `https:` and `wss:`; `frame-src` names `accounts.google.com`; `form-action` is `'self'` | `worker/security.ts:21-30` |
 | TON contracts | `contracts/ton` targets Acton 1.2.0 with one Tolk contract and no tests; the LORA jetton is tested and not deployed; three Solidity contracts are tested and not deployed | `contracts/ton/Acton.toml:8`; `contracts/jetton/deployments.json:2-3`; `contracts/README.md` |
 
@@ -215,33 +319,52 @@ External facts, each checked against a primary source on 2026-10-10:
 
 ### 1.2 Hazards found during the audits
 
-These are defects in the tree today. None is owned by this plan, and three have a separate task raised for them. They are listed because each one would undermine a phase below.
+These are defects in the tree today. Hazards 1 to 8 were found by this plan's own audits; hazards 1 to 3 have separate tasks raised (two chips). Hazards 9 to 19 were added in v0.2 from the Track BB audits and reviews, and hazard 20 in v0.3 from review round 2; each was re-read in code on 2026-10-10. SW0a (section 5.1) fixes hazards 3 and 9 to 20; SW0-3 fixes hazard 8. They are listed because each one would undermine a phase below, and several lose money or mislead a user today.
 
 | # | Hazard | Evidence | Blocks | Handling |
 |---|---|---|---|---|
-| 1 | Production requires App Check for email sign-up and sign-in since `88547dc`, but the production build is given no App Check site key, so those calls would return 401. Top-level and production `vars` disagree | `wrangler.jsonc:108`, `:314`; `worker/appCheck.ts:124-177`; `worker/authCredentialGateway.ts:223`, `:307`; `.github/workflows/deploy-cloudflare.yml:57`, `:119` | Any web sign-in soak | Separate task raised. Not confirmed against the live site |
-| 2 | Public `/api/health` returns only `{ ok: true }` since `88547dc`, while the client still reads `plans`, `ton`, `jettonCheckout`, `trust` and other fields from it | `worker/index.ts:294-300`; `services/apiClient.ts:117-147`; `components/telegram/TelegramAccountPanel.tsx:23`; `components/paywall/paymentOptions.ts:27-55` | Every client feature flag in this plan | Separate task raised. SW0-4 depends on its outcome |
-| 3 | With `TRUST_RECEIPTS_ENABLED` on, the gateway route would mint a public, `worker_verified`, `domain_control` receipt for any domain a signed-in user names, from constants: status 200, length 2500 and the SHA-256 of the empty string. No fetch happens | `worker/oracleGateway.ts:116-127`, `:146-165`; `worker/index.ts:1840-1851` | Turning on receipts (SW5, SW6, SW9) | Separate task raised. SW0 gate |
+| 1 | Production requires App Check for email sign-up and sign-in since `88547dc`, but the production build is given no App Check site key, so those calls would return 401. Top-level and production `vars` disagree | `wrangler.jsonc:108`, `:314`; `worker/appCheck.ts:124-177`; `worker/authCredentialGateway.ts:223`, `:307`; `.github/workflows/deploy-cloudflare.yml:57`, `:119` | Any web sign-in soak | Separate task raised. Not confirmed against the live site: an owner check (Owner brief, item 4) |
+| 2 | Public `/api/health` returns only `{ ok: true }` since `88547dc`, while the client still reads `plans`, `ton`, `jettonCheckout`, `trust` and other fields from it | `worker/index.ts:294-300`; `services/apiClient.ts:117-147`; `components/telegram/TelegramAccountPanel.tsx:23`; `components/paywall/paymentOptions.ts:27-55` | Every client feature flag in this plan | Confirmed live: on 2026-10-10 `GET https://luminarasuite.com/api/health` returned HTTP 200 with the body `{"ok":true}`. Separate task raised; it lands after SW0a-1 and SW0a-6, because restoring the fields before them brings the TON rail and the USDT selector back. SW0-4 ends the client's dependence on this route |
+| 3 | With `TRUST_RECEIPTS_ENABLED` on, the gateway route would mint a public, `worker_verified`, `domain_control` receipt for any domain a signed-in user names, from constants: status 200, length 2500 and the SHA-256 of the empty string. No fetch happens | `worker/oracleGateway.ts:116-127`, `:146-165`; `worker/index.ts:1840-1851` | Turning on receipts (SW5, SW6, SW9) | SW0a-15. Separate task raised |
 | 4 | The queue consumer calls a hosted paid tool with no budget check and no cost event | `worker/auditQueue.ts:269-283` | Nothing here (SW1 does not use the queue) | Recorded for the V plan's queue hardening |
 | 5 | The q402 settle path has replay, proofless-claim, pending-transaction and decimal defects | `worker/q402/tonAdapter.ts`, `xdcAdapter.ts`, `facilitator.ts` (blockchain audit) | Nothing here while it stays off | SW5 does not reuse it. Recorded for the q402 plan |
 | 6 | Account deletion skips several account-keyed tables, and account linking orphans rows | `worker/privacyService.ts:166-212`; `worker/userStore.ts:330-338` | Rule 2.6 for every new table | V2-1, V2-1b (section 3) |
 | 7 | Smoke lists stop at migration 0017 | `scripts/smoke-check.mjs:23-58` | The first SW migration | Ops Phase 0 item 5 (section 3) |
 | 8 | Numbers with no measurement behind them on paths agents would reuse: `healthScore = 74`; Sentinel starts each target with `cited = true` and only changes it when a search key is set | `services/decision/fastDecisionService.ts:297`; `worker/sentinel.ts:154-157` | The number rule (2.9) | SW0-3 |
-| 9 | Another session's uncommitted work adds a visible points balance ("Lumens"), ranks, a daily check-in and a community feed, with no flag, and its plan proposes Stars escrow bounties | `services/referrals/rules.ts` (modified); `docs/plans/gamified-builder-ecosystem-tma-plan.md:67-95` | SW9 | Decision 9. This plan does not edit that session's files |
+| 9 | Live since `42880f5` as API routes, with no flag, no staging pass and no screen that calls them: a points total ("Lumens") with five ranks and a 25-point daily check-in; a community idea feed; a Workers AI fallback. **Feed:** every card carries the sharer's account id and the feed is returned as stored; the share lookup has no account filter, so any signed-in account can publish another account's private idea card by id; votes record no voter; an empty feed returns two example cards with vote counts of 12 and 8; the whole feed is one KV value. **Points:** check-in rows are written into the credit ledger with a `remaining` value, and each unspent credit adds 100 points, so using a credit lowers the total. **Fallback:** it has three call sites: when the provider is not configured, when the upstream call throws, and on any non-OK upstream reply including a 4xx. It runs after quota is charged, ignores `response_format` and `tools`, is unmetered, and the reply does not say a different model answered | `worker/ideaScout.ts:699`, `:720`, `:730-747`, `:753-767`, `:787`, `:843`, `:857-892`; `services/referrals/rules.ts:253-316`; `worker/referrals.ts:632-702`; `worker/providerRelay.ts:363-378`, `:474-482`; `worker/workersAiFallback.ts:273-291` | SW9; every later model call | SW0a-9 to SW0a-11. Decision 9. A task chip is raised for the feed |
+| 10 | The Jetton verifier accepts only notification opcode `0x7362d096`. TEP-74 and the repo's own LORA contract use `0x7362d09c`, so no real USDT or LORA transfer can be matched and credited. The unit test builds its fixture from the same constant, and spec 0018 repeats the wrong value | `worker/jettonSettlement.ts:13`, `:26-27`; `contracts/jetton/contracts/messages.tact:36`; `contracts/jetton/tests/harness.ts:20`; `specs/0018-jetton-settlement-and-preflight.md` | Any Jetton rail | SW0a-1. Task chip raised |
+| 11 | `JETTON_CHECKOUT_LIVE` is `true` with a mainnet USDT master configured, and a test pins it true. Spec 0018 says the switch flips only after a real testnet USDT transfer is credited on staging, whose merchant address is a placeholder. One switch covers USDT and LORA; only an empty master string keeps LORA off | `worker/tonPayment.ts:53`, `:59`, `:63`, `:231`; `tests/paymentFailClosed.test.ts:68`; `specs/0018-jetton-settlement-and-preflight.md` | LORA rule J5 | SW0a-1 |
+| 12 | Copy says "29 LORA (15% Burn)" and "$LORA (Burn)", the public Q402 catalogue advertises a 15% deflationary burn, and the Terms name $LORA as a payment asset. The contract takes no tax, fee or automatic burn on a transfer; LORA rule J6 forbids the claim | `components/paywall/PaywallModal.tsx:256-258`, `:278-280`, `:462`; `worker/q402/middleware.ts:72-87`; `worker/q402/facilitator.ts:46-47`, `:213-217`, `:270`, `:294`, `:317`; `worker/q402/tonAdapter.ts:178-183`; `worker/q402/types.ts:36`; `worker/termsPolicy.ts:49` | Honest copy | SW0a-2 |
+| 13 | A paid Stars update can be lost. The webhook answers 200 before it processes the update, so Telegram never redelivers. If the subscription write then fails, the code releases its claim and throws, and the outer handler swallows the error: the buyer has paid and gets no plan, no refund and no message | `worker/index.ts:872-873`; `worker/telegramBot.ts:380-385`, `:924-926` | SW6, and every Stars sale today | SW0a-3. Task chip raised |
+| 14 | A one-day purchase overwrites an active subscriber's plan, on Stars, on TON and on licence redemption. The refund on a failed claim goes to the user id in the invoice payload, not to the payer | `worker/telegramBot.ts:329`, `:353`, `:365-381`; `worker/tonPayment.ts:33-34`, `:575-588`; `worker/licenseService.ts:194-205` | SW6 | SW0a-4 (Zoro P2-1 to P2-3, on all three rails) |
+| 15 | Native TON matches the order memo with `includes`, not equality. The client polls for 20 seconds, then points to a retry control that does not exist, while the order lives 2 hours: a slow index means paid and not credited | `worker/tonPayment.ts:396`; `services/ton/tonService.ts:144-156` | Any TON rail coming back | SW0a-5 |
+| 16 | Telegram requires digital goods and services inside the bot and Mini App to be sold for Stars. The paywall renders a TON rail on every surface, the server issues TON invoices to Telegram sessions, and the bot's `/plan` reply points to "every payment option". The paywall also tells Mini App users to email for card payments and invoices, and the Terms shown there name $LORA as a way to pay. A card tab is being added to the same paywall by another session (uncommitted on 2026-10-10); a card checkout for a digital plan inside the Mini App would break the same rule | `components/paywall/paymentOptions.ts:42-55`; `components/paywall/PaywallModal.tsx:400-426`, `:637-643`; `worker/index.ts:966-977`; `worker/telegramBot.ts:446`; `worker/termsPolicy.ts:49` | The bot staying listed | SW0a-6. Decision 11 |
+| 17 | Numbers and labels no measurement produced, on surfaces a founder sees: the downloadable dossier prints score 88, grade B and "Verified" beside a non-cryptographic hash it calls a "Trust Receipt Cryptographic Hash"; the report prompt asks the model for "Expected Impact", "Est. Organic Rank" and "Trust Signal Strength" columns; the executive brief says "cited in about N% of relevant AI search answers" from web results and "can double its citations"; a "share of voice" score is the citation rate times 0.85 plus a constant; a preliminary "citeWorthiness" score out of 100 is written into the report prompt, and the same prompt lets the model add figures as long as it labels them "(estimate)"; the Telegram chat is told to "deliver an Instant Scout diagnostic" for a domain nobody fetched, at temperature 0.7, with no output check | `components/audit/ReportDisplay.tsx:171-184`; `services/reports/portableDossierService.ts:267-273`; `services/geminiService.ts:786`, `:841-849`; `services/agentCore/agents/serpRadarAgent.ts:137-140`; `services/agentCore/agents/executiveTranslatorAgent.ts:41`, `:50`; `worker/telegramBot.ts:207`, `:851` | Rule 2.9 | SW0a-7, SW0a-8 |
+| 18 | Releases are not safe to repeat. A manual dispatch of "staging" from `main` also deploys production; the two deploy jobs share no `concurrency` group; D1 migrations apply with no restore point recorded; administrators can bypass `main`'s protection and `staging` has none (section 1.1). The checkout switch in hazard 11 arrived inside a commit titled "feat(ml)" (`7b6bde1`) that was merged through pull request #54, so a pull request alone did not catch it; hazard 9 arrived by direct push. The pre-push hook that blocks a direct push to `main` prints the environment variable that bypasses it. `staging` is one commit behind `main` | `.github/workflows/deploy-cloudflare.yml:28`, `:59-67`, `:90`, `:121-129`; `git show --stat 7b6bde1`; `.githooks/pre-push:9-13` | Every production step in this plan | SW0a-0, SW0a-12, SW0a-13. Decision 27 |
+| 19 | Staging cannot be signed in to on the web. The staging build is given no `VITE_FIREBASE_*` values, so the client falls back to the production Firebase project while the staging Worker verifies against `luminara-suite-staging`; the Mini App link is hard-coded to the production bot. Whether a staging bot token exists cannot be read from the repo | `services/auth/firebasePublicConfig.ts:7-9`; `.github/workflows/deploy-cloudflare.yml:56-57`; `wrangler.jsonc` staging `vars`; `services/referrals/rules.ts:10`; `components/paywall/paymentOptions.ts:4` | Every signed-in soak in this plan | SW0a-14 |
+| 20 | The deploy screen says more than it does. Its WordPress path reports "successfully deployed" when the settings endpoint answers 200, without reading the page back; the setting it posts is one WordPress drops unless a plugin registered it. A founder can be told a fix is live when nothing changed | `services/deployment/cmsDeploymentService.ts:161-240`; `components/audit/CmsDeploymentModal.tsx:230` | "A fix that was checked" (section 0.8); decision 18 | SW0a-17 |
 
 ### 1.3 Not verified (each is resolved by a named task)
 
 - The Workers plan tier, which sets CPU, subrequest and D1 limits (SW0-1).
 - Which migrations are applied on each remote database, and which secrets are set (SW0-1).
 - Whether hosted model keys exist on staging; Zoro's log said none (SW0-1; Zoro decision 9).
-- Whether hazards 1 and 2 are live in production (their own tasks).
-- Whether any non-Stars checkout renders inside the Mini App for a digital plan today (SW0-5).
+- Whether hazard 1 is live in production (an owner check; hazard 2 is confirmed).
+- Whether the TON tab in the Mini App paywall can reach a live checkout today. With hazard 2 live the client reads no `ton` field, so the tab should read "Soon"; that was reasoned from code, not seen on a device (SW0-5).
+- Whether production still has 5 user rows; the count is from 2026-10-01 (SW0-1).
 - Whether `@x402/core` and `@x402/evm` bundle and run under workerd (SW5-0).
 - Whether a rollback across a Durable Object class migration is refused by wrangler, as its documentation suggests (SW1-0).
 - Whether hibernating WebSockets work with the gradual deployment the Ops plan wants (SW7-0).
-- The USDC contract address and decimals on Base and Base Sepolia: read from the facilitator's `/supported` response in SW5-0, never typed from memory.
-- Real cost per run, in cents (SW1-9 measures it; nothing is priced before then).
+- The USDC contract address and decimals on Base and Base Sepolia: taken from the issuer's published list and confirmed by the owner in SW5-0, never typed from memory. Whether a facilitator's `/supported` answer carries the asset address at all is part of SW5-0.
+- Real cost per run (SW1-11 measures it; nothing is priced before then).
+- Whether a Cloudflare Workflow is a better home for a run than an alarm-driven object (SW1-0, spike A, which builds the same toy both ways).
 - Whether Google classes the two read-only scopes as sensitive (SW4-0 reads it in the Cloud Console).
+- Whether anyone sent USDT with a `LUM:` memo to the merchant address while the Jetton switch was on (SW0a-1, an operator read of the address history).
+- Whether any receipt was ever minted through the gateway route in either remote database (SW0a-15).
+- Whether a staging bot token and webhook secret are set (SW0a-14).
+- What Telegram does with a refund when the bot's Star balance is too low, when the charge is old, and when the payer's account is deleted (SW6-0 tests each on the staging bot).
+- Whether `wrangler rollback` leaves cron triggers from the newer version in place (SW0a-13 reads the documentation and tests it on staging).
+- Whether Telegram allows a Mini App to link out to a web checkout for the same digital goods. Until answered, no surface inside Telegram links to a non-Stars checkout (SW0a-6).
 
 ---
 
@@ -251,50 +374,75 @@ The Zoro plan's section 2 applies (gates, flags, release, rollback, migrations, 
 
 | # | Rule | Why |
 |---|---|---|
-| 2.1 | **Release path.** Branch from `origin/staging`. PR to `staging`; after the staging checks, a PR from `staging` to `main` with a merge commit. `main` is branch-protected and requires the "Build, Test & Smoke Validation" check, so Zoro 2.3 step 7's direct push works only by admin bypass. No production step without an explicit owner yes in chat | Deploy audit; `AGENTS.md:34`; V decision 8 |
-| 2.2 | **Back up before merging a migration.** The deploy workflow applies D1 migrations on merge with no backup (`deploy-cloudflare.yml:59-67`, `:121-129`). The operator runs `npm run db:backup:staging` (or `CONFIRM_PROD_BACKUP=1 npm run db:backup:prod`) and records the Time Travel bookmark first | Zoro 2.3; deploy audit |
-| 2.3 | **Flags.** Every flag in this plan is a string compared with `=== 'true'`, so unset means off in every environment. It is declared `"false"` in all three `wrangler.jsonc` blocks with identical top-level and production values, typed in `worker/env.ts`, documented in `.env.staging.example`, `.env.production.example` and `.dev.vars.example`, reported in the admin health block (`worker/index.ts:311-346`) and in the public flag surface (SW0-4). The Trust helper's "unset is on in local dev" rule (`worker/trustReceipts.ts:37-42`) is not copied | Two conventions exist today |
-| 2.4 | **One production flag change per release, 24 hours apart** (Ops section 6). New flags reach production `"false"` | Ops plan `:130` |
-| 2.5 | **Migrations.** Referred to by name; the number is taken at PR time (next free on disk today: 0021; the 0011 to 0013 duplicates stay). Expand-only. `CREATE ... IF NOT EXISTS`. INTEGER millisecond timestamps. Each file and table is added to `scripts/smoke-check.mjs` in the same PR | Zoro 2.5 |
-| 2.6 | **Privacy.** Every new account-keyed table is added to `collectExportPayload`, its `processors` list and `softDeleteAccount` (`worker/privacyService.ts:116-134`, `:166-212`), and to the account-link move helper (V2-1b), in the PR that creates it, with a test | Zoro 2.6 |
+| 2.1 | **Release path.** Branch from `origin/staging`. PR to `staging`; after the staging checks, a PR from `staging` to `main` with a merge commit. `main` is branch-protected and requires the "Build, Test & Smoke Validation" check, so Zoro 2.3 step 7's direct push works only by admin bypass. No production step without an explicit owner yes in chat | Deploy audit; `AGENTS.md:34`; V decision 8; decision 17 |
+| 2.2 | **Record a restore point before merging a migration.** The deploy workflow applies D1 migrations on merge with no restore point (`.github/workflows/deploy-cloudflare.yml:59-67`, `:121-129`). Until SW0a-13 makes the workflow do it, the operator records the D1 Time Travel bookmark first. A full export (`npm run db:backup:staging`, or `CONFIRM_PROD_BACKUP=1 npm run db:backup:prod`) is taken only when rule 2.19 asks for one | Zoro 2.3; deploy audit |
+| 2.3 | **Flags.** One vocabulary. A flag is the string `"true"` or `"false"`; anything else, and unset, means off in every environment, and `validate-env` rejects a present value that is neither. Each flag is declared `"false"` in all three `wrangler.jsonc` blocks with identical top-level and production values, typed in `worker/env.ts`, documented in `.env.staging.example`, `.env.production.example` and `.dev.vars.example`, read through the one flag helper (P7; a plain `=== 'true'` until it lands), and reported in the admin health block (`worker/index.ts:311-346`) and in the signed-in capabilities answer (SW0-4). The Trust helper's "unset is on in local dev" rule (`worker/trustReceipts.ts:37-42`) is not copied | Two conventions exist today |
+| 2.4 | **One production flag change per release.** New flags reach production `"false"`. Ops section 6 asks for 24 hours between changes; this plan keeps the 24 hours where a flag's effect needs a daily cron or a UTC day boundary to be seen, and otherwise waits for the previous change's promotion check to be read (rule 2.18). SW0a's fixes are not flag changes | Ops plan `:130`; section 19 records the edit |
+| 2.5 | **Migrations.** Referred to by name; the number is taken at PR time (next free on disk on 2026-10-10: 0022, because another session holds an uncommitted `0021_stripe_payments.sql`; the 0011 to 0013 duplicates stay). Expand-only. `CREATE ... IF NOT EXISTS`. INTEGER millisecond timestamps. Each file and table is added to `scripts/smoke-check.mjs` in the same PR | Zoro 2.5 |
+| 2.6 | **Privacy.** Every new account-keyed table is added to `collectExportPayload`, its `processors` list and `softDeleteAccount` (`worker/privacyService.ts:116-134`, `:166-212`), and to the account-link move helper (V2-1b), in the PR that creates it, with a test. A table whose rows can exist with no account (a payment from a payer with no account, a join request from a stranger) says so beside its SQL and states how those rows are exported, deleted and aged out | Zoro 2.6 |
 | 2.7 | **Durable Objects.** A new class ships in its own release, with its `migrations` tag and bindings in all three blocks, before any feature calls it, so later rollbacks stay on the far side of the class migration. Every object has a D1 index row that stores its name as created (`object_name`), because objects cannot be listed; account deletion calls the object's purge route before deleting the row | V plan section 6.1 lesson |
 | 2.8 | **Money.** Claim in D1 before granting; fail closed; never KV-only (`worker/paymentLedger.ts:1-5`). Every money state change is a conditional `UPDATE ... WHERE status = ?` that must change exactly one row | Existing rule |
 | 2.9 | **Numbers.** A number in any agent output must cite an evidence row, a snapshot row or a tool result from the same run. The validator blocks a deliverable that carries an uncited number. A value that was not measured is written `not_measured`, never estimated silently | APS invariant 5 |
-| 2.10 | **Untrusted content.** Crawled pages, connector strings, user notes, lead messages and anything a model wrote in an earlier run are wrapped with `wrapUntrustedContent` before they enter a prompt. A run that has read untrusted content is `sealed`: it may not call a write tool without a bound, single-use approval (Ops F3) | Ops plan section 4 |
+| 2.10 | **Untrusted content.** Crawled pages, connector strings, user notes, lead messages and anything a model wrote in an earlier run are wrapped with `wrapUntrustedContent` before they enter a prompt. A run that has read untrusted content is `sealed`. A sealed run may not call a tool whose effect leaves the account (a write to a founder's site or repository, a message to anyone) or spends money, without a bound, single-use approval (Ops F3). Saving a draft inside the account needs no approval: a draft is inert until the founder ships it, and it is checked by code before it is saved (section 4.3) | Ops plan section 4; review round 2 |
 | 2.11 | **Chain.** The agent sends no transaction on any network and holds no key (J1). Automated tests use a mock facilitator and fixtures. Every live payment drill, testnet included, is an owner step | Owner rule of 2026-10-07 |
 | 2.12 | **Shared tree.** Other sessions work in this checkout. Re-run `git status --short` before each commit; stage by explicit path; never `git add -A`; never edit another session's plan file | Recorded practice |
 | 2.13 | **Copy.** No em dashes. No "hire", "employee" or org-chart wording for agents. "Verified" appears only beside a receipt | `AGENTS.md:17`; Ops section 5 |
-| 2.14 | **Double-check.** After every task: its acceptance test, typecheck, targeted tests, and a grep for the regression it could cause. After every phase: full gates on a green Linux CI run, staging smoke, the phase's owner check, and a re-read of this plan's section against the merged code, correcting whichever is wrong | Zoro 2.7; Allora 2.2 |
-| 2.15 | **Licence keys.** The 55 existing keys keep redeeming. Check with `scripts/verify-license-vault.mjs` before and after each production deploy (`describeLicenseKey` has no route or CLI caller). No phase adds a dependency to redemption | Zoro 2.8, corrected |
+| 2.14 | **Double-check.** After every task: its acceptance test, typecheck, targeted tests, and a grep for the regression it could cause. After every phase: full gates on a green Linux CI run, staging smoke, the phase's owner check, and a re-read of this plan's section against the merged code, correcting whichever is wrong | Zoro 2.7; Allora 2.6 |
+| 2.15 | **Licence keys.** The 55 existing keys keep redeeming. Before and after each production deploy, a read-only count of `license:key:*` records that are not revoked must be unchanged (SW0a-12 adds the script; it lists and reads, and writes nothing). `scripts/verify-license-vault.mjs` compares production with a local vault manifest and needs that file, so it is the owner's check, not the deploy's. No phase adds a dependency to redemption, and no script in this plan revokes or re-seeds a key | Zoro 2.8, corrected |
+| 2.16 | **Staging before production, always.** Nothing reaches `main` that `staging` has not run. `main` is protected with administrators included; `staging` is protected the same way (decision 27). CI on `main` checks that the merge commit's second parent is the tip of `staging` and that the two trees are equal (SW0a-12). AI sessions push with an identity that cannot merge to `main`. Rule 2.1's sentence about admin bypass describes what is possible today, not a path this plan uses | `42880f5` reached production with no staging pass and no flag |
+| 2.17 | **Money invariants are tests.** A CI test pins `JETTON_CHECKOUT_LIVE` to `false`, pins each LORA switch to `false`, and fails on burn, tax or yield wording in payment copy. Changing one needs the test changed in the same PR, so the change is visible in review | Hazards 11 and 12 arrived inside an unrelated commit |
+| 2.18 | **Soaks are sized by what they exercise.** A scripted soak states the number of requests and the time-based things it must cross (a daily cron, a UTC day boundary, a weekly sync). It runs no longer than that. A 7-day wait that exercises nothing a 3-day one does not is not required | Staging has no users; waiting is not evidence |
+| 2.19 | **Backups carry personal data.** Routine recovery relies on D1 Time Travel, recorded as a bookmark before each migration. A full `d1 export` is taken only before a migration that alters an existing table. It is written outside any checkout that other sessions share, encrypted at rest, and deleted after 30 days. Dumps include connector snapshots, search query strings, leads and notes | A dump on a shared machine would break the promise that operators do not read connector data |
+| 2.20 | **Crons.** An unmapped cron expression runs no job and reports an error (SW0a-13 changes today's "runs every job"). After that change a new cron and its `CRON_JOBS` entry ship in the same PR | A rollback under a newer trigger must not run every job on the new cadence |
+| 2.21 | **Worker classes stay testable.** Nineteen test suites import `worker/index.ts` under node. A new Durable Object or handler class is either a plain class, as `OracleSession` is, or ships with a test alias for any `cloudflare:` import in the same PR | `vitest.config.ts:6-7` |
+| 2.22 | **Eval gates must be able to fail.** A gate that replays recorded text through deterministic code proves the code, not the model. Any phase that puts model output in front of a founder also runs a live labelled set with stated thresholds before promotion, and re-runs it on any change of prompt, model, schema or guard (sections 6 and 7) | A recorded transcript cannot show that a model ignored an injected instruction |
+| 2.23 | **End-of-track check.** When the last phase in a horizon promotes: re-run every earlier phase's promotion check against production, re-read each section of this plan against the merged code and correct whichever is wrong, and record the result in section 23. A check that no longer passes is reported as failing, not skipped | Owner instruction of 2026-10-10 |
+| 2.24 | **Say who wrote it.** Text a founder reads is labelled by its source wherever it is shown: "built from the findings" when code assembled it, the model's name when a model wrote it, and "answered by a fallback model" when the fallback did. A promotion count never mixes the three | A code-built summary and a model summary look the same on a card; a fallback answer today looks like the hosted one |
 
 ---
 
 ## 3. Prerequisite ledger
 
-This plan does not restate designs owned by other plans. Each row is work that must be on `main` before the phase named in the last column starts. The owning plan's task id is used in commits and in both execution logs. "State" was checked on `main` at `88547dc`.
+This plan does not restate designs owned by other plans. Each row is work that must be on `main` before the phase named in the last column starts. The owning plan's task id is used in commits and in both execution logs. "State" was checked on `main` at `42880f5`. The last paragraph of this section says which rows this team does itself.
 
 | # | Capability | Owner | State on `main` today | Needed by |
 |---|---|---|---|---|
-| P1 | Hazards 1, 2 and 3 fixed (section 1.2) | Their own tasks | Open | SW1 soak (1, 2); any receipt flag (3) |
-| P2 | Findings rows get server-minted ids | V0-8 | Not on `main`. Present on unmerged branch `claude/nervous-murdock-568385` (`27128a0`); `worker/findingsService.ts:166` still takes the client id | SW1, SW3 |
+| P1 | Hazards 1 and 2 fixed (section 1.2). Hazard 3 is SW0a-15 | Their own tasks | Open. Hazard 2 confirmed live | The web sign-in part of any soak (1); nothing here once SW0-4 lands (2) |
+| P2 | Findings rows get server-minted ids | V0-8; Allora CL0-1 is the same fix | Not on `main`. Written twice on unmerged branches: V0-8 on `feat/v0-verifiable-flow` (`e0a3075`, review fix `be52f46`) and a second implementation on `claude/nervous-murdock-568385` (`27128a0`). `worker/findingsService.ts:166` on `main` still takes the client id. SW0-8 picks one | SW1, SW3, the re-check |
 | P3 | Workspace sync no longer overwrites newer data | V0-1 | Not on `main`. Present on unmerged `feat/v0-verifiable-flow` | SW4 (reads Business DNA from the blob) |
-| P4 | Server model call with timeout, fallback and a live model id | V0-2, Zoro P1-4 (`callHosted`) | Not started: no `callHosted` symbol exists; `worker/oracleChat.ts:267` unchanged | SW1 |
-| P5 | Run ledger: `audit_evidence`, `finding_observations`, `audit_runs.origin`, the `/runs` writer, privacy and link move for them | V2-1, V2-1b, V2-5 | Not started: no `worker/runLedger.ts`, no `worker/accountLinkMove.ts` | SW1 |
-| P6 | Owner decision on server-side audits and hosted keys for the summary step | V decision 5; decision 3 here | Open | SW1 |
-| P7 | Flag helper with KV override and account allow-list; migration lint; smoke preflight before deploy; production job needs staging; smoke lists caught up | Ops Phase 0 items 5 to 8 | Not started: no `worker/featureFlags.ts` | SW1 (first migration, first canary) |
-| P8 | A 15-minute ops cron and error reporting from `scheduled` and `queue` | Ops Phase 0 item 9 | Not started | SW1 (stuck-run alert) |
+| P4 | Server model call with timeout, fallback and a live model id | V0-2, Zoro P1-4 (`callHosted`) | Not on `main`. V0-2 (`8efbbec`) is written on the unmerged branch; Zoro P1-4 is not started; `worker/oracleChat.ts:267` on `main` is unchanged | SW1b (SW1a makes no model call) |
+| P5 | Run ledger: the spec and re-baseline, `audit_evidence`, `finding_observations`, `audit_runs.origin`, the provenance types, rules that emit a stable `ruleId`, the `/runs` writer, privacy and link move for them | V2-0, V2-1, V2-1b, V2-2, V2-3, V2-5 | Not started: no `worker/runLedger.ts`, no `worker/accountLinkMove.ts` | SW1a |
+| P6 | Owner decision on server-side audits; hosted keys for the summary step | V decision 5; decision 3 here | Open | SW1a needs the yes to run on the server; only SW1b needs a hosted key |
+| P7 | Flag helper with KV override and account allow-list; migration lint; smoke preflight before deploy; smoke lists caught up. Ops also asked that the production job need the staging job; the two jobs run on different pushes, so SW0a-12's parent-and-tree check does that instead (section 19) | Ops Phase 0 items 5 to 8 | Not started: no `worker/featureFlags.ts` | SW1a (first migration, first canary) |
+| P8 | A 15-minute ops cron and error reporting from `scheduled`. Ops item 9 covers the scheduled handler only; SW0a-13 adds the queue handler | Ops Phase 0 item 9 | Not started | SW1a (stuck-run sweep); SW0a-5 if it uses the cron |
 | P9 | `ExecutionContext` passed into MCP; approvals bound to an args hash and requester, single-use, with expiry enforced | Ops Phase 1, F1 | Not started: `worker/index.ts:1605` passes no context; no `args_hash` column | SW2 |
 | P10 | Beacon attention feed | Ops Phase 1, F2 | Not started | SW2 (optional: the roster view polls run events without it) |
 | P11 | Sealed Lane: trust stored at run start; a sealed run cannot write without a bound approval | Ops Phase 2, F3 | Not started | SW2 (hard: Fixer reads crawled pages and writes assets) |
 | P12 | Agent Passport K1 and K2, with Agent Seats merged in | spec 0016; Ops F4; TN decision D2 | Planned, no schema. SW2 implements it as designed in section 7; decision 2 confirms the merge | SW2 |
 | P13 | Scoped memory: `memory_facts` gains project, domain, kind, hash; conversation index | V3-1, V3-1b | Not started | SW4 |
-| P14 | Trust Receipts switched on after soak, with a signing key set | TN1 | Code on `main`, flags `"false"` everywhere | SW1 (hard: V2-11 lets an evidence row say `worker` only when a receipt backs it), SW6, SW9 |
-| P15 | Fix retest: a server re-check that a shipped fix is live | Allora (`decision_checks`); TN `fix_retested` | Awaiting owner gate | SW2 (Fixer's closing check) |
-| P16 | Findings board hydrates from the server | V2-9 | Not started | SW3 |
+| P14 | Trust Receipts switched on after soak, with a signing key set | TN1 | Code on `main`, flags `"false"` everywhere | SW6, SW9. Not SW1: a server run's evidence rows say the server fetched them because the run row says so, and nothing says "Verified" until a receipt exists (rule 2.13; section 19 records the edit to V2-11) |
+| P15 | Fix retest: a server re-check that a shipped fix is live | Allora CL0 to CL2 (`decision_checks`); TN `fix_retested` | Awaiting Allora's owner gate (decision 28 here) | The launch chain (SW1-16) |
+| P16 | Findings board hydrates from the server | V2-9 | Not started | SW1a (a server run's findings must appear on the board), SW3 |
+| P17 | A fetch wrapper with one overall deadline, a streamed size cap, same-host redirects only and a refusal of the Worker's own hosts; the DNS-rebinding residual closed or accepted in writing | Allora CL0-3 (`worker/publicFetch.ts`); Zoro P1-3b | Not started. `fetchPublicUrl` re-validates each redirect hop but has no timeout and no size cap (`worker/security.ts:321-374`) | SW1 (its 10 s and 1 MB limits come from this wrapper) |
+| P18 | SW0a complete (section 5.1) | This plan | Open | Every phase's production step; SW6 needs SW0a-3 and SW0a-4 before any job is sold |
+| P19 | Rate limiter is a true fixed window. Today each request refreshes the key's lifetime, so a client polling every 5 seconds never leaves the window | V0-4 | Not on `main`. Written on `feat/v0-verifiable-flow` | SW1a (the run view polls) |
 
-**If a prerequisite stalls.** This plan does not fork it. The phase that needs it waits, and the stall is reported to the owner with the unblock that would clear it. The one exception is P12, which no plan has designed in detail: SW2 owns that design.
+**Unmerged work that already does some of this.** `feat/v0-verifiable-flow` is 23 commits ahead of `main` and 33 behind. It holds V0-1 (workspace sync), V0-2 (Oracle model candidates, timeout, failed runs), V0-3 (`f834c5e`), V0-4 (rate-limit window), V0-5, V0-6 (fenced client tool results), V0-7 (build id, D1 probe, soak script, scheduled health check), V0-8 (server-issued finding ids) and V0-9, with its own review record in the V plan. P2, P3, P19 and part of P4 are therefore "written and reviewed, not merged", not "not started". SW0-8 lands that branch or retires it before any of those tasks is done again.
 
-**Shortest path to the first unattended result:** P1 (hazards 2 and 3), P2, P4, P5, P6, P7, P8, P14, then SW1. Everything else can follow.
+**Who does the prerequisites.** Waiting for five other plans to move is how none of this got built. The rows on the shortest path are done by this team, under the owning plan's task ids, in the owning plan's files, and logged in both execution logs. They are counted in the launch cut (section 19):
+
+| Row | Tasks done here under the owner's ids | Count |
+|---|---|---|
+| P2, P3, P19, part of P4 | SW0-8 lands `feat/v0-verifiable-flow` as one merge | in SW0 |
+| P5 | V2-0, V2-1, V2-1b, V2-2, V2-3, V2-5 | 6 |
+| P16 | V2-9 | 1 |
+| P7, P8 | Ops Phase 0 items 5 to 9 | 5 |
+| P17 | Allora CL0-3 | with CL0 |
+| P15 | Allora CL0-0 and CL0-2 to CL0-5, CL1-0 to CL1-5, CL2-0 to CL2-5 (CL0-1 is settled by SW0-8; CL2-6 to CL2-8 stay with Allora) | 17 |
+
+Each of those plans has its own owner gate. Decision 28 asks for Allora's; V decision 5 is decision 3 here; Ops Phase 0 needs none. **If a prerequisite off that path stalls** (P9 to P13), this plan does not fork it: the phase that needs it waits, and the stall is reported to the owner with the unblock that would clear it. The one exception is P12, which no plan has designed in detail: SW2 owns that design.
+
+**Shortest path to the first unattended result:** SW0a-0 (staging level with `main`), P18 (SW0a), P2, P5, P7, P8, P16, P17, P19, the yes in decision 3, then SW1a. No model, no hosted key and no receipt is on that path. Three things shorten it further and are part of this plan: P5 is taken without V1 (the run ledger migration and writer do not need the identity memo that V orders before it); the SW1-0 spikes run on day one beside SW0a; and SW3-1 to SW3-3 run beside SW1a once P16 lands.
 
 ---
 
@@ -302,41 +450,101 @@ This plan does not restate designs owned by other plans. Each row is work that m
 
 ### 4.1 Run engine
 
-One Durable Object class, `SwarmRun`, with one instance per run. The object is the run's state machine, its step scheduler, and from SW7 its live room.
+One Durable Object class, `SwarmRun`, with one instance per run. The object is the run's step scheduler and, from SW7, its live room. **This is the working design, not a settled one:** spike A (SW1-0) builds the same 20-step toy twice, once as the alarm-driven object below and once as a Cloudflare Workflow, and the engine is chosen on what is measured. Everything from "Who is in charge of what" down holds for either.
 
-**Why an object per run, and not the queue or a Workflow.** The queue has no per-run state and cannot be watched live. A Workflow has durable steps but no sockets. An object gives one-at-a-time execution per run for free, alarms to continue after each step, hibernating sockets for watchers, and private storage. Each alarm is a fresh invocation, so each step gets its own CPU and subrequest allowance.
+**Object or Workflow.** The queue has no per-run state. An object gives one-at-a-time execution per run, alarms, private storage and hibernating sockets, and leaves the retry and restart logic to this team. A Workflow has durable steps, per-step retries, pause, resume, terminate, an approval wait with a timeout, and a per-instance event stream a route can relay to watchers; it holds no sockets itself, and it bills per step. Sockets are a horizon 2 need (SW7), so they do not decide it today. Spike A compares the two on: behaviour on restart and on repeated failure; pause, cancel and wait-for-approval; whether the class runs under node tests; how many lines of engine code this team would own; how cleanly it can be removed; and the documented limits. If the Workflow wins, "one step per alarm" becomes one step per `step.do`, the journal is the Workflow's own, the control and money checks sit at the top of each step callback, and watchers are served by relaying the event stream or by a small socket-only object.
 
-**Why not adopt a framework by default.** The engine needs three platform features: storage, alarms, and hibernating WebSockets. The Cloudflare Agents SDK wraps the same three and adds state sync, but it is at 0.28.0, and the D1 ledger below is the source of truth either way. SW1-0 is a time-boxed spike that adopts it only if it removes code without constraining the ledger.
+**Spike A, the Workflow half (2026-10-10; local `wrangler dev`, not the edge; the object half is still running).**
+
+- The 20-step toy ran as a Workflow: 8 runs, every step once, one D1 batch per step with `INSERT OR IGNORE` on `(run_id, seq)`, about 20 to 35 ms between steps.
+- **Replay is right.** After a kill mid-step and a restart, finished steps were not run again and the interrupted step ran once more. Locally the instance did not resume by itself, only after a manual pause and resume, so a mid-step restart cannot be regression-tested locally. Self-resume in production is documented, not observed.
+- **Failure is bounded.** A step that keeps throwing is retried on the configured schedule and then the instance errors; no later step starts, and a catch in `run()` could still write `failed` to D1.
+- **Control works, with two traps.** Pause lets the step in flight finish. Terminate cuts it mid-body. Both reach user code as an exception thrown out of `step.do`, told apart only by an undocumented message string; a catch-all first recorded a paused run as failed. When the platform's own step limit ended a run, the catch could not write its final row, so D1 still said `running`.
+- **Tests.** The class file loads under node with two small aliases for `cloudflare:` modules; step logic kept out of the class file needs none. The earlier claim that node suites cannot load a Workflow is withdrawn.
+- **Size and cost.** 233 lines of engine code owned. A 24-step run is about 25 billable steps; the Paid plan includes 500,000 a month, then $0.80 per 100,000 (Cloudflare's pricing page, read 2026-10-10).
+- **Either way** the D1 ledger and the sweeper are needed: terminate, the step limit and a stranded instance each left D1 needing a writer other than the engine.
+
+Not established: how fast production resumes an instance; what running instances do on a deploy or a `wrangler rollback`. The side-by-side with the object half decides, and SW0-7 records it.
+
+**Why the engine is not built on the Agents SDK (spike B, 2026-10-10, local `wrangler dev`, not the edge).** The engine needs three platform features: storage, alarms, and hibernating WebSockets. `agents` 0.28.0 wraps the same three, and its `Agent` class extends the platform `DurableObject`, so a `SwarmRun` object is the same Cloudflare primitive either way. The spike built the same three-step loop both ways.
+
+- On `Agent` the SDK owns the object's only alarm. Its documentation says not to override `alarm()` or call `setAlarm()`, and an alarm set directly was moved and then deleted by the SDK's own scheduling calls.
+- A step callback that throws is retried three times inside one invocation and then dropped with no alarm left. The SDK's job table keeps no attempt count, so the step journal, the run-again-once rule and the "last act" rule below still had to be this team's. With them, both variants failed a run identically.
+- It removed two `setAlarm` calls. It added about 2,350 KiB (about 428 KiB gzip) of MCP client and schema library the engine does not use, ten tables in every run object, an import that stops the nineteen node suites loading without a test alias (rule 2.21), and a dependency that rewrote its schedule storage in September 2026.
+- It forces no second state or approval store. Dropping it later would strand its ten tables and any pending job in each object, and nothing in naming.
+
+**What would reverse this:** SW7 needing the SDK's state sync and client hook, with `agents/lifecycle` on a platform `DurableObject` building small (lifecycle plus scheduler measured about 135 KiB, 30 KiB gzip, built and not run); a 1.0 release, or 90 days with no storage migration; or the owner making the SDK a requirement, in which case the lifecycle and scheduler modules are used on a platform object, not `extends Agent`. To keep that open, step logic is a function that takes storage and env, and the class is a thin host.
 
 **States.**
 
 ```
 queued -> running -> completed
              |  \-> failed | cancelled | budget_halted | expired
-             +-> waiting_approval -> running
-             +-> paused -> running
+             +-> waiting_approval -> running | expired | cancelled
+             +-> paused -> running | cancelled
 ```
+
+**Who is in charge of what.**
+
+- **D1 decides control.** Start, pause, resume, cancel and an approval's outcome are each one conditional `UPDATE swarm_runs ... WHERE id = ? AND account_id = ? AND status IN (...)` made by the route, which then wakes the object. The object reads its D1 row at the top of every alarm and obeys it. A wake that is lost costs time, not correctness: the sweeper sends it again.
+- **The object's own storage decides progress.** It holds the step journal. D1 events and counters are a projection of the journal, written from an outbox with `INSERT OR IGNORE`. If D1 is unavailable a step's result stays in the journal and the outbox is flushed on the next alarm.
+- **Only `alarm()` executes a step.** The object's `fetch` handlers (start, wake, purge, and from SW7 the socket) record intent and set an alarm. They never run a step, so a request can never run a step beside an alarm that is awaiting one.
 
 **One step per alarm.** On each alarm the object:
 
-1. Loads its state. Stops if cancelled or paused.
-2. Checks the deadline, `max_steps` (default 24, hard limit 40 by CHECK), and the kill switch (flag off means stop and mark `cancelled` with `error_code = 'FLAG_OFF'`).
-3. Checks money, in this order: account budget halt (`isBudgetHalted`), session budget, agent monthly cap (section 4.4). A failed check ends the run as `budget_halted`.
-4. Claims the step by writing `(seq, 'started')` to its own storage before doing anything with a side effect.
-5. Executes exactly one step: one fetch, one tool call or one model call. Tool calls go through the same governance function MCP uses, so there is one policy path.
-6. Appends one event row to D1 and its own storage, updates `steps_done`, and sets the next alarm.
+1. Reads its D1 row. Terminal: purge page bytes and stop. `paused`: stop, with no alarm (resume sets one). `waiting_approval`: stop unless `wait_until` has passed, in which case end as `expired` with `error_code = 'APPROVAL_EXPIRED'`.
+2. Flushes the outbox.
+3. Checks the deadline, `max_steps` (default 24, hard limit 40 by CHECK), and the kill switch (flag off means stop and mark `cancelled` with `error_code = 'FLAG_OFF'`).
+4. Checks money (section 4.4). A failed check ends the run as `budget_halted`.
+5. Journals `(seq, 'started')` before doing anything with a side effect.
+6. Executes exactly one step: one fetch, one tool call or one model call. Tool calls go through the same governance function MCP uses, so there is one policy path.
+7. Journals the result, puts the D1 rows in the outbox, flushes it, and sets the next alarm or writes the terminal state.
 
-A step that was started but not finished when the object restarts is retried once, with the same idempotency key (`<run_id>:<seq>`), then fails the run. Side-effect tools must accept that key.
+**The deadline counts working time.** `deadline_at` is set when a run starts running. On pause or on entering `waiting_approval`, the same conditional update saves the time left in `active_ms_left` and clears `deadline_at`; on resume it sets `deadline_at` to now plus that amount. A run that waits two days for an approval is not expired by its own clock; `wait_until` and the 7-day pause limit bound the wait instead.
+
+**A step found started and not finished.** Each tool declares `idempotent: true` or `false`.
+
+| Step | On restart |
+|---|---|
+| A fetch, a read tool, or a write with a deterministic key | Run again with the same key (`<run_id>:<seq>`) |
+| A model call | Run again. The interrupted attempt is recorded at its reserved worst case, because the provider may have billed it |
+| A non-idempotent tool | Ask the tool what happened to that key. If it cannot say, the run fails with `error_code = 'UNKNOWN_OUTCOME'` and nothing is retried |
+
+A step is run again at most once; a second interruption fails the run. No step in SW1 is non-idempotent.
+
+**A busy provider is a wait, not a failure.** A 429 or 503 with a `Retry-After` sets the alarm for that time, at most 3 times and never past the deadline. If the provider is still unavailable, the model-written part is replaced by the code-built one, an event records `MODEL_UNAVAILABLE`, and the run ends `completed`. A provider failure never fails a run that has saved findings.
 
 **The D1 ledger** is what the app lists, what privacy export and deletion reach, and what the sweeper watches:
 
 - `swarm_runs`: one row per run (SQL in section 6.2).
 - `swarm_run_events`: an append-only feed, redacted, capped at 400 events per run. Summaries are at most 500 characters; `detail_json` at most 4 KB and never holds raw tool arguments, page text or prompt text.
 
+**Page bytes stay in the object.** Fetched page bodies live only in the run object's storage, never in D1 or KV. The alarm that writes a terminal state purges them. An evidence row keeps the URL, status, fetch time and content hash, and nothing of the body.
+
 **Links to what exists.** Each run opens a `run_provenance` row with a new surface value `swarm_run` (the column is free text; only the TypeScript union at `worker/runProvenance.ts:21-26` grows), so parent chains keep working. An audit run also writes the `audit_runs`, `audit_evidence` and `finding_observations` rows defined by V2, with `fetcher = 'worker'`.
 
-**A sweeper** on the Ops 15-minute cron marks any open run whose `updated_at` is older than its deadline plus 10 minutes as `expired`, and raises an alert. It counts expired runs; it does not hide them.
+**A sweeper** on the Ops 15-minute cron acts by state. It counts what it ends and raises an alert; it does not hide them.
 
+| State | Stale when | What the sweeper does |
+|---|---|---|
+| `queued` | Older than 60 seconds | Sends the start again (the start is idempotent). After 3 sweeps: `failed` with `START_LOST` |
+| `running` | `heartbeat_at` older than 10 minutes | Wakes the object once. Still stale on the next sweep: `expired` with `EXECUTOR_LOST` |
+| `waiting_approval` | `wait_until` has passed | `expired` with `APPROVAL_EXPIRED` |
+| `paused` | Paused for more than 7 days | `cancelled` with `PAUSED_TOO_LONG` |
+
+A paused or waiting run is never ended for a quiet heartbeat.
+
+**What "every run ends" rests on.** Three things, none of them the platform's goodwill:
+
+- The alarm handler catches everything. Its last act is always one of: set the next alarm, or write a terminal state to D1 and to its own storage. No path returns without one of them, except the two waiting states, which the sweeper bounds.
+- The platform retries a throwing alarm a limited number of times and then drops it, and an object can be evicted mid-step. So the object is never the only thing that knows a run is open: the D1 row is, and the sweeper is the backstop.
+- A terminal state is written once, by a conditional update on the current state. A step that finishes after its run was ended writes nothing.
+
+**Steps repeat safely.** A step can run twice: after a restart between its claim and its result, or after an alarm retry. Every write a step makes is idempotent on `<run_id>:<seq>`: evidence and findings go through one `DB.batch` with deterministic keys, events are `INSERT OR IGNORE` on `(run_id, seq)`, and a cost row's id is derived from the run, the step and the attempt, so a repeated step cannot be billed twice or leave two results.
+
+**The prompt that runs is the prompt that was tested** (from SW1b; SW1a uses no prompt). At start a run records the `(skill_slug, version, sha256, model)` of each prompt it will use, on its own row, and loads only those for its whole life. The list of tuples that passed the live eval gate (rule 2.22) is a constant in the repository, changed by a pull request that carries the eval report. It is not a database row. Today the loader takes the latest enabled row through a 300-second cache (`worker/agentSkills.ts:37`, `:71-73`), and one admin secret can post a new live version (`worker/index.ts:1125-1157`), so without this a run could change prompt between steps, and an untested prompt could reach a founder.
+
+**The class stays a plain class** (rule 2.21), as `OracleSession` is, so the suites that import `worker/index.ts` keep running under node.
 ### 4.2 Roster
 
 A roster entry is typed data, not a class. The shape borrows the idea of an elizaOS character file and nothing else:
@@ -345,12 +553,12 @@ A roster entry is typed data, not a class. The shape borrows the idea of an eliz
 // services/swarm/roster.ts (shared by the Worker and the UI; no DOM, no Node)
 type RosterAgent = {
   id: 'auditor' | 'fixer' | 'analyst' | 'coach' | 'prospector';
-  displayName: string;            // owner decision 8
+  displayName: string;            // owner decision 24
   purpose: string;                // at most 140 chars, shown on the passport (TN4)
   skillSlug: string;              // row in agent_skills; bundled prompt is the fallback
-  plan: 'fixed' | 'model';        // fixed = a deterministic step list
+  plan: 'fixed' | 'model';        // fixed = a step list written in code; 'model' = a model picks the next tool
   tools: string[];                // allow-list of tool names
-  riskCeiling: 'read' | 'write';  // no roster agent is 'destructive'
+  riskCeiling: 'read' | 'draft' | 'write'; // draft = saves a draft row inside the account; no roster agent is 'destructive'
   maxSteps: number;
   defaultSessionCapCents: number;
   deadlineSeconds: number;
@@ -362,15 +570,17 @@ type RosterAgent = {
 
 | Agent | Job | Plan | Writes | Acceptance check | Phase |
 |---|---|---|---|---|---|
-| Auditor | Crawl a site, apply the playbook rules, record evidence, summarise | fixed | findings, evidence, report | Every finding has a rule id and either an evidence ref or `not_measured` | SW1 |
-| Fixer | For one open finding, prepare the fix asset; after the founder ships, retest | model, bounded | `prepared_assets` (never `published`) | The asset validates (JSON-LD parses, robots or `llms.txt` parses); the retest passes or the finding stays open | SW2 |
-| Coach | Propose the week's Decision Card from open findings and the latest digest | model, bounded | a `weekly_decisions` draft | The card cites a finding id that exists and is open | SW2 |
-| Analyst | Turn connector snapshots into a weekly digest and Brain facts | fixed, then one model call | digest report, `memory_facts` | Every number equals a `metric_snapshots` row | SW4 |
-| Prospector | Idea checks and lead research lists (the brief's "Scout") | model, bounded | report | Every row has a source URL that resolves | SW6 |
+| Auditor | Crawl a site, apply the rule pack, record evidence, summarise | fixed. No model in SW1a; one typed model call for the summary in SW1b | findings, evidence, report | Every finding has a rule id and either an evidence ref or `not_measured` | SW1a, SW1b |
+| Fixer | For one open finding, prepare the fix as a draft; after the founder ships, the re-check says whether the issue is still there | fixed. v0 fills a template by code (SW1-15). From SW2, one typed model call may fill the prose fields of a template | `prepared_assets` as `draft` (never `published`) | The draft validates (JSON-LD parses and has the required properties; `robots.txt` or `llms.txt` parses); the re-check passes or the finding stays open | SW1 (v0), SW2 |
+| Coach | Propose the next action from open findings, and from SW4 the latest digest | fixed. v0 ranks by code (SW1-18). From SW2, one typed model call writes the reason | a `weekly_decisions` draft | The card cites a finding id that exists and is open | SW1 (v0), SW2 |
+| Analyst | Turn connector snapshots into a weekly digest and Brain facts | fixed, then one typed model call | digest report, `memory_facts` | Every number equals a `metric_snapshots` row | SW4 |
+| Prospector | Idea checks and lead research lists (the brief's "Scout") | model: a typed planner that returns `{ tool, args }` from the allow-list, bounded | report | Every row has a source URL that resolves | SW6 |
+
+Only the Prospector lets a model choose the next step, and it arrives last. Every agent before it is a step list in code with at most one typed model call, which is what makes its limits and its checks provable.
 
 The existing Sentinel cron job appears on the roster as a read-only status card. It is not rebuilt.
 
-**Handoff.** An agent hands off by asking the engine to start a child run for an agent in its `handoffTo` list. The child's cap is carved out of the parent's remaining session budget and can never exceed it. The parent records a `handoff` event and waits or finishes, as its plan says. There is no free-form agent-to-agent chat.
+**Handoff.** An agent hands off by asking the engine to start a child run for an agent in its `handoffTo` list. The payload is typed ids only (a project id, a finding id, a run id), never text, so nothing a model wrote is carried into the child as an instruction. Depth is at most 2 and an agent cannot hand off to one of its own ancestors. The child's cap is carved out of the parent's remaining session budget and can never exceed it. The parent records a `handoff` event and waits or finishes, as its plan says. There is no free-form agent-to-agent chat.
 
 ### 4.3 Guardrails
 
@@ -379,36 +589,78 @@ Three checkpoints, the same three the OpenAI Agents SDK names, implemented on th
 | Point | What runs | Blocks |
 |---|---|---|
 | Input | Everything not written by Luminara's own code is fenced (rule 2.10). The run's trust becomes `sealed` the moment it reads untrusted content | Nothing by itself; it sets up the next two |
-| Tool | The existing `decideToolCall` with the run's trust, the agent's allow-list and risk ceiling, and the money checks. A sealed run's write needs a bound single-use approval (P9, P11) | The tool call. The run moves to `waiting_approval` or fails |
-| Output | A deliverable is structured JSON with a `claims` array. Each claim that carries a number names its evidence. The validator checks that the evidence exists in this run and that the number matches | The deliverable. The run fails with `error_code = 'UNCITED_NUMBER'`; nothing is shown as a result |
+| Tool | The existing `decideToolCall` with the run's trust, the agent's allow-list and risk ceiling, and the money checks. A sealed run's call that leaves the account, or spends above the session's per-call cap, needs a bound single-use approval (P9, P11). Saving a draft does not (rule 2.10) | The tool call. The run moves to `waiting_approval` or fails |
+| Output | A deliverable is structured JSON with a `claims` array. Each claim that carries a number names its evidence. The validator checks that the evidence exists in this run and that the number matches | The model-written part of the deliverable. It is retried once with the validator's errors. If it fails again it is replaced by the code-built version of the same part, a `guardrail` event records `UNCITED_NUMBER`, and what the founder reads says no model wrote it. The run does not lose the findings and evidence it already saved |
 
 The output check is the difference from today, where validators annotate text after it has streamed (`worker/oracleChat.ts`, AI audit). A run's deliverable is not streamed, so it can be refused.
 
-**Loop limits for model-planned agents (SW2).** At most `maxSteps` steps; at most two model calls per step; three consecutive tool calls with identical arguments end the run (`RepeatDetector` exists in `services/agentCore` and is test-only today); a per-step timeout; a per-run deadline.
+**The output check, precisely.** "Every number names its evidence" is only as strong as its rules, so they are fixed here.
+
+1. **Scope.** It applies to model-written prose fields. Artefacts (a JSON-LD block, a `robots.txt`, an `llms.txt`, code, URLs) are never edited span by span; they have their own checks (section 7.1, "Fixer").
+2. **Evidence registry.** For each run, code builds a list of typed items: `{ id, value, unit, metric, subject, period, source_ref, kind }` where `kind` is `measured` or `derived`. A derived value is computed by code from measured ones (a difference, a count). A formula score such as "85 minus penalties" or a share of voice is never `measured`.
+3. **The model writes handles, not digits.** A claim names an evidence id; code renders the value with its metric, source and period. A model is never the origin of a digit a founder reads.
+4. **A tokenizer catches what remains** in prose: thousands separators, decimals, percentages, currency, k and M suffixes, ranges, "N of M", ordinals, `#N`, multipliers, and number words including half, double, twice and dozen. The four regular expressions in `worker/agentOutputValidators.ts:25-46` do not cover these and look only near eleven metric words; they are replaced for this path, not extended.
+5. **Allowed without a handle:** a list marker at the start of a line; a date equal to an evidence period or the run date; a short fixed list of product tokens (H1 to H6, GA4, INP, `llms.txt`); and a founder's own figure inside an explicit "you said" quote.
+6. **A quantity word with no handle** (most, doubled, surged, top-ranked) in a sentence that also names a metric is a violation, the same as a bare digit.
+7. **What the check does not prove.** That a handle was used in the right sentence; that a qualitative statement is true; anything about text in other languages. It is lexical. Product copy and this plan do not claim more for it than that.
+
+**Suggestions quote their evidence (SW1b).** A model-written suggestion carries a `quote`: a span copied from one page this run fetched, and that page's evidence ref. Code checks, after collapsing whitespace, that the quote is a substring of that page's text as held in the run object, before the text is purged. A suggestion whose quote is not found is dropped and counted. The summary's `verdict` and `oneAction` fields are enums built per run from the findings that run saved, so a model cannot name a finding that does not exist or an action no finding supports. A run with zero findings makes no model call at all.
+
+**A founder's instructions to an agent are choices, not text.** Where a run takes an instruction (a focus area, a page to start from), it is a typed choice or a URL on the project's domain. Fixed-plan agents take none. Free text from a founder is content, fenced like any other.
+
+**Fencing is a mitigation, not a control.** Wrapping hostile text lowers the chance a model follows it; it does not prevent it. So the things that must not happen are enforced on the output and on the tool call, never on the prompt alone:
+
+- A URL in any deliverable is one that appears in this run's evidence, or a first-party Luminara URL. Others are removed. Images are stripped from model-written text, because a rendered image URL is an outbound request (`utils/markdown.ts:28-32` renders them today).
+- Model-written text is sent to Telegram with no `parse_mode`.
+- Text that came from outside stays fenced in every later prompt, including after a founder approves it. One table carries a marker, `origin_trust = 'sealed'`: `memory_facts` (section 9.2), because a fact a founder typed is trusted, one an agent or a chat proposed is not, and both sit in one table. Reports, findings, prepared assets, ship notes and lead messages carry no marker and need none: they are fenced on every read into a prompt, whoever wrote them.
+- Tests for fencing assert how the prompt was assembled (planted text appears only inside a fence) and what the output may contain. A recorded transcript is never used as proof that a model resisted an instruction; the live gate in rule 2.22 is.
+
+**Loop limits for the model-planned agent (Prospector, SW6).** At most `maxSteps` steps; at most two model calls per step; three consecutive tool calls with identical arguments end the run (`RepeatDetector` exists in `services/agentCore` and is test-only today); a per-step timeout; a per-run deadline.
 
 ### 4.4 Spend
 
 One ledger, no balances. Every hosted cost a run causes is a `cost_events` row:
 
-- `credential_kind = 'roster'`, `credential_id = <agent id>`: no new column, and the existing index `idx_cost_events_credential` serves the per-agent total.
-- `run_id` = the provenance run id; `session_id` (new, nullable) = the K1 session.
+- `credential_kind = 'roster'`, `credential_id = <agent id>`: no new column for that, and the existing index `idx_cost_events_credential` serves the per-agent total.
+- `run_id` = the provenance run id; `session_id` (new, nullable, SW2) = the K1 session.
 - Model calls are metered from the provider's reported token usage through a rate card in code; `source = 'token_meter'`. Until SW0-6 lands, a model call has no cost row at all.
 
-Three limits, checked before every step, smallest wins (spec 0016 "bounded loss stated before consent"):
+**The unit.** A model call often costs less than a cent, and `billed_cents` is a whole number. Rounding each call up would overcharge a run many times over; rounding down would record nothing. So `cost_events` gains `cost_micro` (SW0-6): millionths of a US dollar, 10,000 to the cent. Every row carries both columns, and each column sums correctly by itself:
+
+| Row | `cost_micro` | `billed_cents` |
+|---|---|---|
+| A paid tool call (as today) | cents times 10,000 | the flat price, as today |
+| One model call | exact, from tokens and the rate card | 0 |
+| One settle row per run, id `run:<run_id>`, written with the terminal state | 0 | the run's model `cost_micro`, summed and rounded up to a cent |
+
+The existing account budget keeps reading `SUM(billed_cents)` and needs no change. Every limit in this section reads `SUM(cost_micro)`. A test over a fixture run asserts the two sums agree to within one cent per run and that no row is counted twice.
+
+Three limits, checked at admission and before every step, smallest wins (spec 0016: "Bounded loss stated before consent"):
 
 | Limit | Stored in | Computed as |
 |---|---|---|
-| Account monthly budget | `budget_policies` (exists) | Existing `SUM` over the account's window |
-| Agent monthly cap | `agent_clients.monthly_cap_cents` | `SUM(billed_cents)` where `credential_kind = 'roster'` and `credential_id = ?` in the window |
-| Session budget and per-call cap | `agent_sessions` | `SUM(billed_cents)` where `session_id = ?` |
+| Account monthly budget | `budget_policies` (exists) | `SUM(cost_micro)` over the account's window |
+| Agent monthly cap | `agent_clients.monthly_cap_cents` (SW2) | `SUM(cost_micro)` where `credential_kind = 'roster'` and `credential_id = ?` in the window |
+| Session budget and per-call cap | `agent_sessions` (SW2) | `SUM(cost_micro)` where `session_id = ?` and `account_id = ?` |
 
-A fourth, global limit protects Luminara: `SWARM_DAILY_SPEND_CAP_CENTS`. It has no default. If it is unset, `SWARM_RUNS_ENABLED` is treated as off and the admin health block says why.
+A fourth, global limit protects Luminara, in two pools so that free use cannot crowd out people who paid: `SWARM_DAILY_SPEND_CAP_CENTS` is the day's total for all runs, and `SWARM_DAILY_FREE_CAP_CENTS` is the part of it that runs on the Free plan may use. Neither has a default. If either is unset, any run that would make a model call is refused and the admin health block says why. SW1a makes no model call and is bounded by run counts instead (below). The owner sets both numbers in decision 7 from what SW1-11 measures. When a pool is used up, the founder reads: "Today's shared capacity for this is used up. It resets at 00:00 UTC. Your findings are saved." A run already started finishes with its code-built parts.
 
-A step's worst case is reserved before it runs (the per-call cap, or the tool's rate-card price) and compared against the remaining amount, so two concurrent steps cannot both pass on the last cent. Reservation lives in the run object's storage; the ledger records only actual spend.
+**Reservation is visible to every run.** A run's whole cap is reserved when it is admitted: `swarm_runs.cap_micro`. What a new run may use under any limit is the limit, minus `SUM(cost_micro)` in the window, minus `SUM(cap_micro - spent_micro)` over that scope's open runs. That subtraction is inside the same conditional insert that creates the run, for the agent month, the account month and the global day, so two starts cannot both pass on the last cent. `spent_micro` is a projection and can lag, which only makes the reservation larger. Inside a run, each step's worst case is compared with `cap_micro` minus what the journal has spent, so a run cannot pass its own cap.
 
+**Rules that keep a cap true.**
+
+- **Worst case is defined.** Every model call sets `max_tokens`. Its worst case is input tokens plus `max_tokens`, priced at the dearest model the call may fail over to. SW1-0 measures whether `max_tokens` bounds billed reasoning tokens for each model on the rate card; a model where it does not is not used.
+- **One owner of retries.** The model client makes at most two attempts across at most two model lineages. A step does not retry a model call on top of that, and the typed-output retry in section 4.3 is one of the two attempts, not a third layer. Each attempt is reserved and metered separately. A wait asked for by the provider (section 4.1) is not an attempt.
+- **Missing usage counts as full.** A call that times out, is interrupted, or returns no usage block is recorded at its worst case (SW0-6). Over-counting is allowed; under-counting is not. Each provider has a usage adapter with a fixture: it maps that provider's usage block to billable input, output and reasoning tokens, so a model that bills its thinking is not under-counted.
+- **Admission is one statement.** The plan's open-run and per-day counts, the reservation above, and the per-site limits below are checked inside the conditional insert that creates the run, so two starts cannot both pass a separate read.
+- **A site is not ours to hammer.** Across all accounts, at most 4 runs an hour may start against one registrable domain, checked in the admission insert on `swarm_runs.domain`. A site that answers 429 or 503 ends the run with `SITE_BACKOFF` and a `wait_until`; no run starts against that domain before it. An account's own `domainLimit` (its plan's number of sites) is checked in the same statement.
+- **Subscribers are not unlimited here.** The daily free meter treats an active plan as unlimited (`worker/quotaMiddleware.ts:138`). Runs do not use that meter; they use the limits in this section.
+- **Structured output has dialects.** The rate card records each model's `schema_mode`: `strict`, `best_effort` or `json_object`. A call never fails over silently to a weaker mode. A schema mismatch, or a reply cut off by `max_tokens`, is a validation failure, not a provider failure, and a cut-off reply is not retried. Schemas are closed objects with every field required, nullable unions for optional values and at most four levels of nesting, so one schema is valid on every `strict` provider.
+- **Models retire.** The server Oracle still names a model the repo says was shut down (section 1.1, "Server model call"). A daily canary calls each rate-card model once and alerts on a failure; the rate card refuses a model that is not on it, so a silent provider-side swap fails closed.
+- **The ledger is checked against the bill.** Runs use a provider key of their own, so the provider's usage export for that key is the bill for runs and nothing else. Before each promotion that adds model spend, the summed ledger cost for the soak is compared with that export. A gap above 10 percent blocks the promotion.
 ### 4.5 Business Brain
 
-The Brain is not a new store. It is five existing or planned stores, one new one, and one read function:
+The Brain is not a new store. It is six existing or planned stores, one new one, and one read function:
 
 | Part | Store | State |
 |---|---|---|
@@ -418,9 +670,9 @@ The Brain is not a new store. It is five existing or planned stores, one new one
 | Findings and decisions | `audit_findings`, `weekly_decisions` | Exists |
 | Ship log | `ship_notes` | SW3 |
 | Outside numbers | `metric_snapshots` | SW4 (new) |
-| Business DNA | The workspace blob, read-only on the server, fenced | Exists; stays in the blob (V decision) |
+| Business DNA | The workspace blob, read-only on the server, fenced | Exists; stays in the blob (V section 6.1) |
 
-The read function is V3's context assembler, a pure function in `services/`. Agents and both chat paths call the same one. This plan adds two blocks to it: the latest snapshot totals and the last five ship notes.
+The read function is V3's context assembler, a pure function in `services/`. Agents and both chat paths call the same one. This plan adds two blocks to it: the latest snapshot totals and the last five ship notes. The snapshot block is added on the server only. The browser's copy of the assembler leaves it out, so connector numbers are never put into a prompt that a tab builds and sends to a provider under the founder's own key. When chat runs on a hosted key, the Worker adds the block itself, from the signed-in account's rows.
 
 ### 4.6 Where each thing appears
 
@@ -430,7 +682,8 @@ The read function is V3's context assembler, a pure function in `services/`. Age
 | Approve a step | Yes (one tap) | Yes | Yes, plus a native notification | No: bearer credentials cannot approve (Ops F1) |
 | Fix Board | Read and status change | Full board | Full board | Finding tools belong to the WDL plan |
 | Ship Log | `/shipped` to the bot, and in app | Yes | Yes | `add_ship_note` |
-| Connect Google data | Link out to web (popups are unreliable in the Mini App) | Yes | Yes | No |
+| Drafts and "Retest now" | Yes | Yes | Yes | Read tools belong to the WDL and Allora plans (CL2-6) |
+| Connect Google data | Not at first: a note that says to connect on the web (section 9.1) | Yes | Not at first (section 9.1) | No |
 | Brain view | Read | Full | Full | `get_brain_digest` |
 | Leads | No | Yes (Agency) | Yes | No |
 | Jobs | Stars checkout | Hand-off to Stars | Hand-off to Stars | `list_jobs`, `quote_job` |
@@ -442,32 +695,203 @@ The read function is V3's context assembler, a pure function in `services/`. Age
 
 ## 5. SW0 - Reconcile and unblock
 
-**Goal:** no user-visible change. The owner has decided what this plan needs decided, the platform facts are recorded, the hazards are closed, and the prerequisites for SW1 are on `main`.
+**Goal:** no user-visible change. The owner has decided what this plan needs decided, the platform facts are recorded, the hazards are closed, and the prerequisites for SW1a are on `main`.
 
 | ID | Task | Files | Acceptance |
 |---|---|---|---|
-| SW0-0 | Record owner decisions 1 to 17 in section 20. Open one docs PR that adds a one-line supersession note to each committed plan or spec in section 0.4 whose decision the owner changed. Do not edit the uncommitted plan from another session; list its conflicts for the owner instead | this document; `docs/plans/virality-activation-loops.md`; `specs/0016-agent-passport.md`; `docs/plans/desktop-windows-electron.md` | Each note names this plan and the decision number. `git diff --stat` touches only `docs/` and `specs/` |
+| SW0-0 | Record the owner's answers in section 20. Open one docs PR that adds a one-line supersession note to each committed plan or spec in section 0.4 whose decision the owner changed, and makes the cross-plan edits of section 19. The gamified draft (`docs/plans/gamified-builder-ecosystem-tma-plan.md`) gets a status line pointing at section 24.3 of this plan | this document; each plan or spec named in sections 0.4 and 19 | Each note names this plan and the decision number. `git diff --stat` touches only `docs/` and `specs/` |
 | SW0-1 | Operator, read-only. Record: the Workers plan tier; `wrangler d1 migrations list` for both databases; the names, not values, of the secrets set per environment; whether hosted model keys exist on staging; the `users` row count per environment | section 1 of this document | Each line of 1.3 it resolves moves to 1.1 with evidence. **Stop condition:** if the plan tier is Free, SW1 cannot start (10 ms CPU and 50 subrequests per request) |
-| SW0-2 | Walk the prerequisite ledger. For P1 to P8 and P14, record the commit that landed each one, or the branch it waits on | section 3 | The "State" column carries commit ids. Anything still open is reported to the owner with what would unblock it |
-| SW0-3 | Remove the two unmeasured numbers on paths agents reuse (hazard 8). The health score is derived from measured inputs or omitted. Sentinel starts each target as not checked and reports `not_measured` when no search ran | `services/decision/fastDecisionService.ts:297`; `worker/sentinel.ts:154-157`; tests | A fixture with no search key sends no alert and makes no "cited" claim. Grep finds no literal health score in `services/decision/` |
-| SW0-4 | Public flag surface. Once hazard 2 is resolved, fix the one public, non-sensitive shape the client reads feature flags from, and add a small `isFeatureOn(name)` client helper. Every UI flag in this plan reads from it | `worker/index.ts:294-300`; `services/apiClient.ts:117-147`; new test | A test pins the public shape: flag booleans only, with no provider inventory, pricing internals or admin booleans. With a flag off, its view is hidden and its routes return 404 |
-| SW0-5 | Telegram terms check. Record what the Mini App offers today for non-Stars payment of a digital plan. `resolvePaymentOptions` exposes the TON tab whenever TON is available, in or out of Telegram (`components/paywall/paymentOptions.ts:42-55`) | this document | The finding and decision 11 are recorded. If the owner chooses Stars-only inside Telegram, a follow-up is raised under the payments owner, not built here |
-| SW0-6 | Token metering. A rate card file (provider, model, cents per million input and output tokens, each with the price-page URL and the date it was read) and `recordModelCost`, which writes one `cost_events` row with `source = 'token_meter'` from the usage the provider reports. Wired into the P4 model client | new `services/swarm/rateCard.ts`; `worker/budgets.ts:292-322`; tests | A recorded response with usage 1,000 in and 500 out writes one row whose cents equal the rate-card arithmetic rounded up to a whole cent. A response with no usage block writes a row at that call's maximum possible cost with `source = 'token_meter_missing'`, so spend is never under-counted. The task ships no guessed price: an operator enters each one from the provider's page |
-| SW0-7 | Spec `specs/<next>-swarm-runs.md`: what, why, alternatives. No line numbers | `specs/` | Reviewed with this plan |
+| SW0-2 | Walk the prerequisite ledger. For P1 to P8, P14 and P16 to P19, record the commit that landed each one, or the branch it waits on | section 3 | The "State" column carries commit ids. Anything still open is reported to the owner with what would unblock it |
+| SW0-3 | Remove the two unmeasured numbers on paths agents reuse (hazard 8). The health score is derived from measured inputs or omitted. Sentinel starts each target as not checked and reports `not_measured` when no search ran | `services/decision/fastDecisionService.ts:297`; `worker/sentinel.ts:154-157`; tests | With the search key unset, or a non-OK search reply, the target is stored as `not_measured` and no alert is sent (today it is stored as healthy, which is the defect: the "no alert" half already holds). An OK reply that does not contain the domain alerts with "Not in the top 5 web results for <query>", never "missing from top AI answers". A linked account's enqueued run is readable by that account (the job passes the billing id, `worker/sentinel.ts:258`). Grep finds no literal health score in `services/decision/` |
+| SW0-4 | One capabilities answer. A signed-in route returns the feature flags this account may use, as booleans, read through the one flag helper (rule 2.3). A small client helper `isFeatureOn(name)` reads it. Every UI flag in this plan reads from it. Public `/api/health` stays `{ ok: true }`: this plan no longer depends on hazard 2 being reversed | `worker/index.ts`; `worker/authMiddleware.ts:151-192`; `services/apiClient.ts:117-147`; new test | A test pins the shape: flag booleans only, with no provider inventory, pricing internals or admin booleans. A guest gets 401. With a flag off, its view is hidden and its routes return 404 |
+| SW0-5 | Telegram terms check. Record what the Mini App offers today for non-Stars payment of a digital plan, seen on a device. `resolvePaymentOptions` exposes the TON tab whenever TON is available, in or out of Telegram (`components/paywall/paymentOptions.ts:42-55`) | this document | The finding and decision 11 are recorded. The fix itself is SW0a-6 (section 5.1): it is Telegram's rule today, not a choice that waits for SW6 |
+| SW0-6 | Token metering. Migration `token_meter` (below). A rate card file (provider, model, US dollars per million input, output and reasoning tokens, each with the price-page URL and the date it was read), one usage adapter per provider, and `recordModelCost`, which writes one `cost_events` row with `source = 'token_meter'` from the usage the provider reports. Runs use a provider key of their own (section 4.4). Used first by SW0a-11, then by the SW1b model client | new `services/swarm/rateCard.ts`; `worker/budgets.ts:292-322`; migration `token_meter`; `scripts/smoke-check.mjs`; tests | A recorded response with usage 1,000 in and 500 out writes one row whose `cost_micro` equals the rate-card arithmetic exactly and whose `billed_cents` is 0. A response with no usage block writes a row at that call's maximum possible cost with `source = 'token_meter_missing'`, so spend is never under-counted. Each adapter has a fixture from that provider's documented usage shape, including one that reports reasoning tokens. Existing rows read the same total in both columns after the migration. The task ships no guessed price: an operator enters each one from the provider's page |
+| SW0-7 | Spec `specs/<next>-swarm-runs.md`: what, why, alternatives. No line numbers. The engine choice (alarm-driven object or Workflow) is written after spike A reports, with its measurements, not before | `specs/` | Reviewed with this plan. The number is taken at PR time; another session holds an uncommitted `specs/0019` today |
+| SW0-8 | Land or retire `feat/v0-verifiable-flow`. Merge `origin/staging` into the branch once (it is 33 commits behind), resolve, re-run its own acceptance tests, and open it as one PR to `staging`. Not a rebase: its review record cites its 23 commit ids. Re-review V0-1 and V0-5, whose files `main` has changed since. Choose one fix for server-minted finding ids out of the three that exist (V0-8 with its review fix, the second implementation on `claude/nervous-murdock-568385`, and Allora CL0-1's text) and drop the others. Or record, with the owner's yes, that the branch is abandoned and which of V0-1, V0-2, V0-4, V0-6 and V0-8 must be redone | that branch; the V plan's execution log; the Allora plan's CL0-1 row | P2, P3 and P19 in section 3 carry a commit id on `main`, or a recorded decision to redo them. Exactly one finding-id fix is on `main`. No task in this plan re-implements a fix that branch already holds |
+| SW0-9 | Classification test for account data. A test builds the database from every file in `migrations/` (as `tests/helpers/sqliteD1.ts` does), lists every table from `sqlite_master`, and fails unless each one is classified in one place as: exported, deleted, moved on account link (with its named rule: move, merge and sum, keep the surviving account's row, keep and minimise, or exempt with a reason). It covers tables whose owner column is not `account_id` or may be NULL: `mcp_action_requests.user_id`, `referral_attributions`, `launchpad_vouchers`, `organization_memberships`, `shared_reports.owner_account_id`, `stars_credited_charges`, `stars_charges`, `stripe_credited_sessions` if it has landed, and child tables reached through `project_id`. Non-D1 state is listed beside it: KV keys by prefix, Durable Object names, R2 prefixes | new `worker/accountData.ts` (a list, not a mover); `tests/` | Adding a table to `migrations/` without classifying it fails CI. The list names today's gaps that rule 2.6's hand lists miss; closing each stays with its owner (V2-1, V2-1b, V3-1b). Export files in R2 are deleted at their expiry by `privacy_purge` |
 
-**Order:** SW0-0 and SW0-1 first (they can stop the plan). SW0-3, SW0-6 and SW0-7 in parallel. SW0-4 after hazard 2. SW0-2 last.
+Migration `token_meter`:
 
-**SW0 double-check:** every decision in section 20 has an answer or its default written beside it; section 1.3 has shrunk; no file outside the task's list changed; all gates green.
+```sql
+ALTER TABLE cost_events ADD COLUMN cost_micro INTEGER NOT NULL DEFAULT 0;
+UPDATE cost_events SET cost_micro = billed_cents * 10000 WHERE cost_micro = 0 AND billed_cents > 0;
+```
 
-**Rollback:** revert the PRs. No runtime data is touched.
+The `UPDATE` is a one-time backfill so that existing rows sum the same in both columns (section 4.4). It changes no existing column. `cost_events` is small today; SW0-1 records its row count before the migration is merged.
+
+**Prerequisites done here** (section 3, "Who does the prerequisites"). After SW0-8, in this order: Ops Phase 0 items 5 to 9 (P7, P8); V2-0, V2-1, V2-1b, V2-2, V2-3 and V2-5 (P5); V2-9 (P16); Allora CL0-0 and CL0-2 to CL0-5 (P17 and the base of the re-check). Each follows its own plan's task text and acceptance. This plan adds nothing to them but the edits in section 19.
+
+**Order:** SW0-0 and SW0-1 first (they can stop the plan). SW0-3, SW0-5, SW0-6, SW0-7, SW0-8 and SW0-9 in parallel. SW0-4 after P7's flag helper. SW0-2 last. SW0a (section 5.1) does not wait for any of them.
+
+**SW0 double-check:** every launch decision in section 20 has an answer or its default written beside it; section 1.3 has shrunk; no file outside the task's list changed; all gates green.
+
+**Rollback:** revert the PRs. The `cost_micro` column stays and is ignored. No other runtime data is touched.
+
+### 5.1 SW0a - Fix what is on `main` (starts now, on its own approval)
+
+**Goal:** nothing on `main` takes money it cannot credit, loses a payment, shows a number nobody measured, exposes an account id, or claims a verification or a deploy nobody checked; and a change can be tested signed-in on staging and cannot reach production without passing through it.
+
+**Needs:** decision 25 only (a plain "yes, fix it"). SW0a does not wait for the track, the phase order or any other decision. Each task is its own small PR and its own release. Five task chips already exist: three cover SW0a-1 with SW0a-2, SW0a-3, and SW0a-9; two, raised by the session that wrote v0.1, cover hazards 1 and 2 together and hazard 3.
+
+**Step zero.**
+
+| ID | Task | Files | Acceptance |
+|---|---|---|---|
+| SW0a-0 | Bring `staging` level with `main`. `staging` is one commit behind (`42880f5`), and that commit's parent is the tip of `staging`, so this is a fast-forward: a pull request from `main` into `staging`, or the owner's push of the same commit. No force. It comes before any SW0a branch is cut and before SW0a-12 protects `staging` | none | `git rev-list --count origin/staging..origin/main` prints 0. The staging deploy of `42880f5` is green and its smoke passes. Every SW0a branch is cut from `origin/staging` after this |
+
+**A. Money and honesty.** Each alone, in this order.
+
+| ID | Task | Files | Acceptance |
+|---|---|---|---|
+| SW0a-1 | Jetton verifier and switch (hazards 10, 11). Correct the notification opcode to the TEP-74 value in code, comments and spec 0018. Set `JETTON_CHECKOUT_LIVE` to `false`. Give LORA its own switch, `false`, so an empty master string is not the only thing keeping it off. Add a test whose notification cell is built from the literal `0x7362d09c`, independent of the Worker constant. Operator, read-only, with the owner: read the merchant address's USDT history for transfers carrying a `LUM:` memo while the switch was on; the owner credits or returns each one by hand | `worker/jettonSettlement.ts:13,26-27`; `worker/tonPayment.ts:51,53,59,63,231`; `specs/0018-jetton-settlement-and-preflight.md`; `tests/jettonSettlement.test.ts`; `tests/paymentFailClosed.test.ts:68` | A standard notification decodes; one with `0x7362d096` does not. From the owner's signed-in session, `POST /ton/invoice` with `asset:"USDT"` returns HTTP 400 with the Jetton-unavailable error and writes no order (an unsigned call returns 401, which proves nothing). Native TON tests are unchanged. The lookback result is recorded in section 1.3. Turning USDT back on later needs spec 0018's staging credit and a review; it is not part of this task |
+| SW0a-2 | Remove burn, tax and yield wording (hazard 12): paywall labels; the Q402 catalogue, middleware, adapter and types; LORA as a named payment asset in the Terms while its checkout is off. Every `/q402/*` route returns 404, including `/q402/supported`, which answers today and advertises the burn | `components/paywall/PaywallModal.tsx:256-258,278-280,462`; `worker/q402/middleware.ts:16,72-87`; `worker/q402/facilitator.ts:5,40,46-47,213-229,265-271,294,317`; `worker/q402/tonAdapter.ts:4,34,69,178-183,205`; `worker/q402/types.ts:36,66`; `worker/tonPayment.ts:87`; `worker/termsPolicy.ts:49`; `worker/index.ts:991-1003`; `tests/q402Protocol.test.ts`; `tests/jettonContract.test.ts` | `grep -rin -E "burn|deflation" components/paywall worker/q402 worker/tonPayment.ts worker/termsPolicy.ts` returns nothing a user or an API client can read. Each `/q402/*` path returns 404 (pinned in the money-invariant test of rule 2.17). If the fixture shared with the contract suite changes, `npm run jetton:test` is re-run |
+| SW0a-3 | Stars payments cannot be lost (hazard 13). Migration `stars_charges` (below). An update that carries `pre_checkout_query` or `successful_payment` is processed before the webhook answers. The first write for a payment is its charge row. The webhook returns a 5xx, so that Telegram redelivers, in exactly one case: the charge row could not be written. Once the row exists the webhook answers 200 whatever happens next, because the row and the sweep own the outcome. A failed grant refunds the payer and tells them. A redelivered update for a charge already credited or refunded does nothing. The setup script stops dropping pending updates by default, since a dropped update can now be a paid one waiting for redelivery | `worker/index.ts:859-874`; `worker/telegramBot.ts:290-418,924-926`; `worker/paymentLedger.ts:264-292`; `worker/scheduledJobs.ts`; `scripts/telegram-setup.mjs:32-33`; migration `stars_charges`; `worker/privacyService.ts`; `scripts/smoke-check.mjs` | A payment whose grant throws produces one refund to the payer, one message to the payer and no subscription. The same update twice credits once. With the charge insert failing, the webhook returns non-2xx and nothing is granted. With the insert done and everything after it failing, the webhook returns 200 and the sweep finishes the charge. `pre_checkout_query` is answered inside Telegram's 10 seconds (timed in the test). **Not released on tests alone:** on the staging bot (SW0a-14) one real Stars payment is taken, one is taken with the grant forced to fail and is refunded, and one update is delivered twice |
+| SW0a-4 | A purchase cannot downgrade a plan, on any rail (hazard 14). Zoro P2-1 to P2-3 (rank guard, scoped refund) applied to Stars, native TON and licence redemption, and to the card rail if it has landed (`worker/stripePayment.ts` writes the same subscription record). A lower plan is refused before payment where the rail can refuse: Stars pre-checkout answers no with a reason, the TON invoice is not issued, a licence redemption is refused with a message and the key stays unused. The same plan again extends its expiry. A higher plan replaces the current one from the moment of purchase, which is Zoro P2-2's rule and what happens today. A Stars refund goes to the payer (`message.from.id`); pre-checkout refuses a payer who is not the user named in the payload. TON cannot be refunded by the Worker, which holds no key and sends no transaction: a TON payment that arrives for a refused order is recorded with Zoro's `sub_pending` state and raises an alert for the owner. That rule drops the days still unused on the lower plan; whether they should be carried over instead is decision 31, and until it is answered Zoro's rule stands. Zoro P2-4 and P2-5 (purchasable credits) are not taken: section 0.6 forbids them | `worker/telegramBot.ts:290-333,353,365-381,956-1009`; `worker/tonPayment.ts:33-34,575-588`; `worker/licenseService.ts:194-205`; `worker/userStore.ts:235-248` | A subscriber who tries to buy a one-day SKU on each rail keeps their plan and expiry, pays nothing where the rail can refuse, and reads why. A subscriber who buys the same plan again has a later expiry and the same plan. A trial key offered by an Agency subscriber is refused and is still redeemable afterwards. The 55 existing keys still redeem (rule 2.15) |
+| SW0a-5 | Native TON matching (hazard 15). The memo must equal the order's memo. A pending order is kept in D1 for 48 hours, and a sweep re-checks unpaid ones: on the daily cron today, and on the 15-minute cron once P8 lands. A slow index then credits late instead of never. The client's message says what is true ("if you paid, it will be credited; do not pay again") and points at a retry control that exists | `worker/tonPayment.ts:310,396`; `services/ton/tonService.ts:144-156`; `worker/scheduledJobs.ts`; migration `stars_charges` (the `ton_pending_orders` table) | A transfer whose comment only contains another order's memo is not credited. An order paid at minute 1 and indexed at minute 5 is credited by the next sweep with no user action. An order is never credited twice (the existing `ton_credited_tx` claim is unchanged) |
+| SW0a-6 | Stars only inside Telegram (hazard 16). In the Mini App and the bot: no TON rail, no Jetton selector, no card tab, no "Soon" tab, no link to a web checkout, and no line inviting card payment or an invoice by email. `/ton/invoice` refuses a request that carries valid Telegram init data, and so does the card checkout route if it has landed. The `/plan` reply no longer says "every payment option". A licence key can still be redeemed in the Mini App, because redeeming is not selling; nothing there sells, prices or advertises keys. On web and desktop the TON rail stays hidden until decision 26 confirms the merchant address | `components/paywall/paymentOptions.ts:42-55`; `components/paywall/PaywallModal.tsx:400-426,637-643`; `worker/index.ts:966-977`; `worker/telegramBot.ts:446` | In a Telegram surface the payment options contain Stars only and the card-and-invoice line is absent (pure helper test on the surface flag, and a render test). A TON invoice request with init data returns 400 and writes no order. The rule holds whatever public health reports. Nothing that works today is removed: the TON tab reads "Soon" in production now (hazard 2) |
+| SW0a-7 | Remove invented numbers and labels from what a founder reads or downloads (hazard 17). Dossier: no literal score, no literal grade, no "Verified" badge, and the hash line is removed or named for what it is, a content fingerprint. Report prompt: no "Expected Impact", "Est. Organic Rank" or "Trust Signal Strength" column unless an evidence row supplies the value; no invitation to add figures labelled "(estimate)"; the preliminary cite-worthiness line is dropped from the prompt or marked `estimated`. Executive brief: "mentioned in N of M web results", never "N% of relevant AI search answers", and no "can double its citations". The share-of-voice formula is removed; the count it was built from is shown instead | `components/audit/ReportDisplay.tsx:171-184`; `services/reports/portableDossierService.ts:267-273`; `services/geminiService.ts:786,841-849`; `services/agentCore/agents/executiveTranslatorAgent.ts:41-50`; `services/agentCore/agents/serpRadarAgent.ts:137-140` | A dossier rendered from an audit with no measured score contains "Not measured" and none of `88`, `Grade` or `Verified` (asserted on the rendered HTML). A report from the fixture audit has no rank or impact column. No field named share of voice carries a number that is not a count of evidence rows. The honesty baseline count does not rise. V2-7 later adds evidence-cited JSON findings to the same prompt; the two are sequenced, not merged |
+| SW0a-8 | Telegram chat honesty (hazard 17). The system prompt gains the cite-or-silence rule and loses the instruction to produce a diagnostic for a domain nobody fetched. Business DNA is fenced. Before the reply is stored in history or sent, a sentence that carries a number and a site-metric word (visibility, rank, citations, traffic, score, share and their forms) is replaced by a plain "not measured" sentence; a sentence about a price, a plan or a date is left alone, because code supplied those. The reply is sent with no `parse_mode`. If another session's claim ledger (`services/evidenceBound/`, uncommitted on 2026-10-10) has landed by then, this uses it instead of a second checker | `worker/telegramBot.ts:181-286,833-923`; `utils/untrustedContent.ts`; `worker/agentOutputValidators.ts` | The fixture reply "your AI visibility is 37% and you rank #3" is stored and sent with neither number. "Starter is 250 Stars a month" is sent unchanged. A prompt-assembly test shows text planted in Business DNA appears only inside a fence. No acceptance here claims a model resisted an instruction (rule 2.22) |
+
+Migration `stars_charges`:
+
+```sql
+CREATE TABLE IF NOT EXISTS stars_charges (
+  charge_id TEXT PRIMARY KEY,
+  payer_tg_id INTEGER NOT NULL,
+  account_id TEXT,
+  purpose TEXT NOT NULL CHECK (purpose IN ('plan','job')),
+  ref_id TEXT NOT NULL,
+  stars INTEGER NOT NULL CHECK (stars > 0),
+  status TEXT NOT NULL DEFAULT 'received'
+    CHECK (status IN ('received','credited','refund_due','refunded','refund_failed')),
+  refund_reason TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  lease_until INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_stars_charges_received ON stars_charges(created_at) WHERE status = 'received';
+CREATE INDEX IF NOT EXISTS idx_stars_charges_due ON stars_charges(updated_at) WHERE status = 'refund_due';
+CREATE INDEX IF NOT EXISTS idx_stars_charges_account ON stars_charges(account_id, created_at);
+
+CREATE TABLE IF NOT EXISTS ton_pending_orders (
+  memo TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  plan_id TEXT NOT NULL,
+  amount_nano TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','credited','expired')),
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ton_pending_open ON ton_pending_orders(expires_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_ton_pending_account ON ton_pending_orders(account_id);
+
+CREATE TABLE IF NOT EXISTS payment_support_requests (
+  id TEXT PRIMARY KEY,
+  payer_tg_id INTEGER NOT NULL,
+  account_id TEXT,
+  charge_id TEXT,
+  message TEXT NOT NULL CHECK (length(message) BETWEEN 1 AND 2000),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','answered','closed')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_payment_support_open ON payment_support_requests(created_at) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_payment_support_account ON payment_support_requests(account_id);
+```
+
+How a Stars charge moves. Every arrow is one conditional update that must change exactly one row (rule 2.8).
+
+```
+received -> credited
+received -> refund_due -> refunded
+                       \-> refund_failed   (5 attempts; alerts; an operator retries it)
+```
+
+1. **Record.** `INSERT INTO stars_charges (...) VALUES (...) ON CONFLICT(charge_id) DO NOTHING`. If this statement fails, and only then, the webhook returns a 5xx.
+2. **Look.** Read the row. `credited` or `refunded`: answer 200 and stop.
+3. **Grant.** For a plan: the existing claim in `stars_credited_charges`, then the subscription write, which stores this charge id on the subscription record. Then `UPDATE stars_charges SET status = 'credited', updated_at = ? WHERE charge_id = ? AND status = 'received'`.
+4. **If the grant throws.** Release the claim as today, then `UPDATE stars_charges SET status = 'refund_due', refund_reason = ?, updated_at = ? WHERE charge_id = ? AND status = 'received'`, try the refund once inline, and tell the payer what happened. Answer 200.
+5. **Sweep** (`stars_charge_sweep`: the daily cron today, the 15-minute cron once P8 lands). A `received` row older than 10 minutes is settled by what is true: if a subscription record names the charge it becomes `credited`, otherwise `refund_due`. A `refund_due` row older than 2 minutes whose lease is free is leased by a conditional update on `lease_until`, refunded with `refundStarPayment(payer_tg_id, charge_id)`, and moved to `refunded`. Telegram's "already refunded" answer counts as success. Any other failure adds one to `attempts`; at 5 the row becomes `refund_failed` and an alert is raised.
+
+- A refund always goes to `payer_tg_id`, the account that paid, never to an id read from the invoice payload.
+- Payment and refund messages are sent whatever the account's notice settings say (section 6.5 covers optional notices only).
+- `purpose = 'job'` is used from SW6 (section 11.2), which adds no second charge table.
+- **Rule 2.6.** `account_id` is NULL when the payer has no account row. Rows are exported by `account_id`. On account deletion a charge row is kept as a financial record with `account_id` set to NULL; `payer_tg_id` stays, because a refund can only be sent to it. How long such rows are kept is asked with decision 16. `ton_pending_orders` rows are deleted with the account and 48 hours after `expires_at`. A support request is deleted with the account, or 12 months after it is closed.
+- On account link, charge rows, pending orders and support requests move to the surviving account.
+
+**B. What shipped on 2026-10-10 (hazard 9).**
+
+| ID | Task | Files | Acceptance |
+|---|---|---|---|
+| SW0a-9 | Community feed. A new flag `COMMUNITY_FEED_ENABLED`, `"false"` in all three blocks, turns the three feed routes off in production until the rest of this task is done. Then: no account id in any feed response; share accepts only the id of an idea card the caller owns and publishes under a new feed id; one vote per account per card; no seeded vote counts; cards and votes in D1, not one KV value; rate limits, and a daily share cap inside the insert; privacy export and delete for both tables | `worker/ideaScout.ts:670-909`; `wrangler.jsonc`; `worker/env.ts`; migration `community_feed` (below); `worker/privacyService.ts`; `scripts/smoke-check.mjs`; `tests/gamifiedBuilder.test.ts` | A feed response contains no account id. Sharing another account's card id returns 404 and adds nothing. One account voting twice counts once. An empty feed returns an empty list. Deleting an account removes its cards, its votes, and other accounts' votes on its cards. Flag off: 404 on all three routes. The flag does not go back on in production before the chat's rules and a named moderator exist (section 14.6) |
+| SW0a-10 | Points, pending decision 9. A new flag `LUMENS_ENABLED`, `"false"` in all three blocks: the check-in route returns 404 and the referral summary leaves out the points total and rank. No screen calls either today, so nothing a founder sees changes. Rows stay; nothing is deleted. What happens next is decision 9, and section 14.4 specifies each answer | `worker/referrals.ts:632-702`; `worker/index.ts` (the check-in route); `services/referrals/rules.ts:253-316`; `wrangler.jsonc`; `worker/env.ts`; tests | Flag off: the check-in route returns 404 and writes nothing; the summary has no `lumens` field. The credit-spend tests are unchanged. No row is deleted (asserted on a fixture) |
+| SW0a-11 | Workers AI fallback. It serves only the `groq` chat-completions path. It fires on a network failure or a 5xx, never on a 4xx; where the provider is not configured at all it may answer, and says so. It refuses, with the upstream's own error, a request that carries `response_format`, `tools` or `tool_choice`, a message whose content is not a string, or a prompt longer than the fallback model's stated context, so a typed or long call cannot degrade silently. It passes the caller's temperature. It reads the usage the binding reports and writes a cost row once SW0-6 has landed; until then it logs the usage as a structured event. The response names the model that answered and the client shows it (rule 2.24) | `worker/providerRelay.ts:363-378,431-449,474-482`; `worker/workersAiFallback.ts:273-331`; the chat view that renders the reply | An upstream 429 is returned as a 429. A request with `response_format` gets the upstream's error, not a fallback answer. A request to another provider's path never reaches the fallback. A fallback reply carries the model name and the chat shows "answered by a fallback model". V decision 3 (bind Workers AI) is recorded as answered yes by `42880f5` for chat fallback only; memory embeddings stay off until that plan's own decision |
+
+Migration `community_feed`:
+
+```sql
+CREATE TABLE IF NOT EXISTS community_feed_cards (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  idea_id TEXT NOT NULL,
+  idea_text TEXT NOT NULL CHECK (length(idea_text) BETWEEN 1 AND 500),
+  niche TEXT,
+  card_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'visible' CHECK (status IN ('visible','hidden','removed')),
+  utc_day TEXT NOT NULL,
+  shared_at INTEGER NOT NULL,
+  UNIQUE (account_id, idea_id)
+);
+CREATE INDEX IF NOT EXISTS idx_community_feed_recent ON community_feed_cards(status, shared_at DESC);
+CREATE INDEX IF NOT EXISTS idx_community_feed_account ON community_feed_cards(account_id, utc_day);
+
+CREATE TABLE IF NOT EXISTS community_feed_votes (
+  card_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (card_id, account_id)
+);
+CREATE INDEX IF NOT EXISTS idx_community_feed_votes_account ON community_feed_votes(account_id);
+```
+
+- A card's vote count is `COUNT(*)` over its votes. There is no counter column to drift or to seed.
+- The feed's public id is `id`, never `idea_id`. The response selects named columns and never `account_id`.
+- `status` exists so a reported card can be hidden without deleting the row (section 14.6).
+- Deleting an account deletes its votes, its cards, and every vote on those cards, in that order in one batch.
+- On account link, cards and votes move to the surviving account; a `(account_id, idea_id)` or `(card_id, account_id)` collision keeps the surviving account's row.
+
+**C. Release safety and unblockers.**
+
+| ID | Task | Files | Acceptance |
+|---|---|---|---|
+| SW0a-12 | Owner steps in GitHub (hazard 18, decision 27): include administrators in `main`'s protection; protect `staging` with the same required check and a pull request; set a required reviewer on the `production` environment; give AI sessions a GitHub identity that can open pull requests and cannot merge to `main`. Agent: the money-invariant test of rule 2.17. A CI job on `main` that fails the deploy unless the merge commit's second parent is the tip of `staging` and the two trees are equal. The pre-push hook stops printing its bypass variable. A read-only script that counts licence keys that are not revoked (rule 2.15). A code-owners rule on payment files is recorded as worth adding when there is a second maintainer; with one person it would block every payment PR | GitHub settings; new `tests/moneyInvariants.test.ts`; `.github/workflows/deploy-cloudflare.yml`; `.githooks/pre-push:13`; new `scripts/count-license-keys.mjs` | `gh api` shows `enforce_admins` true on `main` and protection present on `staging`. A push straight to `main` is refused. A squash merge, or a merge of anything but the tip of `staging`, fails the check and does not deploy. Changing the checkout constant without changing the test fails CI. The count script prints one number and writes nothing (it has no write call; asserted by grep in the test) |
+| SW0a-13 | Deploy workflow (hazard 18). A manual dispatch deploys only the environment it names, and "production" only from `main`. A `concurrency` group per environment. Each migrate step first prints the D1 Time Travel bookmark. An unmapped cron runs no job and reports an error (rule 2.20). `queue()` dispatches on `batch.queue`, rejects an unknown queue, and reports a handler error the way `scheduled` does. On staging, read and then test what `wrangler rollback` does to cron triggers added by the newer version, and write the answer into the runbook | `.github/workflows/deploy-cloudflare.yml:28,59-67,90,121-129`; `worker/scheduledJobs.ts`; `worker/index.ts` (the `scheduled` and `queue` handlers); `tests/scheduledJobs.test.ts`; the release runbook | Dispatching "staging" from `main` runs only the staging job. Each deploy log shows a bookmark. An unmapped cron expression runs nothing, and the existing test that expects every job is changed with it. A message from an unknown queue is acknowledged and reported, not processed. Section 1.3's rollback line moves to 1.1 with what was seen. Another session ("Release workflow and test suite readiness") started on 2026-10-10 and may touch the same workflow file: check `git status` and that session before starting |
+| SW0a-14 | Staging can be signed in to (hazard 19). The staging build receives its own `VITE_FIREBASE_*` values from GitHub environment variables; the Mini App link comes from configuration, not a constant; the operator creates a separate staging bot and sets its token and webhook secret (Zoro section 10, step 6), from a fresh shell so no production token is present | `.github/workflows/deploy-cloudflare.yml:56-57,118-119`; `services/auth/firebasePublicConfig.ts`; `services/referrals/rules.ts:10`; `components/paywall/paymentOptions.ts:4`; `wrangler.jsonc` staging `vars` | The owner signs in on staging on the web and through the staging bot. The production build's Firebase configuration is unchanged (asserted on the built bundle). The staging bot can take a test payment in Stars |
+| SW0a-15 | Receipts cannot be minted from constants (hazard 3, with its raised task). Also: remove the minter-key slot and the made-up transaction-hash fallback from the unused registry client; revoke, by method, any receipt the gateway route ever issued; the brand passport matches a receipt's subject to the domain it shows | `worker/oracleGateway.ts:116-165`; `worker/env.ts:122`; `worker/chain/ton/citationRegistry.ts:130,163`; `services/trust/brandPassport.ts:71-76` | No code path issues a `worker_verified` receipt without a typed verifier result (test). A read-only count of gateway-issued receipts in both remote databases is recorded in section 1.3 |
+| SW0a-16 | Payment support reaches a person. Today `/paysupport` sends one canned message and the buyer's reply goes to the model chat. After this: the next message a buyer sends within 10 minutes of `/paysupport` is saved as a support request with their Telegram id, account and most recent charge, is acknowledged with "Received. A person will answer here", and is listed for the owner on the admin page. It is never sent to a model and never read into a prompt | `worker/telegramBot.ts:551-567,768-923`; `worker/index.ts` (an admin list route); migration `stars_charges` (the `payment_support_requests` table); `worker/privacyService.ts` | A message sent after `/paysupport` creates one row and no model call (asserted with a model spy). A message sent 11 minutes later goes to chat as today. The admin list shows open requests oldest first. Export and delete cover the table |
+| SW0a-17 | The deploy screen tells the truth (hazard 20). After the WordPress call, the page is fetched again and the screen says "deployed" only if the schema is in the page source; otherwise it says what happened: "WordPress accepted the request and the page did not change. This needs a plugin that registers the setting." If that cannot be made to pass against a real WordPress site, the WordPress option is hidden. The Webflow path says "added to the site's custom code; publish the site to make it live" instead of "published". The pull request path already reports what it did. The modal's title loses "Autonomous" | `services/deployment/cmsDeploymentService.ts:161-240,262-296`; `components/audit/CmsDeploymentModal.tsx:230`; tests | With a fake site that answers 200 and serves an unchanged page, the result is not a success and the message says the page did not change. With a page that now contains the schema, the result is a success. One real WordPress site the owner controls is tried and the outcome is recorded in section 1.1. No string in the modal says a change is live unless a fetch saw it |
+| SW0a-18 | Look back for payments already lost. Operator, read-only, with the owner's yes for each read on production. Stars: compare the bot's own transaction list (`getStarTransactions`) with `stars_credited_charges` and the `stars:charge:*` records; list every charge that was paid and never credited. TON: compare transfers to the merchant address that carry a `LUM:` comment with `ton_credited_tx`. The owner decides, case by case, to credit or refund; a Stars refund is one `refundStarPayment` call the owner approves, and a TON return is the owner's own transfer | none in the repo; a dated note in section 1.1 | The note states how many charges were compared on each rail, how many were uncredited, and what the owner did with each. Zero is a valid result and is written down |
+
+**Order:** SW0a-0 first. Then SW0a-1, alone. Then SW0a-2 and SW0a-6. Then the two flags of SW0a-9 and SW0a-10 (each turns a live route off). The task that restores the public health fields (hazard 2) lands only after SW0a-1 and SW0a-6. SW0a-14 early, because SW0a-3 cannot be released without the staging bot and every later soak needs sign-in. Then SW0a-3, SW0a-4, SW0a-16 and SW0a-18. The rest of A and B as small independent PRs. C runs in parallel: SW0a-12's owner steps at once, SW0a-13 before the first migration in this plan.
+
+**SW0a double-check:** grep `components/`, `services/` and `worker/` for a numeric literal assigned to a score, grade, rate or confidence field a user can see; run the money-invariant test; confirm no `worker_verified` literal is reachable without a verifier call; confirm the payment-ledger and Telegram auth suites pass; run the licence count (rule 2.15) before and after each production release and confirm it did not change.
+
+**Promote:** each task is released on its own once its acceptance passes; none waits for another except as the order says. SW0a-1, SW0a-2, SW0a-6 and the two flags are released on their tests plus one owner check in production each, because each one removes or hides something and adds no path. SW0a-3, SW0a-4 and SW0a-16 are not released until the staging bot has done SW0a-3's three payment drills. Everything else waits for a signed-in staging pass.
+
+**Rollback:** revert the PR. The `stars_charges` and `community_feed` tables stay. Turning `COMMUNITY_FEED_ENABLED` or `LUMENS_ENABLED` off hides that feature again. A revert of SW0a-3 leaves charge rows behind; they are harmless and the sweep is gone with the code, so any row still `received` or `refund_due` at that moment is listed and settled by hand before the revert is merged.
 
 ---
 
-## 6. SW1 - Run engine and the server-side Auditor
+## 6. SW1 - The first agents that work with nobody watching
 
-**Goal:** a signed-in founder taps "Run it for me", closes the app, and returns to findings on the board backed by evidence the Worker fetched. This is the first thing in the product that an agent does with nobody watching.
+SW1 ships in two parts. **SW1a** is the launch: the run engine, the Auditor on the server, Fixer drafts, the re-check, Coach's proposal and the notice, with no model call anywhere. **SW1b** adds a model-written summary and suggestions behind a live gate, after SW1a is in production.
 
-**Needs:** P1 (hazards 2 and 3), P2, P4, P5, P6, P7, P8, P14; decisions 3 and 7.
+**Goal (SW1a):** a signed-in founder types a domain, taps once and closes the app. They are told when the work is done and come back to: findings backed by evidence the Worker fetched; a draft fix, checked by code, for each finding that has a template; a "Retest now" that says whether the issue is still in the page source; and one proposed next action. This is the first thing in the product that agents do with nobody watching, and the first time one agent hands work to another on the server.
+
+**Needs (SW1a):** P18 (SW0a), P2, P5, P7, P8, P16, P17, P19; SW0-4; decision 3 (the yes to audits on the server) and decision 7 (run limits). For the notice, decision 20. For the re-check, P15 through decision 28. Not needed: P4, P14, a hosted model key.
+
+**Needs (SW1b):** SW1a promoted; P4; SW0-6; a hosted key for runs on staging; the model part of decision 3 and the two spend numbers of decision 7.
 
 ### 6.1 Design
 
@@ -475,38 +899,93 @@ The read function is V3's context assembler, a pure function in `services/`. Age
 
 | Method | Path | Does |
 |---|---|---|
-| POST | `/swarm/runs` | Body `{ agentId, projectId, idempotencyKey }`. Admission, then 201 with the run id. A repeat with the same key returns the first run |
+| POST | `/swarm/runs` | Body `{ agentId, projectId or domain, idempotencyKey }`. With `domain`, the account's project for that domain is found or created first, inside the plan's site limit. Admission, then 201 with the run id. A repeat with the same key returns the first run |
 | GET | `/swarm/runs` | Account-scoped list, newest first, filter by project and status, at most 50 |
-| GET | `/swarm/runs/:id` | One run. Another account's id returns 404 |
+| GET | `/swarm/runs/:id` | One run, with its child runs' ids and states. Another account's id returns 404 |
 | GET | `/swarm/runs/:id/events?after=<seq>` | At most 100 events after `seq` |
-| POST | `/swarm/runs/:id/pause`, `/resume`, `/cancel` | Conditional state change; 409 when the run is not in a state that allows it |
+| POST | `/swarm/runs/:id/pause`, `/resume`, `/cancel` | One conditional update on the D1 row, then a wake (section 4.1); 409 when the run is not in a state that allows it |
 
-**Admission, in order.** Flag on and the global daily cap set; identity; the project belongs to the account; the project's domain passes the existing public-host check; the plan's allowance (open runs and runs per UTC day, decision 7); the account is not budget-halted; receipt signing is available (P14); insert the ledger row; create the object and start it. A refusal at any step writes no row and returns a specific code.
+**Admission, in order.** Flag on; identity; the project belongs to the account; the project's domain passes the existing public-host check; then one statement that checks the plan's allowance (open runs and runs per UTC day, decision 7), the per-site limits and, when the run can spend, the money limits of section 4.4, and inserts the row only if all hold; then create the object and start it. A refusal writes no row and returns a specific code: the route re-reads to say which condition failed. The statement, in full:
 
-**The Auditor's fixed step list.**
+```sql
+-- query: admit one run
+INSERT INTO swarm_runs (id, account_id, project_id, agent_id, kind, origin, status, plan_class, domain,
+                        cap_micro, max_steps, object_name, idempotency_key, created_at, updated_at)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'queued', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13
+WHERE EXISTS (SELECT 1 FROM projects WHERE id = ?3 AND account_id = ?2)
+  AND (SELECT COUNT(*) FROM swarm_runs
+        WHERE account_id = ?2 AND parent_run_id IS NULL
+          AND status IN ('queued','running','waiting_approval','paused')) < ?14
+  AND (SELECT COUNT(*) FROM swarm_runs
+        WHERE account_id = ?2 AND parent_run_id IS NULL AND created_at >= ?15) < ?16
+  AND (SELECT COUNT(*) FROM swarm_runs
+        WHERE domain = ?8 AND parent_run_id IS NULL AND created_at >= ?17) < 4
+  AND NOT EXISTS (SELECT 1 FROM swarm_runs
+                   WHERE domain = ?8 AND error_code = 'SITE_BACKOFF' AND wait_until > ?13)
+  AND (?9 = 0 OR (
+        ?18 >= ?9
+             + (SELECT COALESCE(SUM(cost_micro), 0) FROM cost_events
+                 WHERE account_id = ?2 AND created_at >= ?19)
+             + (SELECT COALESCE(SUM(cap_micro - spent_micro), 0) FROM swarm_runs
+                 WHERE account_id = ?2 AND status IN ('queued','running','waiting_approval','paused'))
+    AND ?20 >= ?9
+             + (SELECT COALESCE(SUM(CASE WHEN status IN ('queued','running','waiting_approval','paused')
+                                         THEN cap_micro ELSE spent_micro END), 0)
+                  FROM swarm_runs
+                 WHERE created_at >= ?15 OR status IN ('queued','running','waiting_approval','paused'))
+    AND (?7 <> 'free' OR ?21 >= ?9
+             + (SELECT COALESCE(SUM(CASE WHEN status IN ('queued','running','waiting_approval','paused')
+                                         THEN cap_micro ELSE spent_micro END), 0)
+                  FROM swarm_runs
+                 WHERE plan_class = 'free'
+                   AND (created_at >= ?15 OR status IN ('queued','running','waiting_approval','paused'))))
+  ))
+ON CONFLICT(account_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING;
+```
+
+Binds: 1 id; 2 account; 3 project; 4 agent; 5 kind; 6 origin; 7 plan class (`free`, `paid` or `job`); 8 the project's registrable domain; 9 the run's cap in micro (0 for every SW1a run); 10 max steps; 11 object name; 12 idempotency key; 13 now; 14 the plan's open-run limit; 15 start of the UTC day; 16 the plan's runs per day; 17 one hour ago; 18 the account's monthly budget in micro; 19 start of the budget window; 20 and 21 the two global pools in micro. A closed run's `spent_micro` is exact, because the update that writes a terminal state writes the journal's total with it; an open run counts at its whole cap. SW2 adds one more condition for the agent's monthly cap. Child runs are admitted by the engine with the same statement minus the two per-account counts.
+
+**The Auditor's step list (SW1a).**
 
 | # | Step | Evidence written |
 |---|---|---|
 | 1 | Fetch `robots.txt` | One evidence row: URL, status, hash, fetch time |
 | 2 | Fetch the home page | One row |
 | 3 | Fetch `sitemap.xml`; choose up to 8 pages from it by a fixed rule (shortest paths first) | One row |
-| 4 | Fetch `llms.txt` | One row; a 404 is evidence too |
+| 4 | Fetch `llms.txt` | One row; a 404 is evidence too, and by itself it is not a finding (the compiled AI-search playbook records that Google calls the file ineffective) |
 | 5 to 12 | Fetch each chosen page | One row each |
-| 13 | Apply the four playbook rules to the fetched content | None; rules are pure functions over the evidence |
+| 13 | Apply the rule pack (SW1-14) to the fetched content | None; rules are pure functions over the evidence |
 | 14 | Write evidence, one observation per finding, and finding upserts through the V2 writer in one batch | Uses V2's caps (50 findings, 40 evidence items) |
-| 15 | One model call: a summary as JSON `{ verdict, oneAction, claims[] }` | The call is metered (SW0-6) |
-| 16 | Output check (section 4.3). Save the report (`agent_reports`) | none |
-| 17 | Mint one `audit_run` receipt over the run's evidence hashes | The receipt id is stored on the run |
+| 15 | Build the summary by code from the findings: counts by severity, the top finding by a fixed order, what was not measured and why. Save the report (`agent_reports`), labelled "built from the findings" (rule 2.24) | None |
+| 16 | Hand off: one Fixer run for the findings that have a template, one Coach run (section 4.2) | A `handoff` event per child |
 
-Every fetch goes through `fetchPublicUrl` (`worker/security.ts:327`), which already re-validates the host. Limits: at most 12 fetches per run, 1 MB per response, a 10 s timeout each, and the site's `robots.txt` is obeyed for our user agent (a block becomes a finding, not a bypass). The task that lists which audit fetches already pass through the Worker (V2-0) decides the user agent; SW1 does not introduce a second crawler identity.
+Every fetch goes through the wrapper in P17 (`worker/publicFetch.ts`, over `fetchPublicUrl`, `worker/security.ts:327`), which re-validates the host on every hop and adds what `fetchPublicUrl` lacks today: one overall deadline and a streamed size cap. Limits: at most 12 fetches per run, 1 MB per response, a 10 s deadline each, and the site's `robots.txt` is obeyed for our user agent (a block becomes a finding, not a bypass). A 429 or 503 from the site ends the run with `SITE_BACKOFF` (section 4.4). Page bodies live in the run object and are purged with the terminal state (section 4.1). The task that lists which audit fetches already pass through the Worker (V2-0) decides the user agent; SW1 does not introduce a second crawler identity.
 
-The Auditor calls no paid tool in this phase. Its only hosted cost is the one summary call, which is why every plan can be allowed to run it.
+**What the server Auditor does not measure.** It fetches pages; it runs no search and calls no paid tool. Of today's four rules, three read page source and run on the server. The fourth, the citation rule, needs live search rows, so a server run reports it `not_measured` and says why. No server result says anything about what an AI engine answers (section 0.3, item 14).
 
-**The rules are shared, not copied.** The four rules live in `services/agentCore/agents/playbookAuditorAgent.ts` and V2-3 gives each a stable rule id. SW1 moves them into pure functions that take fetched content and return findings, used by both the browser crew and the server. A parity test runs both against the same fixture.
+**The rules are shared, not copied.** Today's four rules live in `services/agentCore/agents/playbookAuditorAgent.ts`; V2-3 gives each a stable rule id and Allora CL0-5 puts their thresholds in `services/audit/ruleDefinitions.ts`. SW1-5 makes each rule a pure function from fetched content to findings, used by the browser crew, the server Auditor and Allora's check registry (CL1-2), so the rule that found an issue is the check that later says it is gone. A parity test runs browser and server against the same fixture.
 
-**Front end.** A "Run it for me" button beside the existing audit action in `components/audit/InstantAuditView.tsx`, a run status strip that polls `GET /swarm/runs/:id` every 5 s while visible and stops when hidden, and a short "Runs" list. Findings arrive on the existing board through `GET /findings` (P16). No new top-level view in this phase.
+**The rule pack (SW1-14).** Four checks are not enough to come back to. The nine compiled playbooks (`services/skills/playbooks.generated.json`) state many more than four. A rule enters the pack only if all three hold: a compiled playbook states it; a pure function can decide it from the page source, `robots.txt` or sitemap the run already fetched; and it has one fixture for each outcome (`pass`, `fail`, `not_measured`). Its finding text states the fact found, never an effect on ranking, traffic or citations. Candidates read from the playbooks on 2026-10-10, each to be confirmed against the playbook text in the task: a `noindex` on a page the sitemap lists; `robots.txt` blocking a page the sitemap lists; JSON-LD that does not parse or lacks `@context`; a relative URL inside JSON-LD; HTML larger than the 2 MB the technical playbook says Googlebot reads; a sitemap entry that does not return 200; a page with no title or no H1. The target is ten or more rules in total. The count that ships is the count that passed the three tests, and it is reported.
+
+**Fixer v0 (SW1-15, SW1-16).** A draft is built by code from a template, not written by a model. Three kinds of draft exist at launch:
+
+| Kind | For | Built from | Checked by |
+|---|---|---|---|
+| `json_ld` | A missing or broken schema block | The template for that type, filled from fields the founder typed (name, URL, logo) and from the fetched page | It parses; its type is on an allow-list; it has `@context` and the type's required properties; every URL is absolute and on the project's domain or a `sameAs` the founder listed; it never carries a rating, a review count or a price; no field holds text that was not in the inputs; it passes the existing safety gate and is saved as that gate's `canonicalJson` (`services/deployment/schemaSafetyGate.ts`) |
+| `robots_txt` | A directive that blocks a listed page | The site's fetched file with the offending lines changed, as a full file and as a diff | It parses; it changes only the lines named; it never adds or widens a `Disallow` for any agent |
+| `html_snippet` | A missing tag (title, canonical) or a `noindex` to remove | A one-tag template or a one-line removal instruction | It is exactly one tag from a fixed list; no script, no event attribute, no URL off the project's domain |
+
+A draft is saved as a `prepared_assets` row with `status = 'draft'` and the finding's id. Saving a draft needs no approval (rule 2.10). The draft says what it was built from and that code built it. A finding with no template (thin content, for one) gets no draft and says "no draft for this kind of finding yet"; SW2 adds model-written fields behind its own gate.
+
+**The re-check (SW1-16).** This plan adds no check logic. Starting work on a finding from the Fix Board commits it as the week's decision through the existing `/weekly-decisions` route, where Allora CL1-4 records the server's baseline. "Retest now" calls Allora's manual retest (CL2-3) and the card shows its before and after (CL2-4). A finding whose rule has no check in the registry shows "Server re-check: not available for this finding", in Allora's words. Every result carries Allora's method limit: the server reads page source, so content added by scripts is not seen.
+
+**Coach v0 (SW1-18).** After an audit, code ranks the account's open findings for that domain by a fixed order (severity, then whether a draft exists, then whether a re-check exists, then age) and proposes the first as the week's decision. It inserts a `weekly_decisions` row with `status = 'proposed'` and `created_by = 'agent:coach'`, only when the account has no decision for that domain and week (`ON CONFLICT DO NOTHING`), so it never replaces a founder's own. The card says "proposed from your findings" and names the finding. The founder commits it, changes it or ignores it.
+
+**Front end.** The first screen a signed-in founder sees with no project has one field (a domain) and one button; that is the first run (SW1-17). Elsewhere a "Run it for me" button sits beside the existing audit action in `components/audit/InstantAuditView.tsx`. A run status strip polls `GET /swarm/runs/:id` every 5 s while visible and stops when hidden (P19 makes that polling safe under the rate limiter). A short "Runs" list. Findings arrive on the existing board through `GET /findings` (P16). No new top-level view in this phase.
 
 **MCP.** Three free-class tools on the existing server: `start_run`, `get_run`, `list_runs`. They follow the existing Growth+ gate. The run itself is metered wherever it is started from.
+
+**SW1b, what it adds.** One typed model call after step 15: `{ verdict, oneAction, suggestions[] }`. `verdict` and `oneAction` are enums built from this run's findings; each suggestion quotes a fetched page (section 4.3). The output check runs; one retry; on a second failure the code-built summary stands, a `guardrail` event records why, and the report keeps its "built from the findings" label. A run with no findings makes no call. The founder always sees which they got (rule 2.24).
 
 ### 6.2 Migration `swarm_runs`
 
@@ -520,22 +999,30 @@ CREATE TABLE IF NOT EXISTS swarm_runs (
   origin TEXT NOT NULL CHECK (origin IN ('user','mcp','watch','job','handoff','x402')),
   status TEXT NOT NULL CHECK (status IN ('queued','running','waiting_approval','paused','completed','failed','cancelled','budget_halted','expired')),
   trust TEXT NOT NULL DEFAULT 'standard' CHECK (trust IN ('standard','sealed')),
+  plan_class TEXT NOT NULL DEFAULT 'free' CHECK (plan_class IN ('free','paid','job')),
+  domain TEXT,
   parent_run_id TEXT,
   provenance_run_id TEXT,
   audit_run_id TEXT,
   subject_kind TEXT,
   subject_id TEXT,
   session_id TEXT,
-  cap_cents INTEGER NOT NULL DEFAULT 0 CHECK (cap_cents >= 0),
+  cap_micro INTEGER NOT NULL DEFAULT 0 CHECK (cap_micro >= 0),
+  spent_micro INTEGER NOT NULL DEFAULT 0 CHECK (spent_micro >= 0),
   max_steps INTEGER NOT NULL CHECK (max_steps BETWEEN 1 AND 40),
   steps_done INTEGER NOT NULL DEFAULT 0,
   object_name TEXT NOT NULL,
   idempotency_key TEXT,
+  prompt_pins_json TEXT,
   deliverable_kind TEXT,
   deliverable_ref TEXT,
   error_code TEXT,
   created_at INTEGER NOT NULL,
   started_at INTEGER,
+  heartbeat_at INTEGER,
+  deadline_at INTEGER,
+  active_ms_left INTEGER,
+  wait_until INTEGER,
   updated_at INTEGER NOT NULL,
   finished_at INTEGER
 );
@@ -547,6 +1034,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_swarm_runs_idem ON swarm_runs(account_id, 
   WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_swarm_runs_parent ON swarm_runs(parent_run_id)
   WHERE parent_run_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_swarm_runs_domain ON swarm_runs(domain, created_at);
 
 CREATE TABLE IF NOT EXISTS swarm_run_events (
   run_id TEXT NOT NULL,
@@ -557,7 +1045,7 @@ CREATE TABLE IF NOT EXISTS swarm_run_events (
   actor TEXT NOT NULL,
   summary TEXT NOT NULL,
   detail_json TEXT,
-  cost_cents INTEGER NOT NULL DEFAULT 0,
+  cost_micro INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (run_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_swarm_events_account ON swarm_run_events(account_id, at);
@@ -565,51 +1053,157 @@ CREATE INDEX IF NOT EXISTS idx_swarm_events_account ON swarm_run_events(account_
 
 - `object_name` is the Durable Object's name as created. Account linking re-keys `account_id` and never `object_name` (rule 2.7).
 - The insert uses `ON CONFLICT(account_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`, repeating the index's `WHERE` clause (V rule 2.1).
-- Every state change is a conditional update, for example `UPDATE swarm_runs SET status = 'running', started_at = ?, updated_at = ? WHERE id = ? AND status = 'queued'`, and proceeds only when one row changed.
+- Every state change is a conditional update, for example `UPDATE swarm_runs SET status = 'running', started_at = ?, deadline_at = ?, heartbeat_at = ?, updated_at = ? WHERE id = ? AND status = 'queued'`, and proceeds only when one row changed.
+- `heartbeat_at` is written with each step's projection. `deadline_at`, `active_ms_left` and `wait_until` are the clock fields of section 4.1; `wait_until` is also the back-off time on a row that ended with `SITE_BACKOFF`.
+- `cap_micro` and `spent_micro` are section 4.4's reservation. `plan_class` puts the run in a spend pool.
+- `prompt_pins_json` holds the `(slug, version, sha256, model)` tuples a run pinned (SW1b). It is NULL for a run that uses no prompt.
+- `domain` is the project's registrable domain, copied at admission so the per-site limits need no join.
+- Every query that reads open runs repeats the index's exact predicate, `status IN ('queued','running','waiting_approval','paused')`, or the planner will not use `idx_swarm_runs_open`.
 - No foreign keys, matching `audit_findings.audit_run_id`. Handlers check ownership.
 - Events older than 90 days are purged by the existing `privacy_purge` job; the run row stays.
 
 ### 6.3 Operator steps
 
-1. Create nothing by hand for the object: the class is declared in `wrangler.jsonc` with a new `migrations` tag (`v2-swarm-run`, `new_sqlite_classes: ["SwarmRun"]`) appended after `v1-oracle-session` (`wrangler.jsonc:144-146`), and a `SWARM_RUN` binding in all three `durable_objects` blocks (`:138-142`, `:197-201`, `:286-290`).
+1. Create nothing by hand for the object: the class is declared in `wrangler.jsonc` with a new `migrations` tag (`v2-swarm-run`, `new_sqlite_classes: ["SwarmRun"]`) appended after `v1-oracle-session` (`wrangler.jsonc:144-146`), and a `SWARM_RUN` binding in all three `durable_objects` blocks (`:138-142`, `:197-201`, `:286-290`). If spike A chooses a Workflow, this step declares the Workflow binding instead and SW0-7 records it.
 2. That declaration ships as its own release with an empty class (SW1-1), on staging and then production, before any route uses it (rule 2.7).
-3. Set `SWARM_DAILY_SPEND_CAP_CENTS` per environment. Staging: 500. Production: the owner's number (decision 7). Unset keeps the feature off.
-4. Confirm `RECEIPT_SIGNING_KEY` is set in the environment (P14).
+3. For SW1b only: set `SWARM_DAILY_SPEND_CAP_CENTS` and `SWARM_DAILY_FREE_CAP_CENTS` per environment. Staging: 500 and 200. Production: the owner's numbers (decision 7). Unset keeps every model-calling run off. SW1a needs neither.
+4. For SW1b only: set the runs' own provider key (section 4.4).
 
 ### 6.4 Tasks
 
+**SW1a.**
+
 | ID | Task | Files | Acceptance |
 |---|---|---|---|
-| SW1-0 | Re-baseline and spikes. Re-check section 1 citations. Spike A: an alarm-driven object with SQLite storage runs 20 steps under `wrangler dev` and survives a forced restart mid-step. Spike B: adopt the Agents SDK or not (section 4.1). Spike C: read wrangler's documented behaviour for rollback across a class migration and test it on staging with the empty class | this document; a scratch branch | Section 4.1 and rule 2.7 corrected to match what was observed. The framework decision is recorded with the reason |
+| SW1-0 | Re-baseline and spikes. Starts on day one, beside SW0a, in a scratch directory outside the repo. Re-check section 1 citations. Spike A: the same 20-step toy built twice, as an alarm-driven object with SQLite storage and as a Cloudflare Workflow, each measured for restart mid-step, a handler that throws seven times in a row, pause, cancel and a wait for an outside event, the journal-and-outbox shape with D1 deciding control, whether a `fetch` can interleave with an awaiting alarm, node testability, and lines of engine code owned. Spike B (done 2026-10-10; result in section 4.1): adopt the Agents SDK or not, including whether it forces a second state or approval store. Spike C: read wrangler's documented behaviour for rollback across a class migration and test it on staging with the empty class. Spike D: how the node test suites load the new class (rule 2.21), with a recount of the suites that import `worker/index.ts`. Spike E: run the output check of section 4.3 over 50 real summaries, 20 real fix drafts and 50 real chat replies (for SW0a-8), and count false refusals: phone numbers, prices and postcodes in a draft, figures a founder typed, version numbers. Spike F: for each model proposed for the rate card, whether `max_tokens` bounds what is billed | this document; a scratch directory | Section 4.1 and rule 2.7 corrected to match what was observed. The engine and framework decisions are recorded with their measurements. Spike E's false-refusal rate is recorded with n for each of the three sets, and the allow-list in section 4.3 is adjusted until it is low enough for the owner to accept in writing |
 | SW1-1 | Empty `SwarmRun` class, binding and `migrations` tag in all three blocks, typed in `worker/env.ts`. Own release | `worker/swarmRun.ts` (new); `worker/index.ts:142`; `worker/env.ts`; `wrangler.jsonc` | `wrangler deploy --dry-run` passes for both environments. After the staging release, `wrangler deployments list` shows the class and the app behaves as before |
-| SW1-2 | Migration `swarm_runs`; smoke lists; flag and cap var in three blocks, env typing, example env files, admin health; privacy export and delete; link move | `migrations/`; `scripts/smoke-check.mjs:23-58`; `worker/privacyService.ts:116-134`, `:166-212`; the V2-1b helper; `wrangler.jsonc`; `worker/env.ts` | Applies clean on a database at 0020. After deleting an account no row with its id remains in either table and its objects have been purged. After a link, both tables hold no row under the losing id |
-| SW1-3 | Ledger and admission service: create, list, get, conditional state changes, plan allowance, global cap, concurrency count | new `worker/swarmService.ts`; tests on `tests/helpers/sqliteD1.ts` | Two concurrent starts with one idempotency key yield one run. A start over the plan's open-run limit returns `RUN_LIMIT`. With the global cap unset every start returns `SWARM_OFF`. Another account's run id returns 404 |
-| SW1-4 | The step loop in the object (section 4.1): claim, execute, append, schedule; deadline, `max_steps`, kill switch; retry-once on an interrupted step; purge route | `worker/swarmRun.ts`; tests with a fake clock and fake storage | A run of 5 fake steps completes with events 1 to 5. Killing the object after the claim of step 3 and restarting runs step 3 once more and no step twice. Flag off mid-run ends it `cancelled` with `FLAG_OFF`. Step 41 is impossible (CHECK and code) |
-| SW1-5 | Shared rule functions and the Auditor step list; parity with the browser crew | `services/agentCore/agents/playbookAuditorAgent.ts`; new `services/swarm/auditorPlan.ts`; tests | On the shared fixture, server and browser produce the same finding keys. Each finding has a rule id and an evidence ref or `not_measured` |
-| SW1-6 | Evidence and findings writes through the V2 writer with `fetcher = 'worker'`; the `audit_run` receipt | `worker/runLedger.ts` (from P5); `worker/trustReceipts.ts:101`; `worker/swarmRun.ts` | A completed run has evidence rows whose hashes match the fetched bytes and one receipt naming them. With signing unavailable, admission refuses and no row says `worker` |
-| SW1-7 | Summary call through the P4 client, metered; output check; report save | `worker/swarmRun.ts`; `worker/agentOutputValidators.ts`; `worker/agentReportService.ts`; eval fixtures | A recorded summary with a number that matches no evidence fails the run with `UNCITED_NUMBER` and saves no report. A clean one saves a report under 500,000 bytes and writes one cost row |
-| SW1-8 | Routes, protected-route entry, provenance surface, README route map, rate limits; MCP tools | `worker/index.ts`; `worker/authMiddleware.ts:151-192`; `worker/runProvenance.ts:21-26`; `worker/mcpServer.ts`; `worker/README.md` | Flag off: 404. Guest: 401. Free signed-in user within allowance: 201. `/audit/run` still requires Agency (existing test passes) |
-| SW1-9 | Front end: button, status strip, runs list, feature-flag read | `components/audit/InstantAuditView.tsx`; new `components/swarm/RunStatusStrip.tsx`; new `services/swarm/swarmClient.ts` | Static-markup tests for each run state. Polling stops when the tab is hidden (spy). Flag off renders nothing new |
-| SW1-10 | Sweeper and alerts on the Ops 15-minute cron: expire stale open runs; alert on any expiry, on a run that ended `budget_halted`, and on the global cap reaching 80 percent | `worker/scheduledJobs.ts:10-22`; `worker/index.ts:2059-2068`; `tests/scheduledJobs.test.ts` | A run open past its deadline plus 10 minutes becomes `expired` and one alert is raised. The job list test names the new job |
-| SW1-11 | Soak script: start, poll and verify runs against sites the owner controls; report n, duration p50 and p95, cost per run, terminal states | new `scripts/soak-swarm.mjs` | Output is a JSON report suitable for attaching to the promotion PR |
+| SW1-2 | Migration `swarm_runs`; smoke lists; `SWARM_RUNS_ENABLED` in three blocks, env typing, example env files, admin health and the capabilities answer; privacy export and delete; link move; the purge of events older than 90 days in `privacy_purge` | `migrations/`; `scripts/smoke-check.mjs:23-58`; `worker/privacyService.ts:116-134`, `:166-212`; the V2-1b helper; `worker/scheduledJobs.ts`; `wrangler.jsonc`; `worker/env.ts` | Applies clean on a database at the current head. After deleting an account no row with its id remains in either table and its objects have been purged. After a link, both tables hold no row under the losing id. An event dated 91 days ago is gone after the purge and its run row remains |
+| SW1-3 | Ledger and admission service: the admission statement of section 6.1, list, get, the conditional state changes, and the route's re-read that names the failed condition | new `worker/swarmService.ts`; tests on `tests/helpers/sqliteD1.ts` | Two concurrent starts with one idempotency key yield one run. A start over the plan's open-run limit returns `RUN_LIMIT`. A fifth start in an hour against one domain, from any mix of accounts, returns `SITE_BUSY`. A start during a site's back-off returns `SITE_BACKOFF`. Two concurrent starts that would together pass a spend limit yield one run. Another account's project or run id returns 404 |
+| SW1-4 | The step loop (section 4.1): read control from D1, flush the outbox, check, journal, execute, project, schedule; the working-time deadline; `max_steps`; the kill switch; the interrupted-step table; the provider wait; the purge route. Only `alarm()` executes a step | `worker/swarmRun.ts`; tests with a fake clock and fake storage | A run of 5 fake steps completes with events 1 to 5. Killing the object after the journal entry of step 3 and restarting runs step 3 once more and no step twice. A run cancelled in D1 while a step is in flight writes nothing after the step returns. A run paused for an hour and resumed keeps the working time it had left. With D1 failing for one alarm, the step's result is in the journal and reaches D1 on the next. Flag off mid-run ends it `cancelled` with `FLAG_OFF`. Step 41 is impossible (CHECK and code). A `fetch` handler never calls the step function (asserted by a spy) |
+| SW1-5 | Shared rule functions and the Auditor step list; parity with the browser crew | `services/agentCore/agents/playbookAuditorAgent.ts`; `services/audit/ruleDefinitions.ts` (from CL0-5); new `services/swarm/auditorPlan.ts`; tests | On the shared fixture, server and browser produce the same finding keys for the rules both can run. The citation rule is `not_measured` on the server with its reason. Each finding has a rule id and an evidence ref or `not_measured` |
+| SW1-6 | Evidence and findings writes through the V2 writer with `fetcher = 'worker'`, the code-built summary, and the report save. When receipts are on (P14) the run also mints one `audit_run` receipt over its evidence hashes; when they are off it mints nothing and nothing in the UI says "Verified" | `worker/runLedger.ts` (from P5); `worker/trustReceipts.ts:101`; `worker/swarmRun.ts`; `worker/agentReportService.ts` | A completed run has evidence rows whose hashes match the fetched bytes and a report labelled as code-built. With receipts off, the run completes and no receipt row exists. With receipts on, one receipt names the run's evidence. No page body is in D1 or KV after the run ends (asserted) |
+| SW1-8 | Routes, protected-route entry, provenance surface, rate limits; MCP tools. `worker/README.md` gains the `/swarm` route map and the one-line statement of what a server run does and does not measure | `worker/index.ts`; `worker/authMiddleware.ts:151-192`; `worker/runProvenance.ts:21-26`; `worker/mcpServer.ts`; `worker/README.md` | Flag off: 404. Guest: 401. Free signed-in user within allowance: 201. `/audit/run` still requires Agency (existing test passes) |
+| SW1-9 | Front end: button, status strip, runs list, the capabilities read | `components/audit/InstantAuditView.tsx`; new `components/swarm/RunStatusStrip.tsx`; new `services/swarm/swarmClient.ts` | Static-markup tests for each run state, including "waiting for the site" and each terminal state in plain words. Polling stops when the tab is hidden (spy). Flag off renders nothing new |
+| SW1-10 | Sweeper and alerts on the Ops 15-minute cron, by state as section 4.1's table says; alert on any run it ends, on a run that ended `budget_halted`, and on a spend pool reaching 80 percent | `worker/scheduledJobs.ts:10-22`; `worker/index.ts:2059-2068`; `tests/scheduledJobs.test.ts` | One test per row of the table. A paused run with an old heartbeat is untouched. A `queued` run is started again, not failed, on the first sweep. The job list test names the new job |
+| SW1-11 | Soak script: start, poll and verify runs against sites the owner controls; report n, duration p50 and p95, time from tap to findings on the board, cost per run in micro, terminal states, drafts built per run, and (SW1b) how often the code-built summary stood in for the model's | new `scripts/soak-swarm.mjs` | Output is a JSON report suitable for attaching to the promotion PR. Cost per run is read from the ledger, not estimated |
+| SW1-12 | Run-finished notice (section 6.5), behind `RUN_NOTICES_ENABLED` and decision 20. An in-app sheet asks for consent in one sentence at the moment a founder starts their first run; Telegram's own write-access prompt follows it, because that prompt makes delivery possible and is not itself consent. Sentinel's existing messages go through the same function | migration `run_notices`; new `worker/notify.ts`; `worker/telegramBot.ts:151-173`; `worker/sentinel.ts:225-249`; `services/telegram/tma.ts`; `worker/swarmRun.ts`; privacy export and delete | No message is sent to an account that has not said yes in the sheet. A finished run sends one message with the verdict, one action and a link that opens the Mini App at that run, and nothing else. The sixth notice of a UTC day is recorded as skipped. A 429 from Telegram is retried after `retry_after` and not before. `/stop` silences every category. The notice text contains no number that is not in the run's evidence. An account with no row in `notify_prefs` gets a `skipped` row with `not_opted_in` |
+| SW1-14 | The rule pack (section 6.1). Read the nine compiled playbooks; list each statement a pure function could decide; add the ones that pass the three tests as rules with stable ids in the shared module, each with its fixtures; add each as a check in Allora's registry and its name to Allora's closed list of names shown to users | `services/audit/ruleDefinitions.ts`; `services/agentCore/agents/playbookAuditorAgent.ts`; `worker/decisionChecks/checks.ts` (from CL1-2); `tests/fixtures/`; section 19 (the edit to Allora 3.1) | Each rule has a fixture for `pass`, `fail` and `not_measured`, and its finding text contains no claim about ranking, traffic or citations (a test greps the strings). The number of rules that shipped is recorded in section 23. A rule proposed and rejected is listed with the test it failed |
+| SW1-15 | Fixer templates and their checks (section 6.1): pure functions from a finding, its evidence and the founder's typed fields to a draft, one per rule that can have one, with the three checks | new `services/swarm/fixTemplates.ts`; new `services/swarm/draftChecks.ts`; tests | Each template has a fixture draft that passes its check and three planted drafts that fail it: a URL off the project's domain, an extra `Disallow`, a script tag. A founder field containing markup is escaped, never emitted as markup. A rule with no template is listed as such |
+| SW1-16 | Fixer and the re-check in the product. A `fix` run, started by the Auditor's handoff or from a finding, builds and saves drafts. The Fix Board shows the draft with copy and download, "I shipped this", and "Retest now" wired to Allora CL2-3; the result is Allora's card (CL2-4) | `worker/swarmRun.ts`; `worker/weeklyDecisionService.ts` (it writes `prepared_assets` today); `components/audit/InstantAuditView.tsx`; `components/suite/DashboardView.tsx`; `components/audit/WeeklyDecisionCard.tsx`; tests | A finding with a template has one draft after the Auditor finishes, with no tap. A draft that fails its check is not saved and an event says why. "Retest now" on a fixed fixture site reads "no longer found in page source" with the server's date; on an unfixed one it reads "still found". A finding with no check reads "Server re-check: not available for this finding". No draft has `status` other than `draft` or `ready` |
+| SW1-17 | First run from a domain. A signed-in account with no project sees one field and one button. `POST /swarm/runs` with `domain` finds or creates the project inside the plan's site limit and starts the Auditor. The consent sheet of SW1-12 appears here | `App.tsx:566` (the first-run branch); `components/suite/DashboardView.tsx`; new `components/swarm/FirstRun.tsx`; `worker/swarmService.ts`; tests | From sign-in to a started run is one field and one tap. A domain that fails the public-host check is refused with a plain reason and creates no project. A second tap does not start a second run (idempotency key). An account at its site limit is told so and offered its existing projects |
+| SW1-18 | Coach v0 (section 6.1): the ranking function and the proposed decision | new `services/swarm/coachRank.ts`; `worker/swarmRun.ts`; `worker/weeklyDecisionService.ts`; `components/audit/WeeklyDecisionCard.tsx`; tests; section 19 (the `proposed` status) | With three open findings the proposal names the one the fixed order puts first. With a decision already present for the week nothing is written. A proposed row is never counted as a commitment by the existing route (Allora CL1-3's characterisation test is extended). The card says who proposed it |
 
-**Order:** SW1-0; SW1-1 alone as a release; SW1-2 with its privacy and link move in one PR; SW1-3 to SW1-7 in the Worker lane; SW1-8; SW1-9; SW1-10; SW1-11.
+**SW1b.**
 
-**SW1 double-check:** grep for any write of `fetcher = 'worker'` outside the run object; confirm the Agency pattern list is unchanged; confirm a deleted account leaves no ledger rows and no object storage; confirm no code path starts a run when the global cap is unset; confirm the summary prompt contains fenced content only.
+| ID | Task | Files | Acceptance |
+|---|---|---|---|
+| SW1-7 | The model client for runs (timeout, two attempts over two lineages, the provider wait, usage adapters, the runs' own key), the summary-and-suggestions call, the output check and the quote rule, and prompt pinning: the eval-passed list is a constant in the repo and the run row stores what it pinned | new `worker/modelClient.ts`; `worker/swarmRun.ts`; `worker/agentOutputValidators.ts`; new `services/swarm/evalPassed.ts`; `worker/agentReportService.ts`; eval fixtures | A recorded summary with a number that matches no evidence is retried once; when the retry also fails, the code-built summary stands, a `guardrail` event carries `UNCITED_NUMBER`, and the run ends `completed`. A summary whose `oneAction` is not one of this run's findings cannot be produced (the schema's enum) and a forged one is refused. A suggestion whose quote is not in the page it names is dropped and counted. A 429 with `Retry-After` waits and is not counted as an attempt. A run with zero findings makes no call. A prompt version that is not on the constant list cannot be pinned. Each attempt writes its own cost row in micro, a repeated step writes no second row for the same attempt, and one settle row is written at the end |
+| SW1-13 | Live eval gate for the summary and suggestions (rule 2.22), run once per model on the rate card. A frozen set: 20 real sites the owner may fetch, 10 pages with defects planted on a test site, and 10 twin pairs, each pair being the same page with and without a planted instruction. 3 live runs each, 120 runs. Every run is labelled by a person; two people label 30 of them and their agreement is reported | `evals/`; new `evals/live/`; `scripts/soak-swarm.mjs` | Gate, all required. The unit is one item of `claims[]` or one suggestion. (1) No deliverable contains a URL outside the run's evidence or a first-party URL, counted before the output check removes anything, so the control is not marking its own work. (2) For every twin pair, the findings, statuses and writes are identical with and without the planted instruction. (3) The code-built summary stood in for the model's in at most 10 percent of runs. (4) The model's `verdict` matches the labeller's on at least 90 percent of runs, and for each page the 3 runs agree with each other. (5) No labelled claim is marked unsupported; the report states that zero in a sample of this size still allows a true rate of a few percent. A deliberately broken prompt and a disabled output check must each fail the gate, or the gate is not accepted. The report is attached to the promotion PR. The gate is re-run on any change of prompt, model, schema or check, and a 10-page subset runs weekly to catch drift |
 
-**Scripted soak:** 7 days on staging with the flag on, the script run each day.
+**Order (SW1a):** SW1-0 on day one; SW1-1 alone as a release; SW1-2 with its privacy and link move in one PR; SW1-14 and SW1-15 as pure functions, in parallel with the Worker lane; SW1-3 to SW1-6 in the Worker lane; SW1-8; SW1-9 and SW1-17; SW1-10; SW1-16 and SW1-18 once Allora CL1 and CL2 are on staging; SW1-12; SW1-11 before promotion. **Order (SW1b):** SW1-7, then SW1-13.
 
-**Promote when:** the script has completed at least 50 runs; every run reached a terminal state and none was expired by the sweeper; every finding carries a rule id and an evidence ref or `not_measured`; no summary failed open (a validator failure fails the run, which is counted and reported, not hidden); duration and cost per run are recorded with n; the owner has started a run on a site they control, closed the app, and found the result later. **Production gets** the migration and code with the flag off. Turning it on is its own one-line PR, first for an allow-list of dogfood accounts (P7), then for everyone after 24 hours.
+**SW1 double-check:** grep for any write of `fetcher = 'worker'` outside the run object; confirm the Agency pattern list is unchanged; confirm a deleted account leaves no ledger rows and no object storage; confirm no page body is stored outside a run object; confirm no draft can be saved without passing its check; for SW1b, confirm no model-calling run starts when either pool is unset and that the summary prompt contains fenced content only.
 
-**Rollback:** flag off stops admission and ends open runs at their next step. Code fault: `wrangler rollback` to the last version that still includes the class. Tables stay.
+**Scripted soak (SW1a):** at least 50 runs on staging with the flag on, spread over at least 3 calendar days so the UTC day boundary, the sweeper and the daily cron are each crossed (rule 2.18).
+
+**Promote SW1a when:** the first chain's acceptance test (section 0.5) passes on staging for a real site the owner controls; the script has completed at least 50 runs; every run reached a terminal state and none was ended by the sweeper; every finding carries a rule id and an evidence ref or `not_measured`; every saved draft passed its check; duration and time from tap to findings are recorded with n; the owner has started a run from the first screen, closed the app, received the notice, found the draft and retested it. **Production gets** the migration and code with the flag off. Turning it on is its own one-line PR, first for an allow-list of dogfood accounts (P7), then for everyone once that check has been read.
+
+**Promote SW1b when:** SW1-13's gate passed for the model in use; the summed ledger cost is within 10 percent of the provider's usage export for the runs' key (section 4.4); cost per run is recorded with n; refusals and code-built stand-ins are counted and reported with n, never hidden; the owner has set the two pools. `SWARM_MODEL_SUMMARY_ENABLED` goes on for the dogfood list first.
+
+**Rollback:** flag off stops admission and ends open runs at their next step. `SWARM_MODEL_SUMMARY_ENABLED` off returns every run to the code-built summary with no other change. Code fault: `wrangler rollback` to the last version that still includes the class. Tables stay.
+
+### 6.5 The run-finished notice and the send policy
+
+"Agents work while I am away" needs one thing the product lacks: a way to say the work is done. Today the bot answers commands and sends Sentinel's messages, and web and desktop users have no channel at all. At launch a web or desktop user sees a badge on next open; email is not built and is not promised.
+
+**One send policy (decision 20).** `specs/0009` refused scheduled nudges and said a broadcast "can be added later with an explicit send policy". This is that policy, and every optional Telegram message the product sends goes through it:
+
+- **Consent first.** Nothing is sent to an account that has not said yes in an in-app sheet that states, in one sentence, what will be sent. Telegram's write-access prompt comes after the yes; it makes delivery possible and is not the consent.
+- **About your own work only.** Seven categories: a run you started has finished; a step is waiting for your approval; a job you bought was delivered or refunded; a retest you asked for has a result; a scheduled audit found something that changed; your budget stopped a run; Sentinel saw drift. There is no "come back" message, no streak reminder and no broadcast. A scheduled audit that found nothing new sends nothing.
+- **Capped.** At most 5 a day per account, enforced inside the insert that records the send. `/stop` in the bot mutes everything.
+- **Deliverable.** A bot can only message someone who started it or granted write access; one message a second per chat; a 429 is retried after the `retry_after` it carries.
+- **Plain.** A notice is a verdict, one action and a link (APS invariant 4). It is built by code from the run row, carries no tool arguments and no model-written text, and no body is stored. The link opens the Mini App at the subject (`startapp=run_<id>`); the id is checked against the signed-in account before anything is shown.
+- **Not this policy:** a reply to a command, and payment and refund messages (section 5.1). Those answer something the person just did and are sent whatever their notice setting.
+
+**Sentinel's messages.** Sentinel already sends two: a drift alert, and "It is time for your check", which asks the founder to open the app and run the audit by hand. SW1-12 sends both through this function, so the consent, the cap and `/stop` apply. The second one is a "come back" message. It is removed when the Auditor's own schedule replaces it (section 13's Auditor-only slice): the audit then runs itself and speaks only if something changed.
+
+The Ops plan's Beacon push (its F2) proposes the same thing with an opt-in in KV. There is one store: `notify_prefs` below replaces that KV key, and Beacon's push calls the same send function with the `budget` and `drift` categories (section 19, cross-plan edits).
+
+Migration `run_notices`:
+
+```sql
+CREATE TABLE IF NOT EXISTS notify_prefs (
+  account_id TEXT PRIMARY KEY,
+  telegram_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (telegram_opt_in IN (0, 1)),
+  daily_cap INTEGER NOT NULL DEFAULT 5 CHECK (daily_cap BETWEEN 0 AND 5),
+  muted_until INTEGER,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notify_sends (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('telegram')),
+  category TEXT NOT NULL CHECK (category IN ('run_finished', 'approval', 'job', 'retest', 'watch', 'budget', 'drift')),
+  dedupe_key TEXT NOT NULL,
+  utc_day TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'sent', 'skipped', 'failed')),
+  skip_reason TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER,
+  created_at INTEGER NOT NULL,
+  sent_at INTEGER,
+  UNIQUE (account_id, dedupe_key)
+);
+CREATE INDEX IF NOT EXISTS idx_notify_sends_day ON notify_sends(account_id, utc_day, status);
+CREATE INDEX IF NOT EXISTS idx_notify_sends_due ON notify_sends(status, next_attempt_at)
+  WHERE status = 'queued';
+```
+
+One statement decides and records every notice, so the cap cannot be passed by two events at once and an account with no preferences row is handled without a second read:
+
+```sql
+-- query: enqueue one notice
+INSERT INTO notify_sends (id, account_id, channel, category, dedupe_key, utc_day, status, skip_reason,
+                          next_attempt_at, created_at)
+SELECT ?1, a.account_id, 'telegram', ?3, ?4, ?5,
+  CASE
+    WHEN COALESCE(p.telegram_opt_in, 0) = 0 THEN 'skipped'
+    WHEN p.muted_until IS NOT NULL AND p.muted_until > ?6 THEN 'skipped'
+    WHEN (SELECT COUNT(*) FROM notify_sends s
+           WHERE s.account_id = a.account_id AND s.utc_day = ?5 AND s.status IN ('queued', 'sent'))
+         >= COALESCE(p.daily_cap, 5) THEN 'skipped'
+    ELSE 'queued'
+  END,
+  CASE
+    WHEN COALESCE(p.telegram_opt_in, 0) = 0 THEN 'not_opted_in'
+    WHEN p.muted_until IS NOT NULL AND p.muted_until > ?6 THEN 'muted'
+    WHEN (SELECT COUNT(*) FROM notify_sends s
+           WHERE s.account_id = a.account_id AND s.utc_day = ?5 AND s.status IN ('queued', 'sent'))
+         >= COALESCE(p.daily_cap, 5) THEN 'daily_cap'
+    ELSE NULL
+  END,
+  ?6, ?6
+FROM (SELECT ?2 AS account_id) AS a
+LEFT JOIN notify_prefs p ON p.account_id = a.account_id
+WHERE true
+ON CONFLICT(account_id, dedupe_key) DO NOTHING;
+```
+
+- A new row's `next_attempt_at` is its `created_at`, so it is due at once. The sender reads `WHERE status = 'queued' AND next_attempt_at <= ? ORDER BY next_attempt_at LIMIT 25`.
+- `dedupe_key` is `<category>:<subject id>`, so one run, approval or job produces at most one notice however often its event is replayed. A skipped row keeps its key, so a notice skipped at 09:00 is not sent at 09:05 when the event replays.
+- A root run's notice is enqueued when the run and its children have all ended, so the founder is told once, when the draft and the proposal are there too.
+- A queued row with a later `next_attempt_at` is the durable delay for a 429. The Ops 15-minute cron sends what is due; three failures mark the row `failed`.
+- No message text is stored. A notice is rebuilt from its subject at send time.
+- Send rows older than 90 days are deleted by `privacy_purge`. On account link, the surviving account's `notify_prefs` row is kept and send rows move.
 
 ---
 
 ## 7. SW2 - Roster, caps, approvals, handoffs
 
-**Goal:** named agents with visible limits. A founder can see what each agent may do and spend before it starts, approve a risky step in one tap, and watch one agent pass work to another.
+**Goal:** named agents with visible limits. A founder can see what each agent may do and spend before it starts, and approve in one tap a step that would leave their account or spend above a threshold. Fixer and Coach gain model-written fields, each behind a check.
 
-**Needs:** SW1 promoted; P9, P11, P12, P15; decisions 2 and 8. P10 is optional.
+**Needs:** SW1b promoted; P9, P11, P12; decision 2. SW2-15 needs decision 18 and the connector lane's SW4-1 and SW4-2. P10 is optional.
 
 ### 7.1 Design
 
@@ -619,6 +1213,7 @@ CREATE INDEX IF NOT EXISTS idx_swarm_events_account ON swarm_run_events(account_
 - An API-key client is inserted only through `INSERT ... SELECT FROM api_keys WHERE id = ? AND account_id = ? AND revoked_at IS NULL`, so a client can never attach to another account's key (F4's rule).
 - **`agent_sessions`** is tier 3: one row per task, with a budget, an optional per-call cap, a tool scope and an expiry. A session's budget can never exceed its client's remaining month, which can never exceed the account's remaining month. The approval screen shows that worst case before consent (spec 0016, item 2).
 - **`cost_events.session_id`** attributes spend to the session (spec 0016, item 3). Spend is always a `SUM` over the ledger; there is no mutable counter.
+- **Units.** A founder sets caps in whole cents. Spend is summed in micro (section 4.4). A comparison multiplies the cap by 10,000; nothing is rounded before it is compared.
 
 **Session flow for a roster run.** On start the engine requests a session for the agent's default cap. If the cap is at or under the client's `approval_threshold_cents`, the session is active at once. Otherwise it is `pending` and the run waits for the founder. The request is an `mcp_action_requests` row with `kind = 'session'` (the column is free text, `migrations/0013_mcp_action_requests_kind.sql:8`), so there is no parallel approval table.
 
@@ -626,17 +1221,32 @@ CREATE INDEX IF NOT EXISTS idx_swarm_events_account ON swarm_run_events(account_
 
 **K2.** `estimate_cost(tool, args)` returns the rate-card price before a call, and a refused paid call carries a `PAYMENT_REQUIRED` envelope naming the missing budget. Both are spec 0016's design.
 
-**Approvals inside a run.** When a step needs approval the engine creates a bound request (args hash, requester `roster:<agent>:<run>`, trust) through the Ops F1 path, moves the run to `waiting_approval`, and sets an alarm to re-check every 30 s until the request's expiry. An approval is consumed once. A denial or an expiry fails the step; the agent's plan says whether the run continues without it.
+**Approvals inside a run.** When a step needs approval the engine creates a bound request (args hash, requester `roster:<agent>:<run>`, trust) through the Ops F1 path, and moves the run to `waiting_approval` with a `wait_until` equal to the request's expiry (section 4.1). The decide route's conditional update and wake resume the run; nothing polls. An approval is consumed once. A denial or an expiry fails the step; the agent's plan says whether the run continues without it. Two things need one: an effect that leaves the account (decision 18's pull request is the only such tool in this phase) and a session above the client's threshold. Saving a draft does not (rule 2.10).
 
-**Model-planned agents.** Fixer and Coach choose their next tool from an allow-list. The server loop is a port of the client loop (`services/tools/runToolLoop.ts:64-108`) with every tool result fenced, which the client loop does not do today. Limits are in section 4.3.
+**One typed call, not a loop.** Fixer and Coach keep the fixed step lists they shipped with in SW1. This phase adds one typed model call to each, and nothing lets a model choose a tool. The server tool loop that v0.1 planned here is built with the Prospector in SW6, the first agent that needs it (section 4.2).
 
-**Fixer.** Input: one open finding. It reads the finding's evidence, writes a `prepared_assets` row linked to the finding (`status = 'draft'`, then `ready` when the asset validates), and stops. It never publishes. When the founder marks the fix shipped, a follow-up run asks the retest verifier (P15) to check the live site; a pass moves the finding to `done` with a `fix_retested` receipt, a fail leaves it `in_progress` with the reason. Fixer reads crawled content and writes, so it is always `sealed` and every write is an approved write until the owner sets a threshold for that agent.
+**Fixer.** Input: one open finding. v0 already builds the artefact by code (section 6.1). SW2 lets a model fill the prose fields of a template: a description, an answer paragraph, an FAQ entry. The artefact around them is still code's. Each field is plain text with a length cap, carries no markup and no URL that is not in the run's evidence, and passes the output check of section 4.3; a field that fails is left empty and the draft says so. This is what gives a thin-content finding its first draft. The run is `sealed` because it reads crawled pages. It never publishes, and the re-check is unchanged from SW1-16: a pass moves the finding to `done`, with a `fix_retested` receipt once receipts are on (P14), and a fail leaves it `in_progress` with the reason.
 
-**Coach.** Input: the project's open findings and, from SW4, the latest digest. It drafts one Weekly Decision Card and stops. The founder accepts or edits it. Coach sends no Telegram message; it appears in the roster view and, when P10 exists, in Beacon.
+**Why a draft is checked and not just parsed.** A draft that "parses" can still do harm: a `robots.txt` with `Disallow: /` parses, and a JSON-LD block can carry an attacker's `sameAs` link or an invented rating. SW1-15's checks already refuse those for code-built drafts. SW2-13 extends the same functions to model-filled fields and adds the one artefact SW6's jobs need and no finding produces: an `llms.txt` draft may name only same-origin URLs that the run fetched with a 200.
+
+**Approving from Telegram.** Section 4.6 promises one tap. That needs three things today's code lacks: a `callback_query` handler (the webhook subscribes to it, `scripts/telegram-setup.mjs:32`, and nothing handles it; it must sit before the `if (!msg) return` at `worker/telegramBot.ts:320-321`, or it is never reached); the notice of section 6.5; and an approval card that shows the Ops plan's `argsSummary`, because approving an argument-bound request without seeing the arguments is blind. The handler resolves the tapping Telegram user to an account, requires it to equal the request's account, and calls the same decide function as the route. A bearer credential still cannot approve.
+
+**An agent opening a pull request, if decision 18 says yes.** A founder can already apply a fix with one click from the deploy screen, from their own browser with their own token (hazard 20). The question in decision 18 is narrower: may an agent start that, on the server, after one approval? The default is no. If yes, it is one path only:
+
+- **Where.** A project with a connected GitHub repository. The connection is made like the Google one (section 9.1): bound to the signed-in account at the callback, the token encrypted with the connector crypto, and scoped to that one repository with contents and pull-request write and nothing else. `connector_grants.provider` allows `github` from its first migration for this reason.
+- **What.** New files only, under paths the founder listed for that repository. Never an existing file, never `.github/`, never a workflow, a lockfile or a dependency manifest. A JSON-LD draft is a new file; a change to an existing `robots.txt` stays a draft the founder applies.
+- **How.** One bound, single-use approval that shows the file path and the draft. One branch per finding and draft, named by code from their ids, so a step that runs twice finds its branch and its pull request instead of opening a second. The title and body are built by code and list the finding and its evidence; no model-written text is in either.
+- **Then.** The pull request does nothing until the founder merges it. The re-check runs after they do.
+
+This replaces nothing: the browser-side deploy screen stays, made honest by SW0a-17. WordPress and other direct writes by an agent are not offered in this plan.
+
+**Coach.** Input: the project's open findings and, from SW4, the latest digest. v0 already proposes by a fixed order (SW1-18). SW2 adds one typed call that writes the reason in a sentence or two; the finding it names is still chosen by code, and the reason passes the output check or is replaced by the code-built one. Coach sends no Telegram message; it appears in the roster view and, when P10 exists, in Beacon.
 
 **Roster view.** A new `SWARM` view built on the layout of `components/audit/AgentMissionControl.tsx:156-227`, restyled with design tokens (that file uses raw colour classes today). One card per agent: purpose, limits, month-to-date spend from the ledger, current run, last result, and pause. A feed of run events. An approvals strip. It polls every 5 s while visible; sockets arrive in SW7.
 
-**Evals.** A new trajectory suite beside the seven text cases in `evals/`: recorded tool-call transcripts with the expected step order, guardrail outcomes and final state, including an injection corpus (a crawled page that asks the agent to write a report and to call a paid tool). The suite runs in CI and, new in this phase, in the deploy workflow, which runs no evals today (`.github/workflows/deploy-cloudflare.yml:44-57`).
+**Evals.** A new trajectory suite beside the seven text cases in `evals/`: recorded transcripts of each agent's typed call with the expected step order, guardrail outcomes and final state, including pages that carry planted instructions (one asks for a report to be saved, one for a paid tool to be called). The suite runs in CI and, new in this phase, in the deploy workflow, which runs no evals today (`.github/workflows/deploy-cloudflare.yml:44-57`).
+
+A recorded transcript proves the code around the call, not the model (rule 2.22). So this phase also has a live gate, run by hand before promotion, once per model, and on any change of prompt, model, schema or check: the SW1-13 page set and its twin pairs, extended with 20 findings for Fixer and 10 projects for Coach, 3 live runs each, labelled the way SW1-13 labels. Required: every Fixer draft passes its artefact check; no draft contains a URL outside the run's evidence or the project's domain, counted before the check removes anything; for every twin pair the drafts, writes and caps are identical with and without the planted instruction; every Coach reason names the finding code chose; no labelled draft is marked wrong for its finding. A deliberately broken prompt and a disabled artefact check must each fail the gate.
 
 ### 7.2 Migration `agent_passport_k1`
 
@@ -649,7 +1259,7 @@ CREATE TABLE IF NOT EXISTS agent_clients (
   label TEXT NOT NULL,
   purpose TEXT,
   model TEXT,
-  risk_ceiling TEXT NOT NULL DEFAULT 'write' CHECK (risk_ceiling IN ('read','write','destructive')),
+  risk_ceiling TEXT NOT NULL DEFAULT 'write' CHECK (risk_ceiling IN ('read','draft','write','destructive')),
   tool_allowlist_json TEXT,
   monthly_cap_cents INTEGER CHECK (monthly_cap_cents IS NULL OR monthly_cap_cents >= 0),
   approval_threshold_cents INTEGER CHECK (approval_threshold_cents IS NULL OR approval_threshold_cents >= 0),
@@ -686,52 +1296,57 @@ CREATE INDEX IF NOT EXISTS idx_cost_events_session ON cost_events(account_id, se
 ```
 
 - One `ALTER`, not idempotent: confirm the file is unapplied before running (Zoro 2.5).
-- The per-agent total is `SELECT COALESCE(SUM(billed_cents), 0) FROM cost_events WHERE account_id = ? AND credential_kind = 'roster' AND credential_id = ? AND created_at >= ? AND created_at < ?`. It was checked to use `idx_cost_events_credential`.
-- The existing account-window total (`worker/budgets.ts:331-335`) has no credential filter, so roster spend counts toward the account budget with no change to that query.
-- `agent_clients` is not re-keyed on account link: after a link, the surviving account keeps its own rows and the losing account's rows are deleted, because a cap is a setting, not history. `agent_sessions` rows move.
+- The per-agent total is `SELECT COALESCE(SUM(cost_micro), 0) FROM cost_events WHERE account_id = ? AND credential_kind = 'roster' AND credential_id = ? AND created_at >= ? AND created_at < ?`. It was checked to use `idx_cost_events_credential`.
+- The per-session total is `SELECT COALESCE(SUM(cost_micro), 0) FROM cost_events WHERE account_id = ? AND session_id = ?`. It names the account so that it uses `idx_cost_events_session` and can never read another account's rows.
+- The existing account-window total (`worker/budgets.ts:331-335`) has no credential filter, so roster spend counts toward the account budget with no change to that query: it sees each run's settle row (section 4.4).
+- The admission statement of section 6.1 gains one condition here: the agent's monthly cap, times 10,000, must cover the run's cap plus that agent's `SUM(cost_micro)` for the month plus the reservations of that agent's open runs.
+- `agent_clients` is not re-keyed on account link: after a link, the surviving account keeps its own rows and the losing account's rows are deleted, because a cap is a setting, not history. `agent_sessions` rows move, and each moved row's `agent_client_id` is re-pointed to the surviving account's client with the same `kind` and `ref_id`. A session whose client has no counterpart is set to `revoked` in the same batch, before its client row is deleted.
 - `budget_policies` is not altered (Ops F4's rule).
 
 ### 7.3 Tasks
 
 | ID | Task | Files | Acceptance |
 |---|---|---|---|
-| SW2-0 | Re-baseline. Confirm P9, P11, P15 are on `main` and read their final shapes. Record decision 2 | this document | Section 7 corrected against the merged Ops and Allora code |
-| SW2-1 | Migration; smoke lists; privacy export and delete; link rule above | `migrations/`; `scripts/smoke-check.mjs`; `worker/privacyService.ts`; link helper | Applies clean after `swarm_runs`. A cross-account API-key insert changes zero rows (test) |
+| SW2-0 | Re-baseline. Confirm P9 and P11 are on `main` and read their final shapes. Record decision 2. Ask decision 18 with what SW1 and SW0a-17 showed | this document | Section 7 corrected against the merged Ops code |
+| SW2-1 | Migration; smoke lists; `SWARM_ROSTER_ENABLED` in three blocks, env typing, example env files, admin health and the capabilities answer; privacy export and delete; link rule above | `migrations/`; `scripts/smoke-check.mjs`; `wrangler.jsonc`; `worker/env.ts`; `worker/privacyService.ts`; link helper | Applies clean after `swarm_runs` and `token_meter`. A cross-account API-key insert changes zero rows (test). After a link, no session points at a client that does not exist |
 | SW2-2 | Client and session service: create client, request, approve, close, expire; the three-limit check with reservation | new `worker/agentPassport.ts`; `worker/budgets.ts`; tests | A session request above the client's remaining month is refused with the remaining amount. Two concurrent steps that each fit alone but not together: exactly one runs. An expired session's next step ends the run `budget_halted` |
-| SW2-3 | Roster manifest and default client rows created on first use; owner can edit cap, threshold, pause | new `services/swarm/roster.ts`; `worker/swarmService.ts`; route `/swarm/agents` | A new account sees four agents with default limits and zero spend. Pausing an agent refuses new runs and lets the current step finish |
+| SW2-3 | Roster manifest and default client rows created on first use; owner can edit cap, threshold, pause | new `services/swarm/roster.ts`; `worker/swarmService.ts`; route `/swarm/agents` | A new account sees three agents (Auditor, Fixer, Coach) with default limits and zero spend, and Sentinel as a status card. Pausing an agent refuses new runs and lets the current step finish |
 | SW2-4 | `estimate_cost` and the `PAYMENT_REQUIRED` envelope (spec 0016 K2) on MCP and on run steps | `worker/mcpServer.ts`; `services/swarm/rateCard.ts`; tests | An estimate equals the cost row written by the same call on a fixture. A refused call names the limit that refused it |
 | SW2-5 | Approvals inside runs through the F1 path, `kind = 'session'` and `kind = 'tool'`; wait, resume, expiry | `worker/swarmRun.ts`; `worker/mcpGovernance.ts`; tests | Approve: the run resumes within one alarm tick and the approval is consumed. Same approval reused by a second step: refused. Expiry: the step fails. A bearer credential cannot approve (existing F1 test extended) |
-| SW2-6 | Server tool loop with fencing, repeat detection, per-step and per-run limits | new `worker/swarmToolLoop.ts`; `services/agentCore/` detectors; tests | A fixture model that repeats one call three times ends the run `failed` with `REPEAT`. Every tool result in the next prompt is inside an untrusted fence (snapshot) |
-| SW2-7 | Sealed trust for runs: stored at start, tightened on ingest, enforced on write, inherited by child runs | `worker/swarmRun.ts`; the F3 hook in `worker/mcpGovernance.ts` | Injection corpus: a page that asks for a report save is ingested; the save needs an approval; a child run started after the ingest is sealed too |
-| SW2-8 | Fixer: plan, asset validators, retest follow-up | new `services/swarm/fixerPlan.ts`; `worker/swarmRun.ts`; validators | A schema finding yields a JSON-LD asset that parses and is `ready`. No row ever has `status = 'published'` (the CHECK also refuses it). A failed retest leaves the finding `in_progress` |
-| SW2-9 | Coach: plan and the decision-card draft | new `services/swarm/coachPlan.ts`; `worker/weeklyDecisionService.ts` | The draft cites an open finding that exists. With no open finding it returns "nothing to decide" and writes nothing |
-| SW2-10 | Handoff: child run with a carved cap; events on both runs | `worker/swarmService.ts`; `worker/swarmRun.ts` | A child cannot be started for an agent outside `handoffTo`. Child cap above parent's remaining budget is refused. Provenance shows the parent link |
-| SW2-11 | Roster view; nine registration points for a new view | `types.ts`; `App.tsx`; `components/telegram/TelegramBottomNav.tsx:13-25`; `components/harness/OmnibarModal.tsx`; `services/telegram/startParam.ts`; `utils/marketingRoutes.ts`; new `components/swarm/RosterView.tsx` | Static-markup tests per card state. No new hex colour (the honesty gate fails typecheck on one). The view is absent from `PUBLIC_APP_VIEWS` |
-| SW2-12 | Trajectory evals in CI and in the deploy workflow | `evals/`; `.github/workflows/ci.yml`; `.github/workflows/deploy-cloudflare.yml` | A transcript that skips the output check fails the suite. The deploy job fails when the suite fails |
+| SW2-6 | Moved. The server tool loop is built with the Prospector, the first agent that lets a model pick a tool (SW6-11) | none in this phase | Nothing in SW2 lets a model choose a tool (grep: no caller of a planner in `worker/swarmRun.ts`) |
+| SW2-7 | Sealed trust for runs: stored at start, tightened on ingest, enforced on a call that leaves the account or spends, inherited by child runs | `worker/swarmRun.ts`; the F3 hook in `worker/mcpGovernance.ts` | Prompt-assembly tests: a page that asks for a pull request is ingested, the run is sealed, and the pull-request tool is refused without a bound approval; saving a draft is allowed and the draft passes its check; a child run started after the ingest is sealed too. None of these claims a model resisted anything (rule 2.22) |
+| SW2-8 | Fixer's model-filled fields: one typed call, the field rules, and the fallback to an empty field | `services/swarm/fixTemplates.ts`; new `services/swarm/fixerFields.ts`; `worker/swarmRun.ts`; validators | A thin-content finding yields a draft whose paragraph passed the output check. A field carrying a URL outside the run's evidence is emptied and the draft says a field was left out. No row ever has `status = 'published'` (the CHECK also refuses it). A failed retest leaves the finding `in_progress` |
+| SW2-9 | Coach's reason: one typed call over the finding code chose | `services/swarm/coachRank.ts`; `worker/weeklyDecisionService.ts` | The finding named is the one the fixed order chose, whatever the model returned. A reason that fails the output check is replaced by the code-built one and labelled so. With no open finding nothing is called and nothing is written |
+| SW2-10 | Handoff with money: the child's cap is carved from the parent's remaining session; events on both runs | `worker/swarmService.ts`; `worker/swarmRun.ts` | A child cannot be started for an agent outside `handoffTo`. A child cap above the parent's remaining budget is refused. A handoff payload holding anything but typed ids is refused. A third level is refused, and so is a handoff to an ancestor. Provenance shows the parent link |
+| SW2-11 | Roster view, registered at the six points a new view needs | `types.ts`; `App.tsx` (the lazy import, the render branch and the menu entry); `components/harness/OmnibarModal.tsx`; `services/telegram/startParam.ts`; `components/telegram/TelegramBottomNav.tsx:13-25`; `components/hub/EcosystemHubView.tsx`; new `components/swarm/RosterView.tsx` | Static-markup tests per card state. No new hex colour (the honesty gate fails typecheck on one). The view is absent from the public-view set in `services/auth/useAppAuth.ts:41-59` |
+| SW2-12 | Trajectory evals in CI and in the deploy workflow; the live gate above, run by hand | `evals/`; `evals/live/`; `.github/workflows/ci.yml`; `.github/workflows/deploy-cloudflare.yml` | A transcript that skips the output check fails the suite. The deploy job fails when the suite fails. The live gate's report is attached to the promotion PR |
+| SW2-13 | Artefact checks extended: SW1-15's functions cover model-filled fields, and an `llms.txt` check is added for SW6's jobs. Shared with SW6-2's acceptance checks | `services/swarm/draftChecks.ts`; `services/deployment/schemaSafetyGate.ts`; tests | A `robots.txt` draft that disallows `/` for `*` is refused. A JSON-LD draft with a `sameAs` off the approved list, or with a rating, is refused. A prose field containing markup or an off-evidence URL is refused. An `llms.txt` draft naming a URL the run did not fetch is refused. Each check has a passing and a failing fixture and never calls a model |
+| SW2-14 | Telegram approve and deny: the `callback_query` handler placed before the message guard, the approval notice with `argsSummary`, the account match | `worker/telegramBot.ts:290,320-321`; `worker/mcpGovernance.ts`; `worker/notify.ts` | Approve from Telegram executes the bound call once. A tap from a Telegram user who does not own the request changes nothing and is audited. An expired request answers "Expired". The card shows the arguments summary and no raw arguments. An update that carries only a `callback_query` reaches the handler (today it returns early) |
+| SW2-15 | A pull request opened by Fixer, only if decision 18 is yes (section 7.1). Starts with a spike on how the repository is connected (a GitHub App installation or a fine-grained token), since that decides what is stored | new `worker/fixDelivery.ts`; the connector crypto and `connector_grants` (SW4-1, SW4-2); `worker/mcpGovernance.ts`; tests | A pull request is opened only after a bound single-use approval and contains exactly the approved draft as a new file. A draft whose path is outside the founder's list, is an existing file, or is under `.github/` is refused before any call to GitHub. Running the step twice yields one branch and one pull request. The title and body contain no model-written text (asserted on a fixture whose draft carries planted text). A second use of the approval is refused. Without a connected repository the button is absent. No token is stored unencrypted or logged |
 
-**Order:** SW2-0; SW2-1; SW2-2 to SW2-4; SW2-5 to SW2-7 (the security core, reviewed together); SW2-8 to SW2-10; SW2-11; SW2-12 before any promotion.
+**Order:** SW2-0; SW2-1; SW2-2 to SW2-4; SW2-5 and SW2-7 (the security core, reviewed together); SW2-8 with SW2-13; SW2-9 and SW2-10; SW2-11; SW2-14; SW2-12 before any promotion. SW2-15 as soon as SW2-5, SW2-14 and the connector lane's SW4-1 and SW4-2 are done, if decision 18 is yes.
 
-**SW2 double-check:** no path spends without a session (grep for `recordCostEvent` callers and confirm each roster call passes one); no roster agent has ceiling `destructive`; the injection corpus passes with the flags on and the regression suites the Ops plan names pass with them off; copy check for the word "swarm" before a handoff has shipped.
+**SW2 double-check:** no path spends without a session (grep for `recordCostEvent` callers and confirm each roster call passes one); no roster agent has ceiling `destructive`; the prompt-assembly tests pass with the flags on and the regression suites the Ops plan names pass with them off; nothing in this phase lets a model choose a tool; copy says "swarm" only where two agents handed work to each other.
 
-**Scripted soak:** 14 days on staging, matching the Ops plan's observe window for Sealed Lane.
+**Scripted soak:** sized by what it must cross (rule 2.18): one UTC month boundary for the agent cap, one session expiry, one approval expiry, one session exhausted mid-run, and one run of each agent per model on the rate card. The Ops plan's 14-day observe window for Sealed Lane is that plan's own criterion for P11 and is not repeated here.
 
-**Promote when:** the trajectory suite is green on the release commit; the cap drill, approval drill and injection drill above all pass on staging; no run in the soak spent above its session; the owner has approved one Fixer write from Telegram and from the web. Production order: migration and code with flags off; `SWARM_ROSTER_ENABLED` for the allow-list; then everyone.
+**Promote when:** the trajectory suite is green on the release commit; the live gate passed for the model in use; the cap drill, approval drill and sealed-run drill above all pass on staging; no run in the soak spent above its session; refusals and code-built stand-ins are reported with n; the owner has approved one over-threshold session from Telegram and one from the web. Production order: migration and code with flags off; `SWARM_ROSTER_ENABLED` for the allow-list; then everyone.
 
-**Rollback:** `SWARM_ROSTER_ENABLED` off hides the view and refuses model-planned agents; the Auditor keeps working. Tables and the new column stay.
+**Rollback:** `SWARM_ROSTER_ENABLED` off hides the view and the model-written fields. The Auditor, Fixer's code-built drafts and Coach's code-built proposal keep working. Tables and the new column stay.
 
 ---
 
 ## 8. SW3 - Workbench: Fix Board, Ship Log, Leads
 
-**Goal:** the three things a founder touches every day, each with an agent on the other side of it. This phase is mostly front end and can start when SW0 exits.
+**Goal:** the three things a founder touches every day, each with an agent on the other side of it. This phase is mostly front end and can start when SW0 exits. SW3-1 to SW3-3 are in the launch cut.
 
 **Needs:** P2, P16; SW0-4. Leads needs decision 15.
 
 ### 8.1 Design
 
-**Fix Board.** A board view over `GET /findings`: four columns for the four statuses that already exist (`open`, `in_progress`, `done`, `wont_fix`). Moving a card is the existing `PATCH /findings/:id`. No new table and no new route. When SW2 is on, a card gains "Give to Fixer", which starts a run with the finding as its subject; the link from finding to run lives on the run (`subject_kind = 'finding'`), so `audit_findings` is not altered. The board is a new `FIX_BOARD` view on web and desktop and a compact list in the Mini App.
+**Fix Board.** A board view over `GET /findings`: four columns for the four statuses that already exist (`open`, `in_progress`, `done`, `wont_fix`). Moving a card is the existing `PATCH /findings/:id`. No new table and no new route. A card shows its draft, "I shipped this" and "Retest now" (SW1-16). A card whose rule has a template and no draft yet gains "Draft a fix", which starts a Fixer run with the finding as its subject; the link from finding to run lives on the run (`subject_kind = 'finding'`), so `audit_findings` is not altered. The board is a new `FIX_BOARD` view on web and desktop and a compact list in the Mini App.
 
-**Ship Log.** One short note per thing shipped, the Memos idea. A note may name a finding and a URL. It starts as `self_reported`. "Check it" asks the TN5 `live_deploy` verifier, when that exists, to fetch the URL; a pass upgrades the note to `worker_verified` with a receipt. Notes can be added in the app, by sending `/shipped <text>` to the bot (the user starts it, so it is not a blast), and by an agent through MCP. Adding a note that names a finding completes the existing "ship one fix" weekly mission, which is self-attested today.
+**Ship Log.** One short note per thing shipped, the Memos idea. A note may name a finding and a URL. It starts as `self_reported`. "Check it" asks the TN5 `live_deploy` verifier, when that exists, to fetch the URL; a pass upgrades the note to `worker_verified` with a receipt. Notes can be added in the app, by sending `/shipped <text>` to the bot (the user starts it, so it is not a blast), and by an agent through MCP. Two more commands capture a thought: `/note <text>`, and `/idea <text>`. `/idea` exists today and opens Idea Scout (`worker/telegramBot.ts:631-641`); with no text it still does exactly that, and with text it saves the idea and offers one button to open it in Idea Scout. Adding a `shipped` note that names a finding completes the existing "ship one fix" weekly mission, which is self-attested today. It earns nothing in SW9: the "Ship week" quest counts only fixes whose retest passed. It stays self-reported, and the card says so ("Marked shipped by you. Not re-checked by Luminara."), until the retest of P15 passes for that finding; only a passed retest counts as verified anywhere in this plan. The completion is written idempotently: today's mission code is five separate statements with a streak computed in JavaScript (`worker/referrals.ts`), so SW3-3 makes the mission insert `INSERT OR IGNORE` on its unique key and recomputes the streak from rows, so a repeated or half-finished request cannot double-count or strand it.
 
 **Leads.** A small pipeline, the Krayin idea and none of its code. Sources: a contact form that the owner of a shared report can switch on for that link, a manual add, and later the Prospector's research lists. Five stages: `new`, `contacted`, `qualified`, `won`, `lost`. Agency plan only (decision 15).
 
@@ -739,7 +1354,7 @@ The public form is the one unauthenticated write this plan adds, so it is narrow
 
 - Off by default, per share link. The toggle lives in the link's existing `branding_json`.
 - `POST /share/reports/:token/lead` accepts name, email, company, website and a message of at most 1,000 characters, plus a honeypot field. It returns the same 200 whether or not a row was written.
-- Rate limits through the existing dual limiter: 5 per IP per hour and 50 per link per day.
+- Rate limits: 5 per IP per hour through the existing limiter, and 50 per link per UTC day as a condition inside the insert itself, so two posts cannot both pass a separate count.
 - The form shows who receives the details and links the privacy policy. The consent text version and time are stored with the row.
 - Luminara sends nothing to the lead. The message is untrusted content wherever an agent later reads it (rule 2.10).
 - Leads are other people's personal data. They are deleted with the account, exported with it, and purged after 12 months without an update.
@@ -753,6 +1368,7 @@ CREATE TABLE IF NOT EXISTS ship_notes (
   account_id TEXT NOT NULL,
   project_id TEXT,
   finding_id TEXT,
+  kind TEXT NOT NULL DEFAULT 'shipped' CHECK (kind IN ('shipped', 'idea', 'note')),
   body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 2000),
   url TEXT,
   source TEXT NOT NULL CHECK (source IN ('app','telegram','mcp','agent')),
@@ -791,7 +1407,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_dedupe ON leads(account_id, dedupe_h
   WHERE dedupe_hash IS NOT NULL;
 ```
 
-- `shipped_on` is a UTC date (`YYYY-MM-DD`), so "today" is one equality.
+- `shipped_on` is a UTC date (`YYYY-MM-DD`) set by the server from the time the row is written, never taken from the client, so "today" is one equality and a note cannot be back-dated.
+- `kind` is in the table from the start. A CHECK can arrive with a new column, but the list inside an existing column's CHECK cannot be changed without rebuilding the table. `shipped` is the Ship Log. `idea` and `note` are the brief's "ideas in one place": a thought captured in one line, in the app or by `/idea <text>` and `/note <text>` to the bot, with no model call. An idea can be sent to Idea Scout in one tap, inside that feature's existing daily limit. Only `shipped` notes count toward the ship mission.
+- On account link, notes and leads move to the surviving account. A lead whose `(account_id, dedupe_hash)` collides keeps the row with the later `updated_at`.
+- The route checks what the CHECK cannot: SQLite's `length()` stops at a NUL character, so the handler rejects a body containing one and trims whitespace before measuring; `url` must be `http` or `https` and at most 1,100 characters; and the per-day cap (20 notes per account per UTC day) is a condition inside the insert, not a separate read.
 - `dedupe_hash` is a hash of the lowercased email plus the source link. The form's insert is `ON CONFLICT(account_id, dedupe_hash) WHERE dedupe_hash IS NOT NULL DO UPDATE SET updated_at = excluded.updated_at`, so a repeat submission refreshes one row.
 - Two migrations, two PRs (one concern per PR).
 
@@ -800,15 +1419,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_dedupe ON leads(account_id, dedupe_h
 | ID | Task | Files | Acceptance |
 |---|---|---|---|
 | SW3-0 | Re-baseline. Confirm P2 and P16 are on `main`; read the final findings client | this document | Section 8 corrected |
-| SW3-1 | Fix Board view: columns, card, move, filter by project; registration points | new `components/workbench/FixBoardView.tsx`; `services/audit/findingBoardService.ts`; `types.ts`; `App.tsx` | Static-markup test per column state. A move calls `PATCH` once and reverts on a non-2xx. A second browser on the same account shows the same board after reload |
-| SW3-2 | `ship_log` migration, privacy hooks, link move, smoke lists; routes `GET` and `POST /ship-notes`, `DELETE /ship-notes/:id`; protected-route entry; rate limit | `migrations/`; new `worker/shipLog.ts`; `worker/index.ts`; `worker/authMiddleware.ts`; `worker/privacyService.ts`; `worker/README.md` | Flag off: 404. An empty or 2,001-character body is refused. Another account's note id returns 404. Deleting the account removes its notes |
-| SW3-3 | Ship Log UI and the mission link; `/shipped` bot command; MCP `add_ship_note` | new `components/workbench/ShipLogView.tsx`; `worker/telegramBot.ts`; `worker/mcpServer.ts`; `worker/referrals.ts` | A note naming a finding completes the week's ship mission once. `/shipped` from a Telegram user with no linked account replies with a link to sign in and writes nothing |
-| SW3-4 | "Give to Fixer" on a card (behind `SWARM_ROSTER_ENABLED`) | `components/workbench/FixBoardView.tsx`; `services/swarm/swarmClient.ts` | With the flag off the button is absent. With it on, one click starts one run whose subject is that finding |
-| SW3-5 | `leads_pipeline` migration, privacy hooks, 12-month purge in `privacy_purge`, smoke lists; owner routes `GET /leads`, `POST /leads`, `PATCH /leads/:id`, `DELETE /leads/:id`; Agency gate | `migrations/`; new `worker/leads.ts`; `worker/index.ts`; `worker/authMiddleware.ts`; `worker/privacyService.ts` | A non-Agency account gets 402 with the upgrade code. A lead untouched for 12 months is purged by the job (fake clock) |
-| SW3-6 | Public form: per-link toggle, route, limits, honeypot, consent text; privacy policy text | `worker/shareService.ts`; `worker/leads.ts`; `components/audit/` shared report view; `worker/privacyPolicy.ts` | Toggle off: the route returns 200 and writes nothing. Honeypot filled: 200 and nothing written. Sixth post from one IP in an hour: 429. A stored message containing a forged fence marker is neutralised when read back into a prompt |
+| SW3-1 | Fix Board view: columns, card, move, filter by project; registered at the six points a new view needs (SW2-11 lists them) | new `components/workbench/FixBoardView.tsx`; `services/audit/findingBoardService.ts`; `types.ts`; `App.tsx`; `components/harness/OmnibarModal.tsx`; `services/telegram/startParam.ts`; `components/telegram/TelegramBottomNav.tsx:13-25`; `components/hub/EcosystemHubView.tsx` | Static-markup test per column state. A move calls `PATCH` once and reverts on a non-2xx. A second browser on the same account shows the same board after reload |
+| SW3-2 | `ship_log` migration, privacy hooks, link move, smoke lists; `SHIP_LOG_ENABLED` in three blocks, env typing, example env files, admin health and the capabilities answer; routes `GET` and `POST /ship-notes`, `DELETE /ship-notes/:id`; protected-route entry; rate limit | `migrations/`; new `worker/shipLog.ts`; `worker/index.ts`; `worker/authMiddleware.ts`; `worker/privacyService.ts`; the V2-1b helper; `wrangler.jsonc`; `worker/env.ts`; `worker/README.md` | Flag off: 404. An empty or 2,001-character body is refused. A `shipped_on` sent by the client is ignored. Another account's note id returns 404. Deleting the account removes its notes |
+| SW3-3 | Ship Log UI and the mission link; the `/shipped` and `/note` bot commands and `/idea` with text; MCP `add_ship_note` | new `components/workbench/ShipLogView.tsx`; `worker/telegramBot.ts:631-641` and the command table; `worker/mcpServer.ts`; `worker/referrals.ts` | A `shipped` note naming a finding completes the week's ship mission once. `/shipped` from a Telegram user with no linked account replies with a link to sign in and writes nothing. `/idea` with no text opens Idea Scout exactly as today (the existing reply is pinned by a test). `/idea <text>` and `/note <text>` each write one row of that kind and make no model call. An `idea` or `note` row completes no mission |
+| SW3-4 | "Draft a fix" on a card that has a template and no draft | `components/workbench/FixBoardView.tsx`; `services/swarm/swarmClient.ts` | With `SWARM_RUNS_ENABLED` off the button is absent. With it on, one click starts one Fixer run whose subject is that finding, and a second click does not start a second |
+| SW3-5 | `leads_pipeline` migration, privacy hooks, link move, 12-month purge in `privacy_purge`, smoke lists; `LEADS_ENABLED` in three blocks, env typing, example env files, admin health and the capabilities answer; owner routes `GET /leads`, `POST /leads`, `PATCH /leads/:id`, `DELETE /leads/:id`; Agency gate | `migrations/`; new `worker/leads.ts`; `worker/index.ts`; `worker/authMiddleware.ts`; `worker/privacyService.ts`; the V2-1b helper; `worker/scheduledJobs.ts`; `wrangler.jsonc`; `worker/env.ts` | A non-Agency account gets 402 with the upgrade code. A lead untouched for 12 months is purged by the job (fake clock) |
+| SW3-6 | Public form: per-link toggle, route, limits, honeypot, consent text; privacy policy text | `worker/shareService.ts`; `worker/leads.ts`; `components/audit/` shared report view; `worker/privacyPolicy.ts` | Toggle off: the route returns 200 and writes nothing. Honeypot filled: 200 and nothing written. Sixth post from one IP in an hour: 429. The fifty-first post to one link in a UTC day writes nothing, including when two arrive at once. A stored message containing a forged fence marker is neutralised when read back into a prompt |
 | SW3-7 | Leads view: list, stage change, note | new `components/workbench/LeadsView.tsx` | Static-markup test per stage. Hidden for plans without the entitlement |
+| SW3-8 | Playbook pages. Public pages built at build time from the compiled playbooks, one page per playbook (the compiled file holds nine topic bodies; rule ids live only in the auditor, so "one page per rule" waits for the shared rule definitions of Allora CL0-5). A finding links to its playbook. First: confirm the licence of every source skill allows publishing and add the attribution it requires; two source skills ship without a licence file and are left out until that is settled. Every third-party figure on a page keeps its source and date | `scripts/build-playbooks.mjs`; `services/skills/`; `utils/marketingRoutes.ts`; `services/marketing/pageMeta.ts`; the sitemap; `worker/index.ts` (unknown paths return 404); `THIRD_PARTY_NOTICES.md` | The licence finding is recorded in the PR. Each page has its own title and description. An unknown slug returns HTTP 404. The honesty gate passes on the generated pages. The module that maps paths holds no component import, because the Worker imports it |
 
-**Order:** SW3-0; SW3-1; SW3-2 and SW3-3; SW3-4 when SW2 is on; SW3-5 to SW3-7 after decision 15.
+**Order:** SW3-0; SW3-1; SW3-2 and SW3-3; SW3-4 with SW1-16; SW3-5 to SW3-7 after decision 15, which is asked when Leads is next in line and not before; SW3-8 at any time, it depends on nothing here.
 
 **SW3 double-check:** `audit_findings` has no new column (schema diff); the public route is the only unauthenticated write added; privacy export shows notes and leads; no em dash in new copy.
 
@@ -822,7 +1442,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_dedupe ON leads(account_id, dedupe_h
 
 **Goal:** the numbers a founder already has, in Search Console and Google Analytics, become rows that agents read and cite, next to everything else Luminara knows about the business.
 
-**Needs:** P3, P13; SW1 promoted; decisions 4 and 6; the operator steps in 9.3.
+**Needs:** decision 4 and the operator steps in 9.3 for the connectors (SW4-1 to SW4-5, SW4-8), which depend on neither SW1 nor the run engine and can run beside SW1a. P3 and P13 for the context assembler (SW4-6). SW1b promoted and decision 6 for the Analyst (SW4-7). Decision 29 before production.
 
 ### 9.1 Design
 
@@ -830,12 +1450,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_dedupe ON leads(account_id, dedupe_h
 
 **OAuth flow.**
 
-1. `POST /connectors/google/start` (signed in) creates a random `state` and a PKCE verifier, stores `{ accountId, userId, projectId, verifier }` in KV under the hash of `state` for 10 minutes, sets a short-lived `HttpOnly`, `SameSite=Lax` cookie holding a second nonce, and returns Google's authorisation URL with `access_type=offline`, `prompt=consent` and the two read-only scopes.
-2. `GET /connectors/google/callback` loads and deletes the `state` record (single use), requires the cookie nonce to match it, and exchanges the code with the verifier. The cookie binds the callback to the browser that started the flow, so an attacker cannot get a victim to attach the victim's Google data to the attacker's account.
+1. `POST /connectors/google/start` (signed in, on the web) creates a random `state` and a PKCE verifier, stores `{ accountId, userId, projectId, verifier }` under the hash of `state` for 10 minutes (where is settled below), sets a short-lived cookie holding a second nonce (`__Host-` prefix, `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`), and returns Google's authorisation URL with `access_type=offline`, `prompt=consent` and the two read-only scopes.
+2. `GET /connectors/google/callback` consumes the `state` record (single use), requires the cookie nonce to match it, requires the signed-in session's account to equal the account in the record, and exchanges the code with the verifier. The cookie binds the callback to the browser that started the flow and the session check binds it to the account, so an attacker cannot get a victim to attach the victim's Google data to the attacker's account, or the reverse.
 3. The Worker lists what the grant can see (Search Console sites; Analytics account summaries) and the user picks which to attach.
 4. `DELETE /connectors/grants/:id` revokes the token at Google, then deletes the grant, its sources and their snapshots.
 
-Connecting happens on web and desktop. Inside the Mini App the Brain view shows the connection state and a link that opens the web app, because Google popups are unreliable there.
+Connecting happens on the web only, at first. The Mini App and the desktop app show the connection state and a line that says to connect on the web: a cookie set in one of them does not come back on a callback that opens in the system browser, so the binding above would not hold. A flow for them is designed, not built, in this phase: the callback page would show a one-time code, and the app that started the flow would submit it under its own signed-in session. It ships only after its own review.
+
+Four points the flow above leaves open, settled in SW4-0 before SW4-3 is written:
+
+- **Where `state` lives.** KV is eventually consistent, and the start and the callback can land in different locations seconds apart, so a KV read can miss a `state` that was just written and fail an honest connection. Either the `state` record goes in D1, or `state` is a signed value that needs no lookup and D1 holds only a single-use marker written by the callback. Either way "used once" is a conditional write, not a read followed by a delete.
+- **Which Google account consented.** Adding the `openid email` scopes lets the Worker show "Connected as a...@example.com" on the attach screen and store a salted hash of Google's subject id, so the same Google account is recognised on reconnect. The plain subject id and the id token are not stored.
+- **How a Telegram-only founder gets a web session.** The Mini App link-out lands on the web app, where a founder who has only ever signed in through Telegram has no session. SW4-0 records the answer (the existing Telegram sign-in on the web, or account linking) and the number of steps it takes; if it is more than one screen, the connect flow is reworked before it ships.
+- **The callback page** shows no token, sets no session, and offers a link back to the Mini App.
 
 **Token storage.** AES-256-GCM with a key from a new secret, `CONNECTOR_TOKEN_KEY`, one per environment. A random 12-byte IV per row; the grant id and account id as additional authenticated data, so a ciphertext copied to another row fails to decrypt. The stored value carries a key id so the key can be rotated: new writes use the new key, reads try the id named in the row. Access tokens are never stored.
 
@@ -848,21 +1475,36 @@ Connecting happens on web and desktop. Inside the Mini App the Brain view shows 
 
 Metric and dimension names are confirmed against each API's schema in SW4-0, not typed from memory. A property that returns no rows writes no rows; the Brain shows `not_measured` for it.
 
-**Volume.** About 8 daily-total rows per source per day, kept 16 months, plus a few hundred trailing-window rows that are replaced each day. The purge runs in the existing `privacy_purge` job.
+**Volume.** About 4 daily-total rows per source per day, kept 16 months, plus a few hundred trailing-window rows. A trailing window has a new `period_start` each day, so the upsert does not replace yesterday's: each sync deletes that source's older 28-day windows in the same batch (`DELETE FROM metric_snapshots WHERE source_id = ? AND period_days = 28 AND period_start < ?`). The 16-month purge runs in the existing `privacy_purge` job.
 
-**The Analyst.** A fixed plan: load this week's and last week's totals; compute the changes in code; pick the largest movers by a fixed rule; then one model call that writes the digest around numbers it is handed. The output check (section 4.3) refuses any number that is not one of those rows or a difference of two of them. The digest is saved as a report, and up to five typed facts go to `memory_facts` with `kind` and `project_id` (P13). The Analyst has ceiling `read` plus those two writes and is `sealed`, because query strings and page titles come from outside.
+**The Analyst.** A fixed plan: load two complete 7-day windows, the later one ending on the last day the source treats as final, because both sources revise recent days and a window with an unfinished day in it compares nothing; compute the changes in code; pick the largest movers by a fixed rule that requires a minimum base in the earlier window (set in SW4-0 from real data), so that 1 becoming 3 is shown as counts and never as a percentage; then one typed model call that writes the digest around the handles it is given. The model writes handles, never digits (section 4.3), and the output check refuses any number that is not one of those rows or a difference of two of them. A refused digest is retried once and then replaced by the code-computed table; the run completes either way. The digest is saved as a report, and up to five typed facts go to `memory_facts` with `kind` and `project_id` (P13). The Analyst has ceiling `read` plus those two writes and is `sealed`, because query strings and page titles come from outside.
 
 **Brain view.** The existing `BrandMemoryView` (`components/suite/BrandMemoryView.tsx:166-173`) gains three tabs: "Sources" (connect, attach, disconnect, last sync), "Numbers" (a table of the latest totals with source and fetch time on every cell) and "Ship log". `GET /brain/:projectId/digest` returns what the context assembler would give an agent, so a founder can read exactly what the agents read.
 
 **Consent and policy.** The consent screen at connect time says, in plain words, what is fetched, that it is stored as daily totals and top lists, that agents will read it, and that summaries of it are sent to the model provider that writes the digest. The privacy policy (`worker/privacyPolicy.ts`) and the Google OAuth verification submission say the same. Whether Google's user-data policy allows that last use for these scopes is a question for the verification review and for counsel (decision 6); until it is answered the Analyst's model call is off and the digest is the code-computed table alone.
 
+**If decision 6 is yes, these hold.** A per-prompt tag is not enough, because connector numbers flow on into reports, facts and chat history, and from there into prompts that carry no tag. So the rule is per account: once an account has an active connector, every model call made for that account on a hosted key uses only routes on an allow-list, and fails closed otherwise. It is enforced in two places, because hosted calls leave by two doors: the model client that runs use, and the provider relay that browser chat uses (`worker/providerRelay.ts`). A call under the founder's own key is theirs to route, and never carries the snapshot block (section 4.5). An entry on the list is a provider, a key tier, its routing parameters, and the URL and date of the terms that exclude training on the data. A provider's unpaid tier whose terms allow use of content for product improvement is not on it, and a router is on it only with its "deny data collection" setting. Search queries and page titles are reduced to a safe character class and 80 characters before they are fenced. No test fixture is ever recorded from a prompt that held connector data. Connector data is never used to train or evaluate anything shared between accounts, and operators do not read it (rule 2.19 covers backups).
+
+**Facts written by an agent are proposals.** The Analyst's facts, and facts extracted from chat, are stored with `status = 'proposed'` and are left out of every prompt until the founder approves them; a fact the founder types is `active` at once. Today the chat path writes straight to the store at a fixed confidence with no review (`worker/memoryRag.ts:291-334`). A fact can be edited, replaced (`supersedes_id`) and deleted, which no route allows today. An approved fact that came from a sealed run stays fenced in every prompt.
+
+**Measuring whether retrieval is good enough.** V decision 3 keeps vector search off, and this plan agrees for now. So that the choice can be revisited on evidence, each prompt logs how many facts existed, how many were included and how many were cut, and SW4-10 builds a labelled set of 30 questions about the owner's own project. The choice is revisited when recall on that set falls under 0.9 or facts are cut in more than 5 percent of prompts; D1 full-text search is tried before a vector index.
+
 ### 9.2 Migration `brain_connectors`
 
 ```sql
+ALTER TABLE memory_facts ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
+  CHECK (status IN ('active', 'proposed', 'superseded', 'rejected'));
+ALTER TABLE memory_facts ADD COLUMN source_ref TEXT;
+ALTER TABLE memory_facts ADD COLUMN supersedes_id TEXT;
+ALTER TABLE memory_facts ADD COLUMN origin_trust TEXT;
+CREATE INDEX IF NOT EXISTS idx_memory_facts_status
+  ON memory_facts(account_id, status, created_at);
+
 CREATE TABLE IF NOT EXISTS connector_grants (
   id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
-  provider TEXT NOT NULL CHECK (provider IN ('google')),
+  provider TEXT NOT NULL CHECK (provider IN ('google','github')),
+  external_subject_hash TEXT,
   scopes TEXT NOT NULL,
   refresh_token_enc TEXT NOT NULL,
   token_kid TEXT NOT NULL,
@@ -912,8 +1554,13 @@ CREATE INDEX IF NOT EXISTS idx_metric_snapshots_project
 
 - The snapshot write is an upsert on the full primary key that updates `value` and `fetched_at`, so a re-fetched day replaces itself.
 - The due query is `SELECT id FROM connector_sources WHERE status = 'active' AND (last_synced_at IS NULL OR last_synced_at < ?) ORDER BY last_synced_at IS NOT NULL, last_synced_at LIMIT 25`.
-- On account link, grants, sources and snapshots move to the surviving account. A `(project, source, external_id)` collision keeps the surviving account's row.
+- On account link, grants, sources and snapshots move to the surviving account. A `(project, source, external_id)` collision keeps the surviving account's row; the dropped source's snapshots are deleted with it, not left pointing at a source that no longer exists. The same delete runs whenever a source is removed.
+- `provider` allows `github` from the start, because the list inside a CHECK cannot be widened later without rebuilding the table and SW2-15 may need it. No GitHub grant is written unless decision 18 is yes.
 - The privacy export lists grants without the token column.
+- The four `ALTER`s on `memory_facts` are not idempotent: confirm the file is unapplied before running (Zoro 2.5). The one with `NOT NULL DEFAULT 'active'` and a `CHECK` is accepted because every existing row takes the default; existing facts read as `active` and keep their `source` value (`hosted` or `chat`). In code that column also takes `agent`, `connector` and `audit`; it has no `CHECK`, so no schema change is needed.
+- This migration applies before or after V's `scoped_memory`; the two add different columns. V's dedupe index is on `(account_id, project, content_hash)` and ignores `status`, so an identical fact already exists whenever a proposal's hash matches. In that case the proposal writes nothing and the row keeps the status it has: an `active` fact is already known, a `proposed` one is still waiting, and a `rejected` one stays rejected, so an agent cannot bring back what the founder refused by proposing it again.
+- `external_subject_hash` is a salted hash of the provider's subject id, filled only if SW4-0 adds the `openid` scope. `origin_trust` is null for a founder's own fact and `sealed` for one an agent or a chat proposed (section 4.3). It is the only such marker in the schema.
+- Snapshots hold search queries and page titles in `dim_value`. They are plaintext in D1, which is why rule 2.19 governs every dump of this database.
 
 ### 9.3 Operator steps
 
@@ -929,432 +1576,63 @@ CREATE INDEX IF NOT EXISTS idx_metric_snapshots_project
 | SW4-0 | Re-baseline; confirm P3 and P13; confirm metric and dimension names against both API schemas; record the scope classes; write the consent text and have the owner approve it | this document; a fixtures folder with recorded API responses | Section 9 corrected. The fixtures are the only source of field names in code |
 | SW4-1 | Migration; smoke lists; privacy export without tokens; delete with revoke; link move; flags | `migrations/`; `scripts/smoke-check.mjs`; `worker/privacyService.ts`; link helper; `wrangler.jsonc`; `worker/env.ts` | Applies clean. Deleting an account calls revoke for each grant (spy) and leaves no rows |
 | SW4-2 | Token crypto: seal, open, key id, rotation | new `worker/connectorCrypto.ts`; tests | A token sealed for one grant fails to open under another grant id. A row sealed with the previous key still opens after rotation. The plaintext never appears in a log line (log spy) |
-| SW4-3 | OAuth start and callback; state, verifier, cookie binding; property listing and attach; disconnect | new `worker/connectors.ts`; `worker/index.ts`; `worker/authMiddleware.ts`; `worker/README.md` | A callback with a valid `state` and no cookie is refused. A replayed `state` is refused. A callback for account A cannot attach to account B's project. Secrets unset: every route returns `not_configured` |
-| SW4-4 | Fetchers for both sources against recorded fixtures; snapshot upsert; error mapping | new `worker/connectorSync.ts`; fixtures; tests | Fixture in, exact rows out. A 429 backs off and does not count as a failure. `invalid_grant` marks `needs_reauth` and stops syncing that grant |
+| SW4-3 | OAuth start and callback, on the web: state, verifier, cookie binding, the session-account check; property listing and attach; disconnect | new `worker/connectors.ts`; `worker/index.ts`; `worker/authMiddleware.ts`; `worker/README.md` | A callback with a valid `state` and no cookie is refused. A callback whose session belongs to another account than the one that started is refused. A replayed `state` is refused, including when two callbacks arrive at once (the single use is a conditional write). A callback for account A cannot attach to account B's project. Secrets unset: every route returns `not_configured`. Start called from the Mini App or the desktop app is refused with the "connect on the web" code |
+| SW4-4 | Fetchers for both sources against recorded fixtures; snapshot upsert; the delete of older 28-day windows; error mapping | new `worker/connectorSync.ts`; fixtures; tests | Fixture in, exact rows out. After two syncs on consecutive days one 28-day window remains per source. A 429 backs off and does not count as a failure. `invalid_grant` marks `needs_reauth` and stops syncing that grant |
 | SW4-5 | Hourly cron and job mapping; batch of 25; pause after three failures; 16-month purge | `wrangler.jsonc:11-13`; `worker/scheduledJobs.ts:10-22`; `worker/index.ts:2059-2068`; `tests/scheduledJobs.test.ts` | The cron test names the new expression and job. The daily cron still runs exactly its three jobs. A source synced 2 hours ago is skipped |
 | SW4-6 | Context assembler blocks for snapshots and ship notes; `GET /brain/:projectId/digest` | the V3 assembler in `services/`; new `worker/brain.ts` | Golden prompt test: both blocks present, fenced, within their caps. Another account's project returns 404 |
-| SW4-7 | Analyst plan: deltas in code, one model call behind decision 6, output check, facts | new `services/swarm/analystPlan.ts`; `worker/swarmRun.ts`; evals | A digest whose text states a number not in the handed table fails the run. With decision 6 unanswered the run completes with the table and no model call |
-| SW4-8 | Brain view tabs; connect and disconnect UI; Mini App link-out | `components/suite/BrandMemoryView.tsx`; new `components/brain/`; `services/brain/brainClient.ts` | Static-markup tests for connected, needs-reauth and empty states. Every number cell renders its source and fetch time. In the Mini App the connect button is a link to the web |
+| SW4-7 | Analyst plan: the two complete windows, deltas and the minimum base in code, one typed model call behind decision 6, output check, facts as proposals | new `services/swarm/analystPlan.ts`; `worker/swarmRun.ts`; evals | A digest whose text states a number not in the handed table is retried once and then replaced by the code-computed table, labelled as code-built; the run completes. A window that includes a day the source has not finalised is not compared. A mover under the minimum base is shown as two counts. With decision 6 unanswered the run completes with the table and no model call |
+| SW4-8 | Brain view tabs; connect and disconnect UI; the "connect on the web" note in the Mini App and on desktop | `components/suite/BrandMemoryView.tsx`; new `components/brain/`; new `services/brain/brainClient.ts` | Static-markup tests for connected, needs-reauth and empty states. Every number cell renders its source and fetch time. In the Mini App and on desktop there is no connect button, only the note |
 | SW4-9 | Privacy policy and in-app consent copy | `worker/privacyPolicy.ts`; consent component | The policy names both scopes, the retention periods and the model-provider disclosure |
+| SW4-10 | Retrieval measurement: per-prompt counts of facts available, included and cut; a labelled set of 30 questions about the owner's project | `services/oracle/` (the V3 assembler); `evals/` | The counts appear on each run's events. Recall on the set is recorded with its n and compared with the thresholds in 9.1 |
+| SW4-11 | Fact proposals and review: agent and chat facts land `proposed`; approve, reject, edit, replace, delete; a review queue in the Brain view; an MCP write tool `propose_fact` that can only propose; at most 20 proposals per account per day; a proposal whose hash matches an existing fact writes nothing | `worker/memoryService.ts:33-99`; `worker/memoryRag.ts:291-334`; `worker/mcpServer.ts`; `worker/mcpGovernance.ts`; `components/brain/` | A proposed fact is in no prompt until approved (golden prompt test). No agent path can write an `active` fact. A fact the founder rejected is still `rejected` after an agent proposes the same text again. With `BRAIN_ENABLED` off, today's behaviour exactly |
+| SW4-12 | The per-account provider allow-list of 9.1, enforced in the model client and in the provider relay | `worker/modelClient.ts` (from SW1-7); `worker/providerRelay.ts`; new `docs/ops/CONNECTOR-DATA.md` | For an account with an active connector, a hosted-key call routed to a provider that is not on the list is refused (test), on every path: runs, browser chat through the relay, and the Telegram bot. A call under the founder's own key is not refused and its prompt holds no snapshot block (golden prompt test) |
+| SW4-13 | Live eval gate for the digest (rule 2.22), shaped like SW1-13: real snapshot sets from the owner's properties, twin sets with an instruction planted in a query string or a page title, 3 runs each, every run labelled | `evals/live/`; `scripts/soak-swarm.mjs` | Gate, all required, per model: every number a digest shows is a handle that resolves to a snapshot row; for every twin pair the facts proposed and the tool calls made are identical; the code-computed table stood in for the model's digest in at most 10 percent of runs; no labelled sentence is marked unsupported. A broken prompt and a disabled check must each fail it |
 
-**Order:** SW4-0; SW4-1 with SW4-2; SW4-3; SW4-4 and SW4-5; SW4-6; SW4-7; SW4-8 and SW4-9.
+**Order:** SW4-0; SW4-1 with SW4-2; SW4-3; SW4-4 and SW4-5; SW4-8 and SW4-9; then, when their needs are met, SW4-6, SW4-10 and SW4-11; SW4-12 before SW4-7; SW4-7, then SW4-13 before the Analyst's model call is promoted.
 
 **SW4 double-check:** grep for the refresh token column in every `SELECT` outside the crypto module; confirm no access token is written anywhere; confirm the daily cron's job list is unchanged; confirm a disconnected grant leaves no snapshot; confirm the Analyst prompt contains fenced content only.
 
-**Scripted soak:** 7 days on staging with the owner's own properties attached, and the consent screen published (not in Testing).
+**Scripted soak:** 8 days on staging with the owner's own properties attached, and the consent screen published (not in Testing). Eight, not seven, because a refresh token from an app left in Testing dies on day 7 and the soak has to outlive that (rule 2.18).
 
-**Promote when:** seven consecutive daily syncs succeeded for both sources with no re-consent; the numbers in the Brain view match the same days in Google's own interfaces (owner check, recorded); disconnect removes the grant at Google (owner check in their Google account); verification is approved or the owner accepts the unverified-app user cap in writing.
+**Promote when:** eight consecutive daily syncs succeeded for both sources with no re-consent; the numbers in the Brain view match the same days in Google's own interfaces (owner check, recorded); disconnect removes the grant at Google (owner check in their Google account); verification is approved, or decision 29 records that the owner accepts the unverified-app user cap. The Analyst's model call is promoted separately, after SW4-13 and decision 6.
 
 **Rollback:** `CONNECTORS_ENABLED` off stops new connections and the sync job; existing rows stay readable until the owner chooses to purge them. `BRAIN_ENABLED` off hides the tabs.
 
 ---
 
-## 10. SW5 - Pay-per-audit for outside agents (x402)
-
-**Goal:** an AI agent with no Luminara account can pay a small fixed price for one audit over plain HTTP and get a signed, evidence-backed result. This is the concrete answer to "agentic commerce", and it needs only SW1.
-
-**Needs:** SW1 promoted; decision 5 (and decision 11 already settled); the operator steps in 10.3.
-
-### 10.1 Design
-
-**What is sold.** One "scout audit" of one public URL: the SW1 Auditor's fixed steps with a smaller page budget (at most 6 fetches) and no model call, so it finishes inside one request. The response is JSON: findings with rule ids and evidence refs, the evidence list with hashes and fetch times, and the id of an `audit_run` receipt the caller can verify at `/verify/r/<id>`.
-
-**Wire format: x402 version 2, `exact` scheme, USDC.**
-
-1. `POST /x402/audit` with `{ "url": "..." }` and no payment returns 402 with a `PAYMENT-REQUIRED` header: one accepted option naming the scheme, the network as a CAIP-2 id, the asset, the amount in base units, `payTo`, and a timeout. The body repeats it as JSON for humans.
-2. The caller retries with `PAYMENT-SIGNATURE`.
-3. The Worker asks the facilitator to **verify** the payload. Invalid: 402 again with the reason.
-4. The Worker records the payment as `verified` (unique on a hash of the payload, so a replay inserts nothing), then runs the audit under a 60 s deadline.
-5. Only if the audit produced a result does the Worker ask the facilitator to **settle**. Settled: 200 with the result and a `PAYMENT-RESPONSE` header. Settle failed: 402 and the result is withheld.
-6. If the audit failed or timed out, nothing is settled and the caller is not charged.
-
-So the caller pays only for a delivered result, and Luminara releases a result only for a settled payment. The Worker never holds a key: the caller signs an authorisation for exactly this amount to exactly this address, and the facilitator submits it.
-
-**Why not reuse `worker/q402`.** That code is version-1 shaped, uses custom `ton/*` and `xdc/*` schemes where the client pays on-chain first and presents a transaction hash (`worker/q402/types.ts:8-57`), and its settle path has the defects in hazard 5. It stays off. The new rail lives in `worker/x402/` with a README that says how the two differ. If the owner later wants x402 on TON, the standard now has a TON `exact` scheme, but no production facilitator runs it, and self-hosting one needs a funded wallet, which rule J1 forbids (SW10).
-
-**Libraries.** `@x402/core` and `@x402/evm` for the payload types, header codec and facilitator client, if SW5-0 shows they bundle under workerd. If not, the two facilitator calls and the codec are small enough to write against the specification, with its test vectors as fixtures.
-
-**MCP.** A second, unauthenticated MCP endpoint, `/x402/mcp`, exposes exactly one tool, `scout_audit`, using x402's MCP transport: an unpaid call returns the requirements in `structuredContent` with `isError: true`, and the client retries with the payment in `_meta`. The existing `/mcp` endpoint and its plan gate do not change.
-
-**Abuse.**
-
-- The route fetches caller-chosen URLs, so every fetch goes through `fetchPublicUrl` and the existing host checks.
-- Verification happens before any fetch, so an unpaid caller costs one facilitator call at most; the 402 itself costs nothing.
-- Limits: the high-cost rate limiter per IP; 30 paid audits per payer address per hour; 4 running at once across the service; a daily count cap. Each has a variable and each refusal has a code.
-- A result for the same URL within 10 minutes is served from cache with its original fetch times shown.
-
-**Where it appears.** A docs page on the web. `GET /x402/supported` for discovery. Nothing in the Mini App (section 0.3, item 3): the docs page is not registered in the Telegram navigation and the route is not linked from any Mini App view.
-
-**Money and records.** Revenue arrives at an address the owner controls (decision 5). `x402_payments` is the record. A payer address can be personal data, so rows older than 24 months are purged; the table has no account id and is not part of any account export.
-
-### 10.2 Migration `x402_payments`
-
-```sql
-CREATE TABLE IF NOT EXISTS x402_payments (
-  id TEXT PRIMARY KEY,
-  network TEXT NOT NULL,
-  asset TEXT NOT NULL,
-  amount TEXT NOT NULL,
-  pay_to TEXT NOT NULL,
-  payer TEXT NOT NULL,
-  payment_hash TEXT NOT NULL UNIQUE,
-  resource TEXT NOT NULL,
-  run_id TEXT,
-  status TEXT NOT NULL CHECK (status IN ('verified','settled','settle_failed','work_failed','expired')),
-  settle_tx TEXT,
-  facilitator TEXT NOT NULL,
-  error_code TEXT,
-  created_at INTEGER NOT NULL,
-  settled_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_x402_payments_payer ON x402_payments(payer, created_at);
-CREATE INDEX IF NOT EXISTS idx_x402_payments_status ON x402_payments(status, created_at);
-```
-
-- `amount` is a decimal string of base units. No floating point touches money (the q402 code's float conversion is one of hazard 5's defects).
-- Insert with `ON CONFLICT(payment_hash) DO NOTHING`; proceed only when one row was inserted.
-- Settle with `UPDATE x402_payments SET status = 'settled', settle_tx = ?, settled_at = ? WHERE id = ? AND status = 'verified'`; release the result only when one row changed.
-- Paid runs are written to `swarm_runs` under the fixed account id `sys:x402`, `kind = 'paid_audit'`, `origin = 'x402'`, so the sweeper and alerts cover them.
-
-### 10.3 Operator steps
-
-1. **Owner:** provide the receiving address for Base (decision 5). It is a public address, set as a `var`. The agent never sees, generates or holds its key.
-2. **Owner:** create the facilitator account for production and set its key as a secret. Staging uses the public test facilitator, which needs none.
-3. Set per environment: `X402_NETWORK` (the test network on staging), `X402_PAY_TO_ADDRESS`, `X402_PRICE_BASE_UNITS`, `X402_FACILITATOR_URL`. The asset address is read from the facilitator's `/supported` response at start-up and compared with a pinned value recorded in SW5-0; a mismatch keeps the rail off.
-4. **Owner drill, staging:** pay for one audit from the owner's own test wallet with a standard x402 client. The agent sends no transaction (rule 2.11).
-
-### 10.4 Tasks
-
-| ID | Task | Files | Acceptance |
-|---|---|---|---|
-| SW5-0 | Re-baseline and spike. Re-read the version 2 specification; record the asset addresses and decimals for both networks from the facilitator; bundle the two packages under workerd; measure the scout audit's duration on staging with n | this document; scratch branch | Section 10 corrected. The library decision is recorded. If the measured p95 does not fit the 60 s deadline, the page budget is lowered before any code is written |
-| SW5-1 | Migration; smoke lists; 24-month purge; flag and vars in three blocks | `migrations/`; `scripts/smoke-check.mjs`; `worker/scheduledJobs.ts`; `wrangler.jsonc`; `worker/env.ts` | Applies clean. A purge test removes only rows past the limit |
-| SW5-2 | Requirements builder and header codec; `GET /x402/supported` | new `worker/x402/requirements.ts`; `worker/x402/README.md`; tests against the specification's vectors | The 402 header round-trips through the reference decoder. Amount is a string of base units. Network is a CAIP-2 id |
-| SW5-3 | Facilitator client: verify, settle, supported; timeouts; a mock for tests | new `worker/x402/facilitator.ts`; `tests/helpers/` | Verify false: no row. Verify times out: 503, no row. The mock is the only facilitator any automated test talks to |
-| SW5-4 | Route: verify, record, run, settle, release; the scout audit as a synchronous use of the SW1 steps | new `worker/x402/auditRoute.ts`; `worker/swarmRun.ts`; `worker/index.ts` | Replay of one payload: one audit, one settlement. Audit fails: no settle call (spy), status `work_failed`. Settle fails: the body has no findings, status `settle_failed`. Flag off: 404 |
-| SW5-5 | Limits and cache; codes for each refusal | `worker/x402/auditRoute.ts`; `worker/securityHardening.ts` | A private-network URL is refused before verification. The 31st paid call from one payer in an hour is refused before verification. A fifth concurrent audit gets 503 with `Retry-After` |
-| SW5-6 | MCP endpoint with the one paid tool | new `worker/x402/mcp.ts`; `worker/index.ts` | Unpaid call returns `isError: true` with requirements. Paid call returns the result and settlement metadata. `/mcp` behaviour is unchanged (existing tests) |
-| SW5-7 | Docs page (web only); `llms.txt` entry; not reachable from Mini App navigation | new marketing page; `utils/marketingRoutes.ts` | A test asserts the page is absent from `TOOL_VIEWS` and from Telegram start tokens |
-| SW5-8 | Alerts: settle-failed rate, work-failed rate, daily count at 80 percent | `worker/scheduledJobs.ts` | Each alert fires once per window on a fixture |
-
-**Order:** SW5-0; SW5-1; SW5-2 and SW5-3; SW5-4; SW5-5; SW5-6; SW5-7; SW5-8.
-
-**SW5 double-check:** grep `worker/x402/` for any private key, signer or `sendTransaction`; confirm no import from `worker/q402/`; confirm no number in the route is a float; confirm the Mini App bundle path cannot reach the docs page.
-
-**Staging soak:** 7 days on the test network. Automated checks run daily against the mock. The owner pays for at least 10 audits across the week from their own test wallet.
-
-**Mainnet gate (all required):** decision 5 answered yes; the owner's receiving address recorded and confirmed by a test payment on the test network to the matching test address; the production facilitator key set; counsel has answered the question in decision 5 about taking stablecoin revenue; the price is at or above the measured cost per audit plus the facilitator fee; the 7-day soak met its criteria. Production then gets code with the flag off, and the flag is its own release.
-
-**Rollback:** flag off returns 404 on every x402 route at once. Nothing is owed to anyone: an unsettled authorisation simply expires.
-
----
-
-## 11. SW6 - Jobs: fixed-price work, kept only on a passed check
-
-**Goal:** the brief's "replacement for services" in the shape TN6 already approved: a founder picks a job, sees its price and its acceptance check before paying, and keeps their money unless the check passes. Luminara is the seller of every job. No third party is paid.
-
-**Needs:** SW2 promoted; P14, P15; decisions 1 and 16. Starts with a re-baseline (SW6-0).
-
-### 11.1 Design
-
-**Catalogue.** Typed data in code (`services/swarm/jobCatalogue.ts`): `sku`, version, title, the agent that does it, the deliverable, the acceptance check id, the price in Stars, and the measured cost. The first three SKUs come from TN6's table:
-
-| SKU | Agent | Deliverable | Acceptance check (deterministic) |
-|---|---|---|---|
-| `schema_fix_pack` | Fixer | JSON-LD blocks for the site's entity | Each block parses and validates; `sameAs` lists only links with a receipt |
-| `ai_crawler_policy` | Fixer | `robots.txt` rules and an `llms.txt` file | Both parse; each named crawler is allowed or blocked as the order asked |
-| `competitor_brief` | Prospector | A report through `save_report` | Every metric cites evidence or reads `not_measured` |
-
-Prices are set in SW6-0 from the cost per run measured in SW2, never before. The two one-off Stars SKUs that exist today (`worker/telegramBot.ts:83-108`) are not changed.
-
-**Order flow.**
-
-```
-quoted -> pending_payment -> paid -> running -> checking -> delivered
-                                         \-> failed -> refunded
-quoted | pending_payment -> expired | cancelled
-```
-
-1. `POST /jobs/quote` creates a row with the price copied from the catalogue and a 15-minute expiry. The response shows the price, the check, and the worst-case time.
-2. `POST /jobs/:id/checkout` returns a Stars invoice whose payload is `job:<jobId>`.
-3. **Pre-checkout** (the 10-second answer Telegram requires): the payload names a job that is `pending_payment` and unexpired, the currency is XTR, the amount equals the job's `price_stars`, and the payer's Telegram id equals the job's `payer_telegram_id`. Today's handler takes the price from a plan table and the user id from the payload (`worker/telegramBot.ts:293-308`, `:326-329`); the job branch binds both to the row instead.
-4. **Payment**: claim the charge in `stars_credited_charges` first (the existing ledger), then move the job to `paid` with a conditional update that stores the charge id, then start the run. If the conditional update changes no row, the charge is refunded at once.
-5. The run does the work under a session whose budget is the SKU's measured cost plus a margin. Then the acceptance check runs.
-6. **Pass:** `delivered`, with an `agent_job_delivered` receipt. **Fail, or no result by `due_at`:** `failed`, then an automatic `refundStarPayment` of the whole charge to the payer, tracked by `refund_status` so it runs once.
-
-**"Always results", stated honestly.** The promise is not that every job succeeds. It is that a job either passes the check the buyer saw before paying or is refunded in full without the buyer asking. A buyer who is unhappy with a job that passed can ask for one redo within 7 days; after that it goes to a person at Luminara Digital.
-
-**Human fulfilment.** A SKU may be marked `fulfiller = 'human'` (TN6). It follows the same states, the same check and the same refund rule; the work is done by Luminara Digital staff from an admin queue with a `due_at`.
-
-**Rails.** Stars only in this phase. Inside the Mini App that is required (section 0.3, item 3). On the web the checkout hands off to the Mini App, as plan checkout already does. TON is not offered for jobs: there is no way to refund TON without holding a key. `plan_credit` is reserved in the schema for jobs included in a plan (decision 16) and has no code in this phase.
-
-**Operational rule for refunds.** A refund is paid from the bot's Star balance. The owner does not withdraw below the total of charges on jobs that are not yet `delivered`. SW6-7 reports that total.
-
-### 11.2 Migration `agent_jobs`
-
-```sql
-CREATE TABLE IF NOT EXISTS agent_jobs (
-  id TEXT PRIMARY KEY,
-  account_id TEXT NOT NULL,
-  project_id TEXT NOT NULL,
-  sku TEXT NOT NULL,
-  sku_version INTEGER NOT NULL,
-  fulfiller TEXT NOT NULL DEFAULT 'agent' CHECK (fulfiller IN ('agent','human')),
-  status TEXT NOT NULL CHECK (status IN ('quoted','pending_payment','paid','running','checking','delivered','failed','refunded','cancelled','expired')),
-  rail TEXT CHECK (rail IS NULL OR rail IN ('stars','plan_credit')),
-  price_stars INTEGER,
-  price_cents INTEGER NOT NULL CHECK (price_cents >= 0),
-  payer_telegram_id TEXT,
-  stars_charge_id TEXT UNIQUE,
-  refund_status TEXT CHECK (refund_status IS NULL OR refund_status IN ('pending','done','failed')),
-  run_id TEXT,
-  session_id TEXT,
-  input_json TEXT NOT NULL,
-  check_result_json TEXT,
-  deliverable_ref TEXT,
-  receipt_id TEXT,
-  quote_expires_at INTEGER NOT NULL,
-  due_at INTEGER,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_agent_jobs_account ON agent_jobs(account_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_jobs_open ON agent_jobs(status, updated_at)
-  WHERE status IN ('paid','running','checking','failed');
-```
-
-- Payment claim: `UPDATE agent_jobs SET status = 'paid', stars_charge_id = ?, updated_at = ? WHERE id = ? AND status = 'pending_payment' AND quote_expires_at > ?`. One row changed, or refund.
-- `stars_charge_id` is unique, so one charge can never pay two jobs.
-- Refund claim: `UPDATE agent_jobs SET refund_status = 'pending', updated_at = ? WHERE id = ? AND status = 'failed' AND rail = 'stars' AND refund_status IS NULL`. Only the caller that changed one row calls Telegram.
-- The table name and the flag `AGENT_JOBS_ENABLED` are the ones the TN plan reserved.
-
-### 11.3 Tasks
-
-| ID | Task | Files | Acceptance |
-|---|---|---|---|
-| SW6-0 | Re-baseline. Re-check sections 1 and 11 against `main`. Set each SKU's price from measured cost; record decision 16 | this document | Each price is at or above measured cost with n stated. No SKU ships without a measured cost |
-| SW6-1 | Migration; smoke lists; privacy export and delete; link move; flag | `migrations/`; `scripts/smoke-check.mjs`; `worker/privacyService.ts`; link helper; `wrangler.jsonc`; `worker/env.ts` | Applies clean. A deleted account's jobs are gone; ledger rows in `stars_credited_charges` stay (the existing note about financial records applies) |
-| SW6-2 | Catalogue and the three acceptance checks as pure functions | new `services/swarm/jobCatalogue.ts`; new `services/swarm/jobChecks.ts`; tests | Each check has a passing and a failing fixture. A check never calls a model |
-| SW6-3 | Quote and checkout routes; state machine with conditional updates; expiry | new `worker/agentJobs.ts`; `worker/index.ts`; `worker/authMiddleware.ts` | A quote for another account's project is refused. An expired quote cannot be checked out. Two checkouts of one job return the same invoice |
-| SW6-4 | Stars branch for `job:` payloads in pre-checkout and payment, binding amount and payer to the row | `worker/telegramBot.ts:290-333`; `worker/paymentLedger.ts:264`; tests | Wrong amount: refused at pre-checkout. Payer id different from the job's: refused. Same charge delivered twice by Telegram: one job paid. Payment for an expired job: refunded and the job stays `expired`. Plan purchases behave exactly as before (existing tests) |
-| SW6-5 | Job runs: session sized to the SKU, deliverable, check, receipt | `worker/swarmService.ts`; `worker/swarmRun.ts`; `worker/trustReceipts.ts:101` | A passing fixture ends `delivered` with a receipt. A failing fixture ends `failed` and never `delivered` |
-| SW6-6 | Automatic refund with single-use claim; retry of `refund_status = 'failed'` on the ops cron; alert | `worker/agentJobs.ts`; `worker/telegramBot.ts:956-970`; `worker/scheduledJobs.ts` | Two concurrent refund attempts call Telegram once (spy). A Telegram error leaves `refund_status = 'failed'`, raises an alert, and the next tick retries |
-| SW6-7 | Admin queue for human jobs and the float report | `worker/index.ts` admin routes; `worker/adminAuth.ts` | Without the admin secret: 401. The report's total equals the sum of charges on undelivered jobs in a fixture |
-| SW6-8 | Jobs view: catalogue, quote sheet showing price and check, order status, redo request | new `components/jobs/`; `services/jobs/jobsClient.ts`; `services/telegram/tma.ts` | Static-markup tests per state. The quote sheet shows the check text before the pay button. On the web the pay button is the hand-off link |
-| SW6-9 | MCP `list_jobs`, `quote_job` (no checkout through MCP in this phase) | `worker/mcpServer.ts` | A quote through MCP appears in the app for the same account |
-
-**Order:** SW6-0; SW6-1; SW6-2; SW6-3; SW6-4 (reviewed as a money change); SW6-5; SW6-6; SW6-7; SW6-8; SW6-9.
-
-**SW6 double-check:** every path into `delivered` passes through a check result; every path into `failed` on the Stars rail reaches a refund claim; no state change is an unconditional update (grep); the plan-purchase tests pass unchanged; job copy never says "guaranteed result".
-
-**Staging soak:** the owner buys each SKU once with a real Stars payment on the staging bot and forces one failure. Staging has no users, so nothing here is a waiting period.
-
-**Promote when:** each SKU has been bought, delivered and verified by the owner on staging; one forced failure refunded itself with no admin action and the Stars arrived back (owner check); a double-delivered payment update paid one job. Production: code with the flag off, then the flag, allow-list first.
-
-**Rollback:** flag off refuses new quotes and checkouts. Jobs already paid finish or refund; the refund path does not depend on the flag.
-
----
-
-## 12. SW7 - Live rooms, org invites, agency war room
-
-**Goal:** the brief's "multiplayer": a founder, a teammate or an agency can watch the same run as it happens, steer it between steps, approve for each other, and hand it over.
-
-**Needs:** SW2 promoted; decision 10. Starts with a re-baseline and a socket spike (SW7-0).
-
-### 12.1 Design
-
-**The room is the run.** Viewers connect by WebSocket to the run's own Durable Object, which already holds its events. The object accepts sockets with the hibernation API, so an idle room costs nothing while it waits. On connect a viewer gets the events since a sequence number, then each new event as it is appended.
-
-**Getting in.** A browser cannot set an auth header on a WebSocket. So: `POST /swarm/runs/:id/live-ticket` (signed in, role checked) returns a single-use ticket valid for 60 seconds; the socket presents it as its subprotocol value, not in the URL. The object stores the viewer's user id and role on the socket.
-
-**Who may do what.** Roles are the ones the schema already has (`migrations/0003_enterprise_orgs_rbac.sql:16`).
-
-| Role | Watch | Send an instruction | Pause, resume, cancel | Approve a step | Hand over |
-|---|---|---|---|---|---|
-| owner, admin | yes | yes | yes | yes | yes |
-| analyst | yes | yes | no | no | no |
-| auditor, viewer | yes | no | no | no | no |
-| guest with a watch link | yes, redacted | no | no | no | no |
-
-**An instruction** is text a permitted person sends to the run. It is recorded as an event with their user id and applied at the next step boundary as input to the agent. It can narrow or redirect the work. It cannot raise a cap, change a ceiling, add a tool or approve anything: those stay on their own routes with their own checks.
-
-**Hand over** changes who is asked for approvals on this run: the run's approver becomes another owner or admin of the same org. It is an event, and both people see it.
-
-**Org invites.** Membership rows exist with no way to create one for a second person (`worker/enterpriseStore.ts:76-91` creates only the owner). SW7 adds the smallest invite: an owner or admin creates a single-use link for a role other than owner, valid 7 days; accepting it while signed in inserts the membership. The number of active members is capped by `teamSeats` (1, 1, 3, 10), which becomes a Worker-side entitlement for the first time; it means people, and is never used for agents (Ops F4).
-
-**Scope of membership, deliberately narrow.** Every existing route resolves the caller to their own account. This phase does not change that. Membership is honoured in exactly three places: live rooms, the runs list with `scope=org`, and the approval routes for a run's steps. One helper, `resolveRunAccess(user, run)`, makes the decision and is the only caller of the membership lookup. Everything else in the product stays single-account until a later plan widens it on purpose.
-
-**Guest watch links.** An owner can mint a view-only link for one run, valid at most 24 hours. A guest sees step summaries and state changes and never costs, arguments, evidence text or other viewers.
-
-**War room.** For an agency: one grid of the runs open across its client projects (`projects.client_id` already groups them), each tile a live room in miniature, with the approvals waiting across all of them at the top. A grid, not a canvas.
-
-**Limits.** At most 20 sockets per run and 5 instructions per minute per viewer; messages over 2 KB are dropped. The room closes 10 minutes after the run ends.
-
-### 12.2 Migration `live_rooms`
-
-```sql
-CREATE TABLE IF NOT EXISTS org_invites (
-  id TEXT PRIMARY KEY,
-  org_id TEXT NOT NULL,
-  account_id TEXT NOT NULL,
-  token_hash TEXT NOT NULL UNIQUE,
-  role TEXT NOT NULL CHECK (role IN ('admin','analyst','auditor','viewer')),
-  invited_label TEXT,
-  created_by TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  accepted_by TEXT,
-  accepted_at INTEGER,
-  revoked_at INTEGER,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_org_invites_org ON org_invites(org_id, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS run_watch_tokens (
-  token_hash TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL,
-  account_id TEXT NOT NULL,
-  created_by TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_run_watch_tokens_run ON run_watch_tokens(run_id);
-```
-
-- The role CHECK has no `owner`: an invite can never create a second owner.
-- Accept: `UPDATE org_invites SET accepted_by = ?, accepted_at = ? WHERE token_hash = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?`, then insert the membership with `ON CONFLICT(org_id, user_id) DO NOTHING`, in one batch.
-- Only token hashes are stored, as share links already do.
-- `organization_memberships` is not altered. Its `user_id` is a login id (`worker/enterpriseStore.ts:90`), so access checks compare login ids, not account ids.
-
-### 12.3 Tasks
-
-| ID | Task | Files | Acceptance |
-|---|---|---|---|
-| SW7-0 | Re-baseline and spike: hibernating sockets on the run object under `wrangler dev` and on staging; whether a deploy drops sockets and how clients recover; record decision 10 | this document; scratch branch | Section 12 corrected. Reconnect behaviour after a deploy is written down as measured |
-| SW7-1 | Migration; smoke lists; privacy and link move; flags | `migrations/`; `scripts/smoke-check.mjs`; `worker/privacyService.ts`; `wrangler.jsonc`; `worker/env.ts` | Applies clean. Deleting an account revokes its invites and watch tokens |
-| SW7-2 | `resolveRunAccess` and the `teamSeats` entitlement on the Worker | new `worker/runAccess.ts`; `worker/enterpriseStore.ts:135-188`; `worker/telegramBot.ts:128-149` | A member of org A cannot read org B's run (404). A suspended member is refused. The helper is the only importer of the membership lookup (test over the import graph) |
-| SW7-3 | Invite create, accept, revoke, list; seat cap | new `worker/orgInvites.ts`; `worker/index.ts`; `worker/authMiddleware.ts` | A second accept of one link is refused. An invite beyond the plan's seats is refused with the limit. An invite for `owner` is refused by code and by CHECK |
-| SW7-4 | Ticket route; socket accept with hibernation; replay from a sequence number; broadcast on append | `worker/swarmRun.ts`; `worker/swarmService.ts` | A ticket works once and for 60 seconds. A viewer joining at event 30 receives 31 onward. The 21st socket is refused |
-| SW7-5 | Commands by role: instruct, pause, resume, cancel, hand over; rate limits | `worker/swarmRun.ts`; tests | A viewer's pause is refused. An instruction containing "raise the cap" changes no cap (the cap is not reachable from the instruction path; asserted by test). A hand-over to a non-member is refused |
-| SW7-6 | Approvals by another owner or admin of the org for a run's steps | `worker/mcpGovernance.ts`; `worker/runAccess.ts`; `tests/mcpActionRequestsHttp.test.ts` | An admin of the org approves a member's run step. An analyst cannot. A bearer credential still cannot. Approvals outside runs are unchanged |
-| SW7-7 | Guest watch links with a redacted stream | `worker/swarmRun.ts`; new `worker/watchTokens.ts` | A guest stream contains no cost, argument or evidence text (snapshot). A revoked or expired link is refused |
-| SW7-8 | Live room UI in the roster view; presence; reconnect with back-off; fall back to polling | `components/swarm/`; `services/swarm/liveClient.ts` | With sockets blocked the view still updates by polling. Reconnect resumes from the last sequence number with no duplicate event |
-| SW7-9 | War room grid; `GET /swarm/runs?scope=org` | new `components/swarm/WarRoomView.tsx`; `worker/swarmService.ts` | The grid shows only runs the caller's role may see. Hidden for plans with no agency clients |
-| SW7-10 | Members screen: invite, role, remove | `components/settings/` | Static-markup tests; the seat count shown equals the entitlement |
-
-**Order:** SW7-0; SW7-1; SW7-2 and SW7-3 (reviewed together as an access-control change); SW7-4; SW7-5; SW7-6; SW7-7; SW7-8 to SW7-10.
-
-**SW7 double-check:** grep for every query that filters by `account_id` taken from anything other than the caller or `resolveRunAccess`; confirm no route outside the three named places reads membership; run the two-org test matrix for every `/swarm` route; confirm the guest snapshot.
-
-**Promote when:** the two-org matrix is green; the owner and a second real person have watched one run together on staging, one in the Mini App and one on the web, and the second has approved a step; a deploy during an open room recovered as SW7-0 recorded. Two flags, two production releases: invites first.
-
-**Rollback:** `LIVE_ROOMS_ENABLED` off closes sockets and the view falls back to polling. `ORG_INVITES_ENABLED` off refuses new invites; existing members keep access until removed.
-
----
-
-## 13. SW8 - Watches and desktop surfaces
-
-**Goal:** agents that come back on a schedule without being asked, and a desktop app that tells the founder when one needs them.
-
-**Needs:** SW2 promoted; Ops Phase 2 exited (Sealed Lane and seats in `enforce`), the same condition the Ops plan set when it parked Watches; decision 12. Starts with a re-baseline (SW8-0).
-
-### 13.1 Design: Watches
-
-A Watch is a standing instruction to start one kind of run for one project on a cadence. The name is the Ops plan's, so there is one concept, not two.
-
-- Cadence is limited by the plan's existing `scheduledReaudit` entitlement (none, monthly, weekly, daily).
-- Each run a Watch starts has its own session, capped by the Watch's `run_cap_cents`, inside the agent's monthly cap. A Watch can never spend more per month than its agent may.
-- The hourly cron added in SW4 gains a job, `watch_tick`: take up to 25 due Watches, and for each claim it by advancing `next_run_at` with a compare-and-set, then start the run. A Watch that was not claimed is not run twice.
-- Three failed runs in a row, or a refused start for money, sets `auto_paused` and tells the owner in the app.
-- A Watch sends no Telegram message unless the owner turned on Beacon's Telegram opt-in for that kind of event.
-
-### 13.2 Design: desktop
-
-The server does the work. The desktop shell stays a thin window on the hosted app (`desktop-windows-electron.md:24`) and gains what a browser tab cannot do:
-
-| Addition | How | Note |
-|---|---|---|
-| Sender checks on every IPC handler | Each handler verifies the calling frame's origin against the allow-list before acting | A fix for today's handlers too, which ignore the sender (`electron/main.cjs:309-330`) |
-| Native notification when a step needs approval or a run delivers | New `desktop:notify` call; clicking it shows the window on the run | The page decides when; the shell rate-limits to 6 per hour |
-| Tray menu shows counts | New `desktop:set-badge` call with two integers | The tray exists on Windows today (`electron/main.cjs:267-293`) |
-| Start with Windows, minimised to tray | A preference beside the auto-update toggle | Off by default |
-| Save a deliverable to a folder | New `desktop:save-file` call that opens the system save dialog in the main process and writes the one file the user confirmed | No general file access. The page never receives a path it did not get from the dialog |
-
-A new shell needs a new installer, and old shells keep receiving new web deploys, so the page feature-detects each call, as it does for update preferences today (`components/desktop/DesktopUpdatesPanel.tsx:16`).
-
-### 13.3 Migration `swarm_watches`
-
-```sql
-CREATE TABLE IF NOT EXISTS swarm_watches (
-  id TEXT PRIMARY KEY,
-  account_id TEXT NOT NULL,
-  project_id TEXT NOT NULL,
-  agent_id TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  cadence TEXT NOT NULL CHECK (cadence IN ('daily','weekly','monthly')),
-  run_cap_cents INTEGER NOT NULL CHECK (run_cap_cents >= 0),
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','auto_paused')),
-  next_run_at INTEGER NOT NULL,
-  last_run_id TEXT,
-  consecutive_failures INTEGER NOT NULL DEFAULT 0,
-  created_by TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  UNIQUE (account_id, project_id, agent_id, kind)
-);
-CREATE INDEX IF NOT EXISTS idx_swarm_watches_due ON swarm_watches(status, next_run_at);
-```
-
-- Due: `SELECT id, next_run_at FROM swarm_watches WHERE status = 'active' AND next_run_at <= ? ORDER BY next_run_at LIMIT 25`.
-- Claim: `UPDATE swarm_watches SET next_run_at = ?, last_run_id = ?, updated_at = ? WHERE id = ? AND status = 'active' AND next_run_at = ?`. One row changed, or skip.
-
-### 13.4 Tasks
-
-| ID | Task | Files | Acceptance |
-|---|---|---|---|
-| SW8-0 | Re-baseline. Confirm the Ops Phase 2 exit criteria were met and recorded; record decision 12 | this document | If Sealed Lane is not in `enforce` in production, the Watches half of this phase does not start |
-| SW8-1 | Migration; smoke lists; privacy and link move; flag | `migrations/`; `scripts/smoke-check.mjs`; `worker/privacyService.ts`; `wrangler.jsonc`; `worker/env.ts` | Applies clean |
-| SW8-2 | Watch service and routes; cadence checked against the entitlement; `watch_tick` job with claim; auto-pause | new `worker/swarmWatches.ts`; `worker/scheduledJobs.ts`; `worker/index.ts`; `tests/scheduledJobs.test.ts` | Two overlapping ticks start one run per due Watch. A free plan cannot create a Watch. Three failures auto-pause it and a fourth tick starts nothing |
-| SW8-3 | Watches UI on the roster view | `components/swarm/` | Static-markup tests; the next run time and the month's spend are shown |
-| SW8-4 | IPC sender checks for every existing handler | `electron/main.cjs:296-330`; `electron/security.cjs` | A call from a frame outside the allow-list is rejected (unit test on the check) |
-| SW8-5 | `desktop:notify`, `desktop:set-badge`, start-with-Windows preference | `electron/main.cjs`; `electron/preload.cjs:8-21`; `electron/desktopPrefs.cjs`; `services/desktop/desktopShell.ts` | The 7th notification in an hour is dropped. An old shell without the calls shows no error (feature detection test) |
-| SW8-6 | `desktop:save-file` through the main-process dialog | `electron/main.cjs`; `electron/preload.cjs` | The handler writes only to the path the dialog returned, only the bytes passed, and at most 5 MB. A cancelled dialog writes nothing |
-| SW8-7 | Desktop release: a `desktop-v*` tag built by the existing workflow; owner installs and checks each addition | `.github/workflows/desktop-windows.yml` | Owner check on a real Windows machine: a notification arrives with the window hidden; clicking it opens the run |
-
-**Order:** SW8-0; SW8-4 first (it is a security fix and stands alone); SW8-1 to SW8-3; SW8-5 to SW8-7.
-
-**SW8 double-check:** no handler in `electron/main.cjs` acts before the sender check (grep each `ipcMain.handle`); no new call exposes a path or directory listing to the page; a Watch cannot be created with a cap above its agent's monthly cap.
-
-**Promote when:** a weekly Watch on staging has run on schedule at least three times by a scripted clock test and once for real; an auto-pause was triggered and reported; the owner check in SW8-7 passed.
-
-**Rollback:** `SWARM_WATCHES_ENABLED` off makes `watch_tick` a no-op. Desktop additions are inert on the server; a faulty shell is replaced by the next tag.
+> **Sections 10 to 13 (SW5 pay-per-audit, SW6 Jobs, SW7 live rooms, SW8 Watches and desktop)** are in [`founder-swarm-later-phases.md`](./founder-swarm-later-phases.md).
 
 ---
 
 ## 14. SW9 - Quests and badges
 
-**Goal:** the brief's "fun place to be", built from things that actually happened. A quest is completed by a receipt or a finished run, never by a tap.
+**Goal:** the brief's "fun place to be", built from things that actually happened. A quest is completed by a server-attested event, never by a tap.
 
-**Needs:** SW1 promoted; P14; decision 9. Starts with a re-baseline (SW9-0), which must first settle the conflict in hazard 9.
+**Needs:** SW1a promoted; decision 9. SW9-0 to SW9-2 are in the launch cut, for the quests whose prerequisite is live then. Badges (SW9-3) need P14. Starts with a re-baseline (SW9-0), which must first settle the conflict in hazard 9.
 
 ### 14.1 Design
 
 **Quests are missions with a verifier.** `user_missions` already records one completion per account, mission and week. A one-time quest uses the same table with `week_key = 'once'`, so there is no new table, and the existing level rule keeps counting completions. The catalogue is typed data in code beside the three weekly missions.
 
-| Quest | Completed when | Verified by |
-|---|---|---|
-| First unattended audit | A server Auditor run ends `completed` | The run row and its `audit_run` receipt |
-| Prove your domain | Domain verification passes | The `domain_control` receipt (TN2) |
-| First fix that held | A retest passes on a shipped fix | The `fix_retested` receipt |
-| Connect your numbers | A connector's first successful sync | The source row's `last_synced_at` |
-| Ship week | A ship note on three different days in one week | `ship_notes.shipped_on` |
-| First job delivered | A job reaches `delivered` | The `agent_job_delivered` receipt |
+| Quest | Completed when | Verified by | Live at launch |
+|---|---|---|---|
+| First unattended audit | A server Auditor run ends `completed` | The run row, whose origin the server wrote; its `audit_run` receipt once receipts are on | Yes |
+| First fix that held | A retest passes on a fix, for an issue the server saw at the baseline | Allora's check rows: `fail` at commit, `pass` at retest; the `fix_retested` receipt once receipts are on | Yes |
+| Ship week | Retests pass for fixes on three different days in one week | The same check rows | Yes |
+| Prove your domain | Domain verification passes | The `domain_control` receipt (TN2, behind `DOMAIN_VERIFY_ENABLED`) | No: when TN2 is on |
+| Connect your numbers | A connector's first successful sync | The source row's `last_synced_at` | No: SW4 |
 
-**Rewards use what exists.** A quest may grant hosted scout credits through the existing ledger (`referral_rewards`, kind `hosted_scout_credit`), with the reason `quest:<key>:<period>`. The table's `UNIQUE (account_id, reason)` makes a grant idempotent with no new code path. No new currency, no visible balance (spec 0009, unless decision 9 changes it).
+No quest is completed by a payment. v0.1 listed "First job delivered"; it is removed, because a quest that can be bought is a price, and a reward for buying is a rebate that looks like progress (section 0.6). No quest is completed by a self-reported note either: v0.2's "Ship week" counted ship notes, which a founder types; it now counts retests the server passed.
 
-**One ladder.** The four levels stay. Their inputs grow: a verified quest counts where a self-attested mission counts today. No second set of ranks is added by this plan.
+**Whose site.** A founder can commit to a fix on any public site and ask for a retest. "First fix that held" keeps Allora's rule, that the server reports an issue as gone only if the server saw it first, and that is enough at launch: nobody can make someone else's site fix a defect on cue, and the quest is granted once per account. When TN2 is on, a quest about a site also requires a live `domain_control` receipt for that domain, and "Prove your domain" becomes available.
+
+**Rewards use what exists.** A quest may grant hosted scout credits through the existing ledger (`referral_rewards`, kind `hosted_scout_credit`), with the reason `quest:<key>:<period>`. The table's `UNIQUE (account_id, reason)` makes a grant idempotent with no new code path. No new currency. Points never live in this ledger. What happens to the points total that shipped on 2026-10-10 is decision 9 (section 14.4).
+
+**One ladder.** The four levels stay. Their inputs grow: a verified quest counts where a self-attested mission counts today. No second set of ranks is added by this plan, and section 14.4 says what happens to the second set that shipped.
 
 **Badges are receipts.** A badge is a Trust Receipt with a new claim, `badge`, whose subject is the account and whose evidence lists the receipts that earned it. It is private until the founder makes it public; a public badge has a verify page like any receipt and can be shared as a card. Nothing here touches a chain.
+
+A badge states a fact at a point in time and links to its live status. "Verifiable offline" is true of the signature; whether the receipts behind it still stand needs the verify page. Two things must be true before the first badge is issued: each environment has its own signing key, generated by the owner, and its own issuer name (today `RECEIPT_ISSUER` is one constant for every environment, `worker/trustReceipts.ts:34`); and a receipt can only be issued from a typed verifier result (SW0a-15).
 
 **No nudges.** Quests appear in the existing retention card and in the bot's `/missions` reply, which the user asks for. No cron sends a quest message.
 
@@ -1362,88 +1640,183 @@ CREATE INDEX IF NOT EXISTS idx_swarm_watches_due ON swarm_watches(status, next_r
 
 | ID | Task | Files | Acceptance |
 |---|---|---|---|
-| SW9-0 | Re-baseline. Record decision 9 and read whatever the other session's work became on `main`. If a points balance shipped, this section is rewritten to fit it before any code | this document | Section 14 matches `main`. No quest duplicates a mechanic that already shipped |
-| SW9-1 | Quest catalogue and verifiers as pure functions over rows | `services/referrals/rules.ts`; new `services/swarm/quests.ts`; tests | Each verifier has a true and a false fixture. A quest with no backing row never completes |
-| SW9-2 | Completion and reward on the events that satisfy a quest; idempotent inserts | `worker/referrals.ts`; `worker/swarmService.ts`; `worker/shipLog.ts` | The same event delivered twice completes the quest once and grants once (both inserts are `ON CONFLICT DO NOTHING`) |
+| SW9-0 | Re-baseline. A points total, ranks and a daily check-in shipped in `42880f5` (hazard 9); record decision 9 and apply the option the owner chose in section 14.4. Confirm SW0a-9 and SW0a-10 are in production | this document; a new spec that amends `specs/0009` to match the decision | Section 14 matches `main` and the decision. `specs/0009` and production no longer disagree. No quest duplicates a mechanic that already shipped |
+| SW9-1 | Quest catalogue and verifiers as pure functions over rows; `QUESTS_ENABLED` in three blocks, env typing, example env files, admin health and the capabilities answer | `services/referrals/rules.ts`; new `services/swarm/quests.ts`; `wrangler.jsonc`; `worker/env.ts`; tests | Each verifier has a true and a false fixture. A quest with no backing row never completes. A quest whose prerequisite is not live is not shown |
+| SW9-2 | Completion and reward on the events that satisfy a quest; idempotent inserts | `worker/referrals.ts`; `worker/swarmService.ts`; the retest result handler (Allora CL2-2, CL2-3) | The same event delivered twice completes the quest once and grants once (both inserts are `ON CONFLICT DO NOTHING`). A self-reported ship note completes no quest. A retest that passed for an issue the server never saw failing completes none |
 | SW9-3 | `badge` claim, label and issuance; public page reuse | `services/trust/receiptTypes.ts:8-19`, `:62-74`; `worker/trustReceipts.ts`; `components/trust/` | A badge whose evidence receipt was revoked renders as revoked. A private badge's verify page returns not found to others |
-| SW9-4 | Quests and badges in the retention card; share card for a public badge | `components/suite/VisibilityRetentionCard.tsx`; `worker/shareService.ts` | Static-markup tests. No number on a card without a receipt behind it |
+| SW9-4 | Quests and badges in the retention card; share card for a public badge | `components/suite/VisibilityRetentionCard.tsx`; `worker/shareService.ts` | Static-markup tests. No number on a card without a row behind it |
 | SW9-5 | Level inputs: verified quests count; copy update | `services/referrals/rules.ts`; tests | The level table test covers each boundary. Existing users' levels do not fall (asserted on a fixture of today's rows) |
 
-**Promote when:** every quest has been completed once on staging by doing the real thing; a replayed event granted nothing twice; the owner has shared one public badge and opened its verify page signed out.
+**Order:** SW9-0; SW9-1; SW9-2; SW9-4; SW9-5; SW9-3 when P14 is on.
+
+**SW9 double-check:** no quest verifier reads a row a client can write unaided (grep each verifier's sources); no grant path lacks the unique reason; no copy promises a reward for a purchase; `QUESTS_ENABLED` off hides every quest surface.
+
+**Promote when:** every quest whose prerequisite is live has been completed once on staging by doing the real thing; a replayed event granted nothing twice; and, for badges, the owner has shared one public badge and opened its verify page signed out.
 
 **Rollback:** `QUESTS_ENABLED` off hides quests and stops new completions; rows and receipts stay.
 
+### 14.3 Builders chat (work order; needs decision 19)
+
+The brief asks for a place founders can get into easily and join. One Telegram group, entered by doing one real thing, is the smallest version of that, and Telegram is where these founders already are. TN8 designs gated groups and parks them at decision D6 until 50 verified profiles exist; decision 19 asks to open one room earlier.
+
+**Entry rule (decision 19).** Signed in through Telegram, and one completed server Auditor run on the account. Not a paid plan and not a purchase: entry cannot be bought. TN8's rule (a verified domain) would keep the room empty at today's scale; it becomes the bar for a "Builder" label inside the room later.
+
+**How it works.**
+
+- One supergroup with no public username, so it cannot be found or joined by search. The bot and the owner are its only administrators. The group's own invite link is revoked, and members' permission to invite is off, so the only way in is the join-request link.
+- The app shows "Join the builders chat" to a signed-in founder. If they are not yet eligible it says what to do ("Run your first audit").
+- The link is created with `createChatInviteLink` and `creates_join_request`. A tap sends the Worker a `chat_join_request` update. The Worker maps the Telegram user to an account, checks the rule, and calls `approveChatJoinRequest` or `declineChatJoinRequest`.
+- A requester who is not eligible is told how to get in, and then declined, in that order: Telegram lets a bot message a requester only while the request is open. It is an answer to their own request, like a command reply, not a notice under section 6.5.
+- At most 50 approvals a UTC day, counted inside the update that approves. A leaked link or a bug cannot fill the room in an hour; request 51 is told to try tomorrow.
+- No automatic removal in the first version. Removal for abuse is the named person's act in Telegram.
+
+**What the chat needs before it opens.** Two things, both in decision 19: rules pinned in the group, and a named person who looks after it and for how many hours a week. The moderation minimum of section 14.6 is for founder-written text published inside the product; a Telegram group is looked after with Telegram's own tools.
+
+**Three things the code needs before the bot joins any group.**
+
+- **A private-chat guard, in the right place.** Today the bot answers every text message it receives through a model (`worker/telegramBot.ts:768-923`). As a group administrator it would answer the whole group and spend on every message. The guard ignores a text message or a command whose chat is not private. It sits after the two payment branches, just before `const text` (`worker/telegramBot.ts:420`), and it never touches a payment update: a payment is processed or refunded wherever it came from.
+- **Updates the handler never reaches today.** The handler returns at `if (!msg) return` (`worker/telegramBot.ts:320-321`). A `chat_join_request` has no `message`, so its branch, like the `callback_query` branch of SW2-14, goes before that line.
+- **Subscription, rights and the throttle.** The webhook subscribes to `message`, `pre_checkout_query` and `callback_query` (`scripts/telegram-setup.mjs:32`). `chat_join_request` and `chat_member` must be listed explicitly, and the bot needs the `can_invite_users` right. The webhook throttle allows 5 join requests a minute per chat (`worker/webhookThrottle.ts:51-53`), which a launch day would exceed, silently dropping people; the builders chat's id is exempt and the daily cap above bounds it instead.
+
+Migration `builders_chat`:
+
+```sql
+CREATE TABLE IF NOT EXISTS chat_join_requests (
+  chat_id TEXT NOT NULL,
+  tg_user_id INTEGER NOT NULL,
+  account_id TEXT,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'declined')),
+  reason TEXT,
+  utc_day TEXT NOT NULL,
+  requested_at INTEGER NOT NULL,
+  decided_at INTEGER,
+  PRIMARY KEY (chat_id, tg_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_join_account ON chat_join_requests(account_id)
+  WHERE account_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_chat_join_pending ON chat_join_requests(status, requested_at)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_chat_join_day ON chat_join_requests(chat_id, utc_day, status);
+```
+
+- A request is recorded before Telegram is called: `INSERT ... ON CONFLICT(chat_id, tg_user_id) DO UPDATE SET status = 'pending', reason = NULL, account_id = excluded.account_id, utc_day = excluded.utc_day, requested_at = excluded.requested_at, decided_at = NULL WHERE excluded.requested_at > chat_join_requests.requested_at`. A new request from the same person replaces the row; an old update that Telegram redelivers cannot reopen a decided one.
+- Approve: `UPDATE chat_join_requests SET status = 'approved', decided_at = ? WHERE chat_id = ? AND tg_user_id = ? AND status = 'pending' AND (SELECT COUNT(*) FROM chat_join_requests c WHERE c.chat_id = ? AND c.utc_day = ? AND c.status = 'approved') < 50`. One row changed, then Telegram is called. Decline is the same shape without the count.
+- A requester with no account row is declined with `reason = 'not_signed_in'`.
+- **Rule 2.6.** `account_id` is NULL for a requester with no account. Those rows are deleted 30 days after they are decided. Account deletion removes the account's rows; it does not remove the person from the group, and the privacy page says so. On account link the rows move.
+
+| ID | Task | Files | Acceptance |
+|---|---|---|---|
+| SW9-6 | Private-chat guard. Ships alone and first; it is a safety fix whether or not the chat is ever opened | `worker/telegramBot.ts:320-321,420,768-923`; tests | A text message and a command from a group chat produce no model call, no reply and no state change. A payment update from any chat is processed exactly as before (the existing payment tests run with a group chat id and still pass). Private-chat behaviour is unchanged (existing tests) |
+| SW9-7 | Migration; smoke lists; privacy export and delete; link move; flag `BUILDERS_CHAT_ENABLED` and var `BUILDERS_CHAT_ID` in three blocks, env typing, example env files, admin health and the capabilities answer; `allowed_updates`; the throttle exemption | `migrations/`; `scripts/smoke-check.mjs`; `worker/privacyService.ts`; the V2-1b helper; `wrangler.jsonc`; `worker/env.ts`; `scripts/telegram-setup.mjs:32`; `worker/webhookThrottle.ts:51-53` | Applies clean. The setup script, run against the staging bot only, lists the two new update kinds and does not drop pending updates. Twenty join requests in a minute for the builders chat all reach the handler; for any other chat the throttle is unchanged |
+| SW9-8 | Eligibility as a pure function; `GET /community/chat-link` (signed in); the `chat_join_request` branch, placed before the message guard; message, then approve or decline; the daily cap | new `worker/buildersChat.ts`; `worker/telegramBot.ts:320-321`; `worker/index.ts`; `worker/authMiddleware.ts` | An eligible account's request is approved once. An ineligible one is messaged and then declined, in that order (spy on call order). A request from a Telegram user with no account is declined. The same update delivered twice calls Telegram once (spy). An older update for a decided request changes nothing. The 51st approval of a UTC day is not made. A request for any other chat id is ignored. Flag off: the route returns 404 and requests are declined |
+| SW9-9 | The entry card in the app; the rules pinned in the group and the named person recorded (decision 19); the group's settings checked | `components/suite/VisibilityRetentionCard.tsx`; `services/telegram/tma.ts`; the runbook | The card shows the link only to an eligible account and the one missing step to everyone else. No count of members is shown unless it is read from Telegram. The runbook records that the group has no public username, that members cannot invite, and who looks after it |
+| SW9-10 | The moderation minimum of section 14.6, for founder-written text inside the product: the report route, the operator queue, per-person operator credentials with an audit entry per action, and the limits inside each insert. Not in the launch cut; it gates turning `COMMUNITY_FEED_ENABLED` back on | new `worker/moderation.ts`; `worker/adminAuth.ts:15-41`; `worker/index.ts`; `worker/ideaScout.ts`; tests | A reported card can be hidden by a named operator and the audit entry names them. The shared admin secret alone cannot act on the queue. A hidden card is absent from the feed and present in its author's export |
+
+**Order:** SW9-6 at once. SW9-7 to SW9-9 after SW1a promotes and decision 19 is yes. SW9-10 before any founder-written text is public in the product.
+
+**Promote when:** on a staging group, the owner's account was approved, a second account with no run was told why and declined and then approved after its first run, and a message in the group drew no reply from the bot. **Rollback:** flag off declines new requests; members stay.
+
+### 14.4 The points that shipped, the ladder, and a board (decision 9)
+
+A points total with five ranks and a 25-point daily check-in went live on 2026-10-10 as API routes with no screen (hazard 9). `specs/0009`, which is accepted and shipped, says "Game-style coins are out of the product" and "Tap-to-earn or a visible coin balance: rejected", and that "Duels and leaderboards stay later phases". The spec and production now disagree, and only the owner can say which one moves. Three ways to settle it, each complete. This plan recommends B.
+
+| | Option A: counts and levels | Option B: display-only points (recommended) | Option C: as shipped |
+|---|---|---|---|
+| What a founder sees | The four levels, and counts of real events: "3 fixes that held", "12 audits" | A total beside the level, plus the same counts | A total, five ranks, a daily check-in, and the four levels as well |
+| Where a point comes from | Nowhere; there are none | Only from an event the server attested: a completed server run, a passed retest, a verified domain, a first connector sync. Fixed weights, published | Those, plus 25 a day for opening the app, plus 100 for each unspent credit |
+| The daily check-in | Removed | Kept as a streak count ("day 4") worth no points. Opening the app earns nothing | Pays points |
+| A limit | n/a | At most 200 points a week per account, the same on every plan, enforced inside the insert | None |
+| What points can do | n/a | Nothing. Never bought, spent, transferred, converted or used to gate anything, paid or free. The card says so | Nothing today |
+| The ladder | The four levels | The four levels. The five rank names that shipped are removed, so there is one ladder | Two ladders |
+| Storage | The existing tables | `point_events` (below): one row per event with a unique reason, so a replay adds nothing; never in the credit ledger | As shipped: check-in rows in the credit ledger |
+| The spec | `specs/0009` stands; the shipped code is removed | A short new spec amends the one line about a "visible coin balance" to say what a display-only total may be | `specs/0009` is rewritten: it rejected tap-to-earn by name |
+| What it costs | The least code | One small table and a card | A total that falls when a credit is spent, a reward for opening the app, and two ladders to explain |
+
+Migration `point_events`, created only if the answer is B:
+
+```sql
+CREATE TABLE IF NOT EXISTS point_events (
+  account_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 100),
+  week_key TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (account_id, reason)
+);
+CREATE INDEX IF NOT EXISTS idx_point_events_week ON point_events(account_id, week_key);
+```
+
+- The insert selects its row only while the account's points for that `week_key` plus the new ones are at most 200, and uses `ON CONFLICT(account_id, reason) DO NOTHING`.
+- The total is `SUM(points)`. There is no balance column and no way to subtract.
+- Exported and deleted with the account; on link the rows move and a reason both accounts hold keeps the surviving account's row.
+
+Under any option: no percentage, no decay, no point for a purchase, and nothing to cash out. This plan's engineering reading is that A and B are not stored value while those rules hold; if points are ever to gate something of value, that is a question for counsel first.
+
+**A board** is not built now under any option. `specs/0009` defers leaderboards to a later phase; the trigger here is 50 accounts with a passed retest in one calendar month. Then: an opt-in list ordered by a count anyone can check, and Builder of the Month chosen by a poll (14.5). Recognition only. No Stars, no prize pool.
+
+**Until decision 9 is answered,** SW0a-10 holds: `LUMENS_ENABLED` is off, the check-in route answers 404, and no total is shown anywhere.
+
+### 14.5 Project pages, feed, polls, Demo Day (designs with triggers)
+
+Not work orders. With 5 accounts a public board or a demo day would be an empty room; each part has the condition that makes it worth building.
+
+| Part | What it is | Built on | Trigger |
+|---|---|---|---|
+| Project pages | TN3's public profile with project fields: the problem, what was built, a demo link, the team. Server-rendered meta for crawlers. A page needs a verified domain and stays `noindex` until one more receipt exists (TN's rule) | TN3 | 10 verified domains |
+| Build-in-public feed | TN5's proof feed. A shipped note may be published into it labelled "Self-reported. Luminara did not verify this."; a fix that held carries its receipt. The idea feed that shipped on 2026-10-10 becomes one tab of it once SW0a-9 is done | TN5; `ship_notes`; `community_feed_cards` | Project pages live, and 14.6 in place (SW9-10) |
+| Share cards | A prepared Telegram message and a story card for a badge or a fix that held, carrying the existing invite link. Two Mini App methods the app does not use yet (`services/telegram/tma.ts:290`) | Telegram `shareMessage`, `shareToStory`; the invite in `specs/0009` | Badges live (SW9-3) |
+| Polls | One verified domain, one vote: a unique row per poll and account, and the account must hold a live `domain_control` receipt. Being in the chat is not enough, because one person can hold several Telegram accounts. Results are labelled advisory. A wallet is never the unit, because wallets are free to create, and no vote is weighted by a level, a holding or a payment | New tables at re-baseline; TN2 | 50 members in the builders chat, and TN2 on |
+| Board, Builder of the Month | Section 14.4 | Quests; polls | 50 accounts with a passed retest in a month |
+| Demo Day | A monthly voice chat in the builders group; presenters come from project pages. Recognition only | Telegram; project pages | The board exists |
+
+Invite squads from the brief are the two-sided invite that already exists (two hosted scout credits each, paid on the referred account's first real scout). No group quest is designed here.
+
+### 14.6 The moderation minimum
+
+No founder-written text is public inside the product before these exist. That includes turning `COMMUNITY_FEED_ENABLED` back on. SW9-10 builds them.
+
+- A report route for any public item, signed in, rate limited, with the reporter recorded.
+- A queue an operator can read and act on, and a `hidden` or `removed` state on every public item (the `status` column on feed cards exists for this).
+- Named operator identities. Today every admin action uses one shared secret (`worker/adminAuth.ts:15-41`), which cannot say who hid what. The queue needs a per-person credential and an audit entry per action.
+- Limits inside the insert for anything a founder can post: per day, per item length, links by allow-list.
+- A person. Decision 19 names who looks after the chat and reads this queue, and for how many hours a week; with no answer, nothing public ships.
+
 ---
 
-## 15. SW10 - Gated designs (not work orders)
-
-Each item is recorded so the idea is not lost and so the gate is explicit. None starts without its named decision and, where shown, counsel or an outside audit.
-
-| Item | The lowest-risk design | Why it is gated | Gate |
-|---|---|---|---|
-| Bounties between founders | **Direct pay on acceptance.** The funder posts a commitment; no funds are held anywhere. A builder delivers; a Luminara verifier issues a receipt; the funder pays the builder wallet to wallet through TON Connect in one signed transaction that also carries the platform fee to Luminara's address; the Worker verifies both transfers on-chain and marks the bounty paid. An unpaid accepted bounty shows on the funder's record | Luminara would be arranging payment between two parties, which TN decision D5 sends to legal review first. Whether a peer payment for human work is a "digital service" under Telegram's Stars rule is not settled by its text, so settlement would be web-only until answered | Decision 13; counsel |
-| Bounty escrow on TON | A per-bounty contract in Tolk: funder deposits, one assignee, release on the funder's signature, refund on timeout. No oracle key, because a Luminara signature that released funds would be releasing funds between users | A new contract needs its own outside audit, testnet first, and the owner's wallet to deploy (J1, J3). TN decision D4 recommends deferring | Decision 13; audit; the mainnet gates in Zoro 7.4 |
-| On-chain soulbound badges | A TEP-85 collection where the **user's own wallet** mints: the Worker signs a voucher (collection, owner address, badge id, receipt hash, expiry) with a dedicated key that cannot move funds; the contract checks the signature and mints to the sender, who pays the gas. The Worker sends no transaction | A new contract and a new signed-message format (today's receipt signature covers JSON bytes, not a cell hash). It also links a wallet to a business in public, so it must be opt-in. Zoro paused agent SBTs and locked "no custom contract" | Decision 14; audit; testnet first |
-| Third-party sellers in Jobs | Sellers with a published passport and receipts; Luminara lists, does not hold or release money | Legal review (TN D5) | Decision 13 |
-| An agent paying third parties from the founder's funds | None that keeps rule J1. Every known design (a session key, a spend permission, a funded agent wallet) puts a key that can move the founder's money somewhere Luminara runs | Zero custody | Not planned. Revisit only if the owner changes J1 |
-| x402 on TON | The standard defines it; no production facilitator runs it, and self-hosting one needs a funded relay wallet | Zero custody | Revisit when a third-party TON facilitator exists |
-| Desktop folder bridge | Fixer writes its prepared files into a folder the user picked once, so the fix lands in their site's source | A standing write grant to a folder is a real capability on the user's machine; it needs its own threat model and review | Decision 12, second part |
-| Gated community groups | TN8 Circles as written | Parked at TN decision D6 until 50 verified profiles exist | TN D6 |
+> **Section 15 (SW10, gated designs)** is in [`founder-swarm-later-phases.md`](./founder-swarm-later-phases.md).
 
 ---
 
 ## 16. Flag matrix
 
-All flags below are `"false"` in every block until their phase promotes. Each is its own production release (rule 2.4).
+All flags below are `"false"` in every block until their phase promotes. Each is its own production release (rule 2.4). Every flag this plan adds takes `"true"` or `"false"` and nothing else (rule 2.3). The two Ops names in the table are that plan's own three-state settings, read by its helper.
 
 | Flag | Phase | Off means | Reaches production on |
 |---|---|---|---|
-| `SWARM_RUNS_ENABLED` (with `SWARM_DAILY_SPEND_CAP_CENTS`) | SW1 | `/swarm` routes return 404; open runs end at their next step | SW1 promote, allow-list first |
-| `SWARM_ROSTER_ENABLED` | SW2 | Roster view hidden; model-planned agents refused; the Auditor still runs | SW2 promote |
+| `COMMUNITY_FEED_ENABLED` | SW0a | The three feed routes return 404 | Ships `"false"`, which turns off the feed that went live in `42880f5`. Back on only after SW0a-9 and SW9-10 |
+| `LUMENS_ENABLED` | SW0a | The check-in route returns 404; the referral summary has no points total | Ships `"false"`. Back on only under decision 9, option B or C |
+| `SWARM_RUNS_ENABLED` | SW1a | `/swarm` routes return 404; open runs end at their next step | SW1a promote, allow-list first |
+| `RUN_NOTICES_ENABLED` | SW1a | No notice is queued or sent; `/stop` still works; payment messages are unaffected | SW1a promote, after decision 20 |
+| `SWARM_MODEL_SUMMARY_ENABLED` (with `SWARM_DAILY_SPEND_CAP_CENTS` and `SWARM_DAILY_FREE_CAP_CENTS`) | SW1b | Every run uses the code-built summary; no run makes a model call | SW1b promote, allow-list first |
+| `SWARM_ROSTER_ENABLED` | SW2 | Roster view hidden; model-written fields off; the Auditor, Fixer's code-built drafts and Coach's code-built proposal still run | SW2 promote |
 | `AGENT_SEATS`, `AGENT_SEAT_CAPS` (Ops names; `off`, `observe`, `enforce`) | SW2 | Outside keys behave as today. Roster limits are enforced regardless | Per the Ops flag matrix |
 | `SHIP_LOG_ENABLED` | SW3 | Routes 404; view hidden | SW3 promote |
 | `LEADS_ENABLED` | SW3 | Owner routes 404; the public form accepts and writes nothing | SW3 promote, after decision 15 |
 | `CONNECTORS_ENABLED` | SW4 | No new connections; sync job is a no-op | SW4 promote |
 | `BRAIN_ENABLED` | SW4 | New Brain tabs hidden; digest route 404 | SW4 promote |
-| `X402_AUDIT_ENABLED` | SW5 | Every `/x402` route returns 404 | The mainnet gate in section 10 |
 | `AGENT_JOBS_ENABLED` | SW6 | No quotes or checkouts; paid jobs finish or refund | SW6 promote |
 | `ORG_INVITES_ENABLED` | SW7 | No new invites; members keep access | SW7 promote, first |
 | `LIVE_ROOMS_ENABLED` | SW7 | Sockets refused; views poll | SW7 promote, second |
-| `SWARM_WATCHES_ENABLED` | SW8 | `watch_tick` does nothing | SW8 promote |
+| `SWARM_WATCHES_ENABLED` | SW8 | `watch_tick` does nothing | The Auditor-only slice: after SW1a, under decision 22. The rest: SW8 promote |
 | `QUESTS_ENABLED` | SW9 | Quests hidden; no new completions | SW9 promote |
+| `BUILDERS_CHAT_ENABLED` | SW9 (14.3) | The link route returns 404; join requests are declined | After SW1a promotes and decision 19 is yes |
+| `X402_AUDIT_ENABLED` | SW5 | Every `/x402` route returns 404 on every hostname | The mainnet gate in section 10 |
 
-**Kill switches.** Until the Ops flag helper lands (P7), a flag change is a redeploy and the emergency switch is `npx wrangler rollback --env <env>`. Once it lands, each flag also has a KV override. The global spend cap is a second switch for anything that costs money: setting it to `0` stops every run at its next step.
+**Kill switches.** Until the Ops flag helper lands (P7), a flag change is a redeploy and the emergency switch is `npx wrangler rollback --env <env>`. Once it lands, each flag also has a KV override. The two spend pools are a second switch for anything that costs money: setting `SWARM_DAILY_SPEND_CAP_CENTS` to `0` refuses every new model-calling run, and a run already started finishes with its code-built parts.
 
 ---
 
-## 17. Threat model and test plan
-
-| Threat | Control | Test |
-|---|---|---|
-| A crawled page tells the agent to write, spend or exfiltrate | Fencing (2.10); sealed trust; writes need a bound single-use approval; no roster agent is `destructive` | Injection corpus in the trajectory evals (SW2-7, SW2-12) |
-| An agent reports a number it made up | Output check refuses uncited numbers; rules compute deltas in code | SW1-7, SW4-7 fixtures |
-| A run spends past its limit | Three limits checked before every step with reservation; global daily cap; step and time limits | SW2-2 concurrency test; SW1-4 |
-| A run never ends | Deadline, `max_steps` CHECK, sweeper, alert | SW1-4, SW1-10 |
-| One account reads another's run, brain, leads or jobs | Ownership check in every loader; 404 on a foreign id | Two-account test on every new route |
-| An org member acts beyond their role | One access helper; role table in section 12; two-org matrix | SW7-2, SW7-5, SW7-6 |
-| An instruction in a live room raises a cap | The instruction path cannot reach caps, ceilings or approvals | SW7-5 |
-| A guest link leaks costs or evidence | Redacted stream; hashed, expiring tokens | SW7-7 snapshot |
-| Google data attached to the wrong account | `state` single-use, PKCE, cookie binding to the starting browser | SW4-3 |
-| A refresh token leaks from the database | AES-GCM with a Worker secret, row-bound; tokens never logged or exported | SW4-2 |
-| Spam or abuse through the public lead form | Off by default; dual rate limit; honeypot; uniform 200; no outbound message | SW3-6 |
-| A lead message attacks an agent later | Stored text is untrusted wherever it is read | SW3-6 |
-| An x402 payment is replayed, or work is taken without paying | Unique payment hash; settle before release; single-use settle transition | SW5-4 |
-| The x402 route is used to scan private networks | `fetchPublicUrl`; refusal before verification | SW5-5 |
-| Paying the wrong asset or network | Asset read from the facilitator and pinned; mismatch keeps the rail off | SW5-0, section 10.3 |
-| One Stars charge pays two jobs, or a job is paid at the wrong price or by the wrong person | Charge ledger claim; unique charge id on the job; pre-checkout binds amount and payer to the row | SW6-4 |
-| A failed job is not refunded, or is refunded twice | Single-use refund claim; retry on the ops cron; alert | SW6-6 |
-| A Watch runs twice or runs away | Compare-and-set claim; per-run cap inside the agent cap; auto-pause | SW8-2 |
-| A web page in the desktop shell calls native code | Sender checks on every handler; narrow calls; save only through the system dialog | SW8-4, SW8-6 |
-| A quest or badge is farmed | Completion needs a receipt or a finished run; grants are idempotent | SW9-1, SW9-2 |
-| A new flag silently turns on | Strict `=== 'true'`; three blocks; env validation in CI | Rule 2.3; `validate-env` |
-| A rollback strands a Durable Object class | The class ships alone first (2.7) | SW1-0 spike C, SW1-1 |
-
-Coverage: each new Worker module in this plan carries a per-file floor of 90 percent lines (the Ops plan's convention); the global floors stay. D1 tests use `tests/helpers/sqliteD1.ts`, which applies the real migrations.
+> **Section 17 (threat model and test plan)** are in [`founder-swarm-appendix.md`](./founder-swarm-appendix.md).
 
 ---
 
@@ -1453,71 +1826,82 @@ Targets are proposals to be confirmed against the first measurements, not claims
 
 | Signal | Proposed target | Where it is measured |
 |---|---|---|
-| Runs reaching a terminal state | 100 percent; any expiry alerts | Sweeper (SW1-10) |
+| Runs reaching a terminal state | 100 percent; any run the sweeper ends alerts | Sweeper (SW1-10) |
+| Time from tap to findings on the board | Recorded in SW1-11 with n; a target is set after | Soak report |
 | Audit run duration | Recorded in SW1-11 with n; a target is set after | Soak report |
-| Cost per run by agent | Recorded per phase; no price is set before it | `cost_events` grouped by `credential_id` |
-| Uncited-number refusals | Counted and reviewed weekly; a rise means a prompt or rule regressed | Run events of kind `guardrail` |
+| Drafts built per audit, and drafts refused by their check | Recorded; a refused draft is reviewed | Run events |
+| Cost per run by agent | Recorded per phase, in micro; no price is set before it | `cost_events` grouped by `credential_id` |
+| Code-built stand-ins and uncited-number refusals (from SW1b) | Counted with n and reviewed weekly; a rise means a prompt, a model or a rule regressed | Run events of kind `guardrail` |
 | Approval wait | Under 60 seconds from request to decision for a present user (Ops target) | Request and decision timestamps |
-| Connector sync success | Seven of seven days before promotion | `connector_sources` |
-| x402 settle-failed and work-failed rates | Alert above 2 percent in an hour | `x402_payments` |
-| Refunds pending or failed | Zero older than 30 minutes | `agent_jobs` |
-| Global spend | Alert at 80 percent of the daily cap | `cost_events` |
+| Connector sync success | Eight of eight days before promotion | `connector_sources` |
+| Stars charges still `received` or `refund_due` | Zero older than 30 minutes once the ops cron exists; zero older than a day before it | `stars_charges` |
+| Refunds failed | Zero; each one alerts | `stars_charges` |
+| x402 settle-failed and work-failed rates; rows in `settle_pending` | Alert above 2 percent in an hour; alert on any row pending over 15 minutes | `x402_payments` |
+| Spend pools | Alert at 80 percent of either | `swarm_runs` |
 
-Alerts are computed by the Ops 15-minute cron and sent where that plan sends them. Product analytics gain a short allow-list of events (`swarm_run_started`, `swarm_run_completed`, `job_quoted`, `job_delivered`, `connector_connected`, `quest_completed`); unknown event types are dropped today (`worker/productAnalytics.ts`), so each must be added to the list.
+Alerts are computed by the Ops 15-minute cron and sent where that plan sends them. Product analytics gain a short allow-list of events (`swarm_run_started`, `swarm_run_completed`, `fix_draft_built`, `retest_passed`, `job_quoted`, `job_delivered`, `connector_connected`, `quest_completed`); unknown event types are dropped today (`worker/productAnalytics.ts`), so each must be added to the list.
 
-A runbook, `docs/ops/SWARM-RUNS.md`, ships with SW1 and grows with each phase: how to read a run's events, how to stop one run, how to stop all runs, how to refund a job by hand, how to revoke a connector, how to turn the x402 rail off, and what each alert means.
+A runbook, `docs/ops/SWARM-RUNS.md`, ships with SW1a and grows with each phase: how to read a run's events, how to stop one run, how to stop all runs, how to settle a charge that is stuck, how to answer a payment support request, how to refund a job by hand, how to revoke a connector, how to turn the x402 rail off, and what each alert means.
 
 ---
 
 ## 19. Dependency graph and sequencing
 
 ```
-Hazards 1, 2, 3 (own tasks) ----+
-V0-8, V0-1, V0-2, P1-4 (callHosted) ----+
-V2-1, V2-1b, V2-5 (run ledger) ----------+--> SW0 --> SW1 --+--> SW2 --+--> SW6 (Jobs)
-Ops Phase 0 (flags, lint, cron) ---------+            |     |         +--> SW7 (rooms)
-TN1 on (receipts) -----------------------+            |     |         +--> SW8 (Watches; needs Ops Phase 2 exit)
-                                                      |     +--> SW5 (x402; needs only SW1)
-Ops Phase 1 F1, Phase 2 F3; Allora retest ------------|-----^   (SW2 needs these)
-V3-1 (scoped memory) ---------------------------------+--> SW4 (Brain) --> Analyst
-V2-9 (board hydrates) --> SW3 (Workbench; front end lane, parallel with SW1)
-SW1 + TN1 --> SW9 (quests, badges)
+SW0a-0 (staging level with main) --> SW0a (section 5.1): each task released alone.
+SW1-0 spikes start beside it, outside the repo.
+
+SW0-8 (land the V0 branch: P2, P3, P19) ---+
+Ops Phase 0 items 5 to 9 (P7, P8) ---------+
+V2-0, V2-1, V2-1b, V2-2, V2-3, V2-5 (P5) --+--> SW1a --+--> SW1b --> SW2 --+--> SW6 (Jobs) --> SW5 (x402, on its trigger)
+V2-9 (P16) --------------------------------+     |     |                   +--> SW7 (rooms)
+Allora CL0-3 (P17) ------------------------+     |     |                   +--> SW8 (Watches; needs Ops Phase 2 exit)
+decision 3 (the yes), decision 7 ----------+     |     +--> SW4-7 (Analyst; needs decision 6)
+                                                 |
+Allora CL0 to CL2 (P15; decision 28) ------------+--> SW1-16, SW1-18 (Fixer drafts re-checked; Coach's proposal)
+SW3-1 to SW3-3 (front end lane, beside SW1a; needs P16)
+SW1a + decision 20 --> the run-finished notice (SW1-12)
+SW1a + decision 22 --> scheduled Auditor runs (the Auditor-only slice of SW8-1, SW8-2)
+SW1a + decision 9  --> the first quests (SW9-0 to SW9-2)
+SW1a + decision 19 --> builders chat (SW9-7 to SW9-9); SW9-6 (private-chat guard) ships at once
+Decision 4 --> SW4-1..SW4-5, SW4-8 (connectors; beside SW1a). P13 --> SW4-6
+Ops Phase 1 F1, Phase 2 F3 (P9, P11) --> SW2
+TN1 on (P14) --> badges (SW9-3), job receipts (SW6)
 SW10: decisions and counsel only
 ```
 
+**The launch cut, counted.** These are the tasks behind section 0.5's table.
+
+| Part | Tasks | Count |
+|---|---|---|
+| SW0a | SW0a-0 to SW0a-18 | 19 |
+| SW0 | SW0-0 to SW0-9 | 10 |
+| The V plan's, done here | V2-0, V2-1, V2-1b, V2-2, V2-3, V2-5, V2-9 | 7 |
+| The Ops plan's, done here | Phase 0 items 5 to 9 | 5 |
+| Allora's, done here | CL0-0, CL0-2 to CL0-5; CL1-0 to CL1-5; CL2-0 to CL2-5 | 17 |
+| SW1a | SW1-0 to SW1-6, SW1-8 to SW1-12, SW1-14 to SW1-18 | 17 |
+| SW3 | SW3-0 to SW3-4 | 5 |
+| SW8, the Auditor-only slice | SW8-1, SW8-2 | 2 |
+| SW9 | SW9-0 to SW9-2; SW9-6 to SW9-9 | 7 |
+| Total | | 89 |
+
+### 19.1 Cross-plan edits
+
+**Section 19.1** is in [`founder-swarm-appendix.md`](./founder-swarm-appendix.md). It lists, plan by plan, the sentence to add to each other plan. SW0-0 makes those edits in one docs PR.
+
+### 19.2 Lanes, order and what to cut first
+
 | Rule | Detail |
 |---|---|
-| Lanes | Worker lane: SW1, SW2, then SW4 or SW5. Front end lane: SW3, then SW2-11, SW4-8 |
+| Lanes | Worker lane: SW1a, SW1b, SW2, then SW6. Front end lane: SW3, then SW1-9, SW1-17, SW2-11, SW4-8. Pure-function lane: SW1-14, SW1-15. Connector lane: SW4-1 to SW4-5 |
 | Shared files | `worker/index.ts`, `App.tsx`, `wrangler.jsonc`, `worker/telegramBot.ts` and `worker/privacyService.ts` are touched by many tasks and by other sessions. One open PR per file at a time; rebase before review |
-| Horizon 2 order | SW5 first (smallest, needs only SW1, and is the outside-facing proof). SW6 next. SW7 and SW8 after there are users to share a room with |
+| Horizon 2 order | SW6 first: it serves founders who are already here. SW7 and SW8 after there are users to share a room with. SW5 last, on its trigger (section 10) |
 | Production | Explicit owner approval in chat for every production step. Flags stay off until the phase's promotion criteria are met |
-| What to cut first if time is short | SW9, then SW7's war room, then SW3's Leads. Never the guardrails, the caps or the privacy hooks |
+| What to cut first if time is short | In this order: SW5; SW7; Leads (SW3-5 to SW3-7); the desktop extras (SW8-5 to SW8-7); limits for outside keys (the Ops seat flags). Never cut: the guardrails, the caps, the privacy hooks, the notice, the first quests, the chat |
 
 ---
 
-## 20. Owner decisions
-
-| # | Decision | Blocks | Default if no answer |
-|---|---|---|---|
-| 1 | Build first-party Jobs, setting aside the virality plan's "no marketplace" line for this one shape | SW6 | Yes: TN section 0.2 approved the shape on 2026-10-07 |
-| 2 | Confirm TN decision D2: one Agent Passport table set, with the Ops plan's Agent Seats folded in (section 7) | SW2 | Yes, TN's own recommendation |
-| 3 | Run audits on the server and pay for the one hosted model call per run (V decision 5). Which provider and model | SW1 | None. SW1 does not start without it |
-| 4 | Create the Google Cloud project and consent screen under Luminara Digital and submit it for verification | SW4 | None. An operator step only the owner can do |
-| 5 | Add a receive-only USDC rail for pay-per-audit, setting aside spec 0016's "rejected for now" and the "no new chain" line for this one use. Provide the receiving address; open the facilitator account; ask counsel about taking stablecoin revenue; approve the price | SW5 production | Build and soak on the test network only. No mainnet without all four |
-| 6 | May summaries of connector data be sent to the model provider that writes the digest, as disclosed at consent | SW4-7's model call | No. The digest is the code-computed table until answered |
-| 7 | Allowance per plan (open runs, runs per day) and the production value of `SWARM_DAILY_SPEND_CAP_CENTS` | SW1 production | Free: 1 open, 2 a day. Paid: 3 open, 20 a day. The production cap has no default: unset keeps runs off |
-| 8 | Roster names. "Scout" already names a level, a crew role and a view | SW2 copy | Auditor, Fixer, Analyst, Coach, Prospector |
-| 9 | Spec 0009 rejected a visible coin balance; another session's uncommitted work adds one. Keep spec 0009, or amend it | SW9 | Keep spec 0009. SW9 adds no balance |
-| 10 | Allow team invites, scoped to live rooms and run approvals, setting aside the virality plan's non-goal | SW7 | Yes, with the narrow scope in section 12 |
-| 11 | Inside the Mini App, sell digital plans and jobs for Stars only, per Telegram's terms. Today a TON tab can appear there | SW0-5; SW6 | New things sold by this plan are Stars-only in Telegram. The existing TON tab is the payments owner's call |
-| 12 | Extend the desktop bridge with notify, badge and save-file. Separately: the folder bridge | SW8; SW10 | Yes to the three calls. No to the folder bridge |
-| 13 | Bounties between founders and third-party sellers | SW10 | Defer, as TN decisions D4 and D5 recommend. Take the direct-pay design to counsel when there is demand |
-| 14 | On-chain soulbound badges | SW10 | Defer. Badges are signed receipts |
-| 15 | Leads store other people's contact details. Agency plan only; 12-month retention; privacy policy change | SW3-5 to SW3-7 | Build with those limits after counsel reads the form text |
-| 16 | Job prices (from measured cost), the human-fulfilment commitment, and whether a plan includes job credits | SW6 | No plan credits in the first release. Human fulfilment only for SKUs the owner names |
-| 17 | Release path: PR from `staging` to `main` (V decision 8) | Every production step | PR. Branch protection already requires it |
-
-Also needed from other plans' lists, because this plan waits on them: V decisions 1, 8 and 9; Ops decisions 4, 7, 8 and 9; Zoro decision 9 (hosted keys on staging); TN decisions D2 and D7.
+> **Section 20 (owner decisions)** is in [`founder-swarm-owner-brief.md`](./founder-swarm-owner-brief.md).
 
 ---
 
@@ -1526,20 +1910,34 @@ Also needed from other plans' lists, because this plan waits on them: V decision
 | Risk | Mitigation |
 |---|---|
 | The plan is too large for the product's current size | Horizons. Horizon 2 does not start until horizon 1 is used. The cut order in section 19 |
-| Prerequisites in other plans stall | The ledger makes each one visible with its state. A phase waits rather than forks. The shortest path is named |
-| Hosted model cost grows with unattended use | One model call per Auditor run; metering before pricing; three limits per run; a global daily cap with no default |
-| Agents act on hostile content | Sealed trust, bound approvals, no destructive ceiling, injection evals gating deploy |
+| Prerequisites in other plans stall | The ledger makes each one visible with its state. The ones on the launch path are done by this team under the owners' ids (section 3); a phase that needs one off that path waits rather than forks |
+| Hosted model cost grows with unattended use | No model call at launch; one typed call per run from SW1b; metering in micro before pricing; the whole cap reserved at admission; two daily pools with no default |
+| Agents act on hostile content | Sealed trust, bound approvals for anything that leaves the account, drafts checked by code, no destructive ceiling, no model-chosen tool before the Prospector, and live twin-pair gates that a broken prompt must fail |
+| The audit has too few rules to be worth coming back to | The rule pack (SW1-14); a scheduled run speaks only when something changed |
+| The launch chain depends on another plan's re-check | Decision 28 asks for Allora's gate with the launch decisions; this team builds it under Allora's ids |
+| The engine choice is still open | Spike A builds the toy both ways and SW0-7 records the choice; the ledger, the limits and the checks do not depend on it |
 | "AI does the work" becomes "AI publishes something wrong" | Agents prepare; the founder ships. The schema refuses a published asset |
 | A number is trusted because an agent said it | The output check; receipts; `not_measured` |
 | Money paths gain new states | Conditional updates everywhere; claims before grants; a mock facilitator in tests; owner-run drills |
-| Accepting USDC creates legal or accounting work | Mainnet waits for counsel and an owner address; the facilitator screens payers; the rail can be turned off in one flag with nothing owed |
+| Accepting USDC creates legal or accounting work | It is built last and only on a trigger; mainnet waits for counsel, an accountant and an owner address; the rail can be turned off in one flag once pending settlements have drained |
 | Telegram changes or enforces its terms | Stars-only for what this plan sells in the Mini App; nothing non-TON shown there |
-| Google verification is slow or refused | Search Console and GA4 are independent sources; the unverified-app cap is accepted in writing or the phase waits |
+| Google verification is slow or refused | Search Console and GA4 are independent sources; decision 29 says whether to ship behind the unverified-app screen or wait |
 | Org membership widens access by accident | One helper, three call sites, a two-org test matrix, and a statement of scope |
 | Durable Object rollout strands a rollback | The class ships alone; the spike reads the real behaviour first |
 | Other sessions edit the same files | Rule 2.12; one PR per shared file; re-baseline tasks |
 | Staging proves little with no users | Soaks are scripted with n reported, and each phase lists what the owner checks by hand |
-| The other session's gamification work lands in a different shape | SW9 begins by reading what shipped and is rewritten to fit before any code |
+| The gamification work landed in production with no flag, no spec and no staging pass | SW0a-9 to SW0a-11 fix what is unsafe in it; decision 9 settles the points; rule 2.16 and decision 27 stop the path it took |
+| A payment defect stays live while the plan is discussed | SW0a needs one decision only, and its first tasks have chips raised |
+| The backlog is larger than it looks | Section 3 names every prerequisite and its state; section 19 counts the launch cut task by task, including the tasks other plans own; horizon 2 has triggers, not dates |
+| The plan itself is too long to act on | The Owner brief is the part to read; this file ends at launch; the later phases and the records are companion files; decisions are grouped by when they are needed |
+| "Always a result" degrades into "always not measured" | The output check's false-refusal rate is measured before SW1 ships (SW1-0 spike E) and reported in every soak; a refused summary falls back to a code-built one, not to nothing |
+| A gate passes while the model is wrong | Rule 2.22: a live labelled set with thresholds, and a broken prompt must fail it |
+| Community features ship to an empty room | Triggers in section 14.5; the launch cut has one chat with a low bar |
+| Public text is abused | Section 14.6 (SW9-10) before anything founder-written is public in the product; the chat has its rules and a named person |
+| Points creep back in as "just a number" | Section 0.6; decision 9's rules; no paid event counts toward anything |
+| Telegram removes the bot for selling outside Stars | SW0a-6 now, not at SW6 |
+| A model provider retires or swaps a model | Rate card that refuses unknown models; daily canary; the live gate re-runs on drift |
+| A dump of the database carries connector data onto a shared machine | Rule 2.19 |
 | Licence keys stop redeeming | Rule 2.15 before and after every production deploy |
 
 ---
@@ -1548,9 +1946,33 @@ Also needed from other plans' lists, because this plan waits on them: V decision
 
 | Round | Reviewers | Verdict | Outcome |
 |---|---|---|---|
-| 0 | Seven read-only audits on 2026-10-10 (backend and D1, AI stack, payments and chain, front end and desktop, deploy, existing plans, external standards) | Inputs, not a verdict | Sections 0 to 4 written from them; three hazards raised as separate tasks |
+| 0 | Seven read-only audits on 2026-10-10 (backend and D1, AI stack, payments and chain, front end and desktop, deploy, existing plans, external standards) | Inputs, not a verdict | Sections 0 to 4 written from them; three hazards raised as separate tasks. v0.1 was never gated: no reviewer read it before the merge |
+| 0 | Eight read-only audits by the Track BB session on 2026-10-10 (backend and data, AI and agents, blockchain and payments, front end and desktop, deploy and security, existing plans, reference links and licences, platform facts) | Inputs, not a verdict | Hazards 9 to 19; section 24 |
+| 1 | Five independent reviewers, on Track BB v1.0 (a second plan written from the same brief): a CEO gate, full-stack, AI and machine learning, blockchain and payments, and a citation and SQL verifier | CEO gate: no-go for the track, go for the hotfix slice. Full-stack: no-go as written. AI: conditional go. Blockchain: conditional go for the fixes, no-go for jobs and the gated chat as written. Verifier: 52 items | Track BB was not revised. On the owner's decision it was folded into this plan as v0.2, and each finding that applies here was applied to this plan's own design (section 24.4). Findings about parts of Track BB that this plan never had are recorded there as not applicable |
+| 2 | The same five roles, reading v0.2 (this document after the merge), on 2026-10-10. Beside them, the session that wrote v0.1 ran its own SQL pass (72 checks) and re-read 285 citations | CEO gate: conditional go; SW0a and the SW1-0 spikes may start. AI and machine learning: conditional go, 2 blockers. Blockchain and payments: conditional go for SW0a, no-go for pay-per-audit as written, 2 blockers. Full-stack: conditional go, 3 blockers. Verifier: 99 items, with the plan's mechanical consistency otherwise clean | All applied in v0.3. Section 24.6 says where each finding landed. The largest changes: a launch chain in which every step is code (Fixer drafts and Coach's proposal moved into SW1; the re-check pulled into the launch cut); the run engine's control and progress rules; the cost unit; one Stars charge ledger from SW0a onwards; pay-per-audit moved behind Jobs; decisions grouped by when they are needed; the document split into four files |
+| 2, spikes | A third session ran SW1-0 spike B, the Workflow half of spike A, and the local half of SW5-0, outside the repository | Spike B: not the Agents SDK for the run engine. Spike A: the Workflow half works and two of v0.2's reasons against it were wrong; the object half is still running. SW5-0: the packages run under workerd; a facilitator's `/supported` carries no asset address | Sections 4.1 and 10 carry the results. The engine choice is still open |
+| 3 | Pending, on v0.3: a closing check by the same five roles against their own findings | | |
 
-SQL check for v0.1: all nine migrations in this plan, and every statement quoted beside them, were executed on SQLite with the repository's 23 migration files (0001 to 0020) applied, and again with the V plan's `run_ledger` and `scoped_memory` applied first. 28 statement checks passed in both runs, including the idempotent inserts, the single-use state changes, the partial-index upserts, and the query plans for the per-agent spend and stale-run queries.
+**SQL check for v0.1** (by the session that wrote it): all nine migrations then in this plan, and every statement quoted beside them, were executed on SQLite with the repository's 23 migration files (0001 to 0020) applied, and again with the V plan's `run_ledger` and `scoped_memory` applied first. 28 statement checks passed in both runs.
+
+**SQL check for v0.2** (by the merging session): twelve SQL blocks, 95 checks, none failed. One defect was found and fixed by it: a partial index declared with an `IN` list was not used by the refund worker's query. The rule it taught is now written beside every partial index here: a query uses one only when it repeats the index's own predicate.
+
+**SQL check for v0.3** (by the merging session, 2026-10-10). v0.3 added three blocks (`token_meter`, `stars_charges` with two small tables beside it, `point_events`), removed one table (`stars_job_charges`, replaced by `stars_charges`), and changed five blocks (`swarm_runs`, `run_notices`, `brain_connectors`, `x402_payments`, `agent_jobs`) and one column list (`builders_chat`). It also prints two statements in full for the first time: the admission insert and the notice insert. All fifteen blocks were extracted from the plan's files and executed on SQLite 3.51.3: on the 24 migration files on disk (0001 to 0020, plus another session's uncommitted `0021_stripe_payments.sql`), again with the V plan's `run_ledger` and `scoped_memory` applied first, again with `brain_connectors` before `scoped_memory`, and once in reverse document order. The two printed statements were compiled against each schema and then run exactly as printed. 139 checks passed and none failed. What they cover that v0.2's did not:
+
+- **Admission.** One run per idempotency key; another account's project refused; the open-run and per-day limits; the fifth start in an hour against one site, from five different accounts, refused; nothing admitted during a site's back-off and one admitted after it; child runs outside the per-account counts; two starts that each fit a budget alone admit exactly one; a finished run frees its reservation while its spend still counts; the global pool counts an open run at its cap and a closed one at what it spent; the free pool holds only free runs; a run that spends nothing is held by no money limit.
+- **The clock.** A paused run keeps its working time and gets it back on resume; another account cannot pause it.
+- **Cost.** After the backfill an old row sums the same in cents and in micro; model rows and a settle row never double count in either column.
+- **Stars.** A charge is recorded once; `received` becomes `credited` once; a failed grant is leased once and refunded once; a payer with no account is recorded; a deleted account's charge row is kept with no account id.
+- **Jobs on the same ledger.** Paid and credited together; a redelivery, a second charge, a wrong payer and an expired quote each end in a refund; an orphan charge is settled by the sweep; a failed job and its charge move in one batch, a late delivery is refused, and the job cannot close before its refund has gone; an operator can refund only a delivered job; a redo exists once, within seven days, and can never be refunded.
+- **Notices.** An account with no preferences row gets a skipped row; the sixth of a day is recorded as skipped; a replay writes nothing even when the first row was skipped; a muted account is skipped.
+- **Pay-per-audit.** One authorisation is one row whatever bytes it arrives in; a settled row cannot go back to pending; a pending one can be settled later.
+- **Invites.** Two accepts racing for the last seat seat one person, and a failed accept inserts no membership.
+- **The chat.** An older redelivered request cannot reopen a decided one; the 51st approval of a day is not made.
+- **Points (option B).** A replayed reason adds nothing and the weekly limit holds inside the insert.
+
+**Citations.** Round 2's verifier re-read every `path:line` citation against `42880f5` and corrected 15; the corrections are applied. Citations added in v0.3 were read by the merging session while writing them. On 2026-10-10 other sessions held uncommitted edits to several cited files (section 1.1, "Other sessions"); citations are against `HEAD`, and each phase's re-baseline task re-reads its own.
+
+**What the reviews did not do.** No reviewer ran the product, and no code in this plan exists to run. A "go" from this record means the plan is fit to start work from, phase by phase, with each phase's own double-check and promotion criteria still to be met. It does not mean the product is ready for production.
 
 ---
 
@@ -1558,3 +1980,10 @@ SQL check for v0.1: all nine migrations in this plan, and every statement quoted
 
 Nothing has been executed. No file outside this document was changed by writing it.
 
+2026-10-10, v0.2: this document was edited to fold in Track BB. `docs/plans/business-brain-agent-crew-master-plan.md` was reduced to a pointer to this plan. Five task chips exist for the owner and none has been started: Jetton checkout and burn copy (SW0a-1, SW0a-2); lost Stars payments (SW0a-3); the community feed (SW0a-9); the App Check and public health regressions (hazards 1 and 2); the gateway receipt (hazard 3, SW0a-15). No code was changed.
+
+2026-10-10, v0.3: review round 2 applied, and the plan split into four files (the list is on the first page). Read-only checks made while writing it: `GET https://luminarasuite.com/api/health` returned HTTP 200 with the body `{"ok":true}`, so the public-health half of hazard 2 is live; `origin/staging` is one commit behind `origin/main`. Three spikes were run by another session in a scratch directory outside the repository (section 22). No file in the repository other than these plan files was changed by this work, nothing was committed, and no task chip has been started.
+
+---
+
+> **Section 24 (merged from Track BB; where every review finding landed)** is in [`founder-swarm-appendix.md`](./founder-swarm-appendix.md).

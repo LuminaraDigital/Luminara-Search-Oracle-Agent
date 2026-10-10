@@ -96,17 +96,27 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           and client workspaces.
         </p>
         <p className="mkt-body mb-8">
-          Every paid plan runs 30 days. Pay with Telegram Stars or TON in the Mini App. USD amounts are list
-          prices only. Credit card checkout is available on request during closed beta (email support@luminarasuite.com).
+          Every paid plan runs 30 days. Pay with Telegram Stars or TON inside the Mini App. USD amounts are
+          list prices; card checkout is available on request during closed beta.
         </p>
         <div className="mb-8 border border-[var(--color-rule)] bg-[var(--color-paper)]/70 p-5 sm:p-6">
           <p className="mkt-eyebrow mb-3">How to pay</p>
           <p className="mkt-body mb-4">
-            Open the Mini App in Telegram, then pay with Stars or TON for Starter, Growth, or Agency.
+            Open the Mini App to pay with Telegram Stars or TON. For card payments or corporate invoicing,
+            email support@luminarasuite.com.
           </p>
-          <a href={TELEGRAM_MINI_APP_URL} {...miniAppLinkProps} className="mkt-cta-primary w-full sm:w-auto">
-            Open Mini App in Telegram
-          </a>
+          <div className="flex flex-wrap gap-3">
+            <a href={TELEGRAM_MINI_APP_URL} {...miniAppLinkProps} className="mkt-cta-primary">
+              Open in Telegram
+            </a>
+            <button
+              type="button"
+              onClick={() => openPaywallModal('Pay with Telegram Stars or TON inside the Mini App.')}
+              className="mkt-cta-secondary"
+            >
+              See payment options
+            </button>
+          </div>
           <p className="mt-3 text-[13px] text-[var(--color-ink-2)] font-mono break-all">{TELEGRAM_MINI_APP_URL}</p>
         </div>
         <button type="button" onClick={onTerminal} className="mkt-cta-secondary">
@@ -130,10 +140,12 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 {tier.highlight && <p className="mkt-eyebrow">Recommended</p>}
               </div>
               <p className="font-display text-4xl sm:text-5xl leading-none text-[var(--color-ink)] mb-2">
-                {tier.stars}
+                {inTelegram ? tier.stars : tier.priceLabel}
               </p>
               <p className="text-[13px] font-mono text-[var(--color-ink-2)] mb-5">
-                or {tier.ton} / 30 days · list price {tier.priceLabel}
+                {inTelegram
+                  ? `or ${tier.ton} / 30 days · list ${tier.priceLabel}`
+                  : `or ${tier.stars} in Telegram · ${tier.ton} on TON`}
               </p>
               <p className="mkt-body mb-6">{tier.blurb}</p>
               <ul className="space-y-2.5 flex-1 mb-8">
@@ -155,7 +167,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 }
                 className={`w-full ${tier.highlight ? 'mkt-cta-primary' : 'mkt-cta-secondary'}`}
               >
-                {inTelegram ? `Subscribe to ${title}` : 'See payment options'}
+                Subscribe to {title}
               </button>
             </div>
           );
@@ -188,8 +200,8 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         </h2>
         <p className="mkt-body mb-8">
           Stars and TON checkout runs inside the Luminara Mini App in Telegram. On the web, the payment panel
-          opens Telegram for you, or takes a license key. Card checkout is in onboarding for the closed beta:
-          for card payments or corporate invoicing, email support@luminarasuite.com.
+          opens Telegram for you, or takes a license key. Card checkout is available on request during closed
+          beta: for card payments or corporate invoicing, email support@luminarasuite.com.
         </p>
         {inTelegram ? (
           <TelegramAccountPanel />

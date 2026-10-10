@@ -228,7 +228,7 @@ Users can also enter their own service URL in Settings, in which case the browse
 
 The code is open. The business is the hosted service and what it accumulates:
 
-- **Plans** (Telegram Stars or TON, paid in the app; card checkout is on the roadmap): Starter for 2 sites with monthly AI-visibility re-checks; Growth for 10 sites with weekly tracking and alerts; Agency with white-label reports and client workspaces.
+- **Plans** (Telegram Stars or TON in the Mini App; card checkout on request during closed beta until Stripe CC2 go-live): Starter for 2 sites with monthly AI-visibility re-checks; Growth for 10 sites with weekly tracking and alerts; Agency with white-label reports and client workspaces.
 - **Done-for-you**: schema and content fixes shipped by Luminara Digital Agency, priced per finding.
 - **The dataset**: weekly, per-vertical records of how AI engines answer commercial queries. Every audit improves with every other customer. That compounds; a prompt does not.
 

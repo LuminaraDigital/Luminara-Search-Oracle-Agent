@@ -299,3 +299,78 @@ export async function releaseStarsCharge(env: LedgerEnv, chargeId: string): Prom
     console.error(`[PaymentLedger] releaseStarsCharge failed; charge stays marked credited until an operator clears it: ${errorText(err)}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Stripe checkout sessions
+// ---------------------------------------------------------------------------
+
+export type StripeSessionClaimInput = {
+  sessionId: string;
+  customerId?: string | null;
+  accountId?: string | null;
+  planId: string;
+  amountTotal: number;
+  currency: string;
+  now?: number;
+};
+
+export type StripeSessionClaimResult =
+  | { ok: true }
+  | { ok: false; reason: 'duplicate' | 'missing_session_id' | 'unavailable' };
+
+export async function isStripeLedgerReady(env: LedgerEnv): Promise<boolean> {
+  if (!env.DB) return false;
+  try {
+    await env.DB.prepare(`SELECT 1 AS ready FROM stripe_credited_sessions LIMIT 1`).first();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function claimStripeSession(
+  env: LedgerEnv,
+  input: StripeSessionClaimInput,
+): Promise<StripeSessionClaimResult> {
+  const sessionId = String(input.sessionId || '').trim();
+  if (!sessionId) {
+    console.error('[PaymentLedger] claimStripeSession called without sessionId. Refusing to grant.');
+    return { ok: false, reason: 'missing_session_id' };
+  }
+  const db = env.DB;
+  if (!db) {
+    reportLedgerFault('claimStripeSession');
+    return UNAVAILABLE;
+  }
+  try {
+    const inserted = await db.prepare(
+      `INSERT INTO stripe_credited_sessions (session_id, customer_id, account_id, plan_id, amount_total, currency, credited_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT DO NOTHING`,
+    )
+      .bind(
+        sessionId,
+        input.customerId ?? null,
+        input.accountId ?? null,
+        input.planId,
+        input.amountTotal,
+        input.currency,
+        input.now ?? Date.now(),
+      )
+      .run();
+    return inserted.meta?.changes === 1 ? { ok: true } : { ok: false, reason: 'duplicate' };
+  } catch (err) {
+    reportLedgerFault('claimStripeSession', err);
+    return UNAVAILABLE;
+  }
+}
+
+export async function releaseStripeSession(env: LedgerEnv, sessionId: string): Promise<void> {
+  if (!env.DB) return;
+  try {
+    await env.DB.prepare(`DELETE FROM stripe_credited_sessions WHERE session_id = ?`).bind(String(sessionId || '').trim()).run();
+  } catch (err) {
+    console.error(`[PaymentLedger] releaseStripeSession failed; session stays marked credited until an operator clears it: ${errorText(err)}`);
+  }
+}
+

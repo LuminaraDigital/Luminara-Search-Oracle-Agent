@@ -4,6 +4,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
+import { enqueueDreamEvent } from './dreamingQueue';
 
 function isoWeekKey(d = new Date()): string {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -94,6 +95,17 @@ export async function handleWeeklyDecisionsRoute(
         )
         .run();
       const row = await env.DB.prepare(`SELECT * FROM weekly_decisions WHERE id = ?`).bind(existing.id).first();
+      try {
+        await enqueueDreamEvent(env, {
+          accountId,
+          domain,
+          eventType: 'recommendation_updated',
+          sourceId: existing.id,
+          payload: { title, whyText: body.whyText, status: 'updated', confidence: body.confidence },
+        });
+      } catch {
+        /* ignore dreaming queue failure */
+      }
       return json({ ok: true, decision: row });
     }
 
@@ -125,6 +137,17 @@ export async function handleWeeklyDecisionsRoute(
       )
       .run();
     const row = await env.DB.prepare(`SELECT * FROM weekly_decisions WHERE id = ?`).bind(id).first();
+    try {
+      await enqueueDreamEvent(env, {
+        accountId,
+        domain,
+        eventType: 'recommendation_updated',
+        sourceId: id,
+        payload: { title, whyText: body.whyText, status: 'created', confidence: body.confidence },
+      });
+    } catch {
+      /* ignore dreaming queue failure */
+    }
     return json({ ok: true, decision: row });
   }
 

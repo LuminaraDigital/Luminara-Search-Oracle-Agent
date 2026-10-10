@@ -3,6 +3,7 @@ import { Message } from '../types';
 import { ICONS } from '../constants';
 import { renderMarkdown } from '../utils/markdown';
 import { ReportDisplay } from './audit/ReportDisplay';
+import { HybridMessageBody } from './genui/HybridMessageBody';
 
 interface MessageListProps {
   messages: Message[];
@@ -175,9 +176,9 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                       }
 
                       return (
-                        <div 
-                          className="markdown-content prose prose-invert max-w-none"
-                          dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                        <HybridMessageBody
+                          content={msg.content}
+                          isStreaming={showStreamingIndicator}
                         />
                       );
                     })()

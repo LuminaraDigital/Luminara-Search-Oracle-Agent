@@ -37,6 +37,13 @@ import {
 } from './budgets';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { redactSensitive } from './logRedaction';
+import {
+  getActiveBusinessMemories,
+  executeDreamRun,
+  reviewDreamProposal,
+} from './dreamingService';
+import { getPendingDreamEvents } from './dreamingQueue';
+import { evaluateWakeGate } from './dreamingWakeGate';
 
 export type McpToolDef = {
   name: string;
@@ -388,6 +395,145 @@ const TOOLS: McpToolDef[] = [
       );
     },
   },
+  {
+    name: 'dream_status',
+    description: 'Uses no credits. Checks Luminara Dreaming status, pending un-dreamed events, and pending memory review proposals.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string' },
+      },
+      required: ['domain'],
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const domain = requireString(args, 'domain');
+      if (!domain) return textResult('domain required', undefined, true);
+      const pendingEvents = await getPendingDreamEvents(ctx.env, ctx.accountId, domain);
+      const activeMemories = await getActiveBusinessMemories(ctx.env, ctx.accountId, domain);
+      const wake = evaluateWakeGate({
+        pendingEvents,
+        activeMemories,
+        triggerReason: 'mcp_trigger',
+      });
+      return textResult(
+        [
+          `Luminara Dreaming Status for ${domain}:`,
+          `- Active Memories: ${activeMemories.length}`,
+          `- Pending Un-dreamed Events: ${pendingEvents.length}`,
+          `- Wake Gate: ${wake.shouldWake ? 'Ready to dream' : 'Idle'} (${wake.reason})`,
+          `- Accumulated Signal Score: ${wake.signalScore.toFixed(1)} / ${wake.threshold.toFixed(1)}`,
+        ].join('\n'),
+        {
+          domain,
+          activeMemoriesCount: activeMemories.length,
+          pendingEventsCount: pendingEvents.length,
+          wake,
+        },
+      );
+    },
+  },
+  {
+    name: 'dream_consolidate',
+    description: 'Uses no credits. Triggers an on-demand Luminara Dreaming consolidation run for a domain.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string' },
+        force: { type: 'boolean' },
+      },
+      required: ['domain'],
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const domain = requireString(args, 'domain');
+      if (!domain) return textResult('domain required', undefined, true);
+      const force = args.force === true;
+      const res = await executeDreamRun(ctx.env, ctx.accountId, domain, 'mcp_trigger', { force });
+      if (!res.ok) return textResult(res.error, undefined, true);
+      if (!res.woke) {
+        return textResult(
+          `Dream run skipped: ${res.reason} (Signal score: ${res.signalScore}). Pass force: true to override.`,
+          { woke: false, reason: res.reason, signalScore: res.signalScore },
+        );
+      }
+      return textResult(
+        [
+          `Dreaming consolidated ${res.run.eventsEvaluatedCount} event(s) for ${domain}.`,
+          `Proposals generated: ${res.proposals.length} (${res.run.autoAppliedCount} auto-applied, ${res.run.pendingReviewCount} pending review).`,
+          `Summary: ${res.run.summary}`,
+        ].join('\n'),
+        { run: res.run, proposals: res.proposals },
+      );
+    },
+  },
+  {
+    name: 'get_business_memory',
+    description: 'Uses no credits. Retrieves active Business DNA, visibility profiles, action memories, and preferences.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string' },
+        type: { type: 'string' },
+      },
+      required: ['domain'],
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const domain = requireString(args, 'domain');
+      if (!domain) return textResult('domain required', undefined, true);
+      const typeFilter = typeof args.type === 'string' ? args.type.trim() : null;
+      let memories = await getActiveBusinessMemories(ctx.env, ctx.accountId, domain);
+      if (typeFilter) {
+        memories = memories.filter((m) => m.memoryType === typeFilter);
+      }
+      const lines = memories.length
+        ? memories
+            .map((m) => `[${m.memoryType.toUpperCase()}] ${m.title}: ${m.content} (Confidence: ${m.confidence})`)
+            .join('\n')
+        : `No active memories found for ${domain}.`;
+      return textResult(lines, { domain, memories });
+    },
+  },
+  {
+    name: 'review_dream_proposal',
+    description: 'Uses no credits. Approves or rejects a pending memory proposal from Luminara Dreaming.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        proposalId: { type: 'string' },
+        action: { type: 'string', enum: ['approve', 'reject'] },
+        editedContent: { type: 'string' },
+      },
+      required: ['proposalId', 'action'],
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const proposalId = requireString(args, 'proposalId');
+      const action = requireString(args, 'action');
+      if (!proposalId || (action !== 'approve' && action !== 'reject')) {
+        return textResult('proposalId and action ("approve" | "reject") required', undefined, true);
+      }
+      const editedContent = typeof args.editedContent === 'string' ? args.editedContent : undefined;
+      const res = await reviewDreamProposal(
+        ctx.env,
+        ctx.accountId,
+        proposalId,
+        action,
+        ctx.user.id || 'mcp',
+        editedContent,
+      );
+      if (!res.ok) return textResult(res.error, undefined, true);
+      return textResult(
+        `Proposal ${proposalId} was ${res.proposal.status}. Memory: "${res.proposal.title}".`,
+        { proposal: res.proposal },
+      );
+    },
+  },
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
     description: meta.description,
@@ -418,7 +564,11 @@ function toolsListPayload() {
       description: t.description,
       inputSchema: t.inputSchema,
       annotations: {
-        readOnlyHint: t.name.startsWith('get_') || t.name.startsWith('list_') || t.name === 'whoami',
+        readOnlyHint:
+          t.name.startsWith('get_') ||
+          t.name.startsWith('list_') ||
+          t.name === 'whoami' ||
+          t.name === 'dream_status',
       },
     })),
   };

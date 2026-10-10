@@ -3,6 +3,7 @@ import {
   effectiveTab,
   formatEngineList,
   isFreeEngineConfigured,
+  isStripeCheckoutAvailable,
   isTonAvailable,
   paidEngineLabels,
   PREMIUM_ENGINES_FALLBACK,
@@ -13,37 +14,59 @@ import {
 const EMPTY = { ok: false, providers: {} };
 const tonOn = { ok: true, ton: true, providers: {} };
 const tonOff = { ok: true, ton: false, providers: {} };
+const stripeOn = { ok: true, ton: true, stripeCheckout: true, providers: {} };
 
 describe('resolvePaymentOptions', () => {
-  it('defaults to Stars inside Telegram regardless of TON', () => {
+  it('defaults to Stars inside Telegram regardless of TON or Stripe', () => {
     expect(resolvePaymentOptions({ inTelegram: true, health: tonOn })).toEqual({
       tonAvailable: true,
       starsInline: true,
+      cardAvailable: false,
       defaultTab: 'stars',
     });
+    expect(resolvePaymentOptions({ inTelegram: true, health: stripeOn }).cardAvailable).toBe(false);
     expect(resolvePaymentOptions({ inTelegram: true, health: tonOff }).defaultTab).toBe('stars');
   });
 
-  it('defaults to TON on the web only when the server reports TON configured', () => {
+  it('defaults to TON on the web when TON is configured and Stripe is not live', () => {
     expect(resolvePaymentOptions({ inTelegram: false, health: tonOn }).defaultTab).toBe('ton');
     const off = resolvePaymentOptions({ inTelegram: false, health: tonOff });
-    expect(off).toEqual({ tonAvailable: false, starsInline: false, defaultTab: 'stars' });
+    expect(off).toEqual({
+      tonAvailable: false,
+      starsInline: false,
+      cardAvailable: false,
+      defaultTab: 'stars',
+    });
+  });
+
+  it('defaults to Card on the web only when stripeCheckout is live', () => {
+    const opts = resolvePaymentOptions({ inTelegram: false, health: stripeOn });
+    expect(opts.cardAvailable).toBe(true);
+    expect(opts.defaultTab).toBe('card');
+    expect(isStripeCheckoutAvailable(stripeOn, false)).toBe(true);
+    expect(isStripeCheckoutAvailable(stripeOn, true)).toBe(false);
+    expect(isStripeCheckoutAvailable(tonOn, false)).toBe(false);
   });
 
   it('treats unloaded, failed, or legacy health as TON unavailable', () => {
     for (const health of [null, undefined, EMPTY, { ok: true, providers: {} }, { ok: false, ton: true }]) {
       const opts = resolvePaymentOptions({ inTelegram: false, health });
       expect(opts.tonAvailable).toBe(false);
+      expect(opts.cardAvailable).toBe(false);
       expect(opts.defaultTab).toBe('stars');
     }
   });
 
-  it('never lets a stale TON selection through when TON is unavailable', () => {
+  it('never lets a stale TON or Card selection through when unavailable', () => {
     const off = resolvePaymentOptions({ inTelegram: false, health: tonOff });
     expect(effectiveTab('ton', off)).toBe('stars');
+    expect(effectiveTab('card', off)).toBe('stars');
     const on = resolvePaymentOptions({ inTelegram: false, health: tonOn });
     expect(effectiveTab('ton', on)).toBe('ton');
+    expect(effectiveTab('card', on)).toBe('ton');
     expect(effectiveTab('stars', on)).toBe('stars');
+    const card = resolvePaymentOptions({ inTelegram: false, health: stripeOn });
+    expect(effectiveTab('card', card)).toBe('card');
   });
 
   it('points the web hand-off at the published Mini App link', () => {

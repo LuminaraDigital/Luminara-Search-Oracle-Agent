@@ -97,6 +97,10 @@ export interface Env {
   /** Self-hosted Umami login used to mint a bearer token when no API key is set (secrets). */
   UMAMI_USERNAME?: string;
   UMAMI_PASSWORD?: string;
+  /** Stripe API secret key for card checkouts (sk_live_... / sk_test_...). */
+  STRIPE_SECRET_KEY?: string;
+  /** Stripe webhook endpoint secret (whsec_...). */
+  STRIPE_WEBHOOK_SECRET?: string;
   TON_RECEIVING_ADDRESS?: string;
   TON_API_KEY?: string;
   /**

@@ -5,7 +5,9 @@ import type { ObservePayload, VerifyCheckDetail, VerifyChecks, VerifyResult } fr
 
 function asList(value: string | string[] | undefined): string[] {
   if (value == null) return [];
-  return Array.isArray(value) ? value : [value];
+  const raw = Array.isArray(value) ? value : [value];
+  // Empty/whitespace needles are vacuous (''.includes is always true). Reject them.
+  return raw.map((v) => String(v).trim()).filter((v) => v.length > 0);
 }
 
 function includesCheck(
@@ -90,4 +92,25 @@ export function verifyDone(args: {
     return { ok: false, status: 'not_measured', details };
   }
   return { ok: false, status: 'not_verified', details };
+}
+
+/**
+ * Second cheap DONE check: goal tokens should appear in visible page text/title/url.
+ * Disagreement with a claimed DONE must not mint measured success.
+ */
+export function confirmDoneGoalOverlap(args: {
+  goal: string;
+  observe: ObservePayload | null | undefined;
+  minRatio?: number;
+}): { ok: boolean; ratio: number; tokens: string[] } {
+  const goal = (args.goal || '').trim().toLowerCase();
+  const tokens = goal.split(/[^a-z0-9]+/).filter((t) => t.length > 3);
+  if (!tokens.length || !args.observe) {
+    return { ok: false, ratio: 0, tokens };
+  }
+  const hay = `${args.observe.url} ${args.observe.title} ${args.observe.text}`.toLowerCase();
+  const hits = tokens.filter((t) => hay.includes(t));
+  const ratio = hits.length / tokens.length;
+  const minRatio = args.minRatio ?? 0.25;
+  return { ok: ratio >= minRatio, ratio, tokens };
 }

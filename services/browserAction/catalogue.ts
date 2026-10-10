@@ -41,7 +41,7 @@ export const BROWSE_ACT_TOOL: ToolDefinitionMeta = {
 export const BROWSE_GOAL_TOOL: ToolDefinitionMeta = {
   name: 'browse_goal',
   description:
-    'Paid (same gate as browse_act). Run a bounded indexed DOM loop for a natural-language goal. Returns history, final observe, and independent verifier result. Prefer get_project_context first.',
+    'Paid (same gate as browse_act). Run a bounded indexed DOM loop for a natural-language goal. Requires independent verifier checks (urlIncludes / textIncludes / titleIncludes). Agent DONE is never proof. Prefer get_project_context first.',
   creditClass: 'paid',
   inputSchema: {
     type: 'object',
@@ -53,6 +53,7 @@ export const BROWSE_GOAL_TOOL: ToolDefinitionMeta = {
       maxSteps: { type: 'number' },
       checks: {
         type: 'object',
+        description: 'Mandatory independent DONE checks. At least one include list required.',
         properties: {
           urlIncludes: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
           textIncludes: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
@@ -61,7 +62,7 @@ export const BROWSE_GOAL_TOOL: ToolDefinitionMeta = {
         additionalProperties: false,
       },
     },
-    required: ['goal'],
+    required: ['goal', 'checks'],
     additionalProperties: false,
   },
 };

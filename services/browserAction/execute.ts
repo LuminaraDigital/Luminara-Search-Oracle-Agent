@@ -9,8 +9,9 @@
  */
 import type { PaidToolRuntime, ToolResult } from '../tools/types';
 import { BrowserActionLoop } from './loop';
-import { verifyDone } from './verify';
+import { confirmDoneGoalOverlap, verifyDone } from './verify';
 import type { ObservePayload, ObservedAction, VerifyChecks } from './types';
+import { ClaimLedger } from '../evidenceBound';
 
 export type BrowserActionRuntime = PaidToolRuntime & {
   /** Absolute crawler base URL. Empty/unset => BROWSER_UNAVAILABLE. */
@@ -114,19 +115,33 @@ async function crawlerHealth(base: string): Promise<{ ok: boolean; message?: str
   }
 }
 
+function nonEmptyNeedles(value: unknown): string | string[] | undefined {
+  if (typeof value === 'string') {
+    const t = value.trim();
+    return t ? t : undefined;
+  }
+  if (Array.isArray(value)) {
+    const cleaned = value
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    return cleaned.length ? cleaned : undefined;
+  }
+  return undefined;
+}
+
 function parseChecks(raw: unknown): VerifyChecks | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const c = raw as Record<string, unknown>;
   const out: VerifyChecks = {};
-  if (typeof c.urlIncludes === 'string' || Array.isArray(c.urlIncludes)) {
-    out.urlIncludes = c.urlIncludes as string | string[];
-  }
-  if (typeof c.textIncludes === 'string' || Array.isArray(c.textIncludes)) {
-    out.textIncludes = c.textIncludes as string | string[];
-  }
-  if (typeof c.titleIncludes === 'string' || Array.isArray(c.titleIncludes)) {
-    out.titleIncludes = c.titleIncludes as string | string[];
-  }
+  const urlIncludes = nonEmptyNeedles(c.urlIncludes);
+  const textIncludes = nonEmptyNeedles(c.textIncludes);
+  const titleIncludes = nonEmptyNeedles(c.titleIncludes);
+  if (urlIncludes) out.urlIncludes = urlIncludes;
+  if (textIncludes) out.textIncludes = textIncludes;
+  if (titleIncludes) out.titleIncludes = titleIncludes;
+  // Vacuous {} or empty-string needles are not checks.
+  if (!out.urlIncludes && !out.textIncludes && !out.titleIncludes) return undefined;
   return out;
 }
 
@@ -314,6 +329,16 @@ async function browseGoal(
       ? Math.max(1, Math.min(30, Math.floor(args.maxSteps)))
       : 15;
   const checks = parseChecks(args.checks);
+  if (!checks) {
+    return {
+      text: 'browse_goal requires checks (urlIncludes and/or textIncludes and/or titleIncludes). Agent DONE is never proof; independent verifier checks are mandatory.',
+      structuredContent: {
+        measurementStatus: 'not_measured',
+        code: 'VERIFIER_CHECKS_REQUIRED',
+      },
+      isError: true,
+    };
+  }
 
   if (!rt.llmGenerate) {
     return unavailable('No LLM configured for browse_goal (OPENROUTER_API_KEY / provider relay)');
@@ -395,7 +420,21 @@ async function browseGoal(
   const verify = verifyDone({
     goal,
     observe: finalPage,
-    checks: claimedDone ? checks : checks,
+    checks,
+  });
+  const goalOverlap = confirmDoneGoalOverlap({ goal, observe: finalPage });
+  // Always require substantive verifier + goal overlap before minting measured.
+  const verified = verify.ok && goalOverlap.ok;
+
+  const ledger = new ClaimLedger();
+  ledger.append({
+    text: verified
+      ? `Browse goal satisfied under independent checks: ${goal}`
+      : `Browse goal not verified: ${goal}`,
+    status: verified ? 'measured' : 'not_measured',
+    sources: verified
+      ? [{ kind: 'verifier', excerpt: JSON.stringify(verify.details).slice(0, 500), url: finalPage.url }]
+      : [{ kind: 'browse_observe', url: finalPage.url, excerpt: finalPage.title }],
   });
 
   const summary = [
@@ -404,10 +443,11 @@ async function browseGoal(
     `status=${loop.state.status}`,
     `steps=${loop.state.history.length}`,
     `verifier=${verify.status}`,
+    `goalOverlap=${goalOverlap.ok ? 'pass' : 'fail'}`,
     `url=${finalPage.url}`,
   ].join('. ');
 
-  if (projectId && verify.ok) {
+  if (projectId && verified) {
     try {
       await rt.appendResearchLog(projectId, summary);
     } catch {
@@ -418,21 +458,25 @@ async function browseGoal(
   return {
     text: [
       summary,
-      claimedDone && !verify.ok
-        ? 'Agent claimed DONE but independent verifier did not pass; treat as not_verified.'
+      claimedDone && !verified
+        ? 'Agent claimed DONE but independent verifier / goal-overlap did not pass; treat as not_verified.'
         : '',
       'Agent DONE is not proof. Prefer verifier status.',
+      ...ledger.toVerdictLines(4),
     ]
       .filter(Boolean)
       .join('\n'),
     structuredContent: {
-      measurementStatus: verify.ok ? 'measured' : verify.status === 'not_measured' ? 'not_measured' : 'estimated',
+      // Fail closed: only verified => measured. Never "estimated" for failed verify.
+      measurementStatus: verified ? 'measured' : 'not_measured',
       sessionId: sid,
       status: loop.state.status,
       history: loop.state.history,
       observe: finalPage,
       verify,
+      goalOverlap,
+      claimLedger: ledger.toJSON(),
     },
-    isError: loop.state.status === 'blocked' && !verify.ok,
+    isError: (loop.state.status === 'blocked' || claimedDone) && !verified,
   };
 }

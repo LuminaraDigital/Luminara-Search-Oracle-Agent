@@ -28,6 +28,16 @@ import {
   shouldInvokeResearchKeywords,
   type SessionTurn,
 } from './oracleInteractionGuard';
+import {
+  ClaimLedger,
+  buildRouterState,
+  citationSupportHeuristic,
+  coerceClaimStatus,
+  formatOraclePointer,
+  routeIntentDeterministic,
+} from '../services/evidenceBound';
+import { markProjectContextLoaded, requireProjectContextBeforePaid } from './mcpServer';
+import { getProjectContext } from './projectContextService';
 
 /** Runtime skill slug for hosted Oracle chat (admin-seedable via agent_skills). */
 const ORACLE_CHAT_SKILL_SLUG = 'oracle-chat';
@@ -164,57 +174,137 @@ export async function handleOracleChatSse(
           hint: 'Monthly budget hard stop reached. Resume or raise the budget in Settings.',
         });
       } else if (wantsPaidTool && toolDecision.seed) {
-        const rt = buildPaidToolRuntime({
-          env,
-          accountId,
-          canUsePaid: true,
-          dataForSeoCredential: dfsCred,
-          author: 'oracle',
-        });
         const seed = toolDecision.seed;
-        await write('tool', {
-          tool: 'research_keywords',
-          stage: 'running',
-          args: { projectId: body.projectId, seeds: [seed] },
-          reason: toolDecision.reason,
-        });
-        const toolResult = await executePaidTool(
-          'research_keywords',
-          { projectId: body.projectId, seeds: [seed] },
-          rt,
-        );
-        hadToolEvidence = true;
-        toolNote = `\n\n${fenceToolResult('research_keywords', toolResult.text)}`;
-        if (!toolResult.isError) {
-          const billedCents = dfsCred ? BYOK_PAID_CALL_COST_CENTS : HOSTED_PAID_CALL_COST_CENTS;
-          if (billedCents > 0) {
-            await recordCostEvent(env, {
-              accountId,
-              toolName: 'research_keywords',
-              billedCents,
-              projectId: body.projectId ?? null,
-              creditClass: 'paid',
-              source: 'credit_class',
-              runId: runHandle?.runId ?? null,
-              credentialKind: 'oracle',
-              credentialId: null,
-              now: toolNow,
-            }).catch((err) => console.error('[budgets] oracle recordCostEvent failed:', err));
+        const projectId = body.projectId ?? null;
+
+        // APS: same context-before-paid gate as MCP. Oracle loads D1 context once, then marks KV.
+        let contextBlock = await requireProjectContextBeforePaid(env, accountId, projectId);
+        if (contextBlock && projectId && env.LUMINARA_KV) {
+          const ctx = await getProjectContext(env, accountId, projectId);
+          if (ctx) {
+            await markProjectContextLoaded(env, accountId, projectId);
+            contextBlock = await requireProjectContextBeforePaid(env, accountId, projectId);
           }
+        }
+        const route = routeIntentDeterministic(
+          buildRouterState({
+            userMessage: message,
+            projectId,
+            hasProjectContext: !contextBlock,
+            offeredTools: ['research_keywords'],
+          }),
+        );
+        if (contextBlock || route.intent === 'clarify') {
           await recordAuditLogBestEffort(env, {
             org_id: auditOrgIdFor(accountId),
             actor_id: user.id,
-            action: 'oracle_tool_allow',
+            action: 'oracle_tool_block',
             target_id: 'research_keywords',
-            details: { tool: 'research_keywords', projectId: body.projectId, byok: Boolean(dfsCred) },
+            details: {
+              tool: 'research_keywords',
+              decision: 'block',
+              reason: contextBlock
+                ? String((contextBlock.structuredContent as { reason?: string } | undefined)?.reason || 'CONTEXT_REQUIRED')
+                : route.clarifyReason || 'intent_clarify',
+              projectId,
+            },
+          });
+          await write('tool', {
+            tool: 'research_keywords',
+            stage: 'blocked',
+            reason: contextBlock ? 'CONTEXT_REQUIRED' : 'intent_clarify',
+            hint:
+              contextBlock?.text ||
+              route.clarifyReason ||
+              'Call get_project_context / open the project before paid research (APS).',
+            intentRoute: route,
+          });
+        } else {
+          const rt = buildPaidToolRuntime({
+            env,
+            accountId,
+            canUsePaid: true,
+            dataForSeoCredential: dfsCred,
+            author: 'oracle',
+          });
+          await write('tool', {
+            tool: 'research_keywords',
+            stage: 'running',
+            args: { projectId: body.projectId, seeds: [seed] },
+            reason: toolDecision.reason,
+          });
+          const toolResult = await executePaidTool(
+            'research_keywords',
+            { projectId: body.projectId, seeds: [seed] },
+            rt,
+          );
+          hadToolEvidence = true;
+          toolNote = `\n\n${fenceToolResult('research_keywords', toolResult.text)}`;
+          if (!toolResult.isError) {
+            const billedCents = dfsCred ? BYOK_PAID_CALL_COST_CENTS : HOSTED_PAID_CALL_COST_CENTS;
+            if (billedCents > 0) {
+              await recordCostEvent(env, {
+                accountId,
+                toolName: 'research_keywords',
+                billedCents,
+                projectId: body.projectId ?? null,
+                creditClass: 'paid',
+                source: 'credit_class',
+                runId: runHandle?.runId ?? null,
+                credentialKind: 'oracle',
+                credentialId: null,
+                now: toolNow,
+              }).catch((err) => console.error('[budgets] oracle recordCostEvent failed:', err));
+            }
+            await recordAuditLogBestEffort(env, {
+              org_id: auditOrgIdFor(accountId),
+              actor_id: user.id,
+              action: 'oracle_tool_allow',
+              target_id: 'research_keywords',
+              details: { tool: 'research_keywords', projectId: body.projectId, byok: Boolean(dfsCred) },
+            });
+          }
+          const structured =
+            toolResult.structuredContent && typeof toolResult.structuredContent === 'object'
+              ? (toolResult.structuredContent as Record<string, unknown>)
+              : {};
+          const rawStatus = coerceClaimStatus(
+            (typeof structured.measurementStatus === 'string'
+              ? structured.measurementStatus
+              : 'not_measured') as 'measured' | 'estimated' | 'not_measured' | 'unknown',
+            structured.measurementStatus === 'measured'
+              ? [{ kind: 'dfs', excerpt: toolResult.text.slice(0, 240) }]
+              : [],
+          );
+          const ledger = new ClaimLedger();
+          const cite = citationSupportHeuristic({
+            claimText: toolResult.text.slice(0, 400),
+            evidenceSpans: rawStatus === 'measured' ? [toolResult.text.slice(0, 800)] : [],
+          });
+          ledger.append({
+            text: cite.safeText.slice(0, 400),
+            status: rawStatus === 'measured' ? 'measured' : cite.status,
+            sources:
+              rawStatus === 'measured'
+                ? [{ kind: 'dfs', excerpt: toolResult.text.slice(0, 240) }]
+                : [{ kind: 'other', excerpt: 'tool result without measured status' }],
+          });
+          await write('tool', {
+            tool: 'research_keywords',
+            stage: 'done',
+            output: toolResult.text,
+            structuredContent: {
+              ...structured,
+              measurementStatus: rawStatus,
+              claimLedger: ledger.toJSON(),
+              intentRoute: route,
+              oraclePointer: formatOraclePointer({
+                ledger,
+                oneAction: 'Review keyword ideas in project context, then save_report',
+              }),
+            },
           });
         }
-        await write('tool', {
-          tool: 'research_keywords',
-          stage: 'done',
-          output: toolResult.text,
-          structuredContent: toolResult.structuredContent,
-        });
       } else if (body.invokeTool === 'research_keywords' && !toolDecision.invoke) {
         await write('tool', {
           tool: 'research_keywords',

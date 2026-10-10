@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTonConnectUI, useTonWallet, TonConnectButton } from '@tonconnect/ui-react';
 import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma';
-import { createStarsInvoice, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
+import { createStarsInvoice, createStripeCheckout, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
 import { executeTonPayment } from '../../services/ton/tonService';
 import { executeJettonPayment } from '../../services/ton/jettonService';
 import {
@@ -227,7 +227,27 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     }
   };
 
+  const handleCardCheckout = async (planId: string) => {
+    setBusyPlan(planId);
+    setStatusMessage('Connecting to secure Stripe card checkout…');
+    try {
+      const res = await createStripeCheckout({ planId });
+      if (res.ok && res.checkoutUrl) {
+        window.location.href = res.checkoutUrl;
+      } else {
+        setStatusMessage(toUserFacingText(res.error, 'Could not initiate Stripe checkout. Please try again.'));
+      }
+    } catch (err: any) {
+      setStatusMessage(toUserFacingText(err, 'Failed to start card checkout.'));
+    } finally {
+      setBusyPlan(null);
+    }
+  };
+
   const handlePlanCheckout = (planId: 'starter' | 'growth' | 'agency') => {
+    if (tab === 'card') {
+      return handleCardCheckout(planId);
+    }
     if (tab === 'stars') {
       return handleStarsCheckout(planId);
     }
@@ -238,6 +258,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   };
 
   const planPriceLabel = (plan: 'starter' | 'growth' | 'agency') => {
+    if (tab === 'card') {
+      if (plan === 'starter') return '$49 / 30 days';
+      if (plan === 'growth') return '$149 / 30 days';
+      return '$349 / 30 days';
+    }
     if (tab === 'stars') {
       if (plan === 'starter') return '2,500 ⭐';
       if (plan === 'growth') return '7,500 ⭐';
@@ -260,6 +285,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
   const planButtonLabel = (plan: 'starter' | 'growth' | 'agency') => {
     if (busyPlan === plan) return 'Processing…';
+    if (tab === 'card') {
+      if (plan === 'starter') return 'Checkout with Card · $49';
+      if (plan === 'growth') return 'Checkout with Card · $149';
+      return 'Checkout with Card · $349';
+    }
     if (tab === 'stars') {
       if (plan === 'starter') return inTg ? 'Pay 2,500 Stars · 30 days' : 'Open in Telegram · 2,500 Stars';
       if (plan === 'growth') return inTg ? 'Pay 7,500 Stars · 30 days' : 'Open in Telegram · 7,500 Stars';
@@ -379,18 +409,34 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           )}
         </div>
 
-        {/* Payment Rail Selector */}
-        <div className={`flex items-center gap-2 p-1.5 rounded-2xl bg-black/40 border border-white/10 ${paymentOptions.tonAvailable ? 'mb-6' : 'mb-2'}`}>
+        {/* Payment Rail Selector: Card only when Worker reports stripeCheckout live; never in TMA */}
+        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-black/40 border border-white/10 mb-6">
+          {paymentOptions.cardAvailable && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('card')}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
+                tab === 'card'
+                  ? 'bg-gold text-black shadow-lg shadow-gold/20'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span>Card</span>
+              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
+                30 days
+              </span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setActiveTab('stars')}
-            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
               tab === 'stars'
                 ? 'bg-gold text-black shadow-lg shadow-gold/20'
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            <span>⭐ Telegram Stars</span>
+            <span>Stars</span>
             {inTg && (
               <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
                 1-Click
@@ -401,7 +447,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             type="button"
             onClick={() => setActiveTab('ton')}
             disabled={!paymentOptions.tonAvailable}
-            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
               tab === 'ton'
                 ? 'bg-gold text-black shadow-lg shadow-gold/20'
                 : paymentOptions.tonAvailable
@@ -409,7 +455,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                 : 'text-gray-500 cursor-not-allowed'
             }`}
           >
-            <span>💎 TON Blockchain</span>
+            <span>TON</span>
             {!paymentOptions.tonAvailable ? (
               <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-black">
                 Soon
@@ -421,9 +467,6 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             )}
           </button>
         </div>
-        {!paymentOptions.tonAvailable && (
-          <p className="mb-6 text-center text-[10px] text-gray-400">TON payments are coming soon.</p>
-        )}
 
         {/* Jetton Asset Selector: only when the server reports Jetton checkout live */}
         {tab === 'ton' && paymentOptions.tonAvailable && jettonLive && (
@@ -587,6 +630,18 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </div>
         </div>
 
+        {/* Stripe Card helper if in Card tab (only when stripeCheckout live) */}
+        {tab === 'card' && paymentOptions.cardAvailable && (
+          <div className="p-4 rounded-2xl bg-black/40 border border-gold/30 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-left">
+              <p className="text-xs font-bold text-white">Card checkout (30 days)</p>
+              <p className="text-[10px] text-gray-400">
+                Secure hosted checkout. One-time 30-day plan grant (not auto-renew unless stated at purchase).
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* TON Wallet Connect helper if in TON tab */}
         {tab === 'ton' && (
           <div className="p-4 rounded-2xl bg-black/40 border border-white/10 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -634,13 +689,15 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </div>
         )}
 
-        {/* Card checkout guidance */}
-        <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[10px] text-gray-400">
-          <p>
-            Card checkout is in onboarding for closed beta. For credit card payments or corporate invoicing, email{' '}
-            <a href="mailto:support@luminarasuite.com" className="text-gold underline hover:text-gold-light">support@luminarasuite.com</a>.
-          </p>
-        </div>
+        {/* Card checkout guidance when Card rail is not live */}
+        {!paymentOptions.cardAvailable && (
+          <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[10px] text-gray-400">
+            <p>
+              Card checkout is available on request during closed beta. For credit card payments or corporate invoicing, email{' '}
+              <a href="mailto:support@luminarasuite.com" className="text-gold underline hover:text-gold-light">support@luminarasuite.com</a>.
+            </p>
+          </div>
+        )}
 
         {/* Status / Feedback message */}
         {statusMessage && (

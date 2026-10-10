@@ -4,7 +4,7 @@
 
 **Date:** 2026-09-18  
 **Status:** In progress (A0-A8 in tree; paid research live via DFS/OpenRouter router with honest `not_measured` / `estimated`; callers must `get_project_context` before paid MCP tools)
-**Companion plan:** [`e2e-visibility-agent-platform.md`](./e2e-visibility-agent-platform.md) (W0-W1 done; W2-W8 continue in parallel where noted)  
+**Companion plan:** [`e2e-visibility-agent-platform.md`](./e2e-visibility-agent-platform.md) (W0-W1 done; W2-W8 continue in parallel where noted), [`evidence-bound-decision-100x.md`](./evidence-bound-decision-100x.md) (claim ledger + intent router + citation gate; no TypeSafe dependency)  
 **Pattern library:** local `open-seo-ref` checkout on the dev machine (do not fork into product)
 
 ---

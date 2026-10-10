@@ -14,8 +14,9 @@ import { siteEvidencePackService } from "./scraping/siteEvidencePack";
 import { geminiProxyHttpOptions } from "./apiClient";
 import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from "../utils/untrustedContent";
 import { toUserFacingText } from "../utils/userFacingText";
+import { generateGenUISystemPrompt } from "./genui/promptGenerator";
 
-const ORACLE_SYSTEM_PROMPT = `${SYSTEM_INSTRUCTIONS}\n\n${UNTRUSTED_CONTENT_RULE}`;
+const ORACLE_SYSTEM_PROMPT = `${SYSTEM_INSTRUCTIONS}\n\n${UNTRUSTED_CONTENT_RULE}\n\n${generateGenUISystemPrompt()}`;
 
 export const BUSINESS_DNA_SYSTEM_PROMPT =
   `You are an expert Strategic Business DNA extractor. Always output valid JSON matching the requested schema.\n${UNTRUSTED_CONTENT_RULE}`;
@@ -81,6 +82,7 @@ import { brandMemoryVaultService } from './memory/brandMemoryVaultService';
 import { competitorWatchlistService } from './competitors/competitorWatchlistService';
 import { WIKI_LINK_PROMPT_HINT } from './audit/wikiLinkService';
 import { postAuditReflectionService } from './audit/postAuditReflectionService';
+import { dreamingClient } from './dreaming/dreamingClient';
 
 export interface AuditReportResult {
   text: string;
@@ -261,9 +263,10 @@ export class GeminiService {
     return new GoogleGenAI({ apiKey: key });
   }
 
-  private getDNAContext(dna?: BusinessDNA | null): string {
-    if (!dna) return "";
-    return `
+  private getDNAContext(dna?: BusinessDNA | null, domainOrUrl?: string): string {
+    let result = '';
+    if (dna) {
+      result += `
 [STRATEGIC BUSINESS DNA LINKED]
 Business Name: ${dna.name}
 Mission: ${dna.mission}
@@ -275,6 +278,35 @@ Context Synthesis: ${dna.rawContext}
 --------------------------------------------------
 Integrate this Strategic DNA into your analysis. Prioritize bridging identified gaps and maximizing USP authority.
 `;
+    }
+
+    const domain = domainOrUrl
+      ? domainOrUrl.toLowerCase().replace(/^https?:\/\//i, '').split('/')[0]
+      : dna?.name ? dna.name.toLowerCase().replace(/\s+/g, '') + '.com' : '';
+
+    if (domain && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('luminara_dream_memories_v1');
+        if (raw) {
+          const all = JSON.parse(raw);
+          if (Array.isArray(all)) {
+            const active = all.filter((m: any) => m.domain === domain && m.status === 'active');
+            if (active.length > 0) {
+              result += `
+[LUMINARA DREAMING: CONSOLIDATED BUSINESS MEMORIES]
+${active.slice(0, 5).map((m: any) => `- [${m.memoryType?.toUpperCase() || 'FACT'}] ${m.title}: ${m.content}`).join('\n')}
+--------------------------------------------------
+Respect these consolidated business memories and historical recommendation outcomes.
+`;
+            }
+          }
+        }
+      } catch {
+        /* ignore local storage error */
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -599,7 +631,7 @@ Integrate this Strategic DNA into your analysis. Prioritize bridging identified 
     lenses: AuditLens[] = [],
     crewEvidence?: AuditReportCrewEvidence,
   ): Promise<AuditReportResult> {
-    const dnaContext = this.getDNAContext(dna);
+    const dnaContext = this.getDNAContext(dna, websiteUrl);
     const allLenses = [...new Set([...lenses, ...inferLenses(dna)])];
     const methodology = playbookContext(selectAuditPlaybooks(focus, allLenses), 4500);
     const displayUrl = websiteUrl.replace(/^https?:\/\//i, '');
@@ -964,6 +996,23 @@ Strict Formatting Guidelines:
             dna,
           });
           brandMemoryVaultService.ingestAuditExperience(experience);
+
+          // Luminara Dreaming: enqueue audit_completed event for consolidation
+          try {
+            dreamingClient.enqueueEvent({
+              domain: displayUrl,
+              eventType: 'audit_completed',
+              sourceId: vault.entry.id,
+              payload: {
+                focus: String(focus),
+                healthScore: trustPack?.citeWorthiness ?? null,
+                citationRatePercent: empiricalSummary?.citationRatePercent ?? null,
+                topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
+              },
+            }).catch(() => {});
+          } catch {
+            /* ignore dreaming queue failure */
+          }
         } catch (reflErr) {
           console.warn('[MUSE Reflection] Post-audit reflection error', reflErr);
         }
@@ -1080,6 +1129,24 @@ Strict Formatting Guidelines:
         if (!lastError) lastError = error;
         console.warn("Audit Generation Gemini error:", error);
       }
+    }
+
+    // 3. Resilient Multi-Provider Fallback: Groq / NIM / OpenRouter via aiProviderService
+    try {
+      const fallbackResult = await aiProviderService.generateWithFailover(prompt, {
+        maxTokens: 4000,
+        temperature: 0.2,
+      });
+      if (fallbackResult && fallbackResult.text && fallbackResult.text.trim()) {
+        try {
+          vfsMemoryService.ingestAuditAsResource(fallbackResult.text, websiteUrl);
+        } catch (e) {
+          console.warn('VFS audit ingestion fallback', e);
+        }
+        return buildReportResult(fallbackResult.text);
+      }
+    } catch (fallbackError) {
+      console.warn('Audit generation aiProviderService fallback error:', fallbackError);
     }
 
     const detail = toUserFacingText(lastError, '');

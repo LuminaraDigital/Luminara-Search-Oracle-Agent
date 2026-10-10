@@ -38,6 +38,8 @@ export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/telegram\/webhook$/ },
   { method: 'POST', pattern: /^\/telegram\/auth$/ },
   { method: 'POST', pattern: /^\/telegram\/invoice$/ },
+  { method: 'POST', pattern: /^\/stripe\/create-checkout-session$/ },
+  { method: 'POST', pattern: /^\/stripe\/webhook$/ },
   { method: 'GET', pattern: /^\/auth\/session$/ },
   { method: 'POST', pattern: /^\/auth\/session$/ },
   { method: 'POST', pattern: /^\/auth\/logout$/ },

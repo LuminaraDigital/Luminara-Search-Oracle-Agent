@@ -301,6 +301,8 @@ async function executeObservedAction(page, action, text) {
     }
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
     await page.keyboard.insertText(text);
+    // Cap suggestion wait after fill is logged-bound (jev pattern). Not a second model call.
+    await page.waitForTimeout(200);
   }
   return { executed: action.id };
 }

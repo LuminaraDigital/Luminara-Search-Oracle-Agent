@@ -6,6 +6,7 @@ import { ICONS } from '../../constants';
 import { useConfirm } from '../ui/ConfirmModal';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
+import { dreamingClient } from '../../services/dreaming/dreamingClient';
 
 interface BusinessDNAViewProps {
   currentDNA: BusinessDNA | null;
@@ -38,7 +39,22 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
   const syncToVfs = (dna: BusinessDNA) => {
     try {
       brandMemoryVaultService.syncDna(dna);
-      setVfsSyncSuccess('Synced to Brand Memory Vault + Viking VFS.');
+      const domain = dna.name ? dna.name.toLowerCase().replace(/\s+/g, '') + '.com' : 'business.local';
+      dreamingClient
+        .enqueueEvent({
+          domain,
+          eventType: 'client_profile_changed',
+          payload: {
+            name: dna.name,
+            mission: dna.mission,
+            usp: dna.usp,
+            targetAudience: dna.targetAudience,
+            competitors: dna.competitors,
+          },
+          signalWeight: 2.5,
+        })
+        .catch(() => {});
+      setVfsSyncSuccess('Synced to Brand Memory Vault + Luminara Dreaming.');
       setTimeout(() => setVfsSyncSuccess(null), 3500);
     } catch (e) {
       console.error('VFS sync error', e);

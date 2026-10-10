@@ -19,6 +19,12 @@ export interface ScoutBadge {
   value?: string;
 }
 
+export interface AiPlatformCheck {
+  platform: 'ChatGPT' | 'Perplexity' | 'Google AI Overviews' | 'Google Search';
+  status: 'recommended' | 'cited' | 'not_cited' | 'not_measured';
+  detail: string;
+}
+
 export interface GuestScoutSummary {
   domain: string;
   /** Plain text for teaser, share, and clipboard. No heading or emphasis markers. */
@@ -29,6 +35,7 @@ export interface GuestScoutSummary {
   topFix: string;
   nextStep: string;
   badges: ScoutBadge[];
+  aiPlatforms?: AiPlatformCheck[];
   crawlerChecks: LlmCrawlerCheck[];
   /** Public sentences. Raw provider errors are not copied here. */
   failed: string[];
@@ -211,6 +218,67 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     verdictMarkdown = verdict;
   }
 
+  const aiPlatforms: AiPlatformCheck[] = [
+    {
+      platform: 'ChatGPT',
+      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.citationRatePercent == null)
+        ? 'not_measured'
+        : input.citationRatePercent >= 50
+          ? 'recommended'
+          : input.citationRatePercent > 0
+            ? 'cited'
+            : 'not_cited',
+      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.citationRatePercent == null)
+        ? 'Search evidence was not measured in this run.'
+        : input.citationRatePercent >= 50
+          ? 'Brand is recommended in category recommendation prompts.'
+          : input.citationRatePercent > 0
+            ? 'Brand is cited in secondary prompt citations.'
+            : 'Zero citations detected in ChatGPT commercial intent tests.',
+    },
+    {
+      platform: 'Perplexity',
+      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.shareOfVoiceScore == null)
+        ? 'not_measured'
+        : input.shareOfVoiceScore >= 50
+          ? 'recommended'
+          : input.shareOfVoiceScore > 0
+            ? 'cited'
+            : 'not_cited',
+      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.shareOfVoiceScore == null)
+        ? 'Search evidence was not measured in this run.'
+        : input.shareOfVoiceScore >= 50
+          ? 'High domain citation density in Perplexity answer synthesis.'
+          : input.shareOfVoiceScore > 0
+            ? 'Secondary source citations detected in answers.'
+            : 'Not cited in Perplexity answers for category queries.',
+    },
+    {
+      platform: 'Google AI Overviews',
+      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.citationRatePercent == null)
+        ? 'not_measured'
+        : input.citationRatePercent > 0
+          ? 'cited'
+          : 'not_cited',
+      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.citationRatePercent == null)
+        ? 'AI Overview snapshot not measured in this run.'
+        : input.citationRatePercent > 0
+          ? 'Brand cited within generative overview summary blocks.'
+          : 'Zero citations detected in Google AI Overviews.',
+    },
+    {
+      platform: 'Google Search',
+      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.serpCount === 0)
+        ? 'not_measured'
+        : input.serpCount > 0
+          ? 'cited'
+          : 'not_cited',
+      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.serpCount === 0)
+        ? 'Organic search index not measured in this run.'
+        : `Verified ${input.serpCount} organic category search result(s).`,
+    },
+  ];
+
   return {
     domain,
     verdict,
@@ -219,6 +287,7 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     topFix,
     nextStep: nextStepFor(input.hostedRail, degraded || evidenceEmpty),
     badges,
+    aiPlatforms,
     crawlerChecks,
     failed,
     failureCodes,

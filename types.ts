@@ -1232,3 +1232,119 @@ export interface Notebook {
   updatedAt: number;
   isDemo?: boolean;
 }
+
+// ============================================================================
+// Luminara Dreaming (Business DNA Memory Consolidation & Reflection Layer)
+// ============================================================================
+
+export type DreamMemoryType =
+  | 'business_dna'
+  | 'visibility_profile'
+  | 'action_memory'
+  | 'preference_memory'
+  | 'evidence_memory';
+
+export type DreamMemoryStatus = 'active' | 'pending' | 'rejected' | 'archived';
+
+export type DreamEventType =
+  | 'audit_completed'
+  | 'recommendation_updated'
+  | 'client_profile_changed'
+  | 'feedback_received';
+
+export type DreamProposalAction = 'create' | 'update' | 'deprecate' | 'merge';
+
+export type DreamProposalStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'auto_applied'
+  | 'rolled_back';
+
+export type DreamTriggerReason =
+  | 'scheduled_nightly'
+  | 'post_audit'
+  | 'threshold_exceeded'
+  | 'manual_user'
+  | 'mcp_trigger';
+
+export interface DreamEvent {
+  id: string;
+  accountId: string;
+  projectId?: string | null;
+  domain: string;
+  eventType: DreamEventType;
+  sourceId?: string | null;
+  payload: Record<string, unknown>;
+  contentHash: string;
+  signalWeight: number;
+  dreamRunId?: string | null;
+  createdAt: number;
+}
+
+export interface BusinessMemoryItem {
+  id: string;
+  accountId: string;
+  projectId?: string | null;
+  domain: string;
+  memoryType: DreamMemoryType;
+  title: string;
+  content: string;
+  structuredData: Record<string, unknown>;
+  confidence: number;
+  status: DreamMemoryStatus;
+  sourceRefs: string[];
+  createdAt: number;
+  updatedAt: number;
+  lastVerifiedAt: number;
+  expiresAt?: number | null;
+}
+
+export interface DreamProposal {
+  id: string;
+  dreamRunId: string;
+  accountId: string;
+  domain: string;
+  action: DreamProposalAction;
+  memoryId?: string | null;
+  memoryType: DreamMemoryType;
+  title: string;
+  proposedContent: string;
+  structuredData: Record<string, unknown>;
+  confidence: number;
+  requiresApproval: boolean;
+  status: DreamProposalStatus;
+  rationale: string;
+  sourceRefs: string[];
+  previousSnapshot?: Partial<BusinessMemoryItem> | null;
+  reviewedBy?: string | null;
+  reviewedAt?: number | null;
+  createdAt: number;
+}
+
+export interface DreamRun {
+  id: string;
+  accountId: string;
+  projectId?: string | null;
+  domain: string;
+  triggerReason: DreamTriggerReason;
+  eventsEvaluatedCount: number;
+  proposalsCount: number;
+  autoAppliedCount: number;
+  pendingReviewCount: number;
+  rejectedCount: number;
+  summary: string;
+  modelId: string;
+  durationMs: number;
+  createdAt: number;
+  rolledBackAt?: number | null;
+}
+
+export interface DreamWakeGateResult {
+  shouldWake: boolean;
+  reason: string;
+  signalScore: number;
+  threshold: number;
+  pendingEventsCount: number;
+  highSignalDetected: boolean;
+}

@@ -119,12 +119,14 @@ import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService
 import { isCronMapped, jobsForCron } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
+import { handleDreamingRoute } from './dreamingService';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled } from './trustReceipts';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
 import { handleBudgetReconcileRoute } from './invoiceReconcile';
+import { handleCreateStripeCheckoutSession, handleStripeWebhook, isStripeCheckoutLive } from './stripePayment';
 import { reportWorkerException } from './sentry';
 import {
   enforceDualRateLimit,
@@ -293,10 +295,15 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
-    // Public unauthenticated health check: trimmed to { ok: true } to prevent recon/information leakage.
+    // Public health: ok + payment-rail booleans only (no provider inventory / pricing internals).
     const adminCheck = isAdminAuthorized(env, request);
     if (!adminCheck.ok) {
-      return withCors(json({ ok: true }));
+      return withCors(json({
+        ok: true,
+        ton: isTonPaymentConfigured(env),
+        jettonCheckout: JETTON_CHECKOUT_LIVE && isTonPaymentConfigured(env),
+        stripeCheckout: isStripeCheckoutLive(env),
+      }));
     }
 
     // Full provider inventory and pricing internals available only to authorized admin requests.
@@ -329,6 +336,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       tonPricing: TON_PRICING,
       jettonPricing: JETTON_PRICING,
       jettonCheckout: JETTON_CHECKOUT_LIVE,
+      stripeCheckout: isStripeCheckoutLive(env),
       q402: Q402_SETTLEMENT_LIVE,
       chainNetwork,
       xdcRpcOk,
@@ -986,6 +994,16 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
   }
 
+  if (path === '/stripe/create-checkout-session') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    return withCors(handleCreateStripeCheckoutSession(request, env));
+  }
+
+  if (path === '/stripe/webhook') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    return withCors(handleStripeWebhook(request, env));
+  }
+
   // Q402 (x402-style pay-per-call on TON). Discovery is public; settlement is fail-closed
   // until on-chain verification exists (see Q402_SETTLEMENT_LIVE in worker/q402/facilitator.ts).
   if (path.startsWith('/q402/')) {
@@ -1421,6 +1439,16 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
     const wdl = await handleWeeklyDecisionsRoute(request, env, who.user, path);
     if (wdl) return withCors(wdl);
+  }
+
+  // Luminara Dreaming (0022). Business DNA memory consolidation & reflection.
+  if (path.startsWith('/dreaming')) {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dreamRes = await handleDreamingRoute(request, env, who.user, path);
+    if (dreamRes) return withCors(dreamRes);
   }
 
   // SMB Launchpad (0018). Feature-flagged; see worker/launchpadService.ts.

@@ -10,6 +10,7 @@ import { MarketingFooter } from './marketing/MarketingFooter';
 import { MarketingFaq } from './marketing/MarketingFaq';
 import { MarketingSellPoints } from './marketing/MarketingSellPoints';
 import { VisibilityFieldMap } from './marketing/VisibilityFieldMap';
+import { CaseStudiesSection } from './marketing/CaseStudiesSection';
 import { useMarketingChrome } from './marketing/marketingChrome';
 import { SAMPLE_FIXTURE } from './marketing/demo/demoFixtures';
 import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
@@ -113,11 +114,10 @@ const LandingPage: React.FC<LandingPageProps> = ({
           <div className="lg:col-span-7 min-w-0">
             <p className="mkt-eyebrow mb-5">Luminara Suite</p>
             <h1 className="font-display text-[clamp(2.75rem,6.4vw,4.9rem)] text-[var(--color-ink)] tracking-tight leading-[1.02] mb-6 [overflow-wrap:anywhere]">
-              AI is deciding which businesses get discovered.
+              See if AI recommends your business - and fix it in 15 minutes.
             </h1>
             <p className="max-w-xl text-lg sm:text-xl text-[var(--color-ink-2)] leading-relaxed mb-8">
-              See where you appear across Google, AI Overviews, ChatGPT, and Perplexity. Leave with one
-              prioritised fix, without rebuilding your stack.
+              Check whether ChatGPT, Perplexity, and Google AI Overviews mention your business when customers search. Leave with an actionable fix list to get cited.
             </p>
             <div className="flex flex-col sm:flex-row flex-wrap gap-3 mb-5">
               {isAuthenticated ? (
@@ -308,6 +308,9 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
       </section>
+
+      {/* Verified Empirical Proof & Case Studies */}
+      <CaseStudiesSection />
 
       {/* IDE access: Growth tooling as the visual. */}
       <section className="mkt-section">

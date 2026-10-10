@@ -9,6 +9,7 @@ import {
   validateChoice,
   ValueError,
   verifyDone,
+  confirmDoneGoalOverlap,
   type ObservePayload,
   type ObservedAction,
 } from '../services/browserAction';
@@ -171,6 +172,16 @@ describe('verifyDone', () => {
     expect(result.status).toBe('not_verified');
   });
 
+  it('fails closed on vacuous empty-string needles', () => {
+    const result = verifyDone({
+      goal: 'Open pricing',
+      observe: samplePage({ text: 'Anything' }),
+      checks: { textIncludes: '' },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('not_verified');
+  });
+
   it('passes when independent checks match', () => {
     const result = verifyDone({
       goal: 'See Agency plan',
@@ -189,6 +200,19 @@ describe('verifyDone', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.status).toBe('not_measured');
+  });
+
+  it('confirmDoneGoalOverlap fails closed when page lacks goal tokens', () => {
+    const miss = confirmDoneGoalOverlap({
+      goal: 'Expand Agency pricing accordion',
+      observe: samplePage({ text: 'Hello world', title: 'Home', url: 'https://example.com/' }),
+    });
+    expect(miss.ok).toBe(false);
+    const hit = confirmDoneGoalOverlap({
+      goal: 'See Agency pricing',
+      observe: samplePage({ text: 'Agency pricing table', title: 'Pricing' }),
+    });
+    expect(hit.ok).toBe(true);
   });
 });
 

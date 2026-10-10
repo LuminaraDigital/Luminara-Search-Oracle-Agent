@@ -19,7 +19,7 @@ import { hostedAuthRecoveryHint } from '../audit/hostedScoutRail';
 import { contentDistiller, DistilledContentResult } from './contentDistiller';
 import { githubCitabilityService } from './githubCitabilityService';
 
-export type ScraperProviderType = 'auto' | 'patchright' | 'firecrawl' | 'jina';
+export type ScraperProviderType = 'auto' | 'patchright' | 'firecrawl' | 'jina' | 'direct';
 
 export interface ScrapedPageEvidence {
   success: boolean;
@@ -219,6 +219,46 @@ export class UnifiedScraperService {
         lastError = `Jina Reader HTTP ${jinaRes.status}`;
       } catch (err: any) {
         lastError = `Jina fallback error: ${err.message}`;
+      }
+    }
+
+    // Strategy 4: Direct Fetch Fallback (Zero-dependency resilient crawl)
+    if (providerPref === 'auto' || providerPref === 'direct') {
+      try {
+        const directUrl = url.startsWith('http') ? url : `https://${url}`;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const directRes = await fetch(directUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) LuminaraAuditScout/1.0',
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (directRes.ok) {
+          const html = await directRes.text();
+          if (html && html.trim().length > 50) {
+            const distilled = contentDistiller.distill(html, '', { maxChars: options.maxChars });
+            return {
+              success: true,
+              providerUsed: 'direct',
+              url,
+              statusCode: directRes.status,
+              title: distilled.title || url,
+              description: distilled.description,
+              markdown: distilled.distilledText,
+              rawHtml: html,
+              distilled,
+              formattedEvidence: this.buildEvidenceBlock('Direct Fetch (Zero-Key Fallback)', url, distilled),
+              latencyMs: Math.round(performance.now() - startTime),
+              ...(firecrawlSkipNote ? { fallbackNote: firecrawlSkipNote } : {}),
+            };
+          }
+        }
+      } catch (err: any) {
+        lastError = `Direct fetch error: ${err.message}`;
       }
     }
 

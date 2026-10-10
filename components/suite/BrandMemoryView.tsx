@@ -19,6 +19,7 @@ import { registerSentinelTarget, fetchSentinelStatus, fetchQuotaStatus, subscrib
 import { mem0MemoryEngine } from '../../services/agentCore/mem0MemoryEngine';
 import { MemoryFact } from '../../services/agentCore/types';
 import { useAsyncLock } from '../../hooks/useAsyncLock';
+import { DreamingMemoryHub } from './DreamingMemoryHub';
 
 interface Props {
   dna: BusinessDNA | null;
@@ -42,7 +43,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   const { pending: sentinelBusy, run: runSentinel } = useAsyncLock();
   const [sentinelMsg, setSentinelMsg] = useState<string | null>(null);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
-  const [tab, setTab] = useState<'timeline' | 'diff' | 'query' | 'watch' | 'agency' | 'mem0'>('diff');
+  const [tab, setTab] = useState<'dreaming' | 'timeline' | 'diff' | 'query' | 'watch' | 'agency' | 'mem0'>('dreaming');
   const [mem0Facts, setMem0Facts] = useState<MemoryFact[]>([]);
 
   const planId = quota?.plan || 'free';
@@ -164,6 +165,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   };
 
   const tabs: Array<{ id: typeof tab; label: string }> = [
+    { id: 'dreaming', label: 'Luminara Dreaming' },
     { id: 'diff', label: 'What changed' },
     { id: 'mem0', label: '4-Tier Memory' },
     { id: 'timeline', label: 'Memory timeline' },
@@ -222,6 +224,14 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
           </button>
         ))}
       </div>
+
+      {tab === 'dreaming' && (
+        <DreamingMemoryHub
+          domain={primaryDomain}
+          dna={dna}
+          onNavigateToAudit={() => onNavigate(AppView.INSTANT_AUDIT)}
+        />
+      )}
 
       {tab === 'timeline' && (
         <div className="space-y-3">

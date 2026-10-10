@@ -1,9 +1,9 @@
 # Conversion honesty ship (C0-C4 + L7 gate)
 
 **Date:** 2026-10-02  
-**Status:** C0 + C1 + C2 shipped to staging and production (2026-10-02). PR #37 merged (`5cbfcad`). Staging + prod CI smoke green; probe-crawl verified on both. C3 Stripe deferred. C4 Field polish / full browser click-through still open for operators.  
+**Status:** C0 + C1 + C2 shipped to staging and production (2026-10-02). PR #37 merged (`5cbfcad`). Staging + prod CI smoke green; probe-crawl verified on both. **C3 Stripe:** deferred here historically; **promoted to required** for web commercial credibility under [`commercial-credibility-100x-ship.md`](./commercial-credibility-100x-ship.md) (CC0-CC2). C4 Field polish / full browser click-through still open for operators.  
 **Owner:** CEO craft loop + full-stack + payments + AI honesty  
-**Companions:** [`landing-app-coherence-ship.md`](./landing-app-coherence-ship.md) (L0-L6 done; L7 blocked until C0+C2 on staging), [`landing-moat-100x.md`](./landing-moat-100x.md) (honesty locks), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md) (APS), [`virality-activation-loops.md`](./virality-activation-loops.md)  
+**Companions:** [`commercial-credibility-100x-ship.md`](./commercial-credibility-100x-ship.md) (authoritative for charging + Stripe), [`landing-app-coherence-ship.md`](./landing-app-coherence-ship.md) (L0-L6 done; L7 blocked until C0+C2 on staging), [`landing-moat-100x.md`](./landing-moat-100x.md) (honesty locks), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md) (APS), [`virality-activation-loops.md`](./virality-activation-loops.md)  
 **Reviews:** CEO plan review (2026-10-02), Worker Probe architecture explore, payments surface explore, CEO double-check PASS (post-fix). Implementation review pending this session.
 
 ## Why this plan exists
@@ -17,8 +17,8 @@ North-star (locked from moat): % of visitors who finish a labeled Probe result *
 | Decision | Choice | Reason |
 |----------|--------|--------|
 | Buyer (landing only) | Founders / small-team operators | Agency and MCP are upsell, not the fold |
-| Payments for C0-C2 | Telegram Stars + TON only; honest Pricing copy | Stripe absent from codebase; half-ship card UI is a new lie |
-| Stripe | Track C3 (optional), after C0-C2 on staging | ~3-5 eng-days; needs Checkout + webhook → `writeSubscriptionRecord` |
+| Payments for C0-C2 | Telegram Stars + TON only; honest Pricing copy | Half-ship card UI is a new lie; Card claims wait for commercial CC0/CC2 |
+| Stripe | Track C3 **required for web charging**, after C0-C2; owned by [`commercial-credibility-100x-ship.md`](./commercial-credibility-100x-ship.md) | ~3-5 eng-days; Checkout + webhook → `writeSubscriptionRecord`; no Card claim until staging purchase works |
 | Probe honesty | Two-step: C0 kill Measured/Estimated theater on fixtures; C1 optional public cheap Live **crawl** row | Critique “Google Measured from robots/title” is **rejected**; crawl-readiness Measured is the honesty-safe substitute |
 | Guest primary CTA | Sign up free → Instant Audit with domain handoff | Free signed-in must use hosted rail with zero keys wall for at least one path, or demote the CTA |
 | Sample report | Dated static Live snapshot page of luminarasuite.com (preferred over Growth share tokens) | Token expiry is a deploy risk; fixture rebadge is theater |
@@ -146,16 +146,17 @@ Each phase ends with: typecheck, targeted tests, browser check 1440 + 375, CEO d
 **Dependencies:** C0 (C1 optional parallel).  
 **Files:** `LandingPage.tsx`, `MarketingNav`, `App.tsx`, `AuthPanel.tsx`, `SampleReportPage.tsx`, `PricingPage.tsx`, Why page, tokens for status labels.
 
-### C3 - Card checkout (optional revenue track)
+### C3 - Card checkout (required for web commercialization)
 
-**Goal:** Real Stripe Checkout or explicit deferral with honest Pricing.
+**Goal:** Real Stripe Checkout with honest Pricing. Detail and exit criteria live in [`commercial-credibility-100x-ship.md`](./commercial-credibility-100x-ship.md) phases **CC0** (stop Card claim lies) and **CC2** (end-to-end Checkout).
 
-**Tasks (only if operator chooses Stripe)**
+**Tasks**
 
 1. Stripe Checkout Session on Worker; webhook → `paymentLedger` / `writeSubscriptionRecord`.  
 2. Secrets in Wrangler; no keys in client.  
 3. Pricing buttons: Card / Telegram. Remove unavailable copy only when card works end-to-end on staging.  
-4. Refunds / entitlement parity with Stars/TON tiers.
+4. Refunds / entitlement parity with Stars/TON tiers (rank-guard, TMA Stars-only).  
+5. Do not claim "instant Stripe" in Pricing while secrets/webhook are down (CC0).
 
 **Acceptance**
 
@@ -163,10 +164,10 @@ Each phase ends with: typecheck, targeted tests, browser check 1440 + 375, CEO d
 - [ ] Webhook signature verified; replay-safe.  
 - [ ] Pricing never claims card if webhook path is down.
 
-**If deferred:** Pricing stays Telegram-only; track stays out of L7 critical path.
+**L7 note:** Probe honesty L7 can ship without C3. **Charging web SMBs confidently cannot.**
 
 **Dependencies:** C2.  
-**Files:** new `worker/stripeCheckout.ts`, `PricingPage.tsx`, entitlements tests.
+**Files:** `worker/stripePayment.ts` (scaffolded), `migrations/0021_stripe_payments.sql`, `PricingPage.tsx`, entitlements tests. See commercial-credibility plan for full file list.
 
 ### C4 - Field polish (non-blocking)
 
@@ -221,14 +222,14 @@ Prerequisite: C0 + C2 on branch; merge `origin/main`; gates green; `qronos-landi
 | C0 | 0.5-1 day | Yes |
 | C1 | 1-2 days | Soft (recommended) |
 | C2 | 1-2 days | Yes |
-| C3 | 3-5 days | No (optional) |
+| C3 | 3-5 days | No for Probe L7; **Yes for web charging** (see commercial-credibility CC0-CC2) |
 | C4 | 1-2 days | No |
 | L7 | Operator + CI | After C0+C2 |
 
 ## Operator checklist before execute
 
 - [ ] Confirm buyer lock: founders / small teams.  
-- [ ] Confirm Stripe: defer (default) or start C3 after C2.  
+- [ ] Confirm Stripe for web charging: follow [`commercial-credibility-100x-ship.md`](./commercial-credibility-100x-ship.md) CC0 (hide Card lies) then CC2 (do not defer if selling web SMBs).  
 - [ ] Confirm delete or keep `qronos-landing/` (stop process on :3000 now).  
 - [ ] Authorize a dated static Live snapshot of luminarasuite.com for `/sample-report`.  
 - [ ] Go on starting C0 in this branch.

@@ -50,6 +50,9 @@ describe('pricing page discoverability', () => {
     expect(html).toContain('15 TON');
     expect(html).toContain('45 TON');
     expect(html).toContain('120 TON');
+    expect(html).not.toContain('Instant self-serve card checkout');
+    expect(html).not.toContain('Pay with Card (Stripe)');
+    expect(html).not.toContain('instant Stripe checkout');
     expect(html).not.toContain('Card checkout is coming');
     expect(html).not.toContain('Card checkout coming');
   });

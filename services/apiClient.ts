@@ -32,6 +32,8 @@ export interface ServerHealth {
   tonPricing?: Record<string, unknown>;
   /** USDT / $LORA checkout can settle (server-verified). Absent or false = hide Jetton rails. */
   jettonCheckout?: boolean;
+  /** Stripe card Checkout is live (secrets + STRIPE_CHECKOUT_LIVE). Absent or false = hide Card rail. */
+  stripeCheckout?: boolean;
   /** Q402 pay-per-call settlement is live. */
   q402?: boolean;
   tiers?: { free?: string[]; paid?: string[] };
@@ -914,6 +916,29 @@ export async function createStarsInvoice(plan: string): Promise<string> {
   if (!r.ok || !data.ok) throw new Error(data.error || 'Could not create invoice');
   return data.url as string;
 }
+
+export async function createStripeCheckout(input: {
+  planId: string;
+  customerEmail?: string;
+  successUrl?: string;
+  cancelUrl?: string;
+}): Promise<{ ok: boolean; checkoutUrl?: string; sessionId?: string; error?: string }> {
+  try {
+    const res = await workerFetchWithAuthRetry('/api/stripe/create-checkout-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    const data = (await res.json()) as any;
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data?.error || `HTTP ${res.status}` };
+    }
+    return { ok: true, checkoutUrl: data.checkoutUrl, sessionId: data.sessionId };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Network error initiating card checkout' };
+  }
+}
+
 
 export interface SentinelTargetClient {
   id: string;

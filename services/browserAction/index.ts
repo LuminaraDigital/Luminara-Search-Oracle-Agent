@@ -16,7 +16,7 @@ export {
   fieldContextCacheKey,
 } from './fieldText';
 export { BrowserActionLoop, predict, act, tick } from './loop';
-export { verifyDone } from './verify';
+export { verifyDone, confirmDoneGoalOverlap } from './verify';
 export {
   BROWSE_OBSERVE_TOOL,
   BROWSE_ACT_TOOL,

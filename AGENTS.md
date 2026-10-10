@@ -58,8 +58,11 @@ Screenshot-click automation uses `services/grounding/` (PointerBench protocol): 
 - `docs/plans/suite-10x-production-ship.md` (paperclip Track P + Blender/Canvas Track V)
 - `docs/plans/landing-moat-100x.md` (landing moat Sessions S0-S6; Three.js S6 CEO-only)
 - `docs/plans/conversion-honesty-ship.md` (C0-C4 Probe honesty + guest CTA + L7 gate)
+- `docs/plans/commercial-credibility-100x-ship.md` (CC0-CC5 sellability: honesty residual + Stripe + pitch + Fix/streak + 10-20 payers; authoritative for charging)
 - `docs/plans/agent-mcp-product-surface.md` (APS A0-A8)
 - `docs/plans/virality-activation-loops.md` (share OG + MCP mint activation)
 - `docs/plans/e2e-visibility-agent-platform.md` (W0-W8)
 - `docs/plans/gui-grounding-pointerbench.md`
 - `docs/plans/indexed-dom-action-agent.md` (B0-B5)
+- `docs/plans/evidence-bound-decision-100x.md` (claim ledger + intent router + citation gate; no TypeSafe)
+- `docs/plans/genui-canvas-100x-architecture.md` (Luminara GenUI 100x Canvas streaming DSL)
