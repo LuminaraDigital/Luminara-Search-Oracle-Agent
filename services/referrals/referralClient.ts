@@ -123,7 +123,14 @@ export async function completeWeeklyMission(missionKey: MissionKey): Promise<{ o
   }
 }
 
-export async function postDailyCheckin(): Promise<{ ok: boolean; alreadyCheckedIn?: boolean; streakDays?: number; error?: string }> {
+export async function postDailyCheckin(): Promise<{
+  ok: boolean;
+  alreadyCheckedIn?: boolean;
+  streakDays?: number;
+  error?: string;
+  /** True when the server says the check-in does not exist (points are switched off). */
+  unavailable?: boolean;
+}> {
   const base = apiBase();
   if (!base) return { ok: false, error: 'API unavailable' };
   try {
@@ -133,7 +140,7 @@ export async function postDailyCheckin(): Promise<{ ok: boolean; alreadyCheckedI
       body: JSON.stringify({}),
     });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; alreadyCheckedIn?: boolean; streakDays?: number; error?: string };
-    if (!res.ok || !data.ok) return { ok: false, error: data.error || `HTTP ${res.status}` };
+    if (!res.ok || !data.ok) return { ok: false, error: data.error || `HTTP ${res.status}`, unavailable: res.status === 404 };
     return { ok: true, alreadyCheckedIn: data.alreadyCheckedIn, streakDays: data.streakDays };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : 'Network error' };

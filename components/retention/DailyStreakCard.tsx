@@ -28,10 +28,17 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
     }
   });
 
+  // The card exists only while the server offers the daily check-in. Nothing is drawn until that
+  // call has answered, and nothing at all when the answer is that the check-in does not exist, so
+  // with points switched off the card never appears. A guest, or a call that fails, sees the card
+  // as before.
+  const [available, setAvailable] = useState(false);
+
   useEffect(() => {
     let unmounted = false;
     postDailyCheckin()
       .then((res) => {
+        if (!unmounted) setAvailable(!res.unavailable);
         if (!unmounted && res.ok && typeof res.streakDays === 'number') {
           setStreakDays(res.streakDays);
           try {
@@ -41,7 +48,9 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
           }
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!unmounted) setAvailable(true);
+      });
 
     return () => {
       unmounted = true;
@@ -67,6 +76,8 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
   };
 
   const days = [1, 2, 3, 4, 5, 6, 7];
+
+  if (!available) return null;
 
   return (
     <div className="mt-8 rounded-2xl border border-gold/30 bg-black/80 p-5 sm:p-6 shadow-xl">

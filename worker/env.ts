@@ -108,6 +108,18 @@ export interface Env {
    * closed: no invoice is issued and public health reports `ton: false`.
    */
   TON_CONFIRMED_ADDRESS?: string;
+  /**
+   * "true" turns the community idea feed on (GET /idea-scout/feed, POST /idea-scout/vote,
+   * POST /idea-scout/share). Anything else: those three routes answer 404. Off until the feed
+   * stops returning account ids and has its own tables, limits and moderation (Track SW, SW0a-9).
+   */
+  COMMUNITY_FEED_ENABLED?: string;
+  /**
+   * "true" turns points on: the daily check-in route, and the points total and rank in the
+   * referral summary. Anything else: the check-in answers 404 and writes nothing, and the summary
+   * leaves the points out. Rows already written stay. Off until decision 9 (Track SW, SW0a-10).
+   */
+  LUMENS_ENABLED?: string;
   TON_API_KEY?: string;
   /**
    * Hard network gate for chain payments and proof anchors: `testnet` | `mainnet`.

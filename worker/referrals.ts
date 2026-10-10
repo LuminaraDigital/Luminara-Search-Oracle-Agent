@@ -724,19 +724,30 @@ export async function handleDailyCheckin(
 }
 
 export async function handleReferralRoute(request: Request, env: Env, path: string): Promise<Response> {
+  const normPath = path.startsWith('/api/') ? path.slice(4) : path;
+
+  // Points are off unless switched on (Track SW, SW0a-10). The check-in then does not exist, for a
+  // guest as much as for a signed-in user, and the summary below leaves the points total and rank
+  // out. Nothing already stored is deleted.
+  const lumensOn = env.LUMENS_ENABLED === 'true';
+  if (normPath === '/referrals/checkin' && !lumensOn) {
+    return json({ ok: false, error: 'Not found', code: 'NOT_FOUND' }, 404);
+  }
+
   const who = await identify(request, env);
   const denied = requireIdentity(who.user, who.error);
   if (denied) return denied;
   const user = who.user!;
   if (!env.DB) return json({ ok: false, error: 'Referral store is not configured.', code: 'NO_DB' }, 503);
   const accountId = billingId(user);
-  const normPath = path.startsWith('/api/') ? path.slice(4) : path;
 
   if (normPath === '/referrals/me' && request.method === 'GET') {
     try {
       const code = await ensureReferralCode(env, accountId);
       const snapshot = await readRetentionSnapshot(env, accountId, code);
-      return json({ ok: true, ...snapshot });
+      if (lumensOn) return json({ ok: true, ...snapshot });
+      const { lumens: _lumens, ...withoutPoints } = snapshot;
+      return json({ ok: true, ...withoutPoints });
     } catch (err) {
       return json({ ok: false, error: err instanceof Error ? err.message : 'Could not load invites.' }, 503);
     }
