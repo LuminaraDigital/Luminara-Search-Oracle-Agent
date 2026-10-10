@@ -123,6 +123,12 @@
     // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
     // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
     "TON_CONFIRMED_ADDRESS": "",
+    // Off: the community idea feed routes answer 404 to a signed-in caller. A guest gets 401, because
+    // the sign-in guard runs first. Not to be switched on before the feed stops returning account
+    // ids and has its own tables, limits and a named moderator.
+    "COMMUNITY_FEED_ENABLED": "false",
+    // Off: the daily check-in answers 404 and the referral summary leaves points out. Rows stay.
+    "LUMENS_ENABLED": "false",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
     "LANGUAGETOOL_URL": "",
@@ -243,6 +249,12 @@
         // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
         // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
         "TON_CONFIRMED_ADDRESS": "",
+        // Off: the community idea feed routes answer 404 to a signed-in caller. A guest gets 401, because
+        // the sign-in guard runs first. Not to be switched on before the feed stops returning account
+        // ids and has its own tables, limits and a named moderator.
+        "COMMUNITY_FEED_ENABLED": "false",
+        // Off: the daily check-in answers 404 and the referral summary leaves points out. Rows stay.
+        "LUMENS_ENABLED": "false",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
@@ -333,6 +345,12 @@
         // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
         // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
         "TON_CONFIRMED_ADDRESS": "",
+        // Off: the community idea feed routes answer 404 to a signed-in caller. A guest gets 401, because
+        // the sign-in guard runs first. Not to be switched on before the feed stops returning account
+        // ids and has its own tables, limits and a named moderator.
+        "COMMUNITY_FEED_ENABLED": "false",
+        // Off: the daily check-in answers 404 and the referral summary leaves points out. Rows stay.
+        "LUMENS_ENABLED": "false",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
