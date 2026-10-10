@@ -10,7 +10,6 @@ import { MarketingFooter } from './marketing/MarketingFooter';
 import { MarketingFaq } from './marketing/MarketingFaq';
 import { MarketingSellPoints } from './marketing/MarketingSellPoints';
 import { VisibilityFieldMap } from './marketing/VisibilityFieldMap';
-import { CaseStudiesSection } from './marketing/CaseStudiesSection';
 import { useMarketingChrome } from './marketing/marketingChrome';
 import { SAMPLE_FIXTURE } from './marketing/demo/demoFixtures';
 import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
@@ -308,9 +307,6 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
       </section>
-
-      {/* Verified Empirical Proof & Case Studies */}
-      <CaseStudiesSection />
 
       {/* IDE access: Growth tooling as the visual. */}
       <section className="mkt-section">

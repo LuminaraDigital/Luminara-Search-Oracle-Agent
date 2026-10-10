@@ -132,9 +132,9 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
 
   useEffect(() => {
     if (ui.showReveal) {
-      productTelemetry.track('probe_completed', { domain: demo.typedDomain, focus: demo.focus });
+      productTelemetry.track('probe_completed', { domain: demo.url, focus: demo.focus });
     }
-  }, [ui.showReveal, demo.typedDomain, demo.focus]);
+  }, [ui.showReveal, demo.url, demo.focus]);
 
   const runLabel = demo.phase === 'analyzing' ? 'Running…' : 'Run sample scout';
   const badge =

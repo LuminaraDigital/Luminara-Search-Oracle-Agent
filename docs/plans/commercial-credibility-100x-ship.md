@@ -1,7 +1,7 @@
 # Commercial credibility 100x ship (production + deploy ready)
 
 **Date:** 2026-10-10  
-**Status:** CC0 shipped in tree (2026-10-10). CC1-CC5 not started.  
+**Status:** CC0-CC4 code complete and verified in tree (2026-10-10). CC5 funnel instrumented; live payer cohort ops active.  
 **Owner:** CEO craft loop + full-stack + payments + AI honesty + activation  
 **Companions:** [`conversion-honesty-ship.md`](./conversion-honesty-ship.md) (C0-C2 done; **C3 promoted from optional to required**), [`landing-moat-100x.md`](./landing-moat-100x.md), [`landing-app-coherence-ship.md`](./landing-app-coherence-ship.md), [`user-activation-first-value.md`](./user-activation-first-value.md), [`weekly-decision-loop-10x-ship.md`](./weekly-decision-loop-10x-ship.md), [`agent-mcp-product-surface.md`](./agent-mcp-product-surface.md), [`go-live-open-items.md`](./go-live-open-items.md), [`tasks/deploy-gates.md`](../../tasks/deploy-gates.md)  
 **Reviews:** CEO commercialization audit + reliability + Stripe + Fix/streak subagents (2026-10-10). Double-check protocol below is mandatory after every phase and at spine close.
