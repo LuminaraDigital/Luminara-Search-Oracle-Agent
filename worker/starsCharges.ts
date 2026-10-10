@@ -70,7 +70,8 @@ export async function isStarsChargesReady(env: StarsChargesEnv): Promise<boolean
     return false;
   }
   try {
-    await env.DB.prepare(`SELECT 1 AS ready FROM stars_charges LIMIT 1`).first();
+    // Names the newest column: a table left over in an older shape is not ready either.
+    await env.DB.prepare(`SELECT stars_returned FROM stars_charges LIMIT 1`).first();
     return true;
   } catch (err) {
     console.error(`[StarsCharges] stars_charges cannot be read. Refusing Stars checkout. Apply ${STARS_CHARGES_MIGRATION}: ${errorText(err)}`);
@@ -183,7 +184,7 @@ export async function markStarsChargeCredited(env: StarsChargesEnv, chargeId: st
   if (!env.DB) return false;
   const result = await env.DB.prepare(
     `UPDATE stars_charges SET status = 'credited', lease_until = NULL, updated_at = ?
-     WHERE charge_id = ? AND status = 'received' AND lease_until = ?`,
+     WHERE charge_id = ? AND status = 'received' AND lease_until = ? AND stars_returned = 0`,
   )
     .bind(now, chargeId, lease)
     .run();

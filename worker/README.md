@@ -160,6 +160,10 @@ Telegram does not send a paid update again once the webhook has answered 200, so
   Telegram's own transaction list with the ledger. It never grants.
 - `scripts/telegram-setup.mjs` keeps pending updates unless `DROP_PENDING_UPDATES=true`: a
   dropped update can be a paid one.
+- Known limits: the sweep is daily until the 15-minute ops cron exists; two charges for one
+  account in the same instant can lose one of them (KV has no compare-and-set); and a record
+  written before the ledger that stacked an upgrade names only its last charge, so refunding that
+  charge keeps the upgraded plan name for the days the earlier charge paid for.
 
 ## Stubbed vs live status
 

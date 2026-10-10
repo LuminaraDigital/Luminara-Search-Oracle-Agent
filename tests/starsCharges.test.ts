@@ -19,6 +19,8 @@ import {
   STARS_RECEIVED_GRACE_MS,
   STARS_REFUND_GRACE_MS,
   leaseStarsCharge,
+  markStarsChargeCredited,
+  markStarsReturned,
   recordStarsCharge,
 } from '../worker/starsCharges';
 import { linkTelegramAndFirebase, writeSubscriptionRecord } from '../worker/userStore';
@@ -1200,6 +1202,70 @@ describe('cases the second review pass asked for', () => {
     },
     12_000,
   );
+});
+
+describe('cases the third review pass asked for', () => {
+  it('pre-checkout says no when the charge table is there in an older shape, so nobody pays into a ledger that cannot record it', async () => {
+    const { env } = makeEnv();
+    const old = createSqliteD1({ skipMigrations: ['0023'] });
+    // The table as first drafted, without the stars_returned column.
+    old.sqlite.exec(`CREATE TABLE stars_charges (
+      charge_id TEXT PRIMARY KEY, payer_tg_id INTEGER NOT NULL, account_id TEXT, purpose TEXT NOT NULL, ref_id TEXT NOT NULL,
+      stars INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'received', refund_reason TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+      lease_until INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
+    env.DB = old;
+    await handleTelegramPaymentUpdate(
+      { pre_checkout_query: { id: 'q_old_shape', currency: 'XTR', total_amount: PLANS.starter.stars, invoice_payload: `starter:${PAYER}` } },
+      env,
+    );
+    expect(telegram.of('answerPreCheckoutQuery')[0].body.ok).toBe(false);
+  });
+
+  it('a row whose Stars have gone back cannot be marked credited, even by a handler that read it before they did', async () => {
+    const { env, db } = makeEnv();
+    await recordStarsCharge(env, { chargeId: 'ch_late_notice', payerTgId: PAYER, accountId: String(PAYER), purpose: 'plan', refId: 'starter', stars: 2500 });
+    const lease = await leaseStarsCharge(env, 'ch_late_notice', 'received');
+    expect(lease).not.toBeNull();
+    // The refund notice lands while the handler is between its read and its final write.
+    expect(await markStarsReturned(env, 'ch_late_notice')).toBe(true);
+    expect(await markStarsChargeCredited(env, 'ch_late_notice', lease as number)).toBe(false);
+    expect(rowOf(db, 'ch_late_notice')).toMatchObject({ status: 'received', stars_returned: 1 });
+  });
+
+  it('a refund of a charge older than the ledger is not sent when its receipt cannot be read', async () => {
+    const { env, kv, db } = makeEnv();
+    await kv.put('stars:charge:ch_old_blind', JSON.stringify({ userId: 31, loginId: '31', accountId: '31', plan: 'starter', stars: 2500, chargeId: 'ch_old_blind' }));
+    await kv.put('sub:31', JSON.stringify({ plan: 'starter', chargeId: 'ch_old_blind', expiresAt: Date.now() + 5 * DAY }));
+    kv.failGet = (key) => key.startsWith('stars:charge:');
+
+    const res = await refundStarsCharge(env, 31, 'ch_old_blind', 'admin_bot_refund');
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('Nothing was refunded');
+    expect(telegram.of('refundStarPayment')).toHaveLength(0);
+    expect(rowOf(db, 'ch_old_blind')).toBeNull();
+    expect(kv.store.has('sub:31')).toBe(true);
+  });
+
+  it('when the plan cannot be removed and that cannot be put on record either, the operator is told to send the refund again', async () => {
+    const { env, kv, db } = makeEnv();
+    // A receipt with no amount cannot become a ledger row.
+    await kv.put('stars:charge:ch_old_bare', JSON.stringify({ userId: 31, loginId: '31', accountId: '31', plan: 'starter', chargeId: 'ch_old_bare' }));
+    await kv.put('sub:31', JSON.stringify({ plan: 'starter', chargeId: 'ch_old_bare', expiresAt: Date.now() + 5 * DAY }));
+    kv.failDelete = (key) => key.startsWith('sub:');
+
+    const res = await refundStarsCharge(env, 31, 'ch_old_bare', 'admin_bot_refund');
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('could not be put on record');
+    expect(res.error).toContain('send the refund again');
+    expect(rowOf(db, 'ch_old_bare')).toBeNull();
+
+    // Sending it again finds the Stars already back and finishes the plan.
+    kv.failDelete = () => false;
+    telegram.replies.refundStarPayment = () => ({ ok: false, description: 'Bad Request: CHARGE_ALREADY_REFUNDED' });
+    const again = await refundStarsCharge(env, 31, 'ch_old_bare', 'admin_bot_refund');
+    expect(again).toMatchObject({ ok: true, status: 'refunded' });
+    expect(kv.json('sub:31')).toBeNull();
+  });
 });
 
 describe('pre-checkout', () => {

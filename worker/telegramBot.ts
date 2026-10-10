@@ -1614,20 +1614,28 @@ export async function runStarsChargeSweep(env: Env): Promise<StarsSweepSummary |
   }
 }
 
+type LegacyStarsReceipt = { stars?: number; plan?: string; accountId?: string } | null;
+
 /**
- * Puts a refund that was sent outside the ledger (a charge older than the table) on record.
- * `revoked` false means the Stars went back and the plan could not be taken back: the row is
- * opened as `refund_due` with the Stars marked returned, so the sweep finishes the plan.
+ * Puts a refund that was sent outside the ledger (a charge older than the table) on record, from
+ * the receipt the caller read before the refund. `revoked` false means the Stars went back and the
+ * plan could not be taken back: the row is opened as `refund_due` with the Stars marked returned,
+ * so the sweep finishes the plan. Returns false when nothing could be written.
  */
-async function recordRefundOutsideLedger(env: Env, payerTgId: number, chargeId: string, reason: string, revoked: boolean): Promise<void> {
-  if (!env.DB) return;
+async function recordRefundOutsideLedger(
+  env: Env,
+  payerTgId: number,
+  chargeId: string,
+  reason: string,
+  revoked: boolean,
+  receipt: LegacyStarsReceipt,
+): Promise<boolean> {
+  if (!env.DB) return false;
   try {
-    const receipt = env.LUMINARA_KV
-      ? ((await env.LUMINARA_KV.get(`stars:charge:${chargeId}`, 'json')) as { stars?: number; plan?: string; accountId?: string } | null)
-      : null;
     const stars = Number(receipt?.stars);
+    let onRecord = false;
     if (Number.isSafeInteger(stars) && stars > 0) {
-      await recordStarsCharge(env, {
+      const recorded = await recordStarsCharge(env, {
         chargeId,
         payerTgId,
         accountId: receipt?.accountId ? String(receipt.accountId) : null,
@@ -1638,13 +1646,16 @@ async function recordRefundOutsideLedger(env: Env, payerTgId: number, chargeId: 
         refundReason: reason,
         starsReturned: true,
       });
+      onRecord = recorded.ok;
     }
     // A row that was there after all must not go on saying credited.
     await markStarsReturned(env, chargeId);
     if (revoked) await markStarsChargeRefundedAtTelegram(env, chargeId);
     else await requestStarsRefund(env, chargeId, reason);
+    return onRecord;
   } catch (err) {
     console.error(`[Stars] Charge ${chargeId} was refunded outside the ledger and could not be recorded.`, err);
+    return false;
   }
 }
 
@@ -1678,6 +1689,16 @@ export async function refundStarsCharge(
     }
   }
   if (!row) {
+    // A charge older than the ledger. Its receipt is the only record of what it gave, so it is
+    // read before Telegram is asked: with no way to read it, the refund could not be followed by
+    // taking the plan back, or even be put on record.
+    let receipt: LegacyStarsReceipt = null;
+    try {
+      receipt = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get(`stars:charge:${id}`, 'json')) as LegacyStarsReceipt) : null;
+    } catch (err) {
+      console.error(`[Stars] Could not read the receipt for charge ${id}; nothing was refunded.`, err);
+      return { ok: false, error: 'The payment records could not be read. Nothing was refunded. Try again in a few minutes.' };
+    }
     const res = await refundStarPayment(env, userIdHint, id);
     let returned = res.ok;
     let revoked = res.revoked !== false;
@@ -1687,13 +1708,15 @@ export async function refundStarsCharge(
       revoked = (await revokeStarsGrant(env, userIdHint, id)).ok;
     }
     if (!returned) return { ...res, payerTgId: userIdHint };
-    await recordRefundOutsideLedger(env, userIdHint, id, reason, revoked);
+    const queued = await recordRefundOutsideLedger(env, userIdHint, id, reason, revoked, receipt);
     if (revoked) return { ok: true, status: 'refunded', payerTgId: userIdHint };
     return {
       ok: false,
       status: 'refund_due',
       payerTgId: userIdHint,
-      error: 'The Stars went back to the payer, and the plan could not be taken back yet. It will be tried again; you can also send the refund again in a few minutes.',
+      error: queued
+        ? 'The Stars went back to the payer, and the plan could not be taken back yet. It will be tried again; you can also send the refund again in a few minutes.'
+        : 'The Stars went back to the payer. The plan could not be taken back, and that could not be put on record to be tried again: send the refund again in a few minutes.',
     };
   }
 
