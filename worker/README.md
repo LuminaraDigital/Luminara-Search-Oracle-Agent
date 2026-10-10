@@ -153,6 +153,19 @@ Honest gaps: admin-skill versions, license seeding, and the run-provenance
 chain table all require D1 migrations (`migrations/0010_run_provenance_and_agent_skills.sql`).
 When D1 is unbound they fail best-effort and log to console.
 
+## Cron and queue dispatch invariants (pinned in `tests/scheduledJobs.test.ts`, `tests/workerScheduledAndQueue.test.ts`)
+
+- **A cron expression runs only the jobs mapped to it** in `CRON_JOBS` (`worker/scheduledJobs.ts`).
+  An expression with no entry runs no job, and `scheduled()` logs it as an error
+  (`[Cron] ... is not mapped`). A new cron and its entry ship in the same pull request.
+- **A queue batch goes only to the handler mapped to its queue** in `worker/queueDispatch.ts`.
+  A batch from a queue with no entry is acknowledged and logged as an error
+  (`[Queue] ... is not mapped`); none of its messages is processed. A new consumer in
+  `wrangler.jsonc` and its entry ship in the same pull request.
+- **A queue handler that throws loses no message.** The error is logged and the batch is sent back
+  for retry; the consumer's `max_retries` and dead letter queue then apply. The audit handler still
+  settles its own messages one by one (ack on success, retry on failure).
+
 ## Env vars
 
 Read: `ADMIN_SECRET`, `BOT_TOKEN`, `FIREBASE_PROJECT_ID`, `MCP_OAUTH_SECRET`,

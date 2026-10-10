@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import { AUDIT_QUEUE, AUDIT_QUEUE_STAGING, dispatchQueueBatch, isQueueMapped, type QueueBatchHandler } from '../worker/queueDispatch';
-import { DAILY_CRON } from '../worker/scheduledJobs';
+import { DAILY_CRON, jobsForCron } from '../worker/scheduledJobs';
 import { parseJsonc } from '../scripts/lib/jsonc.mjs';
 import type { Env } from '../worker/env';
 
@@ -54,7 +54,8 @@ const LOCAL_TARGET_JOB = { runId: 'aud_test_1', accountId: 'acct_test', targetUr
 
 function makeCtx() {
   const waited: Promise<unknown>[] = [];
-  const ctx = { waitUntil: vi.fn((p: Promise<unknown>) => void waited.push(p)), passThroughOnException: vi.fn() };
+  // Like the runtime, waitUntil takes ownership of the promise: a job that rejects is not an unhandled rejection here.
+  const ctx = { waitUntil: vi.fn((p: Promise<unknown>) => void waited.push(Promise.resolve(p).catch(() => undefined))), passThroughOnException: vi.fn() };
   return { ctx: ctx as unknown as ExecutionContext, waitUntil: ctx.waitUntil, waited };
 }
 
@@ -90,12 +91,14 @@ describe('scheduled(): an unmapped cron runs no job and is reported', () => {
     expect(reported()[0]).toContain('no job was run');
   });
 
-  it('the daily cron still starts its three jobs and reports nothing', async () => {
+  it('the daily cron still starts every job it owns and reports no cron error', async () => {
     const { ctx, waitUntil, waited } = makeCtx();
     // With no bindings each job returns at once, so nothing leaves the process.
     await worker.scheduled(controller(DAILY_CRON), {} as Env, ctx);
-    await Promise.all(waited);
-    expect(waitUntil).toHaveBeenCalledTimes(3);
+    await Promise.allSettled(waited);
+    const owned = jobsForCron(DAILY_CRON);
+    expect(owned.length).toBeGreaterThanOrEqual(3);
+    expect(waitUntil).toHaveBeenCalledTimes(owned.length);
     expect(reported().filter((line) => line.startsWith('[Cron]'))).toEqual([]);
   });
 });
