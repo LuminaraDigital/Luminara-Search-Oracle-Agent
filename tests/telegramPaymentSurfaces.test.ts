@@ -59,6 +59,8 @@ describe('the paywall inside Telegram', () => {
     const html = paywall();
     expect(html).toContain('Stars');
     expect(html).not.toMatch(/>TON</);
+    // Not as a tab, not as a badge such as "Stars + TON", not in a sentence.
+    expect(html).not.toMatch(/\bTON\b/);
     expect(html).not.toContain('Soon');
     expect(html).not.toContain('USDT');
     expect(html).not.toContain('LORA');

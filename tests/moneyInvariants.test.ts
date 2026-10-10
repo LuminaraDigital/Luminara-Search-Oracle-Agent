@@ -141,6 +141,11 @@ describe('the TON merchant address must be confirmed by the owner before it take
     for (const v of [undefined, '', 'true', 'false', 'yes', OTHER_ADDRESS, MERCHANT.toLowerCase(), MERCHANT.slice(0, -1)]) {
       expect(is(v)).toBe(false);
     }
+    // The same wallet written in its other form (non-bounceable, tag 0x51) is a different string,
+    // and so not confirmed: the owner confirms the exact characters the invoice will carry.
+    const sameWalletOtherForm = syntheticTonAddress(0x51, 0x5a);
+    expect(sameWalletOtherForm).not.toBe(MERCHANT);
+    expect(is(sameWalletOtherForm)).toBe(false);
     expect(is(MERCHANT)).toBe(true);
     expect(is(` ${MERCHANT} `)).toBe(true);
     // No receiving address at all is never "confirmed", even if both are empty.
