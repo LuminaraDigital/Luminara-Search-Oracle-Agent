@@ -4,6 +4,7 @@ import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma'
 import { createStarsInvoice, createStripeCheckout, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
 import { executeTonPayment } from '../../services/ton/tonService';
 import { executeJettonPayment } from '../../services/ton/jettonService';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
 import {
   effectiveTab,
   formatEngineList,
@@ -61,6 +62,12 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     window.addEventListener('luminara-open-paywall', handlePaywall);
     return () => window.removeEventListener('luminara-open-paywall', handlePaywall);
   }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      productTelemetry.track('paywall_viewed', { tab, inTelegram: inTg });
+    }
+  }, [isOpen, tab, inTg]);
 
   useEffect(() => {
     return subscribeQuota(q => setQuota(q));
@@ -233,6 +240,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     try {
       const res = await createStripeCheckout({ planId });
       if (res.ok && res.checkoutUrl) {
+        productTelemetry.track('payment_completed', { planId, method: 'stripe', status: 'initiated' });
         window.location.href = res.checkoutUrl;
       } else {
         setStatusMessage(toUserFacingText(res.error, 'Could not initiate Stripe checkout. Please try again.'));
