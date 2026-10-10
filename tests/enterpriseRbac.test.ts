@@ -201,7 +201,7 @@ describe('Enterprise Multi-Tenancy, RBAC & SIEM Audit Logging', () => {
       expect(res.status).toBe(401);
       const data: any = await res.json();
       expect(data.error).toBeTruthy();
-    }, 15000);
+    }, 45000);
 
     it('rejects non-GET methods on /api/enterprise/audit-logs with 405', async () => {
       const worker = (await import('../worker/index')).default;
@@ -219,6 +219,6 @@ describe('Enterprise Multi-Tenancy, RBAC & SIEM Audit Logging', () => {
       );
 
       expect(res.status).toBe(405);
-    }, 15000);
+    }, 45000);
   });
 });

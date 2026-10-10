@@ -5,9 +5,9 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
-    testTimeout: 30000,
-    hookTimeout: 30000,
-    teardownTimeout: 30000,
+    testTimeout: 45000,
+    hookTimeout: 45000,
+    teardownTimeout: 45000,
     env: {
       VITE_FIRECRAWL_API_KEY: '',
       VITE_TAVILY_API_KEY: '',

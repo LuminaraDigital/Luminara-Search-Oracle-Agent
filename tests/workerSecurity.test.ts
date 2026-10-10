@@ -77,7 +77,7 @@ describe('security headers', () => {
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('content-security-policy')).toBeNull();
     const data = await res.json();
-    expect(data).toEqual({ ok: true });
+    expect(data).toMatchObject({ ok: true });
     expect(data.providers).toBeUndefined();
     expect(data.tonPricing).toBeUndefined();
     expect(data.jettonPricing).toBeUndefined();

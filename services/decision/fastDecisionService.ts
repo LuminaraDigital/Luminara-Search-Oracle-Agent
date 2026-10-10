@@ -61,7 +61,7 @@ export interface EvidenceClassificationResult {
 export interface FastDecisionVerdict {
   verdict: string;
   oneMoveThisWeek: string;
-  healthScore: number;
+  healthScore: number | null;
   readiness: CrawlReadinessResult;
   evidence: EvidenceClassificationResult;
   latencyMs: number;
@@ -281,26 +281,26 @@ export function generateFastDecisionVerdict(
 ): FastDecisionVerdict {
   const start = performance.now();
 
-  let healthScore = readiness.score;
-  if (evidence.status === 'measured') healthScore = Math.min(100, healthScore + 10);
-  if (evidence.status === 'not_measured') healthScore = Math.max(20, healthScore - 20);
-
+  let healthScore: number | null = null;
   let verdict = '';
   let oneMoveThisWeek = '';
 
-  if (!readiness.ready) {
+  if (evidence.status === 'not_measured') {
+    verdict = `${domain} evidence is unverified due to missing crawl digests. Status marked not_measured.`;
+    oneMoveThisWeek = `Run a verified probe crawl with live DOM snapshotting to establish measured evidence.`;
+    healthScore = null;
+  } else if (!readiness.ready) {
     verdict = `${domain} blocks or restricts AI answer engine crawlers in robots.txt.`;
     oneMoveThisWeek = `Update robots.txt to explicitly allow GPTBot and ClaudeBot for Answer Engine indexing.`;
+    healthScore = Math.max(20, Math.min(100, readiness.score));
   } else if (readiness.llmsTxt.status !== 'present') {
     verdict = `AI engines search for ${domain} but lack unambiguous Organization schema and entity links.`;
     oneMoveThisWeek = `Deploy verified Organization JSON-LD with authoritative sameAs links to establish citation authority.`;
-    healthScore = 74;
-  } else if (evidence.status === 'not_measured') {
-    verdict = `${domain} evidence is unverified due to missing crawl digests. Status marked not_measured.`;
-    oneMoveThisWeek = `Run a verified probe crawl with live DOM snapshotting to establish measured evidence.`;
+    healthScore = Math.max(20, Math.min(100, readiness.score));
   } else {
     verdict = `${domain} is verified for ${focus} visibility with active crawler access and structured schemas.`;
     oneMoveThisWeek = `Deploy verified Organization JSON-LD with authoritative sameAs links to establish citation authority.`;
+    healthScore = Math.max(20, Math.min(100, readiness.score + (evidence.status === 'measured' ? 10 : 0)));
   }
 
   const latencyMs = Number((performance.now() - start).toFixed(2));

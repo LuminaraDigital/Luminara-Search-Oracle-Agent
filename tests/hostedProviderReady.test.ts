@@ -340,5 +340,5 @@ describe('ensureHostedProviderReady', () => {
     expect(report?.text).toBe('brief');
     expect(keyDuringReport).toBe('proxy');
     expect(configService.getGroqKey()).toBe('proxy');
-  }, 30_000); // cold import of InstantAuditView after resetModules is slow under full-suite load
+  }, 60_000); // cold import of InstantAuditView after resetModules is slow under full-suite load
 });

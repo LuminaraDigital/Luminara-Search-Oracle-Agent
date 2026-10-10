@@ -45,7 +45,7 @@ export interface OracleGatewayResult {
   state: 'settled';
   verdict: string;
   oneMoveThisWeek: string;
-  healthScore: number;
+  healthScore: number | null;
   evidence: {
     scrapedUrl: string;
     sourcesCount: number;
