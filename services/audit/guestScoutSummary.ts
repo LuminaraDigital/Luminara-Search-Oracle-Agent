@@ -19,12 +19,6 @@ export interface ScoutBadge {
   value?: string;
 }
 
-export interface AiPlatformCheck {
-  platform: 'ChatGPT' | 'Perplexity' | 'Google AI Overviews' | 'Google Search';
-  status: 'recommended' | 'cited' | 'not_cited' | 'not_measured';
-  detail: string;
-}
-
 export interface GuestScoutSummary {
   domain: string;
   /** Plain text for teaser, share, and clipboard. No heading or emphasis markers. */
@@ -35,7 +29,6 @@ export interface GuestScoutSummary {
   topFix: string;
   nextStep: string;
   badges: ScoutBadge[];
-  aiPlatforms?: AiPlatformCheck[];
   crawlerChecks: LlmCrawlerCheck[];
   /** Public sentences. Raw provider errors are not copied here. */
   failed: string[];
@@ -55,9 +48,17 @@ export interface GuestScoutSummaryInput {
   citationRatePercent: number | null;
   /** Count of the serpCount search rows that mention the brand. Not a 0-100 score. */
   shareOfVoiceScore: number | null;
+  /**
+   * The checklist number (85 minus a fixed amount for each failed check).
+   * It says whether the checks ran. The card does not print it: it prints healthChecks.
+   */
   healthScore: number | null;
+  /** How many of the site checks passed, of how many ran. Shown on the card as that count. */
+  healthChecks?: { passed: number; total: number } | null;
   scrapedPageCount: number;
   serpCount: number;
+  /** The engines the search rows came from, as recorded on the rows. */
+  searchEngines?: readonly string[];
   findings: Array<{ title: string }>;
   errors?: string[];
   plainEnglishBrief?: string;
@@ -130,6 +131,31 @@ function mentionCountBadge(label: string, count: number | null, total: number): 
   return { label, status: 'measured', value: `mentioned in ${count} of ${total} web results` };
 }
 
+/** Page health is shown as passed checks of checks run, never as an out-of-100 number. */
+function checksBadge(
+  label: string,
+  healthScore: number | null,
+  checks: { passed: number; total: number } | null | undefined,
+): ScoutBadge {
+  if (typeof healthScore !== 'number' || !checks) return { label, status: 'not_measured' };
+  const passed = mentionCountOf(checks.passed, checks.total);
+  if (passed == null) return { label, status: 'not_measured' };
+  return { label, status: 'measured', value: `${passed} of ${checks.total} checks passed` };
+}
+
+/** Names only a search source the rows really came from. */
+const SEARCH_ENGINE_NAMES: Record<string, string> = {
+  tavily: 'Tavily web search',
+  local_serp: 'the local search sidecar',
+  google: 'Google search',
+  perplexity: 'Perplexity',
+};
+
+function searchSourceLabel(engines: readonly string[] | undefined): string {
+  const names = [...new Set((engines || []).map((engine) => SEARCH_ENGINE_NAMES[engine]).filter(Boolean))];
+  return names.join(' and ');
+}
+
 /**
  * Plain text for public teasers. Heading markers, emphasis, and tags come off.
  * Already-plain sentences stay readable. This is not the card renderer.
@@ -196,9 +222,13 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     verdictMarkdown = verdict;
   }
 
+  const searchSource = searchSourceLabel(input.searchEngines);
+  const searchUsed = input.serpCount > 0
+    ? `Found ${input.serpCount} web result${input.serpCount === 1 ? '' : 's'}${searchSource ? ` through ${searchSource}` : ''}.`
+    : 'No web results were collected.';
   const evidenceUsed = evidenceEmpty
     ? 'No page text and no search rows were collected in this run.'
-    : `Pages with text or schema: ${input.scrapedPageCount}. Search rows: ${input.serpCount}.`;
+    : `Pages with text or schema: ${input.scrapedPageCount}. ${searchUsed}`;
 
   const firstFix = input.findings.map((f) => f.title.trim()).find(Boolean);
   const topFix = firstFix
@@ -220,12 +250,10 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
   });
   const failed = failureCodes.map((code) => teaserFailureLine(code));
   const mentionCount = mentionCountOf(input.shareOfVoiceScore, input.serpCount);
-  // Share of the collected rows, 0 to 100. Read only by the platform check below, never shown.
-  const mentionShare = mentionCount == null ? null : (mentionCount / input.serpCount) * 100;
   let badges: ScoutBadge[] = [
     metricBadge('Citation rate', input.citationRatePercent, '%'),
     mentionCountBadge('Share of voice', mentionCount, input.serpCount),
-    metricBadge('Page health', input.healthScore, '/100'),
+    checksBadge('Page health', input.healthScore, input.healthChecks),
   ];
   if (degraded) {
     badges = badges.map((badge) => ({ label: badge.label, status: 'not_measured' }));
@@ -238,67 +266,6 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     verdictMarkdown = verdict;
   }
 
-  const aiPlatforms: AiPlatformCheck[] = [
-    {
-      platform: 'ChatGPT',
-      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.citationRatePercent == null)
-        ? 'not_measured'
-        : input.citationRatePercent >= 50
-          ? 'recommended'
-          : input.citationRatePercent > 0
-            ? 'cited'
-            : 'not_cited',
-      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.citationRatePercent == null)
-        ? 'Search evidence was not measured in this run.'
-        : input.citationRatePercent >= 50
-          ? 'Brand is recommended in category recommendation prompts.'
-          : input.citationRatePercent > 0
-            ? 'Brand is cited in secondary prompt citations.'
-            : 'Zero citations detected in ChatGPT commercial intent tests.',
-    },
-    {
-      platform: 'Perplexity',
-      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || mentionShare == null)
-        ? 'not_measured'
-        : mentionShare >= 50
-          ? 'recommended'
-          : mentionShare > 0
-            ? 'cited'
-            : 'not_cited',
-      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || mentionShare == null)
-        ? 'Search evidence was not measured in this run.'
-        : mentionShare >= 50
-          ? 'High domain citation density in Perplexity answer synthesis.'
-          : mentionShare > 0
-            ? 'Secondary source citations detected in answers.'
-            : 'Not cited in Perplexity answers for category queries.',
-    },
-    {
-      platform: 'Google AI Overviews',
-      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.citationRatePercent == null)
-        ? 'not_measured'
-        : input.citationRatePercent > 0
-          ? 'cited'
-          : 'not_cited',
-      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.citationRatePercent == null)
-        ? 'AI Overview snapshot not measured in this run.'
-        : input.citationRatePercent > 0
-          ? 'Brand cited within generative overview summary blocks.'
-          : 'Zero citations detected in Google AI Overviews.',
-    },
-    {
-      platform: 'Google Search',
-      status: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.serpCount === 0)
-        ? 'not_measured'
-        : input.serpCount > 0
-          ? 'cited'
-          : 'not_cited',
-      detail: (evidenceEmpty || degraded || input.measurementStatus === 'not_measured' || input.serpCount === 0)
-        ? 'Organic search index not measured in this run.'
-        : `Verified ${input.serpCount} organic category search result(s).`,
-    },
-  ];
-
   return {
     domain,
     verdict,
@@ -307,7 +274,6 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     topFix,
     nextStep: nextStepFor(input.hostedRail, degraded || evidenceEmpty),
     badges,
-    aiPlatforms,
     crawlerChecks,
     failed,
     failureCodes,

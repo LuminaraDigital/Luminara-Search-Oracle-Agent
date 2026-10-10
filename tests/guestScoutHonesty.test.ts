@@ -68,6 +68,101 @@ describe('guest scout summary honesty', () => {
     expect(summary.degraded).toBe(false);
   });
 
+  // SW0a-7 review, item 4: the card names what was queried and nothing else.
+  it('names only the search source the rows came from, and no AI product the run did not query', () => {
+    const measured = {
+      targetUrl: 'brand.example',
+      measurementStatus: 'measured' as const,
+      citationRatePercent: 56,
+      shareOfVoiceScore: 5,
+      healthScore: 73,
+      healthChecks: { passed: 3, total: 4 },
+      scrapedPageCount: 1,
+      serpCount: 9,
+      searchEngines: ['tavily', 'tavily', 'tavily'],
+      findings: [{ title: 'Add Organization schema' }],
+      hostedRail: 'signed_in_hosted' as const,
+    };
+    const summary = buildGuestScoutSummary(measured);
+    expect(summary.degraded).toBe(false);
+    expect('aiPlatforms' in summary).toBe(false);
+    expect(summary.evidenceUsed).toBe('Pages with text or schema: 1. Found 9 web results through Tavily web search.');
+
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
+    expect(html).toContain('Found 9 web results through Tavily web search.');
+    // The summary names no platform at all.
+    for (const text of ['ChatGPT', 'Perplexity', 'Google', 'AI Overviews', 'Verified', 'Recommended']) {
+      expect(JSON.stringify(summary), text).not.toContain(text);
+    }
+    // The card's own block that claimed to have observed four platforms is gone.
+    // (The fix templates lower on the card still name the engines a fix is aimed at.)
+    for (const text of [
+      'AI Engine Recommendation Status', 'Direct observation', 'citation density', 'Brand is recommended',
+      'Zero citations detected', 'organic category', 'Not Cited', 'Not Measured',
+    ]) {
+      expect(html, text).not.toContain(text);
+    }
+    expect(html).not.toMatch(/>\s*(Cited|Recommended)\s*</);
+
+    // The sidecar is named when the rows came from it, and nothing is named when the source is unknown.
+    expect(buildGuestScoutSummary({ ...measured, searchEngines: ['local_serp'] }).evidenceUsed)
+      .toBe('Pages with text or schema: 1. Found 9 web results through the local search sidecar.');
+    expect(buildGuestScoutSummary({ ...measured, searchEngines: undefined }).evidenceUsed)
+      .toBe('Pages with text or schema: 1. Found 9 web results.');
+    expect(buildGuestScoutSummary({ ...measured, serpCount: 1, shareOfVoiceScore: 1 }).evidenceUsed)
+      .toBe('Pages with text or schema: 1. Found 1 web result through Tavily web search.');
+  });
+
+  it('shows no "Cited" pill when no search result mentions the brand', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'brand.example',
+      measurementStatus: 'measured',
+      citationRatePercent: 0,
+      shareOfVoiceScore: 0,
+      healthScore: 70,
+      healthChecks: { passed: 3, total: 4 },
+      scrapedPageCount: 1,
+      serpCount: 9,
+      searchEngines: ['tavily'],
+      findings: [],
+      hostedRail: 'signed_in_hosted',
+    });
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
+    expect(html).toContain('Share of voice: mentioned in 0 of 9 web results');
+    expect(html).not.toMatch(/>\s*Cited\s*</);
+    expect(html).not.toMatch(/>\s*Recommended\s*</);
+    expect(html).not.toMatch(/Verified \d+ organic/);
+    expect(summary.evidenceUsed).toContain('Found 9 web results');
+  });
+
+  it('shows page health as checks passed, never as a number out of 100', () => {
+    const base = {
+      targetUrl: 'brand.example',
+      measurementStatus: 'measured' as const,
+      citationRatePercent: 56,
+      shareOfVoiceScore: 5,
+      scrapedPageCount: 1,
+      serpCount: 9,
+      findings: [],
+      hostedRail: 'signed_in_hosted' as const,
+    };
+    const badge = (healthScore: number | null, healthChecks?: { passed: number; total: number } | null) =>
+      buildGuestScoutSummary({ ...base, healthScore, healthChecks }).badges.find((item) => item.label === 'Page health');
+
+    expect(badge(73, { passed: 3, total: 4 })).toEqual({ label: 'Page health', status: 'measured', value: '3 of 4 checks passed' });
+    // The checklist number on its own is never printed.
+    expect(badge(73)).toEqual({ label: 'Page health', status: 'not_measured' });
+    expect(badge(null, { passed: 3, total: 4 })).toEqual({ label: 'Page health', status: 'not_measured' });
+    expect(badge(73, { passed: 9, total: 4 })).toEqual({ label: 'Page health', status: 'not_measured' });
+
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, {
+      summary: buildGuestScoutSummary({ ...base, healthScore: 73, healthChecks: { passed: 3, total: 4 } }),
+    }));
+    expect(html).toContain('Page health: 3 of 4 checks passed');
+    expect(html).not.toMatch(/\d+\s*\/\s*100/);
+    expect(html).not.toContain('73');
+  });
+
   it('treats provider_failed plus an empty SERP as degraded and hides percent badges', () => {
     const summary = buildGuestScoutSummary({
       targetUrl: 'https://example.com',
@@ -141,7 +236,7 @@ describe('guest scout summary honesty', () => {
     };
     const brief = await executiveTranslatorAgent.execute(
       'https://seamossvibes.com.au',
-      75,
+      { passed: 3, total: 4 },
       { mentioned: 5, total: 9 },
       [finding],
       [],
@@ -170,7 +265,7 @@ describe('guest scout summary honesty', () => {
     expect(summary.verdictMarkdown).toBe(brief.trim());
     expect(summary.verdictMarkdown.length).toBeGreaterThan(600);
     expect(summary.verdictMarkdown).toContain(actionThree);
-    expect(summary.verdictMarkdown.endsWith('competitors.')).toBe(true);
+    expect(summary.verdictMarkdown.endsWith('This run did not measure what they will change.')).toBe(true);
     expect(summary.verdict).not.toMatch(/#{2,}/);
     expect(summary.verdict).not.toContain('**');
     expect(summary.verdict).not.toContain('__');

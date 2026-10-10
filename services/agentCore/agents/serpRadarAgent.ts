@@ -2,8 +2,9 @@
  * SERP Radar Agent: Live Search & Empirical Citation Specialist
  * 
  * CrewAI Role: Radar Scout
- * Goal: Autonomously query live search engines (Google, Perplexity, Tavily),
- * evaluate generative AI search presence, and measure empirical citation rate.
+ * Goal: Run a few web searches through Tavily, or through the local search sidecar
+ * when no Tavily key is set, and count the results that mention the brand.
+ * It queries no other engine and no AI answer product.
  */
 
 import { tavilyService } from '../../search/tavilyService';
@@ -33,16 +34,6 @@ export class SerpRadarAgent {
     const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
     const brandName = dna?.name || cleanDomain.split('.')[0];
 
-    emit({
-      id: `serp-start-${Date.now()}`,
-      timestamp: Date.now(),
-      agentRole: 'serp_radar',
-      agentName: this.name,
-      phase: 'probing_engines',
-      message: `Probing Google, Perplexity & AI Overviews for "${brandName}" search footprint…`,
-      status: 'running',
-    });
-
     // Formulate targeted queries
     const queries = [
       `"${brandName}" ${cleanDomain}`,
@@ -53,6 +44,20 @@ export class SerpRadarAgent {
     const tavilyKey = configService.getTavilyKey();
     const localSerpEnabled = configService.isLocalSerpEnabled();
     const serpEvidence: SerpEvidenceItem[] = [];
+    // Name the one search source this run can use, and nothing it does not query.
+    const searchSource = tavilyKey ? 'Tavily web search' : localSerpEnabled ? 'the local search sidecar' : '';
+
+    emit({
+      id: `serp-start-${Date.now()}`,
+      timestamp: Date.now(),
+      agentRole: 'serp_radar',
+      agentName: this.name,
+      phase: 'probing_engines',
+      message: searchSource
+        ? `Checking web search results for "${brandName}" through ${searchSource}…`
+        : `Checking web search results for "${brandName}"…`,
+      status: 'running',
+    });
 
     if (hostedAuthBlocked()) {
       emit({

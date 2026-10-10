@@ -57,6 +57,33 @@ export function healthScoreBlockReason(input: {
   return 'search';
 }
 
+/**
+ * The four checks behind the health number, and the points a failed check takes
+ * from HEALTH_SCORE_START. The number is a checklist score, not a measurement.
+ * A screen or a brief that tells a founder the result prints the count of passed
+ * checks from healthChecklist, not the number.
+ */
+export const HEALTH_SCORE_START = 85;
+
+export const HEALTH_CHECKS = [
+  { findingId: 'finding-zero-citations', penalty: 15 },
+  { findingId: 'finding-schema-org', penalty: 12 },
+  { findingId: 'finding-deprecated-howto', penalty: 5 },
+  { findingId: 'finding-thin-content', penalty: 8 },
+] as const;
+
+export interface HealthChecklist {
+  passed: number;
+  failed: number;
+  total: number;
+}
+
+/** Counts the checks a run failed, from the findings it kept. Valid only for a run where all four checks ran. */
+export function healthChecklist(findings: readonly { id: string }[]): HealthChecklist {
+  const failed = HEALTH_CHECKS.filter((check) => findings.some((finding) => finding.id === check.findingId)).length;
+  return { total: HEALTH_CHECKS.length, failed, passed: HEALTH_CHECKS.length - failed };
+}
+
 export function unmeasuredHealthMessage(reason: HealthScoreBlockReason): string {
   switch (reason) {
     case 'auth':

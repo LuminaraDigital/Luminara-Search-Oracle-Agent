@@ -15,6 +15,7 @@ import { AgentMissionControl } from './AgentMissionControl';
 import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
 import { PROOF_BADGE_ENABLED } from '../../services/agentCore/tonAttestationService';
 import { crewOrchestrator } from '../../services/agentCore/crewOrchestrator';
+import { healthChecklist } from '../../services/agentCore/auditEvidenceGate';
 import { AgentActivityEvent, AuditAttestation, AuditStateGraphContext } from '../../services/agentCore/types';
 import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
@@ -100,8 +101,10 @@ function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRa
     citationRatePercent: crew.citationRatePercent,
     shareOfVoiceScore: crew.shareOfVoiceScore,
     healthScore: crew.healthScore,
+    healthChecks: typeof crew.healthScore === 'number' ? healthChecklist(crew.findings) : null,
     scrapedPageCount: crew.scrapedPages.length,
     serpCount: crew.serpEvidence.length,
+    searchEngines: [...new Set(crew.serpEvidence.map((row) => row.engine))],
     findings: crew.findings.map((finding) => ({ title: finding.title })),
     errors: crew.errors,
     plainEnglishBrief: crew.plainEnglishBrief,

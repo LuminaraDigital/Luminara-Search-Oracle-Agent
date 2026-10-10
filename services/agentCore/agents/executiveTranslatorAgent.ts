@@ -2,8 +2,12 @@
  * Executive Translator Agent: Plain-English & ROI Specialist
  * 
  * CrewAI Role: Executive Communicator
- * Goal: Translate complex technical findings and schema gaps into an 8th-grade
- * reading level plain-English briefing with clear business impact for non-developers.
+ * Goal: Translate technical findings and schema gaps into an 8th-grade
+ * reading level plain-English briefing for non-developers.
+ *
+ * The brief states counts this run collected and the steps it suggests. It does not
+ * print a score out of 100, name a platform the run did not query, or say what the
+ * steps will cause.
  */
 
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
@@ -18,13 +22,24 @@ export interface WebMentionCounts {
   total: number;
 }
 
+/** How many of the site checks this run made passed. */
+export interface SiteCheckCounts {
+  passed: number;
+  total: number;
+}
+
+/** Two whole numbers that can be "count of total". Anything else is treated as not measured. */
+function validCount(count: number, total: number): boolean {
+  return Number.isInteger(count) && Number.isInteger(total) && total > 0 && count >= 0 && count <= total;
+}
+
 export class ExecutiveTranslatorAgent {
   public readonly name = 'Executive Translator';
   public readonly role = 'executive_translator';
 
   public async execute(
     domain: string,
-    healthScore: number | null,
+    healthChecks: SiteCheckCounts | null,
     webMentions: WebMentionCounts | null,
     findings: AuditFinding[],
     patches: CodeRemediationPatch[],
@@ -43,34 +58,29 @@ export class ExecutiveTranslatorAgent {
 
     const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
     const brandName = dna?.name || cleanDomain;
-    const criticalCount = findings.filter((f) => f.severity === 'critical').length;
-    const healthKnown = typeof healthScore === 'number';
-    // Counts that cannot be a count of rows are treated as not measured.
-    const mentions =
-      webMentions != null &&
-      Number.isInteger(webMentions.mentioned) &&
-      Number.isInteger(webMentions.total) &&
-      webMentions.total > 0 &&
-      webMentions.mentioned >= 0 &&
-      webMentions.mentioned <= webMentions.total
-        ? webMentions
-        : null;
+    const critical = findings.filter((f) => f.severity === 'critical');
+    const criticalCount = critical.length;
+    // Counts that cannot be a count are treated as not measured.
+    const checks = healthChecks != null && validCount(healthChecks.passed, healthChecks.total) ? healthChecks : null;
+    const healthKnown = checks != null;
+    const mentions = webMentions != null && validCount(webMentions.mentioned, webMentions.total) ? webMentions : null;
     const citationKnown = mentions != null;
+    const checksPhrase = checks ? `**passed ${checks.passed} of ${checks.total} checks**` : '';
     const mentionPhrase = mentions
       ? `**mentioned in ${mentions.mentioned} of ${mentions.total} web results**`
       : '';
     const scoreLine = healthKnown && citationKnown
-      ? `Right now, your AI Search Health Score is **${healthScore}/100**, and your brand is ${mentionPhrase} this run collected.`
+      ? `Right now, your site ${checksPhrase} this run made, and your brand is ${mentionPhrase} this run collected.`
       : healthKnown
-        ? `Right now, your AI Search Health Score is **${healthScore}/100**. Citation rate was not measured.`
+        ? `Right now, your site ${checksPhrase} this run made. Citation rate was not measured.`
         : citationKnown
-          ? `Right now, your brand is ${mentionPhrase} this run collected. Health score was not measured.`
-          : 'Right now, health score and citation rate were not measured. Search or page providers did not return evidence for this run.';
+          ? `Right now, your brand is ${mentionPhrase} this run collected. The site checks were not measured.`
+          : 'Right now, the site checks and citation rate were not measured. Search or page providers did not return evidence for this run.';
     const takeaway = criticalCount > 0
-      ? `⚠️ **The Big Takeaway:** Search engines and AI tools like ChatGPT and Perplexity are having trouble understanding your brand because ${criticalCount === 1 ? 'there is 1 key missing identity record' : `there are ${criticalCount} key identity records missing`} on your website.`
+      ? `⚠️ **The Big Takeaway:** This run found ${criticalCount} critical ${criticalCount === 1 ? 'gap' : 'gaps'}: ${critical.map((f) => f.title).join('; ')}.`
       : healthKnown
-        ? `✅ **The Big Takeaway:** Your site has solid baseline technical health.`
-        : '**The takeaway:** This run did not measure enough page or search evidence to judge technical health.';
+        ? `✅ **The Big Takeaway:** None of the checks this run made found a critical gap.`
+        : '**The takeaway:** This run did not measure enough page or search evidence to judge the site.';
 
     const sections = [
       `### What This Means For ${brandName}`,
@@ -84,7 +94,7 @@ export class ExecutiveTranslatorAgent {
       '2. **Answer Customer Questions Directly:** Add clear, 2-to-3 sentence answers to the top questions your buyers ask before buying.',
       '3. **Add an AI Navigation Guide (`llms.txt`):** Help AI bots find your most important products without getting lost in menu links.',
       '',
-      `*Bottom Line:* Taking these steps will make it significantly easier for AI search engines to recommend ${brandName} instead of your competitors.`,
+      "*Bottom Line:* The three steps are: add the Organization tag, write short answers to your buyers' top questions, and publish an llms.txt file. This run did not measure what they will change.",
     ];
 
     const brief = sections.join('\n');

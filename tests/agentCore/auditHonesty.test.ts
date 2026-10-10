@@ -22,6 +22,7 @@ import {
   memorySyncPlan,
 } from '../../services/agentCore/crewOrchestrator';
 import type { AgentActivityEvent, AgentRole, ScrapedPageEvidence, SerpEvidenceItem } from '../../services/agentCore/types';
+import { HEALTH_CHECKS, healthChecklist } from '../../services/agentCore/auditEvidenceGate';
 import { empiricalCitationService } from '../../services/audit/empiricalCitationService';
 import { buildGuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { geminiService } from '../../services/geminiService';
@@ -193,6 +194,37 @@ describe('Instant Audit honesty on empty evidence', () => {
       expect(text).toContain(`Brand mentioned in ${mentionedRows} of ${rows}.`);
       expect(text).not.toMatch(/Share-of-Voice/i);
       expect(text).not.toMatch(/\/100/);
+    }
+  });
+
+  // SW0a-7 review, item 4: the radar names the one source it queries.
+  it('says which search source the radar is checking, and names no engine it does not query', async () => {
+    const startLine = async () => {
+      const events: AgentActivityEvent[] = [];
+      await serpRadarAgent.execute('example.com', null, (event) => {
+        events.push(event);
+      });
+      return events.find((event) => event.phase === 'probing_engines')?.message || '';
+    };
+    vi.spyOn(tavilyService, 'search').mockImplementation(async (query: string) => ({ query, results: [] }));
+    vi.spyOn(localSerpService, 'search').mockResolvedValue(null as never);
+
+    vi.spyOn(configService, 'getTavilyKey').mockReturnValue('test-key');
+    const withTavily = await startLine();
+    expect(withTavily).toContain('through Tavily web search');
+
+    vi.spyOn(configService, 'getTavilyKey').mockReturnValue('');
+    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(true);
+    const withSidecar = await startLine();
+    expect(withSidecar).toContain('through the local search sidecar');
+
+    vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
+    const withNothing = await startLine();
+    expect(withNothing).toContain('Checking web search results for "example"');
+    expect(withNothing).not.toContain('through');
+
+    for (const line of [withTavily, withSidecar, withNothing]) {
+      expect(line).not.toMatch(/Google|Perplexity|AI Overviews?|ChatGPT|Probing/);
     }
   });
 
@@ -421,7 +453,26 @@ describe('Instant Audit honesty on empty evidence', () => {
     );
     expect(result.healthScore).toBe(73);
     expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(true);
-    expect(events.map((event) => event.message).join(' ')).toContain('73/100');
+    // The progress line gives the count of checks, not the checklist number.
+    const said = events.map((event) => event.message).join(' ');
+    expect(said).toContain('3 of 4 checks passed, 1 failed.');
+    expect(said).not.toMatch(/\d+\s*\/\s*100/);
+    expect(said).not.toMatch(/health score/i);
+  });
+
+  it('counts the checks behind the health number, one per finding the checklist knows', () => {
+    expect(HEALTH_CHECKS.map((check) => check.findingId)).toEqual([
+      'finding-zero-citations', 'finding-schema-org', 'finding-deprecated-howto', 'finding-thin-content',
+    ]);
+    expect(healthChecklist([])).toEqual({ total: 4, failed: 0, passed: 4 });
+    expect(healthChecklist([{ id: 'finding-schema-org' }, { id: 'finding-thin-content' }, { id: 'something-else' }]))
+      .toEqual({ total: 4, failed: 2, passed: 2 });
+  });
+
+  it('says nothing about AI overviews in the zero mention finding, only what the search rows show', async () => {
+    const result = await playbookAuditorAgent.execute('AEO', [livePage()], [liveSerp(false), liveSerp(false)], null, noop);
+    const finding = result.findings.find((item) => item.id === 'finding-zero-citations');
+    expect(finding?.description).toBe('None of the 2 web search results this run collected mention the brand.');
   });
 
   it('keeps a connection-refused Jina fallback from inventing a health score', async () => {
@@ -490,24 +541,26 @@ describe('Instant Audit honesty on empty evidence', () => {
 
     const measured = await executiveTranslatorAgent.execute(
       'https://example.com',
-      81,
+      { passed: 3, total: 4 },
       { mentioned: 2, total: 9 },
       [],
       [],
       null,
       noop,
     );
-    expect(measured).toContain('81/100');
+    expect(measured).toContain('passed 3 of 4 checks');
     expect(measured).toContain('mentioned in 2 of 9 web results');
+    expect(measured).not.toMatch(/\d+\s*\/\s*100/);
+    expect(measured).not.toMatch(/health score/i);
   });
 
   // SW0a-7: the brief quotes the two counts and makes no claim about AI answers.
   it('says "mentioned in N of M web results" in the executive brief, never a share of AI answers', async () => {
-    const both = await executiveTranslatorAgent.execute('https://example.com', 81, { mentioned: 2, total: 9 }, [], [], null, noop);
+    const both = await executiveTranslatorAgent.execute('https://example.com', { passed: 4, total: 4 }, { mentioned: 2, total: 9 }, [], [], null, noop);
     const mentionsOnly = await executiveTranslatorAgent.execute('https://example.com', null, { mentioned: 0, total: 6 }, [], [], null, noop);
     expect(both).toContain('mentioned in 2 of 9 web results');
     expect(mentionsOnly).toContain('mentioned in 0 of 6 web results');
-    expect(mentionsOnly).toContain('Health score was not measured.');
+    expect(mentionsOnly).toContain('The site checks were not measured.');
     for (const brief of [both, mentionsOnly]) {
       expect(brief).not.toMatch(/\d+(?:\.\d+)?\s*%/);
       expect(brief).not.toMatch(/AI search answers/i);
@@ -517,11 +570,55 @@ describe('Instant Audit honesty on empty evidence', () => {
   });
 
   it('makes no promise to double citations when a site has no critical findings', async () => {
-    const healthOnly = await executiveTranslatorAgent.execute('https://example.com', 81, null, [], [], null, noop);
+    const healthOnly = await executiveTranslatorAgent.execute('https://example.com', { passed: 4, total: 4 }, null, [], [], null, noop);
     expect(healthOnly).toContain('The Big Takeaway');
     expect(healthOnly).not.toMatch(/double/i);
     expect(healthOnly).not.toMatch(/comparison pages/i);
     expect(healthOnly).toContain('Citation rate was not measured.');
+  });
+
+  it('says what the steps are in the bottom line, not what they will cause', async () => {
+    const brief = await executiveTranslatorAgent.execute('https://example.com', { passed: 4, total: 4 }, { mentioned: 2, total: 9 }, [], [], null, noop);
+    const bottomLine = brief.split('\n').find((line) => line.includes('Bottom Line'));
+    expect(bottomLine).toContain('add the Organization tag');
+    expect(bottomLine).toContain('publish an llms.txt file');
+    expect(bottomLine).toContain('This run did not measure what they will change.');
+    expect(brief).not.toMatch(/significantly|easier|will make|instead of your competitors/i);
+  });
+
+  it('names no platform the run did not query and prints no score out of 100 in the brief', async () => {
+    const critical = {
+      id: 'finding-schema-org',
+      category: 'schema' as const,
+      severity: 'critical' as const,
+      title: 'Missing Organization / Brand Entity Schema',
+      description: 'd',
+      evidenceSource: 'e',
+      howWeKnowItFailed: 'h',
+      leadingIndicator: 'l',
+      criticVerified: true,
+      criticConfidence: 0.9,
+    };
+    const briefs = [
+      await executiveTranslatorAgent.execute('https://example.com', { passed: 3, total: 4 }, { mentioned: 2, total: 9 }, [critical], [], null, noop),
+      await executiveTranslatorAgent.execute('https://example.com', { passed: 4, total: 4 }, { mentioned: 2, total: 9 }, [], [], null, noop),
+      await executiveTranslatorAgent.execute('https://example.com', null, null, [], [], null, noop),
+    ];
+    for (const brief of briefs) {
+      expect(brief).not.toMatch(/ChatGPT|Perplexity|Gemini|Google|AI Overviews?/);
+      expect(brief).not.toMatch(/\d+\s*\/\s*100/);
+      expect(brief).not.toMatch(/health score/i);
+    }
+    expect(briefs[0]).toContain('This run found 1 critical gap: Missing Organization / Brand Entity Schema.');
+    expect(briefs[1]).toContain('None of the checks this run made found a critical gap.');
+  });
+
+  it('treats check counts that cannot be a count as not measured in the brief', async () => {
+    for (const bad of [{ passed: 5, total: 4 }, { passed: 2.5, total: 4 }, { passed: 0, total: 0 }, { passed: -1, total: 4 }]) {
+      const brief = await executiveTranslatorAgent.execute('https://example.com', bad, null, [], [], null, noop);
+      expect(brief).not.toContain('checks**');
+      expect(brief).toContain('the site checks and citation rate were not measured');
+    }
   });
 
   it('builds the crew brief from the rows the radar returned, not from a percentage', async () => {
@@ -536,8 +633,11 @@ describe('Instant Audit honesty on empty evidence', () => {
 
     const result = await crewOrchestrator.runAuditCrew('https://example.com', 'AEO', null, noop);
 
+    expect(translate.mock.calls[0]?.[1]).toEqual({ total: 4, failed: 0, passed: 4 });
     expect(translate.mock.calls[0]?.[2]).toEqual({ mentioned: 2, total: 5 });
+    expect(result.plainEnglishBrief).toContain('passed 4 of 4 checks');
     expect(result.plainEnglishBrief).toContain('mentioned in 2 of 5 web results');
+    expect(result.plainEnglishBrief).not.toContain('81');
     expect(result.plainEnglishBrief).not.toMatch(/\d+(?:\.\d+)?\s*%/);
     expect(result.plainEnglishBrief).not.toMatch(/AI search answers/i);
     mem0MemoryEngine.clear();
