@@ -876,6 +876,7 @@ Strict Formatting Guidelines:
 
     const buildReportResult = (modelText: string): AuditReportResult => {
       // No evidence block supplies an impact, rank, rich result, AI Overview or trust signal value.
+      // The copy each provider path writes to memory goes through the same gate.
       const text = stripUnmeasuredReportColumns(modelText);
       const schemaMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"@type"[\s\S]*?\})\s*```/);
       let schemaJsonLd = schemaMatch ? schemaMatch[1].trim() : JSON.stringify({
@@ -1077,7 +1078,7 @@ Strict Formatting Guidelines:
         });
         const text = result.text;
         try {
-          vfsMemoryService.ingestAuditAsResource(text, websiteUrl);
+          vfsMemoryService.ingestAuditAsResource(stripUnmeasuredReportColumns(text), websiteUrl);
         } catch (e) {
           console.warn('VFS audit ingestion fallback', e);
         }
@@ -1112,7 +1113,7 @@ Strict Formatting Guidelines:
         }
 
         try {
-          vfsMemoryService.ingestAuditAsResource(text, websiteUrl);
+          vfsMemoryService.ingestAuditAsResource(stripUnmeasuredReportColumns(text), websiteUrl);
         } catch (e) {
           console.warn('VFS audit ingestion fallback', e);
         }
@@ -1132,7 +1133,7 @@ Strict Formatting Guidelines:
       });
       if (fallbackResult && fallbackResult.text && fallbackResult.text.trim()) {
         try {
-          vfsMemoryService.ingestAuditAsResource(fallbackResult.text, websiteUrl);
+          vfsMemoryService.ingestAuditAsResource(stripUnmeasuredReportColumns(fallbackResult.text), websiteUrl);
         } catch (e) {
           console.warn('VFS audit ingestion fallback', e);
         }

@@ -33,6 +33,7 @@ import { siteEvidencePackService } from '../services/scraping/siteEvidencePack';
 import { unifiedScraperService } from '../services/scraping/unifiedScraper';
 import { localSerpService } from '../services/search/localSerpService';
 import { tavilyService } from '../services/search/tavilyService';
+import { vfsMemoryService } from '../services/vfs/vfsMemoryService';
 import { generateAuditReportUnlessDegraded } from '../components/audit/InstantAuditView';
 
 const dna: BusinessDNA = {
@@ -342,7 +343,16 @@ describe('generateAuditReport crew evidence', () => {
       ].join('\n'),
     } as never);
 
+    const remember = vi.spyOn(vfsMemoryService, 'ingestAuditAsResource');
     const result = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+
+    // The copy kept in memory is gated too.
+    expect(remember).toHaveBeenCalled();
+    for (const call of remember.mock.calls) {
+      for (const invented of ['Est. Organic Rank', 'Expected Impact', 'Trust Signal Strength', 'Position 3', 'Medium-High']) {
+        expect(String(call[0])).not.toContain(invented);
+      }
+    }
 
     const lines = result.text.split('\n');
     const headerCells = lines
