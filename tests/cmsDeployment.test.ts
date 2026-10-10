@@ -24,6 +24,12 @@ describe('CmsDeploymentService', () => {
     mockLocalStorage.clear();
   });
 
+  // Vitest 4 hands back the existing spy when a method is spied again, so a fetch spy left here
+  // would carry its calls into the next describe block.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('generates standard unified diff format', () => {
     const original = '{"@type": "WebPage"}';
     const updated = '{\n  "@type": "Organization",\n  "name": "Luminara"\n}';
