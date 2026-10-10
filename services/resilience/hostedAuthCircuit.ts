@@ -37,15 +37,19 @@ export function hostedAuthSkipCount(): number {
   return skipCount;
 }
 
-/** Record a non-retryable 401/403. The first one opens the circuit for this run. */
-export function noteHostedAuthFailure(statusCode: number, providerId: string): void {
+/** Record a non-retryable 401/403 or quota_exhausted / credit 429. The first one opens the circuit for this run. */
+export function noteHostedAuthFailure(statusCode: number, providerId: string, message?: string): void {
   const failure = classifyProviderFailure({
     providerId,
     statusCode,
-    message: `HTTP ${statusCode}`,
+    message: message || `HTTP ${statusCode}`,
   });
   if (failure.retryable) return;
-  if (failure.type !== 'authentication_error' && failure.type !== 'permission_error') return;
+  if (
+    failure.type !== 'authentication_error' &&
+    failure.type !== 'permission_error' &&
+    failure.type !== 'quota_exhausted'
+  ) return;
   circuit = observeCircuit(circuit, 'failure', {
     failureThreshold: 1,
     cooldownMs: 10 * 60_000,

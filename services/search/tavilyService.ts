@@ -7,6 +7,7 @@ export interface TavilySearchResult {
   url: string;
   content: string;
   score?: number;
+  sample?: boolean;
 }
 
 export interface TavilySearchResponse {
@@ -14,6 +15,8 @@ export interface TavilySearchResponse {
   answer?: string;
   results: TavilySearchResult[];
   images?: string[];
+  degraded?: boolean;
+  searchDegraded?: boolean;
 }
 
 export class TavilyService {
@@ -30,7 +33,7 @@ export class TavilyService {
 
   public async search(query: string, options: { maxResults?: number; searchDepth?: 'basic' | 'advanced'; includeAnswer?: boolean } = {}): Promise<TavilySearchResponse> {
     if (hostedAuthBlocked()) {
-      return { query, results: [] };
+      return { query, results: [], degraded: true, searchDegraded: true };
     }
     const apiKey = configService.getTavilyKey();
     if (!apiKey) {
@@ -38,10 +41,13 @@ export class TavilyService {
       const freeResults = await import('./freeWebSearch').then(m => m.freeWebSearch(query, options.maxResults || 5)).catch(() => []);
       return {
         query,
+        degraded: true,
+        searchDegraded: true,
         results: freeResults.map(r => ({
           title: r.title,
           url: r.url,
           content: r.snippet,
+          sample: true,
         })),
       };
     }
@@ -62,8 +68,8 @@ export class TavilyService {
       }, { userKey: apiKey });
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          noteHostedAuthFailure(response.status, 'tavily');
+        if (response.status === 401 || response.status === 403 || response.status === 429) {
+          noteHostedAuthFailure(response.status, 'tavily', `HTTP ${response.status} ${response.statusText}`);
         }
         throw new Error(`Tavily API error: ${response.status} ${response.statusText}`);
       }
@@ -85,10 +91,13 @@ export class TavilyService {
       const freeResults = await import('./freeWebSearch').then(m => m.freeWebSearch(query, options.maxResults || 5)).catch(() => []);
       return {
         query,
+        degraded: true,
+        searchDegraded: true,
         results: freeResults.map(r => ({
           title: r.title,
           url: r.url,
           content: r.snippet,
+          sample: true,
         })),
       };
     }

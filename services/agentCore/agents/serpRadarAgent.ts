@@ -79,6 +79,7 @@ export class SerpRadarAgent {
       );
 
       for (const res of responses) {
+        const isDegraded = Boolean((res as any).degraded || (res as any).searchDegraded);
         for (const item of res.results) {
           const mentioned =
             item.title.toLowerCase().includes(brandName.toLowerCase()) ||
@@ -94,6 +95,7 @@ export class SerpRadarAgent {
             score: item.score,
             aiOverviewText: res.answer,
             brandMentioned: mentioned,
+            sample: isDegraded || Boolean((item as any).sample),
           });
         }
       }
