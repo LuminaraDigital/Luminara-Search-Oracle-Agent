@@ -1,6 +1,6 @@
 # Founder Swarm and Business Brain: appendix (Track SW)
 
-**Part of:** Track SW v0.3. The plan is [`founder-swarm-business-brain-additive-plan.md`](./founder-swarm-business-brain-additive-plan.md); its first page lists every file.  
+**Part of:** Track SW v0.4. The plan is [`founder-swarm-business-brain-additive-plan.md`](./founder-swarm-business-brain-additive-plan.md); its first page lists every file.  
 **Date:** 2026-10-10  
 **This file holds:** section 17 (threat model and test plan), section 19.1 (cross-plan edits), section 24 (merged from Track BB, and where every review finding landed).  
 **Section numbers** are the plan's own, so they do not start at 1 here.
@@ -79,6 +79,10 @@ One separate docs PR carries these (SW0-0), because other sessions work in those
 | The check registry | Allora section 3.1 | "Checks are added through this registry by Track SW SW1-14, each with a fixture per cell, and its name joins the closed list shown to users." |
 | A proposed decision | Weekly decision loop | "`weekly_decisions.status` may be `proposed` (Track SW SW1-18): a row an agent suggested and the founder has not committed. It is never counted as a commitment." |
 | Retest notices | Allora decision 4, CL2-7 | "Sent through Track SW's `notify_sends` under its decision 20, category `retest`." |
+| Whose a check is | Allora section 3.7 and CL1-1 | "A check set may belong to a finding with no decision: a server run writes each finding's baseline rows itself (Track SW SW1-16). The manual retest limit is per finding per 24 hours. Checks taken at a decision's commit are unchanged." |
+| Account link and projects | V2-1b | "The mover covers `projects` and every row keyed by a project. A `(account_id, domain, client_id)` collision keeps the surviving account's project and re-points the other's rows to it." |
+| The flag helper | Ops Phase 0 item 8 | "A flag is the string `\"true\"` or `\"false\"` (Track SW rule 2.3). The three-state seat settings are parsed by their own function and are not flags." |
+| Allora's waits | Allora CL1-0 (coverage rule) and its phase gates | "Done by the Track SW team under Track SW rules 2.4 and 2.18. The fourteen-day coverage read before Phase 2 is kept or waived for launch by Track SW decision 28; if waived, the report is still read at day fourteen and recorded here." |
 | Purchasable credits | Zoro Phase 2 | Zoro P2-4 and P2-5: "Not taken by Track SW SW0a-4; Track SW section 0.6 forbids a purchasable credit." |
 | Approvals from Telegram | Ops plan F1 | F1: "Approve and deny buttons are Track SW SW2-14 and call the same decide function. The card shows `argsSummary`." Also Ops decision 8 (argument-bound single use for standard destructive approvals) is needed before SW2-14: recommended yes |
 | Push opt-in | Ops plan F2 | F2: "Consent and the daily cap live in D1 `notify_prefs` (Track SW section 6.5), not KV. Beacon's push calls the same send function with the `budget` and `drift` categories." |
@@ -372,3 +376,40 @@ Fifteen code citations (A) and seven companion-plan citations (B) were corrected
 **From the session that wrote v0.1**
 
 Its 285-citation pass and its four text requests were applied: the notice insert for an account with no preferences; rule 2.6's stated exceptions; the charge transitions quoted in full; and full paths on bare file names. Its wording for decisions 11 and 18 is used.
+
+### 24.7 Review round 3: where each finding landed
+
+The same five reviewers read v0.3 against their own findings. Every round 2 finding was reported closed or partly closed; the partly closed ones are the new findings below. "B" marks a blocker.
+
+| Finding | Landed |
+|---|---|
+| CEO-27 The re-check covered one finding a week, and only if the founder committed first | Solved at its cause by FS-42: the server run records each finding's baseline itself (section 6.1, SW1-16) |
+| CEO-28 The chain's acceptance test could not pass | SW1-18 ("Next:" at read time); the test in section 0.5 |
+| CEO-29 Allora's fourteen-day wait neither counted nor waived | Decision 28; section 3; section 19.1 |
+| CEO-30 "Seven weeks" had a weak basis | Owner brief, "How big it is" |
+| CEO-31 Counsel on bounties had no start | Owner brief, the long leads |
+| CEO-32 Two statements of when handoffs arrive | Sections 0.2 and 0.3 |
+| CEO-14, a third time: the working file is still long | Sections 7 and 9 moved to the later-phases file |
+| AI-37 (B) Spend lost when a run is ended from outside | Section 4.1 step 1; `settled_at` (6.2); the admission statement; the sweeper settles a lost run at its cap |
+| AI-38 Three clock faults | Section 4.1: the object starts the clock; a wake never cuts a wait short; `wait_until` on a provider wait |
+| AI-39 A code-built draft could still be the wrong fix | Section 6.1, the three rules after the draft table |
+| AI-40 The model duplicated the verdict; quotes had no minimum | Section 4.3; section 6.1 (SW1b); SW1-7 |
+| AI-41 Gates compared what code decides | SW1-13; section 7.1; SW4-13; SW6-11 |
+| AI-42 No rule for choosing the engine | Section 4.1, "How the engine is chosen, and by when"; SW1-4 |
+| AI-43 Five details | The Binds paragraph; section 4.2 (child cap); `token_meter`; the per-site rule (4.4); Coach's insert (6.1) |
+| AI-44 Old wording still allowed a number that merely matched | Rule 2.9; section 4.3; SW1-7; section 9.1; the roster |
+| AI-45 Model-filled fields checked only lexically | Section 7.1 |
+| BC-30 (B) A plan charge could be granted and refunded | Section 5.1, steps 2 to 6; SW0a-3 |
+| BC-31 "What happens today" was wrong | SW0a-4; decision 31 |
+| BC-32 (B for SW5) Money could be taken with the result withheld | Sections 10.1 and 10.2; SW5-4; SW5-9 |
+| BC-33 A job could be paid on an uncredited charge | Section 11.2 |
+| BC-34 The card rail as a fourth writer | SW0a-4 (the rule inside `writeSubscriptionRecord`); SW0a-6 |
+| BC-35, BC-36 Smaller | Section 5.1 (manual refunds, `unknown`, the daily comparison); 11.2; 10.2; 14.1; 15 |
+| FS-41 (B) Unpushed commits that must not be pushed alone | Hazard 21; SW0a-0; section 1.1; Owner brief |
+| FS-42 (B) The re-check hung off the weekly decision row | Section 6.1; SW1-16; section 19.1 |
+| FS-43 The sweep's test and four webhook details | Section 5.1 |
+| FS-44 Details of the tasks done under other plans' ids | Section 3; section 5 (order); SW1's order |
+| FS-45 Support had nobody to reach; the deploy read-back needed a route | SW0a-16; SW0a-17 |
+| FS-46, FS-47 Smaller | `ton_pending_orders`; SW1-17; three migrations in place of one |
+| FS-26, FS-30, FS-32, FS-33, leftovers | Section 19.1 (projects, the flag helper); 7.2; SW1-12; 9.1 |
+| Verifier, 24 items | The eight SQL defects are fixed beside each statement; the two citations are corrected; the consistency items are applied in sections 0.5, 0.6, 0.7, 4.1, 6.5, 12.1 and 14.3 |

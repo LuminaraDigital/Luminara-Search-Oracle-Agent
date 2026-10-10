@@ -1,6 +1,6 @@
 # Founder Swarm and Business Brain: owner brief and decisions (Track SW)
 
-**Part of:** Track SW v0.3. The plan is [`founder-swarm-business-brain-additive-plan.md`](./founder-swarm-business-brain-additive-plan.md); its first page lists every file.  
+**Part of:** Track SW v0.4. The plan is [`founder-swarm-business-brain-additive-plan.md`](./founder-swarm-business-brain-additive-plan.md); its first page lists every file.  
 **Date:** 2026-10-10  
 **This file holds:** the Owner brief, and section 20 (every owner decision).  
 **Section numbers** are the plan's own, so they do not start at 1 here.
@@ -15,34 +15,36 @@
 
 1. **No agent does work on the server yet.** The audit "crew" is four fixed rules running in the browser tab. Close the tab and it stops (section 0.1).
 2. **Money defects are on `main`.** The Jetton payment check looks for the wrong message code while its switch is on; a paid Stars update can be lost with no refund; a one-day purchase can relabel a subscriber's plan downward; the paywall advertises a burn that never happens (section 1.2, hazards 10 to 15).
-3. **Code went to production on 2026-10-10 with no pull request, no staging pass and no flag.** Commit `42880f5` added a points total ("Lumens"), a daily check-in, a community idea feed and a Workers AI fallback as API routes. No screen calls them yet, so no founder sees a total or a feed today; anyone signed in can still call the routes, and the feed route returns account ids and lets one account publish another's idea card (hazard 9).
-4. **Several screens can show a number or a claim nobody checked** (hazard 17), and the "1-Click CMS & GitHub Autonomous Deployment" screen reports a WordPress deploy as done on any HTTP 200 (hazard 20).
-5. **Most of what the brief asks for already has an approved design in five other plans that was never built.** Section 3 lists each one and where it stands. This plan sequences them, does the ones on the shortest path itself, and specifies only what is missing.
-6. **Scale is tiny.** Production had 5 user rows on 2026-10-01 (not re-counted since). Community features have a trigger, not a date.
+3. **Unpushed commits are sitting on local `main` and local `staging`, eleven by the end of this review, and must not be pushed as they are.** The first of them (`e25e525`, made by another session on 2026-10-10) restores the payment fields on the public health route while the Jetton switch is still on. Pushed alone, it brings the TON tab and the USDT selector back in production, inside Telegram as well, for a payment the Worker cannot credit (hazard 21). It also adds a card rail through Stripe, two migrations, a second store for business memories, and a streak card that shows a points total and, since a later commit, calls the daily check-in when it opens.
+4. **Code went to production on 2026-10-10 with no pull request, no staging pass and no flag.** Commit `42880f5` added a points total ("Lumens"), a daily check-in, a community idea feed and a Workers AI fallback as API routes. No screen calls them yet, so no founder sees a total or a feed today; anyone signed in can still call the routes, and the feed route returns account ids and lets one account publish another's idea card (hazard 9).
+5. **Several screens can show a number or a claim nobody checked** (hazard 17), and the "1-Click CMS & GitHub Autonomous Deployment" screen reports a WordPress deploy as done on any HTTP 200 (hazard 20).
+6. **Most of what the brief asks for already has an approved design in five other plans that was never built.** Section 3 lists each one and where it stands. This plan sequences them, does the ones on the shortest path itself, and specifies only what is missing.
+7. **Scale is tiny.** Production had 5 user rows on 2026-10-01 (not re-counted since). Community features have a trigger, not a date.
 
 **What needs you first.** None of these waits on the rest of the plan.
 
-1. Say "yes, fix it" to SW0a (section 5.1, decision 25). Five task chips already exist; three cover SW0a's first tasks (Jetton checkout and burn copy; lost Stars payments; the community feed) and two cover hazards 1 to 3. **Order matters:** the Jetton chip and the Stars-only rule (SW0a-1, SW0a-6) go in before the chip that restores the public health fields, or the TON rail and the USDT selector come back.
-2. In your own wallet app, confirm the TON merchant address in `wrangler.jsonc` is yours (decision 26). Until then TON checkout stays hidden.
-3. In GitHub, turn on "Do not allow bypassing the above settings" for `main`, and protect `staging` (decision 27). Today an administrator can push straight to `main`, which is how `42880f5` reached production. The checkout switch arrived another way, inside pull request #54 in a commit titled "feat(ml)", which is why the plan also pins it with a test.
-4. Sign in on the production web app with email and say whether it works (hazard 1).
-5. Create a separate test bot for staging (SW0a-14). The Stars payment fix is not released until it has taken a real test payment there.
-6. Answer the launch decisions in the table below. The first server audit needs no model, so it needs only your yes to run audits on the server and a daily run limit (decisions 3 and 7).
-7. Start two long leads if you want them: Google verification (decision 4) and a code-signing certificate for the desktop installer (decision 30).
+1. Do not push local `main` yet. SW0a-0 says what has to be on it first.
+2. Say "yes, fix it" to SW0a (section 5.1, decision 25). Five task chips already exist; three cover SW0a's first tasks (Jetton checkout and burn copy; lost Stars payments; the community feed) and two cover hazards 1 to 3. **Order matters:** the Jetton chip and the Stars-only rule (SW0a-1, SW0a-6) go in before the chip that restores the public health fields, or the TON rail and the USDT selector come back.
+3. In your own wallet app, confirm the TON merchant address in `wrangler.jsonc` is yours (decision 26). Until then TON checkout stays hidden.
+4. In GitHub, turn on "Do not allow bypassing the above settings" for `main`, and protect `staging` (decision 27). Today an administrator can push straight to `main`, which is how `42880f5` reached production. The checkout switch arrived another way, inside pull request #54 in a commit titled "feat(ml)", which is why the plan also pins it with a test.
+5. Sign in on the production web app with email and say whether it works (hazard 1).
+6. Create a separate test bot for staging (SW0a-14). The Stars payment fix is not released until it has taken a real test payment there.
+7. Answer the launch decisions in the table below. The first server audit needs no model, so it needs only your yes to run audits on the server and a daily run limit (decisions 3 and 7).
+8. Start three long leads if you want them: Google verification (decision 4), a code-signing certificate for the desktop installer (decision 30), and counsel on bounties and third-party sellers (decision 13).
 
 **The launch cut.** "MVP launch with an ecosystem people can join" means one chain a founder can walk end to end, and one room:
 
 - **Auditor** audits the site on the server with the app closed, using a larger rule set than today's four (SW1a, SW1-14), and tells the founder when it is done (SW1-12).
 - **Fixer** drafts the fix for each finding it has a template for, checked by code, saved as a draft (SW1-15, SW1-16).
-- The founder ships it, and a **server re-check** says whether the issue is still in the page source (the Allora retest, decision 28).
+- The founder ships it, and a **server re-check** says whether the issue is still in the page source (the Allora retest, decision 28). The server recorded the "before" itself, during the audit, so the founder has nothing to do first and any finding that has a check can be re-checked.
 - **Coach** proposes the one thing to do next from the open findings (SW1-18).
-- The Fix Board and Ship Log are where this is worked (SW3-1 to SW3-3); the Auditor comes back on the plan's schedule (decision 22); the first quests and one builders chat give a reason to return and a place to join (section 14, decisions 9 and 19).
+- The Fix Board and Ship Log are where this is worked (SW3-0 to SW3-4); the Auditor comes back on the plan's schedule (decision 22); the first quests and one builders chat give a reason to return and a place to join (section 14, decisions 9 and 19).
 
 No model writes anything in that chain at launch; every step is code over fetched evidence, which is why it can be promised. The model-written summary and suggestions (SW1b), the roster with limits (SW2), connectors (SW4) and jobs (SW6) follow in that order. Until Fixer drafts and the re-check are live, product copy says "audits while you are away", not "agents do the work".
 
-**How big it is.** The launch cut is about 90 tasks, counted in section 19: 19 in SW0a, 10 in SW0, 29 that other plans own and this team does under their ids (section 3), and 31 here. Between 26 and 30 September this repository merged 13 reviewed pull requests (Zoro plan, section 0.1). At that rate the cut is roughly seven weeks of merge capacity. That is an estimate from one week of history, not a commitment, and it excludes the waits that are yours: the staging bot, the decisions below and the soaks.
+**How big it is.** The launch cut is about 90 tasks, counted in section 19: 19 in SW0a, 10 in SW0, 28 that other plans own and this team does under their ids (section 3), and 31 here. Between 26 and 30 September this repository merged 13 reviewed pull requests (Zoro plan, section 0.1). At that rate the cut is roughly seven weeks of merge capacity. Seven weeks is a floor taken from one ungated week, not a forecast: the tasks are uneven (SW1-0 is six spikes; SW0-8 lands a 23-commit branch), and that week ran none of this plan's gates. After SW0a's first ten releases under these rules, the rate is measured and the estimate restated. It also excludes the waits that are yours (the staging bot, the decisions below, the soaks) and one that is Allora's (decision 28).
 
-**What you are asked to decide.** Section 20 has every decision with a default. Seven are needed for launch; three are needed now.
+**What you are asked to decide.** Section 20 has every decision with a default. Four are needed now; eight more are needed for launch.
 
 | When | Decisions | What they are |
 |---|---|---|
@@ -54,7 +56,7 @@ No model writes anything in that chain at launch; every step is code over fetche
 
 **What this plan will not do.** Hold or release money between two users. Sell anything inside Telegram for anything but Stars. Let anything be bought that looks like progress: no quest, level, vote or chat entry is earned by paying. Show a number that no measurement produced. Message a founder who did not opt in. Send any transaction or hold any key.
 
-**How to read the rest.** This brief and the decisions (section 20) are one file, and they are the only part written for you. The plan itself holds the argument (0), the baseline (1), the rules (2), what other plans owe (3), the design (4) and the phases that are specified to task level (5 to 9, 14). The later phases (10 to 13, 15) are designs in a second file. The threat model, the edits to other plans and the review records (17, 24) are an appendix. Section numbers are the same everywhere, and the plan's first page lists which file holds which.
+**How to read the rest.** This brief and the decisions (section 20) are one file, and they are the only part written for you. The plan itself holds the argument (0), the baseline (1), the rules (2), what other plans owe (3), the design (4) and the phases in the launch cut (5, 6, 8, 14). The phases after launch (7 and 9 to 13, and 15) are in a second file. The threat model, the edits to other plans and the review records (17, 24) are an appendix. Section numbers are the same everywhere, and the plan's first page lists which file holds which.
 
 ---
 
@@ -69,7 +71,7 @@ Thirty-two numbered rows is too many to answer in one sitting, and most do not n
 | 25 | Approve SW0a (section 5.1): a plain "yes, fix it". It is independent of every other decision here | SW0a | None; needs a yes. Five task chips already exist; three cover its first tasks |
 | 26 | In your own wallet app, confirm that `TON_RECEIVING_ADDRESS` in `wrangler.jsonc` is your address (LORA plan open action O1, open since 2026-10-08) | Any TON rail on web or desktop | TON checkout stays hidden everywhere |
 | 27 | In GitHub: include administrators in `main`'s protection, protect `staging` the same way, require a reviewer on the `production` environment, and give AI sessions an identity that can open pull requests and cannot merge to `main` | Rule 2.16; every production step | None. Until it is done nothing in this plan can promise that staging comes first |
-| 31 | When a subscriber buys a higher plan, the days left on the old one are dropped (the Zoro plan's rule, and what happens today). Keep that, or carry the unused days over | SW0a-4's upgrade path | Keep it. A lower plan is refused and the same plan extends, either way |
+| 31 | When a subscriber buys a higher plan. Today the days left become days of the higher plan: a 3-day Growth pass redeemed with 25 Starter days left gives 28 days of Growth. The Zoro plan's rule would start the new term at the purchase and drop the days left. Keep today's behaviour, or take Zoro's rule with one addition: a higher plan that would end before the current one is refused before payment | SW0a-4's upgrade path | Today's behaviour stays, so no buyer loses days. A lower plan is refused and the same plan extends, either way |
 
 **Needed for launch.**
 
@@ -77,7 +79,7 @@ Thirty-two numbered rows is too many to answer in one sitting, and most do not n
 |---|---|---|---|
 | 3 | Run audits on the server (V decision 5). At launch that is a yes to the Worker fetching a founder's pages while they are away, with no model call and no hosted key. Later, for SW1b, it also means paying for one hosted model call per run; which model is an engineering call, taken from the rate card after the gate in SW1-13 | SW1a; SW1b | None. SW1a does not start without the yes |
 | 7 | Allowance per plan (open runs, runs per day). For SW1b only: the two daily spend pools, the total and the part Free may use, proposed from the cost SW1-11 measures | SW1a production; SW1b | Free: 1 open, 2 a day. Paid: 3 open, 20 a day. The pools have no default: unset keeps every model call off |
-| 28 | Build the server re-check now. It is the Allora plan's phases 0 to 2, awaiting your go, with that plan's decisions 2, 3 and 5 as it wrote them: Free gets the result chip and a manual retest on one site, automatic retests start at Starter; its result strings; its privacy sentence and 180-day retention | SW1-16, SW1-18; the launch chain | None. Without it the chain stops at a draft, and copy stays "audits while you are away" |
+| 28 | Build the server re-check now. It is the Allora plan's phases 0 to 2, awaiting your go, with that plan's decisions 2, 3 and 5 as it wrote them: Free gets the result chip and a manual retest on one site, automatic retests start at Starter; its result strings; its privacy sentence and 180-day retention. One more choice inside it: Allora holds its retest until fourteen days after its first phase is live. Keep that (launch moves about two weeks), or waive it for launch and read the coverage report afterwards | SW1-16, SW1-18; the launch chain | None. Without it the chain stops at a draft, and copy stays "audits while you are away" |
 | 9 | A points total, ranks and a daily check-in shipped on 2026-10-10 against spec 0009, as API routes with no screen. Choose option A (counts and levels; the shipped points are removed), option B (display-only points under the rules of section 14.4, the check-in kept as a streak count worth nothing, one ladder), or option C (as shipped). This plan recommends B | SW9 | None. Until answered, SW0a-10 holds: the routes are off and nothing is removed |
 | 19 | Open one builders chat at launch, earlier than TN decision D6 allows, with the entry rule "signed in through Telegram and one completed server audit". With it: the rules to pin, and the name of the person who looks after the chat and reads the moderation queue, and for how many hours a week | Section 14.3 (SW9-7 to SW9-9); section 14.6. SW9-6 ships regardless | Parked. The launch cut then has no room to join |
 | 20 | The send policy of section 6.5: consent asked in the app, seven categories that are all about the founder's own work, at most 5 a day, no message that only asks a founder to come back | SW1-12; SW2-14; job, retest and scheduled-audit notices | No messages except replies to commands and payment messages. A founder then learns a run finished only by opening the app |

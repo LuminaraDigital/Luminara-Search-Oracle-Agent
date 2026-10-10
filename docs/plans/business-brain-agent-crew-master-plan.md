@@ -7,12 +7,14 @@
 
 On 2026-10-10 two sessions were given the same owner brief and each wrote a master plan. This one (Track BB v1.0) and Track SW overlapped on most of their scope and collided on names: both defined `ship_notes`, `connector_sources`, `metric_snapshots` and `agent_jobs` with different columns, the same `/ship-notes` routes, and a migration both called `brain_connectors`. Every table was created with `IF NOT EXISTS`, so whichever shipped second would have done nothing, silently.
 
-The owner chose Track SW as the plan to keep. Track BB v1.0 was never revised. Its content was folded into Track SW v0.2, and Track SW v0.3 then applied a second review round. Track SW is four files; section numbers are the same in all of them.
+The owner chose Track SW as the plan to keep. Track BB v1.0 was never revised. Its content was folded into Track SW v0.2, and Track SW v0.3 and v0.4 then applied two more review rounds. Track SW is four files; section numbers are the same in all of them.
 
 | Track BB had | Now in Track SW | File |
 |---|---|---|
-| Phase BB0: payment, honesty and release fixes | Hazards 9 to 20 (section 1.2) and SW0a (section 5.1) | the plan |
-| Phases BB1 to BB3: Fix list, server-side crew, business brain | SW3, SW1 and SW2, SW4 (sections 6 to 9) | the plan |
+| Phase BB0: payment, honesty and release fixes | Hazards 9 to 21 (section 1.2) and SW0a (section 5.1) | the plan |
+| Phase BB1: Fix list, ship notes | SW3 (section 8) | the plan |
+| Phase BB2: server-side crew | SW1 (section 6) | the plan |
+| Phase BB2, the roster with limits; Phase BB3, business brain | SW2 (section 7); SW4 (section 9) | `founder-swarm-later-phases.md` |
 | Phase BB4: jobs | SW6 (section 11) | `founder-swarm-later-phases.md` |
 | Phase BB5: community | Sections 14.3 to 14.6 | the plan |
 | Phase BB6: desktop, wallet link, on-chain badges | SW8 (section 13) and section 15 | `founder-swarm-later-phases.md` |
