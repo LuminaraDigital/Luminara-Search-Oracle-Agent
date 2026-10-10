@@ -133,7 +133,14 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       )}
 
       {/* Actionable Fix List with copyable code diffs */}
-      <ActionableFixList domain={summary.domain} />
+      <ActionableFixList
+        domain={summary.domain}
+        findings={summary.failed.map((failText, idx) => ({
+          id: `finding-scout-${idx}`,
+          title: failText,
+          description: `Finding identified during scout: ${failText}`,
+        }))}
+      />
 
       {/* Retention: Daily Verification Streak Card */}
       <DailyStreakCard domain={summary.domain} />
