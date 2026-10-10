@@ -6,7 +6,7 @@
 import type { Env } from './index';
 import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './paymentLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
-import { PLANS } from './telegramBot';
+import { PLANS, alertPaymentAdmins } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
@@ -692,6 +692,78 @@ async function loadTonOrder(env: Env, kv: KVNamespace, orderId: string): Promise
   };
 }
 
+/**
+ * Where an order that was paid and not applied is listed for the owner. It is keyed by the order
+ * alone, so linking the account to another sign-in cannot hide it.
+ */
+const heldTonOrderKey = (orderId: string): string => `sub_pending:ton:${orderId}`;
+
+type HeldTonOrder = { orderId: string; userId: string; accountId: string; message?: string };
+
+/** `'unavailable'` when the list cannot be read: the caller must not answer "confirmed" on a guess. */
+async function readHeldTonOrder(kv: KVNamespace, orderId: string): Promise<HeldTonOrder | null | 'unavailable'> {
+  try {
+    return ((await kv.get(heldTonOrderKey(orderId), 'json')) as HeldTonOrder | null) ?? null;
+  } catch (err) {
+    console.error(`[TON] Could not read whether order ${orderId} is held for the owner: ${err instanceof Error ? err.message : err}`);
+    return 'unavailable';
+  }
+}
+
+/**
+ * Lists a paid order the Worker would not apply, tells the owner, and returns what the buyer
+ * reads. `null` when the list could not be written: nothing was recorded, so the caller has to
+ * give the transfer back to a later check.
+ */
+async function holdPaidTonOrder(
+  env: Env,
+  kv: KVNamespace,
+  input: { order: TonOrder; accountId: string; planTitle: string; refusal: PlanDowngradeRefusedError; txHash: string; network: string; now: number },
+): Promise<string | null> {
+  const { order, accountId, refusal, txHash, network, now } = input;
+  const message =
+    downgradeRefusalText({
+      currentTitle: PLANS[refusal.currentPlan]?.title || refusal.currentPlan,
+      currentExpiresAt: refusal.currentExpiresAt,
+      requestedTitle: input.planTitle,
+      outcome: 'so your payment was not applied.',
+    }) + ` Email support@luminarasuite.com with the order id ${order.orderId} to have it returned.`;
+  const forOwner = {
+    orderId: order.orderId,
+    userId: order.userId,
+    accountId,
+    planId: order.planId,
+    asset: order.asset || 'TON',
+    amountNano: order.amountNano,
+    txHash,
+    network,
+    reason: 'plan_downgrade_refused',
+    currentPlan: refusal.currentPlan,
+    heldAt: now,
+  };
+  try {
+    await kv.put(heldTonOrderKey(order.orderId), JSON.stringify({ ...forOwner, message }));
+  } catch (err) {
+    console.error(`[TON] Held order ${order.orderId} could not be listed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+  console.error(
+    `[TON] ALERT: order ${order.orderId} was paid (tx ${txHash}) and not applied, because the account already has the higher plan "${refusal.currentPlan}". The owner returns it by hand.`,
+  );
+  await alertPaymentAdmins(
+    env,
+    `A TON payment arrived and was not applied, because the account already has a higher plan. Return it from your own wallet. It is listed under ${heldTonOrderKey(order.orderId)}.`,
+    forOwner,
+  );
+  await recordAuditLogBestEffort(env, {
+    org_id: `org_${accountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    actor_id: order.userId,
+    action: 'ton.paid_not_applied',
+    details: { orderId: order.orderId, plan: order.planId, currentPlan: refusal.currentPlan, txHash, network },
+  });
+  return message;
+}
+
 /** An order younger than this is left to the buyer's own polling. */
 const TON_SWEEP_MIN_AGE_MS = 2 * 60_000;
 /**
@@ -805,6 +877,18 @@ export async function verifyTonPayment(
   }
   const kv = env.LUMINARA_KV;
 
+  // First, before the order is even loaded: an order that was paid and held for the owner is
+  // never reported as confirmed. Its claim stays in the ledger, so the sweep marks the
+  // remembered row credited, and without this check a later look would say "confirmed".
+  const held = await readHeldTonOrder(kv, orderId);
+  if (held === 'unavailable') return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
+  if (held) {
+    if (opts.expectedUserId && held.userId !== opts.expectedUserId) {
+      return { ok: false, error: 'Order does not belong to this account' };
+    }
+    return { ok: false, error: held.message || TON_PAID_NOT_APPLIED_ERROR };
+  }
+
   const loaded = await loadTonOrder(env, kv, orderId);
   if (loaded === 'unavailable') {
     return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
@@ -897,8 +981,10 @@ export async function verifyTonPayment(
       return { ok: false, error: 'This on-chain transaction has already been credited to another order.' };
     }
     if (claim.reason === 'order_already_credited') {
-      const held = await kv.get(`sub_pending:${accountId}:${orderId}`, 'json').catch(() => null) as { message?: string } | null;
-      if (held) return { ok: false, error: held.message || TON_PAID_NOT_APPLIED_ERROR };
+      // Another check of this order may have held it since the look at the top.
+      const heldSince = await readHeldTonOrder(kv, orderId);
+      if (heldSince === 'unavailable') return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
+      if (heldSince) return { ok: false, error: heldSince.message || TON_PAID_NOT_APPLIED_ERROR };
       // Not marked credited here: the verifier that holds the claim may still fail and release it.
       return { ok: true, plan: order.planId, expiresAt: await currentExpiry() };
     }
@@ -924,42 +1010,13 @@ export async function verifyTonPayment(
       // The buyer took a higher plan after this invoice was issued. The transfer is real and the
       // Worker holds no key to send it back, so the claim stays (this transaction is spent), the
       // order is put on a list for the owner, and the buyer is told plainly.
-      const message =
-        downgradeRefusalText({
-          currentTitle: PLANS[err.currentPlan]?.title || err.currentPlan,
-          currentExpiresAt: err.currentExpiresAt,
-          requestedTitle: plan.title,
-          outcome: 'so your payment was not applied.',
-        }) + ` Email support@luminarasuite.com with the order id ${orderId} to have it returned.`;
-      try {
-        await kv.put(
-          `sub_pending:${accountId}:${orderId}`,
-          JSON.stringify({
-            orderId,
-            accountId,
-            planId: order.planId,
-            asset: order.asset || 'TON',
-            amountNano: order.amountNano,
-            txHash: match.txHash,
-            network: match.network,
-            reason: 'plan_downgrade_refused',
-            currentPlan: err.currentPlan,
-            heldAt: now,
-            message,
-          }),
-        );
-      } catch (putErr) {
-        console.error(`[TON] Held order ${orderId} could not be listed: ${putErr instanceof Error ? putErr.message : putErr}`);
+      const message = await holdPaidTonOrder(env, kv, { order, accountId, planTitle: plan.title, refusal: err, txHash: match.txHash, network: match.network, now });
+      if (message === null) {
+        // Not listed, so not held: with the claim left in place the next check would find the
+        // order "already credited" and say confirmed. Released, the next check does all of this again.
+        await releaseTonTransaction(env, match.txHash, orderId);
+        return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
       }
-      console.error(
-        `[TON] ALERT: order ${orderId} was paid (tx ${match.txHash}) and not applied, because the account already has the higher plan "${err.currentPlan}". The owner returns it by hand.`,
-      );
-      await recordAuditLogBestEffort(env, {
-        org_id: `org_${accountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
-        actor_id: order.userId,
-        action: 'ton.paid_not_applied',
-        details: { orderId, plan: order.planId, currentPlan: err.currentPlan, txHash: match.txHash, network: match.network },
-      });
       return { ok: false, error: message };
     }
     await releaseTonTransaction(env, match.txHash, orderId);

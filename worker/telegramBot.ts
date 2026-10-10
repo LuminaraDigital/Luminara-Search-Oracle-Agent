@@ -966,12 +966,17 @@ export function subscriptionListsCharge(sub: SubscriptionRecord | null | undefin
   return Boolean(chargeId) && appliedChargesOf(sub).includes(chargeId);
 }
 
-async function raiseStarsAlert(env: Env, text: string, details: Record<string, unknown> = {}): Promise<void> {
-  console.error(`[Stars] ALERT: ${text} ${JSON.stringify(details)}`);
+/** Messages every id in TELEGRAM_ADMIN_ID. For money that needs a person; the caller writes the log line. */
+export async function alertPaymentAdmins(env: Env, text: string, details: Record<string, unknown> = {}): Promise<void> {
   const adminIds = (env.TELEGRAM_ADMIN_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
   for (const id of adminIds) {
     await api(env, 'sendMessage', { chat_id: id, text: `Payment alert: ${text}\n${JSON.stringify(details)}`.slice(0, 3500) });
   }
+}
+
+async function raiseStarsAlert(env: Env, text: string, details: Record<string, unknown> = {}): Promise<void> {
+  console.error(`[Stars] ALERT: ${text} ${JSON.stringify(details)}`);
+  await alertPaymentAdmins(env, text, details);
 }
 
 /** Payment and refund messages are sent whatever the account's notice settings say. */

@@ -31,7 +31,11 @@ export type SubscriptionLike = { plan?: unknown; expiresAt?: unknown } | null | 
 
 /** True when `existing` is still running and outranks `newPlanId`. */
 export function wouldDowngrade(existing: SubscriptionLike, newPlanId: unknown, now: number = Date.now()): boolean {
-  if (!existing || typeof existing.expiresAt !== 'number' || existing.expiresAt <= now) return false;
+  if (!existing) return false;
+  // The readers of a subscription coerce its expiry, so a record that stores it as text is
+  // running for them. It has to be running here too, or it would not be protected.
+  const expiresAt = Number(existing.expiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) return false;
   return planRank(existing.plan) > planRank(newPlanId);
 }
 

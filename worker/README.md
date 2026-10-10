@@ -140,7 +140,7 @@ and the SPA asset fallback:
 - Each rail also refuses before payment where it can: the Stars invoice link, `/buy` and
   pre-checkout; `createTonInvoice`; licence redemption (the key stays unused).
 - A Stars payment that arrives anyway is refunded with the reason. A TON payment that arrives
-  anyway cannot be sent back by the Worker: it is listed under `sub_pending:<account>:<order>` for
+  anyway cannot be sent back by the Worker: it is listed under `sub_pending:ton:<order>` for
   the owner to return by hand, and the buyer is told.
 - The same plan again extends it. A higher plan replaces it and keeps the days already there.
 - A caller that takes a plan away on purpose (a reversed card payment) passes `allowLowerPlan`.

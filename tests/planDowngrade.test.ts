@@ -6,6 +6,7 @@ import { PLANS, createInvoiceLink, handleTelegramPaymentUpdate, handleTelegramUp
 import { PlanDowngradeRefusedError, planRank, wouldDowngrade } from '../worker/planRank';
 import { writeSubscriptionRecord } from '../worker/userStore';
 import { createTonInvoice, verifyTonPayment, TON_PRICING, crc16Xmodem } from '../worker/tonPayment';
+import { TON_CLAIM_SETTLED_MS, closeExpiredTonPendingOrders } from '../worker/tonPendingOrders';
 import { activateLicenseKey } from '../worker/licenseService';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
 
@@ -17,6 +18,7 @@ import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
 
 const DAY = 86400_000;
 const USER = 777;
+const ADMIN = '999999';
 
 function syntheticTonAddress(tag: number, fill: number): string {
   const bytes = new Uint8Array(36);
@@ -32,13 +34,18 @@ const MERCHANT = syntheticTonAddress(0x11, 0x5a);
 class MockKV {
   store = new Map<string, string>();
   failGet: (key: string) => boolean = () => false;
+  failPut: (key: string) => boolean = () => false;
+  /** Runs before a read is answered, so a test can change the store between two reads. */
+  beforeGet: (key: string) => void = () => {};
   async get(key: string, type?: string) {
     if (this.failGet(key)) throw new Error(`KV get failed for ${key}`);
+    this.beforeGet(key);
     const val = this.store.get(key);
     if (val === undefined) return null;
     return type === 'json' ? JSON.parse(val) : val;
   }
   async put(key: string, value: string) {
+    if (this.failPut(key)) throw new Error(`KV put failed for ${key}`);
     this.store.set(key, value);
   }
   async delete(key: string) {
@@ -58,7 +65,7 @@ function makeEnv() {
     BOT_TOKEN: '123456:MOCK_TOKEN',
     WEBAPP_URL: 'https://luminarasuite.com',
     TELEGRAM_WEBHOOK_SECRET: 'test-secret',
-    TELEGRAM_ADMIN_ID: '999999',
+    TELEGRAM_ADMIN_ID: ADMIN,
     LUMINARA_KV: kv as any,
     DB: db as D1Database,
     TON_RECEIVING_ADDRESS: MERCHANT,
@@ -164,6 +171,15 @@ describe('which plan outranks which', () => {
     expect(wouldDowngrade({ plan: 'starter', expiresAt: now + 1 }, 'agency', now)).toBe(false);
     expect(wouldDowngrade(null, 'starter', now)).toBe(false);
   });
+
+  it('a plan whose expiry was stored as text is protected like any other', () => {
+    const now = 1_000_000;
+    expect(wouldDowngrade({ plan: 'agency', expiresAt: String(now + 1) }, 'starter', now)).toBe(true);
+    expect(wouldDowngrade({ plan: 'agency', expiresAt: String(now - 1) }, 'starter', now)).toBe(false);
+    for (const unreadable of [undefined, null, '', 'soon', Number.NaN]) {
+      expect(wouldDowngrade({ plan: 'agency', expiresAt: unreadable }, 'starter', now), String(unreadable)).toBe(false);
+    }
+  });
 });
 
 describe('the rule lives where every rail writes', () => {
@@ -194,14 +210,45 @@ describe('the rule lives where every rail writes', () => {
     expect(kv.json(`sub:${USER}`).plan).toBe('starter');
   });
 
+  /** Every .ts file under worker/ and services/, as a path from the repository root. */
+  function serverSources(): Array<{ file: string; text: string }> {
+    const root = resolve(__dirname, '..');
+    const found: Array<{ file: string; text: string }> = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(resolve(root, dir), { withFileTypes: true })) {
+        const path = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name.endsWith('.ts')) found.push({ file: path, text: readFileSync(resolve(root, path), 'utf8') });
+      }
+    };
+    walk('worker');
+    walk('services');
+    return found;
+  }
+
   it('these are the only places that write a subscription; a new one must be added here on purpose', () => {
-    const dir = resolve(__dirname, '..', 'worker');
-    const callers = readdirSync(dir)
-      .filter((f) => f.endsWith('.ts'))
-      .filter((f) => /\bwriteSubscriptionRecord\(/.test(readFileSync(resolve(dir, f), 'utf8')))
+    const callers = serverSources()
+      .filter((s) => /\bwriteSubscriptionRecord\(/.test(s.text))
+      .map((s) => s.file)
       .sort();
     // userStore.ts defines it. Each of the others is a rail, and each refuses a lower plan before payment where it can.
-    expect(callers).toEqual(['licenseService.ts', 'stripePayment.ts', 'telegramBot.ts', 'tonPayment.ts', 'userStore.ts']);
+    expect(callers).toEqual([
+      'worker/licenseService.ts',
+      'worker/stripePayment.ts',
+      'worker/telegramBot.ts',
+      'worker/tonPayment.ts',
+      'worker/userStore.ts',
+    ]);
+  });
+
+  it('nothing else puts a subscription record in place behind the rule', () => {
+    const direct = serverSources()
+      .flatMap((s) => (s.text.match(/\.put\(\s*`sub:/g) ?? []).map(() => s.file))
+      .sort();
+    // userStore.ts: the writer itself (the account key and the login key) and the copy made when
+    // two sign-ins are linked, which only fills an account that has no running plan.
+    // telegramBot.ts: a Stars refund taking back what its charge gave. Neither is a purchase.
+    expect(direct).toEqual(['worker/telegramBot.ts', 'worker/userStore.ts', 'worker/userStore.ts', 'worker/userStore.ts']);
   });
 });
 
@@ -311,19 +358,138 @@ describe('TON', () => {
     expect(kv.json(`sub:${USER}`)).toEqual(before);
     // The transfer is spent: the claim stays, and the order is on the owner's list.
     expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(1);
-    expect(kv.json(`sub_pending:${USER}:${inv.order.orderId}`)).toMatchObject({
+    expect(kv.json(`sub_pending:ton:${inv.order.orderId}`)).toMatchObject({
       orderId: inv.order.orderId,
+      userId: String(USER),
+      accountId: String(USER),
       planId: 'starter',
       txHash: 'tx_held_for_owner',
       reason: 'plan_downgrade_refused',
       currentPlan: 'agency',
     });
+    // The owner is told once, with what is needed to return it.
+    const alerts = telegram.of('sendMessage').filter((c) => String(c.body.chat_id) === ADMIN);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].body.text).toContain('A TON payment arrived and was not applied');
+    expect(alerts[0].body.text).toContain(inv.order.orderId);
+    expect(alerts[0].body.text).toContain('tx_held_for_owner');
 
-    // Checking again says the same thing; it does not turn into "confirmed".
+    // Checking again says the same thing; it does not turn into "confirmed", and it does not alert again.
     const again = await verifyTonPayment(env, inv.order.orderId, { expectedUserId: String(USER), fetcher: index });
     expect(again.ok).toBe(false);
     if (!again.ok) expect(again.error).toContain('so your payment was not applied');
     expect(kv.json(`sub:${USER}`)).toEqual(before);
+    expect(telegram.of('sendMessage').filter((c) => String(c.body.chat_id) === ADMIN)).toHaveLength(1);
+  });
+
+  /** An order for Starter, paid after the buyer took Agency, and checked once: it is now held. */
+  async function heldOrder() {
+    const made = makeEnv();
+    const inv = await createTonInvoice(made.env, String(USER), 'starter');
+    if (!inv.ok) throw new Error(inv.error);
+    const before = await subscribe(made.kv, 'agency');
+    const index = showing(inv.order.memo, TON_PRICING.starter.nanoTon, 'tx_held');
+    const check = () => verifyTonPayment(made.env, inv.order.orderId, { expectedUserId: String(USER), fetcher: index });
+    return { ...made, orderId: inv.order.orderId, before, index, check };
+  }
+
+  it('a held order stays held after the ledger marks its row credited and the two-hour copy has gone', async () => {
+    const { env, kv, db, orderId, before, index, check } = await heldOrder();
+    expect((await check()).ok).toBe(false);
+
+    // What the daily sweep does once the claim has settled, and the copy in KV running out.
+    const swept = await closeExpiredTonPendingOrders(env, Date.now() + TON_CLAIM_SETTLED_MS + 1000);
+    expect(swept.reconciled).toBe(1);
+    expect(db.sqlite.prepare('SELECT status FROM ton_pending_orders WHERE order_id = ?').get(orderId).status).toBe('credited');
+    kv.store.delete(`ton:order:${orderId}`);
+
+    const later = await check();
+    expect(later.ok).toBe(false);
+    if (!later.ok) expect(later.error).toContain('so your payment was not applied');
+    expect(kv.json(`sub:${USER}`)).toEqual(before);
+
+    // Somebody else asking about the order learns nothing about it.
+    const stranger = await verifyTonPayment(env, orderId, { expectedUserId: '555', fetcher: index });
+    expect(stranger).toEqual({ ok: false, error: 'Order does not belong to this account' });
+  });
+
+  it('when the list for the owner cannot be written, the transfer goes back to a later check instead of being called confirmed', async () => {
+    const { kv, db, orderId, before, check } = await heldOrder();
+    kv.failPut = (key) => key.startsWith('sub_pending:');
+
+    const first = await check();
+    expect(first.ok).toBe(false);
+    if (!first.ok) expect(first.error).toContain('temporarily unavailable');
+    // Nothing is recorded, so nothing is claimed and nobody is told a payment is waiting for them.
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(0);
+    expect(kv.json(`sub_pending:ton:${orderId}`)).toBeNull();
+    expect(telegram.of('sendMessage')).toHaveLength(0);
+    expect(kv.json(`sub:${USER}`)).toEqual(before);
+
+    // A second look while the list still cannot be written says the same, not "confirmed".
+    const second = await check();
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error).toContain('temporarily unavailable');
+
+    kv.failPut = () => false;
+    const third = await check();
+    expect(third.ok).toBe(false);
+    if (!third.ok) expect(third.error).toContain('so your payment was not applied');
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(1);
+    expect(kv.json(`sub_pending:ton:${orderId}`)).toMatchObject({ orderId, txHash: 'tx_held' });
+    expect(kv.json(`sub:${USER}`)).toEqual(before);
+  });
+
+  it('when the list cannot be read, the answer is to try again, never "confirmed"', async () => {
+    const { env, kv, orderId, check } = await heldOrder();
+    expect((await check()).ok).toBe(false);
+    await closeExpiredTonPendingOrders(env, Date.now() + TON_CLAIM_SETTLED_MS + 1000);
+    kv.store.delete(`ton:order:${orderId}`);
+
+    kv.failGet = (key) => key.startsWith('sub_pending:');
+    const res = await check();
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('temporarily unavailable');
+  });
+
+  it('a check that runs alongside the one holding the order does not say confirmed either', async () => {
+    const { kv, orderId, before, check } = await heldOrder();
+    expect((await check()).ok).toBe(false);
+
+    // This check looks at the list before the other one has written to it, and finds the
+    // transfer already claimed afterwards: the list is hidden for the first look only.
+    const key = `sub_pending:ton:${orderId}`;
+    const listed = kv.store.get(key)!;
+    let looked = false;
+    kv.beforeGet = (k) => {
+      if (k === key && !looked) {
+        looked = true;
+        kv.store.delete(key);
+      } else if (looked && !kv.store.has(key)) {
+        kv.store.set(key, listed);
+      }
+    };
+
+    const res = await check();
+    expect(looked).toBe(true);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('so your payment was not applied');
+    expect(kv.json(`sub:${USER}`)).toEqual(before);
+  });
+
+  it('an order that was credited is still reported as confirmed', async () => {
+    const { env, kv } = makeEnv();
+    const inv = await createTonInvoice(env, String(USER), 'starter');
+    if (!inv.ok) throw new Error(inv.error);
+    const index = showing(inv.order.memo, TON_PRICING.starter.nanoTon, 'tx_plain');
+    const check = () => verifyTonPayment(env, inv.order.orderId, { expectedUserId: String(USER), fetcher: index });
+
+    expect((await check()).ok).toBe(true);
+    await closeExpiredTonPendingOrders(env, Date.now() + TON_CLAIM_SETTLED_MS + 1000);
+    kv.store.delete(`ton:order:${inv.order.orderId}`);
+    expect(await check()).toMatchObject({ ok: true, plan: 'starter' });
+    expect([...kv.store.keys()].filter((k) => k.startsWith('sub_pending:'))).toEqual([]);
+    expect(telegram.of('sendMessage')).toHaveLength(0);
   });
 });
 
@@ -332,11 +498,26 @@ describe('licence keys', () => {
     const { env, kv, db } = makeEnv();
     const before = await subscribe(kv, 'agency', 2);
 
+    // Every statement sent to the database while the key is refused.
+    const statements: string[] = [];
+    const real = env.DB!;
+    env.DB = {
+      prepare: (sql: string) => {
+        statements.push(sql);
+        return real.prepare(sql);
+      },
+      batch: (list: any[]) => real.batch(list),
+    } as unknown as D1Database;
+
     const refused = await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY');
+    env.DB = real;
     expect(refused.ok).toBe(false);
     expect(refused.error).toContain('You already have the Pro / Agency plan until');
     expect(refused.error).toContain('the key was not used and is still valid');
     expect(kv.json(`sub:${USER}`)).toEqual(before);
+    // Refused before the claim, not claimed and given back: for a single-use key, a claim held
+    // even for a moment could turn away the buyer it was sold to.
+    expect(statements.filter((sql) => /license_/.test(sql) && /\b(INSERT|UPDATE|DELETE)\b/i.test(sql))).toEqual([]);
     // Nothing was claimed: not the key, and not this account's one trial.
     expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_trial_claims').get().n).toBe(0);
     expect(kv.store.has(`license:trial:claimed:${USER}`)).toBe(false);
@@ -346,6 +527,38 @@ describe('licence keys', () => {
     vi.setSystemTime(Date.now() + 3 * DAY);
     const later = await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY');
     expect(later.ok).toBe(true);
+    expect(kv.json(`sub:${USER}`).plan).toBe('growth');
+  });
+
+  it('a higher plan that starts between the check and the write still wins, and the key is given back', async () => {
+    const { env, kv, db } = makeEnv();
+    // The first look at the subscription finds none; the higher plan lands before the second.
+    let looks = 0;
+    let agency: Record<string, unknown> | null = null;
+    kv.beforeGet = (key) => {
+      if (key !== `sub:${USER}`) return;
+      looks += 1;
+      if (looks === 2) {
+        agency = { plan: 'agency', paymentMethod: 'stars', startedAt: Date.now(), expiresAt: Date.now() + 2 * DAY };
+        kv.store.set(key, JSON.stringify(agency));
+      }
+    };
+
+    const refused = await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY');
+    expect(looks).toBeGreaterThanOrEqual(2);
+    expect(refused.ok).toBe(false);
+    expect(refused.error).toContain('You already have the Pro / Agency plan until');
+    expect(refused.error).toContain('the key was not used and is still valid');
+    expect(kv.json(`sub:${USER}`)).toEqual(agency);
+    // The claim made before the write was released: the key, this account's redemption and its one trial.
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_redemptions').get().n).toBe(0);
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_trial_claims').get().n).toBe(0);
+    expect(kv.store.has(`license:trial:claimed:${USER}`)).toBe(false);
+
+    kv.beforeGet = () => {};
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 3 * DAY);
+    expect((await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY')).ok).toBe(true);
     expect(kv.json(`sub:${USER}`).plan).toBe('growth');
   });
 
