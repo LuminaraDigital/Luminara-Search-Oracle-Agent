@@ -12,12 +12,13 @@ import { PLANS, publicPlanCatalogue } from '../worker/telegramBot';
 
 const state = vi.hoisted(() => ({
   inTelegram: true,
+  wallet: null as { account: { address: string } } | null,
   health: { ok: true, providers: {}, telegram: true, requireAuth: false, plans: {} } as Record<string, unknown>,
 }));
 
 vi.mock('@tonconnect/ui-react', () => ({
   TonConnectButton: () => createElement('span', null, 'TON-CONNECT-BUTTON'),
-  useTonWallet: () => null,
+  useTonWallet: () => state.wallet,
   useTonConnectUI: () => [{}, () => {}],
 }));
 
@@ -120,5 +121,26 @@ describe('the account panel inside Telegram', () => {
     const html = panel();
     expect(html).not.toContain('TON-CONNECT-BUTTON');
     expect(html).not.toContain('TON wallet');
+  });
+});
+
+describe('the account panel on the web with a wallet connected', () => {
+  beforeEach(() => {
+    state.inTelegram = false;
+    state.wallet = { account: { address: '0:' + 'a'.repeat(64) } };
+    state.health = everythingOn();
+  });
+
+  it('draws no Stars plan button, because a Stars invoice cannot open outside Telegram', () => {
+    const html = panel();
+    expect(html).toContain('Open Mini App in Telegram');
+    expect(html).not.toContain('Subscribe');
+    expect(html).not.toContain(`${PLANS.starter.stars.toLocaleString()} Stars`);
+  });
+
+  it('still draws them inside Telegram', () => {
+    state.inTelegram = true;
+    state.wallet = null;
+    expect(panel()).toContain('Subscribe');
   });
 });
