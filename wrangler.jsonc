@@ -123,6 +123,9 @@
     // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
     // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
     "TON_CONFIRMED_ADDRESS": "",
+    // Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
+    // Empty means the production bot's published link. Staging sets its own bot's link once that bot exists.
+    "TELEGRAM_MINI_APP_URL": "",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
     "LANGUAGETOOL_URL": "",
@@ -243,6 +246,9 @@
         // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
         // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
         "TON_CONFIRMED_ADDRESS": "",
+        // Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
+        // Empty means the production bot's published link. Staging sets its own bot's link once that bot exists.
+        "TELEGRAM_MINI_APP_URL": "",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
@@ -333,6 +339,9 @@
         // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
         // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
         "TON_CONFIRMED_ADDRESS": "",
+        // Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
+        // Empty means the production bot's published link. Staging sets its own bot's link once that bot exists.
+        "TELEGRAM_MINI_APP_URL": "",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",

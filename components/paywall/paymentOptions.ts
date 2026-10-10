@@ -1,7 +1,12 @@
+import { MINI_APP_URL } from '../../services/referrals/rules';
+
 export type PaymentRail = 'card' | 'stars' | 'ton';
 
-/** Published Mini App link (see public/privacy.html and worker/privacyPolicy.ts). */
-export const TELEGRAM_MINI_APP_URL = 'https://t.me/LuminaraSuiteBot/app';
+/**
+ * Mini App link for this build: the published one (see public/privacy.html and
+ * worker/privacyPolicy.ts) unless the build names its own bot (a staging build does).
+ */
+export const TELEGRAM_MINI_APP_URL = MINI_APP_URL;
 
 export const PREMIUM_ENGINES_FALLBACK = 'Premium hosted AI engines';
 

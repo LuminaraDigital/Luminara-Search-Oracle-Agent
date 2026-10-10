@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { AuthPanel } from './AuthPanel';
 import { isInTelegram, getTelegramUserUnsafe } from '../../services/telegram/tma';
 import type { AppAuthState } from '../../services/auth/useAppAuth';
+import { MINI_APP_URL, botUsernameFromMiniAppUrl } from '../../services/referrals/rules';
 import { BrandLoader } from '../intro/BrandLoader';
 import { ICONS } from '../../constants';
 
@@ -102,7 +103,7 @@ export const AuthRequiredScreen: React.FC<{
             </button>
           )}
           <p className="text-[11px] text-gray-500 leading-relaxed text-center">
-            Tip: close the Mini App fully, then open it again from @LuminaraSuiteBot.
+            Tip: close the Mini App fully, then open it again from @{botUsernameFromMiniAppUrl(MINI_APP_URL)}.
           </p>
         </div>
       ) : (

@@ -7,7 +7,30 @@ export const REFERRAL_SCOUT_CREDITS = 2;
 export const OPERATOR_STREAK_WEEKS = 4;
 export const REFERRAL_CLAIM_LIMIT_PER_HOUR = 20;
 export const REFERRAL_QUALIFY_LIMIT_PER_HOUR = 20;
-export const MINI_APP_URL = 'https://t.me/LuminaraSuiteBot/app';
+/** The published Mini App link of the production bot. */
+export const PRODUCTION_MINI_APP_URL = 'https://t.me/LuminaraSuiteBot/app';
+
+/**
+ * A Mini App link from configuration. Only a t.me link to a bot (with an optional app name) is
+ * accepted; anything else, including nothing, gives the production link. A bot's username ends
+ * in "bot", which keeps out other t.me paths such as /share/url and /joinchat/x.
+ */
+export function resolveMiniAppUrl(candidate: unknown): string {
+  const value = typeof candidate === 'string' ? candidate.trim() : '';
+  const match = /^https:\/\/t\.me\/([A-Za-z][A-Za-z0-9_]{4,31})(\/[A-Za-z0-9_]{1,64})?$/.exec(value);
+  return match && /bot$/i.test(match[1]!) ? value : PRODUCTION_MINI_APP_URL;
+}
+
+/** The bot's username in a Mini App link, without the @. A link that is not accepted names the production bot. */
+export function botUsernameFromMiniAppUrl(candidate: unknown): string {
+  return resolveMiniAppUrl(candidate).slice('https://t.me/'.length).split('/')[0]!;
+}
+
+/**
+ * The link this build points at. A staging build names its own bot with VITE_TELEGRAM_MINI_APP_URL;
+ * the Worker, where there is no build-time env, passes its own TELEGRAM_MINI_APP_URL where it needs one.
+ */
+export const MINI_APP_URL = resolveMiniAppUrl((import.meta as any).env?.VITE_TELEGRAM_MINI_APP_URL);
 
 /** Crockford-like alphabet: 32 symbols, so a random byte maps without bias. */
 export const REFERRAL_CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -77,8 +100,8 @@ export function generateReferralCode(bytes: Uint8Array): string {
   return out;
 }
 
-export function inviteUrlForCode(code: string): string {
-  return `${MINI_APP_URL}?startapp=${encodeURIComponent(`ref_${code}`)}`;
+export function inviteUrlForCode(code: string, miniAppUrl: string = MINI_APP_URL): string {
+  return `${miniAppUrl}?startapp=${encodeURIComponent(`ref_${code}`)}`;
 }
 
 export type AttributionDecision =
