@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FIREBASE_PUBLIC_CONFIG, resolveFirebaseWebConfig } from '../services/auth/firebasePublicConfig';
+import { FIREBASE_PUBLIC_CONFIG, STAGING_FIREBASE_PROJECT_ID, resolveFirebaseWebConfig } from '../services/auth/firebasePublicConfig';
 import {
   MINI_APP_URL,
   PRODUCTION_MINI_APP_URL,
@@ -108,11 +108,114 @@ describe('the Firebase web config a build signs in with', () => {
       VITE_FIREBASE_STORAGE_BUCKET: 'luminara-suite-staging.firebasestorage.app',
       MODE: 'production',
     };
-    expect(resolveFirebaseWebConfig(stagingValuesEverywhere)).toEqual(PRODUCTION_CONFIG);
+    // Without the switch the values are not looked at, so there is nothing to warn about either.
+    const warned: string[] = [];
+    const quietly = (env: Record<string, unknown>) => resolveFirebaseWebConfig(env, (message) => warned.push(message));
+    expect(quietly(stagingValuesEverywhere)).toEqual(PRODUCTION_CONFIG);
     for (const name of Object.keys(stagingValuesEverywhere).filter((key) => key !== 'MODE')) {
-      expect(resolveFirebaseWebConfig({ MODE: 'production', [name]: 'left-over-value' }), name).toEqual(PRODUCTION_CONFIG);
+      expect(quietly({ MODE: 'production', [name]: 'left-over-value' }), name).toEqual(PRODUCTION_CONFIG);
     }
-    expect(resolveFirebaseWebConfig({ MODE: ' production ', VITE_FIREBASE_PROJECT_ID: 'other' })).toEqual(PRODUCTION_CONFIG);
+    expect(quietly({ MODE: ' production ', VITE_FIREBASE_PROJECT_ID: 'other' })).toEqual(PRODUCTION_CONFIG);
+    expect(warned).toEqual([]);
+  });
+
+  describe('a production build switched to self-hosted', () => {
+    const SELF_HOSTED = {
+      MODE: 'production',
+      VITE_FIREBASE_SELF_HOSTED: 'true',
+      VITE_FIREBASE_API_KEY: 'operator-web-api-value',
+      VITE_FIREBASE_AUTH_DOMAIN: 'auth.operator.example',
+      VITE_FIREBASE_PROJECT_ID: 'operator-project',
+      VITE_FIREBASE_APP_ID: '1:2:web:operator',
+    };
+    const OPERATOR_CONFIG = {
+      apiKey: 'operator-web-api-value',
+      authDomain: 'auth.operator.example',
+      projectId: 'operator-project',
+      appId: '1:2:web:operator',
+    };
+    const warnings = (env: Record<string, unknown>) => {
+      const seen: string[] = [];
+      return { config: resolveFirebaseWebConfig(env, (message) => seen.push(message)), seen };
+    };
+
+    it('signs in with the operator own complete config, and takes nothing from Luminara', () => {
+      const { config, seen } = warnings(SELF_HOSTED);
+      expect(config).toEqual(OPERATOR_CONFIG);
+      expect(seen).toEqual([]);
+      expect(JSON.stringify(config)).not.toContain(FIREBASE_PUBLIC_CONFIG.messagingSenderId);
+      expect(
+        resolveFirebaseWebConfig({ ...SELF_HOSTED, VITE_FIREBASE_MESSAGING_SENDER_ID: '42', VITE_FIREBASE_STORAGE_BUCKET: 'operator.example' }),
+      ).toEqual({ ...OPERATOR_CONFIG, messagingSenderId: '42', storageBucket: 'operator.example' });
+    });
+
+    it.each(['', 'false', 'TRUE', '1', 'yes', undefined])('without the switch set to exactly "true" (%s) the same values are ignored, silently', (value) => {
+      const { config, seen } = warnings({ ...SELF_HOSTED, VITE_FIREBASE_SELF_HOSTED: value });
+      expect(config).toEqual(PRODUCTION_CONFIG);
+      expect(seen).toEqual([]);
+    });
+
+    it.each(['VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_AUTH_DOMAIN', 'VITE_FIREBASE_PROJECT_ID', 'VITE_FIREBASE_APP_ID'])(
+      'with %s missing it falls back to the production config and warns once, naming the key and no value',
+      (missing) => {
+        for (const absent of ['', '   ', undefined]) {
+          const { config, seen } = warnings({ ...SELF_HOSTED, [missing]: absent });
+          expect(config).toEqual(PRODUCTION_CONFIG);
+          expect(seen).toHaveLength(1);
+          expect(seen[0]).toContain(`${missing} is missing`);
+          for (const value of Object.values(OPERATOR_CONFIG)) expect(seen[0]).not.toContain(value);
+        }
+      },
+    );
+
+    it('names every missing key in the one warning', () => {
+      const { config, seen } = warnings({ MODE: 'production', VITE_FIREBASE_SELF_HOSTED: 'true', VITE_FIREBASE_PROJECT_ID: 'operator-project' });
+      expect(config).toEqual(PRODUCTION_CONFIG);
+      expect(seen).toEqual([
+        'VITE_FIREBASE_SELF_HOSTED is set but VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_APP_ID are missing. Using the built-in production Firebase config.',
+      ]);
+    });
+
+    it('with the staging project id it falls back to the production config: staging values plus the switch cannot ship', () => {
+      for (const env of [
+        { ...STAGING, MODE: 'production', VITE_FIREBASE_SELF_HOSTED: 'true' },
+        { ...SELF_HOSTED, VITE_FIREBASE_PROJECT_ID: STAGING_FIREBASE_PROJECT_ID },
+        { ...SELF_HOSTED, VITE_FIREBASE_PROJECT_ID: ` ${STAGING_FIREBASE_PROJECT_ID.toUpperCase()} ` },
+      ]) {
+        const { config, seen } = warnings(env);
+        expect(config).toEqual(PRODUCTION_CONFIG);
+        expect(seen).toHaveLength(1);
+        expect(seen[0]).toContain('VITE_FIREBASE_PROJECT_ID names the staging project');
+      }
+      const wrangler = parseJsonc(readFileSync(resolve(root, 'wrangler.jsonc'), 'utf8')) as any;
+      expect(STAGING_FIREBASE_PROJECT_ID).toBe(wrangler.env.staging.vars.FIREBASE_PROJECT_ID);
+      expect(STAGING.VITE_FIREBASE_PROJECT_ID).toBe(STAGING_FIREBASE_PROJECT_ID);
+    });
+
+    it('the switch changes nothing outside a production build', () => {
+      // Staging still refuses production values, and still uses only its own.
+      expect(resolveFirebaseWebConfig({ ...STAGING, VITE_FIREBASE_SELF_HOSTED: 'true' })).toEqual(resolveFirebaseWebConfig(STAGING));
+      expect(
+        resolveFirebaseWebConfig({ ...STAGING, VITE_FIREBASE_SELF_HOSTED: 'true', VITE_FIREBASE_API_KEY: FIREBASE_PUBLIC_CONFIG.apiKey }),
+      ).toBeNull();
+      expect(resolveFirebaseWebConfig({ MODE: 'staging', VITE_FIREBASE_SELF_HOSTED: 'true' })).toBeNull();
+      // Development keeps its overrides with or without it.
+      expect(resolveFirebaseWebConfig({ MODE: 'development', VITE_FIREBASE_SELF_HOSTED: 'true', VITE_FIREBASE_PROJECT_ID: 'other' })?.projectId).toBe('other');
+    });
+
+    it('by default the warning goes to the console, once however often the config is read', () => {
+      const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const env = { ...SELF_HOSTED, VITE_FIREBASE_APP_ID: '' };
+        expect(resolveFirebaseWebConfig(env)).toEqual(PRODUCTION_CONFIG);
+        expect(resolveFirebaseWebConfig(env)).toEqual(PRODUCTION_CONFIG);
+        expect(resolveFirebaseWebConfig(env)).toEqual(PRODUCTION_CONFIG);
+        expect(consoleWarn).toHaveBeenCalledTimes(1);
+        expect(String(consoleWarn.mock.calls[0]![0])).toContain('VITE_FIREBASE_APP_ID is missing');
+      } finally {
+        consoleWarn.mockRestore();
+      }
+    });
   });
 
   it.each(['development', 'test', undefined])('a %s build keeps its overrides', (mode) => {
@@ -540,6 +643,12 @@ describe('the deploy workflow', () => {
     expect(productionJob).not.toContain('VITE_FIREBASE_');
     expect(productionJob).not.toContain('VITE_TELEGRAM_MINI_APP_URL');
     expect(productionJob).toContain('run: npm run build');
+  });
+
+  it('never sets the self-hosted switch: Luminara own production build always uses the committed config', () => {
+    expect(productionJob).not.toMatch(/VITE_FIREBASE_[A-Z_]+/);
+    expect(workflow).not.toContain('VITE_FIREBASE_SELF_HOSTED');
+    expect(workflow).not.toContain('SELF_HOSTED');
   });
 
   it('reads public config from variables, never from secrets', () => {
