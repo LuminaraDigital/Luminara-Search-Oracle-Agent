@@ -975,6 +975,31 @@ export async function verifyTonPayment(
   }
 
   const accountId = await resolveAccountId(env, order.userId);
+
+  // A plan lower than the one running is never applied, so that is settled before the transfer
+  // is claimed: the order goes on the owner's list first and the claim follows. If the list
+  // cannot be written, nothing has been claimed. If the Worker stops between the two, the order
+  // is listed, and the look at the top reports it as held. The other order (claim, then list)
+  // could leave a claim with nothing listed, which a later check reads as "already credited".
+  let running: { plan?: unknown; expiresAt?: unknown } | null;
+  try {
+    running = (await kv.get(`sub:${accountId}`, 'json')) as { plan?: unknown; expiresAt?: unknown } | null;
+  } catch (err) {
+    console.error(`[TON] Verify could not read the current plan for order ${orderId}: ${err instanceof Error ? err.message : err}`);
+    return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
+  }
+  if (wouldDowngrade(running, order.planId)) {
+    const refusal = new PlanDowngradeRefusedError(String(running?.plan), Number(running?.expiresAt), order.planId);
+    const message = await holdPaidTonOrder(env, kv, { order, accountId, planTitle: plan.title, refusal, txHash: match.txHash, network: match.network, now: Date.now() });
+    if (message === null) return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
+    // The transfer is spent. A failure to mark it changes nothing the buyer is told: the order is listed.
+    const spent = await claimTonTransaction(env, { txHash: match.txHash, orderId, accountId });
+    if (!spent.ok && spent.reason !== 'order_already_credited') {
+      console.error(`[TON] Held order ${orderId} is listed for the owner, and its transfer could not be marked spent (${spent.reason}).`);
+    }
+    return { ok: false, error: message };
+  }
+
   const claim = await claimTonTransaction(env, { txHash: match.txHash, orderId, accountId });
   if (!claim.ok) {
     if (claim.reason === 'tx_credited_to_other_order') {
@@ -1007,7 +1032,7 @@ export async function verifyTonPayment(
     });
   } catch (err) {
     if (err instanceof PlanDowngradeRefusedError) {
-      // The buyer took a higher plan after this invoice was issued. The transfer is real and the
+      // A higher plan landed between the look above and this write. The transfer is real and the
       // Worker holds no key to send it back, so the claim stays (this transaction is spent), the
       // order is put on a list for the owner, and the buyer is told plainly.
       const message = await holdPaidTonOrder(env, kv, { order, accountId, planTitle: plan.title, refusal: err, txHash: match.txHash, network: match.network, now });

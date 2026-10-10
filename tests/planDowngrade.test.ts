@@ -78,6 +78,30 @@ function makeEnv() {
   return { env, kv, db: db as SqliteD1 };
 }
 
+/** A database in which the statements matching `pattern` fail, the way a store that stops answering would. */
+function failingDb(db: SqliteD1, pattern: RegExp): D1Database {
+  const guard = (sql: string) => {
+    if (pattern.test(sql)) throw new Error('D1_ERROR: Network connection lost.');
+  };
+  const wrap = (stmt: any, sql: string): any => ({
+    bind: (...args: unknown[]) => wrap(stmt.bind(...args), sql),
+    execute: () => stmt.execute(),
+    first: async (...args: unknown[]) => {
+      guard(sql);
+      return stmt.first(...args);
+    },
+    all: async () => {
+      guard(sql);
+      return stmt.all();
+    },
+    run: async () => {
+      guard(sql);
+      return stmt.run();
+    },
+  });
+  return { prepare: (sql: string) => wrap(db.prepare(sql), sql), batch: (list: any[]) => db.batch(list) } as unknown as D1Database;
+}
+
 type TelegramCall = { method: string; body: any };
 function installTelegram() {
   const calls: TelegramCall[] = [];
@@ -249,6 +273,13 @@ describe('the rule lives where every rail writes', () => {
     // two sign-ins are linked, which only fills an account that has no running plan.
     // telegramBot.ts: a Stars refund taking back what its charge gave. Neither is a purchase.
     expect(direct).toEqual(['worker/telegramBot.ts', 'worker/userStore.ts', 'worker/userStore.ts', 'worker/userStore.ts']);
+
+    // The search above sees a key written in place. A key built into a variable first would get
+    // past it, so no file does that.
+    const builtElsewhere = serverSources()
+      .filter((s) => /=\s*`sub:\$\{/.test(s.text))
+      .map((s) => s.file);
+    expect(builtElsewhere).toEqual([]);
   });
 });
 
@@ -456,25 +487,120 @@ describe('TON', () => {
     const { kv, orderId, before, check } = await heldOrder();
     expect((await check()).ok).toBe(false);
 
-    // This check looks at the list before the other one has written to it, and finds the
-    // transfer already claimed afterwards: the list is hidden for the first look only.
+    // This check looks at the list before the other one has written to it, and at the plan before
+    // the higher one has landed, and then finds the transfer already claimed. Each is hidden for
+    // the first look only, so the one thing left to stop "confirmed" is the look after the claim.
     const key = `sub_pending:ton:${orderId}`;
+    const planKey = `sub:${USER}`;
     const listed = kv.store.get(key)!;
+    const plan = kv.store.get(planKey)!;
     let looked = false;
+    let lookedAtPlan = false;
     kv.beforeGet = (k) => {
       if (k === key && !looked) {
         looked = true;
         kv.store.delete(key);
-      } else if (looked && !kv.store.has(key)) {
-        kv.store.set(key, listed);
+        return;
       }
+      if (looked && !kv.store.has(key)) kv.store.set(key, listed);
+      if (k === planKey && !lookedAtPlan) {
+        lookedAtPlan = true;
+        kv.store.delete(planKey);
+        return;
+      }
+      if (lookedAtPlan && k !== planKey && !kv.store.has(planKey)) kv.store.set(planKey, plan);
     };
 
     const res = await check();
     expect(looked).toBe(true);
+    expect(lookedAtPlan).toBe(true);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain('so your payment was not applied');
     expect(kv.json(`sub:${USER}`)).toEqual(before);
+  });
+
+  it('two checks at the same moment both say held; neither says confirmed', async () => {
+    const { kv, db, orderId, before, check } = await heldOrder();
+    const [one, two] = await Promise.all([check(), check()]);
+    for (const res of [one, two]) {
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toContain('so your payment was not applied');
+    }
+    expect(kv.json(`sub_pending:ton:${orderId}`)).toMatchObject({ orderId, txHash: 'tx_held' });
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(1);
+    expect(kv.json(`sub:${USER}`)).toEqual(before);
+  });
+
+  it('the order is listed before its transfer is claimed, so a ledger that cannot take the claim back leaves nothing behind', async () => {
+    const { env, kv, db, orderId, before, check } = await heldOrder();
+    // Neither store can be written: not the list, and not the row that takes a claim back.
+    kv.failPut = (key) => key.startsWith('sub_pending:');
+    env.DB = failingDb(db, /DELETE FROM ton_credited_tx/);
+
+    const first = await check();
+    expect(first.ok).toBe(false);
+    if (!first.ok) expect(first.error).toContain('temporarily unavailable');
+    // No claim was ever made, so there is none to be stuck.
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(0);
+
+    kv.failPut = () => false;
+    env.DB = db as D1Database;
+    const later = await check();
+    expect(later.ok).toBe(false);
+    if (!later.ok) expect(later.error).toContain('so your payment was not applied');
+    expect(kv.json(`sub_pending:ton:${orderId}`)).toMatchObject({ orderId });
+    expect(kv.json(`sub:${USER}`)).toEqual(before);
+  });
+
+  /** An order for Starter checked while the buyer has no plan; Agency lands between the look and the write. */
+  async function planLandsMidCheck() {
+    const made = makeEnv();
+    const inv = await createTonInvoice(made.env, String(USER), 'starter');
+    if (!inv.ok) throw new Error(inv.error);
+    const index = showing(inv.order.memo, TON_PRICING.starter.nanoTon, 'tx_mid_check');
+    let looks = 0;
+    const agency = { plan: 'agency', paymentMethod: 'stars', startedAt: Date.now(), expiresAt: Date.now() + 20 * DAY };
+    made.kv.beforeGet = (key) => {
+      if (key !== `sub:${USER}`) return;
+      looks += 1;
+      if (looks === 2) made.kv.store.set(key, JSON.stringify(agency));
+    };
+    const check = () => verifyTonPayment(made.env, inv.order.orderId, { expectedUserId: String(USER), fetcher: index });
+    return { ...made, orderId: inv.order.orderId, agency, check, looks: () => looks };
+  }
+
+  it('a higher plan that lands between the look and the write is still not replaced, and the order is held', async () => {
+    const { kv, db, orderId, agency, check, looks } = await planLandsMidCheck();
+    const res = await check();
+    expect(looks()).toBeGreaterThanOrEqual(2);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('so your payment was not applied');
+    expect(kv.json(`sub:${USER}`)).toEqual(agency);
+    expect(kv.json(`sub_pending:ton:${orderId}`)).toMatchObject({ orderId, txHash: 'tx_mid_check', currentPlan: 'agency' });
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(1);
+  });
+
+  it('and if the list cannot be written then, the claim made a moment earlier is taken back', async () => {
+    const { kv, db, orderId, agency, check } = await planLandsMidCheck();
+    kv.failPut = (key) => key.startsWith('sub_pending:');
+    const res = await check();
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('temporarily unavailable');
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(0);
+    expect(kv.json(`sub_pending:ton:${orderId}`)).toBeNull();
+    expect(kv.json(`sub:${USER}`)).toEqual(agency);
+  });
+
+  it('when the current plan cannot be read, nothing is claimed and the answer is to try again', async () => {
+    const { env, kv, db } = makeEnv();
+    const inv = await createTonInvoice(env, String(USER), 'starter');
+    if (!inv.ok) throw new Error(inv.error);
+    const index = showing(inv.order.memo, TON_PRICING.starter.nanoTon, 'tx_unreadable_plan');
+    kv.failGet = (key) => key.startsWith('sub:');
+    const res = await verifyTonPayment(env, inv.order.orderId, { expectedUserId: String(USER), fetcher: index });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('temporarily unavailable');
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_credited_tx').get().n).toBe(0);
   });
 
   it('an order that was credited is still reported as confirmed', async () => {
