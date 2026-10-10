@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useTonConnectUI, useTonWallet, TonConnectButton } from '@tonconnect/ui-react';
 import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma';
 import { createStarsInvoice, createStripeCheckout, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
-import { executeTonPayment } from '../../services/ton/tonService';
+import { checkPendingTonPayment, executeTonPayment, readPendingTonOrder } from '../../services/ton/tonService';
 import { executeJettonPayment } from '../../services/ton/jettonService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import {
@@ -42,6 +42,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   const [showLicenseInput, setShowLicenseInput] = useState(false);
   const [licenseKeyInput, setLicenseKeyInput] = useState('');
   const [activatingLicense, setActivatingLicense] = useState(false);
+  // A TON transfer that was sent and has not been seen as paid yet. Drives "Check my payment".
+  const [pendingTonOrder, setPendingTonOrder] = useState<string | null>(() => readPendingTonOrder());
+  const [checkingTon, setCheckingTon] = useState(false);
   const [selectedAsset, setTonAsset] = useState<'TON' | 'USDT' | 'LORA'>('TON');
   const jettonLive = isJettonCheckoutAvailable(health);
   const tonAsset = jettonLive ? selectedAsset : 'TON';
@@ -184,6 +187,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     setStatusMessage(null);
     try {
       const res = await executeTonPayment(tonConnectUI, planId, msg => setStatusMessage(msg));
+      setPendingTonOrder(res.ok ? null : (res.pendingOrderId ?? readPendingTonOrder()));
       if (res.ok) {
         productTelemetry.track('payment_completed', { planId, method: 'ton', status: 'confirmed' });
         haptic('success');
@@ -202,6 +206,30 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       setStatusMessage(toUserFacingText(err, 'TON transaction failed.'));
     } finally {
       setBusyPlan(null);
+    }
+  };
+
+  /** The retry the pending notice names. It sends nothing; it asks whether the order was paid. */
+  const handleCheckTonPayment = async () => {
+    if (!pendingTonOrder || checkingTon) return;
+    setCheckingTon(true);
+    try {
+      const res = await checkPendingTonPayment(pendingTonOrder);
+      if (res.ok) {
+        productTelemetry.track('payment_completed', { planId: res.plan || 'unknown', method: 'ton', status: 'confirmed' });
+        haptic('success');
+        setPendingTonOrder(null);
+        setIsSuccess(true);
+        setStatusMessage('TON payment confirmed! Subscription is now active.');
+        await fetchQuotaStatus();
+      } else {
+        if (res.closed) setPendingTonOrder(null);
+        setStatusMessage(toUserFacingText(res.error, 'Could not check the payment. Try again in a minute.'));
+      }
+    } catch (err: any) {
+      setStatusMessage(toUserFacingText(err, 'Could not check the payment. Try again in a minute.'));
+    } finally {
+      setCheckingTon(false);
     }
   };
 
@@ -720,6 +748,21 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             }`}
           >
             {statusMessage}
+          </div>
+        )}
+
+        {/* The retry control for a TON transfer that was sent and is not confirmed yet. Never inside Telegram. */}
+        {pendingTonOrder && paymentOptions.showTonTab && (
+          <div className="mb-4 text-center">
+            <button
+              type="button"
+              onClick={handleCheckTonPayment}
+              disabled={checkingTon}
+              className="px-4 py-2 rounded-xl text-xs font-bold border border-gold/40 text-gold-light bg-gold/10 hover:bg-gold/20 transition-all disabled:opacity-50"
+            >
+              {checkingTon ? 'Checking…' : 'Check my payment'}
+            </button>
+            <p className="mt-2 text-[10px] text-gray-500 font-mono break-all">Order {pendingTonOrder}</p>
           </div>
         )}
 

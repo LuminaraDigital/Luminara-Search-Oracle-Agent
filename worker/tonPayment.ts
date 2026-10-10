@@ -9,6 +9,14 @@ import { PLANS } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
+  deleteExpiredTonPendingOrders,
+  isTonPendingOrdersReady,
+  listOpenTonPendingOrders,
+  markTonPendingOrderCredited,
+  readTonPendingOrder,
+  recordTonPendingOrder,
+} from './tonPendingOrders';
+import {
   merchantAddressMatchesNetwork,
   normalizeTonTxHash,
   resolveChainNetwork,
@@ -292,7 +300,7 @@ export async function createTonInvoice(
     console.error('[TON] Invoice refused: LUMINARA_KV is not bound, so the order could never be verified.');
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
   }
-  if (!(await isTonLedgerReady(env))) {
+  if (!(await isTonLedgerReady(env)) || !(await isTonPendingOrdersReady(env))) {
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
   }
 
@@ -355,6 +363,25 @@ export async function createTonInvoice(
   };
 
   await env.LUMINARA_KV.put(`ton:order:${orderId}`, JSON.stringify(order), { expirationTtl: 7200 });
+
+  // The KV copy lasts 2 hours. The D1 row keeps the order creditable for 48, by the buyer's own
+  // retry or by the sweep. No row, no invoice: an order nobody remembers must not be paid.
+  const remembered = await recordTonPendingOrder(env, {
+    orderId,
+    memo,
+    accountId: await resolveAccountId(env, userId),
+    loginId: userId,
+    planId,
+    asset,
+    amountNano,
+    recipient,
+    network: cfg.network,
+    createdAt: order.createdAt,
+  });
+  if (!remembered) {
+    await env.LUMINARA_KV.delete(`ton:order:${orderId}`).catch(() => undefined);
+    return { ok: false, error: TON_UNAVAILABLE_ERROR };
+  }
 
   return { ok: true, order };
 }
@@ -440,7 +467,9 @@ function matchInboundTransfer(
     // Jetton orders cannot be proven from a native inbound message (memo text is spoofable and
     // `value` is TON, not jetton units). Never credit them here; see JETTON_CHECKOUT_LIVE.
     if (order.asset && order.asset !== 'TON') return null;
-    if (!comment.includes(order.memo)) continue;
+    // The comment must be this order's memo and nothing else. A comment that merely contains it
+    // (another order's memo with this one appended, say) is not a payment for this order.
+    if (comment.trim() !== order.memo) continue;
     if (value < minValue) continue;
     if (inboundValueWasReturned(tx)) {
       console.warn(`[TON] Transfer matching order ${order.orderId} bounced (value returned to sender); not crediting.`);
@@ -527,6 +556,88 @@ export async function findMatchingTonPayment(
   return { ok: false, error: 'Matching on-chain transfer not found yet. Wait a few seconds and retry.' };
 }
 
+/**
+ * The order as the verifier needs it: from KV while that copy lasts (2 hours), and from the D1
+ * row for the rest of its 48 hours. `network` is set when the order came from the row.
+ */
+async function loadTonOrder(env: Env, kv: KVNamespace, orderId: string): Promise<{ order: TonOrder; network?: string } | null> {
+  const raw = await kv.get(`ton:order:${orderId}`, 'json');
+  if (raw) return { order: raw as TonOrder };
+  let row: Awaited<ReturnType<typeof readTonPendingOrder>> = null;
+  try {
+    row = await readTonPendingOrder(env, orderId);
+  } catch (err) {
+    console.error(`[TON] Could not read the remembered order ${orderId}: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+  if (!row || row.expires_at <= Date.now()) return null;
+  return {
+    network: row.network,
+    order: {
+      orderId: row.order_id,
+      userId: row.login_id,
+      planId: row.plan_id,
+      amountNano: row.amount_nano,
+      tonAmount: TON_PRICING[row.plan_id]?.ton ?? 0,
+      memo: row.memo,
+      recipientAddress: row.recipient,
+      status: row.status === 'credited' ? 'confirmed' : 'pending',
+      createdAt: row.created_at,
+      asset: row.asset as TonOrder['asset'],
+    },
+  };
+}
+
+/** An order younger than this is left to the buyer's own polling. */
+const TON_SWEEP_MIN_AGE_MS = 2 * 60_000;
+
+export type TonPendingSweepSummary = { examined: number; credited: number; stillPending: number; errors: number; deleted: number };
+
+/**
+ * Re-checks unpaid orders that are still inside their 48 hours, so a transfer the chain index
+ * shows late is credited without the buyer doing anything, and removes rows past their 48 hours.
+ * Crediting goes through verifyTonPayment, so the ton_credited_tx claim still stops a second credit.
+ */
+export async function sweepTonPendingOrders(
+  env: Env,
+  opts: { now?: number; limit?: number; fetcher?: TonFetch } = {},
+): Promise<TonPendingSweepSummary> {
+  const summary: TonPendingSweepSummary = { examined: 0, credited: 0, stillPending: 0, errors: 0, deleted: 0 };
+  if (!env.DB) {
+    console.error('[TON] pending-order sweep skipped: D1 binding DB is not configured.');
+    summary.errors += 1;
+    return summary;
+  }
+  const now = opts.now ?? Date.now();
+  try {
+    summary.deleted = await deleteExpiredTonPendingOrders(env, now);
+  } catch (err) {
+    summary.errors += 1;
+    console.error(`[TON] pending-order sweep could not remove expired orders: ${err instanceof Error ? err.message : err}`);
+  }
+  let rows: Awaited<ReturnType<typeof listOpenTonPendingOrders>> = [];
+  try {
+    // Each check is up to two calls to the chain index, so a run looks at a bounded number.
+    rows = await listOpenTonPendingOrders(env, { now, minAgeMs: TON_SWEEP_MIN_AGE_MS, limit: Math.max(1, Math.min(opts.limit ?? 20, 50)) });
+  } catch (err) {
+    summary.errors += 1;
+    console.error(`[TON] pending-order sweep could not list open orders: ${err instanceof Error ? err.message : err}`);
+  }
+  for (const row of rows) {
+    summary.examined += 1;
+    try {
+      const result = await verifyTonPayment(env, row.order_id, { fetcher: opts.fetcher });
+      if (result.ok) summary.credited += 1;
+      else summary.stillPending += 1;
+    } catch (err) {
+      summary.errors += 1;
+      console.error(`[TON] pending-order sweep could not check order ${row.order_id}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  console.log(`[TON] pending-order sweep: ${JSON.stringify(summary)}`);
+  return summary;
+}
+
 export async function verifyTonPayment(
   env: Env,
   orderId: string,
@@ -538,11 +649,11 @@ export async function verifyTonPayment(
   }
   const kv = env.LUMINARA_KV;
 
-  const raw = await kv.get(`ton:order:${orderId}`, 'json');
-  if (!raw) {
+  const loaded = await loadTonOrder(env, kv, orderId);
+  if (!loaded) {
     return { ok: false, error: 'Order not found or expired' };
   }
-  const order = raw as TonOrder;
+  const { order } = loaded;
 
   if (opts.expectedUserId && order.userId !== opts.expectedUserId) {
     return { ok: false, error: 'Order does not belong to this account' };
@@ -565,6 +676,11 @@ export async function verifyTonPayment(
   if (!cfg.ok) {
     console.error(`[TON] Verify refused for order ${order.orderId}: ${cfg.reason}.`);
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
+  }
+
+  // An order remembered for one network is never verified against another.
+  if (loaded.network && loaded.network !== cfg.network) {
+    return { ok: false, error: 'Order not found or expired' };
   }
 
   const recipientCheck = validateTonAddress(order.recipientAddress, { production: isProductionEnv(env) });
@@ -614,6 +730,7 @@ export async function verifyTonPayment(
       return { ok: false, error: 'This on-chain transaction has already been credited to another order.' };
     }
     if (claim.reason === 'order_already_credited') {
+      await markTonPendingOrderCredited(env, orderId);
       return { ok: true, plan: order.planId, expiresAt: await currentExpiry() };
     }
     return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
@@ -638,6 +755,8 @@ export async function verifyTonPayment(
     console.error(`[TON] Subscription write failed after claim for order ${orderId}; claim released: ${err instanceof Error ? err.message : err}`);
     return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
   }
+
+  await markTonPendingOrderCredited(env, orderId);
 
   try {
     order.status = 'confirmed';
