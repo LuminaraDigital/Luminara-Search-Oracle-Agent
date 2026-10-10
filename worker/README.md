@@ -28,6 +28,7 @@ leaked internals).
 | `POST /telegram/webhook` | worker/index.ts | webhook secret | Telegram updates |
 | `GET /telegram/auth`, `/telegram/invoice`, `/telegram/refund` | worker/index.ts | none/secret | Telegram auth + Stars |
 | `GET /admin/users` | worker/index.ts | admin | Requires `ADMIN_SECRET` |
+| `GET /admin/payment-support` | worker/index.ts + paymentSupport | admin | Requires `ADMIN_SECRET`. Lists payment support requests by `status` (open, answered, closed). The read is audited by count |
 | `POST /ton/invoice`, `/ton/verify` | worker/tonAttestationService | none | TON payments |
 | `POST /license/activate` | worker/licenseService | session | License activation |
 | `POST /admin/license/generate`, `/admin/license/seed` | worker/licenseService | admin | License ops |
@@ -202,6 +203,37 @@ TON checkout is closed until the owner confirms the merchant address. When it op
     still sweeps both.
   - How the two chain indexes page and order their answers is taken from their documentation. Credit one real
     testnet transfer through each index before TON checkout is opened.
+
+## Payment support (pinned in `tests/paymentSupport.test.ts`)
+
+A buyer's billing message reaches a person. Until this was added, `/paysupport` sent one canned
+message and the reply went to the model chat.
+
+- **`/paysupport` opens a 10-minute window**: an `awaiting` row in `payment_support_requests`
+  (migration 0026). The buyer's next message inside it becomes the request (`open`) in one
+  conditional update. `/paysupport <text>` in one message is the request itself.
+- **For 10 minutes after that, more messages are added to the same request.** After that, a
+  message is ordinary chat again.
+- **The bot forwards the request to every id in `TELEGRAM_ADMIN_ID`**, with the sender, the
+  account and the payer's most recent Stars charge. An attachment is copied to each admin.
+- **An admin answers in the bot.** `/reply <id> <text>` is relayed to the buyer and marks the
+  request `answered`; `/close <id>` closes it without a message; `/requests` lists what is
+  waiting. Anyone else who sends these is refused.
+- **What a buyer writes here never reaches a model.** The window check sits above the chat in
+  `handleTelegramUpdate`; a captured message is not put in a prompt and not kept in
+  `tg:chat:<id>`. When the window cannot be checked (the database does not answer), the message
+  is not read at all and the buyer is asked to send it again.
+- **Private chats only.** In a group, `/paysupport` points to the private chat.
+- **If no admin can be told** (no id configured, or Telegram refuses), the request is still
+  saved, the buyer is told to write to the support address as well, and `[Support] ALERT` is logged.
+- `GET /api/admin/payment-support?status=open|answered|closed` lists requests (`ADMIN_SECRET`).
+- The daily `payment_support_sweep` removes windows nobody wrote into and reminds the admins of
+  requests that have waited more than a day.
+- Requests are exported with the account, moved when two sign-ins are linked, and deleted with it.
+- Known limits: one Telegram account can have 5 unanswered requests at a time; a message is
+  stored up to 2,000 characters; a buyer who answers an admin's reply without sending
+  `/paysupport` first is talking to the chat (the reply says so); the admin's own answers are not
+  stored, only that a request was answered and by whom (audit log).
 
 ## Stubbed vs live status
 
