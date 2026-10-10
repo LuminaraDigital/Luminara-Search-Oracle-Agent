@@ -7,10 +7,8 @@ current_branch=$(git symbolic-ref --short HEAD 2>/dev/null)
 # 1. Block direct unvalidated pushes to main / prod
 if [ "$current_branch" = "main" ] || [ "$current_branch" = "prod" ]; then
   if [ "$ALLOW_DIRECT_PROD_PUSH" != "1" ] && [ -z "$CI" ]; then
-    echo "\033[0;31m[Branch Safeguard Error] Direct push to '$current_branch' is blocked!\033[0m"
-    echo "Multi-tier hierarchy required: feature/* -> staging -> main"
-    echo "Please push to 'staging' first for pre-production validation."
-    echo "To bypass only in critical emergencies: ALLOW_DIRECT_PROD_PUSH=1 git push"
+    echo "\033[0;31m[Branch Safeguard Error] A direct push to '$current_branch' is refused.\033[0m"
+    echo "Open a pull request instead: feature/* -> staging, then staging -> main."
     exit 1
   fi
 fi

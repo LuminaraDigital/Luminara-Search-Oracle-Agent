@@ -2,9 +2,9 @@
  * Cron dispatch for the Worker's scheduled() handler.
  * Each expression in wrangler.jsonc `triggers.crons` maps to the jobs it owns, so adding a cron
  * for a new job never re-runs the others. Keep CRON_JOBS in step with wrangler.jsonc.
- * An unmapped expression runs every job (the behaviour before dispatch existed), so a renamed
- * cron cannot silently stop Sentinel or the privacy purge; a cron that should run fewer jobs
- * must be mapped here explicitly.
+ * An unmapped expression runs no job, and the scheduled() handler reports it as an error. A
+ * rollback to this code under a newer cron trigger must not run every job on the new cadence,
+ * so a new cron and its CRON_JOBS entry ship in the same pull request (plan rule 2.20).
  */
 
 export type ScheduledJobName = 'sentinel' | 'privacy_purge' | 'domain_recheck';
@@ -30,7 +30,7 @@ export function isCronMapped(cron: string): boolean {
   return Object.hasOwn(CRON_JOBS, cronKey(cron));
 }
 
-/** Jobs owned by a cron expression. An unmapped expression gets every job (the caller logs it). */
+/** Jobs owned by a cron expression. An unmapped expression gets none (the caller reports it). */
 export function jobsForCron(cron: string): ScheduledJobName[] {
-  return isCronMapped(cron) ? [...CRON_JOBS[cronKey(cron)]] : [...ALL_SCHEDULED_JOBS];
+  return isCronMapped(cron) ? [...CRON_JOBS[cronKey(cron)]] : [];
 }
