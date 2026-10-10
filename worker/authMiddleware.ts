@@ -38,7 +38,7 @@ export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/telegram\/webhook$/ },
   { method: 'POST', pattern: /^\/telegram\/auth$/ },
   { method: 'POST', pattern: /^\/telegram\/invoice$/ },
-  { method: 'POST', pattern: /^\/stripe\/create-checkout-session$/ },
+  // Signature-checked by handleStripeWebhook. Creating a checkout session is protected, below.
   { method: 'POST', pattern: /^\/stripe\/webhook$/ },
   { method: 'GET', pattern: /^\/auth\/session$/ },
   { method: 'POST', pattern: /^\/auth\/session$/ },
@@ -165,6 +165,7 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/auth\/send-verification$/, methods: ['POST'] },
   { pattern: /^\/license\/activate$/, methods: ['POST'] },
   { pattern: /^\/ton\/(invoice|verify)$/, methods: ['POST'] },
+  { pattern: /^\/stripe\/create-checkout-session$/, methods: ['POST'] },
   { pattern: /^\/agent\/attest$/, methods: ['POST'] },
   { pattern: /^\/proof\/anchor$/, methods: ['POST'] },
   { pattern: /^\/sentinel\/(register|status)$/ },

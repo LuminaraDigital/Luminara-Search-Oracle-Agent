@@ -304,26 +304,55 @@ export async function releaseStarsCharge(env: LedgerEnv, chargeId: string): Prom
 // Stripe checkout sessions
 // ---------------------------------------------------------------------------
 
+export const STRIPE_LEDGER_MIGRATIONS = 'migrations/0021_stripe_payments.sql and migrations/0024_stripe_payment_intent.sql';
+
+export type StripeReversalReason = 'refund' | 'dispute' | 'lower_plan_refused';
+
 export type StripeSessionClaimInput = {
   sessionId: string;
+  /** The id refund and dispute events carry. A session without one is never credited. */
+  paymentIntent: string;
   customerId?: string | null;
   accountId?: string | null;
+  /** Login id that paid. Reversal rewrites the subscription through it. */
+  userId: string;
   planId: string;
   amountTotal: number;
   currency: string;
+  /** Days this charge adds. 0 for a payment that is refused and sent back. */
+  grantedDays: number;
+  /** Plan expiry right after this grant: the end of the days this charge paid for. */
+  grantedUntil?: number | null;
+  /** Plan the account held before its current run of card purchases began, if any. */
+  prevPlan?: string | null;
+  /** Set when the row is born already reversed (a refused lower plan), so a later refund event removes nothing. */
+  reversal?: StripeReversalReason | null;
   now?: number;
 };
 
 export type StripeSessionClaimResult =
   | { ok: true }
-  | { ok: false; reason: 'duplicate' | 'missing_session_id' | 'unavailable' };
+  | { ok: false; reason: 'duplicate' | 'missing_session_id' | 'missing_payment_intent' | 'unavailable' };
 
+/**
+ * Probe used before a checkout session is created so nobody pays while crediting is impossible.
+ * It selects the columns of migration 0024, so a database that has 0021 but not 0024 is not ready.
+ */
 export async function isStripeLedgerReady(env: LedgerEnv): Promise<boolean> {
-  if (!env.DB) return false;
+  if (!env.DB) {
+    reportLedgerFault('isStripeLedgerReady');
+    return false;
+  }
   try {
-    await env.DB.prepare(`SELECT 1 AS ready FROM stripe_credited_sessions LIMIT 1`).first();
+    await env.DB.prepare(
+      `SELECT session_id, payment_intent, user_id, granted_days, granted_until, prev_plan, reversed_at, reversal_reason
+       FROM stripe_credited_sessions LIMIT 1`,
+    ).first();
     return true;
-  } catch {
+  } catch (err) {
+    console.error(
+      `[PaymentLedger] isStripeLedgerReady: the Stripe ledger is not ready. Refusing to take card payments. Apply ${STRIPE_LEDGER_MIGRATIONS}: ${errorText(err)}`,
+    );
     return false;
   }
 }
@@ -337,15 +366,26 @@ export async function claimStripeSession(
     console.error('[PaymentLedger] claimStripeSession called without sessionId. Refusing to grant.');
     return { ok: false, reason: 'missing_session_id' };
   }
+  const paymentIntent = String(input.paymentIntent || '').trim();
+  if (!paymentIntent) {
+    console.error('[PaymentLedger] claimStripeSession called without payment_intent. Refusing to grant.');
+    return { ok: false, reason: 'missing_payment_intent' };
+  }
   const db = env.DB;
   if (!db) {
     reportLedgerFault('claimStripeSession');
     return UNAVAILABLE;
   }
+  const now = input.now ?? Date.now();
   try {
+    // ON CONFLICT DO NOTHING covers both keys. A redelivered session is a duplicate, and so is a
+    // session whose payment intent is already on a row: that is how a refund or dispute that
+    // arrived first (claimStripeReversal's marker row) stops the late session from being credited.
     const inserted = await db.prepare(
-      `INSERT INTO stripe_credited_sessions (session_id, customer_id, account_id, plan_id, amount_total, currency, credited_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO stripe_credited_sessions
+         (session_id, customer_id, account_id, plan_id, amount_total, currency, credited_at,
+          payment_intent, user_id, granted_days, granted_until, prev_plan, reversed_at, reversal_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO NOTHING`,
     )
       .bind(
@@ -355,7 +395,14 @@ export async function claimStripeSession(
         input.planId,
         input.amountTotal,
         input.currency,
-        input.now ?? Date.now(),
+        now,
+        paymentIntent,
+        input.userId,
+        Math.max(0, Math.floor(Number(input.grantedDays)) || 0),
+        input.grantedUntil ?? null,
+        input.prevPlan ?? null,
+        input.reversal ? now : null,
+        input.reversal ?? null,
       )
       .run();
     return inserted.meta?.changes === 1 ? { ok: true } : { ok: false, reason: 'duplicate' };
@@ -374,3 +421,127 @@ export async function releaseStripeSession(env: LedgerEnv, sessionId: string): P
   }
 }
 
+export type StripeCreditedSession = {
+  sessionId: string;
+  userId: string | null;
+  accountId: string | null;
+  planId: string;
+  grantedDays: number;
+  grantedUntil: number | null;
+  prevPlan: string | null;
+};
+
+export type StripeReversalClaimResult =
+  | { ok: true; session: StripeCreditedSession }
+  | { ok: false; reason: 'not_found' | 'already_reversed' | 'unavailable' };
+
+type StripeSessionRow = {
+  session_id: string;
+  user_id: string | null;
+  account_id: string | null;
+  plan_id: string;
+  granted_days: number | null;
+  granted_until: number | null;
+  prev_plan: string | null;
+};
+
+/**
+ * Claims the one reversal a charge can have. A refund and a dispute for the same payment, or one
+ * event delivered twice, remove the granted days once: only the first caller gets ok.
+ *
+ * Stripe does not promise event order. When the payment intent is not on the ledger yet, a marker
+ * row is written for it, so a checkout.session.completed that is delivered later finds its
+ * payment intent taken and credits nothing.
+ */
+export async function claimStripeReversal(
+  env: LedgerEnv,
+  input: { paymentIntent: string; reason: StripeReversalReason; now?: number },
+): Promise<StripeReversalClaimResult> {
+  const paymentIntent = String(input.paymentIntent || '').trim();
+  if (!paymentIntent) return { ok: false, reason: 'not_found' };
+  const db = env.DB;
+  if (!db) {
+    reportLedgerFault('claimStripeReversal');
+    return UNAVAILABLE;
+  }
+  const now = input.now ?? Date.now();
+  try {
+    // Two passes: if a credit lands between the first look and the marker insert, the second
+    // pass claims that row instead of losing the reversal.
+    for (let pass = 0; pass < 2; pass++) {
+      const row = await db.prepare(
+        `UPDATE stripe_credited_sessions SET reversed_at = ?, reversal_reason = ?
+         WHERE payment_intent = ? AND reversed_at IS NULL
+         RETURNING session_id, user_id, account_id, plan_id, granted_days, granted_until, prev_plan`,
+      )
+        .bind(now, input.reason, paymentIntent)
+        .first<StripeSessionRow>();
+      if (row) {
+        return {
+          ok: true,
+          session: {
+            sessionId: row.session_id,
+            userId: row.user_id,
+            accountId: row.account_id,
+            planId: row.plan_id,
+            grantedDays: Number(row.granted_days) || 0,
+            grantedUntil: row.granted_until === null ? null : Number(row.granted_until),
+            prevPlan: row.prev_plan,
+          },
+        };
+      }
+      const known = await db.prepare(`SELECT 1 AS hit FROM stripe_credited_sessions WHERE payment_intent = ?`)
+        .bind(paymentIntent)
+        .first();
+      if (known) return { ok: false, reason: 'already_reversed' };
+
+      const marker = await db.prepare(
+        `INSERT INTO stripe_credited_sessions
+           (session_id, plan_id, amount_total, currency, credited_at, payment_intent, granted_days, reversed_at, reversal_reason)
+         VALUES (?, 'none', 0, '', ?, ?, 0, ?, ?)
+         ON CONFLICT DO NOTHING`,
+      )
+        .bind(`reversed:${paymentIntent}`, now, paymentIntent, now, input.reason)
+        .run();
+      if (marker.meta?.changes === 1) return { ok: false, reason: 'not_found' };
+    }
+    reportLedgerFault('claimStripeReversal', new Error('the payment intent row kept changing between passes'));
+    return UNAVAILABLE;
+  } catch (err) {
+    reportLedgerFault('claimStripeReversal', err);
+    return UNAVAILABLE;
+  }
+}
+
+/** Undo of a reversal claim when the subscription write failed afterwards, so the event can be retried. */
+export async function releaseStripeReversal(env: LedgerEnv, sessionId: string): Promise<void> {
+  if (!env.DB) return;
+  try {
+    await env.DB.prepare(
+      `UPDATE stripe_credited_sessions SET reversed_at = NULL, reversal_reason = NULL WHERE session_id = ?`,
+    )
+      .bind(String(sessionId || '').trim())
+      .run();
+  } catch (err) {
+    console.error(`[PaymentLedger] releaseStripeReversal failed; the charge stays marked reversed although its days were not removed: ${errorText(err)}`);
+  }
+}
+
+/**
+ * Plans of the account's other card charges that are still standing: not reversed, and with
+ * paid days still ahead. A fault throws: the caller is deciding which plan a reversal leaves.
+ */
+export async function liveStripePlans(
+  env: LedgerEnv,
+  input: { userId: string; accountId: string; exceptSessionId: string; now?: number },
+): Promise<string[]> {
+  if (!env.DB) throw new Error('D1 binding DB is not configured');
+  const rows = await env.DB.prepare(
+    `SELECT plan_id FROM stripe_credited_sessions
+     WHERE (user_id = ? OR account_id = ?) AND session_id != ?
+       AND reversed_at IS NULL AND granted_days > 0 AND granted_until > ?`,
+  )
+    .bind(input.userId, input.accountId, input.exceptSessionId, input.now ?? Date.now())
+    .all<{ plan_id: string }>();
+  return (rows.results || []).map((row) => row.plan_id);
+}
