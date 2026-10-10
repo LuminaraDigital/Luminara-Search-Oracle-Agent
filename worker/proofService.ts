@@ -3,7 +3,8 @@
  *
  * Implements the Verifiable Citation Oracle (Phase 1).
  * Computes canonical evidence hashes, records tamper-evident rows in D1 proof_anchors,
- * dispatches on-chain anchors to TON CitationRegistry when PROOF_ANCHOR_ENABLED=true,
+ * asks the TON CitationRegistry client for an anchor (which sends nothing and answers
+ * `ok: false` while the Worker holds no signer, so every proof is recorded off-chain),
  * and serves public verification and embed badges.
  */
 
@@ -175,6 +176,9 @@ export async function recordAuditProof(
   };
 }
 
+/** Said of an audit citation row that an older build stored as anchored. */
+export const AUDIT_NEVER_ANCHORED_DISCLOSURE = 'Recorded off-chain. Not anchored on TON.';
+
 /**
  * Verifies an audit proof by evidence hash or domain + auditRunId.
  */
@@ -215,7 +219,16 @@ export async function verifyAuditProof(
       }
 
       if (row) {
-        const isOnChain = Boolean(row.tx_hash && row.status === 'anchored');
+        // An audit citation has never been anchored: the Worker has never held a signer.
+        // A row of that kind stored as "anchored" was written by the old registry client
+        // from an unsigned post or a hash it computed itself, so it is reported as the
+        // off-chain record it is, and its stored hash and explorer link are not handed out.
+        // Every other kind (payment anchors carry a transaction hash read from the chain)
+        // is reported as before.
+        const isAuditCitation = row.kind === 'audit_citation';
+        const claimsAnchor = Boolean(row.tx_hash || row.status === 'anchored');
+        const isOnChain = !isAuditCitation && Boolean(row.tx_hash && row.status === 'anchored');
+        const neverAnchored = isAuditCitation && claimsAnchor;
         return {
           ok: true,
           verified: true,
@@ -224,12 +237,15 @@ export async function verifyAuditProof(
           source: isOnChain ? 'on_chain' : 'off_chain_digest',
           chain: row.chain,
           network: row.network,
-          txHash: row.tx_hash,
-          explorerUrl: row.explorer_url,
-          record: row,
+          txHash: isAuditCitation ? null : row.tx_hash,
+          explorerUrl: isAuditCitation ? null : row.explorer_url,
+          // The stored row, as the current writer would have stored it: no hash, not anchored.
+          record: neverAnchored ? { ...row, status: 'pending', tx_hash: null, explorer_url: null, anchored_at: null } : row,
           disclosure: isOnChain
             ? `Anchored on TON ${row.network}. Verifiable on-chain.`
-            : 'Recorded by Luminara. Self-reported, off-chain digest.',
+            : neverAnchored
+              ? AUDIT_NEVER_ANCHORED_DISCLOSURE
+              : 'Recorded by Luminara. Self-reported, off-chain digest.',
         };
       }
     } catch (err) {

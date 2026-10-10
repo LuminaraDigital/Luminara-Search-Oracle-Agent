@@ -6,12 +6,16 @@ import {
   fetchReceipt,
   isTrustDisabledError,
   receiptLevelSentence,
+  receiptSignatureNotice,
+  revokedLine,
   verifyReceiptOffline,
   type OfflineVerifyResult,
+  type ReceiptSignatureNotice,
+  type ReceiptSignatureState,
 } from '../../services/trust/trustClient';
 import { RECEIPT_CLAIM_LABELS, type TrustReceiptPayload, type TrustReceiptView } from '../../services/trust/receiptTypes';
 
-type SigState = 'checking' | 'valid' | 'invalid' | 'key_not_found';
+type SigState = ReceiptSignatureState;
 
 function sigStateFrom(result: OfflineVerifyResult): SigState {
   if (!result.kidFound) return 'key_not_found';
@@ -55,23 +59,12 @@ const SmallCopy: React.FC<{ value: string; label: string }> = ({ value, label })
   );
 };
 
-const SIG_COPY: Record<SigState, { label: string; detail: string; className: string }> = {
-  checking: { label: 'Checking signature', detail: 'Verifying in your browser with the published key.', className: 'border-white/15 text-gray-300' },
-  valid: {
-    label: 'Valid signature',
-    detail: 'Checked in your browser. This receipt was signed by Luminara and has not been altered.',
-    className: 'border-gold/50 text-gold-light',
-  },
-  invalid: {
-    label: 'Invalid signature',
-    detail: 'The signature does not match the receipt contents. Do not rely on this receipt.',
-    className: 'border-danger-500/50 text-danger-300',
-  },
-  key_not_found: {
-    label: 'Key not found',
-    detail: 'The signing key for this receipt is not in the published key set, so it cannot be checked.',
-    className: 'border-danger-500/50 text-danger-300',
-  },
+/** Gold is for a receipt that stands. A withdrawn one is shown in the warning style, never in gold. */
+const SIG_TONE_CLASS: Record<ReceiptSignatureNotice['tone'], string> = {
+  neutral: 'border-white/15 text-gray-300',
+  valid: 'border-gold/50 text-gold-light',
+  withdrawn: 'border-danger-500/50 text-danger-300',
+  danger: 'border-danger-500/50 text-danger-300',
 };
 
 const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
@@ -80,6 +73,120 @@ const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, ch
     <dd className="text-gray-100 min-w-0 break-words">{children}</dd>
   </div>
 );
+
+/**
+ * The receipt as the page shows it. It takes the receipt and the signature state as
+ * props and fetches nothing, so a test can render it.
+ *
+ * A withdrawn receipt is shown as withdrawn first. It gets no "Checked by Luminara."
+ * and no "fetched" or HTTP line under its evidence, because those say a check or a
+ * fetch stands behind it. The one date left besides the withdrawal is labelled Issued.
+ */
+export const ReceiptCheckCard: React.FC<{ receipt: TrustReceiptView; sig: SigState }> = ({ receipt, sig }) => {
+  const payload = signedPayload(receipt);
+  const revoked = Boolean(receipt.revokedAt);
+  const idMismatch = payload.id !== receipt.id;
+  const sigCopy = receiptSignatureNotice(idMismatch ? 'invalid' : sig, revoked);
+  const selfReported = payload.level === 'self_reported';
+
+  return (
+    <>
+      {revoked && (
+        <div role="alert" className="rounded-xl border border-danger-500/50 bg-danger-500/10 px-4 py-3 text-sm text-danger-200">
+          {revokedLine(formatDateTime(receipt.revokedAt), receipt.revokedReason, 'Withdrawn')} This receipt no longer stands.
+        </div>
+      )}
+
+      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+        <div className="space-y-1">
+          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">Claim</p>
+          <h2 className="text-xl font-semibold text-white">{RECEIPT_CLAIM_LABELS[payload.claim] ?? payload.claim}</h2>
+          <p className="font-mono text-sm text-gray-300 break-all">{payload.subject.id}</p>
+        </div>
+
+        <div
+          role="status"
+          aria-live="polite"
+          className={`rounded-xl border px-4 py-3 text-sm ${SIG_TONE_CLASS[sigCopy.tone]}`}
+        >
+          <p className="font-semibold">{sigCopy.label}</p>
+          <p className="text-gray-400">{idMismatch ? 'The signed receipt id does not match this link.' : sigCopy.detail}</p>
+        </div>
+
+        <dl className="divide-y divide-white/5">
+          <Row label="Level">
+            <span className={selfReported || revoked ? 'text-gray-200 font-semibold' : ''}>{receiptLevelSentence(payload.level, revoked)}</span>
+          </Row>
+          <Row label="Method">
+            <span className="font-mono">{payload.method}</span>
+          </Row>
+          <Row label="Issued">{formatDateTime(payload.issuedAt)}</Row>
+          {payload.expiresAt && <Row label="Expires">{formatDateTime(payload.expiresAt)}</Row>}
+          <Row label="Measurement">
+            <span className="font-mono">{payload.measurementStatus}</span>
+          </Row>
+          <Row label="Issuer">
+            <span className="font-mono">{payload.iss}</span>
+          </Row>
+        </dl>
+
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">Evidence</p>
+          {payload.evidence.length === 0 ? (
+            <p className="text-sm text-gray-400">No evidence recorded.</p>
+          ) : (
+            <ul className="space-y-2">
+              {payload.evidence.map((ev, i) => (
+                <li key={`${ev.ref}-${i}`} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs font-mono space-y-1">
+                  <p className="text-gray-300 break-all">{ev.url || ev.ref}</p>
+                  {ev.sha256 && (
+                    <p className="text-gray-500 flex items-center gap-1">
+                      sha256 <span className="text-gray-300" title={ev.sha256}>{ev.sha256.slice(0, 16)}...</span>
+                      <SmallCopy value={ev.sha256} label="sha256" />
+                    </p>
+                  )}
+                  {!revoked && ev.fetchedAt && <p className="text-gray-500">fetched {formatDateTime(ev.fetchedAt)}</p>}
+                  {!revoked && typeof ev.httpStatus === 'number' && <p className="text-gray-500">HTTP {ev.httpStatus}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <details className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-xs">
+        <summary className="cursor-pointer text-sm text-gray-300 outline-none focus-visible:ring-2 focus-visible:ring-gold rounded">
+          Raw receipt
+        </summary>
+        <div className="mt-4 space-y-3 font-mono">
+          <div>
+            <p className="text-gray-500 flex items-center gap-1">
+              payloadJson <SmallCopy value={receipt.payloadJson} label="payload JSON" />
+            </p>
+            <pre className="mt-1 whitespace-pre-wrap break-all rounded-lg bg-black/60 p-3 text-gray-300">{receipt.payloadJson}</pre>
+          </div>
+          <div>
+            <p className="text-gray-500 flex items-center gap-1">
+              signature <SmallCopy value={receipt.signature} label="signature" />
+            </p>
+            <p className="mt-1 break-all text-gray-300">{receipt.signature}</p>
+          </div>
+          <div>
+            <p className="text-gray-500">kid</p>
+            <p className="mt-1 text-gray-300">{receipt.kid}</p>
+          </div>
+          <p className="text-gray-400 font-sans">
+            To check independently: fetch the public key with this kid from{' '}
+            <a className="underline underline-offset-4 hover:text-white" href="/api/trust/keys">
+              /api/trust/keys
+            </a>{' '}
+            and verify the Ed25519 signature (base64url) over the UTF-8 bytes of payloadJson.
+          </p>
+        </div>
+      </details>
+    </>
+  );
+};
 
 export const VerifyReceiptView: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const receiptId = useMemo(
@@ -121,11 +228,6 @@ export const VerifyReceiptView: React.FC<{ onBack?: () => void }> = ({ onBack })
     };
   }, [receiptId]);
 
-  const payload = receipt ? signedPayload(receipt) : null;
-  const idMismatch = Boolean(receipt && payload && payload.id !== receipt.id);
-  const sigCopy = SIG_COPY[idMismatch ? 'invalid' : sig];
-  const selfReported = payload?.level === 'self_reported';
-
   return (
     <div className="min-h-[100dvh] bg-black text-gray-100">
       <header className="border-b border-white/10 px-4 py-4 flex items-center justify-between">
@@ -148,104 +250,7 @@ export const VerifyReceiptView: React.FC<{ onBack?: () => void }> = ({ onBack })
           </p>
         )}
 
-        {receipt && payload && (
-          <>
-            {receipt.revokedAt && (
-              <div role="alert" className="rounded-xl border border-danger-500/50 bg-danger-500/10 px-4 py-3 text-sm text-danger-200">
-                Revoked {formatDateTime(receipt.revokedAt)}
-                {receipt.revokedReason ? `: ${receipt.revokedReason}` : '.'} This receipt no longer stands.
-              </div>
-            )}
-
-            <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
-              <div className="space-y-1">
-                <p className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">Claim</p>
-                <h2 className="text-xl font-semibold text-white">{RECEIPT_CLAIM_LABELS[payload.claim] ?? payload.claim}</h2>
-                <p className="font-mono text-sm text-gray-300 break-all">{payload.subject.id}</p>
-              </div>
-
-              <div
-                role="status"
-                aria-live="polite"
-                className={`rounded-xl border px-4 py-3 text-sm ${sigCopy.className}`}
-              >
-                <p className="font-semibold">{sigCopy.label}</p>
-                <p className="text-gray-400">{idMismatch ? 'The signed receipt id does not match this link.' : sigCopy.detail}</p>
-              </div>
-
-              <dl className="divide-y divide-white/5">
-                <Row label="Level">
-                  <span className={selfReported ? 'text-gray-200 font-semibold' : ''}>{receiptLevelSentence(payload.level)}</span>
-                </Row>
-                <Row label="Method">
-                  <span className="font-mono">{payload.method}</span>
-                </Row>
-                <Row label="Issued">{formatDateTime(payload.issuedAt)}</Row>
-                {payload.expiresAt && <Row label="Expires">{formatDateTime(payload.expiresAt)}</Row>}
-                <Row label="Measurement">
-                  <span className="font-mono">{payload.measurementStatus}</span>
-                </Row>
-                <Row label="Issuer">
-                  <span className="font-mono">{payload.iss}</span>
-                </Row>
-              </dl>
-
-              <div className="space-y-2">
-                <p className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">Evidence</p>
-                {payload.evidence.length === 0 ? (
-                  <p className="text-sm text-gray-400">No evidence recorded.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {payload.evidence.map((ev, i) => (
-                      <li key={`${ev.ref}-${i}`} className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs font-mono space-y-1">
-                        <p className="text-gray-300 break-all">{ev.url || ev.ref}</p>
-                        {ev.sha256 && (
-                          <p className="text-gray-500 flex items-center gap-1">
-                            sha256 <span className="text-gray-300" title={ev.sha256}>{ev.sha256.slice(0, 16)}...</span>
-                            <SmallCopy value={ev.sha256} label="sha256" />
-                          </p>
-                        )}
-                        {ev.fetchedAt && <p className="text-gray-500">fetched {formatDateTime(ev.fetchedAt)}</p>}
-                        {typeof ev.httpStatus === 'number' && <p className="text-gray-500">HTTP {ev.httpStatus}</p>}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </section>
-
-            <details className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-xs">
-              <summary className="cursor-pointer text-sm text-gray-300 outline-none focus-visible:ring-2 focus-visible:ring-gold rounded">
-                Raw receipt
-              </summary>
-              <div className="mt-4 space-y-3 font-mono">
-                <div>
-                  <p className="text-gray-500 flex items-center gap-1">
-                    payloadJson <SmallCopy value={receipt.payloadJson} label="payload JSON" />
-                  </p>
-                  <pre className="mt-1 whitespace-pre-wrap break-all rounded-lg bg-black/60 p-3 text-gray-300">{receipt.payloadJson}</pre>
-                </div>
-                <div>
-                  <p className="text-gray-500 flex items-center gap-1">
-                    signature <SmallCopy value={receipt.signature} label="signature" />
-                  </p>
-                  <p className="mt-1 break-all text-gray-300">{receipt.signature}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">kid</p>
-                  <p className="mt-1 text-gray-300">{receipt.kid}</p>
-                </div>
-                <p className="text-gray-400 font-sans">
-                  To check independently: fetch the public key with this kid from{' '}
-                  <a className="underline underline-offset-4 hover:text-white" href="/api/trust/keys">
-                    /api/trust/keys
-                  </a>{' '}
-                  and verify the Ed25519 signature (base64url) over the UTF-8 bytes of payloadJson.
-                </p>
-              </div>
-            </details>
-          </>
-        )}
+        {receipt && <ReceiptCheckCard receipt={receipt} sig={sig} />}
       </main>
     </div>
   );

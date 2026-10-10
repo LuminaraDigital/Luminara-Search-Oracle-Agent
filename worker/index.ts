@@ -121,7 +121,7 @@ import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
 import { handleLaunchpadRoute } from './launchpadService';
-import { handleTrustReceiptsRoute, isTrustReceiptsEnabled } from './trustReceipts';
+import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -1155,6 +1155,33 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
 
     return withCors(json({ ok: true, ...result, requested: seeds.length }));
+  }
+
+  // Admin: revoke receipts the gateway route issued without a verifier check (idempotent, batched)
+  if (path === '/admin/trust/revoke-gateway-receipts') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hitRevoke = limited('auth', RATE_AUTH_PER_MIN);
+    if (hitRevoke) return hitRevoke;
+    const revokeAdmin = isAdminAuthorized(env, request);
+    if (!revokeAdmin.ok) return withCors(revokeAdmin.response);
+    if (!env.DB) return withCors(json({ ok: false, error: 'Trust receipts need D1', code: 'D1_UNAVAILABLE' }, 503));
+    let swept: { revoked: number; remaining: number };
+    try {
+      swept = await revokeGatewayIssuedReceipts(env);
+    } catch (err) {
+      if (!(err instanceof TrustReceiptsTableMissing)) throw err;
+      return withCors(json({ ok: false, error: err.message, code: 'TRUST_RECEIPTS_TABLE_MISSING' }, 503));
+    }
+    // Recorded on every run, a run that found nothing included, so the sweep leaves a trace.
+    await recordAuditLogBestEffort(env, {
+      org_id: ADMIN_SYSTEM_ORG,
+      actor_id: 'admin',
+      action: 'admin.trust.revoke_gateway_receipts',
+      details: swept,
+      ip_address: clientIp(request),
+      user_agent: request.headers.get('user-agent') || undefined,
+    });
+    return withCors(json({ ok: true, ...swept }));
   }
 
   // Admin: runtime agent skill catalog (versioned methodology prompts in D1)

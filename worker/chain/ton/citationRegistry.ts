@@ -1,9 +1,9 @@
 /**
  * TON CitationRegistry client for Luminara Suite.
  *
- * Interacts with CitationRegistry.tolk on The Open Network (TON).
- * Supports constructing tamper-evident proof payloads, batch chunking,
- * and dispatching via Toncenter v3 / TonAPI.
+ * Builds the payload for CitationRegistry.tolk on The Open Network (TON) and reads
+ * a recorded proof back through Toncenter v3. It does not write to the chain: the
+ * Worker holds no signing key (see anchorAuditCitation).
  */
 
 import type { Env } from '../../env';
@@ -11,8 +11,6 @@ import {
   type ChainNetwork,
   isProofFlagEnabled,
   resolveTonApiBases,
-  tonExplorerTxUrl,
-  normalizeTonTxHash,
 } from '../../chainNetwork';
 import { sha256Hex } from '../../workerUtils';
 
@@ -105,75 +103,38 @@ export async function buildCitationPayloadHex(payload: CitationPayload): Promise
   return `${opHex}${dHash}${aHash}${eHash}${scoreHex}${rateHex}${countHex}`;
 }
 
+export const ANCHOR_NO_SIGNER_ERROR =
+  'Anchoring is not available: the Worker holds no chain signing key, so it sends nothing to the chain and records nothing as anchored.';
+
 /**
- * Broadcasts or records an audit citation anchor to the TON network.
- * Fails closed if PROOF_ANCHOR_ENABLED is false.
+ * Asks for an audit citation anchor. It never sends one: an anchor is a signed chain
+ * message, the Worker holds no signing key, and an unsigned post proves nothing. So
+ * this makes no outbound request and always answers `ok: false` with the reason, in
+ * every configuration, including PROOF_ANCHOR_ENABLED on. Nothing it returns can be
+ * stored as anchored. The flag, the types and the third parameter stay so callers
+ * need no change on the day a signer outside the Worker exists.
  */
 export async function anchorAuditCitation(
   env: Env,
-  payload: CitationPayload,
-  fetcher: typeof fetch = fetch,
+  _payload: CitationPayload,
+  _fetcher: typeof fetch = fetch,
 ): Promise<AnchorResult> {
   if (!isProofFlagEnabled(env, 'PROOF_ANCHOR_ENABLED')) {
     return { ok: false, error: 'PROOF_ANCHOR_ENABLED is false; anchoring skipped' };
   }
 
-  const bases = resolveTonApiBases(env);
-  if (!bases) {
+  if (!resolveTonApiBases(env)) {
     return { ok: false, error: 'Invalid CHAIN_NETWORK or TON API configuration' };
   }
 
-  const contractAddress = resolveCitationContract(env);
-  const network = bases.network;
-
-  // Fail closed honestly: never fabricate or simulate on-chain transactions
-  const minterKey = String(env.TON_MINTER_PRIVATE_KEY || '').trim();
-  if (!contractAddress || !minterKey) {
+  if (!resolveCitationContract(env)) {
     return {
       ok: false,
-      error: 'TON citation contract or minter key not configured',
+      error: 'TON citation contract not configured',
     };
   }
 
-  try {
-    const payloadHex = await buildCitationPayloadHex(payload);
-    const apiKey = String(env.TON_API_KEY || '').trim();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    };
-    if (apiKey) headers['X-API-Key'] = apiKey;
-
-    // Send via Toncenter v3 sendBoc / message endpoint
-    const url = `${bases.toncenter}/message`;
-    const res = await fetcher(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        boc: payloadHex,
-      }),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      return { ok: false, error: `Toncenter HTTP ${res.status}: ${errText.slice(0, 200)}` };
-    }
-
-    const data = (await res.json()) as { message_hash?: string; hash?: string };
-    const txHash = data.message_hash || data.hash || (await sha256Hex(payloadHex));
-    const normalizedHash = normalizeTonTxHash(txHash);
-
-    return {
-      ok: true,
-      txHash: normalizedHash,
-      network,
-      contract: contractAddress,
-      explorerUrl: tonExplorerTxUrl(network, normalizedHash),
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: `TON broadcast failed: ${msg}` };
-  }
+  return { ok: false, error: ANCHOR_NO_SIGNER_ERROR };
 }
 
 /**

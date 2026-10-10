@@ -31,6 +31,7 @@ leaked internals).
 | `POST /ton/invoice`, `/ton/verify` | worker/tonAttestationService | none | TON payments |
 | `POST /license/activate` | worker/licenseService | session | License activation |
 | `POST /admin/license/generate`, `/admin/license/seed` | worker/licenseService | admin | License ops |
+| `POST /admin/trust/revoke-gateway-receipts` | worker/trustReceipts.ts | admin | Revokes receipts whose signed method is `gateway_oracle_audit_v1` (issued by the gateway route before it stopped issuing). Up to 10 per call; returns `{ revoked, remaining }`. Idempotent. Works while `TRUST_RECEIPTS_ENABLED` is off. Each run writes one `admin.trust.revoke_gateway_receipts` audit entry. 503 `TRUST_RECEIPTS_TABLE_MISSING` when migration 0020 is not applied. It marks rows and their public pages; a copy saved earlier keeps a valid signature until the signing key is rotated |
 | `POST /admin/skills/:slug/versions`, `POST /admin/skills/:slug/enable`, `GET /admin/skills/:slug` | worker/agentSkills.ts | admin | Agent skill versions/enable |
 | `POST /agent/attest` | worker/attestationService.ts | none | Agent attestation |
 | `POST /sentinel/register`, `/sentinel/status` | worker/sentinel.ts | session | Drift Sentinel targets |
@@ -89,12 +90,36 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 - **Receipts are minted only by Worker verifiers.** No route accepts a client-built
   receipt. `level` is mandatory: `worker_verified`, `registry_verified`, or
   `self_reported`; UI must never present `self_reported` as verified.
+- **A verified level needs a verifier result.** `issueTrustReceipt` refuses
+  `worker_verified` and `registry_verified` unless the call carries a `VerifierResult`:
+  a passed check for the same subject, claim and method, whose evidence hash and
+  location the receipt carries. The level, claim and method must also be ones a
+  verifier in the Worker can return (`VERIFIER_METHODS`): today only `worker_verified`
+  `domain_control` by `dns_txt`, `well_known` or `meta_tag`. The evidence must be where
+  that method reads its proof for that subject: `dns:TXT:_luminara-verify.<domain>` or
+  `dns:TXT:<domain>` for `dns_txt`, and for the other two an http(s) URL on the domain
+  or its www twin, as the domain check reports it. The guard checks the result's shape
+  and that it matches; it cannot prove who built it, so only a verifier may build one. `POST /gateway/execute` checks nothing about a domain, so it issues
+  no receipt and says so (`receiptIssued: false`). `tests/receiptsNeedVerifier.test.ts`
+  lists the only files allowed to write the level.
+- **The Worker holds no chain signing key and sends nothing to a chain.**
+  `anchorAuditCitation` makes no outbound request and answers `ok: false`, also with
+  `PROOF_ANCHOR_ENABLED` on, so it can store nothing as `anchored`
+  (`worker/chain/ton/citationRegistry.ts`). `/proof/verify` never reports an
+  `audit_citation` row as on-chain, not even one an older build stored as `anchored`;
+  payment anchors, which carry a transaction hash, are reported as before.
 - **The signed bytes are `payload_json`.** Verify against the stored canonical JSON
   (`services/trust/receiptCrypto.ts`), never a re-serialisation. Key id is derived
   from the public key. Rotation moves the old public JWK into
   `RECEIPT_RETIRED_PUBLIC_KEYS`; never delete a published key while receipts use it.
 - **Revocation is a column, never a delete** (except account deletion, which removes
   the account's receipts and domain rows).
+- **Revoking does not undo a signature.** It marks the row, and the receipt's public
+  page then shows it as withdrawn. A copy of the receipt that somebody saved earlier
+  still checks out against `/api/trust/keys`: the signature stays valid until the
+  signing key is rotated and the old public key is no longer published. That is the
+  only way to make a saved copy fail, and it makes every other receipt signed with
+  that key fail too, so those have to be issued again.
 - **A missing signing key never fakes a receipt.** Verifiers report
   `receiptIssued: false` with the reason.
 

@@ -128,8 +128,6 @@ export interface Env {
   PROOF_ANCHOR_ENABLED?: string;
   /** Optional TON CitationRegistry contract address override. */
   TON_CITATION_CONTRACT_ADDRESS?: string;
-  /** Secret. TON operations hot wallet private key for on-chain anchoring. */
-  TON_MINTER_PRIVATE_KEY?: string;
   /** Feature flag: enable XDC weekly re-check path (`true` / `false`). */
   PROOF_XDC_ENABLED?: string;
   /**

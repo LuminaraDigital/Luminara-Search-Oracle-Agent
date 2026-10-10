@@ -27,6 +27,7 @@ import { MAX_SMALL_BODY_BYTES, fetchPublicUrl, readBody, safePublicHostname, typ
 import { billingId, identify, json, sha256Hex } from './workerUtils';
 import { issueTrustReceipt, isTrustReceiptsEnabled, revokeTrustReceipt, trustFlagEnabled } from './trustReceipts';
 import { ReceiptSigningUnavailable } from './receiptSigning';
+import { wwwTwin } from '../services/security/publicHostname';
 
 export const DOMAIN_TOKEN_TTL_DAYS = 7;
 export const DOMAIN_RECHECK_INTERVAL_DAYS = 7;
@@ -57,10 +58,6 @@ export function isDomainVerifyEnabled(env: Pick<Env, 'ENVIRONMENT' | 'DOMAIN_VER
 
 export function normalizeVerifiableDomain(input: string): string | null {
   return safePublicHostname(String(input || ''));
-}
-
-function wwwTwin(domain: string): string {
-  return domain.startsWith('www.') ? domain.slice(4) : `www.${domain}`;
 }
 
 export function newDomainToken(): string {
@@ -287,6 +284,15 @@ async function issueDomainReceipt(
       subject: { kind: 'domain', id: domain },
       claim: 'domain_control',
       level: 'worker_verified',
+      // The check that just passed. issueTrustReceipt refuses a verified level without it.
+      verifierResult: {
+        passed: true,
+        subject: { kind: 'domain', id: domain },
+        claim: 'domain_control',
+        method: found.method,
+        evidenceUrl: found.evidenceUrl,
+        evidenceSha256: found.evidenceSha256,
+      },
       method: found.method,
       evidence: [
         {
