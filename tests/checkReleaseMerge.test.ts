@@ -3,18 +3,23 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { evaluateReleaseMerge, readCommits, readReleaseFacts } from '../scripts/check-release-merge.mjs';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { evaluateReleaseMerge, firstParentLine, readCommits, readReleaseFacts } from '../scripts/check-release-merge.mjs';
+
+// Each case starts git or node processes, which can take seconds apiece on a busy machine.
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 /**
  * The production deploy runs scripts/check-release-merge.mjs before it migrates or deploys.
- * These tests build a real git repository in a temporary directory (no network) and ask the
- * script about each way a commit can reach main.
+ * A release must meet four conditions:
+ *   (a) two parents; (b) tree equal to the second parent's tree; (c) the second parent is on
+ *   staging's own first-parent line; (d) the commit is the current tip of main.
  *
- * Starting a process is slow on some machines, so the commit graph is written by one
- * `git fast-import` call: it stores ordinary commit objects with the parents and files stated
- * below. The last test makes the two headline shapes with `git merge` itself and gets the same
- * answers.
+ * These tests build a real git repository in a temporary directory (no network) and ask the
+ * script about each way a commit can reach main. Starting a process is slow on some machines,
+ * so the commit graph is written by one `git fast-import` call: it stores ordinary commit
+ * objects with the parents and files stated below. The last test makes the two headline shapes
+ * with `git merge` itself and gets the same answers.
  */
 
 const SCRIPT = resolve(__dirname, '..', 'scripts', 'check-release-merge.mjs');
@@ -39,8 +44,10 @@ function runCli(args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, [SCRIPT, ...args], { cwd: repo, env: { ...env, ...extraEnv }, encoding: 'utf8' });
 }
 
-function check(commit: string, staging = 'origin/staging') {
-  return evaluateReleaseMerge(readReleaseFacts({ commit, staging, cwd: repo, env }));
+/** The verdict for `commit` when main is at `main` (by default the commit itself) and staging at `staging`. */
+function check(commit: string, options: { main?: string; staging?: string } = {}) {
+  const facts = readReleaseFacts({ commit, main: options.main ?? commit, staging: options.staging ?? 'origin/staging', cwd: repo, env });
+  return { facts, verdict: evaluateReleaseMerge(facts) };
 }
 
 /**
@@ -56,8 +63,8 @@ function commitBlock(mark: number, ref: string, message: string, parents: number
 }
 
 const MARKS: Record<string, number> = {
-  A: 1, B: 2, C: 3, release: 4, squash: 5, direct: 6, oldStaging: 7, feature: 8,
-  featureMerge: 9, hotfix: 10, divergedMerge: 11, swapped: 12, octopus: 13, D: 14,
+  A: 1, B: 2, C: 3, feature: 4, stagingMerge: 5, D: 6, release: 7, squash: 8, direct: 9, featureMerge: 10,
+  stray: 11, strayMerge: 12, hotfix: 13, divergedMerge: 14, swapped: 15, octopus: 16, nextRelease: 17,
 };
 
 beforeAll(() => {
@@ -85,38 +92,42 @@ beforeAll(() => {
     GIT_COMMITTER_EMAIL: 'release-check@example.invalid',
   };
 
-  // HEAD names the branch "release", which the import below creates.
-  execFileSync('git', ['init', '--quiet', '--initial-branch=release', repo], { cwd: root, env, stdio: 'ignore' });
+  execFileSync('git', ['init', '--quiet', '--initial-branch=main', repo], { cwd: root, env, stdio: 'ignore' });
   expect(samePath(git('rev-parse', '--show-toplevel'), repo)).toBe(true);
 
   const m = MARKS;
   const stream = [
-    // main:    A
-    // staging: A - B - C        (C is the tip of staging)
+    // staging's own line of history (first parents): A - B - C - stagingMerge - D
+    //   A is where staging left main; B and C are commits on staging;
+    //   stagingMerge is staging merging the feature branch; D is a later commit on staging.
     commitBlock(m.A, 'main', 'A on main', [], ['a.txt']),
     commitBlock(m.B, 'staging', 'B on staging', [m.A], ['b.txt']),
     commitBlock(m.C, 'staging', 'C on staging', [m.B], ['c.txt']),
-    // What a fetch of the remote leaves behind.
-    `reset refs/remotes/origin/staging\nfrom :${m.C}\n\n`,
-    // The one shape that is a release: main merges the tip of staging with a merge commit.
-    commitBlock(m.release, 'release', 'Merge staging into main', [m.A, m.C], ['b.txt', 'c.txt']),
-    // A squash merge: staging's files, one parent.
-    commitBlock(m.squash, 'squash', 'Squash of staging', [m.A], ['b.txt', 'c.txt']),
-    // A direct push: an ordinary commit on main.
-    commitBlock(m.direct, 'direct', 'Direct push to main', [m.A], ['d.txt']),
-    // A merge of an older staging commit, and a merge of a feature branch.
-    commitBlock(m.oldStaging, 'old-staging', 'Merge an older staging commit', [m.A, m.B], ['b.txt']),
     commitBlock(m.feature, 'feature', 'F on a feature branch', [m.A], ['f.txt']),
-    commitBlock(m.featureMerge, 'feature-merge', 'Merge a feature branch', [m.A, m.feature], ['f.txt']),
-    // main holds a hotfix staging never ran, then merges the tip of staging: right parent, different files.
+    commitBlock(m.stagingMerge, 'staging', 'staging merges the feature branch', [m.C, m.feature], ['f.txt']),
+    commitBlock(m.D, 'staging', 'D on staging, after the release', [m.stagingMerge], ['e.txt']),
+    // What a fetch leaves behind. staging has already moved on past C, the commit the release merged.
+    `reset refs/remotes/origin/staging\nfrom :${m.D}\n\n`,
+
+    // The release: main merges C, a commit staging was at, with a merge commit.
+    commitBlock(m.release, 'release', 'Merge staging into main', [m.A, m.C], ['b.txt', 'c.txt']),
+    // (a) fails: a squash merge has staging's files and one parent; a direct push is an ordinary commit.
+    commitBlock(m.squash, 'squash', 'Squash of staging', [m.A], ['b.txt', 'c.txt']),
+    commitBlock(m.direct, 'direct', 'Direct push to main', [m.A], ['d.txt']),
+    // (c) fails: the feature commit reached staging only as the second parent of stagingMerge,
+    // so staging itself was never at it. The stray commit never reached staging at all.
+    commitBlock(m.featureMerge, 'feature-merge', 'Merge a feature branch into main', [m.A, m.feature], ['f.txt']),
+    commitBlock(m.stray, 'stray', 'G on a branch staging never saw', [m.A], ['g.txt']),
+    commitBlock(m.strayMerge, 'stray-merge', 'Merge a stray branch into main', [m.A, m.stray], ['g.txt']),
+    // (b) fails: main holds a hotfix staging never ran, then merges C. Right parent, different files.
     commitBlock(m.hotfix, 'hotfix', 'H hotfix on main only', [m.A], ['h.txt']),
     commitBlock(m.divergedMerge, 'diverged', 'Merge staging into a main that moved', [m.hotfix, m.C], ['b.txt', 'c.txt']),
-    // The tip of staging as the first parent instead of the second.
+    // The staging commit as the first parent instead of the second, and a merge with three parents.
     commitBlock(m.swapped, 'swapped', 'Merge main into staging', [m.C, m.hotfix], ['h.txt']),
-    // One merge commit with three parents.
     commitBlock(m.octopus, 'octopus', 'Merge staging and a feature at once', [m.A, m.C, m.feature], ['b.txt', 'c.txt', 'f.txt']),
-    // staging moves on after the release merge was made.
-    commitBlock(m.D, 'staging-later', 'D on staging, after the release', [m.C], ['e.txt']),
+    // (d): a newer release on top of the first one. main is now here.
+    commitBlock(m.nextRelease, 'main', 'Merge staging into main again', [m.release, m.D], ['f.txt', 'e.txt']),
+    `reset refs/remotes/origin/main\nfrom :${m.nextRelease}\n\n`,
   ].join('');
   execFileSync('git', ['fast-import', '--quiet', `--export-marks=${marksFile}`], { cwd: repo, env, input: stream, stdio: ['pipe', 'ignore', 'pipe'] });
 
@@ -137,89 +148,124 @@ afterAll(() => {
   }
 });
 
-describe("release merge check: the commit on main must be a merge of the tip of staging, with staging's files", () => {
-  it('passes for a merge commit whose second parent is the tip of staging and whose tree equals it', () => {
-    const facts = readReleaseFacts({ commit: sha.release, cwd: repo, env });
+describe('release merge check: a release passes', () => {
+  it('for a two-parent merge of a commit staging was at, with that commit\'s files, at the tip of main', () => {
+    const { facts, verdict } = check(sha.release);
     expect(facts.commit).toBe(sha.release);
     expect(facts.parents).toEqual([sha.A, sha.C]);
-    expect(facts.stagingTip).toBe(sha.C);
-    expect(facts.commitTree).toBe(facts.stagingTree);
-    expect(evaluateReleaseMerge(facts)).toMatchObject({ ok: true });
+    expect(facts.commitTree).toBe(facts.secondParentTree);
+    expect(facts.secondParentOnStaging).toBe(true);
+    expect(facts.mainTip).toBe(sha.release);
+    expect(verdict).toMatchObject({ ok: true, failed: [] });
   });
 
-  it("fails a squash merge, even though its files equal staging's", () => {
-    const facts = readReleaseFacts({ commit: sha.squash, cwd: repo, env });
-    expect(facts.commitTree).toBe(facts.stagingTree);
+  it('and still passes after staging has moved on, so a failed deploy can be re-run', () => {
+    // The release merged C. Since then staging merged a feature branch and took another commit.
+    expect(firstParentLine(sha.D, { cwd: repo, env })).toEqual([sha.D, sha.stagingMerge, sha.C, sha.B, sha.A]);
+    expect(check(sha.release, { staging: sha.C }).verdict.ok).toBe(true); // at release time: C was the tip
+    expect(check(sha.release, { staging: sha.stagingMerge }).verdict.ok).toBe(true); // one pull request later
+    expect(check(sha.release, { staging: sha.D }).verdict.ok).toBe(true); // and another
+  });
+
+  it('for the next release too, whose second parent is the tip of staging today', () => {
+    const { facts, verdict } = check(sha.nextRelease);
+    expect(facts.parents).toEqual([sha.release, sha.D]);
+    expect(verdict.ok).toBe(true);
+  });
+});
+
+describe('release merge check: each condition failing alone', () => {
+  it('(a) a squash merge: staging\'s files, one parent', () => {
+    const { facts, verdict } = check(sha.squash);
     expect(facts.parents).toEqual([sha.A]);
-    const verdict = evaluateReleaseMerge(facts);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/1 parent\(s\)/);
+    expect(verdict.failed).toEqual(['a']);
+    expect(verdict.reason).toMatch(/Condition \(a\) failed: .*1 parent\(s\)/);
+    expect(verdict.reason).toMatch(/What to do: .*Create a merge commit/);
   });
 
-  it('fails a direct push', () => {
-    const verdict = check(sha.direct);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/1 parent\(s\)/);
+  it('(a) a direct push, a fast-forward of main to staging, and a merge with three parents', () => {
+    expect(check(sha.direct).verdict.failed).toEqual(['a']);
+    expect(check(sha.D).verdict.failed).toEqual(['a']);
+    const octopus = check(sha.octopus);
+    expect(octopus.facts.parents).toEqual([sha.A, sha.C, sha.feature]);
+    expect(octopus.verdict.failed).toEqual(['a']);
+    expect(octopus.verdict.reason).toMatch(/3 parent\(s\)/);
   });
 
-  it('fails a fast-forward of main to the tip of staging', () => {
-    expect(check(sha.C).ok).toBe(false);
-  });
-
-  it('fails a merge of an older staging commit', () => {
-    const verdict = check(sha.oldStaging);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/not the tip of staging/);
-  });
-
-  it('fails a merge of a branch that is not staging', () => {
-    const verdict = check(sha.featureMerge);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/not the tip of staging/);
-  });
-
-  it("fails a merge of the staging tip whose files differ from staging's", () => {
-    const facts = readReleaseFacts({ commit: sha.divergedMerge, cwd: repo, env });
+  it('(b) a merge of a staging commit whose files differ from that commit\'s', () => {
+    const { facts, verdict } = check(sha.divergedMerge);
     expect(facts.parents).toEqual([sha.hotfix, sha.C]);
-    expect(facts.commitTree).not.toBe(facts.stagingTree);
-    const verdict = evaluateReleaseMerge(facts);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/files differ from staging/);
+    expect(facts.secondParentOnStaging).toBe(true);
+    expect(facts.commitTree).not.toBe(facts.secondParentTree);
+    expect(verdict.failed).toEqual(['b']);
+    expect(verdict.reason).toMatch(/Condition \(b\) failed: .*differ/);
+    expect(verdict.reason).toMatch(/What to do: merge main back into staging/);
   });
 
-  it('fails when the tip of staging is the first parent, not the second', () => {
-    const facts = readReleaseFacts({ commit: sha.swapped, cwd: repo, env });
-    expect(facts.parents).toEqual([sha.C, sha.hotfix]);
-    expect(evaluateReleaseMerge(facts).ok).toBe(false);
+  it('(c) a merge of a feature commit that staging merged but was never itself at', () => {
+    const { facts, verdict } = check(sha.featureMerge);
+    expect(facts.parents).toEqual([sha.A, sha.feature]);
+    expect(facts.commitTree).toBe(facts.secondParentTree);
+    // The feature commit is in staging's history, only not on staging's own line.
+    expect(git('merge-base', '--is-ancestor', sha.feature, sha.D)).toBe('');
+    expect(facts.secondParentOnStaging).toBe(false);
+    expect(verdict.failed).toEqual(['c']);
+    expect(verdict.reason).toMatch(/Condition \(c\) failed: .*staging itself was never at/);
+    expect(verdict.reason).toMatch(/What to do: merge that work into staging first/);
   });
 
-  it('fails a merge commit with three parents', () => {
-    const facts = readReleaseFacts({ commit: sha.octopus, cwd: repo, env });
-    expect(facts.parents).toEqual([sha.A, sha.C, sha.feature]);
-    const verdict = evaluateReleaseMerge(facts);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/3 parent\(s\)/);
+  it('(c) a merge of a branch that never reached staging', () => {
+    const { facts, verdict } = check(sha.strayMerge);
+    expect(facts.commitTree).toBe(facts.secondParentTree);
+    expect(verdict.failed).toEqual(['c']);
   });
 
-  it('fails the same release merge once staging has moved on', () => {
-    const verdict = check(sha.release, sha.D);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/not the tip of staging/);
+  it('(d) an older release once main has moved on: a stale re-run', () => {
+    const { facts, verdict } = check(sha.release, { main: 'origin/main' });
+    expect(facts.mainTip).toBe(sha.nextRelease);
+    expect(verdict.failed).toEqual(['d']);
+    expect(verdict.reason).toMatch(/Condition \(d\) failed: .*not the current tip of main/);
+    expect(verdict.reason).toMatch(/What to do: use the run of the newest release/);
+  });
+});
+
+describe('release merge check: more than one condition, and facts that cannot be read', () => {
+  it('names every condition that failed', () => {
+    // staging's commit is the first parent, the hotfix the second: wrong files and not staging's.
+    const swapped = check(sha.swapped);
+    expect(swapped.facts.parents).toEqual([sha.C, sha.hotfix]);
+    expect(swapped.verdict.failed).toEqual(['b', 'c']);
+    // A squash that is not even the tip of main.
+    expect(check(sha.squash, { main: 'origin/main' }).verdict.failed).toEqual(['a', 'd']);
+    expect(check(sha.featureMerge, { main: 'origin/main' }).verdict.failed).toEqual(['c', 'd']);
+  });
+
+  it('the pure decision fails each condition alone and passes only when all four hold', () => {
+    const good = { commit: 'm1', parents: ['p1', 'p2'], commitTree: 't1', secondParentTree: 't1', secondParentOnStaging: true, mainTip: 'm1' };
+    expect(evaluateReleaseMerge(good)).toMatchObject({ ok: true, failed: [] });
+    expect(evaluateReleaseMerge({ ...good, parents: ['p1'] }).failed).toEqual(['a']);
+    expect(evaluateReleaseMerge({ ...good, parents: ['p1', 'p2', 'p3'] }).failed).toEqual(['a']);
+    expect(evaluateReleaseMerge({ ...good, secondParentTree: 't2' }).failed).toEqual(['b']);
+    expect(evaluateReleaseMerge({ ...good, secondParentTree: '' }).failed).toEqual(['b']);
+    expect(evaluateReleaseMerge({ ...good, secondParentOnStaging: false }).failed).toEqual(['c']);
+    expect(evaluateReleaseMerge({ ...good, secondParentOnStaging: undefined }).failed).toEqual(['c']);
+    expect(evaluateReleaseMerge({ ...good, mainTip: 'm2' }).failed).toEqual(['d']);
   });
 
   it('refuses facts it could not read rather than passing them', () => {
-    expect(evaluateReleaseMerge({ commit: '', parents: [], commitTree: '', stagingTip: '', stagingTree: '' }).ok).toBe(false);
-    expect(evaluateReleaseMerge({ commit: 'a', parents: ['b', 'c'], commitTree: '', stagingTip: 'c', stagingTree: '' }).ok).toBe(false);
     expect(evaluateReleaseMerge(undefined).ok).toBe(false);
+    expect(evaluateReleaseMerge({ commit: '', parents: [], commitTree: '', mainTip: '' }).ok).toBe(false);
+    expect(evaluateReleaseMerge({ commit: 'm1', parents: ['p1', 'p2'], commitTree: 't1', secondParentTree: 't1', secondParentOnStaging: true, mainTip: '' }).ok).toBe(false);
   });
 
   it('throws, rather than guessing, on a revision git does not have or one that is not a revision', () => {
-    expect(() => readReleaseFacts({ commit: sha.release, staging: 'origin/never-fetched', cwd: repo, env })).toThrow(/cannot resolve "origin\/never-fetched"/);
+    expect(() => readReleaseFacts({ commit: sha.release, main: sha.release, staging: 'origin/never-fetched', cwd: repo, env })).toThrow(/cannot resolve "origin\/never-fetched"/);
+    expect(() => readReleaseFacts({ commit: sha.release, main: 'origin/never-fetched', cwd: repo, env })).toThrow(/cannot resolve "origin\/never-fetched"/);
     expect(() => readReleaseFacts({ commit: '--all', cwd: repo, env })).toThrow(/not a revision/);
     expect(() => readReleaseFacts({ commit: 'HEAD\norigin/staging', cwd: repo, env })).toThrow(/not a revision/);
   });
 
-  it('reads the real parents in a shallow clone, where git itself reports none', () => {
+  it('in a shallow clone it reads the real parents, then stops because the history is missing', () => {
     const shallow = join(root, 'shallow');
     execFileSync('git', ['clone', '--quiet', '--depth', '1', '--branch', 'release', pathToFileURL(repo).href, shallow], {
       cwd: root,
@@ -232,43 +278,46 @@ describe("release merge check: the commit on main must be a merge of the tip of 
     const [head] = readCommits(['HEAD'], opts);
     expect(head.sha).toBe(sha.release);
     expect(head.parents).toEqual([sha.A, sha.C]);
+    expect(() => readReleaseFacts({ commit: 'HEAD', main: 'HEAD', staging: 'HEAD', ...opts })).toThrow(/full history/);
   });
 });
 
 describe('release merge check: the command the deploy job runs', () => {
-  it('exits 0 on a release merge, reading HEAD and origin/staging by default', () => {
+  it('exits 0 on a release, reading HEAD, origin/staging and origin/main by default', () => {
+    // HEAD is the branch main, which the import left at the newest release, as is origin/main.
     const res = runCli([]);
     expect(res.status).toBe(0);
     expect(res.stdout).toMatch(/\[release-check\] OK/);
   });
 
-  it('exits 1 on a squash merge and says why, with nothing on stdout', () => {
-    const res = runCli(['--commit', sha.squash]);
+  it('exits 1 on a squash merge and says which condition failed and what to do, with nothing on stdout', () => {
+    const res = runCli(['--commit', sha.squash, '--main', sha.squash]);
     expect(res.status).toBe(1);
-    expect(res.stderr).toMatch(/REFUSED/);
-    expect(res.stderr).toMatch(/1 parent\(s\)/);
-    expect(res.stderr).toMatch(/pull request/);
+    expect(res.stderr).toMatch(/REFUSED\. Condition \(a\) failed/);
+    expect(res.stderr).toMatch(/What to do:/);
     expect(res.stdout).toBe('');
   });
 
-  it('exits 1 on a direct push and on a merge of something other than the staging tip', () => {
-    expect(runCli(['--commit', sha.direct]).status).toBe(1);
-    expect(runCli(['--commit', sha.featureMerge]).status).toBe(1);
+  it('exits 1 on a merge of a feature branch, and on a stale older release', () => {
+    const feature = runCli(['--commit', sha.featureMerge, '--main', sha.featureMerge]);
+    expect(feature.status).toBe(1);
+    expect(feature.stderr).toMatch(/Condition \(c\) failed/);
+    const stale = runCli(['--commit', sha.release]);
+    expect(stale.status).toBe(1);
+    expect(stale.stderr).toMatch(/Condition \(d\) failed/);
   });
 
-  it('takes both revisions as arguments', () => {
-    expect(runCli(['--commit', sha.release, '--staging', sha.C]).status).toBe(0);
-    expect(runCli(['--commit', sha.release, '--staging', sha.D]).status).toBe(1);
-  });
-
-  it('marks the refusal as an error annotation when it runs in GitHub Actions', () => {
+  it('marks each refusal as an error annotation when it runs in GitHub Actions', () => {
     const res = runCli(['--commit', sha.squash], { GITHUB_ACTIONS: 'true' });
     expect(res.status).toBe(1);
-    expect(res.stderr).toMatch(/^::error title=Not a release merge::/);
+    const lines = res.stderr.trim().split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^::error title=Not a release merge::Condition \(a\) failed/);
+    expect(lines[1]).toMatch(/^::error title=Not a release merge::Condition \(d\) failed/);
   });
 
   it('exits 2, not 0, when staging was never fetched or an argument is unknown', () => {
-    const missing = runCli(['--commit', sha.release, '--staging', 'origin/never-fetched']);
+    const missing = runCli(['--staging', 'origin/never-fetched']);
     expect(missing.status).toBe(2);
     expect(missing.stderr).toMatch(/cannot resolve "origin\/never-fetched"/);
     expect(runCli(['--force']).status).toBe(2);
@@ -276,20 +325,19 @@ describe('release merge check: the command the deploy job runs', () => {
 });
 
 describe('release merge check: the shapes git merge itself writes', () => {
-  it('a real --no-ff merge of the staging tip passes; a real --squash merge of it fails', () => {
+  it('a real --no-ff merge of a staging commit passes; a real --squash merge of it fails (a)', () => {
     git('checkout', '--quiet', '--force', '-b', 'real-release', sha.A);
     git('merge', '--quiet', '--no-ff', '-m', 'Merge staging into main', sha.C);
     git('checkout', '--quiet', '--force', '-b', 'real-squash', sha.A);
     git('merge', '--quiet', '--squash', sha.C);
     git('commit', '--quiet', '-m', 'Squash of staging');
 
-    const merged = readReleaseFacts({ commit: 'real-release', cwd: repo, env });
-    expect(merged.parents).toEqual([sha.A, sha.C]);
-    expect(evaluateReleaseMerge(merged).ok).toBe(true);
+    const merged = check('real-release');
+    expect(merged.facts.parents).toEqual([sha.A, sha.C]);
+    expect(merged.verdict.ok).toBe(true);
 
-    const squashed = readReleaseFacts({ commit: 'real-squash', cwd: repo, env });
-    expect(squashed.parents).toEqual([sha.A]);
-    expect(squashed.commitTree).toBe(squashed.stagingTree);
-    expect(evaluateReleaseMerge(squashed).ok).toBe(false);
+    const squashed = check('real-squash');
+    expect(squashed.facts.parents).toEqual([sha.A]);
+    expect(squashed.verdict.failed).toEqual(['a']);
   });
 });

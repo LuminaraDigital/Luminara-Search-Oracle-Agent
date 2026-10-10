@@ -10,12 +10,36 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv.includes('--staged')
   ? 'staged'
   : process.argv.includes('--all')
     ? 'all'
     : 'staged';
+
+/**
+ * The tree to scan. `--all` scans the working tree the command is run in (its git top level).
+ * A hook directory can be shared by several worktrees (an absolute core.hooksPath), and then
+ * this file lives in one checkout while another is being pushed: the tree to check is the one
+ * being pushed, not the one this file happens to be in. Outside a git work tree, and for
+ * `--staged`, the root is this script's own checkout, as it always was.
+ */
+function resolveScanRoot() {
+  if (mode !== 'all') return scriptRoot;
+  try {
+    const top = execSync('git rev-parse --show-toplevel', {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (top) return resolve(top);
+  } catch {
+    // Not inside a git work tree: fall through to the script's own checkout.
+  }
+  return scriptRoot;
+}
+
+const root = resolveScanRoot();
 
 /** Paths that may mention key shapes as documentation, placeholders, or public client config. */
 const ALLOW_PATH_RE =

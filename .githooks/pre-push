@@ -13,9 +13,19 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "prod" ]; then
   fi
 fi
 
+# Every check below runs on the working tree that is being pushed, with that tree's own
+# scripts. This hook directory can be shared by several worktrees (an absolute core.hooksPath),
+# so nothing may depend on which checkout this file happens to be in.
+top=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$top" ] || [ ! -d "$top" ]; then
+  echo "[Pre-Push] Could not find the top level of the working tree being pushed."
+  exit 1
+fi
+cd "$top" || exit 1
+
 # 2. Block pushes when the worktree still contains secret-shaped material
 echo "[Pre-Push] 1/3 Checking for secret leaks..."
-node "$(dirname "$0")/../scripts/check-secrets.mjs" --all || exit 1
+node "$top/scripts/check-secrets.mjs" --all || exit 1
 
 # 3. Typecheck validation
 echo "[Pre-Push] 2/3 Validating TypeScript types..."
@@ -24,7 +34,7 @@ npm run typecheck || exit 1
 # 4. Automated smoke checks
 echo "[Pre-Push] 3/3 Running automated test suite & smoke checks..."
 npm test || exit 1
-node "$(dirname "$0")/../scripts/smoke-check.mjs" --dry-run || exit 1
+node "$top/scripts/smoke-check.mjs" --dry-run || exit 1
 
 echo "\033[0;32m[Pre-Push] All branch safeguards and smoke checks passed!\033[0m"
 exit 0

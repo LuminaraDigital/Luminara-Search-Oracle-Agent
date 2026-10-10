@@ -116,12 +116,16 @@ jobs:
     concurrency:
       group: cloudflare-deploy-production
       cancel-in-progress: false
+    # The staging deploy check reads this workflow's own runs with the job's token. Nothing more.
+    permissions:
+      actions: read
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Full history. The release check below reads the merge commit's parents and the tip
-          # of origin/staging; the default one-commit checkout has neither.
+          # Full history. The release check below reads the merge commit's second parent and
+          # staging's line of history; the default one-commit checkout has neither.
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -130,14 +134,30 @@ jobs:
           node-version: 22
           cache: npm
 
-      # Production runs only what staging ran. Before anything is installed, migrated or deployed:
-      # the commit must be a merge commit whose second parent is the current tip of staging and
-      # whose files equal staging's. A squash merge, a direct push, or a merge of anything else
-      # stops the job here. A manual run from main is checked the same way.
-      - name: Release check (main must be a merge of the staging tip)
+      # Production runs only what staging ran. Before anything is installed, migrated or deployed,
+      # the commit must be (a) a merge commit with two parents, (b) with the files of its second
+      # parent, (c) whose second parent is a commit staging itself was at, and (d) the current tip
+      # of main. A squash merge, a direct push, a merge of a feature branch, or a stale run of an
+      # older release stops the job here. A manual run from main is checked the same way.
+      # The second parent need not be staging's tip today: a release that migrated and then failed
+      # must stay re-runnable after staging has moved on.
+      - name: Release check (main must be a merge of a commit staging was at)
         run: |
-          git fetch --no-tags --quiet origin +refs/heads/staging:refs/remotes/origin/staging
-          node scripts/check-release-merge.mjs --commit HEAD --staging origin/staging
+          git fetch --no-tags --quiet origin +refs/heads/staging:refs/remotes/origin/staging +refs/heads/main:refs/remotes/origin/main
+          node scripts/check-release-merge.mjs --commit HEAD --staging origin/staging --main origin/main
+
+      # The release check proves the shape of the merge. This proves staging's own deploy of the
+      # merged commit went green: this workflow's run for the push of that commit to staging must
+      # have completed with success, and so must its staging deploy job (latest attempt counts).
+      # The step only fetches and pipes; scripts/check-staging-deploy.mjs decides and fails closed.
+      - name: Staging deploy check (the merged commit must have a green staging deploy)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(git rev-parse --verify 'HEAD^2')"
+          api="repos/${GITHUB_REPOSITORY}/actions"
+          run_id="$(gh api "${api}/workflows/deploy-cloudflare.yml/runs?head_sha=${sha}&branch=staging&event=push&per_page=100" | node scripts/check-staging-deploy.mjs run --sha "${sha}")"
+          gh api "${api}/runs/${run_id}/jobs?filter=latest&per_page=100" | node scripts/check-staging-deploy.mjs job --sha "${sha}" --run "${run_id}"
 
       - name: Install dependencies
         run: npm ci

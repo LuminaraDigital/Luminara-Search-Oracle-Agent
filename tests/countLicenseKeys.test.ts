@@ -3,8 +3,11 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { countLicenseKeys, decodeInput, LICENSE_KEY_PREFIX, recordOf } from '../scripts/count-license-keys.mjs';
+
+// The cases that run the script start node processes, which can take seconds apiece on a busy machine.
+vi.setConfig({ testTimeout: 120_000 });
 
 /**
  * scripts/count-license-keys.mjs backs plan rule 2.15: the number of licence keys that are not

@@ -251,32 +251,73 @@ describe('deploy workflow: the log holds a restore point before every migration'
   });
 });
 
-describe('deploy workflow: production runs only a merge of the staging tip', () => {
+describe('deploy workflow: production runs only a release merge whose staging deploy went green', () => {
   const list = steps('deploy_production');
   const check = list.findIndex((s) => s.text.includes('node scripts/check-release-merge.mjs'));
+  const green = list.findIndex((s) => s.text.includes('node scripts/check-staging-deploy.mjs'));
 
   it('checks out full history, which the release check needs', () => {
     const checkout = list.find((s) => s.text.includes('uses: actions/checkout@'));
     expect(checkout?.text).toMatch(/fetch-depth: 0/);
   });
 
-  it('runs the release check against HEAD and a freshly fetched origin/staging', () => {
+  it('runs the release check against HEAD and freshly fetched origin/staging and origin/main', () => {
     expect(check).toBeGreaterThanOrEqual(0);
-    expect(list[check].text).toContain('git fetch --no-tags --quiet origin +refs/heads/staging:refs/remotes/origin/staging');
-    expect(list[check].text).toContain('node scripts/check-release-merge.mjs --commit HEAD --staging origin/staging');
+    expect(list[check].text).toContain(
+      'git fetch --no-tags --quiet origin +refs/heads/staging:refs/remotes/origin/staging +refs/heads/main:refs/remotes/origin/main',
+    );
+    expect(list[check].text).toContain('node scripts/check-release-merge.mjs --commit HEAD --staging origin/staging --main origin/main');
     expect(list[check].text).not.toMatch(/continue-on-error|\|\| true|if:/);
   });
 
-  it('runs it before anything is installed, built, migrated or deployed', () => {
+  it('then requires a green staging deploy of the merged commit, fetching with the job token and piping to the script', () => {
+    expect(green).toBe(check + 1);
+    const text = list[green].text;
+    expect(text).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(text).toContain(`sha="$(git rev-parse --verify 'HEAD^2')"`);
+    // Two reads of the Actions API, each piped straight into the script that decides.
+    expect(text).toContain(
+      'gh api "${api}/workflows/deploy-cloudflare.yml/runs?head_sha=${sha}&branch=staging&event=push&per_page=100" | node scripts/check-staging-deploy.mjs run --sha "${sha}"',
+    );
+    expect(text).toContain('gh api "${api}/runs/${run_id}/jobs?filter=latest&per_page=100" | node scripts/check-staging-deploy.mjs job --sha "${sha}" --run "${run_id}"');
+    expect(text.match(/gh api /g)).toHaveLength(2);
+    // It only reads: no request method, no request body, no other gh command, no secret.
+    expect(text).not.toMatch(/--method|-X |--field|-f |-F |--input|gh (run|workflow|pr|release|secret|variable) /);
+    expect(text).not.toMatch(/secrets\./);
+    expect(text).not.toMatch(/continue-on-error|\|\| true|if:/);
+  });
+
+  it('runs both checks before anything is installed, built, migrated or deployed', () => {
     expect(check).toBeGreaterThanOrEqual(0);
-    const later = list.findIndex((s) => /npm (ci|run|test)|npx |wrangler|scripts\/(?!check-release-merge)/.test(s.text));
-    expect(later).toBeGreaterThan(check);
+    expect(green).toBeGreaterThan(check);
+    const later = list.findIndex((s) => /npm (ci|run|test)|npx |wrangler|scripts\/(?!check-release-merge|check-staging-deploy)/.test(s.text));
+    expect(later).toBeGreaterThan(green);
     for (const [index, step] of list.entries()) {
-      if (/d1 |deploy --env|wrangler-action|npm ci/.test(step.text)) expect(index, step.name).toBeGreaterThan(check);
+      if (/d1 |deploy --env|wrangler-action|npm ci/.test(step.text)) expect(index, step.name).toBeGreaterThan(green);
     }
   });
 
-  it('does not put the release check on the staging job, which deploys any commit pushed to staging', () => {
-    expect(jobBlock('deploy_staging')).not.toContain('check-release-merge');
+  it('gives the production job read access to actions and contents, and nothing more', () => {
+    expect(jobBlock('deploy_production')).toContain('\n    permissions:\n      actions: read\n      contents: read\n    steps:\n');
+    // The workflow default stays read-only on contents, and no job asks for write access or the id token.
+    expect(WORKFLOW).toContain('\npermissions:\n  contents: read\n');
+    expect(WORKFLOW.match(/^\s*permissions:/gm)).toHaveLength(2);
+    expect(WORKFLOW).not.toMatch(/:\s*write\b|write-all|id-token/);
+  });
+
+  it('puts neither check on the staging job, which deploys any commit pushed to staging', () => {
+    expect(jobBlock('deploy_staging')).not.toMatch(/check-release-merge|check-staging-deploy|GH_TOKEN/);
+  });
+});
+
+describe('dependency updates go to staging, never straight to main', () => {
+  it('every Dependabot entry targets staging', () => {
+    const dependabot = readFileSync(resolve(__dirname, '..', '.github', 'dependabot.yml'), 'utf8').replace(/\r\n/g, '\n');
+    const entries = dependabot.split(/\n(?= {2}- package-ecosystem: )/).slice(1);
+    expect(entries.length).toBeGreaterThanOrEqual(3);
+    for (const entry of entries) {
+      expect(entry, entry.split('\n')[0]).toMatch(/\n {4}target-branch: "staging"\n/);
+      expect(entry.match(/target-branch:/g)).toHaveLength(1);
+    }
   });
 });

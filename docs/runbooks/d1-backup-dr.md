@@ -76,15 +76,32 @@ What the code does in the meantime, whichever way that test comes out:
 - A queue batch from a queue with no entry in `worker/queueDispatch.ts` is acknowledged and not processed, and logged as `[Queue] Queue "<name>" is not mapped ...`. Those messages are gone once acknowledged, so a rollback across a release that added a queue consumer needs that queue drained or paused first.
 - A rollback restores code only. It does not undo a D1 migration (see "Migration rollback" above and the bookmark in the deploy log).
 
+Both of those are log lines and nothing else. Nothing pages or messages anyone when one appears: someone has to look at the Worker's logs.
+
 ## Production release (staging to main)
 
-Production runs only what staging ran. The production deploy job first runs `scripts/check-release-merge.mjs` and stops, before anything is installed, migrated or deployed, unless the commit on `main` is a merge commit whose second parent is the current tip of `staging` and whose files are identical to staging's.
+Production runs only what staging ran, and only what staging deployed green. Before anything is installed, migrated or deployed, the production job runs two checks and stops if either fails:
 
-1. Release by merging the pull request from `staging` into `main` with **Create a merge commit**. A squash merge, a rebase merge, a fast-forward push (`git push origin staging:main`) or a direct push fails the check and deploys nothing.
-2. Merge nothing else into `main`. A pull request from any other branch (a dependency update, a hotfix) fails the check; it goes to `staging` first.
-3. If `staging` moves on between the merge and the deploy job, the check fails, because the merged commit is no longer the tip. Release again from the new tip. The same holds for a manual run of "production" from `main` later: it deploys only while `main` is still a merge of the current staging tip.
-4. A manual run that names "production" from any ref other than `main` fails in the job "Refuse a production deploy from a ref other than main" and deploys nothing. A manual run that names "staging" deploys staging only, from whichever ref it was started on.
-5. One deploy per environment runs at a time. A run that has started is never cancelled; a newer one waits. If two are waiting, GitHub keeps only the newest.
+- **Release check** (`scripts/check-release-merge.mjs`). The commit on `main` must be (a) a merge commit with exactly two parents, (b) with the same files as its second parent, (c) whose second parent is a commit `staging` itself was at (on the first-parent line of `origin/staging`, not a feature commit that staging merged), and (d) the current tip of `main`. A failed step names the condition and says what to do.
+- **Staging deploy check** (`scripts/check-staging-deploy.mjs`). The deploy workflow's run for the push of that second parent to `staging` must have completed with success, and so must its staging deploy job. A re-run counts as its latest attempt. A staging deploy started by hand does not count.
+
+The steps, in order:
+
+1. See that staging's deploy of its tip is green (Actions, "Multi-Tier Cloudflare Deployment Safeguard", the run for the tip of `staging`). If it is still running when the release is merged, the production job fails at the staging deploy check; wait for staging, then use "Re-run failed jobs".
+2. Release by merging the pull request from `staging` into `main` with **Create a merge commit**. A squash merge, a rebase merge, a fast-forward push (`git push origin staging:main`) or a direct push fails condition (a) and deploys nothing.
+3. Merge nothing else into `main`. A pull request from any other branch (a dependency update, a hotfix) fails condition (c); it goes to `staging` first. Dependabot is pointed at `staging` in `.github/dependabot.yml`.
+4. **Leave `staging` alone from the moment the release pull request is merged until production is green.** A later change to `staging` no longer blocks a re-run, but a quiet staging keeps the two environments on the same code while the release is in flight, and the next release starts from a known state. Never force-push or rewrite `staging`: condition (c) reads its history.
+5. If the production job fails after "Apply D1 migrations", production has a new schema under old code. Fix the cause and use **Re-run failed jobs** on that same run. It passes both checks again as long as `main` has not moved, whatever has landed on `staging` since. If the migration itself must be undone, the bookmark printed just before it is the restore point.
+6. **When production is green, merge `main` back into `staging`:** open a pull request from `main` into `staging` and merge it with **Create a merge commit**. `main`'s protection requires a branch to be up to date before merging (`strict: true`), and each release leaves one merge commit on `main` that `staging` does not have, so without this step the next release pull request is "out of date" and cannot be merged. The back-merge changes no file. It lands on `staging` as a merge commit whose first parent is staging's previous tip, so staging's own line of history is kept.
+7. An older release cannot be deployed again once a newer one is on `main`: condition (d) refuses the stale run. To go back to older code use `wrangler rollback` (above), not this workflow.
+8. A manual run that names "production" from `main` goes through the same two checks. From any other ref it fails in the job "Refuse a production deploy from a ref other than main" and deploys nothing. A manual run that names "staging" deploys staging only, from whichever ref it was started on.
+9. One deploy per environment runs at a time. A run that has started is never cancelled; a newer one waits. If two are waiting, GitHub keeps only the newest.
+
+### What these checks do not cover
+
+- **A manual run uses the workflow file of the branch it is started from.** Until the `production` environment in GitHub holds the Cloudflare token itself, is restricted to the `main` branch and has a required reviewer, anyone who can push a branch can start a run from a copy of the workflow with the checks removed. Until then the checks are advisory against anyone with write access. This is a GitHub setting (Settings, Environments), not something this repository can fix.
+- **Cloudflare Workers Builds** is connected to this repository and builds on its own when `main` moves. If it is set to deploy, a commit this workflow refuses still goes live. Worker, Settings, Builds in the Cloudflare dashboard.
+- The checks stop a deploy. They do not stop a merge: keeping a wrong commit off `main` is the job of branch protection.
 
 ### Licence key count, before and after (plan rule 2.15)
 
