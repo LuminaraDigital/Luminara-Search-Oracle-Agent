@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TELEGRAM_MINI_APP_URL } from '../components/paywall/paymentOptions';
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { TelegramAccountPanel } from '../components/telegram/TelegramAccountPanel';
-import PricingPage from '../components/PricingPage';
+import PricingPage, { planChoiceLine } from '../components/PricingPage';
 import { PLANS } from '../worker/telegramBot';
 import { TON_PRICING } from '../worker/tonPayment';
 
@@ -131,7 +131,19 @@ describe('copy outside the paywall while TON and card checkout are closed', () =
       .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
       .join('\n');
     expect(text).not.toMatch(/Stars\s*(or|and|,|\/)\s*TON/i);
+    // Any sentence that names Stars and then TON within a few words, such as "Stars and website TON".
+    expect(text).not.toMatch(/Stars\b[^.\n]{0,24}\bTON\b/i);
     expect(text).not.toMatch(/TON (billing|can pay)/i);
     expect(text).not.toMatch(/Stripe plan/i);
+  });
+
+  it('the line the paywall opens with from a pricing card names TON only while TON checkout is open', () => {
+    const tier = { stars: '2,500 Stars', ton: '15 TON' };
+    expect(planChoiceLine('Starter', tier, false)).toBe('Choose Starter: 2,500 Stars inside the Mini App.');
+    expect(planChoiceLine('Starter', tier, true)).toBe('Choose Starter: 2,500 Stars inside the Mini App, or 15 TON on the web.');
+    // The page builds that line through the helper, with the same switch as the rest of its copy.
+    const source = readFileSync(resolve(__dirname, '..', 'components', 'PricingPage.tsx'), 'utf8');
+    expect(source).toContain('openPaywallModal(planChoiceLine(title, tier, tonOpen))');
+    expect(source).not.toMatch(/\$\{tier\.ton\} inside the Mini App/);
   });
 });
