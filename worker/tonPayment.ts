@@ -46,11 +46,21 @@ export const JETTON_PRICING: Record<string, { amount: number; units: string }> =
 };
 
 /**
- * Jetton (USDT / $LORA) checkout is live backed by the TEP-74 verifier in ./jettonSettlement.ts.
- * The verifier derives the merchant's canonical jetton wallet on-chain via get_wallet_address,
- * decodes transfer_notification (op 0x7362d096), checks exact memo match, and enforces decimals.
+ * Jetton (USDT / $LORA) checkout is OFF.
+ *
+ * It was switched on before spec 0018's condition was met (one real testnet USDT transfer credited
+ * end to end on staging), while the verifier looked for the wrong notification opcode, so a paid
+ * USDT order could never be credited. Turning it back on needs that staging credit, a review, and
+ * a change to `tests/moneyInvariants.test.ts` in the same pull request.
  */
-export const JETTON_CHECKOUT_LIVE = true;
+export const JETTON_CHECKOUT_LIVE = false;
+
+/**
+ * $LORA has its own switch. An empty master string must not be the only thing keeping it off
+ * (LORA rule J5: no LORA checkout before on-chain verification of real transfers is reviewed).
+ * LORA needs both switches on.
+ */
+export const LORA_CHECKOUT_LIVE = false;
 
 /** Empty string = not configured. Never ship invented addresses. */
 export const JETTON_MASTERS: Record<string, { USDT: string; LORA: string }> = {
@@ -229,6 +239,9 @@ export async function createTonInvoice(
     return { ok: false, error: 'Invalid asset. Use TON.' };
   }
   if (requestedAsset !== 'TON' && !JETTON_CHECKOUT_LIVE) {
+    return { ok: false, error: JETTON_UNAVAILABLE_ERROR };
+  }
+  if (requestedAsset === 'LORA' && !LORA_CHECKOUT_LIVE) {
     return { ok: false, error: JETTON_UNAVAILABLE_ERROR };
   }
 

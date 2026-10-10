@@ -64,8 +64,16 @@ function makeEnv() {
 const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
 
 describe('Jetton checkout fails closed', () => {
-  it('ships with Jetton checkout live backed by on-chain verifier', () => {
-    expect(JETTON_CHECKOUT_LIVE).toBe(true);
+  it('ships with Jetton checkout off until spec 0018 credits a real transfer on staging', () => {
+    expect(JETTON_CHECKOUT_LIVE).toBe(false);
+  });
+
+  it('refuses a USDT invoice while the switch is off, and stores no order', async () => {
+    const { env, kv } = makeEnv();
+    const inv = await createTonInvoice(env, 'user_1', 'starter', { asset: 'USDT' });
+    expect(inv.ok).toBe(false);
+    expect(inv.error).toBe(JETTON_UNAVAILABLE_ERROR);
+    expect(kv.store.size).toBe(0);
   });
 
   it('refuses unconfigured Jetton masters and stores no order', async () => {
