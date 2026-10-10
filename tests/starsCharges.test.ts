@@ -360,6 +360,17 @@ describe('a grant that fails', () => {
     expect(telegram.of('refundStarPayment')).toHaveLength(0);
   });
 
+  it('a charge the subscription already lists is never applied a second time, even with no claim on record', async () => {
+    const { env, kv, db } = makeEnv();
+    const expiresAt = Date.now() + 30 * DAY;
+    await kv.put(`sub:${PAYER}`, JSON.stringify({ plan: 'starter', chargeId: 'ch_listed', appliedCharges: ['ch_listed'], expiresAt }));
+    const outcome = await handleTelegramPaymentUpdate(paid('ch_listed'), env);
+    expect(outcome).toEqual({ status: 200, note: 'credited' });
+    expect(kv.json(`sub:${PAYER}`).expiresAt).toBe(expiresAt);
+    expect(rowOf(db, 'ch_listed').status).toBe('credited');
+    expect(telegram.of('refundStarPayment')).toHaveLength(0);
+  });
+
   it('a redelivery that finds the row refund_due grants nothing', async () => {
     const { env, kv, db } = makeEnv();
     kv.failPut = (key) => key.startsWith('sub:');
