@@ -1,16 +1,33 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TELEGRAM_MINI_APP_URL } from '../components/paywall/paymentOptions';
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { TelegramAccountPanel } from '../components/telegram/TelegramAccountPanel';
-import PricingPage from '../components/PricingPage';
+import PricingPage, { planChoiceLine } from '../components/PricingPage';
 import { PLANS } from '../worker/telegramBot';
 import { TON_PRICING } from '../worker/tonPayment';
+
+const state = vi.hoisted(() => ({
+  inTelegram: false,
+  health: { ok: true, ton: false, jettonCheckout: false, stripeCheckout: false, plans: {} } as Record<string, unknown>,
+}));
 
 vi.mock('@tonconnect/ui-react', () => ({
   TonConnectButton: () => null,
   useTonWallet: () => null,
+}));
+
+vi.mock('../services/telegram/tma', async (importActual) => ({
+  ...(await importActual<typeof import('../services/telegram/tma')>()),
+  isInTelegram: () => state.inTelegram,
+}));
+
+vi.mock('../services/apiClient', async (importActual) => ({
+  ...(await importActual<typeof import('../services/apiClient')>()),
+  getServerHealthSync: () => state.health,
 }));
 
 const noop = () => {};
@@ -28,8 +45,8 @@ describe('paid plan price mirror', () => {
 });
 
 describe('pricing page discoverability', () => {
-  it('shows the Mini App link, Stars and TON amounts, and unavailable card checkout', () => {
-    const html = renderToStaticMarkup(
+  const renderPricing = () =>
+    renderToStaticMarkup(
       createElement(PricingPage, {
         onBack: noop,
         onTerminal: noop,
@@ -38,6 +55,36 @@ describe('pricing page discoverability', () => {
         onNavigateWhy: noop,
       }),
     );
+
+  beforeEach(() => {
+    state.inTelegram = false;
+    state.health = { ok: true, ton: false, jettonCheckout: false, stripeCheckout: false, plans: {} };
+  });
+
+  it('names Stars alone, with no TON price, while TON checkout is closed', () => {
+    const html = renderPricing();
+    expect(html).toContain('Pay with Telegram Stars inside the Mini App.');
+    expect(html).toContain('2,500 Stars');
+    expect(html).not.toContain('15 TON');
+    expect(html).not.toContain('45 TON');
+    expect(html).not.toContain('120 TON');
+    expect(html).not.toMatch(/Stars (or|and) TON/);
+    expect(html).not.toContain('on TON');
+  });
+
+  it('never shows a TON price inside Telegram, whatever the server reports', () => {
+    state.inTelegram = true;
+    state.health = { ok: true, ton: true, jettonCheckout: true, stripeCheckout: true, plans: {} };
+    const html = renderPricing();
+    expect(html).not.toMatch(/\d+ TON/);
+    expect(html).not.toMatch(/Stars (or|and) TON/);
+    expect(html).not.toContain('with TON on the web');
+  });
+
+  it('shows the Mini App link, Stars and TON amounts, and unavailable card checkout once TON checkout is open', () => {
+    state.health = { ok: true, ton: true, jettonCheckout: false, stripeCheckout: false, plans: {} };
+    const html = renderPricing();
+    expect(html).toContain('Pay with Telegram Stars inside the Mini App, or with TON on the web.');
     expect(html).toContain(`href="${TELEGRAM_MINI_APP_URL}"`);
     expect(html).toContain('https://t.me/LuminaraSuiteBot/app');
     expect(html).toContain('Open Mini App in Telegram');
@@ -66,5 +113,37 @@ describe('Settings Telegram and TON section', () => {
     expect(html).toContain('Open Mini App in Telegram');
     expect(html).toContain('Card checkout is available on request');
     expect(html).toContain('Link Telegram and web account - shares subscription');
+  });
+});
+
+describe('copy outside the paywall while TON and card checkout are closed', () => {
+  // Static text cannot ask the server which rails are open, so it names Stars alone.
+  it.each([
+    'public/llms.txt',
+    'worker/crawlDocuments.ts',
+    'services/marketing/pageMeta.ts',
+    'components/settings/tabs/ApiKeyScrapingTab.tsx',
+    'services/scraping/siteEvidencePack.ts',
+    'components/auth/AuthPanel.tsx',
+  ])('%s does not tell a reader they can pay with TON or by card plan', (file) => {
+    const text = readFileSync(resolve(__dirname, '..', file), 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      .join('\n');
+    expect(text).not.toMatch(/Stars\s*(or|and|,|\/)\s*TON/i);
+    // Any sentence that names Stars and then TON within a few words, such as "Stars and website TON".
+    expect(text).not.toMatch(/Stars\b[^.\n]{0,24}\bTON\b/i);
+    expect(text).not.toMatch(/TON (billing|can pay)/i);
+    expect(text).not.toMatch(/Stripe plan/i);
+  });
+
+  it('the line the paywall opens with from a pricing card names TON only while TON checkout is open', () => {
+    const tier = { stars: '2,500 Stars', ton: '15 TON' };
+    expect(planChoiceLine('Starter', tier, false)).toBe('Choose Starter: 2,500 Stars inside the Mini App.');
+    expect(planChoiceLine('Starter', tier, true)).toBe('Choose Starter: 2,500 Stars inside the Mini App, or 15 TON on the web.');
+    // The page builds that line through the helper, with the same switch as the rest of its copy.
+    const source = readFileSync(resolve(__dirname, '..', 'components', 'PricingPage.tsx'), 'utf8');
+    expect(source).toContain('openPaywallModal(planChoiceLine(title, tier, tonOpen))');
+    expect(source).not.toMatch(/\$\{tier\.ton\} inside the Mini App/);
   });
 });

@@ -30,7 +30,7 @@ LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt pres
 
 ## Pricing (30 days)
 
-Published USD labels. Telegram Stars or TON can pay inside the app. Card checkout is not available yet.
+Published USD labels. Plans are paid with Telegram Stars inside the Telegram Mini App. Card checkout is not available yet.
 
 - Starter: US$49. Up to 2 sites. No MCP. No full public share links.
 - Growth: US$149. MCP, full share links, 3 seats, weekly re-audits.

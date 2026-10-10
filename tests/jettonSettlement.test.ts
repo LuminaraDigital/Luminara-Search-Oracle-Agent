@@ -69,6 +69,18 @@ describe('decodeJettonNotification', () => {
     expect(d!.sender).toBeNull();
   });
 
+  it('decodes a notification built from the TEP-74 literal, not from the Worker constant', () => {
+    // 0x7362d09c is what every standard jetton wallet sends (TEP-74; contracts/jetton/contracts/messages.tact).
+    const d = decodeJettonNotification(notificationBody({ amount: 79_000_000n, comment: MEMO, op: 0x7362d09c }));
+    expect(d).not.toBeNull();
+    expect(d!.amount).toBe(79_000_000n);
+    expect(d!.comment).toBe(MEMO);
+  });
+
+  it('rejects the old wrong opcode 0x7362d096, which no real transfer carries', () => {
+    expect(decodeJettonNotification(notificationBody({ amount: 79_000_000n, comment: MEMO, op: 0x7362d096 }))).toBeNull();
+  });
+
   it('rejects other opcodes and truncated cells', () => {
     expect(decodeJettonNotification(notificationBody({ amount: 1n, comment: MEMO, op: 0x0f8a7ea5 }))).toBeNull();
     expect(decodeJettonNotification(beginCell().storeUint(OP_JETTON_TRANSFER_NOTIFICATION, 32).endCell())).toBeNull();

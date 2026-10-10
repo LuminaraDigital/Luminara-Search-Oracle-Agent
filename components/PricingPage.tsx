@@ -7,10 +7,10 @@
 import { isInTelegram } from '../services/telegram/tma';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
 import React, { useEffect } from 'react';
-import { openPaywallModal } from '../services/apiClient';
+import { getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
-import { TELEGRAM_MINI_APP_URL } from './paywall/paymentOptions';
+import { TELEGRAM_MINI_APP_URL, isTonAvailable } from './paywall/paymentOptions';
 import { PAID_PLAN_PRICES, type PaidPlanId } from './paywall/planPrices';
 
 interface PricingPageProps {
@@ -51,6 +51,13 @@ export const pricingTiers: Array<{
   },
 ];
 
+/** The line the paywall opens with when a plan is chosen here. TON is named only while its checkout is open. */
+export function planChoiceLine(title: string, tier: { stars: string; ton: string }, tonOpen: boolean): string {
+  return tonOpen
+    ? `Choose ${title}: ${tier.stars} inside the Mini App, or ${tier.ton} on the web.`
+    : `Choose ${title}: ${tier.stars} inside the Mini App.`;
+}
+
 /** One-off runs sold by the Worker alongside the plans. */
 const ONE_OFFS = [
   { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit. Self-reported, not independently checked.' },
@@ -78,6 +85,12 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
   }, []);
 
   const inTelegram = isInTelegram();
+  // TON is paid on the web with a connected wallet, never inside Telegram, and only while the
+  // Worker reports that checkout open. Until then this page names Stars alone.
+  const tonOpen = !inTelegram && isTonAvailable(getServerHealthSync());
+  const payLine = tonOpen
+    ? 'Pay with Telegram Stars inside the Mini App, or with TON on the web.'
+    : 'Pay with Telegram Stars inside the Mini App.';
   const free = PLAN_ENTITLEMENTS.free;
   const miniAppLinkProps = inTelegram
     ? { rel: 'noopener noreferrer' as const }
@@ -96,13 +109,13 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           and client workspaces.
         </p>
         <p className="mkt-body mb-8">
-          Every paid plan runs 30 days. Pay with Telegram Stars or TON inside the Mini App. USD amounts are
+          Every paid plan runs 30 days. {payLine} USD amounts are
           list prices; card checkout is available on request during closed beta.
         </p>
         <div className="mb-8 border border-[var(--color-rule)] bg-[var(--color-paper)]/70 p-5 sm:p-6">
           <p className="mkt-eyebrow mb-3">How to pay</p>
           <p className="mkt-body mb-4">
-            Open the Mini App to pay with Telegram Stars or TON. For card payments or corporate invoicing,
+            Open the Mini App to pay with Telegram Stars.{tonOpen ? ' TON is paid here on the web, from the payment panel.' : ''} For card payments or corporate invoicing,
             email support@luminarasuite.com.
           </p>
           <div className="flex flex-wrap gap-3">
@@ -111,7 +124,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
             </a>
             <button
               type="button"
-              onClick={() => openPaywallModal('Pay with Telegram Stars or TON inside the Mini App.')}
+              onClick={() => openPaywallModal(payLine)}
               className="mkt-cta-secondary"
             >
               See payment options
@@ -144,8 +157,10 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
               </p>
               <p className="text-[13px] font-mono text-[var(--color-ink-2)] mb-5">
                 {inTelegram
-                  ? `or ${tier.ton} / 30 days · list ${tier.priceLabel}`
-                  : `or ${tier.stars} in Telegram · ${tier.ton} on TON`}
+                  ? `30 days · list ${tier.priceLabel}`
+                  : tonOpen
+                    ? `or ${tier.stars} in Telegram · ${tier.ton} on TON`
+                    : `or ${tier.stars} in Telegram`}
               </p>
               <p className="mkt-body mb-6">{tier.blurb}</p>
               <ul className="space-y-2.5 flex-1 mb-8">
@@ -161,9 +176,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
               <button
                 type="button"
                 onClick={() =>
-                  openPaywallModal(
-                    `Choose ${title}: ${tier.stars} or ${tier.ton} inside the Mini App.`,
-                  )
+                  openPaywallModal(planChoiceLine(title, tier, tonOpen))
                 }
                 className={`w-full ${tier.highlight ? 'mkt-cta-primary' : 'mkt-cta-secondary'}`}
               >
@@ -199,7 +212,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           How payment works
         </h2>
         <p className="mkt-body mb-8">
-          Stars and TON checkout runs inside the Luminara Mini App in Telegram. On the web, the payment panel
+          Stars checkout runs inside the Luminara Mini App in Telegram.{tonOpen ? ' TON checkout runs here on the web, with a connected wallet.' : ''} On the web, the payment panel
           opens Telegram for you, or takes a license key. Card checkout is available on request during closed
           beta: for card payments or corporate invoicing, email support@luminarasuite.com.
         </p>
@@ -209,7 +222,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           <div className="space-y-4">
             <button
               type="button"
-              onClick={() => openPaywallModal('Pay with Telegram Stars or TON inside the Mini App.')}
+              onClick={() => openPaywallModal(payLine)}
               className="mkt-cta-primary w-full sm:w-auto"
             >
               See payment options
@@ -218,7 +231,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           </div>
         )}
         <p className="text-[var(--color-ink-2)] text-[13px] mt-6">
-          Pay in the Mini App with Stars or TON. Plans run for 30 days. Plan limits apply per account. Credit card checkout is available on request during closed beta.
+          {payLine} Plans run for 30 days. Plan limits apply per account. Credit card checkout is available on request during closed beta.
         </p>
       </section>
     </MarketingPageShell>

@@ -108,15 +108,29 @@ and the SPA asset fallback:
 
 - `worker/jettonSettlement.ts` credits a jetton payment only when the inbound message source
   equals the merchant's jetton wallet, derived from `get_wallet_address(owner)` on the configured
-  master. The body must decode as `transfer_notification` (`0x7362d096`) with amount >= price, and
+  master. The body must decode as `transfer_notification` (`0x7362d09c`, TEP-74) with amount >= price, and
   its forward comment must equal the order memo exactly.
 - A memo in a plain TON comment is never proof of a jetton payment.
 - Indexer wallet listings are never trusted for ownership. If the two providers disagree on the
   derived wallet, the check fails closed.
 - Price jetton units per asset with `jettonPriceUnits`; never reuse one asset's unit string.
 - Each tx hash is still claimed once in D1 (`paymentLedger`).
-- `JETTON_CHECKOUT_LIVE` stays false until `verifyTonPayment` routes jetton orders through
-  `findMatchingJettonPayment` and that path is tested.
+- `JETTON_CHECKOUT_LIVE` is false. It goes back on only after one real testnet USDT transfer has been
+  credited end to end on staging (spec 0018), with a review, and with `tests/moneyInvariants.test.ts`
+  changed in the same pull request. `LORA_CHECKOUT_LIVE` is a second, separate switch for $LORA.
+
+## Payment rail invariants (pinned in `tests/moneyInvariants.test.ts`)
+
+- **Inside Telegram the only rail is Stars.** `POST /ton/invoice` refuses a request that carries
+  Telegram init data and any caller whose identity came from Telegram. The paywall draws no TON
+  tab, no Jetton selector, no card tab and no "email us" line there.
+- **TON checkout is open only for an address the owner has confirmed.** `TON_CONFIRMED_ADDRESS`
+  must equal `TON_RECEIVING_ADDRESS`. Until it does, no invoice is issued and public
+  `/health` reports `ton: false`. Orders that already exist can still be verified.
+- **Q402 is off, and while it is off every `/q402/*` path is a 404**, including discovery.
+- **The Stripe card rail is off** (`STRIPE_CHECKOUT_LIVE`) until its own review.
+- Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
+  catalogue: title, description, price in Stars, days). Nothing else.
 
 ## Stubbed vs live status
 

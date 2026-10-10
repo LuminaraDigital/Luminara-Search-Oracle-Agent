@@ -107,7 +107,7 @@ export const ApiKeyScrapingTab: React.FC<ApiKeyScrapingTabProps> = ({
         </div>
         <p className="text-[10px] text-gray-400">
           Smart mode discovers URLs via Firecrawl /map or homepage links, then scrapes a budgeted mix of about, product, FAQ, and location pages.
-          Deep crawl uses hosted Firecrawl /crawl (Stars, TON, or Stripe plan) or your own Firecrawl key. Hosted crawls are capped for cost control.
+          Deep crawl uses hosted Firecrawl /crawl (any paid plan) or your own Firecrawl key. Hosted crawls are capped for cost control.
         </p>
       </div>
 

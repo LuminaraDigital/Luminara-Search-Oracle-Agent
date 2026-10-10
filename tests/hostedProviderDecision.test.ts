@@ -130,6 +130,40 @@ describe('hostedProviderDecisionReason', () => {
     expect(api.formatInstantAuditProviderSummary()).toBe('Page fetch: hosted Firecrawl · Search: hosted Tavily');
   });
 
+  it('keeps hosted keys on when public health carries no provider inventory', async () => {
+    // What production's public /api/health actually returns: rail booleans and the plan
+    // catalogue, and no `providers` field. Absent must not be read as "nothing is configured".
+    const publicHealth = {
+      ok: true,
+      ton: false,
+      jettonCheckout: false,
+      stripeCheckout: false,
+      plans: { starter: { title: 'Starter', description: 'd', stars: 2500, days: 30 } },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(publicHealth)));
+    authState.currentUser = { getIdToken: async () => 'firebase-test-token' };
+    const { api, auth } = await loadApi();
+    await auth.ensureFirebaseIdTokenCached();
+    const committed = await api.loadServerHealth();
+    expect(committed.ok).toBe(true);
+    expect('providers' in committed).toBe(false);
+    expect(committed.plans).toEqual(publicHealth.plans);
+    for (const id of ['groq', 'tavily', 'firecrawl']) {
+      expect(api.isProviderConfiguredOnServer(id)).toBe(true);
+      expect(api.canUseHostedProviderKey(id)).toBe(true);
+    }
+    expect(api.hostedProviderDecisionReason('groq')).toBe('hosted');
+  });
+
+  it('fills in an empty plan list, and only that, when public health carries none', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ok: true })));
+    const { api } = await loadApi();
+    const committed = await api.loadServerHealth();
+    expect(committed.plans).toEqual({});
+    expect('providers' in committed).toBe(false);
+    expect(api.isProviderConfiguredOnServer('groq')).toBe(true);
+  });
+
   it('returns no_health when the health cache is not ok', async () => {
     const { api } = await loadApi();
     await api.loadServerHealth();
