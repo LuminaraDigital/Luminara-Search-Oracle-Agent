@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { postDailyCheckin } from '../../services/referrals/referralClient';
+import { postDailyCheckin, streakCardVisible } from '../../services/referrals/referralClient';
 
 interface DailyStreakCardProps {
   domain: string;
@@ -29,16 +29,16 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
   });
 
   // The card exists only while the server offers the daily check-in. Nothing is drawn until that
-  // call has answered, and nothing at all when the answer is that the check-in does not exist, so
-  // with points switched off the card never appears. A guest, or a call that fails, sees the card
-  // as before.
+  // call has answered, and it is drawn only for the two answers streakCardVisible accepts: the
+  // check-in worked, or a guest was asked to sign in. With points switched off the answer is 404,
+  // so the card never appears. A rate limit, a server error or a call that fails also hides it.
   const [available, setAvailable] = useState(false);
 
   useEffect(() => {
     let unmounted = false;
     postDailyCheckin()
       .then((res) => {
-        if (!unmounted) setAvailable(!res.unavailable);
+        if (!unmounted) setAvailable(streakCardVisible(res));
         if (!unmounted && res.ok && typeof res.streakDays === 'number') {
           setStreakDays(res.streakDays);
           try {
@@ -49,7 +49,7 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
         }
       })
       .catch(() => {
-        if (!unmounted) setAvailable(true);
+        if (!unmounted) setAvailable(false);
       });
 
     return () => {
