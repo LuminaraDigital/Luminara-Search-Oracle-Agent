@@ -40,6 +40,7 @@ import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, TON_PRICING
 import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE, Q402_NOT_LIVE_ERROR } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
+import { fetchVerifiedContract } from './chain/evmExplorer';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
@@ -359,6 +360,26 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       return withCors(json({ error: 'Method not allowed' }, 405));
     }
     return withCors(desktopLatestJson(env));
+  }
+
+  if (path === '/chain/contract') {
+    if (request.method !== 'GET') {
+      return withCors(json({ ok: false, error: 'Method not allowed' }, 405));
+    }
+    const chainIdParam = url.searchParams.get('chainId');
+    const addressParam = url.searchParams.get('address');
+    if (!chainIdParam || !addressParam) {
+      return withCors(json({ ok: false, error: 'Missing required query parameters: chainId, address' }, 400));
+    }
+    const chainId = parseInt(chainIdParam, 10);
+    if (isNaN(chainId)) {
+      return withCors(json({ ok: false, error: 'Invalid chainId parameter' }, 400));
+    }
+    const contractResult = await fetchVerifiedContract(chainId, addressParam, env);
+    if (!contractResult.ok) {
+      return withCors(json({ ok: false, error: contractResult.error }, contractResult.status));
+    }
+    return withCors(json({ ok: true, data: contractResult.data }));
   }
 
   if (path === '/auth/session') {

@@ -63,11 +63,13 @@ Kill: copy that says unlimited with a hidden cap; a limit message in a unit the 
 
 ### 3.3 CC5 additions (instrumentation)
 
-**Live bug first.** The client union `TelemetryEventType` (`services/analytics/productTelemetry.ts`) now includes `probe_completed`, `signup_completed`, `paywall_viewed` and `payment_completed`. The Worker's `ALLOWED_TYPES` (`worker/productAnalytics.ts`) has none of them, and `ingestProductAnalytics` skips any unlisted type. So those events are emitted and silently discarded. Add them to the allow-list, with a test that every client event type is either allow-listed or listed as client-only.
+**Done in tree, uncommitted at the time of writing:**
 
-**Naming bug.** `components/paywall/PaywallModal.tsx` fires `payment_completed` with `status: 'initiated'` when checkout starts. A name that says "completed" for an initiated checkout will overcount payers. Rename it `checkout_started` and write `payment_completed` only from the Worker at the payment claim (Stripe webhook, Stars, TON), where it is true.
+- The allow-list drop is fixed. `c0e5389` added `probe_completed`, `signup_completed`, `paywall_viewed` and `checkout_started` to `ALLOWED_TYPES` in `worker/productAnalytics.ts`, and the `PaywallModal.tsx` start-of-checkout event is now `checkout_started`.
+- `tests/productAnalyticsParity.test.ts` fails if a client event type is missing from `ALLOWED_TYPES`, which is how the original silent drop happened.
+- `payment_completed` is now server-only. The browser could post it with `status: 'confirmed'` and the Worker stored it, so anyone could inflate the free-to-paid number. It is off the allow-list, the three browser emits are removed, and `writeSubscriptionRecord` (`worker/userStore.ts`) now writes it through `worker/paymentAnalytics.ts` after each rail's idempotent claim. The event id is a hash of the payment reference, because license order ids embed the key. Payload is plan and rail only. `rail = license_key` covers comp and invoice grants, so paid-cohort queries must exclude it. Tests: `tests/paymentAnalytics.test.ts`.
 
-**Still missing:** `checkout_started{rail}`, server-side `payment_completed{plan,rail}`, `fix_shipped`, `mission_completed{mission}`, `plan_expired`, and a `survey_answered` Sean Ellis question after week two. Use the existing `paywall_viewed`, not the study's `paywall_shown`. Add a durable guest id to replace the timestamp `sessionId` so Probe, signup and payment link. Add a weekly cohort query (signed-in accounts with a `session_started` in week N+1) as a SQL view or admin page.
+**Still missing:** `fix_shipped`, `mission_completed{mission}`, `plan_expired`, and a `survey_answered` Sean Ellis question after week two. Use the existing `paywall_viewed`, not the study's `paywall_shown`. Add a durable guest id to replace the timestamp `sessionId` so Probe, signup and payment link. Add a weekly cohort query (signed-in accounts with a `session_started` in week N+1) as a SQL view or admin page.
 
 ### 3.4 CC2 additions
 

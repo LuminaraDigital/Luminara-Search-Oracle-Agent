@@ -152,7 +152,6 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       haptic(status === 'paid' ? 'success' : 'light');
 
       if (status === 'paid') {
-        productTelemetry.track('payment_completed', { planId, method: 'stars', status: 'confirmed' });
         setIsSuccess(true);
         setStatusMessage('Payment received! Activating your subscription…');
         for (let i = 0; i < 6; i++) {
@@ -185,7 +184,6 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     try {
       const res = await executeTonPayment(tonConnectUI, planId, msg => setStatusMessage(msg));
       if (res.ok) {
-        productTelemetry.track('payment_completed', { planId, method: 'ton', status: 'confirmed' });
         haptic('success');
         setIsSuccess(true);
         setStatusMessage('TON payment confirmed! Subscription is now active.');
@@ -217,7 +215,6 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         msg => setStatusMessage(msg),
       );
       if (res.ok) {
-        productTelemetry.track('payment_completed', { planId, method: asset.toLowerCase(), status: 'confirmed' });
         haptic('success');
         setIsSuccess(true);
         setStatusMessage(`${asset} Jetton payment confirmed! Subscription is now active.`);

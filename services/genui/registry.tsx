@@ -7,6 +7,9 @@ import { ShipActionGate } from '../../components/audit/ShipActionGate';
 import { ShareOfVoiceCard } from '../../components/audit/ShareOfVoiceCard';
 import { MetricBadge } from './components/MetricBadge';
 import { ActionCard } from './components/ActionCard';
+import { Web3DeployCard } from './components/web3/Web3DeployCard';
+import { ContractAuditCard } from './components/web3/ContractAuditCard';
+import { Web3MethodCard } from './components/web3/Web3MethodCard';
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 
 const DEFAULT_RADAR_HEADERS = [
@@ -186,5 +189,24 @@ export const LUMINARA_GENUI_REGISTRY: ComponentRegistry = {
     },
     signature: 'ShareOfVoiceCard(brandName: string, distribution: [string, number][])',
     description: 'Share of voice comparison card showing brand vs rival citation coverage.',
+  },
+
+  // Conversational Web3 Action Cards
+  Web3DeployCard: {
+    component: Web3DeployCard,
+    signature: 'Web3DeployCard(name: string, network: string, supply: string, gasEstimate: string, action?: Action, buttonLabel?: string)',
+    description: '1-click smart contract deployment card with simulated gas and network target.',
+  },
+
+  ContractAuditCard: {
+    component: ContractAuditCard,
+    signature: 'ContractAuditCard(address: string, network: string, score: string, findings: [string, string, string][], action?: Action)',
+    description: 'Deconstructed smart contract safety audit with plain English findings and verified explorer link.',
+  },
+
+  Web3MethodCard: {
+    component: Web3MethodCard,
+    signature: 'Web3MethodCard(methodName: string, contractName: string, address: string, feeEstimate: string, action?: Action)',
+    description: 'Conversational method execution card for calling smart contracts with dry-run pre-simulation.',
   },
 };

@@ -55,6 +55,21 @@ export const GENUI_COMPONENTS_SPEC: Record<string, GenUISchemaDef> = {
     signature: 'ShareOfVoiceCard(brandName: string, distribution: [string, number][])',
     description: 'Share of voice comparison card showing brand vs rival citation coverage.',
   },
+  Web3DeployCard: {
+    name: 'Web3DeployCard',
+    signature: 'Web3DeployCard(name: string, network: string, supply: string, gasEstimate: string, action?: Action, buttonLabel?: string)',
+    description: '1-click smart contract deployment card with simulated gas and network target.',
+  },
+  ContractAuditCard: {
+    name: 'ContractAuditCard',
+    signature: 'ContractAuditCard(address: string, network: string, score: string, findings: [string, string, string][], action?: Action)',
+    description: 'Deconstructed smart contract safety audit with plain English findings and verified explorer link.',
+  },
+  Web3MethodCard: {
+    name: 'Web3MethodCard',
+    signature: 'Web3MethodCard(methodName: string, contractName: string, address: string, feeEstimate: string, action?: Action)',
+    description: 'Conversational method execution card for calling smart contracts with dry-run pre-simulation.',
+  },
 };
 
 export function generateGenUISystemPrompt(): string {

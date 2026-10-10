@@ -21,7 +21,6 @@ export type TelemetryEventType =
   | 'instant_audit_completed'
   | 'paywall_viewed'
   | 'checkout_started'
-  | 'payment_completed'
   | 'strategy_saved'
   | 'share_cta_clicked'
   | 'share_link_created'

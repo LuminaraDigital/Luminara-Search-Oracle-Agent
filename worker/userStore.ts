@@ -3,6 +3,7 @@
  * Prefers Cloudflare D1 when bound; falls back to KV so local tests still work.
  */
 import type { HostedIdentity, EncryptedKeyBag } from './userTypes';
+import { recordPaymentCompleted } from './paymentAnalytics';
 
 export type UserStoreEnv = {
   DB?: D1Database;
@@ -244,6 +245,7 @@ export async function writeSubscriptionRecord(
   if (accountId !== String(loginUserId)) {
     await env.LUMINARA_KV.put(`sub:${loginUserId}`, body);
   }
+  await recordPaymentCompleted(env, accountId, record);
   return { accountId };
 }
 
