@@ -183,7 +183,7 @@ Gating is configured in `wrangler.jsonc` vars: `REQUIRE_TG_AUTH` (hosted keys ne
 ### Firebase Auth setup (web signup / signin)
 
 1. Create a Firebase project and enable **Authentication** → Email/Password (and optionally Google).
-2. Register a Web app; copy the config into `.env` as `VITE_FIREBASE_*` (or use `services/auth/firebasePublicConfig.ts`).
+2. Register a Web app; copy the config into `.env` as `VITE_FIREBASE_*` for local development. A production build (`vite build`) ignores `VITE_FIREBASE_*` and signs in with the values in `services/auth/firebasePublicConfig.ts` only, so a deployment of your own puts its config there.
 3. Set the same project id on the Worker: `FIREBASE_PROJECT_ID` in `wrangler.jsonc`.
 4. Under Authentication → Settings → Authorized domains, add `luminarasuite.com`, `www.luminarasuite.com`, and `localhost`.
 5. **Web:** Settings → Account for email/password or Google. Product tools require this sign-in.

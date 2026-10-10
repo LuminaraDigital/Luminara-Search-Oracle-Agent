@@ -92,8 +92,32 @@ describe('the Firebase web config a build signs in with', () => {
     expect(resolveFirebaseWebConfig({ MODE: 'development' })?.projectId).toBe('luminara-suite');
   });
 
-  it('a production build still lets each value be overridden', () => {
-    expect(resolveFirebaseWebConfig({ MODE: 'production', VITE_FIREBASE_PROJECT_ID: 'other' })?.projectId).toBe('other');
+  const PRODUCTION_CONFIG = {
+    apiKey: FIREBASE_PUBLIC_CONFIG.apiKey,
+    authDomain: FIREBASE_PUBLIC_CONFIG.authDomain,
+    projectId: FIREBASE_PUBLIC_CONFIG.projectId,
+    appId: FIREBASE_PUBLIC_CONFIG.appId,
+    messagingSenderId: FIREBASE_PUBLIC_CONFIG.messagingSenderId,
+    storageBucket: FIREBASE_PUBLIC_CONFIG.storageBucket,
+  };
+
+  it('a production build ignores every override: staging values left in its env still give the production config', () => {
+    const stagingValuesEverywhere = {
+      ...STAGING,
+      VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000',
+      VITE_FIREBASE_STORAGE_BUCKET: 'luminara-suite-staging.firebasestorage.app',
+      MODE: 'production',
+    };
+    expect(resolveFirebaseWebConfig(stagingValuesEverywhere)).toEqual(PRODUCTION_CONFIG);
+    for (const name of Object.keys(stagingValuesEverywhere).filter((key) => key !== 'MODE')) {
+      expect(resolveFirebaseWebConfig({ MODE: 'production', [name]: 'left-over-value' }), name).toEqual(PRODUCTION_CONFIG);
+    }
+    expect(resolveFirebaseWebConfig({ MODE: ' production ', VITE_FIREBASE_PROJECT_ID: 'other' })).toEqual(PRODUCTION_CONFIG);
+  });
+
+  it.each(['development', 'test', undefined])('a %s build keeps its overrides', (mode) => {
+    const env = { MODE: mode, VITE_FIREBASE_PROJECT_ID: 'other', VITE_FIREBASE_STORAGE_BUCKET: 'other.example' };
+    expect(resolveFirebaseWebConfig(env)).toEqual({ ...PRODUCTION_CONFIG, projectId: 'other', storageBucket: 'other.example' });
   });
 
   it('a staging build with its own values signs in against the staging project', () => {
@@ -130,6 +154,29 @@ describe('the Firebase web config a build signs in with', () => {
     expect(resolveFirebaseWebConfig({ ...STAGING, VITE_FIREBASE_PROJECT_ID: ` ${FIREBASE_PUBLIC_CONFIG.projectId} ` })).toBeNull();
     // The same values are what a production build is meant to use.
     expect(resolveFirebaseWebConfig({ ...leaked, MODE: 'production' })?.projectId).toBe(FIREBASE_PUBLIC_CONFIG.projectId);
+  });
+
+  it.each([
+    ['VITE_FIREBASE_API_KEY', FIREBASE_PUBLIC_CONFIG.apiKey],
+    ['VITE_FIREBASE_AUTH_DOMAIN', FIREBASE_PUBLIC_CONFIG.authDomain],
+    ['VITE_FIREBASE_PROJECT_ID', FIREBASE_PUBLIC_CONFIG.projectId],
+    ['VITE_FIREBASE_APP_ID', FIREBASE_PUBLIC_CONFIG.appId],
+  ])('a staging build whose %s is the production value is not configured, whatever the other three are', (name, productionValue) => {
+    expect(resolveFirebaseWebConfig(STAGING)).not.toBeNull();
+    expect(resolveFirebaseWebConfig({ ...STAGING, [name]: productionValue })).toBeNull();
+    expect(resolveFirebaseWebConfig({ ...STAGING, [name]: ` ${productionValue.toUpperCase()} ` })).toBeNull();
+    // Outside staging the same mix is an ordinary local override.
+    expect(resolveFirebaseWebConfig({ ...STAGING, MODE: 'development', [name]: productionValue })).not.toBeNull();
+  });
+
+  it('the staging Worker is not given the production web API key', () => {
+    const wrangler = parseJsonc(readFileSync(resolve(root, 'wrangler.jsonc'), 'utf8')) as any;
+    const productionKey = wrangler.env.production.vars.FIREBASE_WEB_API_KEY;
+    expect(productionKey).toBe(FIREBASE_PUBLIC_CONFIG.apiKey);
+    // A plain variable in the file, empty until the owner sets the staging key.
+    const stagingKey = wrangler.env.staging.vars.FIREBASE_WEB_API_KEY;
+    expect(typeof stagingKey).toBe('string');
+    expect(String(stagingKey).trim().toLowerCase()).not.toBe(String(productionKey).toLowerCase());
   });
 
   describe('the sign-in service', () => {
@@ -378,6 +425,38 @@ describe('the Telegram setup script', () => {
     expect(betweenGetMeAndWebhook.indexOf('process.exit(1)')).toBeLessThan(betweenGetMeAndWebhook.indexOf('Matched bot'));
   });
 
+  it('stops before the webhook is set unless the bot and the site are the same environment', () => {
+    const matchedAt = script.indexOf('console.log(`Matched bot: @${botUsername}`);');
+    const afterNameCheck = script.slice(matchedAt, setWebhookAt);
+    expect(matchedAt).toBeGreaterThan(getMeAt);
+    expect(setWebhookAt).toBeGreaterThan(matchedAt);
+
+    // The site is the whole origin as new URL() reads it, compared for equality, never by a prefix.
+    expect(script.slice(0, getMeAt)).toContain('const origin = new URL(WEBAPP_URL).origin;');
+    expect(afterNameCheck).toContain("const PRODUCTION_BOT = 'luminarasuitebot';");
+    expect(afterNameCheck).toContain("const PRODUCTION_ORIGIN = 'https://luminarasuite.com';");
+    expect(afterNameCheck).toContain('const productionBot = botUsername.toLowerCase() === PRODUCTION_BOT;');
+    expect(afterNameCheck).toContain('const productionOrigin = origin === PRODUCTION_ORIGIN;');
+    expect(script).not.toMatch(/startsWith|endsWith|\.includes\(|\.indexOf\(|\.match\(/);
+
+    // Both production, or neither: one without the other stops, and the message names the bot and the site.
+    const stop = /if \(productionBot !== productionOrigin\) \{\n([\s\S]*?)process\.exit\(1\);\n\}\n/.exec(afterNameCheck);
+    expect(stop).not.toBeNull();
+    const messages = stop![1]!.split('\n').filter((line) => line.includes('Nothing was changed.'));
+    expect(messages).toHaveLength(2);
+    for (const message of messages) {
+      expect(message).toContain('@${botUsername}');
+      expect(message).toContain('${origin}');
+    }
+
+    // Then it says what it is about to do, and only then does it.
+    const announce = 'console.log(`About to point @${botUsername} at ${origin}`);';
+    expect(afterNameCheck.indexOf(announce)).toBeGreaterThan(stop!.index);
+    expect(afterNameCheck.slice(afterNameCheck.indexOf(announce) + announce.length).trim()).toBe('');
+    // The webhook goes to that same origin.
+    expect(script.slice(setWebhookAt)).toContain('url: `${origin}/api/telegram/webhook`,');
+  });
+
   it('keeps pending updates unless told otherwise, because one of them can be a paid update', () => {
     expect(script).not.toMatch(/drop_pending_updates:\s*true/);
     expect(script).toContain("drop_pending_updates: process.env.DROP_PENDING_UPDATES === 'true'");
@@ -389,14 +468,31 @@ describe('the staging runbook', () => {
   const runbook = readFileSync(resolve(root, 'docs', 'runbooks', 'staging-sign-in-and-bot.md'), 'utf8').replace(/\r\n/g, '\n');
 
   it('names the bot it expects on every run of the setup script, in bash and in PowerShell', () => {
-    const runs = runbook.split('\n').filter((line) => line.includes('node scripts/telegram-setup.mjs') && line.includes('BOT_TOKEN='));
-    expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatch(/^EXPECT_BOT_USERNAME=<[^>]+> BOT_TOKEN=/);
+    const runs = runbook.split('\n').filter((line) => line.endsWith('node scripts/telegram-setup.mjs'));
+    expect(runs).toEqual([
+      'EXPECT_BOT_USERNAME=<staging bot username> WEBAPP_URL=https://staging.luminarasuite.com/ node scripts/telegram-setup.mjs',
+      'node scripts/telegram-setup.mjs',
+    ]);
     const powershell = /```powershell\n([\s\S]*?)```/.exec(runbook)?.[1] ?? '';
-    expect(powershell).toContain("$env:EXPECT_BOT_USERNAME = '");
-    expect(powershell).toContain("$env:BOT_TOKEN = '");
+    expect(powershell).toContain("$env:EXPECT_BOT_USERNAME = '<staging bot username>'");
+    expect(powershell).toContain("$env:WEBAPP_URL = 'https://staging.luminarasuite.com/'");
     expect(powershell.trimEnd().split('\n').pop()).toBe('node scripts/telegram-setup.mjs');
-    expect(runbook).toContain('stays in the shell');
+  });
+
+  it('reads the token and the webhook secret at a prompt, so neither is saved to shell history', () => {
+    // No assignment of either secret on a command line, in either shell.
+    expect(runbook).not.toMatch(/\b(BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET)=\S/);
+    expect(runbook).not.toMatch(/\$env:(BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET) = ['"]/);
+    expect(runbook).toContain('read -rs BOT_TOKEN && export BOT_TOKEN');
+    expect(runbook).toContain('read -rs TELEGRAM_WEBHOOK_SECRET && export TELEGRAM_WEBHOOK_SECRET');
+    expect(runbook).toContain('$env:BOT_TOKEN = Read-Host "Paste the STAGING bot token"');
+    expect(runbook).toContain('$env:TELEGRAM_WEBHOOK_SECRET = Read-Host "Paste the STAGING webhook secret"');
+    expect(runbook).toContain('closing the window does not clear that file');
+  });
+
+  it('says what the setup script still cannot catch', () => {
+    expect(runbook).toContain('The production bot goes only with `https://luminarasuite.com`.');
+    expect(runbook).toContain('It cannot tell a mistake from intent when the name, the token and `WEBAPP_URL` are all production');
   });
 
   it('tells the owner to set the staging Firebase web API key the Worker signs in with', () => {

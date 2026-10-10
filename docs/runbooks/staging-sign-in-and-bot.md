@@ -52,35 +52,46 @@ Then set two values in `wrangler.jsonc`, staging `vars`. That is one pull reques
 | Variable | Value |
 |---|---|
 | `TELEGRAM_MINI_APP_URL` | the Worker's own link to the staging bot: the same link as the GitHub variable |
-| `FIREBASE_WEB_API_KEY` | the staging Firebase web API key from step 1: the same value as `VITE_FIREBASE_API_KEY`. It is a public value, not a secret |
+| `FIREBASE_WEB_API_KEY` | the staging Firebase web API key from step 1: the same value as `VITE_FIREBASE_API_KEY`. It is a public value, not a secret. It must not be the production key; a test fails if it is |
 
 Email sign-in and sign-up go through the Worker, and the Worker answers 503 to both while `FIREBASE_WEB_API_KEY` is empty.
 
 ## 5. Point the staging bot at the staging Worker
 
-From the same fresh terminal, with the staging values only. `EXPECT_BOT_USERNAME` is the staging bot's username, with or without the `@`. The script asks Telegram which bot the token belongs to before it changes anything, and stops if that is not the bot you named.
+From the same fresh terminal, with the staging values only. `EXPECT_BOT_USERNAME` is the staging bot's username, with or without the `@`. The script makes two checks before it changes anything:
 
-A value typed on a command line stays in the shell's history. That includes the bot token below. Clear it afterwards, or revoke the token in @BotFather and set the new one if the history may have been read.
+- It asks Telegram which bot the token belongs to, and stops if that is not the bot you named.
+- It stops unless the bot and the site belong together. The production bot goes only with `https://luminarasuite.com`. Any other bot goes only with another site. A `WEBAPP_URL` left over from the other environment stops the run.
 
-bash:
+The token and the webhook secret are read at a prompt, never typed on a command line. The shell saves command lines to a history file, and closing the window does not clear that file.
+
+bash. Each `read` waits without showing what you paste; paste the value and press Enter:
 
 ```bash
-EXPECT_BOT_USERNAME=<staging bot username> BOT_TOKEN=<staging bot token> TELEGRAM_WEBHOOK_SECRET=<the staging value> WEBAPP_URL=https://staging.luminarasuite.com/ node scripts/telegram-setup.mjs
+read -rs BOT_TOKEN && export BOT_TOKEN
 ```
 
-PowerShell (Windows). An inline `VAR=value command` does not work there; set each value on its own line first:
+```bash
+read -rs TELEGRAM_WEBHOOK_SECRET && export TELEGRAM_WEBHOOK_SECRET
+```
+
+```bash
+EXPECT_BOT_USERNAME=<staging bot username> WEBAPP_URL=https://staging.luminarasuite.com/ node scripts/telegram-setup.mjs
+```
+
+PowerShell (Windows). An inline `VAR=value command` does not work there; set each value on its own line. `Read-Host` asks for the value, so it is not part of a command line:
 
 ```powershell
+$env:BOT_TOKEN = Read-Host "Paste the STAGING bot token"
+$env:TELEGRAM_WEBHOOK_SECRET = Read-Host "Paste the STAGING webhook secret"
 $env:EXPECT_BOT_USERNAME = '<staging bot username>'
-$env:BOT_TOKEN = '<staging bot token>'
-$env:TELEGRAM_WEBHOOK_SECRET = '<the staging value>'
 $env:WEBAPP_URL = 'https://staging.luminarasuite.com/'
 node scripts/telegram-setup.mjs
 ```
 
-In PowerShell the four values stay set in that window until it is closed. Close the window when you are done.
+In both shells the values stay set in that window until it is closed. Close the window when you are done.
 
-The script prints `Matched bot: @<username>` before it sets the webhook. If the token belongs to a different bot it prints which one, changes nothing, and exits with an error. It keeps pending updates unless `DROP_PENDING_UPDATES=true` is set.
+The script prints `Matched bot: @<username>`, then `About to point @<username> at <site>`, and only then sets the webhook. If either check fails it prints the bot and the site, changes nothing, and exits with an error. It keeps pending updates unless `DROP_PENDING_UPDATES=true` is set.
 
 ## 6. Check
 
@@ -91,5 +102,5 @@ The script prints `Matched bot: @<username>` before it sets the webhook. If the 
 ## What not to do
 
 - Do not reuse the production bot token or webhook secret on staging.
-- Do not run `scripts/telegram-setup.mjs` with a production token in the shell. The `EXPECT_BOT_USERNAME` check stops it only when the name you gave is the staging bot's; with the production bot's name and token it moves the production webhook.
+- Do not run `scripts/telegram-setup.mjs` with production values in the shell. The script refuses a token that is not the bot you named, and refuses to point the production bot at any site but production, or any other bot at production. It cannot tell a mistake from intent when the name, the token and `WEBAPP_URL` are all production's: that run sets the production webhook again, with whatever `TELEGRAM_WEBHOOK_SECRET` is in the shell.
 - Do not put any of these values in a file that is committed.

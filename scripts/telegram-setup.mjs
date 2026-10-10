@@ -47,6 +47,23 @@ if (!botUsername || botUsername.toLowerCase() !== expectedBot) {
 }
 console.log(`Matched bot: @${botUsername}`);
 
+// The production bot goes with the production site, and no other bot does. A WEBAPP_URL left in
+// the shell from another environment would otherwise point one environment's bot at the other's
+// Worker. The site is compared by its whole origin, as new URL() reads it, never by a prefix.
+const PRODUCTION_BOT = 'luminarasuitebot';
+const PRODUCTION_ORIGIN = 'https://luminarasuite.com';
+const productionBot = botUsername.toLowerCase() === PRODUCTION_BOT;
+const productionOrigin = origin === PRODUCTION_ORIGIN;
+if (productionBot !== productionOrigin) {
+  console.error(
+    productionBot
+      ? `@${botUsername} is the production bot and ${origin} is not the production site. Nothing was changed.`
+      : `@${botUsername} is not the production bot and ${origin} is the production site. Nothing was changed.`,
+  );
+  process.exit(1);
+}
+console.log(`About to point @${botUsername} at ${origin}`);
+
 await call('setWebhook', {
   url: `${origin}/api/telegram/webhook`,
   secret_token: TELEGRAM_WEBHOOK_SECRET || undefined,
