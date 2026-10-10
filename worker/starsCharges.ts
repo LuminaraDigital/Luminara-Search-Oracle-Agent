@@ -45,13 +45,15 @@ export type StarsChargeRow = {
   status: StarsChargeStatus;
   refund_reason: string | null;
   attempts: number;
+  /** 1 once the Stars are known to be back with the payer. */
+  stars_returned: number;
   lease_until: number | null;
   created_at: number;
   updated_at: number;
 };
 
 const COLUMNS =
-  'charge_id, payer_tg_id, account_id, purpose, ref_id, stars, status, refund_reason, attempts, lease_until, created_at, updated_at';
+  'charge_id, payer_tg_id, account_id, purpose, ref_id, stars, status, refund_reason, attempts, stars_returned, lease_until, created_at, updated_at';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -93,6 +95,8 @@ export type RecordStarsChargeInput = {
   /** `refund_due` for a payment nobody can grant; `refunded` for an older charge already sent back. */
   status?: 'received' | 'refund_due' | 'refunded';
   refundReason?: string | null;
+  /** The Stars are already back with the payer (a refund sent outside the ledger). */
+  starsReturned?: boolean;
   now?: number;
 };
 
@@ -114,8 +118,8 @@ export async function recordStarsCharge(env: StarsChargesEnv, input: RecordStars
   const now = input.now ?? Date.now();
   try {
     const inserted = await db.prepare(
-      `INSERT INTO stars_charges (charge_id, payer_tg_id, account_id, purpose, ref_id, stars, status, refund_reason, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO stars_charges (charge_id, payer_tg_id, account_id, purpose, ref_id, stars, status, refund_reason, stars_returned, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(charge_id) DO NOTHING`,
     )
       .bind(
@@ -127,6 +131,7 @@ export async function recordStarsCharge(env: StarsChargesEnv, input: RecordStars
         input.stars,
         input.status ?? 'received',
         input.refundReason ?? null,
+        input.starsReturned ? 1 : 0,
         now,
         now,
       )
@@ -217,7 +222,7 @@ export async function requestStarsRefund(env: StarsChargesEnv, chargeId: string,
 async function markStarsChargeRefunded(env: StarsChargesEnv, chargeId: string, lease: number, now: number): Promise<boolean> {
   if (!env.DB) return false;
   const result = await env.DB.prepare(
-    `UPDATE stars_charges SET status = 'refunded', lease_until = NULL, updated_at = ?
+    `UPDATE stars_charges SET status = 'refunded', stars_returned = 1, lease_until = NULL, updated_at = ?
      WHERE charge_id = ? AND status = 'refund_due' AND lease_until = ?`,
   )
     .bind(now, chargeId, lease)
@@ -239,6 +244,15 @@ async function noteStarsRefundFailure(env: StarsChargesEnv, chargeId: string, le
   return (await readStarsCharge(env, chargeId))?.status ?? null;
 }
 
+/** Records the fact that the Stars are back with the payer, whatever state the row is in. */
+export async function markStarsReturned(env: StarsChargesEnv, chargeId: string, now: number = Date.now()): Promise<boolean> {
+  if (!env.DB) return false;
+  const result = await env.DB.prepare(`UPDATE stars_charges SET stars_returned = 1, updated_at = ? WHERE charge_id = ? AND stars_returned = 0`)
+    .bind(now, chargeId)
+    .run();
+  return changedOne(result);
+}
+
 /**
  * Telegram itself says the Stars went back (a refunded_payment message, or a refund sent outside
  * this ledger). Whatever the row said before, the money is no longer here.
@@ -246,7 +260,7 @@ async function noteStarsRefundFailure(env: StarsChargesEnv, chargeId: string, le
 export async function markStarsChargeRefundedAtTelegram(env: StarsChargesEnv, chargeId: string, now: number = Date.now()): Promise<boolean> {
   if (!env.DB) return false;
   const result = await env.DB.prepare(
-    `UPDATE stars_charges SET status = 'refunded', refund_reason = COALESCE(refund_reason, 'refunded_at_telegram'),
+    `UPDATE stars_charges SET status = 'refunded', stars_returned = 1, refund_reason = COALESCE(refund_reason, 'refunded_at_telegram'),
        lease_until = NULL, updated_at = ?
      WHERE charge_id = ? AND status <> 'refunded'`,
   )
@@ -268,6 +282,8 @@ export type StarsChargeHooks = {
    * back and the grant is still in place, so the row stays open and is tried again.
    */
   refund(row: StarsChargeRow): Promise<{ ok: boolean; error?: string; moneyReturned?: boolean }>;
+  /** Takes back what the charge gave, without touching Telegram. Used once the Stars are known to be back. */
+  revoke(row: StarsChargeRow): Promise<{ ok: boolean; error?: string }>;
   alert(text: string, details?: Record<string, unknown>): Promise<void>;
   /** Called by the sweep after it settles a row, so the payer can be told. Must not throw. */
   onSwept?(row: StarsChargeRow, outcome: 'credited' | 'refunded'): Promise<void>;
@@ -276,8 +292,18 @@ export type StarsChargeHooks = {
 };
 
 export type StarsRefundOutcome =
-  | { settled: true; row: StarsChargeRow }
-  | { settled: false; reason: 'busy' | 'refused'; status: StarsChargeStatus | null; error?: string; moneyReturned?: boolean };
+  /** `starsReturnedNow`: the Stars went back to the payer in this very attempt. */
+  | { settled: true; row: StarsChargeRow; starsReturnedNow: boolean }
+  | {
+      settled: false;
+      reason: 'busy' | 'refused';
+      status: StarsChargeStatus | null;
+      error?: string;
+      /** The payer has their Stars; what is left is taking back what the charge gave. */
+      moneyReturned?: boolean;
+      starsReturnedNow: boolean;
+      row?: StarsChargeRow;
+    };
 
 /**
  * Sends the refund for one `refund_due` row and records what happened. Used inline, straight after
@@ -290,44 +316,50 @@ export async function settleStarsRefund(
   now: number = Date.now(),
 ): Promise<StarsRefundOutcome> {
   const lease = await leaseStarsCharge(env, chargeId, 'refund_due', now);
-  if (lease === null) return { settled: false, reason: 'busy', status: null };
+  if (lease === null) return { settled: false, reason: 'busy', status: null, starsReturnedNow: false };
   const row = await readStarsCharge(env, chargeId);
-  if (!row) return { settled: false, reason: 'busy', status: null };
+  if (!row) return { settled: false, reason: 'busy', status: null, starsReturnedNow: false };
 
+  // Once the Stars are known to be back, only the grant is left to take back. Telegram is not
+  // asked again: its answer to a second refund is not something to build on.
+  const alreadyBack = row.stars_returned === 1;
   let refund: { ok: boolean; error?: string; moneyReturned?: boolean };
   try {
-    refund = await hooks.refund(row);
+    refund = alreadyBack ? await hooks.revoke(row) : await hooks.refund(row);
   } catch (err) {
     refund = { ok: false, error: errorText(err) };
   }
+  const starsBack = alreadyBack || refund.ok || refund.moneyReturned === true;
+  const starsReturnedNow = starsBack && !alreadyBack;
 
   if (refund.ok) {
-    // The Stars are back with the payer. If this write is lost the lease expires, the sweep tries
-    // again, Telegram answers "already refunded", and the row is closed then.
+    // The Stars are back with the payer and the grant is gone. If this write is lost the lease
+    // expires, the sweep tries again, Telegram answers "already refunded", and the row closes then.
     try {
       await markStarsChargeRefunded(env, chargeId, lease, now);
     } catch (err) {
       console.error(`[StarsCharges] Charge ${chargeId} was refunded and could not be marked so; the sweep will close it: ${errorText(err)}`);
     }
-    return { settled: true, row };
+    return { settled: true, row, starsReturnedNow };
   }
 
   let status: StarsChargeStatus | null = null;
   try {
+    if (starsReturnedNow) await markStarsReturned(env, chargeId, now);
     status = await noteStarsRefundFailure(env, chargeId, lease, now);
   } catch (err) {
-    console.error(`[StarsCharges] Could not count the failed refund of charge ${chargeId}: ${errorText(err)}`);
+    console.error(`[StarsCharges] Could not record the failed refund of charge ${chargeId}: ${errorText(err)}`);
   }
   console.error(`[StarsCharges] Refund of charge ${chargeId} failed (${refund.error || 'no reason given'}); status is now ${status}.`);
   if (status === 'refund_failed') {
     await hooks.alert(
-      refund.moneyReturned
+      starsBack
         ? `A Stars refund went through, and what the charge gave could not be taken back after ${STARS_MAX_REFUND_ATTEMPTS} attempts. The payer has their Stars and may still have the plan.`
         : `A Stars refund failed ${STARS_MAX_REFUND_ATTEMPTS} times and is no longer retried. The payer is still owed their Stars.`,
       { chargeId, payerTgId: row.payer_tg_id, stars: row.stars, lastError: refund.error || null },
     );
   }
-  return { settled: false, reason: 'refused', status, error: refund.error, moneyReturned: refund.moneyReturned };
+  return { settled: false, reason: 'refused', status, error: refund.error, moneyReturned: starsBack, starsReturnedNow, row };
 }
 
 export type StarsSweepSummary = {
@@ -384,7 +416,9 @@ export async function sweepStarsCharges(
       if (lease === null) continue;
       let granted: boolean;
       try {
-        granted = await hooks.isGranted(row);
+        // Stars that have already gone back are never credited, whatever is in place: the row goes
+        // to refund_due and what the charge gave is taken back.
+        granted = row.stars_returned === 1 ? false : await hooks.isGranted(row);
       } catch (err) {
         // What is true could not be read, so nothing is decided. The next sweep tries again.
         await releaseStarsLease(env, row.charge_id, lease, now);
@@ -427,12 +461,10 @@ export async function sweepStarsCharges(
   for (const chargeId of new Set([...refundNow, ...due])) {
     try {
       const outcome = await settleStarsRefund(env, hooks, chargeId, now);
-      if (outcome.settled) {
-        summary.refunded += 1;
-        await hooks.onSwept?.(outcome.row, 'refunded');
-      } else if (outcome.status === 'refund_failed') {
-        summary.refundFailed += 1;
-      }
+      if (outcome.settled) summary.refunded += 1;
+      else if (outcome.status === 'refund_failed') summary.refundFailed += 1;
+      // The payer is told once: at the attempt in which their Stars actually went back.
+      if (outcome.starsReturnedNow && outcome.row) await hooks.onSwept?.(outcome.row, 'refunded');
     } catch (err) {
       summary.errors += 1;
       console.error(`[StarsCharges] sweep could not refund charge ${chargeId}: ${errorText(err)}`);

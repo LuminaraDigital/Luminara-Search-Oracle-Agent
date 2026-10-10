@@ -116,7 +116,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     `SELECT charge_id, purpose, ref_id, stars, status, refund_reason, created_at, updated_at FROM stars_charges WHERE account_id = ?`,
     accountId,
   ).catch((err) => {
-    console.error('[Privacy] stars_charges could not be read for the export', err);
+    // Only a database from before the table is let through. Any other failure fails the export.
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
   return {
@@ -217,7 +218,9 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   // Telegram id stays too, because a refund can only be sent to it.
   // Guarded, so a database without the table yet cannot stop the deletion before the login rows are anonymized.
   await run('stars_charges_unlinked', `UPDATE stars_charges SET account_id = NULL WHERE account_id = ?`, accountId).catch((err) => {
-    console.error('[Privacy] stars_charges could not be unlinked from the account', err);
+    // Only a database from before the table is let through. Any other failure fails the job, so
+    // it cannot report an account deleted while its charge rows still name it.
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
   await run(

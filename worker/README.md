@@ -148,6 +148,13 @@ Telegram does not send a paid update again once the webhook has answered 200, so
   read from the invoice payload or typed by an operator.
 - **Manual refunds go through the ledger** (`/refund` in the bot, `POST /telegram/refund`), so
   the ledger never says `credited` for Stars that went back.
+- **A refund is finished only when the plan has gone back too.** `stars_returned` records that
+  the Stars are with the payer. If taking back what the charge gave fails, the row stays
+  `refund_due` and the sweep retries that part alone; Telegram is not asked to refund twice.
+- **A refund takes back what that charge gave, no more.** Its days come off; if it was the last
+  thing applied, the plan returns to what the record said before it. The subscription record keeps
+  `appliedCharges` and `chargeLinks` (the plan before each charge, and the charge before it) for
+  this.
 - **The daily sweep** (`stars_charge_sweep`) settles rows a webhook left undecided, retries
   refunds (5 attempts, then `refund_failed` and an alert to `TELEGRAM_ADMIN_ID`), and compares
   Telegram's own transaction list with the ledger. It never grants.

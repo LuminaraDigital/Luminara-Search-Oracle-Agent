@@ -7,6 +7,8 @@
 --                          \-> refund_failed -> refund_due   (5 attempts; an operator retries it)
 --
 -- payer_tg_id is the Telegram account that paid. A refund is only ever sent to it.
+-- stars_returned is 1 once the Stars are known to be back with the payer. A row can stay refund_due
+-- after that, while what the charge gave is still being taken back; Telegram is not asked again.
 -- account_id is NULL when the payer has no account row, and is set to NULL on account deletion:
 -- the row is kept as a financial record.
 
@@ -21,6 +23,7 @@ CREATE TABLE IF NOT EXISTS stars_charges (
     CHECK (status IN ('received','credited','refund_due','refunded','refund_failed')),
   refund_reason TEXT,
   attempts INTEGER NOT NULL DEFAULT 0,
+  stars_returned INTEGER NOT NULL DEFAULT 0 CHECK (stars_returned IN (0, 1)),
   lease_until INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL

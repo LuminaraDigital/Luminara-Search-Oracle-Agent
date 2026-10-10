@@ -17,6 +17,7 @@ import {
   markStarsChargeCredited,
   markStarsChargeRefundDue,
   markStarsChargeRefundedAtTelegram,
+  markStarsReturned,
   readStarsCharge,
   recordStarsCharge,
   releaseStarsLease,
@@ -1083,6 +1084,29 @@ function starsReceipt(input: PlanChargeInput, expiresAt: number): string {
 }
 
 /**
+ * What a refund of one applied charge has to put back: the plan the record had before the charge
+ * (`before`), and the Stars charge that had been applied just before it (`prev`), when the record
+ * was last written by one. Kept on the subscription record under `chargeLinks`, one entry per
+ * charge in `appliedCharges`.
+ */
+type ChargeLink = { before?: string; prev?: string };
+
+function chargeLinksOf(sub: SubscriptionRecord | null | undefined): Record<string, ChargeLink> {
+  const raw = sub?.chargeLinks;
+  const out: Record<string, ChargeLink> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const link = value as { before?: unknown; prev?: unknown };
+    out[id] = {
+      before: typeof link.before === 'string' && link.before ? link.before : undefined,
+      prev: typeof link.prev === 'string' && link.prev ? link.prev : undefined,
+    };
+  }
+  return out;
+}
+
+/**
  * Step 4: the grant. Throws when it could not be finished. The caller then decides by what is
  * true, because a throw does not mean nothing was written.
  */
@@ -1110,7 +1134,7 @@ async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ e
     // An earlier attempt wrote the subscription and stopped before the receipt. The days are
     // already there; adding them again would give the plan twice.
     expiresAt = Number(existing?.expiresAt) || input.now;
-    previousPlan = typeof existing?.previousPlan === 'string' ? existing.previousPlan : undefined;
+    previousPlan = chargeLinksOf(existing)[input.chargeId]?.before;
   } else if (!claim.ok) {
     // Claimed by an attempt that left no grant behind. The claim alone is not a grant.
     throw new Error('the charge was claimed earlier and no grant is in place');
@@ -1118,11 +1142,20 @@ async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ e
     const active = typeof existing?.expiresAt === 'number' && existing.expiresAt > input.now;
     expiresAt = (active ? Number(existing?.expiresAt) : input.now) + plan.days * DAY_MS;
     const earlier = active ? appliedChargesOf(existing).filter((c) => c !== input.chargeId) : [];
-    previousPlan = active && typeof existing?.plan === 'string' ? existing.plan : undefined;
+    const applied = [...earlier, input.chargeId].slice(-MAX_APPLIED_CHARGES);
+    const lastCharge = active && typeof existing?.chargeId === 'string' ? existing.chargeId : undefined;
+    const links = active ? chargeLinksOf(existing) : {};
+    links[input.chargeId] = active
+      ? {
+          before: typeof existing?.plan === 'string' && existing.plan ? existing.plan : undefined,
+          // Set only when the record was last written by a Stars charge that still stands behind it.
+          prev: lastCharge && earlier.includes(lastCharge) ? lastCharge : undefined,
+        }
+      : {};
+    for (const id of Object.keys(links)) if (!applied.includes(id)) delete links[id];
+    previousPlan = links[input.chargeId].before;
     await writeSubscriptionRecord(env, input.loginId, {
       plan: input.planId,
-      // What the record said before this charge, so a refund of this charge can put it back.
-      previousPlan,
       stars: input.stars,
       chargeId: input.chargeId,
       providerPaymentChargeId: input.providerChargeId,
@@ -1130,7 +1163,9 @@ async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ e
       startedAt: input.now,
       expiresAt,
       // Every Stars charge this record was built from. The sweep and refunds read it.
-      appliedCharges: [...earlier, input.chargeId].slice(-MAX_APPLIED_CHARGES),
+      appliedCharges: applied,
+      // What a refund of each of them puts back.
+      chargeLinks: links,
     });
   }
 
@@ -1173,6 +1208,13 @@ async function settleReceivedPlanCharge(env: Env, ctx: ReceivedChargeContext): P
   const lease = await leaseStarsCharge(env, chargeId, 'received');
   // Another delivery of this update, or the sweep, holds the charge and will decide it.
   if (lease === null) return 'held_elsewhere';
+
+  if (row.stars_returned === 1) {
+    // Telegram already sent these Stars back. Nothing is granted; anything in place is taken back.
+    if (!(await markStarsChargeRefundDue(env, chargeId, lease, 'refunded_at_telegram'))) return 'lease_lost';
+    const taken = await settleStarsRefund(env, starsChargeHooks(env), chargeId);
+    return taken.settled ? 'refunded' : 'refund_due';
+  }
 
   const planId = row.ref_id;
   const plan = Object.hasOwn(PLANS, planId) ? PLANS[planId] : null;
@@ -1333,18 +1375,28 @@ async function handleSuccessfulPayment(msg: any, env: Env): Promise<PaymentUpdat
   }
 }
 
-/** Telegram's own notice that Stars went back. Keeps the ledger and the plan in step with it. */
+/**
+ * Telegram's own notice that Stars went back. That much is a fact and is recorded first. The row
+ * is closed only once what the charge gave has been taken back too; if that fails here, the row is
+ * left (or put) at `refund_due` and the sweep finishes it without asking Telegram to refund again.
+ */
 async function handleRefundedPayment(msg: any, env: Env): Promise<PaymentUpdateOutcome> {
   const chargeId = String(msg.refunded_payment?.telegram_payment_charge_id || '').trim();
   const payerTgId = Number(msg.chat?.id ?? msg.from?.id) || 0;
   if (!chargeId) return { status: 200, note: 'refund_notice_without_charge' };
   try {
-    await markStarsChargeRefundedAtTelegram(env, chargeId);
+    await markStarsReturned(env, chargeId);
   } catch (err) {
     console.error(`[Stars] The refund notice for charge ${chargeId} could not be written to the ledger.`, err);
   }
-  await revokeStarsGrant(env, payerTgId, chargeId);
-  return { status: 200, note: 'refund_notice' };
+  const revoked = await revokeStarsGrant(env, payerTgId, chargeId);
+  try {
+    if (revoked.ok) await markStarsChargeRefundedAtTelegram(env, chargeId);
+    else await requestStarsRefund(env, chargeId, 'refunded_at_telegram');
+  } catch (err) {
+    console.error(`[Stars] The ledger row for refunded charge ${chargeId} could not be updated.`, err);
+  }
+  return { status: 200, note: revoked.ok ? 'refund_notice' : 'refund_notice_plan_pending' };
 }
 
 /**
@@ -1387,10 +1439,12 @@ async function planOfStarsCharge(env: Env, chargeId: string | undefined): Promis
 /**
  * Marks the receipt refunded and takes back only what this charge gave. A charge is found by its
  * receipt or by the subscription record that lists it, so a grant that stopped half way is taken
- * back too. When time is left that this charge did not pay for, its days come off and, if it was
- * the last thing applied to the record, the plan goes back to what the record said before it.
- * Otherwise the record goes. `ok` is false when the record could not be read or written, so the
- * caller can try again: the Stars are back with the payer and the plan must follow.
+ * back too. When time is left that this charge did not pay for, its days come off; if it was the
+ * last thing applied to the record, the plan goes back to what the record said before it; and
+ * whatever was applied after it is re-linked to what came before it, so a later refund still puts
+ * the right plan back. Otherwise the record goes. `ok` is false when the record could not be read
+ * or written, so the caller can try again: the Stars are back with the payer and the plan must
+ * follow.
  */
 async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Promise<{ accountId: string; ok: boolean }> {
   let accountId = String(userId);
@@ -1423,16 +1477,21 @@ async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Pro
         continue;
       }
       // Time is left that this charge did not pay for (it was added to days already there).
-      const next: SubscriptionRecord = { ...sub, expiresAt: shortened, appliedCharges: remaining };
+      const links = chargeLinksOf(sub);
+      const mine: ChargeLink = links[chargeId] ?? {
+        before: typeof receipt?.previousPlan === 'string' && receipt.previousPlan ? receipt.previousPlan : undefined,
+      };
+      // Whatever was applied straight after this charge now follows what came before it.
+      for (const id of Object.keys(links)) {
+        if (links[id].prev === chargeId) links[id] = { before: mine.before, prev: mine.prev };
+      }
+      delete links[chargeId];
+      const next: SubscriptionRecord = { ...sub, expiresAt: shortened, appliedCharges: remaining, chargeLinks: links };
       if (sub.chargeId === chargeId) {
         // This charge was the last thing applied to the record, so the plan name is its doing.
-        const before =
-          (typeof sub.previousPlan === 'string' && sub.previousPlan) ||
-          (typeof receipt?.previousPlan === 'string' && receipt.previousPlan) ||
-          (await planOfStarsCharge(env, remaining[remaining.length - 1]));
+        const before = mine.before || (await planOfStarsCharge(env, remaining[remaining.length - 1]));
         if (before) next.plan = before;
-        next.chargeId = remaining[remaining.length - 1];
-        delete next.previousPlan;
+        next.chargeId = mine.prev && remaining.includes(mine.prev) ? mine.prev : undefined;
       }
       await kv.put(`sub:${key}`, JSON.stringify(next));
     }
@@ -1530,6 +1589,7 @@ function starsChargeHooks(env: Env): StarsChargeHooks {
       const revoked = await revokeStarsGrant(env, row.payer_tg_id, row.charge_id);
       return revoked.ok ? { ok: true } : { ok: false, moneyReturned: true, error: planStayed };
     },
+    revoke: async (row) => ((await revokeStarsGrant(env, row.payer_tg_id, row.charge_id)).ok ? { ok: true } : { ok: false, error: planStayed }),
     alert: (text, details) => raiseStarsAlert(env, text, details),
     onSwept: async (row, outcome) => {
       // A refund a person asked for needs no explanation; one the sweep made after a failed grant does.
@@ -1554,7 +1614,12 @@ export async function runStarsChargeSweep(env: Env): Promise<StarsSweepSummary |
   }
 }
 
-async function recordRefundOutsideLedger(env: Env, payerTgId: number, chargeId: string, reason: string): Promise<void> {
+/**
+ * Puts a refund that was sent outside the ledger (a charge older than the table) on record.
+ * `revoked` false means the Stars went back and the plan could not be taken back: the row is
+ * opened as `refund_due` with the Stars marked returned, so the sweep finishes the plan.
+ */
+async function recordRefundOutsideLedger(env: Env, payerTgId: number, chargeId: string, reason: string, revoked: boolean): Promise<void> {
   if (!env.DB) return;
   try {
     const receipt = env.LUMINARA_KV
@@ -1569,12 +1634,15 @@ async function recordRefundOutsideLedger(env: Env, payerTgId: number, chargeId: 
         purpose: 'plan',
         refId: String(receipt?.plan || 'legacy'),
         stars,
-        status: 'refunded',
+        status: revoked ? 'refunded' : 'refund_due',
         refundReason: reason,
+        starsReturned: true,
       });
     }
     // A row that was there after all must not go on saying credited.
-    await markStarsChargeRefundedAtTelegram(env, chargeId);
+    await markStarsReturned(env, chargeId);
+    if (revoked) await markStarsChargeRefundedAtTelegram(env, chargeId);
+    else await requestStarsRefund(env, chargeId, reason);
   } catch (err) {
     console.error(`[Stars] Charge ${chargeId} was refunded outside the ledger and could not be recorded.`, err);
   }
@@ -1611,8 +1679,22 @@ export async function refundStarsCharge(
   }
   if (!row) {
     const res = await refundStarPayment(env, userIdHint, id);
-    if (res.ok) await recordRefundOutsideLedger(env, userIdHint, id, reason);
-    return { ...res, payerTgId: userIdHint };
+    let returned = res.ok;
+    let revoked = res.revoked !== false;
+    if (!res.ok && /CHARGE_ALREADY_REFUNDED/i.test(res.error || '')) {
+      // The Stars went back on an earlier try. What is left is the plan.
+      returned = true;
+      revoked = (await revokeStarsGrant(env, userIdHint, id)).ok;
+    }
+    if (!returned) return { ...res, payerTgId: userIdHint };
+    await recordRefundOutsideLedger(env, userIdHint, id, reason, revoked);
+    if (revoked) return { ok: true, status: 'refunded', payerTgId: userIdHint };
+    return {
+      ok: false,
+      status: 'refund_due',
+      payerTgId: userIdHint,
+      error: 'The Stars went back to the payer, and the plan could not be taken back yet. It will be tried again; you can also send the refund again in a few minutes.',
+    };
   }
 
   const payerTgId = row.payer_tg_id;
