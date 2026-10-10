@@ -704,6 +704,8 @@ const App: React.FC = () => {
       let fullText = '';
       let allUrls: Array<{ uri: string; title: string }> = [];
       const toolExecutions: Message['toolExecutions'] = [];
+      // Set when the Worker's fallback model wrote this reply; the message carries it to the chat.
+      let answeredByFallback: Message['fallback'];
       let firstToken = true;
       let usedServerOracle = false;
 
@@ -797,6 +799,7 @@ const App: React.FC = () => {
               if (!existingUris.has(u.uri)) allUrls.push(u);
             });
           }
+          if (chunk.fallback) answeredByFallback = chunk.fallback;
           if (chunk.text) {
             if (firstToken) {
               firstToken = false;
@@ -814,6 +817,7 @@ const App: React.FC = () => {
                       content: fullText,
                       groundingUrls: allUrls,
                       toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined,
+                      fallback: answeredByFallback,
                     }
                   : m,
               ),
@@ -832,6 +836,7 @@ const App: React.FC = () => {
                 groundingUrls: allUrls.length ? allUrls : undefined,
                 isStreaming: false,
                 toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined,
+                fallback: answeredByFallback,
               }
             : m,
         ),

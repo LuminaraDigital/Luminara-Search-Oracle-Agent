@@ -16,6 +16,7 @@ import {
 import { parseOpenAiSseStream } from '../../../utils/sse';
 import { BaseAIProvider } from './BaseAIProvider';
 import { applyToolsToChatBody, parseToolCallsFromMessage } from '../openaiTools';
+import { readFallbackAnswer } from '../fallbackAnswer';
 
 function isGroqModelMissingStatus(status: number, body: string): boolean {
   return isMissingModelStatus(status, body);
@@ -121,6 +122,8 @@ export class GroqProvider extends BaseAIProvider {
     const latencyMs = Date.now() - startTime;
     const usage = data.usage || {};
     this.config.model = usedModel;
+    // The Worker may have answered with its fallback model. Carry that with the text.
+    const fallback = readFallbackAnswer(response.headers, data);
 
     return {
       text,
@@ -132,6 +135,7 @@ export class GroqProvider extends BaseAIProvider {
       finishReason: (data.choices?.[0]?.finish_reason as GenerateFinishReason) || 'stop',
       toolCalls,
       latencyMs,
+      ...(fallback ? { fallback } : {}),
     };
   }
 
@@ -192,8 +196,14 @@ export class GroqProvider extends BaseAIProvider {
     }
 
     this.config.model = usedModel;
+    // The fallback marker is in the response headers, which arrive before the stream.
+    // It rides on the first text chunk so the chat can label the reply as it starts.
+    let fallback = readFallbackAnswer(response.headers);
     for await (const chunk of parseOpenAiSseStream(response)) {
-      if (chunk.text) yield { text: chunk.text };
+      if (chunk.text) {
+        yield fallback ? { text: chunk.text, fallback } : { text: chunk.text };
+        fallback = undefined;
+      }
       if (chunk.toolCalls?.length) {
         yield {
           toolCalls: chunk.toolCalls,
