@@ -301,3 +301,22 @@ describe('Q402 is off, and while it is off none of its routes answer', () => {
     expect(text).not.toMatch(/USDT|LORA|burn/i);
   });
 });
+
+describe('payment copy makes no burn, tax-on-transfer or yield claim', () => {
+  // The LORA contract takes no tax, fee or automatic burn on a transfer (LORA rule J6), so no screen may say it does.
+  it.each([
+    'components/paywall/PaywallModal.tsx',
+    'components/paywall/paymentOptions.ts',
+    'components/telegram/TelegramAccountPanel.tsx',
+    'worker/termsPolicy.ts',
+  ])('%s', (rel) => {
+    const src = readFileSync(join(ROOT, rel), 'utf8');
+    expect(src).not.toMatch(/\bburn|deflation|\byield\b|\bstaking\b|\bAPY\b/i);
+  });
+
+  it('the Terms do not name USDT or $LORA as a way to pay while both are off', () => {
+    const terms = readFileSync(join(ROOT, 'worker/termsPolicy.ts'), 'utf8');
+    expect(JETTON_CHECKOUT_LIVE).toBe(false);
+    expect(terms).not.toMatch(/USDT|\$LORA|Jetton/);
+  });
+});
