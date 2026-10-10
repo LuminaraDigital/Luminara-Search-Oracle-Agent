@@ -83,25 +83,25 @@ export const NativeFailoverPopup: React.FC = () => {
           <div className="p-2.5 rounded-xl bg-danger-950/30 border border-danger-500/20 flex items-start gap-2">
             <span className="text-danger-400 font-mono text-sm">⚠</span>
             <div className="flex-1">
-              <div className="text-[10px] text-danger-300 font-mono uppercase">Interrupted Engine</div>
-              <div className="text-gray-200 font-semibold">{currentEvent.failedProvider}</div>
+              <div className="text-[10px] text-danger-300 font-mono uppercase">Primary Engine Load</div>
+              <div className="text-gray-200 font-semibold">Autonomous Failover Triggered</div>
               <div className="text-[10px] text-danger-400/80 font-mono truncate">{toUserFacingText(currentEvent.reason, 'Execution error')}</div>
             </div>
           </div>
 
           <div className="flex justify-center -my-1 text-gold font-mono text-xs">
-            <span>↓ Auto Pop-up Handoff ↓</span>
+            <span>↓ Seamless Engine Handoff ↓</span>
           </div>
 
           <div className="p-2.5 rounded-xl bg-success-950/30 border border-success-500/30 flex items-start gap-2">
             <span className="text-success-400 font-mono text-sm">⚡</span>
             <div className="flex-1">
               <div className="text-[10px] text-success-300 font-mono uppercase flex items-center justify-between">
-                <span>Active Engine Engaged</span>
+                <span>Resilient AI Inference Engaged</span>
                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-success-500/20 text-success-300 font-bold">100% ONLINE</span>
               </div>
-              <div className="text-gold-light font-bold">{currentEvent.activatedProvider}</div>
-              <div className="text-[10px] text-gray-400 font-mono">{currentEvent.activatedModel}</div>
+              <div className="text-gold-light font-bold">Enterprise Cloud Cluster</div>
+              <div className="text-[10px] text-gray-400 font-mono">Zero Query Loss Architecture</div>
             </div>
           </div>
         </div>

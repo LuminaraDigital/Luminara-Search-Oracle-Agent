@@ -9,21 +9,14 @@
  * - Audit digest: self-reported SHA-256 summary digest (no chain write)
  */
 
-import { ReportFocus, BusinessDNA } from '../../types';
+import { ReportFocus, BusinessDNA, AgentRosterRole } from '../../types';
 import type { LlmCrawlerReport } from '../audit/llmCrawlerReadiness';
 
 // ============================================================================
 // 1. Multi-Agent Crew & Roles (CrewAI-inspired)
 // ============================================================================
 
-export type AgentRole =
-  | 'scout'
-  | 'serp_radar'
-  | 'playbook_auditor'
-  | 'competitor_strategist'
-  | 'remediation_architect'
-  | 'executive_translator'
-  | 'adversarial_critic';
+export type AgentRole = AgentRosterRole;
 
 export type AgentStatus = 'idle' | 'running' | 'reflecting' | 'completed' | 'failed';
 
@@ -157,6 +150,13 @@ export interface AuditStateGraphContext {
   citationRatePercent: number | null;
   shareOfVoiceScore: number | null;
   healthScore: number | null;
+  /** Verified playbook compliance checks. Replaces legacy healthScore. */
+  checks?: {
+    passed: number;
+    total: number;
+    summary: string;
+    items?: Array<{ id: string; label: string; passed: boolean; reason: string }>;
+  } | null;
   /** measured only when citation, share of voice, and health are all numeric. */
   measurementStatus: 'measured' | 'not_measured';
   measurementReason?: string;

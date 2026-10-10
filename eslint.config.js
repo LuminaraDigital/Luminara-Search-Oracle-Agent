@@ -17,6 +17,8 @@ export default tseslint.config(
       'release/**',
       'open-seo/**',
       'Switchyard/**',
+      'ponytail/**',
+      'pstack/**',
       'scratch/**',
       'tmp/**',
       'build/**',

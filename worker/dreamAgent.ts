@@ -270,20 +270,41 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
     const sanitizedProposals = parsed.proposals
       .filter((p) => {
         if (!p.title || !p.content || !p.memoryType || !p.action) return false;
-        if (p.confidence < 0.5) return false; // reject low confidence
+        const rationale = String(p.rationale || '').trim();
+        if (rationale.length < 10) return false; // reject empty or trivial rationale
+        const lowerRationale = rationale.toLowerCase();
+        const lowerContent = String(p.content || '').toLowerCase();
+        // Reject contradictory rationales
+        if (
+          lowerRationale.includes('no competitor') ||
+          lowerRationale.includes('none identified') ||
+          lowerRationale.includes('no evidence') ||
+          (p.memoryType === 'visibility_profile' &&
+            lowerContent.includes('none identified') &&
+            lowerRationale.includes('competitor'))
+        ) {
+          return false;
+        }
+        // Strict grounding: must cite real pending events
+        const validRefs = (p.sourceRefs || []).filter((ref) => validEventIds.has(ref));
+        if (validRefs.length === 0) return false;
         return true;
       })
       .map((p) => {
-        // Enforce valid source refs
-        const filteredRefs = (p.sourceRefs || []).filter((ref) => validEventIds.has(ref));
-        const finalRefs =
-          filteredRefs.length > 0 ? filteredRefs : input.pendingEvents.slice(0, 1).map((e) => e.id);
+        const finalRefs = (p.sourceRefs || []).filter((ref) => validEventIds.has(ref));
 
+        // Confidence capped by empirical evidence count: 1 ref -> max 0.70; 2+ refs -> max 0.85
+        const maxConfidence = finalRefs.length >= 2 ? 0.85 : 0.70;
+        const rawConfidence = typeof p.confidence === 'number' ? p.confidence : 0.7;
+        const confidence = Math.min(maxConfidence, Math.max(0.5, rawConfidence));
+
+        // Auto-apply only above strict multi-source evidence threshold
         const requiresApproval =
-          p.requiresApproval === true ||
+          p.requiresApproval !== false ||
           p.action === 'deprecate' ||
           p.memoryType === 'business_dna' ||
-          p.confidence < 0.85;
+          finalRefs.length < 2 ||
+          confidence < 0.85;
 
         return {
           action: p.action as DreamProposalAction,
@@ -292,10 +313,10 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
           title: String(p.title).slice(0, 200),
           content: String(p.content).slice(0, 4000),
           structuredData: p.structuredData || {},
-          confidence: Math.min(1.0, Math.max(0.5, p.confidence || 0.8)),
+          confidence,
           sourceRefs: finalRefs,
           requiresApproval,
-          rationale: String(p.rationale || 'Consolidated by Dream Agent').slice(0, 500),
+          rationale: String(p.rationale).slice(0, 500),
         };
       })
       .slice(0, 5);

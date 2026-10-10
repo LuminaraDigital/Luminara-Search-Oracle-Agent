@@ -173,15 +173,15 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     const html = generatePortableDossierHtml({
       title: `${domain} Executive AEO Dossier`,
       targetDomain: domain,
-      overallScore: 88,
-      grade: 'B',
+      checksSummary: 'Self-reported plain text audit',
+      overallScore: null,
+      grade: null,
       generatedAt: Date.now(),
       trustReceiptHash: safeHash,
       sections: [
         {
           id: 'executive-summary',
           title: 'Executive Audit Analysis',
-          badge: 'Verified',
           contentHtml: `<div style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7;">${cleanMarkdown.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`,
         },
       ],

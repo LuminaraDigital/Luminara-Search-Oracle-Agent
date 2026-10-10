@@ -7,10 +7,12 @@
 import type { ScrapedPageEvidence, SerpEvidenceItem } from '../agentCore/types';
 import { liveSearchRows, pageHasObservableBody } from '../agentCore/auditEvidenceGate';
 import type { PrefetchedCitationGroup, QueryIntent } from './empiricalCitationService';
+import type { AuditChecksSummary } from './auditMetrics';
 
 export interface AuditReportCrewEvidence {
   scrapedPages?: readonly ScrapedPageEvidence[] | null;
   serpEvidence?: readonly SerpEvidenceItem[] | null;
+  checks?: AuditChecksSummary | null;
 }
 
 export interface ReusedPageEvidence {

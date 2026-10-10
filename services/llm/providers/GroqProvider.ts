@@ -32,7 +32,7 @@ export class GroqProvider extends BaseAIProvider {
     model: GROQ_DEFAULT_MODEL,
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     temperature: 0.7,
-    maxTokens: 4096,
+    maxTokens: 1024,
   };
   capabilities = {
     streaming: true,
@@ -89,7 +89,7 @@ export class GroqProvider extends BaseAIProvider {
       let apiKey = key || fallbackKey;
       try {
         response = await doFetch(apiKey, model);
-        if ((response.status === 429 || response.status === 402 || response.status === 401) && fallbackKey && key !== fallbackKey) {
+        if ((response.status === 429 || response.status === 402 || response.status === 401 || response.status === 413) && fallbackKey && key !== fallbackKey) {
           console.warn(`[Groq] Received status ${response.status} on primary key, rotating to fallback key...`);
           response = await doFetch(fallbackKey, model);
           apiKey = fallbackKey;
@@ -166,7 +166,7 @@ export class GroqProvider extends BaseAIProvider {
       }, { userKey: key });
 
       const fallbackKey = configService.getGroqFallbackKey();
-      if ((response.status === 429 || response.status === 402 || response.status === 401) && fallbackKey && key !== fallbackKey) {
+      if ((response.status === 429 || response.status === 402 || response.status === 401 || response.status === 413) && fallbackKey && key !== fallbackKey) {
         console.warn(`[Groq] Stream received status ${response.status} on primary key, rotating to fallback key...`);
         response = await providerFetch('groq', '/chat/completions', this.config.endpoint, {
           method: 'POST',

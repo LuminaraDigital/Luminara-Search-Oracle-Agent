@@ -71,7 +71,7 @@ import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, 
 import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
-import { getActiveSubscription, checkHostedQuota, type SubRow } from './quotaMiddleware';
+import { getActiveSubscription, checkHostedQuota, refundDailyQuota, FAIR_USE_DAILY_CAPS, type SubRow } from './quotaMiddleware';
 import { handleReferralRoute, referralBonusRemaining } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
@@ -97,6 +97,7 @@ import { handleFindingsRoute } from './findingsService';
 import { handleLlmCrawlerRoute } from './llmCrawlerRoute';
 import { handleProbeCrawlRoute } from './probeCrawlRoute';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
+import { handleWebhookIngressRoute } from './webhookIngressService';
 import { getBudgetStatus, upsertBudgetPolicy, approveBudgetResume } from './budgets';
 import {
   listActionRequests,
@@ -158,7 +159,7 @@ export { isPathAllowed, proxyProvider, PROVIDERS } from './providerRelay';
 export type { ProviderSpec } from './providerRelay';
 export { isSidecarPathAllowed, umamiUpstreamPath, isSidecarConfigured } from './sidecarRelay';
 export type { SidecarId } from './sidecarRelay';
-export { getActiveSubscription, isUserSubscribed, checkHostedQuota } from './quotaMiddleware';
+export { getActiveSubscription, isUserSubscribed, checkHostedQuota, refundDailyQuota, FAIR_USE_DAILY_CAPS } from './quotaMiddleware';
 export type { QuotaStatus, SubRow } from './quotaMiddleware';
 export { runSentinelScan, auditSecurityOnEdge } from './sentinel';
 export type { SentinelTarget } from './sentinel';
@@ -797,7 +798,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(json({ ok: chains.every((c) => c.verified && !c.truncated), orgId: org.id, chains }));
   }
 
-  if (path === '/auth/quota') {
+  if (path === '/auth/quota' || path === '/quota') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
     const who = await identify(request, env);
     const limit = Number(env.FREE_DAILY_LIMIT || 0);
@@ -814,6 +815,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         remaining: limit,
         resetSec,
         isUnlimited: false,
+        unit: 'audits/questions',
       }));
     }
 
@@ -829,17 +831,23 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const isSubActive = Boolean(sub?.expiresAt && sub.expiresAt > Date.now());
 
     if (isSubActive) {
+      const planName = (sub!.plan || 'growth').toLowerCase();
+      const fairUseLimit = FAIR_USE_DAILY_CAPS[planName] ?? FAIR_USE_DAILY_CAPS.growth ?? 200;
+      const day = now.toISOString().slice(0, 10);
+      const paidUsed = env.LUMINARA_KV ? Number((await env.LUMINARA_KV.get(`quota:paid:${accountId}:${day}`)) || 0) : 0;
       return withCors(json({
         ok: true,
         authenticated: true,
         accountId,
         plan: sub!.plan,
         expiresAt: sub!.expiresAt,
-        limit: -1,
-        used: 0,
-        remaining: -1,
+        limit: fairUseLimit,
+        used: paidUsed,
+        remaining: Math.max(0, fairUseLimit - paidUsed),
         resetSec,
         isUnlimited: true,
+        fairUse: true,
+        unit: 'audits/questions',
       }));
     }
 
@@ -858,6 +866,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       bonusRemaining,
       resetSec,
       isUnlimited: limit <= 0,
+      unit: 'audits/questions',
     }));
   }
 
@@ -1330,6 +1339,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(await handleFindingsRoute(request, env, path));
   }
 
+  if (path === '/webhooks/ingress' || path.startsWith('/webhooks/ingress/')) {
+    const ingressRes = await handleWebhookIngressRoute(request, env, path);
+    if (ingressRes) return withCors(ingressRes);
+  }
+
   if (path === '/share/teasers' || path.startsWith('/share/teasers/')) {
     const teaserPublicGet = request.method === 'GET' && /^\/share\/teasers\/[a-f0-9]{64}$/i.test(path);
     const dual = await enforceDualRateLimit(env, {
@@ -1641,6 +1655,12 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   // APS: MCP (Growth+ mcpAccess; session, lm_live_* API key, or mcp_* OAuth token)
   if (path === '/mcp' || path.startsWith('/mcp/')) {
+    // Human browsers hitting the bare endpoint with a document request get the docs page;
+    // MCP clients (JSON-RPC POST, Accept: application/json) still reach the API handler.
+    const accept = request.headers.get('accept') || '';
+    if (request.method === 'GET' && path === '/mcp' && /text\/html/i.test(accept)) {
+      return withSecurityHeaders(permanentRedirect(url, '/docs/mcp'));
+    }
     const resolved = await resolveMcpUser(request, env);
     if ('response' in resolved) return withCors(resolved.response);
     const dual = await enforceDualRateLimit(env, {

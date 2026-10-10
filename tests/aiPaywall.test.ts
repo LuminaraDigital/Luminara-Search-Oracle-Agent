@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkHostedQuota } from '../worker/index';
+import { checkHostedQuota, refundDailyQuota, FAIR_USE_DAILY_CAPS } from '../worker/index';
 import { updateQuotaFromHeaders, getCurrentQuotaSync } from '../services/apiClient';
 
 function createMockKv() {
@@ -57,7 +57,7 @@ describe('AI Paywall & Quota Engine', () => {
     expect(q4.error).toMatch(/Daily free limit/i);
   });
 
-  it('unlimited subscription completely bypasses free daily limits', async () => {
+  it('unlimited subscription completely bypasses free daily limits with fair-use allowance', async () => {
     const kv = createMockKv();
     const env: any = {
       LUMINARA_KV: kv,
@@ -75,7 +75,89 @@ describe('AI Paywall & Quota Engine', () => {
     const q = await checkHostedQuota(env, user);
     expect(q.ok).toBe(true);
     expect(q.isUnlimited).toBe(true);
-    expect(q.remaining).toBe(-1);
+    expect(q.fairUse).toBe(true);
+    expect(q.limit).toBe(50);
+    expect(q.used).toBe(1);
+    expect(q.remaining).toBe(49);
+  });
+
+  it('meters one unit per action across multiple provider calls sharing actionId', async () => {
+    const kv = createMockKv();
+    const env: any = {
+      LUMINARA_KV: kv,
+      FREE_DAILY_LIMIT: '10',
+      REQUIRE_TG_AUTH: 'true',
+    };
+    const user = { id: 'tg_action_user', source: 'telegram' as const };
+    const actionId = 'action_audit_12345';
+
+    // Call 1: First call of the action - should be charged
+    const q1 = await checkHostedQuota(env, user, { actionId });
+    expect(q1.ok).toBe(true);
+    expect(q1.used).toBe(1);
+    expect(q1.remaining).toBe(9);
+    expect(q1.deduped).toBeUndefined();
+
+    // Calls 2 through 5: Sub-calls sharing the same actionId - should NOT increment quota
+    for (let i = 2; i <= 5; i++) {
+      const qi = await checkHostedQuota(env, user, { actionId });
+      expect(qi.ok).toBe(true);
+      expect(qi.used).toBe(1);
+      expect(qi.remaining).toBe(9);
+      expect(qi.deduped).toBe(true);
+    }
+  });
+
+  it('refundDailyQuota restores counter and clears action idempotency', async () => {
+    const kv = createMockKv();
+    const env: any = {
+      LUMINARA_KV: kv,
+      FREE_DAILY_LIMIT: '10',
+      REQUIRE_TG_AUTH: 'true',
+    };
+    const user = { id: 'tg_refund_user', source: 'telegram' as const };
+    const actionId = 'action_fail_999';
+
+    const q1 = await checkHostedQuota(env, user, { actionId });
+    expect(q1.used).toBe(1);
+    expect(q1.remaining).toBe(9);
+
+    // Upstream fails: trigger refund with actionId
+    await refundDailyQuota(env, q1.quotaKeyId!, 1, actionId);
+
+    // KV should have 0 used and actionId removed
+    const day = new Date().toISOString().slice(0, 10);
+    const usedAfterRefund = Number(await kv.get(`quota:${q1.quotaKeyId}:${day}`) || 0);
+    expect(usedAfterRefund).toBe(0);
+    expect(await kv.get(`action:${actionId}`)).toBeNull();
+  });
+
+  it('enforces fair-use daily caps on paid subscriptions', async () => {
+    const kv = createMockKv();
+    const env: any = {
+      LUMINARA_KV: kv,
+      FREE_DAILY_LIMIT: '5',
+      REQUIRE_TG_AUTH: 'true',
+    };
+    const user = { id: 'tg_paid_cap_user', source: 'telegram' as const };
+
+    // Starter plan: cap is 50 actions/day
+    expect(FAIR_USE_DAILY_CAPS.starter).toBe(50);
+    await kv.put('sub:tg_paid_cap_user', JSON.stringify({
+      plan: 'starter',
+      expiresAt: Date.now() + 86400_000 * 15,
+    }));
+
+    const day = new Date().toISOString().slice(0, 10);
+    // Simulate user already used 50 actions today
+    await kv.put(`quota:paid:tg_paid_cap_user:${day}`, '50');
+
+    const q = await checkHostedQuota(env, user);
+    expect(q.ok).toBe(false);
+    expect(q.limit).toBe(50);
+    expect(q.used).toBe(50);
+    expect(q.remaining).toBe(0);
+    expect(q.error).toMatch(/Daily fair-use limit of 50 actions reached/i);
   });
 
   it('client parses X-Quota response headers accurately', () => {
@@ -247,7 +329,7 @@ describe('AI Paywall & Quota Engine', () => {
         const res = await proxyProvider(req, env as any, 'groq', '/chat/completions');
         expect(res.status).toBe(200);
         expect(res.headers.get('x-quota-remaining')).toBe('9'); // 10 limit - 1 used
-        expect(JSON.parse(capturedBody).max_tokens).toBe(8192);
+        expect(JSON.parse(capturedBody).max_tokens).toBe(1024);
       } finally {
         globalThis.fetch = originalFetch;
       }
@@ -348,7 +430,8 @@ describe('AI Paywall & Quota Engine', () => {
         expect(res.status).toBe(200);
         expect(capturedUpstream).toBe('https://openrouter.ai/api/v1/chat/completions');
         expect(capturedAuth).toBe('Bearer or-hosted-openrouter-key');
-        expect(res.headers.get('x-quota-remaining')).toBe('unlimited');
+        expect(res.headers.get('x-quota-remaining')).toBe('49');
+        expect(res.headers.get('x-quota-fair-use')).toBe('true');
       } finally {
         globalThis.fetch = originalFetch;
       }
@@ -396,6 +479,54 @@ describe('AI Paywall & Quota Engine', () => {
       } finally {
         globalThis.fetch = originalFetch;
       }
+    });
+
+    it('returns consistent unified quota at both /api/auth/quota and /api/quota', async () => {
+      const kv = createMockKv();
+      const env = createEnv(kv);
+      const ctx = { waitUntil: () => {}, passThroughOnException: () => {} };
+
+      // 1. Anonymous request
+      const anonReq = new Request('https://luminarasuite.com/api/quota', { method: 'GET' });
+      const { default: worker } = await import('../worker/index');
+      const anonRes1 = await worker.fetch(anonReq, env as any, ctx as any);
+      expect(anonRes1.status).toBe(200);
+      const anonBody1 = await anonRes1.json() as any;
+      expect(anonBody1.authenticated).toBe(false);
+      expect(anonBody1.unit).toBe('audits/questions');
+      expect(anonBody1.limit).toBe(10);
+
+      // Verify /api/auth/quota returns identical shape
+      const anonReq2 = new Request('https://luminarasuite.com/api/auth/quota', { method: 'GET' });
+      const anonRes2 = await worker.fetch(anonReq2, env as any, ctx as any);
+      expect(anonRes2.status).toBe(200);
+      const anonBody2 = await anonRes2.json() as any;
+      expect(anonBody2).toEqual(anonBody1);
+
+      // 2. Paid subscriber request
+      const initData = signInitData({
+        auth_date: String(Math.floor(Date.now() / 1000)),
+        user: JSON.stringify({ id: 301, first_name: 'PaidSubscriber' }),
+      });
+      await kv.put('sub:301', JSON.stringify({
+        plan: 'starter',
+        expiresAt: Date.now() + 86400_000 * 30,
+      }));
+
+      const paidReq = new Request('https://luminarasuite.com/api/quota', {
+        method: 'GET',
+        headers: { 'x-telegram-init-data': initData },
+      });
+      const paidRes = await worker.fetch(paidReq, env as any, ctx as any);
+      expect(paidRes.status).toBe(200);
+      const paidBody = await paidRes.json() as any;
+      expect(paidBody.authenticated).toBe(true);
+      expect(paidBody.plan).toBe('starter');
+      expect(paidBody.isUnlimited).toBe(true);
+      expect(paidBody.fairUse).toBe(true);
+      expect(paidBody.limit).toBe(50);
+      expect(paidBody.remaining).toBe(50);
+      expect(paidBody.unit).toBe('audits/questions');
     });
   });
 });

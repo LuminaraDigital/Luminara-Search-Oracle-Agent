@@ -20,7 +20,8 @@ export class ExecutiveTranslatorAgent {
     findings: AuditFinding[],
     patches: CodeRemediationPatch[],
     dna: BusinessDNA | null | undefined,
-    emit: (event: AgentActivityEvent) => void
+    emit: (event: AgentActivityEvent) => void,
+    checks?: { passed: number; total: number; summary?: string } | null,
   ): Promise<string> {
     emit({
       id: `exec-start-${Date.now()}`,
@@ -33,20 +34,43 @@ export class ExecutiveTranslatorAgent {
     });
 
     const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
-    const brandName = dna?.name || cleanDomain;
+    const rawBrand = dna?.name || cleanDomain;
+    const isInvalidBrand = (b: string) =>
+      !b ||
+      ['data not available', 'unknown', 'n/a', 'null', 'undefined', 'not measured'].includes(
+        b.trim().toLowerCase(),
+      );
+    const brandName = !isInvalidBrand(rawBrand)
+      ? rawBrand
+      : !isInvalidBrand(cleanDomain)
+        ? cleanDomain
+        : 'Your Brand';
+
     const criticalCount = findings.filter((f) => f.severity === 'critical').length;
     const healthKnown = typeof healthScore === 'number';
     const citationKnown = typeof citationRate === 'number';
-    const scoreLine = healthKnown && citationKnown
-      ? `Right now, your AI Search Health Score is **${healthScore}/100**, and your brand is cited in about **${citationRate}%** of relevant AI search answers.`
+    const checksKnown = Boolean(checks);
+
+    const scoreClause = checksKnown
+      ? `**${checks!.summary || `${checks!.passed} of ${checks!.total} checks passed`}**`
       : healthKnown
-        ? `Right now, your AI Search Health Score is **${healthScore}/100**. Citation rate was not measured.`
-        : citationKnown
-          ? `Right now, your brand is cited in about **${citationRate}%** of relevant AI search answers. Health score was not measured.`
-          : 'Right now, health score and citation rate were not measured. Search or page providers did not return evidence for this run.';
+        ? `your AI Search Health Score is **${healthScore}/100**`
+        : null;
+
+    let scoreLine: string;
+    if (scoreClause && citationKnown) {
+      scoreLine = `Right now, ${checksKnown ? scoreClause : scoreClause}, and your brand is cited in about **${citationRate}%** of relevant AI search answers.`;
+    } else if (scoreClause) {
+      scoreLine = `Right now, ${scoreClause}. Citation rate was not measured.`;
+    } else if (citationKnown) {
+      scoreLine = `Right now, your brand is cited in about **${citationRate}%** of relevant AI search answers. Health score was not measured.`;
+    } else {
+      scoreLine = 'Right now, health score and citation rate were not measured. Search or page providers did not return evidence for this run.';
+    }
+
     const takeaway = criticalCount > 0
       ? `⚠️ **The Big Takeaway:** Search engines and AI tools like ChatGPT and Perplexity are having trouble understanding your brand because ${criticalCount === 1 ? 'there is 1 key missing identity record' : `there are ${criticalCount} key identity records missing`} on your website.`
-      : healthKnown
+      : (healthKnown || checksKnown)
         ? `✅ **The Big Takeaway:** Your site has solid baseline technical health, but can double its citations by adding structured comparison pages.`
         : '**The takeaway:** This run did not measure enough page or search evidence to judge technical health.';
 

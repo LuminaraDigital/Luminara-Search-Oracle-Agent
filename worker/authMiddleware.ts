@@ -42,6 +42,8 @@ export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/stripe\/webhook$/ },
   { method: 'GET', pattern: /^\/auth\/session$/ },
   { method: 'POST', pattern: /^\/auth\/session$/ },
+  { method: 'GET', pattern: /^\/auth\/quota$/ },
+  { method: 'GET', pattern: /^\/quota$/ },
   { method: 'POST', pattern: /^\/auth\/logout$/ },
   // Public by design: anti-enumeration reset, IP-throttled in handlePasswordResetRequest.
   { method: 'POST', pattern: /^\/auth\/reset-password$/ },
@@ -158,7 +160,6 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/trust\/receipts$/, methods: ['GET'] },
   { pattern: /^\/trust\/receipts\/[^/]+\/(visibility|revoke)$/, methods: ['POST'] },
   { pattern: /^\/trust\/domains(\/|$)/ },
-  { pattern: /^\/auth\/quota$/, methods: ['GET'] },
   // /auth/link is not guarded here. guardApiRoute calls identify(), which upserts
   // each login. The link handler must reject a missing { confirm: true } before any
   // user-store write, then validate both credentials itself.

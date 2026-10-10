@@ -183,6 +183,7 @@ export function createInitialAuditContext(
     citationRatePercent: null,
     shareOfVoiceScore: null,
     healthScore: null,
+    checks: null,
     measurementStatus: 'not_measured',
     measurementReason: 'Audit has not measured search or page evidence yet.',
     llmCrawlerReadiness: unevaluatedLlmCrawlerReport(),
@@ -316,7 +317,7 @@ export class CrewOrchestrator {
     // Node 3: Playbook Compliance Audit
     graph.addNode('auditor_node', 'Playbook Auditor', async (ctx, emit) => {
       const llmCrawlerReadiness = await probeLlmCrawlerReadiness(ctx.targetUrl);
-      const { findings, healthScore } = await playbookAuditorAgent.execute(
+      const { findings, healthScore, checks, llmCrawler } = await playbookAuditorAgent.execute(
         ctx.focus,
         ctx.scrapedPages,
         ctx.serpEvidence,
@@ -326,7 +327,8 @@ export class CrewOrchestrator {
       return {
         findings,
         healthScore,
-        llmCrawlerReadiness,
+        checks,
+        llmCrawlerReadiness: llmCrawler || llmCrawlerReadiness,
         ...deriveAuditMeasurement({
           citationRatePercent: ctx.citationRatePercent,
           shareOfVoiceScore: ctx.shareOfVoiceScore,
@@ -414,7 +416,8 @@ export class CrewOrchestrator {
         ctx.findings,
         ctx.patches,
         ctx.dna,
-        emit
+        emit,
+        ctx.checks,
       );
       return { plainEnglishBrief };
     });

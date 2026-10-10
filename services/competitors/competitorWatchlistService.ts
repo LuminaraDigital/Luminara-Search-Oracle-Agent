@@ -31,6 +31,19 @@ export interface CompetitorAlert {
   read: boolean;
 }
 
+export function isValidCompetitorName(name: string): boolean {
+  if (!name || typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  if (trimmed.length < 2 || trimmed.length > 100) return false;
+  // Reject square brackets or literal placeholders like [Competitor A]
+  if (trimmed.includes('[') || trimmed.includes(']') || trimmed.includes('{') || trimmed.includes('}')) return false;
+  // Reject generic placeholders
+  if (/^(competitor|rival|brand|company|entity)\s*([a-z0-9]|\b.*placeholder\b)?$/i.test(trimmed)) return false;
+  if (/^\[?competitor\s+[a-z0-9]+\]?$/i.test(trimmed)) return false;
+  if (/^(unknown|none|n\/?a|placeholder|null|undefined)$/i.test(trimmed)) return false;
+  return true;
+}
+
 let watchMemory: CompetitorWatchItem[] = [];
 let alertMemory: CompetitorAlert[] = [];
 
@@ -46,22 +59,23 @@ function canLS(): boolean {
 }
 
 function loadWatch(): CompetitorWatchItem[] {
-  if (!canLS()) return [...watchMemory];
+  if (!canLS()) return watchMemory.filter((w) => isValidCompetitorName(w.name));
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...watchMemory];
+    if (!raw) return watchMemory.filter((w) => isValidCompetitorName(w.name));
     const parsed = JSON.parse(raw) as CompetitorWatchItem[];
-    return Array.isArray(parsed) ? parsed : [...watchMemory];
+    const valid = Array.isArray(parsed) ? parsed.filter((w) => isValidCompetitorName(w.name)) : watchMemory;
+    return valid.filter((w) => isValidCompetitorName(w.name));
   } catch {
-    return [...watchMemory];
+    return watchMemory.filter((w) => isValidCompetitorName(w.name));
   }
 }
 
 function saveWatch(items: CompetitorWatchItem[]): void {
-  watchMemory = [...items];
+  watchMemory = items.filter((w) => isValidCompetitorName(w.name));
   if (!canLS()) return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(watchMemory));
     noteWorkspaceDirty();
   } catch {
     /* ignore */
@@ -69,19 +83,24 @@ function saveWatch(items: CompetitorWatchItem[]): void {
 }
 
 function loadAlerts(): CompetitorAlert[] {
-  if (!canLS()) return [...alertMemory];
+  if (!canLS()) return alertMemory.filter((a) => isValidCompetitorName(a.competitorName));
   try {
     const raw = localStorage.getItem(ALERTS_KEY);
-    if (!raw) return [...alertMemory];
+    if (!raw) return alertMemory.filter((a) => isValidCompetitorName(a.competitorName));
     const parsed = JSON.parse(raw) as CompetitorAlert[];
-    return Array.isArray(parsed) ? parsed : [...alertMemory];
+    const valid = Array.isArray(parsed)
+      ? parsed.filter((a) => isValidCompetitorName(a.competitorName))
+      : alertMemory;
+    return valid.filter((a) => isValidCompetitorName(a.competitorName));
   } catch {
-    return [...alertMemory];
+    return alertMemory.filter((a) => isValidCompetitorName(a.competitorName));
   }
 }
 
 function saveAlerts(alerts: CompetitorAlert[]): void {
-  alertMemory = alerts.slice(-100);
+  alertMemory = alerts
+    .filter((a) => isValidCompetitorName(a.competitorName))
+    .slice(-100);
   if (!canLS()) return;
   try {
     localStorage.setItem(ALERTS_KEY, JSON.stringify(alertMemory));
@@ -108,7 +127,9 @@ export function addCompetitor(
     return { error: `Watchlist limit is ${limit} on your plan.` };
   }
   const cleanName = name.trim().slice(0, 120);
-  if (!cleanName) return { error: 'Competitor name required' };
+  if (!cleanName || !isValidCompetitorName(cleanName)) {
+    return { error: 'Please enter a valid competitor or brand name (placeholders like [Competitor A] are not allowed).' };
+  }
   const bd = brandDomain
     .replace(/^https?:\/\//i, '')
     .replace(/^www\./i, '')
@@ -136,7 +157,7 @@ export function removeCompetitor(id: string): void {
 
 export function seedFromDna(competitors: string[], brandDomain: string, planId?: string | null): number {
   let added = 0;
-  for (const name of competitors || []) {
+  for (const name of (competitors || []).filter(isValidCompetitorName)) {
     const res = addCompetitor(name, brandDomain, { planId });
     if (!('error' in res)) added++;
   }
@@ -176,17 +197,23 @@ export function evaluateCitationDeltas(brandDomain: string): CompetitorAlert[] {
       newAlerts.push(alert);
       w.citationDelta = (w.citationDelta || 0) - 1;
     } else if (!was && is) {
-      const alert: CompetitorAlert = {
-        id: `ca-${now}-${Math.random().toString(36).slice(2, 6)}`,
-        competitorName: w.name,
-        brandDomain: w.brandDomain,
-        change: 'gained',
-        message: `[[${w.name}]] appeared in your latest audit for ${w.brandDomain}.`,
-        createdAt: now,
-        read: false,
-      };
-      newAlerts.push(alert);
-      w.citationDelta = (w.citationDelta || 0) + 1;
+      // Confirmed across at least two real audits before declaring GAINED
+      const totalMentionAudits = audits.filter((a) =>
+        a.competitorsMentioned.map((c) => c.toLowerCase()).includes(key),
+      ).length;
+      if (totalMentionAudits >= 2) {
+        const alert: CompetitorAlert = {
+          id: `ca-${now}-${Math.random().toString(36).slice(2, 6)}`,
+          competitorName: w.name,
+          brandDomain: w.brandDomain,
+          change: 'gained',
+          message: `[[${w.name}]] appeared in your latest audit for ${w.brandDomain}.`,
+          createdAt: now,
+          read: false,
+        };
+        newAlerts.push(alert);
+        w.citationDelta = (w.citationDelta || 0) + 1;
+      }
     }
   }
 
@@ -226,6 +253,7 @@ export const competitorWatchlistService = {
   listAlerts,
   markAlertsRead,
   sentinelKeywordsFor,
+  isValidCompetitorName,
   STORAGE_KEY,
   ALERTS_KEY,
 };

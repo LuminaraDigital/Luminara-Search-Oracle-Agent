@@ -367,9 +367,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             <span className="w-2 h-2 rounded-full bg-gold animate-pulse shrink-0" />
             <span>{triggerReason || 'Free tier daily request allowance reached.'}</span>
           </div>
-          {quota && !quota.isUnlimited && (
+          {quota && quota.limit > 0 && (
             <span className="font-mono text-gold shrink-0 font-bold">
-              {quota.used}/{quota.limit} used today
+              {quota.used}/{quota.limit} {quota.unit || 'used today'}
             </span>
           )}
         </div>

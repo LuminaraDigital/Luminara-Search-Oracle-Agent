@@ -263,7 +263,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
 
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-mono text-gold-light bg-gold/10 px-2 py-0.5 rounded border border-gold/20">
-                        Confidence: {(prop.confidence * 100).toFixed(0)}%
+                        Confidence: {prop.confidence >= 0.8 ? 'High' : prop.confidence >= 0.65 ? 'Medium' : 'Low'}
                       </span>
                     </div>
                   </div>

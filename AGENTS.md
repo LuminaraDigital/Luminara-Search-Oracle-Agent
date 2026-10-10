@@ -19,6 +19,31 @@ This repository is **Luminara Suite**: React (Vite) + Cloudflare Workers + D1, w
 - Subsystem invariants live in per-folder README.md files. Update the README when you change an invariant.
 - Specs under `specs/` are public design records: what, why, alternatives. No line numbers, secrets, or migration dump noise.
 
+## Code quality and simplicity defaults (Ponytail, pstack, Thermo-Nuclear)
+
+These three standards are default and mandatory across all code changes to keep the codebase unbloated, clean, direct, and maintainable:
+
+1. **Ponytail (Lazy senior dev mode):**
+   - The best code is the code never written. Solve the whole problem with the least new code.
+   - The smallest complete change: stop at the first rung that works (1. Does it need to exist? 2. Already in codebase? 3. Standard library / platform feature? 4. Installed dependency? 5. One clear line? 6. Minimum working code).
+   - Deletion beats addition. Never add wrappers, speculative options, or boilerplate.
+   - Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, or tests for non-trivial logic.
+
+2. **pstack (Rigorous engineering discipline):**
+   - Go deep first: trace the real flow before picking a solution. Read all code your change touches.
+   - Laziness protocol: bias toward deletion and smallest change.
+   - Subtract before you add: remove dead weight first, then build on the simpler base.
+   - Minimize reader load: collapse one-caller wrappers, reduce layers and hidden mutable state.
+   - Boundary discipline: validate at system edges, trust internal types, keep business logic pure.
+   - Type system discipline: make illegal states unrepresentable. Test observable behavior, not internal plumbing.
+
+3. **Thermo-Nuclear Code Quality Review (Strict maintainability and code judo):**
+   - Ambitious structural simplification: seek "code judo" moves that make entire branches, helpers, or layers disappear.
+   - 1,000-line ceiling: do not let a change push a file from under 1k lines to over 1k lines without decomposing first.
+   - Zero spaghetti condition growth: reject ad-hoc conditionals and scattered flags in existing flows. Push logic into dedicated abstractions or domain models.
+   - Canonical layer reuse: keep logic in its rightful package/module; reuse canonical utilities instead of bespoke duplicates.
+
+
 ## Quality gates
 
 Before merging to `main`:

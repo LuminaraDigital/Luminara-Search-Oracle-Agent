@@ -11,12 +11,19 @@ import { tavilyService } from "./search/tavilyService";
 import { localSerpService } from "./search/localSerpService";
 import { unifiedScraperService } from "./scraping/unifiedScraper";
 import { siteEvidencePackService } from "./scraping/siteEvidencePack";
-import { geminiProxyHttpOptions } from "./apiClient";
+import { geminiProxyHttpOptions, withActionId, withActionIdStream } from "./apiClient";
 import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from "../utils/untrustedContent";
 import { toUserFacingText } from "../utils/userFacingText";
 import { generateGenUISystemPrompt } from "./genui/promptGenerator";
+import { budgetContext } from "./llm/contextBudget";
 
-const ORACLE_SYSTEM_PROMPT = `${SYSTEM_INSTRUCTIONS}\n\n${UNTRUSTED_CONTENT_RULE}\n\n${generateGenUISystemPrompt()}`;
+export const BASE_ORACLE_SYSTEM_PROMPT = `${SYSTEM_INSTRUCTIONS}\n\n${UNTRUSTED_CONTENT_RULE}`;
+export const ORACLE_SYSTEM_PROMPT_WITH_GENUI = `${BASE_ORACLE_SYSTEM_PROMPT}\n\n${generateGenUISystemPrompt()}`;
+export const ORACLE_SYSTEM_PROMPT = BASE_ORACLE_SYSTEM_PROMPT;
+
+export function getOracleSystemPrompt(enableGenUI = false): string {
+  return enableGenUI ? ORACLE_SYSTEM_PROMPT_WITH_GENUI : BASE_ORACLE_SYSTEM_PROMPT;
+}
 
 export const BUSINESS_DNA_SYSTEM_PROMPT =
   `You are an expert Strategic Business DNA extractor. Always output valid JSON matching the requested schema.\n${UNTRUSTED_CONTENT_RULE}`;
@@ -50,6 +57,8 @@ export interface StreamQueryOptions {
   preferredProvider?: NativeEngineId;
   /** When true, native providers may call live_search via tool_calls (also luminara_oracle_native_tools=1). */
   enableNativeTools?: boolean;
+  /** When true, include GenUI component rendering instructions in system prompt */
+  enableGenUI?: boolean;
 }
 
 import { empiricalCitationService, type EmpiricalCitationSummary } from './audit/empiricalCitationService';
@@ -83,6 +92,7 @@ import { competitorWatchlistService } from './competitors/competitorWatchlistSer
 import { WIKI_LINK_PROMPT_HINT } from './audit/wikiLinkService';
 import { postAuditReflectionService } from './audit/postAuditReflectionService';
 import { dreamingClient } from './dreaming/dreamingClient';
+import { formatCitationLabel, type AuditChecksSummary, type AuditCitationSummary } from './audit/auditMetrics';
 
 export interface AuditReportResult {
   text: string;
@@ -103,6 +113,8 @@ export interface AuditReportResult {
   shareOfVoice?: ShareOfVoiceSummary;
   sourceGraph?: SourceCitationGraph;
   enterpriseTrust?: EnterpriseTrustPack;
+  checks?: AuditChecksSummary | null;
+  citation?: AuditCitationSummary | null;
 }
 
 import { shouldSearch, toSearchQuery } from './search/searchIntent';
@@ -314,6 +326,10 @@ Respect these consolidated business memories and historical recommendation outco
    * With automatic fallback to Groq / NVIDIA NIM and live Tavily SERP grounding
    */
   async *streamQuery(prompt: string, mode: OracleMode, dna?: BusinessDNA | null, opts: StreamQueryOptions = {}): AsyncGenerator<StreamChunk, void, unknown> {
+    yield* withActionIdStream('ask', () => this.streamQueryInternal(prompt, mode, dna, opts));
+  }
+
+  private async *streamQueryInternal(prompt: string, mode: OracleMode, dna?: BusinessDNA | null, opts: StreamQueryOptions = {}): AsyncGenerator<StreamChunk, void, unknown> {
     const geminiKey = getApiKey();
     const dnaContext = this.getDNAContext(dna);
     const history = opts.history ?? [];
@@ -351,8 +367,7 @@ Respect these consolidated business memories and historical recommendation outco
     }
 
     const chatPlaybooks = opts.skipSearch ? '' : playbookContext(selectChatPlaybooks(prompt), 9000);
-    const grounded = tavilyContext ? wrapUntrustedContent('LIVE_SEARCH', tavilyContext) : '';
-    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${chatPlaybooks ? chatPlaybooks + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${grounded ? grounded + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
+    const systemPrompt = getOracleSystemPrompt(opts.enableGenUI);
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama Local & Cloud
     // With automatic native engine discovery, searching, and instant auto-failover
@@ -362,6 +377,25 @@ Respect these consolidated business memories and historical recommendation outco
     const nativeToolsEnabled =
       opts.enableNativeTools === true ||
       (typeof localStorage !== 'undefined' && localStorage.getItem('luminara_oracle_native_tools') === '1');
+
+    // Context budgeting & trimming
+    const budgeted = budgetContext(
+      {
+        systemPrompt,
+        userPrompt: prompt,
+        history: history.map(h => ({ role: h.role, content: h.content })),
+        vfsContext,
+        chatPlaybooks,
+        groundedSnippets: tavilySources.map(s => ({ uri: s.uri, title: s.title, content: s.title })),
+        dnaContext,
+      },
+      {
+        providerId: preferredProvider,
+        isDeepThink: mode === OracleMode.DEEP_THINK,
+      },
+    );
+    const fullPrompt = budgeted.fullPrompt;
+
     let nativeFailure: unknown = null;
     try {
       const bestNative = await aiProviderService.getBestAvailableProvider(preferredProvider);
@@ -380,8 +414,9 @@ Respect these consolidated business memories and historical recommendation outco
           provider: bestNative,
           prompt: fullPrompt,
           generateOptions: {
-            systemPrompt: ORACLE_SYSTEM_PROMPT,
+            systemPrompt,
             temperature: mode === OracleMode.DEEP_THINK ? 0.4 : 0.7,
+            maxTokens: budgeted.maxTokens,
             history,
             model: preferredModel,
             preferredProvider,
@@ -427,8 +462,9 @@ Respect these consolidated business memories and historical recommendation outco
       if (bestNative) {
         let isFirst = true;
         for await (const chunk of aiProviderService.streamWithFailover(fullPrompt, {
-          systemPrompt: ORACLE_SYSTEM_PROMPT,
+          systemPrompt,
           temperature: mode === OracleMode.DEEP_THINK ? 0.4 : 0.7,
+          maxTokens: budgeted.maxTokens,
           history,
           model: preferredModel,
           preferredProvider,
@@ -453,7 +489,8 @@ Respect these consolidated business memories and historical recommendation outco
         const ai = this.getAI();
         const model = mode === OracleMode.DEEP_THINK ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
         const config: any = {
-          systemInstruction: ORACLE_SYSTEM_PROMPT,
+          systemInstruction: systemPrompt,
+          maxOutputTokens: budgeted.maxTokens,
           tools: [{ googleSearch: {} }],
         };
 
@@ -514,6 +551,14 @@ Respect these consolidated business memories and historical recommendation outco
     urls: Array<{ uri: string; title: string }>;
     toolExecutions: ToolExecution[];
   }> {
+    return withActionId('audit', () => this.queryWithSearchInternal(prompt, dna, opts));
+  }
+
+  private async queryWithSearchInternal(prompt: string, dna?: BusinessDNA | null, opts: StreamQueryOptions = {}): Promise<{
+    text: string;
+    urls: Array<{ uri: string; title: string }>;
+    toolExecutions: ToolExecution[];
+  }> {
     const toolExecutions: ToolExecution[] = [];
     const dnaContext = this.getDNAContext(dna);
     const history = opts.history ?? [];
@@ -549,16 +594,31 @@ Respect these consolidated business memories and historical recommendation outco
       }
     }
 
-    const groundedSearch = searchContext ? wrapUntrustedContent('LIVE_SEARCH', searchContext) : '';
-    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${groundedSearch ? groundedSearch + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
+    const systemPrompt = getOracleSystemPrompt(opts.enableGenUI);
+    const budgeted = budgetContext(
+      {
+        systemPrompt,
+        userPrompt: prompt,
+        history: history.map(h => ({ role: h.role, content: h.content })),
+        vfsContext,
+        groundedSnippets: foundUrls.map(s => ({ uri: s.uri, title: s.title, content: s.title })),
+        dnaContext,
+      },
+      {
+        providerId: opts.preferredProvider,
+        isDeepThink: false,
+      },
+    );
+    const fullPrompt = budgeted.fullPrompt;
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama with auto-failover
     try {
       const best = await aiProviderService.getBestAvailableProvider();
       if (best) {
         const result = await aiProviderService.generateWithFailover(fullPrompt, {
-          systemPrompt: ORACLE_SYSTEM_PROMPT,
+          systemPrompt,
           temperature: 0.5,
+          maxTokens: budgeted.maxTokens,
           history,
         });
 
@@ -581,7 +641,8 @@ Respect these consolidated business memories and historical recommendation outco
           model: 'gemini-3-pro-preview',
           contents: toGeminiContents(fullPrompt, history),
           config: {
-            systemInstruction: ORACLE_SYSTEM_PROMPT,
+            systemInstruction: systemPrompt,
+            maxOutputTokens: budgeted.maxTokens,
             tools: [{ googleSearch: {} }, { codeExecution: {} }],
           }
         });
@@ -625,6 +686,16 @@ Respect these consolidated business memories and historical recommendation outco
    * When Instant Audit passes usable crew pages or SERP rows, those are reused and the matching fetch is skipped.
    */
   async generateAuditReport(
+    websiteUrl: string,
+    focus: ReportFocus = 'SEO',
+    dna?: BusinessDNA | null,
+    lenses: AuditLens[] = [],
+    crewEvidence?: AuditReportCrewEvidence,
+  ): Promise<AuditReportResult> {
+    return withActionId('audit', () => this.generateAuditReportInternal(websiteUrl, focus, dna, lenses, crewEvidence));
+  }
+
+  private async generateAuditReportInternal(
     websiteUrl: string,
     focus: ReportFocus = 'SEO',
     dna?: BusinessDNA | null,
@@ -948,13 +1019,29 @@ Strict Formatting Guidelines:
       }
 
       let reportText = text;
+      const finalChecks = crewEvidence?.checks || null;
+      const finalCitation: AuditCitationSummary | null =
+        empiricalSummary &&
+        empiricalSummary.measurementStatus !== 'not_measured' &&
+        typeof empiricalSummary.citationRatePercent === 'number'
+          ? {
+              ratePercent: empiricalSummary.citationRatePercent,
+              sampleCount: empiricalSummary.totalQueriesTested,
+              citedCount: empiricalSummary.queriesCitedCount,
+              label: formatCitationLabel(empiricalSummary.queriesCitedCount, empiricalSummary.totalQueriesTested),
+              measurementStatus: 'measured',
+            }
+          : null;
+
       try {
         const vault = brandMemoryVaultService.ingestAudit({
           domain: displayUrl,
           focus: String(focus),
           reportText: text,
           title: reportTitle,
-          healthScore: trustPack?.citeWorthiness ?? null,
+          healthScore: null,
+          checks: finalChecks,
+          citation: finalCitation,
           citationRatePercent: empiricalSummary?.citationRatePercent ?? null,
           topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
           dna,
@@ -970,7 +1057,7 @@ Strict Formatting Guidelines:
             domain: displayUrl,
             focus: String(focus),
             auditId: vault.entry.id,
-            healthScore: trustPack?.citeWorthiness ?? null,
+            healthScore: null,
             scrapedEvidence: {
               scrapedUrl: websiteUrl,
               hasContent: Boolean(scrapedContent),
@@ -998,7 +1085,9 @@ Strict Formatting Guidelines:
               sourceId: vault.entry.id,
               payload: {
                 focus: String(focus),
-                healthScore: trustPack?.citeWorthiness ?? null,
+                healthScore: null,
+                checks: finalChecks,
+                citation: finalCitation,
                 citationRatePercent: empiricalSummary?.citationRatePercent ?? null,
                 topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
               },
@@ -1062,6 +1151,8 @@ Strict Formatting Guidelines:
         shareOfVoice,
         sourceGraph,
         enterpriseTrust,
+        checks: finalChecks,
+        citation: finalCitation,
       };
     };
 

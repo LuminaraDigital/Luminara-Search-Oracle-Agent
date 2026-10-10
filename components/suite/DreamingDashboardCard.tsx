@@ -60,7 +60,7 @@ export const DreamingDashboardCard: React.FC<DreamingDashboardCardProps> = ({
             </div>
             <p className="text-xs sm:text-sm text-gray-200 mt-1">
               {lastRun
-                ? `Consolidated: ${lastRun.proposalsCount} insights recorded across audits and recommendations.`
+                ? `Consolidated: ${lastRun.proposalsCount ?? (lastRun as any).proposals_count ?? 0} insights recorded across audits and recommendations.`
                 : 'Your Business DNA memory layer is active and learning from every audit.'}
             </p>
             <p className="text-[11px] text-gray-400 mt-0.5">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS } from './types';
+import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS, AgentRosterRole } from './types';
 import { geminiService, toChatHistory } from './services/geminiService';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -14,6 +14,8 @@ import { resolveHostedScoutRail } from './services/audit/hostedScoutRail';
 import { resolveContinuumIdeaId, continuumEventForViewChange } from './services/ideaScout/continuum';
 import MessageList from './components/MessageList';
 import InputBar from './components/InputBar';
+import { AgentRosterBar } from './components/suite/AgentRosterBar';
+import { CREW_PROFILES } from './services/agentCore/crewOrchestrator';
 import Waveform from './components/Waveform';
 import LandingPage from './components/LandingPage';
 import { themingService } from './services/harness/themingService';
@@ -206,6 +208,7 @@ const App: React.FC = () => {
       return [];
     }
   });
+  const [selectedAgentRole, setSelectedAgentRole] = useState<AgentRosterRole | null>(null);
   const [loginWallMode, setLoginWallMode] = useState<'signin' | 'signup' | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
@@ -665,12 +668,18 @@ const App: React.FC = () => {
       setView(AppView.ORACLE_AGENT);
     }
 
+    const activeProfile = selectedAgentRole ? CREW_PROFILES[selectedAgentRole] : null;
+    const promptToSend = activeProfile
+      ? `[SPECIALIST AGENT: ${activeProfile.name} - ${activeProfile.tagline}]\n[MISSION: ${activeProfile.goal}]\n[INSTRUCTION: Adopt this specialized role and focus your audit, tone, and strategic recommendations accordingly.]\n\n${content}`
+      : content;
+
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
       content,
       displayContent: opts.displayContent,
       timestamp: Date.now(),
+      agentRole: selectedAgentRole || undefined,
     };
 
     // History is captured before appending this turn so the model sees prior turns + the new prompt once.
@@ -689,6 +698,7 @@ const App: React.FC = () => {
       timestamp: Date.now(),
       mode,
       isStreaming: true,
+      agentRole: selectedAgentRole || undefined,
     };
     setMessages(prev => [...prev, modelMsg]);
 
@@ -714,7 +724,7 @@ const App: React.FC = () => {
       if (preferServer) {
         let softFail = false;
         for await (const ev of streamOracleChat({
-          message: content,
+          message: promptToSend,
           history: history.map((h) => ({ role: h.role, content: h.content })),
           signal: controller.signal,
         })) {
@@ -780,7 +790,7 @@ const App: React.FC = () => {
       }
 
       if (!usedServerOracle) {
-        for await (const chunk of geminiService.streamQuery(content, mode, dna, {
+        for await (const chunk of geminiService.streamQuery(promptToSend, mode, dna, {
           history,
           skipSearch: opts.skipSearch,
         })) {
@@ -871,7 +881,7 @@ const App: React.FC = () => {
       setProgress(0);
       setHeaderSearch('');
     }
-  }, [mode, isThinking, dna, view, messages, setView, appAuth.authenticated]);
+  }, [mode, isThinking, dna, view, messages, setView, appAuth.authenticated, selectedAgentRole]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -1819,6 +1829,11 @@ const App: React.FC = () => {
       {/* Terminal Footer only in Oracle Agent View */}
       {view === AppView.ORACLE_AGENT && !isVoiceActive && (
         <footer className="z-40 bg-gradient-to-t from-black via-black to-transparent flex flex-col gap-0.5 pb-2 shrink-0">
+          <AgentRosterBar
+            selectedRole={selectedAgentRole}
+            onSelectRole={setSelectedAgentRole}
+            disabled={isThinking}
+          />
           <div 
             className="flex flex-wrap items-center justify-center gap-2 px-4 transition-all duration-700 overflow-hidden py-1.5 sm:py-2" 
             style={{ 

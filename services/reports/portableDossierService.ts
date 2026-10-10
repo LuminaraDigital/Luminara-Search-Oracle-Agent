@@ -19,8 +19,9 @@ export interface DossierSection {
 export interface PortableDossierData {
   title: string;
   targetDomain: string;
-  overallScore: number;
-  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  overallScore?: number | null;
+  checksSummary?: string | null;
+  grade?: 'A' | 'B' | 'C' | 'D' | 'F' | string | null;
   generatedAt: number;
   trustReceiptHash: string;
   sections: DossierSection[];
@@ -264,13 +265,13 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
         <p style="color: var(--text-secondary); margin-top: 0.5rem;">Target Entity: <strong>${safeDomain}</strong></p>
         <div class="hero-meta">
           <div>
-            <span>Verified Score: </span>
-            <span class="score-badge">${data.overallScore}/100 (Grade ${data.grade})</span>
+            <span>Audit Status: </span>
+            <span class="score-badge">${typeof data.overallScore === 'number' ? `${data.overallScore}/100${data.grade ? ` (Grade ${data.grade})` : ''}` : data.checksSummary ? escapeHtml(data.checksSummary) : 'Not measured'}</span>
           </div>
           <div>${formattedDate}</div>
         </div>
         <div style="margin-top: 1rem;">
-          <div style="font-size: 0.75rem; color: var(--text-secondary);">Trust Receipt Cryptographic Hash:</div>
+          <div style="font-size: 0.75rem; color: var(--text-secondary);">Audit SHA-256 Digest:</div>
           <div class="trust-seal">${safeHash}</div>
         </div>
       </div>

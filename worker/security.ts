@@ -71,9 +71,11 @@ export const MAX_BODY_BYTES = 1_000_000; // provider proxies (chat completions w
 export const MAX_SMALL_BODY_BYTES = 64_000; // auth / invoice / webhook / sentinel
 
 /** Caps for hosted-key LLM calls (cost abuse control). BYOK is not clamped. */
-export const HOSTED_MAX_TOKENS = 8192;
+export const HOSTED_MAX_TOKENS = 1024;
+export const HOSTED_DEEP_THINK_MAX_TOKENS = 2048;
 export const HOSTED_MAX_COMPLETION_CHOICES = 1;
 export const HOSTED_MAX_MESSAGES = 64;
+export const HOSTED_MAX_MESSAGE_CHARS = 32_000;
 
 export type BodyResult<T> = { ok: true; value: T; text: string } | { ok: false; status: number; error: string };
 
@@ -88,20 +90,54 @@ export function clampHostedChatCompletionsBody(body: unknown): { ok: true; body:
   if (Array.isArray(b.messages) && b.messages.length > HOSTED_MAX_MESSAGES) {
     return { ok: false, error: `Too many messages (max ${HOSTED_MAX_MESSAGES} on hosted keys)` };
   }
+
+  // Defense-in-depth clamp: prevent message payload from exceeding provider token window
+  if (Array.isArray(b.messages)) {
+    let totalChars = 0;
+    for (const m of b.messages) {
+      if (m && typeof m === 'object' && typeof (m as { content?: unknown }).content === 'string') {
+        totalChars += (m as { content: string }).content.length;
+      }
+    }
+    if (totalChars > HOSTED_MAX_MESSAGE_CHARS) {
+      const msgs = [...(b.messages as Array<{ role?: string; content?: string }>)];
+      while (totalChars > HOSTED_MAX_MESSAGE_CHARS && msgs.length > 2) {
+        const idx = msgs.findIndex((m, i) => m.role !== 'system' && i < msgs.length - 1);
+        if (idx !== -1) {
+          totalChars -= (msgs[idx].content || '').length;
+          msgs.splice(idx, 1);
+        } else {
+          break;
+        }
+      }
+      if (totalChars > HOSTED_MAX_MESSAGE_CHARS && msgs.length > 0) {
+        const lastMsg = { ...msgs[msgs.length - 1] };
+        const maxAllowed = Math.max(1000, HOSTED_MAX_MESSAGE_CHARS - (totalChars - (lastMsg.content || '').length));
+        lastMsg.content = (lastMsg.content || '').slice(0, maxAllowed);
+        msgs[msgs.length - 1] = lastMsg;
+      }
+      b.messages = msgs;
+    }
+  }
+
+  const modelStr = String(b.model || '').toLowerCase();
+  const isDeepThink = modelStr.includes('r1') || modelStr.includes('reason') || modelStr.includes('deep-think');
+  const ceiling = isDeepThink ? HOSTED_DEEP_THINK_MAX_TOKENS : HOSTED_MAX_TOKENS;
+
   const clampToken = (key: 'max_tokens' | 'max_completion_tokens') => {
     const v = b[key];
     if (v === undefined || v === null) return;
     const n = Number(v);
     if (!Number.isFinite(n) || n < 1) {
-      b[key] = HOSTED_MAX_TOKENS;
+      b[key] = ceiling;
       return;
     }
-    b[key] = Math.min(Math.floor(n), HOSTED_MAX_TOKENS);
+    b[key] = Math.min(Math.floor(n), ceiling);
   };
   clampToken('max_tokens');
   clampToken('max_completion_tokens');
   if (b.max_tokens === undefined && b.max_completion_tokens === undefined) {
-    b.max_tokens = HOSTED_MAX_TOKENS;
+    b.max_tokens = ceiling;
   }
   if (b.n !== undefined) {
     const n = Number(b.n);

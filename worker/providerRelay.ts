@@ -2,7 +2,7 @@ import type { Env } from './env';
 import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
-import { isUserSubscribed, checkHostedQuota, type QuotaStatus } from './quotaMiddleware';
+import { isUserSubscribed, checkHostedQuota, refundDailyQuota, type QuotaStatus } from './quotaMiddleware';
 import { runWorkersAiChatFallback } from './workersAiFallback';
 import {
   MAX_BODY_BYTES,
@@ -308,7 +308,11 @@ export async function proxyProvider(
       );
     }
 
-    quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
+    const actionId = request.headers.get('x-luminara-action-id') || null;
+    quotaGate = await checkHostedQuota(env, who.user, {
+      clientIp: clientIp(request),
+      actionId,
+    });
     if (!quotaGate.ok) {
       return json(
         {
@@ -378,6 +382,7 @@ export async function proxyProvider(
           console.warn('[Workers AI fallback error for unconfigured provider]', aiErr);
         }
       }
+      if (quotaGate?.quotaKeyId) await refundDailyQuota(env, quotaGate.quotaKeyId, 1, quotaGate.actionId);
       return json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503);
     }
     if (auth.body !== undefined) body = auth.body;
@@ -386,15 +391,24 @@ export async function proxyProvider(
     if (request.method !== 'GET') {
       if (isChatCompletionsPath(providerId, subPath)) {
         const clamped = clampHostedChatCompletionsBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) {
+          if (quotaGate?.quotaKeyId) await refundDailyQuota(env, quotaGate.quotaKeyId, 1, quotaGate.actionId);
+          return json({ error: clamped.error }, 400);
+        }
         body = clamped.body;
       } else if (providerId === 'gemini') {
         const clamped = clampHostedGeminiBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) {
+          if (quotaGate?.quotaKeyId) await refundDailyQuota(env, quotaGate.quotaKeyId, 1, quotaGate.actionId);
+          return json({ error: clamped.error }, 400);
+        }
         body = clamped.body;
       } else if (providerId === 'firecrawl' && subPath === '/crawl') {
         const clamped = clampHostedFirecrawlCrawlBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) {
+          if (quotaGate?.quotaKeyId) await refundDailyQuota(env, quotaGate.quotaKeyId, 1, quotaGate.actionId);
+          return json({ error: clamped.error }, 400);
+        }
         body = clamped.body;
       }
     }
@@ -413,6 +427,7 @@ export async function proxyProvider(
     for (const target of targets) {
       const parsed = safePublicUrl(target);
       if (!parsed) {
+        if (quotaGate?.quotaKeyId) await refundDailyQuota(env, quotaGate.quotaKeyId, 1, quotaGate.actionId);
         return json(
           { error: 'Target URL is invalid or targets a private/local host (SSRF blocked)', code: 'SSRF_BLOCKED' },
           400,
@@ -420,6 +435,7 @@ export async function proxyProvider(
       }
       const isPublic = await resolvesToPublicAddress(parsed.hostname);
       if (!isPublic) {
+        if (quotaGate?.quotaKeyId) await refundDailyQuota(env, quotaGate.quotaKeyId, 1, quotaGate.actionId);
         return json(
           { error: 'Target hostname does not resolve to a public address (SSRF blocked)', code: 'SSRF_BLOCKED' },
           400,
@@ -445,11 +461,12 @@ export async function proxyProvider(
         console.warn('[Workers AI fallback error after network throw]', aiErr);
       }
     }
+    if (quotaGate?.quotaKeyId) await refundDailyQuota(env, quotaGate.quotaKeyId, 1, quotaGate.actionId);
     return json({ error: `Upstream connection failed: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}` }, 502);
   }
 
-  // Seamless Groq failover if hosted primary key hits billing (402), auth (401), or rate limit (429)
-  if (!userKey && providerId === 'groq' && (res.status === 401 || res.status === 402 || res.status === 429) && env.GROQ_API_KEY_FALLBACK) {
+  // Seamless Groq failover if hosted primary key hits billing (402), auth (401), payload too large (413), or rate limit (429)
+  if (!userKey && providerId === 'groq' && (res.status === 401 || res.status === 402 || res.status === 413 || res.status === 429) && env.GROQ_API_KEY_FALLBACK) {
     const fallbackKey = env.GROQ_API_KEY_FALLBACK.trim();
     const currentKey = (headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
     if (fallbackKey && fallbackKey !== currentKey) {
@@ -471,14 +488,34 @@ export async function proxyProvider(
   }
 
   // Fallback to Cloudflare Workers AI edge model if hosted chat completions upstream fails
-  if (!userKey && isChatCompletionsPath(providerId, subPath) && env.AI && (!res.ok || res.status >= 400)) {
-    try {
-      const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
-      const aiResult = await runWorkersAiChatFallback(env.AI, body);
-      return makeFallbackResponse(aiResult, isStreaming, quotaGate);
-    } catch (aiErr) {
-      console.warn('[Workers AI fallback error]', aiErr);
+  if (!userKey && isChatCompletionsPath(providerId, subPath) && (!res.ok || res.status >= 400)) {
+    if (env.AI) {
+      try {
+        const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
+        const aiResult = await runWorkersAiChatFallback(env.AI, body);
+        return makeFallbackResponse(aiResult, isStreaming, quotaGate);
+      } catch (aiErr) {
+        console.warn('[Workers AI fallback error]', aiErr);
+      }
     }
+    // If Workers AI also failed or env.AI is not configured, check if it's 402 billing to distinguish BYOK from hosted
+    if (res.status === 402) {
+      if (quotaGate?.quotaKeyId) await refundDailyQuota(env, quotaGate.quotaKeyId, 1, quotaGate.actionId);
+      return json({
+        ok: false,
+        error: `The hosted ${providerId} service is temporarily unavailable due to upstream provider credit limits. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`,
+        code: 'HOSTED_PROVIDER_DEPLETED',
+        provider: providerId,
+      }, 503);
+    }
+    // For 413, 429, 5xx, or when fallback throws: refund quota and return normalized friendly error
+    if (quotaGate?.quotaKeyId) await refundDailyQuota(env, quotaGate.quotaKeyId, 1, quotaGate.actionId);
+    return json({
+      error: {
+        code: 'AI_UNAVAILABLE',
+        message: 'Luminara could not answer right now. Nothing was charged. Try again in a minute.',
+      },
+    }, 503);
   }
 
   // Stream the upstream body straight through (SSE for chat completions works unchanged).
@@ -486,7 +523,12 @@ export async function proxyProvider(
   const out = new Headers(res.headers);
   stripUpstreamHeaders(out);
   if (quotaGate) {
-    if (quotaGate.isUnlimited) {
+    if (quotaGate.fairUse) {
+      out.set('X-Quota-Limit', String(quotaGate.limit));
+      out.set('X-Quota-Remaining', String(quotaGate.remaining));
+      out.set('X-Quota-Reset', String(quotaGate.resetSec));
+      out.set('X-Quota-Fair-Use', 'true');
+    } else if (quotaGate.isUnlimited) {
       out.set('X-Quota-Limit', 'unlimited');
       out.set('X-Quota-Remaining', 'unlimited');
     } else if (quotaGate.limit > 0) {

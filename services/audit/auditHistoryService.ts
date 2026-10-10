@@ -4,6 +4,7 @@
  */
 
 import { entitlementsFor, type PlanId } from '../plans/planEntitlements';
+import type { AuditChecksSummary, AuditCitationSummary } from './auditMetrics';
 
 const STORAGE_KEY = 'luminara_audit_history_v1';
 const MAX_HARD_CAP = 500;
@@ -14,6 +15,8 @@ export interface AuditHistoryEntry {
   focus: string;
   measuredAt: number;
   healthScore: number | null;
+  checks?: AuditChecksSummary | null;
+  citation?: AuditCitationSummary | null;
   citationRatePercent: number | null;
   schemaGapCount: number | null;
   topCompetitor: string | null;
@@ -104,6 +107,8 @@ export interface RecordAuditInput {
   reportText: string;
   title?: string;
   healthScore?: number | null;
+  checks?: AuditChecksSummary | null;
+  citation?: AuditCitationSummary | null;
   citationRatePercent?: number | null;
   topCompetitor?: string | null;
   dnaCompetitors?: string[];
@@ -122,16 +127,31 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
       .split(/\n+/)
       .map((l) => l.trim())
       .find((l) => l.length > 40 && !l.startsWith('#') && !l.startsWith('|')) ||
-    text.slice(0, 240);
+      text.slice(0, 240);
 
   const entry: AuditHistoryEntry = {
     id: `audit-${Date.now()}-${(++auditSeq).toString(36)}`,
     domain,
     focus: input.focus,
     measuredAt: input.measuredAt ?? Date.now(),
-    healthScore: input.healthScore !== undefined ? input.healthScore : extractHealthScore(text),
+    healthScore:
+      input.healthScore !== undefined
+        ? input.healthScore
+        : input.checks
+          ? null
+          : extractHealthScore(text),
+    checks: input.checks ?? null,
+    citation: input.citation ?? (typeof input.citationRatePercent === 'number' ? {
+      ratePercent: Math.round(input.citationRatePercent),
+      sampleCount: 0,
+      citedCount: 0,
+      label: `${Math.round(input.citationRatePercent)}%`,
+      measurementStatus: 'measured',
+    } : null),
     citationRatePercent:
-      typeof input.citationRatePercent === 'number' ? Math.round(input.citationRatePercent) : null,
+      typeof input.citationRatePercent === 'number'
+        ? Math.round(input.citationRatePercent)
+        : input.citation?.ratePercent ?? null,
     schemaGapCount: extractSchemaGaps(text),
     topCompetitor: input.topCompetitor ?? null,
     competitorsMentioned: extractCompetitors(text, input.dnaCompetitors),

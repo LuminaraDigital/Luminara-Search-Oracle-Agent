@@ -1,9 +1,11 @@
 /**
  * Cloudflare Workers AI edge fallback for chat completions.
- * Falls back to @cf/meta/llama-3.1-8b-instruct and formats
+ * Falls back to @cf/meta/llama-3.3-70b-instruct-fp8-fast and formats
  * output as standard OpenAI ChatCompletion (JSON or SSE stream).
  */
 import type { Ai } from './env';
+
+export const WORKERS_AI_FALLBACK_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 export interface OpenAiChatCompletionChoice {
   index: number;
@@ -79,7 +81,7 @@ export function createOpenAiSseReadableStream(
                   id,
                   object: 'chat.completion.chunk',
                   created,
-                  model: '@cf/meta/llama-3.1-8b-instruct',
+                  model: WORKERS_AI_FALLBACK_MODEL,
                   choices: [
                     {
                       index: 0,
@@ -110,7 +112,7 @@ export function createOpenAiSseReadableStream(
                       id,
                       object: 'chat.completion.chunk',
                       created,
-                      model: '@cf/meta/llama-3.1-8b-instruct',
+                      model: WORKERS_AI_FALLBACK_MODEL,
                       choices: [
                         {
                           index: 0,
@@ -136,7 +138,7 @@ export function createOpenAiSseReadableStream(
                       id,
                       object: 'chat.completion.chunk',
                       created,
-                      model: '@cf/meta/llama-3.1-8b-instruct',
+                      model: WORKERS_AI_FALLBACK_MODEL,
                       choices: [
                         {
                           index: 0,
@@ -171,7 +173,7 @@ export function createOpenAiSseReadableStream(
                       id,
                       object: 'chat.completion.chunk',
                       created,
-                      model: '@cf/meta/llama-3.1-8b-instruct',
+                      model: WORKERS_AI_FALLBACK_MODEL,
                       choices: [
                         {
                           index: 0,
@@ -194,7 +196,7 @@ export function createOpenAiSseReadableStream(
               id,
               object: 'chat.completion.chunk',
               created,
-              model: '@cf/meta/llama-3.1-8b-instruct',
+              model: WORKERS_AI_FALLBACK_MODEL,
               choices: [
                 {
                   index: 0,
@@ -220,7 +222,7 @@ export function createOpenAiSseReadableStream(
               id,
               object: 'chat.completion.chunk',
               created,
-              model: '@cf/meta/llama-3.1-8b-instruct',
+              model: WORKERS_AI_FALLBACK_MODEL,
               choices: [
                 {
                   index: 0,
@@ -235,7 +237,7 @@ export function createOpenAiSseReadableStream(
             id,
             object: 'chat.completion.chunk',
             created,
-            model: '@cf/meta/llama-3.1-8b-instruct',
+            model: WORKERS_AI_FALLBACK_MODEL,
             choices: [
               {
                 index: 0,
@@ -282,11 +284,33 @@ export async function runWorkersAiChatFallback(ai: Ai, body: unknown): Promise<a
     messages = [{ role: 'user', content: parsedBody.prompt.trim() }];
   }
 
+  // Budget and clip messages if total length exceeds safe ceiling (24,000 characters)
+  let totalChars = messages.reduce((acc, m) => acc + (m.content ? m.content.length : 0), 0);
+  const MAX_WORKERS_AI_CHARS = 24_000;
+  if (totalChars > MAX_WORKERS_AI_CHARS && messages.length > 1) {
+    while (totalChars > MAX_WORKERS_AI_CHARS && messages.length > 2) {
+      const idx = messages.findIndex((m, i) => m.role !== 'system' && i < messages.length - 1);
+      if (idx !== -1) {
+        totalChars -= messages[idx].content.length;
+        messages.splice(idx, 1);
+      } else {
+        break;
+      }
+    }
+    if (totalChars > MAX_WORKERS_AI_CHARS && messages.length > 0) {
+      const last = { ...messages[messages.length - 1] };
+      const overflow = totalChars - MAX_WORKERS_AI_CHARS;
+      const keepChars = Math.max(1000, last.content.length - overflow);
+      last.content = last.content.slice(-keepChars);
+      messages[messages.length - 1] = last;
+    }
+  }
+
   const stream = Boolean(parsedBody.stream);
-  const aiResult = await ai.run('@cf/meta/llama-3.1-8b-instruct', {
+  const aiResult = await ai.run(WORKERS_AI_FALLBACK_MODEL, {
     messages,
     temperature: 0.7,
-    max_tokens: 2048,
+    max_tokens: 1024,
     stream,
   });
 
@@ -317,7 +341,7 @@ export async function runWorkersAiChatFallback(ai: Ai, body: unknown): Promise<a
     id,
     object: 'chat.completion',
     created,
-    model: '@cf/meta/llama-3.1-8b-instruct',
+    model: WORKERS_AI_FALLBACK_MODEL,
     choices: [
       {
         index: 0,
