@@ -10,6 +10,7 @@ import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
 import { claimStarsCharge, isStarsLedgerReady, releaseStarsCharge } from './paymentLedger';
+import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
   isStarsChargesReady,
@@ -371,6 +372,11 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       const planId = normalizePlanId(buyMatch[1]);
       const plan = PLANS[planId];
       if (plan) {
+        const refusal = await planDowngradeRefusal(env, String(msg.from?.id || ''), planId, 'so no invoice was opened and nothing was charged.').catch(() => null);
+        if (refusal) {
+          await api(env, 'sendMessage', { chat_id: chatId, text: refusal, reply_markup: openAppKeyboard(env) });
+          return;
+        }
         await api(env, 'sendInvoice', {
           chat_id: chatId,
           title: plan.title.slice(0, 32),
@@ -850,6 +856,10 @@ export async function createInvoiceLink(
   if (!plan) return { ok: false, error: `Unknown plan "${planId}"` };
   if (!userId || typeof userId !== 'number') return { ok: false, error: 'Valid userId required' };
 
+  // Refused here so the buyer reads why before an invoice opens. Pre-checkout checks again.
+  const refusal = await planDowngradeRefusal(env, String(userId), normId, 'so no invoice was opened and nothing was charged.').catch(() => null);
+  if (refusal) return { ok: false, error: refusal };
+
   const title = plan.title.slice(0, 32);
   const description = plan.description.slice(0, 255);
   const payload = `${normId}:${userId}`.slice(0, 128);
@@ -956,12 +966,17 @@ export function subscriptionListsCharge(sub: SubscriptionRecord | null | undefin
   return Boolean(chargeId) && appliedChargesOf(sub).includes(chargeId);
 }
 
-async function raiseStarsAlert(env: Env, text: string, details: Record<string, unknown> = {}): Promise<void> {
-  console.error(`[Stars] ALERT: ${text} ${JSON.stringify(details)}`);
+/** Messages every id in TELEGRAM_ADMIN_ID. For money that needs a person; the caller writes the log line. */
+export async function alertPaymentAdmins(env: Env, text: string, details: Record<string, unknown> = {}): Promise<void> {
   const adminIds = (env.TELEGRAM_ADMIN_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
   for (const id of adminIds) {
     await api(env, 'sendMessage', { chat_id: id, text: `Payment alert: ${text}\n${JSON.stringify(details)}`.slice(0, 3500) });
   }
+}
+
+async function raiseStarsAlert(env: Env, text: string, details: Record<string, unknown> = {}): Promise<void> {
+  console.error(`[Stars] ALERT: ${text} ${JSON.stringify(details)}`);
+  await alertPaymentAdmins(env, text, details);
 }
 
 /** Payment and refund messages are sent whatever the account's notice settings say. */
@@ -987,10 +1002,36 @@ function starsWentBack(outcome: StarsRefundOutcome): boolean {
 }
 
 /** Resolves false when the check has not answered inside `ms`, or fails. */
-function withinBudget(check: Promise<boolean>, ms: number): Promise<boolean> {
+function withinBudget<T>(check: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), ms);
-    check.then(resolve, () => resolve(false)).finally(() => clearTimeout(timer));
+    const timer = setTimeout(() => resolve(fallback), ms);
+    check.then(resolve, () => resolve(fallback)).finally(() => clearTimeout(timer));
+  });
+}
+
+/** The title a buyer knows a plan by. */
+function planTitle(planId: unknown): string {
+  const id = normalizePlanId(String(planId ?? ''));
+  return Object.hasOwn(PLANS, id) ? PLANS[id].title : String(planId);
+}
+
+/**
+ * Why a purchase of `planId` for this user has to be stopped, or null when it may go ahead: the
+ * user has a higher plan still running, and the purchase would replace it (Track SW, SW0a-4).
+ * `outcome` finishes the sentence with what happened to the money or the key. Throws when the
+ * user's plan cannot be read.
+ */
+export async function planDowngradeRefusal(env: Env, loginId: string, planId: string, outcome: string): Promise<string | null> {
+  const kv = env.LUMINARA_KV;
+  if (!kv || !loginId) return null;
+  const accountId = await resolveAccountId(env, loginId);
+  const running = (await kv.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
+  if (!wouldDowngrade(running, planId)) return null;
+  return downgradeRefusalText({
+    currentTitle: planTitle(running?.plan),
+    currentExpiresAt: Number(running?.expiresAt),
+    requestedTitle: planTitle(planId),
+    outcome,
   });
 }
 
@@ -1012,15 +1053,33 @@ async function answerPreCheckout(q: any, env: Env): Promise<void> {
     ok = false;
     errorMessage = `Price mismatch. Expected ${plan.stars} Stars.`;
   } else {
-    // Nobody is charged unless the claim table and the charge ledger can both take a write. A
-    // probe that has not answered inside the budget counts as no.
-    const ready = await withinBudget(
-      Promise.all([isStarsLedgerReady(env), isStarsChargesReady(env)]).then(([claims, charges]) => claims && charges),
-      PRE_CHECKOUT_BUDGET_MS,
-    );
-    if (!ready) {
+    const payerId = Number(q.from?.id) || 0;
+    const granteeId = parsed.purpose === 'plan' ? parsed.granteeId : null;
+    const planId = parsed.purpose === 'plan' ? parsed.planId : '';
+    if (granteeId !== null && payerId && granteeId !== payerId) {
+      // An invoice link can be passed on. The plan would go to one account and any refund to another.
       ok = false;
-      errorMessage = 'Payments are temporarily unavailable. Please try again in a few minutes.';
+      errorMessage = 'This invoice was made for another Telegram account. Open the app from your own account to buy a plan.';
+    } else {
+      // Nobody is charged unless the claim table and the charge ledger can both take a write, and
+      // the plan being bought would not replace a higher one that is still running. A check that
+      // has not answered inside the budget, or cannot be made, counts as no.
+      const verdict = await withinBudget(
+        Promise.all([
+          isStarsLedgerReady(env),
+          isStarsChargesReady(env),
+          planDowngradeRefusal(env, String(granteeId ?? payerId), planId, 'so this purchase was stopped and nothing was charged.'),
+        ]).then(([claims, charges, refusal]) => ({ ready: claims && charges, refusal })),
+        PRE_CHECKOUT_BUDGET_MS,
+        { ready: false, refusal: null as string | null },
+      );
+      if (verdict.refusal) {
+        ok = false;
+        errorMessage = verdict.refusal.slice(0, 255);
+      } else if (!verdict.ready) {
+        ok = false;
+        errorMessage = 'Payments are temporarily unavailable. Please try again in a few minutes.';
+      }
     }
   }
 
@@ -1220,6 +1279,7 @@ async function settleReceivedPlanCharge(env: Env, ctx: ReceivedChargeContext): P
   const plan = Object.hasOwn(PLANS, planId) ? PLANS[planId] : null;
   let grant: { expiresAt: number; alreadyTold: boolean } | null = null;
   let failure = '';
+  let downgrade: PlanDowngradeRefusedError | null = null;
   const input: PlanChargeInput = {
     chargeId,
     planId,
@@ -1235,6 +1295,7 @@ async function settleReceivedPlanCharge(env: Env, ctx: ReceivedChargeContext): P
     if (!ctx.accountId) throw new Error('the account could not be resolved');
     grant = await grantPlanForCharge(env, input);
   } catch (err) {
+    if (err instanceof PlanDowngradeRefusedError) downgrade = err;
     failure = err instanceof Error ? err.message : String(err);
     console.error(`[Stars] Grant for charge ${chargeId} did not complete: ${failure}`);
   }
@@ -1282,9 +1343,17 @@ async function settleReceivedPlanCharge(env: Env, ctx: ReceivedChargeContext): P
 
   await releaseStarsCharge(env, chargeId);
   // The ledger keeps a code. The error text is in the log line above.
-  if (!(await markStarsChargeRefundDue(env, chargeId, lease, 'grant_failed'))) return 'lease_lost';
+  if (!(await markStarsChargeRefundDue(env, chargeId, lease, downgrade ? 'plan_downgrade_refused' : 'grant_failed'))) return 'lease_lost';
   const outcome = await settleStarsRefund(env, starsChargeHooks(env), chargeId);
-  await tellPayer(env, ctx.chatId, starsWentBack(outcome) ? refundedText(row.stars) : refundPendingText(row.stars, chargeId));
+  const refundedMessage = downgrade
+    ? downgradeRefusalText({
+        currentTitle: planTitle(downgrade.currentPlan),
+        currentExpiresAt: downgrade.currentExpiresAt,
+        requestedTitle: planTitle(downgrade.requestedPlan),
+        outcome: `so it was not applied and your ${row.stars.toLocaleString()} Stars have been refunded.`,
+      })
+    : refundedText(row.stars);
+  await tellPayer(env, ctx.chatId, starsWentBack(outcome) ? refundedMessage : refundPendingText(row.stars, chargeId));
   return outcome.settled ? 'refunded' : 'refund_due';
 }
 

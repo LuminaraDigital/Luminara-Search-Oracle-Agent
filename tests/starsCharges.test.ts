@@ -799,26 +799,32 @@ describe('cases the payments review asked for', () => {
     expect(sub.chargeLinks).toEqual({ ch_starter: {} });
   });
 
-  it('refunding a one-day pass bought over Agency leaves Agency as it was', async () => {
-    const { env, kv } = makeEnv();
+  it('a one-day pass paid for by an Agency subscriber is refunded, and Agency is left as it was', async () => {
+    const { env, kv, db } = makeEnv();
     await handleTelegramPaymentUpdate(paid('ch_agency', { payload: `agency:${PAYER}`, amount: PLANS.agency.stars }), env);
-    const agencyExpiry = kv.json(`sub:${PAYER}`).expiresAt;
-    await handleTelegramPaymentUpdate(paid('ch_pass', { payload: `single_audit:${PAYER}`, amount: PLANS.single_audit.stars }), env);
+    const before = kv.json(`sub:${PAYER}`);
+    telegram.calls.length = 0;
 
-    expect((await refundStarsCharge(env, PAYER, 'ch_pass')).ok).toBe(true);
-    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'agency', expiresAt: agencyExpiry, appliedCharges: ['ch_agency'] });
+    // Pre-checkout would have said no. This is the payment arriving anyway.
+    await handleTelegramPaymentUpdate(paid('ch_pass', { payload: `single_audit:${PAYER}`, amount: PLANS.single_audit.stars }), env);
+    expect(kv.json(`sub:${PAYER}`)).toEqual(before);
+    expect(rowOf(db, 'ch_pass')).toMatchObject({ status: 'refunded', refund_reason: 'plan_downgrade_refused' });
+    expect(telegram.of('refundStarPayment')).toHaveLength(1);
+    const told = telegram.messagesTo(PAYER)[0].body.text as string;
+    expect(told).toContain('You already have Luminara Pro / Agency');
+    expect(told).toContain('25 Stars have been refunded');
   });
 
   it('refunding a Stars charge that was added to days bought on another rail leaves those days and that plan', async () => {
     const { env, kv } = makeEnv();
     const tonExpiry = Date.now() + 10 * DAY;
-    await kv.put(`sub:${PAYER}`, JSON.stringify({ plan: 'growth', paymentMethod: 'ton', txHash: 'abc', expiresAt: tonExpiry }));
-    await handleTelegramPaymentUpdate(paid('ch_on_ton'), env);
-    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'starter', expiresAt: tonExpiry + 30 * DAY, chargeLinks: { ch_on_ton: { before: 'growth' } } });
+    await kv.put(`sub:${PAYER}`, JSON.stringify({ plan: 'starter', paymentMethod: 'ton', txHash: 'abc', expiresAt: tonExpiry }));
+    await handleTelegramPaymentUpdate(paid('ch_on_ton', { payload: `growth:${PAYER}`, amount: PLANS.growth.stars }), env);
+    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'growth', expiresAt: tonExpiry + 30 * DAY, chargeLinks: { ch_on_ton: { before: 'starter' } } });
 
     expect((await refundStarsCharge(env, PAYER, 'ch_on_ton')).ok).toBe(true);
     const sub = kv.json(`sub:${PAYER}`);
-    expect(sub).toMatchObject({ plan: 'growth', expiresAt: tonExpiry, appliedCharges: [] });
+    expect(sub).toMatchObject({ plan: 'starter', expiresAt: tonExpiry, appliedCharges: [] });
     expect(sub.chargeId).toBeUndefined();
   });
 
@@ -850,9 +856,13 @@ describe('cases the payments review asked for', () => {
   it('a buyer whose Stars went back is told so, even when the ledger row could not be closed yet', async () => {
     const { env, kv, db } = makeEnv();
     kv.failPut = (key) => key.startsWith('sub:');
-    let subReads = 0;
-    // The grant and the check of what was granted each read the record once; the read made while taking the grant back fails.
-    kv.failGet = (key) => key.startsWith('sub:') && (subReads += 1) > 2;
+    // The refund goes through at Telegram; reading the record to take the (absent) grant back then fails.
+    let refundSent = false;
+    telegram.replies.refundStarPayment = () => {
+      refundSent = true;
+      return { ok: true, result: true };
+    };
+    kv.failGet = (key) => refundSent && key.startsWith('sub:');
 
     await handleTelegramPaymentUpdate(paid('ch_back'), env);
     expect(telegram.of('refundStarPayment')).toHaveLength(1);
@@ -1004,44 +1014,44 @@ describe('cases the second review pass asked for', () => {
     });
   });
 
-  it('a licence plan, then Starter (A), then Agency (B); refund A, then B: the licence plan is back with its own days', async () => {
+  it('a licence plan, then Growth (A), then Agency (B); refund A, then B: the licence plan is back with its own days', async () => {
     const { env, kv } = makeEnv();
-    expect((await activateLicenseKey(env, String(PAYER), 'LUM-GROWTH-3DAY')).ok).toBe(true);
+    expect((await activateLicenseKey(env, String(PAYER), 'LUM-PROMO-3DAY')).ok).toBe(true);
     const licenceExpiry = kv.json(`sub:${PAYER}`).expiresAt as number;
-    await handleTelegramPaymentUpdate(paid('ch_a'), env);
+    await handleTelegramPaymentUpdate(paid('ch_a', { payload: `growth:${PAYER}`, amount: PLANS.growth.stars }), env);
     await handleTelegramPaymentUpdate(agency('ch_b'), env);
-    expect(kv.json(`sub:${PAYER}`).chargeLinks).toEqual({ ch_a: { before: 'growth' }, ch_b: { before: 'starter', prev: 'ch_a' } });
+    expect(kv.json(`sub:${PAYER}`).chargeLinks).toEqual({ ch_a: { before: 'starter' }, ch_b: { before: 'growth', prev: 'ch_a' } });
 
     expect((await refundStarsCharge(env, PAYER, 'ch_a')).ok).toBe(true);
     expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'agency', chargeId: 'ch_b', appliedCharges: ['ch_b'] });
-    expect(kv.json(`sub:${PAYER}`).chargeLinks).toEqual({ ch_b: { before: 'growth' } });
+    expect(kv.json(`sub:${PAYER}`).chargeLinks).toEqual({ ch_b: { before: 'starter' } });
 
     expect((await refundStarsCharge(env, PAYER, 'ch_b')).ok).toBe(true);
     const sub = kv.json(`sub:${PAYER}`);
-    expect(sub).toMatchObject({ plan: 'growth', expiresAt: licenceExpiry, appliedCharges: [] });
+    expect(sub).toMatchObject({ plan: 'starter', expiresAt: licenceExpiry, appliedCharges: [] });
     expect(sub.chargeId).toBeUndefined();
   });
 
   it('after another rail rewrote the record, refunding earlier Stars charges takes their days and leaves that rail its plan', async () => {
     const { env, kv } = makeEnv();
     expect((await activateLicenseKey(env, String(PAYER), 'LUM-PROMO-3DAY')).ok).toBe(true);
-    await handleTelegramPaymentUpdate(agency('ch_a'), env);
-    // A TON purchase rewrites the record as Growth.
+    await handleTelegramPaymentUpdate(paid('ch_a', { payload: `growth:${PAYER}`, amount: PLANS.growth.stars }), env);
+    // A TON purchase rewrites the record as Agency.
     const beforeTon = kv.json(`sub:${PAYER}`).expiresAt as number;
-    await writeSubscriptionRecord(env, String(PAYER), { plan: 'growth', paymentMethod: 'ton', txHash: 'abc', startedAt: Date.now(), expiresAt: beforeTon + 30 * DAY });
-    await handleTelegramPaymentUpdate(paid('ch_b'), env);
-    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'starter', chargeId: 'ch_b', appliedCharges: ['ch_a', 'ch_b'] });
-    expect(kv.json(`sub:${PAYER}`).chargeLinks.ch_b).toEqual({ before: 'growth' });
+    await writeSubscriptionRecord(env, String(PAYER), { plan: 'agency', paymentMethod: 'ton', txHash: 'abc', startedAt: Date.now(), expiresAt: beforeTon + 30 * DAY });
+    await handleTelegramPaymentUpdate(agency('ch_b'), env);
+    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'agency', chargeId: 'ch_b', appliedCharges: ['ch_a', 'ch_b'] });
+    expect(kv.json(`sub:${PAYER}`).chargeLinks.ch_b).toEqual({ before: 'agency' });
 
     expect((await refundStarsCharge(env, PAYER, 'ch_b')).ok).toBe(true);
     let sub = kv.json(`sub:${PAYER}`);
-    expect(sub).toMatchObject({ plan: 'growth', appliedCharges: ['ch_a'], expiresAt: beforeTon + 30 * DAY });
+    expect(sub).toMatchObject({ plan: 'agency', appliedCharges: ['ch_a'], expiresAt: beforeTon + 30 * DAY });
     // The record is back to what the TON purchase wrote: no Stars charge was the last thing applied.
     expect(sub.chargeId).toBeUndefined();
 
     expect((await refundStarsCharge(env, PAYER, 'ch_a')).ok).toBe(true);
     sub = kv.json(`sub:${PAYER}`);
-    expect(sub).toMatchObject({ plan: 'growth', appliedCharges: [], expiresAt: beforeTon });
+    expect(sub).toMatchObject({ plan: 'agency', appliedCharges: [], expiresAt: beforeTon });
   });
 
   it('the sweep never credits a charge whose Stars have already gone back, even with the plan in place', async () => {
@@ -1147,8 +1157,17 @@ describe('cases the second review pass asked for', () => {
     const { env, kv, db } = makeEnv();
     // The grant fails, the refund goes through at Telegram, and taking the (absent) grant back fails once.
     kv.failPut = (key) => key.startsWith('sub:');
-    let subReads = 0;
-    kv.failGet = (key) => key.startsWith('sub:') && (subReads += 1) === 3;
+    let refundSent = false;
+    let failedOnce = false;
+    telegram.replies.refundStarPayment = () => {
+      refundSent = true;
+      return { ok: true, result: true };
+    };
+    kv.failGet = (key) => {
+      if (!refundSent || failedOnce || !key.startsWith('sub:')) return false;
+      failedOnce = true;
+      return true;
+    };
     await handleTelegramPaymentUpdate(paid('ch_told_once'), env);
     expect(rowOf(db, 'ch_told_once')).toMatchObject({ status: 'refund_due', stars_returned: 1 });
     expect(telegram.messagesTo(PAYER).filter((m) => /have been refunded/.test(m.body.text))).toHaveLength(1);

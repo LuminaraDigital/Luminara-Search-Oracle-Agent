@@ -2,6 +2,7 @@
  * Durable user profiles, Telegram↔Firebase account linking, and workspace blobs.
  * Prefers Cloudflare D1 when bound; falls back to KV so local tests still work.
  */
+import { PlanDowngradeRefusedError, wouldDowngrade } from './planRank';
 import type { HostedIdentity, EncryptedKeyBag } from './userTypes';
 
 export type UserStoreEnv = {
@@ -236,16 +237,24 @@ export async function writeSubscriptionRecord(
   env: UserStoreEnv,
   loginUserId: string,
   record: Record<string, unknown>,
+  // `allowLowerPlan` is for a caller that takes a plan away on purpose (a reversed or disputed
+  // payment falling back to the plan still paid for). A purchase never sets it.
+  opts: { allowLowerPlan?: boolean } = {},
 ): Promise<{ accountId: string }> {
   const accountId = await resolveAccountId(env, String(loginUserId));
   if (!env.LUMINARA_KV) return { accountId };
+  const existing = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as
+    | { plan?: unknown; expiresAt?: number; appliedCharges?: unknown; chargeId?: unknown }
+    | null;
+  // A purchase may never replace a plan that is still running with a lower one. The rule lives
+  // here because every rail writes through here, so a rail added later inherits it.
+  if (!opts.allowLowerPlan && wouldDowngrade(existing, record.plan)) {
+    throw new PlanDowngradeRefusedError(String(existing?.plan), Number(existing?.expiresAt), String(record.plan));
+  }
   // A purchase on another rail must not erase which Stars charges an active record was built
   // from: the charge sweep and refunds read that list to tell a granted charge from a lost one.
   let toWrite = record;
   if (!Array.isArray(record.appliedCharges)) {
-    const existing = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as
-      | { expiresAt?: number; appliedCharges?: unknown; chargeId?: unknown }
-      | null;
     // Records written before the list existed name one charge.
     const earlier = Array.isArray(existing?.appliedCharges)
       ? existing.appliedCharges
