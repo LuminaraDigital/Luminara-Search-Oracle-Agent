@@ -103,7 +103,7 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
       const linked = await linkTelegramFirebaseAccounts({ confirm: true });
       if (!linked.ok) throw new Error(linked.error || 'Could not link accounts');
       await pullWorkspaceOnLogin();
-      setInfo('Linked. Stars/TON in Telegram and the website now share one plan and saved work.');
+      setInfo('Linked. Telegram and the website now share one plan and saved work.');
     } catch (e) {
       setError(e instanceof Error ? e.message : friendlyFirebaseError(e));
     } finally {
