@@ -3,7 +3,12 @@ import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
 import { isUserSubscribed, checkHostedQuota, type QuotaStatus } from './quotaMiddleware';
-import { runWorkersAiChatFallback } from './workersAiFallback';
+import {
+  WORKERS_AI_FALLBACK_PROVIDER,
+  runWorkersAiChatFallback,
+  type WorkersAiFallbackContext,
+  type WorkersAiFallbackOutcome,
+} from './workersAiFallback';
 import {
   MAX_BODY_BYTES,
   clampHostedChatCompletionsBody,
@@ -43,6 +48,14 @@ export function isChatCompletionsPath(providerId: string, subPath: string): bool
     return subPath === '/v1/chat/completions' || subPath === '/api/chat' || subPath === '/api/generate';
   }
   return subPath === '/chat/completions';
+}
+
+/**
+ * The one path the Workers AI fallback may answer: hosted Groq chat completions.
+ * Every other provider, and every other Groq path, returns its own result or its own error.
+ */
+export function isWorkersAiFallbackPath(providerId: string, subPath: string): boolean {
+  return providerId === 'groq' && subPath === '/chat/completions';
 }
 
 export const PROVIDERS: Record<string, ProviderSpec> = {
@@ -186,12 +199,16 @@ export const PROVIDERS: Record<string, ProviderSpec> = {
 };
 
 function makeFallbackResponse(
-  aiResult: unknown,
-  isStreaming: boolean,
+  outcome: Extract<WorkersAiFallbackOutcome, { answered: true }>,
   quotaGate: QuotaStatus | null,
 ): Response {
+  // The client reads these to show "Answered by a fallback model" with the reply. They arrive
+  // before the body, so a streamed reply is labelled too. corsHeaders (workerUtils.ts) exposes
+  // them, so a client on another origin can read them as well.
   const fallbackHeaders: Record<string, string> = {
-    'X-Provider-Fallback': 'workers-ai',
+    'X-Provider-Fallback': WORKERS_AI_FALLBACK_PROVIDER,
+    'X-Provider-Fallback-Model': outcome.model,
+    'X-Provider-Fallback-Reason': outcome.reason,
   };
   if (quotaGate) {
     if (quotaGate.isUnlimited) {
@@ -206,16 +223,46 @@ function makeFallbackResponse(
       }
     }
   }
-  if (isStreaming) {
+  if (outcome.streaming) {
     const streamHeaders = new Headers({
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       ...fallbackHeaders,
     });
-    return new Response(aiResult as BodyInit, { status: 200, headers: streamHeaders });
+    return new Response(outcome.stream as BodyInit, { status: 200, headers: streamHeaders });
   }
-  return json(aiResult, 200, fallbackHeaders);
+  return json(outcome.completion, 200, fallbackHeaders);
+}
+
+/**
+ * Asks the Workers AI fallback to answer, or returns null so the caller sends its own error.
+ *
+ * It answers only a hosted-key POST to the groq chat-completions path with the binding present.
+ * The three callers decide when: no hosted key, a network failure, or an upstream 5xx. A 4xx
+ * never gets here. The fallback itself refuses a typed, tool-using, non-text or over-long request,
+ * and a refusal or a binding error also comes back as null.
+ */
+async function tryWorkersAiFallback(
+  env: Env,
+  request: Request,
+  providerId: string,
+  subPath: string,
+  userKey: string,
+  body: unknown,
+  context: WorkersAiFallbackContext,
+  quotaGate: QuotaStatus | null,
+): Promise<Response | null> {
+  if (userKey || !env.AI || request.method !== 'POST') return null;
+  if (!isWorkersAiFallbackPath(providerId, subPath)) return null;
+  try {
+    const outcome = await runWorkersAiChatFallback(env.AI, body, context);
+    if (!outcome.answered) return null;
+    return makeFallbackResponse(outcome, quotaGate);
+  } catch (aiErr) {
+    console.warn(`[Workers AI fallback error: ${context.reason}]`, aiErr);
+    return null;
+  }
 }
 
 export async function proxyProvider(
@@ -364,19 +411,15 @@ export async function proxyProvider(
   } else {
     const auth = spec.auth(env, headers, body);
     if (!auth.ok) {
-      if (isChatCompletionsPath(providerId, subPath) && env.AI) {
-        if (request.method !== 'GET') {
-          const clamped = clampHostedChatCompletionsBody(body);
-          if (!clamped.ok) return json({ error: clamped.error }, 400);
-          body = clamped.body;
-        }
-        try {
-          const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
-          const aiResult = await runWorkersAiChatFallback(env.AI, body);
-          return makeFallbackResponse(aiResult, isStreaming, quotaGate);
-        } catch (aiErr) {
-          console.warn('[Workers AI fallback error for unconfigured provider]', aiErr);
-        }
+      // No hosted key at all. On the groq chat path the fallback may answer, and the reply says so.
+      if (isWorkersAiFallbackPath(providerId, subPath) && env.AI && request.method === 'POST') {
+        const clamped = clampHostedChatCompletionsBody(body);
+        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        body = clamped.body;
+        const fallback = await tryWorkersAiFallback(
+          env, request, providerId, subPath, userKey, body, { reason: 'provider_not_configured' }, quotaGate,
+        );
+        if (fallback) return fallback;
       }
       return json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503);
     }
@@ -436,15 +479,10 @@ export async function proxyProvider(
       body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
     });
   } catch (networkErr) {
-    if (!userKey && isChatCompletionsPath(providerId, subPath) && env.AI) {
-      try {
-        const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
-        const aiResult = await runWorkersAiChatFallback(env.AI, body);
-        return makeFallbackResponse(aiResult, isStreaming, quotaGate);
-      } catch (aiErr) {
-        console.warn('[Workers AI fallback error after network throw]', aiErr);
-      }
-    }
+    const fallback = await tryWorkersAiFallback(
+      env, request, providerId, subPath, userKey, body, { reason: 'network_error' }, quotaGate,
+    );
+    if (fallback) return fallback;
     return json({ error: `Upstream connection failed: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}` }, 502);
   }
 
@@ -470,15 +508,15 @@ export async function proxyProvider(
     }
   }
 
-  // Fallback to Cloudflare Workers AI edge model if hosted chat completions upstream fails
-  if (!userKey && isChatCompletionsPath(providerId, subPath) && env.AI && (!res.ok || res.status >= 400)) {
-    try {
-      const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
-      const aiResult = await runWorkersAiChatFallback(env.AI, body);
-      return makeFallbackResponse(aiResult, isStreaming, quotaGate);
-    } catch (aiErr) {
-      console.warn('[Workers AI fallback error]', aiErr);
-    }
+  // Workers AI fallback, after the second-key retry above: only when the upstream itself failed
+  // (5xx). A 4xx is the upstream's answer about this request or this key (429, 401, 400, 413 and
+  // the rest). It is never replaced by another model's reply: it goes through the code below as
+  // it always has, where a hosted 402 is reported as HOSTED_PROVIDER_DEPLETED.
+  if (res.status >= 500 && res.status <= 599) {
+    const fallback = await tryWorkersAiFallback(
+      env, request, providerId, subPath, userKey, body, { reason: 'upstream_5xx', upstreamStatus: res.status }, quotaGate,
+    );
+    if (fallback) return fallback;
   }
 
   // Stream the upstream body straight through (SSE for chat completions works unchanged).

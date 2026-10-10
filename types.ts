@@ -137,6 +137,17 @@ export interface ToolExecution {
   output: string;
 }
 
+/**
+ * Set when the Worker's fallback model wrote a reply instead of the engine that was asked.
+ * The chat shows it with the reply so a founder can see who answered.
+ */
+export interface FallbackAnswerInfo {
+  /** Id of the model that answered, as the Worker reported it. Empty when it reported none. */
+  model: string;
+  /** Why the fallback answered, as the Worker reported it (for example `upstream_5xx`). */
+  reason?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'model' | 'assistant' | 'system';
@@ -151,6 +162,8 @@ export interface Message {
   groundingUrls?: Array<{ uri: string; title: string }>;
   toolExecutions?: ToolExecution[];
   sources?: any[];
+  /** Present when a fallback model wrote this reply. */
+  fallback?: FallbackAnswerInfo;
 }
 
 export interface SearchGroundingChunk {
@@ -873,6 +886,8 @@ export interface GenerateResult {
   finishReason: GenerateFinishReason;
   toolCalls?: ToolCall[];
   latencyMs?: number;
+  /** Present when the Worker's fallback model wrote this text. */
+  fallback?: FallbackAnswerInfo;
 }
 
 /**
@@ -885,6 +900,8 @@ export interface StreamChunk {
   toolCalls?: ToolCall[];
   finishReason?: GenerateFinishReason;
   tokenUsage?: { prompt: number; completion: number; total: number };
+  /** Present on the first chunk of a reply the Worker's fallback model is writing. */
+  fallback?: FallbackAnswerInfo;
 }
 
 /**

@@ -54,7 +54,7 @@ leaked internals).
 | `GET,POST /api-keys`, `DELETE /api-keys/:id` | worker/apiKeyService.ts | session + plan gate | lm_live_* API keys; Growth/Agency only |
 | `POST /oracle/chat` | worker/oracleChat.ts | session + apiAccess | Agency Oracle SSE |
 | `POST /audit/run`, `GET /audit/runs/:id` | worker/auditQueue.ts | session + apiAccess | Audit queue |
-| `* /providers/:id/*` | worker/providerRelay.ts | byok/session | LLM/search/scrape proxy |
+| `* /providers/:id/*` | worker/providerRelay.ts | byok/session | LLM/search/scrape proxy. Workers AI fallback (worker/workersAiFallback.ts): hosted-key `POST /providers/groq/chat/completions` only, and only on no hosted key, a network failure, or an upstream 5xx after the second-key retry. Never on a 4xx, never for BYOK, never for another provider. It refuses `response_format`, `tools`, `tool_choice`, non-string content and a prompt over its character budget; the caller then gets the upstream's own error. A fallback reply carries `X-Provider-Fallback`, `X-Provider-Fallback-Model`, `X-Provider-Fallback-Reason` and a body `x_fallback` field, and the chat shows the model. Usage is the binding's or absent, never zeros |
 
 Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 `apikey` = `lm_live_*` MCP key; `oauth` = `mcp_*` OAuth token;

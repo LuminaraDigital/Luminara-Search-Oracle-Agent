@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { classifyInvoiceDelta } from '../worker/invoiceReconcile';
 import { assertHonestyLabel } from '../worker/weeklyDecisionService';
 import {
@@ -6,8 +6,8 @@ import {
   freshnessFromCaptures,
   normalizeMeasurementStatus,
 } from '../services/wdl/liveHonesty';
-import { hashEmbed, resolveVectorProvider } from '../worker/memoryRag';
-import type { Env } from '../worker/env';
+import { hashEmbed, resolveVectorProvider, searchMemoryVectors } from '../worker/memoryRag';
+import type { Ai, Env } from '../worker/env';
 import { createSqliteD1 } from './helpers/sqliteD1';
 import { createPrivacyJob, getPrivacyJob } from '../worker/privacyService';
 import type { HostedIdentity } from '../worker/userTypes';
@@ -77,6 +77,43 @@ describe('memory history', () => {
       .first<{ event: string; text_snapshot: string }>();
     expect(row?.event).toBe('ADD');
     expect(row?.text_snapshot).toContain('plain-language');
+  });
+});
+
+describe('memory embeddings stay off (V decision 3)', () => {
+  it('calls no embedding model for a memory write or search while no vector index is configured', async () => {
+    // Workers AI is bound for the chat fallback only. Its presence must not start embedding.
+    const ai: Ai = { run: vi.fn().mockResolvedValue({ data: [[0.1, 0.2]] }) };
+    const env = {
+      DB: createSqliteD1(),
+      LUMINARA_KV: mockKv(),
+      WEBAPP_URL: 'https://luminarasuite.com/',
+      AI: ai,
+    } as unknown as Env;
+    const user: HostedIdentity = {
+      id: 'fb:embed',
+      accountId: 'acct_embed',
+      source: 'firebase',
+    } as HostedIdentity;
+    expect(resolveVectorProvider(env)).toBe('none');
+
+    const { createMemoryFact } = await import('../worker/memoryService');
+    const stored = await createMemoryFact(
+      new Request('https://luminarasuite.com/api/memory/facts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'We prefer plain-language audits for local clients' }),
+      }),
+      env,
+      user,
+    );
+    expect(stored.status).toBe(200);
+
+    // The keyword search still finds the fact without a vector.
+    const hits = await searchMemoryVectors(env, 'acct_embed', 'plain-language audits', 5);
+    expect(hits.length).toBeGreaterThan(0);
+
+    expect(ai.run).not.toHaveBeenCalled();
   });
 });
 

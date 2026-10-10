@@ -4,6 +4,7 @@ import { ICONS } from '../constants';
 import { renderMarkdown } from '../utils/markdown';
 import { ReportDisplay } from './audit/ReportDisplay';
 import { HybridMessageBody } from './genui/HybridMessageBody';
+import { fallbackAnswerLine } from '../services/llm/fallbackAnswer';
 
 interface MessageListProps {
   messages: Message[];
@@ -79,6 +80,8 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
         const showStreamingIndicator = isThinking && isLastMessage && msg.role === 'model';
         
         const isError = msg.role === 'model' && Boolean(msg.isError);
+        // Say who wrote it: a reply from the Worker's fallback model is labelled with that model.
+        const fallbackLine = msg.role === 'model' && !isError ? fallbackAnswerLine(msg.fallback) : null;
 
         return (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -162,6 +165,12 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                         );
                       })}
                     </div>
+                  )}
+
+                  {fallbackLine && (
+                    <p role="note" className="mb-4 text-xs text-gray-400">
+                      {fallbackLine}
+                    </p>
                   )}
 
                   {msg.role === 'model' ? (
