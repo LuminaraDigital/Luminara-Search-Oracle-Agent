@@ -322,20 +322,28 @@ describe('payment copy makes no burn, tax-on-transfer or yield claim', () => {
   it('no file a buyer or an API client reads from says burn or deflation (the search in the task\'s acceptance)', () => {
     // components/paywall, worker/q402, worker/tonPayment.ts and worker/termsPolicy.ts, whole files:
     // a field or a comment left behind is how the wording came back last time.
-    const files = [
-      ...readdirSync(join(ROOT, 'components/paywall')).map((f) => `components/paywall/${f}`),
-      ...readdirSync(join(ROOT, 'worker/q402')).map((f) => `worker/q402/${f}`),
-      'worker/tonPayment.ts',
-      'worker/termsPolicy.ts',
-    ].filter((f) => /\.(ts|tsx)$/.test(f));
+    // Walked all the way down, like the search itself.
+    const walk = (dir: string): string[] =>
+      readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory() ? walk(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`],
+      );
+    const sources = (list: string[]) => list.filter((f) => f.endsWith('.ts') || f.endsWith('.tsx'));
+    const files = sources([...walk('components/paywall'), ...walk('worker/q402'), 'worker/tonPayment.ts', 'worker/termsPolicy.ts']);
     expect(files.length).toBeGreaterThan(8);
-    const hits = files.flatMap((rel) =>
-      readFileSync(join(ROOT, rel), 'utf8')
-        .split('\n')
-        .map((line, i) => (/burn|deflation/i.test(line) ? `${rel}:${i + 1}` : ''))
-        .filter(Boolean),
-    );
-    expect(hits).toEqual([]);
+    const linesMatching = (list: string[], pattern: RegExp) =>
+      list.flatMap((rel) =>
+        readFileSync(join(ROOT, rel), 'utf8')
+          .split('\n')
+          .map((line, i) => (pattern.test(line) ? `${rel}:${i + 1}` : ''))
+          .filter(Boolean),
+      );
+    expect(linesMatching(files, /burn|deflation/i)).toEqual([]);
+
+    // services/ton builds the contract's real burn message (a holder burning their own tokens),
+    // so the word itself belongs there. The claim that a payment burns a share does not.
+    const tonClient = sources(walk('services/ton'));
+    expect(tonClient.length).toBeGreaterThan(0);
+    expect(linesMatching(tonClient, /deflation|supply watcher|qubic/i)).toEqual([]);
   });
 
   it('the Terms do not name USDT or $LORA as a way to pay while both are off', () => {
