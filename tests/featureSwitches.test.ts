@@ -263,6 +263,16 @@ describe('whether the streak card is drawn', () => {
     expect(source).toMatch(/\.catch\(\(\) => \{\s*if \(!unmounted\) setAvailable\(false\);\s*\}\)/);
     expect(source).toContain('if (!available) return null;');
   });
+
+  it('the card states no schedule: nothing in the product runs a scan or a countdown for it', () => {
+    const source = readFileSync(resolve(__dirname, '..', 'components', 'retention', 'DailyStreakCard.tsx'), 'utf8');
+    expect(source).not.toContain('In 18 hours');
+    // No "next scan" of any kind, no "in / every / within N units", and no clock duration at all.
+    expect(source).not.toMatch(/\bnext\b[^<\n]*\b(scan|check|crawl|run|update|alert|index)\b/i);
+    expect(source).not.toMatch(/\b(in|every|within|after)\s+~?\d+\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?)\b/i);
+    expect(source).not.toMatch(/\b\d+\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b/i);
+    expect(source).not.toMatch(/\bautomated\b|\bscheduled\b/i);
+  });
 });
 
 describe('the switches through the Worker, with its sign-in guard in front', () => {
