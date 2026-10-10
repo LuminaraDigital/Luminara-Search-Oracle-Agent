@@ -143,6 +143,13 @@ and the SPA asset fallback:
 - `worker/oracleInteractionGuard.ts`: instructs Oracle to respond
   `not_measured` or "not verified" when data is missing; numeric claims
   without tool evidence are rejected. Live.
+- `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
+  nothing. Before a reply is stored in history or sent, each sentence that pairs a
+  number with a site-metric word (visibility, rank, citations, traffic, score, share)
+  is replaced by one "not measured" sentence; Stars prices, plan allowances and dates
+  are not counted. Status comes from the claim ledger (`services/evidenceBound`).
+  Business DNA enters the prompt only inside an untrusted-content fence, and the
+  reply is sent with no `parse_mode`. English only, pattern based. Live.
 - DataForSEO / Umami sidecars: live when env-bound; the front-end traffic
   path returns `not_configured` when unreachable. See `services/competitors/README.md`.
 - Telegram webhook, license service, sentinel scan: live when bindings exist.

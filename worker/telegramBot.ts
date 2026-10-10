@@ -6,6 +6,7 @@ import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
+import { businessDnaPromptBlock, replaceUnmeasuredSiteMetrics, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
 import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
@@ -199,7 +200,9 @@ Style guidelines:
 - Lead with what matters to revenue and what action to ship.
 - Ground advice in search principles: Schema.org JSON-LD structured data, technical crawlability, brand citation velocity, and authoritative third-party references.
 - Keep responses concise (typically 2-4 focused paragraphs or punchy bullet points) suitable for Telegram mobile reading.
-- When an in-depth audit, radar chart, or competitor diff is relevant, remind them they can tap the "Open Luminara Suite" button below for the full visual suite.`;
+- When an in-depth audit, radar chart, or competitor diff is relevant, remind them they can tap the "Open Luminara Suite" button below for the full visual suite.
+
+${TELEGRAM_CHAT_HONESTY_RULES}`;
 
 export async function generateOracleChatResponse(
   env: Env,
@@ -852,7 +855,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         if (dnaRaw) {
           const dna = JSON.parse(dnaRaw);
           if (dna && typeof dna === 'object') {
-            dnaPromptAddition = `\n\nKnown User Business DNA Memory:\n- Company: ${dna.companyName || dna.name || 'Unknown'}\n- Primary Domain: ${dna.domain || dna.primaryDomain || 'Unknown'}\n- USP: ${dna.uniqueSellingPoint || dna.usp || 'N/A'}\n- Known Competitors: ${Array.isArray(dna.competitors) ? dna.competitors.join(', ') : 'N/A'}`;
+            // Saved profile text is untrusted: it reaches the prompt only inside a fence.
+            dnaPromptAddition = businessDnaPromptBlock(dna);
           }
         }
       } catch {
@@ -861,7 +865,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     const domainPromptAddition = targetDomain
-      ? `\n\nDetected Target Domain in query: "${targetDomain}". If the user is asking to inspect or audit this domain, deliver an Instant Scout diagnostic covering: AI visibility readiness, entity schema status, and 1 highest-priority ship move this week.`
+      ? `\n\nDetected Target Domain in query: "${targetDomain}". This chat has not fetched or measured that site. Do not describe its current state and do not give it a diagnostic, a rating or any number. Give general guidance only, and tell the user that the Full Visual Audit button under this reply opens the audit screen in the app.`
       : '';
 
     // 5. Multi-turn session memory
@@ -883,7 +887,14 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     ];
 
     // 6. Generate AI response via configured worker providers
-    const aiResponse = await generateOracleChatResponse(env, messages);
+    const modelReply = await generateOracleChatResponse(env, messages);
+    // Nothing in this chat measures a site, so a sentence that puts a number beside a site-metric
+    // word is replaced here, before the reply is stored in history or sent.
+    const honest = modelReply ? replaceUnmeasuredSiteMetrics(modelReply) : null;
+    if (honest && honest.claims.length > 0) {
+      console.warn(`[Telegram Bot] chat reply carried ${honest.claims.length} unmeasured site-metric sentence(s); replaced`);
+    }
+    const aiResponse = honest ? honest.text : null;
 
     // Dynamic action keyboard (Hermes-like deep actions)
     const replyKeyboard = targetDomain
@@ -919,20 +930,16 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
     }
 
-    // 8. Deliver response
+    // 8. Deliver response. No parse_mode: model text is not valid Markdown, and Telegram
+    // rejects the whole message when the markup does not parse.
     const sendResult = await api(env, 'sendMessage', {
       chat_id: chatId,
       text: aiResponse,
-      parse_mode: 'Markdown',
       reply_markup: replyKeyboard,
     });
 
     if (!sendResult.ok) {
-      await api(env, 'sendMessage', {
-        chat_id: chatId,
-        text: aiResponse,
-        reply_markup: replyKeyboard,
-      });
+      console.error('[Telegram Bot] chat reply was not delivered', sendResult.description);
     }
   } catch (e) {
     console.error('telegram update failed', e);
