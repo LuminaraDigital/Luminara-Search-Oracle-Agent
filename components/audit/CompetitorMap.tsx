@@ -6,9 +6,26 @@ interface CompetitorMapProps {
     rows: string[][];
 }
 
+/**
+ * Index of the column whose header matches, or -1 when the table does not carry it.
+ * A table that came with no headers at all is read by the report's own column order.
+ */
+function columnIndex(headers: string[], pattern: RegExp, position: number): number {
+    if (headers.length === 0) return position;
+    return headers.findIndex((header) => pattern.test(String(header)));
+}
+
+/** The cell as written, or "Not measured" when the report left it empty. No default wording. */
+function cellText(cell: unknown): string {
+    return String(cell ?? '').replace(/[*_`]/g, '').trim() || 'Not measured';
+}
+
 export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) => {
-    // New audit reports carry no trust signal column. The block is drawn only for a table that has one.
-    const trustCol = headers.findIndex((header) => /trust signal/i.test(header));
+    const entityCol = columnIndex(headers, /entity|brand/i, 0);
+    const perceptionCol = columnIndex(headers, /perception|how ai talks/i, 1);
+    const pagesCol = columnIndex(headers, /page/i, 2);
+    const advantageCol = columnIndex(headers, /advantage/i, 3);
+
     return (
         <div className="my-8 glass-morphism rounded-2xl border border-gold/30 overflow-hidden shadow-2xl animate-in fade-in duration-700">
             <div className="bg-gradient-to-r from-gold/20 via-black to-transparent px-6 py-4 border-b border-gold/20 flex items-center justify-between">
@@ -28,12 +45,10 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
 
             <div className="p-4 md:p-6 grid gap-4">
                 {rows.map((row, idx) => {
-                    const entity = row[0]?.replace(/[*_`]/g, '') || 'Market Entity';
-                    const perception = row[1]?.replace(/[*_`]/g, '') || 'Neutral visibility';
-                    const topPages = row[2]?.replace(/[*_`]/g, '') || 'Homepage, Case Studies';
-                    const contentAdvantage = row[3]?.replace(/[*_`]/g, '') || 'None identified';
-                    // No default label: an empty or missing cell shows nothing.
-                    const trustStrength = row[trustCol]?.replace(/[*_`]/g, '').trim().toLowerCase() || '';
+                    const entity = cellText(row[entityCol]);
+                    const perception = cellText(row[perceptionCol]);
+                    const topPages = cellText(row[pagesCol]);
+                    const contentAdvantage = cellText(row[advantageCol]);
                     const isUser = idx === 0;
 
                     return (
@@ -84,29 +99,6 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
                                         {contentAdvantage}
                                     </div>
                                 </div>
-
-                                {/* Trust Signal Strength */}
-                                {trustStrength && (
-                                <div className="lg:w-44 border-t lg:border-t-0 lg:border-l border-white/5 lg:pl-6 pt-4 lg:pt-0 flex flex-col justify-between">
-                                    <div>
-                                        <span className="block text-[9px] uppercase tracking-widest text-gray-500 mb-1">Trust Signal Strength</span>
-                                        <span className={`text-xs font-bold uppercase tracking-wider ${
-                                            trustStrength.includes('high') ? 'text-success-400' :
-                                            trustStrength.includes('med') ? 'text-gold-light' : 'text-gray-400'
-                                        }`}>
-                                            {trustStrength}
-                                        </span>
-                                    </div>
-                                    <div className="w-full bg-white/5 rounded-full h-1.5 mt-2 overflow-hidden border border-white/5">
-                                        <div 
-                                            className={`h-full rounded-full ${
-                                                trustStrength.includes('high') ? 'w-full bg-success-500' :
-                                                trustStrength.includes('med') ? 'w-2/3 bg-gold' : 'w-1/3 bg-gray-600'
-                                            }`}
-                                        ></div>
-                                    </div>
-                                </div>
-                                )}
                             </div>
                         </div>
                     );

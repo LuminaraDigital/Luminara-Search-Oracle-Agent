@@ -4,12 +4,24 @@ import { ICONS } from '../constants';
 import { renderMarkdown } from '../utils/markdown';
 import { ReportDisplay } from './audit/ReportDisplay';
 import { HybridMessageBody } from './genui/HybridMessageBody';
+import { gateReportTables, looksLikeAuditReport } from '../services/audit/reportColumnGate';
 
 interface MessageListProps {
   messages: Message[];
   isThinking?: boolean;
   activeTool?: { name: string; stage: string; output?: string } | null;
   onSimplify?: (content: string) => void;
+}
+
+/**
+ * The text of a chat message as the list shows it, copies it and sends it to be
+ * rewritten. An audit written by the model goes through the report gate first.
+ * Any other message is returned as written.
+ */
+export function chatMessageText(msg: Pick<Message, 'role' | 'content'>): string {
+  return msg.role === 'model' && looksLikeAuditReport(msg.content)
+    ? gateReportTables(msg.content).text
+    : msg.content;
 }
 
 const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeTool, onSimplify }) => {
@@ -79,6 +91,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
         const showStreamingIndicator = isThinking && isLastMessage && msg.role === 'model';
         
         const isError = msg.role === 'model' && Boolean(msg.isError);
+        const shownContent = chatMessageText(msg);
 
         return (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -111,7 +124,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                     {msg.role === 'model' && !isError && onSimplify && (
                       <button
                         type="button"
-                        onClick={() => onSimplify(msg.content)}
+                        onClick={() => onSimplify(shownContent)}
                         className="p-1.5 rounded-lg border border-white/10 bg-white/5 text-gray-400 hover:text-gold hover:border-gold/30 transition-all flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold outline-none focus-visible:ring-2 focus-visible:ring-gold"
                         title="Rewrite this in plain English"
                         aria-label="Rewrite response in plain English"
@@ -122,7 +135,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                     )}
                     <button
                       type="button"
-                      onClick={() => handleCopy(msg.content, msg.id)}
+                      onClick={() => handleCopy(shownContent, msg.id)}
                       className="p-1.5 rounded-lg border border-white/10 bg-white/5 text-gray-400 hover:text-gold hover:border-gold/30 transition-all outline-none focus-visible:ring-2 focus-visible:ring-gold"
                       title="Copy"
                       aria-label={copiedId === msg.id ? "Copied" : "Copy response to clipboard"}
@@ -172,12 +185,14 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                         (msg.content.includes('Visibility Radar') || msg.content.includes('Strategic Intelligence Report') || msg.content.includes('Diagnostic Scan') || msg.content.includes('Competitor Reality Map'));
 
                       if (isAuditReport) {
+                        // The report screen gates the text itself. It gets the stored text so the
+                        // ship commitment saved against that text still unlocks the report.
                         return <ReportDisplay markdownText={msg.content} sources={msg.groundingUrls} />;
                       }
 
                       return (
                         <HybridMessageBody
-                          content={msg.content}
+                          content={shownContent}
                           isStreaming={showStreamingIndicator}
                         />
                       );

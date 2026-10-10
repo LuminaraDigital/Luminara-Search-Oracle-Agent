@@ -39,6 +39,7 @@ import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadSer
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
 import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
+import { gateReportText, readTableAt } from '../../services/audit/reportColumnGate';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
@@ -71,7 +72,7 @@ interface ReportDisplayProps {
 }
 
 export const ReportDisplay: React.FC<ReportDisplayProps> = ({
-  markdownText,
+  markdownText: rawMarkdownText,
   sources,
   empiricalSummary,
   remediationPayload,
@@ -93,6 +94,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   hostedRail,
 }) => {
   const hideLiveNumbers = suppressLiveMetrics || empiricalSummary?.measurementStatus === 'not_measured';
+  // Every reader of this screen gets the gated text: the cards, the share link, the PDF and the dossier.
+  // A stored or shared report was gated when it was made only if it was made after the gate existed.
+  const markdownText = useMemo(() => gateReportText(rawMarkdownText || ''), [rawMarkdownText]);
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
@@ -100,7 +104,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const [shareBusy, setShareBusy] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shipCommitment, setShipCommitment] = useState<ShipCommitment | null>(() =>
-    readShipCommitment(targetDomain || 'unknown', markdownText),
+    readShipCommitment(targetDomain || 'unknown', rawMarkdownText),
   );
   const [boardFindings, setBoardFindings] = useState<BoardFinding[]>(boardFindingsProp || []);
 
@@ -252,17 +256,12 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           i++;
         }
         currentSection.elements.push(<ol key={`ol-${i}`} className="list-decimal list-outside space-y-1 my-3 pl-6 marker:text-gold">{listItems}</ol>);
-      } else if (line.startsWith('|')) {
-        const headerLine = lines[i];
-        const separatorLine = lines[i + 1];
-        if (separatorLine && separatorLine.includes('---')) {
-          const headers = headerLine.split('|').slice(1, -1).map(h => h.trim());
-          const rows: string[][] = [];
-          i += 2;
-          while (i < lines.length && lines[i].startsWith('|')) {
-            rows.push(lines[i].split('|').slice(1, -1).map(c => c.trim()));
-            i++;
-          }
+      } else if (line.startsWith('|') || readTableAt(lines, i)) {
+        // The gate's own table reader, so a cell with an escaped pipe stays under its header.
+        const table = readTableAt(lines, i);
+        if (table && table !== 'unparsed') {
+          const { headers, rows } = table;
+          i = table.end;
 
           const sTitle = currentSection.titleText.toLowerCase();
           if (sTitle.includes('visibility radar')) {
@@ -344,7 +343,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
       {!reportUnlocked && !hideAgencyActions && (
         <ShipActionGate
           domain={targetDomain}
-          markdownText={markdownText}
+          markdownText={rawMarkdownText}
           hasEvidence={hasEvidence}
           sourceCount={sourceCount}
           onCommitted={setShipCommitment}

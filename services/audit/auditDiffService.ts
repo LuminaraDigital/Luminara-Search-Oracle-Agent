@@ -102,12 +102,8 @@ export function diffSince(
       after?.citationRatePercent ?? trend.points[trend.points.length - 1]?.citationRatePercent
     ),
     metric('schemaGaps', 'Schema gaps', before?.schemaGapCount, after?.schemaGapCount),
-    metric(
-      'shareOfVoice',
-      'Brand citation share %',
-      trend.points.length >= 2 ? trend.points[0].brandCitationSharePercent : null,
-      trend.points.length >= 1 ? trend.points[trend.points.length - 1].brandCitationSharePercent : null
-    ),
+    // Share of voice is two counts from one audit's search sample. Two audits sample
+    // different queries, so no change between them is worked out or shown.
   ];
 
   const competitors = competitorDeltas(before, after);

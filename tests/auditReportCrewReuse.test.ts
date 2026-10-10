@@ -22,7 +22,8 @@ import {
   serpRowsToCitationGroups,
 } from '../services/audit/reuseCrewEvidence';
 import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
-import { isUnmeasuredReportColumn } from '../services/audit/reportColumnGate';
+import { REPORT_TABLES, isReportColumn, readTableAt } from '../services/audit/reportColumnGate';
+import { OracleMode } from '../types';
 import { citationIntegrityService } from '../services/audit/citationIntegrityService';
 import { publicApisEnrichmentService } from '../services/enrichment/publicApisEnrichmentService';
 import { writingQualityService } from '../services/audit/writingQualityService';
@@ -299,7 +300,61 @@ describe('generateAuditReport crew evidence', () => {
       'Query', 'Intent', 'Brand Cited (Yes/No)', 'Key Competitors', 'Citation Status (Cited/Not Cited/Not Measured)',
       'Entity', 'AI Perception (Tone/Claims)', 'Top Cited Page Types', 'Content Advantage (vs You)',
     ]);
-    expect(requestedColumns.filter((column) => isUnmeasuredReportColumn(column))).toEqual([]);
+    expect(requestedColumns.filter((column) => !isReportColumn(column))).toEqual([]);
+  });
+
+  /** Header cells of every table in a prompt. */
+  function tableHeaders(text: string): string[] {
+    const lines = text.split('\n');
+    const headers: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const table = readTableAt(lines, i);
+      if (table && table !== 'unparsed') {
+        headers.push(...table.headers);
+        i = table.end - 1;
+      }
+    }
+    return headers;
+  }
+
+  /** What the old template asked for, in the words it used. */
+  function expectNoOldTemplate(systemPrompt: string): void {
+    const twelve = Object.values(REPORT_TABLES).flat();
+    expect(tableHeaders(systemPrompt)).toEqual(twelve);
+    for (const cell of ['| Impact |', 'Organic rank', '| AI Overview |', 'Trust signals', 'Low/Med/High |']) {
+      expect(systemPrompt, cell).not.toContain(cell);
+    }
+    expect(systemPrompt).not.toMatch(/\(directional estimate\)/i);
+    expect(systemPrompt).not.toMatch(/label\s+"\([^)]*estimate\)"/i);
+    expect(systemPrompt).not.toMatch(/\[Rank or not measured\]/i);
+    expect(systemPrompt).toContain('Add no other column and no other table to an audit');
+  }
+
+  // The system prompt is the template the model reads first. Assert on the one actually sent.
+  it('sends the report call a system prompt with no rank, impact, AI Overview or trust signal column', async () => {
+    await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+    const options = generate.mock.calls[0]?.[1] as { systemPrompt?: string };
+    expect(typeof options.systemPrompt).toBe('string');
+    expectNoOldTemplate(String(options.systemPrompt));
+  });
+
+  it('sends the chat call the same template, for both chat paths', async () => {
+    // Chat with search: one generate call.
+    generate.mockClear();
+    await geminiService.queryWithSearch('audit example.com', dna, { skipSearch: true });
+    const asked = generate.mock.calls[0]?.[1] as { systemPrompt?: string };
+    expectNoOldTemplate(String(asked.systemPrompt));
+
+    // Streaming chat: the stream call.
+    const stream = vi.spyOn(aiProviderService, 'streamWithFailover').mockImplementation(async function* () {
+      yield { text: 'ok' };
+    } as never);
+    for await (const _chunk of geminiService.streamQuery('audit example.com', OracleMode.FLASH, dna, { skipSearch: true })) {
+      // drain
+    }
+    const streamed = stream.mock.calls[0]?.[1] as { systemPrompt?: string };
+    expect(stream).toHaveBeenCalledTimes(1);
+    expectNoOldTemplate(String(streamed.systemPrompt));
   });
 
   it('does not invite the model to add figures labelled as estimates', async () => {

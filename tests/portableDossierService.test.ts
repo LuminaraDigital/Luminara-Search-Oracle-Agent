@@ -23,14 +23,12 @@ describe('PortableDossierService', () => {
     const data: PortableDossierData = {
       title: 'Executive AEO Audit Dossier',
       targetDomain: 'luminara-suite.ai',
-      overallScore: 72,
       generatedAt: 1760000000000,
       contentFingerprint: 'e3b0c44298fc1c14',
       sections: [
         {
           id: 'summary',
           title: 'Executive Summary',
-          badge: 'Draft',
           contentHtml: '<p>Organization schema is missing on the homepage.</p>',
         },
         {
@@ -47,7 +45,8 @@ describe('PortableDossierService', () => {
     expect(html).toContain('<!DOCTYPE html>');
     expect(html).toContain('Executive AEO Audit Dossier');
     expect(html).toContain('luminara-suite.ai');
-    expect(html).toContain('72/100');
+    expect(html).toContain('Score: </span>');
+    expect(html).toContain('Not measured');
     expect(html).toContain('Content fingerprint');
     expect(html).toContain('e3b0c44298fc1c14');
 
@@ -65,7 +64,6 @@ describe('PortableDossierService', () => {
     const maliciousData: PortableDossierData = {
       title: '<script>alert("xss")</script>',
       targetDomain: 'target.com"><img src=x onerror=alert(1)>',
-      overallScore: 70,
       generatedAt: Date.now(),
       contentFingerprint: '"><script>alert(2)</script>',
       sections: [],
@@ -94,18 +92,40 @@ describe('dossier honesty (SW0a-7)', () => {
     expect(html).toContain('Add an Organization JSON-LD block to the homepage.');
   });
 
-  it('never prints a score the caller did not pass', () => {
-    for (const overallScore of [undefined, null, Number.NaN]) {
-      const html = generatePortableDossierHtml({
-        title: 'Dossier',
-        targetDomain: 'example.com',
-        overallScore,
-        generatedAt: 1760000000000,
-        sections: [],
-      });
-      expect(html).toContain('Not measured');
-      expect(html).not.toMatch(/\d+\s*\/\s*100/);
-    }
+  it('prints no score, grade or badge that a caller passes, because it takes none', () => {
+    // A caller that still passes the old fields gets nothing printed from them.
+    const html = generatePortableDossierHtml({
+      title: 'Dossier',
+      targetDomain: 'example.com',
+      generatedAt: 1760000000000,
+      overallScore: 88,
+      grade: 'B',
+      sections: [{ id: 's', title: 'Section', badge: 'Verified', contentHtml: '<p>Text.</p>' }],
+    } as unknown as PortableDossierData);
+    expect(html).toContain('Not measured');
+    expect(html).not.toContain('88');
+    expect(html).not.toContain('Grade');
+    expect(html).not.toContain('Verified');
+    expect(html).not.toMatch(/\d+\s*\/\s*100/);
+    expect(html).not.toContain('section-badge');
+
+    const src = fs.readFileSync(path.join(process.cwd(), 'services', 'reports', 'portableDossierService.ts'), 'utf8');
+    expect(src).not.toMatch(/overallScore|\bbadge\?\s*:/);
+  });
+
+  it('gates the report text it is given, whoever calls it', () => {
+    const html = buildAuditDossierHtml({
+      ...FIXTURE_AUDIT,
+      markdownText: [
+        '## AI & Search Visibility Radar',
+        '| Query | Est. Organic Rank | Citation Status |',
+        '|---|---|---|',
+        '| what is luminara | Position 3 | Cited |',
+      ].join('\n'),
+    });
+    expect(html).toContain('| what is luminara | Cited |');
+    expect(html).not.toContain('Est. Organic Rank');
+    expect(html).not.toContain('Position 3');
   });
 
   it('names the hash a content fingerprint and never a receipt, seal or cryptographic hash', () => {

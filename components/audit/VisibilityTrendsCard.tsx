@@ -32,11 +32,21 @@ export const VisibilityTrendsCard: React.FC<VisibilityTrendsCardProps> = ({ doma
   );
 
   const citationSeries = series.points.map((p) => p.citationRatePercent);
-  const sovSeries = series.points.map((p) => p.brandCitationSharePercent);
   const pathCite = sparkPath(citationSeries, 280, 64);
-  const pathSov = sparkPath(sovSeries, 280, 64);
 
   const latest = series.points[series.points.length - 1];
+  // Share of voice is shown as the latest audit's two counts. A snapshot stored
+  // before counts were kept has none, and then the tile is left out.
+  const latestMentions =
+    latest &&
+    typeof latest.brandMentionCount === 'number' &&
+    Number.isInteger(latest.brandMentionCount) &&
+    Number.isInteger(latest.promptCount) &&
+    latest.promptCount > 0 &&
+    latest.brandMentionCount >= 0 &&
+    latest.brandMentionCount <= latest.promptCount
+      ? { mentioned: latest.brandMentionCount, total: latest.promptCount }
+      : null;
 
   return (
     <div className="glass-morphism rounded-2xl border border-gold/40 p-5 bg-gradient-to-br from-black via-black/90 to-black/80 shadow-2xl">
@@ -48,7 +58,7 @@ export const VisibilityTrendsCard: React.FC<VisibilityTrendsCardProps> = ({ doma
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">Visibility Trends</h3>
             <p className="text-xs text-gray-400">
-              Historical citation rate and share of voice from your Luminara audits (stored in this browser).
+              Citation rate from your Luminara audits over time (stored in this browser).
             </p>
           </div>
         </div>
@@ -75,24 +85,22 @@ export const VisibilityTrendsCard: React.FC<VisibilityTrendsCardProps> = ({ doma
                   : `${series.deltaCitationRate > 0 ? '+' : ''}${series.deltaCitationRate} pts`}
               </span>
             </div>
-            <div className="glass-morphism rounded-xl p-3 border border-white/10">
-              <span className="text-[10px] font-mono text-gray-400 uppercase">SoV delta</span>
-              <span className="block text-base font-bold font-mono text-cyan-300">
-                {series.deltaShareOfVoice === null
-                  ? 'n/a'
-                  : `${series.deltaShareOfVoice > 0 ? '+' : ''}${series.deltaShareOfVoice} pts`}
-              </span>
-            </div>
+            {latestMentions && (
+              <div className="glass-morphism rounded-xl p-3 border border-white/10">
+                <span className="text-[10px] font-mono text-gray-400 uppercase">Share of voice, latest audit</span>
+                <span className="block text-xs font-bold font-mono text-cyan-300">
+                  mentioned in {latestMentions.mentioned} of {latestMentions.total} sampled queries
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="mt-4 overflow-x-auto">
             <svg viewBox="0 0 280 64" className="w-full h-16" role="img" aria-label="Citation rate trend">
               <path d={pathCite} fill="none" stroke="currentColor" className="text-gold-light" strokeWidth="2" />
-              <path d={pathSov} fill="none" stroke="currentColor" className="text-cyan-400" strokeWidth="1.5" strokeDasharray="4 3" />
             </svg>
             <div className="flex gap-4 text-[10px] font-mono text-gray-500 mt-1">
-              <span className="text-gold-light">Solid: citation rate</span>
-              <span className="text-cyan-400">Dashed: brand SoV</span>
+              <span className="text-gold-light">Line: citation rate</span>
               <span>{series.points.length} snapshots</span>
             </div>
           </div>

@@ -2,6 +2,9 @@
  * Luminara Visibility History: append-only audit snapshots for trend charts.
  * Browser-local first (production-ready offline); Worker KV can mirror later.
  * Falls back to in-memory storage when localStorage is unavailable (SSR / tests).
+ *
+ * Share of voice is stored as the two counts it is made of (brandMentionCount of
+ * promptCount sampled queries). No percentage of it and no change over time is kept.
  */
 
 import type { ShareOfVoiceSummary } from './shareOfVoiceService';
@@ -16,11 +19,11 @@ export interface VisibilityHistoryPoint {
   focus: string;
   measuredAt: number;
   citationRatePercent: number;
-  mentionCoveragePercent: number;
-  citationCoveragePercent: number;
-  brandCitationSharePercent: number;
+  /** Sampled queries whose results named the brand. Null when the audit had no count. */
+  brandMentionCount: number | null;
   citeWorthiness?: number;
   topCompetitor?: string | null;
+  /** Sampled queries the count is taken from. */
   promptCount: number;
 }
 
@@ -28,7 +31,6 @@ export interface VisibilityTrendSeries {
   domain: string;
   points: VisibilityHistoryPoint[];
   deltaCitationRate: number | null;
-  deltaShareOfVoice: number | null;
 }
 
 let memoryStore: VisibilityHistoryPoint[] = [];
@@ -93,9 +95,7 @@ export function recordVisibilitySnapshot(input: RecordVisibilityInput): Visibili
     focus: input.focus,
     measuredAt: input.measuredAt ?? Date.now(),
     citationRatePercent: Math.max(0, Math.min(100, Math.round(input.citationRatePercent))),
-    mentionCoveragePercent: input.shareOfVoice?.mentionCoveragePercent ?? Math.round(input.citationRatePercent),
-    citationCoveragePercent: input.shareOfVoice?.citationCoveragePercent ?? Math.round(input.citationRatePercent),
-    brandCitationSharePercent: input.shareOfVoice?.brandCitationSharePercent ?? Math.round(input.citationRatePercent),
+    brandMentionCount: input.shareOfVoice?.slices.find((slice) => slice.kind === 'brand')?.mentionCount ?? null,
     citeWorthiness: input.citeWorthiness,
     topCompetitor: input.topCompetitor ?? null,
     promptCount: input.shareOfVoice?.totalPrompts ?? 0,
@@ -126,7 +126,7 @@ export function getVisibilityTrend(domain: string): VisibilityTrendSeries {
   const d = normalizeDomain(domain);
   const points = loadAll().filter((p) => p.domain === d);
   if (points.length < 2) {
-    return { domain: d, points, deltaCitationRate: null, deltaShareOfVoice: null };
+    return { domain: d, points, deltaCitationRate: null };
   }
   const first = points[0];
   const last = points[points.length - 1];
@@ -134,7 +134,6 @@ export function getVisibilityTrend(domain: string): VisibilityTrendSeries {
     domain: d,
     points,
     deltaCitationRate: last.citationRatePercent - first.citationRatePercent,
-    deltaShareOfVoice: last.brandCitationSharePercent - first.brandCitationSharePercent,
   };
 }
 

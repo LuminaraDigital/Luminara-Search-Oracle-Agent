@@ -7,24 +7,25 @@
  * Inspired by the Odysseus visual report generator (`src/visual_report.py`).
  *
  * Invariant: No em dashes (U+2014) in copy or code comments. Use '-', ':', or '.'.
- * Invariant: the dossier prints no score, grade or badge that a check did not produce.
- * A missing score renders "Not measured". The fingerprint is a checksum, not a signature.
+ * Invariant: the dossier prints no score, grade or badge. No caller can pass one: nothing
+ * in the product measures an overall score for a report today, so the score line always
+ * reads "Not measured". If a measured score is added later, it must arrive as a typed
+ * input built by the code that measures it, never as a number or a label a caller types in.
+ * The fingerprint is a checksum, not a signature.
  */
 
 import { fastHash } from '../audit/evidenceLedgerService';
+import { gateReportText } from '../audit/reportColumnGate';
 
 export interface DossierSection {
   id: string;
   title: string;
-  badge?: string;
   contentHtml: string;
 }
 
 export interface PortableDossierData {
   title: string;
   targetDomain: string;
-  /** A 0-100 score that a check in this audit measured. Null or omitted renders "Not measured". */
-  overallScore?: number | null;
   generatedAt: number;
   /** Short non-cryptographic checksum of the report text. Omitted: the line is left out. */
   contentFingerprint?: string;
@@ -54,10 +55,6 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
   const formattedDate = new Date(data.generatedAt).toUTCString();
   const safeTitle = escapeHtml(data.title);
   const safeDomain = escapeHtml(data.targetDomain);
-  const scoreText =
-    typeof data.overallScore === 'number' && Number.isFinite(data.overallScore)
-      ? `${data.overallScore}/100`
-      : 'Not measured';
   const fingerprintBlock = data.contentFingerprint
     ? `
         <div style="margin-top: 1rem;">
@@ -76,14 +73,10 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
   // Generate Sections
   const sectionBlocks = data.sections
     .map(sec => {
-      const badgeHtml = sec.badge
-        ? `<span class="section-badge">${escapeHtml(sec.badge)}</span>`
-        : '';
       return `
       <section id="${escapeHtml(sec.id)}" class="card">
         <div class="card-header">
           <h2>${escapeHtml(sec.title)}</h2>
-          ${badgeHtml}
         </div>
         <div class="card-body">
           ${sec.contentHtml}
@@ -233,14 +226,6 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
       font-size: 1.25rem;
     }
 
-    .section-badge {
-      font-size: 0.75rem;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      background: var(--surface-border);
-      color: var(--text-secondary);
-    }
-
     .content-fingerprint {
       font-family: monospace;
       font-size: 0.75rem;
@@ -287,7 +272,7 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
         <div class="hero-meta">
           <div>
             <span>Score: </span>
-            <span class="score-badge">${scoreText}</span>
+            <span class="score-badge">Not measured</span>
           </div>
           <div>${formattedDate}</div>
         </div>${fingerprintBlock}
@@ -306,11 +291,11 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
  * The section has no badge: nothing checked the text after the model wrote it.
  */
 export function buildAuditDossierHtml(input: AuditDossierInput): string {
-  const text = input.markdownText || '';
+  // The download gets the same gated text as the screen, whoever calls this.
+  const text = gateReportText(input.markdownText || '');
   return generatePortableDossierHtml({
     title: `${input.domain} Executive AEO Dossier`,
     targetDomain: input.domain,
-    overallScore: null,
     generatedAt: input.generatedAt,
     // fastHash repeats one 16-character value four times. Print it once.
     contentFingerprint: fastHash(text || input.domain).slice(0, 16),
