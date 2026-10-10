@@ -22,6 +22,8 @@ import {
   recordStarsCharge,
 } from '../worker/starsCharges';
 import { linkTelegramAndFirebase, writeSubscriptionRecord } from '../worker/userStore';
+import { claimStarsCharge } from '../worker/paymentLedger';
+import { activateLicenseKey } from '../worker/licenseService';
 import { createPrivacyJob } from '../worker/privacyService';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
@@ -39,6 +41,7 @@ class MockKV {
   store = new Map<string, string>();
   failPut: (key: string) => boolean = () => false;
   failGet: (key: string) => boolean = () => false;
+  failDelete: (key: string) => boolean = () => false;
 
   async get(key: string, type?: string) {
     if (this.failGet(key)) throw new Error(`KV get failed for ${key}`);
@@ -53,6 +56,7 @@ class MockKV {
   }
 
   async delete(key: string) {
+    if (this.failDelete(key)) throw new Error(`KV delete failed for ${key}`);
     this.store.delete(key);
   }
 
@@ -201,7 +205,7 @@ describe('a paid Stars charge is put on record first', () => {
     expect(telegram.messagesTo(PAYER)[0].body.text).toContain('Luminara Starter');
   });
 
-  it('the webhook answers only after the charge is settled, and is not held back by the throttle', async () => {
+  it('the webhook answers only after the charge is settled, forty times in a row from one chat', async () => {
     const { env, db } = makeEnv();
     for (let i = 0; i < 40; i += 1) {
       const res = await webhook(paid(`ch_burst_${i}`, { amount: PLANS.starter.stars }), env);
@@ -304,7 +308,7 @@ describe('a grant that fails', () => {
     expect(kv.json(`sub:${PAYER}`)).toBeNull();
     expect(kv.json('sub:555')).toBeNull();
     expect(kv.json('stars:charge:ch_grant_fails')).toBeNull();
-    expect(rowOf(db, 'ch_grant_fails')).toMatchObject({ status: 'refunded', payer_tg_id: 555, lease_until: null });
+    expect(rowOf(db, 'ch_grant_fails')).toMatchObject({ status: 'refunded', payer_tg_id: 555, lease_until: null, refund_reason: 'grant_failed' });
     // The claim is gone, so the older claim table does not go on saying this charge was credited.
     expect(claimed(db, 'ch_grant_fails')).toBe(false);
   });
@@ -337,7 +341,8 @@ describe('a grant that fails', () => {
     expect(outcome).toEqual({ status: 200, note: 'undecided' });
     expect(rowOf(db, 'ch_blind')).toMatchObject({ status: 'received', lease_until: null });
     expect(telegram.of('refundStarPayment')).toHaveLength(0);
-    expect(telegram.messagesTo(PAYER)[0].body.text).toContain('Within 24 hours');
+    expect(telegram.messagesTo(PAYER)[0].body.text).toContain('We check once a day');
+    expect(telegram.messagesTo(PAYER)[0].body.text).not.toMatch(/24 hours/);
   });
 
   it('a redelivery after a grant that stopped half way does not add the days twice', async () => {
@@ -377,7 +382,9 @@ describe('a grant that fails', () => {
     telegram.replies.refundStarPayment = () => ({ ok: false, description: 'Bad Request: try later' });
     await handleTelegramPaymentUpdate(paid('ch_due'), env);
     expect(rowOf(db, 'ch_due')).toMatchObject({ status: 'refund_due', attempts: 1 });
-    expect(telegram.messagesTo(PAYER)[0].body.text).toContain('will be refunded automatically within 24 hours');
+    expect(telegram.messagesTo(PAYER)[0].body.text).toContain('did not go through yet');
+    expect(telegram.messagesTo(PAYER)[0].body.text).toContain('/paysupport');
+    expect(telegram.messagesTo(PAYER)[0].body.text).not.toMatch(/24 hours/);
 
     kv.failPut = () => false;
     const again = await handleTelegramPaymentUpdate(paid('ch_due'), env);
@@ -465,9 +472,10 @@ describe('the sweep', () => {
     expect(rowOf(db, 'ch_overwritten').status).toBe('received');
     expect(kv.json('stars:charge:ch_overwritten')).toBeNull();
 
-    // A TON purchase replaces the record. It knows nothing about Stars charges.
-    await writeSubscriptionRecord(env, String(PAYER), { plan: 'growth', paymentMethod: 'ton', txHash: 'abc', startedAt: Date.now(), expiresAt: Date.now() + 60 * DAY });
-    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'growth', paymentMethod: 'ton', appliedCharges: ['ch_overwritten'] });
+    // A licence key is redeemed and replaces the record. That code knows nothing about Stars charges.
+    const redeemed = await activateLicenseKey(env, String(PAYER), 'LUM-GROWTH-3DAY');
+    expect(redeemed.ok).toBe(true);
+    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'growth', paymentMethod: 'license_key', appliedCharges: ['ch_overwritten'] });
 
     down = false;
     travel(STARS_RECEIVED_GRACE_MS + 60_000);
@@ -484,12 +492,14 @@ describe('the sweep', () => {
     expect(kv.json(`sub:${PAYER}`).appliedCharges).toBeUndefined();
   });
 
-  it('a late redelivery and the sweep racing for one received row: exactly one of them decides it', async () => {
+  it.each(['the redelivery starts first', 'the sweep starts first'])('a late redelivery and the sweep racing for one received row (%s): exactly one of them decides it', async (order) => {
     const { env, kv, db } = makeEnv();
     await recordStarsCharge(env, { chargeId: 'ch_race', payerTgId: PAYER, accountId: String(PAYER), purpose: 'plan', refId: 'starter', stars: 2500 });
     travel(STARS_RECEIVED_GRACE_MS + 60_000);
 
-    await Promise.all([handleTelegramPaymentUpdate(paid('ch_race'), env), runStarsChargeSweep(env)]);
+    const redelivery = () => handleTelegramPaymentUpdate(paid('ch_race'), env);
+    const sweep = () => runStarsChargeSweep(env);
+    await Promise.all(order === 'the sweep starts first' ? [sweep(), redelivery()] : [redelivery(), sweep()]);
 
     const status = rowOf(db, 'ch_race').status;
     const hasPlan = subscriptionListsCharge(kv.json(`sub:${PAYER}`), 'ch_race');
@@ -712,6 +722,217 @@ describe('refunds a person asks for go through the ledger', () => {
     expect(rowOf(db, 'ch_notice')).toMatchObject({ status: 'refunded', refund_reason: 'refunded_at_telegram' });
     expect(kv.json(`sub:${PAYER}`)).toBeNull();
     expect(telegram.calls).toHaveLength(0);
+  });
+});
+
+describe('cases the payments review asked for', () => {
+  it('a failed read straight after the insert asks for the update again, and the redelivery credits it once', async () => {
+    const { env, kv, db } = makeEnv();
+    let failing = true;
+    env.DB = faultyDb(db, (sql) => {
+      if (failing && /SELECT .* FROM stars_charges WHERE charge_id/.test(sql)) {
+        failing = false;
+        return 'D1_ERROR: Network connection lost.';
+      }
+      return false;
+    });
+    expect((await webhook(paid('ch_read_fails'), env)).status).toBe(503);
+    expect(rowOf(db, 'ch_read_fails').status).toBe('received');
+    expect(kv.json(`sub:${PAYER}`)).toBeNull();
+
+    expect((await webhook(paid('ch_read_fails'), env)).status).toBe(200);
+    expect(rowOf(db, 'ch_read_fails').status).toBe('credited');
+    expect(kv.json(`sub:${PAYER}`).appliedCharges).toEqual(['ch_read_fails']);
+  });
+
+  it('a handler killed in the middle of a grant: a redelivery inside its lease does nothing, and the sweep refunds', async () => {
+    const { env, kv, db } = makeEnv();
+    // What a dead handler leaves: the row, its lease, and a claim with no grant behind it.
+    await recordStarsCharge(env, { chargeId: 'ch_killed', payerTgId: PAYER, accountId: String(PAYER), purpose: 'plan', refId: 'starter', stars: 2500 });
+    expect(await leaseStarsCharge(env, 'ch_killed', 'received')).not.toBeNull();
+    expect((await claimStarsCharge(env, 'ch_killed', String(PAYER))).ok).toBe(true);
+
+    const again = await handleTelegramPaymentUpdate(paid('ch_killed'), env);
+    expect(again).toEqual({ status: 200, note: 'held_elsewhere' });
+    expect(kv.json(`sub:${PAYER}`)).toBeNull();
+    expect(telegram.calls).toHaveLength(0);
+    expect(rowOf(db, 'ch_killed').status).toBe('received');
+
+    travel(STARS_RECEIVED_GRACE_MS + 60_000);
+    const summary = await runStarsChargeSweep(env);
+    expect(summary).toMatchObject({ refundDue: 1, refunded: 1, credited: 0 });
+    expect(rowOf(db, 'ch_killed').status).toBe('refunded');
+    expect(claimed(db, 'ch_killed')).toBe(false);
+    expect(telegram.of('refundStarPayment')[0].body.user_id).toBe(PAYER);
+    expect(kv.json(`sub:${PAYER}`)).toBeNull();
+  });
+
+  it('a redelivery that finds the row refunded does nothing', async () => {
+    const { env, kv, db } = makeEnv();
+    await handleTelegramPaymentUpdate(paid('ch_done'), env);
+    expect((await refundStarsCharge(env, PAYER, 'ch_done')).ok).toBe(true);
+    telegram.calls.length = 0;
+
+    const again = await handleTelegramPaymentUpdate(paid('ch_done'), env);
+    expect(again).toEqual({ status: 200, note: 'already_refunded' });
+    expect(kv.json(`sub:${PAYER}`)).toBeNull();
+    expect(telegram.calls).toHaveLength(0);
+    expect(rowOf(db, 'ch_done').status).toBe('refunded');
+  });
+
+  it('refunding an upgrade puts the earlier plan back, not just its days', async () => {
+    const { env, kv } = makeEnv();
+    await handleTelegramPaymentUpdate(paid('ch_starter'), env);
+    const starterExpiry = kv.json(`sub:${PAYER}`).expiresAt;
+    await handleTelegramPaymentUpdate(paid('ch_agency', { payload: `agency:${PAYER}`, amount: PLANS.agency.stars }), env);
+    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'agency', previousPlan: 'starter', expiresAt: starterExpiry + 30 * DAY });
+
+    expect((await refundStarsCharge(env, PAYER, 'ch_agency')).ok).toBe(true);
+    const sub = kv.json(`sub:${PAYER}`);
+    expect(sub).toMatchObject({ plan: 'starter', expiresAt: starterExpiry, chargeId: 'ch_starter', appliedCharges: ['ch_starter'] });
+    expect(sub.previousPlan).toBeUndefined();
+  });
+
+  it('refunding a one-day pass bought over Agency leaves Agency as it was', async () => {
+    const { env, kv } = makeEnv();
+    await handleTelegramPaymentUpdate(paid('ch_agency', { payload: `agency:${PAYER}`, amount: PLANS.agency.stars }), env);
+    const agencyExpiry = kv.json(`sub:${PAYER}`).expiresAt;
+    await handleTelegramPaymentUpdate(paid('ch_pass', { payload: `single_audit:${PAYER}`, amount: PLANS.single_audit.stars }), env);
+
+    expect((await refundStarsCharge(env, PAYER, 'ch_pass')).ok).toBe(true);
+    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'agency', expiresAt: agencyExpiry, appliedCharges: ['ch_agency'] });
+  });
+
+  it('refunding a Stars charge that was added to days bought on another rail leaves those days and that plan', async () => {
+    const { env, kv } = makeEnv();
+    const tonExpiry = Date.now() + 10 * DAY;
+    await kv.put(`sub:${PAYER}`, JSON.stringify({ plan: 'growth', paymentMethod: 'ton', txHash: 'abc', expiresAt: tonExpiry }));
+    await handleTelegramPaymentUpdate(paid('ch_on_ton'), env);
+    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'starter', previousPlan: 'growth', expiresAt: tonExpiry + 30 * DAY });
+
+    expect((await refundStarsCharge(env, PAYER, 'ch_on_ton')).ok).toBe(true);
+    const sub = kv.json(`sub:${PAYER}`);
+    expect(sub).toMatchObject({ plan: 'growth', expiresAt: tonExpiry, appliedCharges: [] });
+    expect(sub.chargeId).toBeUndefined();
+  });
+
+  it('when the Stars go back and the plan cannot be removed, the row stays open and the sweep finishes it', async () => {
+    const { env, kv, db } = makeEnv();
+    await handleTelegramPaymentUpdate(paid('ch_sticky'), env);
+    let refundCalls = 0;
+    telegram.replies.refundStarPayment = () =>
+      (refundCalls += 1) === 1 ? { ok: true, result: true } : { ok: false, description: 'Bad Request: CHARGE_ALREADY_REFUNDED' };
+    kv.failDelete = (key) => key.startsWith('sub:');
+
+    const res = await refundStarsCharge(env, PAYER, 'ch_sticky', 'admin_bot_refund');
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('plan could not be taken back yet');
+    expect(rowOf(db, 'ch_sticky')).toMatchObject({ status: 'refund_due', attempts: 1 });
+    expect(kv.json(`sub:${PAYER}`)).not.toBeNull();
+
+    kv.failDelete = () => false;
+    travel(STARS_LEASE_MS + STARS_REFUND_GRACE_MS + 60_000);
+    const summary = await runStarsChargeSweep(env);
+    expect(summary).toMatchObject({ refunded: 1 });
+    expect(rowOf(db, 'ch_sticky').status).toBe('refunded');
+    expect(kv.json(`sub:${PAYER}`)).toBeNull();
+    expect(kv.json('stars:charge:ch_sticky').refunded).toBe(true);
+    // The sweep says nothing to the payer about a refund a person asked for.
+    expect(telegram.messagesTo(PAYER).filter((m) => /refunded/.test(m.body.text))).toHaveLength(0);
+  });
+
+  it('a buyer whose Stars went back is told so, even when the ledger row could not be closed yet', async () => {
+    const { env, kv, db } = makeEnv();
+    kv.failPut = (key) => key.startsWith('sub:');
+    let subReads = 0;
+    // The grant and the check of what was granted each read the record once; the read made while taking the grant back fails.
+    kv.failGet = (key) => key.startsWith('sub:') && (subReads += 1) > 2;
+
+    await handleTelegramPaymentUpdate(paid('ch_back'), env);
+    expect(telegram.of('refundStarPayment')).toHaveLength(1);
+    expect(rowOf(db, 'ch_back')).toMatchObject({ status: 'refund_due', attempts: 1 });
+    expect(telegram.messagesTo(PAYER)[0].body.text).toContain('2,500 Stars have been refunded');
+  });
+
+  it("Telegram's refund notice arriving while the refund is being recorded changes nothing", async () => {
+    const { env, kv, db } = makeEnv();
+    await handleTelegramPaymentUpdate(paid('ch_overlap'), env);
+    const notice = {
+      message: { chat: { id: PAYER }, from: { id: PAYER }, refunded_payment: { currency: 'XTR', total_amount: 2500, telegram_payment_charge_id: 'ch_overlap' } },
+    };
+    telegram.replies.refundStarPayment = async () => {
+      await handleTelegramPaymentUpdate(notice, env);
+      return { ok: true, result: true };
+    };
+
+    const res = await refundStarsCharge(env, PAYER, 'ch_overlap', 'admin_bot_refund');
+    expect(res).toMatchObject({ ok: true, status: 'refunded' });
+    expect(rowOf(db, 'ch_overlap')).toMatchObject({ status: 'refunded', refund_reason: 'admin_bot_refund', lease_until: null });
+    expect(telegram.of('refundStarPayment')).toHaveLength(1);
+    expect(kv.json(`sub:${PAYER}`)).toBeNull();
+  });
+
+  it('a manual refund does nothing when the ledger cannot be read, instead of refunding to a typed id', async () => {
+    const { env, db } = makeEnv();
+    await handleTelegramPaymentUpdate(paid('ch_unreadable'), env);
+    env.DB = faultyDb(db, (sql) => (/FROM stars_charges WHERE charge_id/.test(sql) ? 'D1_ERROR: Network connection lost.' : false));
+    const res = await refundStarsCharge(env, 4242, 'ch_unreadable', 'admin_bot_refund');
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('Nothing was refunded');
+    expect(telegram.of('refundStarPayment')).toHaveLength(0);
+    expect(rowOf(db, 'ch_unreadable').status).toBe('credited');
+  });
+
+  it('a record that names its charge the old way keeps that charge when another rail rewrites it', async () => {
+    const { env, kv } = makeEnv();
+    await kv.put(`sub:${PAYER}`, JSON.stringify({ plan: 'starter', chargeId: 'ch_old_style', expiresAt: Date.now() + 5 * DAY }));
+    await writeSubscriptionRecord(env, String(PAYER), { plan: 'growth', paymentMethod: 'ton', expiresAt: Date.now() + 35 * DAY });
+    expect(kv.json(`sub:${PAYER}`).appliedCharges).toEqual(['ch_old_style']);
+  });
+
+  describe("the comparison with Telegram's list reads its newest end, whichever way the list is ordered", () => {
+    const payer = { type: 'user', transaction_type: 'invoice_payment', user: { id: PAYER } };
+    const buildList = (nowMs: number) => {
+      // 1,250 payments: 900 from weeks ago, then 350 inside the window. That is several pages, so
+      // reading only the first page, only the last one, or only the pages touched while looking
+      // for the end of the list misses some of them.
+      const old = Array.from({ length: 900 }, (_, i) => ({ id: `ch_old_${i}`, amount: 25, date: Math.floor((nowMs - 30 * DAY) / 1000) + i, source: payer }));
+      const hourAgo = Math.floor((nowMs - 60 * 60_000) / 1000);
+      const recent = Array.from({ length: 350 }, (_, i) => ({ id: `ch_win_${i}`, amount: 2500, date: hourAgo + i, source: payer }));
+      return [...old, ...recent];
+    };
+
+    it.each(['oldest first', 'newest first'])('%s', async (order) => {
+      const { env, db } = makeEnv();
+      travel(STARS_RECEIVED_GRACE_MS + 60_000);
+      // The ledger knows the first and the last of the 350; the other 348 were never seen here.
+      for (const id of ['ch_win_0', 'ch_win_349']) {
+        await recordStarsCharge(env, { chargeId: id, payerTgId: PAYER, accountId: null, purpose: 'plan', refId: 'starter', stars: 2500, status: 'refunded' });
+      }
+      const list = buildList(Date.now());
+      if (order === 'newest first') list.reverse();
+      telegram.replies.getStarTransactions = (body) => ({ ok: true, result: { transactions: list.slice(body.offset, body.offset + body.limit) } });
+
+      const summary = await runStarsChargeSweep(env);
+      const unmatched = new Set(summary?.unmatched);
+      expect(unmatched.size).toBe(348);
+      for (const i of [1, 29, 30, 31, 49, 50, 51, 99, 100, 149, 150, 151, 199, 200, 249, 250, 251, 348]) expect(unmatched.has(`ch_win_${i}`), `ch_win_${i}`).toBe(true);
+      expect(unmatched.has('ch_win_0')).toBe(false);
+      expect(unmatched.has('ch_win_349')).toBe(false);
+      expect([...unmatched].some((id) => id.startsWith('ch_old_'))).toBe(false);
+      expect(summary?.errors).toBe(0);
+      expect(telegram.of('getStarTransactions').length).toBeLessThan(20);
+      expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM stars_charges').get().n).toBe(2);
+    });
+
+    it('says so when the list could not be read', async () => {
+      const { env } = makeEnv();
+      telegram.replies.getStarTransactions = () => ({ ok: false, description: 'Too Many Requests: retry after 30' });
+      const summary = await runStarsChargeSweep(env);
+      expect(summary?.errors).toBe(1);
+      const alert = telegram.messagesTo(ADMIN).find((m) => m.body.text.includes('could not run'));
+      expect(alert?.body.text).toContain('Too Many Requests');
+    });
   });
 });
 

@@ -262,18 +262,22 @@ export type StarsChargeHooks = {
   isGranted(row: StarsChargeRow): Promise<boolean>;
   /** Drops a claim with no grant behind it, so a refunded charge is not left marked credited. */
   releaseClaim(row: StarsChargeRow): Promise<void>;
-  /** Sends the Stars back to row.payer_tg_id. Telegram's "already refunded" must come back as ok. */
-  refund(row: StarsChargeRow): Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Sends the Stars back to row.payer_tg_id and takes back what the charge gave. Telegram's
+   * "already refunded" must come back as ok. `moneyReturned` with ok false means the Stars went
+   * back and the grant is still in place, so the row stays open and is tried again.
+   */
+  refund(row: StarsChargeRow): Promise<{ ok: boolean; error?: string; moneyReturned?: boolean }>;
   alert(text: string, details?: Record<string, unknown>): Promise<void>;
   /** Called by the sweep after it settles a row, so the payer can be told. Must not throw. */
   onSwept?(row: StarsChargeRow, outcome: 'credited' | 'refunded'): Promise<void>;
-  /** Telegram's own list of recent incoming Stars payments, for the daily comparison. */
-  listIncoming?(): Promise<StarsIncomingPayment[]>;
+  /** Telegram's own list of incoming Stars payments since `sinceMs`, for the daily comparison. Throws when it could not be read in full. */
+  listIncoming?(sinceMs: number): Promise<StarsIncomingPayment[]>;
 };
 
 export type StarsRefundOutcome =
   | { settled: true; row: StarsChargeRow }
-  | { settled: false; reason: 'busy' | 'refused'; status: StarsChargeStatus | null; error?: string };
+  | { settled: false; reason: 'busy' | 'refused'; status: StarsChargeStatus | null; error?: string; moneyReturned?: boolean };
 
 /**
  * Sends the refund for one `refund_due` row and records what happened. Used inline, straight after
@@ -290,7 +294,7 @@ export async function settleStarsRefund(
   const row = await readStarsCharge(env, chargeId);
   if (!row) return { settled: false, reason: 'busy', status: null };
 
-  let refund: { ok: boolean; error?: string };
+  let refund: { ok: boolean; error?: string; moneyReturned?: boolean };
   try {
     refund = await hooks.refund(row);
   } catch (err) {
@@ -316,14 +320,14 @@ export async function settleStarsRefund(
   }
   console.error(`[StarsCharges] Refund of charge ${chargeId} failed (${refund.error || 'no reason given'}); status is now ${status}.`);
   if (status === 'refund_failed') {
-    await hooks.alert(`A Stars refund failed ${STARS_MAX_REFUND_ATTEMPTS} times and is no longer retried. The payer is still owed their Stars.`, {
-      chargeId,
-      payerTgId: row.payer_tg_id,
-      stars: row.stars,
-      lastError: refund.error || null,
-    });
+    await hooks.alert(
+      refund.moneyReturned
+        ? `A Stars refund went through, and what the charge gave could not be taken back after ${STARS_MAX_REFUND_ATTEMPTS} attempts. The payer has their Stars and may still have the plan.`
+        : `A Stars refund failed ${STARS_MAX_REFUND_ATTEMPTS} times and is no longer retried. The payer is still owed their Stars.`,
+      { chargeId, payerTgId: row.payer_tg_id, stars: row.stars, lastError: refund.error || null },
+    );
   }
-  return { settled: false, reason: 'refused', status, error: refund.error };
+  return { settled: false, reason: 'refused', status, error: refund.error, moneyReturned: refund.moneyReturned };
 }
 
 export type StarsSweepSummary = {
@@ -437,7 +441,7 @@ export async function sweepStarsCharges(
 
   if (options.reconcile && hooks.listIncoming) {
     try {
-      summary.unmatched = await findUnrecordedCharges(db, await hooks.listIncoming(), now);
+      summary.unmatched = await findUnrecordedCharges(db, await hooks.listIncoming(now - STARS_RECONCILE_WINDOW_MS), now);
       if (summary.unmatched.length > 0) {
         await hooks.alert(
           `Telegram lists ${summary.unmatched.length} Stars payment(s) this ledger has no record of. Each one was paid and was neither credited nor refunded here.`,
@@ -447,6 +451,10 @@ export async function sweepStarsCharges(
     } catch (err) {
       summary.errors += 1;
       console.error(`[StarsCharges] sweep could not compare with Telegram's transaction list: ${errorText(err)}`);
+      // This comparison is the only thing that notices a payment the ledger never saw.
+      await hooks.alert("Today's comparison with Telegram's list of Stars payments could not run. A payment this ledger never saw would not be noticed.", {
+        error: errorText(err),
+      });
     }
   }
 

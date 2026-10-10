@@ -27,6 +27,7 @@ import {
   type StarsChargeRow,
   type StarsChargeStatus,
   type StarsIncomingPayment,
+  type StarsRefundOutcome,
   type StarsSweepSummary,
 } from './starsCharges';
 
@@ -869,7 +870,7 @@ export async function refundStarPayment(
   env: Env,
   userId: number,
   telegramPaymentChargeId: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; revoked?: boolean }> {
   if (!userId || !telegramPaymentChargeId) {
     return { ok: false, error: 'userId and telegramPaymentChargeId are required' };
   }
@@ -882,7 +883,8 @@ export async function refundStarPayment(
   }
 
   // Mark the receipt refunded and take back what this charge gave.
-  const refundedAccountId = await revokeStarsGrant(env, userId, telegramPaymentChargeId);
+  const revoked = await revokeStarsGrant(env, userId, telegramPaymentChargeId);
+  const refundedAccountId = revoked.accountId;
 
   // Money event: Stars refund already issued at Telegram. Best-effort audit; a
   // logging failure here cannot un-refund, so it must not fail the response.
@@ -896,7 +898,7 @@ export async function refundStarPayment(
     },
   });
 
-  return { ok: true };
+  return { ok: true, revoked: revoked.ok };
 }
 
 // ---------------------------------------------------------------------------
@@ -973,9 +975,14 @@ function refundedText(stars: number): string {
 
 function refundPendingText(stars: number, chargeId: string): string {
   return (
-    `We could not activate your plan. Your ${stars.toLocaleString()} Stars will be refunded automatically within 24 hours. ` +
-    `If they are not, send /paysupport with this receipt ID: ${chargeId}`
+    `We could not activate your plan, and the refund of your ${stars.toLocaleString()} Stars did not go through yet. ` +
+    `We try again once a day. If you do not have them back in 3 days, send /paysupport with this receipt ID: ${chargeId}`
   );
+}
+
+/** True when the payer has their Stars back, whether or not the ledger row could be closed. */
+function starsWentBack(outcome: StarsRefundOutcome): boolean {
+  return outcome.settled || outcome.moneyReturned === true;
 }
 
 /** Resolves false when the check has not answered inside `ms`, or fails. */
@@ -1054,6 +1061,8 @@ type PlanChargeInput = {
   payerTgId: number;
   stars: number;
   providerChargeId?: string;
+  /** What the subscription record said before this charge, when it was still active. */
+  previousPlan?: string;
   now: number;
 };
 
@@ -1064,6 +1073,7 @@ function starsReceipt(input: PlanChargeInput, expiresAt: number): string {
     loginId: input.loginId,
     accountId: input.accountId,
     plan: input.planId,
+    previousPlan: input.previousPlan,
     stars: input.stars,
     chargeId: input.chargeId,
     providerPaymentChargeId: input.providerChargeId,
@@ -1082,21 +1092,25 @@ async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ e
   const plan = PLANS[input.planId];
   const chargeKey = `stars:charge:${input.chargeId}`;
 
-  // A receipt means an earlier delivery finished this grant and told the buyer. Charges credited
-  // before the D1 ledger existed are recorded only here.
-  const receipt = (await kv.get(chargeKey, 'json')) as { refunded?: boolean; expiresAt?: number } | null;
+  // A receipt means an earlier delivery finished this grant. One written before this ledger
+  // existed names no payer, and its buyer was told long ago. One written by this ledger means an
+  // earlier delivery stopped after the receipt and may not have sent the message, so the buyer is
+  // told now.
+  const receipt = (await kv.get(chargeKey, 'json')) as { refunded?: boolean; expiresAt?: number; payerTgId?: number } | null;
   if (receipt?.refunded) throw new Error('the receipt says this charge was refunded');
-  if (receipt) return { expiresAt: Number(receipt.expiresAt) || 0, alreadyTold: true };
+  if (receipt) return { expiresAt: Number(receipt.expiresAt) || 0, alreadyTold: receipt.payerTgId === undefined };
 
   const claim = await claimStarsCharge(env, input.chargeId, input.accountId);
   if (!claim.ok && claim.reason !== 'duplicate') throw new Error(`the charge could not be claimed (${claim.reason})`);
 
   const existing = (await kv.get(`sub:${input.accountId}`, 'json')) as SubscriptionRecord | null;
   let expiresAt: number;
+  let previousPlan: string | undefined;
   if (subscriptionListsCharge(existing, input.chargeId)) {
     // An earlier attempt wrote the subscription and stopped before the receipt. The days are
     // already there; adding them again would give the plan twice.
     expiresAt = Number(existing?.expiresAt) || input.now;
+    previousPlan = typeof existing?.previousPlan === 'string' ? existing.previousPlan : undefined;
   } else if (!claim.ok) {
     // Claimed by an attempt that left no grant behind. The claim alone is not a grant.
     throw new Error('the charge was claimed earlier and no grant is in place');
@@ -1104,8 +1118,11 @@ async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ e
     const active = typeof existing?.expiresAt === 'number' && existing.expiresAt > input.now;
     expiresAt = (active ? Number(existing?.expiresAt) : input.now) + plan.days * DAY_MS;
     const earlier = active ? appliedChargesOf(existing).filter((c) => c !== input.chargeId) : [];
+    previousPlan = active && typeof existing?.plan === 'string' ? existing.plan : undefined;
     await writeSubscriptionRecord(env, input.loginId, {
       plan: input.planId,
+      // What the record said before this charge, so a refund of this charge can put it back.
+      previousPlan,
       stars: input.stars,
       chargeId: input.chargeId,
       providerPaymentChargeId: input.providerChargeId,
@@ -1117,7 +1134,7 @@ async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ e
     });
   }
 
-  await kv.put(chargeKey, starsReceipt(input, expiresAt));
+  await kv.put(chargeKey, starsReceipt({ ...input, previousPlan }, expiresAt));
   return { expiresAt, alreadyTold: false };
 }
 
@@ -1193,8 +1210,9 @@ async function settleReceivedPlanCharge(env: Env, ctx: ReceivedChargeContext): P
       await tellPayer(
         env,
         ctx.chatId,
-        `Your payment was received, but we could not confirm your plan yet. Within 24 hours it will either be active ` +
-          `or your ${row.stars.toLocaleString()} Stars will be refunded. Receipt ID: ${chargeId}`,
+        `Your payment was received, but we could not confirm your plan yet. We check once a day: it will either be ` +
+          `activated or your ${row.stars.toLocaleString()} Stars will be refunded. If neither has happened in 3 days, ` +
+          `send /paysupport with this receipt ID: ${chargeId}`,
       );
       return 'undecided';
     }
@@ -1221,9 +1239,10 @@ async function settleReceivedPlanCharge(env: Env, ctx: ReceivedChargeContext): P
   }
 
   await releaseStarsCharge(env, chargeId);
-  if (!(await markStarsChargeRefundDue(env, chargeId, lease, failure || 'grant_failed'))) return 'lease_lost';
+  // The ledger keeps a code. The error text is in the log line above.
+  if (!(await markStarsChargeRefundDue(env, chargeId, lease, 'grant_failed'))) return 'lease_lost';
   const outcome = await settleStarsRefund(env, starsChargeHooks(env), chargeId);
-  await tellPayer(env, ctx.chatId, outcome.settled ? refundedText(row.stars) : refundPendingText(row.stars, chargeId));
+  await tellPayer(env, ctx.chatId, starsWentBack(outcome) ? refundedText(row.stars) : refundPendingText(row.stars, chargeId));
   return outcome.settled ? 'refunded' : 'refund_due';
 }
 
@@ -1292,7 +1311,7 @@ async function handleSuccessfulPayment(msg: any, env: Env): Promise<PaymentUpdat
       await tellPayer(
         env,
         chatId,
-        outcome.settled
+        starsWentBack(outcome)
           ? `We received a payment we could not match to a plan, so your ${stars.toLocaleString()} Stars have been refunded.`
           : refundPendingText(stars, chargeId),
       );
@@ -1351,16 +1370,32 @@ export async function handleTelegramPaymentUpdate(update: any, env: Env): Promis
   }
 }
 
+/** The plan a Stars charge bought, from its receipt or its ledger row. */
+async function planOfStarsCharge(env: Env, chargeId: string | undefined): Promise<string | null> {
+  if (!chargeId) return null;
+  const receipt = (await env.LUMINARA_KV?.get(`stars:charge:${chargeId}`, 'json')) as { plan?: string } | null | undefined;
+  if (typeof receipt?.plan === 'string' && Object.hasOwn(PLANS, receipt.plan)) return receipt.plan;
+  try {
+    const row = await readStarsCharge(env, chargeId);
+    if (row?.purpose === 'plan' && Object.hasOwn(PLANS, row.ref_id)) return row.ref_id;
+  } catch {
+    // No ledger row to read.
+  }
+  return null;
+}
+
 /**
  * Marks the receipt refunded and takes back only what this charge gave. A charge is found by its
  * receipt or by the subscription record that lists it, so a grant that stopped half way is taken
- * back too. When other Stars charges still stand behind the record, this one's days come off;
- * otherwise the record goes. Returns the account the charge belonged to.
+ * back too. When time is left that this charge did not pay for, its days come off and, if it was
+ * the last thing applied to the record, the plan goes back to what the record said before it.
+ * Otherwise the record goes. `ok` is false when the record could not be read or written, so the
+ * caller can try again: the Stars are back with the payer and the plan must follow.
  */
-async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Promise<string> {
+async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Promise<{ accountId: string; ok: boolean }> {
   let accountId = String(userId);
   const kv = env.LUMINARA_KV;
-  if (!kv) return accountId;
+  if (!kv) return { accountId, ok: true };
   try {
     const chargeKey = `stars:charge:${chargeId}`;
     const receipt = (await kv.get(chargeKey, 'json')) as Record<string, unknown> | null;
@@ -1370,12 +1405,8 @@ async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Pro
     } catch {
       // No ledger row to read (a charge older than the table, or the table is not there yet).
     }
-    if (receipt) {
-      await kv.put(chargeKey, JSON.stringify({ ...receipt, refunded: true, refundedAt: Date.now() }));
-      accountId = String(receipt.accountId || receipt.loginId || userId);
-    } else if (row?.account_id) {
-      accountId = row.account_id;
-    }
+    if (receipt) accountId = String(receipt.accountId || receipt.loginId || userId);
+    else if (row?.account_id) accountId = row.account_id;
 
     const planId = String(receipt?.plan || (row?.purpose === 'plan' ? row.ref_id : ''));
     const days = Object.hasOwn(PLANS, planId) ? PLANS[planId].days : 0;
@@ -1384,64 +1415,120 @@ async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Pro
     );
     for (const key of keys) {
       const sub = (await kv.get(`sub:${key}`, 'json')) as SubscriptionRecord | null;
-      if (!subscriptionListsCharge(sub, chargeId)) continue;
+      if (!sub || !subscriptionListsCharge(sub, chargeId)) continue;
       const remaining = appliedChargesOf(sub).filter((c) => c !== chargeId);
-      const shortened = days > 0 ? Number(sub?.expiresAt) - days * DAY_MS : 0;
-      if (shortened > Date.now()) {
-        // Time is left that this charge did not pay for (it was added to days already there).
-        await kv.put(
-          `sub:${key}`,
-          JSON.stringify({ ...sub, expiresAt: shortened, appliedCharges: remaining, chargeId: remaining[remaining.length - 1] }),
-        );
-      } else {
+      const shortened = days > 0 ? Number(sub.expiresAt) - days * DAY_MS : 0;
+      if (shortened <= Date.now()) {
         await kv.delete(`sub:${key}`);
+        continue;
       }
+      // Time is left that this charge did not pay for (it was added to days already there).
+      const next: SubscriptionRecord = { ...sub, expiresAt: shortened, appliedCharges: remaining };
+      if (sub.chargeId === chargeId) {
+        // This charge was the last thing applied to the record, so the plan name is its doing.
+        const before =
+          (typeof sub.previousPlan === 'string' && sub.previousPlan) ||
+          (typeof receipt?.previousPlan === 'string' && receipt.previousPlan) ||
+          (await planOfStarsCharge(env, remaining[remaining.length - 1]));
+        if (before) next.plan = before;
+        next.chargeId = remaining[remaining.length - 1];
+        delete next.previousPlan;
+      }
+      await kv.put(`sub:${key}`, JSON.stringify(next));
     }
+    // Last, so a failure above leaves the receipt unmarked and a retry starts from the same facts.
+    if (receipt) await kv.put(chargeKey, JSON.stringify({ ...receipt, refunded: true, refundedAt: Date.now() }));
+    return { accountId, ok: true };
   } catch (err) {
     console.error('[Stars] Error updating KV after refund', err);
+    return { accountId, ok: false };
   }
-  return accountId;
 }
 
-/** Telegram's own record of Stars paid to this bot by invoice. Read only. */
-async function listIncomingStarPayments(env: Env): Promise<StarsIncomingPayment[]> {
-  const PAGE = 100;
-  const MAX_PAGES = 10;
-  const out: StarsIncomingPayment[] = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const r = await api(env, 'getStarTransactions', { offset: page * PAGE, limit: PAGE });
+const STAR_TXN_PAGE = 100;
+/** Bounds the calls one comparison may make, whatever the list looks like. */
+const STAR_TXN_MAX_CALLS = 60;
+
+/**
+ * Telegram's own record of Stars paid to this bot by invoice since `sinceMs`. Read only.
+ * The Bot API pages the list by offset "in chronological order" and does not say which end comes
+ * first, so this reads the newest end either way: straight from offset 0 when the newest come
+ * first, and by finding the end of the list when the oldest do. It throws when it could not
+ * cover the window, so the sweep can say the comparison did not run.
+ */
+async function listIncomingStarPayments(env: Env, sinceMs: number): Promise<StarsIncomingPayment[]> {
+  let calls = 0;
+  const pages = new Map<number, any[]>();
+  const page = async (offset: number): Promise<any[]> => {
+    const seen = pages.get(offset);
+    if (seen) return seen;
+    calls += 1;
+    if (calls > STAR_TXN_MAX_CALLS) throw new Error('the transaction list is too long to compare in one run');
+    const r = await api(env, 'getStarTransactions', { offset, limit: STAR_TXN_PAGE });
     if (!r.ok) throw new Error(r.description || 'getStarTransactions failed');
     const list: any[] = Array.isArray(r.result?.transactions) ? r.result.transactions : [];
+    pages.set(offset, list);
+    return list;
+  };
+  const paidAt = (t: any) => (Number(t?.date) || 0) * 1000;
+
+  const first = await page(0);
+  if (first.length === STAR_TXN_PAGE) {
+    if (paidAt(first[0]) > paidAt(first[first.length - 1])) {
+      // Newest first: read on until a page ends before the window.
+      let last = first;
+      for (let offset = STAR_TXN_PAGE; last.length === STAR_TXN_PAGE && paidAt(last[last.length - 1]) >= sinceMs; offset += STAR_TXN_PAGE) {
+        last = await page(offset);
+      }
+    } else {
+      // Oldest first: find where the list ends (double the offset until a page comes back short,
+      // then halve the gap), and read back from there until a page starts before the window.
+      let full = 0;
+      let short = STAR_TXN_PAGE;
+      while ((await page(short)).length === STAR_TXN_PAGE) {
+        full = short;
+        short *= 2;
+      }
+      while (short - full > STAR_TXN_PAGE) {
+        const mid = full + Math.floor((short - full) / (2 * STAR_TXN_PAGE)) * STAR_TXN_PAGE;
+        if ((await page(mid)).length === STAR_TXN_PAGE) full = mid;
+        else short = mid;
+      }
+      for (let offset = short; offset >= 0; offset -= STAR_TXN_PAGE) {
+        const p = await page(offset);
+        if (p.length > 0 && paidAt(p[0]) < sinceMs) break;
+      }
+    }
+  }
+
+  const out = new Map<string, StarsIncomingPayment>();
+  for (const list of pages.values()) {
     for (const t of list) {
       const source = t?.source;
       // A payment in has a paying user and no receiver; a refund out has a receiver.
       if (!source || source.type !== 'user' || t.receiver) continue;
       if (source.transaction_type && source.transaction_type !== 'invoice_payment') continue;
-      if (typeof t.id !== 'string' || !t.id) continue;
-      out.push({
-        chargeId: t.id,
-        payerTgId: Number(source.user?.id) || 0,
-        stars: Number(t.amount) || 0,
-        paidAt: (Number(t.date) || 0) * 1000,
-      });
+      if (typeof t.id !== 'string' || !t.id || paidAt(t) < sinceMs) continue;
+      out.set(t.id, { chargeId: t.id, payerTgId: Number(source.user?.id) || 0, stars: Number(t.amount) || 0, paidAt: paidAt(t) });
     }
-    if (list.length < PAGE) return out;
   }
-  console.warn(`[Stars] The transaction list is longer than ${MAX_PAGES * PAGE} entries; the daily comparison read only that many.`);
-  return out;
+  return [...out.values()];
 }
 
 function starsChargeHooks(env: Env): StarsChargeHooks {
+  const planStayed = 'the Stars went back to the payer, and the plan could not be taken back yet';
   return {
     isGranted: async (row) =>
       row.purpose === 'plan' && (await readPlanGrantTrace(env, row.charge_id, [row.account_id, String(row.payer_tg_id)])) !== null,
     releaseClaim: (row) => releaseStarsCharge(env, row.charge_id),
     refund: async (row) => {
       const res = await refundStarPayment(env, row.payer_tg_id, row.charge_id);
-      if (res.ok || !/CHARGE_ALREADY_REFUNDED/i.test(res.error || '')) return res;
+      // Refunded, but the plan is still there: not finished, so the sweep comes back to it.
+      if (res.ok) return res.revoked === false ? { ok: false, moneyReturned: true, error: planStayed } : { ok: true };
+      if (!/CHARGE_ALREADY_REFUNDED/i.test(res.error || '')) return res;
       // The Stars are already back with the payer. Make sure the grant went with them.
-      await revokeStarsGrant(env, row.payer_tg_id, row.charge_id);
-      return { ok: true };
+      const revoked = await revokeStarsGrant(env, row.payer_tg_id, row.charge_id);
+      return revoked.ok ? { ok: true } : { ok: false, moneyReturned: true, error: planStayed };
     },
     alert: (text, details) => raiseStarsAlert(env, text, details),
     onSwept: async (row, outcome) => {
@@ -1451,7 +1538,7 @@ function starsChargeHooks(env: Env): StarsChargeHooks {
       }
     },
     // Without a bot token there is no list to read.
-    ...(env.BOT_TOKEN ? { listIncoming: () => listIncomingStarPayments(env) } : {}),
+    ...(env.BOT_TOKEN ? { listIncoming: (sinceMs: number) => listIncomingStarPayments(env, sinceMs) } : {}),
   };
 }
 
@@ -1514,7 +1601,13 @@ export async function refundStarsCharge(
   try {
     row = await readStarsCharge(env, id);
   } catch (err) {
-    console.error(`[Stars] Could not read the ledger row for charge ${id}; refunding directly.`, err);
+    // A database that is there and did not answer is not the same as "no row": refunding now
+    // could send Stars to a typed id and leave the row saying credited. Only a missing table
+    // (a database from before the ledger) means the charge is older than the ledger.
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) {
+      console.error(`[Stars] Could not read the ledger row for charge ${id}; nothing was refunded.`, err);
+      return { ok: false, error: 'The payment ledger could not be read. Nothing was refunded. Try again in a few minutes.' };
+    }
   }
   if (!row) {
     const res = await refundStarPayment(env, userIdHint, id);

@@ -111,10 +111,14 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     accountId,
   );
   // Payments made with Telegram Stars (0023). Kept as a financial record after deletion, without the account id.
+  // Guarded: a database that does not have the table yet must not fail the whole export.
   const starsCharges = await q<Record<string, unknown>>(
     `SELECT charge_id, purpose, ref_id, stars, status, refund_reason, created_at, updated_at FROM stars_charges WHERE account_id = ?`,
     accountId,
-  );
+  ).catch((err) => {
+    console.error('[Privacy] stars_charges could not be read for the export', err);
+    return [] as Record<string, unknown>[];
+  });
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -211,7 +215,10 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   await run('domain_verifications', `DELETE FROM domain_verifications WHERE account_id = ?`, accountId);
   // Stars charges are a financial record: the row stays, the account id goes. The payer's
   // Telegram id stays too, because a refund can only be sent to it.
-  await run('stars_charges_unlinked', `UPDATE stars_charges SET account_id = NULL WHERE account_id = ?`, accountId);
+  // Guarded, so a database without the table yet cannot stop the deletion before the login rows are anonymized.
+  await run('stars_charges_unlinked', `UPDATE stars_charges SET account_id = NULL WHERE account_id = ?`, accountId).catch((err) => {
+    console.error('[Privacy] stars_charges could not be unlinked from the account', err);
+  });
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
   await run(
     'users_anon',

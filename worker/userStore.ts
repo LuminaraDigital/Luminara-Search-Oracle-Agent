@@ -243,9 +243,17 @@ export async function writeSubscriptionRecord(
   // from: the charge sweep and refunds read that list to tell a granted charge from a lost one.
   let toWrite = record;
   if (!Array.isArray(record.appliedCharges)) {
-    const existing = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { expiresAt?: number; appliedCharges?: unknown } | null;
-    if (existing?.expiresAt && existing.expiresAt > Date.now() && Array.isArray(existing.appliedCharges) && existing.appliedCharges.length > 0) {
-      toWrite = { ...record, appliedCharges: existing.appliedCharges };
+    const existing = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as
+      | { expiresAt?: number; appliedCharges?: unknown; chargeId?: unknown }
+      | null;
+    // Records written before the list existed name one charge.
+    const earlier = Array.isArray(existing?.appliedCharges)
+      ? existing.appliedCharges
+      : typeof existing?.chargeId === 'string' && existing.chargeId
+        ? [existing.chargeId]
+        : [];
+    if (existing?.expiresAt && existing.expiresAt > Date.now() && earlier.length > 0) {
+      toWrite = { ...record, appliedCharges: earlier };
     }
   }
   const body = JSON.stringify(toWrite);
