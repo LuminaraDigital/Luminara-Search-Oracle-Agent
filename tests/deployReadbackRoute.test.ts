@@ -66,6 +66,9 @@ const page = (head: string) =>
   `<!doctype html><html><head><title>Acme</title>${head}</head><body><h1>UNCHANGED-PAGE-BODY</h1></body></html>`;
 const ldScript = (json: string) => `<script type="application/ld+json">${json}</script>`;
 const unchangedPage = page(ldScript(JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: 'Acme' })));
+/** A response served the way a web page is. `new Response(text)` alone is text/plain. */
+const htmlPage = (body: string, status = 200) =>
+  new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
 
 type Site = Record<string, () => Response>;
 type Dns = Record<string, { a?: string; aaaa?: string }>;
@@ -123,7 +126,7 @@ afterEach(() => {
 
 describe('POST /api/deploy/readback: who may call it', () => {
   it('refuses a guest with 401 and fetches nothing', async () => {
-    const spy = fakeNetwork({ 'https://my-site.com/': () => new Response(page(ldScript(schemaJsonLd))) });
+    const spy = fakeNetwork({ 'https://my-site.com/': () => htmlPage(page(ldScript(schemaJsonLd))) });
     const res = await call(makeEnv(), { url: 'https://my-site.com/', schemaJsonLd });
     expect(res.status).toBe(401);
     const data = (await res.json()) as Body;
@@ -134,7 +137,7 @@ describe('POST /api/deploy/readback: who may call it', () => {
   });
 
   it('answers a cookie session while it is live, and 401 once it has expired', async () => {
-    const spy = fakeNetwork({ 'https://my-site.com/': () => new Response(unchangedPage) });
+    const spy = fakeNetwork({ 'https://my-site.com/': () => htmlPage(unchangedPage) });
     const env = makeEnv();
     const sid = (await mintOpaqueSession(env, { uid: 'owner-1' })) as string;
     const withCookie = () =>
@@ -171,7 +174,7 @@ describe('POST /api/deploy/readback: who may call it', () => {
     ['one address, however many accounts use it', (i: number) => ({ userId: 9200 + i, ip: '198.51.100.251' })],
     ['one account, however many addresses it uses', (i: number) => ({ userId: 9300, ip: `198.51.100.${200 + i}` })],
   ])(`stops ${DEPLOY_READBACK_PER_MIN} calls a minute from %s, before fetching anything`, async (_label, caller) => {
-    const spy = fakeNetwork({ 'https://my-site.com/': () => new Response(unchangedPage) });
+    const spy = fakeNetwork({ 'https://my-site.com/': () => htmlPage(unchangedPage) });
     const env = makeEnv();
     for (let i = 0; i < DEPLOY_READBACK_PER_MIN; i++) {
       const ok = await call(env, { url: 'https://my-site.com/', schemaJsonLd }, caller(i));
@@ -220,7 +223,7 @@ describe('POST /api/deploy/readback: where it may reach', () => {
   });
 
   it('reads a page whose address names the default port', async () => {
-    fakeNetwork({ 'https://my-site.com/': () => new Response(page(ldScript(schemaJsonLd))) });
+    fakeNetwork({ 'https://my-site.com/': () => htmlPage(page(ldScript(schemaJsonLd))) });
     const res = await call(makeEnv(), { url: 'https://my-site.com:443/', schemaJsonLd }, { userId: 9014 });
     expect(await res.json()).toEqual({ ok: true, found: true });
   });
@@ -234,7 +237,7 @@ describe('POST /api/deploy/readback: where it may reach', () => {
     ['an AAAA record that is 127.0.0.1 in IPv4-compatible form', { aaaa: '::7f00:1' }],
   ])('refuses a public name that resolves to %s', async (_label, records) => {
     const spy = fakeNetwork(
-      { 'https://rebind-alias.com/': () => new Response(page(ldScript(schemaJsonLd))) },
+      { 'https://rebind-alias.com/': () => htmlPage(page(ldScript(schemaJsonLd))) },
       { 'rebind-alias.com': records },
     );
     const res = await call(makeEnv(), { url: 'https://rebind-alias.com/', schemaJsonLd }, { userId: 9011 });
@@ -251,7 +254,7 @@ describe('POST /api/deploy/readback: where it may reach', () => {
     const spy = fakeNetwork(
       {
         'https://my-site.com/': () => new Response(null, { status: 302, headers: { Location: location } }),
-        [location]: () => new Response(page(ldScript(schemaJsonLd))),
+        [location]: () => htmlPage(page(ldScript(schemaJsonLd))),
       },
       dns as Dns,
     );
@@ -272,7 +275,7 @@ describe('POST /api/deploy/readback: where it may reach', () => {
 
 describe('POST /api/deploy/readback: what it answers', () => {
   it('says found: false for an unchanged page and returns none of the page', async () => {
-    fakeNetwork({ 'https://my-site.com/': () => new Response(unchangedPage) });
+    fakeNetwork({ 'https://my-site.com/': () => htmlPage(unchangedPage) });
     const res = await call(makeEnv(), { url: 'https://my-site.com/', schemaJsonLd }, { userId: 9020 });
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -281,7 +284,7 @@ describe('POST /api/deploy/readback: what it answers', () => {
   });
 
   it('says found: true when the page now holds the schema, and still returns none of the page', async () => {
-    fakeNetwork({ 'https://my-site.com/': () => new Response(page(ldScript(schemaJsonLd))) });
+    fakeNetwork({ 'https://my-site.com/': () => htmlPage(page(ldScript(schemaJsonLd))) });
     const res = await call(makeEnv(), { url: 'https://my-site.com/', schemaJsonLd }, { userId: 9021 });
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -293,17 +296,34 @@ describe('POST /api/deploy/readback: what it answers', () => {
   it('follows a redirect to another public page and reads that page', async () => {
     const spy = fakeNetwork({
       'https://my-site.com/': () => new Response(null, { status: 301, headers: { Location: 'https://www.my-site.com/' } }),
-      'https://www.my-site.com/': () => new Response(page(ldScript(schemaJsonLd))),
+      'https://www.my-site.com/': () => htmlPage(page(ldScript(schemaJsonLd))),
     });
     const res = await call(makeEnv(), { url: 'https://my-site.com/', schemaJsonLd }, { userId: 9022 });
     expect(await res.json()).toEqual({ ok: true, found: true });
     expect(siteCalls(spy)).toEqual(['https://my-site.com/', 'https://www.my-site.com/']);
   });
 
+  it.each(['text/html; charset=utf-8', 'application/xhtml+xml'])('reads a page served as %s', async (contentType) => {
+    fakeNetwork({
+      'https://my-site.com/': () => new Response(page(ldScript(schemaJsonLd)), { headers: { 'content-type': contentType } }),
+    });
+    const res = await call(makeEnv(), { url: 'https://my-site.com/', schemaJsonLd }, { userId: 9027 });
+    expect(await res.json()).toEqual({ ok: true, found: true });
+  });
+
   // One answer for all of these: telling them apart would make the route a status and port probe.
   it.each([
     ['answers HTTP 500', () => new Response('oops', { status: 500 })],
-    ['answers HTTP 404 with the schema in the body', () => new Response(page(ldScript(schemaJsonLd)), { status: 404 })],
+    ['answers HTTP 404 with the schema in the body', () => htmlPage(page(ldScript(schemaJsonLd)), 404)],
+    ['serves the markup as text/plain', () => new Response(page(ldScript(schemaJsonLd)), { headers: { 'content-type': 'text/plain' } })],
+    [
+      'serves the markup with no content type',
+      () => {
+        const res = htmlPage(page(ldScript(schemaJsonLd)));
+        res.headers.delete('content-type');
+        return res;
+      },
+    ],
     [
       'cannot be reached',
       () => {
@@ -312,7 +332,7 @@ describe('POST /api/deploy/readback: what it answers', () => {
     ],
     [
       'is too large to read to the end',
-      () => new Response(`<html><head>${'<!-- pad -->'.repeat(200_000)}${ldScript(schemaJsonLd)}</head></html>`),
+      () => htmlPage(`<html><head>${'<!-- pad -->'.repeat(200_000)}${ldScript(schemaJsonLd)}</head></html>`),
     ],
   ])('gives the same answer, neither found nor not found, when the site %s', async (_label, serve) => {
     fakeNetwork({ 'https://my-site.com/': serve });
@@ -337,8 +357,8 @@ describe('POST /api/deploy/readback: what it answers', () => {
 
 describe('POST /api/deploy/readback: what counts as the schema being in the page', () => {
   let userId = 9100;
-  async function found(html: string): Promise<boolean | undefined> {
-    fakeNetwork({ 'https://my-site.com/': () => new Response(html) });
+  async function found(markup: string): Promise<boolean | undefined> {
+    fakeNetwork({ 'https://my-site.com/': () => htmlPage(markup) });
     const res = await call(makeEnv(), { url: 'https://my-site.com/', schemaJsonLd }, { userId: userId++ });
     vi.restoreAllMocks();
     return ((await res.json()) as Body).found;
@@ -354,6 +374,10 @@ describe('POST /api/deploy/readback: what counts as the schema being in the page
     ['in a tag written in capitals with single quotes', `<SCRIPT class="x" TYPE=' Application/LD+JSON '>\n${schemaJsonLd}\n</SCRIPT>`],
     ['in a tag with an unquoted type', `<script type=application/ld+json>${schemaJsonLd}</script>`],
     ['in a tag whose other attribute holds a ">"', `<script data-note="a > b" type="application/ld+json">${schemaJsonLd}</script>`],
+    ['in a tag whose type carries a parameter', `<script type="application/ld+json; charset=utf-8">${schemaJsonLd}</script>`],
+    // Inside inline SVG a self-closed title or style is empty. It must not swallow what follows.
+    ['after an inline SVG with a self-closed title', `<svg><title/></svg>${ldScript(schemaJsonLd)}`],
+    ['after an inline SVG with a self-closed style', `<svg><style/></svg>${ldScript(schemaJsonLd)}`],
     [
       'as a real element beside inert copies of it',
       `<!-- ${ldScript(schemaJsonLd)} --><textarea>${ldScript(schemaJsonLd)}</textarea>${ldScript(schemaJsonLd)}`,
@@ -371,6 +395,10 @@ describe('POST /api/deploy/readback: what counts as the schema being in the page
     ['a style element', `<style>${ldScript(schemaJsonLd)}</style>`],
     ['a script of another type', `<script type="text/plain" data-was="application/ld+json">${schemaJsonLd}</script>`],
     ['a script whose type only starts with the JSON-LD type', `<script type="application/ld+json-patch">${schemaJsonLd}</script>`],
+    ['a script whose type only names JSON-LD in a parameter', `<script type="text/plain; x=application/ld+json">${schemaJsonLd}</script>`],
+    // An HTML parser reads "</ " up to the next ">" as a comment, so the script tag never opens.
+    ['a "</ " that swallows the script tag', `</ ${ldScript(schemaJsonLd)}`],
+    ['inline SVG', `<svg>${ldScript(schemaJsonLd)}</svg>`],
     ['a script with no type', `<script>${ldScript(schemaJsonLd)}</script>`],
     ['a commented-out script inside another script', `<script type="text/plain"><!-- <script> </script> ${ldScript(schemaJsonLd)} --></script>`],
     ['an attribute value', `<div data-copy='${ldScript(schemaJsonLd)}'></div>`],

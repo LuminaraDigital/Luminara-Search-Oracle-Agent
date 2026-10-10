@@ -123,6 +123,8 @@ const webflowConfig: DeploymentConfig = { platform: 'webflow', authToken: 'wf-to
 const ldScript = (json: string) => `<script type="application/ld+json">${json}</script>`;
 const homePage = (head: string) =>
   `<!doctype html><html><head><title>My site</title>${head}</head><body><h1>Hello</h1></body></html>`;
+/** A response served the way a web page is. `new Response(text)` alone is text/plain. */
+const htmlPage = (body: string) => new Response(body, { headers: { 'content-type': 'text/html; charset=utf-8' } });
 
 type Handler = (init?: RequestInit) => Response | Promise<Response>;
 
@@ -163,7 +165,7 @@ function fakeWordPress(opts: { pluginRegistersSetting: boolean; onPage?: string 
       if (opts.pluginRegistersSetting) site.onPage = sent;
       return new Response('{}', { status: 200 });
     },
-    [SITE_HOME]: () => new Response(homePage(site.onPage ? ldScript(site.onPage) : '')),
+    [SITE_HOME]: () => htmlPage(homePage(site.onPage ? ldScript(site.onPage) : '')),
   };
   return { routes, site };
 }
@@ -255,7 +257,10 @@ describe('WordPress: deployed only when the schema was absent before the request
 
     expect(wp.site.received).toEqual([]);
     expect(res.success).toBe(false);
-    expect(res.message).toMatch(/^Nothing was sent to WordPress\..*The page could not be read\.$/);
+    // "Could not be read" is said once, with no second copy of it tacked on.
+    expect(res.message).toBe(
+      'Nothing was sent to WordPress. The page has to be read before and after the request to confirm a change, and it could not be read.',
+    );
     expect(renderResult(res)).not.toMatch(SAYS_LIVE);
   });
 
@@ -264,7 +269,7 @@ describe('WordPress: deployed only when the schema was absent before the request
     fakeNetwork({
       ...wp.routes,
       [SITE_HOME]: inTurn(
-        () => new Response(homePage('')),
+        () => htmlPage(homePage('')),
         () => new Response('error', { status: 500 }),
       ),
     });
@@ -273,8 +278,7 @@ describe('WordPress: deployed only when the schema was absent before the request
     expect(wp.site.received).toHaveLength(1);
     expect(res.success).toBe(false);
     expect(res.seenInPageSource).toBe(false);
-    expect(res.message).toMatch(/could not be read back, so nothing is confirmed/);
-    expect(res.message).not.toContain('did not change');
+    expect(res.message).toBe('WordPress accepted the request, but the page could not be read back, so nothing is confirmed.');
     expect(renderResult(res)).not.toMatch(SAYS_LIVE);
   });
 
@@ -643,6 +647,27 @@ describe('the modal: what it offers and what it stores', () => {
     expect(html).toContain('Remember on this device');
     expect(html).toContain('type="checkbox"');
     expect(html).not.toContain('checked=""');
+  });
+
+  // The password an earlier version saved has no screen left to manage it while the option is hidden.
+  it('removes a saved WordPress password and nothing else, and the modal does that on open', () => {
+    const storage = openApp({ signedIn: true });
+    const github: DeploymentConfig = { platform: 'github_pr', repoOwner: 'acme', repoName: 'site', authToken: 'gh-token-for-tests' };
+    cmsDeploymentService.saveConfig('wordpress', wpConfig);
+    cmsDeploymentService.saveConfig('webflow', webflowConfig);
+    cmsDeploymentService.saveConfig('github_pr', github);
+    expect(storage.dump()).toContain('abcd efgh');
+
+    cmsDeploymentService.rememberConfig('wordpress', {}, false);
+
+    expect(cmsDeploymentService.getSavedConfig('wordpress')).toEqual({});
+    expect(storage.dump()).not.toContain('abcd efgh');
+    expect(cmsDeploymentService.getSavedConfig('webflow')).toEqual(webflowConfig);
+    expect(cmsDeploymentService.getSavedConfig('github_pr')).toEqual(github);
+
+    // An effect does not run in a static render, so the call is checked where it is written.
+    const modalSource = readFileSync(resolve(process.cwd(), 'components/audit/CmsDeploymentModal.tsx'), 'utf8');
+    expect(modalSource).toContain("if (!WORDPRESS_TRIAL_PASSED) cmsDeploymentService.rememberConfig('wordpress', {}, false);");
   });
 
   it('stores no token unless the user asked, and forgets a stored one when they stop asking', () => {

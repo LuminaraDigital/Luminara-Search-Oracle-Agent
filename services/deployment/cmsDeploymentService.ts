@@ -230,10 +230,14 @@ export class CmsDeploymentService {
         body: JSON.stringify({ url: pageUrl, schemaJsonLd }),
       });
       if (res.status === 401) return { status: 'unreadable', reason: 'Sign in so the page can be read back.' };
-      const data = (await res.json().catch(() => null)) as { ok?: unknown; found?: unknown; error?: unknown } | null;
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: unknown; found?: unknown; error?: unknown; code?: unknown }
+        | null;
       if (res.ok && data?.ok === true && typeof data.found === 'boolean') {
         return { status: data.found ? 'found' : 'not_found' };
       }
+      // The route's one answer for a page it could not read adds nothing to "could not be read".
+      if (data?.code === 'PAGE_NOT_READ') return { status: 'unreadable', reason: '' };
       const reason = typeof data?.error === 'string' && data.error ? data.error : 'The page check gave no answer.';
       return { status: 'unreadable', reason };
     } catch {
@@ -296,7 +300,7 @@ export class CmsDeploymentService {
         return finish({
           success: false,
           seenInPageSource: false,
-          message: `Nothing was sent to WordPress. The page has to be read before and after the request to confirm a change, and it could not be read. ${before.reason}`,
+          message: `Nothing was sent to WordPress. The page has to be read before and after the request to confirm a change, and it could not be read. ${before.reason}`.trim(),
         });
       }
       if (before.status === 'found') {
@@ -350,7 +354,7 @@ export class CmsDeploymentService {
         message:
           after.status === 'not_found'
             ? 'WordPress accepted the request and the page did not change. This needs a plugin that registers the setting.'
-            : `WordPress accepted the request, but the page could not be read back, so nothing is confirmed. ${after.reason}`,
+            : `WordPress accepted the request, but the page could not be read back, so nothing is confirmed. ${after.reason}`.trim(),
       });
     } catch (e: any) {
       return {

@@ -99,6 +99,9 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
   // Load stored config when platform switches
   useEffect(() => {
     if (!isOpen) return;
+    // While the WordPress option is hidden there is no screen to manage a WordPress password
+    // that an earlier version saved in this browser, so it is removed. Other options are kept.
+    if (!WORDPRESS_TRIAL_PASSED) cmsDeploymentService.rememberConfig('wordpress', {}, false);
     const cfg = cmsDeploymentService.getSavedConfig(platform);
     // Only a URL the user saved themselves; never prefill from the audited domain.
     setEndpoint(cfg.endpoint && validateCmsEndpoint(cfg.endpoint).ok ? cfg.endpoint : '');

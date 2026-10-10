@@ -16,11 +16,12 @@
  *     page that could not be read, so the route cannot be used to probe ports or statuses.
  *   - Bounded time and bytes. The response carries the boolean, never the page.
  *
- * "In the page source" means a JSON-LD script element an HTML parser would find, whose parsed
- * JSON equals the schema that was sent (or a top-level array holding it). Whitespace, key order
- * and slash escaping do not hide a real deployment. A copy inside a comment, a textarea, a
- * template, a noscript, a style or another kind of script is text, not an element, and does not
- * count.
+ * "In the page source" means a JSON-LD script element an HTML parser would find in a page served
+ * as HTML, whose parsed JSON equals the schema that was sent (or a top-level array holding it).
+ * Whitespace, key order and slash escaping do not hide a real deployment. A copy inside a
+ * comment, a textarea, a template, a noscript, a style or another kind of script is text, not
+ * an element, and does not count. The comparison is of the whole schema: a plugin that merges it
+ * into a larger `@graph`, or adds an `@id`, reads as not found.
  */
 import type { Env } from './env';
 import { MAX_SMALL_BODY_BYTES, clientIp, fetchPublicUrl, readBody, safePublicUrl } from './security';
@@ -55,12 +56,13 @@ function indexFrom(re: RegExp, text: string, from: number): number {
 const isSpace = (c: string) => c === ' ' || c === '\n' || c === '\t' || c === '\r' || c === '\f';
 const isLetter = (c: string) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 
-type Tag = { name: string; closing: boolean; end: number; type: string | null };
+type Tag = { name: string; closing: boolean; selfClosing: boolean; end: number; type: string | null };
 
 /**
  * Reads the tag that starts at `lt`, stepping over quoted attribute values so a '>' or a
  * '<script' inside one is not taken for markup. `end` is the index of the tag's own '>', or -1
- * when the tag never closes. `type` is the value of its first `type` attribute.
+ * when the tag never closes. `type` is the value of its first `type` attribute. `selfClosing`
+ * is true for a tag written `<name ... />`.
  */
 function readTag(html: string, lt: number): Tag | null {
   let i = lt + 1;
@@ -71,10 +73,12 @@ function readTag(html: string, lt: number): Tag | null {
   while (i < html.length && !isSpace(html[i]) && html[i] !== '/' && html[i] !== '>') i++;
   const name = html.slice(nameStart, i).toLowerCase();
   let type: string | null = null;
+  let selfClosing = false;
   while (i < html.length) {
     const c = html[i];
-    if (c === '>') return { name, closing, end: i, type };
+    if (c === '>') return { name, closing, selfClosing, end: i, type };
     if (c === '/' || isSpace(c)) {
+      selfClosing = c === '/' && html[i + 1] === '>';
       i++;
       continue;
     }
@@ -90,7 +94,7 @@ function readTag(html: string, lt: number): Tag | null {
       const quote = html[i];
       if (quote === '"' || quote === "'") {
         const close = html.indexOf(quote, i + 1);
-        if (close < 0) return { name, closing, end: -1, type };
+        if (close < 0) return { name, closing, selfClosing, end: -1, type };
         value = html.slice(i + 1, close);
         i = close + 1;
       } else {
@@ -101,7 +105,7 @@ function readTag(html: string, lt: number): Tag | null {
     }
     if (attr === 'type' && type === null) type = value;
   }
-  return { name, closing, end: -1, type };
+  return { name, closing, selfClosing, end: -1, type };
 }
 
 /** Elements whose content is text to an HTML parser: markup written inside them is not on the page. */
@@ -144,17 +148,29 @@ function scriptCloseIndex(html: string, from: number): number {
   return -1;
 }
 
+/** Inline SVG and MathML: inside them `<title/>` and the like close themselves, as in XML. */
+const FOREIGN_ROOTS = new Set(['svg', 'math']);
+/** Elements inside SVG or MathML whose children are read by the HTML rules again. */
+const HTML_INSIDE_FOREIGN = new Set(['foreignobject', 'desc', 'annotation-xml', 'mi', 'mo', 'mn', 'ms', 'mtext']);
+
+/** JSON-LD may carry parameters, as in `application/ld+json; charset=utf-8`: compare the part before ';'. */
+const isJsonLdType = (type: string | null) => (type ?? '').split(';')[0].trim().toLowerCase() === JSON_LD_TYPE;
+
 /**
  * Bodies of the JSON-LD script elements an HTML parser would find. One forward pass: every
  * character is stepped over once. Anything left open at the end of the page swallows the rest.
+ * A script inside a template, inline SVG or MathML is not counted.
  */
 function jsonLdBlocks(html: string): string[] {
   const out: string[] = [];
   let templateDepth = 0;
+  let foreignDepth = 0;
+  let htmlInsideForeign = 0;
   let pos = 0;
   while (out.length < MAX_JSON_LD_BLOCKS) {
     const lt = html.indexOf('<', pos);
     if (lt < 0) break;
+    const next = html[lt + 1];
 
     if (html.startsWith('<!--', lt)) {
       const end = indexFrom(COMMENT_END, html, lt + 2);
@@ -162,8 +178,17 @@ function jsonLdBlocks(html: string): string[] {
       pos = html.indexOf('>', end) + 1;
       continue;
     }
-    if (html[lt + 1] === '!' || html[lt + 1] === '?') {
-      // A doctype or other declaration ends at the first '>'.
+    if (foreignDepth > 0 && html.startsWith('<![CDATA[', lt)) {
+      const end = html.indexOf(']]>', lt);
+      if (end < 0) break;
+      pos = end + 3;
+      continue;
+    }
+    // A declaration ("<!doctype"), a "<?", and a "</" that no tag name follows are all read by
+    // an HTML parser as a comment that runs to the first '>'. Markup inside it is not markup.
+    const afterSlash = html[lt + 2];
+    const strayEndTag = next === '/' && afterSlash !== undefined && afterSlash !== '>' && !isLetter(afterSlash);
+    if (next === '!' || next === '?' || strayEndTag) {
       const end = html.indexOf('>', lt);
       if (end < 0) break;
       pos = end + 1;
@@ -182,16 +207,29 @@ function jsonLdBlocks(html: string): string[] {
       templateDepth = Math.max(0, templateDepth + (tag.closing ? -1 : 1));
       continue;
     }
+    if (FOREIGN_ROOTS.has(tag.name)) {
+      if (tag.closing) foreignDepth = Math.max(0, foreignDepth - 1);
+      else if (!tag.selfClosing) foreignDepth++;
+      if (foreignDepth === 0) htmlInsideForeign = 0;
+      continue;
+    }
+    if (foreignDepth > 0 && HTML_INSIDE_FOREIGN.has(tag.name)) {
+      if (tag.closing) htmlInsideForeign = Math.max(0, htmlInsideForeign - 1);
+      else if (!tag.selfClosing) htmlInsideForeign++;
+      continue;
+    }
     if (tag.closing) continue;
-    if (tag.name === 'plaintext') break;
+    if (tag.name === 'plaintext' && foreignDepth === 0) break;
 
     const isScript = tag.name === 'script';
     const textOnlyClose = TEXT_ONLY_CLOSE.get(tag.name);
     if (!isScript && !textOnlyClose) continue;
+    // Directly inside SVG or MathML a self-closed element is empty: there is no content to skip.
+    if (tag.selfClosing && foreignDepth > 0 && htmlInsideForeign === 0) continue;
 
     const close = isScript ? scriptCloseIndex(html, pos) : indexFrom(textOnlyClose as RegExp, html, pos);
     if (close < 0) break;
-    if (isScript && templateDepth === 0 && (tag.type ?? '').trim().toLowerCase() === JSON_LD_TYPE) {
+    if (isScript && templateDepth === 0 && foreignDepth === 0 && isJsonLdType(tag.type)) {
       out.push(html.slice(pos, close));
     }
     const closeEnd = html.indexOf('>', close);
@@ -314,7 +352,10 @@ export async function handleDeployReadbackRoute(request: Request, env: Env): Pro
     { fetcher: fetchOnDefaultPort, dohFetcher: (dohUrl, dohInit) => fetch(dohUrl, dohInit) },
   );
   if (!fetched.ok) return notRead();
-  if (!fetched.response.ok) {
+  // Only an HTML page can carry a script element. The same markup served as text/plain, or with
+  // no content type, is text that no browser or crawler would read as a page.
+  const isHtml = /html/i.test(fetched.response.headers.get('content-type') || '');
+  if (!fetched.response.ok || !isHtml) {
     await fetched.response.body?.cancel().catch(() => undefined);
     return notRead();
   }
