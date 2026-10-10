@@ -16,7 +16,7 @@ import {
   type User,
 } from 'firebase/auth';
 export type { User };
-import { FIREBASE_PUBLIC_CONFIG } from './firebasePublicConfig';
+import { resolveFirebaseWebConfig } from './firebasePublicConfig';
 import { ensureAppCheck, getAppCheckTokenForBackend, isAppCheckConfigured } from './firebaseAppCheck';
 
 export interface FirebasePublicConfig {
@@ -42,23 +42,7 @@ function notifyUserListeners(user: User | null): void {
 }
 
 function readConfig(): FirebasePublicConfig | null {
-  const env = (import.meta as any).env || {};
-  const apiKey = String(env.VITE_FIREBASE_API_KEY || FIREBASE_PUBLIC_CONFIG.apiKey || '').trim();
-  const authDomain = String(env.VITE_FIREBASE_AUTH_DOMAIN || FIREBASE_PUBLIC_CONFIG.authDomain || '').trim();
-  const projectId = String(env.VITE_FIREBASE_PROJECT_ID || FIREBASE_PUBLIC_CONFIG.projectId || '').trim();
-  const appId = String(env.VITE_FIREBASE_APP_ID || FIREBASE_PUBLIC_CONFIG.appId || '').trim();
-  if (!apiKey || !authDomain || !projectId || !appId) return null;
-  return {
-    apiKey,
-    authDomain,
-    projectId,
-    appId,
-    messagingSenderId:
-      String(env.VITE_FIREBASE_MESSAGING_SENDER_ID || FIREBASE_PUBLIC_CONFIG.messagingSenderId || '').trim() ||
-      undefined,
-    storageBucket:
-      String(env.VITE_FIREBASE_STORAGE_BUCKET || FIREBASE_PUBLIC_CONFIG.storageBucket || '').trim() || undefined,
-  };
+  return resolveFirebaseWebConfig((import.meta as any).env || {});
 }
 
 /** True when VITE_FIREBASE_* is present (signup/signin UI can show). */

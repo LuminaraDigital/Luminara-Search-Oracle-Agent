@@ -108,6 +108,11 @@ export interface Env {
    * closed: no invoice is issued and public health reports `ton: false`.
    */
   TON_CONFIRMED_ADDRESS?: string;
+  /**
+   * Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
+   * Empty means the production bot's published link. Staging sets its own bot's link.
+   */
+  TELEGRAM_MINI_APP_URL?: string;
   TON_API_KEY?: string;
   /**
    * Hard network gate for chain payments and proof anchors: `testnet` | `mainnet`.

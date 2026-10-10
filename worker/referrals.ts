@@ -18,6 +18,7 @@ import {
   formatWeeklyMissionNudge,
   generateReferralCode,
   inviteUrlForCode,
+  resolveMiniAppUrl,
   isoWeekKey,
   nextStreakWeeks,
   normalizeReferralCode,
@@ -343,7 +344,7 @@ export async function readRetentionSnapshot(env: Env, accountId: string, code?: 
   return {
     code: resolvedCode,
     startParam: resolvedCode ? `ref_${resolvedCode}` : null,
-    inviteUrl: resolvedCode ? inviteUrlForCode(resolvedCode) : null,
+    inviteUrl: resolvedCode ? inviteUrlForCode(resolvedCode, resolveMiniAppUrl(env.TELEGRAM_MINI_APP_URL)) : null,
     bonusRemaining: bonus,
     creditsPerSide: REFERRAL_SCOUT_CREDITS,
     lumens,

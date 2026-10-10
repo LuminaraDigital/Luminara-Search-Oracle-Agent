@@ -37,6 +37,9 @@ TON_RECEIVING_ADDRESS=
 # The address the owner has confirmed, in their own wallet app, to be theirs. Must equal TON_RECEIVING_ADDRESS.
 # Empty or different keeps TON checkout closed.
 TON_CONFIRMED_ADDRESS=
+# Mini App link of this environment's bot (https://t.me/<bot>/<app>), for links the Worker writes.
+# Empty means the production bot's published link.
+TELEGRAM_MINI_APP_URL=
 TON_API_KEY=
 # Chain network gate (must match merchant address + API hosts)
 CHAIN_NETWORK=mainnet
