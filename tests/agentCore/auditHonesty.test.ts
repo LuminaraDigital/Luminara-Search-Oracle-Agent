@@ -192,6 +192,9 @@ describe('Instant Audit honesty on empty evidence', () => {
 
       const text = events.map((event) => event.message).join(' ');
       expect(text).toContain(`Brand mentioned in ${mentionedRows} of ${rows}.`);
+      // The same two counts are not printed again as a percentage.
+      expect(text).not.toMatch(/\d\s*%/);
+      expect(text).not.toMatch(/citation rate/i);
       expect(text).not.toMatch(/Share-of-Voice/i);
       expect(text).not.toMatch(/\/100/);
     }
@@ -577,13 +580,72 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(healthOnly).toContain('Citation rate was not measured.');
   });
 
+  const failedCheck = (id: string, severity: 'critical' | 'high' | 'medium' = 'high') => ({
+    id,
+    category: 'schema' as const,
+    severity,
+    title: `Finding ${id}`,
+    description: 'd',
+    evidenceSource: 'e',
+    howWeKnowItFailed: 'h',
+    leadingIndicator: 'l',
+    criticVerified: true,
+    criticConfidence: 0.9,
+  });
+
   it('says what the steps are in the bottom line, not what they will cause', async () => {
-    const brief = await executiveTranslatorAgent.execute('https://example.com', { passed: 4, total: 4 }, { mentioned: 2, total: 9 }, [], [], null, noop);
+    const brief = await executiveTranslatorAgent.execute(
+      'https://example.com', { passed: 3, total: 4 }, { mentioned: 2, total: 9 }, [failedCheck('finding-schema-org')], [], null, noop,
+    );
     const bottomLine = brief.split('\n').find((line) => line.includes('Bottom Line'));
-    expect(bottomLine).toContain('add the Organization tag');
-    expect(bottomLine).toContain('publish an llms.txt file');
-    expect(bottomLine).toContain('This run did not measure what they will change.');
+    expect(bottomLine).toBe('*Bottom Line:* These are the steps the failed checks point to. This run did not measure what they will change.');
     expect(brief).not.toMatch(/significantly|easier|will make|instead of your competitors/i);
+  });
+
+  // Review 2, 6: the brief used to list the same three actions whatever the checks found.
+  it('lists a step only for a check that failed', async () => {
+    const steps = (brief: string) => brief.split('\n').filter((line) => /^\d+\. /.test(line));
+
+    const one = await executiveTranslatorAgent.execute(
+      'https://example.com', { passed: 3, total: 4 }, null, [failedCheck('finding-thin-content')], [], null, noop,
+    );
+    expect(one).toContain('#### 1 step for the check that failed:');
+    expect(steps(one)).toHaveLength(1);
+    expect(steps(one)[0]).toContain('**Write fuller answers on thin pages:**');
+    expect(one).not.toContain('Organization tag');
+    expect(one).not.toContain('llms.txt');
+
+    const all = await executiveTranslatorAgent.execute(
+      'https://example.com',
+      { passed: 0, total: 4 },
+      null,
+      // Given out of order, and with a finding that is not one of the four checks.
+      [failedCheck('finding-thin-content'), failedCheck('something-else'), failedCheck('finding-deprecated-howto', 'medium'), failedCheck('finding-schema-org'), failedCheck('finding-zero-citations')],
+      [],
+      null,
+      noop,
+    );
+    expect(all).toContain('#### 4 steps for the checks that failed:');
+    expect(steps(all).map((line) => line.slice(0, line.indexOf(':**')))).toEqual([
+      '1. **Say plainly what you offer',
+      '2. **Add an Organization tag',
+      '3. **Remove the HowTo markup',
+      '4. **Write fuller answers on thin pages',
+    ]);
+  });
+
+  it('says so and lists no step when every check passed, or when the checks did not run', async () => {
+    const allPassed = await executiveTranslatorAgent.execute('https://example.com', { passed: 4, total: 4 }, { mentioned: 2, total: 9 }, [], [], null, noop);
+    expect(allPassed).toContain('passed 4 of 4 checks');
+    expect(allPassed).toContain('All 4 checks this run made passed, so there are no steps to list.');
+    const notRun = await executiveTranslatorAgent.execute('https://example.com', null, null, [], [], null, noop);
+    expect(notRun).toContain('The site checks were not measured, so there are no steps to list.');
+    for (const brief of [allPassed, notRun]) {
+      expect(brief.split('\n').filter((line) => /^\d+\. /.test(line))).toEqual([]);
+      expect(brief).not.toContain('Organization tag');
+      expect(brief).not.toContain('Bottom Line');
+      expect(brief).not.toMatch(/Actions You Can Take/);
+    }
   });
 
   it('names no platform the run did not query and prints no score out of 100 in the brief', async () => {

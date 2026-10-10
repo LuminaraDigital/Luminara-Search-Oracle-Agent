@@ -6,10 +6,13 @@ import { describe, expect, it, vi } from 'vitest';
 import MessageList, { chatMessageText } from '../components/MessageList';
 import * as markdownUtils from '../utils/markdown';
 import { CompetitorMap } from '../components/audit/CompetitorMap';
-import { ReportDisplay } from '../components/audit/ReportDisplay';
-import { VisibilityRadar, readBrandCited } from '../components/audit/VisibilityRadar';
+import { EmpiricalEvidenceDrawer } from '../components/audit/EmpiricalEvidenceDrawer';
+import { ReportDisplay, sampledMentionsLabel } from '../components/audit/ReportDisplay';
+import { VisibilityRadar, readBrandCited, readCitationStatus } from '../components/audit/VisibilityRadar';
+import type { TrafficImpact } from '../services/analytics/trafficInsightsService';
+import type { EmpiricalCitationSummary } from '../services/audit/empiricalCitationService';
 import { writeShipCommitment } from '../services/audit/shipCommitmentService';
-import { REPORT_TABLES } from '../services/audit/reportColumnGate';
+import { MEASURED_TRAFFIC_COLUMNS, REMOVED_TABLE_NOTE, REPORT_TABLES } from '../services/audit/reportColumnGate';
 import { generateGenUISystemPrompt } from '../services/genui/promptGenerator';
 import { LUMINARA_GENUI_REGISTRY, gatedTableArgs } from '../services/genui/registry';
 import { buildAuditDossierHtml } from '../services/reports/portableDossierService';
@@ -129,6 +132,151 @@ describe('a stored report is gated where it is rendered', () => {
     }
     expect(html).toContain('what is example.com');
   });
+
+  // Review 2, 4: a chat audit with no top heading used to show ungated.
+  it('a chat audit that has a section heading and no top heading', () => {
+    const reply = ['## Visibility radar', '| Query | Organic rank | Status |', '|---|---|---|', '| what is example.com | Position 3 | Cited |'].join('\n');
+    const shown = chatMessageText({ role: 'model', content: reply });
+    expect(shown).toContain('| what is example.com | Cited |');
+    expect(shown).not.toContain('Organic rank');
+    expect(shown).not.toContain('Position 3');
+  });
+});
+
+describe('a page title with a pipe in it does not break the table or let a column through', () => {
+  // Review 2, 1b. "Home | Acme" is a common title tag, and the pipe is not escaped.
+  const fixList = (headers: string, cells: string) => [
+    '# Luminara: Will AI mention Example?',
+    '',
+    '## 3. Fix list',
+    headers,
+    headers.replace(/[^|]+/g, '---'),
+    cells,
+  ].join('\n');
+
+  it('renders as a table with the right cells under the right columns', () => {
+    const html = renderToStaticMarkup(createElement(ReportDisplay, {
+      markdownText: fixList('| Task | Plain issue | Priority |', '| Rewrite the title | It reads "Home | Acme" everywhere | High |'),
+      hideAgencyActions: true,
+    }));
+    const cells = [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((cell) => cell[1].replace(/<[^>]*>/g, '').replace(/&quot;/g, '"'));
+    expect(cells).toEqual(['Rewrite the title', 'It reads "Home | Acme" everywhere', 'High']);
+    expect((html.match(/<th[ >]/g) || []).length).toBe(3);
+    // Not printed as raw pipe rows.
+    expect(html).not.toContain('| Rewrite the title |');
+  });
+
+  it('is left out, with the note, when the table also has a column that is not listed', () => {
+    const html = renderToStaticMarkup(createElement(ReportDisplay, {
+      markdownText: fixList(
+        '| Task | Plain issue | Expected Impact | Priority |',
+        '| Rewrite the title | It reads "Home | Acme" everywhere | +40% citations | High |',
+      ),
+      hideAgencyActions: true,
+    }));
+    expect(html).toContain(REMOVED_TABLE_NOTE);
+    for (const text of ['Expected Impact', '+40% citations', 'Rewrite the title']) {
+      expect(html, text).not.toContain(text);
+    }
+  });
+});
+
+describe('the measured traffic table shows only where the measured traffic is held', () => {
+  const report = [
+    '# Luminara: Will AI mention Example?',
+    '',
+    '## 2. Plain verdict',
+    `| ${MEASURED_TRAFFIC_COLUMNS.join(' | ')} |`,
+    '|---|---|---|',
+    '| Visitors | 120 | 100 |',
+  ].join('\n');
+  const metric = { current: 120, previous: 100, changePct: 20 };
+  const referrals = { total: 7, previousTotal: 4, changePct: 75, bySource: [] };
+  const ready = {
+    status: 'ready',
+    domain: 'example.com',
+    period: { startAt: 1, endAt: 2, days: 30 },
+    visitors: metric,
+    pageviews: metric,
+    visits: metric,
+    aiAssistantReferrals: referrals,
+    searchReferrals: referrals,
+    topReferrers: [],
+    topPages: [],
+    fetchedAt: 1,
+  } as unknown as TrafficImpact;
+
+  it('is kept on the report screen that holds ready traffic data, and in its dossier', () => {
+    const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: report, hideAgencyActions: true, trafficImpact: ready }));
+    expect(html).toContain('Measured traffic');
+    expect(html).toContain('This period (measured)');
+    expect(html).not.toContain(REMOVED_TABLE_NOTE);
+
+    const dossier = buildAuditDossierHtml({
+      domain: 'example.com', markdownText: report, generatedAt: 1760000000000, measuredColumns: MEASURED_TRAFFIC_COLUMNS,
+    });
+    expect(dossier).toContain('| Visitors | 120 | 100 |');
+  });
+
+  it('is left out, with the note, on a screen that holds none: a shared report, for example', () => {
+    for (const trafficImpact of [undefined, { status: 'not_configured', domain: 'example.com' } as unknown as TrafficImpact]) {
+      const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: report, hideAgencyActions: true, trafficImpact }));
+      expect(html).toContain(REMOVED_TABLE_NOTE);
+      expect(html).not.toContain('>120<');
+    }
+    const dossier = buildAuditDossierHtml({ domain: 'example.com', markdownText: report, generatedAt: 1760000000000 });
+    expect(dossier).toContain(REMOVED_TABLE_NOTE);
+    expect(dossier).not.toContain('| Visitors | 120 | 100 |');
+  });
+});
+
+describe('the evidence button gives the two counts, not a percentage (review 2, 7)', () => {
+  const summary = {
+    targetDomain: 'example.com',
+    brandName: 'Example',
+    totalQueriesTested: 3,
+    queriesCitedCount: 2,
+    citationRatePercent: 67,
+    topCitedCompetitor: null,
+    evidenceList: [],
+    entityClarityScore: null,
+    lastAudited: 1,
+    measurementStatus: 'measured',
+  } as EmpiricalCitationSummary;
+
+  it('reads "mentioned in N of M sampled queries"', () => {
+    expect(sampledMentionsLabel(summary)).toBe('mentioned in 2 of 3 sampled queries');
+    const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: '# Report', empiricalSummary: summary }));
+    expect(html).toContain('Preview evidence (mentioned in 2 of 3 sampled queries)');
+    expect(html).not.toContain('67%');
+    expect(html).not.toMatch(/evidence \(\d+%\)/i);
+  });
+
+  it('says "not measured" when the summary holds no usable count', () => {
+    for (const bad of [
+      undefined,
+      { ...summary, measurementStatus: 'not_measured' },
+      { ...summary, citationRatePercent: null },
+      { ...summary, totalQueriesTested: 0 },
+      { ...summary, queriesCitedCount: 5 },
+    ] as Array<EmpiricalCitationSummary | undefined>) {
+      expect(sampledMentionsLabel(bad)).toBeNull();
+    }
+    const html = renderToStaticMarkup(createElement(ReportDisplay, {
+      markdownText: '# Report',
+      empiricalSummary: { ...summary, totalQueriesTested: 0 },
+    }));
+    expect(html).toContain('Preview evidence (not measured)');
+  });
+
+  it('prints the counts in the evidence drawer', () => {
+    const html = renderToStaticMarkup(createElement(EmpiricalEvidenceDrawer, { isOpen: true, onClose: () => {}, summary }));
+    expect(html).toContain('Brand mentions');
+    expect(html).toContain('2 of 3');
+    expect(html).toContain('sampled queries whose results name the brand');
+    expect(html).not.toContain('67%');
+    expect(html).not.toContain('Citation Rate');
+  });
 });
 
 describe('the visibility card shows what the table says and no score', () => {
@@ -160,10 +308,32 @@ describe('the visibility card shows what the table says and no score', () => {
         ['q2', 'commercial', 'No', 'Rival', '40'],
       ],
     }));
-    expect(html).toContain('Cited (2 of 5)');
-    for (const text of ['Blended authority', 'Radar score', '25/100', '25%', '40%', '/100', 'not_measured']) {
+    for (const text of ['Blended authority', 'Radar score', '25/100', '25%', '40%', '/100', 'not_measured', '(2 of 5)', '>40<']) {
       expect(html, text).not.toContain(text);
     }
+  });
+
+  // Review 2, 5: the status cell used to be printed as written.
+  it('prints only the reading of the status cell, not what else the cell says', () => {
+    expect(readCitationStatus('Cited, rank #3, AI Overview active')).toBe('cited');
+    expect(readCitationStatus('**Not Cited** (rank 14)')).toBe('not_cited');
+    for (const cell of ['Not Measured', 'not verified', '', 'Rank #3', 'Probably cited', '88/100']) {
+      expect(readCitationStatus(cell), cell).toBe('not_measured');
+    }
+    const html = renderToStaticMarkup(createElement(VisibilityRadar, {
+      headers,
+      rows: [
+        ['q1', 'informational', 'Yes', 'Rival', 'Cited, rank #3, AI Overview active'],
+        ['q2', 'commercial', 'No', 'Rival', 'Not Cited (rank 14)'],
+        ['q3', 'comparative', 'No', 'Rival', 'Rank #3'],
+      ],
+    }));
+    for (const text of ['rank #3', 'Rank #3', 'AI Overview active', 'rank 14', '#3']) {
+      expect(html, text).not.toContain(text);
+    }
+    expect(html).toMatch(/>Cited</);
+    expect(html).toMatch(/>Not cited</);
+    expect(html).toMatch(/>Not measured</);
   });
 
   it('does not read a cell under the wrong header when the table is missing a column', () => {

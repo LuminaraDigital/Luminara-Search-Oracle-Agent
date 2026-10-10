@@ -22,7 +22,7 @@ import {
   serpRowsToCitationGroups,
 } from '../services/audit/reuseCrewEvidence';
 import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
-import { REPORT_TABLES, isReportColumn, readTableAt } from '../services/audit/reportColumnGate';
+import { MEASURED_TRAFFIC_COLUMNS, REMOVED_TABLE_NOTE, REPORT_TABLES, isReportColumn, readTableAt } from '../services/audit/reportColumnGate';
 import { OracleMode } from '../types';
 import { citationIntegrityService } from '../services/audit/citationIntegrityService';
 import { publicApisEnrichmentService } from '../services/enrichment/publicApisEnrichmentService';
@@ -309,7 +309,7 @@ describe('generateAuditReport crew evidence', () => {
     const headers: string[] = [];
     for (let i = 0; i < lines.length; i++) {
       const table = readTableAt(lines, i);
-      if (table && table !== 'unparsed') {
+      if (table) {
         headers.push(...table.headers);
         i = table.end - 1;
       }
@@ -420,6 +420,66 @@ describe('generateAuditReport crew evidence', () => {
     }
     expect(result.text).toContain('Add Organization schema');
     expect(result.text).toContain('what is example.com');
+  });
+
+  // Review 2, 3: the one table outside the twelve columns is the measured traffic
+  // table, and only in a run that fetched the site's own analytics.
+  describe('measured traffic table', () => {
+    const metric = (current: number, previous: number) => ({ current, previous, changePct: null });
+    const readyTraffic = {
+      status: 'ready',
+      domain: 'example.com',
+      period: { startAt: 1, endAt: 2, days: 30 },
+      visitors: metric(120, 100),
+      pageviews: metric(300, 280),
+      visits: metric(150, 130),
+      aiAssistantReferrals: { total: 7, previousTotal: 4, changePct: null, bySource: [] },
+      searchReferrals: { total: 40, previousTotal: 38, changePct: null, bySource: [] },
+      topReferrers: [],
+      topPages: [],
+      fetchedAt: 1,
+    };
+    const trafficTable = [
+      `| ${MEASURED_TRAFFIC_COLUMNS.join(' | ')} |`,
+      '|---|---|---|',
+      '| Visitors | 120 | 100 |',
+    ];
+    const modelReport = [
+      '# Luminara: Will AI mention Example?',
+      '',
+      '## 2. Plain verdict',
+      ...trafficTable,
+      '',
+      '## 3. Fix list',
+      '| Task | Plain issue | Expected Impact | Priority |',
+      '|---|---|---|---|',
+      '| Add Organization schema | AI cannot tell who you are | +40% citations | High |',
+    ].join('\n');
+
+    it('is offered to the model and kept in the report when the analytics block was fetched', async () => {
+      vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue(readyTraffic as never);
+      generate.mockResolvedValue({ text: modelReport } as never);
+      const result = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+
+      expect(prompt()).toContain('Visitors: 120 (previous 100)');
+      expect(prompt()).toContain(`use exactly these columns and copy every figure from that block: | ${MEASURED_TRAFFIC_COLUMNS.join(' | ')} |`);
+      for (const line of trafficTable) expect(result.text).toContain(line);
+      // Holding measured traffic does not let any other column through.
+      expect(result.text).not.toContain('Expected Impact');
+      expect(result.text).not.toContain('+40% citations');
+      expect(result.text).toContain('| Add Organization schema | AI cannot tell who you are | High |');
+    });
+
+    it('is not offered and is left out, with the note, when no analytics block was fetched', async () => {
+      generate.mockResolvedValue({ text: modelReport } as never);
+      const result = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+
+      expect(prompt()).not.toContain('Measured traffic');
+      expect(prompt()).toContain('No measured traffic data is present above. State no traffic figure.');
+      expect(result.text).toContain(REMOVED_TABLE_NOTE);
+      expect(result.text).not.toContain('| Visitors | 120 | 100 |');
+      expect(result.text).not.toContain('This period (measured)');
+    });
   });
 
   it('passes crew pages and SERP rows from Instant Audit into the report', async () => {

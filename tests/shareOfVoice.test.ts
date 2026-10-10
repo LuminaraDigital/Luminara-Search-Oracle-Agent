@@ -187,7 +187,7 @@ describe('share of voice over time', () => {
     }
   });
 
-  it('shows the latest counts on the trends card, with no delta and no second line', () => {
+  it('lists the counts of each audit on the trends card, with no percentage, no delta and no line', () => {
     recordVisibilitySnapshot({ domain: 'example.com', focus: 'AEO', citationRatePercent: 33, measuredAt: 1_000_000, shareOfVoice: buildShareOfVoice(sample()) });
     const later = sample();
     later.evidenceList[1].brandCited = true;
@@ -195,15 +195,22 @@ describe('share of voice over time', () => {
 
     const html = renderToStaticMarkup(createElement(VisibilityTrendsCard, { domain: 'example.com' }));
     expect(html).toContain('mentioned in 2 of 3 sampled queries');
-    expect(html).not.toMatch(/SoV delta|brand SoV|Dashed/);
+    expect(html).toContain('mentioned in 1 of 3 sampled queries');
+    expect(html.indexOf('mentioned in 2 of 3')).toBeLessThan(html.indexOf('mentioned in 1 of 3'));
+    expect(html).not.toMatch(/SoV delta|brand SoV|Dashed|Citation delta|cite rate|pts\b/i);
+    expect(html).not.toMatch(/\d\s*%/);
+    expect(html).not.toContain('67');
+    expect(html).not.toContain('Citation rate trend');
     expect(html).not.toContain('stroke-dasharray');
   });
 
-  it('leaves the share of voice tile out for a snapshot that has no count', () => {
+  it('does not show a snapshot that holds a percentage and no count', () => {
     recordVisibilitySnapshot({ domain: 'example.com', focus: 'AEO', citationRatePercent: 33, measuredAt: 1_000_000 });
     const html = renderToStaticMarkup(createElement(VisibilityTrendsCard, { domain: 'example.com' }));
-    expect(html).not.toMatch(/share of voice/i);
+    expect(html).toContain('No history yet.');
+    expect(html).not.toContain('33');
     expect(html).not.toContain('sampled queries');
+    expect(html).not.toContain('Audits counted');
   });
 
   it('works out no share of voice change in the audit diff', () => {

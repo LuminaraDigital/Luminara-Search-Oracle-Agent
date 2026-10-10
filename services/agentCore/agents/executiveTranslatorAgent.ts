@@ -12,6 +12,7 @@
 
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
+import { HEALTH_CHECKS } from '../auditEvidenceGate';
 
 /**
  * Counts of the live web search rows this run collected.
@@ -27,6 +28,21 @@ export interface SiteCheckCounts {
   passed: number;
   total: number;
 }
+
+/**
+ * The step the brief lists for each site check, shown only when that check failed.
+ * A step says what the check found and what to do. It does not say what will follow.
+ */
+const STEP_FOR_FAILED_CHECK: Record<(typeof HEALTH_CHECKS)[number]['findingId'], string> = {
+  'finding-zero-citations':
+    '**Say plainly what you offer:** None of the web results this run collected mention your brand. Publish one page under your brand name that states what you offer and who it is for.',
+  'finding-schema-org':
+    '**Add an Organization tag:** No Organization markup was found on the pages this run read. Add the generated Organization tag to your website header. It states who you are and what you do in a form machines read.',
+  'finding-deprecated-howto':
+    '**Remove the HowTo markup:** Your pages carry HowTo schema, which the playbook marks as deprecated.',
+  'finding-thin-content':
+    '**Write fuller answers on thin pages:** At least one page this run read has fewer than 250 words. Add clear, 2-to-3 sentence answers to the questions your buyers ask before buying.',
+};
 
 /** Two whole numbers that can be "count of total". Anything else is treated as not measured. */
 function validCount(count: number, total: number): boolean {
@@ -82,6 +98,25 @@ export class ExecutiveTranslatorAgent {
         ? `✅ **The Big Takeaway:** None of the checks this run made found a critical gap.`
         : '**The takeaway:** This run did not measure enough page or search evidence to judge the site.';
 
+    // Only the checks that failed get a step. A check that passed has nothing to fix.
+    const steps = HEALTH_CHECKS
+      .filter((check) => findings.some((f) => f.id === check.findingId))
+      .map((check) => STEP_FOR_FAILED_CHECK[check.findingId]);
+    const stepLines = steps.length > 0
+      ? [
+          steps.length === 1 ? '#### 1 step for the check that failed:' : `#### ${steps.length} steps for the checks that failed:`,
+          ...steps.map((step, index) => `${index + 1}. ${step}`),
+          '',
+          '*Bottom Line:* These are the steps the failed checks point to. This run did not measure what they will change.',
+        ]
+      : [
+          !checks
+            ? 'The site checks were not measured, so there are no steps to list.'
+            : checks.passed === checks.total
+              ? `All ${checks.total} checks this run made passed, so there are no steps to list.`
+              : 'There are no steps to list for this run.',
+        ];
+
     const sections = [
       `### What This Means For ${brandName}`,
       '',
@@ -89,12 +124,7 @@ export class ExecutiveTranslatorAgent {
       '',
       takeaway,
       '',
-      '#### 3 Actions You Can Take Today (In Plain English):',
-      '1. **Claim Your Brand Identity:** Add the generated Organization tag to your website header so AI search engines know who you are and what you do.',
-      '2. **Answer Customer Questions Directly:** Add clear, 2-to-3 sentence answers to the top questions your buyers ask before buying.',
-      '3. **Add an AI Navigation Guide (`llms.txt`):** Help AI bots find your most important products without getting lost in menu links.',
-      '',
-      "*Bottom Line:* The three steps are: add the Organization tag, write short answers to your buyers' top questions, and publish an llms.txt file. This run did not measure what they will change.",
+      ...stepLines,
     ];
 
     const brief = sections.join('\n');

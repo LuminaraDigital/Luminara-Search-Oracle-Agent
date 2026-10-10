@@ -108,13 +108,6 @@ export function shouldGenerateAuditReport(
   });
 }
 
-function metricBadge(label: string, value: number | null, suffix: string): ScoutBadge {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return { label, status: 'not_measured' };
-  }
-  return { label, status: 'measured', value: `${value}${suffix}` };
-}
-
 /**
  * A value that cannot be a count of the rows collected is treated as not measured.
  * That covers a 0-100 score stored before share of voice became a count.
@@ -250,8 +243,11 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
   });
   const failed = failureCodes.map((code) => teaserFailureLine(code));
   const mentionCount = mentionCountOf(input.shareOfVoiceScore, input.serpCount);
+  // Citation rate and share of voice were always the same two counts: search rows
+  // that mention the brand, out of the rows collected. Both badges print those counts.
+  // Neither prints a percentage.
   let badges: ScoutBadge[] = [
-    metricBadge('Citation rate', input.citationRatePercent, '%'),
+    mentionCountBadge('Citation rate', typeof input.citationRatePercent === 'number' ? mentionCount : null, input.serpCount),
     mentionCountBadge('Share of voice', mentionCount, input.serpCount),
     checksBadge('Page health', input.healthScore, input.healthChecks),
   ];

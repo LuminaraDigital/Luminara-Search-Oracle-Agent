@@ -37,6 +37,8 @@ export interface AuditDossierInput {
   domain: string;
   markdownText: string;
   generatedAt: number;
+  /** Columns the calling screen holds measured data for. Passed straight to the report gate. */
+  measuredColumns?: readonly string[];
 }
 
 function escapeHtml(str: string): string {
@@ -292,7 +294,7 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
  */
 export function buildAuditDossierHtml(input: AuditDossierInput): string {
   // The download gets the same gated text as the screen, whoever calls this.
-  const text = gateReportText(input.markdownText || '');
+  const text = gateReportText(input.markdownText || '', { measuredColumns: input.measuredColumns });
   return generatePortableDossierHtml({
     title: `${input.domain} Executive AEO Dossier`,
     targetDomain: input.domain,

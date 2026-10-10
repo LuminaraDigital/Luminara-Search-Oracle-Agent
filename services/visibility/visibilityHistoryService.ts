@@ -3,8 +3,9 @@
  * Browser-local first (production-ready offline); Worker KV can mirror later.
  * Falls back to in-memory storage when localStorage is unavailable (SSR / tests).
  *
- * Share of voice is stored as the two counts it is made of (brandMentionCount of
- * promptCount sampled queries). No percentage of it and no change over time is kept.
+ * Brand mentions are stored as two counts (brandMentionCount of promptCount sampled
+ * queries). The trend carries no percentage of them and no change between audits:
+ * two audits sample different queries.
  */
 
 import type { ShareOfVoiceSummary } from './shareOfVoiceService';
@@ -30,7 +31,6 @@ export interface VisibilityHistoryPoint {
 export interface VisibilityTrendSeries {
   domain: string;
   points: VisibilityHistoryPoint[];
-  deltaCitationRate: number | null;
 }
 
 let memoryStore: VisibilityHistoryPoint[] = [];
@@ -125,16 +125,7 @@ export function recordVisibilitySnapshot(input: RecordVisibilityInput): Visibili
 export function getVisibilityTrend(domain: string): VisibilityTrendSeries {
   const d = normalizeDomain(domain);
   const points = loadAll().filter((p) => p.domain === d);
-  if (points.length < 2) {
-    return { domain: d, points, deltaCitationRate: null };
-  }
-  const first = points[0];
-  const last = points[points.length - 1];
-  return {
-    domain: d,
-    points,
-    deltaCitationRate: last.citationRatePercent - first.citationRatePercent,
-  };
+  return { domain: d, points };
 }
 
 export function clearVisibilityHistory(domain?: string): void {

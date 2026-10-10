@@ -158,7 +158,7 @@ export class SerpRadarAgent {
             : searchSkipReason
               ? `Analyzed 0 SERP results. Citation rate and share of voice were not measured. ${searchSkipReason}`
               : 'Analyzed 0 SERP results. Citation rate and share of voice were not measured.'
-          : `Analyzed ${totalItems} SERP results. Brand mentioned in ${mentionedItems} of ${totalItems}. Empirical citation rate: ${citationRatePercent}%.`,
+          : `Analyzed ${totalItems} SERP results. Brand mentioned in ${mentionedItems} of ${totalItems}.`,
       status: 'completed',
       evidenceSnippet:
         citationRatePercent == null

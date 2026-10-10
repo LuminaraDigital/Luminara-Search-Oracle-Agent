@@ -32,6 +32,26 @@ export function readBrandCited(cell: unknown): RadarReading {
     return 'not_measured';
 }
 
+export type RadarStatus = 'cited' | 'not_cited' | 'not_measured';
+
+/**
+ * Reads the "Citation Status" cell. The column has three values: Cited, Not Cited,
+ * Not Measured. The cell is read for the one it starts with and nothing after it is
+ * shown, so "Cited, rank #3, AI Overview active" reads as cited and prints "Cited".
+ */
+export function readCitationStatus(cell: unknown): RadarStatus {
+    const text = plain(cell).toLowerCase();
+    if (/^cited\b/.test(text)) return 'cited';
+    if (/^not cited\b/.test(text)) return 'not_cited';
+    return 'not_measured';
+}
+
+const STATUS_TEXT: Record<RadarStatus, string> = {
+    cited: 'Cited',
+    not_cited: 'Not cited',
+    not_measured: 'Not measured',
+};
+
 /**
  * Draws the report's visibility table as cards.
  * It shows what the table says and nothing else: no score is worked out from the
@@ -64,7 +84,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                     const intent = plain(row[intentCol]);
                     const cited = readBrandCited(row[citedCol]);
                     const competitors = plain(row[competitorsCol]) || 'Not measured';
-                    const status = plain(row[statusCol]) || 'Not measured';
+                    const status = STATUS_TEXT[readCitationStatus(row[statusCol])];
 
                     return (
                         <div

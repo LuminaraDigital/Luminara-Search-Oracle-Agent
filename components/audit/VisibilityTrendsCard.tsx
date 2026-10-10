@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { ICONS } from '../../constants';
 import {
   visibilityHistoryService,
+  type VisibilityHistoryPoint,
   type VisibilityTrendSeries,
 } from '../../services/visibility/visibilityHistoryService';
 
@@ -11,42 +12,31 @@ interface VisibilityTrendsCardProps {
   series?: VisibilityTrendSeries;
 }
 
-function sparkPath(values: number[], width: number, height: number): string {
-  if (values.length === 0) return '';
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 100);
-  const span = Math.max(1, max - min);
-  return values
-    .map((v, i) => {
-      const x = values.length === 1 ? width / 2 : (i / (values.length - 1)) * width;
-      const y = height - ((v - min) / span) * (height - 8) - 4;
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
+/** The two counts of one stored audit, or null when the snapshot does not hold them. */
+function mentionCounts(point: VisibilityHistoryPoint): { mentioned: number; total: number } | null {
+  const mentioned = point.brandMentionCount;
+  const total = point.promptCount;
+  if (typeof mentioned !== 'number' || !Number.isInteger(mentioned) || !Number.isInteger(total)) return null;
+  if (total <= 0 || mentioned < 0 || mentioned > total) return null;
+  return { mentioned, total };
 }
 
+/**
+ * Lists what each stored audit counted: sampled queries whose results name the brand.
+ * It shows no percentage, no line and no change between audits, because two audits
+ * sample different queries. A snapshot stored before the counts were kept holds only
+ * a percentage, and is not shown.
+ */
 export const VisibilityTrendsCard: React.FC<VisibilityTrendsCardProps> = ({ domain, series: seriesProp }) => {
   const series = useMemo(
     () => seriesProp || visibilityHistoryService.getTrend(domain),
     [domain, seriesProp]
   );
 
-  const citationSeries = series.points.map((p) => p.citationRatePercent);
-  const pathCite = sparkPath(citationSeries, 280, 64);
-
-  const latest = series.points[series.points.length - 1];
-  // Share of voice is shown as the latest audit's two counts. A snapshot stored
-  // before counts were kept has none, and then the tile is left out.
-  const latestMentions =
-    latest &&
-    typeof latest.brandMentionCount === 'number' &&
-    Number.isInteger(latest.brandMentionCount) &&
-    Number.isInteger(latest.promptCount) &&
-    latest.promptCount > 0 &&
-    latest.brandMentionCount >= 0 &&
-    latest.brandMentionCount <= latest.promptCount
-      ? { mentioned: latest.brandMentionCount, total: latest.promptCount }
-      : null;
+  const counted = series.points
+    .map((point) => ({ point, counts: mentionCounts(point) }))
+    .filter((entry): entry is { point: VisibilityHistoryPoint; counts: { mentioned: number; total: number } } => entry.counts !== null);
+  const latestFirst = counted.slice(-6).reverse();
 
   return (
     <div className="glass-morphism rounded-2xl border border-gold/40 p-5 bg-gradient-to-br from-black via-black/90 to-black/80 shadow-2xl">
@@ -58,53 +48,35 @@ export const VisibilityTrendsCard: React.FC<VisibilityTrendsCardProps> = ({ doma
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">Visibility Trends</h3>
             <p className="text-xs text-gray-400">
-              Citation rate from your Luminara audits over time (stored in this browser).
+              Brand mentions counted in the search sample of each Luminara audit (stored in this browser).
             </p>
           </div>
         </div>
-        {latest && (
+        {counted.length > 0 && (
           <div className="text-right">
-            <span className="block text-[10px] font-mono text-gray-500 uppercase">Latest cite rate</span>
-            <span className="text-lg font-bold font-mono text-gold-light">{latest.citationRatePercent}%</span>
+            <span className="block text-[10px] font-mono text-gray-500 uppercase">Audits counted</span>
+            <span className="text-lg font-bold font-mono text-gold-light">{counted.length}</span>
           </div>
         )}
       </div>
 
-      {series.points.length === 0 ? (
+      {latestFirst.length === 0 ? (
         <p className="text-xs text-gray-400 mt-4">
-          No history yet. Run Instant Audit again later to build a trend line for this domain.
+          No history yet. Run Instant Audit again later to build a history for this domain.
         </p>
       ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 pt-4">
-            <div className="glass-morphism rounded-xl p-3 border border-white/10">
-              <span className="text-[10px] font-mono text-gray-400 uppercase">Citation delta</span>
-              <span className="block text-base font-bold font-mono text-success-400">
-                {series.deltaCitationRate === null
-                  ? 'n/a'
-                  : `${series.deltaCitationRate > 0 ? '+' : ''}${series.deltaCitationRate} pts`}
+        <ul className="mt-3 space-y-1.5">
+          {latestFirst.map(({ point, counts }) => (
+            <li key={point.id} className="flex items-center justify-between gap-3 text-xs text-gray-300">
+              <span className="font-mono text-gray-500 shrink-0">
+                {new Date(point.measuredAt).toISOString().slice(0, 10)} · {point.focus}
               </span>
-            </div>
-            {latestMentions && (
-              <div className="glass-morphism rounded-xl p-3 border border-white/10">
-                <span className="text-[10px] font-mono text-gray-400 uppercase">Share of voice, latest audit</span>
-                <span className="block text-xs font-bold font-mono text-cyan-300">
-                  mentioned in {latestMentions.mentioned} of {latestMentions.total} sampled queries
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 overflow-x-auto">
-            <svg viewBox="0 0 280 64" className="w-full h-16" role="img" aria-label="Citation rate trend">
-              <path d={pathCite} fill="none" stroke="currentColor" className="text-gold-light" strokeWidth="2" />
-            </svg>
-            <div className="flex gap-4 text-[10px] font-mono text-gray-500 mt-1">
-              <span className="text-gold-light">Line: citation rate</span>
-              <span>{series.points.length} snapshots</span>
-            </div>
-          </div>
-        </>
+              <span className="font-mono text-gold-light text-right">
+                mentioned in {counts.mentioned} of {counts.total} sampled queries
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

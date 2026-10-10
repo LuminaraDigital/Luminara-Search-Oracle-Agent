@@ -49,8 +49,8 @@ describe('guest scout summary honesty', () => {
     const summary = buildGuestScoutSummary({
       targetUrl: 'brand.example',
       measurementStatus: 'measured',
-      citationRatePercent: 12,
-      shareOfVoiceScore: 20,
+      citationRatePercent: 25,
+      shareOfVoiceScore: 1,
       healthScore: 80,
       scrapedPageCount: 1,
       serpCount: 4,
@@ -61,7 +61,7 @@ describe('guest scout summary honesty', () => {
     expect(summary.badges.find((badge) => badge.label === 'Citation rate')).toEqual({
       label: 'Citation rate',
       status: 'measured',
-      value: '12%',
+      value: 'mentioned in 1 of 4 web results',
     });
     expect(summary.topFix).toBe('Add Organization schema');
     expect(summary.failureCodes).toEqual([]);
@@ -111,6 +111,36 @@ describe('guest scout summary honesty', () => {
       .toBe('Pages with text or schema: 1. Found 9 web results.');
     expect(buildGuestScoutSummary({ ...measured, serpCount: 1, shareOfVoiceScore: 1 }).evidenceUsed)
       .toBe('Pages with text or schema: 1. Found 1 web result through Tavily web search.');
+  });
+
+  // Review 2, 7: citation rate is the same two counts as share of voice.
+  it('prints the citation rate as the two counts, never as a percentage', () => {
+    const base = {
+      targetUrl: 'brand.example',
+      measurementStatus: 'measured' as const,
+      healthScore: 73,
+      healthChecks: { passed: 3, total: 4 },
+      scrapedPageCount: 1,
+      serpCount: 9,
+      searchEngines: ['tavily'],
+      findings: [],
+      hostedRail: 'signed_in_hosted' as const,
+    };
+    const badge = (citationRatePercent: number | null, shareOfVoiceScore: number | null) =>
+      buildGuestScoutSummary({ ...base, citationRatePercent, shareOfVoiceScore }).badges.find((item) => item.label === 'Citation rate');
+
+    expect(badge(56, 5)).toEqual({ label: 'Citation rate', status: 'measured', value: 'mentioned in 5 of 9 web results' });
+    expect(badge(0, 0)).toEqual({ label: 'Citation rate', status: 'measured', value: 'mentioned in 0 of 9 web results' });
+    // A percentage with no count behind it is not printed.
+    expect(badge(56, null)).toEqual({ label: 'Citation rate', status: 'not_measured' });
+    expect(badge(56, 61)).toEqual({ label: 'Citation rate', status: 'not_measured' });
+    expect(badge(null, 5)).toEqual({ label: 'Citation rate', status: 'not_measured' });
+
+    const summary = buildGuestScoutSummary({ ...base, citationRatePercent: 56, shareOfVoiceScore: 5 });
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
+    expect(html).toContain('Citation rate: mentioned in 5 of 9 web results');
+    expect(html).not.toContain('56');
+    expect(JSON.stringify(summary.badges)).not.toMatch(/\d\s*%/);
   });
 
   it('shows no "Cited" pill when no search result mentions the brand', () => {
@@ -222,31 +252,36 @@ describe('guest scout summary honesty', () => {
   });
 
   it('keeps the full measured brief for the card and a plain verdict for share', async () => {
-    const finding: AuditFinding = {
-      id: 'org',
+    const finding = (id: string, severity: AuditFinding['severity'], title: string): AuditFinding => ({
+      id,
       category: 'schema',
-      severity: 'critical',
-      title: 'Missing Organization',
-      description: 'No Organization node on the homepage.',
+      severity,
+      title,
+      description: 'd',
       evidenceSource: 'homepage',
-      howWeKnowItFailed: 'No JSON-LD Organization node.',
+      howWeKnowItFailed: 'h',
       leadingIndicator: 'entity',
       criticVerified: true,
       criticConfidence: 0.9,
-    };
+    });
+    // Three of the four checks failed, so the brief lists three steps and is long.
     const brief = await executiveTranslatorAgent.execute(
       'https://seamossvibes.com.au',
-      { passed: 3, total: 4 },
+      { passed: 1, total: 4 },
       { mentioned: 5, total: 9 },
-      [finding],
+      [
+        finding('finding-schema-org', 'critical', 'Missing Organization'),
+        finding('finding-deprecated-howto', 'medium', 'Deprecated HowTo Schema Detected'),
+        finding('finding-thin-content', 'high', 'Thin Content Detected'),
+      ],
       [],
       null,
       () => {},
     );
-    const actionThree = '3. **Add an AI Navigation Guide (`llms.txt`):** Help AI bots find your most important products without getting lost in menu links.';
+    const actionThree = '3. **Write fuller answers on thin pages:** At least one page this run read has fewer than 250 words. Add clear, 2-to-3 sentence answers to the questions your buyers ask before buying.';
     expect(brief).toContain(actionThree);
     expect(brief.length).toBeGreaterThan(600);
-    expect(brief.indexOf('without getting lost in menu links.')).toBeGreaterThan(600);
+    expect(brief.indexOf('questions your buyers ask before buying.')).toBeGreaterThan(600);
 
     const summary = buildGuestScoutSummary({
       targetUrl: 'https://seamossvibes.com.au',
@@ -269,14 +304,14 @@ describe('guest scout summary honesty', () => {
     expect(summary.verdict).not.toMatch(/#{2,}/);
     expect(summary.verdict).not.toContain('**');
     expect(summary.verdict).not.toContain('__');
-    expect(summary.verdict).toContain('without getting lost in menu links.');
-    expect(summary.verdict).toContain('Add an AI Navigation Guide (llms.txt)');
+    expect(summary.verdict).toContain('questions your buyers ask before buying.');
+    expect(summary.verdict).toContain('Write fuller answers on thin pages:');
     expect(summary.verdict).toContain('Bottom Line:');
     expect(summary.verdict).not.toMatch(/(^|\s)\*[A-Za-z]/);
     expect(plainScoutVerdict(summary.verdict)).toBe(summary.verdict);
 
     const collapsed = brief.replace(/\s+/g, ' ').trim().slice(0, 600);
-    expect(collapsed).not.toContain('without getting lost in menu links.');
+    expect(collapsed).not.toContain('questions your buyers ask before buying.');
     expect(plainScoutVerdict(collapsed)).not.toMatch(/#{2,}/);
     expect(plainScoutVerdict(collapsed)).not.toContain('**');
 
@@ -455,15 +490,15 @@ describe('audit report LLM gate', () => {
     const summary = buildGuestScoutSummary({
       targetUrl: 'https://example.com',
       measurementStatus: 'measured',
-      citationRatePercent: 12,
-      shareOfVoiceScore: 20,
+      citationRatePercent: 25,
+      shareOfVoiceScore: 1,
       healthScore: 80,
       scrapedPageCount: 1,
       serpCount: 4,
       findings: [{ title: 'Add Organization schema' }],
       hostedRail: 'signed_in_hosted',
     });
-    expect(summary.badges.find((badge) => badge.label === 'Citation rate')?.value).toBe('12%');
+    expect(summary.badges.find((badge) => badge.label === 'Citation rate')?.value).toBe('mentioned in 1 of 4 web results');
     expect(shouldGenerateAuditReport(false, summary, 'measured')).toBe(true);
   });
 

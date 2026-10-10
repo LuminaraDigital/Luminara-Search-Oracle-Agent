@@ -11,7 +11,7 @@ describe('visibilityHistoryService', () => {
     clearVisibilityHistory();
   });
 
-  it('records snapshots and computes the citation rate delta', () => {
+  it('records snapshots and works out no change between them', () => {
     recordVisibilitySnapshot({
       domain: 'https://www.example.com/path',
       focus: 'AEO',
@@ -41,10 +41,9 @@ describe('visibilityHistoryService', () => {
 
     const trend = getVisibilityTrend('example.com');
     expect(trend.points).toHaveLength(2);
-    expect(trend.deltaCitationRate).toBe(30);
-    // Share of voice is kept as two counts per audit. No change between audits is worked out.
+    // Brand mentions are kept as two counts per audit. No change between audits is worked out.
     expect(trend.points.map((p) => [p.brandMentionCount, p.promptCount])).toEqual([[1, 5], [2, 4]]);
-    expect('deltaShareOfVoice' in trend).toBe(false);
+    expect(Object.keys(trend).sort()).toEqual(['domain', 'points']);
     expect(visibilityHistoryService.listAll().every((p) => p.domain === 'example.com')).toBe(true);
   });
 
