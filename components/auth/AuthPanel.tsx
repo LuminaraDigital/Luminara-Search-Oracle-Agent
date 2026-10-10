@@ -12,6 +12,7 @@ import {
 import { isInTelegram } from '../../services/telegram/tma';
 import { linkTelegramFirebaseAccounts } from '../../services/apiClient';
 import { pullWorkspaceOnLogin } from '../../services/sync/workspaceSyncService';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
 
@@ -202,7 +203,10 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
         onSubmit={(e) => {
           e.preventDefault();
           if (mode === 'signup') {
-            void run(() => signUpWithEmail(email, password));
+            void run(async () => {
+              await signUpWithEmail(email, password);
+              productTelemetry.track('signup_completed', { method: 'email' });
+            });
           } else {
             void run(() => signInWithEmail(email, password));
           }
@@ -266,7 +270,10 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
         variant="secondary"
         disabled={busy}
         className="w-full text-xs flex items-center justify-center gap-2 font-medium"
-        onClick={() => run(() => signInWithGoogle())}
+        onClick={() => run(async () => {
+          await signInWithGoogle();
+          productTelemetry.track('signup_completed', { method: 'google' });
+        })}
       >
         <GoogleIcon className="w-4 h-4" />
         Continue with Google

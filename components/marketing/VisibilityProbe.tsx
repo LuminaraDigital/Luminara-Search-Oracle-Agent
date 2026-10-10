@@ -6,6 +6,7 @@ import { DEMO_PRESETS, DemoEngineId, DemoFocus, DemoPhase } from './demo/demoFix
 import { useDemoPlayback } from './demo/useDemoPlayback';
 import type { AuditHandoff } from '../../services/activation/auditHandoff';
 import type { ReportFocus } from '../../types';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
 
 interface VisibilityProbeProps {
   isAuthenticated?: boolean;
@@ -128,6 +129,12 @@ export const VisibilityProbe: React.FC<VisibilityProbeProps> = ({
     if (onSignUp) onSignUp(handoff);
     else onSignIn(handoff);
   };
+
+  useEffect(() => {
+    if (ui.showReveal) {
+      productTelemetry.track('probe_completed', { domain: demo.typedDomain, focus: demo.focus });
+    }
+  }, [ui.showReveal, demo.typedDomain, demo.focus]);
 
   const runLabel = demo.phase === 'analyzing' ? 'Running…' : 'Run sample scout';
   const badge =
