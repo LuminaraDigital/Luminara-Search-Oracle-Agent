@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { postDailyCheckin } from '../../services/referrals/referralClient';
 
 interface DailyStreakCardProps {
   domain: string;
@@ -26,6 +27,26 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
       return false;
     }
   });
+
+  useEffect(() => {
+    let unmounted = false;
+    postDailyCheckin()
+      .then((res) => {
+        if (!unmounted && res.ok && typeof res.streakDays === 'number') {
+          setStreakDays(res.streakDays);
+          try {
+            localStorage.setItem(`luminara_streak_${cleanDomain}`, String(res.streakDays));
+          } catch {
+            // ignore
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      unmounted = true;
+    };
+  }, [cleanDomain]);
 
   useEffect(() => {
     try {
