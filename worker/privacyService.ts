@@ -120,6 +120,14 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  // TON orders the Worker remembers (0025): open for 48 hours, kept 30 days more for support, deleted with the account.
+  const tonPendingOrders = await q<Record<string, unknown>>(
+    `SELECT order_id, plan_id, asset, amount_nano, network, status, created_at, expires_at FROM ton_pending_orders WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -142,6 +150,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'trust_receipts',
       'domain_verifications',
       'stars_charges',
+      'ton_pending_orders',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -171,6 +180,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     trustReceipts,
     domainVerifications,
     starsCharges,
+    tonPendingOrders,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -220,6 +230,9 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   await run('stars_charges_unlinked', `UPDATE stars_charges SET account_id = NULL WHERE account_id = ?`, accountId).catch((err) => {
     // Only a database from before the table is let through. Any other failure fails the job, so
     // it cannot report an account deleted while its charge rows still name it.
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  await run('ton_pending_orders', `DELETE FROM ton_pending_orders WHERE account_id = ?`, accountId).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
