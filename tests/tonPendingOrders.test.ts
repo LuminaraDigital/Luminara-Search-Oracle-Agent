@@ -214,28 +214,28 @@ function chainIndex(
 }
 
 /** Lets a test make chosen statements fail, the way a database that stops answering would. */
-function faultyDb(db: SqliteD1, failure: (sql: string) => string | false): D1Database {
-  const guard = (sql: string) => {
-    const message = failure(sql);
+function faultyDb(db: SqliteD1, failure: (sql: string, bound: unknown[]) => string | false): D1Database {
+  const guard = (sql: string, bound: unknown[]) => {
+    const message = failure(sql, bound);
     if (message) throw new Error(message);
   };
-  const wrap = (stmt: any, sql: string): any => ({
-    bind: (...args: unknown[]) => wrap(stmt.bind(...args), sql),
+  const wrap = (stmt: any, sql: string, bound: unknown[]): any => ({
+    bind: (...args: unknown[]) => wrap(stmt.bind(...args), sql, args),
     execute: () => stmt.execute(),
     first: async (...args: unknown[]) => {
-      guard(sql);
+      guard(sql, bound);
       return stmt.first(...args);
     },
     all: async () => {
-      guard(sql);
+      guard(sql, bound);
       return stmt.all();
     },
     run: async () => {
-      guard(sql);
+      guard(sql, bound);
       return stmt.run();
     },
   });
-  return { prepare: (sql: string) => wrap(db.prepare(sql), sql), batch: (s: any[]) => db.batch(s) } as unknown as D1Database;
+  return { prepare: (sql: string) => wrap(db.prepare(sql), sql, []), batch: (s: any[]) => db.batch(s) } as unknown as D1Database;
 }
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -532,6 +532,50 @@ describe('the sweep credits late instead of never', () => {
     expect(rowOf(db, order.orderId).status).toBe('credited');
     expect(JSON.parse(kv.store.get('sub:user_a') as string).expiresAt).toBe(expiry);
     expect(creditedCount(db)).toBe(1);
+  });
+
+  it('one failed lookup does not cost the paid orders the others find, and a comment that only starts like a memo is never looked up', async () => {
+    const { env, kv, db } = makeEnv();
+    const first = await invoice(env, 'user_first');
+    const second = await invoice(env, 'user_second');
+    const t0 = nowSec();
+    // A hundred well-formed memos nobody issued, so the lookup takes two statements. The two real
+    // memos sit at its two ends.
+    const strangers = Array.from({ length: 100 }, (_, i) => ({
+      hash: `stranger_${i}`,
+      now: t0 + 10 + i,
+      lt: 10 + i,
+      comment: `LUM:ton_${1000 + i}_abc123:starter`,
+      value: '1',
+    }));
+    const index = chainIndex([
+      { hash: 'tx_first', now: t0 + 5, lt: 5, comment: first.memo, value: TON_PRICING.starter.nanoTon },
+      ...strangers,
+      { hash: 'tx_junk', now: t0 + 200, lt: 200, comment: `LUM:${'x'.repeat(4000)}`, value: '1' },
+      { hash: 'tx_second', now: t0 + 300, lt: 300, comment: second.memo, value: TON_PRICING.starter.nanoTon },
+    ]);
+    travel(3 * 60_000);
+
+    const bound: unknown[] = [];
+    let lookups = 0;
+    env.DB = faultyDb(db, (sql, args) => {
+      if (!sql.includes('memo IN (')) return false;
+      bound.push(...args);
+      lookups += 1;
+      return lookups === 1 ? 'D1_ERROR: Network connection lost.' : false;
+    });
+    const summary = await sweepTonPendingOrders(env, { fetcher: index.fetcher });
+    expect(lookups).toBe(2);
+    expect(summary).toMatchObject({ errors: 1, credited: 1 });
+    expect(kv.store.has('sub:user_second')).toBe(true);
+    expect(kv.store.has('sub:user_first')).toBe(false);
+    // The 4,000-character comment never reached the database.
+    expect(bound.some((value) => typeof value === 'string' && value.length > 100)).toBe(false);
+
+    // The next run finds the one the failed lookup held.
+    env.DB = db;
+    expect((await sweepTonPendingOrders(env, { fetcher: index.fetcher })).credited).toBe(1);
+    expect(kv.store.has('sub:user_first')).toBe(true);
   });
 
   it('when neither index answers, nothing is decided and nothing is lost', async () => {

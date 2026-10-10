@@ -172,22 +172,29 @@ const MEMO_CHUNK = 80;
 export async function findOpenTonPendingOrdersByMemo(
   env: TonPendingOrdersEnv,
   opts: { recipient: string; memos: string[]; now: number; minAgeMs: number },
-): Promise<TonPendingOrderRow[]> {
-  if (!env.DB) return [];
+): Promise<{ rows: TonPendingOrderRow[]; failedChunks: number }> {
+  if (!env.DB) return { rows: [], failedChunks: 0 };
   const memos = [...new Set(opts.memos)];
   const rows: TonPendingOrderRow[] = [];
+  let failedChunks = 0;
   for (let i = 0; i < memos.length; i += MEMO_CHUNK) {
     const chunk = memos.slice(i, i + MEMO_CHUNK);
+    // One lookup that fails must not cost the orders found by the others.
     const found = await env.DB.prepare(
       `SELECT ${COLUMNS} FROM ton_pending_orders
        WHERE status = 'pending' AND recipient = ? AND expires_at > ? AND created_at < ? AND memo IN (${chunk.map(() => '?').join(', ')})
        ORDER BY created_at`,
     )
       .bind(opts.recipient, opts.now, opts.now - opts.minAgeMs, ...chunk)
-      .all<TonPendingOrderRow>();
-    rows.push(...(found.results ?? []));
+      .all<TonPendingOrderRow>()
+      .catch((err) => {
+        failedChunks += 1;
+        console.error(`[TonPendingOrders] A lookup of paid orders failed; the next run looks again: ${errorText(err)}`);
+        return null;
+      });
+    rows.push(...(found?.results ?? []));
   }
-  return rows;
+  return { rows, failedChunks };
 }
 
 /**

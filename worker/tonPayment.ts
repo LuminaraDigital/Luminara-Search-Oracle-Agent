@@ -64,6 +64,9 @@ export const JETTON_PRICING: Record<string, { amount: number; units: string }> =
  * USDT order could never be credited. Turning it back on needs that staging credit, a review, and
  * a change to `tests/moneyInvariants.test.ts` in the same pull request.
  */
+// Before this goes back on: the pending-order sweep (sweepTonPendingOrders) works from the comments
+// on native transfers, so it does not see a Jetton order. A Jetton order paid and shown late by the
+// index would be credited only by the buyer's own "Check my payment". Extend the sweep first.
 export const JETTON_CHECKOUT_LIVE = false;
 
 /**
@@ -674,6 +677,11 @@ async function loadTonOrder(env: Env, kv: KVNamespace, orderId: string): Promise
 
 /** An order younger than this is left to the buyer's own polling. */
 const TON_SWEEP_MIN_AGE_MS = 2 * 60_000;
+/**
+ * What an order memo looks like (createTonInvoice writes `LUM:<order id>:<plan id>`). A comment is
+ * anybody's to write, so only comments of this shape are looked up as memos.
+ */
+const TON_MEMO_SHAPE = /^LUM:ton_[0-9]{1,16}_[a-z0-9]{0,12}:[a-z0-9_]{1,40}$/;
 
 export type TonPendingSweepSummary = {
   /** Open orders old enough to check, and how many of them had a transfer carrying their memo. */
@@ -748,18 +756,13 @@ export async function sweepTonPendingOrders(env: Env, opts: { now?: number; fetc
     const memos = new Set<string>();
     for (const tx of [...(history.toncenter ?? []), ...(history.tonapi ?? [])]) {
       const comment = extractTonComment(tx?.in_msg).trim();
-      if (comment.startsWith('LUM:')) memos.add(comment);
+      if (TON_MEMO_SHAPE.test(comment)) memos.add(comment);
     }
     if (memos.size === 0) continue;
 
-    let orders: Awaited<ReturnType<typeof findOpenTonPendingOrdersByMemo>> = [];
-    try {
-      orders = await findOpenTonPendingOrdersByMemo(env, { recipient: wallet.recipient, memos: [...memos], now, minAgeMs: TON_SWEEP_MIN_AGE_MS });
-    } catch (err) {
-      summary.errors += 1;
-      console.error(`[TON] pending-order sweep could not look up the orders that were paid: ${err instanceof Error ? err.message : err}`);
-    }
-    for (const row of orders) {
+    const lookup = await findOpenTonPendingOrdersByMemo(env, { recipient: wallet.recipient, memos: [...memos], now, minAgeMs: TON_SWEEP_MIN_AGE_MS });
+    summary.errors += lookup.failedChunks;
+    for (const row of lookup.rows) {
       summary.matched += 1;
       try {
         const result = await verifyTonPayment(env, row.order_id, { fetcher: opts.fetcher, known: history });

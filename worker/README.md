@@ -165,6 +165,31 @@ Telegram does not send a paid update again once the webhook has answered 200, so
   written before the ledger that stacked an upgrade names only its last charge, so refunding that
   charge keeps the upgraded plan name for the days the earlier charge paid for.
 
+## TON orders (pinned in `tests/tonPendingOrders.test.ts`)
+
+TON checkout is closed until the owner confirms the merchant address. When it opens:
+
+- **The comment on a transfer must equal the order's memo.** Containing it is not enough.
+- **An order is remembered in D1 for 48 hours** (`ton_pending_orders`, migration 0025). No invoice
+  is issued unless the row was written, and one account can hold at most 20 open orders (the
+  count is part of the insert). The KV copy still lasts 2 hours; the verifier falls back to the row.
+- **The daily sweep works from the transfers** (`ton_pending_sweep`). It reads each wallet's
+  history once, collects the comments shaped like a memo, and verifies only the open orders that
+  carry one of them. Crediting still goes through `verifyTonPayment` and the `ton_credited_tx` claim.
+- **An unpaid order closes at 48 hours** and its row is kept 30 days more for support.
+- **An order is creditable only for the wallet configured now.**
+- Known limits:
+  - The sweep is daily until the 15-minute ops cron exists; the buyer's "Check my payment" works at any time.
+  - A wallet's history is read up to 1,000 transfers per index; beyond that a run is partial, and that is only logged.
+  - A claim in `ton_credited_tx` older than five minutes is taken as a credit. If a claim's release ever fails
+    after a failed grant (it is logged), the row is marked credited with no plan behind it: an operator who
+    clears such a claim must also set the row back to `pending`.
+  - The sweep does not see Jetton orders (see the note at `JETTON_CHECKOUT_LIVE`).
+  - The client remembers one pending order; sending a second replaces the first on that device. The Worker
+    still sweeps both.
+  - How the two chain indexes page and order their answers is taken from their documentation. Credit one real
+    testnet transfer through each index before TON checkout is opened.
+
 ## Stubbed vs live status
 
 - `worker/auditQueue.ts`: v1 queue is live; when a full node payload is not
