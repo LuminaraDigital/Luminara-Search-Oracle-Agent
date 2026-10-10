@@ -144,17 +144,26 @@ and the SPA asset fallback:
   `not_measured` or "not verified" when data is missing; numeric claims
   without tool evidence are rejected. Live.
 - `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
-  nothing, and its only prices are the ones in `PLANS`. The prompt gets a price block
-  built from `PLANS` on every turn. Before a reply is stored in history or sent, a
-  sentence with a plan price that differs from `PLANS` (wrong Stars amount, wrong
-  term, or any other currency) becomes the true price line, and a sentence that
-  states a number as a fact beside a site-metric word (visibility, rank, position,
-  citations, mentions, backlinks, traffic, score, share, authority) becomes one
-  "not measured" sentence. An instruction with a count ("Add 3 FAQ questions")
-  passes. Status comes from the claim ledger (`services/evidenceBound`). Business
-  DNA enters the prompt only inside an untrusted-content fence, and the reply is
-  sent with no `parse_mode`. The filter is a backstop, English only and pattern
-  based; the prompt rules are the main control. Live.
+  nothing, and the model has no say over prices. The prompt gets the plan facts built
+  from `PLANS` on every turn and the rule not to state prices or offers. Before a
+  reply is stored in history or sent:
+  - Every sentence or list line about our own plans, prices or offers is removed,
+    and one block built from `PLANS` (each plan with its Stars and days, where to
+    buy, that plans do not renew, where billing help is) stands where the first one
+    was. The model's number is never checked: a correct price is replaced too.
+  - A sentence that states a measurement nobody made (a percentage, a rank, a score,
+    a count of citations or visits, a claim of having looked at the site) becomes
+    one "not measured" sentence. Code, links, dates, phone and version numbers, HTTP
+    status codes and numbers the user wrote are set aside first. An instruction
+    keeps its count ("Add 3 FAQ questions") and loses a promised outcome. Status
+    comes from the claim ledger (`services/evidenceBound`).
+  - A link to a host that is neither luminarasuite.com (or `WEBAPP_URL`) nor one the
+    user wrote is spelled out in words. Code blocks are left as they are.
+  Business DNA enters the prompt only inside an untrusted-content fence whose
+  markers carry a one-time code, with each field capped at 300 characters. The
+  reply is sent with no `parse_mode` and with link previews off. The filter is a
+  backstop, English only and pattern based; the prompt rules are the main control.
+  Live.
 - DataForSEO / Umami sidecars: live when env-bound; the front-end traffic
   path returns `not_configured` when unreachable. See `services/competitors/README.md`.
 - Telegram webhook, license service, sentinel scan: live when bindings exist.

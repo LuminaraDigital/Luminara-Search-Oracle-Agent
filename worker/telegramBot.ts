@@ -470,7 +470,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
-    const buyMatch = text.match(/^\/buy(?:_|\s+)([a-z]+)/i);
+    const buyMatch = text.match(/^\/buy(?:_|\s+)([a-z_]+)/i);
     if (buyMatch) {
       const planId = normalizePlanId(buyMatch[1]);
       const plan = PLANS[planId];
@@ -736,17 +736,18 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         const joined = new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         const minutesAgo = Math.max(0, Math.round((Date.now() - u.last_seen_at) / 60000));
         const activeStr = minutesAgo < 60 ? `${minutesAgo}m ago` : `${Math.round(minutesAgo / 60)}h ago`;
-        return `${i + 1}. *${label}*\n   ${sourceBadge} · Joined: ${joined} · Active: ${activeStr}`;
+        return `${i + 1}. ${label}\n   ${sourceBadge} · Joined: ${joined} · Active: ${activeStr}`;
       });
 
+      // Plain text, no parse_mode: the names and emails in this list are set by users, and an
+      // underscore or asterisk in one of them would break or restyle a Markdown message.
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
-          `📊 *Luminara User Signups & Sign-Ins*\n\n` +
-          `*Total Registered Users:* ${users.length}\n\n` +
+          `📊 Luminara User Signups & Sign-Ins\n\n` +
+          `Total Registered Users: ${users.length}\n\n` +
           (lines.length ? lines.join('\n\n') : 'No registered users found yet.') +
-          `\n\n_Use /refund <userId> <chargeId> to issue a Stars refund._`,
-        parse_mode: 'Markdown',
+          `\n\nUse /refund <userId> <chargeId> to issue a Stars refund.`,
       });
       return;
     }
@@ -881,7 +882,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      // Prices in the prompt are built from PLANS on every turn, never typed by hand.
+      // Plan facts in the prompt are built from PLANS on every turn, never typed by hand.
       { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(PLANS) + dnaPromptAddition + domainPromptAddition },
       ...history.slice(-6),
       { role: 'user', content: text },
@@ -889,12 +890,18 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
 
     // 6. Generate AI response via configured worker providers
     const modelReply = await generateOracleChatResponse(env, messages);
-    // Before the reply is stored in history or sent: a plan price that differs from PLANS becomes
-    // the true price line, and a number stated as a fact beside a site-metric word is replaced,
-    // because nothing in this chat measures a site.
-    const honest = modelReply ? filterChatReply(modelReply, PLANS) : null;
-    if (honest && (honest.claims.length > 0 || honest.priceCorrections > 0)) {
-      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured site-metric sentence(s), ${honest.priceCorrections} plan price sentence(s) replaced`);
+    // Before the reply is stored in history or sent (worker/chatHonesty.ts): anything it says about
+    // our plans, prices or offers gives way to one block built from PLANS, a measurement nobody
+    // made is replaced, and a link to a host that is neither ours nor the user's is spelled out.
+    const honest = modelReply
+      ? filterChatReply(modelReply, {
+          plans: PLANS,
+          userTexts: [...history.filter((turn) => turn.role === 'user').map((turn) => turn.content), text],
+          allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
+        })
+      : null;
+    if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.linksRemoved > 0)) {
+      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan or price sentence(s), ${honest.linksRemoved} link(s)`);
     }
     const aiResponse = honest ? honest.text : null;
 
@@ -933,10 +940,12 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     // 8. Deliver response. No parse_mode: model text is not valid Markdown, and Telegram
-    // rejects the whole message when the markup does not parse.
+    // rejects the whole message when the markup does not parse. No link preview: model text
+    // must not unfurl a page.
     const sendResult = await api(env, 'sendMessage', {
       chat_id: chatId,
       text: aiResponse,
+      link_preview_options: { is_disabled: true },
       reply_markup: replyKeyboard,
     });
 
