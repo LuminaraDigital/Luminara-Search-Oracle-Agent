@@ -211,7 +211,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p>Starter: web audits for a small site set. No MCP. No share links.</p>
   <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>
   <p>Agency: Growth capabilities plus API access and client workspaces.</p>
-  <p>Telegram Stars or TON billing is available in the Mini App. No invented SEO scores on any plan.</p>
+  <p>Telegram Stars billing is available in the Mini App. No invented SEO scores on any plan.</p>
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
 </section>`,
   },

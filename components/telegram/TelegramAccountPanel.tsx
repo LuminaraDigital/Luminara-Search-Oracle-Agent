@@ -20,7 +20,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
   const [licenseKey, setLicenseKey] = useState('');
   const [activating, setActivating] = useState(false);
   const wallet = useTonWallet();
-  const plans = getServerHealthSync().plans;
+  const plans = getServerHealthSync().plans ?? {};
   const inTg = isInTelegram();
 
   const refresh = async () => {
@@ -100,9 +100,9 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
   if (!inTg && !wallet) {
     return (
       <div className="rounded-xl bg-[var(--color-paper-2)] border border-[var(--color-rule)] p-5 space-y-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-gold">Telegram &amp; TON</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-gold">Telegram</p>
         <p className="text-xs text-gray-400 leading-relaxed">
-          Pay with Stars or TON inside the Mini App. Card checkout is available on request. You can also connect a TON wallet here.
+          Pay with Telegram Stars inside the Mini App. Card checkout is available on request.
         </p>
         <p className="text-xs text-gray-400 leading-relaxed">
           Link Telegram and web account - shares subscription. Open the Mini App, sign in there, and confirm the link. Signing in does not merge plans by itself.
@@ -168,7 +168,8 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
         </div>
       )}
 
-      {Object.keys(plans).length > 0 && (
+      {/* A Stars invoice can only be opened inside Telegram, so the buttons are drawn only there. */}
+      {inTg && Object.keys(plans).length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {Object.entries(plans).map(([id, p]) => (
             <button
@@ -221,11 +222,14 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-3 pt-1 border-t border-white/5">
-        <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">TON wallet</span>
-        <TonConnectButton />
-      </div>
-      {wallet && (
+      {/* Inside Telegram only Stars may be offered, so no wallet connect is drawn there. */}
+      {!inTg && (
+        <div className="flex items-center justify-between gap-3 pt-1 border-t border-white/5">
+          <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">TON wallet</span>
+          <TonConnectButton />
+        </div>
+      )}
+      {!inTg && wallet && (
         <p className="text-[10px] font-mono text-gray-500 truncate">Connected: {wallet.account.address}</p>
       )}
 

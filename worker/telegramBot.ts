@@ -119,6 +119,19 @@ export const FREE_PLAN_CAPS = {
   mcpAccess: false,
 };
 
+/**
+ * What a buyer may see before signing in: the 30-day plans, with their title, description, Stars
+ * price and length. No entitlement internals, and not the one-off SKUs.
+ */
+export function publicPlanCatalogue(): Record<string, { title: string; description: string; stars: number; days: number }> {
+  const out: Record<string, { title: string; description: string; stars: number; days: number }> = {};
+  for (const id of ['starter', 'growth', 'agency'] as const) {
+    const p = PLANS[id];
+    if (p) out[id] = { title: p.title, description: p.description, stars: p.stars, days: p.days };
+  }
+  return out;
+}
+
 export function normalizePlanId(planId: string | null | undefined): string {
   const id = String(planId || '').toLowerCase().trim();
   if (id === 'pro') return 'agency';
@@ -443,7 +456,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         text:
           `*Luminara Suite Subscription Plans (Telegram Stars)*\n\n` +
           lines.join('\n\n') +
-          `\n\nTap /buy_starter, /buy_growth, or /buy_agency to pay directly in chat, or open the app to see every payment option.`,
+          `\n\nTap /buy_starter, /buy_growth, or /buy_agency to pay directly in chat, or open the app to pay with Stars in one tap.`,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
@@ -528,7 +541,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           'We value your privacy and transparency. Here is how personal data is handled:\n\n' +
           '• *Controller:* Luminara Digital Agency (Contact: `privacy@luminarasuite.com`)\n' +
           '• *Telegram Data:* We receive your signed Telegram user ID, username, and language to identify your session and meter usage. We never receive or store payment cards or phone numbers.\n' +
-          '• *Stars & TON:* Subscriptions via Telegram Stars or TON blockchain are processed by Telegram and the public TON network. No credit card information is collected.\n' +
+          '• *Payments:* Plans bought here are paid in Telegram Stars and processed by Telegram. No credit card information is collected.\n' +
           '• *Audits & Prompts:* Audit domains and queries are processed via configured AI models (Groq, NVIDIA NIM, Gemini, OpenRouter) to deliver search intelligence.\n' +
           '• *Data Retention & Control:* Reset your bot chat memory anytime with /reset. To request account data export or deletion, contact `privacy@luminarasuite.com`.\n\n' +
           `Full policy document: ${baseUrl}/privacy`,

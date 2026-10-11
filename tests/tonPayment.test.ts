@@ -62,6 +62,8 @@ function makeEnv(overrides: Record<string, unknown> = {}) {
     CHAIN_XDC_RPC_URL: 'https://erpc.xinfin.network',
     ...overrides,
   };
+  // The owner has confirmed whichever address this test uses, unless the test says otherwise.
+  if (!('TON_CONFIRMED_ADDRESS' in overrides)) env.TON_CONFIRMED_ADDRESS = env.TON_RECEIVING_ADDRESS;
   return { env, kv };
 }
 

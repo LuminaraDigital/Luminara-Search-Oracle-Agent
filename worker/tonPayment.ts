@@ -46,11 +46,21 @@ export const JETTON_PRICING: Record<string, { amount: number; units: string }> =
 };
 
 /**
- * Jetton (USDT / $LORA) checkout is live backed by the TEP-74 verifier in ./jettonSettlement.ts.
- * The verifier derives the merchant's canonical jetton wallet on-chain via get_wallet_address,
- * decodes transfer_notification (op 0x7362d096), checks exact memo match, and enforces decimals.
+ * Jetton (USDT / $LORA) checkout is OFF.
+ *
+ * It was switched on before spec 0018's condition was met (one real testnet USDT transfer credited
+ * end to end on staging), while the verifier looked for the wrong notification opcode, so a paid
+ * USDT order could never be credited. Turning it back on needs that staging credit, a review, and
+ * a change to `tests/moneyInvariants.test.ts` in the same pull request.
  */
-export const JETTON_CHECKOUT_LIVE = true;
+export const JETTON_CHECKOUT_LIVE = false;
+
+/**
+ * $LORA has its own switch. An empty master string must not be the only thing keeping it off
+ * (LORA rule J5: no LORA checkout before on-chain verification of real transfers is reviewed).
+ * LORA needs both switches on.
+ */
+export const LORA_CHECKOUT_LIVE = false;
 
 /** Empty string = not configured. Never ship invented addresses. */
 export const JETTON_MASTERS: Record<string, { USDT: string; LORA: string }> = {
@@ -65,7 +75,7 @@ export const JETTON_MASTERS: Record<string, { USDT: string; LORA: string }> = {
 };
 
 export const JETTON_UNAVAILABLE_ERROR =
-  'USDT and $LORA checkout is not available yet. Pay with TON or Telegram Stars.';
+  'USDT and $LORA checkout is not available. Pay with Telegram Stars in the Telegram app.';
 
 export const TON_UNAVAILABLE_ERROR =
   'TON payments are not available right now. Use Telegram Stars in the Telegram app or a license key.';
@@ -183,6 +193,7 @@ function addressForLog(value: string): string {
 type TonConfigEnv = Pick<
   Env,
   | 'TON_RECEIVING_ADDRESS'
+  | 'TON_CONFIRMED_ADDRESS'
   | 'ENVIRONMENT'
   | 'CHAIN_NETWORK'
   | 'CHAIN_TON_API_BASE'
@@ -208,6 +219,33 @@ export function isTonPaymentConfigured(env: TonConfigEnv): boolean {
   return diagnoseTonConfig(env).ok;
 }
 
+/**
+ * The owner has confirmed, in their own wallet app, that TON_RECEIVING_ADDRESS is their address.
+ * TON_CONFIRMED_ADDRESS holds the address they confirmed, and the two must be the same string.
+ * A bare yes/no would let a later edit of the receiving address inherit the old confirmation;
+ * this way a changed address is unconfirmed until the owner confirms it again.
+ *
+ * A valid-looking address nobody has confirmed must not take money: on 2026-10-10 the production
+ * address had never had a transaction on any network.
+ */
+export function isTonAddressConfirmed(env: Pick<Env, 'TON_CONFIRMED_ADDRESS' | 'TON_RECEIVING_ADDRESS'>): boolean {
+  const confirmed = String(env.TON_CONFIRMED_ADDRESS ?? '').trim();
+  const receiving = String(env.TON_RECEIVING_ADDRESS ?? '').trim();
+  return confirmed !== '' && confirmed === receiving;
+}
+
+/**
+ * New TON invoices are issued only when the config is valid and the address is confirmed.
+ * Verification of orders that already exist does not use this, so an order created before a
+ * switch-off can still be credited.
+ */
+export function isTonCheckoutOpen(env: TonConfigEnv): boolean {
+  return isTonAddressConfirmed(env) && diagnoseTonConfig(env).ok;
+}
+
+/** Telegram requires digital goods inside a bot or Mini App to be sold for Stars. */
+export const TON_IN_TELEGRAM_ERROR = 'Inside Telegram, plans are paid with Telegram Stars.';
+
 // ---------------------------------------------------------------------------
 // Invoice + verification
 // ---------------------------------------------------------------------------
@@ -231,12 +269,21 @@ export async function createTonInvoice(
   if (requestedAsset !== 'TON' && !JETTON_CHECKOUT_LIVE) {
     return { ok: false, error: JETTON_UNAVAILABLE_ERROR };
   }
+  if (requestedAsset === 'LORA' && !LORA_CHECKOUT_LIVE) {
+    return { ok: false, error: JETTON_UNAVAILABLE_ERROR };
+  }
 
   const recipient = String(env.TON_RECEIVING_ADDRESS || '').trim();
   const cfg = diagnoseTonConfig(env);
   if (!cfg.ok) {
     console.error(
       `[TON] Invoice refused: ${cfg.reason}. TON_RECEIVING_ADDRESS ${addressForLog(recipient)} ENVIRONMENT=${env.ENVIRONMENT || 'unset'} CHAIN_NETWORK=${env.CHAIN_NETWORK || 'unset'}.`,
+    );
+    return { ok: false, error: TON_UNAVAILABLE_ERROR };
+  }
+  if (!isTonAddressConfirmed(env)) {
+    console.error(
+      `[TON] Invoice refused: TON_CONFIRMED_ADDRESS does not equal TON_RECEIVING_ADDRESS. The owner has not confirmed that ${addressForLog(recipient)} is their wallet.`,
     );
     return { ok: false, error: TON_UNAVAILABLE_ERROR };
   }

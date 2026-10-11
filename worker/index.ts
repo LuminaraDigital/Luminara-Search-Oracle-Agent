@@ -35,9 +35,9 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { validateInitData, createTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
-import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS, planCapsFor } from './telegramBot';
-import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
-import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE, Q402_NOT_LIVE_ERROR } from './q402';
+import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS, planCapsFor, publicPlanCatalogue } from './telegramBot';
+import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, isTonAddressConfirmed, isTonCheckoutOpen, TON_IN_TELEGRAM_ERROR, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
+import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
@@ -300,8 +300,12 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!adminCheck.ok) {
       return withCors(json({
         ok: true,
-        ton: isTonPaymentConfigured(env),
-        jettonCheckout: JETTON_CHECKOUT_LIVE && isTonPaymentConfigured(env),
+        // ton is true only when the config is valid AND the owner has confirmed the merchant address.
+        ton: isTonCheckoutOpen(env),
+        jettonCheckout: JETTON_CHECKOUT_LIVE && isTonCheckoutOpen(env),
+        // The public Stars catalogue. The account panel in the Mini App builds its plan buttons
+        // from this; without it the panel has nothing to list.
+        plans: publicPlanCatalogue(),
         stripeCheckout: isStripeCheckoutLive(env),
       }));
     }
@@ -332,7 +336,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       appCheckRequired: String(env.REQUIRE_APP_CHECK || '').toLowerCase() === 'true',
       mcpOAuthConfigured: Boolean(String(env.MCP_OAUTH_SECRET || '').trim()),
       pagespeedHosted: Boolean(String(env.PAGESPEED_API_KEY || '').trim()),
-      ton: isTonPaymentConfigured(env),
+      // Same meaning as the public field: TON checkout is open. tonConfigured says only that the
+      // address and network settings are valid.
+      ton: isTonCheckoutOpen(env),
+      tonConfigured: isTonPaymentConfigured(env),
+      tonAddressConfirmed: isTonAddressConfirmed(env),
       tonPricing: TON_PRICING,
       jettonPricing: JETTON_PRICING,
       jettonCheckout: JETTON_CHECKOUT_LIVE,
@@ -978,8 +986,18 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         userWalletAddress?: string;
       };
       if (!planId) return withCors(json({ error: 'planId required' }, 400));
+      // Telegram requires digital goods inside a bot or Mini App to be sold for Stars. A request that
+      // reaches here with init data has already passed the sign-in guard, so it is a Mini App user.
+      if (request.headers.get('x-telegram-init-data')) {
+        return withCors(json({ error: TON_IN_TELEGRAM_ERROR, code: 'TON_NOT_IN_TELEGRAM' }, 400));
+      }
       const who = await identify(request, env);
       if (!who.user) return withCors(json({ error: who.error || 'Sign in required' }, 401));
+      // A Telegram identity is only ever minted from Mini App init data, so a Telegram session
+      // cookie or bearer without the header is still a Telegram surface.
+      if (who.user.source === 'telegram') {
+        return withCors(json({ error: TON_IN_TELEGRAM_ERROR, code: 'TON_NOT_IN_TELEGRAM' }, 400));
+      }
       const result = await createTonInvoice(env, who.user.id, planId, { asset, userWalletAddress });
       return withCors(result.ok ? json(result) : json({ error: result.error }, 400));
     }
@@ -1004,18 +1022,18 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleStripeWebhook(request, env));
   }
 
-  // Q402 (x402-style pay-per-call on TON). Discovery is public; settlement is fail-closed
-  // until on-chain verification exists (see Q402_SETTLEMENT_LIVE in worker/q402/facilitator.ts).
+  // Q402 (x402-style pay-per-call on TON) is off, and while it is off none of its routes answer.
+  // The discovery route used to publish the merchant address and TON, USDT and LORA prices to
+  // anyone, for a rail that cannot settle and a wallet the owner had not confirmed. Every
+  // /q402/* path is a 404 until Q402_SETTLEMENT_LIVE is true (worker/q402/facilitator.ts) and
+  // tests/moneyInvariants.test.ts is changed with it.
   if (path.startsWith('/q402/')) {
+    if (!Q402_SETTLEMENT_LIVE) {
+      return withCors(json({ ok: false, error: 'Not found' }, 404));
+    }
     if (path === '/q402/supported') {
       if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
       return withCors(json(getQ402SupportedCatalog(env)));
-    }
-    if (path === '/q402/verify' || path === '/q402/settle' || path === '/q402/audit') {
-      if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
-      if (!Q402_SETTLEMENT_LIVE) {
-        return withCors(json({ ok: false, code: 'Q402_NOT_LIVE', error: Q402_NOT_LIVE_ERROR }, 503));
-      }
     }
     return withCors(json({ ok: false, error: 'Not found' }, 404));
   }

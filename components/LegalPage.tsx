@@ -330,8 +330,9 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
               <h2 className="text-gold-light font-bold uppercase tracking-widest text-xs mb-2">Plans and payments</h2>
               <p>
                 Plans bought with Telegram Stars run for the stated number of days from purchase and do
-                not renew automatically. TON payments are verified on-chain against the order memo you
-                are shown. Refunds for Stars follow Telegram&apos;s policy; for billing problems contact{' '}
+                not renew automatically. Where TON checkout is offered, a TON payment is verified
+                on-chain against the order memo you are shown. Refunds for Stars follow Telegram&apos;s
+                policy; for billing problems contact{' '}
                 {SUPPORT_EMAIL}.
               </p>
             </section>

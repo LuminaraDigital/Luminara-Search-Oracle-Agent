@@ -289,9 +289,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       if (plan === 'growth') return '79 USDT';
       return '199 USDT';
     }
-    if (plan === 'starter') return '29 LORA (15% Burn)';
-    if (plan === 'growth') return '79 LORA (15% Burn)';
-    return '199 LORA (15% Burn)';
+    if (plan === 'starter') return '29 LORA';
+    if (plan === 'growth') return '79 LORA';
+    return '199 LORA';
   };
 
   const planButtonLabel = (plan: 'starter' | 'growth' | 'agency') => {
@@ -316,9 +316,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       if (plan === 'growth') return 'Pay 79 USDT · 30 days';
       return 'Pay 199 USDT · 30 days';
     }
-    if (plan === 'starter') return 'Pay 29 LORA (15% Burn) · 30 days';
-    if (plan === 'growth') return 'Pay 79 LORA (15% Burn) · 30 days';
-    return 'Pay 199 LORA (15% Burn) · 30 days';
+    if (plan === 'starter') return 'Pay 29 LORA · 30 days';
+    if (plan === 'growth') return 'Pay 79 LORA · 30 days';
+    return 'Pay 199 LORA · 30 days';
   };
 
   if (!isOpen) return null;
@@ -454,29 +454,31 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               </span>
             )}
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('ton')}
-            disabled={!paymentOptions.tonAvailable}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
-              tab === 'ton'
-                ? 'bg-gold text-black shadow-lg shadow-gold/20'
-                : paymentOptions.tonAvailable
-                ? 'text-gray-400 hover:text-white hover:bg-white/5'
-                : 'text-gray-500 cursor-not-allowed'
-            }`}
-          >
-            <span>TON</span>
-            {!paymentOptions.tonAvailable ? (
-              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-black">
-                Soon
-              </span>
-            ) : wallet && (
-              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
-                Connected
-              </span>
-            )}
-          </button>
+          {paymentOptions.showTonTab && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('ton')}
+              disabled={!paymentOptions.tonAvailable}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
+                tab === 'ton'
+                  ? 'bg-gold text-black shadow-lg shadow-gold/20'
+                  : paymentOptions.tonAvailable
+                  ? 'text-gray-400 hover:text-white hover:bg-white/5'
+                  : 'text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              <span>TON</span>
+              {!paymentOptions.tonAvailable ? (
+                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-black">
+                  Soon
+                </span>
+              ) : wallet && (
+                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
+                  Connected
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Jetton Asset Selector: only when the server reports Jetton checkout live */}
@@ -513,7 +515,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <span>🔥 $LORA (Burn)</span>
+              <span>$LORA</span>
             </button>
           </div>
         )}
@@ -700,8 +702,8 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </div>
         )}
 
-        {/* Card checkout guidance when Card rail is not live */}
-        {!paymentOptions.cardAvailable && (
+        {/* Card checkout guidance when Card rail is not live. Never inside Telegram, where only Stars may be offered. */}
+        {paymentOptions.showCardGuidance && (
           <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[10px] text-gray-400">
             <p>
               Card checkout is available on request during closed beta. For credit card payments or corporate invoicing, email{' '}

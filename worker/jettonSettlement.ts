@@ -10,8 +10,8 @@
  *      `get_wallet_address(owner)` on the configured master. Only the jetton wallet contract deployed
  *      by that master can send from that address, so a forged `transfer_notification` from any other
  *      contract is ignored. Indexer wallet listings are never trusted for this.
- *   2. The body decodes as `transfer_notification` (op 0x7362d096) with amount >= price, in
- *      elementary units.
+ *   2. The body decodes as `transfer_notification` (op 0x7362d09c, the TEP-74 value) with
+ *      amount >= price, in elementary units.
  *   3. The forward-payload text comment equals the order memo exactly.
  *   4. The inbound message is not itself a bounce, and the transaction has a hash.
  * Double-credit protection stays with the caller's D1 ledger (`claimTonTransaction`).
@@ -23,8 +23,14 @@ import type { Env } from './env';
 import { normalizeTonTxHash, resolveTonApiBases, type ChainNetwork } from './chainNetwork';
 import { toElementaryUnits } from '../services/chain/chainRegistry';
 
-/** TEP-74 transfer_notification#7362d096 query_id:uint64 amount:Coins sender:MsgAddress forward_payload:(Either Cell ^Cell) */
-export const OP_JETTON_TRANSFER_NOTIFICATION = 0x7362d096;
+/**
+ * TEP-74 transfer_notification#7362d09c query_id:uint64 amount:Coins sender:MsgAddress forward_payload:(Either Cell ^Cell)
+ *
+ * This is the opcode every standard jetton wallet sends, including USDT and the in-repo LORA
+ * contract (`contracts/jetton/contracts/messages.tact`). It was 0x7362d096 here until 2026-10-10,
+ * which matched no real transfer. `tests/moneyInvariants.test.ts` pins it against the literal.
+ */
+export const OP_JETTON_TRANSFER_NOTIFICATION = 0x7362d09c;
 
 export const JETTON_WALLET_CACHE_TTL_SEC = 86_400;
 const TX_PAGE_LIMIT = 50;
