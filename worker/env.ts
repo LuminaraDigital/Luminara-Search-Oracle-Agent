@@ -245,6 +245,9 @@ export interface Ai {
       stream?: boolean;
       max_tokens?: number;
       temperature?: number;
+      /** Declared by the binding's text-generation input in `@cloudflare/workers-types`. */
+      top_p?: number;
+      seed?: number;
     } | { text: string[] },
   ): Promise<any>;
 }

@@ -509,9 +509,10 @@ export async function proxyProvider(
   }
 
   // Workers AI fallback, after the second-key retry above: only when the upstream itself failed
-  // (5xx). A 4xx is the upstream's answer about this request or this key (429, 401, 400, 413 and
-  // the rest). It is never replaced by another model's reply: it goes through the code below as
-  // it always has, where a hosted 402 is reported as HOSTED_PROVIDER_DEPLETED.
+  // (5xx). A 4xx is the upstream's answer about this request or this key (429, 400, 413 and the
+  // rest). It is never replaced by another model's reply: it goes through the code below, where
+  // a hosted 402 is reported as HOSTED_PROVIDER_DEPLETED and a hosted 401 or 403 as
+  // HOSTED_PROVIDER_KEY_REFUSED.
   if (res.status >= 500 && res.status <= 599) {
     const fallback = await tryWorkersAiFallback(
       env, request, providerId, subPath, userKey, body, { reason: 'upstream_5xx', upstreamStatus: res.status }, quotaGate,
@@ -566,6 +567,21 @@ export async function proxyProvider(
       code: 'BYOK_PAYMENT_REQUIRED',
       provider: providerId,
     }, 402, Object.fromEntries(out.entries()));
+  }
+
+  // An upstream 401 or 403 on a hosted key means the provider refused the server's key. It says
+  // nothing about the caller's own sign-in, and the client reads a 401 or 403 from this route as
+  // exactly that (it stops calling every hosted provider for a while). So it is reported the way
+  // a hosted 402 is: a 503 that names the cause. The relay's own 401s above are the caller's
+  // session and are unchanged, and a BYOK 401 or 403 is the caller's key and passes through.
+  if (!userKey && (res.status === 401 || res.status === 403)) {
+    return json({
+      ok: false,
+      error: `The hosted ${providerId} service is temporarily unavailable: the provider refused the hosted key. This is not a problem with your sign-in. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`,
+      code: 'HOSTED_PROVIDER_KEY_REFUSED',
+      provider: providerId,
+      upstreamStatus: res.status,
+    }, 503, Object.fromEntries(out.entries()));
   }
 
   return new Response(res.body, { status: res.status, headers: out });

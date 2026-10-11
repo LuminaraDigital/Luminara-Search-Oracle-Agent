@@ -1,7 +1,10 @@
 /**
- * SW0a-11, client side: a reply the Worker's fallback model wrote is labelled in the chat.
- * The marker travels: response headers -> GroqProvider -> StreamChunk / GenerateResult
- * -> Message.fallback (App.tsx) -> the line MessageList renders.
+ * SW0a-11, client side: a reply the Worker's fallback model wrote is labelled in the chat, and
+ * no other screen receives one.
+ *
+ * The marker travels: response headers -> GroqProvider -> StreamChunk -> streamQuery ->
+ * the reply reducer (services/chat/streamedReply.ts) -> Message.fallback -> the MessageList line.
+ * Only a caller that passes `allowFallback` gets a fallback reply at all; the chat is that caller.
  */
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -10,16 +13,34 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GroqProvider, aiProviderService } from '../services/aiProviderService';
 import { configService } from '../services/configService';
-import { FALLBACK_ANSWER_LABEL, fallbackAnswerLine, readFallbackAnswer } from '../services/llm/fallbackAnswer';
+import { geminiService, ProviderUnavailableError } from '../services/geminiService';
+import { tavilyService } from '../services/search/tavilyService';
+import { agentMatrixService } from '../services/harness/agentMatrixService';
+import {
+  FALLBACK_ANSWER_CUT_OFF_NOTE,
+  FALLBACK_ANSWER_LABEL,
+  FallbackAnswerNotAcceptedError,
+  fallbackAnswerLine,
+  readFallbackAnswer,
+} from '../services/llm/fallbackAnswer';
+import {
+  addStreamChunk,
+  newStreamedReply,
+  replyIsMemorable,
+  replyToMessage,
+  type StreamedReply,
+} from '../services/chat/streamedReply';
 import MessageList from '../components/MessageList';
-import type { Message, StreamChunk } from '../types';
+import { OracleMode, type Message, type StreamChunk } from '../types';
 
 const MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const FALLBACK_TEXT = 'Text only the fallback model wrote';
 const FALLBACK_HEADERS = {
   'x-provider-fallback': 'workers-ai',
   'x-provider-fallback-model': MODEL,
   'x-provider-fallback-reason': 'upstream_5xx',
 };
+const MARKER = { model: MODEL, reason: 'upstream_5xx' };
 
 const storage: Record<string, string> = {};
 const mockLocalStorage = {
@@ -46,10 +67,18 @@ function jsonReply(headers: Record<string, string>, body: Record<string, unknown
   });
 }
 
-function sseReply(headers: Record<string, string>, parts: string[]): Response {
+function fallbackJsonReply(finishReason = 'stop'): Response {
+  return jsonReply(FALLBACK_HEADERS, {
+    model: MODEL,
+    choices: [{ index: 0, message: { role: 'assistant', content: FALLBACK_TEXT }, finish_reason: finishReason }],
+    x_fallback: { provider: 'workers-ai', model: MODEL, reason: 'upstream_5xx' },
+  });
+}
+
+function sseReply(headers: Record<string, string>, parts: string[], finishReason = 'stop'): Response {
   const payload = [
     ...parts.map(text => `data: ${JSON.stringify({ model: MODEL, choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\n`),
-    `data: ${JSON.stringify({ model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`,
+    `data: ${JSON.stringify({ model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: finishReason }] })}\n\n`,
     'data: [DONE]\n\n',
   ].join('');
   const stream = new ReadableStream({
@@ -61,9 +90,37 @@ function sseReply(headers: Record<string, string>, parts: string[]): Response {
   return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream', ...headers } });
 }
 
+/** Answers Groq calls with `groq()`, and every other host with a failure. */
+function fetchWhereGroqAnswers(groq: () => Response, others: Record<string, () => Response> = {}) {
+  return vi.fn(async (input: any) => {
+    const url = String(typeof input === 'string' ? input : input?.url ?? input);
+    if (url.includes('api.groq.com')) return groq();
+    for (const [host, reply] of Object.entries(others)) {
+      if (url.includes(host)) return reply();
+    }
+    throw new Error(`no network in this test: ${url}`);
+  });
+}
+
+async function collect(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[]> {
+  const chunks: StreamChunk[] = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return chunks;
+}
+
+/** What App.tsx does with one send: a new reply, every chunk folded in, the message at the end. */
+function messageFromChunks(chunks: StreamChunk[], id = 'm1'): Message {
+  let reply: StreamedReply = newStreamedReply();
+  for (const chunk of chunks) reply = addStreamChunk(reply, chunk);
+  const blank: Message = { id, role: 'model', content: '', timestamp: 1, isStreaming: true };
+  return replyToMessage(blank, reply, { done: true });
+}
+
+const render = (messages: Message[]) => renderToStaticMarkup(createElement(MessageList, { messages }));
+
 describe('readFallbackAnswer', () => {
   it('reads the marker from the response headers', () => {
-    expect(readFallbackAnswer(new Headers(FALLBACK_HEADERS))).toEqual({ model: MODEL, reason: 'upstream_5xx' });
+    expect(readFallbackAnswer(new Headers(FALLBACK_HEADERS))).toEqual(MARKER);
   });
 
   it('returns undefined for a reply the asked engine wrote', () => {
@@ -84,7 +141,13 @@ describe('readFallbackAnswer', () => {
 
 describe('fallbackAnswerLine', () => {
   it('says a fallback model answered and names it', () => {
-    expect(fallbackAnswerLine({ model: MODEL, reason: 'upstream_5xx' })).toBe(`Answered by a fallback model: ${MODEL}`);
+    expect(fallbackAnswerLine(MARKER)).toBe(`Answered by a fallback model: ${MODEL}`);
+  });
+
+  it('adds that the answer may be cut short when the Worker reported it', () => {
+    expect(fallbackAnswerLine({ ...MARKER, truncated: true })).toBe(
+      `Answered by a fallback model: ${MODEL}. ${FALLBACK_ANSWER_CUT_OFF_NOTE}`,
+    );
   });
 
   it('keeps the label when the Worker named no model', () => {
@@ -97,7 +160,93 @@ describe('fallbackAnswerLine', () => {
   });
 });
 
-describe('GroqProvider surfaces the marker', () => {
+describe('the reply reducer (what App.tsx runs for every chunk)', () => {
+  it('labels the message when a chunk carries the marker', () => {
+    const message = messageFromChunks([{ text: 'Fallback ', fallback: MARKER }, { text: 'stream' }]);
+    expect(message.content).toBe('Fallback stream');
+    expect(message.fallback).toEqual(MARKER);
+    expect(message.isStreaming).toBe(false);
+  });
+
+  it('leaves the message unlabelled when no chunk carries it', () => {
+    const message = messageFromChunks([{ text: 'Groq ' }, { text: 'stream' }]);
+    expect(message.content).toBe('Groq stream');
+    expect(message.fallback).toBeUndefined();
+  });
+
+  it('does not label a second send after a fallback answer', () => {
+    const first = messageFromChunks([{ text: 'From the fallback', fallback: MARKER }], 'm1');
+    const second = messageFromChunks([{ text: 'From Groq' }], 'm2');
+    expect(first.fallback).toEqual(MARKER);
+    expect(second.fallback).toBeUndefined();
+    expect(render([first, second]).split(FALLBACK_ANSWER_LABEL)).toHaveLength(2);
+  });
+
+  it('shows the marker from the first chunk on, while the reply is still streaming', () => {
+    const blank: Message = { id: 'm1', role: 'model', content: '', timestamp: 1, isStreaming: true };
+    const reply = addStreamChunk(newStreamedReply(), { text: 'Fal', fallback: MARKER });
+    const shown = replyToMessage(blank, reply, { done: false });
+    expect(shown.fallback).toEqual(MARKER);
+    expect(shown.isStreaming).toBe(true);
+  });
+
+  it('takes a later marker over an earlier one, so a cut-off reply says so', () => {
+    const message = messageFromChunks([
+      { text: 'Half an answ', fallback: MARKER },
+      { fallback: { ...MARKER, truncated: true }, finishReason: 'length' },
+    ]);
+    expect(message.fallback).toEqual({ ...MARKER, truncated: true });
+    expect(render([message])).toContain(FALLBACK_ANSWER_CUT_OFF_NOTE);
+  });
+
+  it('keeps sources once each, tool runs in order, and the text whole', () => {
+    const a = { uri: 'https://a.example', title: 'A' };
+    const b = { uri: 'https://b.example', title: 'B' };
+    const search = { tool: 'live_search', args: {}, output: 'Checked live search results' };
+    const message = messageFromChunks([
+      { toolExecution: search },
+      { text: 'One ', groundingUrls: [a] },
+      { text: 'two', groundingUrls: [a, b] },
+    ]);
+    expect(message.content).toBe('One two');
+    expect(message.groundingUrls).toEqual([a, b]);
+    expect(message.toolExecutions).toEqual([search]);
+  });
+
+  it('does not change the reply it is given', () => {
+    const before = newStreamedReply();
+    const after = addStreamChunk(before, { text: 'x', fallback: MARKER });
+    expect(before).toEqual(newStreamedReply());
+    expect(after).not.toBe(before);
+  });
+
+  it('writes "Stopped." only for a stopped reply with no text', () => {
+    const blank: Message = { id: 'm1', role: 'model', content: '', timestamp: 1 };
+    expect(replyToMessage(blank, newStreamedReply(), { done: true, stopped: true }).content).toBe('*Stopped.*');
+    expect(replyToMessage(blank, newStreamedReply(), { done: true }).content).toBe('');
+  });
+
+  it('does not keep a fallback reply as a brand-memory insight', () => {
+    const groq = addStreamChunk(newStreamedReply(), { text: 'From Groq' });
+    const fallback = addStreamChunk(newStreamedReply(), { text: 'From the fallback', fallback: MARKER });
+    expect(replyIsMemorable(groq, { stopped: false })).toBe(true);
+    expect(replyIsMemorable(fallback, { stopped: false })).toBe(false);
+    expect(replyIsMemorable(groq, { stopped: true })).toBe(false);
+    expect(replyIsMemorable(groq, { stopped: false, skipSearch: true })).toBe(false);
+  });
+
+  it('App.tsx builds the chat message through this reducer (source-text check)', () => {
+    // App.tsx cannot be rendered in this node setup. The logic is tested above; this pins that
+    // App.tsx still calls it, and no longer assembles the message by hand.
+    const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8');
+    expect(app).toContain('reply = addStreamChunk(reply, chunk);');
+    expect(app).toContain('replyToMessage(m, shown, state)');
+    expect(app).toContain('let reply = newStreamedReply();');
+    expect(app).not.toContain('answeredByFallback');
+  });
+});
+
+describe('with a hosted Groq call the fallback answered', () => {
   const originalFetch = globalThis.fetch;
   let provider: GroqProvider;
 
@@ -107,75 +256,185 @@ describe('GroqProvider surfaces the marker', () => {
     provider = new GroqProvider();
     aiProviderService.clearCooldowns();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
     mockLocalStorage.clear();
+    aiProviderService.clearCooldowns();
   });
 
-  it('generateText: carries the marker on the result', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      jsonReply(FALLBACK_HEADERS, {
-        model: MODEL,
-        choices: [{ index: 0, message: { role: 'assistant', content: 'Fallback text' }, finish_reason: 'stop' }],
-        x_fallback: { provider: 'workers-ai', model: MODEL, reason: 'upstream_5xx' },
-      }),
-    );
+  describe('GroqProvider', () => {
+    it('generateText: throws a typed error unless the caller asked for fallback replies', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply());
 
-    const result = await provider.generateText('Ping');
+      const error = await provider.generateText('Ping').catch(e => e);
 
-    expect(result.text).toBe('Fallback text');
-    expect(result.fallback).toEqual({ model: MODEL, reason: 'upstream_5xx' });
+      expect(error).toBeInstanceOf(FallbackAnswerNotAcceptedError);
+      expect(error.code).toBe('FALLBACK_ANSWER_NOT_ACCEPTED');
+      expect(error.fallback).toEqual(MARKER);
+      // The error says which model replied. It does not hand over what that model wrote.
+      expect(error.message).toContain(MODEL);
+      expect(error.message).not.toContain(FALLBACK_TEXT);
+    });
+
+    it('generateText: with allowFallback, returns the text and the marker together', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply());
+
+      const result = await provider.generateText('Ping', { allowFallback: true });
+
+      expect(result.text).toBe(FALLBACK_TEXT);
+      expect(result.fallback).toEqual(MARKER);
+    });
+
+    it('generateText: marks a fallback reply the Worker reported as cut off', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply('length'));
+
+      const result = await provider.generateText('Ping', { allowFallback: true });
+
+      expect(result.finishReason).toBe('length');
+      expect(result.fallback).toEqual({ ...MARKER, truncated: true });
+    });
+
+    it('generateText: a reply Groq wrote has no marker and needs no opt-in', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() =>
+        jsonReply({}, {
+          model: 'llama-3.3-70b-versatile',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'Groq text' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        }),
+      );
+
+      const result = await provider.generateText('Ping');
+
+      expect(result.text).toBe('Groq text');
+      expect('fallback' in result).toBe(false);
+    });
+
+    it('streamText: throws before any text unless the caller asked for fallback replies', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => sseReply(FALLBACK_HEADERS, ['Fallback ', 'stream']));
+
+      const seen: StreamChunk[] = [];
+      const error = await (async () => {
+        for await (const chunk of provider.streamText('Ping')) seen.push(chunk);
+      })().catch(e => e);
+
+      expect(error).toBeInstanceOf(FallbackAnswerNotAcceptedError);
+      expect(seen).toEqual([]);
+    });
+
+    it('streamText: with allowFallback, the marker rides on the first chunk, read from the headers', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => sseReply(FALLBACK_HEADERS, ['Fallback ', 'stream']));
+
+      const chunks = await collect(provider.streamText('Ping', { allowFallback: true }));
+
+      expect(chunks).toEqual([{ text: 'Fallback ', fallback: MARKER }, { text: 'stream' }]);
+    });
+
+    it('streamText: says so when the fallback stream ended at its length limit', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => sseReply(FALLBACK_HEADERS, ['Half an answ'], 'length'));
+
+      const chunks = await collect(provider.streamText('Ping', { allowFallback: true }));
+
+      expect(chunks).toEqual([
+        { text: 'Half an answ', fallback: MARKER },
+        { fallback: { ...MARKER, truncated: true }, finishReason: 'length' },
+      ]);
+    });
+
+    it('streamText: a stream Groq wrote has no marker and needs no opt-in', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => sseReply({}, ['Groq ', 'stream'], 'length'));
+
+      const chunks = await collect(provider.streamText('Ping'));
+
+      expect(chunks).toEqual([{ text: 'Groq ' }, { text: 'stream' }]);
+    });
   });
 
-  it('generateText: no marker on a reply Groq wrote', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      jsonReply({}, {
-        model: 'llama-3.3-70b-versatile',
-        choices: [{ index: 0, message: { role: 'assistant', content: 'Groq text' }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
-      }),
-    );
+  describe('the chat: the caller that opts in', () => {
+    it('streamQuery passes the marker through, and the chat shows the line', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => sseReply(FALLBACK_HEADERS, ['Fallback ', 'stream']));
 
-    const result = await provider.generateText('Ping');
+      const chunks = await collect(geminiService.streamQuery('Ping', OracleMode.FLASH, null, { skipSearch: true }));
+      const message = messageFromChunks(chunks);
 
-    expect(result.text).toBe('Groq text');
-    expect('fallback' in result).toBe(false);
+      expect(message.content).toBe('Fallback stream');
+      expect(message.fallback).toEqual(MARKER);
+      expect(render([message])).toContain(`Answered by a fallback model: ${MODEL}`);
+    });
+
+    it('keeps the marker on the first chunk when live search sources are attached to it', async () => {
+      vi.spyOn(configService, 'getTavilyKey').mockReturnValue('tvly-test-key');
+      vi.spyOn(tavilyService, 'search').mockResolvedValue({
+        query: 'q',
+        answer: 'A summary',
+        results: [{ title: 'A source', url: 'https://source.example/a', content: 'Excerpt', score: 0.9 }],
+      } as any);
+      globalThis.fetch = fetchWhereGroqAnswers(() => sseReply(FALLBACK_HEADERS, ['Fallback ', 'stream']));
+
+      const chunks = await collect(
+        geminiService.streamQuery('What is the latest news about example.com pricing today?', OracleMode.FLASH, null),
+      );
+      const message = messageFromChunks(chunks);
+
+      // This run went through the branch that rebuilds the first chunk to add the sources.
+      expect(message.groundingUrls).toEqual([{ uri: 'https://source.example/a', title: 'A source' }]);
+      expect(message.fallback).toEqual(MARKER);
+      expect(render([message])).toContain(`Answered by a fallback model: ${MODEL}`);
+    });
+
+    it('does not label the next reply when Groq is back', async () => {
+      const replies = [
+        () => sseReply(FALLBACK_HEADERS, ['From the fallback']),
+        () => sseReply({}, ['From Groq']),
+      ];
+      globalThis.fetch = fetchWhereGroqAnswers(() => replies.shift()!());
+
+      const first = messageFromChunks(await collect(geminiService.streamQuery('Ping', OracleMode.FLASH, null, { skipSearch: true })), 'm1');
+      const second = messageFromChunks(await collect(geminiService.streamQuery('Pong', OracleMode.FLASH, null, { skipSearch: true })), 'm2');
+
+      expect(first.fallback).toEqual(MARKER);
+      expect(second.content).toBe('From Groq');
+      expect(second.fallback).toBeUndefined();
+      expect(render([second])).not.toContain(FALLBACK_ANSWER_LABEL);
+    });
   });
 
-  it('streamText: the marker rides on the first chunk, read from the headers', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(sseReply(FALLBACK_HEADERS, ['Fallback ', 'stream']));
+  describe('callers that do not opt in treat it as Groq being down', () => {
+    it('a failover caller (geminiService.generateText) gets no fallback text: no engine answered', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply());
 
-    const chunks: StreamChunk[] = [];
-    for await (const chunk of provider.streamText('Ping')) chunks.push(chunk);
+      await expect(geminiService.generateText('Ping')).rejects.toBeInstanceOf(ProviderUnavailableError);
+    });
 
-    expect(chunks).toEqual([
-      { text: 'Fallback ', fallback: { model: MODEL, reason: 'upstream_5xx' } },
-      { text: 'stream' },
-    ]);
-  });
+    it('a failover caller moves on to the next engine, as it does when Groq is down', async () => {
+      configService.setKey('luminara_openrouter_key', 'sk-or-v1-testkey123');
+      globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply(), {
+        'openrouter.ai': () =>
+          jsonReply({}, {
+            choices: [{ index: 0, message: { role: 'assistant', content: 'OpenRouter text' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+          }),
+      });
 
-  it('streamText: no marker on a stream Groq wrote', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(sseReply({}, ['Groq ', 'stream']));
+      const text = await geminiService.generateText('Ping');
 
-    const chunks: StreamChunk[] = [];
-    for await (const chunk of provider.streamText('Ping')) chunks.push(chunk);
+      expect(text).toBe('OpenRouter text');
+      expect(text).not.toContain(FALLBACK_TEXT);
+    });
 
-    expect(chunks).toEqual([{ text: 'Groq ' }, { text: 'stream' }]);
-  });
+    it('a direct caller (the crew "groq" agent) records a failed task, not the fallback text', async () => {
+      globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply());
 
-  it('the failover service the chat streams through passes the marker on', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(sseReply(FALLBACK_HEADERS, ['Fallback ', 'stream']));
+      const task = await agentMatrixService.dispatchPrompt('Ping', 'groq');
 
-    const chunks: StreamChunk[] = [];
-    for await (const chunk of aiProviderService.streamWithFailover('Ping', { preferredProvider: 'groq' })) {
-      chunks.push(chunk);
-    }
-
-    expect(chunks.map(c => c.text).join('')).toBe('Fallback stream');
-    expect(chunks.find(c => c.fallback)?.fallback).toEqual({ model: MODEL, reason: 'upstream_5xx' });
+      expect(task.status).toBe('error');
+      expect(task.result).toContain('did not answer');
+      expect(task.result).not.toContain(FALLBACK_TEXT);
+      expect((task.thoughtLog || []).join('\n')).not.toContain('Response received');
+    });
   });
 });
 
@@ -187,10 +446,9 @@ describe('the chat view shows who answered', () => {
     timestamp: 1,
     ...extra,
   });
-  const render = (messages: Message[]) => renderToStaticMarkup(createElement(MessageList, { messages }));
 
   it('renders the line and the model name with a fallback reply', () => {
-    const html = render([reply({ fallback: { model: MODEL, reason: 'upstream_5xx' } })]);
+    const html = render([reply({ fallback: MARKER })]);
     expect(html).toContain(`Answered by a fallback model: ${MODEL}`);
   });
 
@@ -208,13 +466,5 @@ describe('the chat view shows who answered', () => {
     expect(render([reply()])).not.toContain(FALLBACK_ANSWER_LABEL);
     expect(render([reply({ role: 'user', fallback: { model: MODEL } })])).not.toContain(FALLBACK_ANSWER_LABEL);
     expect(render([reply({ isError: true, fallback: { model: MODEL } })])).not.toContain(FALLBACK_ANSWER_LABEL);
-  });
-
-  it('App.tsx copies the marker from the stream onto the message (source-text check)', () => {
-    // App.tsx cannot be rendered in this node setup, so this pins the two lines that join the
-    // provider's chunk to the message the view above renders.
-    const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8');
-    expect(app).toContain('if (chunk.fallback) answeredByFallback = chunk.fallback;');
-    expect(app.match(/fallback: answeredByFallback,/g)?.length).toBe(2);
   });
 });

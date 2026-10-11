@@ -146,6 +146,8 @@ export interface FallbackAnswerInfo {
   model: string;
   /** Why the fallback answered, as the Worker reported it (for example `upstream_5xx`). */
   reason?: string;
+  /** True when the Worker reported the reply as cut off at the fallback's length limit. */
+  truncated?: boolean;
 }
 
 export interface Message {
@@ -870,6 +872,12 @@ export interface GenerateOptions {
   jsonMode?: boolean;
   /** Prior turns, oldest first. Providers prepend these so the model has conversation memory. */
   history?: ChatTurn[];
+  /**
+   * Accept a reply written by the Worker's fallback model. Off by default: without it a
+   * fallback reply is an error, handled like the provider being down. Set it only where the
+   * `fallback` marker on the result is carried into what is shown or stored with the text.
+   */
+  allowFallback?: boolean;
 }
 
 export interface ChatTurn {

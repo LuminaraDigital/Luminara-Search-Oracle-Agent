@@ -5,6 +5,10 @@
  * upstream 5xx. It answers in the OpenAI ChatCompletion shape (JSON or SSE) and always names the
  * model that wrote the reply. It refuses any request it cannot serve faithfully, so a typed,
  * tool-using or long call gets the upstream's own error instead of free text from a smaller model.
+ *
+ * It writes one structured log line per outcome and never more than one:
+ * `workers_ai_fallback_answer`, `workers_ai_fallback_refused` or `workers_ai_fallback_failed`.
+ * None of them carries prompt text, reply text or a user id.
  */
 import type { Ai } from './env';
 
@@ -12,7 +16,8 @@ export const WORKERS_AI_FALLBACK_PROVIDER = 'workers-ai';
 export const WORKERS_AI_FALLBACK_MODEL = '@cf/meta/llama-3.1-8b-instruct';
 
 /**
- * Prompt budget for the fallback: characters of message content, summed over every message.
+ * Prompt budget for the fallback, in budget units summed over every message's content.
+ * One ASCII character is one unit. See `promptBudgetUnits` for other characters.
  *
  * This is a conservative budget chosen by hand. It is NOT the context length that Cloudflare's
  * model catalogue states for @cf/meta/llama-3.1-8b-instruct, and nothing here measured it: the
@@ -25,33 +30,39 @@ export const WORKERS_AI_FALLBACK_MODEL = '@cf/meta/llama-3.1-8b-instruct';
  */
 export const WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET = 8_000;
 
-/** Used when the caller sends no temperature, or one outside the accepted range. */
+/** Used when the caller sends no temperature. A temperature that is sent and invalid is refused. */
 export const WORKERS_AI_FALLBACK_DEFAULT_TEMPERATURE = 0.7;
 /**
  * Temperatures passed through to the binding. 0 to 2 is what the OpenAI-shaped request this
- * replaces allows. The binding's own documented range was not read when this was written, so
- * anything outside 0 to 2 gets the default instead of being forwarded.
+ * replaces allows. The binding's own documented range was not read when this was written.
  */
 export const WORKERS_AI_FALLBACK_MIN_TEMPERATURE = 0;
 export const WORKERS_AI_FALLBACK_MAX_TEMPERATURE = 2;
-/** Reply length cap. The caller's `max_tokens` is used when it is lower. */
+/** Reply length cap in tokens. The caller's `max_tokens` is used when it is lower. */
 export const WORKERS_AI_FALLBACK_MAX_TOKENS = 2048;
 
-/** Fixed name of the one structured log line written per fallback answer. */
+/** Fixed names of the structured log lines. */
 export const WORKERS_AI_FALLBACK_EVENT = 'workers_ai_fallback_answer';
+export const WORKERS_AI_FALLBACK_REFUSED_EVENT = 'workers_ai_fallback_refused';
+export const WORKERS_AI_FALLBACK_FAILED_EVENT = 'workers_ai_fallback_failed';
 
 /** Why the relay turned to the fallback. */
 export type WorkersAiFallbackReason = 'provider_not_configured' | 'network_error' | 'upstream_5xx';
 
-/** Why the fallback would not answer a request. */
+/** The rule under which the fallback would not answer a request. */
 export type WorkersAiFallbackRefusal =
   | 'response_format'
   | 'tools'
   | 'tool_choice'
   | 'non_string_content'
   | 'malformed_message'
-  | 'prompt_too_long'
-  | 'no_prompt';
+  | 'no_messages'
+  | 'unsupported_parameter'
+  | 'invalid_parameter'
+  | 'prompt_too_long';
+
+/** Why the fallback tried and produced no answer. */
+export type WorkersAiFallbackFailure = 'binding_error' | 'no_text' | 'stream_error';
 
 export interface WorkersAiFallbackContext {
   reason: WorkersAiFallbackReason;
@@ -72,13 +83,15 @@ export interface FallbackMarker {
   reason: WorkersAiFallbackReason;
 }
 
+export type FallbackFinishReason = 'stop' | 'length';
+
 export interface OpenAiChatCompletionChoice {
   index: number;
   message: {
     role: string;
     content: string;
   };
-  finish_reason: string;
+  finish_reason: FallbackFinishReason;
 }
 
 export interface OpenAiChatCompletion {
@@ -98,7 +111,7 @@ export interface OpenAiStreamChunkChoice {
     role?: string;
     content?: string;
   };
-  finish_reason: string | null;
+  finish_reason: FallbackFinishReason | null;
 }
 
 export interface OpenAiStreamChunk {
@@ -116,7 +129,22 @@ export interface WorkersAiFallbackPlan {
   temperature: number;
   maxTokens: number;
   stream: boolean;
+  /** Forwarded only when the caller sent them. */
+  topP?: number;
+  seed?: number;
 }
+
+/** Size of the prompt as the plan saw it. Numbers only: safe to log. */
+export interface PromptSize {
+  /** Characters of message text. */
+  chars: number;
+  /** The same text in budget units (see `promptBudgetUnits`). */
+  units: number;
+}
+
+export type WorkersAiFallbackPlanResult =
+  | { ok: true; plan: WorkersAiFallbackPlan; prompt: PromptSize }
+  | { ok: false; refusal: WorkersAiFallbackRefusal; parameter: string | null; prompt: PromptSize };
 
 export type WorkersAiFallbackOutcome =
   | { answered: false; refusal: WorkersAiFallbackRefusal }
@@ -135,6 +163,31 @@ export type WorkersAiFallbackOutcome =
       stream: ReadableStream<Uint8Array>;
     };
 
+/** Thrown when the fallback tried and has nothing to send. The caller returns the upstream's error. */
+export class WorkersAiFallbackFailedError extends Error {
+  constructor(readonly failure: WorkersAiFallbackFailure, cause?: unknown) {
+    super(`Workers AI fallback failed: ${failure}`);
+    this.name = 'WorkersAiFallbackFailedError';
+    if (cause !== undefined) (this as { cause?: unknown }).cause = cause;
+  }
+}
+
+const utf8 = new TextEncoder();
+
+/**
+ * Size of a text in budget units: its UTF-8 byte length. An ASCII character is 1 unit, an
+ * accented Latin, Greek or Cyrillic letter is 2, a CJK character is 3, an emoji is 4.
+ *
+ * Why bytes and not characters: the budget stands in for tokens, and a count of characters does
+ * not. Latin text packs several characters into a token, while a CJK character or an emoji can
+ * be a token or more by itself, so 8,000 CJK characters are far more tokens than 8,000 Latin
+ * ones. A token is never smaller than one byte, so a byte count is an upper bound on tokens for
+ * every script. This is a conservative weight, not a tokenizer.
+ */
+export function promptBudgetUnits(text: string): number {
+  return utf8.encode(text).length;
+}
+
 function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
@@ -142,18 +195,38 @@ function isCount(value: unknown): value is number {
 /**
  * Reads the usage block a Workers AI text-generation result carries
  * (`usage: { prompt_tokens, completion_tokens, total_tokens }`, optional in the binding's types).
- * Returns null when the binding reported none.
+ * Returns null when the binding reported none. A block of all zeros is treated as not reported:
+ * a reply with text did not cost zero tokens, so zeros are a placeholder, not a measurement.
  */
 export function readBindingUsage(value: unknown): OpenAiUsage | null {
   const usage = (value as { usage?: unknown } | null | undefined)?.usage;
   if (!usage || typeof usage !== 'object') return null;
   const u = usage as Record<string, unknown>;
   if (!isCount(u.prompt_tokens) || !isCount(u.completion_tokens)) return null;
+  if (u.prompt_tokens === 0 && u.completion_tokens === 0) return null;
   return {
     prompt_tokens: u.prompt_tokens,
     completion_tokens: u.completion_tokens,
-    total_tokens: isCount(u.total_tokens) ? u.total_tokens : u.prompt_tokens + u.completion_tokens,
+    total_tokens: isCount(u.total_tokens) && u.total_tokens > 0 ? u.total_tokens : u.prompt_tokens + u.completion_tokens,
   };
+}
+
+/**
+ * Whether a reply was cut off at the token cap (`'length'`) or ended on its own (`'stop'`).
+ *
+ * Rule 1, the binding reported usage: `'length'` when its completion token count reached the cap.
+ * Rule 2, it reported none: nothing is guessed. `'stop'` only when the reply has fewer UTF-8
+ * bytes than the cap has tokens. A token is at least one byte, so such a reply cannot have used
+ * the whole cap. Any longer reply is reported as `'length'`: it may have been cut off, and
+ * nothing here can show that it was not.
+ */
+export function fallbackFinishReason(
+  usage: OpenAiUsage | null,
+  replyBytes: number,
+  maxTokens: number,
+): FallbackFinishReason {
+  if (usage) return usage.completion_tokens >= maxTokens ? 'length' : 'stop';
+  return replyBytes < maxTokens ? 'stop' : 'length';
 }
 
 /** Text carried by one binding payload: a whole result or one stream event. */
@@ -191,161 +264,385 @@ function parseBody(body: unknown): Record<string, unknown> {
 }
 
 /**
- * Decides whether the fallback may answer this request, and with what settings.
- * Pure: it calls nothing. Every refusal sends the caller back to the upstream's own error.
+ * Every request field the fallback acts on, one way or another. A field that is not here and
+ * carries a value is refused: the fallback does not accept a setting and then ignore it.
+ *
+ * - Forwarded to the binding: `messages`, `stream`, `temperature`, `max_tokens` /
+ *   `max_completion_tokens`, and `top_p` and `seed` (the binding's text-generation input in
+ *   `@cloudflare/workers-types` declares both, with the same meaning).
+ * - Refused by a rule of their own: `response_format`, `tools`, `functions`, `tool_choice`,
+ *   `function_call`.
+ * - No effect on the reply: `model` (the fallback names its own model in the reply), `user`
+ *   (never forwarded and never logged), and `n` when it is 1.
+ *
+ * So `stop`, `logprobs`, `top_logprobs` and `logit_bias` are refused: the binding's input type
+ * has no such field. `frequency_penalty` and `presence_penalty` are refused too: the type has
+ * them, but the OpenAI request allows negative values and nothing in this repository says the
+ * binding gives the same number the same meaning. A bare `prompt` is refused: this path takes
+ * `messages`.
  */
-export function planWorkersAiChatFallback(
-  body: unknown,
-): { ok: true; plan: WorkersAiFallbackPlan } | { ok: false; refusal: WorkersAiFallbackRefusal } {
-  const b = parseBody(body);
+const HANDLED_FIELDS = new Set([
+  'model',
+  'messages',
+  'stream',
+  'temperature',
+  'max_tokens',
+  'max_completion_tokens',
+  'top_p',
+  'seed',
+  'n',
+  'user',
+  'response_format',
+  'tools',
+  'functions',
+  'tool_choice',
+  'function_call',
+]);
 
-  // A typed or tool-using call would come back as free text. Refuse it.
-  if (carries(b.response_format)) return { ok: false, refusal: 'response_format' };
-  if (carries(b.tools) || carries(b.functions)) return { ok: false, refusal: 'tools' };
-  if (carries(b.tool_choice) || carries(b.function_call)) return { ok: false, refusal: 'tool_choice' };
+/** Field names that may be written to a log. A caller can name a field anything, so any other name is logged as "other". */
+const LOGGABLE_FIELDS = new Set([
+  ...HANDLED_FIELDS,
+  'prompt',
+  'stop',
+  'logprobs',
+  'top_logprobs',
+  'logit_bias',
+  'frequency_penalty',
+  'presence_penalty',
+  'repetition_penalty',
+  'top_k',
+  'stream_options',
+  'parallel_tool_calls',
+]);
 
-  const messages: Array<{ role: string; content: string }> = [];
-  if (Array.isArray(b.messages) && b.messages.length > 0) {
-    for (const raw of b.messages) {
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, refusal: 'malformed_message' };
-      const m = raw as Record<string, unknown>;
-      if (m.role === 'tool' || m.role === 'function' || carries(m.tool_calls) || carries(m.tool_call_id)) {
-        return { ok: false, refusal: 'tools' };
-      }
-      // Image parts, content arrays and null content are not turned into text.
-      if (typeof m.content !== 'string') return { ok: false, refusal: 'non_string_content' };
-      messages.push({ role: typeof m.role === 'string' ? m.role : 'user', content: m.content });
-    }
-  } else if (typeof b.prompt === 'string' && b.prompt.trim()) {
-    messages.push({ role: 'user', content: b.prompt.trim() });
-  }
-  if (messages.length === 0) return { ok: false, refusal: 'no_prompt' };
-
-  const promptChars = messages.reduce((sum, m) => sum + m.content.length, 0);
-  if (promptChars > WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET) return { ok: false, refusal: 'prompt_too_long' };
-
-  const t = b.temperature;
-  const temperature =
-    typeof t === 'number' &&
-    Number.isFinite(t) &&
-    t >= WORKERS_AI_FALLBACK_MIN_TEMPERATURE &&
-    t <= WORKERS_AI_FALLBACK_MAX_TEMPERATURE
-      ? t
-      : WORKERS_AI_FALLBACK_DEFAULT_TEMPERATURE;
-
-  const requested = carries(b.max_tokens) ? b.max_tokens : b.max_completion_tokens;
-  const maxTokens =
-    typeof requested === 'number' && Number.isFinite(requested) && requested >= 1
-      ? Math.min(Math.floor(requested), WORKERS_AI_FALLBACK_MAX_TOKENS)
-      : WORKERS_AI_FALLBACK_MAX_TOKENS;
-
-  return { ok: true, plan: { messages, temperature, maxTokens, stream: Boolean(b.stream) } };
+function isNumberIn(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 }
 
 /**
- * One structured line per fallback answer. Until the plan's cost table exists (SW0-6) this line
- * is the only record of what the fallback used. It carries no prompt text and no user id.
+ * Decides whether the fallback may answer this request, and with what settings.
+ * Pure: it calls nothing and logs nothing. Every refusal sends the caller back to the upstream's
+ * own error. Nothing is defaulted over a value the caller sent: a bad value is a refusal.
  */
-function logFallbackAnswer(context: WorkersAiFallbackContext, stream: boolean, usage: OpenAiUsage | null): void {
+export function planWorkersAiChatFallback(body: unknown): WorkersAiFallbackPlanResult {
+  const b = parseBody(body);
+
+  // Measure first, so a refusal can say how large the prompt was whatever rule refused it.
+  const rawMessages = Array.isArray(b.messages) ? b.messages : [];
+  const prompt: PromptSize = { chars: 0, units: 0 };
+  for (const raw of rawMessages) {
+    const content = (raw as { content?: unknown } | null | undefined)?.content;
+    if (typeof content !== 'string') continue;
+    prompt.chars += content.length;
+    prompt.units += promptBudgetUnits(content);
+  }
+  const refuse = (refusal: WorkersAiFallbackRefusal, parameter: string | null = null): WorkersAiFallbackPlanResult => ({
+    ok: false,
+    refusal,
+    parameter,
+    prompt,
+  });
+
+  // A typed or tool-using call would come back as free text.
+  if (carries(b.response_format)) return refuse('response_format');
+  if (carries(b.tools) || carries(b.functions)) return refuse('tools');
+  if (carries(b.tool_choice) || carries(b.function_call)) return refuse('tool_choice');
+
+  const messages: Array<{ role: string; content: string }> = [];
+  for (const raw of rawMessages) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return refuse('malformed_message');
+    const m = raw as Record<string, unknown>;
+    if (m.role === 'tool' || m.role === 'function' || carries(m.tool_calls) || carries(m.tool_call_id)) {
+      return refuse('tools');
+    }
+    // Image parts, content arrays and null content are not turned into text.
+    if (typeof m.content !== 'string') return refuse('non_string_content');
+    messages.push({ role: typeof m.role === 'string' ? m.role : 'user', content: m.content });
+  }
+  // The relay's chat path is messages only. A bare `prompt` is not answered.
+  if (messages.length === 0) return refuse('no_messages');
+
+  for (const field of Object.keys(b)) {
+    if (!HANDLED_FIELDS.has(field) && carries(b[field])) {
+      return refuse('unsupported_parameter', LOGGABLE_FIELDS.has(field) ? field : 'other');
+    }
+  }
+
+  // Only a boolean true streams. "false", 1 and the like are not read as a wish either way.
+  if (carries(b.stream) && typeof b.stream !== 'boolean') return refuse('invalid_parameter', 'stream');
+  const stream = b.stream === true;
+
+  let temperature = WORKERS_AI_FALLBACK_DEFAULT_TEMPERATURE;
+  if (carries(b.temperature)) {
+    if (!isNumberIn(b.temperature, WORKERS_AI_FALLBACK_MIN_TEMPERATURE, WORKERS_AI_FALLBACK_MAX_TEMPERATURE)) {
+      return refuse('invalid_parameter', 'temperature');
+    }
+    temperature = b.temperature;
+  }
+
+  let maxTokens = WORKERS_AI_FALLBACK_MAX_TOKENS;
+  const requested = carries(b.max_tokens) ? b.max_tokens : b.max_completion_tokens;
+  if (carries(requested)) {
+    if (!isNumberIn(requested, 1, Number.MAX_SAFE_INTEGER)) return refuse('invalid_parameter', 'max_tokens');
+    maxTokens = Math.min(Math.floor(requested), WORKERS_AI_FALLBACK_MAX_TOKENS);
+  }
+
+  let topP: number | undefined;
+  if (carries(b.top_p)) {
+    if (!isNumberIn(b.top_p, 0, 1)) return refuse('invalid_parameter', 'top_p');
+    topP = b.top_p;
+  }
+
+  let seed: number | undefined;
+  if (carries(b.seed)) {
+    if (!Number.isSafeInteger(b.seed)) return refuse('invalid_parameter', 'seed');
+    seed = b.seed as number;
+  }
+
+  // The reply is one choice.
+  if (carries(b.n) && b.n !== 1) return refuse('invalid_parameter', 'n');
+
+  if (prompt.units > WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET) return refuse('prompt_too_long');
+
+  return {
+    ok: true,
+    plan: {
+      messages,
+      temperature,
+      maxTokens,
+      stream,
+      ...(topP !== undefined ? { topP } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+    },
+    prompt,
+  };
+}
+
+function logLine(event: string, context: WorkersAiFallbackContext, fields: Record<string, unknown>): void {
   console.log(
     JSON.stringify({
-      event: WORKERS_AI_FALLBACK_EVENT,
+      event,
       provider: WORKERS_AI_FALLBACK_PROVIDER,
       model: WORKERS_AI_FALLBACK_MODEL,
       reason: context.reason,
       upstream_status: typeof context.upstreamStatus === 'number' ? context.upstreamStatus : null,
-      stream,
-      prompt_tokens: usage ? usage.prompt_tokens : null,
-      completion_tokens: usage ? usage.completion_tokens : null,
-      total_tokens: usage ? usage.total_tokens : null,
+      ...fields,
     }),
   );
 }
 
 /**
- * Turns a Workers AI result (an SSE byte stream, a stream of objects, or a plain result) into an
- * OpenAI-compatible SSE stream. `onEnd` is called exactly once, when the stream has finished or
- * failed, with the usage the binding reported along the way (null when it reported none).
+ * One line per fallback answer. Until the plan's cost table exists (SW0-6) this line is the only
+ * record of what the fallback used.
  */
-export function createOpenAiSseReadableStream(
+function logFallbackAnswer(
+  context: WorkersAiFallbackContext,
+  stream: boolean,
+  usage: OpenAiUsage | null,
+  finishReason: FallbackFinishReason,
+): void {
+  logLine(WORKERS_AI_FALLBACK_EVENT, context, {
+    stream,
+    finish_reason: finishReason,
+    prompt_tokens: usage ? usage.prompt_tokens : null,
+    completion_tokens: usage ? usage.completion_tokens : null,
+    total_tokens: usage ? usage.total_tokens : null,
+  });
+}
+
+/**
+ * One line per refusal: which rule, and how large the prompt was. With the budget as low as it
+ * is, this line is how anyone sees how often the fallback could not help.
+ */
+function logFallbackRefusal(
+  context: WorkersAiFallbackContext,
+  refused: Extract<WorkersAiFallbackPlanResult, { ok: false }>,
+): void {
+  logLine(WORKERS_AI_FALLBACK_REFUSED_EVENT, context, {
+    refusal: refused.refusal,
+    parameter: refused.parameter,
+    prompt_chars: refused.prompt.chars,
+    prompt_budget_units: refused.prompt.units,
+    budget: WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET,
+  });
+}
+
+/** One line when the fallback tried and had no answer to give, or lost one part-way. */
+function logFallbackFailure(
+  context: WorkersAiFallbackContext,
+  stream: boolean,
+  failure: WorkersAiFallbackFailure,
+  textSent: boolean,
+): void {
+  logLine(WORKERS_AI_FALLBACK_FAILED_EVENT, context, { stream, failure, text_sent: textSent });
+}
+
+/** The payloads a Workers AI result carries, one at a time. */
+interface PayloadSource {
+  next(): Promise<{ done: true } | { done: false; value: unknown }>;
+  cancel(): Promise<void>;
+}
+
+/**
+ * Reads a Workers AI result as a sequence of payloads, whatever form it came in:
+ * an SSE byte stream, a stream of objects, or one plain result.
+ */
+function payloadSource(aiResult: unknown): PayloadSource {
+  if (!aiResult || typeof (aiResult as { getReader?: unknown }).getReader !== 'function') {
+    // A plain result although a stream was asked for.
+    let taken = false;
+    return {
+      async next() {
+        if (taken) return { done: true };
+        taken = true;
+        return { done: false, value: aiResult };
+      },
+      async cancel() {},
+    };
+  }
+
+  const reader = (aiResult as ReadableStream).getReader();
+  const decoder = new TextDecoder();
+  const queue: unknown[] = [];
+  let buffer = '';
+  let ended = false;
+
+  const takeSseLine = (rawLine: string) => {
+    const line = rawLine.trim();
+    if (!line.startsWith('data:')) return;
+    const data = line.slice(5).trim();
+    if (!data || data === '[DONE]') return;
+    try {
+      queue.push(JSON.parse(data));
+    } catch {
+      // Ignore SSE lines that are not JSON.
+    }
+  };
+
+  return {
+    async next() {
+      while (queue.length === 0 && !ended) {
+        const { done, value } = await reader.read();
+        if (done) {
+          ended = true;
+          takeSseLine(buffer);
+          buffer = '';
+          break;
+        }
+        if (value && typeof value === 'object' && !(value instanceof Uint8Array)) {
+          // The binding (or a test double) handed over an object, not bytes.
+          queue.push(value);
+          continue;
+        }
+        buffer += typeof value === 'string' ? value : decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) takeSseLine(line);
+      }
+      if (queue.length > 0) return { done: false, value: queue.shift() };
+      return { done: true };
+    },
+    async cancel() {
+      ended = true;
+      try {
+        await reader.cancel();
+      } catch {
+        // The binding's stream is already gone.
+      }
+    },
+  };
+}
+
+/**
+ * Turns a Workers AI stream into an OpenAI-compatible SSE stream.
+ *
+ * It waits for the first piece of text before it returns. A stream that ends or breaks before
+ * any text is not an answer: this throws `WorkersAiFallbackFailedError` and nothing is sent, so
+ * the caller can still return the upstream's own error. Once text exists the reply is committed:
+ * `onEnd` is called once when it finishes, or `onFail` once if the binding's stream breaks
+ * part-way, in which case the client's stream is errored and not closed as if complete.
+ */
+export async function openFallbackSseStream(
   aiResult: unknown,
-  id: string,
-  created: number,
-  onEnd?: (usage: OpenAiUsage | null) => void,
-): ReadableStream<Uint8Array> {
+  opts: {
+    id: string;
+    created: number;
+    maxTokens: number;
+    onEnd?: (usage: OpenAiUsage | null, finishReason: FallbackFinishReason) => void;
+    onFail?: () => void;
+  },
+): Promise<ReadableStream<Uint8Array>> {
+  const source = payloadSource(aiResult);
+  let usage: OpenAiUsage | null = null;
+
+  /** Pulls payloads until one carries text. Returns '' when the source is exhausted. */
+  const nextText = async (): Promise<string> => {
+    while (true) {
+      const next = await source.next();
+      if (next.done) return '';
+      const reported = readBindingUsage(next.value);
+      if (reported) usage = reported;
+      const content = textOf(next.value);
+      if (content) return content;
+    }
+  };
+
+  let first: string;
+  try {
+    first = await nextText();
+  } catch (err) {
+    await source.cancel();
+    throw new WorkersAiFallbackFailedError('stream_error', err);
+  }
+  if (!first) throw new WorkersAiFallbackFailedError('no_text');
+
   const encoder = new TextEncoder();
+  let cancelled = false;
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      let usage: OpenAiUsage | null = null;
-
-      const send = (delta: OpenAiStreamChunkChoice['delta'], finishReason: string | null) => {
-        const chunk: OpenAiStreamChunk = {
-          id,
-          object: 'chat.completion.chunk',
-          created,
-          model: WORKERS_AI_FALLBACK_MODEL,
-          choices: [{ index: 0, delta, finish_reason: finishReason }],
-        };
-        if (finishReason && usage) chunk.usage = usage;
+      const send = (chunk: OpenAiStreamChunk) => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
       };
+      const chunkOf = (delta: OpenAiStreamChunkChoice['delta'], finishReason: FallbackFinishReason | null): OpenAiStreamChunk => ({
+        id: opts.id,
+        object: 'chat.completion.chunk',
+        created: opts.created,
+        model: WORKERS_AI_FALLBACK_MODEL,
+        choices: [{ index: 0, delta, finish_reason: finishReason }],
+      });
 
-      /** One binding payload: remember its usage, forward its text. */
-      const take = (payload: unknown) => {
-        const reported = readBindingUsage(payload);
-        if (reported) usage = reported;
-        const content = textOf(payload);
-        if (content) send({ content }, null);
-      };
-
-      const takeSseLine = (rawLine: string) => {
-        const line = rawLine.trim();
-        if (!line.startsWith('data:')) return;
-        const data = line.slice(5).trim();
-        if (!data || data === '[DONE]') return;
-        try {
-          take(JSON.parse(data));
-        } catch {
-          // Ignore SSE lines that are not JSON.
-        }
-      };
-
+      let replyBytes = 0;
       try {
-        if (aiResult && typeof (aiResult as { getReader?: unknown }).getReader === 'function') {
-          const reader = (aiResult as ReadableStream).getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            if (value && typeof value === 'object' && !(value instanceof Uint8Array)) {
-              // The binding (or a test double) handed over an object, not bytes.
-              take(value);
-              continue;
-            }
-
-            buffer += typeof value === 'string' ? value : decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() ?? '';
-            for (const line of lines) takeSseLine(line);
-          }
-          takeSseLine(buffer);
-        } else {
-          // A plain result although a stream was asked for.
-          take(aiResult);
+        let content = first;
+        while (content && !cancelled) {
+          replyBytes += promptBudgetUnits(content);
+          send(chunkOf({ content }, null));
+          content = await nextText();
         }
 
-        send({}, 'stop');
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
+        const finishReason = fallbackFinishReason(usage, replyBytes, opts.maxTokens);
+        if (!cancelled) {
+          const last = chunkOf({}, finishReason);
+          if (usage) last.usage = usage;
+          send(last);
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        }
+        opts.onEnd?.(usage, finishReason);
       } catch (err) {
+        if (cancelled) {
+          // The client left. What it received was an answer.
+          opts.onEnd?.(usage, fallbackFinishReason(usage, replyBytes, opts.maxTokens));
+          return;
+        }
         controller.error(err);
-      } finally {
-        onEnd?.(usage);
+        opts.onFail?.();
       }
+    },
+    cancel() {
+      cancelled = true;
+      return source.cancel();
     },
   });
 }
@@ -356,7 +653,9 @@ export function createOpenAiSseReadableStream(
  * The caller (the relay) decides when a fallback is allowed at all: only the groq
  * chat-completions path, and only for a missing hosted key, a network failure or an upstream 5xx.
  * This function decides whether the request itself can be answered faithfully.
- * A thrown error means the binding failed; the caller then returns the upstream's own error.
+ *
+ * A thrown error means the binding failed or produced no text; a failure line has been logged and
+ * the caller returns the upstream's own error. An empty or broken fallback is never sent as an answer.
  */
 export async function runWorkersAiChatFallback(
   ai: Ai,
@@ -364,37 +663,58 @@ export async function runWorkersAiChatFallback(
   context: WorkersAiFallbackContext,
 ): Promise<WorkersAiFallbackOutcome> {
   const planned = planWorkersAiChatFallback(body);
-  if (!planned.ok) return { answered: false, refusal: planned.refusal };
-  const { messages, temperature, maxTokens, stream } = planned.plan;
+  if (!planned.ok) {
+    logFallbackRefusal(context, planned);
+    return { answered: false, refusal: planned.refusal };
+  }
+  const { messages, temperature, maxTokens, stream, topP, seed } = planned.plan;
 
-  const aiResult: unknown = await ai.run(WORKERS_AI_FALLBACK_MODEL, {
-    messages,
-    temperature,
-    max_tokens: maxTokens,
-    stream,
-  });
+  let aiResult: unknown;
+  try {
+    aiResult = await ai.run(WORKERS_AI_FALLBACK_MODEL, {
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      stream,
+      ...(topP !== undefined ? { top_p: topP } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+    });
+  } catch (err) {
+    logFallbackFailure(context, stream, 'binding_error', false);
+    throw new WorkersAiFallbackFailedError('binding_error', err);
+  }
 
   const now = Date.now();
   const id = `chatcmpl-cf-${now}`;
   const created = Math.floor(now / 1000);
 
   if (stream) {
-    return {
-      answered: true,
-      streaming: true,
-      model: WORKERS_AI_FALLBACK_MODEL,
-      reason: context.reason,
-      stream: createOpenAiSseReadableStream(aiResult, id, created, (usage) => {
-        logFallbackAnswer(context, true, usage);
-      }),
-    };
+    let sse: ReadableStream<Uint8Array>;
+    try {
+      sse = await openFallbackSseStream(aiResult, {
+        id,
+        created,
+        maxTokens,
+        onEnd: (usage, finishReason) => logFallbackAnswer(context, true, usage, finishReason),
+        onFail: () => logFallbackFailure(context, true, 'stream_error', true),
+      });
+    } catch (err) {
+      const failure = err instanceof WorkersAiFallbackFailedError ? err.failure : 'stream_error';
+      logFallbackFailure(context, true, failure, false);
+      throw err;
+    }
+    return { answered: true, streaming: true, model: WORKERS_AI_FALLBACK_MODEL, reason: context.reason, stream: sse };
   }
 
   const responseText = textOf(aiResult);
-  // No text is not an answer. Let the caller return the upstream's error instead of an empty reply.
-  if (!responseText) throw new Error('Workers AI returned no text');
+  // No text is not an answer. The caller returns the upstream's error instead of an empty reply.
+  if (!responseText) {
+    logFallbackFailure(context, false, 'no_text', false);
+    throw new WorkersAiFallbackFailedError('no_text');
+  }
 
   const usage = readBindingUsage(aiResult);
+  const finishReason = fallbackFinishReason(usage, promptBudgetUnits(responseText), maxTokens);
   const completion: OpenAiChatCompletion = {
     id,
     object: 'chat.completion',
@@ -407,7 +727,7 @@ export async function runWorkersAiChatFallback(
           role: 'assistant',
           content: responseText,
         },
-        finish_reason: 'stop',
+        finish_reason: finishReason,
       },
     ],
     ...(usage ? { usage } : {}),
@@ -417,7 +737,7 @@ export async function runWorkersAiChatFallback(
       reason: context.reason,
     },
   };
-  logFallbackAnswer(context, false, usage);
+  logFallbackAnswer(context, false, usage, finishReason);
 
   return {
     answered: true,

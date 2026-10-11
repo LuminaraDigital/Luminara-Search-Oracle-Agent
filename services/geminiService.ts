@@ -432,6 +432,9 @@ Respect these consolidated business memories and historical recommendation outco
           history,
           model: preferredModel,
           preferredProvider,
+          // The chat is the one caller that accepts a reply from the Worker's fallback model:
+          // each chunk below keeps its `fallback` marker, and the chat shows it with the reply.
+          allowFallback: true,
         })) {
           if (isFirst && tavilySources.length > 0) {
             yield { ...chunk, groundingUrls: tavilySources };

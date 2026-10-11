@@ -3,10 +3,16 @@ import { createHmac } from 'node:crypto';
 import type { Ai, Env } from '../worker/env';
 import {
   WORKERS_AI_FALLBACK_EVENT,
+  WORKERS_AI_FALLBACK_FAILED_EVENT,
   WORKERS_AI_FALLBACK_MAX_TOKENS,
   WORKERS_AI_FALLBACK_MODEL,
   WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET,
+  WORKERS_AI_FALLBACK_REFUSED_EVENT,
+  WorkersAiFallbackFailedError,
+  fallbackFinishReason,
   planWorkersAiChatFallback,
+  promptBudgetUnits,
+  readBindingUsage,
   runWorkersAiChatFallback,
   type WorkersAiFallbackOutcome,
 } from '../worker/workersAiFallback';
@@ -58,6 +64,21 @@ function sseStream(events: string[]): ReadableStream<Uint8Array> {
   });
 }
 
+/** A binding stream that sends the given events and then breaks. */
+function brokenSseStream(events: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let sent = 0;
+  return new ReadableStream({
+    pull(controller) {
+      if (sent < events.length) {
+        controller.enqueue(encoder.encode(`data: ${events[sent++]}\n\n`));
+        return;
+      }
+      controller.error(new Error('binding stream broke'));
+    },
+  });
+}
+
 async function readAll(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -78,20 +99,26 @@ function sseChunks(text: string): any[] {
     .map(ev => JSON.parse(ev.slice(6)));
 }
 
-/** The structured fallback events written to console.log, parsed. */
-function fallbackEvents(spy: { mock: { calls: unknown[][] } }): any[] {
+type LogSpy = { mock: { calls: unknown[][] } };
+
+/** The structured lines of one event name written to console.log, parsed. */
+function eventsNamed(spy: LogSpy, name: string): any[] {
   const events: any[] = [];
   for (const call of spy.mock.calls) {
     if (typeof call[0] !== 'string') continue;
     try {
       const parsed = JSON.parse(call[0]);
-      if (parsed?.event === WORKERS_AI_FALLBACK_EVENT) events.push(parsed);
+      if (parsed?.event === name) events.push(parsed);
     } catch {
       /* not a JSON line */
     }
   }
   return events;
 }
+const answerEvents = (spy: LogSpy) => eventsNamed(spy, WORKERS_AI_FALLBACK_EVENT);
+const refusedEvents = (spy: LogSpy) => eventsNamed(spy, WORKERS_AI_FALLBACK_REFUSED_EVENT);
+const failedEvents = (spy: LogSpy) => eventsNamed(spy, WORKERS_AI_FALLBACK_FAILED_EVENT);
+const everythingLogged = (spy: LogSpy) => spy.mock.calls.map(c => c.map(String).join(' ')).join('\n');
 
 function answered(outcome: WorkersAiFallbackOutcome) {
   if (!outcome.answered) throw new Error(`fallback refused: ${outcome.refusal}`);
@@ -110,25 +137,27 @@ function streamAnswer(outcome: WorkersAiFallbackOutcome) {
   return a.stream;
 }
 
+const USER = { role: 'user', content: 'Ping' };
+
 /** Requests the fallback must refuse: each would come back as something the caller did not ask for. */
 const REFUSED_REQUESTS: Array<{ name: string; refusal: string; body: Record<string, unknown> }> = [
   {
     name: 'response_format',
     refusal: 'response_format',
-    body: { messages: [{ role: 'user', content: 'Ping' }], response_format: { type: 'json_object' } },
+    body: { messages: [USER], response_format: { type: 'json_object' } },
   },
   {
     name: 'tools',
     refusal: 'tools',
     body: {
-      messages: [{ role: 'user', content: 'Ping' }],
+      messages: [USER],
       tools: [{ type: 'function', function: { name: 'live_search', description: 'Search', parameters: { type: 'object', properties: {} } } }],
     },
   },
   {
     name: 'tool_choice',
     refusal: 'tool_choice',
-    body: { messages: [{ role: 'user', content: 'Ping' }], tool_choice: 'auto' },
+    body: { messages: [USER], tool_choice: 'auto' },
   },
   {
     name: 'a message whose content is an array',
@@ -145,7 +174,29 @@ const REFUSED_REQUESTS: Array<{ name: string; refusal: string; body: Record<stri
       ],
     },
   },
+  {
+    name: 'a parameter it would have to ignore (stop)',
+    refusal: 'unsupported_parameter',
+    body: { messages: [USER], stop: ['\n'] },
+  },
+  {
+    name: 'a temperature it cannot use',
+    refusal: 'invalid_parameter',
+    body: { messages: [USER], temperature: 3 },
+  },
 ];
+
+function refusalOf(body: unknown) {
+  const planned = planWorkersAiChatFallback(body);
+  if (planned.ok) throw new Error('expected a refusal');
+  return { refusal: planned.refusal, parameter: planned.parameter };
+}
+
+function planOf(body: unknown) {
+  const planned = planWorkersAiChatFallback(body);
+  if (!planned.ok) throw new Error(`refused: ${planned.refusal} ${planned.parameter ?? ''}`);
+  return planned.plan;
+}
 
 describe('Workers AI fallback (SW0a-11)', () => {
   afterEach(() => {
@@ -154,65 +205,151 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
   describe('planWorkersAiChatFallback: what it will answer', () => {
     it.each(REFUSED_REQUESTS)('refuses a request with $name', ({ body, refusal }) => {
-      expect(planWorkersAiChatFallback(body)).toEqual({ ok: false, refusal });
+      expect(refusalOf(body).refusal).toBe(refusal);
     });
 
     it('refuses the older spellings of a tool call and a tool conversation', () => {
-      const user = { role: 'user', content: 'Ping' };
-      expect(planWorkersAiChatFallback({ messages: [user], functions: [{ name: 'f' }] })).toEqual({ ok: false, refusal: 'tools' });
-      expect(planWorkersAiChatFallback({ messages: [user], function_call: 'auto' })).toEqual({ ok: false, refusal: 'tool_choice' });
-      expect(
-        planWorkersAiChatFallback({ messages: [user, { role: 'tool', tool_call_id: 'call_1', content: 'result' }] }),
-      ).toEqual({ ok: false, refusal: 'tools' });
+      expect(refusalOf({ messages: [USER], functions: [{ name: 'f' }] }).refusal).toBe('tools');
+      expect(refusalOf({ messages: [USER], function_call: 'auto' }).refusal).toBe('tool_choice');
+      expect(refusalOf({ messages: [USER, { role: 'tool', tool_call_id: 'call_1', content: 'result' }] }).refusal).toBe('tools');
     });
 
     it('refuses null content, a message that is not an object, and an empty request', () => {
-      expect(planWorkersAiChatFallback({ messages: [{ role: 'assistant', content: null }] })).toEqual({
-        ok: false,
-        refusal: 'non_string_content',
-      });
-      expect(planWorkersAiChatFallback({ messages: ['Ping'] })).toEqual({ ok: false, refusal: 'malformed_message' });
-      expect(planWorkersAiChatFallback({})).toEqual({ ok: false, refusal: 'no_prompt' });
-      expect(planWorkersAiChatFallback('not json')).toEqual({ ok: false, refusal: 'no_prompt' });
+      expect(refusalOf({ messages: [{ role: 'assistant', content: null }] }).refusal).toBe('non_string_content');
+      expect(refusalOf({ messages: ['Ping'] }).refusal).toBe('malformed_message');
+      expect(refusalOf({}).refusal).toBe('no_messages');
+      expect(refusalOf('not json').refusal).toBe('no_messages');
     });
 
-    it('accepts a prompt exactly at the budget and keeps every message whole', () => {
-      const messages = [
-        { role: 'system', content: 'a'.repeat(WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET - 1) },
-        { role: 'user', content: 'b' },
-      ];
-      const planned = planWorkersAiChatFallback({ messages });
-      expect(planned.ok).toBe(true);
-      if (planned.ok) expect(planned.plan.messages).toEqual(messages);
+    it('refuses a bare prompt: the chat path takes messages', () => {
+      expect(refusalOf({ prompt: 'Explain quantum computing in one sentence' })).toEqual({ refusal: 'no_messages', parameter: null });
+      expect(refusalOf({ messages: [], prompt: 'Ping' }).refusal).toBe('no_messages');
+      expect(refusalOf({ messages: [USER], prompt: 'Ping' })).toEqual({ refusal: 'unsupported_parameter', parameter: 'prompt' });
     });
 
-    it('passes the caller temperature when it is a number from 0 to 2, else the default', () => {
-      const temp = (temperature: unknown) => {
-        const planned = planWorkersAiChatFallback({ messages: [{ role: 'user', content: 'Ping' }], temperature });
-        if (!planned.ok) throw new Error('refused');
-        return planned.plan.temperature;
-      };
-      expect(temp(0.2)).toBe(0.2);
-      expect(temp(0)).toBe(0);
-      expect(temp(2)).toBe(2);
-      expect(temp(undefined)).toBe(0.7);
-      expect(temp(2.5)).toBe(0.7);
-      expect(temp(-1)).toBe(0.7);
-      expect(temp('0.2')).toBe(0.7);
-      expect(temp(Number.NaN)).toBe(0.7);
+    it.each(['stop', 'logprobs', 'top_logprobs', 'logit_bias', 'frequency_penalty', 'presence_penalty', 'stream_options'])(
+      'refuses %s: it would be accepted and then ignored',
+      field => {
+        const value = field === 'stop' ? ['END'] : field === 'logit_bias' ? { 50256: -100 } : field === 'stream_options' ? { include_usage: true } : 1;
+        expect(refusalOf({ messages: [USER], [field]: value })).toEqual({ refusal: 'unsupported_parameter', parameter: field });
+      },
+    );
+
+    it('refuses a field it has never heard of, and does not repeat its name', () => {
+      expect(refusalOf({ messages: [USER], [PROMPT]: true })).toEqual({ refusal: 'unsupported_parameter', parameter: 'other' });
+    });
+
+    it('lets through the fields that change nothing: model, user, n of 1, and nulls', () => {
+      const plan = planOf({ model: 'llama-3.3-70b-versatile', messages: [USER], user: 'tg_999', n: 1, stop: null, response_format: null });
+      expect(plan.messages).toEqual([USER]);
+      expect(refusalOf({ messages: [USER], n: 2 })).toEqual({ refusal: 'invalid_parameter', parameter: 'n' });
+    });
+
+    it('forwards top_p and seed when they are valid, and refuses them when they are not', () => {
+      const plan = planOf({ messages: [USER], top_p: 0.9, seed: 42 });
+      expect(plan.topP).toBe(0.9);
+      expect(plan.seed).toBe(42);
+      const plain = planOf({ messages: [USER] });
+      expect('topP' in plain).toBe(false);
+      expect('seed' in plain).toBe(false);
+      expect(refusalOf({ messages: [USER], top_p: 1.5 })).toEqual({ refusal: 'invalid_parameter', parameter: 'top_p' });
+      expect(refusalOf({ messages: [USER], top_p: '0.9' })).toEqual({ refusal: 'invalid_parameter', parameter: 'top_p' });
+      expect(refusalOf({ messages: [USER], seed: 1.5 })).toEqual({ refusal: 'invalid_parameter', parameter: 'seed' });
+    });
+
+    it('streams only for a boolean true', () => {
+      expect(planOf({ messages: [USER], stream: true }).stream).toBe(true);
+      expect(planOf({ messages: [USER], stream: false }).stream).toBe(false);
+      expect(planOf({ messages: [USER] }).stream).toBe(false);
+      expect(refusalOf({ messages: [USER], stream: 'false' })).toEqual({ refusal: 'invalid_parameter', parameter: 'stream' });
+      expect(refusalOf({ messages: [USER], stream: 'true' })).toEqual({ refusal: 'invalid_parameter', parameter: 'stream' });
+      expect(refusalOf({ messages: [USER], stream: 1 })).toEqual({ refusal: 'invalid_parameter', parameter: 'stream' });
+    });
+
+    it('passes a temperature from 0 to 2, uses the default when none is sent, and refuses any other', () => {
+      expect(planOf({ messages: [USER], temperature: 0.2 }).temperature).toBe(0.2);
+      expect(planOf({ messages: [USER], temperature: 0 }).temperature).toBe(0);
+      expect(planOf({ messages: [USER], temperature: 2 }).temperature).toBe(2);
+      expect(planOf({ messages: [USER] }).temperature).toBe(0.7);
+      expect(planOf({ messages: [USER], temperature: null }).temperature).toBe(0.7);
+      for (const temperature of [2.5, -1, '0.2', Number.NaN]) {
+        expect(refusalOf({ messages: [USER], temperature })).toEqual({ refusal: 'invalid_parameter', parameter: 'temperature' });
+      }
     });
 
     it('passes the caller max_tokens, capped at what the fallback allows', () => {
-      const max = (extra: Record<string, unknown>) => {
-        const planned = planWorkersAiChatFallback({ messages: [{ role: 'user', content: 'Ping' }], ...extra });
-        if (!planned.ok) throw new Error('refused');
-        return planned.plan.maxTokens;
-      };
-      expect(max({ max_tokens: 256 })).toBe(256);
-      expect(max({ max_completion_tokens: 300 })).toBe(300);
-      expect(max({ max_tokens: 999_999 })).toBe(WORKERS_AI_FALLBACK_MAX_TOKENS);
-      expect(max({})).toBe(WORKERS_AI_FALLBACK_MAX_TOKENS);
-      expect(max({ max_tokens: 0 })).toBe(WORKERS_AI_FALLBACK_MAX_TOKENS);
+      expect(planOf({ messages: [USER], max_tokens: 256 }).maxTokens).toBe(256);
+      expect(planOf({ messages: [USER], max_completion_tokens: 300 }).maxTokens).toBe(300);
+      expect(planOf({ messages: [USER], max_tokens: 999_999 }).maxTokens).toBe(WORKERS_AI_FALLBACK_MAX_TOKENS);
+      expect(planOf({ messages: [USER] }).maxTokens).toBe(WORKERS_AI_FALLBACK_MAX_TOKENS);
+      expect(refusalOf({ messages: [USER], max_tokens: 0 })).toEqual({ refusal: 'invalid_parameter', parameter: 'max_tokens' });
+      expect(refusalOf({ messages: [USER], max_tokens: '256' })).toEqual({ refusal: 'invalid_parameter', parameter: 'max_tokens' });
+    });
+
+    describe('the prompt budget', () => {
+      it('accepts a prompt exactly at the budget and keeps every message whole', () => {
+        const messages = [
+          { role: 'system', content: 'a'.repeat(WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET - 1) },
+          { role: 'user', content: 'b' },
+        ];
+        expect(planOf({ messages }).messages).toEqual(messages);
+      });
+
+      it('weighs a character by its UTF-8 bytes: 1 for ASCII, 2 to 4 for anything else', () => {
+        expect(promptBudgetUnits('a')).toBe(1);
+        expect(promptBudgetUnits('é')).toBe(2); // e with an acute accent
+        expect(promptBudgetUnits('漢')).toBe(3); // a CJK character
+        expect(promptBudgetUnits('\u{1F600}')).toBe(4); // an emoji
+        expect(promptBudgetUnits('aé漢\u{1F600}')).toBe(10);
+      });
+
+      it('refuses CJK text that would pass if characters were counted', () => {
+        const cjk = '漢';
+        const fits = Math.floor(WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET / 3);
+        expect(planWorkersAiChatFallback({ messages: [{ role: 'user', content: cjk.repeat(fits) }] }).ok).toBe(true);
+
+        // One more character goes over the budget, at a third of the budget in characters.
+        const over = planWorkersAiChatFallback({ messages: [{ role: 'user', content: cjk.repeat(fits + 1) }] });
+        expect(over.ok).toBe(false);
+        expect(over).toMatchObject({ refusal: 'prompt_too_long', prompt: { chars: fits + 1, units: (fits + 1) * 3 } });
+        expect(fits + 1).toBeLessThan(WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET / 2);
+      });
+
+      it('reports the size of the prompt with any refusal', () => {
+        const planned = planWorkersAiChatFallback({
+          messages: [{ role: 'system', content: 'abc' }, { role: 'user', content: '漢漢' }],
+          response_format: { type: 'json_object' },
+        });
+        expect(planned).toMatchObject({ ok: false, refusal: 'response_format', prompt: { chars: 5, units: 9 } });
+      });
+    });
+  });
+
+  describe('usage and finish reason', () => {
+    it('reads the usage the binding reports', () => {
+      expect(readBindingUsage({ usage: { prompt_tokens: 21, completion_tokens: 8, total_tokens: 29 } })).toEqual({
+        prompt_tokens: 21,
+        completion_tokens: 8,
+        total_tokens: 29,
+      });
+      expect(readBindingUsage({ response: 'no usage' })).toBeNull();
+    });
+
+    it('treats all zeros as not reported', () => {
+      expect(readBindingUsage({ usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } })).toBeNull();
+    });
+
+    it('says length when the reported completion tokens reached the cap', () => {
+      const usage = (completion_tokens: number) => ({ prompt_tokens: 10, completion_tokens, total_tokens: 10 + completion_tokens });
+      expect(fallbackFinishReason(usage(2048), 100, 2048)).toBe('length');
+      expect(fallbackFinishReason(usage(2047), 100_000, 2048)).toBe('stop');
+      expect(fallbackFinishReason(usage(256), 100, 256)).toBe('length');
+    });
+
+    it('does not guess without usage: stop only when the reply is too short to have used the cap', () => {
+      expect(fallbackFinishReason(null, 2047, 2048)).toBe('stop');
+      expect(fallbackFinishReason(null, 2048, 2048)).toBe('length');
+      expect(fallbackFinishReason(null, 50_000, 2048)).toBe('length');
     });
   });
 
@@ -244,12 +381,12 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
       expect(capturedModel).toBe('@cf/meta/llama-3.1-8b-instruct');
       // The caller asked for 0.5. It used to be overwritten with 0.7.
-      expect(capturedInput.temperature).toBe(0.5);
-      expect(capturedInput.max_tokens).toBe(2048);
-      expect(capturedInput.stream).toBe(false);
-      expect(capturedInput.messages).toEqual([
-        { role: 'user', content: 'What is the capital of France?' },
-      ]);
+      expect(capturedInput).toEqual({
+        messages: [{ role: 'user', content: 'What is the capital of France?' }],
+        temperature: 0.5,
+        max_tokens: 2048,
+        stream: false,
+      });
 
       expect(result.id).toMatch(/^chatcmpl-cf-\d+$/);
       expect(result.object).toBe('chat.completion');
@@ -271,6 +408,15 @@ describe('Workers AI fallback (SW0a-11)', () => {
       });
     });
 
+    it('forwards top_p and seed to the binding when the caller sent them', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const mockAi: Ai = { run: vi.fn().mockResolvedValue({ response: 'ok' }) };
+
+      await runWorkersAiChatFallback(mockAi, { messages: [USER], top_p: 0.9, seed: 42 }, { reason: 'network_error' });
+
+      expect((mockAi.run as any).mock.calls[0][1]).toMatchObject({ top_p: 0.9, seed: 42 });
+    });
+
     it('reports the usage the binding reported', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       const mockAi: Ai = {
@@ -285,23 +431,57 @@ describe('Workers AI fallback (SW0a-11)', () => {
       );
 
       expect(result.usage).toEqual({ prompt_tokens: 21, completion_tokens: 8, total_tokens: 29 });
-      const events = fallbackEvents(log);
+      const events = answerEvents(log);
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ prompt_tokens: 21, completion_tokens: 8, total_tokens: 29 });
     });
 
-    it('leaves usage out when the binding reported none: no zeros', async () => {
+    it.each([
+      { name: 'none', bindingResult: { response: 'Paris.' } },
+      { name: 'all zeros', bindingResult: { response: 'Paris.', usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } } },
+    ])('leaves usage out when the binding reported $name', async ({ bindingResult }) => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-      const mockAi: Ai = { run: vi.fn().mockResolvedValue({ response: 'Paris.' }) };
+      const mockAi: Ai = { run: vi.fn().mockResolvedValue(bindingResult) };
 
       const result = jsonAnswer(
         await runWorkersAiChatFallback(mockAi, { messages: [{ role: 'user', content: PROMPT }] }, { reason: 'network_error' }),
       );
 
       expect('usage' in result).toBe(false);
-      const events = fallbackEvents(log);
+      const events = answerEvents(log);
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ prompt_tokens: null, completion_tokens: null, total_tokens: null });
+    });
+
+    it('says finish_reason length when the reply was cut off at the cap', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const mockAi: Ai = {
+        run: vi.fn().mockResolvedValue({
+          response: 'A reply that stops mid',
+          usage: { prompt_tokens: 30, completion_tokens: 2048, total_tokens: 2078 },
+        }),
+      };
+
+      // The client asks for 4096; the fallback caps at 2048 and must say the reply hit that cap.
+      const result = jsonAnswer(
+        await runWorkersAiChatFallback(mockAi, { messages: [USER], max_tokens: 4096 }, { reason: 'upstream_5xx', upstreamStatus: 500 }),
+      );
+
+      expect((mockAi.run as any).mock.calls[0][1].max_tokens).toBe(2048);
+      expect(result.choices[0].finish_reason).toBe('length');
+      expect(answerEvents(log)[0]).toMatchObject({ finish_reason: 'length' });
+    });
+
+    it('says length for a long reply with no usage, and stop for a short one', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const long: Ai = { run: vi.fn().mockResolvedValue({ response: 'x'.repeat(WORKERS_AI_FALLBACK_MAX_TOKENS) }) };
+      const short: Ai = { run: vi.fn().mockResolvedValue({ response: 'x'.repeat(WORKERS_AI_FALLBACK_MAX_TOKENS - 1) }) };
+
+      const cut = jsonAnswer(await runWorkersAiChatFallback(long, { messages: [USER] }, { reason: 'network_error' }));
+      const whole = jsonAnswer(await runWorkersAiChatFallback(short, { messages: [USER] }, { reason: 'network_error' }));
+
+      expect(cut.choices[0].finish_reason).toBe('length');
+      expect(whole.choices[0].finish_reason).toBe('stop');
     });
 
     it('logs one structured event per answer, with no prompt text and no user id', async () => {
@@ -319,7 +499,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         { reason: 'upstream_5xx', upstreamStatus: 502 },
       );
 
-      const events = fallbackEvents(log);
+      const events = answerEvents(log);
       expect(events).toHaveLength(1);
       // The whole event is these fields. None of them can hold a prompt or an identity.
       expect(events[0]).toEqual({
@@ -329,13 +509,15 @@ describe('Workers AI fallback (SW0a-11)', () => {
         reason: 'upstream_5xx',
         upstream_status: 502,
         stream: false,
+        finish_reason: 'stop',
         prompt_tokens: 12,
         completion_tokens: 30,
         total_tokens: 42,
       });
-      const everythingLogged = log.mock.calls.map(c => c.map(String).join(' ')).join('\n');
-      expect(everythingLogged).not.toContain(PROMPT);
-      expect(everythingLogged).not.toContain('tg_999');
+      expect(refusedEvents(log)).toHaveLength(0);
+      expect(failedEvents(log)).toHaveLength(0);
+      expect(everythingLogged(log)).not.toContain(PROMPT);
+      expect(everythingLogged(log)).not.toContain('tg_999');
     });
 
     it.each(REFUSED_REQUESTS)('does not call the binding for a request with $name', async ({ body, refusal }) => {
@@ -346,41 +528,92 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
       expect(outcome).toEqual({ answered: false, refusal });
       expect(mockAi.run).not.toHaveBeenCalled();
-      expect(fallbackEvents(log)).toHaveLength(0);
+      expect(answerEvents(log)).toHaveLength(0);
+      expect(refusedEvents(log)).toHaveLength(1);
+      expect(refusedEvents(log)[0].refusal).toBe(refusal);
     });
 
-    it('throws instead of answering when the binding returns no text', async () => {
+    it('logs one refusal event with the rule and the size of the prompt, and no prompt text', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const mockAi: Ai = { run: vi.fn() };
+      const long = `${PROMPT} `.repeat(200);
+
+      await runWorkersAiChatFallback(
+        mockAi,
+        { messages: [{ role: 'system', content: long }, { role: 'user', content: PROMPT }], user: 'tg_999' },
+        { reason: 'upstream_5xx', upstreamStatus: 503 },
+      );
+
+      const events = refusedEvents(log);
+      expect(events).toHaveLength(1);
+      // The whole event is these fields: a rule, a known field name or null, and numbers.
+      expect(events[0]).toEqual({
+        event: 'workers_ai_fallback_refused',
+        provider: 'workers-ai',
+        model: '@cf/meta/llama-3.1-8b-instruct',
+        reason: 'upstream_5xx',
+        upstream_status: 503,
+        refusal: 'prompt_too_long',
+        parameter: null,
+        prompt_chars: long.length + PROMPT.length,
+        prompt_budget_units: long.length + PROMPT.length,
+        budget: WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET,
+      });
+      expect(log.mock.calls).toHaveLength(1);
+      expect(everythingLogged(log)).not.toContain(PROMPT);
+      expect(everythingLogged(log)).not.toContain('tg_999');
+    });
+
+    it('names the refused parameter only when it is a known one', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const mockAi: Ai = { run: vi.fn() };
+
+      await runWorkersAiChatFallback(mockAi, { messages: [USER], stop: ['END'] }, { reason: 'network_error' });
+      await runWorkersAiChatFallback(mockAi, { messages: [USER], [PROMPT]: 'x' }, { reason: 'network_error' });
+
+      expect(refusedEvents(log).map(e => [e.refusal, e.parameter])).toEqual([
+        ['unsupported_parameter', 'stop'],
+        ['unsupported_parameter', 'other'],
+      ]);
+      expect(everythingLogged(log)).not.toContain(PROMPT);
+    });
+
+    it('throws instead of answering when the binding returns no text, and logs a failure', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       const mockAi: Ai = { run: vi.fn().mockResolvedValue({ tool_calls: [] }) };
 
       await expect(
-        runWorkersAiChatFallback(mockAi, { messages: [{ role: 'user', content: 'Ping' }] }, { reason: 'network_error' }),
-      ).rejects.toThrow(/no text/);
-      expect(fallbackEvents(log)).toHaveLength(0);
+        runWorkersAiChatFallback(mockAi, { messages: [USER] }, { reason: 'network_error' }),
+      ).rejects.toBeInstanceOf(WorkersAiFallbackFailedError);
+
+      expect(answerEvents(log)).toHaveLength(0);
+      expect(failedEvents(log)).toEqual([
+        {
+          event: 'workers_ai_fallback_failed',
+          provider: 'workers-ai',
+          model: '@cf/meta/llama-3.1-8b-instruct',
+          reason: 'network_error',
+          upstream_status: null,
+          stream: false,
+          failure: 'no_text',
+          text_sent: false,
+        },
+      ]);
     });
 
-    it('extracts prompt if messages array is missing or empty', async () => {
-      vi.spyOn(console, 'log').mockImplementation(() => {});
-      let capturedInput: any = null;
-      const mockAi: Ai = {
-        async run(_model: string, input: any) {
-          capturedInput = input;
-          return { response: 'Echo prompt answer' };
-        },
-      };
+    it('logs a failure when the binding throws', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const mockAi: Ai = { run: vi.fn().mockRejectedValue(new Error(`binding down while handling ${PROMPT}`)) };
 
-      const result = jsonAnswer(
-        await runWorkersAiChatFallback(
-          mockAi,
-          { prompt: 'Explain quantum computing in one sentence' },
-          { reason: 'provider_not_configured' },
-        ),
-      );
+      await expect(
+        runWorkersAiChatFallback(mockAi, { messages: [USER] }, { reason: 'upstream_5xx', upstreamStatus: 500 }),
+      ).rejects.toMatchObject({ failure: 'binding_error' });
 
-      expect(capturedInput.messages).toEqual([
-        { role: 'user', content: 'Explain quantum computing in one sentence' },
-      ]);
-      expect(result.choices[0].message.content).toBe('Echo prompt answer');
+      expect(answerEvents(log)).toHaveLength(0);
+      expect(failedEvents(log)).toHaveLength(1);
+      expect(failedEvents(log)[0]).toMatchObject({ failure: 'binding_error', text_sent: false });
+      // The binding's own error text is not copied into the event.
+      expect(everythingLogged(log)).not.toContain(PROMPT);
     });
 
     it('returns valid OpenAI SSE stream when stream is requested', async () => {
@@ -413,9 +646,9 @@ describe('Workers AI fallback (SW0a-11)', () => {
       // The binding reported no usage on this stream, so none is claimed.
       expect('usage' in parsedChunks[2]).toBe(false);
 
-      const events = fallbackEvents(log);
+      const events = answerEvents(log);
       expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({ stream: true, reason: 'upstream_5xx', prompt_tokens: null, completion_tokens: null });
+      expect(events[0]).toMatchObject({ stream: true, reason: 'upstream_5xx', finish_reason: 'stop', prompt_tokens: null, completion_tokens: null });
     });
 
     it('carries the usage a stream reports on its last chunk, and logs it once', async () => {
@@ -437,7 +670,6 @@ describe('Workers AI fallback (SW0a-11)', () => {
           { reason: 'network_error' },
         ),
       );
-      // Nothing is logged until the stream has been produced.
       const parsedChunks = sseChunks(await readAll(stream));
 
       expect(parsedChunks).toHaveLength(2);
@@ -445,10 +677,31 @@ describe('Workers AI fallback (SW0a-11)', () => {
       expect(parsedChunks[1].choices[0].finish_reason).toBe('stop');
       expect(parsedChunks[1].usage).toEqual({ prompt_tokens: 9, completion_tokens: 2, total_tokens: 11 });
 
-      const events = fallbackEvents(log);
+      const events = answerEvents(log);
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ stream: true, prompt_tokens: 9, completion_tokens: 2, total_tokens: 11 });
-      expect(JSON.stringify(events[0])).not.toContain(PROMPT);
+      expect(everythingLogged(log)).not.toContain(PROMPT);
+    });
+
+    it('ends a stream with finish_reason length when it was cut off at the cap', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const mockAiStream: Ai = {
+        async run(_model: string, _input: any) {
+          return sseStream([
+            '{"response":"A reply that stops mid"}',
+            '{"response":"","usage":{"prompt_tokens":30,"completion_tokens":2048,"total_tokens":2078}}',
+            '[DONE]',
+          ]);
+        },
+      };
+
+      const stream = streamAnswer(
+        await runWorkersAiChatFallback(mockAiStream, { messages: [USER], stream: true, max_tokens: 4096 }, { reason: 'network_error' }),
+      );
+      const parsedChunks = sseChunks(await readAll(stream));
+
+      expect(parsedChunks[parsedChunks.length - 1].choices[0].finish_reason).toBe('length');
+      expect(answerEvents(log)[0]).toMatchObject({ finish_reason: 'length' });
     });
 
     it('handles static object response when stream was requested as fallback resilience', async () => {
@@ -472,6 +725,37 @@ describe('Workers AI fallback (SW0a-11)', () => {
       expect(text).toContain('"content":"Direct response"');
       expect(text).toContain('"finish_reason":"stop"');
       expect(text).toContain('data: [DONE]\n\n');
+    });
+
+    it.each([
+      { name: 'ends with no text', makeStream: () => sseStream(['{"response":""}', '[DONE]']), failure: 'no_text' },
+      { name: 'is empty', makeStream: () => sseStream([]), failure: 'no_text' },
+      { name: 'breaks before any text', makeStream: () => brokenSseStream([]), failure: 'stream_error' },
+    ])('does not answer when the binding stream $name', async ({ makeStream, failure }) => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const mockAi: Ai = { run: vi.fn().mockResolvedValue(makeStream()) };
+
+      await expect(
+        runWorkersAiChatFallback(mockAi, { messages: [USER], stream: true }, { reason: 'upstream_5xx', upstreamStatus: 503 }),
+      ).rejects.toMatchObject({ failure });
+
+      expect(answerEvents(log)).toHaveLength(0);
+      expect(failedEvents(log)).toHaveLength(1);
+      expect(failedEvents(log)[0]).toMatchObject({ stream: true, failure, text_sent: false });
+    });
+
+    it('errors the stream and logs a failure, not an answer, when the binding breaks part-way', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const mockAi: Ai = { run: vi.fn().mockResolvedValue(brokenSseStream(['{"response":"Half an"}'])) };
+
+      const stream = streamAnswer(
+        await runWorkersAiChatFallback(mockAi, { messages: [USER], stream: true }, { reason: 'network_error' }),
+      );
+
+      await expect(readAll(stream)).rejects.toThrow('binding stream broke');
+      expect(answerEvents(log)).toHaveLength(0);
+      expect(failedEvents(log)).toHaveLength(1);
+      expect(failedEvents(log)[0]).toMatchObject({ stream: true, failure: 'stream_error', text_sent: true });
     });
   });
 
@@ -526,6 +810,16 @@ describe('Workers AI fallback (SW0a-11)', () => {
         body: method === 'GET' ? undefined : JSON.stringify(body),
       });
 
+    const byokRequest = (body: unknown) =>
+      new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-provider-key': 'gsk_custom_user_key',
+        },
+        body: JSON.stringify(body),
+      });
+
     const upstreamError = (status: number) =>
       new Response(JSON.stringify({ error: { message: `upstream said ${status}` } }), {
         status,
@@ -536,7 +830,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
       proxyProvider(hostedRequest('groq', '/chat/completions', body), env, 'groq', '/chat/completions');
 
     describe('never on a 4xx', () => {
-      it.each([400, 401, 403, 404, 413, 422, 429])(
+      it.each([400, 404, 413, 422, 429])(
         'returns an upstream %i as itself, with its own body and headers',
         async status => {
           globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));
@@ -549,7 +843,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
           expect(res.headers.get('x-provider-fallback')).toBeNull();
           expect(await res.json()).toEqual({ error: { message: `upstream said ${status}` } });
           expect(mockAi.run).not.toHaveBeenCalled();
-          expect(fallbackEvents(log)).toHaveLength(0);
+          expect(log.mock.calls).toHaveLength(0);
         },
       );
 
@@ -565,6 +859,55 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(res.headers.get('x-provider-fallback')).toBeNull();
         expect(((await res.json()) as any).code).toBe('HOSTED_PROVIDER_DEPLETED');
         expect(mockAi.run).not.toHaveBeenCalled();
+      });
+
+      it.each([401, 403])(
+        'reports a hosted-key upstream %i as the hosted key being refused, not as the caller sign-in',
+        async status => {
+          globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));
+          const mockAi = answeringAi();
+
+          const res = await callGroq(createTestEnv({ AI: mockAi }));
+
+          // A 401 or 403 from this route makes the client stop calling every hosted provider.
+          // The upstream refusing the server's key is not the caller's session failing.
+          expect(res.status).toBe(503);
+          expect(res.headers.get('x-provider-fallback')).toBeNull();
+          const data = (await res.json()) as any;
+          expect(data.code).toBe('HOSTED_PROVIDER_KEY_REFUSED');
+          expect(data.provider).toBe('groq');
+          expect(data.upstreamStatus).toBe(status);
+          expect(mockAi.run).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each([401, 403])('passes a BYOK %i through: it is the caller key', async status => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));
+        const mockAi = answeringAi();
+
+        const res = await proxyProvider(byokRequest(chatBody()), createTestEnv({ AI: mockAi }), 'groq', '/chat/completions');
+
+        expect(res.status).toBe(status);
+        expect(await res.json()).toEqual({ error: { message: `upstream said ${status}` } });
+        expect(mockAi.run).not.toHaveBeenCalled();
+      });
+
+      it('still answers 401 itself when the caller is not signed in', async () => {
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error('the upstream must not be called'));
+
+        const res = await proxyProvider(
+          new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(chatBody()),
+          }),
+          createTestEnv({ AI: answeringAi() }),
+          'groq',
+          '/chat/completions',
+        );
+
+        expect(res.status).toBe(401);
+        expect(((await res.json()) as any).code).toBe('AUTH_REQUIRED');
       });
 
       it('lets the second Groq key answer a 429 before anything else', async () => {
@@ -619,7 +962,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(data.choices[0].message.content).toBe(`Recovered via Workers AI on ${status}`);
         expect(mockAi.run).toHaveBeenCalledTimes(1);
 
-        const events = fallbackEvents(log);
+        const events = answerEvents(log);
         expect(events).toHaveLength(1);
         expect(events[0]).toMatchObject({ reason: 'upstream_5xx', upstream_status: status, model: WORKERS_AI_FALLBACK_MODEL });
       });
@@ -637,7 +980,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         const data = (await res.json()) as any;
         expect(data.x_fallback.reason).toBe('network_error');
         expect(data.choices[0].message.content).toBe('Recovered via Workers AI on network throw');
-        expect(fallbackEvents(log)).toHaveLength(1);
+        expect(answerEvents(log)).toHaveLength(1);
       });
 
       it('passes the caller temperature and max_tokens to the binding', async () => {
@@ -666,6 +1009,21 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect('usage' in silent).toBe(false);
       });
 
+      it('tells the caller when the reply was cut off at the fallback cap', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
+        const mockAi: Ai = {
+          run: vi.fn().mockResolvedValue({
+            response: 'A reply that stops mid',
+            usage: { prompt_tokens: 30, completion_tokens: 2048, total_tokens: 2078 },
+          }),
+        };
+
+        // What the app's own client sends: max_tokens 4096.
+        const data = (await (await callGroq(createTestEnv({ AI: mockAi }), chatBody({ max_tokens: 4096 }))).json()) as any;
+
+        expect(data.choices[0].finish_reason).toBe('length');
+      });
+
       it('returns the upstream error when the binding itself fails', async () => {
         globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
         const mockAi: Ai = { run: vi.fn().mockRejectedValue(new Error('binding down')) };
@@ -675,6 +1033,8 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(res.status).toBe(503);
         expect(res.headers.get('x-provider-fallback')).toBeNull();
         expect(await res.json()).toEqual({ error: { message: 'upstream said 503' } });
+        expect(answerEvents(log)).toHaveLength(0);
+        expect(failedEvents(log)).toHaveLength(1);
       });
 
       it('does not answer a GET', async () => {
@@ -694,7 +1054,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
     });
 
     describe('requests it refuses', () => {
-      it.each(REFUSED_REQUESTS)('a request with $name gets the upstream 5xx, not an answer', async ({ body }) => {
+      it.each(REFUSED_REQUESTS)('a request with $name gets the upstream 5xx, not an answer', async ({ body, refusal }) => {
         globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
         const mockAi = answeringAi();
 
@@ -704,7 +1064,10 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(res.headers.get('x-provider-fallback')).toBeNull();
         expect(await res.json()).toEqual({ error: { message: 'upstream said 503' } });
         expect(mockAi.run).not.toHaveBeenCalled();
-        expect(fallbackEvents(log)).toHaveLength(0);
+        expect(answerEvents(log)).toHaveLength(0);
+        // The refusal is visible to whoever reads the logs: one line, with the rule.
+        expect(refusedEvents(log)).toHaveLength(1);
+        expect(refusedEvents(log)[0]).toMatchObject({ refusal, reason: 'upstream_5xx', upstream_status: 503 });
       });
 
       it.each(REFUSED_REQUESTS)('a request with $name gets the connection error after a network throw', async ({ body }) => {
@@ -760,7 +1123,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(text).toContain(`"model":"${WORKERS_AI_FALLBACK_MODEL}"`);
         expect(text).toContain('data: [DONE]');
         expect((mockAi.run as any).mock.calls[0][1].stream).toBe(true);
-        expect(fallbackEvents(log)).toHaveLength(1);
+        expect(answerEvents(log)).toHaveLength(1);
       });
 
       it('streams the fallback answer after a network throw', async () => {
@@ -794,6 +1157,44 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(res.status).toBe(503);
         expect(res.headers.get('x-provider-fallback')).toBeNull();
         expect(mockAi.run).not.toHaveBeenCalled();
+      });
+
+      it('does not stream for the string "false": it refuses', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
+        const mockAi = streamingAi();
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ stream: 'false' }));
+
+        expect(res.status).toBe(503);
+        expect(res.headers.get('content-type')).not.toContain('text/event-stream');
+        expect(mockAi.run).not.toHaveBeenCalled();
+        expect(refusedEvents(log)[0]).toMatchObject({ refusal: 'invalid_parameter', parameter: 'stream' });
+      });
+
+      it('returns the upstream error, not a labelled 200, when the fallback stream is empty', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
+        const mockAi: Ai = { run: vi.fn().mockResolvedValue(sseStream(['[DONE]'])) };
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ stream: true }));
+
+        expect(res.status).toBe(503);
+        expect(res.headers.get('x-provider-fallback')).toBeNull();
+        expect(await res.json()).toEqual({ error: { message: 'upstream said 503' } });
+        expect(answerEvents(log)).toHaveLength(0);
+        expect(failedEvents(log)).toHaveLength(1);
+        expect(failedEvents(log)[0]).toMatchObject({ failure: 'no_text', stream: true });
+      });
+
+      it('returns the connection error when the fallback stream breaks before any text', async () => {
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error('Connection reset by peer'));
+        const mockAi: Ai = { run: vi.fn().mockResolvedValue(brokenSseStream([])) };
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ stream: true }));
+
+        expect(res.status).toBe(502);
+        expect(res.headers.get('x-provider-fallback')).toBeNull();
+        expect(answerEvents(log)).toHaveLength(0);
+        expect(failedEvents(log)).toHaveLength(1);
       });
     });
 
@@ -904,7 +1305,8 @@ describe('Workers AI fallback (SW0a-11)', () => {
             expect(mockAi.run, `${providerId}${path}`).not.toHaveBeenCalled();
           }
         }
-        expect(fallbackEvents(log)).toHaveLength(0);
+        // Not answered, not refused, not failed: the fallback was never asked.
+        expect(log.mock.calls).toHaveLength(0);
       });
     });
 
@@ -927,16 +1329,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         );
         const mockAi = answeringAi('Should not be called');
 
-        const req = new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-provider-key': 'gsk_custom_user_key',
-          },
-          body: JSON.stringify(chatBody()),
-        });
-
-        const res = await proxyProvider(req, createTestEnv({ AI: mockAi }), 'groq', '/chat/completions');
+        const res = await proxyProvider(byokRequest(chatBody()), createTestEnv({ AI: mockAi }), 'groq', '/chat/completions');
         expect(res.status).toBe(402);
         const data = (await res.json()) as any;
         expect(data.code).toBe('BYOK_PAYMENT_REQUIRED');
@@ -947,16 +1340,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));
         const mockAi = answeringAi('Should not be called');
 
-        const req = new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-provider-key': 'gsk_custom_user_key',
-          },
-          body: JSON.stringify(chatBody()),
-        });
-
-        const res = await proxyProvider(req, createTestEnv({ AI: mockAi }), 'groq', '/chat/completions');
+        const res = await proxyProvider(byokRequest(chatBody()), createTestEnv({ AI: mockAi }), 'groq', '/chat/completions');
         expect(res.status).toBe(status);
         expect(mockAi.run).not.toHaveBeenCalled();
       });

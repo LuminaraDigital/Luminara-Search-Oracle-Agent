@@ -10,6 +10,10 @@ export function toUserFacingText(value: unknown, fallback = 'Something went wron
 
 function sanitizeErrorMessage(msg: string, fallback: string): string {
   if (!msg) return fallback;
+  // The upstream refused the server's hosted key (the relay's code for an upstream 401 or 403).
+  if (msg.includes('HOSTED_PROVIDER_KEY_REFUSED')) {
+    return 'The hosted AI provider is temporarily unavailable. This is not a problem with your sign-in. Add your own API key in Settings to continue, or try again shortly.';
+  }
   if (msg.includes('402') || msg.includes('HOSTED_PROVIDER_DEPLETED') || /payment required/i.test(msg)) {
     return 'The AI provider is temporarily unavailable due to upstream credit limits. Add your own API key in Settings to continue.';
   }
