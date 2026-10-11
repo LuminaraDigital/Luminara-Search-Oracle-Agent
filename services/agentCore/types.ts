@@ -155,6 +155,10 @@ export interface AuditStateGraphContext {
    * Never seed these with placeholder percentages.
    */
   citationRatePercent: number | null;
+  /**
+   * Count of live serpEvidence rows that mention the brand. Not a 0-100 score.
+   * The field name is kept so callers and stored contexts keep working.
+   */
   shareOfVoiceScore: number | null;
   healthScore: number | null;
   /** measured only when citation, share of voice, and health are all numeric. */
