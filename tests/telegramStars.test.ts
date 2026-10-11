@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   createInvoiceLink,
   handleTelegramUpdate,
+  handleTelegramPaymentUpdate,
   refundStarPayment,
   normalizePlanId,
   premiumEnginesPhrase,
@@ -316,19 +317,21 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       errSpy.mockRestore();
     });
 
-    it('refunds instead of crediting when the charge cannot be recorded', async () => {
+    it('asks Telegram to send the update again when the charge cannot be put on record', async () => {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       env.DB = undefined;
       mockFetch.mockResolvedValue({ json: async () => ({ ok: true, result: true }) });
-      await handleTelegramUpdate({
+      const outcome = await handleTelegramPaymentUpdate({
         message: {
           chat: { id: 4243 },
           from: { id: 4243 },
           successful_payment: { invoice_payload: 'starter:4243', total_amount: PLANS.starter.stars, currency: 'XTR', telegram_payment_charge_id: 'ch_no_ledger' },
         },
       }, env);
+      // Nothing is granted and nothing is refunded: the update comes back and is handled then.
+      expect(outcome.status).toBe(503);
       expect(await mockKv.get('sub:4243', 'json')).toBeNull();
-      expect(mockFetch.mock.calls.some(([url]) => String(url).endsWith('/refundStarPayment'))).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
       errSpy.mockRestore();
     });
 

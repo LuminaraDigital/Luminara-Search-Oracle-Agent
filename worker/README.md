@@ -229,6 +229,77 @@ they land on `/?payment=success` (nothing reads it today).
 - Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
   catalogue: title, description, price in Stars, days). Nothing else.
 
+## A purchase never downgrades a plan (pinned in `tests/planDowngrade.test.ts`)
+
+- `worker/planRank.ts` ranks the plans: the two one-day passes lowest and equal, then Starter,
+  Growth, Agency. `writeSubscriptionRecord` refuses to write a lower plan over a higher one that is
+  still running, so every rail inherits the rule; the test lists the files that call it.
+- Each rail also refuses before payment where it can: the Stars invoice link, `/buy` and
+  pre-checkout; `createTonInvoice`; licence redemption (the key stays unused).
+- A Stars payment that arrives anyway is refunded with the reason. A TON payment that arrives
+  anyway cannot be sent back by the Worker: it is listed under `sub_pending:ton:<order>` for
+  the owner to return by hand, and the buyer is told.
+- The same plan again extends it. A higher plan replaces it and keeps the days already there.
+- A caller that takes a plan away on purpose (a reversed card payment) passes `allowLowerPlan`.
+
+## Stars charges (pinned in `tests/starsCharges.test.ts`)
+
+Telegram does not send a paid update again once the webhook has answered 200, so:
+
+- **A payment update is handled before the webhook answers.** `pre_checkout_query`,
+  `successful_payment` and `refunded_payment` never go through `waitUntil` or the throttle.
+- **The first write for a payment is its row in `stars_charges`** (migration 0023,
+  `worker/starsCharges.ts`). The webhook answers 503, so Telegram sends the update again, in
+  exactly one case: that row could not be written. Once the row exists the answer is 200.
+- **A charge always ends `credited` or `refunded`.** A failed grant refunds the payer and tells
+  them. "It threw" is not taken to mean "nothing was granted": the code checks for the receipt
+  (`stars:charge:<id>`) or a subscription record that lists the charge in `appliedCharges`.
+- **A refund only ever goes to the Telegram account that paid** (`payer_tg_id`), never to an id
+  read from the invoice payload or typed by an operator.
+- **Manual refunds go through the ledger** (`/refund` in the bot, `POST /telegram/refund`), so
+  the ledger never says `credited` for Stars that went back.
+- **A refund is finished only when the plan has gone back too.** `stars_returned` records that
+  the Stars are with the payer. If taking back what the charge gave fails, the row stays
+  `refund_due` and the sweep retries that part alone; Telegram is not asked to refund twice.
+- **A refund takes back what that charge gave, no more.** Its days come off; if it was the last
+  thing applied, the plan returns to what the record said before it. The subscription record keeps
+  `appliedCharges` and `chargeLinks` (the plan before each charge, and the charge before it) for
+  this.
+- **The daily sweep** (`stars_charge_sweep`) settles rows a webhook left undecided, retries
+  refunds (5 attempts, then `refund_failed` and an alert to `TELEGRAM_ADMIN_ID`), and compares
+  Telegram's own transaction list with the ledger. It never grants.
+- `scripts/telegram-setup.mjs` keeps pending updates unless `DROP_PENDING_UPDATES=true`: a
+  dropped update can be a paid one.
+- Known limits: the sweep is daily until the 15-minute ops cron exists; two charges for one
+  account in the same instant can lose one of them (KV has no compare-and-set); and a record
+  written before the ledger that stacked an upgrade names only its last charge, so refunding that
+  charge keeps the upgraded plan name for the days the earlier charge paid for.
+
+## TON orders (pinned in `tests/tonPendingOrders.test.ts`)
+
+TON checkout is closed until the owner confirms the merchant address. When it opens:
+
+- **The comment on a transfer must equal the order's memo.** Containing it is not enough.
+- **An order is remembered in D1 for 48 hours** (`ton_pending_orders`, migration 0025). No invoice
+  is issued unless the row was written, and one account can hold at most 20 open orders (the
+  count is part of the insert). The KV copy still lasts 2 hours; the verifier falls back to the row.
+- **The daily sweep works from the transfers** (`ton_pending_sweep`). It reads each wallet's
+  history once, collects the comments shaped like a memo, and verifies only the open orders that
+  carry one of them. Crediting still goes through `verifyTonPayment` and the `ton_credited_tx` claim.
+- **An unpaid order closes at 48 hours** and its row is kept 30 days more for support.
+- **An order is creditable only for the wallet configured now.**
+- Known limits:
+  - The sweep is daily until the 15-minute ops cron exists; the buyer's "Check my payment" works at any time.
+  - A wallet's history is read up to 1,000 transfers per index; beyond that a run is partial, and that is only logged.
+  - A claim in `ton_credited_tx` older than five minutes is taken as a credit. If a claim's release ever fails
+    after a failed grant (it is logged), the row is marked credited with no plan behind it: an operator who
+    clears such a claim must also set the row back to `pending`.
+  - The sweep does not see Jetton orders (see the note at `JETTON_CHECKOUT_LIVE`).
+  - The client remembers one pending order; sending a second replaces the first on that device. The Worker
+    still sweeps both.
+  - How the two chain indexes page and order their answers is taken from their documentation. Credit one real
+    testnet transfer through each index before TON checkout is opened.
+
 ## Stubbed vs live status
 
 - `worker/auditQueue.ts`: v1 queue is live; when a full node payload is not
