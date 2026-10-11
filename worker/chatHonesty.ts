@@ -1,20 +1,25 @@
 /**
  * Honesty guard for the Telegram bot's free-text chat (Track SW task SW0a-8).
  *
- * That chat fetches no site, measures nothing, and has no say over prices.
+ * That chat fetches no site, measures nothing, and has no say over prices or payments.
  *
- * 1. A question about our own plans, prices, payment or offers never reaches the model.
- *    isPlanQuestion() reads the user's message, and the handler answers with one fixed block
- *    built from the plan table.
- * 2. Every other reply passes through filterChatReply() before it is stored or sent:
- *    - a sentence about our plans, prices or offers gives way to that same block;
+ * 1. chatRoute() reads the user's message. Two kinds never reach the model, and each gets a
+ *    fixed reply: a payment problem ("I paid but nothing happened") gets the /paysupport
+ *    text, and a question about Luminara's own plans, prices or how to pay gets the block
+ *    built from the plan table. It routes only when sure: a message that names another
+ *    company or tool, or is about the user's own site or business, goes to the model. It has
+ *    no memory: each message is read by itself.
+ * 2. Every model reply passes through filterChatReply() before it is stored or sent:
+ *    - a sentence that names one of our plans with a number, or gives a number of Stars,
+ *      gives way to the plan block;
+ *    - any other talk of money stays as it is, and one fixed line is added at the end;
  *    - a sentence that states a measurement nobody made becomes one "not measured" sentence;
  *    - a link to a host that is neither ours nor the user's is spelled out in words, and a
  *      sentence that asks for a code, password or key is removed.
- *    Inline code is read as prose. A block of JSON, markup or robots.txt is not read for
- *    measurements, because it is something to paste, but the plan and link rules apply to it.
+ *    Only JSON-LD and head tags are set aside as something to paste. Any other JSON, markup
+ *    or fenced text is read as prose.
  *
- * The filter is a backstop. The prompt rules are the main control.
+ * The filter is a backstop. The router and the prompt rules are the main controls.
  * Pure functions only: no I/O, no env, no model calls.
  */
 import { ClaimLedger, coerceClaimStatus } from '../services/evidenceBound';
@@ -81,9 +86,16 @@ export function businessDnaPromptBlock(dna: unknown): string {
 export type PlanPrice = { title: string; stars: number; days: number };
 export type PlanPriceTable = Record<string, PlanPrice>;
 
-/** The last line of the plan block: where to buy, that nothing renews, where billing help is. */
-export const PLAN_BLOCK_FOOTER =
-  'Send /plan to see or buy a plan. Plans do not renew on their own. For billing help send /paysupport.';
+/** The first line of the plan block: whose plans these are. */
+export const PLAN_BLOCK_HEADING = "Luminara's own plans:";
+/** The last line of the plan block: how a plan is paid for and where to buy one. */
+export const PLAN_BLOCK_FOOTER = 'Plans are paid with Telegram Stars, inside Telegram. Send /plan to buy.';
+/** The whole reply to a payment problem. A person handles those, and the model never does. */
+export const BILLING_HELP_REPLY =
+  'Billing problems are handled by a person. Send /paysupport and then your message. Your receipt ID is in /status. Please do not pay again.';
+/** Added once, at the end of a model reply that talks about money. */
+export const MONEY_NOTE =
+  "For Luminara's own plans and prices send /plan. For billing help send /paysupport. I cannot quote prices or take payments here.";
 
 const groupThousands = (n: number): string => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
@@ -92,9 +104,9 @@ export function planPriceLine(plan: PlanPrice): string {
   return `${plan.title} is ${groupThousands(plan.stars)} Stars for ${plan.days} ${plan.days === 1 ? 'day' : 'days'}.`;
 }
 
-/** The block that stands in for anything the model says about plans, prices or offers. */
+/** The plan block: the heading, one line per plan, and how to pay. */
 export function planFactsBlock(plans: PlanPriceTable): string {
-  return [...Object.values(plans).map(planPriceLine), PLAN_BLOCK_FOOTER].join('\n');
+  return [PLAN_BLOCK_HEADING, ...Object.values(plans).map(planPriceLine), PLAN_BLOCK_FOOTER].join('\n');
 }
 
 /** The plan facts for the system prompt. Call it with the live plan table on every turn. */
@@ -103,298 +115,393 @@ export function planPricePromptBlock(plans: PlanPriceTable): string {
   return (
     '\n\nPlan facts (from the live plan table):\n' +
     `${planFactsBlock(plans)}\n` +
-    'Do not state prices, plan limits or offers yourself. When the user asks about plans, price, payment, refunds, trials or discounts, say: send /plan.'
+    'Do not state prices, plan limits or offers yourself. When the user asks about plans, price, payment, refunds, trials or discounts, say: send /plan.\n' +
+    'Never tell the user to pay again or to retry a payment. For a payment problem say: send /paysupport.'
   );
 }
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const wordCount = (s: string): number => s.trim().split(/\s+/).filter(Boolean).length;
+const stripEmphasis = (s: string): string => s.replace(/[*_`~]+/g, '');
+// "pricing page" is a page of the user's site, and a link such as acme.io/pricing says nothing
+// about our prices.
+const PRICING_PAGE_RE = /\bpric(?:e|ing)\s+(?:pages?|tables?|sections?|blocks?|schema|copy)\b/gi;
+const wordsForPlanRules = (s: string): string =>
+  stripEmphasis(s).replace(LINK_OR_HOST_RE, ' ').replace(PRICING_PAGE_RE, ' ');
 
-type PlanNames = { phrases: RegExp[]; words: Array<{ word: string; re: RegExp }> };
+type PlanNames = {
+  /** A title of several words: "Single Autonomous Audit Run". */
+  phrases: RegExp[];
+  /** A plan id of several words, as a user types it: "single audit" for single_audit. */
+  idPhrases: RegExp[];
+  /** A title of one word: "Starter", and "Pro" and "Agency" from "Luminara Pro / Agency". */
+  words: Array<{ word: string; re: RegExp }>;
+};
 
-/**
- * The names a reply can use for a plan, taken from the plan titles: "Luminara Pro / Agency"
- * gives the words "Pro" and "Agency", and a title of several words is matched as a phrase.
- */
+/** The names a message can use for a plan, taken from the plan table. */
 function planNames(plans: PlanPriceTable): PlanNames {
-  const names: PlanNames = { phrases: [], words: [] };
-  for (const plan of Object.values(plans)) {
+  const names: PlanNames = { phrases: [], idPhrases: [], words: [] };
+  const phrase = (parts: string[]): RegExp => new RegExp(String.raw`\b${parts.map(escapeRegExp).join(String.raw`[\s_-]+`)}\b`, 'i');
+  for (const [id, plan] of Object.entries(plans)) {
     for (const name of plan.title.replace(/^Luminara\s+/i, '').split('/').map((n) => n.trim()).filter(Boolean)) {
-      if (name.includes(' ')) {
-        const src = name.split(/\s+/).map(escapeRegExp).join(String.raw`[\s-]+`);
-        names.phrases.push(new RegExp(String.raw`\b${src}\b`, 'i'));
-      } else {
-        names.words.push({ word: name, re: new RegExp(String.raw`\b${escapeRegExp(name)}\b`, 'gi') });
-      }
+      if (name.includes(' ')) names.phrases.push(phrase(name.split(/\s+/)));
+      else names.words.push({ word: name, re: new RegExp(String.raw`\b${escapeRegExp(name)}\b`, 'gi') });
     }
+    const idWords = id.split(/[\s_-]+/).filter(Boolean);
+    if (idWords.length > 1) names.idPhrases.push(phrase(idWords));
   }
   return names;
 }
 
-// "Starter plan", "the growth tier".
-const PLAN_WORD_AFTER_RE = /^\s+(?:plans?|tiers?|subscriptions?|packages?|memberships?)\b/i;
+// "Starter plan", "the growth tier", "Starter-Tarif".
+const PLAN_WORD_AFTER_RE = /^[\s-]+(?:plans?|tiers?|subscriptions?|packages?|memberships?|tarif|forfait)\b/i;
 // A plan name that is also an everyday word is not a plan in these phrases:
 // "pro tip", "starter content", "growth in traffic", "agency clients", "organic growth".
 const ORDINARY_AFTER: Record<string, RegExp> = {
   pro: /^[\s-]*(?:tips?|moves?|level|grade|bono|advice|writers?|designers?)\b/i,
-  starter: /^[\s-]*(?:content|kits?|packs?|templates?|guides?|pages?|posts?|questions?|projects?|sets?|ideas?|lists?|prompts?|topics?|sites?)\b/i,
+  starter: /^[\s-]*(?:content|kits?|packs?|templates?|guides?|pages?|posts?|questions?|projects?|sets?|ideas?|lists?|prompts?|topics?|sites?|checklists?)\b/i,
   growth: /^[\s-]*(?:in|of|from|rates?|hacking|hacks?|marketing|teams?|loops?|strateg(?:y|ies)|stages?|curves?|engines?|channels?|levers?|goals?|targets?|over|through|tips?|ideas?)\b/i,
-  agency: /^[\s-]*(?:owners?|teams?|clients?|retainers?|work|life|models?|partners?|side|fees|rates|staff|world|folks|people|leads?)\b/i,
+  agency: /^[\s-]*(?:owners?|teams?|clients?|retainers?|work|life|models?|partners?|side|fees|rates|staff|world|folks|people|leads?|sites?)\b/i,
 };
-// "organic growth", "a marketing agency", "Perplexity Pro".
+// "organic growth", "a marketing agency", "Perplexity Pro", and the user's own "your Starter tier".
 const ORDINARY_BEFORE: Record<string, RegExp> = {
-  pro: /\b(?:a|an|like\s+a|ChatGPT|Perplexity|Gemini|Claude|Copilot|Grok|Google|Bing|GPT|Semrush|Ahrefs|Moz|Canva|Notion|Yoast|Surfer|Jasper|LinkedIn|YouTube|iPhone|MacBook|iPad|Midjourney|Grammarly|Zapier|Shopify|WordPress|Wix|Squarespace)\s+$/i,
-  starter: /\b(?:a|an)\s+$/i,
+  pro: /\b(?:a|an|like\s+a|your|their|his|her|its|my|ChatGPT|Perplexity|Gemini|Claude|Copilot|Grok|Google|Bing|GPT|Semrush|Ahrefs|Moz|Canva|Notion|Yoast|Surfer|Jasper|LinkedIn|YouTube|iPhone|MacBook|iPad|Midjourney|Grammarly|Zapier|Shopify|WordPress|Wix|Squarespace)\s+$/i,
+  starter: /\b(?:a|an|your|their|his|her|its|my)\s+$/i,
   growth: /\b(?:organic|revenue|traffic|business|sustainable|steady|fast|faster|rapid|slow|future|long[- ]term|audience|sales|user|customer|brand|market|economic|compound|real|more|their|his|her|its|your|our|my)\s+$/i,
   agency: /\b(?:a|an|your|their|my|our|marketing|seo|pr|creative|digital|ad|advertising|design|own|another|any)\s+$/i,
 };
-// At the start of a sentence a capital proves nothing, so the word needs company: a plan-like
-// verb, mark or number right after it ("Starter is ...", "Starter: ...", "Starter | 1,000"),
-// or a weaker link ("Starter for ...") beside a number or a price word. "Growth" starts many
-// ordinary sentences, so it also needs a number, a price word or a plan feature after it.
-const NEEDS_VERB_AND_CUE_AT_START = new Set(['growth']);
-const NEEDS_VERB_AT_START = new Set(['starter', 'pro', 'agency']);
-const PLAN_VERB_AFTER_RE =
-  /^(?:\s*[:(/&|=-]|\s+[#$€£]?\d|\s+(?:is|are|was|costs?|cuesta|includes|covers|comes\s+with|unlocks|adds|gives|lets|has|gets\s+you|offers|runs|starts|suits|fits)\b)/i;
-const PLAN_LINK_AFTER_RE = /^\s+(?:for|at|with|on)\b/i;
-const PLAN_FEATURE_RE = /\b(?:sites?|domains?|workspaces?|re-?audits?|audits?|sentinel|api\s+access|white[- ]label|share\s+links?)\b/i;
 
-// Words of buying, paying and offers. Used as a cue beside a plan name, never alone.
-const COMMERCE_RE = new RegExp(
-  [
-    String.raw`\b(?:price[sd]?|pricing|costs?|fees?|charges?|charged|discount(?:s|ed)?|coupons?|promo(?:tion)?s?|free|trials?|refund(?:s|able|ed)?|money[- ]back|guarantee[sd]?|(?:auto[- ]?)?renew(?:s|al|als|ing|ed)?|subscri(?:be|bed|bes|bing|ption|ptions)|billing|billed|invoices?|payments?|pay(?:s|ing)?\s+(?:for|with|in|by|via|using)|checkout|buy(?:s|ing)?|purchas(?:e|es|ed|ing)|upgrad(?:e|es|ed|ing)|downgrad(?:e|es|ed|ing)|cancel(?:s|led|ed|ling|ing|lation)?|cheap(?:er|est)?|expensive|afford(?:able)?|credit\s+card|debit\s+card|by\s+card|crypto|usdt|usdc|bitcoin|bucks|dollars?|euros?|usd|eur|gbp)\b`,
-    String.raw`[$€£]\s?\d`,
-    String.raw`\b\d+\s?(?:%|percent)\s+(?:off|discount)\b`,
-  ].join('|'),
-  'i',
-);
 const TON_RE = /\bTON\b/;
-const isCommerce = (s: string): boolean => COMMERCE_RE.test(s) || TON_RE.test(s);
-
 const STARS_WORD_RE = /\bStars\b|⭐|\bXTR\b/;
-// "500 Stars", "⭐1500", "25 XTR". Lower-case "500 stars" counts too, but not a rating:
-// "5-star reviews", "5 star reviews" and "4 stars" are left alone.
-const CAPITAL_STARS_RE =
-  /\d[\d,.]*\s*[kK]?\+?\s*(?:Telegram\s+)?(?:Stars?\b|STARS\b|XTR\b|⭐)|(?:⭐|\bXTR\b|\bStars?\b|\bSTARS\b)\s*[:=]?\s*\d/;
-const LOWER_STARS_RE =
-  /(\d[\d,.]*)\s*[kK]?\+?\s+(telegram\s+)?stars?\b(?!\s+(?:reviews?|ratings?|rated|average|hotels?|schema|out\s+of|on\s+(?:google|g2|capterra|trustpilot|yelp|amazon)))/;
-// The sentence after a plan sentence that goes on about "it".
-const FOLLOW_UP_RE =
-  /^(?:(?:and|but|also|so|then|plus)\s+)?(?:it|it['’]s|its|they|they['’]re|both|each|either|(?:that|this)\s+(?:plan|tier|one)|the\s+(?:price|cost|fee|plan|tier|subscription))\b/i;
+// "500 Stars", "25 XTR", "⭐ 1500".
+const STARS_AMOUNT_RE = /(\d[\d,.]*)\s*[kK]?\+?\s*(telegram\s+)?(stars?\b|xtr\b|⭐)|(⭐|\bxtr\b|\bstars\b)\s*[:=]?\s*(\d[\d,.]*)/i;
+// Stars beside these words are a rating, not our price: "a 4.8 Star average", "50 stars on GitHub".
+const RATING_CONTEXT_RE =
+  /\b(?:ratings?|rated|reviews?|hotels?|github|repos?|repository|aggregaterating|ratingvalue|bestrating|trustpilot|yelp|capterra|tripadvisor|app\s+store|play\s+store)\b/i;
+
+/** A number of Telegram Stars: "500 Stars", "25 XTR". A rating ("5 stars") is not one. */
+function mentionsStarsPrice(s: string): boolean {
+  const m = STARS_AMOUNT_RE.exec(s);
+  if (!m) return false;
+  const unit = (m[3] ?? m[4] ?? '').toLowerCase();
+  if (unit === 'xtr' || m[2]) return true;
+  const amount = Number((m[1] ?? m[5] ?? '').replace(/,/g, ''));
+  return amount > 5 && !RATING_CONTEXT_RE.test(s);
+}
 
 // "content plan" and "plan your week" are not our plans.
 const ORDINARY_PLAN_RE =
   /\b(?:content|action|marketing|growth|editorial|project|launch|business|seo|media|posting|publishing|outreach|pr|link[- ]building|testing|test|game|meal|lesson|study|site|migration|rollout|backup|recovery|\d+[- ](?:day|week|month|step)|weekly|quarterly|step[- ]by[- ]step)\s+plans?\b/gi;
 const PLAN_AS_VERB_RE =
-  /(?:^|[.!?:]\s+|\b(?:to|and|then|should|could|can|will|would|must|i|we|you|let['’]?s|please)\s+)plan\s+(?:to|on|for|your|a|an|the|out|ahead|each|every|this|next|\d)/gi;
+  /(?:^|[.!?:]\s+|\b(?:to|and|then|should|could|can|will|would|must|i|we|you|let['’]?s|please)\s+)plan\s+(?:to|on|for|your|my|our|a|an|the|out|ahead|each|every|this|next|\d)/gi;
 const ORDINARY_TIER_RE = /\b[\w-]+-tier\b|\btier[- ]?\d\b|\btier\s+(?:one|two|three)\b/gi;
+// "My plan is to publish weekly."
+const PLAN_AS_INTENT_RE = /\b(?:my|our|the)\s+plan\s+(?:is|was)\s+to\b/gi;
 const withoutOrdinaryPlans = (s: string): string =>
-  s.replace(ORDINARY_PLAN_RE, ' ').replace(PLAN_AS_VERB_RE, ' ').replace(ORDINARY_TIER_RE, ' ');
-const mentionsPlanWord = (s: string): boolean => /\b(?:plans?|tiers?)\b/i.test(withoutOrdinaryPlans(s));
+  s.replace(ORDINARY_PLAN_RE, ' ').replace(PLAN_AS_VERB_RE, ' ').replace(ORDINARY_TIER_RE, ' ').replace(PLAN_AS_INTENT_RE, ' ');
 
-function mentionsStarsPrice(s: string): boolean {
-  if (CAPITAL_STARS_RE.test(s)) return true;
-  const m = LOWER_STARS_RE.exec(s);
-  return m !== null && (Boolean(m[2]) || Number(m[1].replace(/,/g, '')) > 5);
-}
+// ---------------------------------------------------------------------------------------
+// Words in other languages: a handful per language, read as they stand.
+// ---------------------------------------------------------------------------------------
 
-const hasPriceCue = (s: string): boolean => /\d/.test(s) || isCommerce(s) || STARS_WORD_RE.test(s);
-const hasPlanCue = (s: string): boolean => hasPriceCue(s) || PLAN_FEATURE_RE.test(s) || mentionsPlanWord(s);
+/** The plan and payment words read in other languages. They route to the plan block. */
+export const PLAN_QUESTION_WORDS: Record<string, readonly string[]> = {
+  es: ['precio', 'precios', 'cuánto cuesta', 'cuanto cuesta', 'cuánto vale', 'cuánto es', 'cuanto es', 'cuánto sale', 'cuanto sale', 'cuesta', 'costo', 'coste', 'pagar', 'pago', 'comprar', 'suscripción', 'suscripcion', 'renovar', 'renovación', 'se renueva', 'prueba gratis', 'descuento', 'gratis', 'estrellas', 'planes'],
+  pt: ['preço', 'preços', 'quanto custa', 'quanto é', 'custa', 'custo', 'pagamento', 'assinatura', 'assinar', 'renovação', 'teste grátis', 'desconto', 'grátis', 'gratuito', 'estrelas', 'planos'],
+  ru: ['цена', 'цены', 'цену', 'сколько стоит', 'скок стоит', 'стоимость', 'почём', 'почем', 'оплата', 'оплатить', 'платить', 'заплатить', 'платно', 'платный', 'платная', 'купить', 'подписка', 'подписку', 'подписки', 'продление', 'продлить', 'продлевается', 'пробный', 'пробная', 'скидка', 'скидки', 'скидку', 'бесплатно', 'бесплатный', 'бесплатная', 'тариф', 'тарифы', 'тарифа', 'звёзд', 'звезд', 'звёзды', 'звезды', 'картой'],
+  fr: ['prix', "c'est combien", 'combien coûte', 'combien coute', 'combien ça coûte', 'coûte', 'coût', 'tarif', 'tarifs', 'payer', 'payant', 'paiement', 'acheter', 'abonnement', 'renouveler', 'renouvellement', 'essai gratuit', 'réduction', 'remise', 'gratuit', 'étoiles', 'forfait'],
+  de: ['preis', 'preise', 'was kostet', 'wie viel kostet', 'wieviel kostet', 'kosten', 'kostet', 'teuer', 'bezahlen', 'muss ich zahlen', 'zahle ich', 'zahlung', 'kaufen', 'abo', 'abonnement', 'abonnieren', 'verlängern', 'verlängerung', 'testphase', 'probezeit', 'rabatt', 'kostenlos', 'gratis', 'sterne'],
+};
+/** The payment-problem words read in other languages. They route to the /paysupport reply. */
+export const BILLING_PROBLEM_WORDS: Record<string, readonly string[]> = {
+  es: ['reembolso', 'devolución', 'ya pagué', 'me cobraron'],
+  pt: ['reembolso', 'estorno', 'já paguei', 'cobraram'],
+  ru: ['возврат', 'вернуть деньги', 'верните деньги', 'деньги вернёте', 'деньги вернете', 'оплатил', 'оплатила', 'заплатил', 'заплатила', 'списали'],
+  fr: ['remboursement', 'rembourser', "j'ai payé", 'débité'],
+  de: ['rückerstattung', 'erstattung', 'geld zurück', 'habe bezahlt', 'abgebucht'],
+};
+// These words carry accents and Cyrillic, where \b does not work, so the edges are tested as
+// "no letter or digit on either side".
+const foreignWordsRe = (lists: Record<string, readonly string[]>): RegExp =>
+  new RegExp(
+    String.raw`(?<![\p{L}\p{N}])(?:${Object.values(lists)
+      .flat()
+      .map((w) => w.split(' ').map(escapeRegExp).join(String.raw`\s+`))
+      .join('|')})(?![\p{L}\p{N}])`,
+    'iu',
+  );
+const FOREIGN_PLAN_WORD_RE = foreignWordsRe(PLAN_QUESTION_WORDS);
+const FOREIGN_BILLING_WORD_RE = foreignWordsRe(BILLING_PROBLEM_WORDS);
 
-/** True when the sentence names one of our plans, as opposed to using the same everyday word. */
-function namesPlan(s: string, names: PlanNames): boolean {
+// ---------------------------------------------------------------------------------------
+// The reply: what is certainly a price of ours, and what is only talk of money.
+// ---------------------------------------------------------------------------------------
+
+// Beside a plan name these make the sentence a price: "for 30 days", "a month", Stars, a currency.
+const PRICE_CUE_RE = new RegExp(
+  [
+    String.raw`\b(?:price[sd]?|prices|pricing|costs?|fees?|charge[sd]?|stars?|xtr|dollars?|bucks|usd|eur|euros?|gbp|usdt)\b`,
+    String.raw`\b(?:off|discount(?:s|ed)?|free|trials?|refund(?:s|ed|able)?|renew(?:s|al|ed|ing)?|money[- ]back|guarantee[sd]?)\b`,
+    String.raw`[$€£⭐]`,
+    String.raw`\bfor\s+\d+\s+(?:days?|weeks?|months?|years?)\b`,
+    String.raw`\b(?:a|per|each|every)\s+(?:day|week|month|year)\b|\/\s?mo\b|\b(?:monthly|yearly|annually)\b`,
+  ].join('|'),
+  'i',
+);
+const hasPriceCue = (s: string): boolean => PRICE_CUE_RE.test(s) || TON_RE.test(s) || FOREIGN_PLAN_WORD_RE.test(s);
+// "Starter is 1,000", "Growth costs 3000", "Starter: 2,500", "Starter | 1,000". Not "Growth is 3
+// times harder" or "Growth: 3 steps".
+const NOT_A_PRICE = String.raw`(?!\s?(?:%|x\b|times\b|of\b|to\b|[\w-]*\s*(?:steps?|ways|tips|things|rules|parts|ideas|pages?|posts?|days?|weeks?|months?|years?)\b))`;
+const PRICE_RIGHT_AFTER_RE = new RegExp(
+  String.raw`^(?:\s+(?:is|was|costs?)\s+(?:(?:only|just|about|around|now)\s+)?|["'\s]*[:=|(-]["'\s]*)[$€£⭐]?\d[\d,.]*${NOT_A_PRICE}`,
+  'i',
+);
+// "Starter covers 5 sites", "Growth includes 10 audits".
+const PLAN_VERB_AFTER_RE = /^\s+(?:covers|includes|comes\s+with|unlocks|gets\s+you|offers|allows|gives\s+you|lets\s+you|is\s+limited\s+to)\b/i;
+const NUMBER_SOON_RE = /^[^.!?\n\d]{0,30}\d/;
+
+/**
+ * True when the sentence names one of our plans as a plan and carries a number: "The Growth
+ * plan covers 10 sites.", "Luminara Starter: 500", "Starter is 1,000 for 30 days". The plan
+ * name must be written as in the title, so "growth takes 3 months" is not one.
+ */
+function namesPlanWithNumber(s: string, names: PlanNames): boolean {
+  if (!/\d/.test(s)) return false;
   if (names.phrases.some((re) => re.test(s))) return true;
   for (const { word, re } of names.words) {
+    const key = word.toLowerCase();
     for (const m of s.matchAll(re)) {
       const at = m.index ?? 0;
       const before = s.slice(0, at);
       const after = s.slice(at + m[0].length);
-      // As in the title ("Growth"), or shouted ("GROWTH").
-      const asTitled = m[0] === word || m[0] === word.toUpperCase();
-      if (PLAN_WORD_AFTER_RE.test(after)) {
-        // "the Growth plan" is ours. "a growth plan" is ours only beside a price.
-        if (asTitled || hasPriceCue(s)) return true;
-        continue;
-      }
-      if (!asTitled) continue;
       if (/\bLuminara\s+$/i.test(before)) return true;
-      const key = word.toLowerCase();
+      // As in the title ("Growth"), or shouted ("GROWTH"). "growth" is the everyday word.
+      if (m[0] !== word && m[0] !== word.toUpperCase()) continue;
+      // "Your Starter tier at $29" is a tier of the user's own product.
+      if (/\b(?:your|their|his|her|its|my)\s+$/i.test(before)) continue;
+      if (PLAN_WORD_AFTER_RE.test(after)) return true;
       if (ORDINARY_AFTER[key]?.test(after) || ORDINARY_BEFORE[key]?.test(before)) continue;
-      const midSentence = /[A-Za-z0-9]/.test(before);
-      if (midSentence) return true;
-      const verb = PLAN_VERB_AFTER_RE.test(after);
-      const link = PLAN_LINK_AFTER_RE.test(after);
-      if (NEEDS_VERB_AND_CUE_AT_START.has(key)) {
-        if ((verb || link) && hasPlanCue(after)) return true;
-      } else if (NEEDS_VERB_AT_START.has(key)) {
-        const standsAlone = !/[A-Za-z0-9]/.test(after);
-        if (verb || standsAlone || (link && hasPriceCue(after))) return true;
-      } else {
-        return true;
-      }
+      if (PRICE_RIGHT_AFTER_RE.test(after) || PLAN_VERB_AFTER_RE.test(after)) return true;
+      // "Starter for 30 days is 1,000 Stars", "You get 14 days free on Growth".
+      const midSentence = /[\p{L}\p{N}]/u.test(before);
+      if ((midSentence || NUMBER_SOON_RE.test(after)) && hasPriceCue(s)) return true;
     }
   }
   return false;
 }
 
-// A price word within a few words of Luminara, the bot, a subscription or one of our plans:
-// "Luminara is free for the first audit", "plans start at 29 dollars".
-const PRICE_WORD = String.raw`(?:price[sd]?|prices|pricing|costs?|fees?|charge[sd]?|cheap(?:er|est)?|expensive|free|[$€£]\s?\d[\d,.]*|\d[\d,.]*\s?(?:dollars?|bucks|usd|eur|euros?|gbp|usdt))`;
-const OUR_ANCHOR = String.raw`(?:luminara|(?:the|this|our)\s+bot|subscriptions?|membership|(?:the|our|your|this|that|each|every|any|which|paid|premium|monthly|yearly|annual|cheapest|cheaper|current|higher|lower|basic|top|all)\s+(?:plans?|tiers?)|plans?\s+(?:start|cost|are\s+priced))`;
-const FEW_WORDS = String.raw`(?:[^\w.!?]+[\w'’-]+){0,4}?[^\w.!?]+`;
-const PRICE_NEAR_OURS_RE = new RegExp(
-  String.raw`(?<![\w])${PRICE_WORD}${FEW_WORDS}${OUR_ANCHOR}\b|\b${OUR_ANCHOR}${FEW_WORDS}${PRICE_WORD}(?![A-Za-z])`,
-  'i',
-);
-// "the free plan", "a paid tier".
-const FREE_OR_PAID_PLAN_RE = /\b(?:free|paid|premium)\s+(?:plans?|tiers?|version)\b/i;
-// "We accept TON and USDT", "we charge monthly".
-const WE_SELL_RE =
-  /\bwe\s+(?:accept|take)\s+(?:[\w-]+\s+){0,2}?(?:ton|usdt|usdc|crypto|bitcoin|cards?|credit\s+cards?|paypal|payments?|stars|dollars)\b|\bwe\s+(?:charge|bill|refund)\b|\bwe\s+offer\s+(?:[\w-]+\s+){0,2}?(?:discounts?|refunds?|trials?|plans?|free)\b/i;
-
-/** True when the sentence is about Luminara's own plans or prices. */
-function isAboutOurPlans(s: string, names: PlanNames): boolean {
-  if (namesPlan(s, names) || mentionsStarsPrice(s)) return true;
-  const rest = withoutOrdinaryPlans(s);
-  return PRICE_NEAR_OURS_RE.test(rest) || FREE_OR_PAID_PLAN_RE.test(rest) || WE_SELL_RE.test(s);
+/** True when a block of JSON-LD or head tags gives a number of Stars, or names "Luminara <plan>" beside a number. */
+function dataQuotesOurPrice(text: string, names: PlanNames): boolean {
+  if (mentionsStarsPrice(text)) return true;
+  if (!/\d/.test(text)) return false;
+  return (
+    names.phrases.some((re) => re.test(text)) ||
+    names.words.some(({ word }) => new RegExp(String.raw`\bLuminara\s+${escapeRegExp(word)}\b`, 'i').test(text))
+  );
 }
 
-// An offer with nothing that ties it to us: "It renews automatically.", "No refunds after 7 days."
-// It counts when it speaks of "it", "you", "we" or the plan, and names no third party.
-const OFFER_RE =
-  /\b(?:auto[- ]?)?renew(?:s|al|als|ing|ed)?\b|\brefund(?:s|able|ed)?\b|\bmoney[- ]back\b|\b(?:free\s+trial|trial\s+(?:period|ends?|lasts?)|\d+[- ]day\s+(?:free\s+)?trial|trials?)\b|\bdiscount(?:s|ed)?\b|\b\d+\s?(?:%|percent)\s+off\b|\b(?:charged|no\s+charge|extra\s+charge|charges?\s+appl(?:y|ies))\b|\b(?:money[- ]back|satisfaction|\d+[- ]day)\s+guarantee\b|\bcancel\s+any\s?time\b|\bfirst\s+(?:month|week|year)\s+(?:is\s+)?free\b/i;
-const OFFER_SUBJECT_RE =
-  /^(?:(?:yes|no|sure|and|but|also)[,.]?\s+)?(?:it|it['’]s|there(?:['’]s|\s+is|\s+are)|you(?:['’]ll)?|we|payments?|billing|refunds?|renewal|cancell?ation|the\s+(?:first|trial|price|plans?|subscription|charge|fee|refund|renewal)|(?:your|our)\s+(?:plans?|subscription|membership|trial|payment|card|refunds?)|all\s+plans|every\s+plan|each\s+plan|plans|no)\b/i;
-const THIRD_PARTY_RE = new RegExp(
+// Talk of money, read broadly. Nothing is removed for it: one line is added at the end.
+const MONEY_TALK_RE = new RegExp(
   [
-    String.raw`\b(?:Google|OpenAI|ChatGPT|Perplexity|Gemini|Microsoft|Bing|Apple|Amazon|Meta|Facebook|Instagram|LinkedIn|YouTube|TikTok|Reddit|Stripe|PayPal|Shopify|WordPress|Wix|Squarespace|Semrush|Ahrefs|Moz|Yoast|HubSpot|Mailchimp|Zapier|Notion|Canva|G2|Capterra|Trustpilot|GoDaddy|Namecheap|Cloudflare|Netflix|Spotify)\b`,
-    String.raw`\b(?:your|their|his|her)\s+(?:customers?|buyers?|clients?|users?|visitors?|audience|shoppers?|subscribers?|members?|readers?|products?|pricing|prices?|store|shop|saas|offers?|checkout|pages?|site|website|domain|hosting|brand|company|business|competitors?)\b`,
-    String.raw`\b(?:customers?|buyers?|shoppers?|clients?|competitors?|vendors?|tools?|providers?|platforms?|companies|brands?|stores?)\b`,
-  ].join('|'),
-  'i',
-);
-// "You could offer a discount" is advice about the user's own business.
-const OFFER_ADVICE_RE =
-  /^you\s+(?:should|could|can|might|may|need\s+to|want\s+to)\s+(?:also\s+)?(?:offer|add|give|run|show|promote|test|use|include|mention|highlight|create|make|set\s+up|build|try)\b/i;
-const isUncuedOffer = (s: string): boolean =>
-  OFFER_RE.test(s) && OFFER_SUBJECT_RE.test(s.trim()) && !OFFER_ADVICE_RE.test(s.trim()) && !THIRD_PARTY_RE.test(s);
-
-// ---------------------------------------------------------------------------------------
-// Plan questions: answered from the plan table, never by the model.
-// ---------------------------------------------------------------------------------------
-
-/** The handful of plan and payment words read in other languages. */
-export const PLAN_QUESTION_WORDS: Record<string, readonly string[]> = {
-  es: ['precio', 'precios', 'cuánto cuesta', 'cuanto cuesta', 'cuánto vale', 'costo', 'coste', 'pagar', 'pago', 'comprar', 'suscripción', 'suscripcion', 'renovar', 'renovación', 'se renueva', 'reembolso', 'prueba gratis', 'descuento', 'gratis', 'estrellas', 'planes'],
-  pt: ['preço', 'preços', 'quanto custa', 'custo', 'pagamento', 'assinatura', 'assinar', 'renovação', 'teste grátis', 'desconto', 'grátis', 'gratuito', 'estrelas', 'planos'],
-  ru: ['цена', 'цены', 'цену', 'сколько стоит', 'стоимость', 'оплата', 'оплатить', 'заплатить', 'купить', 'подписка', 'подписку', 'подписки', 'продление', 'продлить', 'продлевается', 'возврат', 'пробный', 'пробная', 'скидка', 'скидки', 'скидку', 'бесплатно', 'бесплатный', 'тариф', 'тарифы', 'тарифа', 'звёзд', 'звезд', 'звёзды', 'звезды'],
-  fr: ['prix', 'combien coûte', 'combien coute', 'combien ça coûte', 'coût', 'tarif', 'tarifs', 'payer', 'paiement', 'acheter', 'abonnement', 'renouveler', 'renouvellement', 'remboursement', 'essai gratuit', 'réduction', 'remise', 'gratuit', 'étoiles', 'forfait'],
-  de: ['preis', 'preise', 'was kostet', 'wie viel kostet', 'wieviel kostet', 'kosten', 'kostet', 'bezahlen', 'zahlung', 'kaufen', 'abo', 'abonnement', 'abonnieren', 'verlängern', 'verlängerung', 'rückerstattung', 'erstattung', 'testphase', 'probezeit', 'rabatt', 'kostenlos', 'sterne'],
-};
-// These words carry accents and Cyrillic, where \b does not work, so the edges are tested as
-// "no letter or digit on either side".
-const FOREIGN_PLAN_WORD_RE = new RegExp(
-  String.raw`(?<![\p{L}\p{N}])(?:${Object.values(PLAN_QUESTION_WORDS)
-    .flat()
-    .map((w) => w.split(' ').map(escapeRegExp).join(String.raw`\s+`))
-    .join('|')})(?![\p{L}\p{N}])`,
-  'iu',
-);
-
-// Words that are about buying from us wherever they stand in a question. Each has its
-// everyday use fenced off: "buy backlinks", "subscribe to my newsletter", "renew my domain".
-const PLAN_QUESTION_WORD_RE = new RegExp(
-  [
-    String.raw`\btelegram\s+stars\b|\bhow\s+many\s+stars\b|\b(?:in|with|for|using)\s+stars\b|\bstars\s*\?|\bxtr\b|⭐`,
-    String.raw`\bsubscri(?:be|bed|bing|ption|ptions)\b(?!\s+to\s+(?:my|our|a|an|the|their|your)\s+(?:newsletter|list|blog|channel|feed|podcast|emails?))`,
-    String.raw`\bunsubscribe\b|\bdowngrad(?:e|es|ed|ing)\b`,
-    String.raw`\bupgrad(?:e|es|ed|ing)\b(?!\s+(?:my|our|the|your)\s+(?:site|website|content|schema|pages?|hosting|theme|cms))`,
-    String.raw`\b(?:auto[- ]?)?renew(?:s|al|als|ing|ed)?\b(?!\s+(?:my|our|the|your|a)\s+(?:domain|ssl|certificate|hosting))`,
-    String.raw`\brefund(?:s|able|ed)?\b|\bmoney[- ]back\b`,
+    String.raw`\b(?:price[sd]?|prices|pricing|costs?|fees?|charge[sd]?|billing|billed|invoices?|refund(?:s|ed|able)?|money|(?:auto[- ]?)?renew(?:s|al|als|ing|ed)?|discount(?:s|ed)?|coupons?|promo\s*codes?|subscri(?:be|bed|bes|bing|ption|ptions)|payments?|crypto|usdt|usdc|bitcoin|paypal|visa|mastercard)\b`,
+    String.raw`\bpa(?:y|ys|id|ying)\b(?!\s+(?:attention|off)\b)`,
     String.raw`\btrials?\b(?!\s+and\s+error)`,
-    String.raw`\bdiscount(?:s|ed)?\b|\bcoupons?\b|\bpromo\s*codes?\b`,
-    String.raw`\bbilling\b|\bbilled\b|\binvoices?\b|\breceipts?\b|\bpaywall\b`,
-    String.raw`\bcancel(?:s|led|ed|ling|ing|lation)?\b`,
-    String.raw`\bpay(?:ing|ment|ments)?\b(?!\s+(?:attention|off)\b|\s+for\s+(?:ads?|links?|backlinks?|reviews?|traffic|tools?|content|seo|a\s+writer|an?\s+agency)\b)`,
-    String.raw`\bbuy(?:ing)?\b(?!\s+(?:ads?|links?|backlinks?|reviews?|traffic|followers|domains?|an?\s+(?:aged\s+)?domain|media|citations?|mentions?)\b)`,
-    String.raw`\bpurchas(?:e|ed|ing)\b`,
-    String.raw`\bexpir(?:e|es|ed|y|ation)\b`,
-    String.raw`\bwhat\s+happens\s+(?:after\s+(?:\d+|the|it|that|my)\b|when\s+(?:it|my|the)\s+(?:plan\s+|trial\s+|subscription\s+)?(?:ends?|expires?|runs?\s+out|is\s+over))`,
-    String.raw`\b(?:paid|premium)\s+(?:plans?|tiers?|version|features?)\b|\bgo\s+premium\b`,
+    // "free", but not "feel free", "error-free" or "free of".
+    String.raw`(?<!\bfeel\s)(?<![\w-])free\b(?!-|\s+(?:of|from|up)\b)`,
+    // "card", but not "Twitter card" or "product card".
+    String.raw`(?<!\b(?:twitter|x|og|graph|knowledge|summary|product|rich|business|info|score|report)\s)\bcards?\b`,
+    String.raw`\b(?:paid|premium|monthly|yearly|annual|cheaper|cheapest|each|every|which|our|luminara['’]?s?)\s+(?:plans?|tiers?)\b|\bplans?\s+(?:start|cost|costs|include|includes|renew|renews)\b`,
   ].join('|'),
   'i',
 );
-// "How much is it?" but not "how much traffic".
-const HOW_MUCH_RE =
-  /\bhow\s+much\b(?=\s*(?:\?|$|is\b|are\b|does\b|do\b|did\b|for\b|would\b|will\b|per\b|a\b|an\b|it\b|this\b|that\b|money\b|you\b|i\b|we\b|to\s+(?:pay|buy|subscribe|upgrade|get|use|start|join)\b))/i;
-const PRICE_QUESTION_RE = /\b(?:price[sd]?|prices|pricing|costs?|fees?|charge[sd]?|cheap(?:er|est)?|expensive|afford(?:able)?)\b/i;
-const FREE_QUESTION_RE =
-  /\bfor\s+free\b|\bfree\s+(?:plan|tier|version|trial|audits?|to\s+use|or\s+paid|forever|credits?|queries|limit)\b|\b(?:is|are|was)\s+(?:it|this|that|you|luminara|the\s+(?:bot|app|audit))\s+(?:really\s+)?free\b|\bfree\s*\?/i;
-// What the price word must be about: us, or nothing else in particular.
-const OURS_QUESTION_RE = /\b(?:plans?|tiers?|subscriptions?|membership|luminara|bot|app|suite|this|it|you|your|yours|here)\b/i;
-const EXPLICIT_OURS_RE = /\b(?:luminara|subscriptions?|membership|stars|xtr)\b|\b(?:the|this|your)\s+(?:bot|app|suite|plans?|tiers?)\b/i;
-// "How much does it cost to rank?" is about ranking, "how much does it cost to subscribe?" is about us.
-const GENERIC_COST_RE =
-  /\b(?:costs?|prices?|priced|expensive|cheap(?:er)?|charge[sd]?)\s+(?:to|of|for)\s+(?!use\b|get\s+(?:it|this|started)\b|buy\b|subscribe\b|upgrade\b|start\b|try\b|join\b|unlock\b|run\b|audit\b|this\b|it\b|that\b|the\s+(?:bot|app|plan|subscription)\b|luminara\b|your\b|a\s+(?:plan|subscription)\b)/i;
-// The user's own business, not ours: "should I offer my customers a discount?"
+function talksAboutMoney(sentence: string): boolean {
+  const s = withoutOrdinaryPlans(sentence);
+  return (
+    MONEY_TALK_RE.test(s) ||
+    TON_RE.test(s) ||
+    (STARS_WORD_RE.test(s) && !RATING_CONTEXT_RE.test(s)) ||
+    FOREIGN_PLAN_WORD_RE.test(s) ||
+    FOREIGN_BILLING_WORD_RE.test(s)
+  );
+}
+
+// ---------------------------------------------------------------------------------------
+// The router: two kinds of message never reach the model. It routes only when sure.
+// ---------------------------------------------------------------------------------------
+
+/** 'billing': a payment problem. 'plans': a question about our own plans, prices or how to pay. */
+export type ChatRoute = 'billing' | 'plans';
+
+// "What is your refund policy?" is about us, though "a refund policy" is a page of the user's.
+const YOUR_POLICY_RE = /\b(?:your|luminara['’]?s)\s+(?:refund|returns?|cancell?ation|billing|payment)\s+polic(?:y|ies)\b/gi;
+
+// Another company or tool. A message that names one is not about our plans.
+const OTHER_COMPANY_RE =
+  /\b(?:semrush|ahrefs|moz|majestic|screaming\s+frog|yoast|surfer|clearscope|google(?!\s+pay\b)|bing|chatgpt|openai|perplexity|gemini|claude|copilot|grok|stripe|shopify|woocommerce|wordpress|wix|squarespace|webflow|hubspot|mailchimp|zapier|notion|canva|g2|capterra|trustpilot|yelp|amazon|github|linkedin|youtube|tiktok|reddit|instagram|facebook|wikipedia|netflix|spotify|search\s+console)\b/i;
+// The user's own customers and business.
 const THEIR_BUSINESS_RE =
-  /\b(?:my|our)\s+(?:customers?|buyers?|clients?|users?|subscribers?|members?|products?|pricing|prices?|store|shop|saas|offers?|checkout|plans?\s+page|newsletter)\b/i;
+  /\b(?:my|our|his|her|their)\s+(?:[\w-]+\s+)?(?:customers?|clients?|buyers?|users?|subscribers?|members?|audience|visitors?|readers?|competitors?|site|website|store|shop|saas|products?|startup|brand|blog|newsletter|pricing|prices?|tiers|offers?|checkout|homepage|domain|hosting)\b|\b(?:i|we)\s+(?:sell|own)\b|\b(?:i|we)\s+run\s+(?:an?|\d+|my|our|the|several|multiple|two|three)\b|\bsells\b/i;
+// Work on a site: markup, pages, links, reviews, and paying somebody else for it.
+const SITE_WORK_RE = new RegExp(
+  [
+    String.raw`\b(?:schema|markup|mark(?:ing)?\s+up|json-?ld|structured\s+data|rich\s+results?|h[1-6]|faqs?|meta|title\s+tags?|alt\s+text|robots|llms|sitemaps?|redirects?|canonicals?|noindex|index(?:ed|ing)?|backlinks?|link[- ]building|reviews?|ratings?|testimonials?|polic(?:y|ies)|press\s+releases?|registrar|hosting|ads?|advertising|ppc|followers|traffic|freelancers?|writers?|consultants?|agencies)\b`,
+    String.raw`\b(?:pric(?:e|ing)|plans?|billing|checkout|product|landing|home|returns?|refunds?|coupon|receipt|category|web)\s*(?:pages?|tables?|sections?)\b`,
+    String.raw`\b(?:a|an|the|aged|expired|new|old)\s+(?:[\w-]+\s+)?domain\b|\bdomain\s+names?\b`,
+    String.raw`\b(?:an?|the|another|any)\s+(?:[\w-]+\s+)?agency\b(?!\s+(?:plan|tier|subscription|package|one)\b)|\bhir(?:e|ing)\b|\boutsourc(?:e|ing)\b`,
+  ].join('|'),
+  'i',
+);
+// The everyday subjects of this chat. They keep a message away from the plan block only: a
+// payment problem that mentions "the visibility audit" is still a payment problem.
+const SEARCH_TOPIC_RE =
+  /\b(?:visibility|seo|aeo|geo|serps?|search|keywords?|citations?|cit(?:e|es|ed|ing)|mentions?|(?:out)?rank(?:s|ed|ing|ings)?|content|blogs?|posts?|articles?|copy|pages?|links?|tools?|software|plugins?|campaigns?|competitors?|authority|conversions?|results?|snippets?|headings?|headlines?|brands?|audience|strateg(?:y|ies)|marketing)\b/i;
+
+// What "I paid" must not be followed by: then it was paid to somebody else.
+const NOT_OURS_AFTER = String.raw`(?!\s+(?:for\s+)?(?:an?\s+|some\s+|the\s+|more\s+)?(?:backlinks?|links?|reviews?|ads?|traffic|content|followers|writers?|freelancers?|agency|consultants?|tools?|software|domains?|hosting|courses?)\b)`;
+const OUR_THING = String.raw`(?:payment|purchase|plan|subscription|access|premium|stars|receipt|invoice|charge)`;
+const WENT_WRONG = String.raw`(?:not|isn['’]?t|wasn['’]?t|never|no\s+longer|gone|disappear\w*|vanish\w*|missing|lost|chang\w+|downgrad\w+|locked|expired|stopp\w+|fail\w*|declin\w+|pending|stuck|didn['’]?t|doesn['’]?t|won['’]?t)`;
+// A payment problem, in the first person.
+const PAYMENT_PROBLEM_RE = new RegExp(
+  [
+    // "I paid but nothing happened", "I already paid", "I bought it yesterday"
+    String.raw`\bi(?:['’]ve|\s+have)?\s+(?:(?:already|just|also)\s+)?(?:paid|payed|bought|purchased|subscribed|renewed)\b${NOT_OURS_AFTER}`,
+    String.raw`\bpaid\b[,;:]?\s+(?:but|and|yet|still|no|not|nothing|already|twice|double|by\s+mistake|yesterday|today)\b|\balready\s+paid\b`,
+    // "I was charged twice", "I got double billed", "I was downgraded", "you charged me"
+    String.raw`\b(?:i|we)\s+(?:was|were|got|am|have\s+been|['’]ve\s+been)\s+(?:double[- ]?)?(?:charged|billed|downgraded)\b(?!\s+with\b)`,
+    String.raw`\b(?:charged|billed)\s+(?:me\s+)?(?:twice|double|two\s+times|2\s+times)\b|\bdouble[- ]?(?:charged?|billed|billing|payment)\b|\b(?:you|it|they)\s+(?:charged|billed)\s+me\b`,
+    // "my payment failed", "my plan is not active", "my access is gone", "where is my plan"
+    String.raw`\bmy\s+${OUR_THING}\b(?!\s+is\s+to\b)[^.?!\n]{0,40}?\b${WENT_WRONG}\b`,
+    String.raw`\b(?:where\s+(?:is|are|did|has|have)|why\s+(?:did|is|was|has|have|are))\s+my\s+${OUR_THING}\b`,
+    // "payment went through but no access", "money was taken", "stars gone", "you took my money"
+    String.raw`\b(?:payment|money|stars|charge)\s+(?:went\s+through|was\s+taken|were\s+taken|taken|failed|declined|gone|missing|lost|didn['’]?t|did\s+not)\b`,
+    String.raw`\btook\s+my\s+(?:money|stars)\b|\b(?:money|stars)\s+back\b|\bmoney[- ]back\b`,
+    String.raw`\brefund(?:s|ed|able|ing)?\b|\bchargebacks?\b|\bunsubscribe\b`,
+    // "cancel", "how do I cancel", "cancel my subscription". Not "cancel a redirect".
+    String.raw`\bcancel(?:l?ing|l?ed|lation)?\b(?=\s*(?:$|[?.!,]|it\b|this\b|that\b|(?:my|the|this)\s+(?:subscription|plan|membership|payment|renewal|trial)\b))`,
+    String.raw`\b(?:an?|the|my)\s+(?:invoice|receipt)\b|\binvoice\s+for\b`,
+  ].join('|'),
+  'i',
+);
+
+const FIRST_PERSON_RE = /\b(?:i|we|me|my|mine|our|us)\b|\bi['’](?:m|ve|d|ll)\b/i;
+const TO_US_RE = /\b(?:you|your|yours|luminara|it|this|here|(?:the|this)\s+(?:bot|app|suite))\b/i;
+
+// "How much is it?" Not "how much traffic" or "how much should I write".
+const HOW_MUCH_RE =
+  /\bhow\s?much\b(?=\s*(?:[?$€£]|$|is\b|are\b|was\b|(?:does|do|did|would|will|can|could)\s+(?:it|this|that|you|they|one|the\s+[\w-]+|[\w-]+\s+plan)\s+(?:cost|charge|run|set)\b|(?:do|would|will|should|must)\s+(?:i|we)\s+(?:pay|owe|have\s+to\s+pay|need\s+to\s+pay)\b|for\b|per\b|a\s+(?:month|year|week|day)\b|money\b|to\s+(?:pay|buy|subscribe|upgrade|get\s+started|start|join|unlock)\b))/i;
+// A price word. "How do I price it?" uses the verb and is not one.
+const PRICE_WORD_RE =
+  /(?<!\b(?:i|we|to|should|can|could|would)\s)\bprice[sd]?\b|\b(?:prices|pricing|costs?|fees?|charge[sd]?|cheap(?:er|est)?|expensive|afford(?:able)?)\b/i;
+// "How much does it cost to rank?" is about ranking, "how much does it cost to subscribe?" is about us.
+// So is "are cheap domains ok?": the price word describes something that is not ours.
+const GENERIC_COST_RE =
+  /\b(?:costs?|prices?|priced|expensive|cheap(?:er|est)?|charge[sd]?)\s+(?:to|of|for|way)\s+(?!use\b|get\s+(?:it|this|started)\b|buy\b|subscribe\b|upgrade\b|start\b|try\b|join\b|unlock\b|run\b|audit\b|this\b|it\b|that\b|the\s+(?:bot|app|plan|subscription)\b|luminara\b|your\b|a\s+(?:plan|subscription)\b|me\b|one\b|\d)|\b(?:cheap|cheaper|cheapest|expensive|affordable)\s+(?!plans?\b|tiers?\b|options?\b|ones?\b|version\b|subscription\b|here\b|or\b|than\b|is\b|for\b|to\b|way\b)[a-z]/i;
+// "which plan", "what plans do you have", "plans".
 const OUR_PLAN_WORD_QUESTION_RE =
-  /\b(?:your|which|any|paid|free|cheapest|cheaper|monthly|yearly|annual|current|my|available)\s+(?:\w+\s+)?(?:plans?|tiers?)\b|\bwhat\s+plans\b|\bplans?\s+(?:do\s+you|are\s+there|cost|costs|prices?|pricing|options?|comparison|start|available)\b|^\W*(?:plans?|tiers?|pricing|prices?)\W*$/i;
+  /\b(?:your|which|any|paid|free|cheapest|cheaper|monthly|yearly|annual|current|my|available)\s+(?:\w+\s+)?(?:plans?|tiers?)\b|\bwhat\s+plans\b|\bplans?\s+(?:do\s+you|are\s+there|cost|costs|prices?|pricing|options?|comparison|start|available)\b|^\W*(?:plans?|tiers?)\W*$/i;
+// "how many stars", "stars?", "the 75 stars thing". Not "how do I get more stars".
+const STARS_QUESTION_RE = /\bhow\s+many\s+stars\b|\d\s*stars\b|\b(?:in|with|for|using|by|telegram)\s+stars\b|^\W*stars\W*$|⭐|\bxtr\b/i;
+// A message of one to three words that is one of these is a question about us: "price?", "crypto?".
+const BARE_MONEY_WORD_RE = new RegExp(
+  [
+    String.raw`\b(?:price|prices|pricing|costs?|fees?|free|paid|payments?|buy|purchase|subscribe|subscription|upgrade|unlock|premium|trial|demo|discounts?|coupons?|promo|deals?|sale|limits?|unlimited|visa|mastercard|paypal|crypto|usdt|usdc|bitcoin|wallet|monthly|yearly|annual|lifetime|recurring|renew|renewal|cheap|cheaper|cheapest|expensive)\b`,
+    String.raw`\bpay\b(?!\s+(?:attention|off)\b)`,
+    String.raw`(?<!\b(?:twitter|x|og|graph|knowledge|summary|product|rich|business)\s)\bcards?\b`,
+    String.raw`^\W*\$+\W*$`,
+  ].join('|'),
+  'i',
+);
+// What "pay" and "buy" must be followed by to be about us. Not "pay a writer" or "buy backlinks".
+const PAY_AFTER = String.raw`(?=\s*(?:$|[?.!,]|with\b|in\b|by\b|via\b|using\b|for\s+(?:this|it|that|the\s+(?:bot|app|plan|subscription|audit)|luminara|a\s+plan|more|anything)\b|you\b|here\b|more\b|now\b|monthly\b|yearly\b|again\b|anything\b|something\b|to\s+(?:use|unlock|continue|keep|get)\b|or\b|first\b|later\b|once\b|upfront\b))`;
+const BUY_AFTER = String.raw`(?=\s*(?:$|[?.!,]|it\b|this\b|that\b|one\b|a\s+plan\b|the\s+(?:plan|subscription|[\w-]+\s+plan)\b|here\b|now\b|more\b|stars\b|premium\b|access\b|from\s+you\b|in\b|with\b))`;
+const OUR_NOUNS = String.raw`(?:sites|domains|audits|queries|questions|messages|reports|projects|seats|engines)`;
+const PAY_METHOD = String.raw`(?:cards?|credit\s+cards?|debit\s+cards?|visa|mastercard|paypal|apple\s+pay|google\s+pay|crypto|usdt|usdc|bitcoin|dollars|euros?|wallet)`;
+const ASKS_HOW_TO_PAY_RE = /\b(?:do|does|can|could|will)\s+(?:you|i|we|it)\b/i;
+// Phrases that are about our plans when the message is short, or speaks of "I" or "you".
+const CUED_PLAN_RES: RegExp[] = [
+  // pay, buy, subscribe, upgrade, unlock, join
+  new RegExp(String.raw`\bpay\b${PAY_AFTER}|\bme\s+pay\b|\bbuy\b${BUY_AFTER}|\bpurchase\b${BUY_AFTER}`, 'i'),
+  /\bsubscribe\b(?=\s*(?:$|[?.!,]|to\s+(?:luminara|this|it|the\s+(?:bot|app|plan)|a\s+plan|premium)\b|here\b|now\b|monthly\b|again\b))|\b(?:a|the|my|your)\s+subscription\b(?!\s+(?:product|business|box|model|service|site|software|company))/i,
+  /\bupgrad(?:e|ing)\b(?=\s*(?:$|[?.!,]|my\s+plan\b|to\s+(?:premium|a\s+[\w-]+\s+plan|the\s+[\w-]+\s+plan)\b|later\b|now\b|it\b|plan\b|from\b))/i,
+  /\bunlock\b|\bhow\s+do\s+i\s+join\s*(?:$|\?)|\bsign\s+me\s+up\b|\btake\s+my\s+money\b|\bpremium\b|\benterprise\b/i,
+  // free or paid
+  /\bfor\s+free\b|\bfree\s+(?:plan|tier|version|trial|audits?|to\s+use|or\s+paid|or\s+not|forever|credits?|queries|limit)\b|\b(?:is|are|was)\s+(?:it|this|that|you|luminara|the\s+(?:bot|app|audit))\s+(?:really\s+)?(?:free|paid)\b|\bfree\s*\?|\bpaid\s+or\s+free\b|\b(?:paid|premium)\s+(?:plans?|tiers?|version|features?)\b/i,
+  // trials, discounts and deals
+  /\b(?:free\s+)?trial\s*\?|\b(?:do|does|is|are|can)\s+(?:you|there|it|i|luminara)\b[^?.!\n]{0,25}\b(?:trial|discount|coupon|promo|sale|deal)s?\b|\b(?:any|a|student|team|special|bulk)\s+(?:discounts?|deals?)\b|\bpromo\s*codes?\b|\btry\s+(?:it\s+)?before\b|\btest\s+it\s+first\b/i,
+  // renewal and how long a plan lasts
+  /\b(?:does|will|do|did)\s+(?:it|this|that|they|mine|my\s+plan|the\s+plan|plans)\s+(?:auto[- ]?)?(?:renew|recur|charge|expire|end|stop)\b|\bauto[- ]?(?:renew\w*|pay\w*|charge\w*|bill\w*)\b|\bbe\s+charged\b/i,
+  /\bhow\s+long\s+(?:does|will|do)\s+(?:it|this|that|mine|my\s+plan|a\s+plan|the\s+plan|plans?)\s+last\b|\bwhen\s+(?:does|will|do)\s+(?:it|this|mine|my\s+plan|the\s+plan)\s+(?:end|expire|run\s+out|stop|renew)\b|\bwhen\s+(?:it|mine|my\s+plan|the\s+plan)\s+(?:ends|expires|runs\s+out)\b/i,
+  /\bwhat\s+happens\s+(?:after\s+(?:\d+|the|it|that|my)\b|when\s+(?:it|my|the)\s+(?:plan\s+|trial\s+|subscription\s+)?(?:ends?|expires?|runs?\s+out|is\s+over))|\b(?:one[- ]?time|one[- ]?off|recurring|lifetime)\b|\b(?:monthly|yearly|annual)\s+(?:fee|plan|price|payment|or)\b|\bper\s+month\b/i,
+  // how to pay
+  new RegExp(String.raw`\b(?:do|does|can|could|will)\s+(?:you|i|we|it)\b[^?.!\n]{0,30}\b${PAY_METHOD}\b|\bmy\s+card\b`, 'i'),
+  // limits and what is included
+  new RegExp(
+    String.raw`\blimit(?:s|ed)?\b|\bunlimited\b|\bquota\b|\bhow\s+many\s+${OUR_NOUNS}\s+(?:(?:can|may)\s+(?:i|we)\b|do\s+(?:i|we)\s+get\b)|\b(?:i|we)\s+need\s+more\s+${OUR_NOUNS}\b|\bcan\s+(?:i|we)\s+add\s+(?:more\s+)?${OUR_NOUNS}\b`,
+    'i',
+  ),
+];
+// "What is included in the top one?", "Is the Drift Sentinel included or separate?"
+const WHAT_IS_INCLUDED_RE = /\bwhat(?:['’]?s|\s+is|\s+are)\s+included\b|\bis\s+(?:it|this|that|the\s+[\w\s-]{1,30}?)\s+included\b/i;
 // What may stand beside "pro", "growth" or "agency" for the word to mean a plan in a question.
 const PLAN_COMPANION_RE =
-  /\bhow\s+much\b|\b(?:price[sd]?|prices|pricing|costs?|plans?|tiers?|vs\.?|versus|difference|between|compare|comparison|which|include[sd]?|limits?|features?|upgrade|downgrade|switch|choose|pick|worth)\b/i;
-// A short follow-up to the plan block ("and the cheapest?"), not a new subject and not "thanks".
-const SITE_TOPIC_RE = /\b(?:site|website|pages?|schema|visibility|rank\w*|citations?|traffic|seo|aeo|geo|content|backlinks?|domain|keywords?|blog|faq)\b/i;
-const ACKNOWLEDGEMENT_RE =
-  /^\W*(?:ok(?:ay)?|k|thanks?|thank\s+you|thx|ty|cool|great|nice|got\s+it|fine|good|perfect|yes|yep|yeah|no|nope|bye|hi|hello|hey|sure|alright|understood)\W*$/i;
+  /\bhow\s?much\b|\bwhat\s+do\s+i\s+get\b|\b(?:price[sd]?|prices|pricing|costs?|plans?|tiers?|vs\.?|versus|difference|between|compare|comparison|which|include[sd]?|limits?|features?|upgrade|downgrade|switch|choose|pick|worth|buy|pay)\b/i;
 
-const wordCount = (s: string): number => s.trim().split(/\s+/).filter(Boolean).length;
-
-/** A plan name typed any way: "starter", "is growth worth it", "pro vs agency". */
-function namesPlanLoosely(text: string, names: PlanNames): boolean {
+/** A plan named in a question: "starter", "is growth worth it", "pro vs agency", "single audit". */
+function namesPlanInQuestion(text: string, names: PlanNames, words: number): boolean {
+  if (names.phrases.some((re) => re.test(text)) || names.idPhrases.some((re) => re.test(text))) return true;
   for (const { word, re } of names.words) {
     const key = word.toLowerCase();
     for (const m of text.matchAll(re)) {
       const at = m.index ?? 0;
       const before = text.slice(0, at);
       const after = text.slice(at + m[0].length);
+      if (/\bLuminara\s+$/i.test(before)) return true;
       if (ORDINARY_AFTER[key]?.test(after) || ORDINARY_BEFORE[key]?.test(before)) continue;
-      const everydayWord = NEEDS_VERB_AND_CUE_AT_START.has(key) || key === 'pro' || key === 'agency';
-      if (!everydayWord || PLAN_COMPANION_RE.test(before + after) || wordCount(text) <= 3) return true;
+      // Written as in the title, in the middle of the message: "How much is Starter?"
+      const titledMidMessage = m[0] === word && /[\p{L}\p{N}]/u.test(before);
+      if (words <= 3 || titledMidMessage || PLAN_WORD_AFTER_RE.test(after) || PLAN_COMPANION_RE.test(`${before} ${after}`)) return true;
     }
   }
   return false;
 }
 
+function asksAboutOurPlans(text: string, names: PlanNames): boolean {
+  const words = wordCount(text);
+  if (namesPlanInQuestion(text, names, words) || STARS_QUESTION_RE.test(text)) return true;
+  if (words <= 3 && (BARE_MONEY_WORD_RE.test(text) || TON_RE.test(text))) return true;
+  if (FOREIGN_PLAN_WORD_RE.test(text) || OUR_PLAN_WORD_QUESTION_RE.test(withoutOrdinaryPlans(text))) return true;
+  if (WHAT_IS_INCLUDED_RE.test(text)) return true;
+  // The rest needs a cue: a short message, or one that speaks of "I" or "you".
+  if (words > 6 && !FIRST_PERSON_RE.test(text) && !TO_US_RE.test(text)) return false;
+  if ((HOW_MUCH_RE.test(text) || PRICE_WORD_RE.test(text)) && !GENERIC_COST_RE.test(text)) return true;
+  return CUED_PLAN_RES.some((re) => re.test(text)) || (TON_RE.test(text) && ASKS_HOW_TO_PAY_RE.test(text));
+}
+
 /**
- * True when the user's message is about Luminara's own plans, prices, payment, billing,
- * refunds, renewal, trials, discounts or upgrading. Such a message is answered with
- * planFactsBlock() and the model is not called.
+ * Where the user's message goes. 'billing' and 'plans' get a fixed reply (chatRouteReply) and
+ * the model is not called; null goes to the model.
  *
- * `previousAssistantText` is the last reply in the chat: after the plan block, a short
- * follow-up ("and the cheapest?") is a plan question too.
+ * It answers only what is clearly a payment problem of the user's, or a question about
+ * Luminara's own plans, prices or how to pay. A message that names another company or tool,
+ * or is about the user's own site or business, is never routed. Each message is read by
+ * itself: what was said before changes nothing.
  */
-export function isPlanQuestion(userText: string, plans: PlanPriceTable, previousAssistantText = ''): boolean {
-  const text = wordsForPlanRules(String(userText || ''));
-  if (!text.trim()) return false;
-  const names = planNames(plans);
-  if (namesPlan(text, names) || namesPlanLoosely(text, names) || mentionsStarsPrice(text)) return true;
-  if (FOREIGN_PLAN_WORD_RE.test(text)) return true;
-  const aboutTheirBusiness = THEIR_BUSINESS_RE.test(text) && !EXPLICIT_OURS_RE.test(text);
-  if (!aboutTheirBusiness) {
-    if (PLAN_QUESTION_WORD_RE.test(text) || OUR_PLAN_WORD_QUESTION_RE.test(withoutOrdinaryPlans(text))) return true;
-    const short = wordCount(text) <= 5;
-    const price = HOW_MUCH_RE.test(text) || PRICE_QUESTION_RE.test(text);
-    const generic = GENERIC_COST_RE.test(text) && !EXPLICIT_OURS_RE.test(text);
-    if (price && !generic && (OURS_QUESTION_RE.test(text) || short)) return true;
-    if (FREE_QUESTION_RE.test(text) && (OURS_QUESTION_RE.test(text) || short)) return true;
-  }
-  return (
-    previousAssistantText.trimEnd().endsWith(PLAN_BLOCK_FOOTER) &&
-    wordCount(text) <= 6 &&
-    !SITE_TOPIC_RE.test(text) &&
-    !ACKNOWLEDGEMENT_RE.test(text)
-  );
+export function chatRoute(userText: string, plans: PlanPriceTable): ChatRoute | null {
+  const text = stripEmphasis(String(userText || ''))
+    .replace(LINK_OR_HOST_RE, ' ')
+    .replace(YOUR_POLICY_RE, ' refund ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return null;
+  if (OTHER_COMPANY_RE.test(text) || THEIR_BUSINESS_RE.test(text) || SITE_WORK_RE.test(text)) return null;
+  if (PAYMENT_PROBLEM_RE.test(text) || FOREIGN_BILLING_WORD_RE.test(text)) return 'billing';
+  if (SEARCH_TOPIC_RE.test(text)) return null;
+  return asksAboutOurPlans(text, planNames(plans)) ? 'plans' : null;
+}
+
+/** The fixed reply for a routed message. */
+export function chatRouteReply(route: ChatRoute, plans: PlanPriceTable): string {
+  return route === 'billing' ? BILLING_HELP_REPLY : planFactsBlock(plans);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -441,6 +548,8 @@ const SCALE_RE = /(?<!\d\s)\bout\s+of\s+(?:5|10|100)\b|\b(?:from\s+)?[01]\s?(?:-
 // "100% sure", "100% focus": an idiom, not a share of anything.
 const WHOLLY_RE =
   /\b100\s?%\s+(?:focus|focused|sure|certain|clear|ready|committed|confident|original|unique|accurate|honest|human|natural|necessary|required|crawlable|indexable|accessible|correct|complete|consistent|true)\b/gi;
+// A price cut is talk of money, not a reading: "20% off", "a 10% discount".
+const DISCOUNT_RE = /\b\d+(?:\.\d+)?\s?(?:%|percent)\s+(?:off|discounts?|cheaper|commission|deposit|tax|vat)\b/gi;
 // A number with its marks: "#3", "2nd", "1,200", "40%", "40 percent". The marks are part of
 // what the user said: "2 competitors" does not make "2nd" or "#2" the user's own.
 const NUMBER_TOKEN_RE = /(#\s?)?(\d[\d,]*(?:\.\d+)?)(st\b|nd\b|rd\b|th\b)?(\s?%|\s+percent\b)?/g;
@@ -493,7 +602,8 @@ function setAside(sentence: string, userNumbers: Set<string>): string {
     .replace(LABEL_RE, ' ')
     .replace(ITEM_COUNT_RE, ' ')
     .replace(SCALE_RE, ' ')
-    .replace(WHOLLY_RE, ' ');
+    .replace(WHOLLY_RE, ' ')
+    .replace(DISCOUNT_RE, ' ');
 }
 
 // ---------------------------------------------------------------------------------------
@@ -533,6 +643,8 @@ const SHAPE_RES: RegExp[] = [
   MULTIPLE_WORD_RE,
   // "#3"
   /(?:^|[^\w&])#\s?\d+\b/,
+  // a metric as a key in JSON that is not JSON-LD: "rank": 3, "ai_visibility": "37"
+  /"[\w\s-]*(?:visib|rank|citation|mention|traffic|score|share|authority|backlink|visit|click|impression)[\w\s-]*"\s*:\s*"?#?\d/i,
   // "37/100", "8/10"
   /\b\d+(?:\.\d+)?\s?\/\s?(?:5|10|100)\b(?!\s?\/)/,
   // "62 out of 100", "8 of 10 prompts", "3 of your 10 products"
@@ -735,69 +847,72 @@ const ASKS_FOR_SECRET_RE = new RegExp(
 // Data and sentences
 // ---------------------------------------------------------------------------------------
 
-/** A run of the reply: prose to read, or data (JSON, markup, robots.txt) to paste. */
+/** A run of the reply: prose to read, or JSON-LD or head tags to paste. */
 type Segment = { data: boolean; text: string };
 
 const CLOSED_FENCE_RE = /```[^\n`]*\n([\s\S]*?)```/g;
-const MARKUP_LINE_RE = /^\s*<[A-Za-z!?/][^\n]*>\s*$/;
-const SCRIPT_OPEN_RE = /^\s*<script\b/i;
-const SCRIPT_CLOSE_RE = /<\/script>/i;
-const ROBOTS_LINE_RE = /^\s*(?:user-agent|allow|disallow|sitemap|crawl-delay|host)\s*:/i;
-const URL_LINE_RE = /^\s*https?:\/\/\S+\s*$/i;
+// What goes in a page head. Any other tag is read as prose, with the text inside it.
+const HEAD_TAG_LINE_RE =
+  /^\s*(?:<\/?(?:head|html)\b[^<>\n]*>|<(?:meta|link|base)\b[^<>\n]*>|<title>[^<>\n]*<\/title>|<!--[^\n]*-->)\s*$/i;
+const LD_SCRIPT_OPEN_RE = /^\s*<script\b[^<>\n]*\btype\s*=\s*["']?application\/ld\+json["']?[^<>\n]*>/i;
+const SCRIPT_CLOSE_RE = /<\/script>\s*$/i;
 const MAX_DATA_LINES = 400;
 
-function isJson(text: string): boolean {
+/** JSON-LD: an object with "@context", or a list of such objects. */
+function isJsonLd(text: string): boolean {
   const trimmed = text.trim();
   if (!/^[{[]/.test(trimmed)) return false;
   try {
     const value: unknown = JSON.parse(trimmed);
-    return typeof value === 'object' && value !== null;
+    const items: unknown[] = Array.isArray(value) ? value : [value];
+    return items.length > 0 && items.every((item) => typeof item === 'object' && item !== null && '@context' in item);
   } catch {
     return false;
   }
 }
 
-function isRobotsOrSitemap(text: string): boolean {
-  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
-  const content = lines.filter((line) => !line.startsWith('#'));
-  return content.length > 0 && content.every((line) => ROBOTS_LINE_RE.test(line) || URL_LINE_RE.test(line));
-}
-
-/** What a closed fence must hold to be data: JSON that parses, markup, or a robots.txt or sitemap. */
-function isData(text: string): boolean {
-  const trimmed = text.trim();
-  return /^<[A-Za-z!?/][\s\S]*>$/.test(trimmed) || isJson(trimmed) || isRobotsOrSitemap(trimmed);
-}
-
-/** How many lines from `at` form data outside a fence: a script element, JSON, markup, robots.txt. */
+/** How many lines from `at` are something to paste: a JSON-LD script element, JSON-LD, or head tags. */
 function dataRunLength(lines: string[], at: number): number {
   const limit = Math.min(lines.length, at + MAX_DATA_LINES);
-  if (SCRIPT_OPEN_RE.test(lines[at])) {
-    for (let j = at; j < limit; j += 1) if (SCRIPT_CLOSE_RE.test(lines[j])) return j - at + 1;
+  if (LD_SCRIPT_OPEN_RE.test(lines[at])) {
+    for (let j = at; j < limit; j += 1) if (SCRIPT_CLOSE_RE.test(lines[j].trimEnd())) return j - at + 1;
     return 0;
   }
   if (/^\s*[{[]/.test(lines[at])) {
     let text = '';
     for (let j = at; j < limit; j += 1) {
       text += lines[j];
-      if (/[}\]],?\s*$/.test(lines[j]) && isJson(text.replace(/,\s*$/, ''))) return j - at + 1;
+      if (/[}\]],?\s*$/.test(lines[j]) && isJsonLd(text.replace(/,\s*$/, ''))) return j - at + 1;
     }
+    return 0;
   }
-  if (MARKUP_LINE_RE.test(lines[at])) {
-    let j = at;
-    while (j < limit && MARKUP_LINE_RE.test(lines[j])) j += 1;
-    return j - at;
+  let j = at;
+  while (j < limit && HEAD_TAG_LINE_RE.test(lines[j])) j += 1;
+  return j - at;
+}
+
+const linesOf = (text: string): string[] => text.split(/(?<=\n)/).filter((line) => line !== '');
+
+/** What a closed fence must hold to be set aside: nothing but JSON-LD or head tags. */
+function isPasteable(text: string): boolean {
+  const lines = linesOf(text);
+  let at = 0;
+  let found = false;
+  while (at < lines.length) {
+    if (lines[at].trim() === '') {
+      at += 1;
+      continue;
+    }
+    const run = dataRunLength(lines, at);
+    if (run === 0) return false;
+    found = true;
+    at += run;
   }
-  if (ROBOTS_LINE_RE.test(lines[at])) {
-    let j = at;
-    while (j < limit && ROBOTS_LINE_RE.test(lines[j])) j += 1;
-    return j - at >= 2 ? j - at : 0;
-  }
-  return 0;
+  return found;
 }
 
 function splitUnfenced(text: string, segments: Segment[]): void {
-  const lines = text.split(/(?<=\n)/).filter((line) => line !== '');
+  const lines = linesOf(text);
   let at = 0;
   while (at < lines.length) {
     const run = dataRunLength(lines, at);
@@ -810,9 +925,9 @@ function splitUnfenced(text: string, segments: Segment[]): void {
 }
 
 /**
- * The reply as runs of prose and of data. A fence is data only when it closes and holds
- * JSON, markup or a robots.txt; any other fenced text, and everything after an unclosed
- * fence, is prose.
+ * The reply as runs of prose and of data. Only JSON-LD (an object with "@context") and head
+ * tags are data, fenced or not. Any other JSON, markup or fenced text, and everything after
+ * an unclosed fence, is prose and is read for measurements like any sentence.
  */
 function splitData(reply: string): Segment[] {
   const segments: Segment[] = [];
@@ -820,7 +935,7 @@ function splitData(reply: string): Segment[] {
   for (const m of reply.matchAll(CLOSED_FENCE_RE)) {
     const start = m.index ?? 0;
     splitUnfenced(reply.slice(at, start), segments);
-    if (isData(m[1])) segments.push({ data: true, text: m[0] });
+    if (isPasteable(m[1])) segments.push({ data: true, text: m[0] });
     else splitUnfenced(m[0], segments);
     at = start + m[0].length;
   }
@@ -884,8 +999,10 @@ export type ChatHonestyResult = {
   text: string;
   /** One ledger entry per unmeasured claim found, with the status the ledger gave it. */
   claims: readonly Claim[];
-  /** How many sentences about our plans, prices or offers gave way to the plan block. */
+  /** How many sentences that named one of our plans with a number, or a number of Stars, gave way to the plan block. */
   planSentences: number;
+  /** True when the reply talks about money and MONEY_NOTE was added at its end. */
+  moneyNote: boolean;
   /** How many links were spelled out because their host is not an allowed one. */
   linksRemoved: number;
   /** How many sentences were removed because they asked for a code, password or key. */
@@ -894,21 +1011,6 @@ export type ChatHonestyResult = {
 
 // This chat has no measurement to cite, so a claim found here has no source.
 const NO_SOURCES: ClaimSource[] = [];
-// The words of a sentence as the plan rules read them: no emphasis or code marks, no links (a
-// link such as acme.io/pricing says nothing about our prices), and "pricing page" is a page.
-const PRICING_PAGE_RE = /\bpric(?:e|ing)\s+(?:pages?|tables?|sections?|blocks?|schema|copy)\b/gi;
-const stripEmphasis = (s: string): string => s.replace(/[*_`~]+/g, '');
-const wordsForPlanRules = (s: string): string =>
-  stripEmphasis(s).replace(LINK_OR_HOST_RE, ' ').replace(PRICING_PAGE_RE, ' ');
-
-/** True when a block of data names one of our plans beside a number, or gives a number of Stars. */
-function dataNamesOurPlans(text: string, names: PlanNames): boolean {
-  if (mentionsStarsPrice(text) || names.phrases.some((re) => re.test(text))) return true;
-  return names.words.some(({ word }) => {
-    const name = escapeRegExp(word);
-    return new RegExp(String.raw`\b${name}\b["'\s:=|,-]{0,6}\d|\d["'\s:=|,-]{0,6}\b${name}\b`, 'i').test(text);
-  });
-}
 
 /**
  * The reply as it may be stored and sent. See the top of this file for the rules.
@@ -920,7 +1022,9 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
   const lastUserText = wordsForPlanRules(userTexts[userTexts.length - 1] ?? '');
   const names = planNames(plans);
   const block = planFactsBlock(plans);
+  // Our own fixed lines are ours to place, when a reply repeats them.
   const blockSentences = new Set(block.split('\n').flatMap(splitSentences).map((s) => s.trim()));
+  const noteSentences = new Set(splitSentences(MONEY_NOTE).map((s) => s.trim()));
   const userAskedForMetric = METRIC_WORD_RE.test(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
   const userNumbers = numbersIn(userTexts);
   const userHosts = hostsIn(userTexts);
@@ -934,6 +1038,7 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
   const out: string[] = [];
   let blockAt = -1;
   let planSentences = 0;
+  let moneyTalk = false;
   let linksRemoved = 0;
   let secretRequests = 0;
 
@@ -949,7 +1054,7 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
   const dropPiece = (trail: string): void => {
     if (out.length > 0 && blockAt !== out.length - 1) out[out.length - 1] = out[out.length - 1].trimEnd() + trail;
   };
-  // The first sentence about our plans marks where the block goes; the rest are dropped.
+  // The first sentence that quotes a price of ours marks where the block goes; the rest are dropped.
   const giveWayToBlock = (trail: string): void => {
     planSentences += 1;
     if (blockAt === -1) {
@@ -962,18 +1067,25 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
 
   for (const segment of splitData(String(reply || ''))) {
     if (segment.data) {
-      // Data is not read for measurements. The plan and link rules still apply to it.
-      if (dataNamesOurPlans(wordsForPlanRules(segment.text), names)) giveWayToBlock(/\s*$/.exec(segment.text)?.[0] ?? '');
+      // JSON-LD and head tags are not read for measurements. The link rule still applies.
+      if (dataQuotesOurPrice(segment.text, names)) giveWayToBlock(/\s*$/.exec(segment.text)?.[0] ?? '');
       else out.push(spellOutForeignLinks(segment.text, SCHEME_LINK_RE));
       continue;
     }
-    let previousWasPlan = false;
     let previousWasUnmeasured = false;
     for (const piece of splitSentences(segment.text)) {
       const lead = LIST_MARKER_RE.exec(piece)?.[0] ?? '';
       const body = piece.slice(lead.length).trimEnd();
       const trail = piece.slice(lead.length + body.length);
       const plain = wordsForPlanRules(body);
+      const asWritten = stripEmphasis(body).trim();
+
+      // Our own money line: taken out here and put back once, at the end.
+      if (body !== '' && noteSentences.has(asWritten)) {
+        moneyTalk = true;
+        dropPiece(trail);
+        continue;
+      }
 
       if (body !== '' && ASKS_FOR_SECRET_RE.test(stripEmphasis(body))) {
         secretRequests += 1;
@@ -981,19 +1093,12 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
         continue;
       }
 
-      const aboutPlans =
-        body !== '' &&
-        (blockSentences.has(stripEmphasis(body).trim()) ||
-          isAboutOurPlans(plain, names) ||
-          isUncuedOffer(plain) ||
-          (previousWasPlan && FOLLOW_UP_RE.test(plain)));
-      if (aboutPlans) {
+      // Certain: one of our plans with a number, or a number of Stars. It gives way to the block.
+      if (body !== '' && (blockSentences.has(asWritten) || mentionsStarsPrice(plain) || namesPlanWithNumber(plain, names))) {
         if (blockAt === -1) previousWasUnmeasured = false;
         giveWayToBlock(trail);
-        previousWasPlan = true;
         continue;
       }
-      previousWasPlan = false;
 
       if (body !== '' && statesMeasurement(body, userNumbers, userAskedForMetric)) {
         // The ledger rule decides: a claim proposed as measured with no source is not_measured.
@@ -1007,6 +1112,8 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
         }
       }
       previousWasUnmeasured = false;
+      // Any other talk of money stays, word for word. It earns the one line at the end.
+      if (body !== '' && talksAboutMoney(plain)) moneyTalk = true;
       out.push(spellOutForeignLinks(piece, LINK_RE));
     }
   }
@@ -1017,5 +1124,7 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
     const after = out.slice(blockAt).join('').trim();
     text = [before, block, after].filter(Boolean).join('\n\n');
   }
-  return { text, claims: ledger.list(), planSentences, linksRemoved, secretRequests };
+  const moneyNote = moneyTalk && text.trim() !== '';
+  if (moneyNote) text = `${text.trimEnd()}\n\n${MONEY_NOTE}`;
+  return { text, claims: ledger.list(), planSentences, moneyNote, linksRemoved, secretRequests };
 }

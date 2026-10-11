@@ -6,7 +6,7 @@ import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
-import { businessDnaPromptBlock, filterChatReply, isPlanQuestion, planFactsBlock, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
+import { businessDnaPromptBlock, chatRoute, chatRouteReply, filterChatReply, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
 import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
@@ -744,11 +744,12 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
     };
 
-    // 3. A question about our own plans, prices, payment or offers never reaches the model
-    // (worker/chatHonesty.ts). The answer is built from PLANS, uses no quota and needs no plan.
-    const lastTurn = history[history.length - 1];
-    if (isPlanQuestion(text, PLANS, lastTurn?.role === 'assistant' ? String(lastTurn.content ?? '') : '')) {
-      await deliverChatReply(planFactsBlock(PLANS), openAppKeyboard(env));
+    // 3. A payment problem, and a question about our own plans, prices or how to pay, never
+    // reach the model (worker/chatHonesty.ts). Each gets a fixed reply that uses no quota and
+    // needs no plan. Only this message is read: what was said before does not route it.
+    const route = chatRoute(text, PLANS);
+    if (route) {
+      await deliverChatReply(chatRouteReply(route, PLANS), openAppKeyboard(env));
       return;
     }
 
@@ -856,7 +857,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         })
       : null;
     if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.linksRemoved > 0 || honest.secretRequests > 0)) {
-      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan or price sentence(s), ${honest.linksRemoved} link(s), ${honest.secretRequests} request(s) for a secret`);
+      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan price sentence(s), money note ${honest.moneyNote ? 'added' : 'not added'}, ${honest.linksRemoved} link(s), ${honest.secretRequests} request(s) for a secret`);
     }
     const aiResponse = honest ? honest.text : null;
 

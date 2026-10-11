@@ -362,19 +362,27 @@ message and the reply went to the model chat.
   `not_measured` or "not verified" when data is missing; numeric claims
   without tool evidence are rejected. Live.
 - `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
-  nothing, and the model has no say over prices.
-  - **A question about our own plans, prices, payment or offers never reaches the
-    model.** `isPlanQuestion` reads the user's message (English, plus a short named
-    list of words in Spanish, Portuguese, Russian, French and German). The reply is
-    one block built from `PLANS`: each plan with its Stars and days, where to buy,
-    that plans do not renew, where billing help is. It is stored in history like any
-    reply, costs no quota and needs no plan. A short follow-up to that block gets
-    the block again.
-  - Every other reply passes through `filterChatReply` before it is stored or sent.
-    A sentence that names a plan, gives a number of Stars, puts a price word next to
-    Luminara or a plan, or makes an offer (renewal, refund, trial, discount, charge,
-    guarantee) with no third party named gives way to the same block. The model's
-    number is never checked: a correct price is replaced too.
+  nothing, and the model has no say over prices or payments.
+  - **Two kinds of message never reach the model.** `chatRoute` reads the user's
+    message (English, plus a short named list of words in Spanish, Portuguese,
+    Russian, French and German). A payment problem in the first person ("I paid but
+    nothing happened", "charged twice", "I want a refund") gets one fixed reply that
+    points to `/paysupport` and says not to pay again. A question about Luminara's
+    own plans, prices or how to pay gets one block built from `PLANS`, headed
+    "Luminara's own plans:". Both are stored in history like any reply, cost no
+    quota and need no plan.
+  - **It routes only when sure, and it has no memory.** A message that names another
+    company or tool, or is about the user's own site, page, markup, policy,
+    customers or pricing, goes to the model. Each message is read by itself: what
+    was said before never routes it.
+  - Every model reply passes through `filterChatReply` before it is stored or sent.
+    A sentence that names one of our plans as a plan with a number, or gives a
+    number of Stars, gives way to the plan block. The model's number is never
+    checked: a correct price is replaced too. Any other talk of money (price, pay,
+    refund, renew, trial, discount, free, card, crypto, subscription) stays word for
+    word, and one fixed line is added at the end of the reply: where plans and
+    prices are, where billing help is, and that this chat cannot quote prices or
+    take payments.
   - A sentence that states a measurement nobody made (a percentage, a rank, a score,
     a count of citations or visits, a claim of having looked at the site) becomes
     one "not measured" sentence. Links, dates, phone and version numbers and HTTP
@@ -382,13 +390,14 @@ message and the reply went to the model chat.
     sentence hands it back ("you said"). An instruction keeps its count ("Add 3 FAQ
     questions") and loses a promised outcome. Status comes from the claim ledger
     (`services/evidenceBound`).
-  - Inline code is read as prose. A fence is data, and not read for measurements,
-    only when it closes and holds JSON that parses, markup, or a robots.txt; any
-    other fenced text, and everything after an unclosed fence, is prose.
+  - Inline code is read as prose. Only JSON-LD (an object with `@context`) and head
+    tags (`meta`, `link`, `title`, a JSON-LD `script`) are set aside as something
+    to paste, fenced or not. Any other JSON, markup or fenced text, and everything
+    after an unclosed fence, is prose and is read for measurements.
   - A link or bare host name is spelled out in words unless the host is
     luminarasuite.com, the `WEBAPP_URL` host, one the user wrote, or a reference
-    host (`REFERENCE_LINK_HOSTS`). This applies inside JSON and markup too. A
-    sentence that asks for a code, password, seed phrase or key is removed.
+    host (`REFERENCE_LINK_HOSTS`). Links inside JSON-LD and head tags are checked
+    too. A sentence that asks for a code, password, seed phrase or key is removed.
   Business DNA enters the prompt only inside an untrusted-content fence whose
   markers carry a one-time code, with each field capped at 300 characters. The
   reply is sent with no `parse_mode` and with link previews off. The filter is a
