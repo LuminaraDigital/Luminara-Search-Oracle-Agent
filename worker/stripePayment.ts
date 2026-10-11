@@ -14,6 +14,7 @@ import {
   releaseStripeReversal,
   releaseStripeSession,
 } from './paymentLedger';
+import { planRank } from './planRank';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { normalizePlanId } from '../services/plans/planEntitlements';
 
@@ -99,18 +100,10 @@ export const CARD_IN_TELEGRAM_ERROR = 'Inside Telegram, plans are paid with Tele
 
 type StripeDeps = { fetcher?: typeof fetch };
 
-/**
- * Plan rank for the rule of Track SW task SW0a-4: a lower plan never replaces a higher active one.
- * Names go through normalizePlanId, so "pro" ranks as agency and an unknown name ranks as free.
- * SW0a-4 has not landed for the other rails. When it moves this rule into writeSubscriptionRecord,
- * use its rank table here, and let reverseStripeCharge through: restoring the plan a disputed
- * upgrade replaced is a deliberate write of a lower plan.
- */
-const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, growth: 2, agency: 3 };
-
-export function planRank(plan: unknown): number {
-  return PLAN_RANK[normalizePlanId(typeof plan === 'string' ? plan : '')] ?? 0;
-}
+// The rank table is the one every rail shares (worker/planRank.ts, Track SW task SW0a-4). The
+// rule itself, a lower plan never replaces a higher one that is still running, is enforced inside
+// writeSubscriptionRecord; this file refuses and refunds before it gets there.
+export { planRank };
 
 type ActiveSubscription = { plan: string; expiresAt: number; record: Record<string, unknown> };
 
@@ -632,7 +625,8 @@ async function reverseStripeCharge(env: Env, paymentIntentRaw: unknown, reason: 
           reversedAt: now,
         };
       }
-      await writeSubscriptionRecord(env, userId, next);
+      // Restoring the plan a reversed upgrade replaced is a deliberate write of a lower plan.
+      await writeSubscriptionRecord(env, userId, next, { allowLowerPlan: true });
     }
   } catch (err) {
     await releaseStripeReversal(env, sessionId);
