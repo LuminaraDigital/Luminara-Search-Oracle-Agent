@@ -31,6 +31,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0015_privacy_observability_memory.sql',
   'migrations/0016_memory_history.sql',
   'migrations/0017_proof_ledger.sql',
+  'migrations/0023_stars_charges.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
@@ -55,6 +56,7 @@ const REQUIRED_D1_TABLES = [
   'idea_scouts',
   'idea_scout_daily',
   'niche_pulse_subs',
+  'stars_charges',
 ];
 
 // 1. Verify build bundle integrity
