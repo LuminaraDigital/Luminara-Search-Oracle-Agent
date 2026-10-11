@@ -97,7 +97,11 @@ export interface Env {
   /** Self-hosted Umami login used to mint a bearer token when no API key is set (secrets). */
   UMAMI_USERNAME?: string;
   UMAMI_PASSWORD?: string;
-  /** Stripe API secret key for card checkouts (sk_live_... / sk_test_...). */
+  /**
+   * Stripe API secret key for card checkouts. Must be a live key (sk_live_...) when
+   * ENVIRONMENT=production and a test key (sk_test_...) everywhere else; any other pairing
+   * keeps the card rail closed (worker/stripePayment.ts, diagnoseStripeConfig).
+   */
   STRIPE_SECRET_KEY?: string;
   /** Stripe webhook endpoint secret (whsec_...). */
   STRIPE_WEBHOOK_SECRET?: string;
@@ -113,6 +117,21 @@ export interface Env {
    * Empty means the production bot's published link. Staging sets its own bot's link.
    */
   TELEGRAM_MINI_APP_URL?: string;
+  /**
+   * "true" turns the community idea feed on (GET /idea-scout/feed, POST /idea-scout/vote,
+   * POST /idea-scout/share). Anything else: those three routes serve nothing. The sign-in guard
+   * (worker/authMiddleware.ts) runs before the handler on every /idea-scout route, so a guest gets
+   * 401 from the guard and a signed-in caller gets 404 from the handler. Off until the feed
+   * stops returning account ids and has its own tables, limits and moderation (Track SW, SW0a-9).
+   */
+  COMMUNITY_FEED_ENABLED?: string;
+  /**
+   * "true" turns points on: the daily check-in route, and the points total and rank in the
+   * referral summary. Anything else: the check-in answers 404 before any sign-in check, to a
+   * guest and a signed-in caller alike, and writes nothing, and the summary leaves the points
+   * out. Rows already written stay. Off until decision 9 (Track SW, SW0a-10).
+   */
+  LUMENS_ENABLED?: string;
   TON_API_KEY?: string;
   /**
    * Hard network gate for chain payments and proof anchors: `testnet` | `mainnet`.
@@ -133,8 +152,6 @@ export interface Env {
   PROOF_ANCHOR_ENABLED?: string;
   /** Optional TON CitationRegistry contract address override. */
   TON_CITATION_CONTRACT_ADDRESS?: string;
-  /** Secret. TON operations hot wallet private key for on-chain anchoring. */
-  TON_MINTER_PRIVATE_KEY?: string;
   /** Feature flag: enable XDC weekly re-check path (`true` / `false`). */
   PROOF_XDC_ENABLED?: string;
   /**

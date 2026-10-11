@@ -126,6 +126,12 @@
     // Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
     // Empty means the production bot's published link. Staging sets its own bot's link once that bot exists.
     "TELEGRAM_MINI_APP_URL": "",
+    // Off: the community idea feed routes answer 404 to a signed-in caller. A guest gets 401, because
+    // the sign-in guard runs first. Not to be switched on before the feed stops returning account
+    // ids and has its own tables, limits and a named moderator.
+    "COMMUNITY_FEED_ENABLED": "false",
+    // Off: the daily check-in answers 404 and the referral summary leaves points out. Rows stay.
+    "LUMENS_ENABLED": "false",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
     "LANGUAGETOOL_URL": "",
@@ -249,6 +255,12 @@
         // Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
         // Empty means the production bot's published link. Staging sets its own bot's link once that bot exists.
         "TELEGRAM_MINI_APP_URL": "",
+        // Off: the community idea feed routes answer 404 to a signed-in caller. A guest gets 401, because
+        // the sign-in guard runs first. Not to be switched on before the feed stops returning account
+        // ids and has its own tables, limits and a named moderator.
+        "COMMUNITY_FEED_ENABLED": "false",
+        // Off: the daily check-in answers 404 and the referral summary leaves points out. Rows stay.
+        "LUMENS_ENABLED": "false",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
@@ -342,6 +354,12 @@
         // Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
         // Empty means the production bot's published link. Staging sets its own bot's link once that bot exists.
         "TELEGRAM_MINI_APP_URL": "",
+        // Off: the community idea feed routes answer 404 to a signed-in caller. A guest gets 401, because
+        // the sign-in guard runs first. Not to be switched on before the feed stops returning account
+        // ids and has its own tables, limits and a named moderator.
+        "COMMUNITY_FEED_ENABLED": "false",
+        // Off: the daily check-in answers 404 and the referral summary leaves points out. Rows stay.
+        "LUMENS_ENABLED": "false",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",

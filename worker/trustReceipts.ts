@@ -2,7 +2,8 @@
  * Trust Receipts (Trust Network TN1). A receipt is a signed statement that a
  * Worker verifier checked a claim. It indexes evidence by hash and never copies
  * it. There is deliberately no route that mints a receipt from client input:
- * only server-side verifiers (domainVerification.ts first) call issueTrustReceipt.
+ * only server-side verifiers (domainVerification.ts first) call issueTrustReceipt,
+ * and a verified level is refused without the verifier's typed result (VerifierResult).
  *
  * Routes (all 404 unless TRUST_RECEIPTS_ENABLED):
  *   GET  /trust/keys                       public key set (public)
@@ -12,8 +13,10 @@
  *   POST /trust/receipts/:id/revoke        owner: { reason }
  */
 import type { Env } from './env';
+import type { DomainProofMethod } from './domainVerification';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
-import { MAX_SMALL_BODY_BYTES, readBody } from './security';
+import { MAX_SMALL_BODY_BYTES, readBody, safePublicUrl } from './security';
+import { wwwTwin } from '../services/security/publicHostname';
 import { billingId, identify, json } from './workerUtils';
 import {
   ReceiptSigningUnavailable,
@@ -81,11 +84,27 @@ function toView(row: ReceiptRow): TrustReceiptView {
   };
 }
 
-export type IssueReceiptInput = {
+/**
+ * What a Worker verifier checked, and that the check passed. A receipt at a verified
+ * level is issued only with one of these in hand, built from the verifier's own result.
+ */
+export type VerifierResult = {
+  /** Only a passed check can back a verified receipt. */
+  passed: true;
+  /** What was checked: the subject, and the claim about it. */
+  subject: { kind: TrustReceiptSubjectKind; id: string };
+  claim: TrustReceiptClaim;
+  /** How it was checked, for example `dns_txt`. */
+  method: string;
+  /** Where the proof was read, and the SHA-256 of the bytes that were read. */
+  evidenceUrl: string;
+  evidenceSha256: string;
+};
+
+type IssueReceiptCommon = {
   accountId: string;
   subject: { kind: TrustReceiptSubjectKind; id: string };
   claim: TrustReceiptClaim;
-  level: TrustReceiptLevel;
   method: string;
   evidence: TrustReceiptEvidence[];
   measurementStatus: 'measured' | 'estimated' | 'not_measured';
@@ -94,11 +113,116 @@ export type IssueReceiptInput = {
 };
 
 /**
+ * `self_reported` needs no check. Every other level says Luminara verified something,
+ * so it must carry the verifier result it rests on.
+ */
+export type IssueReceiptInput = IssueReceiptCommon &
+  (
+    | { level: 'self_reported'; verifierResult?: undefined }
+    | { level: Exclude<TrustReceiptLevel, 'self_reported'>; verifierResult: VerifierResult }
+  );
+
+/** Thrown when a verified level is asked for without a verifier result that matches the receipt. */
+export class ReceiptNotVerified extends Error {
+  constructor(reason: string) {
+    super(`Refusing to issue a verified receipt: ${reason}`);
+    this.name = 'ReceiptNotVerified';
+  }
+}
+
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+
+type ReceiptSubject = { kind: TrustReceiptSubjectKind; id: string };
+/** True when `location` is where this method reads its proof for this subject. */
+type ProofLocationRule = (subject: ReceiptSubject, location: string) => boolean;
+
+/**
+ * An HTTP proof as fetchFromDomain in domainVerification.ts reports it: the final URL
+ * after redirects, which it accepts only from the domain or its www twin. The path is
+ * not held to anything, because a redirect may change it.
+ */
+const servedByTheDomain: ProofLocationRule = (subject, location) => {
+  const url = safePublicUrl(location);
+  if (!url || subject.kind !== 'domain') return false;
+  const host = url.hostname.toLowerCase();
+  return host === subject.id || host === wwwTwin(subject.id);
+};
+
+/**
+ * Where each method of the domain check reads its proof, in the form checkDomainProof
+ * puts in `evidenceUrl`. Typed against DomainProofMethod, so a method the verifier
+ * cannot return does not compile here, and a new one must be given its rule.
+ */
+const DOMAIN_PROOF_LOCATIONS: Record<DomainProofMethod, ProofLocationRule> = {
+  // `dns:TXT:${name}`, where name is the `_luminara-verify.` label or the domain itself.
+  dns_txt: (subject, location) =>
+    subject.kind === 'domain' &&
+    (location === `dns:TXT:_luminara-verify.${subject.id}` || location === `dns:TXT:${subject.id}`),
+  well_known: servedByTheDomain,
+  meta_tag: servedByTheDomain,
+};
+
+/**
+ * The verifiers that exist, by level, then claim, then method. Today that is one: the
+ * domain check in domainVerification.ts. A verified receipt for any other level, claim
+ * or method is refused, because nothing in the Worker could have checked it, and so is
+ * one whose evidence is not where that method reads. Add an entry here in the change
+ * that ships a verifier.
+ */
+const VERIFIER_METHODS: Record<Exclude<TrustReceiptLevel, 'self_reported'>, Partial<Record<TrustReceiptClaim, Record<string, ProofLocationRule>>>> = {
+  worker_verified: { domain_control: DOMAIN_PROOF_LOCATIONS },
+  registry_verified: {},
+};
+
+/** A key the table itself holds. `constructor`, `toString` and the like are on every object and must not count. */
+function own<T>(table: Record<string, T> | undefined, key: string): T | undefined {
+  return table && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
+}
+
+/**
+ * The runtime half of the IssueReceiptInput type: a cast or a JavaScript caller cannot
+ * skip it. It checks that the result is complete, matches the receipt and names a real
+ * verifier. It cannot prove who built the result: that rests on the rule that only a
+ * verifier builds one, which tests/receiptsNeedVerifier.test.ts checks statically.
+ */
+function assertVerifierResult(input: IssueReceiptInput): void {
+  if (input.level === 'self_reported') return;
+  const result = input.verifierResult as VerifierResult | undefined;
+  if (!result || result.passed !== true) throw new ReceiptNotVerified('no passed verifier result was given');
+  if (
+    result.subject?.kind !== input.subject.kind ||
+    result.subject?.id !== input.subject.id ||
+    result.claim !== input.claim ||
+    result.method !== input.method
+  ) {
+    throw new ReceiptNotVerified('the verifier result is for a different subject, claim or method');
+  }
+  const readsProofAt = own(own(own(VERIFIER_METHODS, input.level), input.claim), input.method);
+  if (!readsProofAt) {
+    throw new ReceiptNotVerified('no verifier checks this claim by this method at this level');
+  }
+  // Both must be real values before they are compared: two missing fields are equal too.
+  const sha256 = result.evidenceSha256;
+  const url = result.evidenceUrl;
+  if (typeof sha256 !== 'string' || !SHA256_HEX_RE.test(sha256) || typeof url !== 'string' || !url) {
+    throw new ReceiptNotVerified('the verifier result does not say what was read, or its hash is not a SHA-256');
+  }
+  if (!readsProofAt(input.subject, url)) {
+    throw new ReceiptNotVerified('the evidence is not where this method reads its proof for this subject');
+  }
+  if (!input.evidence.some((e) => e.sha256 === sha256 && e.url === url)) {
+    throw new ReceiptNotVerified('the receipt does not carry the evidence the verifier read');
+  }
+}
+
+/**
  * Signs and stores a receipt. Server-side verifiers only. Throws
  * ReceiptSigningUnavailable when no key or no D1 is configured, so a verifier
  * can report "verified, receipt not issued" honestly instead of faking one.
+ * Throws ReceiptNotVerified when a verified level has no matching verifier result.
  */
 export async function issueTrustReceipt(env: Env, input: IssueReceiptInput): Promise<TrustReceiptView> {
+  assertVerifierResult(input);
   if (!env.DB) throw new ReceiptSigningUnavailable('D1 is not bound');
   const kid = await currentReceiptKid(env);
   if (!kid) throw new ReceiptSigningUnavailable('RECEIPT_SIGNING_KEY is not configured');
@@ -188,6 +312,53 @@ export async function revokeTrustReceipt(
     });
   }
   return changed;
+}
+
+/**
+ * The method the gateway route stamped on each receipt it issued. That route fetched
+ * nothing and checked nothing, so none of those receipts rests on a verifier result.
+ */
+export const GATEWAY_RECEIPT_METHOD = 'gateway_oracle_audit_v1';
+/** Shown to anyone who opens the receipt's link, so it is a plain sentence. */
+export const GATEWAY_RECEIPT_REVOKED_REASON = 'This receipt was issued without a check and has been withdrawn.';
+/** Kept low: each receipt costs a KV write and a few D1 queries, and one Worker call may only make so many. */
+export const GATEWAY_REVOKE_BATCH = 10;
+
+/** Thrown when the trust_receipts table is not in this database (migration 0020 not applied). */
+export class TrustReceiptsTableMissing extends Error {
+  constructor() {
+    super('This database has no trust_receipts table. Apply migration 0020 first. Without the table no receipt exists here, so there is nothing to revoke.');
+    this.name = 'TrustReceiptsTableMissing';
+  }
+}
+
+/**
+ * Revokes the receipts the gateway route issued, chosen by the method in the signed
+ * payload, so a receipt from a real verifier is never touched. Each call handles up to
+ * GATEWAY_REVOKE_BATCH and reports how many are left. Safe to run again: a revoked
+ * receipt is not selected and its first reason and time are kept.
+ *
+ * Revoking marks the row and what the receipt's page shows. It cannot reach a copy
+ * somebody saved: that copy's signature stays valid until the signing key is rotated.
+ */
+export async function revokeGatewayIssuedReceipts(env: Env): Promise<{ revoked: number; remaining: number }> {
+  if (!env.DB) throw new Error('Trust receipts need D1');
+  const stillLive = `FROM trust_receipts WHERE revoked_at IS NULL AND json_extract(payload_json, '$.method') = ?`;
+  const { results } = await env.DB.prepare(`SELECT id, account_id, visibility ${stillLive} ORDER BY created_at LIMIT ?`)
+    .bind(GATEWAY_RECEIPT_METHOD, GATEWAY_REVOKE_BATCH)
+    .all<Pick<ReceiptRow, 'id' | 'account_id' | 'visibility'>>()
+    .catch((err: unknown) => {
+      if (/no such table: trust_receipts/i.test(err instanceof Error ? err.message : String(err))) throw new TrustReceiptsTableMissing();
+      throw err;
+    });
+  let revoked = 0;
+  for (const row of results || []) {
+    // These were public from the moment they were issued, so a shared link must keep showing "revoked".
+    if (row.visibility === 'public') await markEverPublic(env, row.id);
+    if (await revokeTrustReceipt(env, row.account_id, row.id, GATEWAY_RECEIPT_REVOKED_REASON, 'admin')) revoked++;
+  }
+  const left = await env.DB.prepare(`SELECT COUNT(*) AS n ${stillLive}`).bind(GATEWAY_RECEIPT_METHOD).first<{ n: number }>();
+  return { revoked, remaining: Number(left?.n || 0) };
 }
 
 async function readReceipt(env: Env, id: string): Promise<ReceiptRow | null> {

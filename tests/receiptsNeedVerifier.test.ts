@@ -1,0 +1,665 @@
+/**
+ * SW0a-15: a receipt cannot be minted from constants.
+ *
+ *  1. issueTrustReceipt refuses a verified level without a typed verifier result that
+ *     matches the receipt, and stores nothing when it refuses.
+ *  2. The gateway route (POST /api/gateway/execute) stores no receipt at all.
+ *  3. The verified level literal is written only where a verifier result is in hand.
+ *  4. revokeGatewayIssuedReceipts revokes only what the gateway route issued, and is
+ *     safe to run twice. Real migrations via sqliteD1.
+ */
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
+import type { Env } from '../worker/env';
+import worker from '../worker/index';
+import { GATEWAY_NO_RECEIPT_NOTE } from '../worker/oracleGateway';
+import { resetReceiptKeyCacheForTests } from '../worker/receiptSigning';
+import {
+  GATEWAY_RECEIPT_METHOD,
+  GATEWAY_RECEIPT_REVOKED_REASON,
+  GATEWAY_REVOKE_BATCH,
+  ReceiptNotVerified,
+  TrustReceiptsTableMissing,
+  handleTrustReceiptsRoute,
+  issueTrustReceipt,
+  revokeGatewayIssuedReceipts,
+  type IssueReceiptInput,
+  type VerifierResult,
+} from '../worker/trustReceipts';
+import { canonicalJson } from '../services/trust/receiptCrypto';
+import type { TrustReceiptView } from '../services/trust/receiptTypes';
+import { createSqliteD1 } from './helpers/sqliteD1';
+
+/** Built from parts so this file never matches the static scan it runs. */
+const VERIFIED_LEVEL = ['worker', 'verified'].join('_');
+const ADMIN_SECRET = 'test-admin-secret';
+const REPO_ROOT = resolve(__dirname, '..');
+
+let SIGNING_KEY = '';
+
+beforeAll(async () => {
+  const pair = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify'])) as CryptoKeyPair;
+  SIGNING_KEY = JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey));
+});
+
+afterEach(() => {
+  resetReceiptKeyCacheForTests();
+  principal.accountId = null;
+});
+
+/** Signed-in requests go through identify(); a hoisted mock returns the current principal. */
+const principal = vi.hoisted(() => ({ accountId: null as string | null }));
+vi.mock('../worker/workerUtils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../worker/workerUtils')>();
+  return {
+    ...actual,
+    identify: async () =>
+      principal.accountId
+        ? { user: { id: `u_${principal.accountId}`, source: 'firebase', accountId: principal.accountId } }
+        : { user: null, error: 'Sign in required' },
+  };
+});
+
+function mockKv(store = new Map<string, string>()): KVNamespace {
+  return {
+    get: async (key: string) => store.get(key) ?? null,
+    put: async (key: string, value: string) => {
+      store.set(key, value);
+    },
+    delete: async (key: string) => {
+      store.delete(key);
+    },
+  } as unknown as KVNamespace;
+}
+
+/** Everything the old gateway code needed to mint: the flag on, a signing key, D1 and KV. */
+function makeEnv(overrides: Partial<Env> = {}): Env {
+  return {
+    ASSETS: { fetch: async () => new Response('ok') } as unknown as Fetcher,
+    LUMINARA_KV: mockKv(),
+    DB: createSqliteD1(),
+    WEBAPP_URL: 'https://luminarasuite.com/',
+    ALLOWED_ORIGINS: 'https://luminarasuite.com',
+    TRUST_RECEIPTS_ENABLED: 'true',
+    RECEIPT_SIGNING_KEY: SIGNING_KEY,
+    ...overrides,
+  } as Env;
+}
+
+const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
+
+let ipCounter = 0;
+function apiRequest(path: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers || {});
+  headers.set('cf-connecting-ip', `10.15.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`);
+  if (init.body) headers.set('content-type', 'application/json');
+  return new Request(`https://luminarasuite.com${path}`, { ...init, headers });
+}
+
+type StoredReceipt = {
+  id: string;
+  account_id: string;
+  level: string;
+  visibility: string;
+  revoked_at: string | null;
+  revoked_reason: string | null;
+};
+
+async function storedReceipts(env: Env): Promise<StoredReceipt[]> {
+  const { results } = await env.DB!.prepare(
+    'SELECT id, account_id, level, visibility, revoked_at, revoked_reason FROM trust_receipts ORDER BY id',
+  ).all<StoredReceipt>();
+  return results;
+}
+
+async function auditCount(env: Env, action: string): Promise<number> {
+  const row = await env.DB!.prepare('SELECT COUNT(*) AS n FROM org_audit_logs WHERE action = ?').bind(action).first<{ n: number }>();
+  return Number(row?.n || 0);
+}
+
+const PROOF_URL = 'dns:TXT:_luminara-verify.example.com';
+const PROOF_SHA = 'a'.repeat(64);
+
+/** The result a verifier holds after its check passed. */
+function passedCheck(overrides: Record<string, unknown> = {}): VerifierResult {
+  return {
+    passed: true,
+    subject: { kind: 'domain', id: 'example.com' },
+    claim: 'domain_control',
+    method: 'dns_txt',
+    evidenceUrl: PROOF_URL,
+    evidenceSha256: PROOF_SHA,
+    ...overrides,
+  } as VerifierResult;
+}
+
+/** A receipt request for example.com. The cast lets a test hand in what the type forbids. */
+function receiptInput(level: string, verifierResult: unknown, overrides: Record<string, unknown> = {}): IssueReceiptInput {
+  return {
+    accountId: 'acct_v',
+    subject: { kind: 'domain', id: 'example.com' },
+    claim: 'domain_control',
+    level,
+    verifierResult,
+    method: 'dns_txt',
+    evidence: [{ ref: 'proof', url: PROOF_URL, sha256: PROOF_SHA }],
+    measurementStatus: 'measured',
+    ...overrides,
+  } as unknown as IssueReceiptInput;
+}
+
+/** The verifier result and the receipt fields for `method` with its evidence at `location`, agreeing with each other. */
+function proofAt(method: string, location: string): [VerifierResult, Record<string, unknown>] {
+  return [
+    passedCheck({ method, evidenceUrl: location }),
+    { method, evidence: [{ ref: 'proof', url: location, sha256: PROOF_SHA }] },
+  ];
+}
+
+/** One refusal case: the result and the receipt agree, so only the location rule can refuse it. */
+function evidenceElsewhere(method: string, location: string, what: string): Array<[string, unknown, Record<string, unknown>]> {
+  return [[`${method} evidence at ${what} (${location})`, ...proofAt(method, location)]];
+}
+
+describe('issueTrustReceipt needs a typed verifier result for a verified level', () => {
+  /** [what is wrong, the verifier result, and where needed the receipt fields changed to agree with it] */
+  const notAResult: Array<[string, unknown, Record<string, unknown>?]> = [
+    ['no verifier result', undefined],
+    ['a null verifier result', null],
+    ['an empty object', {}],
+    ['a check that did not pass', passedCheck({ passed: false })],
+    ['a truthy value that is not true', passedCheck({ passed: 'true' })],
+    ['a result for another domain', passedCheck({ subject: { kind: 'domain', id: 'victim.org' } })],
+    ['a result for another kind of subject', passedCheck({ subject: { kind: 'account', id: 'example.com' } })],
+    ['a result for another claim', passedCheck({ claim: 'audit_run' })],
+    ['a result from another method', passedCheck({ method: 'meta_tag' })],
+    ['evidence the receipt does not carry', passedCheck({ evidenceSha256: 'b'.repeat(64) })],
+    ['evidence read from somewhere else', passedCheck({ evidenceUrl: 'https://victim.org/' })],
+    ['an evidence hash that is not a SHA-256', passedCheck({ evidenceSha256: 'not-a-hash' })],
+    // From here on the receipt agrees with the result, so only the rule named can refuse it.
+    [
+      'no evidence hash on either side (two missing values are equal)',
+      passedCheck({ evidenceSha256: undefined }),
+      { evidence: [{ ref: 'proof', url: PROOF_URL }] },
+    ],
+    [
+      'the same text that is not a hash on both sides',
+      passedCheck({ evidenceSha256: 'not-a-hash' }),
+      { evidence: [{ ref: 'proof', url: PROOF_URL, sha256: 'not-a-hash' }] },
+    ],
+    [
+      'no evidence location on either side',
+      passedCheck({ evidenceUrl: undefined }),
+      { evidence: [{ ref: 'proof', sha256: PROOF_SHA }] },
+    ],
+    [
+      'an empty evidence location on both sides',
+      passedCheck({ evidenceUrl: '' }),
+      { evidence: [{ ref: 'proof', url: '', sha256: PROOF_SHA }] },
+    ],
+    [
+      'the gateway method on both sides, which no verifier returns',
+      passedCheck({ method: GATEWAY_RECEIPT_METHOD }),
+      { method: GATEWAY_RECEIPT_METHOD },
+    ],
+    ['a made-up method on both sides', passedCheck({ method: 'http_200' }), { method: 'http_200' }],
+    ['a claim no verifier checks, on both sides', passedCheck({ claim: 'audit_run' }), { claim: 'audit_run' }],
+    // Names every object has must not pass for a claim or a method.
+    ['the claim "constructor" on both sides', passedCheck({ claim: 'constructor' }), { claim: 'constructor' }],
+    ['the method "toString" on both sides', passedCheck({ method: 'toString' }), { method: 'toString' }],
+    // A real method with evidence that is not where that method reads its proof for example.com.
+    ...evidenceElsewhere('dns_txt', 'https://victim.org/', 'a web page on another site'),
+    ...evidenceElsewhere('dns_txt', 'dns:TXT:_luminara-verify.victim.org', "another domain's DNS record"),
+    ...evidenceElsewhere('dns_txt', 'https://example.com/', 'a web page, which is not a DNS record'),
+    ...evidenceElsewhere('well_known', 'https://victim.org/.well-known/luminara-verify.txt', 'the file on another site'),
+    ...evidenceElsewhere('well_known', PROOF_URL, 'a DNS record, which is not a file'),
+    ...evidenceElsewhere('meta_tag', 'https://example.com.evil.net/', 'a look-alike host'),
+    ...evidenceElsewhere('meta_tag', 'https://sub.example.com/', 'a sub-domain'),
+    ...evidenceElsewhere('meta_tag', 'ftp://example.com/', 'a location that is not a web address'),
+  ];
+
+  for (const level of [VERIFIED_LEVEL, 'registry_verified']) {
+    it.each(notAResult)(`refuses ${level} with %s, and stores nothing`, async (_label, verifierResult, receiptFields) => {
+      const env = makeEnv();
+      await expect(issueTrustReceipt(env, receiptInput(level, verifierResult, receiptFields))).rejects.toBeInstanceOf(ReceiptNotVerified);
+      expect(await storedReceipts(env)).toEqual([]);
+      expect(await auditCount(env, 'trust_receipt_issued')).toBe(0);
+    });
+  }
+
+  // The three ways the domain check in worker/domainVerification.ts can pass, each with the
+  // location it reports: `dns:TXT:<name>` for the label or the domain itself, and for the two
+  // HTTP methods the final URL, on the domain or its www twin. tests/trustNetwork.test.ts runs
+  // the real check for each and issues from what it returns.
+  it.each([
+    ['dns_txt', 'dns:TXT:_luminara-verify.example.com'],
+    ['dns_txt', 'dns:TXT:example.com'],
+    ['well_known', 'https://example.com/.well-known/luminara-verify.txt'],
+    ['well_known', 'https://www.example.com/.well-known/luminara-verify.txt'],
+    ['meta_tag', 'https://example.com/'],
+    ['meta_tag', 'https://www.example.com/'],
+  ])('accepts the domain check method %s with its evidence at %s', async (method, location) => {
+    const env = makeEnv();
+    const receipt = await issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, ...proofAt(method, location)));
+    expect(receipt.payload).toMatchObject({ level: VERIFIED_LEVEL, claim: 'domain_control', method });
+    expect(receipt.payload.evidence[0].url).toBe(location);
+  });
+
+  it('names the location rule when the evidence is in the wrong place', async () => {
+    const env = makeEnv();
+    await expect(issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, ...proofAt('dns_txt', 'https://victim.org/')))).rejects.toThrow(
+      'the evidence is not where this method reads its proof for this subject',
+    );
+  });
+
+  it('refuses registry_verified even with a complete, matching result: no registry verifier exists', async () => {
+    const env = makeEnv();
+    await expect(issueTrustReceipt(env, receiptInput('registry_verified', passedCheck()))).rejects.toThrow(
+      'no verifier checks this claim by this method at this level',
+    );
+    expect(await storedReceipts(env)).toEqual([]);
+  });
+
+  it('refuses the exact receipt the gateway route used to build from constants', async () => {
+    const env = makeEnv();
+    const fromConstants = receiptInput(VERIFIED_LEVEL, undefined, {
+      subject: { kind: 'domain', id: 'victim.org' },
+      method: GATEWAY_RECEIPT_METHOD,
+      evidence: [{ ref: 'target_homepage', url: 'https://victim.org', fetchedAt: new Date().toISOString(), httpStatus: 0 }],
+      measurementStatus: 'not_measured',
+      visibility: 'public',
+    });
+    await expect(issueTrustReceipt(env, fromConstants)).rejects.toThrow('no passed verifier result was given');
+    expect(await storedReceipts(env)).toEqual([]);
+  });
+
+  it('issues the verified level when the verifier result matches the receipt', async () => {
+    const env = makeEnv();
+    const receipt = await issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, passedCheck()));
+    expect(receipt.payload.level).toBe(VERIFIED_LEVEL);
+    expect(receipt.payload.evidence).toEqual([{ ref: 'proof', url: PROOF_URL, sha256: PROOF_SHA }]);
+    expect((await storedReceipts(env)).map((r) => r.level)).toEqual([VERIFIED_LEVEL]);
+  });
+
+  it('still issues a self_reported receipt without a verifier result', async () => {
+    const env = makeEnv();
+    const receipt = await issueTrustReceipt(env, receiptInput('self_reported', undefined, { claim: 'self_reported_file', method: 'owner_upload' }));
+    expect(receipt.payload.level).toBe('self_reported');
+    expect((await storedReceipts(env)).map((r) => r.level)).toEqual(['self_reported']);
+  });
+});
+
+describe('the gateway route issues no receipt', () => {
+  it('POST /api/gateway/execute stores nothing for a signed-in user, with receipts on and a signing key', async () => {
+    const env = makeEnv();
+    principal.accountId = 'acct_gateway';
+
+    const res = await worker.fetch(
+      apiRequest('/api/gateway/execute', { method: 'POST', body: JSON.stringify({ targetDomain: 'victim.org', surface: 'web' }) }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+
+    // The request reached the handler and finished as it did before.
+    expect(body).toMatchObject({ ok: true, state: 'settled', targetDomain: 'victim.org' });
+    // It says no receipt was issued, and why.
+    expect(body.receiptIssued).toBe(false);
+    expect(body.receiptNote).toBe(GATEWAY_NO_RECEIPT_NOTE);
+    expect(body).not.toHaveProperty('receiptId');
+    expect(body).not.toHaveProperty('receiptSignature');
+    // It fetched nothing, so it reports no scraped URL and no count of sources.
+    expect(body.evidence).toEqual({ measurementStatus: 'not_measured' });
+
+    // Nothing was stored: not at the verified level, not at any level.
+    const stored = await storedReceipts(env);
+    expect(stored.filter((r) => r.level === VERIFIED_LEVEL)).toEqual([]);
+    expect(stored).toEqual([]);
+    expect(await auditCount(env, 'trust_receipt_issued')).toBe(0);
+
+    // The same environment does sign and store once a verifier result is in hand,
+    // so the empty table above is the route's choice and not a broken setup.
+    await issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, passedCheck()));
+    expect((await storedReceipts(env)).map((r) => r.level)).toEqual([VERIFIED_LEVEL]);
+  });
+});
+
+describe('the verified level literal is written only where a verifier result is in hand', () => {
+  /** Files that name the level without issuing anything. */
+  const READ_ONLY: Record<string, string> = {
+    'services/trust/receiptTypes.ts': 'declares the level and its label',
+    'services/trust/brandPassport.ts': 'compares the level of a stored receipt',
+  };
+  /** Files that issue it. Each one must hand issueTrustReceipt a verifier result in the same call. */
+  const ISSUERS = ['worker/domainVerification.ts'];
+  /** The guard itself: it names the level once, as the key of its list of real verifiers. */
+  const GUARD = 'worker/trustReceipts.ts';
+  const SOURCE_DIRS = ['worker', 'services', 'components', 'utils', 'hooks', 'constants', 'electron', 'bin', 'scripts', 'plugins', 'crawler', 'evals'];
+  const SOURCE_FILE_RE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
+
+  function sourceFiles(): string[] {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (SOURCE_FILE_RE.test(entry.name)) out.push(full);
+      }
+    };
+    for (const dir of SOURCE_DIRS) if (existsSync(join(REPO_ROOT, dir))) walk(join(REPO_ROOT, dir));
+    for (const entry of readdirSync(REPO_ROOT, { withFileTypes: true })) {
+      if (entry.isFile() && SOURCE_FILE_RE.test(entry.name)) out.push(join(REPO_ROOT, entry.name));
+    }
+    return out;
+  }
+
+  function positions(text: string, needle: string): number[] {
+    const found: number[] = [];
+    for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) found.push(at);
+    return found;
+  }
+
+  /** The text of the issueTrustReceipt(...) call that encloses `at`, or null when there is none. */
+  function enclosingIssueCall(text: string, at: number): string | null {
+    const opener = 'issueTrustReceipt(';
+    const start = text.lastIndexOf(opener, at);
+    if (start === -1) return null;
+    let depth = 0;
+    for (let i = start + opener.length - 1; i < text.length; i++) {
+      if (text[i] === '(') depth++;
+      if (text[i] === ')') depth--;
+      if (depth === 0) return i > at ? text.slice(start, i + 1) : null;
+    }
+    return null;
+  }
+
+  const withLiteral = new Map<string, string>();
+  for (const file of sourceFiles()) {
+    const text = readFileSync(file, 'utf8');
+    if (text.includes(VERIFIED_LEVEL)) withLiteral.set(relative(REPO_ROOT, file).split('\\').join('/'), text);
+  }
+
+  it('appears in no source file outside the reviewed list', () => {
+    expect([...withLiteral.keys()].sort()).toEqual([...Object.keys(READ_ONLY), ...ISSUERS, GUARD].sort());
+  });
+
+  it('the guard names it once, as a key of the verifier list, and never writes it as a value', () => {
+    const text = withLiteral.get(GUARD) || '';
+    expect(positions(text, VERIFIED_LEVEL)).toHaveLength(1);
+    // The key of VERIFIER_METHODS, whose only entry is the domain check.
+    expect(text).toMatch(new RegExp(`\\s${VERIFIED_LEVEL}: \\{ domain_control: DOMAIN_PROOF_LOCATIONS \\},`));
+    // A quoted occurrence would be a value somebody could store. There is none.
+    expect(text).not.toMatch(new RegExp(`['"\`]${VERIFIED_LEVEL}['"\`]`));
+  });
+
+  it('the gateway route does not write it', () => {
+    expect(readFileSync(join(REPO_ROOT, 'worker', 'oracleGateway.ts'), 'utf8')).not.toContain(VERIFIED_LEVEL);
+    expect(readFileSync(join(REPO_ROOT, 'worker', 'oracleGateway.ts'), 'utf8')).not.toContain('issueTrustReceipt');
+  });
+
+  it.each(Object.keys(READ_ONLY))('%s names it without issuing a receipt', (file) => {
+    const text = withLiteral.get(file) || '';
+    expect(text).not.toContain('issueTrustReceipt');
+    expect(text).not.toMatch(new RegExp(`\\blevel\\s*[:=]\\s*['"\`]${VERIFIED_LEVEL}`));
+  });
+
+  it.each(ISSUERS)('%s writes it only inside an issueTrustReceipt call that passes a verifier result', (file) => {
+    const text = withLiteral.get(file) || '';
+    const at = positions(text, VERIFIED_LEVEL);
+    expect(at.length).toBeGreaterThan(0);
+    for (const index of at) {
+      const call = enclosingIssueCall(text, index);
+      expect(call, `${file} offset ${index} is outside an issueTrustReceipt call`).not.toBeNull();
+      expect(call).toMatch(/\bverifierResult\s*:\s*\{/);
+      expect(call).toMatch(/\bpassed\s*:\s*true\b/);
+    }
+  });
+});
+
+describe('revokeGatewayIssuedReceipts', () => {
+  let seq = 0;
+
+  /** A row as the old gateway route stored it: verified level, public, built from constants. */
+  async function seedGatewayReceipt(
+    env: Env,
+    opts: { accountId?: string; visibility?: 'public' | 'private'; revokedAt?: string; revokedReason?: string; method?: string; evidenceUrl?: string } = {},
+  ): Promise<string> {
+    const n = ++seq;
+    const id = `rcpt_${n.toString(16).padStart(24, '0')}`;
+    const issuedAt = new Date(Date.UTC(2026, 9, 1, 0, 0, n)).toISOString();
+    const domain = `victim${n}.org`;
+    const payload = {
+      v: 1,
+      id,
+      iss: 'luminarasuite.com',
+      kid: 'kid_old',
+      issuedAt,
+      subject: { kind: 'domain', id: domain },
+      claim: 'domain_control',
+      level: VERIFIED_LEVEL,
+      method: opts.method ?? GATEWAY_RECEIPT_METHOD,
+      evidence: [{ ref: 'target_homepage', url: opts.evidenceUrl ?? `https://${domain}`, fetchedAt: issuedAt, httpStatus: 0 }],
+      measurementStatus: 'not_measured',
+    };
+    await env.DB!.prepare(
+      `INSERT INTO trust_receipts (id, account_id, subject_kind, subject_id, claim, level, payload_json, signature, kid, visibility, expires_at, revoked_at, revoked_reason, created_at)
+       VALUES (?, ?, 'domain', ?, 'domain_control', ?, ?, 'sig', 'kid_old', ?, NULL, ?, ?, ?)`,
+    )
+      .bind(
+        id,
+        opts.accountId ?? 'acct_a',
+        domain,
+        VERIFIED_LEVEL,
+        canonicalJson(payload),
+        opts.visibility ?? 'public',
+        opts.revokedAt ?? null,
+        opts.revokedReason ?? null,
+        issuedAt,
+      )
+      .run();
+    return id;
+  }
+
+  const byId = (rows: StoredReceipt[], id: string) => rows.find((r) => r.id === id)!;
+
+  it('revokes only the receipts the gateway route issued', async () => {
+    const env = makeEnv();
+    const gateway = [
+      await seedGatewayReceipt(env, { accountId: 'acct_a' }),
+      await seedGatewayReceipt(env, { accountId: 'acct_a', visibility: 'private' }),
+      await seedGatewayReceipt(env, { accountId: 'acct_b' }),
+    ];
+    // Receipts that must survive: a real verifier's, a self-reported one, and two that
+    // only mention the gateway method somewhere other than as their exact method.
+    const real = await issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, passedCheck(), { accountId: 'acct_a', visibility: 'public' }));
+    const selfReported = await issueTrustReceipt(
+      env,
+      receiptInput('self_reported', undefined, { accountId: 'acct_b', claim: 'self_reported_file', method: 'owner_upload' }),
+    );
+    const nearName = await seedGatewayReceipt(env, { method: `${GATEWAY_RECEIPT_METHOD}_checked` });
+    const inEvidence = await seedGatewayReceipt(env, { method: 'dns_txt', evidenceUrl: `https://example.org/${GATEWAY_RECEIPT_METHOD}` });
+
+    expect(await revokeGatewayIssuedReceipts(env)).toEqual({ revoked: 3, remaining: 0 });
+
+    const rows = await storedReceipts(env);
+    for (const id of gateway) {
+      const row = byId(rows, id);
+      expect(row.revoked_at, id).toBeTruthy();
+      expect(row.revoked_reason, id).toBe(GATEWAY_RECEIPT_REVOKED_REASON);
+      expect(row.visibility, id).toBe('private');
+      expect(row.level, id).toBe(VERIFIED_LEVEL);
+    }
+    for (const id of [real.id, selfReported.id, nearName, inEvidence]) {
+      const row = byId(rows, id);
+      expect(row.revoked_at, id).toBeNull();
+      expect(row.revoked_reason, id).toBeNull();
+    }
+    expect(byId(rows, real.id).visibility).toBe('public');
+    expect(rows).toHaveLength(7);
+
+    // One entry per revoked receipt, in its owner's audit chain, attributed to the admin.
+    const { results: logs } = await env.DB!.prepare(
+      `SELECT actor_id, target_id FROM org_audit_logs WHERE action = 'trust_receipt_revoked' ORDER BY target_id`,
+    ).all<{ actor_id: string; target_id: string }>();
+    expect(logs).toEqual([...gateway].sort().map((id) => ({ actor_id: 'admin', target_id: id })));
+  });
+
+  it('is safe to run twice: the second run changes nothing', async () => {
+    const env = makeEnv();
+    await seedGatewayReceipt(env);
+    await seedGatewayReceipt(env, { accountId: 'acct_b' });
+    const real = await issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, passedCheck()));
+
+    expect(await revokeGatewayIssuedReceipts(env)).toEqual({ revoked: 2, remaining: 0 });
+    const afterFirst = await storedReceipts(env);
+    const logsAfterFirst = await auditCount(env, 'trust_receipt_revoked');
+
+    // Let the clock move so a second write would leave a different timestamp.
+    await new Promise((done) => setTimeout(done, 5));
+    expect(await revokeGatewayIssuedReceipts(env)).toEqual({ revoked: 0, remaining: 0 });
+    expect(await revokeGatewayIssuedReceipts(env)).toEqual({ revoked: 0, remaining: 0 });
+
+    expect(await storedReceipts(env)).toEqual(afterFirst);
+    expect(await auditCount(env, 'trust_receipt_revoked')).toBe(logsAfterFirst);
+    expect(byId(afterFirst, real.id).revoked_at).toBeNull();
+  });
+
+  it('keeps the reason and time of a gateway receipt its owner had already revoked', async () => {
+    const env = makeEnv();
+    const earlier = await seedGatewayReceipt(env, {
+      visibility: 'private',
+      revokedAt: '2026-10-02T00:00:00.000Z',
+      revokedReason: 'revoked by owner',
+    });
+    const live = await seedGatewayReceipt(env);
+
+    expect(await revokeGatewayIssuedReceipts(env)).toEqual({ revoked: 1, remaining: 0 });
+
+    const rows = await storedReceipts(env);
+    expect(byId(rows, earlier)).toMatchObject({ revoked_at: '2026-10-02T00:00:00.000Z', revoked_reason: 'revoked by owner' });
+    expect(byId(rows, live).revoked_reason).toBe(GATEWAY_RECEIPT_REVOKED_REASON);
+  });
+
+  it('works in batches and reports what is left', async () => {
+    const env = makeEnv();
+    for (let i = 0; i < GATEWAY_REVOKE_BATCH + 2; i++) await seedGatewayReceipt(env);
+
+    expect(await revokeGatewayIssuedReceipts(env)).toEqual({ revoked: GATEWAY_REVOKE_BATCH, remaining: 2 });
+    expect(await revokeGatewayIssuedReceipts(env)).toEqual({ revoked: 2, remaining: 0 });
+    expect(await revokeGatewayIssuedReceipts(env)).toEqual({ revoked: 0, remaining: 0 });
+    expect((await storedReceipts(env)).every((r) => r.revoked_at && r.revoked_reason === GATEWAY_RECEIPT_REVOKED_REASON)).toBe(true);
+  });
+
+  it('a link to a public gateway receipt shows it as revoked afterwards, not as missing', async () => {
+    const env = makeEnv();
+    const id = await seedGatewayReceipt(env);
+    const read = async () => handleTrustReceiptsRoute(apiRequest(`/api/trust/receipts/${id}`), env, `/trust/receipts/${id}`);
+
+    const before = await read();
+    expect(before!.status).toBe(200);
+    expect(((await before!.json()) as { receipt: TrustReceiptView }).receipt.revokedAt).toBeNull();
+
+    await revokeGatewayIssuedReceipts(env);
+
+    const after = await read();
+    expect(after!.status).toBe(200);
+    const { receipt } = (await after!.json()) as { receipt: TrustReceiptView };
+    expect(receipt.revokedAt).toBeTruthy();
+    expect(receipt.revokedReason).toBe(GATEWAY_RECEIPT_REVOKED_REASON);
+    expect(receipt.visibility).toBe('private');
+  });
+
+  describe('POST /api/admin/trust/revoke-gateway-receipts', () => {
+    const call = (env: Env, init: RequestInit = { method: 'POST' }) =>
+      worker.fetch(apiRequest('/api/admin/trust/revoke-gateway-receipts', init), env, ctx);
+    const asAdmin = { method: 'POST', headers: { 'x-admin-secret': ADMIN_SECRET, 'user-agent': 'sweep-test/1.0' } };
+    const SWEEP_ACTION = 'admin.trust.revoke_gateway_receipts';
+
+    type SweepLog = { org_id: string; actor_id: string; details: string; ip_address: string | null; user_agent: string | null };
+    async function sweepLogs(env: Env): Promise<SweepLog[]> {
+      const { results } = await env.DB!.prepare(
+        'SELECT org_id, actor_id, details, ip_address, user_agent FROM org_audit_logs WHERE action = ? ORDER BY rowid',
+      )
+        .bind(SWEEP_ACTION)
+        .all<SweepLog>();
+      return results;
+    }
+
+    it('refuses a caller without the admin secret, revokes nothing and logs no sweep', async () => {
+      const env = makeEnv({ ADMIN_SECRET });
+      const id = await seedGatewayReceipt(env);
+      principal.accountId = 'acct_a'; // a signed-in user is not an admin
+
+      expect((await call(env)).status).toBe(401);
+      expect((await call(env, { method: 'POST', headers: { 'x-admin-secret': 'wrong' } })).status).toBe(401);
+      expect((await call(makeEnv({ ADMIN_SECRET: undefined }), asAdmin)).status).toBe(503);
+      expect(byId(await storedReceipts(env), id).revoked_at).toBeNull();
+      expect(await sweepLogs(env)).toEqual([]);
+    });
+
+    it('revokes for the admin, also while receipts are switched off, and can be repeated', async () => {
+      const env = makeEnv({ ADMIN_SECRET, ENVIRONMENT: 'production', TRUST_RECEIPTS_ENABLED: 'false' });
+      const id = await seedGatewayReceipt(env);
+      const real = await issueTrustReceipt(env, receiptInput(VERIFIED_LEVEL, passedCheck()));
+
+      const first = await call(env, asAdmin);
+      expect(first.status).toBe(200);
+      expect(await first.json()).toEqual({ ok: true, revoked: 1, remaining: 0 });
+
+      const second = await call(env, asAdmin);
+      expect(second.status).toBe(200);
+      expect(await second.json()).toEqual({ ok: true, revoked: 0, remaining: 0 });
+
+      const rows = await storedReceipts(env);
+      expect(byId(rows, id).revoked_reason).toBe(GATEWAY_RECEIPT_REVOKED_REASON);
+      expect(byId(rows, real.id).revoked_at).toBeNull();
+    });
+
+    it('writes one admin audit entry per run, with the counts, the IP and the user agent, also when nothing was revoked', async () => {
+      const env = makeEnv({ ADMIN_SECRET });
+      await seedGatewayReceipt(env);
+
+      await call(env, asAdmin); // revokes one
+      await call(env, asAdmin); // finds nothing
+
+      const logs = await sweepLogs(env);
+      expect(logs).toHaveLength(2);
+      expect(logs.map((l) => JSON.parse(l.details))).toEqual([
+        { revoked: 1, remaining: 0 },
+        { revoked: 0, remaining: 0 },
+      ]);
+      for (const log of logs) {
+        expect(log.org_id).toBe('org_system_admin');
+        expect(log.actor_id).toBe('admin');
+        expect(log.ip_address).toMatch(/^10\.15\.\d+\.\d+$/);
+        expect(log.user_agent).toBe('sweep-test/1.0');
+      }
+    });
+
+    it('answers 405 to a GET and 503 without D1', async () => {
+      const env = makeEnv({ ADMIN_SECRET });
+      expect((await call(env, { method: 'GET', headers: { 'x-admin-secret': ADMIN_SECRET } })).status).toBe(405);
+      expect((await call(makeEnv({ ADMIN_SECRET, DB: undefined }), asAdmin)).status).toBe(503);
+    });
+
+    it('answers 503 with a clear message, not a bare 500, when the receipts table is missing', async () => {
+      const env = makeEnv({ ADMIN_SECRET });
+      (env.DB as unknown as { sqlite: { exec: (sql: string) => void } }).sqlite.exec('DROP TABLE trust_receipts');
+
+      await expect(revokeGatewayIssuedReceipts(env)).rejects.toBeInstanceOf(TrustReceiptsTableMissing);
+
+      const res = await call(env, asAdmin);
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as { ok: boolean; code: string; error: string };
+      expect(body.ok).toBe(false);
+      expect(body.code).toBe('TRUST_RECEIPTS_TABLE_MISSING');
+      expect(body.error).toContain('migration 0020');
+      expect(body.error).toContain('nothing to revoke');
+      // Nothing ran, so no sweep is on record.
+      expect(await sweepLogs(env)).toEqual([]);
+    });
+  });
+});

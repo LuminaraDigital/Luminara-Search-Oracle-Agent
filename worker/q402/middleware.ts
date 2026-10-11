@@ -13,7 +13,6 @@ import {
   type Q402SignedPayload,
   type Q402ExecutionResponse,
 } from './types';
-import { QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT } from './facilitator';
 import { TON_PRICING, JETTON_PRICING, JETTON_MASTERS, USDT_DECIMALS, LORA_DECIMALS } from '../tonPayment';
 import { resolveChainNetwork } from '../chainNetwork';
 
@@ -69,13 +68,13 @@ export function createQ402Response(
         displayAmount: `${jettonPrice.amount} USDT`,
       },
     },
-    // Option 3: Luminara Oracle Token (TEP-74 Jetton with Qubic Deflationary Burn)
+    // Option 3: Luminara Oracle Token (TEP-74 Jetton)
     {
       scheme: 'ton/jetton-transfer',
       network,
       maxAmountRequired: jettonPrice.units,
       resource: endpointPath,
-      description: `Luminara ${planKey.replace(/_/g, ' ')} execution via $LORA (15% Deflationary Burn)`,
+      description: `Luminara ${planKey.replace(/_/g, ' ')} execution via LORA Jetton`,
       payTo: recipient,
       maxTimeoutSeconds: 900,
       asset: 'LORA',
@@ -84,7 +83,6 @@ export function createQ402Response(
         memo: `LUM:${orderId}:${planKey}`,
         decimals: LORA_DECIMALS,
         jettonMaster: JETTON_MASTERS[network]?.LORA,
-        burnRatePercent: QUBIC_SUPPLY_WATCHER_BURN_RATE_PERCENT,
         displayAmount: `${jettonPrice.amount} LORA`,
       },
     },

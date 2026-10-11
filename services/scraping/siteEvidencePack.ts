@@ -170,7 +170,7 @@ export class SiteEvidencePackService {
       if (crawl.httpStatus === 402 || crawl.code === 'TIER_UPGRADE_REQUIRED') {
         upgradeRequired = true;
         warnings.push(
-          'Hosted Firecrawl deep crawl requires an active Stars/TON/Stripe plan, or a BYOK Firecrawl key. Falling back to smart discovery.',
+          'Hosted Firecrawl deep crawl requires an active paid plan, or a BYOK Firecrawl key. Falling back to smart discovery.',
         );
       } else if (crawl.success && crawl.pages.length > 0) {
         const pages = this.pagesFromCrawl(crawl.pages, rootUrl);
@@ -348,7 +348,7 @@ export class SiteEvidencePackService {
     blocks.push(`Mode: ${mode}`);
     blocks.push(`Pages: ${typed.length} (discovery=${discovery.source}, candidates=${discovery.candidateCount})`);
     if (upgradeRequired) {
-      blocks.push(`Upgrade: deep crawl gated - use Stars/TON/Stripe plan or BYOK Firecrawl key`);
+      blocks.push(`Upgrade: deep crawl gated - use a paid plan or BYOK Firecrawl key`);
     }
     blocks.push('');
 

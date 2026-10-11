@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { postDailyCheckin } from '../../services/referrals/referralClient';
+import { postDailyCheckin, streakCardVisible } from '../../services/referrals/referralClient';
 
 interface DailyStreakCardProps {
   domain: string;
@@ -28,10 +28,17 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
     }
   });
 
+  // The card exists only while the server offers the daily check-in. Nothing is drawn until that
+  // call has answered, and it is drawn only for the two answers streakCardVisible accepts: the
+  // check-in worked, or a guest was asked to sign in. With points switched off the answer is 404,
+  // so the card never appears. A rate limit, a server error or a call that fails also hides it.
+  const [available, setAvailable] = useState(false);
+
   useEffect(() => {
     let unmounted = false;
     postDailyCheckin()
       .then((res) => {
+        if (!unmounted) setAvailable(streakCardVisible(res));
         if (!unmounted && res.ok && typeof res.streakDays === 'number') {
           setStreakDays(res.streakDays);
           try {
@@ -41,7 +48,9 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
           }
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!unmounted) setAvailable(false);
+      });
 
     return () => {
       unmounted = true;
@@ -67,6 +76,8 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
   };
 
   const days = [1, 2, 3, 4, 5, 6, 7];
+
+  if (!available) return null;
 
   return (
     <div className="mt-8 rounded-2xl border border-gold/30 bg-black/80 p-5 sm:p-6 shadow-xl">
@@ -138,7 +149,6 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
           })}
         </div>
         <div className="mt-3 flex items-center justify-between text-[11px] font-mono text-gray-500">
-          <span>Next automated index scan: In 18 hours</span>
           <span>Target: 7-day verification loop completion</span>
         </div>
       </div>
