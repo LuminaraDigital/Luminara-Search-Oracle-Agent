@@ -118,7 +118,7 @@ function mentionCountOf(count: number | null, total: number): number | null {
   return count;
 }
 
-/** Share of voice is shown as the count it is: rows that mention the brand, of rows collected. */
+/** The count as it is: rows that mention the brand, of rows collected. */
 function mentionCountBadge(label: string, count: number | null, total: number): ScoutBadge {
   if (count == null) return { label, status: 'not_measured' };
   return { label, status: 'measured', value: `mentioned in ${count} of ${total} web results` };
@@ -244,11 +244,11 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
   const failed = failureCodes.map((code) => teaserFailureLine(code));
   const mentionCount = mentionCountOf(input.shareOfVoiceScore, input.serpCount);
   // Citation rate and share of voice were always the same two counts: search rows
-  // that mention the brand, out of the rows collected. Both badges print those counts.
-  // Neither prints a percentage.
+  // that mention the brand, out of the rows collected. One badge prints them, as
+  // counts. It keeps the citation rate name: the count is of rows that mention the
+  // brand, not of the brand's share against anyone else.
   let badges: ScoutBadge[] = [
     mentionCountBadge('Citation rate', typeof input.citationRatePercent === 'number' ? mentionCount : null, input.serpCount),
-    mentionCountBadge('Share of voice', mentionCount, input.serpCount),
     checksBadge('Page health', input.healthScore, input.healthChecks),
   ];
   if (degraded) {

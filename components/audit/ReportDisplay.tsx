@@ -39,7 +39,7 @@ import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadSer
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
 import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
-import { MEASURED_TRAFFIC_COLUMNS, gateReportText, readTableAt } from '../../services/audit/reportColumnGate';
+import { gateReportText, readTableAt } from '../../services/audit/reportColumnGate';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
@@ -70,8 +70,6 @@ interface ReportDisplayProps {
   /** Instant Audit rail. When omitted, a live session still avoids a sign-in CTA. */
   hostedRail?: HostedScoutRail;
 }
-
-const NO_MEASURED_COLUMNS: readonly string[] = [];
 
 /** "mentioned in N of M sampled queries", or null when the summary holds no such count. */
 export function sampledMentionsLabel(summary: EmpiricalCitationSummary | undefined): string | null {
@@ -107,12 +105,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const hideLiveNumbers = suppressLiveMetrics || empiricalSummary?.measurementStatus === 'not_measured';
   // Every reader of this screen gets the gated text: the cards, the share link, the PDF and the dossier.
   // A stored or shared report was gated when it was made only if it was made after the gate existed.
-  // The measured traffic table stays only on a screen that holds that measured traffic.
-  const measuredColumns = trafficImpact?.status === 'ready' ? MEASURED_TRAFFIC_COLUMNS : NO_MEASURED_COLUMNS;
-  const markdownText = useMemo(
-    () => gateReportText(rawMarkdownText || '', { measuredColumns }),
-    [rawMarkdownText, measuredColumns],
-  );
+  // No table in the report text is measured: the model writes its rows. Measured
+  // traffic is drawn by ResultsTrackingCard from the analytics data, not from this text.
+  const markdownText = useMemo(() => gateReportText(rawMarkdownText || ''), [rawMarkdownText]);
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
@@ -190,7 +185,6 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
       domain,
       markdownText: markdownText || '',
       generatedAt: Date.now(),
-      measuredColumns,
     });
 
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
@@ -273,9 +267,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           i++;
         }
         currentSection.elements.push(<ol key={`ol-${i}`} className="list-decimal list-outside space-y-1 my-3 pl-6 marker:text-gold">{listItems}</ol>);
-      } else if (line.startsWith('|') || readTableAt(lines, i, { measuredColumns })) {
+      } else if (line.startsWith('|') || readTableAt(lines, i)) {
         // The gate's own table reader, so a cell with a pipe in it stays under its header.
-        const table = readTableAt(lines, i, { measuredColumns });
+        const table = readTableAt(lines, i);
         if (table && !table.unaligned) {
           const { headers, rows } = table;
           i = table.end;
@@ -303,7 +297,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
       sections.push(currentSection);
     }
     return sections;
-  }, [markdownText, measuredColumns]);
+  }, [markdownText]);
 
   const validSources = sources?.filter(s => s && s.uri);
   const sourceCount = validSources?.length || 0;

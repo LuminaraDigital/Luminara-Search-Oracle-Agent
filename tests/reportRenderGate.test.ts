@@ -12,7 +12,7 @@ import { VisibilityRadar, readBrandCited, readCitationStatus } from '../componen
 import type { TrafficImpact } from '../services/analytics/trafficInsightsService';
 import type { EmpiricalCitationSummary } from '../services/audit/empiricalCitationService';
 import { writeShipCommitment } from '../services/audit/shipCommitmentService';
-import { MEASURED_TRAFFIC_COLUMNS, REMOVED_TABLE_NOTE, REPORT_TABLES } from '../services/audit/reportColumnGate';
+import { REMOVED_TABLE_NOTE, REPORT_TABLES } from '../services/audit/reportColumnGate';
 import { generateGenUISystemPrompt } from '../services/genui/promptGenerator';
 import { LUMINARA_GENUI_REGISTRY, gatedTableArgs } from '../services/genui/registry';
 import { buildAuditDossierHtml } from '../services/reports/portableDossierService';
@@ -144,8 +144,8 @@ describe('a stored report is gated where it is rendered', () => {
 });
 
 describe('a page title with a pipe in it does not break the table or let a column through', () => {
-  // Review 2, 1b. "Home | Acme" is a common title tag, and the pipe is not escaped.
-  const fixList = (headers: string, cells: string) => [
+  // "Home | Acme" is a common title tag, and the pipe is not escaped.
+  const section = (headers: string, cells: string) => [
     '# Luminara: Will AI mention Example?',
     '',
     '## 3. Fix list',
@@ -153,24 +153,37 @@ describe('a page title with a pipe in it does not break the table or let a colum
     headers.replace(/[^|]+/g, '---'),
     cells,
   ].join('\n');
+  const tableCells = (html: string) =>
+    [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((cell) => cell[1].replace(/<[^>]*>/g, '').replace(/&quot;/g, '"'));
 
-  it('renders as a table with the right cells under the right columns', () => {
+  it('renders as a table, with the pipe in its cell, when the table has one free-text column', () => {
     const html = renderToStaticMarkup(createElement(ReportDisplay, {
-      markdownText: fixList('| Task | Plain issue | Priority |', '| Rewrite the title | It reads "Home | Acme" everywhere | High |'),
+      markdownText: section('| Task | Priority |', '| Rewrite the title "Home | Acme" | High |'),
       hideAgencyActions: true,
     }));
-    const cells = [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((cell) => cell[1].replace(/<[^>]*>/g, '').replace(/&quot;/g, '"'));
-    expect(cells).toEqual(['Rewrite the title', 'It reads "Home | Acme" everywhere', 'High']);
-    expect((html.match(/<th[ >]/g) || []).length).toBe(3);
+    expect(tableCells(html)).toEqual(['Rewrite the title "Home | Acme"', 'High']);
+    expect((html.match(/<th[ >]/g) || []).length).toBe(2);
     // Not printed as raw pipe rows.
-    expect(html).not.toContain('| Rewrite the title |');
+    expect(html).not.toContain('| Rewrite the title');
+  });
+
+  // Review 3, 3: with two free-text columns the pipe could belong to either, and
+  // joining it into the last one put text under the wrong header.
+  it('is left out, with the note, when the table has two free-text columns', () => {
+    const html = renderToStaticMarkup(createElement(ReportDisplay, {
+      markdownText: section('| Task | Plain issue | Priority |', '| Rewrite the title | It reads "Home | Acme" everywhere | High |'),
+      hideAgencyActions: true,
+    }));
+    expect(html).toContain(REMOVED_TABLE_NOTE);
+    expect(tableCells(html)).toEqual([]);
+    expect(html).not.toContain('Rewrite the title');
   });
 
   it('is left out, with the note, when the table also has a column that is not listed', () => {
     const html = renderToStaticMarkup(createElement(ReportDisplay, {
-      markdownText: fixList(
-        '| Task | Plain issue | Expected Impact | Priority |',
-        '| Rewrite the title | It reads "Home | Acme" everywhere | +40% citations | High |',
+      markdownText: section(
+        '| Task | Expected Impact | Priority |',
+        '| Rewrite the title "Home | Acme" | +40% citations | High |',
       ),
       hideAgencyActions: true,
     }));
@@ -181,24 +194,27 @@ describe('a page title with a pipe in it does not break the table or let a colum
   });
 });
 
-describe('the measured traffic table shows only where the measured traffic is held', () => {
+describe('measured traffic comes from the analytics data, never from the report text (review 3, 1)', () => {
+  // The model writes every row of a table in the report. With analytics on, a row
+  // such as "Est. organic rank | #3 | #7" used to stay under "This period (measured)".
   const report = [
     '# Luminara: Will AI mention Example?',
     '',
     '## 2. Plain verdict',
-    `| ${MEASURED_TRAFFIC_COLUMNS.join(' | ')} |`,
+    '| Measured traffic | This period (measured) | Previous period (measured) |',
     '|---|---|---|',
-    '| Visitors | 120 | 100 |',
+    '| Visitors | 987 | 654 |',
+    '| Est. organic rank | #3 | #7 |',
   ].join('\n');
-  const metric = { current: 120, previous: 100, changePct: 20 };
-  const referrals = { total: 7, previousTotal: 4, changePct: 75, bySource: [] };
+  const metric = (current: number) => ({ current, previous: 100, changePct: null });
+  const referrals = { total: 7, previousTotal: 4, changePct: null, bySource: [] };
   const ready = {
     status: 'ready',
     domain: 'example.com',
     period: { startAt: 1, endAt: 2, days: 30 },
-    visitors: metric,
-    pageviews: metric,
-    visits: metric,
+    visitors: metric(432),
+    pageviews: metric(555),
+    visits: metric(444),
     aiAssistantReferrals: referrals,
     searchReferrals: referrals,
     topReferrers: [],
@@ -206,27 +222,35 @@ describe('the measured traffic table shows only where the measured traffic is he
     fetchedAt: 1,
   } as unknown as TrafficImpact;
 
-  it('is kept on the report screen that holds ready traffic data, and in its dossier', () => {
-    const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: report, hideAgencyActions: true, trafficImpact: ready }));
-    expect(html).toContain('Measured traffic');
-    expect(html).toContain('This period (measured)');
-    expect(html).not.toContain(REMOVED_TABLE_NOTE);
-
-    const dossier = buildAuditDossierHtml({
-      domain: 'example.com', markdownText: report, generatedAt: 1760000000000, measuredColumns: MEASURED_TRAFFIC_COLUMNS,
-    });
-    expect(dossier).toContain('| Visitors | 120 | 100 |');
-  });
-
-  it('is left out, with the note, on a screen that holds none: a shared report, for example', () => {
-    for (const trafficImpact of [undefined, { status: 'not_configured', domain: 'example.com' } as unknown as TrafficImpact]) {
+  it('leaves a model-written "measured" table out of the report screen, with analytics on or off', () => {
+    for (const trafficImpact of [ready, undefined, { status: 'not_configured', domain: 'example.com' } as unknown as TrafficImpact]) {
       const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: report, hideAgencyActions: true, trafficImpact }));
       expect(html).toContain(REMOVED_TABLE_NOTE);
-      expect(html).not.toContain('>120<');
+      for (const text of ['This period (measured)', 'Est. organic rank', '#3', '#7', '987', '654']) {
+        expect(html, text).not.toContain(text);
+      }
     }
-    const dossier = buildAuditDossierHtml({ domain: 'example.com', markdownText: report, generatedAt: 1760000000000 });
+  });
+
+  it('still draws the measured figures in the tracking card, from the analytics data', () => {
+    const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: report, hideAgencyActions: true, trafficImpact: ready }));
+    expect(html).toContain('Is it working? Last 30 days');
+    expect(html).toContain('Measured on your own site');
+    expect(html).toContain('Visitors');
+    expect(html).toMatch(/>432</);
+  });
+
+  it('leaves it out of the dossier too, and the dossier builder takes no list of measured columns', () => {
+    const dossier = buildAuditDossierHtml({
+      domain: 'example.com',
+      markdownText: report,
+      generatedAt: 1760000000000,
+      measuredColumns: ['Measured traffic', 'This period (measured)', 'Previous period (measured)'],
+    } as unknown as Parameters<typeof buildAuditDossierHtml>[0]);
     expect(dossier).toContain(REMOVED_TABLE_NOTE);
-    expect(dossier).not.toContain('| Visitors | 120 | 100 |');
+    for (const text of ['| Visitors | 987 | 654 |', 'Est. organic rank', '| #3 |', 'This period (measured)']) {
+      expect(dossier, text).not.toContain(text);
+    }
   });
 });
 

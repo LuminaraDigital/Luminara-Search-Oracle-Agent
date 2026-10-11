@@ -22,7 +22,7 @@ import {
   serpRowsToCitationGroups,
 } from '../services/audit/reuseCrewEvidence';
 import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
-import { MEASURED_TRAFFIC_COLUMNS, REMOVED_TABLE_NOTE, REPORT_TABLES, isReportColumn, readTableAt } from '../services/audit/reportColumnGate';
+import { REMOVED_TABLE_NOTE, REPORT_TABLES, isReportColumn, readTableAt } from '../services/audit/reportColumnGate';
 import { OracleMode } from '../types';
 import { citationIntegrityService } from '../services/audit/citationIntegrityService';
 import { publicApisEnrichmentService } from '../services/enrichment/publicApisEnrichmentService';
@@ -422,9 +422,9 @@ describe('generateAuditReport crew evidence', () => {
     expect(result.text).toContain('what is example.com');
   });
 
-  // Review 2, 3: the one table outside the twelve columns is the measured traffic
-  // table, and only in a run that fetched the site's own analytics.
-  describe('measured traffic table', () => {
+  // Review 3, 1: the report offers no measured table. The model writes every row
+  // of a table, so a table in the report is never measured, analytics or not.
+  describe('measured traffic', () => {
     const metric = (current: number, previous: number) => ({ current, previous, changePct: null });
     const readyTraffic = {
       status: 'ready',
@@ -439,46 +439,49 @@ describe('generateAuditReport crew evidence', () => {
       topPages: [],
       fetchedAt: 1,
     };
-    const trafficTable = [
-      `| ${MEASURED_TRAFFIC_COLUMNS.join(' | ')} |`,
+    const modelTable = [
+      '| Measured traffic | This period (measured) | Previous period (measured) |',
       '|---|---|---|',
       '| Visitors | 120 | 100 |',
+      '| Est. organic rank | #3 | #7 |',
     ];
-    const modelReport = [
-      '# Luminara: Will AI mention Example?',
-      '',
-      '## 2. Plain verdict',
-      ...trafficTable,
-      '',
-      '## 3. Fix list',
-      '| Task | Plain issue | Expected Impact | Priority |',
-      '|---|---|---|---|',
-      '| Add Organization schema | AI cannot tell who you are | +40% citations | High |',
-    ].join('\n');
+    const modelReport = ['# Luminara: Will AI mention Example?', '', '## 2. Plain verdict', ...modelTable].join('\n');
+    const rules = () => prompt().slice(prompt().indexOf('Strict Formatting Guidelines:'));
 
-    it('is offered to the model and kept in the report when the analytics block was fetched', async () => {
+    it('gives the model the analytics block and invites no traffic table', async () => {
       vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue(readyTraffic as never);
-      generate.mockResolvedValue({ text: modelReport } as never);
-      const result = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+      await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
 
       expect(prompt()).toContain('Visitors: 120 (previous 100)');
-      expect(prompt()).toContain(`use exactly these columns and copy every figure from that block: | ${MEASURED_TRAFFIC_COLUMNS.join(' | ')} |`);
-      for (const line of trafficTable) expect(result.text).toContain(line);
-      // Holding measured traffic does not let any other column through.
-      expect(result.text).not.toContain('Expected Impact');
-      expect(result.text).not.toContain('+40% citations');
-      expect(result.text).toContain('| Add Organization schema | AI cannot tell who you are | High |');
+      expect(rules()).toContain('Cite it in "## 2. Plain verdict" as measured, in a sentence. Do not put it in a table');
+      expect(rules()).not.toMatch(/This period|Previous period|\| Measured traffic|use exactly these columns/i);
+      // The only table headers the prompt prints are the twelve.
+      expect(rules().split('\n').filter((line) => line.trim().startsWith('|'))).toHaveLength(3);
     });
 
-    it('is not offered and is left out, with the note, when no analytics block was fetched', async () => {
+    it('leaves a model-written "measured" table out of the report and of the memory copy, analytics or not', async () => {
+      const remember = vi.spyOn(vfsMemoryService, 'ingestAuditAsResource');
       generate.mockResolvedValue({ text: modelReport } as never);
-      const result = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
 
-      expect(prompt()).not.toContain('Measured traffic');
-      expect(prompt()).toContain('No measured traffic data is present above. State no traffic figure.');
-      expect(result.text).toContain(REMOVED_TABLE_NOTE);
-      expect(result.text).not.toContain('| Visitors | 120 | 100 |');
-      expect(result.text).not.toContain('This period (measured)');
+      vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue(readyTraffic as never);
+      const withAnalytics = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+      // The measured data still reaches the screen as data, for the tracking card.
+      expect(withAnalytics.trafficImpact?.status).toBe('ready');
+
+      vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue({ status: 'not_configured', domain: 'example.com' } as never);
+      const without = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+      const lastPrompt = String(generate.mock.calls[generate.mock.calls.length - 1]?.[0] || '');
+      expect(lastPrompt).toContain('No measured traffic data is present above. State no traffic figure.');
+      expect(lastPrompt).not.toContain('Visitors: 120');
+
+      const texts = [withAnalytics.text, without.text, ...remember.mock.calls.map((call) => String(call[0]))];
+      expect(texts.length).toBeGreaterThanOrEqual(4);
+      for (const text of texts) {
+        expect(text).toContain(REMOVED_TABLE_NOTE);
+        for (const gone of ['This period (measured)', 'Est. organic rank', '#3', '| Visitors | 120 | 100 |']) {
+          expect(text, gone).not.toContain(gone);
+        }
+      }
     });
   });
 

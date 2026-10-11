@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SYSTEM_INSTRUCTIONS } from '../constants';
 import {
-  MEASURED_TRAFFIC_COLUMNS,
   REMOVED_TABLE_NOTE,
   REPORT_TABLES,
   gateReportTables,
@@ -33,8 +32,8 @@ function tableHeaders(markdown: string): string[] {
   return headers;
 }
 
-function gate(lines: string[], options?: Parameters<typeof gateReportTables>[1]) {
-  return gateReportTables(lines.join('\n'), options);
+function gate(lines: string[]) {
+  return gateReportTables(lines.join('\n'));
 }
 
 describe('the report has twelve columns and the templates print them from one list', () => {
@@ -50,6 +49,9 @@ describe('the report has twelve columns and the templates print them from one li
     for (const header of [
       ...TWELVE, 'Brand Cited', '**Citation Status**', 'citation status', 'AI Perception', 'Content Advantage',
       'Brand Cited (Yes / No)', 'Citation Status (Cited / Not Cited / Not Measured)', 'content advantage (vs you)',
+      // Review 3, 2: a bracket that only restates the column's own values is a hint too.
+      'Priority (High/Med/Low)', 'Priority (high, medium or low)', 'Brand Cited (Y/N)', 'Brand Cited (Yes/No/Not measured)',
+      'Intent (informational/commercial/comparative)', 'Status (Cited/Not cited)',
     ]) {
       expect(isReportColumn(header), header).toBe(true);
     }
@@ -72,11 +74,40 @@ describe('a bracket is accepted only when it is the hint the template prints for
     'Citation Status (Cited/Not Cited/Not Measured) (Est. Rank)',
     'Key Competitors (Trust Score)',
     'Task (Yes/No)',
+    'Priority (High/Med/Low, Impact +40%)',
+    'Priority (High) (Low)',
+    'Brand Cited (Y/N/Rank)',
+    'Content Advantage (vs Acme)',
+    'Content Advantage (Authority 0-100)',
   ])('removes "%s" and its cell', (header) => {
     expect(isReportColumn(header)).toBe(false);
     const result = gate([`| Query | ${header} | Intent |`, '|---|---|---|', '| q1 | INVENTED-CELL | informational |']);
     expect(result.text).toBe(['| Query | Intent |', '| --- | --- |', '| q1 | informational |'].join('\n'));
     expect(result.removedColumns).toEqual([header]);
+  });
+});
+
+describe('"vs" followed by a name is a hint only when the name is in the same table', () => {
+  it('keeps "Content Advantage (vs Acme)" when Acme is in the Entity column', () => {
+    const table = [
+      '| Entity | AI Perception (Tone/Claims) | Content Advantage (vs Acme) |',
+      '|---|---|---|',
+      '| **Acme** | Clear | None |',
+      '| Rival | Strong | Comparison pages |',
+    ];
+    const result = gate(table);
+    expect(result.text).toBe(table.join('\n'));
+    expect(result.removedColumns).toEqual([]);
+  });
+
+  it('removes it when the name is not one of the entities', () => {
+    const result = gate([
+      '| Entity | AI Perception (Tone/Claims) | Content Advantage (vs Globex) |',
+      '|---|---|---|',
+      '| Acme | Clear | None |',
+    ]);
+    expect(result.text).toBe(['| Entity | AI Perception (Tone/Claims) |', '| --- | --- |', '| Acme | Clear |'].join('\n'));
+    expect(result.removedColumns).toEqual(['Content Advantage (vs Globex)']);
   });
 });
 
@@ -197,43 +228,71 @@ describe('nothing passes because it was "left as written"', () => {
     expect(result.text).not.toContain('#3');
   });
 
-  // Review 2, 1b: one pipe that is not escaped inside a cell, a page title for
-  // example, used to make the whole table "unparsed" and pass it through.
-  const titleRow = '| Fix the title tag | The title reads "Home | Acme" on every page | High |';
-
-  it('joins a stray pipe back into the free-text cell when every header is listed', () => {
-    const lines = ['| Task | Plain issue | Priority |', '|---|---|---|', titleRow, '| Add schema | Missing | Med |'];
+  // Review 2, 1b and review 3, 3: one pipe that is not escaped inside a cell, a page
+  // title for example. The surplus cells are joined back only when the table has
+  // exactly one free-text column. Otherwise nothing says where the pipe belongs.
+  it('joins a stray pipe back when the table has exactly one free-text column', () => {
+    const lines = [
+      '| Query | Intent | Citation Status |',
+      '|---|---|---|',
+      '| what does "Home | Acme" sell | informational | Cited |',
+      '| acme pricing | commercial | Not Cited |',
+    ];
     const table = readTableAt(lines, 0);
     expect(table?.unaligned).toBe(false);
     expect(table?.rows).toEqual([
-      ['Fix the title tag', 'The title reads "Home | Acme" on every page', 'High'],
-      ['Add schema', 'Missing', 'Med'],
+      ['what does "Home | Acme" sell', 'informational', 'Cited'],
+      ['acme pricing', 'commercial', 'Not Cited'],
     ]);
 
     const result = gate(lines);
     // The row is written back with the pipe escaped, so every reader lines it up the same way.
     expect(result.text).toBe([
-      '| Task | Plain issue | Priority |',
+      '| Query | Intent | Citation Status |',
       '| --- | --- | --- |',
-      '| Fix the title tag | The title reads "Home \\| Acme" on every page | High |',
-      '| Add schema | Missing | Med |',
+      '| what does "Home \\| Acme" sell | informational | Cited |',
+      '| acme pricing | commercial | Not Cited |',
     ].join('\n'));
     expect(result).toMatchObject({ removedColumns: [], removedTables: 0, unparsedTables: 0 });
     // Gating the result again changes nothing.
     expect(gateReportTables(result.text).text).toBe(result.text);
   });
 
+  it.each([
+    ['the fix list, with a page title in the plain issue', [
+      '| Task | Plain issue | Priority |',
+      '|---|---|---|',
+      '| Fix the title tag | The title reads "Home | Acme" on every page | High |',
+    ], 'Fix the title tag'],
+    ['the competitor map, with a pipe between page types', [
+      '| Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) |',
+      '|---|---|---|---|',
+      '| Acme | Clear | Homepage | Pricing | Blog | None |',
+    ], 'Pricing'],
+    ['the radar, with a pipe in the query', [
+      '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status |',
+      '|---|---|---|---|---|',
+      '| acme | pricing | commercial | No | Rival | Not Cited |',
+    ], 'Rival'],
+  ])('leaves out %s: two free-text columns, so the pipe could belong to either', (_name, lines, lostText) => {
+    const result = gate(['Before.', ...lines, 'After.']);
+    expect(result.text).toBe(['Before.', REMOVED_TABLE_NOTE, 'After.'].join('\n'));
+    expect(result.text).not.toContain(lostText);
+    expect(result).toMatchObject({ removedColumns: [], removedTables: 1, unparsedTables: 0 });
+    expect(readTableAt(lines, 0)).toMatchObject({ unaligned: true, rows: [] });
+  });
+
   it('leaves the table out when a row has a stray pipe and a header is not listed', () => {
     const result = gate([
       '## 3. Fix list',
-      '| Task | Plain issue | Expected Impact | Priority |',
-      '|---|---|---|---|',
-      '| Fix the title tag | The title reads "Home | Acme" on every page | +40% citations | High |',
+      '| Query | Est. Organic Rank | Citation Status |',
+      '|---|---|---|',
+      '| what does "Home | Acme" sell | #3 | Cited |',
       'After.',
     ]);
     expect(result.text).toBe(['## 3. Fix list', REMOVED_TABLE_NOTE, 'After.'].join('\n'));
-    expect(result.text).not.toContain('+40% citations');
-    expect(result.removedColumns).toEqual(['Expected Impact']);
+    expect(result.text).not.toContain('#3');
+    expect(result.removedColumns).toEqual(['Est. Organic Rank']);
     expect(result.removedTables).toBe(1);
     expect(result.unparsedTables).toBe(0);
   });
@@ -301,8 +360,22 @@ describe('what the gate keeps on purpose', () => {
     expect(gate(plain).text).toBe(plain.join('\n'));
   });
 
+  // Review 3, 5.
+  it('keeps a sources table that numbers its rows in a first column', () => {
+    for (const numbered of [
+      ['| # | Source | URL |', '|---|---|---|', '| 1 | Example | https://example.com/about |', '| 2 | Rival review | https://rival.test/vs |'],
+      ['| No. | Title | Link |', '|---|---|---|', '| 1. | About Example | https://example.com/about |'],
+    ]) {
+      const result = gate(numbered);
+      expect(result.text).toBe(numbered.join('\n'));
+      expect(result.removedTables).toBe(0);
+    }
+  });
+
   it.each([
-    ['a numbers column', ['| # | Source | Title |', '|---|---|---|', '| 1 | https://example.com | About |']],
+    ['a numbers column that is not first', ['| Source | # | Title |', '|---|---|---|', '| https://example.com | 1 | About |']],
+    ['a first column of figures that do not number the rows', ['| # | Source | Title |', '|---|---|---|', '| #3 | https://example.com | About |']],
+    ['a score in the index column', ['| No. | Source | Title |', '|---|---|---|', '| 88/100 | https://example.com | About |']],
     ['a rank column', ['| Source | Title | Rank |', '|---|---|---|', '| https://example.com | About | 3 |']],
     ['a percentage in a cell', ['| Source | Title |', '|---|---|', '| https://example.com | Cited in 40% of answers |']],
     ['a rank in a cell', ['| Source | Title |', '|---|---|', '| https://example.com | Ranks #3 for widgets |']],
@@ -315,43 +388,35 @@ describe('what the gate keeps on purpose', () => {
   });
 });
 
-describe('a column the calling code filled from evidence stays', () => {
-  // These three were deleted by the first gate because their names contain "impact" or "rank".
-  it.each([
-    'Traffic impact (measured)',
-    'Top-ranking pages',
-    'Search sample position',
-  ])('keeps "%s" when code passes it as measured, and removes it otherwise', (header) => {
-    const table = [`| Query | ${header} |`, '|---|---|', '| q1 | from evidence |'];
-
-    const marked = gate(table, { measuredColumns: [header] });
-    expect(marked.text).toBe(table.join('\n'));
-    expect(marked.removedColumns).toEqual([]);
-
-    const unmarked = gate(table);
-    expect(unmarked.text).toBe(['| Query |', '| --- |', '| q1 |'].join('\n'));
-    expect(unmarked.removedColumns).toEqual([header]);
-  });
-
-  it('keeps only the marked column, not another one beside it', () => {
-    const result = gate(
-      ['| Query | Search sample position | Est. Organic Rank |', '|---|---|---|', '| q1 | 2 | 7 |'],
-      { measuredColumns: ['Search sample position'] },
-    );
-    expect(result.text).toBe(['| Query | Search sample position |', '| --- | --- |', '| q1 | 2 |'].join('\n'));
-  });
-
-  it('keeps the measured traffic table only when the caller holds measured traffic', () => {
-    const traffic = [
-      `| ${MEASURED_TRAFFIC_COLUMNS.join(' | ')} |`,
+describe('no table in a report is measured (review 3, 1)', () => {
+  // With an exception for "measured" columns the model still typed the rows, so
+  // "Est. organic rank | #3 | #7" sat under "This period (measured)".
+  it('leaves out a table whose headers say measured, whatever its rows hold', () => {
+    const result = gate([
+      '## 2. Plain verdict',
+      '| Measured traffic | This period (measured) | Previous period (measured) |',
       '|---|---|---|',
       '| Visitors | 120 | 100 |',
-      '| Visits from AI assistants | 7 | 4 |',
-    ];
-    expect(gate(traffic, { measuredColumns: MEASURED_TRAFFIC_COLUMNS }).text).toBe(traffic.join('\n'));
-    const without = gate(traffic);
-    expect(without.text).toBe(REMOVED_TABLE_NOTE);
-    expect(without.text).not.toContain('120');
+      '| Est. organic rank | #3 | #7 |',
+    ]);
+    expect(result.text).toBe(['## 2. Plain verdict', REMOVED_TABLE_NOTE].join('\n'));
+    expect(result.text).not.toContain('#3');
+    expect(result.removedTables).toBe(1);
+  });
+
+  it('takes no list of measured columns from any caller', () => {
+    expect(gateReportTables.length).toBe(1);
+    expect(gateReportText.length).toBe(1);
+    // A second argument is ignored: the column goes all the same.
+    const loose = gateReportTables as unknown as (markdown: string, options: unknown) => { text: string };
+    const text = loose(
+      ['| Query | Search sample position |', '|---|---|', '| q1 | 2 |'].join('\n'),
+      { measuredColumns: ['Search sample position'] },
+    ).text;
+    expect(text).toBe(['| Query |', '| --- |', '| q1 |'].join('\n'));
+    for (const header of ['Traffic impact (measured)', 'Top-ranking pages', 'Search sample position', 'This period (measured)']) {
+      expect(isReportColumn(header), header).toBe(false);
+    }
   });
 });
 
@@ -406,6 +471,13 @@ describe('what the gate does not cover', () => {
     const table = ['| Task | Priority |', '|---|---|', '| Add schema | Rank 3, +40% |'].join('\n');
     expect(gateReportTables(table).text).toBe(table);
   });
+
+  // Review 3, 5: a known limit. The sources rule refuses a percentage, a ratio, a
+  // rank written "#3" and a bare number. A claim spelled out in a title still passes.
+  it('does not catch a claim spelled out inside a sources title', () => {
+    const sources = ['| Source | Title |', '|---|---|', '| https://example.com/a | Acme, rank three, cited 34 times |'].join('\n');
+    expect(gateReportTables(sources).text).toBe(sources);
+  });
 });
 
 describe('which chat replies count as an audit', () => {
@@ -423,5 +495,20 @@ describe('which chat replies count as an audit', () => {
     expect(looksLikeAuditReport('# A note\n\n| Plan | Price |\n|---|---|\n| Growth | 49 |')).toBe(false);
     expect(looksLikeAuditReport('# Pricing\n\nYour fix list is in the last audit.\n\n| Plan | Price |\n|---|---|\n| Growth | 49 |')).toBe(false);
     expect(looksLikeAuditReport('**Note:** see the fix list above.')).toBe(false);
+  });
+
+  // Review 3, 4: the section names are matched as whole words.
+  it('is not triggered by a heading that only contains a section name inside other words', () => {
+    for (const reply of [
+      '## Prefix list of plans\n| Plan | Price |\n|---|---|\n| Growth | 49 |',
+      '## Competitor mapping\nA note on how we map competitors.',
+      '### Our visibility radars\ntext',
+      '**Prefix list**',
+    ]) {
+      expect(looksLikeAuditReport(reply), reply).toBe(false);
+    }
+    expect(looksLikeAuditReport('## 3. Fix list\n')).toBe(true);
+    expect(looksLikeAuditReport('## Competitor map\n')).toBe(true);
+    expect(looksLikeAuditReport('## AI & Search Visibility Radar\n')).toBe(true);
   });
 });

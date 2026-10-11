@@ -139,6 +139,10 @@ describe('guest scout summary honesty', () => {
     const summary = buildGuestScoutSummary({ ...base, citationRatePercent: 56, shareOfVoiceScore: 5 });
     const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
     expect(html).toContain('Citation rate: mentioned in 5 of 9 web results');
+    // Review 3, 6: the same line is not printed a second time under another name.
+    expect(summary.badges.map((item) => item.label)).toEqual(['Citation rate', 'Page health']);
+    expect((html.match(/mentioned in 5 of 9 web results/g) || []).length).toBe(1);
+    expect(html).not.toContain('Share of voice:');
     expect(html).not.toContain('56');
     expect(JSON.stringify(summary.badges)).not.toMatch(/\d\s*%/);
   });
@@ -158,7 +162,7 @@ describe('guest scout summary honesty', () => {
       hostedRail: 'signed_in_hosted',
     });
     const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
-    expect(html).toContain('Share of voice: mentioned in 0 of 9 web results');
+    expect(html).toContain('Citation rate: mentioned in 0 of 9 web results');
     expect(html).not.toMatch(/>\s*Cited\s*</);
     expect(html).not.toMatch(/>\s*Recommended\s*</);
     expect(html).not.toMatch(/Verified \d+ organic/);

@@ -231,7 +231,7 @@ describe('Instant Audit honesty on empty evidence', () => {
     }
   });
 
-  it('shows share of voice on the scout card as the count it was built from', () => {
+  it('shows the crew share of voice count on the scout card as the count it is', () => {
     const base = {
       targetUrl: 'https://example.com',
       measurementStatus: 'measured' as const,
@@ -242,21 +242,24 @@ describe('Instant Audit honesty on empty evidence', () => {
       findings: [],
       hostedRail: 'signed_in_hosted' as const,
     };
+    // The count is the crew's shareOfVoiceScore field. It is printed once, under the
+    // citation rate badge: the card has no second badge for the same two counts.
     const badge = (shareOfVoiceScore: number | null, serpCount = 9) => buildGuestScoutSummary({ ...base, serpCount, shareOfVoiceScore })
-      .badges.find((item) => item.label === 'Share of voice');
+      .badges.find((item) => item.label === 'Citation rate');
 
-    expect(badge(3)).toEqual({ label: 'Share of voice', status: 'measured', value: 'mentioned in 3 of 9 web results' });
-    expect(badge(0)).toEqual({ label: 'Share of voice', status: 'measured', value: 'mentioned in 0 of 9 web results' });
-    expect(badge(null)).toEqual({ label: 'Share of voice', status: 'not_measured' });
+    expect(badge(3)).toEqual({ label: 'Citation rate', status: 'measured', value: 'mentioned in 3 of 9 web results' });
+    expect(badge(0)).toEqual({ label: 'Citation rate', status: 'measured', value: 'mentioned in 0 of 9 web results' });
+    expect(badge(null)).toEqual({ label: 'Citation rate', status: 'not_measured' });
     // A stored 0-100 formula score is not a count of nine rows. It is not shown.
-    expect(badge(43)).toEqual({ label: 'Share of voice', status: 'not_measured' });
-    expect(badge(2.5)).toEqual({ label: 'Share of voice', status: 'not_measured' });
+    expect(badge(43)).toEqual({ label: 'Citation rate', status: 'not_measured' });
+    expect(badge(2.5)).toEqual({ label: 'Citation rate', status: 'not_measured' });
 
-    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, {
-      summary: buildGuestScoutSummary({ ...base, shareOfVoiceScore: 3 }),
-    }));
-    expect(html).toContain('Share of voice: mentioned in 3 of 9 web results');
-    expect(html).not.toMatch(/Share of voice:\s*\d+\s*\/\s*100/);
+    const summary = buildGuestScoutSummary({ ...base, shareOfVoiceScore: 3 });
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
+    expect(html).toContain('Citation rate: mentioned in 3 of 9 web results');
+    expect(summary.badges.some((item) => /share of voice/i.test(item.label))).toBe(false);
+    expect(html).not.toMatch(/Share of voice:/);
+    expect(html).not.toMatch(/\d+\s*\/\s*100/);
   });
 
   it('leaves health unmeasured when scrape and SERP evidence are both empty', async () => {
