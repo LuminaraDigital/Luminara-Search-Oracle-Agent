@@ -106,6 +106,7 @@ import {
 import { handleOracleChatSse, isOracleServerEnabled } from './oracleChat';
 import { OracleSession } from './oracleSession';
 import { handlePagespeedRoute } from './pagespeedRoute';
+import { handleDeployReadbackRoute } from './deployReadback';
 import {
   enqueueAuditRun,
   getAuditRun,
@@ -1514,6 +1515,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
     if (!dual.ok) return withCors(dual.response);
     return withCors(handlePagespeedRoute(request, env, who.user));
+  }
+
+  // Deploy read-back (SW0a-17). Sign-in, rate limit and the SSRF guard live in worker/deployReadback.ts.
+  if (path === '/deploy/readback') {
+    return withCors(handleDeployReadbackRoute(request, env));
   }
 
   // Budget policy self-service (spec 0014). Authz: the caller's own account
