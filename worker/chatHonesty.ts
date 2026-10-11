@@ -6,9 +6,10 @@
  * 1. chatRoute() reads the user's message. Two kinds never reach the model, and each gets a
  *    fixed reply: a payment problem ("I paid but nothing happened") gets the /paysupport
  *    text, and a question about Luminara's own plans, prices or how to pay gets the block
- *    built from the plan table. It routes only when sure: a message that names another
- *    company or tool, or is about the user's own site or business, goes to the model. It has
- *    no memory: each message is read by itself.
+ *    built from the plan table. A payment cue in the first person ("I paid", "charged me")
+ *    wins over everything else in the message. Without one it routes only when sure: a
+ *    message that names another company or tool, or is about the user's own site or
+ *    business, goes to the model. It has no memory: each message is read by itself.
  * 2. Every model reply passes through filterChatReply() before it is stored or sent:
  *    - a sentence that names one of our plans with a number, or gives a number of Stars,
  *      gives way to the plan block;
@@ -88,8 +89,9 @@ export type PlanPriceTable = Record<string, PlanPrice>;
 
 /** The first line of the plan block: whose plans these are. */
 export const PLAN_BLOCK_HEADING = "Luminara's own plans:";
-/** The last line of the plan block: how a plan is paid for and where to buy one. */
-export const PLAN_BLOCK_FOOTER = 'Plans are paid with Telegram Stars, inside Telegram. Send /plan to buy.';
+/** The last line of the plan block: how a plan is paid for, that it does not renew, and where to buy one. */
+export const PLAN_BLOCK_FOOTER =
+  'Plans are paid with Telegram Stars, inside Telegram. They do not renew on their own. Send /plan to buy.';
 /** The whole reply to a payment problem. A person handles those, and the model never does. */
 export const BILLING_HELP_REPLY =
   'Billing problems are handled by a person. Send /paysupport and then your message. Your receipt ID is in /status. Please do not pay again.';
@@ -220,6 +222,14 @@ export const BILLING_PROBLEM_WORDS: Record<string, readonly string[]> = {
   fr: ['remboursement', 'rembourser', "j'ai payé", 'débité'],
   de: ['rückerstattung', 'erstattung', 'geld zurück', 'habe bezahlt', 'abgebucht'],
 };
+/** "I paid" and "I was charged" in other languages. Like the English cue, they win over every guard. */
+export const FIRST_PERSON_PAYMENT_WORDS: Record<string, readonly string[]> = {
+  es: ['ya pagué', 'pagué', 'me cobraron', 'me cobró'],
+  pt: ['já paguei', 'paguei', 'me cobraram', 'cobraram'],
+  ru: ['оплатил', 'оплатила', 'заплатил', 'заплатила', 'списали', 'верните деньги', 'деньги вернёте', 'деньги вернете'],
+  fr: ["j'ai payé", 'débité', 'débitée'],
+  de: ['habe bezahlt', 'habe gezahlt', 'abgebucht', 'geld zurück'],
+};
 // These words carry accents and Cyrillic, where \b does not work, so the edges are tested as
 // "no letter or digit on either side".
 const foreignWordsRe = (lists: Record<string, readonly string[]>): RegExp =>
@@ -232,6 +242,7 @@ const foreignWordsRe = (lists: Record<string, readonly string[]>): RegExp =>
   );
 const FOREIGN_PLAN_WORD_RE = foreignWordsRe(PLAN_QUESTION_WORDS);
 const FOREIGN_BILLING_WORD_RE = foreignWordsRe(BILLING_PROBLEM_WORDS);
+const FOREIGN_FIRST_PERSON_PAYMENT_RE = foreignWordsRe(FIRST_PERSON_PAYMENT_WORDS);
 
 // ---------------------------------------------------------------------------------------
 // The reply: what is certainly a price of ours, and what is only talk of money.
@@ -336,8 +347,8 @@ export type ChatRoute = 'billing' | 'plans';
 const YOUR_POLICY_RE = /\b(?:your|luminara['’]?s)\s+(?:refund|returns?|cancell?ation|billing|payment)\s+polic(?:y|ies)\b/gi;
 
 // Another company or tool. A message that names one is not about our plans.
-const OTHER_COMPANY_RE =
-  /\b(?:semrush|ahrefs|moz|majestic|screaming\s+frog|yoast|surfer|clearscope|google(?!\s+pay\b)|bing|chatgpt|openai|perplexity|gemini|claude|copilot|grok|stripe|shopify|woocommerce|wordpress|wix|squarespace|webflow|hubspot|mailchimp|zapier|notion|canva|g2|capterra|trustpilot|yelp|amazon|github|linkedin|youtube|tiktok|reddit|instagram|facebook|wikipedia|netflix|spotify|search\s+console)\b/i;
+const OTHER_COMPANY = String.raw`(?:semrush|ahrefs|moz|majestic|screaming\s+frog|yoast|surfer|clearscope|google(?!\s+pay\b)|bing|chatgpt|openai|perplexity|gemini|claude|copilot|grok|stripe|shopify|woocommerce|wordpress|wix|squarespace|webflow|hubspot|mailchimp|zapier|notion|canva|g2|capterra|trustpilot|yelp|amazon|github|linkedin|youtube|tiktok|reddit|instagram|facebook|wikipedia|netflix|spotify|search\s+console)`;
+const OTHER_COMPANY_RE = new RegExp(String.raw`\b${OTHER_COMPANY}\b`, 'i');
 // The user's own customers and business.
 const THEIR_BUSINESS_RE =
   /\b(?:my|our|his|her|their)\s+(?:[\w-]+\s+)?(?:customers?|clients?|buyers?|users?|subscribers?|members?|audience|visitors?|readers?|competitors?|site|website|store|shop|saas|products?|startup|brand|blog|newsletter|pricing|prices?|tiers|offers?|checkout|homepage|domain|hosting)\b|\b(?:i|we)\s+(?:sell|own)\b|\b(?:i|we)\s+run\s+(?:an?|\d+|my|our|the|several|multiple|two|three)\b|\bsells\b/i;
@@ -356,25 +367,41 @@ const SITE_WORK_RE = new RegExp(
 const SEARCH_TOPIC_RE =
   /\b(?:visibility|seo|aeo|geo|serps?|search|keywords?|citations?|cit(?:e|es|ed|ing)|mentions?|(?:out)?rank(?:s|ed|ing|ings)?|content|blogs?|posts?|articles?|copy|pages?|links?|tools?|software|plugins?|campaigns?|competitors?|authority|conversions?|results?|snippets?|headings?|headlines?|brands?|audience|strateg(?:y|ies)|marketing)\b/i;
 
-// What "I paid" must not be followed by: then it was paid to somebody else.
-const NOT_OURS_AFTER = String.raw`(?!\s+(?:for\s+)?(?:an?\s+|some\s+|the\s+|more\s+)?(?:backlinks?|links?|reviews?|ads?|traffic|content|followers|writers?|freelancers?|agency|consultants?|tools?|software|domains?|hosting|courses?)\b)`;
+// What "I paid" must not be followed by: then the money went to somebody else. "I paid for
+// Semrush", "I paid a writer", "I bought an aged domain".
+const NOT_OURS_AFTER = String.raw`(?!\s+(?:for\s+|to\s+)?(?:(?:an?|some|the|more|my|our)\s+)?(?:${OTHER_COMPANY}\b|(?:[\w-]+\s+)?(?:backlinks?|links?|reviews?|ads?|traffic|content|followers|writers?|freelancers?|agency|consultants?|tools?|software|domains?|hosting|courses?|posts?|articles?|plugins?|themes?|templates?)\b))`;
 const OUR_THING = String.raw`(?:payment|purchase|plan|subscription|access|premium|stars|receipt|invoice|charge)`;
 const WENT_WRONG = String.raw`(?:not|isn['’]?t|wasn['’]?t|never|no\s+longer|gone|disappear\w*|vanish\w*|missing|lost|chang\w+|downgrad\w+|locked|expired|stopp\w+|fail\w*|declin\w+|pending|stuck|didn['’]?t|doesn['’]?t|won['’]?t)`;
-// A payment problem, in the first person.
+// A payment cue in the first person. It wins over every guard: whatever else the message
+// mentions (a page, a tool, another company), the user paid us and something is wrong.
+const FIRST_PERSON_PAYMENT_RE = new RegExp(
+  [
+    // "I paid but the pricing page still says locked", "I already paid", "I bought Growth"
+    String.raw`\bi(?:['’]ve|\s+have)?\s+(?:(?:already|just|also)\s+)?(?:paid|payed|bought|purchased|subscribed|renewed)\b${NOT_OURS_AFTER}`,
+    // "I was charged twice", "I got double billed", "Stripe charged me twice", "you charged me"
+    String.raw`\b(?:i|we)\s+(?:was|were|got|am|have\s+been|['’]ve\s+been)\s+(?:double[- ]?)?(?:charged|billed|downgraded)\b(?!\s+with\b)`,
+    String.raw`\b(?:charged|billed)\s+me\b`,
+    // "my payment failed", "where is my money", "it took my stars", "refund me"
+    String.raw`\bmy\s+payment\b(?!\s+(?:pages?|forms?|schema|methods?|options?|gateway|provider|processor)\b)`,
+    String.raw`\b(?:where\s+(?:is|are|did|has|have)|why\s+(?:did|is|was|has|have|are))\s+my\s+(?:payment|purchase|stars|money|receipt|charge)\b`,
+    String.raw`\btook\s+my\s+(?:money|stars)\b|\bmy\s+(?:money|stars)\s+(?:back|(?:is|are|was|were)\s+(?:gone|taken))\b`,
+    String.raw`\brefund\s+(?:me\b|my\s+(?:money|stars|payment|purchase)\b)|\b(?:my|i\s+(?:want|need|would\s+like|demand)\s+(?:a|my))\s+refund\b(?!\s+(?:polic|pages?|terms|schema)\w*)`,
+  ].join('|'),
+  'i',
+);
+// Other signs of a payment problem. These give way to the guards: "a refund policy" is a page
+// of the user's, and "my client was charged twice by Stripe" is not about us.
 const PAYMENT_PROBLEM_RE = new RegExp(
   [
-    // "I paid but nothing happened", "I already paid", "I bought it yesterday"
-    String.raw`\bi(?:['’]ve|\s+have)?\s+(?:(?:already|just|also)\s+)?(?:paid|payed|bought|purchased|subscribed|renewed)\b${NOT_OURS_AFTER}`,
+    // "paid twice by mistake", "paid, no access", "charged twice", "double charge"
     String.raw`\bpaid\b[,;:]?\s+(?:but|and|yet|still|no|not|nothing|already|twice|double|by\s+mistake|yesterday|today)\b|\balready\s+paid\b`,
-    // "I was charged twice", "I got double billed", "I was downgraded", "you charged me"
-    String.raw`\b(?:i|we)\s+(?:was|were|got|am|have\s+been|['’]ve\s+been)\s+(?:double[- ]?)?(?:charged|billed|downgraded)\b(?!\s+with\b)`,
-    String.raw`\b(?:charged|billed)\s+(?:me\s+)?(?:twice|double|two\s+times|2\s+times)\b|\bdouble[- ]?(?:charged?|billed|billing|payment)\b|\b(?:you|it|they)\s+(?:charged|billed)\s+me\b`,
-    // "my payment failed", "my plan is not active", "my access is gone", "where is my plan"
+    String.raw`\b(?:charged|billed)\s+(?:twice|double|two\s+times|2\s+times)\b|\bdouble[- ]?(?:charged?|billed|billing|payment)\b`,
+    // "my plan is not active", "my access is gone", "where is my plan"
     String.raw`\bmy\s+${OUR_THING}\b(?!\s+is\s+to\b)[^.?!\n]{0,40}?\b${WENT_WRONG}\b`,
     String.raw`\b(?:where\s+(?:is|are|did|has|have)|why\s+(?:did|is|was|has|have|are))\s+my\s+${OUR_THING}\b`,
-    // "payment went through but no access", "money was taken", "stars gone", "you took my money"
+    // "payment went through but no access", "money was taken", "stars gone"
     String.raw`\b(?:payment|money|stars|charge)\s+(?:went\s+through|was\s+taken|were\s+taken|taken|failed|declined|gone|missing|lost|didn['’]?t|did\s+not)\b`,
-    String.raw`\btook\s+my\s+(?:money|stars)\b|\b(?:money|stars)\s+back\b|\bmoney[- ]back\b`,
+    String.raw`\b(?:money|stars)\s+back\b|\bmoney[- ]back\b`,
     String.raw`\brefund(?:s|ed|able|ing)?\b|\bchargebacks?\b|\bunsubscribe\b`,
     // "cancel", "how do I cancel", "cancel my subscription". Not "cancel a redirect".
     String.raw`\bcancel(?:l?ing|l?ed|lation)?\b(?=\s*(?:$|[?.!,]|it\b|this\b|that\b|(?:my|the|this)\s+(?:subscription|plan|membership|payment|renewal|trial)\b))`,
@@ -482,9 +509,10 @@ function asksAboutOurPlans(text: string, names: PlanNames): boolean {
  * the model is not called; null goes to the model.
  *
  * It answers only what is clearly a payment problem of the user's, or a question about
- * Luminara's own plans, prices or how to pay. A message that names another company or tool,
- * or is about the user's own site or business, is never routed. Each message is read by
- * itself: what was said before changes nothing.
+ * Luminara's own plans, prices or how to pay. A payment cue in the first person ("I paid",
+ * "charged me", "my payment") wins over everything else in the message. Without one, a
+ * message that names another company or tool, or is about the user's own site or business,
+ * is never routed. Each message is read by itself: what was said before changes nothing.
  */
 export function chatRoute(userText: string, plans: PlanPriceTable): ChatRoute | null {
   const text = stripEmphasis(String(userText || ''))
@@ -493,6 +521,7 @@ export function chatRoute(userText: string, plans: PlanPriceTable): ChatRoute | 
     .replace(/\s+/g, ' ')
     .trim();
   if (!text) return null;
+  if (FIRST_PERSON_PAYMENT_RE.test(text) || FOREIGN_FIRST_PERSON_PAYMENT_RE.test(text)) return 'billing';
   if (OTHER_COMPANY_RE.test(text) || THEIR_BUSINESS_RE.test(text) || SITE_WORK_RE.test(text)) return null;
   if (PAYMENT_PROBLEM_RE.test(text) || FOREIGN_BILLING_WORD_RE.test(text)) return 'billing';
   if (SEARCH_TOPIC_RE.test(text)) return null;

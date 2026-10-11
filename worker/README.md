@@ -369,12 +369,14 @@ message and the reply went to the model chat.
     nothing happened", "charged twice", "I want a refund") gets one fixed reply that
     points to `/paysupport` and says not to pay again. A question about Luminara's
     own plans, prices or how to pay gets one block built from `PLANS`, headed
-    "Luminara's own plans:". Both are stored in history like any reply, cost no
-    quota and need no plan.
-  - **It routes only when sure, and it has no memory.** A message that names another
-    company or tool, or is about the user's own site, page, markup, policy,
-    customers or pricing, goes to the model. Each message is read by itself: what
-    was said before never routes it.
+    "Luminara's own plans:", which also says that plans are paid with Telegram
+    Stars and do not renew on their own. Both are stored in history like any reply,
+    cost no quota and need no plan.
+  - **It routes only when sure, and it has no memory.** A payment cue in the first
+    person ("I paid", "charged me", "my payment") wins over everything else in the
+    message. Without one, a message that names another company or tool, or is about
+    the user's own site, page, markup, policy, customers or pricing, goes to the
+    model. Each message is read by itself: what was said before never routes it.
   - Every model reply passes through `filterChatReply` before it is stored or sent.
     A sentence that names one of our plans as a plan with a number, or gives a
     number of Stars, gives way to the plan block. The model's number is never

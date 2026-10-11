@@ -19,6 +19,7 @@ import {
   chatRoute,
   chatRouteReply,
   filterChatReply,
+  FIRST_PERSON_PAYMENT_WORDS,
   MONEY_NOTE,
   NOT_MEASURED_SENTENCE,
   PLAN_QUESTION_WORDS,
@@ -56,7 +57,7 @@ const stars = (n: number): string => n.toLocaleString('en-US');
 const trueLine = (plan: Plan): string =>
   `${plan.title} is ${stars(plan.stars)} Stars for ${plan.days} ${plan.days === 1 ? 'day' : 'days'}.`;
 const HEADING = "Luminara's own plans:";
-const FOOTER = 'Plans are paid with Telegram Stars, inside Telegram. Send /plan to buy.';
+const FOOTER = 'Plans are paid with Telegram Stars, inside Telegram. They do not renew on their own. Send /plan to buy.';
 /** The block that answers a plan question, and stands in for a price of ours in a model reply. */
 const planBlock = (): string => [HEADING, ...Object.values(PLANS).map(trueLine), FOOTER].join('\n');
 /** The whole reply to a payment problem. */
@@ -181,6 +182,39 @@ describe('chatRoute: which messages never reach the model', () => {
     ])('is a payment problem: %s', (problem) => {
       expect(route(problem)).toBe('billing');
     });
+
+    // A payment cue in the first person wins over every guard: the message may name a page,
+    // a tool or another company and is still a payment problem.
+    it.each([
+      'I paid but the pricing page still says locked',
+      'Stripe charged me twice for Starter',
+      'I bought Growth and my site still shows free',
+      'charged me but Google says nothing changed',
+      'I paid via Google Pay and my schema audit is still locked',
+      'My payment failed on the checkout page',
+      'It took my stars and the FAQ says to wait',
+      'Refund me, the reviews page is wrong about refunds',
+      'Ya pagué y mi sitio sigue bloqueado en Google',
+      'Я оплатил, а в schema ничего не изменилось',
+      "J'ai payé mais Stripe dit non",
+      'Ich habe bezahlt, aber die Pricing Page zeigt nichts',
+      'Já paguei e o Google Pay cobrou duas vezes',
+    ])('is a payment problem whatever else it mentions: %s', (problem) => {
+      expect(route(problem)).toBe('billing');
+    });
+
+    // No first-person payment cue, or the money went to somebody else: the guards apply.
+    it.each([
+      'How do I mark up a refund policy?',
+      'Should I cancel my Ahrefs account?',
+      'My client was charged twice by Stripe',
+      'I paid for Semrush and my traffic did not grow',
+      'I paid an agency for backlinks and nothing happened',
+      'I paid a writer for 10 posts, how do I get them cited?',
+      'I bought an aged domain, what now?',
+    ])('is not one, and goes to the model: %s', (question) => {
+      expect(route(question)).toBeNull();
+    });
   });
 
   describe('a question about our own plans, prices or how to pay gets the plan block', () => {
@@ -299,6 +333,7 @@ describe('chatRoute: which messages never reach the model', () => {
   it('names the words it reads in other languages', () => {
     expect(Object.keys(PLAN_QUESTION_WORDS).sort()).toEqual(['de', 'es', 'fr', 'pt', 'ru']);
     expect(Object.keys(BILLING_PROBLEM_WORDS).sort()).toEqual(['de', 'es', 'fr', 'pt', 'ru']);
+    expect(Object.keys(FIRST_PERSON_PAYMENT_WORDS).sort()).toEqual(['de', 'es', 'fr', 'pt', 'ru']);
   });
 
   it('answers within a second on a 4096-character message built to make a pattern work hard', () => {
@@ -1216,6 +1251,8 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     'I was charged twice',
     'my payment failed',
     'I paid 2500 stars and my plan is not active',
+    'I paid but the pricing page still says locked',
+    'Stripe charged me twice for Starter',
     'Can I get a refund?',
     'деньги вернёте?',
   ])('does not call the model for a payment problem, and stores and sends the /paysupport text: %s', async (problem) => {
@@ -1247,7 +1284,7 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(sends).toHaveLength(1);
     expect(sends[0].text).toBe(planBlock());
     expect(sends[0].text.startsWith("Luminara's own plans:\n")).toBe(true);
-    expect(sends[0].text.endsWith('Plans are paid with Telegram Stars, inside Telegram. Send /plan to buy.')).toBe(true);
+    expect(sends[0].text.endsWith('Plans are paid with Telegram Stars, inside Telegram. They do not renew on their own. Send /plan to buy.')).toBe(true);
     expect(sends[0]).not.toHaveProperty('parse_mode');
     expect(history).toEqual([
       { role: 'user', content: question },
