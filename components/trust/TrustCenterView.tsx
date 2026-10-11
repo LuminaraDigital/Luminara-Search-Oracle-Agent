@@ -12,6 +12,7 @@ import {
   listMyReceipts,
   receiptLevelSentence as levelSentence,
   removeDomain,
+  revokedLine,
   setReceiptVisibility,
   startDomainVerification,
   verifyLinkFor,
@@ -545,8 +546,8 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
                     )}
                   </div>
                   <p className={`text-xs ${selfReported ? 'text-gray-300' : 'text-gray-400'}`}>
-                    {levelSentence(r.payload.level)} Issued {formatDate(r.payload.issuedAt)}.
-                    {revoked && ` Revoked ${formatDate(r.revokedAt)}${r.revokedReason ? `: ${r.revokedReason}` : ''}.`}
+                    {!revoked && `${levelSentence(r.payload.level)} `}Issued {formatDate(r.payload.issuedAt)}.
+                    {revoked && ` ${revokedLine(formatDate(r.revokedAt), r.revokedReason)}`}
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button

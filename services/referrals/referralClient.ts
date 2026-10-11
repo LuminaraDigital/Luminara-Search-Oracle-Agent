@@ -123,7 +123,29 @@ export async function completeWeeklyMission(missionKey: MissionKey): Promise<{ o
   }
 }
 
-export async function postDailyCheckin(): Promise<{ ok: boolean; alreadyCheckedIn?: boolean; streakDays?: number; error?: string }> {
+export interface DailyCheckinResult {
+  ok: boolean;
+  alreadyCheckedIn?: boolean;
+  streakDays?: number;
+  error?: string;
+  /** True when the server says the check-in does not exist (points are switched off). */
+  unavailable?: boolean;
+  /** HTTP status of the answer. Absent when there was no answer: no API base, or the request failed. */
+  status?: number;
+}
+
+/**
+ * Whether the daily streak card may be drawn. Two answers show it: the check-in worked, or the
+ * server refused it for lack of sign-in (401), which is what a guest gets while points are on.
+ * Everything else hides it: 404 (points are off), a rate limit, a server error, a request that
+ * failed, no API base, no answer yet.
+ */
+export function streakCardVisible(result: Pick<DailyCheckinResult, 'ok' | 'status'> | null | undefined): boolean {
+  if (!result) return false;
+  return result.ok === true || result.status === 401;
+}
+
+export async function postDailyCheckin(): Promise<DailyCheckinResult> {
   const base = apiBase();
   if (!base) return { ok: false, error: 'API unavailable' };
   try {
@@ -133,8 +155,10 @@ export async function postDailyCheckin(): Promise<{ ok: boolean; alreadyCheckedI
       body: JSON.stringify({}),
     });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; alreadyCheckedIn?: boolean; streakDays?: number; error?: string };
-    if (!res.ok || !data.ok) return { ok: false, error: data.error || `HTTP ${res.status}` };
-    return { ok: true, alreadyCheckedIn: data.alreadyCheckedIn, streakDays: data.streakDays };
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data.error || `HTTP ${res.status}`, unavailable: res.status === 404, status: res.status };
+    }
+    return { ok: true, alreadyCheckedIn: data.alreadyCheckedIn, streakDays: data.streakDays, status: res.status };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : 'Network error' };
   }

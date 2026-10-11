@@ -2,7 +2,7 @@
  * Client-Side Jetton Payment Orchestrator (TEP-74 & Q402).
  *
  * Constructs compliant TEP-74 Jetton transfer messages for TonConnect UI
- * to transfer USDT or $LORA tokens with forward memos and Qubic burn semantics.
+ * to transfer USDT or $LORA tokens with forward memos.
  */
 
 import { beginCell, toNano, Address, Cell } from '@ton/core';
@@ -46,7 +46,8 @@ export function buildJettonTransferPayload(params: JettonTransferParams): Cell {
 }
 
 /**
- * Builds a standard TEP-74 TokenBurn payload cell (Qubic-style Supply Watcher burn).
+ * Builds a standard TEP-74 TokenBurn payload cell: a holder burning their own tokens. Nothing
+ * in the app sends one on a payment.
  */
 export function buildJettonBurnPayload(amount: bigint, responseAddress: Address, queryId = 0n): Cell {
   return beginCell()

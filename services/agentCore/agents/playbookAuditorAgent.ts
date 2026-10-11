@@ -16,6 +16,9 @@ import {
   type LlmCrawlerSnapshot,
 } from '../../audit/llmCrawlerReadiness';
 import {
+  HEALTH_CHECKS,
+  HEALTH_SCORE_START,
+  healthChecklist,
   healthScoreBlockReason,
   liveSearchRows,
   pageSupportsHealthScore,
@@ -79,7 +82,7 @@ export class PlaybookAuditorAgent {
         category: 'citations',
         severity: 'critical',
         title: 'Weak Generative Search Footprint in Live SERP',
-        description: 'Zero third-party search results or AI overview summaries currently cite the brand directly for category queries.',
+        description: `None of the ${liveSerp.length} web search results this run collected mention the brand.`,
         evidenceSource: 'SERP Radar live search probe',
         howWeKnowItFailed: `0 out of ${liveSerp.length} search snippets mentioned the brand.`,
         leadingIndicator: 'Publishing entity-grounded comparison pages increases AI Overview citation rate.',
@@ -154,13 +157,14 @@ export class PlaybookAuditorAgent {
       return { findings, healthScore: null, llmCrawler };
     }
 
-    let baseScore = 85;
-    if (findings.some((f) => f.id === 'finding-zero-citations')) baseScore -= 15;
-    if (findings.some((f) => f.id === 'finding-schema-org')) baseScore -= 12;
-    if (findings.some((f) => f.id === 'finding-deprecated-howto')) baseScore -= 5;
-    if (findings.some((f) => f.id === 'finding-thin-content')) baseScore -= 8;
-
+    // A checklist number: it starts at 85 and loses a fixed amount for each failed check.
+    // It is kept for the code that reads it. What a founder is told is the count of checks.
+    const baseScore = HEALTH_CHECKS.reduce(
+      (score, check) => (findings.some((f) => f.id === check.findingId) ? score - check.penalty : score),
+      HEALTH_SCORE_START,
+    );
     const healthScore = Math.max(20, Math.min(100, baseScore));
+    const checklist = healthChecklist(findings);
 
     emit({
       id: `auditor-done-${Date.now()}`,
@@ -168,7 +172,7 @@ export class PlaybookAuditorAgent {
       agentRole: 'playbook_auditor',
       agentName: this.name,
       phase: 'audit_complete',
-      message: `Completed compliance audit. Identified ${findings.length} actionable findings. Overall Health Score: ${healthScore}/100 (estimated).`,
+      message: `Completed compliance audit. Identified ${findings.length} actionable findings. ${checklist.passed} of ${checklist.total} checks passed, ${checklist.failed} failed.`,
       status: 'completed',
       confidenceScore: 0.92,
     });
