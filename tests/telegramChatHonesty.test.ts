@@ -14,7 +14,9 @@ import {
   BUSINESS_DNA_FIELD_MAX_CHARS,
   businessDnaPromptBlock,
   filterChatReply,
+  isPlanQuestion,
   NOT_MEASURED_SENTENCE,
+  PLAN_QUESTION_WORDS,
   planPricePromptBlock,
   TELEGRAM_CHAT_HONESTY_RULES,
 } from '../worker/chatHonesty';
@@ -46,8 +48,109 @@ const FIXTURE_METRIC_REPLY = 'Your AI visibility is 37% and you rank #3.';
 const WRONG_STARTER_PRICE = `Starter is ${stars(Math.floor(PLANS.starter.stars / 10))} Stars a month.`;
 const TRUE_STARTER_PRICE = `Starter is ${stars(PLANS.starter.stars)} Stars for ${PLANS.starter.days} days.`;
 
-describe('filterChatReply: our plans, prices and offers', () => {
-  // Every sentence the review found passing. None of them may reach the user.
+describe('isPlanQuestion: a question about our plans is answered from PLANS, not by the model', () => {
+  const ask = (text: string, previousAssistantText = ''): boolean => isPlanQuestion(text, PLANS, previousAssistantText);
+
+  it.each([
+    'How much is Starter?',
+    'how much is it?',
+    'What does the subscription cost?',
+    'price?',
+    'Pricing',
+    'What do you charge?',
+    'What plans do you have?',
+    'Which plan should I pick?',
+    'what is the cheapest plan',
+    'tell me about Starter',
+    'STARTER PRICE',
+    'is growth worth it',
+    'pro vs agency',
+    'whats included in growth',
+    'how much for the agency plan',
+    'How do I pay?',
+    'Can I pay with TON?',
+    'Can I buy it with a card?',
+    'how many stars is it?',
+    'I want to upgrade',
+    'Cancel my subscription',
+    'does it renew?',
+    'what happens after 30 days?',
+    'when does my plan expire',
+    'Can I get a refund?',
+    'do you offer refunds',
+    'Do you have a free trial?',
+    'Is there a discount?',
+    'Is it free?',
+    'Is the audit free?',
+    'Is Luminara expensive?',
+    'How much does it cost to run an audit?',
+    // The same handful of words in Spanish, Portuguese, Russian, French and German.
+    '¿Cuánto cuesta?',
+    '¿Hay descuento?',
+    'Quanto custa o plano?',
+    'Como funciona a assinatura?',
+    'Сколько стоит подписка?',
+    'Есть ли пробный период?',
+    "Combien coûte l'abonnement ?",
+    'Was kostet das Abo?',
+    'Gibt es einen Rabatt?',
+  ])('is a plan question: %s', (question) => {
+    expect(ask(question)).toBe(true);
+  });
+
+  it.each([
+    'How do I get organic growth?',
+    'Give me a growth strategy.',
+    'Should I buy backlinks?',
+    'Should I pay for ads?',
+    'How much traffic can I get from Perplexity?',
+    'How much does a backlink campaign cost?',
+    'What does it cost to rank on ChatGPT?',
+    'Is it expensive to earn citations?',
+    'Any pro tips for FAQ schema?',
+    'I run an agency, how do I track 10 clients?',
+    'What should my starter content be?',
+    'Should I offer a discount to my customers?',
+    'How do I price my product?',
+    'Should I show prices on my site?',
+    'How should I structure my pricing page?',
+    'Is schema free to add?',
+    'What happens when Google recrawls my site?',
+    'Write me a content plan for Q4.',
+    'How do I get people to subscribe to my newsletter?',
+    'Do I need to renew my domain for SEO?',
+    'What is a 5-star review worth for citations?',
+    'How is my site doing?',
+    'Can you check stripe.com visibility?',
+    'How do I win against competitors?',
+    'How do I optimize for Perplexity AI search?',
+    'Hello',
+    'What next?',
+    'thanks',
+  ])('is not a plan question: %s', (question) => {
+    expect(ask(question)).toBe(false);
+  });
+
+  it('carries one turn: after the plan block a short follow-up is a plan question too', () => {
+    for (const followUp of ['which one?', 'how long?', 'and then?', 'does that one cover more?']) {
+      expect(ask(followUp, planBlock()), followUp).toBe(true);
+      expect(ask(followUp, 'Add FAQ schema to your pricing page.'), followUp).toBe(false);
+      expect(ask(followUp), followUp).toBe(false);
+    }
+    // A price word needs no help from the turn before.
+    expect(ask('and the cheapest?')).toBe(true);
+    for (const other of ['thanks', 'ok', 'what about my site?', 'How do I earn citations from Perplexity in my niche this quarter?']) {
+      expect(ask(other, planBlock()), other).toBe(false);
+    }
+  });
+
+  it('names the words it reads in other languages', () => {
+    expect(Object.keys(PLAN_QUESTION_WORDS).sort()).toEqual(['de', 'es', 'fr', 'pt', 'ru']);
+  });
+});
+
+describe('filterChatReply: our plans, prices and offers (the backstop)', () => {
+  // Sentences the reviews found passing. None of them may reach the user.
   const ABOUT_OUR_PLANS: Row[] = [
     ['Starter: 2,500. Growth: 7,500. Agency: 12,000.'],
     ['Starter is **1,500** Stars.'],
@@ -60,7 +163,6 @@ describe('filterChatReply: our plans, prices and offers', () => {
     ['Starter is 2,500 Stars, valid 90 days.'],
     ['Starter (2,500 Stars) is roughly 50 dollars.'],
     ['Growth is 49 bucks.'],
-    ['49 bucks.', 'How much is it?'],
     ['Starter cuesta 500 estrellas al mes.'],
     ['Starter is 2,500 Stars and covers 5 sites.'],
     ['Starter is 50% off this week.'],
@@ -79,16 +181,22 @@ describe('filterChatReply: our plans, prices and offers', () => {
     ['Starter is our entry plan. It covers 5 sites.'],
     ['Starter is great for solo founders.'],
     ['Pro is for agencies.'],
-    ['It renews automatically.', 'Does my subscription renew automatically every month?'],
-    ['Our plans renew every month.'],
+    ['Starter | 1,000 | 30 days'],
+    ['STARTER IS 1,000 STARS'],
+    ['The free plan covers 1 site.'],
     ['The bot has a 7-day free trial.'],
     ['You can get a refund from Luminara within 14 days.'],
     ['We accept TON and USDT.'],
     ['Luminara is free for the first audit.'],
+    // An offer with nothing that ties it to us, and no third party named.
+    ['It renews automatically.'],
+    ['Our plans renew every month.'],
+    ['No refunds after 7 days.'],
+    ['You get a 14-day free trial.'],
+    ['The first month is free.'],
     ['There is a 20% discount if you subscribe today.'],
-    ['It costs 29 dollars a month.', 'What does the subscription cost?'],
-    ['No refunds after 7 days.', 'Can I get a refund?'],
-    ['Prices start at 25.', 'I run a small bakery, what are your prices for the monthly thing?'],
+    // Data that names a plan beside a number is not something to paste.
+    ['```json\n{ "Starter": 1000, "Growth": 3000 }\n```'],
   ];
 
   it.each(ABOUT_OUR_PLANS)('gives way to the plan block: %s', (reply, userText) => {
@@ -99,7 +207,13 @@ describe('filterChatReply: our plans, prices and offers', () => {
 
   it('gives way to the plan block when the price carries a dollar sign', () => {
     expect(filter('Starter (2,500 Stars) is roughly $50.').text).toBe(planBlock());
-    expect(filter('It costs $29 a month.', 'What does the subscription cost?').text).toBe(planBlock());
+  });
+
+  it('removes wrong prices inside a fence that is not data, and leaves the block once', () => {
+    const out = filter('```\nStarter: 1,000 Stars\nGrowth: 3,000 Stars\n```').text;
+    expect(out).toBe(planBlock());
+    expect(out).not.toContain('1,000');
+    expect(out).not.toContain('3,000');
   });
 
   // Everyday uses of the same words. None of them is about our plans.
@@ -132,6 +246,16 @@ describe('filterChatReply: our plans, prices and offers', () => {
     ['Share the post in Telegram groups and ask for reviews; the cost is zero.'],
     ['Premium content earns citations; cheap content does not.'],
     ['A typical link campaign costs 2,000 dollars a month.', 'How much does a backlink campaign cost?'],
+    // The second review: the block had landed in ordinary advice.
+    ['If you buy backlinks, Google may penalize you.'],
+    ['A good plan beats a cheap tool.'],
+    ['Luminara shows where engines cite you for free.'],
+    // An offer that names a third party, or advice about the user's own offer, is not ours.
+    ['Free trials convert better than demos.'],
+    ['Refunds from Stripe take 5 days.'],
+    ['Google gives a refund within 48 hours.'],
+    ['Offer your customers a 14-day trial.'],
+    ['You could offer a discount to first buyers.'],
   ];
 
   it.each(NOT_ABOUT_OUR_PLANS)('leaves an everyday sentence alone: %s', (reply, userText) => {
@@ -257,6 +381,22 @@ describe('filterChatReply: site numbers', () => {
     ['Since March 3, 2026 you rank #2.'],
     // The user never said this number, so it is not an echo.
     ['You told me you get 1,200 visits a month.'],
+    // The user's own number is not free for any use: it is kept only where the sentence
+    // hands it back to the user.
+    ['You rank 2nd on Perplexity.', 'I have 2 competitors. Where do I rank?'],
+    ['You said 2 competitors, so you rank 2nd.', 'I have 2 competitors.'],
+    ['Yes, your visibility is 37%.', 'Is my visibility 37%?'],
+    // Inline code is prose, and so is a line that only looks like data.
+    ['Your visibility is `37%` and you rank `#3`.'],
+    ['"visibility": "37%"'],
+    // More shapes from the second review.
+    ['On ChatGPT you come up 4th.'],
+    ['Your number is 37.'],
+    ['Your GEO grade is 72.'],
+    ['ChatGPT knows about 3 of your 10 products.'],
+    ['Add FAQ schema to double your citations.'],
+    ['Add FAQ schema and your citations will double.'],
+    ['Your traffic doubled last month.'],
     // A number that only looks like a status code or a version.
     ['That is a 200% rise in traffic.'],
     ['You get a steady 500 visits a month.'],
@@ -272,10 +412,14 @@ describe('filterChatReply: site numbers', () => {
     // Not prose, or the user's own.
     ['```json\n{\n  "@type": "ListItem",\n  "position": 1,\n  "name": "Home"\n}\n```'],
     ['{\n  "@type": "ListItem",\n  "position": 1,\n  "name": "Home"\n}'],
-    ['```js\nconst item = { position: 1, score: 62 };\n```'],
     ['{\n  "page": "/pricing",\n  "score": 62\n}'],
+    ['<script type="application/ld+json">\n{ "@type": "FAQPage", "position": 1 }\n</script>'],
+    ['User-agent: *\nDisallow: /admin\nSitemap: https://example.com/sitemap.xml'],
     ['Use `"position": 1` for the first breadcrumb item.'],
-    ['The first breadcrumb item carries `position: 1`.'],
+    ['Paste the code into the page head.'],
+    ['As you said, your traffic is 1,200 visits a month.', 'I get 1,200 visits a month. What next?'],
+    ['Read https://schema.org/FAQPage before you write the markup.'],
+    ['See developers.google.com/search/docs for the rules.'],
     ['The link you sent, https://acme.io/report?score=62, opens a login page.', 'What is https://acme.io/report?score=62 about?'],
     ['Call +1 415 555 0100 if your traffic team needs help.'],
     ['A 404 scores nothing with crawlers, so fix broken links first.'],
@@ -325,6 +469,8 @@ describe('filterChatReply: site numbers', () => {
     ['Add alt text to your 10 most visited pages.'],
     ['Send 5 emails to partners this week.'],
     ['Put the answer in the first 100 words.'],
+    ['Add Organization and FAQPage schema to the top 5 pages by traffic.'],
+    ['Be 100% sure the page is crawlable before chasing citations.'],
     // Statements with a number that is not a measurement of the site.
     ['Top 3 ways to earn citations: reviews, original data and expert quotes.'],
     ['Pages with 3 FAQ questions tend to earn more citations.'],
@@ -348,6 +494,11 @@ describe('filterChatReply: site numbers', () => {
     ['It usually takes 2 to 3 months to see a change in traffic.'],
     ['A page with 300 words rarely answers a buyer question in full.'],
     ['Schema.org has over 800 types.'],
+    // A scale, an idiom and a list inside a sentence are not readings.
+    ['The audit in the app gives a score out of 100.'],
+    ['The audit scores your site from 0 to 100.'],
+    ['One page, one topic, 100% focus: that is how you earn citations.'],
+    ['Two things matter for citations: 1) sources, 2) structure.'],
     // Suppositions and questions state nothing.
     ['If your page has 3 or more FAQs, add FAQ schema.'],
     ['Do you have 3 or more FAQs on your site?'],
@@ -363,13 +514,25 @@ describe('filterChatReply: site numbers', () => {
     expect(out.claims).toHaveLength(0);
   });
 
-  // Harmless by a fair reading, and still replaced. Kept here so the cost is on record.
+  // Harmless by a fair reading, and still changed. Kept here so the cost is on record.
   it.each([
+    // An unsourced general statistic has the shape of a measurement.
     ['Three out of four buyers read reviews before they choose.', NOT_MEASURED_SENTENCE],
     ['About 60% of searches end without a click.', NOT_MEASURED_SENTENCE],
-    ['Read https://schema.org/FAQPage before you write the markup.', 'Read schema dot org before you write the markup.'],
+    // Inline code and a fence that is not data are read as prose.
+    ['The first breadcrumb item carries `position: 1`.', NOT_MEASURED_SENTENCE],
+    ['```js\nconst item = { position: 1, score: 62 };\n```', NOT_MEASURED_SENTENCE],
+    // A bare host name is a link, and only ours, the user's and the reference hosts stay.
+    ['List your product on g2.com and capterra.com.', 'List your product on g2 dot com and capterra dot com.'],
   ])('still changes this harmless sentence: %s', (reply, expected) => {
     expect(filter(reply).text).toBe(expected);
+  });
+
+  it('reads an unclosed fence, and a fence that is not data, as prose', () => {
+    expect(filter('```\nYour visibility is 37%.\nYou rank #3.').text).toBe(NOT_MEASURED_SENTENCE);
+    const closed = filter('Here it is:\n\n```\nYour visibility is 37%.\n```').text;
+    expect(closed).toContain(NOT_MEASURED_SENTENCE);
+    expect(closed).not.toContain('37');
   });
 
   it('replaces the fixture sentence with the one not-measured sentence, so neither number is left', () => {
@@ -466,11 +629,55 @@ describe('filterChatReply: links', () => {
     expect(out.text).toBe(reply);
   });
 
-  it('does not touch code, file names or a slash between two names', () => {
-    const code = '```json\n{ "@context": "https://schema.org", "url": "https://evil.example/x" }\n```';
-    expect(filter(code).text).toBe(code);
-    const names = 'Next.js/React apps need server rendering, and robots.txt/sitemap.xml must be reachable.';
-    expect(filter(names).text).toBe(names);
+  it('treats a bare host name as a link too', () => {
+    expect(filter('Open evil.example to see it.').text).toBe('Open evil dot example to see it.');
+    const theirs = 'Start with acme.io and its pricing page.';
+    expect(filter(theirs, 'My site is acme.io').text).toBe(theirs);
+  });
+
+  it('keeps the reference hosts: schema.org, developers.google.com and the reserved example names', () => {
+    for (const reply of [
+      'Read https://schema.org/FAQPage before you write the markup.',
+      'Schema.org lists every type.',
+      'See developers.google.com/search/docs for the rules.',
+      'Use https://example.com/pricing as the pattern for your own address.',
+    ]) {
+      expect(filter(reply).text, reply).toBe(reply);
+    }
+  });
+
+  it('applies the link rule inside JSON and markup, and keeps the schema.org context and the user\'s host', () => {
+    const json = '```json\n{ "@context": "https://schema.org", "@id": "https://acme.io/#org", "url": "https://evil.example/x" }\n```';
+    expect(filter(json, 'My site is acme.io').text).toBe(
+      '```json\n{ "@context": "https://schema.org", "@id": "https://acme.io/#org", "url": "evil dot example" }\n```',
+    );
+    expect(filter('<a href="https://evil.example/login">Log in</a>').text).toBe('<a href="evil dot example">Log in</a>');
+  });
+
+  it('leaves file names, a slash between two names and an email address alone', () => {
+    for (const reply of [
+      'Next.js/React apps need server rendering, and robots.txt/sitemap.xml must be reachable.',
+      'ASP.NET sites need the same schema as any other.',
+      'Email support@luminarasuite.com if the bot stops answering.',
+    ]) {
+      expect(filter(reply).text, reply).toBe(reply);
+    }
+  });
+
+  it('removes a sentence that asks for a code, password, seed phrase or key, whatever the host', () => {
+    const lone = filter('Go to evil.example and enter your Telegram code.');
+    expect(lone.text).toBe('');
+    expect(lone.secretRequests).toBe(1);
+    for (const ask of [
+      'Send me your password so I can check the account.',
+      'Type your seed phrase at luminarasuite.com to confirm.',
+      'Paste your API key here.',
+      'Enter the verification code we sent you.',
+    ]) {
+      expect(filter(`Add FAQ schema. ${ask} Then test it.`).text, ask).toBe('Add FAQ schema. Then test it.');
+    }
+    const markup = 'Paste the code into the page head.';
+    expect(filter(markup).text).toBe(markup);
   });
 });
 
@@ -622,11 +829,13 @@ function makeChat() {
   /** Sends one update. Returns what reached the model and every Telegram call, by method. */
   async function send(text: string, modelReply = 'Add FAQ schema.', fromId = 100, telegramOk = true) {
     let systemPrompt = '';
+    let modelCalls = 0;
     const calls: Array<{ method: string; body: Sent }> = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init: { body: string }) => {
         if (url.startsWith('https://api.groq.com/')) {
+          modelCalls += 1;
           systemPrompt = JSON.parse(init.body).messages[0].content;
           return { ok: true, json: async () => ({ choices: [{ message: { content: modelReply } }] }) };
         }
@@ -640,7 +849,7 @@ function makeChat() {
     await handleTelegramUpdate({ message: { chat: { id: fromId }, from: { id: fromId }, text } }, env);
     const sends = calls.filter((call) => call.method === 'sendMessage').map((call) => call.body);
     const history = (await kv.get(`tg:chat:${fromId}`, 'json')) as Array<{ role: string; content: string }> | null;
-    return { systemPrompt, calls, sends, history };
+    return { systemPrompt, modelCalls, calls, sends, history };
   }
 
   const chatTurn = (userText: string, modelReply: string, telegramOk = true) => send(userText, modelReply, 100, telegramOk);
@@ -675,43 +884,102 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(JSON.stringify(history)).not.toContain('#3');
   });
 
-  it('stores and sends the plan block in place of a made-up price', async () => {
-    const { sends, history } = await chat.chatTurn('What does Starter cost?', WRONG_STARTER_PRICE);
+  // The model is given a wrong answer to return. For a plan question it is never asked.
+  it.each([
+    'How much is Starter?',
+    'what happens after 30 days?',
+    'STARTER PRICE',
+    'Can I get a refund?',
+    '¿Cuánto cuesta?',
+    'Сколько стоит подписка?',
+  ])('does not call the model for a plan question, and stores and sends the plan block: %s', async (question) => {
+    const { modelCalls, sends, history } = await chat.chatTurn(question, "It's 1,000 for a month. It renews automatically.");
 
+    expect(modelCalls).toBe(0);
     expect(sends).toHaveLength(1);
     expect(sends[0].text).toBe(planBlock());
-    expect(history?.[1]).toEqual({ role: 'assistant', content: planBlock() });
+    expect(sends[0]).not.toHaveProperty('parse_mode');
+    expect(history).toEqual([
+      { role: 'user', content: question },
+      { role: 'assistant', content: planBlock() },
+    ]);
   });
 
-  it('stores and sends the plan block in place of a true price as well', async () => {
-    const { sends, history } = await chat.chatTurn('What does Starter cost?', TRUE_STARTER_PRICE);
+  it('answers a short follow-up to the plan block from PLANS as well, and calls the model again after that', async () => {
+    await chat.chatTurn('How much is Starter?', 'unused');
 
-    expect(sends[0].text).toBe(planBlock());
-    expect(history?.[1]).toEqual({ role: 'assistant', content: planBlock() });
+    const followUp = await chat.chatTurn('and the cheapest?', 'The cheapest is 500.');
+    expect(followUp.modelCalls).toBe(0);
+    expect(followUp.sends[0].text).toBe(planBlock());
+
+    const next = await chat.chatTurn('How do I get cited by Perplexity?', 'Add FAQ schema.');
+    expect(next.modelCalls).toBe(1);
+    expect(next.sends[0].text).toBe('Add FAQ schema.');
+  });
+
+  it('answers a plan question with no plan and no quota left, and does not count it against the quota', async () => {
+    chat.env.REQUIRE_SUBSCRIPTION = 'true';
+    const gated = await chat.chatTurn('How much is Starter?', 'unused');
+    expect(gated.sends[0].text).toBe(planBlock());
+
+    chat.env.REQUIRE_SUBSCRIPTION = undefined;
+    chat.env.FREE_DAILY_LIMIT = '1';
+    const day = new Date().toISOString().slice(0, 10);
+    await chat.chatTurn('How much is Growth?', 'unused');
+    expect(await chat.kv.get(`quota:100:${day}`)).toBeNull();
+  });
+
+  it('calls the model for any other question', async () => {
+    const { modelCalls, sends } = await chat.chatTurn('How do I get cited by Perplexity?', 'Add FAQ schema.');
+
+    expect(modelCalls).toBe(1);
+    expect(sends[0].text).toBe('Add FAQ schema.');
+  });
+
+  it('as a backstop, stores and sends the plan block when the model brings up a price by itself', async () => {
+    for (const reply of [WRONG_STARTER_PRICE, TRUE_STARTER_PRICE]) {
+      const { modelCalls, sends, history } = await makeChat().chatTurn('Any quick tip?', reply);
+
+      expect(modelCalls).toBe(1);
+      expect(sends[0].text).toBe(planBlock());
+      expect(history?.[history.length - 1]).toEqual({ role: 'assistant', content: planBlock() });
+    }
   });
 
   it('puts the plan facts and the rule not to state prices in the system prompt', async () => {
-    const { systemPrompt } = await chat.chatTurn('What does it cost?', 'Add FAQ schema.');
+    const { systemPrompt } = await chat.chatTurn('Any quick tip?', 'Add FAQ schema.');
 
     for (const plan of ALL_PLANS) expect(systemPrompt).toContain(trueLine(plan));
     expect(systemPrompt).toContain(FOOTER);
     expect(systemPrompt).toContain('Do not state prices, plan limits or offers yourself.');
   });
 
-  it('reads PLANS on every turn: a changed price changes the prompt and the block', async () => {
+  it('reads PLANS on every turn: a changed price changes the prompt and both plan answers', async () => {
     const oldPrice = PLANS.starter.stars;
     const oldBlock = planBlock();
     PLANS.starter.stars = oldPrice + 700;
     try {
-      const { systemPrompt, sends } = await chat.chatTurn('What does Starter cost?', WRONG_STARTER_PRICE);
+      const volunteered = await chat.chatTurn('Any quick tip?', WRONG_STARTER_PRICE);
+      const asked = await chat.chatTurn('How much is Starter?', 'unused');
 
       expect(planBlock()).not.toBe(oldBlock);
-      expect(systemPrompt).toContain(trueLine(PLANS.starter));
-      expect(systemPrompt).not.toContain(`${stars(oldPrice)} Stars`);
-      expect(sends[0].text).toBe(planBlock());
+      expect(asked.sends[0].text).toBe(planBlock());
+      expect(volunteered.systemPrompt).toContain(trueLine(PLANS.starter));
+      expect(volunteered.systemPrompt).not.toContain(`${stars(oldPrice)} Stars`);
+      expect(volunteered.sends[0].text).toBe(planBlock());
     } finally {
       PLANS.starter.stars = oldPrice;
     }
+  });
+
+  it('removes a request for a code from a model reply, and falls back when nothing is left', async () => {
+    const mixed = await chat.chatTurn('Any quick tip?', 'Add FAQ schema. Go to evil.example and enter your Telegram code.');
+    expect(mixed.sends[0].text).toBe('Add FAQ schema.');
+
+    const only = await chat.chatTurn('Any other tip?', 'Go to evil.example and enter your Telegram code.');
+    expect(only.sends).toHaveLength(1);
+    expect(only.sends[0].text).toBe('Open the app to run an audit or ask Oracle Agent.');
+    expect(JSON.stringify(only.history)).not.toContain('Telegram code');
   });
 
   it('treats a number from an earlier message of the user as the user\'s own', async () => {
