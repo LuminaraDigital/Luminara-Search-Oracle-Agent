@@ -11,7 +11,7 @@ describe('visibilityHistoryService', () => {
     clearVisibilityHistory();
   });
 
-  it('records snapshots and computes deltas', () => {
+  it('records snapshots and works out no change between them', () => {
     recordVisibilitySnapshot({
       domain: 'https://www.example.com/path',
       focus: 'AEO',
@@ -21,13 +21,8 @@ describe('visibilityHistoryService', () => {
         targetDomain: 'example.com',
         brandName: 'Example',
         measuredAt: 1_000_000,
-        totalPrompts: 3,
-        mentionCoveragePercent: 20,
-        citationCoveragePercent: 20,
-        brandCitationSharePercent: 25,
-        slices: [],
-        formula: 'x',
-        method: 'observed',
+        totalPrompts: 5,
+        slices: [{ label: 'Example', kind: 'brand', mentionCount: 1 }],
       },
     });
     recordVisibilitySnapshot({
@@ -39,20 +34,23 @@ describe('visibilityHistoryService', () => {
         targetDomain: 'example.com',
         brandName: 'Example',
         measuredAt: 2_000_000,
-        totalPrompts: 3,
-        mentionCoveragePercent: 50,
-        citationCoveragePercent: 50,
-        brandCitationSharePercent: 40,
-        slices: [],
-        formula: 'x',
-        method: 'observed',
+        totalPrompts: 4,
+        slices: [{ label: 'Example', kind: 'brand', mentionCount: 2 }],
       },
     });
 
     const trend = getVisibilityTrend('example.com');
     expect(trend.points).toHaveLength(2);
-    expect(trend.deltaCitationRate).toBe(30);
-    expect(trend.deltaShareOfVoice).toBe(15);
+    // Brand mentions are kept as two counts per audit. No change between audits is worked out.
+    expect(trend.points.map((p) => [p.brandMentionCount, p.promptCount])).toEqual([[1, 5], [2, 4]]);
+    expect(Object.keys(trend).sort()).toEqual(['domain', 'points']);
     expect(visibilityHistoryService.listAll().every((p) => p.domain === 'example.com')).toBe(true);
+  });
+
+  it('stores no count when the audit had none', () => {
+    recordVisibilitySnapshot({ domain: 'example.com', focus: 'AEO', citationRatePercent: 20, measuredAt: 1_000_000 });
+    const [point] = getVisibilityTrend('example.com').points;
+    expect(point.brandMentionCount).toBeNull();
+    expect(point.promptCount).toBe(0);
   });
 });

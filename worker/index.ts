@@ -35,8 +35,21 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { validateInitData, createTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
-import { handleTelegramUpdate, createInvoiceLink, refundStarPayment, normalizePlanId, PLANS, planCapsFor, publicPlanCatalogue } from './telegramBot';
-import { createTonInvoice, verifyTonPayment, isTonPaymentConfigured, isTonAddressConfirmed, isTonCheckoutOpen, TON_IN_TELEGRAM_ERROR, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
+import {
+  handleTelegramUpdate,
+  handleTelegramPaymentUpdate,
+  isTelegramPaymentUpdate,
+  createInvoiceLink,
+  refundStarsCharge,
+  runStarsChargeSweep,
+  runPaymentSupportSweep,
+  normalizePlanId,
+  PLANS,
+  planCapsFor,
+  publicPlanCatalogue,
+} from './telegramBot';
+import { createTonInvoice, verifyTonPayment, sweepTonPendingOrders, isTonPaymentConfigured, isTonAddressConfirmed, isTonCheckoutOpen, TON_IN_TELEGRAM_ERROR, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
+import { listSupportRequests } from './paymentSupport';
 import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
@@ -106,6 +119,7 @@ import {
 import { handleOracleChatSse, isOracleServerEnabled } from './oracleChat';
 import { OracleSession } from './oracleSession';
 import { handlePagespeedRoute } from './pagespeedRoute';
+import { handleDeployReadbackRoute } from './deployReadback';
 import {
   enqueueAuditRun,
   getAuditRun,
@@ -121,7 +135,7 @@ import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
 import { handleLaunchpadRoute } from './launchpadService';
-import { handleTrustReceiptsRoute, isTrustReceiptsEnabled } from './trustReceipts';
+import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -880,6 +894,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!secretEquals(secret, env.TELEGRAM_WEBHOOK_SECRET)) return json({ error: 'bad secret' }, 401);
     const read = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!read.ok) return json({ error: read.error }, read.status);
+    // A payment update is handled before the webhook answers, and is never throttled. Telegram
+    // does not send an update again once it has a 200, so a paid charge must be on record
+    // first. A 503 here, and only here, asks Telegram to send it again.
+    if (isTelegramPaymentUpdate(read.value)) {
+      const outcome = await handleTelegramPaymentUpdate(read.value, env);
+      return json({ ok: outcome.status === 200 }, outcome.status);
+    }
     const throttle = checkTelegramUpdateThrottle(read.value, telegramLimiter);
     if (!throttle.allowed) {
       console.warn('[telegram] webhook update throttled', throttle.key);
@@ -940,7 +961,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const { userId, chargeId } = (read.value || {}) as { userId?: number | string; chargeId?: string };
     if (!userId || !chargeId) return withCors(json({ error: 'userId and chargeId are required' }, 400));
 
-    const result = await refundStarPayment(env, Number(userId), String(chargeId));
+    const result = await refundStarsCharge(env, Number(userId), String(chargeId), 'admin_http_refund');
     return withCors(json(result, result.ok ? 200 : 400));
   }
 
@@ -970,6 +991,40 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       total: users.length,
       users: users.map(projectAdminUser),
     }));
+  }
+
+  if (path === '/admin/payment-support') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+
+    // Admin route: ADMIN_SECRET only. What buyers wrote to payment support, for a person to read.
+    const admin = isAdminAuthorized(env, request);
+    if (!admin.ok) return withCors(admin.response);
+
+    const asked = url.searchParams.get('status') || 'open';
+    if (asked !== 'open' && asked !== 'answered' && asked !== 'closed') {
+      return withCors(json({ error: 'status must be open, answered or closed' }, 400));
+    }
+    let requests;
+    try {
+      requests = await listSupportRequests(env, { status: asked, limit: Number(url.searchParams.get('limit')) || 50 });
+    } catch (err) {
+      console.error(`[Support] admin list failed: ${err instanceof Error ? err.message : err}`);
+      return withCors(json({ error: 'Payment support requests could not be read.' }, 503));
+    }
+
+    // Buyers' own words leave the database here: record that an operator read them, not the rows.
+    await recordAuditLogBestEffort(env, {
+      org_id: ADMIN_SYSTEM_ORG,
+      actor_id: 'admin',
+      action: 'admin.payment_support.list',
+      details: { status: asked, count: requests.length },
+      ip_address: clientIp(request),
+      user_agent: request.headers.get('user-agent') || undefined,
+    });
+
+    return withCors(json({ ok: true, status: asked, total: requests.length, requests }));
   }
 
   if (path === '/ton/invoice' || path === '/ton/verify') {
@@ -1014,6 +1069,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/stripe/create-checkout-session') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
     return withCors(handleCreateStripeCheckoutSession(request, env));
   }
 
@@ -1155,6 +1212,33 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
 
     return withCors(json({ ok: true, ...result, requested: seeds.length }));
+  }
+
+  // Admin: revoke receipts the gateway route issued without a verifier check (idempotent, batched)
+  if (path === '/admin/trust/revoke-gateway-receipts') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hitRevoke = limited('auth', RATE_AUTH_PER_MIN);
+    if (hitRevoke) return hitRevoke;
+    const revokeAdmin = isAdminAuthorized(env, request);
+    if (!revokeAdmin.ok) return withCors(revokeAdmin.response);
+    if (!env.DB) return withCors(json({ ok: false, error: 'Trust receipts need D1', code: 'D1_UNAVAILABLE' }, 503));
+    let swept: { revoked: number; remaining: number };
+    try {
+      swept = await revokeGatewayIssuedReceipts(env);
+    } catch (err) {
+      if (!(err instanceof TrustReceiptsTableMissing)) throw err;
+      return withCors(json({ ok: false, error: err.message, code: 'TRUST_RECEIPTS_TABLE_MISSING' }, 503));
+    }
+    // Recorded on every run, a run that found nothing included, so the sweep leaves a trace.
+    await recordAuditLogBestEffort(env, {
+      org_id: ADMIN_SYSTEM_ORG,
+      actor_id: 'admin',
+      action: 'admin.trust.revoke_gateway_receipts',
+      details: swept,
+      ip_address: clientIp(request),
+      user_agent: request.headers.get('user-agent') || undefined,
+    });
+    return withCors(json({ ok: true, ...swept }));
   }
 
   // Admin: runtime agent skill catalog (versioned methodology prompts in D1)
@@ -1514,6 +1598,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
     if (!dual.ok) return withCors(dual.response);
     return withCors(handlePagespeedRoute(request, env, who.user));
+  }
+
+  // Deploy read-back (SW0a-17). Sign-in, rate limit and the SSRF guard live in worker/deployReadback.ts.
+  if (path === '/deploy/readback') {
+    return withCors(handleDeployReadbackRoute(request, env));
   }
 
   // Budget policy self-service (spec 0014). Authz: the caller's own account
@@ -2111,6 +2200,15 @@ export default {
     if (jobs.includes('sentinel')) ctx.waitUntil(runSentinelScan(env));
     if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
     if (jobs.includes('domain_recheck')) ctx.waitUntil(recheckVerifiedDomains(env).then(() => undefined));
+    if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
+    if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
+    if (jobs.includes('ton_pending_sweep')) {
+      ctx.waitUntil(
+        sweepTonPendingOrders(env)
+          .then(() => undefined)
+          .catch((err) => console.error('[TON] pending-order sweep failed', err)),
+      );
+    }
   },
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     await processAuditQueueBatch(batch as MessageBatch<{ runId: string; accountId: string; targetUrl: string; projectId?: string | null }>, env);

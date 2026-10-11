@@ -29,3 +29,12 @@ export function safePublicHostname(input: string): string | null {
   if (/\.(local|internal|intranet|home|lan|corp|arpa|onion|test|example|invalid)$/.test(host)) return null;
   return host;
 }
+
+/**
+ * `www.example.com` for `example.com`, and back. Domain verification accepts an HTTP
+ * proof served by a domain or by this one other host, and the receipt guard holds a
+ * receipt's evidence to the same pair.
+ */
+export function wwwTwin(domain: string): string {
+  return domain.startsWith('www.') ? domain.slice(4) : `www.${domain}`;
+}

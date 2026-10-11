@@ -236,13 +236,22 @@ describe('Telegram endpoints', () => {
       expect(processed).toBe(20);
       expect(warn).toHaveBeenCalledWith('[telegram] webhook update throttled', expect.stringContaining('777001'));
 
+      // Payment updates from the throttled chat are still handled, and before the webhook
+      // answers: they do not wait in waitUntil, because Telegram does not resend what got a 200.
       const before = processed;
+      const telegramMethods = () => vi.mocked(fetch).mock.calls.map(([url]) => String(url).split('/').pop());
       expect((await send({ pre_checkout_query: { id: 'q1', from: { id: 777001 }, currency: 'XTR', total_amount: 1, invoice_payload: 'starter:777001' } })).status).toBe(200);
-      expect((await send({ message: { chat: { id: 777001 }, from: { id: 777001 }, successful_payment: { invoice_payload: 'x:1', total_amount: 1 } } })).status).toBe(200);
-      expect(processed).toBe(before + 2);
+      expect(telegramMethods()).toContain('answerPreCheckoutQuery');
+      // This environment has no database, so the paid charge cannot be put on record: 503 asks
+      // Telegram to send it again. tests/starsCharges.test.ts covers the path with a database.
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const paidUpdate = { message: { chat: { id: 777001 }, from: { id: 777001 }, successful_payment: { invoice_payload: 'starter:777001', total_amount: 2500, telegram_payment_charge_id: 'ch_throttle' } } };
+      expect((await send(paidUpdate)).status).toBe(503);
+      errors.mockRestore();
+      expect(processed).toBe(before);
 
       await send({ edited_message: { chat: { id: 777002 }, text: 'other chat' } });
-      expect(processed).toBe(before + 3);
+      expect(processed).toBe(before + 1);
     } finally {
       warn.mockRestore();
       vi.unstubAllGlobals();
