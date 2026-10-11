@@ -10,6 +10,7 @@
  */
 import type { Env } from './index';
 import { claimLicenseRedemption, releaseLicenseRedemption } from './paymentLedger';
+import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { normalizePlanId } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { licenseKeyFingerprint, recordAuditLogBestEffort } from './auditLog';
@@ -103,6 +104,18 @@ export function formatGeneratedLicenseKey(plan: string, durationDays: number): s
  * Activates a license key for the given authenticated user.
  * Elevates account plan in KV/D1 and records anti-abuse metrics.
  */
+const PLAN_NAMES: Record<string, string> = { starter: 'Starter', growth: 'Growth', agency: 'Pro / Agency', pro: 'Pro / Agency' };
+
+function licenseDowngradeText(currentPlan: string, currentExpiresAt: number, keyPlan: string): string {
+  const name = (plan: string) => PLAN_NAMES[String(plan).toLowerCase()] || plan;
+  return downgradeRefusalText({
+    currentTitle: `the ${name(currentPlan)} plan`,
+    currentExpiresAt,
+    requestedTitle: `This key is for the ${name(keyPlan)} plan, which`,
+    outcome: 'so the key was not used and is still valid.',
+  });
+}
+
 export async function activateLicenseKey(
   env: Env,
   userId: string,
@@ -166,6 +179,13 @@ export async function activateLicenseKey(
     return { ok: false, error: LICENSE_REDEEMED_ERROR };
   }
 
+  // A key for a lower plan than the one still running is refused before it is claimed, so it
+  // stays unused and can be redeemed later (Track SW, SW0a-4).
+  const running = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
+  if (wouldDowngrade(running, keyRecord.plan)) {
+    return { ok: false, error: licenseDowngradeText(String(running?.plan), Number(running?.expiresAt), keyRecord.plan) };
+  }
+
   // 3. Atomic claim (single-use count, one redemption per account, one trial per account)
   const claim = await claimLicenseRedemption(env, {
     key,
@@ -207,6 +227,10 @@ export async function activateLicenseKey(
   } catch (err) {
     // Release so the user can retry; if the write partly landed, a retry may extend twice, which beats burning a paid key.
     await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
+    if (err instanceof PlanDowngradeRefusedError) {
+      // A higher plan started between the check above and this write. The claim is released, so the key is unused.
+      return { ok: false, error: licenseDowngradeText(err.currentPlan, err.currentExpiresAt, keyRecord.plan) };
+    }
     console.error(`[License] Subscription write failed after claim; claim released: ${err instanceof Error ? err.message : err}`);
     return { ok: false, error: LICENSE_UNAVAILABLE_ERROR };
   }

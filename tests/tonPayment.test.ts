@@ -319,15 +319,15 @@ describe('TON transaction hash encoding (Toncenter base64 vs TonAPI hex)', () =>
     const invA = await createTonInvoice(env, 'user_b64', 'starter');
     const invB = await createTonInvoice(env, 'user_hex', 'starter');
     if (!invA.ok || !invB.ok) throw new Error('invoice failed');
-    const memo = `${invA.order.memo} ${invB.order.memo}`;
-
-    const toncenter = vi.fn(async () => toncenterResponse(memo, TON_PRICING.starter.nanoTon, HASH_BASE64));
+    // The comment must equal the order's memo, so each order is shown a transfer carrying its own.
+    // What the two answers share is the transaction: one hash, spelled two ways.
+    const toncenter = vi.fn(async () => toncenterResponse(invA.order.memo, TON_PRICING.starter.nanoTon, HASH_BASE64));
     expect((await verifyTonPayment(env, invA.order.orderId, { fetcher: toncenter })).ok).toBe(true);
 
     // The D1 ledger alone must refuse the second spelling, so drop the KV guard.
     await kv.delete(`ton:tx:${HASH_HEX}`);
     const replay = await verifyTonPayment(env, invB.order.orderId, {
-      fetcher: tonapiOnlyFetcher(memo, TON_PRICING.starter.nanoTon, HASH_HEX),
+      fetcher: tonapiOnlyFetcher(invB.order.memo, TON_PRICING.starter.nanoTon, HASH_HEX),
     });
 
     expect(replay.ok).toBe(false);
@@ -548,14 +548,13 @@ describe('Atomic TON crediting (D1 ledger)', () => {
     const invB = await createTonInvoice(env, 'user_b', 'starter');
     if (!invA.ok || !invB.ok) throw new Error('invoice failed');
 
-    // One transfer whose comment matches both memos; only one order may be credited.
-    const fetcher = vi.fn(async () =>
-      toncenterResponse(`${invA.order.memo} ${invB.order.memo}`, TON_PRICING.starter.nanoTon, 'tx_shared'),
-    );
+    // An index that shows each order a transfer with its own memo and the same transaction hash:
+    // one transaction, so only one order may be credited.
+    const shared = (memo: string) => vi.fn(async () => toncenterResponse(memo, TON_PRICING.starter.nanoTon, 'tx_shared'));
 
     const results = await Promise.all([
-      verifyTonPayment(env, invA.order.orderId, { fetcher }),
-      verifyTonPayment(env, invB.order.orderId, { fetcher }),
+      verifyTonPayment(env, invA.order.orderId, { fetcher: shared(invA.order.memo) }),
+      verifyTonPayment(env, invB.order.orderId, { fetcher: shared(invB.order.memo) }),
     ]);
 
     expect(results.filter((r) => r.ok)).toHaveLength(1);
@@ -569,14 +568,13 @@ describe('Atomic TON crediting (D1 ledger)', () => {
     const invA = await createTonInvoice(env, 'user_first', 'starter');
     const invB = await createTonInvoice(env, 'user_replay', 'starter');
     if (!invA.ok || !invB.ok) throw new Error('invoice failed');
-    const fetcher = vi.fn(async () =>
-      toncenterResponse(`${invA.order.memo} ${invB.order.memo}`, TON_PRICING.starter.nanoTon, 'tx_replayed'),
-    );
+    // The same transaction hash shown to each order with that order's own memo.
+    const replayed = (memo: string) => vi.fn(async () => toncenterResponse(memo, TON_PRICING.starter.nanoTon, 'tx_replayed'));
 
-    expect((await verifyTonPayment(env, invA.order.orderId, { fetcher })).ok).toBe(true);
+    expect((await verifyTonPayment(env, invA.order.orderId, { fetcher: replayed(invA.order.memo) })).ok).toBe(true);
     await kv.delete('ton:tx:tx_replayed');
 
-    const replay = await verifyTonPayment(env, invB.order.orderId, { fetcher });
+    const replay = await verifyTonPayment(env, invB.order.orderId, { fetcher: replayed(invB.order.memo) });
     expect(replay.ok).toBe(false);
     expect(kv.store.has('sub:user_replay')).toBe(false);
   });

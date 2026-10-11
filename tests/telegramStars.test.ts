@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   createInvoiceLink,
   handleTelegramUpdate,
+  handleTelegramPaymentUpdate,
   refundStarPayment,
   normalizePlanId,
   premiumEnginesPhrase,
@@ -316,19 +317,21 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       errSpy.mockRestore();
     });
 
-    it('refunds instead of crediting when the charge cannot be recorded', async () => {
+    it('asks Telegram to send the update again when the charge cannot be put on record', async () => {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       env.DB = undefined;
       mockFetch.mockResolvedValue({ json: async () => ({ ok: true, result: true }) });
-      await handleTelegramUpdate({
+      const outcome = await handleTelegramPaymentUpdate({
         message: {
           chat: { id: 4243 },
           from: { id: 4243 },
           successful_payment: { invoice_payload: 'starter:4243', total_amount: PLANS.starter.stars, currency: 'XTR', telegram_payment_charge_id: 'ch_no_ledger' },
         },
       }, env);
+      // Nothing is granted and nothing is refunded: the update comes back and is handled then.
+      expect(outcome.status).toBe(503);
       expect(await mockKv.get('sub:4243', 'json')).toBeNull();
-      expect(mockFetch.mock.calls.some(([url]) => String(url).endsWith('/refundStarPayment'))).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
       errSpy.mockRestore();
     });
 
@@ -449,15 +452,18 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       expect(body.text).toContain('Terms and Conditions');
       expect(body.text).toContain('/paysupport');
 
-      // /paysupport
+      // /paysupport. This environment has no table for support requests, so no window can be
+      // opened: the buyer is given the address to write to instead of a promise nobody keeps.
+      // What it does with the table is pinned in tests/paymentSupport.test.ts.
       mockFetch.mockClear();
       await handleTelegramUpdate(
         { message: { chat: { id: 100 }, from: { id: 100 }, text: '/paysupport' } },
         env,
       );
       body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.text).toContain('Payment & Dispute Support');
-      expect(body.text).toContain('Telegram Support does not resolve merchant purchases');
+      expect(body.text).toContain('We could not open a support request just now');
+      expect(body.text).toContain('support@luminarasuite.com');
+      expect(body).not.toHaveProperty('parse_mode');
     });
 
     it('enforces admin authorization on /refund command', async () => {

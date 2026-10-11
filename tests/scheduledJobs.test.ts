@@ -14,14 +14,14 @@ function configuredCrons(): string[] {
 }
 
 describe('jobsForCron', () => {
-  it('runs Sentinel, the privacy purge, and the domain re-check on the daily cron', () => {
+  it('runs Sentinel, the privacy purge, the domain re-check and the two payment sweeps on the daily cron', () => {
     expect(DAILY_CRON).toBe('0 8 * * *');
     expect(isCronMapped('0 8 * * *')).toBe(true);
-    expect(jobsForCron('0 8 * * *')).toEqual(['sentinel', 'privacy_purge', 'domain_recheck']);
+    expect(jobsForCron('0 8 * * *')).toEqual(['sentinel', 'privacy_purge', 'domain_recheck', 'stars_charge_sweep', 'ton_pending_sweep', 'payment_support_sweep']);
   });
 
   it('tolerates surrounding and repeated whitespace', () => {
-    expect(jobsForCron('  0  8 * * * ')).toEqual(['sentinel', 'privacy_purge', 'domain_recheck']);
+    expect(jobsForCron('  0  8 * * * ')).toEqual(['sentinel', 'privacy_purge', 'domain_recheck', 'stars_charge_sweep', 'ton_pending_sweep', 'payment_support_sweep']);
   });
 
   it.each([
@@ -41,7 +41,7 @@ describe('jobsForCron', () => {
 
   it('returns a fresh array so callers cannot mutate the mapping', () => {
     jobsForCron(DAILY_CRON).push('sentinel');
-    expect(jobsForCron(DAILY_CRON)).toEqual(['sentinel', 'privacy_purge', 'domain_recheck']);
+    expect(jobsForCron(DAILY_CRON)).toEqual(['sentinel', 'privacy_purge', 'domain_recheck', 'stars_charge_sweep', 'ton_pending_sweep', 'payment_support_sweep']);
   });
 
   it('gives every cron configured in wrangler.jsonc an explicit map entry', () => {

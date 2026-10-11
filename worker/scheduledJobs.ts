@@ -7,18 +7,34 @@
  * so a new cron and its CRON_JOBS entry ship in the same pull request (plan rule 2.20).
  */
 
-export type ScheduledJobName = 'sentinel' | 'privacy_purge' | 'domain_recheck';
+export type ScheduledJobName =
+  | 'sentinel'
+  | 'privacy_purge'
+  | 'domain_recheck'
+  | 'stars_charge_sweep'
+  | 'ton_pending_sweep'
+  | 'payment_support_sweep';
 
-export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = ['sentinel', 'privacy_purge', 'domain_recheck'];
+export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
+  'sentinel',
+  'privacy_purge',
+  'domain_recheck',
+  'stars_charge_sweep',
+  'ton_pending_sweep',
+  'payment_support_sweep',
+];
 
 /**
- * Daily 08:00 UTC: Drift Sentinel scan, the expired privacy-delete purge, and the
- * Trust Network domain re-check (each verified domain is re-checked every 7 days).
+ * Daily 08:00 UTC: Drift Sentinel scan, the expired privacy-delete purge, the
+ * Trust Network domain re-check (each verified domain is re-checked every 7 days), and the
+ * Stars charge sweep (settles charges a webhook left undecided and retries refunds), and the TON
+ * pending-order sweep (re-checks unpaid orders inside their 48 hours), and the payment support
+ * sweep (removes support windows nobody wrote into; reminds the admins of requests a day old).
  */
 export const DAILY_CRON = '0 8 * * *';
 
 const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
-  [DAILY_CRON]: ['sentinel', 'privacy_purge', 'domain_recheck'],
+  [DAILY_CRON]: ['sentinel', 'privacy_purge', 'domain_recheck', 'stars_charge_sweep', 'ton_pending_sweep', 'payment_support_sweep'],
 };
 
 function cronKey(cron: string): string {
