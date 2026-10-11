@@ -154,9 +154,6 @@ export function publicPlanCatalogue(): Record<string, { title: string; descripti
   return out;
 }
 
-/** The plan ids the bot's /buy command can match: letters only, as its pattern reads them. */
-const BUY_COMMAND_ID = /^[a-z]+$/;
-
 export function normalizePlanId(planId: string | null | undefined): string {
   const id = String(planId || '').toLowerCase().trim();
   if (id === 'pro') return 'agency';
@@ -354,13 +351,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/plan') || text.startsWith('/subscribe')) {
-      // A /buy command is shown only for a plan the command can sell. The one-day plans are
-      // bought in the app: selling them by command waits for the rule that stops a purchase
-      // replacing a higher plan (Track SW, SW0a-4).
       const lines = Object.entries(PLANS).map(
-        ([id, p]) =>
-          `• *${p.title}* - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  ` +
-          (BUY_COMMAND_ID.test(id) ? `/buy_${id}` : 'Buy this one in the app.'),
+        ([id, p]) => `• *${p.title}* - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  /buy_${id}`,
       );
       await api(env, 'sendMessage', {
         chat_id: chatId,
@@ -378,7 +370,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
-    const buyMatch = text.match(/^\/buy(?:_|\s+)([a-z]+)/i);
+    const buyMatch = text.match(/^\/buy(?:_|\s+)([a-z_]+)/i);
     if (buyMatch) {
       const planId = normalizePlanId(buyMatch[1]);
       const plan = PLANS[planId];
