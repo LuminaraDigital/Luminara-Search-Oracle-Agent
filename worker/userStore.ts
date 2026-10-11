@@ -381,6 +381,11 @@ export async function linkTelegramAndFirebase(
       } catch (err) {
         console.error('[UserStore] Stars charge rows were not moved to the linked account', err);
       }
+      try {
+        await env.DB.prepare(`UPDATE ton_pending_orders SET account_id = ? WHERE account_id = ?`).bind(accountId, from).run();
+      } catch (err) {
+        console.error('[UserStore] Pending TON orders were not moved to the linked account', err);
+      }
     }
   }
 
