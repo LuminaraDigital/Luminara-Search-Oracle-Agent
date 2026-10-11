@@ -856,8 +856,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
         })
       : null;
-    if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.linksRemoved > 0 || honest.secretRequests > 0)) {
-      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan price sentence(s), money note ${honest.moneyNote ? 'added' : 'not added'}, ${honest.linksRemoved} link(s), ${honest.secretRequests} request(s) for a secret`);
+    if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.billingSentences > 0 || honest.linksRemoved > 0 || honest.secretRequests > 0)) {
+      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan price sentence(s), ${honest.billingSentences} pay-again or account sentence(s), money note ${honest.moneyNote ? 'added' : 'not added'}, ${honest.linksRemoved} link(s), ${honest.secretRequests} request(s) for a secret`);
     }
     const aiResponse = honest ? honest.text : null;
 

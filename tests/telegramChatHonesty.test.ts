@@ -31,7 +31,10 @@ import type { Env } from '../worker/index';
 import {
   ADVICE_SENTENCES,
   ADVICE_USER_TEXT,
+  ANSWERS_TO_A_PAYMENT_PROBLEM,
   BILLING_PHRASINGS,
+  DATA_IN_A_REPLY,
+  DATA_USER_TEXT,
   DIRECT_PLAN_QUESTIONS,
   HARMLESS_SENTENCES,
   HARMLESS_USER_TEXT,
@@ -42,6 +45,12 @@ import {
   NON_ENGLISH_PRICE_REPLIES,
   ORDINARY_PROMPTS,
   ORDINARY_REWORDINGS,
+  ORDINARY_SHORT_PROMPTS,
+  PAID_AND_GOT_NOTHING,
+  PAID_SOMEBODY_ELSE,
+  PAYMENT_PROBLEM_USER_TEXT,
+  PLAN_FACT_USER_TEXT,
+  PLAN_FACTS_IN_A_REPLY,
   PRICE_ANSWERS,
   PROMISED_OUTCOMES,
   SHORT_ANSWERS,
@@ -58,8 +67,9 @@ const trueLine = (plan: Plan): string =>
   `${plan.title} is ${stars(plan.stars)} Stars for ${plan.days} ${plan.days === 1 ? 'day' : 'days'}.`;
 const HEADING = "Luminara's own plans:";
 const FOOTER = 'Plans are paid with Telegram Stars, inside Telegram. They do not renew on their own. Send /plan to buy.';
+const PAID_LINE = 'Already paid? Send /paysupport. Do not pay again.';
 /** The block that answers a plan question, and stands in for a price of ours in a model reply. */
-const planBlock = (): string => [HEADING, ...Object.values(PLANS).map(trueLine), FOOTER].join('\n');
+const planBlock = (): string => [HEADING, ...Object.values(PLANS).map(trueLine), FOOTER, PAID_LINE].join('\n');
 /** The whole reply to a payment problem. */
 const BILLING_REPLY =
   'Billing problems are handled by a person. Send /paysupport and then your message. Your receipt ID is in /status. Please do not pay again.';
@@ -215,6 +225,43 @@ describe('chatRoute: which messages never reach the model', () => {
     ])('is not one, and goes to the model: %s', (question) => {
       expect(route(question)).toBeNull();
     });
+  });
+
+  describe('the fourth review: a buyer who paid and got nothing, in 83 phrasings', () => {
+    // Too vague, a typo with a Latin letter in a Russian word, or a language outside the five.
+    const NOT_RECOGNISED = new Set([
+      'did you receive it?', 'expires tomorrow, did I renew?', 'oплатил, ничего не изменилось', 'ho pagato ma niente', 'ödedim ama açılmadı',
+    ]);
+    for (const problem of PAID_AND_GOT_NOTHING) {
+      const want = NOT_RECOGNISED.has(problem) ? null : 'billing';
+      it(`${want ?? 'not recognised, goes to the model'}: ${problem}`, () => {
+        expect(route(problem)).toBe(want);
+      });
+    }
+    it('sends 78 of the 83 to /paysupport, 5 to the model, and none to the plan block', () => {
+      expect(PAID_AND_GOT_NOTHING).toHaveLength(83);
+      expect(PAID_AND_GOT_NOTHING.filter((problem) => route(problem) === 'billing')).toHaveLength(78);
+      expect(PAID_AND_GOT_NOTHING.filter((problem) => route(problem) === 'plans')).toHaveLength(0);
+    });
+  });
+
+  describe('the fourth review: 35 sentences with a payment word that are not about us, and 42 short ordinary prompts', () => {
+    for (const prompt of [...PAID_SOMEBODY_ELSE, ...ORDINARY_SHORT_PROMPTS]) {
+      it(`goes to the model: ${prompt}`, () => {
+        expect(route(prompt)).toBeNull();
+      });
+    }
+    it('has the sizes the review states', () => {
+      expect(PAID_SOMEBODY_ELSE).toHaveLength(35);
+      expect(ORDINARY_SHORT_PROMPTS).toHaveLength(42);
+    });
+  });
+
+  it('takes a bare money word only when it is the whole message', () => {
+    for (const bare of ['buy', 'Buy?', 'pricing', 'crypto?', 'TON?', 'upgrade', 'free trial?', 'apple pay?']) expect(route(bare), bare).toBe('plans');
+    for (const more of ['buy button color', 'pricing psychology tips', 'crypto niche ideas', 'upgrade my CMS?', 'demo video ideas']) {
+      expect(route(more), more).toBeNull();
+    }
   });
 
   describe('a question about our own plans, prices or how to pay gets the plan block', () => {
@@ -476,9 +523,9 @@ describe('filterChatReply: any other talk of money stays, and one line is added 
     for (const sentence of ADVICE_SENTENCES) {
       it(`keeps: ${sentence}`, () => expectKept(sentence, ADVICE_USER_TEXT));
     }
-    it('has the size the review states, and adds the money line to 24 of them', () => {
+    it('has the size the review states, and adds the money line to 26 of them', () => {
       expect(ADVICE_SENTENCES).toHaveLength(75);
-      expect(ADVICE_SENTENCES.filter((sentence) => filter(sentence, ADVICE_USER_TEXT).moneyNote)).toHaveLength(24);
+      expect(ADVICE_SENTENCES.filter((sentence) => filter(sentence, ADVICE_USER_TEXT).moneyNote)).toHaveLength(26);
     });
   });
 
@@ -517,7 +564,11 @@ describe('filterChatReply: any other talk of money stays, and one line is added 
     ['We accept TON and USDT.'],
     ['Luminara is free for the first audit.'],
     ['You can pay for Starter with TON or USDT inside Telegram.'],
-    ['Please try the payment again.'],
+    ["It's 1,000 for a month."],
+    ['Roughly $50 a month.'],
+    ['Yes, cards work too.'],
+    // A tier of the user's own product that shares a name with a plan of ours.
+    ['Your Starter tier at 29 dollars should be in Offer schema.', 'My tiers are Starter at 29 dollars and Pro at 99 dollars'],
     ['Cards work too.'],
     ['Visa and Mastercard are accepted in the app.'],
     ['PayPal works on the website.'],
@@ -557,8 +608,7 @@ describe('filterChatReply: any other talk of money stays, and one line is added 
     ['The Pro plan is the best value.'],
     ['Upgrade to Pro for more sites.'],
     ['Do not buy links.'],
-    // A tier of the user's own product that shares a name with a plan of ours.
-    ['Your Starter tier at 29 dollars should be in Offer schema.', 'My tiers are Starter at 29 dollars and Pro at 99 dollars'],
+    ['Your Growth plan should be the highlighted tier on your pricing page, at about 2x Starter.'],
     ['Offer 20% off to first buyers.'],
   ] as Row[])('leaves an everyday sentence alone, with no line: %s', (reply, userText) => {
     const out = filter(reply, userText);
@@ -586,8 +636,12 @@ describe('filterChatReply: any other talk of money stays, and one line is added 
 
   describe('the review\'s 28 wrong answers to a price question, had one reached the model', () => {
     // The router is what keeps the question from the model. Here the backstop is alone: it
-    // removes none of these, because none names a plan or Stars, and adds the line to four.
-    const NOTED = new Set(['You get your first week at no charge.', 'Cards work too.', 'Visa and Mastercard are accepted in the app.', 'PayPal works on the website.']);
+    // removes none of these, because none names a plan or Stars, and adds the line to nine.
+    const NOTED = new Set([
+      "It's 2,500 for a month.", "It's 1,000 for a month.", 'Just 1,000 for 30 days.', '1,000 for 30 days.',
+      'The first one is 1,000 for 30 days, the second 3,000.', 'You get your first week at no charge.', 'Cards work too.',
+      'Visa and Mastercard are accepted in the app.', 'PayPal works on the website.',
+    ]);
     for (const answer of PRICE_ANSWERS) {
       it(`${NOTED.has(answer) ? 'gets the money line' : 'passes'}: ${answer}`, () => {
         expect(filter(answer, 'How much is Starter?').text).toBe(NOTED.has(answer) ? withNote(answer) : answer);
@@ -596,6 +650,112 @@ describe('filterChatReply: any other talk of money stays, and one line is added 
     it('never has to: the question itself is routed', () => {
       expect(PRICE_ANSWERS).toHaveLength(28);
       expect(chatRoute('How much is Starter?', PLANS)).toBe('plans');
+    });
+  });
+});
+
+describe('filterChatReply: a reply never sends a payer back to pay, and never claims to have changed an account', () => {
+  describe('the fourth review: 21 answers a model could give to a payment problem', () => {
+    // No pay word beside "again", or nothing wrong with it. These five are kept.
+    const KEPT = new Set([
+      'Try again in a few minutes.', 'It can take up to an hour.', 'It is being processed, wait 24 hours.',
+      'Telegram sometimes drops the first attempt, so repeat it.', 'Send /paysupport.',
+    ]);
+    for (const answer of ANSWERS_TO_A_PAYMENT_PROBLEM) {
+      it(`${KEPT.has(answer) ? 'keeps' : 'gives way to the /paysupport text'}: ${answer}`, () => {
+        const out = filter(answer, PAYMENT_PROBLEM_USER_TEXT);
+        expect(out.text).toBe(KEPT.has(answer) ? answer : BILLING_REPLY);
+        expect(out.billingSentences).toBe(KEPT.has(answer) ? 0 : 1);
+      });
+    }
+    it('has the size the review states', () => {
+      expect(ANSWERS_TO_A_PAYMENT_PROBLEM).toHaveLength(21);
+    });
+  });
+
+  it.each([
+    ['I have activated it for you.'],
+    ['I activated your plan.'],
+    ["I've refunded you."],
+    ['I have upgraded your plan.'],
+    ['Your plan is now active.'],
+    ["I've credited your account."],
+    ['I will refund the first payment.'],
+    ['Buy it again and it should work.'],
+    ['Complete the checkout one more time.'],
+    ['Re-try the payment in an hour.'],
+  ])('gives way to the /paysupport text: %s', (reply) => {
+    expect(filter(reply).text).toBe(BILLING_REPLY);
+  });
+
+  it.each([
+    ['Do not pay again.'],
+    ['Please do not buy it again; send /paysupport first.'],
+    ['Customers who buy again are your best reviewers.'],
+    ['Encourage repeat purchases with a follow-up email.'],
+    ['I upgraded the schema example above.'],
+    ['Try the audit again after you publish.'],
+    ['Think twice before you buy links.'],
+    ['Check out your competitors again next month.'],
+    ['Good schema pays off again and again.'],
+  ])('keeps a sentence that says the opposite, or is about somebody else: %s', (reply) => {
+    const out = filter(reply);
+    expect([reply, withNote(reply)]).toContain(out.text);
+    expect(out.billingSentences).toBe(0);
+  });
+
+  it('puts the /paysupport text once, where the first such sentence was, and keeps the rest of the reply', () => {
+    const out = filter('Add FAQ schema first. Send /buy_starter again. Then ask for a review. Or try the payment again.');
+    expect(out.text).toBe(`Add FAQ schema first.\n\n${BILLING_REPLY}\n\nThen ask for a review.`);
+    expect(out.billingSentences).toBe(2);
+  });
+
+  it('keeps both fixed texts apart when a reply earns both', () => {
+    const out = filter(`${WRONG_STARTER_PRICE} Open /plan and buy it again.`);
+    expect(out.text).toBe(`${planBlock()}\n\n${BILLING_REPLY}`);
+  });
+
+  it('leaves our own fixed texts as they are when a reply holds them whole', () => {
+    for (const own of [planBlock(), BILLING_REPLY, `Add FAQ schema.\n\n${planBlock()}\n\n${BILLING_REPLY}`]) {
+      const out = filter(own);
+      expect(out.text).toBe(own);
+      expect(out.moneyNote).toBe(false);
+    }
+  });
+});
+
+describe('filterChatReply: the fourth review\'s plan facts and data', () => {
+  describe('25 plan limits and offers stated as fact', () => {
+    // "Your Starter plan" is ours to a subscriber; beside "tier", "page" or "pricing" it is the user's own.
+    const NOTED = new Set([
+      'Your Starter tier at $29 is a good anchor for the pricing page.', 'Starter renews automatically.', 'It renews automatically.',
+      'The first week is free.', 'Yes, cards work too.', 'Yes, TON and USDT both work in the app.', 'Roughly $50 a month.',
+      "It's 1,000 for a month.",
+    ]);
+    const KEPT = new Set(['Your Growth plan should be the highlighted tier on your pricing page, at about 2x Starter.']);
+    const TO_PAYSUPPORT = new Set(['You will be refunded within 14 days.']);
+    for (const reply of PLAN_FACTS_IN_A_REPLY) {
+      const want = KEPT.has(reply) ? reply : NOTED.has(reply) ? withNote(reply) : TO_PAYSUPPORT.has(reply) ? BILLING_REPLY : planBlock();
+      const how = KEPT.has(reply) ? 'keeps' : NOTED.has(reply) ? 'keeps, with the money line' : TO_PAYSUPPORT.has(reply) ? 'gives way to the /paysupport text' : 'gives way to the plan block';
+      it(`${how}: ${reply}`, () => {
+        expect(filter(reply, PLAN_FACT_USER_TEXT).text).toBe(want);
+      });
+    }
+    it('has the size the review states', () => {
+      expect(PLAN_FACTS_IN_A_REPLY).toHaveLength(25);
+    });
+  });
+
+  describe('8 replies that hold data', () => {
+    // A claim inside a JSON-LD string or a head tag still passes: those are set aside whole.
+    for (const [index, reply] of DATA_IN_A_REPLY.entries()) {
+      const replaced = index < 3;
+      it(`${replaced ? 'replaces the claim in' : 'leaves alone'}: ${reply.slice(0, 80)}`, () => {
+        expect(filter(reply, DATA_USER_TEXT).text).toBe(replaced ? NOT_MEASURED_SENTENCE : reply);
+      });
+    }
+    it('has the size the review states', () => {
+      expect(DATA_IN_A_REPLY).toHaveLength(8);
     });
   });
 });
@@ -1284,7 +1444,9 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(sends).toHaveLength(1);
     expect(sends[0].text).toBe(planBlock());
     expect(sends[0].text.startsWith("Luminara's own plans:\n")).toBe(true);
-    expect(sends[0].text.endsWith('Plans are paid with Telegram Stars, inside Telegram. They do not renew on their own. Send /plan to buy.')).toBe(true);
+    expect(sends[0].text).toContain('Plans are paid with Telegram Stars, inside Telegram. They do not renew on their own. Send /plan to buy.');
+    // The last word goes to a buyer whose payment went wrong and who landed here.
+    expect(sends[0].text.endsWith('\nAlready paid? Send /paysupport. Do not pay again.')).toBe(true);
     expect(sends[0]).not.toHaveProperty('parse_mode');
     expect(history).toEqual([
       { role: 'user', content: question },
@@ -1351,12 +1513,37 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
 
   it('as a backstop, keeps other money talk of the model word for word and adds the money line, in what is stored and sent', async () => {
     // "how do I stop it" is not recognised as a payment problem, so the model answers it.
-    const { modelCalls, sends, history } = await chat.chatTurn('how do I stop it', 'Please try the payment again.');
+    const { modelCalls, sends, history } = await chat.chatTurn('how do I stop it', 'It can take up to an hour. Cards work too.');
 
     expect(modelCalls).toBe(1);
-    expect(sends[0].text).toBe(withNote('Please try the payment again.'));
+    expect(sends[0].text).toBe(withNote('It can take up to an hour. Cards work too.'));
     expect(sends[0].text).toContain('For billing help send /paysupport.');
-    expect(history?.[history.length - 1]).toEqual({ role: 'assistant', content: withNote('Please try the payment again.') });
+    expect(history?.[history.length - 1]).toEqual({ role: 'assistant', content: withNote('It can take up to an hour. Cards work too.') });
+  });
+
+  // "did you receive it?" is too vague to route, so the model answers it. Whatever it says, the
+  // user is not told to pay again and is not told that something was done to the account.
+  it.each([
+    'Please try the payment again.',
+    'Send /buy_starter again.',
+    'Open /plan and buy it again.',
+    'I have activated it for you.',
+    'Your payment was received and your plan is active now.',
+  ])('as a backstop, stores and sends the /paysupport text when the model answers a missed payment problem with: %s', async (modelReply) => {
+    const { modelCalls, sends, history } = await chat.chatTurn('did you receive it?', modelReply);
+
+    expect(modelCalls).toBe(1);
+    expect(sends[0].text).toBe(BILLING_REPLY);
+    expect(history?.[history.length - 1]).toEqual({ role: 'assistant', content: BILLING_REPLY });
+    expect(JSON.stringify(history)).not.toContain(modelReply);
+  });
+
+  it('routes the payment problems that used to land on the plan block', async () => {
+    for (const problem of ['it charged again', 'why two charges', 'sent the stars, still free version', 'I upgraded and nothing changed', 'it did not activate']) {
+      const { modelCalls, sends } = await makeChat().chatTurn(problem, 'Send /buy_starter again.');
+      expect(modelCalls, problem).toBe(0);
+      expect(sends[0].text, problem).toBe(BILLING_REPLY);
+    }
   });
 
   it('puts the plan facts, the rule not to state prices and the rule not to ask for a second payment in the system prompt', async () => {

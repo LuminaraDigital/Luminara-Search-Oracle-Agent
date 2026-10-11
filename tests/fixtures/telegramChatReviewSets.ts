@@ -249,3 +249,95 @@ export const ADVICE_SENTENCES: string[] = [
   'Tap the "Open Luminara Suite" button below for the full visual suite.', 'I can only give general guidance here.',
   'Plan your content around buyer questions.', 'A 90-day plan works well.', 'Make a content plan for Q4.',
 ];
+
+// ---------------------------------------------------------------------------------------
+// The fourth review
+// ---------------------------------------------------------------------------------------
+
+/** A buyer who paid and got nothing, in 83 phrasings. The target is the /paysupport reply. */
+export const PAID_AND_GOT_NOTHING: string[] = [
+  'i payed and nothing', 'paid. nothing.', 'Paid!! where is it', 'just paid, now what', 'sent the stars, still free version',
+  'I sent 2500 stars and nothing changed', 'I sent you the stars', 'stars sent but no premium', 'transferred the stars an hour ago',
+  'the invoice went through but I am still on free', 'bought starter still limited', 'got starter but it says limit reached',
+  'starter not working after purchase', 'purchase done, nothing unlocked', 'the purchase is not showing', 'did my purchase go through?',
+  'did it go through?', 'did you get my payment?', 'did you receive it?', 'transaction successful but no upgrade',
+  'telegram says paid but bot says free', 'it still says Daily Free Limit Reached', 'why does it still say free limit reached, I upgraded',
+  'I upgraded and nothing changed', 'upgraded yesterday, premium engines still locked', 'premium still locked', 'still locked',
+  'nothing unlocked', 'it did not activate', 'activation failed', 'not activated', 'my subscription is not showing',
+  'subscription missing', 'where is my subscription', 'lost my subscription after linking my account', 'my stars disappeared',
+  'the stars were deducted', 'stars deducted, no plan', '2500 stars gone', 'you charged 2500 stars for nothing',
+  'the bot ate my stars', 'scam? took stars gave nothing', 'this is a scam, give it back', 'give me my stars back', 'give it back',
+  'return my stars', 'I want my stars returned', 'reverse the payment', 'undo the purchase', 'wrong plan, I wanted growth',
+  'I bought the wrong one', 'bought twice by accident', 'clicked pay two times', 'pressed buy twice', 'duplicate payment',
+  'it charged again', 'charged again today', 'why two charges', 'second charge?', 'the payment is pending', 'payment stuck',
+  'payment error', 'payment keeps failing', 'cannot pay, error', 'the pay button does nothing', 'invoice expired',
+  'it expired early', 'my plan ended early', 'plan ended after 2 days', 'expired but I paid for 30 days', 'expires tomorrow, did I renew?',
+  // The first letter of the next row is a Latin "o", as the review wrote it.
+  'oплатил, ничего не изменилось', 'оплатил и ничего', 'деньги списались, доступа нет', 'звёзды списали, плана нет', 'купил, не работает',
+  'pagué y no pasa nada', 'ya pagué y sigue bloqueado', 'ho pagato ma niente', 'ich habe bezahlt aber nichts passiert', "j'ai payé mais rien",
+  'ödedim ama açılmadı', 'paguei e nada',
+];
+
+/** Sentences with a payment word that are not about us. Each must reach the model. */
+export const PAID_SOMEBODY_ELSE: string[] = [
+  'I paid for Semrush', 'I paid a writer', 'I bought an aged domain', 'I paid for a press release, was it worth it?',
+  'I paid for SEO last year and got nothing', 'I paid an expert to audit my site', 'I bought a course on AEO, is it any good?',
+  'I paid for Google Ads and got no citations', 'I bought reviews, will Google punish me?', 'I subscribed to a newsletter about GEO',
+  'I renewed my domain, do I need to do anything?', 'I purchased a theme with schema built in', 'I was charged with fixing our SEO',
+  'my client was charged twice by Stripe, how do I word the apology page?', 'My customers say my payment form is confusing',
+  'my payment page is not indexed', 'my plan is to publish weekly', 'My plan is not working, traffic is flat',
+  'my access to Search Console is gone', 'my stars rating is gone from Google results', 'where are my stars in the search results?',
+  'why did my rating stars disappear', 'refund policy page not indexed', 'How do I write a refund policy?', 'cancel culture and brand mentions',
+  'a receipt schema example please', 'invoice for services schema', 'the invoice page ranks above my home page',
+  'money back guarantee wording for my store', 'how to cancel noindex', 'I already paid attention to schema', 'double charge keywords for my billing SaaS',
+  'unsubscribe page best practice', 'chargebacks hurt my store rating, how to respond to reviews', 'stars gone from my Google listing',
+];
+
+/** Ordinary short prompts that hold a plan or money word. Each must reach the model. */
+export const ORDINARY_SHORT_PROMPTS: string[] = [
+  'pricing psychology tips', 'crypto niche ideas', 'upgrade my CMS?', 'demo video ideas', 'sale season prep', 'free ebook idea',
+  'lifetime value explained', 'monthly reporting template', 'buy button color', 'premium domains worth it?',
+  'Do you think premium domains are worth it?', 'How much is too much?', 'Any deals with publishers worth doing?', 'free tools?',
+  'cheap hosting ok?', 'paid search vs organic', 'unlimited scroll and crawling', 'limits of llms.txt', 'wallet schema',
+  'trial and error approach?', 'recurring content ideas', 'annual report as PDF or HTML?', 'yearly review post', 'is it worth it',
+  'what do I get from schema', 'which one should I use, JSON-LD or microdata?', 'can I add more sites to a sitemap index?',
+  'how many questions in an FAQ', 'how many reports should I publish', 'enterprise SEO vs local', 'premium content gating',
+  'unlock featured snippets', 'card layout or list?', 'discount codes page thin content?', 'cost per click explained',
+  'is cheap content risky', 'how much text on a page', 'how much is enough internal linking', 'how much does it matter',
+  'do you take guest posts into account', 'can you pay attention to my tone', 'does it renew my crawl budget',
+];
+
+/** What a model could answer to a payment problem the router missed. The user wrote "sent the stars, still free version". */
+export const PAYMENT_PROBLEM_USER_TEXT = 'sent the stars, still free version';
+export const ANSWERS_TO_A_PAYMENT_PROBLEM: string[] = [
+  'Please try the payment again.', 'Try paying again.', 'Try again in a few minutes.', 'Just send the Stars again and it should activate.',
+  'Tap /buy_starter once more.', 'Send /buy_starter again.', 'Open /plan and buy it again.', 'You may need to repurchase.',
+  'Retry the purchase.', 'Make the payment a second time; the first is reversed automatically.', 'Pay once more and I will refund the first.',
+  'It can take up to an hour.', 'It is being processed, wait 24 hours.', 'Your payment was received and your plan is active now.',
+  'I have activated it for you.', 'I have refunded you.', 'You will get your Stars back within 3 days.', 'Nothing was charged, so you can safely buy again.',
+  'Telegram sometimes drops the first attempt, so repeat it.', 'Restart the bot with /start and then complete checkout again.',
+  'Send /paysupport.',
+];
+
+/** Plan limits and offers stated as fact in a reply. The user wrote "what does my plan include?". */
+export const PLAN_FACT_USER_TEXT = 'what does my plan include?';
+export const PLAN_FACTS_IN_A_REPLY: string[] = [
+  'Your Growth plan covers 10 sites.', 'Your Starter plan covers 10 sites.', 'Your Starter plan is 500 Stars.', 'Your Starter plan costs 500.',
+  'The Starter plan covers 10 sites.', 'Starter covers 10 sites.', 'On Starter you get 10 sites.', 'With Starter you can track 10 sites.',
+  'Starter users get 10 sites and daily checks.', 'Your plan covers 10 sites.', 'Your current plan includes 25 domains.',
+  'Your Pro plan includes API access and 50 sites.', 'Your Agency plan renews on the 5th.', 'Your Starter subscription renews every 30 days.',
+  'Your Starter is 1,000 for 30 days.', 'Your Starter tier at $29 is a good anchor for the pricing page.',
+  'Your Growth plan should be the highlighted tier on your pricing page, at about 2x Starter.',
+  'Starter renews automatically.', 'It renews automatically.', 'You will be refunded within 14 days.', 'The first week is free.',
+  'Yes, cards work too.', 'Yes, TON and USDT both work in the app.', 'Roughly $50 a month.', "It's 1,000 for a month.",
+];
+
+/** Data in a reply. The user wrote "schema for acme.io please". */
+export const DATA_USER_TEXT = 'schema for acme.io please';
+export const DATA_IN_A_REPLY: string[] = [
+  '```json\n{"note":"you rank #3"}\n```', '{"ai_visibility":"37%","rank":3}', '<p>Your AI visibility is 37% and you rank #3.</p>',
+  '```json\n{"@context":"https://schema.org","@type":"Thing","description":"You rank #3 and your AI visibility is 37%"}\n```',
+  '<title>You rank #3 on Perplexity with 37% visibility</title>', '<meta name="description" content="Your AI visibility is 37%">',
+  '```json\n{"@context":"https://schema.org","@type":"Offer","name":"Starter","price":"1000","description":"Renews automatically, refund in 14 days"}\n```',
+  'Use this:\n```json\n{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://acme.io/"}]}\n```\nPaste it in the head.',
+];

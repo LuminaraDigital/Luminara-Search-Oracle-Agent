@@ -370,17 +370,25 @@ message and the reply went to the model chat.
     points to `/paysupport` and says not to pay again. A question about Luminara's
     own plans, prices or how to pay gets one block built from `PLANS`, headed
     "Luminara's own plans:", which also says that plans are paid with Telegram
-    Stars and do not renew on their own. Both are stored in history like any reply,
-    cost no quota and need no plan.
+    Stars and do not renew on their own. Its last line is for a buyer whose payment
+    went wrong and who landed there: "Already paid? Send /paysupport. Do not pay
+    again." Both replies are stored in history like any reply, cost no quota and
+    need no plan.
   - **It routes only when sure, and it has no memory.** A payment cue in the first
     person ("I paid", "charged me", "my payment") wins over everything else in the
     message. Without one, a message that names another company or tool, or is about
     the user's own site, page, markup, policy, customers or pricing, goes to the
     model. Each message is read by itself: what was said before never routes it.
   - Every model reply passes through `filterChatReply` before it is stored or sent.
-    A sentence that names one of our plans as a plan with a number, or gives a
-    number of Stars, gives way to the plan block. The model's number is never
-    checked: a correct price is replaced too. Any other talk of money (price, pay,
+    A sentence that tells the user to pay again ("Send /buy_starter again.",
+    "Retry the purchase."), or claims a change to the account that the model cannot
+    make ("I have activated it for you.", "Your plan is now active."), gives way to
+    the /paysupport text, once per reply.
+  - A sentence that names one of our plans as a plan with a number (a price, or a
+    limit such as "10 sites"), or gives a number of Stars, gives way to the plan
+    block. The model's number is never checked: a correct price is replaced too.
+    "Your Starter plan" is ours; beside "tier", "page" or "pricing" it is read as a
+    tier of the user's own product and left alone. Any other talk of money (price, pay,
     refund, renew, trial, discount, free, card, crypto, subscription) stays word for
     word, and one fixed line is added at the end of the reply: where plans and
     prices are, where billing help is, and that this chat cannot quote prices or
