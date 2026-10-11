@@ -45,6 +45,9 @@ function envWithDb(): Env {
     REQUIRE_TG_AUTH: 'true',
     WEBAPP_URL: 'https://luminarasuite.com',
     BOT_TOKEN: '123456:MOCK_TOKEN',
+    // These suites describe the features switched on. tests/featureSwitches.test.ts covers them off.
+    COMMUNITY_FEED_ENABLED: 'true',
+    LUMENS_ENABLED: 'true',
   };
 }
 

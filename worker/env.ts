@@ -108,6 +108,21 @@ export interface Env {
    * closed: no invoice is issued and public health reports `ton: false`.
    */
   TON_CONFIRMED_ADDRESS?: string;
+  /**
+   * "true" turns the community idea feed on (GET /idea-scout/feed, POST /idea-scout/vote,
+   * POST /idea-scout/share). Anything else: those three routes serve nothing. The sign-in guard
+   * (worker/authMiddleware.ts) runs before the handler on every /idea-scout route, so a guest gets
+   * 401 from the guard and a signed-in caller gets 404 from the handler. Off until the feed
+   * stops returning account ids and has its own tables, limits and moderation (Track SW, SW0a-9).
+   */
+  COMMUNITY_FEED_ENABLED?: string;
+  /**
+   * "true" turns points on: the daily check-in route, and the points total and rank in the
+   * referral summary. Anything else: the check-in answers 404 before any sign-in check, to a
+   * guest and a signed-in caller alike, and writes nothing, and the summary leaves the points
+   * out. Rows already written stay. Off until decision 9 (Track SW, SW0a-10).
+   */
+  LUMENS_ENABLED?: string;
   TON_API_KEY?: string;
   /**
    * Hard network gate for chain payments and proof anchors: `testnet` | `mainnet`.
