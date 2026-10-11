@@ -86,6 +86,16 @@ describe('check-secrets --all scans the working tree it is run in', () => {
     expect(res.stderr).toContain('deep/inside/settings.js');
   });
 
+  it('scans a file whose name git would print in quotes (a non-ASCII name), instead of skipping it', () => {
+    // "cle" with an acute accent on the e. Listed without -z, git prints this name quoted and escaped.
+    const name = `cl${String.fromCharCode(233)}-settings.js`;
+    const repo = makeRepo('quoted-name', { 'notes.txt': 'nothing to see\n', [name]: `export const token = "${KEY_SHAPED}";\n` });
+    const res = runAll(repo);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('Secret check failed (all): 1 finding(s)');
+    expect(res.stderr).toContain('-settings.js');
+  });
+
   it('two trees side by side are judged separately: the leak in one does not fail the other', () => {
     const clean = makeRepo('side-clean', { 'a.txt': 'clean\n' });
     const leaky = makeRepo('side-leaky', { 'a.txt': `${KEY_SHAPED}\n` });

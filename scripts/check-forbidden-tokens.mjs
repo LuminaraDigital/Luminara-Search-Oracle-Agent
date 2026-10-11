@@ -160,9 +160,10 @@ function lineHasToken(line, token, source) {
 
 /**
  * The content the commit will hold for each staged path: the staged blobs, not the working
- * files. One git process reads them all (`git cat-file --batch` over `:<path>` names, the same
- * staged content `git show :<path>` prints). Returns a Map of path to Buffer, or to null when
- * git could not hand that path's content over.
+ * files. One git process reads them all (`git cat-file --batch` over `:0:<path>` names, the same
+ * staged content `git show :<path>` prints). The stage number is spelled out, because a bare
+ * `:<path>` for a file named "0:clean.txt" would be read as "clean.txt, as staged".
+ * Returns a Map of path to Buffer, or to null when git could not hand that path's content over.
  */
 function readStagedBlobs(paths) {
   const blobs = new Map(paths.map((p) => [p, null]));
@@ -173,7 +174,7 @@ function readStagedBlobs(paths) {
   try {
     out = execFileSync('git', ['cat-file', '--batch'], {
       cwd: root,
-      input: names.map((p) => `:${p}\n`).join(''),
+      input: names.map((p) => `:0:${p}\n`).join(''),
       maxBuffer: 1024 * 1024 * 1024,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -198,26 +199,32 @@ function readStagedBlobs(paths) {
   return blobs;
 }
 
+/**
+ * Names from a git command run with -z: exact, separated by NUL. Without -z git quotes unusual
+ * names (non-ASCII, for one), and a quoted name is not a path anything can be read from. The
+ * output is not trimmed, because a name may begin or end with a space; only the empty piece
+ * after the last NUL is dropped.
+ */
+function gitNames(cmd) {
+  const names = execSync(cmd, { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }).split('\0');
+  if (names[names.length - 1] === '') names.pop();
+  return names;
+}
+
 function listFiles() {
   if (mode === 'staged') {
-    // -z gives exact names separated by NUL. Without it git quotes unusual names, and a quoted
-    // name is not a path anything can be read from. R: a renamed file is checked under its new name.
-    const out = git('git diff --cached --name-only --diff-filter=ACMR -z');
-    return out ? out.split('\0').filter(Boolean) : [];
+    // Every staged change but a deletion: added, copied, modified, renamed, and a change of type
+    // (a file replaced by a link), whose new content is checked like any other.
+    return gitNames('git diff --cached --name-only --diff-filter=d -z');
   }
-  const tracked = git('git ls-files');
-  let untracked = '';
+  const tracked = gitNames('git ls-files -z');
+  let untracked = [];
   try {
-    untracked = git('git ls-files --others --exclude-standard');
+    untracked = gitNames('git ls-files --others --exclude-standard -z');
   } catch {
-    untracked = '';
+    untracked = [];
   }
-  return [
-    ...new Set([
-      ...(tracked ? tracked.split(/\r?\n/) : []),
-      ...(untracked ? untracked.split(/\r?\n/) : []),
-    ]),
-  ].filter(Boolean);
+  return [...new Set([...tracked, ...untracked])].filter(Boolean);
 }
 
 /** Merge list tokens and identity tokens, dedupe, tag with source class. */

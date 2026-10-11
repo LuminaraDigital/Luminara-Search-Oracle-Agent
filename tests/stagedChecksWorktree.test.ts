@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -60,6 +61,33 @@ function runStaged(script: string) {
   return spawnSync(process.execPath, [script, '--staged'], { cwd: linked, env, encoding: 'utf8' });
 }
 
+/**
+ * Stage `text` at `path` with the given mode, straight into the index and with no working file.
+ * This is how a link entry gets staged on a machine without symlinks.
+ */
+function stageEntry(mode: '100644' | '120000', path: string, text: string) {
+  const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: linked, env, input: text, encoding: 'utf8' }).trim();
+  git(linked, 'update-index', '--add', '--cacheinfo', `${mode},${blob},${path}`);
+}
+
+/**
+ * Stage `text` under a name git on Windows refuses to add (one with a colon in it). The entry is
+ * staged under a placeholder of the same length, then the name is rewritten in the index file
+ * itself and the file's closing checksum recomputed. git reads such an index on every platform.
+ */
+function stageUnderRefusedName(placeholder: string, name: string, text: string) {
+  expect(Buffer.byteLength(name)).toBe(Buffer.byteLength(placeholder));
+  stageEntry('100644', placeholder, text);
+  const indexPath = resolve(linked, git(linked, 'rev-parse', '--git-path', 'index'));
+  const index = readFileSync(indexPath);
+  const body = Buffer.from(index.subarray(0, index.length - 20));
+  const at = body.indexOf(`${placeholder}\0`, 0, 'latin1');
+  expect(at).toBeGreaterThan(0);
+  expect(body.indexOf(`${placeholder}\0`, at + 1, 'latin1')).toBe(-1);
+  body.write(name, at, 'latin1');
+  writeFileSync(indexPath, Buffer.concat([body, createHash('sha1').update(body).digest()]));
+}
+
 /** Remove the stored content of a staged path, so git can still name it but can no longer read it. */
 function loseStagedContent(rel: string) {
   const blob = git(linked, 'rev-parse', `:${rel}`);
@@ -98,7 +126,9 @@ beforeAll(() => {
   mkdirSync(join(mainCheckout, '.githooks'), { recursive: true });
   writeFileSync(join(mainCheckout, '.githooks', 'forbidden-tokens.txt'), `${FORBIDDEN}\n`);
   writeFileSync(join(mainCheckout, 'README.md'), 'a temporary repository\n');
-  git(mainCheckout, 'add', '--', '.githooks/forbidden-tokens.txt', 'README.md');
+  // Three clean, committed files that the name and type cases further down sit beside.
+  for (const tracked of ['lead.txt', 'clean.txt', 'was-a-file.txt']) writeFileSync(join(mainCheckout, tracked), 'nothing to see\n');
+  git(mainCheckout, 'add', '--', '.githooks/forbidden-tokens.txt', 'README.md', 'lead.txt', 'clean.txt', 'was-a-file.txt');
   git(mainCheckout, 'commit', '--quiet', '-m', 'init');
   git(mainCheckout, 'worktree', 'add', '--quiet', '-b', 'feature', linked);
   expect(samePath(git(linked, 'rev-parse', '--show-toplevel'), linked)).toBe(true);
@@ -199,6 +229,47 @@ describe('check-forbidden-tokens --staged, run from a linked worktree', () => {
     const res = runStaged(TOKENS);
     expect(res.status).toBe(1);
     expect(res.stderr).toContain('t-lost-content.txt: staged content could not be read, so it was not checked');
+    unstageAll();
+  });
+});
+
+describe.each([
+  ['check-secrets', SECRETS, KEY_SHAPED],
+  ['check-forbidden-tokens', TOKENS, FORBIDDEN],
+])('%s --staged reads exactly the staged entry it was told about', (_name, script, poison) => {
+  it('a staged name that begins with a space is not read as the tracked file without the space', () => {
+    unstageAll();
+    // " lead.txt" is new and holds the string; "lead.txt" is committed and clean.
+    write(' lead.txt', `value ${poison} here\n`);
+    stage(' lead.txt');
+    expect(git(linked, 'diff', '--cached', '--name-status')).toBe('A\t lead.txt');
+    const res = runStaged(script);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('1 finding(s)');
+    expect(res.stderr).toMatch(/^ {2}- {2}lead\.txt/m); // the name, leading space included
+  });
+
+  it('a staged change of type is checked: a committed file replaced by a link entry that holds the string', () => {
+    unstageAll();
+    stageEntry('120000', 'was-a-file.txt', `${poison}\n`);
+    expect(git(linked, 'diff', '--cached', '--name-status')).toBe('T\twas-a-file.txt');
+    const res = runStaged(script);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('1 finding(s)');
+    expect(res.stderr).toContain('was-a-file.txt');
+    unstageAll();
+  });
+
+  it('a staged file named "0:clean.txt" is not read as the committed clean.txt', () => {
+    unstageAll();
+    // ":0:clean.txt" is git's own way to say "clean.txt, as staged", so the name must be spelled out in full.
+    // The colon keeps the entry where the placeholder sorted, between ".githooks/..." and "README.md".
+    stageUnderRefusedName('0_clean.txt', '0:clean.txt', `value ${poison} here\n`);
+    expect(git(linked, 'diff', '--cached', '--name-status')).toBe('A\t0:clean.txt');
+    const res = runStaged(script);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('1 finding(s)');
+    expect(res.stderr).toContain('0:clean.txt');
     unstageAll();
   });
 });

@@ -202,6 +202,15 @@ describe('script in temp git repo', () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('src/d.ts:1');
   }, 60_000);
+  it('detects a token in a file whose name git would print in quotes (a non-ASCII name), with --all', () => {
+    setupTempRepo('secretprojectname\n');
+    // "cafe" with an acute accent on the e. Listed without -z, git prints this name quoted and escaped.
+    write(`src/caf${String.fromCharCode(233)}.ts`, 'const z = "secretprojectname";\n');
+    const r = runScript(['--all']);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('1 finding(s)');
+    expect(r.stderr).toContain('.ts:1');
+  }, 60_000);
   it('reports identity findings without disclosing the username value', () => {
     setupTempRepo(undefined);
     write('src/e.ts', 'const me = "jdoeidentity";\n');
