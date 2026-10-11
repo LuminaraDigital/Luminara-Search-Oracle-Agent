@@ -395,6 +395,11 @@ export async function linkTelegramAndFirebase(
       } catch (err) {
         console.error('[UserStore] Pending TON orders were not moved to the linked account', err);
       }
+      try {
+        await env.DB.prepare(`UPDATE payment_support_requests SET account_id = ? WHERE account_id = ?`).bind(accountId, from).run();
+      } catch (err) {
+        console.error('[UserStore] Payment support requests were not moved to the linked account', err);
+      }
     }
   }
 

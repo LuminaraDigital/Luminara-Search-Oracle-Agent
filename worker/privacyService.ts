@@ -128,6 +128,14 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  // What the account wrote to payment support (0026), in its own words. Deleted with the account.
+  const paymentSupportRequests = await q<Record<string, unknown>>(
+    `SELECT id, charge_id, message, status, created_at, updated_at FROM payment_support_requests WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -151,6 +159,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'domain_verifications',
       'stars_charges',
       'ton_pending_orders',
+      'payment_support_requests',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -181,6 +190,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     domainVerifications,
     starsCharges,
     tonPendingOrders,
+    paymentSupportRequests,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -233,6 +243,10 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
   await run('ton_pending_orders', `DELETE FROM ton_pending_orders WHERE account_id = ?`, accountId).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  // Free text the buyer wrote, with their Telegram id: nothing here is a financial record, so the rows go.
+  await run('payment_support_requests', `DELETE FROM payment_support_requests WHERE account_id = ?`, accountId).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
