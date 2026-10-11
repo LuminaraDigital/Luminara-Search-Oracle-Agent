@@ -394,7 +394,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     const buyMatch = text.match(/^\/buy(?:_|\s+)([a-z]+)/i);
     if (buyMatch) {
       const planId = normalizePlanId(buyMatch[1]);
-      const plan = PLANS[planId];
+      const plan = Object.hasOwn(PLANS, planId) ? PLANS[planId] : undefined;
       if (plan) {
         const refusal = await planDowngradeRefusal(env, String(msg.from?.id || ''), planId, 'so no invoice was opened and nothing was charged.').catch(() => null);
         if (refusal) {

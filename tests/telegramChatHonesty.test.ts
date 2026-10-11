@@ -1097,6 +1097,16 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(calls.filter((call) => call.method === 'sendInvoice')).toHaveLength(0);
   });
 
+  it('answers "Unknown command" and opens no invoice for /buy with a name every object has', async () => {
+    for (const command of ['/buy_constructor', '/buy constructor', '/buy_hasOwnProperty']) {
+      const { calls, sends } = await chat.send(command);
+
+      expect(calls.filter((call) => call.method === 'sendInvoice'), command).toHaveLength(0);
+      expect(sends, command).toHaveLength(1);
+      expect(String(sends[0].text), command).toContain('Unknown command');
+    }
+  });
+
   it('sends the /admin user list as plain text, with user-set names as they are', async () => {
     const hostileName = 'Ann_*[click](https://evil.example)';
     await chat.kv.put(
