@@ -893,6 +893,13 @@ export async function voteCommunityIdea(request: Request, env: Env): Promise<Res
 export async function handleIdeaScoutRoute(request: Request, env: Env, path: string, deps: IdeaScoutDeps = {}): Promise<Response> {
   const normPath = path.startsWith('/api/') ? path.slice(4) : path;
 
+  // The community feed is off unless switched on: its responses carry account ids, and it has no
+  // tables, limits or moderation of its own yet (Track SW, SW0a-9).
+  const feedRoute = normPath === '/idea-scout/feed' || normPath === '/idea-scout/vote' || normPath === '/idea-scout/share';
+  if (feedRoute && env.COMMUNITY_FEED_ENABLED !== 'true') {
+    return json({ ok: false, error: 'Not found', code: 'NOT_FOUND' }, 404);
+  }
+
   if (normPath === '/idea-scout/feed' && request.method === 'GET') {
     return getCommunityFeed(request, env);
   }

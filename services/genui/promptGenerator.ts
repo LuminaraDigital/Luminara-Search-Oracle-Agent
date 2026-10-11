@@ -32,12 +32,12 @@ export const GENUI_COMPONENTS_SPEC: Record<string, GenUISchemaDef> = {
   },
   VisibilityRadar: {
     name: 'VisibilityRadar',
-    signature: 'VisibilityRadar(rows: string[][], headers?: string[])',
-    description: 'Live SERP and AI Overview visibility radar mapping query rankings and citations.',
+    signature: 'VisibilityRadar(rows: [query, intent, brandCited, keyCompetitors, citationStatus][])',
+    description: 'Visibility table: one row per query with brand cited (Yes/No/not measured), key competitors and citation status.',
   },
   CompetitorMap: {
     name: 'CompetitorMap',
-    signature: 'CompetitorMap(rows: string[][], headers?: string[])',
+    signature: 'CompetitorMap(rows: [entity, aiPerception, topCitedPageTypes, contentAdvantage][])',
     description: 'Comparative perception and content advantage map for market rivals.',
   },
   ROICalculator: {
@@ -50,11 +50,8 @@ export const GENUI_COMPONENTS_SPEC: Record<string, GenUISchemaDef> = {
     signature: 'ShipActionGate(domain: string, markdownText: string)',
     description: 'Level 4 commitment gate unlocking deep audit findings only after shipping one move.',
   },
-  ShareOfVoiceCard: {
-    name: 'ShareOfVoiceCard',
-    signature: 'ShareOfVoiceCard(brandName: string, distribution: [string, number][])',
-    description: 'Share of voice comparison card showing brand vs rival citation coverage.',
-  },
+  // ShareOfVoiceCard is not offered to the model: its numbers come only from the
+  // code that counted them (see the registry).
 };
 
 export function generateGenUISystemPrompt(): string {

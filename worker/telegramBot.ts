@@ -6,11 +6,46 @@ import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
+import { businessDnaPromptBlock, filterChatReply, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
 import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
 import { claimStarsCharge, isStarsLedgerReady, releaseStarsCharge } from './paymentLedger';
+import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { recordAuditLogBestEffort } from './auditLog';
+import {
+  SUPPORT_MESSAGE_MAX,
+  clipSupportMessage,
+  closeSupportRequest,
+  latestStarsChargeId,
+  listSupportRequests,
+  markSupportAnswered,
+  openSupportWindow,
+  readSupportRequest,
+  sweepSupportRequests,
+  takeSupportMessage,
+  type SupportSweepSummary,
+} from './paymentSupport';
+import {
+  isStarsChargesReady,
+  leaseStarsCharge,
+  markStarsChargeCredited,
+  markStarsChargeRefundDue,
+  markStarsChargeRefundedAtTelegram,
+  markStarsReturned,
+  readStarsCharge,
+  recordStarsCharge,
+  releaseStarsLease,
+  requestStarsRefund,
+  settleStarsRefund,
+  sweepStarsCharges,
+  type StarsChargeHooks,
+  type StarsChargeRow,
+  type StarsChargeStatus,
+  type StarsIncomingPayment,
+  type StarsRefundOutcome,
+  type StarsSweepSummary,
+} from './starsCharges';
 
 const PREMIUM_ENGINE_LABELS: Record<string, string> = {
   nim: 'NVIDIA NIM',
@@ -132,6 +167,9 @@ export function publicPlanCatalogue(): Record<string, { title: string; descripti
   return out;
 }
 
+/** The plan ids the bot's /buy command can match: letters only, as its pattern reads them. */
+const BUY_COMMAND_ID = /^[a-z]+$/;
+
 export function normalizePlanId(planId: string | null | undefined): string {
   const id = String(planId || '').toLowerCase().trim();
   if (id === 'pro') return 'agency';
@@ -199,7 +237,9 @@ Style guidelines:
 - Lead with what matters to revenue and what action to ship.
 - Ground advice in search principles: Schema.org JSON-LD structured data, technical crawlability, brand citation velocity, and authoritative third-party references.
 - Keep responses concise (typically 2-4 focused paragraphs or punchy bullet points) suitable for Telegram mobile reading.
-- When an in-depth audit, radar chart, or competitor diff is relevant, remind them they can tap the "Open Luminara Suite" button below for the full visual suite.`;
+- When an in-depth audit, radar chart, or competitor diff is relevant, remind them they can tap the "Open Luminara Suite" button below for the full visual suite.
+
+${TELEGRAM_CHAT_HONESTY_RULES}`;
 
 export async function generateOracleChatResponse(
   env: Env,
@@ -300,135 +340,14 @@ export async function generateOracleChatResponse(
 
 export async function handleTelegramUpdate(update: any, env: Env): Promise<void> {
   try {
-    if (update.pre_checkout_query) {
-      // Telegram requires an answer within 10 seconds; we verify plan existence, currency, and exact Star amount.
-      const q = update.pre_checkout_query;
-      const rawPlanId = String(q.invoice_payload || '').split(':')[0];
-      const planId = normalizePlanId(rawPlanId);
-      const plan = PLANS[planId];
-
-      let ok = true;
-      let errorMessage = '';
-
-      if (!plan) {
-        ok = false;
-        errorMessage = 'Unknown plan. Please reopen the app and try again.';
-      } else if (q.currency && q.currency !== 'XTR') {
-        ok = false;
-        errorMessage = 'Invalid currency. Telegram Stars (XTR) required.';
-      } else if (typeof q.total_amount === 'number' && q.total_amount !== plan.stars) {
-        ok = false;
-        errorMessage = `Price mismatch. Expected ${plan.stars} Stars.`;
-      } else if (!(await isStarsLedgerReady(env))) {
-        ok = false;
-        errorMessage = 'Payments are temporarily unavailable. Please try again in a few minutes.';
-      }
-
-      await api(env, 'answerPreCheckoutQuery', ok
-        ? { pre_checkout_query_id: q.id, ok: true }
-        : { pre_checkout_query_id: q.id, ok: false, error_message: errorMessage });
+    if (isTelegramPaymentUpdate(update)) {
+      // The webhook route awaits payment updates itself; this keeps direct callers working.
+      await handleTelegramPaymentUpdate(update, env);
       return;
     }
 
     const msg = update.message;
     if (!msg) return;
-
-    if (msg.successful_payment) {
-      const sp = msg.successful_payment;
-      const payload = String(sp.invoice_payload || '');
-      const [rawPlanId, userIdRaw] = payload.split(':');
-      const planId = normalizePlanId(rawPlanId);
-      const plan = PLANS[planId];
-      const userId = Number(userIdRaw) || msg.from?.id;
-
-      if (plan && userId) {
-        const chargeId = String(sp.telegram_payment_charge_id || '');
-        const chargeKey = chargeId ? `stars:charge:${chargeId}` : '';
-
-        const now = Date.now();
-        const loginId = String(userId);
-        const accountId = env.LUMINARA_KV ? await resolveAccountId(env, loginId) : loginId;
-
-        // Charges credited before the D1 ledger existed are recorded only in KV.
-        if (chargeKey && env.LUMINARA_KV && (await env.LUMINARA_KV.get(chargeKey))) {
-          console.warn(`[Stars] Duplicate payment webhook for charge ${chargeId}, skipping duplicate credit`);
-          return;
-        }
-
-        const claim = await claimStarsCharge(env, chargeId, accountId);
-        if (!claim.ok) {
-          if (claim.reason === 'duplicate') {
-            console.warn(`[Stars] Duplicate payment webhook for charge ${chargeId}, skipping duplicate credit`);
-            return;
-          }
-          // Telegram will not redeliver a successful_payment, so refund rather than keep Stars we cannot credit.
-          console.error(`[Stars] Could not record charge ${chargeId || '(missing id)'} (${claim.reason}); refunding instead of crediting.`);
-          const refund = chargeId ? await refundStarPayment(env, userId, chargeId) : { ok: false };
-          if (msg.chat?.id) {
-            await api(env, 'sendMessage', {
-              chat_id: msg.chat.id,
-              text: refund.ok
-                ? 'We could not activate your plan right now, so your Stars have been refunded. Please try again in a few minutes.'
-                : 'We could not activate your plan right now. Send /paysupport with your receipt and we will sort it out.',
-              reply_markup: openAppKeyboard(env),
-            });
-          }
-          return;
-        }
-        const existing = env.LUMINARA_KV
-          ? ((await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null)
-          : null;
-        const base = existing?.expiresAt && existing.expiresAt > now ? existing.expiresAt : now;
-        const record = {
-          plan: planId,
-          stars: sp.total_amount,
-          chargeId,
-          providerPaymentChargeId: sp.provider_payment_charge_id,
-          paymentMethod: 'stars',
-          startedAt: now,
-          expiresAt: base + plan.days * 86400_000,
-        };
-
-        if (env.LUMINARA_KV) {
-          try {
-            await writeSubscriptionRecord(env, loginId, record);
-          } catch (err) {
-            await releaseStarsCharge(env, chargeId);
-            throw err;
-          }
-          if (chargeKey) {
-            await env.LUMINARA_KV.put(
-              chargeKey,
-              JSON.stringify({
-                userId,
-                loginId,
-                accountId,
-                plan: planId,
-                stars: sp.total_amount,
-                chargeId,
-                providerPaymentChargeId: sp.provider_payment_charge_id,
-                paidAt: now,
-                expiresAt: record.expiresAt,
-              }),
-            );
-          }
-        }
-
-        if (msg.chat?.id) {
-          await api(env, 'sendMessage', {
-            chat_id: msg.chat.id,
-            text:
-              `✅ *${plan.title}* is active until ${new Date(record.expiresAt).toUTCString()}.\n\n` +
-              `⭐ Paid: ${sp.total_amount.toLocaleString()} Stars\n` +
-              (chargeId ? `🧾 Receipt ID: \`${chargeId}\`\n\n` : '\n') +
-              `Open the app to run your audits and access frontier intelligence.`,
-            parse_mode: 'Markdown',
-            reply_markup: openAppKeyboard(env),
-          });
-        }
-      }
-      return;
-    }
 
     const text: string = msg.text || '';
     const chatId = msg.chat.id;
@@ -448,8 +367,13 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/plan') || text.startsWith('/subscribe')) {
+      // A /buy command is shown only for a plan the command can sell. The one-day plans are
+      // bought in the app: selling them by command waits for the rule that stops a purchase
+      // replacing a higher plan (Track SW, SW0a-4).
       const lines = Object.entries(PLANS).map(
-        ([id, p]) => `• *${p.title}* - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  /buy_${id}`,
+        ([id, p]) =>
+          `• *${p.title}* - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  ` +
+          (BUY_COMMAND_ID.test(id) ? `/buy_${id}` : 'Buy this one in the app.'),
       );
       await api(env, 'sendMessage', {
         chat_id: chatId,
@@ -472,6 +396,11 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       const planId = normalizePlanId(buyMatch[1]);
       const plan = PLANS[planId];
       if (plan) {
+        const refusal = await planDowngradeRefusal(env, String(msg.from?.id || ''), planId, 'so no invoice was opened and nothing was charged.').catch(() => null);
+        if (refusal) {
+          await api(env, 'sendMessage', { chat_id: chatId, text: refusal, reply_markup: openAppKeyboard(env) });
+          return;
+        }
         await api(env, 'sendInvoice', {
           chat_id: chatId,
           title: plan.title.slice(0, 32),
@@ -562,20 +491,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/paysupport') || text.startsWith('/support')) {
-      await api(env, 'sendMessage', {
-        chat_id: chatId,
-        text:
-          '*Payment & Dispute Support*\n' +
-          'We handle Stars purchase issues and billing directly. Telegram Support does not resolve merchant purchases.\n\n' +
-          'To request billing support or report a payment issue, reply with:\n' +
-          '1. Your Telegram username (@handle)\n' +
-          '2. The plan purchased (Starter, Growth, or Pro/Agency)\n' +
-          '3. Date of purchase and Receipt ID from your /status message\n' +
-          '4. What went wrong\n\n' +
-          'Check /status to see your active plan and receipt ID.',
-        parse_mode: 'Markdown',
-        reply_markup: openAppKeyboard(env),
-      });
+      // Opens a window: the sender's next message goes to a person, never to the chat below.
+      await handlePaySupportCommand(env, msg, text);
       return;
     }
 
@@ -733,17 +650,18 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         const joined = new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         const minutesAgo = Math.max(0, Math.round((Date.now() - u.last_seen_at) / 60000));
         const activeStr = minutesAgo < 60 ? `${minutesAgo}m ago` : `${Math.round(minutesAgo / 60)}h ago`;
-        return `${i + 1}. *${label}*\n   ${sourceBadge} · Joined: ${joined} · Active: ${activeStr}`;
+        return `${i + 1}. ${label}\n   ${sourceBadge} · Joined: ${joined} · Active: ${activeStr}`;
       });
 
+      // Plain text, no parse_mode: the names and emails in this list are set by users, and an
+      // underscore or asterisk in one of them would break or restyle a Markdown message.
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
-          `📊 *Luminara User Signups & Sign-Ins*\n\n` +
-          `*Total Registered Users:* ${users.length}\n\n` +
+          `📊 Luminara User Signups & Sign-Ins\n\n` +
+          `Total Registered Users: ${users.length}\n\n` +
           (lines.length ? lines.join('\n\n') : 'No registered users found yet.') +
-          `\n\n_Use /refund <userId> <chargeId> to issue a Stars refund._`,
-        parse_mode: 'Markdown',
+          `\n\nUse /refund <userId> <chargeId> to issue a Stars refund.`,
       });
       return;
     }
@@ -758,16 +676,21 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
       const targetUserId = Number(refundMatch[1]);
       const chargeId = refundMatch[2];
-      const res = await refundStarPayment(env, targetUserId, chargeId);
-      await api(env, 'sendMessage', {
-        chat_id: chatId,
-        text: res.ok
-          ? `✅ Successfully refunded Stars payment \`${chargeId}\` for user \`${targetUserId}\`.`
-          : `❌ Refund failed: ${res.error || 'Unknown error'}`,
-        parse_mode: 'Markdown',
-      });
+      const res = await refundStarsCharge(env, targetUserId, chargeId, 'admin_bot_refund');
+      if (res.ok) {
+        await api(env, 'sendMessage', {
+          chat_id: chatId,
+          text: `✅ Successfully refunded Stars payment \`${chargeId}\` for user \`${res.payerTgId ?? targetUserId}\`.`,
+          parse_mode: 'Markdown',
+        });
+      } else {
+        await api(env, 'sendMessage', { chat_id: chatId, text: `❌ Refund failed: ${res.error || 'Unknown error'}` });
+      }
       return;
     }
+
+    // /reply, /close and /requests: how an admin answers a payment support request.
+    if (await handleSupportAdminCommand(env, msg, text)) return;
 
     if (text.startsWith('/')) {
       await api(env, 'sendMessage', {
@@ -777,6 +700,10 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       });
       return;
     }
+
+    // A message sent inside a payment support window is for a person. It stops here: it is not
+    // put in a prompt and not kept in the chat history. This has to stay above the chat.
+    if (await receiveSupportMessage(env, msg, text || String(msg.caption || ''))) return;
 
     // Interactive conversational session with Oracle Agent (Hermes-like agentic loop)
     // 1. Send typing action so user gets immediate visual feedback
@@ -852,7 +779,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         if (dnaRaw) {
           const dna = JSON.parse(dnaRaw);
           if (dna && typeof dna === 'object') {
-            dnaPromptAddition = `\n\nKnown User Business DNA Memory:\n- Company: ${dna.companyName || dna.name || 'Unknown'}\n- Primary Domain: ${dna.domain || dna.primaryDomain || 'Unknown'}\n- USP: ${dna.uniqueSellingPoint || dna.usp || 'N/A'}\n- Known Competitors: ${Array.isArray(dna.competitors) ? dna.competitors.join(', ') : 'N/A'}`;
+            // Saved profile text is untrusted: it reaches the prompt only inside a fence.
+            dnaPromptAddition = businessDnaPromptBlock(dna);
           }
         }
       } catch {
@@ -861,7 +789,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     const domainPromptAddition = targetDomain
-      ? `\n\nDetected Target Domain in query: "${targetDomain}". If the user is asking to inspect or audit this domain, deliver an Instant Scout diagnostic covering: AI visibility readiness, entity schema status, and 1 highest-priority ship move this week.`
+      ? `\n\nDetected Target Domain in query: "${targetDomain}". This chat has not fetched or measured that site. Do not describe its current state and do not give it a diagnostic, a rating or any number. Give general guidance only, and tell the user that the Full Visual Audit button under this reply opens the audit screen in the app.`
       : '';
 
     // 5. Multi-turn session memory
@@ -877,13 +805,28 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + dnaPromptAddition + domainPromptAddition },
+      // Plan facts in the prompt are built from PLANS on every turn, never typed by hand.
+      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(PLANS) + dnaPromptAddition + domainPromptAddition },
       ...history.slice(-6),
       { role: 'user', content: text },
     ];
 
     // 6. Generate AI response via configured worker providers
-    const aiResponse = await generateOracleChatResponse(env, messages);
+    const modelReply = await generateOracleChatResponse(env, messages);
+    // Before the reply is stored in history or sent (worker/chatHonesty.ts): anything it says about
+    // our plans, prices or offers gives way to one block built from PLANS, a measurement nobody
+    // made is replaced, and a link to a host that is neither ours nor the user's is spelled out.
+    const honest = modelReply
+      ? filterChatReply(modelReply, {
+          plans: PLANS,
+          userTexts: [...history.filter((turn) => turn?.role === 'user').map((turn) => String(turn.content ?? '')), text],
+          allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
+        })
+      : null;
+    if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.linksRemoved > 0)) {
+      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan or price sentence(s), ${honest.linksRemoved} link(s)`);
+    }
+    const aiResponse = honest ? honest.text : null;
 
     // Dynamic action keyboard (Hermes-like deep actions)
     const replyKeyboard = targetDomain
@@ -919,20 +862,18 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
     }
 
-    // 8. Deliver response
+    // 8. Deliver response. No parse_mode: model text is not valid Markdown, and Telegram
+    // rejects the whole message when the markup does not parse. No link preview: model text
+    // must not unfurl a page.
     const sendResult = await api(env, 'sendMessage', {
       chat_id: chatId,
       text: aiResponse,
-      parse_mode: 'Markdown',
+      link_preview_options: { is_disabled: true },
       reply_markup: replyKeyboard,
     });
 
     if (!sendResult.ok) {
-      await api(env, 'sendMessage', {
-        chat_id: chatId,
-        text: aiResponse,
-        reply_markup: replyKeyboard,
-      });
+      console.error('[Telegram Bot] chat reply was not delivered', sendResult.description);
     }
   } catch (e) {
     console.error('telegram update failed', e);
@@ -948,6 +889,10 @@ export async function createInvoiceLink(
   const plan = PLANS[normId];
   if (!plan) return { ok: false, error: `Unknown plan "${planId}"` };
   if (!userId || typeof userId !== 'number') return { ok: false, error: 'Valid userId required' };
+
+  // Refused here so the buyer reads why before an invoice opens. Pre-checkout checks again.
+  const refusal = await planDowngradeRefusal(env, String(userId), normId, 'so no invoice was opened and nothing was charged.').catch(() => null);
+  if (refusal) return { ok: false, error: refusal };
 
   const title = plan.title.slice(0, 32);
   const description = plan.description.slice(0, 255);
@@ -970,7 +915,7 @@ export async function refundStarPayment(
   env: Env,
   userId: number,
   telegramPaymentChargeId: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; revoked?: boolean }> {
   if (!userId || !telegramPaymentChargeId) {
     return { ok: false, error: 'userId and telegramPaymentChargeId are required' };
   }
@@ -982,29 +927,9 @@ export async function refundStarPayment(
     return { ok: false, error: r.description || 'Telegram refund failed' };
   }
 
-  // Update KV state: mark charge as refunded and revoke subscription if it was active
-  let refundedAccountId = String(userId);
-  if (env.LUMINARA_KV) {
-    try {
-      const chargeKey = `stars:charge:${telegramPaymentChargeId}`;
-      const existing = (await env.LUMINARA_KV.get(chargeKey, 'json')) as Record<string, unknown> | null;
-      if (existing) {
-        await env.LUMINARA_KV.put(
-          chargeKey,
-          JSON.stringify({ ...existing, refunded: true, refundedAt: Date.now() }),
-        );
-        const accountId = String(existing.accountId || existing.loginId || userId);
-        refundedAccountId = accountId;
-        const sub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { chargeId?: string } | null;
-        if (sub && sub.chargeId === telegramPaymentChargeId) {
-          await env.LUMINARA_KV.delete(`sub:${accountId}`);
-          if (existing.loginId) await env.LUMINARA_KV.delete(`sub:${existing.loginId}`);
-        }
-      }
-    } catch (err) {
-      console.error('[Stars] Error updating KV after refund', err);
-    }
-  }
+  // Mark the receipt refunded and take back what this charge gave.
+  const revoked = await revokeStarsGrant(env, userId, telegramPaymentChargeId);
+  const refundedAccountId = revoked.accountId;
 
   // Money event: Stars refund already issued at Telegram. Best-effort audit; a
   // logging failure here cannot un-refund, so it must not fail the response.
@@ -1018,7 +943,1255 @@ export async function refundStarPayment(
     },
   });
 
-  return { ok: true };
+  return { ok: true, revoked: revoked.ok };
+}
+
+// ---------------------------------------------------------------------------
+// Payment support (Track SW, SW0a-16): a buyer's billing message reaches a person.
+// worker/paymentSupport.ts holds the requests; this section does the talking. Every message here
+// is plain text, so nothing a buyer or an admin types is read as formatting.
+// ---------------------------------------------------------------------------
+
+const SUPPORT_EMAIL = 'support@luminarasuite.com';
+
+const SUPPORT_PROMPT_TEXT =
+  'Payment support\n\n' +
+  'Send your next message here within 10 minutes. It goes to a person, not to the assistant.\n\n' +
+  'Say what went wrong and, if you have it, include the receipt ID from /status. You can attach a screenshot.\n\n' +
+  'We handle purchases made through this bot ourselves. Telegram Support does not resolve them.';
+
+const SUPPORT_UNAVAILABLE_TEXT =
+  `We could not open a support request just now. Please send /paysupport again in a minute, or email ${SUPPORT_EMAIL} with the receipt ID from /status.`;
+
+const SUPPORT_TOO_MANY_TEXT =
+  `Your earlier requests are saved and waiting for a person, who will answer here. To add something now, email ${SUPPORT_EMAIL}.`;
+
+const SUPPORT_NOT_READ_TEXT =
+  'Something went wrong on our side, so this message was not read. Please send it again in a minute.';
+
+/** One notice to an admin, under Telegram's 4,096 characters and under what sendPlain sends. */
+const SUPPORT_NOTICE_MAX = 3900;
+const SUPPORT_SHORTENED_NOTE = '\n> (shortened here to fit one message; the stored request has the rest)';
+
+/** The longest answer relayed to a buyer. Telegram's own limit is 4,096 with our two lines around it. */
+const SUPPORT_ANSWER_MAX = 3800;
+
+function adminChatIds(env: Env): string[] {
+  return (env.TELEGRAM_ADMIN_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** A private chat's id is the user's own id. Billing is not discussed anywhere else. */
+function isPrivateChat(msg: any): boolean {
+  return Boolean(msg?.from?.id) && msg?.chat?.id === msg.from.id;
+}
+
+/** Anything in a message that is not its text: it can be copied to an admin, and it has no words to store. */
+function hasAttachment(msg: any): boolean {
+  return Boolean(
+    msg?.photo || msg?.document || msg?.video || msg?.voice || msg?.audio || msg?.video_note || msg?.animation || msg?.sticker ||
+      msg?.contact || msg?.location || msg?.venue || msg?.poll,
+  );
+}
+
+/** The buyer's words, marked line by line, so nothing in them can pass for the bot's own lines. */
+function quoteForAdmins(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+}
+
+/**
+ * The request a message answers, when the buyer used Telegram's own reply on something the bot
+ * said about it: the support answer, or an acknowledgement that names the request. The id is
+ * only a pointer: it is looked up together with the sender, so quoting somebody else's id, or a
+ * message the bot sent to an admin, finds nothing.
+ */
+function repliedRequestId(msg: any): string | undefined {
+  const original = msg?.reply_to_message;
+  if (!original?.from?.is_bot || typeof original.text !== 'string') return undefined;
+  const found = original.text.match(/\bps_[0-9a-f]{10}\b/);
+  return found ? found[0] : undefined;
+}
+
+function describeSender(from: any): string {
+  const name = [from?.first_name, from?.last_name].filter(Boolean).join(' ').trim();
+  const handle = from?.username ? `@${from.username}` : '';
+  const known = [handle, name].filter(Boolean).join(', ');
+  return `Telegram id ${from?.id}${known ? ` (${known})` : ''}`;
+}
+
+function ageText(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+}
+
+async function sendPlain(env: Env, chatId: number | string, text: string): Promise<boolean> {
+  const sent = await api(env, 'sendMessage', { chat_id: chatId, text: text.slice(0, 4000) });
+  return sent.ok === true;
+}
+
+/**
+ * Sends to every admin id. Says how many got the text and, when there is an attachment, how many
+ * got the copy. An admin whose copy failed is told that something was attached.
+ */
+async function sendToAdmins(
+  env: Env,
+  text: string,
+  attachment?: { fromChatId: number; messageId: number },
+): Promise<{ reached: number; copied: number }> {
+  let reached = 0;
+  let copied = 0;
+  for (const id of adminChatIds(env)) {
+    if (!(await sendPlain(env, id, text))) continue;
+    reached += 1;
+    if (!attachment) continue;
+    const copy = await api(env, 'copyMessage', { chat_id: id, from_chat_id: attachment.fromChatId, message_id: attachment.messageId });
+    if (copy.ok) copied += 1;
+    else await sendPlain(env, id, 'An attachment came with that message and could not be copied here.');
+  }
+  return { reached, copied };
+}
+
+/**
+ * Gives a message to the sender's open support window, if there is one. True when the message
+ * was dealt with here and must go no further; false when it is ordinary chat.
+ */
+async function receiveSupportMessage(env: Env, msg: any, content: string): Promise<boolean> {
+  if (!isPrivateChat(msg)) return false;
+  const attached = hasAttachment(msg);
+  const text = content.trim() || (attached ? '[attachment, no text]' : '');
+  if (!text) return false;
+
+  const chatId = msg.chat.id;
+  const taken = await takeSupportMessage(env, Number(msg.from.id), text, Date.now(), { replyTo: repliedRequestId(msg) });
+  if (taken.kind === 'none') return false;
+  if (taken.kind === 'unavailable') {
+    // Not knowing is not a reason to let a billing message into a prompt.
+    await sendPlain(env, chatId, SUPPORT_NOT_READ_TEXT);
+    return true;
+  }
+  const { row } = taken;
+  if (taken.kind === 'full') {
+    // Not stored and not forwarded, so one buyer cannot fill the admins' chats. Not chat either.
+    await sendPlain(
+      env,
+      chatId,
+      `Request ${row.id} already holds your messages, so this one was not added. A person will answer here. To send more, wait for the answer or email ${SUPPORT_EMAIL}.`,
+    );
+    return true;
+  }
+
+  const header =
+    taken.kind === 'opened'
+      ? `Payment support request ${row.id}\n` +
+        `From: ${describeSender(msg.from)}\n` +
+        `Account: ${row.account_id ?? 'not known'}\n` +
+        `Most recent Stars charge: ${row.charge_id ?? 'none on record'}`
+      : `More on payment support request ${row.id}, from ${describeSender(msg.from)}`;
+  const footer = `\n\nAnswer: /reply ${row.id} your answer\nClose without answering: /close ${row.id}`;
+  const cutNote = taken.cut ? `\n\n(Longer than ${SUPPORT_MESSAGE_MAX.toLocaleString('en-US')} characters. What is stored stops at the limit.)` : '';
+  // Marking each line adds to the length. The buyer's words give way, never the lines that
+  // tell the admin how to answer.
+  const quoted = quoteForAdmins(clipSupportMessage(text).text);
+  const room = SUPPORT_NOTICE_MAX - header.length - cutNote.length - footer.length - SUPPORT_SHORTENED_NOTE.length - 2;
+  const shown = quoted.length > room ? quoted.slice(0, room) + SUPPORT_SHORTENED_NOTE : quoted;
+  const notice = `${header}\n\n${shown}${cutNote}${footer}`;
+  const sent = await sendToAdmins(
+    env,
+    notice,
+    attached && msg.message_id ? { fromChatId: chatId, messageId: msg.message_id } : undefined,
+  );
+
+  if (sent.reached === 0) {
+    console.error(
+      `[Support] ALERT: payment support request ${row.id} was saved and no admin could be told. Check TELEGRAM_ADMIN_ID; open requests are listed at GET /api/admin/payment-support.`,
+    );
+    await sendPlain(
+      env,
+      chatId,
+      `Received and saved as request ${row.id}. We could not alert our team just now, so please also email ${SUPPORT_EMAIL} and quote that id.`,
+    );
+    return true;
+  }
+
+  const received =
+    taken.kind === 'opened'
+      ? `Received. A person will answer here. Your request id is ${row.id}. Anything else you send in the next 10 minutes is added to it.`
+      : taken.kind === 'added'
+        ? `Added to request ${row.id}.`
+        : `Sent to support as a follow-up to request ${row.id}. A person will answer here. To add more, send /paysupport first. Anything else you send now goes to the assistant.`;
+  // The words arrived. An attachment that no admin received is said, not left to be assumed.
+  const attachmentLost =
+    attached && sent.copied === 0 ? ` Your attachment did not come through. Please describe it in words, or email it to ${SUPPORT_EMAIL}.` : '';
+  await sendPlain(env, chatId, received + attachmentLost);
+  return true;
+}
+
+async function handlePaySupportCommand(env: Env, msg: any, text: string): Promise<void> {
+  const chatId = msg.chat.id;
+  if (!isPrivateChat(msg)) {
+    await sendPlain(env, chatId, 'Billing help is private. Open a chat with this bot and send /paysupport there.');
+    return;
+  }
+  const payerTgId = Number(msg.from.id);
+  let accountId = String(payerTgId);
+  try {
+    accountId = await resolveAccountId(env, String(payerTgId));
+  } catch {
+    /* the Telegram id is enough to answer */
+  }
+  let chargeId = await latestStarsChargeId(env, payerTgId);
+  if (!chargeId && env.LUMINARA_KV) {
+    // A purchase from before the charge ledger names its charge on the subscription record.
+    const sub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json').catch(() => null)) as { chargeId?: unknown } | null;
+    if (typeof sub?.chargeId === 'string' && sub.chargeId) chargeId = sub.chargeId;
+  }
+
+  const opened = await openSupportWindow(env, { payerTgId, accountId, chargeId });
+  if (!opened.ok) {
+    await sendPlain(env, chatId, opened.reason === 'too_many' ? SUPPORT_TOO_MANY_TEXT : SUPPORT_UNAVAILABLE_TEXT);
+    return;
+  }
+
+  // "/paysupport my plan did not start" is the request itself.
+  const inline = text.replace(/^\/\S*\s*/, '');
+  if ((inline.trim() || hasAttachment(msg)) && (await receiveSupportMessage(env, msg, inline))) return;
+
+  await sendPlain(env, chatId, SUPPORT_PROMPT_TEXT);
+}
+
+/** /reply, /close and /requests. True when the text was one of them, whoever sent it. */
+async function handleSupportAdminCommand(env: Env, msg: any, text: string): Promise<boolean> {
+  const parsed = text.match(/^\/(reply|close|requests)(?:@\S+)?(?:\s+([\s\S]*))?$/i);
+  if (!parsed) return false;
+  const chatId = msg.chat.id;
+  const command = parsed[1].toLowerCase();
+  const adminId = String(msg.from?.id ?? '');
+  if (!adminId || !adminChatIds(env).includes(adminId)) {
+    await sendPlain(env, chatId, 'Unauthorized. Only configured bot administrators can answer support requests.');
+    return true;
+  }
+  if (!isPrivateChat(msg)) {
+    // A list of requests, or an answer, would show buyers' ids and words to everyone in the chat.
+    await sendPlain(env, chatId, 'Use this command in a private chat with the bot.');
+    return true;
+  }
+
+  try {
+    if (command === 'requests') {
+      const waiting = await listSupportRequests(env, { status: 'open', limit: 10 });
+      if (waiting.length === 0) {
+        await sendPlain(env, chatId, 'No payment support requests are waiting for an answer.');
+        return true;
+      }
+      const now = Date.now();
+      const lines = waiting.map(
+        (r) => `${r.id} · ${ageText(now - r.updated_at)} · Telegram id ${r.payer_tg_id}\n${String(r.message ?? '').slice(0, 160)}`,
+      );
+      await sendPlain(
+        env,
+        chatId,
+        `Payment support requests waiting for an answer, oldest first (up to 10):\n\n${lines.join('\n\n')}\n\nAnswer: /reply <id> your answer\nClose without answering: /close <id>`,
+      );
+      return true;
+    }
+
+    const args = (parsed[2] || '').trim().match(/^(\S+)(?:\s+([\s\S]+))?$/);
+    const id = args?.[1] ?? '';
+    const answer = (args?.[2] ?? '').trim();
+    if (!id || (command === 'reply' && !answer)) {
+      await sendPlain(env, chatId, command === 'reply' ? 'Use: /reply <request id> <your answer>' : 'Use: /close <request id>');
+      return true;
+    }
+
+    const row = await readSupportRequest(env, id);
+    if (!row || row.status === 'awaiting') {
+      await sendPlain(env, chatId, `No support request with the id ${id}.`);
+      return true;
+    }
+    if (row.status === 'closed') {
+      await sendPlain(env, chatId, `Request ${id} is closed.`);
+      return true;
+    }
+    const orgId = `org_${String(row.account_id ?? row.payer_tg_id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+    if (command === 'close') {
+      const closed = await closeSupportRequest(env, id);
+      // The answer told the buyer their next message would come back here. Closing takes that
+      // away, so they are told, or their reply to a person would go to the assistant unannounced.
+      const promised = row.status === 'answered' && Number(row.expires_at ?? 0) > Date.now();
+      const told =
+        closed && promised
+          ? await sendPlain(env, row.payer_tg_id, `Your payment support request ${id} is now closed. To write to us again, send /paysupport.`)
+          : false;
+      await sendPlain(
+        env,
+        chatId,
+        !closed
+          ? `Request ${id} could not be closed. Try again.`
+          : told
+            ? `Request ${id} is closed. The buyer was told, because their next message would have come back here.`
+            : promised
+              ? `Request ${id} is closed. The buyer could not be told; their next message will go to the assistant.`
+              : `Request ${id} is closed. The buyer was not messaged.`,
+      );
+      if (closed) {
+        await recordAuditLogBestEffort(env, { org_id: orgId, actor_id: `tg:${adminId}`, action: 'support.close', details: { requestId: id } });
+      }
+      return true;
+    }
+
+    const relayed = answer.slice(0, SUPPORT_ANSWER_MAX);
+    const sent = await api(env, 'sendMessage', {
+      chat_id: row.payer_tg_id,
+      text: `Luminara support, about your request ${id}:\n\n${relayed}\n\nYour next message here, within 3 days, goes back to support.`,
+    });
+    if (!sent.ok) {
+      await sendPlain(env, chatId, `Not delivered to the buyer: ${sent.description || 'Telegram refused the message'}. Request ${id} is still ${row.status}.`);
+      return true;
+    }
+    const marked = await markSupportAnswered(env, id);
+    await sendPlain(
+      env,
+      chatId,
+      (marked ? `Sent to the buyer. Request ${id} is marked answered.` : `Sent to the buyer. Request ${id} could not be marked answered.`) +
+        (relayed.length < answer.length ? ` Your answer was longer than ${SUPPORT_ANSWER_MAX.toLocaleString('en-US')} characters and was cut there.` : ''),
+    );
+    await recordAuditLogBestEffort(env, { org_id: orgId, actor_id: `tg:${adminId}`, action: 'support.reply', details: { requestId: id } });
+  } catch (err) {
+    console.error(`[Support] ${command} failed: ${err instanceof Error ? err.message : err}`);
+    await sendPlain(env, chatId, 'The support requests could not be read just now. Nothing was sent. Try again in a minute.');
+  }
+  return true;
+}
+
+/** Daily: removes windows nobody wrote into and reminds the admins of requests that waited a day. */
+export async function runPaymentSupportSweep(env: Env): Promise<SupportSweepSummary | null> {
+  try {
+    const summary = await sweepSupportRequests(env);
+    if (summary.overdue > 0) {
+      await sendToAdmins(
+        env,
+        `${summary.overdue} payment support request${summary.overdue === 1 ? ' has' : 's have'} waited more than a day for an answer (${summary.open} open in all). Send /requests to read them.`,
+      );
+    }
+    console.log(`[Support] sweep: ${JSON.stringify(summary)}`);
+    return summary;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // A database from before the migration has nothing to sweep.
+    if (!/no such table/i.test(message)) console.error(`[Support] sweep failed: ${message}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stars payments (Track SW, SW0a-3): a paid charge is on record before anything else happens.
+// worker/starsCharges.ts holds the ledger; this section is what the ledger means for a plan.
+// ---------------------------------------------------------------------------
+
+/** Well inside Telegram's 10 seconds for answerPreCheckoutQuery. */
+const PRE_CHECKOUT_BUDGET_MS = 6_000;
+const DAY_MS = 86400_000;
+/** How many Stars charge ids one subscription record remembers. */
+const MAX_APPLIED_CHARGES = 20;
+
+type SubscriptionRecord = Record<string, unknown> & {
+  plan?: string;
+  expiresAt?: number;
+  chargeId?: string;
+  appliedCharges?: unknown;
+};
+
+/** What the webhook must answer. 503 makes Telegram send the update again. */
+export type PaymentUpdateOutcome = { status: 200 | 503; note: string };
+
+export function isTelegramPaymentUpdate(update: any): boolean {
+  return Boolean(update?.pre_checkout_query || update?.message?.successful_payment || update?.message?.refunded_payment);
+}
+
+export type StarsPayload =
+  | { purpose: 'plan'; planId: string; granteeId: number | null }
+  | { purpose: 'unknown'; ref: string };
+
+/** Reads `<plan>:<telegram user id>`. Anything else is `unknown`. This cannot throw. */
+export function parseStarsPayload(raw: unknown): StarsPayload {
+  const payload = typeof raw === 'string' ? raw : '';
+  const [rawPlanId, userIdRaw] = payload.split(':');
+  const planId = normalizePlanId(rawPlanId);
+  if (!Object.hasOwn(PLANS, planId)) return { purpose: 'unknown', ref: payload.slice(0, 128) || '(empty)' };
+  const granteeId = Number(userIdRaw);
+  return { purpose: 'plan', planId, granteeId: Number.isSafeInteger(granteeId) && granteeId > 0 ? granteeId : null };
+}
+
+function appliedChargesOf(sub: SubscriptionRecord | null | undefined): string[] {
+  if (!sub) return [];
+  const listed = Array.isArray(sub.appliedCharges)
+    ? sub.appliedCharges.filter((c): c is string => typeof c === 'string' && c !== '')
+    : [];
+  // Records written before the list existed name one charge.
+  if (typeof sub.chargeId === 'string' && sub.chargeId && !listed.includes(sub.chargeId)) listed.push(sub.chargeId);
+  return listed;
+}
+
+/** True when this subscription record was built from the given Stars charge. */
+export function subscriptionListsCharge(sub: SubscriptionRecord | null | undefined, chargeId: string): boolean {
+  return Boolean(chargeId) && appliedChargesOf(sub).includes(chargeId);
+}
+
+/** Messages every id in TELEGRAM_ADMIN_ID. For money that needs a person; the caller writes the log line. */
+export async function alertPaymentAdmins(env: Env, text: string, details: Record<string, unknown> = {}): Promise<void> {
+  const adminIds = (env.TELEGRAM_ADMIN_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
+  for (const id of adminIds) {
+    await api(env, 'sendMessage', { chat_id: id, text: `Payment alert: ${text}\n${JSON.stringify(details)}`.slice(0, 3500) });
+  }
+}
+
+async function raiseStarsAlert(env: Env, text: string, details: Record<string, unknown> = {}): Promise<void> {
+  console.error(`[Stars] ALERT: ${text} ${JSON.stringify(details)}`);
+  await alertPaymentAdmins(env, text, details);
+}
+
+/** Payment and refund messages are sent whatever the account's notice settings say. */
+async function tellPayer(env: Env, chatId: number | string | undefined, text: string): Promise<void> {
+  if (!chatId) return;
+  await api(env, 'sendMessage', { chat_id: chatId, text, reply_markup: openAppKeyboard(env) });
+}
+
+function refundedText(stars: number): string {
+  return `We could not activate your plan, so your ${stars.toLocaleString()} Stars have been refunded. You can try again from the app.`;
+}
+
+function refundPendingText(stars: number, chargeId: string): string {
+  return (
+    `We could not activate your plan, and the refund of your ${stars.toLocaleString()} Stars did not go through yet. ` +
+    `We try again once a day. If you do not have them back in 3 days, send /paysupport with this receipt ID: ${chargeId}`
+  );
+}
+
+/** True when the payer has their Stars back, whether or not the ledger row could be closed. */
+function starsWentBack(outcome: StarsRefundOutcome): boolean {
+  return outcome.settled || outcome.moneyReturned === true;
+}
+
+/** Resolves false when the check has not answered inside `ms`, or fails. */
+function withinBudget<T>(check: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    check.then(resolve, () => resolve(fallback)).finally(() => clearTimeout(timer));
+  });
+}
+
+/** The title a buyer knows a plan by. */
+function planTitle(planId: unknown): string {
+  const id = normalizePlanId(String(planId ?? ''));
+  return Object.hasOwn(PLANS, id) ? PLANS[id].title : String(planId);
+}
+
+/**
+ * Why a purchase of `planId` for this user has to be stopped, or null when it may go ahead: the
+ * user has a higher plan still running, and the purchase would replace it (Track SW, SW0a-4).
+ * `outcome` finishes the sentence with what happened to the money or the key. Throws when the
+ * user's plan cannot be read.
+ */
+export async function planDowngradeRefusal(env: Env, loginId: string, planId: string, outcome: string): Promise<string | null> {
+  const kv = env.LUMINARA_KV;
+  if (!kv || !loginId) return null;
+  const accountId = await resolveAccountId(env, loginId);
+  const running = (await kv.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
+  if (!wouldDowngrade(running, planId)) return null;
+  return downgradeRefusalText({
+    currentTitle: planTitle(running?.plan),
+    currentExpiresAt: Number(running?.expiresAt),
+    requestedTitle: planTitle(planId),
+    outcome,
+  });
+}
+
+async function answerPreCheckout(q: any, env: Env): Promise<void> {
+  // Telegram requires an answer within 10 seconds; we verify plan existence, currency, and exact Star amount.
+  const parsed = parseStarsPayload(q.invoice_payload);
+  const plan = parsed.purpose === 'plan' ? PLANS[parsed.planId] : null;
+
+  let ok = true;
+  let errorMessage = '';
+
+  if (!plan) {
+    ok = false;
+    errorMessage = 'Unknown plan. Please reopen the app and try again.';
+  } else if (q.currency && q.currency !== 'XTR') {
+    ok = false;
+    errorMessage = 'Invalid currency. Telegram Stars (XTR) required.';
+  } else if (typeof q.total_amount === 'number' && q.total_amount !== plan.stars) {
+    ok = false;
+    errorMessage = `Price mismatch. Expected ${plan.stars} Stars.`;
+  } else {
+    const payerId = Number(q.from?.id) || 0;
+    const granteeId = parsed.purpose === 'plan' ? parsed.granteeId : null;
+    const planId = parsed.purpose === 'plan' ? parsed.planId : '';
+    if (granteeId !== null && payerId && granteeId !== payerId) {
+      // An invoice link can be passed on. The plan would go to one account and any refund to another.
+      ok = false;
+      errorMessage = 'This invoice was made for another Telegram account. Open the app from your own account to buy a plan.';
+    } else {
+      // Nobody is charged unless the claim table and the charge ledger can both take a write, and
+      // the plan being bought would not replace a higher one that is still running. A check that
+      // has not answered inside the budget, or cannot be made, counts as no.
+      const verdict = await withinBudget(
+        Promise.all([
+          isStarsLedgerReady(env),
+          isStarsChargesReady(env),
+          planDowngradeRefusal(env, String(granteeId ?? payerId), planId, 'so this purchase was stopped and nothing was charged.'),
+        ]).then(([claims, charges, refusal]) => ({ ready: claims && charges, refusal })),
+        PRE_CHECKOUT_BUDGET_MS,
+        { ready: false, refusal: null as string | null },
+      );
+      if (verdict.refusal) {
+        ok = false;
+        errorMessage = verdict.refusal.slice(0, 255);
+      } else if (!verdict.ready) {
+        ok = false;
+        errorMessage = 'Payments are temporarily unavailable. Please try again in a few minutes.';
+      }
+    }
+  }
+
+  await api(env, 'answerPreCheckoutQuery', ok
+    ? { pre_checkout_query_id: q.id, ok: true }
+    : { pre_checkout_query_id: q.id, ok: false, error_message: errorMessage });
+}
+
+type PlanGrantTrace = { expiresAt: number; hasReceipt: boolean };
+
+/**
+ * What is true about a plan charge: has it been granted? The receipt written at the end of a grant
+ * says so, and so does a subscription record that lists the charge, because the subscription is
+ * two KV writes and the first can land before the second fails. The claim row is not the test: it
+ * is written before the grant, so a crash between the two leaves a claim with nothing behind it.
+ */
+async function readPlanGrantTrace(
+  env: Env,
+  chargeId: string,
+  accountKeys: Array<string | null | undefined>,
+): Promise<PlanGrantTrace | null> {
+  const kv = env.LUMINARA_KV;
+  if (!kv) return null;
+  const receipt = (await kv.get(`stars:charge:${chargeId}`, 'json')) as { refunded?: boolean; expiresAt?: number } | null;
+  if (receipt?.refunded) return null;
+  if (receipt) return { expiresAt: Number(receipt.expiresAt) || 0, hasReceipt: true };
+  for (const key of new Set(accountKeys.filter((k): k is string => Boolean(k) && k !== '0'))) {
+    const sub = (await kv.get(`sub:${key}`, 'json')) as SubscriptionRecord | null;
+    if (subscriptionListsCharge(sub, chargeId)) return { expiresAt: Number(sub?.expiresAt) || 0, hasReceipt: false };
+  }
+  return null;
+}
+
+type PlanChargeInput = {
+  chargeId: string;
+  planId: string;
+  loginId: string;
+  accountId: string;
+  payerTgId: number;
+  stars: number;
+  providerChargeId?: string;
+  /** What the subscription record said before this charge, when it was still active. */
+  previousPlan?: string;
+  now: number;
+};
+
+function starsReceipt(input: PlanChargeInput, expiresAt: number): string {
+  return JSON.stringify({
+    userId: Number(input.loginId) || input.payerTgId,
+    payerTgId: input.payerTgId,
+    loginId: input.loginId,
+    accountId: input.accountId,
+    plan: input.planId,
+    previousPlan: input.previousPlan,
+    stars: input.stars,
+    chargeId: input.chargeId,
+    providerPaymentChargeId: input.providerChargeId,
+    paidAt: input.now,
+    expiresAt,
+  });
+}
+
+/**
+ * What a refund of one applied charge has to put back: the plan the record had before the charge
+ * (`before`), and the Stars charge that had been applied just before it (`prev`), when the record
+ * was last written by one. Kept on the subscription record under `chargeLinks`, one entry per
+ * charge in `appliedCharges`.
+ */
+type ChargeLink = { before?: string; prev?: string };
+
+function chargeLinksOf(sub: SubscriptionRecord | null | undefined): Record<string, ChargeLink> {
+  const raw = sub?.chargeLinks;
+  const out: Record<string, ChargeLink> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const link = value as { before?: unknown; prev?: unknown };
+    out[id] = {
+      before: typeof link.before === 'string' && link.before ? link.before : undefined,
+      prev: typeof link.prev === 'string' && link.prev ? link.prev : undefined,
+    };
+  }
+  return out;
+}
+
+/**
+ * Step 4: the grant. Throws when it could not be finished. The caller then decides by what is
+ * true, because a throw does not mean nothing was written.
+ */
+async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ expiresAt: number; alreadyTold: boolean }> {
+  const kv = env.LUMINARA_KV;
+  if (!kv) throw new Error('LUMINARA_KV is not bound, so a plan cannot be stored');
+  const plan = PLANS[input.planId];
+  const chargeKey = `stars:charge:${input.chargeId}`;
+
+  // A receipt means an earlier delivery finished this grant. One written before this ledger
+  // existed names no payer, and its buyer was told long ago. One written by this ledger means an
+  // earlier delivery stopped after the receipt and may not have sent the message, so the buyer is
+  // told now.
+  const receipt = (await kv.get(chargeKey, 'json')) as { refunded?: boolean; expiresAt?: number; payerTgId?: number } | null;
+  if (receipt?.refunded) throw new Error('the receipt says this charge was refunded');
+  if (receipt) return { expiresAt: Number(receipt.expiresAt) || 0, alreadyTold: receipt.payerTgId === undefined };
+
+  const claim = await claimStarsCharge(env, input.chargeId, input.accountId);
+  if (!claim.ok && claim.reason !== 'duplicate') throw new Error(`the charge could not be claimed (${claim.reason})`);
+
+  const existing = (await kv.get(`sub:${input.accountId}`, 'json')) as SubscriptionRecord | null;
+  let expiresAt: number;
+  let previousPlan: string | undefined;
+  if (subscriptionListsCharge(existing, input.chargeId)) {
+    // An earlier attempt wrote the subscription and stopped before the receipt. The days are
+    // already there; adding them again would give the plan twice.
+    expiresAt = Number(existing?.expiresAt) || input.now;
+    previousPlan = chargeLinksOf(existing)[input.chargeId]?.before;
+  } else if (!claim.ok) {
+    // Claimed by an attempt that left no grant behind. The claim alone is not a grant.
+    throw new Error('the charge was claimed earlier and no grant is in place');
+  } else {
+    const active = typeof existing?.expiresAt === 'number' && existing.expiresAt > input.now;
+    expiresAt = (active ? Number(existing?.expiresAt) : input.now) + plan.days * DAY_MS;
+    const earlier = active ? appliedChargesOf(existing).filter((c) => c !== input.chargeId) : [];
+    const applied = [...earlier, input.chargeId].slice(-MAX_APPLIED_CHARGES);
+    const lastCharge = active && typeof existing?.chargeId === 'string' ? existing.chargeId : undefined;
+    const links = active ? chargeLinksOf(existing) : {};
+    links[input.chargeId] = active
+      ? {
+          before: typeof existing?.plan === 'string' && existing.plan ? existing.plan : undefined,
+          // Set only when the record was last written by a Stars charge that still stands behind it.
+          prev: lastCharge && earlier.includes(lastCharge) ? lastCharge : undefined,
+        }
+      : {};
+    for (const id of Object.keys(links)) if (!applied.includes(id)) delete links[id];
+    previousPlan = links[input.chargeId].before;
+    await writeSubscriptionRecord(env, input.loginId, {
+      plan: input.planId,
+      stars: input.stars,
+      chargeId: input.chargeId,
+      providerPaymentChargeId: input.providerChargeId,
+      paymentMethod: 'stars',
+      startedAt: input.now,
+      expiresAt,
+      // Every Stars charge this record was built from. The sweep and refunds read it.
+      appliedCharges: applied,
+      // What a refund of each of them puts back.
+      chargeLinks: links,
+    });
+  }
+
+  await kv.put(chargeKey, starsReceipt({ ...input, previousPlan }, expiresAt));
+  return { expiresAt, alreadyTold: false };
+}
+
+async function sendPlanActiveMessage(
+  env: Env,
+  chatId: number | string | undefined,
+  plan: PlanMeta,
+  row: StarsChargeRow,
+  expiresAt: number,
+): Promise<void> {
+  if (!chatId) return;
+  await api(env, 'sendMessage', {
+    chat_id: chatId,
+    text:
+      `✅ *${plan.title}* is active until ${new Date(expiresAt).toUTCString()}.\n\n` +
+      `⭐ Paid: ${row.stars.toLocaleString()} Stars\n` +
+      `🧾 Receipt ID: \`${row.charge_id}\`\n\n` +
+      `Open the app to run your audits and access frontier intelligence.`,
+    parse_mode: 'Markdown',
+    reply_markup: openAppKeyboard(env),
+  });
+}
+
+type ReceivedChargeContext = {
+  row: StarsChargeRow;
+  loginId: string;
+  accountId: string | null;
+  chatId: number | string | undefined;
+  providerChargeId?: string;
+};
+
+/** Steps 3 to 5 for a plan charge that is on record as `received`. */
+async function settleReceivedPlanCharge(env: Env, ctx: ReceivedChargeContext): Promise<string> {
+  const { row } = ctx;
+  const chargeId = row.charge_id;
+  const lease = await leaseStarsCharge(env, chargeId, 'received');
+  // Another delivery of this update, or the sweep, holds the charge and will decide it.
+  if (lease === null) return 'held_elsewhere';
+
+  if (row.stars_returned === 1) {
+    // Telegram already sent these Stars back. Nothing is granted; anything in place is taken back.
+    if (!(await markStarsChargeRefundDue(env, chargeId, lease, 'refunded_at_telegram'))) return 'lease_lost';
+    const taken = await settleStarsRefund(env, starsChargeHooks(env), chargeId);
+    return taken.settled ? 'refunded' : 'refund_due';
+  }
+
+  const planId = row.ref_id;
+  const plan = Object.hasOwn(PLANS, planId) ? PLANS[planId] : null;
+  let grant: { expiresAt: number; alreadyTold: boolean } | null = null;
+  let failure = '';
+  let downgrade: PlanDowngradeRefusedError | null = null;
+  const input: PlanChargeInput = {
+    chargeId,
+    planId,
+    loginId: ctx.loginId,
+    accountId: ctx.accountId || '',
+    payerTgId: row.payer_tg_id,
+    stars: row.stars,
+    providerChargeId: ctx.providerChargeId,
+    now: Date.now(),
+  };
+  try {
+    if (!plan) throw new Error(`plan "${planId}" is not in the catalogue`);
+    if (!ctx.accountId) throw new Error('the account could not be resolved');
+    grant = await grantPlanForCharge(env, input);
+  } catch (err) {
+    if (err instanceof PlanDowngradeRefusedError) downgrade = err;
+    failure = err instanceof Error ? err.message : String(err);
+    console.error(`[Stars] Grant for charge ${chargeId} did not complete: ${failure}`);
+  }
+
+  if (!grant) {
+    // Step 5. "It threw" does not mean "nothing was granted". Decide by what is true, exactly as
+    // the sweep does.
+    let trace: PlanGrantTrace | null;
+    try {
+      trace = await readPlanGrantTrace(env, chargeId, [ctx.accountId, row.account_id, ctx.loginId]);
+    } catch (err) {
+      // Nothing can be read, so nothing is decided here: hand the row back for the sweep.
+      console.error(`[Stars] Could not read what charge ${chargeId} granted; leaving it for the sweep.`, err);
+      await releaseStarsLease(env, chargeId, lease);
+      await tellPayer(
+        env,
+        ctx.chatId,
+        `Your payment was received, but we could not confirm your plan yet. We check once a day: it will either be ` +
+          `activated or your ${row.stars.toLocaleString()} Stars will be refunded. If neither has happened in 3 days, ` +
+          `send /paysupport with this receipt ID: ${chargeId}`,
+      );
+      return 'undecided';
+    }
+    if (trace) {
+      grant = { expiresAt: trace.expiresAt, alreadyTold: false };
+      if (!trace.hasReceipt && input.accountId) {
+        // The subscription is there and its receipt is not. Write it if that works now, so a later
+        // purchase that replaces the record cannot hide this grant.
+        await env.LUMINARA_KV?.put(`stars:charge:${chargeId}`, starsReceipt(input, trace.expiresAt)).catch(() => undefined);
+      }
+    }
+  }
+
+  if (grant) {
+    let credited = true;
+    try {
+      credited = await markStarsChargeCredited(env, chargeId, lease);
+    } catch (err) {
+      // The plan is in place; the sweep will find it and close the row.
+      console.error(`[Stars] Charge ${chargeId} was granted and could not be marked credited; the sweep will close it.`, err);
+    }
+    if (credited && !grant.alreadyTold && plan) await sendPlanActiveMessage(env, ctx.chatId, plan, row, grant.expiresAt);
+    return credited ? 'credited' : 'lease_lost';
+  }
+
+  await releaseStarsCharge(env, chargeId);
+  // The ledger keeps a code. The error text is in the log line above.
+  if (!(await markStarsChargeRefundDue(env, chargeId, lease, downgrade ? 'plan_downgrade_refused' : 'grant_failed'))) return 'lease_lost';
+  const outcome = await settleStarsRefund(env, starsChargeHooks(env), chargeId);
+  const refundedMessage = downgrade
+    ? downgradeRefusalText({
+        currentTitle: planTitle(downgrade.currentPlan),
+        currentExpiresAt: downgrade.currentExpiresAt,
+        requestedTitle: planTitle(downgrade.requestedPlan),
+        outcome: `so it was not applied and your ${row.stars.toLocaleString()} Stars have been refunded.`,
+      })
+    : refundedText(row.stars);
+  await tellPayer(env, ctx.chatId, starsWentBack(outcome) ? refundedMessage : refundPendingText(row.stars, chargeId));
+  return outcome.settled ? 'refunded' : 'refund_due';
+}
+
+async function handleSuccessfulPayment(msg: any, env: Env): Promise<PaymentUpdateOutcome> {
+  const sp = msg.successful_payment || {};
+  const chargeId = String(sp.telegram_payment_charge_id || '').trim();
+  const payerTgId = Number(msg.from?.id) || 0;
+  const stars = Number(sp.total_amount);
+  const chatId: number | string | undefined = msg.chat?.id ?? (payerTgId || undefined);
+
+  // An update that cannot be put on record will not become recordable by being sent again:
+  // answer 200 and alert, or Telegram would redeliver it forever.
+  if (!chargeId || !payerTgId || !Number.isSafeInteger(stars) || stars <= 0) {
+    await raiseStarsAlert(env, 'A paid Stars update arrived without a charge id, a payer or an amount, and could not be recorded.', {
+      chargeId: chargeId || null,
+      payerTgId: payerTgId || null,
+      totalAmount: sp.total_amount ?? null,
+    });
+    if (chargeId && payerTgId) {
+      const refund = await refundStarPayment(env, payerTgId, chargeId);
+      await tellPayer(
+        env,
+        chatId,
+        refund.ok
+          ? 'We could not record your payment, so your Stars have been refunded. You can try again from the app.'
+          : `We could not record your payment. Send /paysupport with this receipt ID and we will sort it out: ${chargeId}`,
+      );
+    }
+    return { status: 200, note: 'malformed' };
+  }
+
+  const parsed = parseStarsPayload(sp.invoice_payload);
+  // The plan goes to the user named in the invoice. A refund only ever goes to the payer.
+  const loginId = String(parsed.purpose === 'plan' ? (parsed.granteeId ?? payerTgId) : payerTgId);
+  let accountId: string | null = null;
+  try {
+    accountId = env.LUMINARA_KV ? await resolveAccountId(env, loginId) : loginId;
+  } catch (err) {
+    console.error(`[Stars] Could not resolve the account for charge ${chargeId}; recording it without one.`, err);
+  }
+
+  // Step 1: the charge row is the first write.
+  const recorded = await recordStarsCharge(
+    env,
+    parsed.purpose === 'plan'
+      ? { chargeId, payerTgId, accountId, purpose: 'plan', refId: parsed.planId, stars }
+      : { chargeId, payerTgId, accountId, purpose: 'unknown', refId: parsed.ref, stars, status: 'refund_due', refundReason: 'unknown_payload' },
+  );
+  if (!recorded.ok) {
+    // The one case that asks Telegram to send the update again.
+    if (recorded.retryable) return { status: 503, note: 'charge_not_recorded' };
+    await raiseStarsAlert(env, 'A paid Stars charge was rejected by the ledger and will not be retried.', {
+      chargeId,
+      payerTgId,
+      stars,
+      error: recorded.error,
+    });
+    return { status: 200, note: 'charge_rejected' };
+  }
+
+  // The charge is on record. Whatever happens next, the row and the sweep own the outcome.
+  try {
+    const { row } = recorded;
+    if (row.status === 'refund_due' && recorded.created) {
+      const outcome = await settleStarsRefund(env, starsChargeHooks(env), chargeId);
+      await tellPayer(
+        env,
+        chatId,
+        starsWentBack(outcome)
+          ? `We received a payment we could not match to a plan, so your ${stars.toLocaleString()} Stars have been refunded.`
+          : refundPendingText(stars, chargeId),
+      );
+      return { status: 200, note: 'unknown_payload' };
+    }
+    // Step 2: any status but `received` was decided by an earlier delivery, or belongs to the sweep.
+    if (row.status !== 'received' || row.purpose !== 'plan') return { status: 200, note: `already_${row.status}` };
+    const note = await settleReceivedPlanCharge(env, {
+      row,
+      loginId,
+      accountId,
+      chatId,
+      providerChargeId: sp.provider_payment_charge_id,
+    });
+    return { status: 200, note };
+  } catch (err) {
+    console.error(`[Stars] Charge ${chargeId} is on record and was not settled here; the sweep will finish it.`, err);
+    return { status: 200, note: 'left_for_sweep' };
+  }
+}
+
+/**
+ * Telegram's own notice that Stars went back. That much is a fact and is recorded first. The row
+ * is closed only once what the charge gave has been taken back too; if that fails here, the row is
+ * left (or put) at `refund_due` and the sweep finishes it without asking Telegram to refund again.
+ */
+async function handleRefundedPayment(msg: any, env: Env): Promise<PaymentUpdateOutcome> {
+  const chargeId = String(msg.refunded_payment?.telegram_payment_charge_id || '').trim();
+  const payerTgId = Number(msg.chat?.id ?? msg.from?.id) || 0;
+  if (!chargeId) return { status: 200, note: 'refund_notice_without_charge' };
+  try {
+    await markStarsReturned(env, chargeId);
+  } catch (err) {
+    console.error(`[Stars] The refund notice for charge ${chargeId} could not be written to the ledger.`, err);
+  }
+  const revoked = await revokeStarsGrant(env, payerTgId, chargeId);
+  try {
+    if (revoked.ok) await markStarsChargeRefundedAtTelegram(env, chargeId);
+    else await requestStarsRefund(env, chargeId, 'refunded_at_telegram');
+  } catch (err) {
+    console.error(`[Stars] The ledger row for refunded charge ${chargeId} could not be updated.`, err);
+  }
+  return { status: 200, note: revoked.ok ? 'refund_notice' : 'refund_notice_plan_pending' };
+}
+
+/**
+ * Handles pre_checkout_query, successful_payment and refunded_payment. The webhook route awaits
+ * this before it answers, because Telegram does not send an update again once it has a 200.
+ * It never throws. It asks for a redelivery (503) in exactly one case: a paid charge could not be
+ * put on record.
+ */
+export async function handleTelegramPaymentUpdate(update: any, env: Env): Promise<PaymentUpdateOutcome> {
+  const msg = update?.message;
+  try {
+    if (update?.pre_checkout_query) {
+      await answerPreCheckout(update.pre_checkout_query, env);
+      return { status: 200, note: 'pre_checkout' };
+    }
+    if (msg?.successful_payment) return await handleSuccessfulPayment(msg, env);
+    if (msg?.refunded_payment) return await handleRefundedPayment(msg, env);
+    return { status: 200, note: 'not_a_payment' };
+  } catch (err) {
+    console.error('[Stars] payment update failed', err);
+    // Everything after the charge row is guarded, so a throw that reaches here came before it.
+    return msg?.successful_payment ? { status: 503, note: 'charge_not_recorded' } : { status: 200, note: 'error' };
+  }
+}
+
+/** The plan a Stars charge bought, from its receipt or its ledger row. */
+async function planOfStarsCharge(env: Env, chargeId: string | undefined): Promise<string | null> {
+  if (!chargeId) return null;
+  const receipt = (await env.LUMINARA_KV?.get(`stars:charge:${chargeId}`, 'json')) as { plan?: string } | null | undefined;
+  if (typeof receipt?.plan === 'string' && Object.hasOwn(PLANS, receipt.plan)) return receipt.plan;
+  try {
+    const row = await readStarsCharge(env, chargeId);
+    if (row?.purpose === 'plan' && Object.hasOwn(PLANS, row.ref_id)) return row.ref_id;
+  } catch {
+    // No ledger row to read.
+  }
+  return null;
+}
+
+/**
+ * Marks the receipt refunded and takes back only what this charge gave. A charge is found by its
+ * receipt or by the subscription record that lists it, so a grant that stopped half way is taken
+ * back too. When time is left that this charge did not pay for, its days come off; if it was the
+ * last thing applied to the record, the plan goes back to what the record said before it; and
+ * whatever was applied after it is re-linked to what came before it, so a later refund still puts
+ * the right plan back. Otherwise the record goes. `ok` is false when the record could not be read
+ * or written, so the caller can try again: the Stars are back with the payer and the plan must
+ * follow.
+ */
+async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Promise<{ accountId: string; ok: boolean }> {
+  let accountId = String(userId);
+  const kv = env.LUMINARA_KV;
+  if (!kv) return { accountId, ok: true };
+  try {
+    const chargeKey = `stars:charge:${chargeId}`;
+    const receipt = (await kv.get(chargeKey, 'json')) as Record<string, unknown> | null;
+    let row: StarsChargeRow | null = null;
+    try {
+      row = await readStarsCharge(env, chargeId);
+    } catch {
+      // No ledger row to read (a charge older than the table, or the table is not there yet).
+    }
+    if (receipt) accountId = String(receipt.accountId || receipt.loginId || userId);
+    else if (row?.account_id) accountId = row.account_id;
+
+    const planId = String(receipt?.plan || (row?.purpose === 'plan' ? row.ref_id : ''));
+    const days = Object.hasOwn(PLANS, planId) ? PLANS[planId].days : 0;
+    const keys = new Set(
+      [accountId, receipt?.loginId, row?.account_id, userId].map((k) => (k ? String(k) : '')).filter((k) => k && k !== '0'),
+    );
+    for (const key of keys) {
+      const sub = (await kv.get(`sub:${key}`, 'json')) as SubscriptionRecord | null;
+      if (!sub || !subscriptionListsCharge(sub, chargeId)) continue;
+      const remaining = appliedChargesOf(sub).filter((c) => c !== chargeId);
+      const shortened = days > 0 ? Number(sub.expiresAt) - days * DAY_MS : 0;
+      if (shortened <= Date.now()) {
+        await kv.delete(`sub:${key}`);
+        continue;
+      }
+      // Time is left that this charge did not pay for (it was added to days already there).
+      const links = chargeLinksOf(sub);
+      const mine: ChargeLink = links[chargeId] ?? {
+        before: typeof receipt?.previousPlan === 'string' && receipt.previousPlan ? receipt.previousPlan : undefined,
+      };
+      // Whatever was applied straight after this charge now follows what came before it.
+      for (const id of Object.keys(links)) {
+        if (links[id].prev === chargeId) links[id] = { before: mine.before, prev: mine.prev };
+      }
+      delete links[chargeId];
+      const next: SubscriptionRecord = { ...sub, expiresAt: shortened, appliedCharges: remaining, chargeLinks: links };
+      if (sub.chargeId === chargeId) {
+        // This charge was the last thing applied to the record, so the plan name is its doing.
+        const before = mine.before || (await planOfStarsCharge(env, remaining[remaining.length - 1]));
+        if (before) next.plan = before;
+        next.chargeId = mine.prev && remaining.includes(mine.prev) ? mine.prev : undefined;
+      }
+      await kv.put(`sub:${key}`, JSON.stringify(next));
+    }
+    // Last, so a failure above leaves the receipt unmarked and a retry starts from the same facts.
+    if (receipt) await kv.put(chargeKey, JSON.stringify({ ...receipt, refunded: true, refundedAt: Date.now() }));
+    return { accountId, ok: true };
+  } catch (err) {
+    console.error('[Stars] Error updating KV after refund', err);
+    return { accountId, ok: false };
+  }
+}
+
+const STAR_TXN_PAGE = 100;
+/** Bounds the calls one comparison may make, whatever the list looks like. */
+const STAR_TXN_MAX_CALLS = 60;
+
+/**
+ * Telegram's own record of Stars paid to this bot by invoice since `sinceMs`. Read only.
+ * The Bot API pages the list by offset "in chronological order" and does not say which end comes
+ * first, so this reads the newest end either way: straight from offset 0 when the newest come
+ * first, and by finding the end of the list when the oldest do. It throws when it could not
+ * cover the window, so the sweep can say the comparison did not run.
+ */
+async function listIncomingStarPayments(env: Env, sinceMs: number): Promise<StarsIncomingPayment[]> {
+  let calls = 0;
+  const pages = new Map<number, any[]>();
+  const page = async (offset: number): Promise<any[]> => {
+    const seen = pages.get(offset);
+    if (seen) return seen;
+    calls += 1;
+    if (calls > STAR_TXN_MAX_CALLS) throw new Error('the transaction list is too long to compare in one run');
+    const r = await api(env, 'getStarTransactions', { offset, limit: STAR_TXN_PAGE });
+    if (!r.ok) throw new Error(r.description || 'getStarTransactions failed');
+    const list: any[] = Array.isArray(r.result?.transactions) ? r.result.transactions : [];
+    pages.set(offset, list);
+    return list;
+  };
+  const paidAt = (t: any) => (Number(t?.date) || 0) * 1000;
+
+  const first = await page(0);
+  if (first.length === STAR_TXN_PAGE) {
+    if (paidAt(first[0]) > paidAt(first[first.length - 1])) {
+      // Newest first: read on until a page ends before the window.
+      let last = first;
+      for (let offset = STAR_TXN_PAGE; last.length === STAR_TXN_PAGE && paidAt(last[last.length - 1]) >= sinceMs; offset += STAR_TXN_PAGE) {
+        last = await page(offset);
+      }
+    } else {
+      // Oldest first: find where the list ends (double the offset until a page comes back short,
+      // then halve the gap), and read back from there until a page starts before the window.
+      let full = 0;
+      let short = STAR_TXN_PAGE;
+      while ((await page(short)).length === STAR_TXN_PAGE) {
+        full = short;
+        short *= 2;
+      }
+      while (short - full > STAR_TXN_PAGE) {
+        const mid = full + Math.floor((short - full) / (2 * STAR_TXN_PAGE)) * STAR_TXN_PAGE;
+        if ((await page(mid)).length === STAR_TXN_PAGE) full = mid;
+        else short = mid;
+      }
+      for (let offset = short; offset >= 0; offset -= STAR_TXN_PAGE) {
+        const p = await page(offset);
+        if (p.length > 0 && paidAt(p[0]) < sinceMs) break;
+      }
+    }
+  }
+
+  const out = new Map<string, StarsIncomingPayment>();
+  for (const list of pages.values()) {
+    for (const t of list) {
+      const source = t?.source;
+      // A payment in has a paying user and no receiver; a refund out has a receiver.
+      if (!source || source.type !== 'user' || t.receiver) continue;
+      if (source.transaction_type && source.transaction_type !== 'invoice_payment') continue;
+      if (typeof t.id !== 'string' || !t.id || paidAt(t) < sinceMs) continue;
+      out.set(t.id, { chargeId: t.id, payerTgId: Number(source.user?.id) || 0, stars: Number(t.amount) || 0, paidAt: paidAt(t) });
+    }
+  }
+  return [...out.values()];
+}
+
+function starsChargeHooks(env: Env): StarsChargeHooks {
+  const planStayed = 'the Stars went back to the payer, and the plan could not be taken back yet';
+  return {
+    isGranted: async (row) =>
+      row.purpose === 'plan' && (await readPlanGrantTrace(env, row.charge_id, [row.account_id, String(row.payer_tg_id)])) !== null,
+    releaseClaim: (row) => releaseStarsCharge(env, row.charge_id),
+    refund: async (row) => {
+      const res = await refundStarPayment(env, row.payer_tg_id, row.charge_id);
+      // Refunded, but the plan is still there: not finished, so the sweep comes back to it.
+      if (res.ok) return res.revoked === false ? { ok: false, moneyReturned: true, error: planStayed } : { ok: true };
+      if (!/CHARGE_ALREADY_REFUNDED/i.test(res.error || '')) return res;
+      // The Stars are already back with the payer. Make sure the grant went with them.
+      const revoked = await revokeStarsGrant(env, row.payer_tg_id, row.charge_id);
+      return revoked.ok ? { ok: true } : { ok: false, moneyReturned: true, error: planStayed };
+    },
+    revoke: async (row) => ((await revokeStarsGrant(env, row.payer_tg_id, row.charge_id)).ok ? { ok: true } : { ok: false, error: planStayed }),
+    alert: (text, details) => raiseStarsAlert(env, text, details),
+    onSwept: async (row, outcome) => {
+      // A refund a person asked for needs no explanation; one the sweep made after a failed grant does.
+      if (outcome === 'refunded' && !/^admin_|^manual_/.test(row.refund_reason || '')) {
+        await tellPayer(env, row.payer_tg_id, refundedText(row.stars));
+      }
+    },
+    // Without a bot token there is no list to read.
+    ...(env.BOT_TOKEN ? { listIncoming: (sinceMs: number) => listIncomingStarPayments(env, sinceMs) } : {}),
+  };
+}
+
+/** Cron entry: settles Stars charges a webhook left undecided, retries refunds, and compares with Telegram's list. */
+export async function runStarsChargeSweep(env: Env): Promise<StarsSweepSummary | null> {
+  try {
+    const summary = await sweepStarsCharges(env, starsChargeHooks(env), { reconcile: true });
+    console.log(`[Stars] charge sweep: ${JSON.stringify(summary)}`);
+    return summary;
+  } catch (err) {
+    console.error('[Stars] charge sweep failed', err);
+    return null;
+  }
+}
+
+type LegacyStarsReceipt = { stars?: number; plan?: string; accountId?: string } | null;
+
+/**
+ * Puts a refund that was sent outside the ledger (a charge older than the table) on record, from
+ * the receipt the caller read before the refund. `revoked` false means the Stars went back and the
+ * plan could not be taken back: the row is opened as `refund_due` with the Stars marked returned,
+ * so the sweep finishes the plan. Returns false when nothing could be written.
+ */
+async function recordRefundOutsideLedger(
+  env: Env,
+  payerTgId: number,
+  chargeId: string,
+  reason: string,
+  revoked: boolean,
+  receipt: LegacyStarsReceipt,
+): Promise<boolean> {
+  if (!env.DB) return false;
+  try {
+    const stars = Number(receipt?.stars);
+    let onRecord = false;
+    if (Number.isSafeInteger(stars) && stars > 0) {
+      const recorded = await recordStarsCharge(env, {
+        chargeId,
+        payerTgId,
+        accountId: receipt?.accountId ? String(receipt.accountId) : null,
+        purpose: 'plan',
+        refId: String(receipt?.plan || 'legacy'),
+        stars,
+        status: revoked ? 'refunded' : 'refund_due',
+        refundReason: reason,
+        starsReturned: true,
+      });
+      onRecord = recorded.ok;
+    }
+    // A row that was there after all must not go on saying credited.
+    await markStarsReturned(env, chargeId);
+    if (revoked) await markStarsChargeRefundedAtTelegram(env, chargeId);
+    else await requestStarsRefund(env, chargeId, reason);
+    return onRecord;
+  } catch (err) {
+    console.error(`[Stars] Charge ${chargeId} was refunded outside the ledger and could not be recorded.`, err);
+    return false;
+  }
+}
+
+export type StarsRefundResult = { ok: boolean; error?: string; status?: StarsChargeStatus; payerTgId?: number };
+
+/**
+ * A refund a person asked for (the bot's /refund, POST /telegram/refund). It goes through the
+ * ledger, so the ledger never says `credited` for Stars that went back, and it goes to the account
+ * that paid, whatever user id was typed. A charge older than the ledger is refunded directly, as
+ * before, and recorded as refunded.
+ */
+export async function refundStarsCharge(
+  env: Env,
+  userIdHint: number,
+  chargeId: string,
+  reason: string = 'manual_refund',
+): Promise<StarsRefundResult> {
+  const id = String(chargeId || '').trim();
+  if (!id) return { ok: false, error: 'chargeId is required' };
+
+  let row: StarsChargeRow | null = null;
+  try {
+    row = await readStarsCharge(env, id);
+  } catch (err) {
+    // A database that is there and did not answer is not the same as "no row": refunding now
+    // could send Stars to a typed id and leave the row saying credited. Only a missing table
+    // (a database from before the ledger) means the charge is older than the ledger.
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) {
+      console.error(`[Stars] Could not read the ledger row for charge ${id}; nothing was refunded.`, err);
+      return { ok: false, error: 'The payment ledger could not be read. Nothing was refunded. Try again in a few minutes.' };
+    }
+  }
+  if (!row) {
+    // A charge older than the ledger. Its receipt is the only record of what it gave, so it is
+    // read before Telegram is asked: with no way to read it, the refund could not be followed by
+    // taking the plan back, or even be put on record.
+    let receipt: LegacyStarsReceipt = null;
+    try {
+      receipt = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get(`stars:charge:${id}`, 'json')) as LegacyStarsReceipt) : null;
+    } catch (err) {
+      console.error(`[Stars] Could not read the receipt for charge ${id}; nothing was refunded.`, err);
+      return { ok: false, error: 'The payment records could not be read. Nothing was refunded. Try again in a few minutes.' };
+    }
+    const res = await refundStarPayment(env, userIdHint, id);
+    let returned = res.ok;
+    let revoked = res.revoked !== false;
+    if (!res.ok && /CHARGE_ALREADY_REFUNDED/i.test(res.error || '')) {
+      // The Stars went back on an earlier try. What is left is the plan.
+      returned = true;
+      revoked = (await revokeStarsGrant(env, userIdHint, id)).ok;
+    }
+    if (!returned) return { ...res, payerTgId: userIdHint };
+    const queued = await recordRefundOutsideLedger(env, userIdHint, id, reason, revoked, receipt);
+    if (revoked) return { ok: true, status: 'refunded', payerTgId: userIdHint };
+    return {
+      ok: false,
+      status: 'refund_due',
+      payerTgId: userIdHint,
+      error: queued
+        ? 'The Stars went back to the payer, and the plan could not be taken back yet. It will be tried again; you can also send the refund again in a few minutes.'
+        : 'The Stars went back to the payer. The plan could not be taken back, and that could not be put on record to be tried again: send the refund again in a few minutes.',
+    };
+  }
+
+  const payerTgId = row.payer_tg_id;
+  if (row.status === 'refunded') return { ok: true, status: 'refunded', payerTgId };
+  try {
+    const now = Date.now();
+    if (row.status === 'received') {
+      const lease = await leaseStarsCharge(env, id, 'received', now);
+      if (lease === null || !(await markStarsChargeRefundDue(env, id, lease, reason, now))) {
+        return { ok: false, status: 'received', payerTgId, error: 'This charge is still being processed. Try again in a few minutes.' };
+      }
+    } else if (row.status !== 'refund_due' && !(await requestStarsRefund(env, id, reason, now))) {
+      return { ok: false, status: row.status, payerTgId, error: 'The charge changed while the refund was being requested. Try again.' };
+    }
+    const outcome = await settleStarsRefund(env, starsChargeHooks(env), id, now);
+    if (outcome.settled) return { ok: true, status: 'refunded', payerTgId };
+    if (outcome.reason === 'busy') {
+      return { ok: false, status: 'refund_due', payerTgId, error: 'A refund for this charge is already in progress.' };
+    }
+    return {
+      ok: false,
+      status: outcome.status ?? 'refund_due',
+      payerTgId,
+      error: `${outcome.error || 'Telegram refused the refund'}. The charge is marked refund due and will be retried.`,
+    };
+  } catch (err) {
+    console.error(`[Stars] Manual refund of charge ${id} failed`, err);
+    return { ok: false, status: row.status, payerTgId, error: 'The payment ledger could not be updated. Try again in a few minutes.' };
+  }
 }
 
 export async function sendTelegramAlert(env: Env, chatId: number | string, text: string, buttonUrl?: string): Promise<boolean> {
