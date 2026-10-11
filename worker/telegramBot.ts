@@ -2210,6 +2210,12 @@ export async function sendTelegramAlert(env: Env, chatId: number | string, text:
     };
   }
   const res = await api(env, 'sendMessage', payload);
-  return Boolean(res.ok);
+  if (res.ok) return true;
+  // An alert carries the user's own words (a domain, a keyword, competitor names). One stray
+  // underscore or asterisk in them and Telegram refuses the formatted message. The alert matters
+  // more than its formatting, so it is sent again as plain text, markers showing.
+  const { parse_mode: _formatted, ...plain } = payload;
+  const again = await api(env, 'sendMessage', plain);
+  return Boolean(again.ok);
 }
 
