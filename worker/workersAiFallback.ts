@@ -1,8 +1,9 @@
 /**
  * Cloudflare Workers AI fallback for the hosted Groq chat-completions path (Track SW, SW0a-11).
  *
- * The relay calls this when hosted Groq cannot answer: no hosted key, a network failure, or an
- * upstream 5xx. It answers in the OpenAI ChatCompletion shape (JSON or SSE) and always names the
+ * The relay calls this when hosted Groq cannot answer (no hosted key, a network failure, or an
+ * upstream 5xx) and the caller asked for a fallback answer with the `x-accept-fallback` request
+ * header. It answers in the OpenAI ChatCompletion shape (JSON or SSE) and always names the
  * model that wrote the reply. It refuses any request it cannot serve faithfully, so a typed,
  * tool-using or long call gets the upstream's own error instead of free text from a smaller model.
  *
@@ -212,21 +213,16 @@ export function readBindingUsage(value: unknown): OpenAiUsage | null {
 }
 
 /**
- * Whether a reply was cut off at the token cap (`'length'`) or ended on its own (`'stop'`).
+ * Whether a reply reached the token cap (`'length'`) or not (`'stop'`).
  *
- * Rule 1, the binding reported usage: `'length'` when its completion token count reached the cap.
- * Rule 2, it reported none: nothing is guessed. `'stop'` only when the reply has fewer UTF-8
- * bytes than the cap has tokens. A token is at least one byte, so such a reply cannot have used
- * the whole cap. Any longer reply is reported as `'length'`: it may have been cut off, and
- * nothing here can show that it was not.
+ * `'length'` is reported only on evidence: the binding reported usage and its completion token
+ * count reached the cap. With no usage reported the reply is `'stop'`. Its length in characters
+ * is not evidence either way, and a guess would put a "cut short" note on complete replies.
+ * The structured answer line says which case it was (`usage: 'reported' | 'none'`), so a reader
+ * of the logs knows when `'stop'` means "ended" and when it means "not known".
  */
-export function fallbackFinishReason(
-  usage: OpenAiUsage | null,
-  replyBytes: number,
-  maxTokens: number,
-): FallbackFinishReason {
-  if (usage) return usage.completion_tokens >= maxTokens ? 'length' : 'stop';
-  return replyBytes < maxTokens ? 'stop' : 'length';
+export function fallbackFinishReason(usage: OpenAiUsage | null, maxTokens: number): FallbackFinishReason {
+  return usage && usage.completion_tokens >= maxTokens ? 'length' : 'stop';
 }
 
 /** Text carried by one binding payload: a whole result or one stream event. */
@@ -444,6 +440,8 @@ function logFallbackAnswer(
   logLine(WORKERS_AI_FALLBACK_EVENT, context, {
     stream,
     finish_reason: finishReason,
+    // 'none' means the binding reported no usage, so finish_reason 'stop' is not a measurement.
+    usage: usage ? 'reported' : 'none',
     prompt_tokens: usage ? usage.prompt_tokens : null,
     completion_tokens: usage ? usage.completion_tokens : null,
     total_tokens: usage ? usage.total_tokens : null,
@@ -612,16 +610,14 @@ export async function openFallbackSseStream(
         choices: [{ index: 0, delta, finish_reason: finishReason }],
       });
 
-      let replyBytes = 0;
       try {
         let content = first;
         while (content && !cancelled) {
-          replyBytes += promptBudgetUnits(content);
           send(chunkOf({ content }, null));
           content = await nextText();
         }
 
-        const finishReason = fallbackFinishReason(usage, replyBytes, opts.maxTokens);
+        const finishReason = fallbackFinishReason(usage, opts.maxTokens);
         if (!cancelled) {
           const last = chunkOf({}, finishReason);
           if (usage) last.usage = usage;
@@ -633,7 +629,7 @@ export async function openFallbackSseStream(
       } catch (err) {
         if (cancelled) {
           // The client left. What it received was an answer.
-          opts.onEnd?.(usage, fallbackFinishReason(usage, replyBytes, opts.maxTokens));
+          opts.onEnd?.(usage, fallbackFinishReason(usage, opts.maxTokens));
           return;
         }
         controller.error(err);
@@ -714,7 +710,7 @@ export async function runWorkersAiChatFallback(
   }
 
   const usage = readBindingUsage(aiResult);
-  const finishReason = fallbackFinishReason(usage, promptBudgetUnits(responseText), maxTokens);
+  const finishReason = fallbackFinishReason(usage, maxTokens);
   const completion: OpenAiChatCompletion = {
     id,
     object: 'chat.completion',

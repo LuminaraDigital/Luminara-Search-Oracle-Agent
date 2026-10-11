@@ -63,7 +63,7 @@ export function corsHeaders(env: Env, request: Request): Record<string, string> 
         'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
         'Access-Control-Allow-Headers':
-          'content-type, accept, authorization, x-telegram-init-data, x-provider-key, x-goog-api-key, x-goog-api-client, x-share-password, mcp-session-id, MCP-Protocol-Version, Mcp-Method, Mcp-Name',
+          'content-type, accept, authorization, x-telegram-init-data, x-provider-key, x-accept-fallback, x-goog-api-key, x-goog-api-client, x-share-password, mcp-session-id, MCP-Protocol-Version, Mcp-Method, Mcp-Name',
         'Access-Control-Expose-Headers':
           'x-quota-limit, x-quota-remaining, x-quota-reset, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset, retry-after, mcp-session-id, x-scout-receipt, x-quota-bonus, x-provider-fallback, x-provider-fallback-model, x-provider-fallback-reason',
         'Access-Control-Allow-Credentials': 'true',

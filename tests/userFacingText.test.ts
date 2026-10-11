@@ -50,6 +50,20 @@ describe('toUserFacingText', () => {
     expect(shown).not.toContain('{');
   });
 
+  it('words a refused request as refused, without blaming the key or the sign-in', () => {
+    const relayBody = JSON.stringify({
+      ok: false,
+      error: 'The hosted groq service refused this request.',
+      code: 'HOSTED_PROVIDER_REQUEST_REFUSED',
+      provider: 'groq',
+      upstreamStatus: 403,
+    });
+    const shown = toUserFacingText(new Error(`Groq inference error (503): ${relayBody}`));
+    expect(shown).toContain('refused this request');
+    expect(shown).toContain('not a problem with your sign-in');
+    expect(shown).not.toContain('{');
+  });
+
   it('never returns a non-string (safe for React children)', () => {
     const samples: unknown[] = [
       { message: { message: 'deep', code: 'x', metadata: {} }, code: 'y', metadata: {} },

@@ -9,6 +9,7 @@ import { AudioOverview, AudioOverviewTurn, Notebook, NotebookSource } from '../.
 import { aiProviderService, safeJsonParse } from '../aiProviderService';
 import { notebookService } from './notebookService';
 import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from '../../utils/untrustedContent';
+import { toUserFacingText } from '../../utils/userFacingText';
 
 export function buildAudioOverviewPrompt(sources: NotebookSource[]): string {
   const corpusText = sources
@@ -88,59 +89,44 @@ export class AudioOverviewService {
 
     const prompt = buildAudioOverviewPrompt(activeSources);
 
-    let generatedScript: AudioOverviewTurn[] = [];
     let title = `Deep Dive: ${nb.title}`;
     let summary = `Alex and Sam analyze ${activeSources.length} sources from ${nb.title}.`;
 
+    // A failure here is thrown to the caller, which shows it. Nothing is stored: an overview is
+    // a script a model wrote from these sources, or there is no overview. There is no stock
+    // script to fall back on, because it would be read out as an analysis of sources nobody read.
+    let res;
     try {
-      const res = await aiProviderService.generateWithFallback(prompt, {
+      res = await aiProviderService.generateWithFallback(prompt, {
         temperature: 0.6,
         maxTokens: 2500,
       });
-
-      const parsed = safeJsonParse<{ title?: string; summary?: string; script?: Array<{ speaker: string; text: string }> }>(
-        res.text || '',
-        {}
-      );
-
-      if (parsed.script && Array.isArray(parsed.script) && parsed.script.length > 0) {
-        if (parsed.title) title = parsed.title;
-        if (parsed.summary) summary = parsed.summary;
-        generatedScript = parsed.script.map(turn => ({
-          speaker: turn.speaker === 'Sam' ? 'Sam' : 'Alex',
-          text: turn.text,
-          durationEstimateMs: Math.max(3000, Math.round(turn.text.split(' ').length * 300)),
-        }));
-      }
     } catch (err) {
       console.error('[AudioOverview] Failed to generate script via AI', err);
+      const reason = toUserFacingText(err, 'no AI engine answered').replace(/[.\s]+$/, '');
+      throw new Error(`Could not generate the Audio Overview: ${reason}. Nothing was saved. Your sources are unchanged.`);
     }
 
-    // Fallback if parsing failed or offline
-    if (generatedScript.length === 0) {
-      generatedScript = [
-        {
-          speaker: 'Alex',
-          text: `Welcome to the Luminara Deep Dive. Today we're examining our dossier on "${nb.title}".`,
-          durationEstimateMs: 5000,
-        },
-        {
-          speaker: 'Sam',
-          text: `Right, and what's crucial here is how the analyzed sources point directly to entity authority and structured answers as the primary lever for search visibility.`,
-          durationEstimateMs: 7000,
-        },
-        {
-          speaker: 'Alex',
-          text: `Exactly. If competitors are failing to maintain clean Schema graphs, that leaves a wide-open gap for direct citation in AI answers.`,
-          durationEstimateMs: 6500,
-        },
-        {
-          speaker: 'Sam',
-          text: `To capitalize on this, we need to focus on clear, unhedged answers under our primary headings and ensure our entity links are rock-solid.`,
-          durationEstimateMs: 7000,
-        },
-      ];
+    const parsed = safeJsonParse<{ title?: string; summary?: string; script?: Array<{ speaker: string; text: string }> }>(
+      res.text || '',
+      {}
+    );
+    const turns = Array.isArray(parsed.script)
+      ? parsed.script.filter(turn => turn && typeof turn.text === 'string' && turn.text.trim())
+      : [];
+    if (turns.length === 0) {
+      throw new Error(
+        'Could not generate the Audio Overview: the AI engine did not return a usable script. Nothing was saved. Please try again.',
+      );
     }
+
+    if (parsed.title) title = parsed.title;
+    if (parsed.summary) summary = parsed.summary;
+    const generatedScript: AudioOverviewTurn[] = turns.map(turn => ({
+      speaker: turn.speaker === 'Sam' ? 'Sam' : 'Alex',
+      text: turn.text,
+      durationEstimateMs: Math.max(3000, Math.round(turn.text.split(' ').length * 300)),
+    }));
 
     const audioOverview: AudioOverview = {
       id: `audio-${Date.now()}`,

@@ -65,3 +65,40 @@ export function replyToMessage(
 export function replyIsMemorable(reply: StreamedReply, state: { stopped: boolean; skipSearch?: boolean }): boolean {
   return Boolean(reply.text) && !state.stopped && !state.skipSearch && !reply.fallback;
 }
+
+/** How much of an answer a chat insight keeps. */
+export const INSIGHT_EXCERPT_CHARS = 1500;
+
+export interface ReplyInsight {
+  question: string;
+  answerExcerpt: string;
+}
+
+/** The two things a reply does to the app. App.tsx supplies them; tests supply fakes. */
+export interface ReplyEffects {
+  /** Replace this reply's chat message with an updated one. */
+  show(update: (message: Message) => Message): void;
+  /** Keep a finished reply as a chat insight in brand memory. */
+  remember(insight: ReplyInsight): void;
+}
+
+/** Shows the reply as it stands while it is still streaming. */
+export function showReplyProgress(reply: StreamedReply, effects: Pick<ReplyEffects, 'show'>): void {
+  effects.show((message) => replyToMessage(message, reply, { done: false }));
+}
+
+/**
+ * Ends a reply. Both decisions are made here and nowhere else: the final message is built from
+ * the reply (so a fallback reply keeps its label), and the reply is remembered only when
+ * `replyIsMemorable` allows it (so a fallback reply is not).
+ */
+export function completeReply(
+  reply: StreamedReply,
+  ctx: { question: string; stopped: boolean; skipSearch?: boolean },
+  effects: ReplyEffects,
+): void {
+  effects.show((message) => replyToMessage(message, reply, { done: true, stopped: ctx.stopped }));
+  if (replyIsMemorable(reply, ctx)) {
+    effects.remember({ question: ctx.question, answerExcerpt: reply.text.slice(0, INSIGHT_EXCERPT_CHARS) });
+  }
+}

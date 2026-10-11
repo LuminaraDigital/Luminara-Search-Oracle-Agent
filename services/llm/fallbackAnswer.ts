@@ -5,12 +5,16 @@
  * so a founder always sees which model wrote what they are reading.
  *
  * A fallback reply is accepted only by a caller that asks for it (`allowFallback`) and carries
- * the marker with the text. For every other caller it is `FallbackAnswerNotAcceptedError`.
+ * the marker with the text. Only such a call asks the Worker for a fallback at all (the
+ * `x-accept-fallback` request header), so for other callers the Worker does not run its fallback
+ * model. `FallbackAnswerNotAcceptedError` is the second guard: if a marked reply reaches a caller
+ * that did not ask for one, it is an error and its text is not handed over.
  */
 import type { FallbackAnswerInfo } from '../../types';
 
 export const FALLBACK_ANSWER_LABEL = 'Answered by a fallback model';
-export const FALLBACK_ANSWER_CUT_OFF_NOTE = 'This answer may have been cut short at the length limit of the fallback model.';
+/** Shown only when the Worker reported `finish_reason: 'length'`, which it does only on the binding's own token count. */
+export const FALLBACK_ANSWER_CUT_OFF_NOTE = 'This answer reached the length limit of the fallback model and may be incomplete.';
 
 const MAX_FIELD_CHARS = 120;
 

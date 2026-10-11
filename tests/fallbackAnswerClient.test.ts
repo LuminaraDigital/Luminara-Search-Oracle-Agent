@@ -24,10 +24,15 @@ import {
   readFallbackAnswer,
 } from '../services/llm/fallbackAnswer';
 import {
+  INSIGHT_EXCERPT_CHARS,
   addStreamChunk,
+  completeReply,
   newStreamedReply,
   replyIsMemorable,
   replyToMessage,
+  showReplyProgress,
+  type ReplyEffects,
+  type ReplyInsight,
   type StreamedReply,
 } from '../services/chat/streamedReply';
 import MessageList from '../components/MessageList';
@@ -235,14 +240,89 @@ describe('the reply reducer (what App.tsx runs for every chunk)', () => {
     expect(replyIsMemorable(groq, { stopped: false, skipSearch: true })).toBe(false);
   });
 
-  it('App.tsx builds the chat message through this reducer (source-text check)', () => {
-    // App.tsx cannot be rendered in this node setup. The logic is tested above; this pins that
-    // App.tsx still calls it, and no longer assembles the message by hand.
+  describe('ending a reply: what is shown and what is remembered', () => {
+    /** Stand-ins for the two things App.tsx lets a reply do: update its message, write to brand memory. */
+    function fakeApp() {
+      const state = {
+        message: { id: 'm1', role: 'model', content: '', timestamp: 1, isStreaming: true } as Message,
+        remembered: [] as ReplyInsight[],
+      };
+      const effects: ReplyEffects = {
+        show: (update) => { state.message = update(state.message); },
+        remember: (insight) => { state.remembered.push(insight); },
+      };
+      return { state, effects };
+    }
+    const replyFrom = (chunks: StreamChunk[]) => chunks.reduce(addStreamChunk, newStreamedReply());
+    const ctx = { question: 'What should I fix first?', stopped: false };
+
+    it('a fallback reply is shown with its label and is not saved to brand memory', () => {
+      const { state, effects } = fakeApp();
+
+      completeReply(replyFrom([{ text: 'From the fallback', fallback: MARKER }]), ctx, effects);
+
+      expect(state.message.content).toBe('From the fallback');
+      expect(state.message.isStreaming).toBe(false);
+      expect(state.message.fallback).toEqual(MARKER);
+      expect(render([state.message])).toContain(`Answered by a fallback model: ${MODEL}`);
+      expect(state.remembered).toEqual([]);
+    });
+
+    it('a normal reply is saved and has no label', () => {
+      const { state, effects } = fakeApp();
+
+      completeReply(replyFrom([{ text: 'From Groq' }]), ctx, effects);
+
+      expect(state.message.content).toBe('From Groq');
+      expect(state.message.fallback).toBeUndefined();
+      expect(render([state.message])).not.toContain(FALLBACK_ANSWER_LABEL);
+      expect(state.remembered).toEqual([{ question: 'What should I fix first?', answerExcerpt: 'From Groq' }]);
+    });
+
+    it('keeps only an excerpt, and nothing for a stopped, empty or rewrite-only reply', () => {
+      const long = fakeApp();
+      completeReply(replyFrom([{ text: 'x'.repeat(INSIGHT_EXCERPT_CHARS + 500) }]), ctx, long.effects);
+      expect(long.state.remembered[0].answerExcerpt).toHaveLength(INSIGHT_EXCERPT_CHARS);
+
+      const stopped = fakeApp();
+      completeReply(replyFrom([{ text: 'Half' }]), { ...ctx, stopped: true }, stopped.effects);
+      expect(stopped.state.remembered).toEqual([]);
+      expect(stopped.state.message.content).toBe('Half');
+
+      const empty = fakeApp();
+      completeReply(newStreamedReply(), { ...ctx, stopped: true }, empty.effects);
+      expect(empty.state.message.content).toBe('*Stopped.*');
+      expect(empty.state.remembered).toEqual([]);
+
+      const rewrite = fakeApp();
+      completeReply(replyFrom([{ text: 'Plain English version' }]), { ...ctx, skipSearch: true }, rewrite.effects);
+      expect(rewrite.state.remembered).toEqual([]);
+    });
+
+    it('shows progress without ending the reply or remembering anything', () => {
+      const { state, effects } = fakeApp();
+
+      showReplyProgress(replyFrom([{ text: 'Fal', fallback: MARKER }]), effects);
+
+      expect(state.message.content).toBe('Fal');
+      expect(state.message.isStreaming).toBe(true);
+      expect(state.message.fallback).toEqual(MARKER);
+      expect(state.remembered).toEqual([]);
+    });
+  });
+
+  it('App.tsx leaves both decisions to this module (source-text check)', () => {
+    // App.tsx cannot be rendered in this node setup. The behaviour is tested above; this pins
+    // that App.tsx only wires the two effects and calls in, and decides nothing itself.
     const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8');
-    expect(app).toContain('reply = addStreamChunk(reply, chunk);');
-    expect(app).toContain('replyToMessage(m, shown, state)');
     expect(app).toContain('let reply = newStreamedReply();');
-    expect(app).not.toContain('answeredByFallback');
+    expect(app).toContain('reply = addStreamChunk(reply, chunk);');
+    expect(app.match(/showReplyProgress\(reply, replyEffects\)/g)).toHaveLength(2);
+    expect(app.match(/completeReply\(/g)).toHaveLength(1);
+    // The one write to brand memory from the chat is the effect handed to completeReply.
+    expect(app.match(/ingestChatInsight\(/g)).toHaveLength(1);
+    expect(app).not.toContain('replyIsMemorable');
+    expect(app).not.toContain('replyToMessage');
   });
 });
 

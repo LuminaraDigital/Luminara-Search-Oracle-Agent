@@ -17,10 +17,12 @@ import {
   type WorkersAiFallbackOutcome,
 } from '../worker/workersAiFallback';
 import {
+  ACCEPT_FALLBACK_HEADER,
   PROVIDERS,
   isChatCompletionsPath,
   isWorkersAiFallbackPath,
   proxyProvider,
+  upstreamErrorExcerpt,
 } from '../worker/providerRelay';
 import { corsHeaders } from '../worker/workerUtils';
 
@@ -341,15 +343,14 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
     it('says length when the reported completion tokens reached the cap', () => {
       const usage = (completion_tokens: number) => ({ prompt_tokens: 10, completion_tokens, total_tokens: 10 + completion_tokens });
-      expect(fallbackFinishReason(usage(2048), 100, 2048)).toBe('length');
-      expect(fallbackFinishReason(usage(2047), 100_000, 2048)).toBe('stop');
-      expect(fallbackFinishReason(usage(256), 100, 256)).toBe('length');
+      expect(fallbackFinishReason(usage(2048), 2048)).toBe('length');
+      expect(fallbackFinishReason(usage(2047), 2048)).toBe('stop');
+      expect(fallbackFinishReason(usage(256), 256)).toBe('length');
     });
 
-    it('does not guess without usage: stop only when the reply is too short to have used the cap', () => {
-      expect(fallbackFinishReason(null, 2047, 2048)).toBe('stop');
-      expect(fallbackFinishReason(null, 2048, 2048)).toBe('length');
-      expect(fallbackFinishReason(null, 50_000, 2048)).toBe('length');
+    it('says length only on evidence: with no usage reported it is stop', () => {
+      expect(fallbackFinishReason(null, 2048)).toBe('stop');
+      expect(fallbackFinishReason(null, 1)).toBe('stop');
     });
   });
 
@@ -469,19 +470,31 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
       expect((mockAi.run as any).mock.calls[0][1].max_tokens).toBe(2048);
       expect(result.choices[0].finish_reason).toBe('length');
-      expect(answerEvents(log)[0]).toMatchObject({ finish_reason: 'length' });
+      expect(answerEvents(log)[0]).toMatchObject({ finish_reason: 'length', usage: 'reported' });
     });
 
-    it('says length for a long reply with no usage, and stop for a short one', async () => {
-      vi.spyOn(console, 'log').mockImplementation(() => {});
-      const long: Ai = { run: vi.fn().mockResolvedValue({ response: 'x'.repeat(WORKERS_AI_FALLBACK_MAX_TOKENS) }) };
-      const short: Ai = { run: vi.fn().mockResolvedValue({ response: 'x'.repeat(WORKERS_AI_FALLBACK_MAX_TOKENS - 1) }) };
+    it('does not raise a false alarm: a long reply with no usage reported is stop, and the event says why', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      // Far longer than the cap in characters. Length in characters is not evidence of a cut.
+      const long: Ai = { run: vi.fn().mockResolvedValue({ response: 'x'.repeat(WORKERS_AI_FALLBACK_MAX_TOKENS * 10) }) };
 
-      const cut = jsonAnswer(await runWorkersAiChatFallback(long, { messages: [USER] }, { reason: 'network_error' }));
-      const whole = jsonAnswer(await runWorkersAiChatFallback(short, { messages: [USER] }, { reason: 'network_error' }));
+      const reply = jsonAnswer(await runWorkersAiChatFallback(long, { messages: [USER] }, { reason: 'network_error' }));
 
-      expect(cut.choices[0].finish_reason).toBe('length');
-      expect(whole.choices[0].finish_reason).toBe('stop');
+      expect(reply.choices[0].finish_reason).toBe('stop');
+      expect(answerEvents(log)[0]).toMatchObject({ finish_reason: 'stop', usage: 'none' });
+    });
+
+    it('does the same for a long stream with no usage reported', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const mockAi: Ai = {
+        run: vi.fn().mockResolvedValue(sseStream([JSON.stringify({ response: 'x'.repeat(WORKERS_AI_FALLBACK_MAX_TOKENS * 10) }), '[DONE]'])),
+      };
+
+      const stream = streamAnswer(await runWorkersAiChatFallback(mockAi, { messages: [USER], stream: true }, { reason: 'network_error' }));
+      const parsedChunks = sseChunks(await readAll(stream));
+
+      expect(parsedChunks[parsedChunks.length - 1].choices[0].finish_reason).toBe('stop');
+      expect(answerEvents(log)[0]).toMatchObject({ finish_reason: 'stop', usage: 'none' });
     });
 
     it('logs one structured event per answer, with no prompt text and no user id', async () => {
@@ -510,6 +523,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         upstream_status: 502,
         stream: false,
         finish_reason: 'stop',
+        usage: 'reported',
         prompt_tokens: 12,
         completion_tokens: 30,
         total_tokens: 42,
@@ -764,6 +778,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
     let kv: any;
     let validInitData: string;
     let log: ReturnType<typeof vi.spyOn>;
+    let warn: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
       kv = createMockKv();
@@ -772,7 +787,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         user: JSON.stringify({ id: 999, first_name: 'EdgeTester' }),
       });
       log = vi.spyOn(console, 'log').mockImplementation(() => {});
-      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     });
 
     afterEach(() => {
@@ -800,12 +815,24 @@ describe('Workers AI fallback (SW0a-11)', () => {
       ...extra,
     });
 
-    const hostedRequest = (providerId: string, subPath: string, body: unknown, method = 'POST') =>
+    /**
+     * A signed-in hosted-key request. It asks for a fallback answer by default, as the app's chat
+     * does; pass `acceptFallback: null` for a caller that does not ask, or another string to send
+     * that value.
+     */
+    const hostedRequest = (
+      providerId: string,
+      subPath: string,
+      body: unknown,
+      method = 'POST',
+      acceptFallback: string | null = '1',
+    ) =>
       new Request(`https://luminarasuite.com/api/providers/${providerId}${subPath}`, {
         method,
         headers: {
           'content-type': 'application/json',
           'x-telegram-init-data': validInitData,
+          ...(acceptFallback === null ? {} : { [ACCEPT_FALLBACK_HEADER]: acceptFallback }),
         },
         body: method === 'GET' ? undefined : JSON.stringify(body),
       });
@@ -826,8 +853,76 @@ describe('Workers AI fallback (SW0a-11)', () => {
         headers: { 'content-type': 'application/json', 'retry-after': '7' },
       });
 
-    const callGroq = (env: Env, body: unknown = chatBody()) =>
-      proxyProvider(hostedRequest('groq', '/chat/completions', body), env, 'groq', '/chat/completions');
+    const callGroq = (env: Env, body: unknown = chatBody(), acceptFallback: string | null = '1') =>
+      proxyProvider(hostedRequest('groq', '/chat/completions', body, 'POST', acceptFallback), env, 'groq', '/chat/completions');
+
+    /** The structured lines the relay itself writes with console.warn, parsed. */
+    const relayWarnings = (name: string) => eventsNamed(warn, name);
+
+    describe('only for a caller that asked for a fallback answer', () => {
+      it.each([null, '0', 'true', ''])('does not run the fallback when the header is %j: upstream 5xx comes back', async header => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
+        const mockAi = answeringAi();
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody(), header);
+
+        expect(res.status).toBe(503);
+        expect(res.headers.get('x-provider-fallback')).toBeNull();
+        expect(await res.json()).toEqual({ error: { message: 'upstream said 503' } });
+        expect(mockAi.run).not.toHaveBeenCalled();
+        // The fallback was not consulted, so there is no answer, refusal or failure line.
+        expect(log.mock.calls).toHaveLength(0);
+      });
+
+      it('returns the connection error after a network throw', async () => {
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error('Connection reset by peer'));
+        const mockAi = answeringAi();
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody(), null);
+
+        expect(res.status).toBe(502);
+        expect(((await res.json()) as any).error).toBe('Upstream connection failed: Connection reset by peer');
+        expect(mockAi.run).not.toHaveBeenCalled();
+        expect(log.mock.calls).toHaveLength(0);
+      });
+
+      it('returns the not-configured error when there is no hosted key', async () => {
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error('the upstream must not be called'));
+        const mockAi = answeringAi();
+
+        const res = await callGroq(
+          createTestEnv({ AI: mockAi, GROQ_API_KEY: undefined, GROQ_API_KEY_FALLBACK: undefined }),
+          chatBody(),
+          null,
+        );
+
+        expect(res.status).toBe(503);
+        expect(((await res.json()) as any).error).toMatch(/groq is not configured on the server/);
+        expect(mockAi.run).not.toHaveBeenCalled();
+        expect(log.mock.calls).toHaveLength(0);
+      });
+
+      it('does not stream a fallback either', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
+        const mockAi: Ai = { run: vi.fn().mockResolvedValue(sseStream(['{"response":"Streamed"}', '[DONE]'])) };
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ stream: true }), null);
+
+        expect(res.status).toBe(503);
+        expect(mockAi.run).not.toHaveBeenCalled();
+      });
+
+      it('answers the same request when the header is sent', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
+        const mockAi = answeringAi();
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody(), '1');
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('x-provider-fallback')).toBe('workers-ai');
+        expect(mockAi.run).toHaveBeenCalledTimes(1);
+      });
+    });
 
     describe('never on a 4xx', () => {
       it.each([400, 404, 413, 422, 429])(
@@ -861,25 +956,114 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(mockAi.run).not.toHaveBeenCalled();
       });
 
-      it.each([401, 403])(
-        'reports a hosted-key upstream %i as the hosted key being refused, not as the caller sign-in',
-        async status => {
-          globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));
-          const mockAi = answeringAi();
+      /** An upstream error body whose message quotes the request and part of a key, as some providers do. */
+      const tellingUpstream = (status: number, error: Record<string, unknown>, contentType = 'application/json') =>
+        new Response(JSON.stringify({ error }), { status, headers: { 'content-type': contentType } });
+      const LEAKY_MESSAGE = `Incorrect API key provided: gsk_primary_test_key. Request was: ${PROMPT}`;
 
-          const res = await callGroq(createTestEnv({ AI: mockAi }));
+      it('reports a hosted-key upstream 401 as the provider refusing our key, not as the caller sign-in', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(
+          tellingUpstream(401, { message: LEAKY_MESSAGE, type: 'invalid_request_error', code: 'invalid_api_key' }),
+        );
+        const mockAi = answeringAi();
 
-          // A 401 or 403 from this route makes the client stop calling every hosted provider.
-          // The upstream refusing the server's key is not the caller's session failing.
-          expect(res.status).toBe(503);
-          expect(res.headers.get('x-provider-fallback')).toBeNull();
-          const data = (await res.json()) as any;
-          expect(data.code).toBe('HOSTED_PROVIDER_KEY_REFUSED');
-          expect(data.provider).toBe('groq');
-          expect(data.upstreamStatus).toBe(status);
-          expect(mockAi.run).not.toHaveBeenCalled();
-        },
-      );
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ messages: [{ role: 'user', content: PROMPT }] }));
+
+        // A 401 or 403 from this route makes the client stop calling every hosted provider.
+        // The upstream refusing the server's key is not the caller's session failing.
+        expect(res.status).toBe(503);
+        expect(res.headers.get('x-provider-fallback')).toBeNull();
+        const data = (await res.json()) as any;
+        expect(data.code).toBe('HOSTED_PROVIDER_KEY_REFUSED');
+        expect(data.error).toMatch(/refused the hosted key/);
+        expect(data.provider).toBe('groq');
+        expect(data.upstreamStatus).toBe(401);
+        expect(JSON.stringify(data)).not.toContain('gsk_primary_test_key');
+        expect(mockAi.run).not.toHaveBeenCalled();
+
+        // The upstream's body is not dropped silently: its status and its own code and type are logged.
+        expect(relayWarnings('hosted_provider_refused')).toEqual([
+          {
+            event: 'hosted_provider_refused',
+            provider: 'groq',
+            upstream_status: 401,
+            upstream_error_code: 'invalid_api_key',
+            upstream_error_type: 'invalid_request_error',
+            upstream_error_status: null,
+          },
+        ]);
+        // Never its message: that is where a provider quotes the request or part of a key.
+        expect(everythingLogged(warn)).not.toContain(PROMPT);
+        expect(everythingLogged(warn)).not.toContain('gsk_primary_test_key');
+      });
+
+      it('reports a hosted-key upstream 403 as the request being refused, and claims no cause', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(
+          tellingUpstream(403, { message: `Content flagged: ${PROMPT}`, status: 'PERMISSION_DENIED', code: 403 }),
+        );
+        const mockAi = answeringAi();
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ messages: [{ role: 'user', content: PROMPT }] }));
+
+        expect(res.status).toBe(503);
+        const data = (await res.json()) as any;
+        expect(data.code).toBe('HOSTED_PROVIDER_REQUEST_REFUSED');
+        // It says what is known. It does not say the key was refused: a 403 can be about the request.
+        expect(data.error).toMatch(/refused this request/);
+        expect(data.error).not.toMatch(/key was refused|refused the hosted key/);
+        expect(data.error).toMatch(/not a problem with your sign-in/);
+        expect(data.upstreamStatus).toBe(403);
+        expect(mockAi.run).not.toHaveBeenCalled();
+
+        expect(relayWarnings('hosted_provider_refused')).toEqual([
+          {
+            event: 'hosted_provider_refused',
+            provider: 'groq',
+            upstream_status: 403,
+            upstream_error_code: '403',
+            upstream_error_type: null,
+            upstream_error_status: 'PERMISSION_DENIED',
+          },
+        ]);
+        expect(everythingLogged(warn)).not.toContain(PROMPT);
+      });
+
+      it('labels its own body as JSON when the upstream sent an HTML refusal', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(
+          new Response(`<html><body>Forbidden ${PROMPT}</body></html>`, { status: 403, headers: { 'content-type': 'text/html' } }),
+        );
+
+        const res = await callGroq(createTestEnv({ AI: answeringAi() }));
+
+        expect(res.status).toBe(503);
+        expect(res.headers.get('content-type')).toContain('application/json');
+        expect(((await res.json()) as any).code).toBe('HOSTED_PROVIDER_REQUEST_REFUSED');
+        expect(relayWarnings('hosted_provider_refused')[0]).toMatchObject({
+          upstream_status: 403,
+          upstream_error_code: null,
+          upstream_error_type: null,
+        });
+        expect(everythingLogged(warn)).not.toContain(PROMPT);
+      });
+
+      it('keeps only short identifiers from an upstream error body', () => {
+        expect(upstreamErrorExcerpt(JSON.stringify({ error: { code: 'rate_limit_exceeded', type: 'tokens', message: 'free text' } }))).toEqual({
+          code: 'rate_limit_exceeded',
+          type: 'tokens',
+          status: null,
+        });
+        // Free text, an over-long value and a nested object are not identifiers.
+        expect(
+          upstreamErrorExcerpt(JSON.stringify({ error: { code: `said ${PROMPT}`, type: 'x'.repeat(65), status: { a: 1 } } })),
+        ).toEqual({ code: null, type: null, status: null });
+        // A provider that puts the fields at the top level, and a body that is not JSON.
+        expect(upstreamErrorExcerpt(JSON.stringify({ code: 'forbidden', error: 'a sentence, not an object' }))).toEqual({
+          code: 'forbidden',
+          type: null,
+          status: null,
+        });
+        expect(upstreamErrorExcerpt('<html>Forbidden</html>')).toEqual({ code: null, type: null, status: null });
+      });
 
       it.each([401, 403])('passes a BYOK %i through: it is the caller key', async status => {
         globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));
@@ -890,6 +1074,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(res.status).toBe(status);
         expect(await res.json()).toEqual({ error: { message: `upstream said ${status}` } });
         expect(mockAi.run).not.toHaveBeenCalled();
+        expect(relayWarnings('hosted_provider_refused')).toHaveLength(0);
       });
 
       it('still answers 401 itself when the caller is not signed in', async () => {
@@ -1357,6 +1542,15 @@ describe('Workers AI fallback (SW0a-11)', () => {
       expect(exposed).toEqual(
         expect.arrayContaining(['x-provider-fallback', 'x-provider-fallback-model', 'x-provider-fallback-reason']),
       );
+    });
+
+    it('lets a cross-origin client send the header that asks for a fallback answer', () => {
+      const env = { WEBAPP_URL: 'https://luminarasuite.com' } as Env;
+      const request = new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
+        headers: { Origin: 'https://luminarasuite.com' },
+      });
+      const allowed = corsHeaders(env, request)['Access-Control-Allow-Headers'].split(',').map(h => h.trim());
+      expect(allowed).toContain(ACCEPT_FALLBACK_HEADER);
     });
   });
 });

@@ -57,6 +57,8 @@ export class GroqProvider extends BaseAIProvider {
     const startTime = Date.now();
     const messages = buildChatMessages(prompt, options);
     const models = groqModelCandidates(options?.model);
+    // Only a caller that accepts a fallback reply asks the Worker for one.
+    const acceptFallback = Boolean(options?.allowFallback);
 
     const doFetch = async (apiKey: string, model: string) => {
       const body: any = {
@@ -78,7 +80,7 @@ export class GroqProvider extends BaseAIProvider {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
-      }, { userKey: apiKey });
+      }, { userKey: apiKey, acceptFallback });
     };
 
     let response: Response | null = null;
@@ -151,6 +153,8 @@ export class GroqProvider extends BaseAIProvider {
 
     const messages = buildChatMessages(prompt, options);
     const models = groqModelCandidates(options?.model);
+    // Only a caller that accepts a fallback reply asks the Worker for one.
+    const acceptFallback = Boolean(options?.allowFallback);
 
     let response: Response | null = null;
     let lastErrText = '';
@@ -173,7 +177,7 @@ export class GroqProvider extends BaseAIProvider {
           Authorization: `Bearer ${key}`,
         },
         body: JSON.stringify(body),
-      }, { userKey: key });
+      }, { userKey: key, acceptFallback });
 
       const fallbackKey = configService.getGroqFallbackKey();
       if ((response.status === 429 || response.status === 402 || response.status === 401) && fallbackKey && key !== fallbackKey) {
@@ -185,7 +189,7 @@ export class GroqProvider extends BaseAIProvider {
             Authorization: `Bearer ${fallbackKey}`,
           },
           body: JSON.stringify(body),
-        }, { userKey: fallbackKey });
+        }, { userKey: fallbackKey, acceptFallback });
       }
 
       if (response.ok && response.body) break;

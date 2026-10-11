@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS } from './types';
 import { geminiService, toChatHistory } from './services/geminiService';
-import { addStreamChunk, newStreamedReply, replyIsMemorable, replyToMessage } from './services/chat/streamedReply';
+import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
@@ -705,9 +705,17 @@ const App: React.FC = () => {
       // One reply per send. Its text, sources, tool runs and fallback marker come only from the
       // chunks of this send (services/chat/streamedReply.ts).
       let reply = newStreamedReply();
-      const showReply = (state: { done: boolean; stopped?: boolean }) => {
-        const shown = reply;
-        setMessages((prev) => prev.map((m) => (m.id === modelId ? replyToMessage(m, shown, state) : m)));
+      // What a reply may do to the app. What it shows and whether it is remembered is decided
+      // in streamedReply.ts, not here.
+      const replyEffects: ReplyEffects = {
+        show: (update) => setMessages((prev) => prev.map((m) => (m.id === modelId ? update(m) : m))),
+        remember: (insight) => {
+          try {
+            brandMemoryVaultService.ingestChatInsight({ ...insight, dna });
+          } catch {
+            /* memory optional */
+          }
+        },
       };
       let firstToken = true;
       let usedServerOracle = false;
@@ -757,7 +765,7 @@ const App: React.FC = () => {
               setProgress(60);
             }
             reply = addStreamChunk(reply, { text: ev.text });
-            showReply({ done: false });
+            showReplyProgress(reply, replyEffects);
           }
           if (ev.type === 'done' && !ev.ok && !usedServerOracle) {
             softFail = true;
@@ -792,25 +800,17 @@ const App: React.FC = () => {
               setAgentStep('Writing your answer');
               setProgress(60);
             }
-            showReply({ done: false });
+            showReplyProgress(reply, replyEffects);
           }
         }
       }
 
       setProgress(100);
-      const stopped = controller.signal.aborted;
-      showReply({ done: true, stopped });
-      if (replyIsMemorable(reply, { stopped, skipSearch: opts.skipSearch })) {
-        try {
-          brandMemoryVaultService.ingestChatInsight({
-            question: content,
-            answerExcerpt: reply.text.slice(0, 1500),
-            dna,
-          });
-        } catch {
-          /* memory optional */
-        }
-      }
+      completeReply(
+        reply,
+        { question: content, stopped: controller.signal.aborted, skipSearch: opts.skipSearch },
+        replyEffects,
+      );
     } catch (error: any) {
       console.error('Luminara Search Error:', error);
       const reason = error?.message || 'Unknown error';
