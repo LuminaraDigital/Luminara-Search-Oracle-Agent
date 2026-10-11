@@ -925,11 +925,9 @@ export async function createStarsInvoice(plan: string): Promise<string> {
   return data.url as string;
 }
 
+/** The Worker decides the buyer, the price, the receipt email and both return URLs. The client names the plan only. */
 export async function createStripeCheckout(input: {
   planId: string;
-  customerEmail?: string;
-  successUrl?: string;
-  cancelUrl?: string;
 }): Promise<{ ok: boolean; checkoutUrl?: string; sessionId?: string; error?: string }> {
   try {
     const res = await workerFetchWithAuthRetry('/api/stripe/create-checkout-session', {

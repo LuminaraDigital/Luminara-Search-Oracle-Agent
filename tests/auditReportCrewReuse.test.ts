@@ -22,6 +22,8 @@ import {
   serpRowsToCitationGroups,
 } from '../services/audit/reuseCrewEvidence';
 import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
+import { REMOVED_TABLE_NOTE, REPORT_TABLES, isReportColumn, readTableAt } from '../services/audit/reportColumnGate';
+import { OracleMode } from '../types';
 import { citationIntegrityService } from '../services/audit/citationIntegrityService';
 import { publicApisEnrichmentService } from '../services/enrichment/publicApisEnrichmentService';
 import { writingQualityService } from '../services/audit/writingQualityService';
@@ -32,6 +34,7 @@ import { siteEvidencePackService } from '../services/scraping/siteEvidencePack';
 import { unifiedScraperService } from '../services/scraping/unifiedScraper';
 import { localSerpService } from '../services/search/localSerpService';
 import { tavilyService } from '../services/search/tavilyService';
+import { vfsMemoryService } from '../services/vfs/vfsMemoryService';
 import { generateAuditReportUnlessDegraded } from '../components/audit/InstantAuditView';
 
 const dna: BusinessDNA = {
@@ -277,6 +280,209 @@ describe('generateAuditReport crew evidence', () => {
     expect(result.empiricalSummary?.citationRatePercent).toBeNull();
     expect(result.empiricalSummary?.entityClarityScore).toBeNull();
     expect(prompt()).toContain('via jina');
+  });
+
+  // SW0a-7: the report prompt asks for no column an evidence block cannot fill.
+  it('asks the model for no rank, impact, rich result, AI Overview or trust signal column', async () => {
+    await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+    const rules = prompt().slice(prompt().indexOf('Strict Formatting Guidelines:'));
+    expect(rules).toContain('## AI & Search Visibility Radar');
+
+    for (const label of ['Expected Impact', 'Est. Organic Rank', 'Rich Results', 'AI Overview Status', 'Trust Signal Strength']) {
+      expect(rules.toLowerCase(), label).not.toContain(label.toLowerCase());
+    }
+    const requestedColumns = rules
+      .split('\n')
+      .filter((line) => line.trim().startsWith('|'))
+      .flatMap((line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim()));
+    expect(requestedColumns).toEqual([
+      'Task', 'Plain issue', 'Priority',
+      'Query', 'Intent', 'Brand Cited (Yes/No)', 'Key Competitors', 'Citation Status (Cited/Not Cited/Not Measured)',
+      'Entity', 'AI Perception (Tone/Claims)', 'Top Cited Page Types', 'Content Advantage (vs You)',
+    ]);
+    expect(requestedColumns.filter((column) => !isReportColumn(column))).toEqual([]);
+  });
+
+  /** Header cells of every table in a prompt. */
+  function tableHeaders(text: string): string[] {
+    const lines = text.split('\n');
+    const headers: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const table = readTableAt(lines, i);
+      if (table) {
+        headers.push(...table.headers);
+        i = table.end - 1;
+      }
+    }
+    return headers;
+  }
+
+  /** What the old template asked for, in the words it used. */
+  function expectNoOldTemplate(systemPrompt: string): void {
+    const twelve = Object.values(REPORT_TABLES).flat();
+    expect(tableHeaders(systemPrompt)).toEqual(twelve);
+    for (const cell of ['| Impact |', 'Organic rank', '| AI Overview |', 'Trust signals', 'Low/Med/High |']) {
+      expect(systemPrompt, cell).not.toContain(cell);
+    }
+    expect(systemPrompt).not.toMatch(/\(directional estimate\)/i);
+    expect(systemPrompt).not.toMatch(/label\s+"\([^)]*estimate\)"/i);
+    expect(systemPrompt).not.toMatch(/\[Rank or not measured\]/i);
+    expect(systemPrompt).toContain('Add no other column and no other table to an audit');
+  }
+
+  // The system prompt is the template the model reads first. Assert on the one actually sent.
+  it('sends the report call a system prompt with no rank, impact, AI Overview or trust signal column', async () => {
+    await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+    const options = generate.mock.calls[0]?.[1] as { systemPrompt?: string };
+    expect(typeof options.systemPrompt).toBe('string');
+    expectNoOldTemplate(String(options.systemPrompt));
+  });
+
+  it('sends the chat call the same template, for both chat paths', async () => {
+    // Chat with search: one generate call.
+    generate.mockClear();
+    await geminiService.queryWithSearch('audit example.com', dna, { skipSearch: true });
+    const asked = generate.mock.calls[0]?.[1] as { systemPrompt?: string };
+    expectNoOldTemplate(String(asked.systemPrompt));
+
+    // Streaming chat: the stream call.
+    const stream = vi.spyOn(aiProviderService, 'streamWithFailover').mockImplementation(async function* () {
+      yield { text: 'ok' };
+    } as never);
+    for await (const _chunk of geminiService.streamQuery('audit example.com', OracleMode.FLASH, dna, { skipSearch: true })) {
+      // drain
+    }
+    const streamed = stream.mock.calls[0]?.[1] as { systemPrompt?: string };
+    expect(stream).toHaveBeenCalledTimes(1);
+    expectNoOldTemplate(String(streamed.systemPrompt));
+  });
+
+  it('does not invite the model to add figures labelled as estimates', async () => {
+    await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+    const rules = prompt().slice(prompt().indexOf('Strict Formatting Guidelines:'));
+    expect(rules).not.toContain('(estimate)');
+    expect(rules).not.toMatch(/label every estimate/i);
+    expect(rules).toContain('Do not add figures of your own.');
+  });
+
+  it('puts no cite-worthiness value or formula in the prompt and marks the trust block estimated', async () => {
+    await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+    const text = prompt();
+    const block = text.slice(text.indexOf('AEO TRUST PACK'));
+    expect(text).toContain('[ESTIMATED: AEO TRUST PACK, PRELIMINARY]');
+    expect(block).toContain('Cite-worthiness: not measured at this stage.');
+    expect(text).not.toMatch(/cite-?worthiness\s*[:=]\s*\d/i);
+    expect(text).not.toContain('Formula:');
+    expect(text).not.toContain('0.30*securityTrust');
+  });
+
+  it('returns a report with no rank or impact column even when the model writes them', async () => {
+    generate.mockResolvedValue({
+      text: [
+        '# Luminara: Will AI mention Example?',
+        '',
+        '## 3. Fix list',
+        '| Task | Plain issue | Expected Impact | Priority |',
+        '|------|-------------|-----------------|----------|',
+        '| Add Organization schema | AI cannot tell who you are | +40% citations | High |',
+        '',
+        '## AI & Search Visibility Radar',
+        '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Est. Organic Rank | Rich Results | AI Overview Status | Citation Status (Cited/Not Cited/Not Measured) |',
+        '|---|---|---|---|---|---|---|---|',
+        '| what is example.com | informational | Yes | none measured | Position 3 | FAQ snippet | Active | Cited |',
+        '',
+        '## Competitor Reality Map',
+        '| Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) | Trust Signal Strength (Low/Med/High) |',
+        '|---|---|---|---|---|',
+        '| Example | Clear | Homepage | None | Medium-High |',
+      ].join('\n'),
+    } as never);
+
+    const remember = vi.spyOn(vfsMemoryService, 'ingestAuditAsResource');
+    const result = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+
+    // The copy kept in memory is gated too.
+    expect(remember).toHaveBeenCalled();
+    for (const call of remember.mock.calls) {
+      for (const invented of ['Est. Organic Rank', 'Expected Impact', 'Trust Signal Strength', 'Position 3', 'Medium-High']) {
+        expect(String(call[0])).not.toContain(invented);
+      }
+    }
+
+    const lines = result.text.split('\n');
+    const headerCells = lines
+      .filter((line, index) => line.trim().startsWith('|') && (lines[index + 1] || '').includes('---'))
+      .flatMap((line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim()));
+    expect(headerCells).toHaveLength(12);
+    expect(headerCells.filter((cell) => /rank|impact|rich result|ai overview|trust signal/i.test(cell))).toEqual([]);
+    for (const invented of ['+40% citations', 'Position 3', 'FAQ snippet', 'Active', 'Medium-High']) {
+      expect(result.text).not.toContain(invented);
+    }
+    expect(result.text).toContain('Add Organization schema');
+    expect(result.text).toContain('what is example.com');
+  });
+
+  // Review 3, 1: the report offers no measured table. The model writes every row
+  // of a table, so a table in the report is never measured, analytics or not.
+  describe('measured traffic', () => {
+    const metric = (current: number, previous: number) => ({ current, previous, changePct: null });
+    const readyTraffic = {
+      status: 'ready',
+      domain: 'example.com',
+      period: { startAt: 1, endAt: 2, days: 30 },
+      visitors: metric(120, 100),
+      pageviews: metric(300, 280),
+      visits: metric(150, 130),
+      aiAssistantReferrals: { total: 7, previousTotal: 4, changePct: null, bySource: [] },
+      searchReferrals: { total: 40, previousTotal: 38, changePct: null, bySource: [] },
+      topReferrers: [],
+      topPages: [],
+      fetchedAt: 1,
+    };
+    const modelTable = [
+      '| Measured traffic | This period (measured) | Previous period (measured) |',
+      '|---|---|---|',
+      '| Visitors | 120 | 100 |',
+      '| Est. organic rank | #3 | #7 |',
+    ];
+    const modelReport = ['# Luminara: Will AI mention Example?', '', '## 2. Plain verdict', ...modelTable].join('\n');
+    const rules = () => prompt().slice(prompt().indexOf('Strict Formatting Guidelines:'));
+
+    it('gives the model the analytics block and invites no traffic table', async () => {
+      vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue(readyTraffic as never);
+      await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+
+      expect(prompt()).toContain('Visitors: 120 (previous 100)');
+      expect(rules()).toContain('Cite it in "## 2. Plain verdict" as measured, in a sentence. Do not put it in a table');
+      expect(rules()).not.toMatch(/This period|Previous period|\| Measured traffic|use exactly these columns/i);
+      // The only table headers the prompt prints are the twelve.
+      expect(rules().split('\n').filter((line) => line.trim().startsWith('|'))).toHaveLength(3);
+    });
+
+    it('leaves a model-written "measured" table out of the report and of the memory copy, analytics or not', async () => {
+      const remember = vi.spyOn(vfsMemoryService, 'ingestAuditAsResource');
+      generate.mockResolvedValue({ text: modelReport } as never);
+
+      vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue(readyTraffic as never);
+      const withAnalytics = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+      // The measured data still reaches the screen as data, for the tracking card.
+      expect(withAnalytics.trafficImpact?.status).toBe('ready');
+
+      vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue({ status: 'not_configured', domain: 'example.com' } as never);
+      const without = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
+      const lastPrompt = String(generate.mock.calls[generate.mock.calls.length - 1]?.[0] || '');
+      expect(lastPrompt).toContain('No measured traffic data is present above. State no traffic figure.');
+      expect(lastPrompt).not.toContain('Visitors: 120');
+
+      const texts = [withAnalytics.text, without.text, ...remember.mock.calls.map((call) => String(call[0]))];
+      expect(texts.length).toBeGreaterThanOrEqual(4);
+      for (const text of texts) {
+        expect(text).toContain(REMOVED_TABLE_NOTE);
+        for (const gone of ['This period (measured)', 'Est. organic rank', '#3', '| Visitors | 120 | 100 |']) {
+          expect(text, gone).not.toContain(gone);
+        }
+      }
+    });
   });
 
   it('passes crew pages and SERP rows from Instant Audit into the report', async () => {
