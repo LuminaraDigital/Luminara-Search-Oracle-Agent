@@ -2,10 +2,13 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // Each case starts git and node processes, which can take seconds apiece on a busy machine.
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
+// Cases that block on child processes back to back never let the event loop turn, and vitest
+// then reports a timeout of its own messaging. One turn between cases is enough.
+afterEach(() => new Promise<void>((done) => setImmediate(done)));
 
 /**
  * `scripts/check-secrets.mjs --all` must scan the working tree it is run in, not the checkout

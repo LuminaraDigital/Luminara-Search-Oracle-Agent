@@ -3,11 +3,14 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { evaluateReleaseMerge, firstParentLine, readCommits, readReleaseFacts } from '../scripts/check-release-merge.mjs';
 
 // Each case starts git or node processes, which can take seconds apiece on a busy machine.
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
+// Cases that block on child processes back to back never let the event loop turn, and vitest
+// then reports a timeout of its own messaging. One turn between cases is enough.
+afterEach(() => new Promise<void>((done) => setImmediate(done)));
 
 /**
  * The production deploy runs scripts/check-release-merge.mjs before it migrates or deploys.
@@ -225,7 +228,9 @@ describe('release merge check: each condition failing alone', () => {
     expect(facts.mainTip).toBe(sha.nextRelease);
     expect(verdict.failed).toEqual(['d']);
     expect(verdict.reason).toMatch(/Condition \(d\) failed: .*not the current tip of main/);
-    expect(verdict.reason).toMatch(/What to do: use the run of the newest release/);
+    // Both ways main can have moved, each with its own way out.
+    expect(verdict.reason).toMatch(/What to do: if the tip of main is a newer release, use that release's run/);
+    expect(verdict.reason).toMatch(/for any other reason .* merge main back into staging with a pull request, let staging deploy, and release again/);
   });
 });
 

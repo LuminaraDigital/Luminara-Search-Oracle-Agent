@@ -2,10 +2,13 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // The cases that run the hook start git, sh, node and npm, which can take seconds apiece on a busy machine.
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
+// Cases that block on child processes back to back never let the event loop turn, and vitest
+// then reports a timeout of its own messaging. One turn between cases is enough.
+afterEach(() => new Promise<void>((done) => setImmediate(done)));
 
 /**
  * .githooks/pre-push refuses a direct push to main. Its refusal must not tell the reader how to

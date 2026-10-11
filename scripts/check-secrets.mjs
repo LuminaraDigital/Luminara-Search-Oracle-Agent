@@ -5,7 +5,7 @@
  *
  * Exit 0 = clean. Exit 1 = secrets found (or scan error).
  */
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,14 +18,18 @@ const mode = process.argv.includes('--staged')
     : 'staged';
 
 /**
- * The tree to scan. `--all` scans the working tree the command is run in (its git top level).
+ * The repository to check: the git top level of the directory the command is run in.
  * A hook directory can be shared by several worktrees (an absolute core.hooksPath), and then
- * this file lives in one checkout while another is being pushed: the tree to check is the one
- * being pushed, not the one this file happens to be in. Outside a git work tree, and for
- * `--staged`, the root is this script's own checkout, as it always was.
+ * this file lives in one checkout while another is being committed or pushed. The tree to check
+ * is the one being committed or pushed, not the one this file happens to be in. Outside a git
+ * work tree the root is this script's own checkout.
+ *
+ * `--all` reads the working files of that tree. `--staged` reads the staged content of each
+ * staged path (the blob `git show :<path>` prints), so what is checked is exactly what the
+ * commit will hold.
+ * A staged path whose content cannot be read fails the check; it is never skipped.
  */
 function resolveScanRoot() {
-  if (mode !== 'all') return scriptRoot;
   try {
     const top = execSync('git rev-parse --show-toplevel', {
       cwd: process.cwd(),
@@ -97,8 +101,10 @@ function git(cmd) {
 
 function listFiles() {
   if (mode === 'staged') {
-    const out = git('git diff --cached --name-only --diff-filter=ACMR');
-    return out ? out.split(/\r?\n/).filter(Boolean) : [];
+    // -z gives exact names separated by NUL. Without it git quotes unusual names, and a quoted
+    // name is not a path anything can be read from.
+    const out = git('git diff --cached --name-only --diff-filter=ACMR -z');
+    return out ? out.split('\0').filter(Boolean) : [];
   }
   // Tracked + untracked, respecting .gitignore
   const tracked = git('git ls-files');
@@ -121,12 +127,56 @@ function relNorm(p) {
   return p.split(/[/\\]/).join(sep);
 }
 
+/**
+ * The content the commit will hold for each staged path: the staged blobs, not the working
+ * files. One git process reads them all (`git cat-file --batch` over `:<path>` names, the same
+ * staged content `git show :<path>` prints). Returns a Map of path to Buffer, or to null when
+ * git could not hand that path's content over.
+ */
+function readStagedBlobs(paths) {
+  const blobs = new Map(paths.map((p) => [p, null]));
+  // One name per line: a name with a line feed in it cannot be asked for, and stays unread.
+  const names = paths.filter((p) => !p.includes('\n'));
+  if (names.length === 0) return blobs;
+  let out;
+  try {
+    out = execFileSync('git', ['cat-file', '--batch'], {
+      cwd: root,
+      input: names.map((p) => `:${p}\n`).join(''),
+      maxBuffer: 1024 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch {
+    return blobs;
+  }
+  let offset = 0;
+  for (const name of names) {
+    const lineEnd = out.indexOf(0x0a, offset);
+    if (lineEnd < 0) break;
+    const header = /^[0-9a-f]{40,64} blob (\d+)$/.exec(out.subarray(offset, lineEnd).toString('utf8'));
+    if (!header) {
+      offset = lineEnd + 1; // "<name> missing", or not a file's content: one line, nothing follows
+      continue;
+    }
+    const start = lineEnd + 1;
+    const end = start + Number(header[1]);
+    if (end > out.length) break;
+    blobs.set(name, out.subarray(start, end));
+    offset = end + 1; // one line feed follows each object
+  }
+  return blobs;
+}
+
 const findings = [];
 const files = listFiles();
+const toScan = [];
 
 for (const rel of files) {
-  const abs = resolve(root, rel);
-  if (!existsSync(abs) || !statSync(abs).isFile()) continue;
+  // A staged path is checked whether or not a working file exists for it.
+  if (mode !== 'staged') {
+    const abs = resolve(root, rel);
+    if (!existsSync(abs) || !statSync(abs).isFile()) continue;
+  }
 
   if (FORBIDDEN_NAME_RE.test(relNorm(rel)) && !ALLOW_PATH_RE.test(relNorm(rel))) {
     findings.push({ file: rel, label: 'forbidden secret filename', snippet: rel });
@@ -134,12 +184,27 @@ for (const rel of files) {
   }
 
   if (ALLOW_PATH_RE.test(relNorm(rel)) || isBinaryPath(rel)) continue;
+  toScan.push(rel);
+}
 
+const stagedBlobs = mode === 'staged' ? readStagedBlobs(toScan) : null;
+
+for (const rel of toScan) {
+  const abs = resolve(root, rel);
   let text;
-  try {
-    text = readFileSync(abs, 'utf8');
-  } catch {
-    continue;
+  if (stagedBlobs) {
+    const blob = stagedBlobs.get(rel);
+    if (!blob) {
+      findings.push({ file: rel, label: 'staged content could not be read, so it was not checked', snippet: 'unreadable' });
+      continue;
+    }
+    text = blob.toString('utf8');
+  } else {
+    try {
+      text = readFileSync(abs, 'utf8');
+    } catch {
+      continue;
+    }
   }
   // Skip huge generated lockfiles content scan already allowlisted; skip empty
   if (!text || text.length > 2_000_000) continue;

@@ -3,11 +3,14 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { countLicenseKeys, decodeInput, LICENSE_KEY_PREFIX, recordOf } from '../scripts/count-license-keys.mjs';
 
 // The cases that run the script start node processes, which can take seconds apiece on a busy machine.
 vi.setConfig({ testTimeout: 120_000 });
+// Cases that block on child processes back to back never let the event loop turn, and vitest
+// then reports a timeout of its own messaging. One turn between cases is enough.
+afterEach(() => new Promise<void>((done) => setImmediate(done)));
 
 /**
  * scripts/count-license-keys.mjs backs plan rule 2.15: the number of licence keys that are not

@@ -46,7 +46,11 @@ function apiMessage(doc) {
 }
 
 const WAIT = 'Wait for staging to finish, then use "Re-run failed jobs" on this run.';
-const GET_GREEN = 'Get a green staging deploy of this commit (re-run it on staging), or release a newer staging commit.';
+// Re-running an old staging run puts that run's older code back on staging, over whatever is there now.
+const GET_GREEN =
+  'If staging is still at this commit, re-run its staging deploy until it is green, then re-run this job. ' +
+  'If staging has moved on since, do not re-run the old staging run (it would put older code back on staging): ' +
+  'release the current tip of staging instead.';
 
 /**
  * From the runs listing of the deploy workflow, pick the newest run for a push of `sha` to

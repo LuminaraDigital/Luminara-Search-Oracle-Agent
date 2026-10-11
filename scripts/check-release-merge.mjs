@@ -167,8 +167,11 @@ export function evaluateReleaseMerge(facts) {
       condition: 'd',
       message:
         `Condition (d) failed: commit ${short(commit)} is not the current tip of main (${short(mainTip)}). ` +
-        'This is a stale run of an older release, and it must not deploy over a newer one. ' +
-        'What to do: use the run of the newest release. To go back to older code, use "wrangler rollback", not this workflow.',
+        'main has moved since this release was merged, and an older commit must not deploy over a newer one. ' +
+        'What to do: if the tip of main is a newer release, use that release\'s run. ' +
+        'If main moved for any other reason (something was merged or pushed straight to main), merge main back into staging ' +
+        'with a pull request, let staging deploy, and release again. ' +
+        'To go back to older code, use "wrangler rollback", not this workflow.',
     });
   }
   if (problems.length > 0) {

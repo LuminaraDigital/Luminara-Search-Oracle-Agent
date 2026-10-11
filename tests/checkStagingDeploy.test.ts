@@ -1,11 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEPLOY_WORKFLOW_PATH, judgeStagingJob, pickStagingRun, STAGING_JOB_NAME } from '../scripts/check-staging-deploy.mjs';
 
 // The last group starts node processes, which can take seconds apiece on a busy machine.
 vi.setConfig({ testTimeout: 120_000 });
+// Cases that block on child processes back to back never let the event loop turn, and vitest
+// then reports a timeout of its own messaging. One turn between cases is enough.
+afterEach(() => new Promise<void>((done) => setImmediate(done)));
 
 /**
  * scripts/check-staging-deploy.mjs: before production migrates or deploys, the commit it is
@@ -87,6 +90,19 @@ describe('staging deploy check: which run counts (the runs listing)', () => {
     const verdict = pickStagingRun(runs(), SHA);
     expect(verdict.ok).toBe(false);
     expect(verdict.reason).toMatch(/No run of the deploy workflow was found/);
+  });
+
+  it('a refusal never tells the reader to re-run an old staging run over a staging that has moved on', () => {
+    const reasons = [
+      pickStagingRun(runs(run({ conclusion: 'failure' })), SHA).reason,
+      pickStagingRun(runs(), SHA).reason,
+      judgeStagingJob(jobs(job({ conclusion: 'failure' })), SHA, RUN_ID).reason,
+    ];
+    for (const reason of reasons) {
+      expect(reason).toMatch(/If staging is still at this commit, re-run its staging deploy/);
+      expect(reason).toMatch(/If staging has moved on since, do not re-run the old staging run/);
+      expect(reason).toMatch(/release the current tip of staging instead/);
+    }
   });
 
   it('refuses a successful run that is for a different commit', () => {
