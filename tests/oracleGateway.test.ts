@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
-import { executeOracleGatewayTask } from '../worker/oracleGateway';
+import { describe, expect, it } from 'vitest';
+import { GATEWAY_NO_RECEIPT_NOTE, executeOracleGatewayTask } from '../worker/oracleGateway';
 import type { Env } from '../worker/env';
 import type { HostedIdentity } from '../worker/userTypes';
+import { createSqliteD1 } from './helpers/sqliteD1';
 
 describe('worker/oracleGateway', () => {
   it('returns 400 when targetDomain is invalid', async () => {
@@ -54,30 +55,25 @@ describe('worker/oracleGateway', () => {
     expect(body.targetDomain).toBe('example.com');
     expect(body.healthScore).toBeNull();
     expect(body.evidence.measurementStatus).toBe('not_measured');
+    // Nothing is fetched, so the response names no scraped URL and no source count.
+    expect(body.evidence).toEqual({ measurementStatus: 'not_measured' });
+    expect(JSON.stringify(body)).not.toMatch(/scrapedUrl|sourcesCount/);
     expect(body.verdict).toContain('not_measured');
     expect(body.oneMoveThisWeek).toContain('probe crawl');
     expect(body.diagnostics.length).toBeGreaterThan(0);
   });
 
-  it('issues an Ed25519 Trust Receipt when trust receipts are enabled', async () => {
-    // Generate valid Ed25519 keypair in JWK format
+  it('issues no Trust Receipt, and says so, even with receipts on, a signing key and a signed-in user', async () => {
+    // Everything the old code needed to mint one: the flag, a valid Ed25519 key, D1 and a user.
     const keyPair = await crypto.subtle.generateKey('Ed25519', true, ['sign', 'verify']);
     const jwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
-
-    const mockDb = {
-      prepare: vi.fn(() => ({
-        bind: vi.fn(() => ({
-          first: vi.fn(async () => null),
-          run: vi.fn(async () => ({ success: true })),
-        })),
-      })),
-    };
+    const db = createSqliteD1();
 
     const env = {
       GROQ_API_KEY: 'gsk_mock',
       TRUST_RECEIPTS_ENABLED: 'true',
       RECEIPT_SIGNING_KEY: JSON.stringify(jwk),
-      DB: mockDb,
+      DB: db,
     } as unknown as Env;
 
     const user: HostedIdentity = {
@@ -93,14 +89,19 @@ describe('worker/oracleGateway', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      ok: boolean;
-      receiptId?: string;
-      receiptSignature?: string;
-    };
+    const body = (await res.json()) as Record<string, unknown> & { diagnostics: string[] };
 
     expect(body.ok).toBe(true);
-    expect(body.receiptId).toMatch(/^rcpt_/);
-    expect(typeof body.receiptSignature).toBe('string');
+    expect(body.receiptIssued).toBe(false);
+    expect(body.receiptNote).toBe(GATEWAY_NO_RECEIPT_NOTE);
+    expect(body).not.toHaveProperty('receiptId');
+    expect(body).not.toHaveProperty('receiptSignature');
+    expect(body.diagnostics.join('\n')).toContain('No Trust Receipt issued');
+    expect(body.diagnostics.join('\n')).not.toContain('Minted');
+
+    // The route checked nothing, so nothing is stored at any level.
+    const { results } = await db.prepare('SELECT level FROM trust_receipts').all<{ level: string }>();
+    expect(results.filter((r) => r.level === 'worker_verified')).toEqual([]);
+    expect(results).toEqual([]);
   });
 });

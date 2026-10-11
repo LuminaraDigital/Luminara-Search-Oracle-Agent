@@ -109,7 +109,6 @@ export interface TonOrder {
   confirmedAt?: number;
   txHash?: string;
   asset?: 'TON' | 'USDT' | 'LORA';
-  burnAmount?: string;
   jettonMaster?: string;
   userJettonWallet?: string;
 }

@@ -32,6 +32,7 @@ leaked internals).
 | `POST /ton/invoice`, `/ton/verify` | worker/tonAttestationService | none | TON payments |
 | `POST /license/activate` | worker/licenseService | session | License activation |
 | `POST /admin/license/generate`, `/admin/license/seed` | worker/licenseService | admin | License ops |
+| `POST /admin/trust/revoke-gateway-receipts` | worker/trustReceipts.ts | admin | Revokes receipts whose signed method is `gateway_oracle_audit_v1` (issued by the gateway route before it stopped issuing). Up to 10 per call; returns `{ revoked, remaining }`. Idempotent. Works while `TRUST_RECEIPTS_ENABLED` is off. Each run writes one `admin.trust.revoke_gateway_receipts` audit entry. 503 `TRUST_RECEIPTS_TABLE_MISSING` when migration 0020 is not applied. It marks rows and their public pages; a copy saved earlier keeps a valid signature until the signing key is rotated |
 | `POST /admin/skills/:slug/versions`, `POST /admin/skills/:slug/enable`, `GET /admin/skills/:slug` | worker/agentSkills.ts | admin | Agent skill versions/enable |
 | `POST /agent/attest` | worker/attestationService.ts | none | Agent attestation |
 | `POST /sentinel/register`, `/sentinel/status` | worker/sentinel.ts | session | Drift Sentinel targets |
@@ -49,6 +50,7 @@ leaked internals).
 | `* /oauth/mcp/*` | worker/mcpOAuth.ts | oauth/token | OAuth 2.1 + PKCE for MCP |
 | `GET,POST /memory/facts` | worker/memoryService.ts | session | Hosted memory facts |
 | `POST /pagespeed` | worker/pagespeedRoute.ts | session | Hosted PageSpeed |
+| `POST /deploy/readback` | worker/deployReadback.ts | session | Deploy read-back for the CMS deploy screen. Body `{ url, schemaJsonLd }`. Fetches the page through `fetchPublicUrl` (public http(s) only; private, loopback and link-local addresses refused, DNS re-checked on every redirect hop) on the default web ports only, first hop and redirects alike. Answers `{ ok: true, found }`: whether a JSON-LD script element equal to the schema is in the page source. The page must be served with an HTML content type. A copy inside a comment, textarea, template, noscript, style, inline SVG or a script of another type does not count, and the `type` attribute must be `application/ld+json` (parameters after `;` allowed). The whole schema is compared, so one merged into a larger `@graph` reads as not found. Never returns the page. Every page that could not be read gets the same 422 and the same sentence, never `found: false`, so the route cannot probe ports or statuses. 10/min per account and per IP |
 | `* /mcp`, `/mcp/*` | worker/mcpServer.ts | session/apikey/oauth | MCP tool calls |
 | `GET,POST /projects`, `/projects/:id` | worker/projectService.ts + projectContextService.ts | session | Project memory CRUD |
 | `GET,POST /reports`, `/reports/:id` | worker/agentReportService.ts | session | Agent reports |
@@ -90,12 +92,36 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 - **Receipts are minted only by Worker verifiers.** No route accepts a client-built
   receipt. `level` is mandatory: `worker_verified`, `registry_verified`, or
   `self_reported`; UI must never present `self_reported` as verified.
+- **A verified level needs a verifier result.** `issueTrustReceipt` refuses
+  `worker_verified` and `registry_verified` unless the call carries a `VerifierResult`:
+  a passed check for the same subject, claim and method, whose evidence hash and
+  location the receipt carries. The level, claim and method must also be ones a
+  verifier in the Worker can return (`VERIFIER_METHODS`): today only `worker_verified`
+  `domain_control` by `dns_txt`, `well_known` or `meta_tag`. The evidence must be where
+  that method reads its proof for that subject: `dns:TXT:_luminara-verify.<domain>` or
+  `dns:TXT:<domain>` for `dns_txt`, and for the other two an http(s) URL on the domain
+  or its www twin, as the domain check reports it. The guard checks the result's shape
+  and that it matches; it cannot prove who built it, so only a verifier may build one. `POST /gateway/execute` checks nothing about a domain, so it issues
+  no receipt and says so (`receiptIssued: false`). `tests/receiptsNeedVerifier.test.ts`
+  lists the only files allowed to write the level.
+- **The Worker holds no chain signing key and sends nothing to a chain.**
+  `anchorAuditCitation` makes no outbound request and answers `ok: false`, also with
+  `PROOF_ANCHOR_ENABLED` on, so it can store nothing as `anchored`
+  (`worker/chain/ton/citationRegistry.ts`). `/proof/verify` never reports an
+  `audit_citation` row as on-chain, not even one an older build stored as `anchored`;
+  payment anchors, which carry a transaction hash, are reported as before.
 - **The signed bytes are `payload_json`.** Verify against the stored canonical JSON
   (`services/trust/receiptCrypto.ts`), never a re-serialisation. Key id is derived
   from the public key. Rotation moves the old public JWK into
   `RECEIPT_RETIRED_PUBLIC_KEYS`; never delete a published key while receipts use it.
 - **Revocation is a column, never a delete** (except account deletion, which removes
   the account's receipts and domain rows).
+- **Revoking does not undo a signature.** It marks the row, and the receipt's public
+  page then shows it as withdrawn. A copy of the receipt that somebody saved earlier
+  still checks out against `/api/trust/keys`: the signature stays valid until the
+  signing key is rotated and the old public key is no longer published. That is the
+  only way to make a saved copy fail, and it makes every other receipt signed with
+  that key fail too, so those have to be issued again.
 - **A missing signing key never fakes a receipt.** Verifiers report
   `receiptIssued: false` with the reason.
 
@@ -119,6 +145,77 @@ and the SPA asset fallback:
 - `JETTON_CHECKOUT_LIVE` is false. It goes back on only after one real testnet USDT transfer has been
   credited end to end on staging (spec 0018), with a review, and with `tests/moneyInvariants.test.ts`
   changed in the same pull request. `LORA_CHECKOUT_LIVE` is a second, separate switch for $LORA.
+
+## Stripe card rail invariants (`worker/stripePayment.ts`, pinned in `tests/stripePayment.test.ts`)
+
+The rail is off. These hold for the day it is switched on.
+
+- **Only a signed-in web buyer can start a checkout.** `POST /stripe/create-checkout-session` is a
+  protected route and the handler calls `identify()` again: no user means 401 and no call to
+  Stripe. There is no guest checkout. A request with Telegram init data, or an identity that
+  came from Telegram, is refused (Stars only inside Telegram).
+- **The Stripe mode must match the environment.** `ENVIRONMENT=production` needs a live secret
+  key; every other environment needs a test key. Anything else closes the rail and public
+  `/health` reports `stripeCheckout: false`. The webhook acts only on an event whose `livemode`
+  matches, so card 4242 can never buy a production plan.
+- **Nobody pays while the payment could not be credited.** No session is created unless
+  `isStripeLedgerReady` passes (migrations 0021 and 0024 applied) and KV is bound.
+- **The grant is decided by the server's own numbers.** Only `checkout.session.completed` with
+  `mode=payment`, `payment_status=paid`, `currency=usd`, a `payment_intent`, and `amount_total`
+  equal to `STRIPE_PLAN_CONFIG[plan].amountCents` is credited, to `metadata.userId` only.
+  `invoice.payment_succeeded` and `client_reference_id` are not honoured. Turning on Stripe Tax
+  or coupons changes `amount_total` and must change this check in the same PR. A session that
+  fails a check is logged with `NOT credited` and nothing is refunded automatically: refund it by
+  hand. A session can be paid for one hour, so a price change needs an hour before sessions
+  opened at the old price are gone.
+- **A full refund or a dispute takes back the days that charge granted, once.** The ledger row
+  stores `payment_intent`, the paying login, the days granted and when they end
+  (`granted_until`). `charge.refunded` (full refunds only; a partial refund leaves the plan
+  alone), `charge.dispute.created` and `charge.dispute.funds_withdrawn` claim the reversal in D1
+  before the subscription is rewritten. An inquiry (dispute status `warning_*`) changes nothing.
+  Only the days still ahead come off, so a card month that has run out cannot shorten a plan
+  bought another way. A dispute that is later won is not re-credited automatically.
+- **A reversed upgrade does not leave the higher plan behind.** After a reversal the plan is the
+  highest of: the account's other card charges still standing, and the plan it held before its
+  run of card purchases began (`prev_plan`). If another rail has written the record since, that
+  purchase set the plan and the name is left alone.
+- **Events may arrive in any order.** A refund or dispute that arrives before its session was
+  credited leaves a marker row (`reversed:<payment_intent>`), and the late session is not credited.
+- **Plan rank (Track SW, SW0a-4).** A lower plan never replaces a higher active one: it is refused
+  before payment (409 `LOWER_PLAN_REFUSED`). If a lower-plan session opened earlier is paid
+  anyway, plan and expiry stay as they are and the Worker refunds the payment through Stripe
+  (the only place the Worker moves money on this rail). The same plan extends the expiry. A
+  higher plan adds its days to the current expiry and replaces the plan name: this is today's
+  rule on every rail, and Track SW decision 31 is whether to keep it (see below).
+- **The payer returns to the Luminara site.** Both return URLs are built from `WEBAPP_URL`. The
+  request body and the `Origin` header are never used. The client sends the plan id and nothing else.
+- **Webhook hygiene.** Body capped at `MAX_SMALL_BODY_BYTES` before the HMAC is computed; a
+  non-numeric `t` in the signature header is malformed; a failed write releases its D1 claim and
+  the request fails, so Stripe redelivers. A retried session finds itself in `stripeSessions`
+  on the record and is neither added again nor refused.
+
+Known limits, each to be settled before the rail is switched on:
+
+- **Days bought cheaply become days of the higher plan on upgrade (decision 31).** Twelve Starter
+  months and then one Agency month is thirteen months of Agency. The card rail makes this easy
+  to do on purpose. It is the same on Stars, TON and licence keys today.
+- **Two events for one account at the same moment can lose an update.** The subscription is one
+  KV record that each rail reads and then writes. Three charges disputed in the same second can
+  end with one month removed instead of three. Fixing it means keeping the plan in D1 or a
+  Durable Object, for every rail.
+- **A Worker that is cut off between the D1 claim and the KV write leaves a claim with no
+  grant**, and later deliveries are answered as duplicates. A caught failure releases the claim;
+  a cancelled request does not. The ledger needs an "applied" state to close this.
+- **The run of card purchases is remembered on the KV record.** A purchase on another rail writes
+  a fresh record, so a card retry or reversal after it is judged without that memory.
+
+Before `STRIPE_CHECKOUT_LIVE` is set to true (its own PR, with `tests/moneyInvariants.test.ts`):
+subscribe the Stripe endpoint to exactly `checkout.session.completed`, `charge.refunded`,
+`charge.dispute.created` and `charge.dispute.funds_withdrawn`; on staging, prove one test-mode
+purchase (also once with a `+location_FR` email, to see `currency` stay `usd` under Adaptive
+Pricing), one refund, one dispute and one refused lower plan; add the two migrations and
+`stripe_credited_sessions` to `scripts/smoke-check.mjs`; and give the buyer a confirmation when
+they land on `/?payment=success` (nothing reads it today).
 
 ## Payment rail invariants (pinned in `tests/moneyInvariants.test.ts`)
 
@@ -264,6 +361,27 @@ message and the reply went to the model chat.
 - `worker/oracleInteractionGuard.ts`: instructs Oracle to respond
   `not_measured` or "not verified" when data is missing; numeric claims
   without tool evidence are rejected. Live.
+- `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
+  nothing, and the model has no say over prices. The prompt gets the plan facts built
+  from `PLANS` on every turn and the rule not to state prices or offers. Before a
+  reply is stored in history or sent:
+  - Every sentence or list line about our own plans, prices or offers is removed,
+    and one block built from `PLANS` (each plan with its Stars and days, where to
+    buy, that plans do not renew, where billing help is) stands where the first one
+    was. The model's number is never checked: a correct price is replaced too.
+  - A sentence that states a measurement nobody made (a percentage, a rank, a score,
+    a count of citations or visits, a claim of having looked at the site) becomes
+    one "not measured" sentence. Code, links, dates, phone and version numbers, HTTP
+    status codes and numbers the user wrote are set aside first. An instruction
+    keeps its count ("Add 3 FAQ questions") and loses a promised outcome. Status
+    comes from the claim ledger (`services/evidenceBound`).
+  - A link to a host that is neither luminarasuite.com (or `WEBAPP_URL`) nor one the
+    user wrote is spelled out in words. Code blocks are left as they are.
+  Business DNA enters the prompt only inside an untrusted-content fence whose
+  markers carry a one-time code, with each field capped at 300 characters. The
+  reply is sent with no `parse_mode` and with link previews off. The filter is a
+  backstop, English only and pattern based; the prompt rules are the main control.
+  Live.
 - DataForSEO / Umami sidecars: live when env-bound; the front-end traffic
   path returns `not_configured` when unreachable. See `services/competitors/README.md`.
 - Telegram webhook, license service, sentinel scan: live when bindings exist.
