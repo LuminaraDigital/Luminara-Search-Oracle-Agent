@@ -367,21 +367,22 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/plan') || text.startsWith('/subscribe')) {
-      // A /buy command is shown only for a plan the command can sell. The one-day plans are
-      // bought in the app: selling them by command waits for the rule that stops a purchase
-      // replacing a higher plan (Track SW, SW0a-4).
+      // A /buy command is shown only for a plan the command sells. The one-day plans are bought
+      // in the app.
       const lines = Object.entries(PLANS).map(
         ([id, p]) =>
-          `• *${p.title}* - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  ` +
+          `• ${p.title} - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  ` +
           (BUY_COMMAND_ID.test(id) ? `/buy_${id}` : 'Buy this one in the app.'),
       );
+      // Plain text, on purpose. With a parse mode, Telegram reads the underscore in /buy_starter
+      // as the start of italics: the commands lose their underscores and stop being tappable, or
+      // the whole message is refused. Telegram links a command in plain text by itself.
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
-          `*Luminara Suite Subscription Plans (Telegram Stars)*\n\n` +
+          `Luminara Suite Subscription Plans (Telegram Stars)\n\n` +
           lines.join('\n\n') +
           `\n\nTap /buy_starter, /buy_growth, or /buy_agency to pay directly in chat, or open the app to pay with Stars in one tap.`,
-        parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
             { text: '⭐ Open Paywall in Mini App', web_app: { url: `${env.WEBAPP_URL}?startapp=stars` } },
@@ -2221,6 +2222,12 @@ export async function sendTelegramAlert(env: Env, chatId: number | string, text:
     };
   }
   const res = await api(env, 'sendMessage', payload);
-  return Boolean(res.ok);
+  if (res.ok) return true;
+  // An alert carries the user's own words (a domain, a keyword, competitor names). One stray
+  // underscore or asterisk in them and Telegram refuses the formatted message. The alert matters
+  // more than its formatting, so it is sent again as plain text, markers showing.
+  const { parse_mode: _formatted, ...plain } = payload;
+  const again = await api(env, 'sendMessage', plain);
+  return Boolean(again.ok);
 }
 
