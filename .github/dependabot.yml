@@ -1,12 +1,19 @@
 # Conservative dependency automation: weekly cadence, minor/patch grouped into
 # one PR per ecosystem so review load stays low. No ignores initially; add
 # targeted ignore rules only when an update is known to break the build.
+#
+# Every entry targets staging. Nothing reaches main that staging has not run: the production
+# deploy refuses any commit on main that is not a release merge from staging, so an update
+# merged straight into main would not deploy and would leave main holding files staging lacks.
+# Dependabot reads this file from the default branch (main), so the setting takes effect once
+# this file is released there.
 version: 2
 
 updates:
   # Root app (React 19 + Vite + worker tooling, package-lock.json)
   - package-ecosystem: npm
     directory: /
+    target-branch: "staging"
     schedule:
       interval: weekly
       day: monday
@@ -22,6 +29,7 @@ updates:
   # Crawler sidecar (tracked manifest + lockfile under crawler/)
   - package-ecosystem: npm
     directory: /crawler
+    target-branch: "staging"
     schedule:
       interval: weekly
       day: monday
@@ -37,6 +45,7 @@ updates:
   # CI workflow actions
   - package-ecosystem: github-actions
     directory: /
+    target-branch: "staging"
     schedule:
       interval: weekly
       day: monday

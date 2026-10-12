@@ -33,6 +33,8 @@ export default tseslint.config(
       'tmp-*.json',
       'qronos-landing/**',
       'contracts/**',
+      'pstack/**',
+      'ponytail/**',
     ],
   },
   js.configs.recommended,

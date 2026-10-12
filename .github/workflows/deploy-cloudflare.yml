@@ -19,15 +19,28 @@ on:
 permissions:
   contents: read
 
+# Which job runs (tests/deployWorkflow.test.ts evaluates these conditions):
+#   push to staging                         -> deploy_staging only
+#   push to main                            -> deploy_production only
+#   manual run naming staging, any ref      -> deploy_staging only
+#   manual run naming production, from main -> deploy_production only
+#   manual run naming production, elsewhere -> refuse_production_off_main (fails, deploys nothing)
+# Keep each `if:` on one line: the test reads them as text.
+
 jobs:
   # =========================================================================
   # STAGE 1: Staging Deployment & Automated Validation
   # =========================================================================
   deploy_staging:
     name: Staging Deployment & Pre-Production Smoke Gates
-    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'staging')
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'staging')
     runs-on: ubuntu-latest
     environment: staging
+    # One staging deploy at a time. A run that has started is never cancelled: a migrate
+    # followed by a deploy must finish. A newer run waits for it.
+    concurrency:
+      group: cloudflare-deploy-staging
+      cancel-in-progress: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -55,6 +68,14 @@ jobs:
 
       - name: Build staging bundle
         run: npx vite build --mode staging
+
+      # The restore point. If the migration below goes wrong, this log holds the bookmark to
+      # give `wrangler d1 time-travel restore`. No bookmark, no migration: a failure here stops the job.
+      - name: Print D1 Time Travel bookmark before migrating (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '2373013c66331e9660e47ffa3ae40f5c' }}
+        run: npx wrangler d1 time-travel info luminara-users-staging --env staging
 
       - name: Apply D1 migrations (staging)
         uses: cloudflare/wrangler-action@v3
@@ -87,18 +108,56 @@ jobs:
   # =========================================================================
   deploy_production:
     name: Production Deployment & Live Verification
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'production')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'production'))
     runs-on: ubuntu-latest
     environment: production
+    # One production deploy at a time. A run that has started is never cancelled: a migrate
+    # followed by a deploy must finish. A newer run waits for it.
+    concurrency:
+      group: cloudflare-deploy-production
+      cancel-in-progress: false
+    # The staging deploy check reads this workflow's own runs with the job's token. Nothing more.
+    permissions:
+      actions: read
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Full history. The release check below reads the merge commit's second parent and
+          # staging's line of history; the default one-commit checkout has neither.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
+      # Production runs only what staging ran. Before anything is installed, migrated or deployed,
+      # the commit must be (a) a merge commit with two parents, (b) with the files of its second
+      # parent, (c) whose second parent is a commit staging itself was at, and (d) the current tip
+      # of main. A squash merge, a direct push, a merge of a feature branch, or a stale run of an
+      # older release stops the job here. A manual run from main is checked the same way.
+      # The second parent need not be staging's tip today: a release that migrated and then failed
+      # must stay re-runnable after staging has moved on.
+      - name: Release check (main must be a merge of a commit staging was at)
+        run: |
+          git fetch --no-tags --quiet origin +refs/heads/staging:refs/remotes/origin/staging +refs/heads/main:refs/remotes/origin/main
+          node scripts/check-release-merge.mjs --commit HEAD --staging origin/staging --main origin/main
+
+      # The release check proves the shape of the merge. This proves staging's own deploy of the
+      # merged commit went green: this workflow's run for the push of that commit to staging must
+      # have completed with success, and so must its staging deploy job (latest attempt counts).
+      # The step only fetches and pipes; scripts/check-staging-deploy.mjs decides and fails closed.
+      - name: Staging deploy check (the merged commit must have a green staging deploy)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(git rev-parse --verify 'HEAD^2')"
+          api="repos/${GITHUB_REPOSITORY}/actions"
+          run_id="$(gh api "${api}/workflows/deploy-cloudflare.yml/runs?head_sha=${sha}&branch=staging&event=push&per_page=100" | node scripts/check-staging-deploy.mjs run --sha "${sha}")"
+          gh api "${api}/runs/${run_id}/jobs?filter=latest&per_page=100" | node scripts/check-staging-deploy.mjs job --sha "${sha}" --run "${run_id}"
 
       - name: Install dependencies
         run: npm ci
@@ -117,6 +176,14 @@ jobs:
 
       - name: Build production bundle
         run: npm run build
+
+      # The restore point. If the migration below goes wrong, this log holds the bookmark to
+      # give `wrangler d1 time-travel restore`. No bookmark, no migration: a failure here stops the job.
+      - name: Print D1 Time Travel bookmark before migrating (production)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '2373013c66331e9660e47ffa3ae40f5c' }}
+        run: npx wrangler d1 time-travel info luminara-users --env production
 
       - name: Apply D1 migrations (production)
         uses: cloudflare/wrangler-action@v3
@@ -143,3 +210,17 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '2373013c66331e9660e47ffa3ae40f5c' }}
         run: node scripts/smoke-check.mjs --prod
+
+  # =========================================================================
+  # A manual run that names production from any ref but main deploys nothing,
+  # and fails so the operator sees why instead of a silently skipped run.
+  # =========================================================================
+  refuse_production_off_main:
+    name: Refuse a production deploy from a ref other than main
+    if: github.event_name == 'workflow_dispatch' && inputs.target_env == 'production' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse
+        run: |
+          echo "::error title=Production deploys only from main::This run named production from ${GITHUB_REF}. Nothing was deployed. Run the workflow from main."
+          exit 1

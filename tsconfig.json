@@ -41,6 +41,8 @@
     "scratch",
     "qronos-landing",
     "contracts",
-    "tmp"
+    "tmp",
+    "pstack",
+    "ponytail"
   ]
 }
