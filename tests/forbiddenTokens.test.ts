@@ -17,15 +17,11 @@ const SCRIPT_SRC = path.join(repoRoot, 'scripts', 'check-forbidden-tokens.mjs');
 // Inside a git hook (pre-push runs this suite) git exports GIT_DIR and friends. Left in place they
 // point every git call below at the real repository instead of the temp one, which rewrote the
 // shared .git/config and committed on the real branch when the hook ran from a linked worktree.
-for (const key of [
-  'GIT_DIR',
-  'GIT_WORK_TREE',
-  'GIT_INDEX_FILE',
-  'GIT_PREFIX',
-  'GIT_COMMON_DIR',
-  'GIT_OBJECT_DIRECTORY',
-]) {
-  delete process.env[key];
+// Every GIT_* variable goes, not a fixed list: a push started as `git -c core.hooksPath=... push`
+// also exports GIT_CONFIG_PARAMETERS, which would make the temp repository's own `git commit`
+// run this repository's hooks against the fixture files.
+for (const key of Object.keys(process.env)) {
+  if (/^GIT_/i.test(key)) delete process.env[key];
 }
 
 let root: string;
@@ -37,6 +33,11 @@ beforeEach(() => {
 afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+// The cases below block on child processes back to back. Without a turn of the event loop
+// between them vitest cannot service its own messaging, and on a slow machine it reports
+// "Timeout calling onTaskUpdate" for a run in which every test passed.
+afterEach(() => new Promise<void>((done) => setImmediate(done)));
 
 function write(rel: string, content: string | Buffer) {
   const abs = path.join(root, rel);
@@ -200,6 +201,15 @@ describe('script in temp git repo', () => {
     const r = runScript(['--all']);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('src/d.ts:1');
+  }, 60_000);
+  it('detects a token in a file whose name git would print in quotes (a non-ASCII name), with --all', () => {
+    setupTempRepo('secretprojectname\n');
+    // "cafe" with an acute accent on the e. Listed without -z, git prints this name quoted and escaped.
+    write(`src/caf${String.fromCharCode(233)}.ts`, 'const z = "secretprojectname";\n');
+    const r = runScript(['--all']);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('1 finding(s)');
+    expect(r.stderr).toContain('.ts:1');
   }, 60_000);
   it('reports identity findings without disclosing the username value', () => {
     setupTempRepo(undefined);

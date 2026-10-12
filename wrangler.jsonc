@@ -123,6 +123,9 @@
     // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
     // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
     "TON_CONFIRMED_ADDRESS": "",
+    // Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
+    // Empty means the production bot's published link. Staging sets its own bot's link once that bot exists.
+    "TELEGRAM_MINI_APP_URL": "",
     // Off: the community idea feed routes answer 404 to a signed-in caller. A guest gets 401, because
     // the sign-in guard runs first. Not to be switched on before the feed stops returning account
     // ids and has its own tables, limits and a named moderator.
@@ -249,6 +252,9 @@
         // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
         // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
         "TON_CONFIRMED_ADDRESS": "",
+        // Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
+        // Empty means the production bot's published link. Staging sets its own bot's link once that bot exists.
+        "TELEGRAM_MINI_APP_URL": "",
         // Off: the community idea feed routes answer 404 to a signed-in caller. A guest gets 401, because
         // the sign-in guard runs first. Not to be switched on before the feed stops returning account
         // ids and has its own tables, limits and a named moderator.
@@ -345,6 +351,9 @@
         // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
         // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
         "TON_CONFIRMED_ADDRESS": "",
+        // Mini App link of this environment's bot, for links the Worker writes (invites, share teasers).
+        // Empty means the production bot's published link. Staging sets its own bot's link once that bot exists.
+        "TELEGRAM_MINI_APP_URL": "",
         // Off: the community idea feed routes answer 404 to a signed-in caller. A guest gets 401, because
         // the sign-in guard runs first. Not to be switched on before the feed stops returning account
         // ids and has its own tables, limits and a named moderator.
