@@ -46,7 +46,7 @@ export const pricingTiers: Array<{
     priceLabel: PAID_PLAN_PRICES.agency.usdLabel,
     stars: PAID_PLAN_PRICES.agency.starsLabel,
     ton: PAID_PLAN_PRICES.agency.tonLabel,
-    blurb: 'API access for paid research, 10 client seats, daily re-audits, white-label PDF.',
+    blurb: 'API access for paid research, 10 client workspaces, 10 team seats, daily re-audits, white-label PDF.',
     highlight: false,
   },
 ];

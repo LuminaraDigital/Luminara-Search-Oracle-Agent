@@ -71,9 +71,6 @@ export async function loadCrawlerSnapshot(
 export async function handleLlmCrawlerRoute(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405);
   const who = await identify(request, env);
-  if (!who.user) {
-    return json({ ok: false, error: who.error || 'Sign in required', code: 'AUTH_REQUIRED' }, 401);
-  }
   const url = new URL(request.url);
   const target = url.searchParams.get('url') || '';
   const loaded = await loadCrawlerSnapshot(target);
@@ -85,7 +82,7 @@ export async function handleLlmCrawlerRoute(request: Request, env: Env): Promise
   );
   const host = safePublicHostname(target);
   let receipt: string | null = null;
-  if (sawFile && host) {
+  if (sawFile && host && who.user) {
     try {
       receipt = await mintScoutReceipt(env, billingId(who.user), host);
     } catch {

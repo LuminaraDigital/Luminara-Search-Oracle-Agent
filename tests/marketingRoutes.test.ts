@@ -27,6 +27,10 @@ describe('marketingRoutes', () => {
     expect(marketingViewFromPathname('/how/')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/infrastructure')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/why-us')).toBe(AppView.WHY_US);
+    expect(marketingViewFromPathname('/compare/profound')).toBe(AppView.WHY_US);
+    expect(marketingViewFromPathname('/compare/ahrefs')).toBe(AppView.WHY_US);
+    expect(marketingViewFromPathname('/compare/otterly')).toBe(AppView.WHY_US);
+    expect(marketingViewFromPathname('/compare/peec')).toBe(AppView.WHY_US);
   });
 
   it('maps legacy hashes', () => {
@@ -48,6 +52,8 @@ describe('marketingRoutes', () => {
     expect(resolveAppView('/', '#pricing')).toBe(AppView.PRICING);
     expect(resolveAppView('/', '#settings')).toBe(null);
     expect(resolveAppView('/random-made-up-page', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/smb', '')).toBe(AppView.LAUNCHPAD);
+    expect(resolveAppView('/dashboard', '')).toBe(AppView.DASHBOARD);
   });
 
   it('routes /verify/r/<id> to the receipt view without breaking /verify/<digest>', () => {
@@ -137,10 +143,69 @@ describe('marketing shell injection', () => {
     expect(page.crawlerBody).toMatch(/Starter:[\s\S]*No MCP/);
   });
 
-  it('resolves shell keys for aliases', () => {
+  it('resolves shell keys for aliases and comparisons', () => {
     expect(marketingShellKey('/how')).toBe('/how-it-works');
     expect(marketingShellKey('/how/')).toBe('/how-it-works');
     expect(marketingShellKey('/infrastructure')).toBe('/how-it-works');
     expect(marketingShellKey('/pricing/')).toBe('/pricing');
+    expect(marketingShellKey('/compare/profound')).toBe('/compare/profound');
+    expect(marketingShellKey('/compare/ahrefs/')).toBe('/compare/ahrefs');
+  });
+
+  it('de-duplicates existing JSON-LD script blocks', () => {
+    const shellWithStaticJsonLd = `<!DOCTYPE html><html><head>
+  <title>Old</title>
+  <script type="application/ld+json" id="luminara-marketing-jsonld">{"@context":"https://schema.org","@type":"Old"}</script>
+</head><body></body></html>`;
+    const page = MARKETING_SHELL_BY_PATH['/'];
+    const out = injectMarketingMeta(shellWithStaticJsonLd, page);
+    const matches = out.match(/application\/ld\+json/g);
+    expect(matches).toHaveLength(1);
+    expect(out).toContain('SoftwareApplication');
   });
 });
+
+describe('maybeServeReceiptHtml', () => {
+  it('serves rich HTML with OG tags and noindex for receipts', async () => {
+    const { maybeServeReceiptHtml } = await import('../worker/marketingShell');
+    const { createSqliteD1 } = await import('./helpers/sqliteD1');
+    const db = createSqliteD1();
+    const assets = {
+      fetch: async () =>
+        new Response(
+          '<!DOCTYPE html><html><head><title>Old</title><meta property="og:title" content="Old"></head><body></body></html>',
+          {
+            headers: { 'content-type': 'text/html; charset=utf-8' },
+          },
+        ),
+    } as unknown as Fetcher;
+
+    await db
+      .prepare(
+        `INSERT INTO trust_receipts (id, account_id, subject_kind, subject_id, claim, level, payload_json, signature, kid, visibility, created_at)
+         VALUES (?, ?, 'domain', ?, 'domain_control', 'worker_verified', ?, 'sig', 'kid_test', 'public', ?)`,
+      )
+      .bind(
+        'rcpt_test_123',
+        'acct_1',
+        'example.com',
+        JSON.stringify({ id: 'rcpt_test_123', subject: { id: 'example.com' } }),
+        new Date().toISOString(),
+      )
+      .run();
+
+    const req = new Request('https://www.luminarasuite.com/verify/r/rcpt_test_123', {
+      headers: { accept: 'text/html' },
+    });
+    const res = await maybeServeReceiptHtml(req, { ASSETS: assets, DB: db });
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(200);
+    expect(res!.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    const html = await res!.text();
+    expect(html).toContain('Trust Receipt: example.com | Luminara Suite');
+    expect(html).toContain('og:title');
+    expect(html).toContain('noindex, nofollow');
+  });
+});
+
+

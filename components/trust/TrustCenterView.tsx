@@ -337,8 +337,9 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
         <p className="text-[10px] uppercase tracking-widest text-gold-light font-mono">Trust</p>
         <h1 className="text-2xl font-semibold text-white">Prove what is true about your business</h1>
         <p className="text-sm text-gray-400">
-          Each check produces a signed receipt anyone can verify with our public key. Nothing here is marked verified unless a
-          receipt says so.
+          {domainState === 'disabled' && receiptState === 'disabled'
+            ? 'Preview the upcoming signed trust protocol. Cryptographic verification will allow any third-party engine to verify facts with our public key.'
+            : 'Each check produces a signed receipt anyone can verify with our public key. Nothing here is marked verified unless a receipt says so.'}
         </p>
       </header>
 

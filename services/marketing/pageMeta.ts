@@ -3,7 +3,7 @@
 import { buildFaqPageJsonLd } from './marketingFaqContent';
 
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
-export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/icon-512.png`;
+export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/og-image.png`;
 
 export interface MarketingShellMeta {
   path: string;
@@ -19,8 +19,12 @@ const ORG_NODE = {
   '@id': `${MARKETING_ORIGIN}/#organization`,
   name: 'Luminara Digital',
   url: 'https://luminaradigital.io',
-  logo: DEFAULT_OG_IMAGE,
-  sameAs: ['https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent'],
+  logo: `${MARKETING_ORIGIN}/icon-512.png`,
+  sameAs: [
+    'https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent',
+    'https://t.me/LuminaraSuiteBot',
+    'https://www.linkedin.com/company/luminara-digital',
+  ],
 };
 
 const SOFTWARE_NODE = {
@@ -213,6 +217,102 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p>Agency: Growth capabilities plus API access and client workspaces.</p>
   <p>Telegram Stars billing is available in the Mini App. No invented SEO scores on any plan.</p>
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
+</section>`,
+  },
+  '/compare/profound': {
+    path: '/compare/profound',
+    title: 'Luminara vs Profound | AI Search Visibility Comparison',
+    description:
+      'Compare Luminara Suite and Profound. Evidence-bound citation tracking versus synthetic visibility scores. Prioritized weekly fixes without opaque indexes.',
+    jsonLd: graph('/compare/profound', 'Luminara vs Profound', 'Empirical comparison of AI visibility tracking methodology.'),
+    crawlerBody: `
+<section>
+  <h1>Luminara Suite vs Profound</h1>
+  <p>An objective comparison between Luminara Suite and Profound for generative search and AI visibility auditing.</p>
+  <table>
+    <thead>
+      <tr><th>Dimension</th><th>Profound</th><th>Luminara Suite</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Metric Validity</td><td>Proprietary 0-100 composite scores</td><td>Strictly Measured, Estimated, or Not measured labels</td></tr>
+      <tr><td>Search Grounding</td><td>Simulated engine scrapes</td><td>Search-grounded live probes with tamper-evident receipts</td></tr>
+      <tr><td>Remediation</td><td>Data dashboards and telemetry</td><td>Exportable llms.txt and JSON-LD schema fix packs</td></tr>
+      <tr><td>Pricing Model</td><td>Enterprise retainers</td><td>Self-serve plans from $49/mo, BYOK, or Telegram Stars</td></tr>
+    </tbody>
+  </table>
+  <p><a href="/">Run Instant Audit</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
+</section>`,
+  },
+  '/compare/ahrefs': {
+    path: '/compare/ahrefs',
+    title: 'Luminara vs Ahrefs Brand Monitoring | Traditional SEO vs AEO',
+    description:
+      'Compare traditional keyword rank tracking with LLM Answer Engine Optimization. Why blue link ranks differ from conversational AI search citations.',
+    jsonLd: graph('/compare/ahrefs', 'Luminara vs Ahrefs', 'Comparing traditional SEO search monitoring with LLM citability and answer targets.'),
+    crawlerBody: `
+<section>
+  <h1>Luminara Suite vs Ahrefs Brand Monitoring</h1>
+  <p>Why traditional blue-link keyword tracking does not answer whether ChatGPT, Perplexity, or Google AI Overviews cite your brand.</p>
+  <table>
+    <thead>
+      <tr><th>Dimension</th><th>Ahrefs</th><th>Luminara Suite</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Search Surface</td><td>Traditional 10 blue links on Google</td><td>AI Overviews, ChatGPT Search, Claude, and Perplexity</td></tr>
+      <tr><td>Measurement Target</td><td>Keyword rankings and backlink graphs</td><td>Entity citability, LLM answer targets, and crawler governance</td></tr>
+      <tr><td>Action Guidance</td><td>Backlink acquisition and keyword stuffing</td><td>Structured knowledge graph and machine-readable llms.txt</td></tr>
+      <tr><td>Verification</td><td>Third-party crawl estimates</td><td>Cryptographic verification receipts and crawler directives</td></tr>
+    </tbody>
+  </table>
+  <p><a href="/">Run Instant Audit</a> · <a href="/why">Why Luminara</a> · <a href="/pricing">Pricing</a></p>
+</section>`,
+  },
+  '/compare/otterly': {
+    path: '/compare/otterly',
+    title: 'Luminara vs Otterly AI | Honest AEO & GEO Audits',
+    description:
+      'Compare Luminara Suite and Otterly AI. Evidence-bound Measured vs Estimated labels, reproducible receipts, and single-action weekly decisions.',
+    jsonLd: graph('/compare/otterly', 'Luminara vs Otterly AI', 'Comparative audit of LLM search tracking and generative engine optimization.'),
+    crawlerBody: `
+<section>
+  <h1>Luminara Suite vs Otterly AI</h1>
+  <p>Comparing generative engine optimization (GEO) platforms on evidence honesty, verification, and actionable remediation.</p>
+  <table>
+    <thead>
+      <tr><th>Dimension</th><th>Otterly AI</th><th>Luminara Suite</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Label Honesty</td><td>Synthesized sentiment & visibility scores</td><td>Never invent SEO metrics. Unmeasured engines labeled not_measured</td></tr>
+      <tr><td>Agent Tools</td><td>Web UI only</td><td>MCP server for Cursor and Claude plus Telegram Mini App</td></tr>
+      <tr><td>Fix Verification</td><td>Periodic scraping runs</td><td>Re-check and prove verification loop with local and remote sync</td></tr>
+      <tr><td>Key Flexibility</td><td>Hosted subscription only</td><td>Hosted allowance with daily resets plus Enterprise BYOK</td></tr>
+    </tbody>
+  </table>
+  <p><a href="/">Run Instant Audit</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
+</section>`,
+  },
+  '/compare/peec': {
+    path: '/compare/peec',
+    title: 'Luminara vs Peec AI | Empirical AI Search Monitoring',
+    description:
+      'Luminara Suite versus Peec AI. Contrast synthetic composite scores with strict evidence-bound labeling and verifiable remediation fix packs.',
+    jsonLd: graph('/compare/peec', 'Luminara vs Peec AI', 'Comparing synthetic AI visibility scores with verifiable search receipts.'),
+    crawlerBody: `
+<section>
+  <h1>Luminara Suite vs Peec AI</h1>
+  <p>Contrast synthetic visibility approximations with verifiable, evidence-bound answer engine audits.</p>
+  <table>
+    <thead>
+      <tr><th>Dimension</th><th>Peec AI</th><th>Luminara Suite</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Integrity Baseline</td><td>Black-box score weighting</td><td>Cryptographically signed receipts verified offline via Ed25519</td></tr>
+      <tr><td>Execution Loop</td><td>Static chart exports</td><td>Weekly decision card: one verdict, one fix, and what changed</td></tr>
+      <tr><td>Remediation Output</td><td>Generic text advice</td><td>Downloadable schema.jsonld and llms.txt tailored to findings</td></tr>
+      <tr><td>Audit Grounding</td><td>Uncited response text</td><td>Direct prompt and citation excerpt evidence bound to source URLs</td></tr>
+    </tbody>
+  </table>
+  <p><a href="/">Run Instant Audit</a> · <a href="/docs/what-is-aeo.html">What is AEO</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
 };

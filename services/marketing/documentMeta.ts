@@ -41,6 +41,10 @@ function ensureCanonical(href: string) {
 }
 
 function ensureJsonLd(data: Record<string, unknown>) {
+  const legacyScript = document.getElementById('luminara-static-jsonld');
+  if (legacyScript) {
+    legacyScript.remove();
+  }
   let script = document.getElementById(JSON_LD_ID) as HTMLScriptElement | null;
   if (!script) {
     script = document.createElement('script');

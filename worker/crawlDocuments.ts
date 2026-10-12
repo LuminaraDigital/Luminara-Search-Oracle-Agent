@@ -30,6 +30,7 @@ Allow: /sample-report
 Allow: /privacy
 Allow: /terms
 Allow: /desktop
+Allow: /compare/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -52,6 +53,7 @@ Allow: /sample-report
 Allow: /privacy
 Allow: /terms
 Allow: /desktop
+Allow: /compare/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -83,6 +85,10 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/docs/mcp.html</loc></url>
   <url><loc>${base}/docs/what-is-aeo.html</loc></url>
   <url><loc>${base}/desktop</loc></url>
+  <url><loc>${base}/compare/profound</loc></url>
+  <url><loc>${base}/compare/ahrefs</loc></url>
+  <url><loc>${base}/compare/otterly</loc></url>
+  <url><loc>${base}/compare/peec</loc></url>
   <url><loc>${base}/llms.txt</loc></url>
 </urlset>
 `;
@@ -115,6 +121,17 @@ Agents may cite redacted teaser cards under /share/teaser/. robots.txt allows th
 Instant Audit can report citation rate, share of voice, and page health only when that run collected live page or search evidence.
 
 LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt presence, llms.txt structure (a title and a short summary), common AI crawler directives, cite-path blocks, and optional ai.txt. Structure is a hint, not a score.
+
+## Answer engine targets
+
+### What is Luminara Suite?
+Luminara Suite is an Answer Engine Optimization (AEO) and AI visibility platform that audits brand citations across Google Search, AI Overviews, ChatGPT, and Perplexity. Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week.
+
+### How does Luminara compare to traditional SEO suites?
+Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness, brand citation share in conversational models, and knowledge-graph grounding. Every metric is strictly labeled measured, estimated, or not_measured, refusing to fabricate visibility percentages when underlying evidence is unavailable.
+
+### What is Answer Engine Optimization (AEO)?
+Answer Engine Optimization (AEO) is the discipline of structuring web content, technical crawl assets, and entity schema so generative AI engines (Google AI Overviews, ChatGPT, Perplexity, Claude) extract, synthesize, and cite the brand as an authoritative source in direct conversational responses.
 
 ## Sitemap
 
@@ -150,6 +167,10 @@ Published USD labels. Plans are paid with Telegram Stars inside the Telegram Min
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
+- Profound comparison: https://www.luminarasuite.com/compare/profound
+- Ahrefs comparison: https://www.luminarasuite.com/compare/ahrefs
+- Otterly AI comparison: https://www.luminarasuite.com/compare/otterly
+- Peec AI comparison: https://www.luminarasuite.com/compare/peec
 
 ## Studio
 

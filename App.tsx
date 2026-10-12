@@ -972,6 +972,7 @@ const App: React.FC = () => {
           {introOverlay}
           <AuthRequiredScreen
             auth={appAuth}
+            featureView={view}
             onBackToMarketing={skipMarketing ? undefined : () => setView(AppView.LANDING)}
           />
         </>
@@ -1365,7 +1366,7 @@ const App: React.FC = () => {
                   </>)}
                   <button
                     type="button"
-                    onClick={() => { setView(AppView.VISION); setShowSuiteMenu(false); }}
+                    onClick={() => { setView(AppView.INFRASTRUCTURE); setShowSuiteMenu(false); }}
                     className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />

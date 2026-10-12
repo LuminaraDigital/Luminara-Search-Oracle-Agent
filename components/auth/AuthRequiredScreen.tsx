@@ -14,13 +14,29 @@ import { ICONS } from '../../constants';
  * 3. Inside Telegram: identity is verified natively via Mini App initData.
  * 4. On the web: Google One-Click or Email/Password.
  */
+function featureExplanation(view?: string): string | null {
+  switch (view) {
+    case 'ORACLE_AGENT':
+      return 'Oracle Chat requires an account to ground conversations in your verified Business DNA and preserve message memory.';
+    case 'BRAND_MEMORY':
+      return 'Brand Memory requires an account to securely save and synchronize your company facts across devices.';
+    case 'NOTEBOOK':
+      return 'Studio requires an account to save interactive audit notebooks and research history.';
+    case 'BUSINESS_DNA':
+      return 'Business DNA requires an account to establish verified entity ownership and private tenant storage.';
+    default:
+      return null;
+  }
+}
+
 export const AuthRequiredScreen: React.FC<{
   auth: AppAuthState;
+  featureView?: string;
   initialMode?: 'signin' | 'signup';
   onBackToMarketing?: () => void;
   isModal?: boolean;
   onClose?: () => void;
-}> = ({ auth, initialMode = 'signin', onBackToMarketing, isModal, onClose }) => {
+}> = ({ auth, featureView, initialMode = 'signin', onBackToMarketing, isModal, onClose }) => {
   // Prefer auth-hook Telegram signal (survives background init) over a one-shot module read.
   const inTelegram = Boolean(auth.retryTelegram) || isInTelegram();
   const tgUser = inTelegram ? getTelegramUserUnsafe() : null;
@@ -79,6 +95,12 @@ export const AuthRequiredScreen: React.FC<{
         <h1 className="font-display font-normal text-[2rem] sm:text-4xl text-[var(--color-ink)] tracking-tight leading-[1.08]">
           {inTelegram ? 'Confirm your Telegram session' : 'Sign in to Luminara Suite'}
         </h1>
+        {featureExplanation(featureView) && (
+          <div className="p-3 rounded-xl bg-gold/10 border border-gold/30 text-xs text-gold-light max-w-sm mx-auto text-left leading-relaxed">
+            <span className="font-bold uppercase tracking-wider block mb-1 text-[10px] text-gold">Account Required</span>
+            {featureExplanation(featureView)}
+          </div>
+        )}
         <p className="text-sm text-[var(--color-ink-2)] leading-relaxed max-w-sm mx-auto">
           {inTelegram
             ? tgUser?.first_name
