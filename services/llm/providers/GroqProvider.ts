@@ -16,6 +16,7 @@ import {
 import { parseOpenAiSseStream } from '../../../utils/sse';
 import { BaseAIProvider } from './BaseAIProvider';
 import { applyToolsToChatBody, parseToolCallsFromMessage } from '../openaiTools';
+import { FallbackAnswerNotAcceptedError, readFallbackAnswer } from '../fallbackAnswer';
 
 function isGroqModelMissingStatus(status: number, body: string): boolean {
   return isMissingModelStatus(status, body);
@@ -56,6 +57,8 @@ export class GroqProvider extends BaseAIProvider {
     const startTime = Date.now();
     const messages = buildChatMessages(prompt, options);
     const models = groqModelCandidates(options?.model);
+    // Only a caller that accepts a fallback reply asks the Worker for one.
+    const acceptFallback = Boolean(options?.allowFallback);
 
     const doFetch = async (apiKey: string, model: string) => {
       const body: any = {
@@ -77,7 +80,7 @@ export class GroqProvider extends BaseAIProvider {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
-      }, { userKey: apiKey });
+      }, { userKey: apiKey, acceptFallback });
     };
 
     let response: Response | null = null;
@@ -116,6 +119,14 @@ export class GroqProvider extends BaseAIProvider {
     }
 
     const data = await response.json();
+    // The Worker may have answered with its fallback model. Groq itself did not answer then, so
+    // unless this caller asked for fallback replies it is an error, not a result: the text of a
+    // small fallback model must not be stored or shown as if the asked engine wrote it.
+    const marker = readFallbackAnswer(response.headers, data);
+    if (marker && !options?.allowFallback) throw new FallbackAnswerNotAcceptedError(this.name, marker);
+    const fallback =
+      marker && data.choices?.[0]?.finish_reason === 'length' ? { ...marker, truncated: true } : marker;
+
     const text = data.choices?.[0]?.message?.content || '';
     const toolCalls = parseToolCallsFromMessage(data.choices?.[0]?.message);
     const latencyMs = Date.now() - startTime;
@@ -132,6 +143,7 @@ export class GroqProvider extends BaseAIProvider {
       finishReason: (data.choices?.[0]?.finish_reason as GenerateFinishReason) || 'stop',
       toolCalls,
       latencyMs,
+      ...(fallback ? { fallback } : {}),
     };
   }
 
@@ -141,6 +153,8 @@ export class GroqProvider extends BaseAIProvider {
 
     const messages = buildChatMessages(prompt, options);
     const models = groqModelCandidates(options?.model);
+    // Only a caller that accepts a fallback reply asks the Worker for one.
+    const acceptFallback = Boolean(options?.allowFallback);
 
     let response: Response | null = null;
     let lastErrText = '';
@@ -163,7 +177,7 @@ export class GroqProvider extends BaseAIProvider {
           Authorization: `Bearer ${key}`,
         },
         body: JSON.stringify(body),
-      }, { userKey: key });
+      }, { userKey: key, acceptFallback });
 
       const fallbackKey = configService.getGroqFallbackKey();
       if ((response.status === 429 || response.status === 402 || response.status === 401) && fallbackKey && key !== fallbackKey) {
@@ -175,7 +189,7 @@ export class GroqProvider extends BaseAIProvider {
             Authorization: `Bearer ${fallbackKey}`,
           },
           body: JSON.stringify(body),
-        }, { userKey: fallbackKey });
+        }, { userKey: fallbackKey, acceptFallback });
       }
 
       if (response.ok && response.body) break;
@@ -191,14 +205,35 @@ export class GroqProvider extends BaseAIProvider {
       throw new Error(`Groq stream error: ${lastErrText || 'no response body'}`);
     }
 
+    // The fallback marker is in the response headers, which arrive before the stream. A caller
+    // that did not ask for fallback replies gets an error before any text, as in generateText.
+    const marker = readFallbackAnswer(response.headers);
+    if (marker && !options?.allowFallback) {
+      try {
+        await response.body.cancel();
+      } catch {
+        /* the stream is already closed */
+      }
+      throw new FallbackAnswerNotAcceptedError(this.name, marker);
+    }
+
     this.config.model = usedModel;
+    // The marker rides on the first text chunk so the chat can label the reply as it starts.
+    let unsent = marker;
     for await (const chunk of parseOpenAiSseStream(response)) {
-      if (chunk.text) yield { text: chunk.text };
+      if (chunk.text) {
+        yield unsent ? { text: chunk.text, fallback: unsent } : { text: chunk.text };
+        unsent = undefined;
+      }
       if (chunk.toolCalls?.length) {
         yield {
           toolCalls: chunk.toolCalls,
           finishReason: (chunk.finishReason as GenerateFinishReason) || 'tool_calls',
         };
+      }
+      // A fallback reply cut off at its length limit says so in its last chunk.
+      if (marker && chunk.finishReason === 'length') {
+        yield { fallback: { ...marker, truncated: true }, finishReason: 'length' };
       }
     }
   }

@@ -349,7 +349,17 @@ export async function destroySessionCookie(): Promise<boolean> {
 export interface ProviderFetchOptions {
   /** The user's own key. When set and a Worker is reachable, the request is relayed with this key. */
   userKey?: string;
+  /**
+   * Ask the Worker for a fallback answer if the hosted provider cannot answer. The Worker runs
+   * its fallback model only for a request that says so. Set it only where the reply's fallback
+   * marker is shown with the text. It is sent on a hosted-key relay call and nowhere else: a
+   * direct vendor call or a call with the user's own key never gets a fallback answer.
+   */
+  acceptFallback?: boolean;
 }
+
+/** The request header the Worker's relay reads (ACCEPT_FALLBACK_HEADER in worker/providerRelay.ts). */
+export const ACCEPT_FALLBACK_HEADER = 'x-accept-fallback';
 
 export async function providerFetch(providerId: string, path: string, directUrl: string, init: RequestInit, opts: ProviderFetchOptions = {}): Promise<Response> {
   const relayOwnKey = Boolean(opts.userKey) && opts.userKey !== 'proxy' && canRelayWithOwnKey(providerId);
@@ -369,11 +379,13 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   headers.delete('authorization');
   headers.delete('x-api-key');
   headers.delete('nv-organization-id');
+  headers.delete(ACCEPT_FALLBACK_HEADER);
   let res: Response;
   if (relayOwnKey) {
     headers.set('x-provider-key', opts.userKey as string);
     res = await fetch(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
   } else {
+    if (opts.acceptFallback) headers.set(ACCEPT_FALLBACK_HEADER, '1');
     res = await workerFetchWithAuthRetry(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
   }
   updateQuotaFromHeaders(res.headers);

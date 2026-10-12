@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS } from './types';
 import { geminiService, toChatHistory } from './services/geminiService';
+import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
@@ -701,9 +702,21 @@ const App: React.FC = () => {
         setActiveTool({ name: 'Live search', stage: 'Checking what search engines say right now' });
       }
 
-      let fullText = '';
-      let allUrls: Array<{ uri: string; title: string }> = [];
-      const toolExecutions: Message['toolExecutions'] = [];
+      // One reply per send. Its text, sources, tool runs and fallback marker come only from the
+      // chunks of this send (services/chat/streamedReply.ts).
+      let reply = newStreamedReply();
+      // What a reply may do to the app. What it shows and whether it is remembered is decided
+      // in streamedReply.ts, not here.
+      const replyEffects: ReplyEffects = {
+        show: (update) => setMessages((prev) => prev.map((m) => (m.id === modelId ? update(m) : m))),
+        remember: (insight) => {
+          try {
+            brandMemoryVaultService.ingestChatInsight({ ...insight, dna });
+          } catch {
+            /* memory optional */
+          }
+        },
+      };
       let firstToken = true;
       let usedServerOracle = false;
 
@@ -737,10 +750,8 @@ const App: React.FC = () => {
               stage: ev.output || ev.stage || 'Running research',
             });
             if (ev.stage === 'done' && ev.output) {
-              toolExecutions.push({
-                tool: ev.tool,
-                args: {},
-                output: ev.output,
+              reply = addStreamChunk(reply, {
+                toolExecution: { tool: ev.tool, args: {}, output: ev.output },
               });
             }
           }
@@ -753,18 +764,8 @@ const App: React.FC = () => {
               setAgentStep('Writing your answer');
               setProgress(60);
             }
-            fullText += ev.text;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === modelId
-                  ? {
-                      ...m,
-                      content: fullText,
-                      toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined,
-                    }
-                  : m,
-              ),
-            );
+            reply = addStreamChunk(reply, { text: ev.text });
+            showReplyProgress(reply, replyEffects);
           }
           if (ev.type === 'done' && !ev.ok && !usedServerOracle) {
             softFail = true;
@@ -773,9 +774,8 @@ const App: React.FC = () => {
         }
         if (softFail) {
           usedServerOracle = false;
-          fullText = '';
+          reply = newStreamedReply();
           firstToken = true;
-          toolExecutions.length = 0;
         }
       }
 
@@ -786,16 +786,11 @@ const App: React.FC = () => {
         })) {
           if (controller.signal.aborted) break;
 
+          // Text, sources, tool runs and the fallback marker all go through this one step.
+          reply = addStreamChunk(reply, chunk);
           if (chunk.toolExecution) {
-            toolExecutions.push(chunk.toolExecution);
             setProgress(35);
             setActiveTool({ name: 'Live search', stage: chunk.toolExecution.output });
-          }
-          if (chunk.groundingUrls) {
-            const existingUris = new Set(allUrls.map((u) => u.uri));
-            chunk.groundingUrls.forEach((u) => {
-              if (!existingUris.has(u.uri)) allUrls.push(u);
-            });
           }
           if (chunk.text) {
             if (firstToken) {
@@ -805,48 +800,17 @@ const App: React.FC = () => {
               setAgentStep('Writing your answer');
               setProgress(60);
             }
-            fullText += chunk.text;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === modelId
-                  ? {
-                      ...m,
-                      content: fullText,
-                      groundingUrls: allUrls,
-                      toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined,
-                    }
-                  : m,
-              ),
-            );
+            showReplyProgress(reply, replyEffects);
           }
         }
       }
 
       setProgress(100);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === modelId
-            ? {
-                ...m,
-                content: fullText || (controller.signal.aborted ? '*Stopped.*' : ''),
-                groundingUrls: allUrls.length ? allUrls : undefined,
-                isStreaming: false,
-                toolExecutions: toolExecutions.length ? [...toolExecutions] : undefined,
-              }
-            : m,
-        ),
+      completeReply(
+        reply,
+        { question: content, stopped: controller.signal.aborted, skipSearch: opts.skipSearch },
+        replyEffects,
       );
-      if (fullText && !controller.signal.aborted && !opts.skipSearch) {
-        try {
-          brandMemoryVaultService.ingestChatInsight({
-            question: content,
-            answerExcerpt: fullText.slice(0, 1500),
-            dna,
-          });
-        } catch {
-          /* memory optional */
-        }
-      }
     } catch (error: any) {
       console.error('Luminara Search Error:', error);
       const reason = error?.message || 'Unknown error';
