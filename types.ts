@@ -137,6 +137,19 @@ export interface ToolExecution {
   output: string;
 }
 
+/**
+ * Set when the Worker's fallback model wrote a reply instead of the engine that was asked.
+ * The chat shows it with the reply so a founder can see who answered.
+ */
+export interface FallbackAnswerInfo {
+  /** Id of the model that answered, as the Worker reported it. Empty when it reported none. */
+  model: string;
+  /** Why the fallback answered, as the Worker reported it (for example `upstream_5xx`). */
+  reason?: string;
+  /** True when the Worker reported the reply as cut off at the fallback's length limit. */
+  truncated?: boolean;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'model' | 'assistant' | 'system';
@@ -151,6 +164,8 @@ export interface Message {
   groundingUrls?: Array<{ uri: string; title: string }>;
   toolExecutions?: ToolExecution[];
   sources?: any[];
+  /** Present when a fallback model wrote this reply. */
+  fallback?: FallbackAnswerInfo;
 }
 
 export interface SearchGroundingChunk {
@@ -857,6 +872,12 @@ export interface GenerateOptions {
   jsonMode?: boolean;
   /** Prior turns, oldest first. Providers prepend these so the model has conversation memory. */
   history?: ChatTurn[];
+  /**
+   * Accept a reply written by the Worker's fallback model. Off by default: without it a
+   * fallback reply is an error, handled like the provider being down. Set it only where the
+   * `fallback` marker on the result is carried into what is shown or stored with the text.
+   */
+  allowFallback?: boolean;
 }
 
 export interface ChatTurn {
@@ -873,6 +894,8 @@ export interface GenerateResult {
   finishReason: GenerateFinishReason;
   toolCalls?: ToolCall[];
   latencyMs?: number;
+  /** Present when the Worker's fallback model wrote this text. */
+  fallback?: FallbackAnswerInfo;
 }
 
 /**
@@ -885,6 +908,8 @@ export interface StreamChunk {
   toolCalls?: ToolCall[];
   finishReason?: GenerateFinishReason;
   tokenUsage?: { prompt: number; completion: number; total: number };
+  /** Present on the first chunk of a reply the Worker's fallback model is writing. */
+  fallback?: FallbackAnswerInfo;
 }
 
 /**
