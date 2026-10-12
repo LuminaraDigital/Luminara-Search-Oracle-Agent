@@ -61,6 +61,9 @@ describe('marketing FAQ + crawl surfaces', () => {
   it('lists new surfaces in sitemap, robots, and llms.txt', () => {
     expect(SITEMAP_XML).toContain('/methodology');
     expect(SITEMAP_XML).toContain('/sample-report');
+    const matches = SITEMAP_XML.match(/<loc>[^<]+<\/loc>/g) || [];
+    const unique = new Set(matches);
+    expect(matches.length).toBe(unique.size);
     expect(ROBOTS_TXT).toContain('Allow: /methodology');
     expect(ROBOTS_TXT).toContain('Allow: /sample-report');
     expect(LLMS_TXT).toContain('/methodology');

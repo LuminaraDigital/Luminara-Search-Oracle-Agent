@@ -78,8 +78,6 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/pricing</loc></url>
   <url><loc>${base}/methodology</loc></url>
   <url><loc>${base}/sample-report</loc></url>
-  <url><loc>${base}/methodology</loc></url>
-  <url><loc>${base}/sample-report</loc></url>
   <url><loc>${base}/privacy</loc></url>
   <url><loc>${base}/terms</loc></url>
   <url><loc>${base}/docs/mcp.html</loc></url>
