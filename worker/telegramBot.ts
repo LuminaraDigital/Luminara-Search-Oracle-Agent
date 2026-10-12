@@ -6,7 +6,7 @@ import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
-import { businessDnaPromptBlock, filterChatReply, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
+import { businessDnaPromptBlock, chatRoute, chatRouteReply, filterChatReply, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
 import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
@@ -166,6 +166,9 @@ export function publicPlanCatalogue(): Record<string, { title: string; descripti
   }
   return out;
 }
+
+/** The plan ids the bot's /buy command can match: letters only, as its pattern reads them. */
+const BUY_COMMAND_ID = /^[a-z]+$/;
 
 export function normalizePlanId(planId: string | null | undefined): string {
   const id = String(planId || '').toLowerCase().trim();
@@ -364,16 +367,22 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/plan') || text.startsWith('/subscribe')) {
+      // A /buy command is shown only for a plan the command sells. The one-day plans are bought
+      // in the app.
       const lines = Object.entries(PLANS).map(
-        ([id, p]) => `• *${p.title}* - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  /buy_${id}`,
+        ([id, p]) =>
+          `• ${p.title} - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  ` +
+          (BUY_COMMAND_ID.test(id) ? `/buy_${id}` : 'Buy this one in the app.'),
       );
+      // Plain text, on purpose. With a parse mode, Telegram reads the underscore in /buy_starter
+      // as the start of italics: the commands lose their underscores and stop being tappable, or
+      // the whole message is refused. Telegram links a command in plain text by itself.
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
-          `*Luminara Suite Subscription Plans (Telegram Stars)*\n\n` +
+          `Luminara Suite Subscription Plans (Telegram Stars)\n\n` +
           lines.join('\n\n') +
           `\n\nTap /buy_starter, /buy_growth, or /buy_agency to pay directly in chat, or open the app to pay with Stars in one tap.`,
-        parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
             { text: '⭐ Open Paywall in Mini App', web_app: { url: `${env.WEBAPP_URL}?startapp=stars` } },
@@ -383,10 +392,10 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
-    const buyMatch = text.match(/^\/buy(?:_|\s+)([a-z_]+)/i);
+    const buyMatch = text.match(/^\/buy(?:_|\s+)([a-z]+)/i);
     if (buyMatch) {
       const planId = normalizePlanId(buyMatch[1]);
-      const plan = PLANS[planId];
+      const plan = Object.hasOwn(PLANS, planId) ? PLANS[planId] : undefined;
       if (plan) {
         const refusal = await planDowngradeRefusal(env, String(msg.from?.id || ''), planId, 'so no invoice was opened and nothing was charged.').catch(() => null);
         if (refusal) {
@@ -701,7 +710,51 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // 1. Send typing action so user gets immediate visual feedback
     await api(env, 'sendChatAction', { chat_id: chatId, action: 'typing' });
 
-    // 2. Check subscription & daily quota
+    // 2. Multi-turn session memory
+    const histKey = `tg:chat:${chatId}`;
+    let history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    if (env.LUMINARA_KV) {
+      try {
+        const stored = await env.LUMINARA_KV.get(histKey, 'json');
+        if (Array.isArray(stored)) history = stored;
+      } catch {
+        history = [];
+      }
+    }
+
+    // Stores a chat reply in session memory and sends it. No parse_mode: the text is not valid
+    // Markdown, and Telegram rejects the whole message when the markup does not parse. No link
+    // preview: a chat reply must not unfurl a page.
+    const deliverChatReply = async (reply: string, keyboard: unknown): Promise<void> => {
+      if (env.LUMINARA_KV) {
+        try {
+          const nextHist = [...history, { role: 'user' as const, content: text }, { role: 'assistant' as const, content: reply }].slice(-6);
+          await env.LUMINARA_KV.put(histKey, JSON.stringify(nextHist), { expirationTtl: 86400 });
+        } catch (err) {
+          console.error('[Telegram Bot] Failed storing chat history in KV', err);
+        }
+      }
+      const sendResult = await api(env, 'sendMessage', {
+        chat_id: chatId,
+        text: reply,
+        link_preview_options: { is_disabled: true },
+        reply_markup: keyboard,
+      });
+      if (!sendResult.ok) {
+        console.error('[Telegram Bot] chat reply was not delivered', sendResult.description);
+      }
+    };
+
+    // 3. A payment problem, and a question about our own plans, prices or how to pay, never
+    // reach the model (worker/chatHonesty.ts). Each gets a fixed reply that uses no quota and
+    // needs no plan. Only this message is read: what was said before does not route it.
+    const route = chatRoute(text, PLANS);
+    if (route) {
+      await deliverChatReply(chatRouteReply(route, PLANS), openAppKeyboard(env));
+      return;
+    }
+
+    // 4. Check subscription & daily quota
     const loginId = String(msg.from?.id || chatId);
     const accountId = env.LUMINARA_KV ? await resolveAccountId(env, loginId) : loginId;
     let sub: { plan: string; expiresAt: number; chargeId?: string } | null = null;
@@ -758,11 +811,11 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
     }
 
-    // 3. Hermes-like: Detect domain / URL intent in message
+    // 5. Hermes-like: Detect domain / URL intent in message
     const domainMatch = text.match(/(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/i);
     const targetDomain = domainMatch ? domainMatch[1].split('/')[0].toLowerCase() : null;
 
-    // 4. Hermes-like: Recall persistent user Business DNA from KV workspace
+    // 6. Hermes-like: Recall persistent user Business DNA from KV workspace
     let dnaPromptAddition = '';
     if (env.LUMINARA_KV) {
       try {
@@ -784,18 +837,6 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       ? `\n\nDetected Target Domain in query: "${targetDomain}". This chat has not fetched or measured that site. Do not describe its current state and do not give it a diagnostic, a rating or any number. Give general guidance only, and tell the user that the Full Visual Audit button under this reply opens the audit screen in the app.`
       : '';
 
-    // 5. Multi-turn session memory
-    const histKey = `tg:chat:${chatId}`;
-    let history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-    if (env.LUMINARA_KV) {
-      try {
-        const stored = await env.LUMINARA_KV.get(histKey, 'json');
-        if (Array.isArray(stored)) history = stored;
-      } catch {
-        history = [];
-      }
-    }
-
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       // Plan facts in the prompt are built from PLANS on every turn, never typed by hand.
       { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(PLANS) + dnaPromptAddition + domainPromptAddition },
@@ -803,11 +844,12 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       { role: 'user', content: text },
     ];
 
-    // 6. Generate AI response via configured worker providers
+    // 7. Generate AI response via configured worker providers
     const modelReply = await generateOracleChatResponse(env, messages);
     // Before the reply is stored in history or sent (worker/chatHonesty.ts): anything it says about
     // our plans, prices or offers gives way to one block built from PLANS, a measurement nobody
-    // made is replaced, and a link to a host that is neither ours nor the user's is spelled out.
+    // made is replaced, a link to a host that is neither ours nor the user's is spelled out, and
+    // a sentence that asks for a code, password or key is removed.
     const honest = modelReply
       ? filterChatReply(modelReply, {
           plans: PLANS,
@@ -815,8 +857,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
         })
       : null;
-    if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.linksRemoved > 0)) {
-      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan or price sentence(s), ${honest.linksRemoved} link(s)`);
+    if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.billingSentences > 0 || honest.linksRemoved > 0 || honest.secretRequests > 0)) {
+      console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan price sentence(s), ${honest.billingSentences} pay-again or account sentence(s), money note ${honest.moneyNote ? 'added' : 'not added'}, ${honest.linksRemoved} link(s), ${honest.secretRequests} request(s) for a secret`);
     }
     const aiResponse = honest ? honest.text : null;
 
@@ -844,29 +886,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
-    // 7. Update session memory in KV
-    if (env.LUMINARA_KV) {
-      try {
-        const nextHist = [...history, { role: 'user' as const, content: text }, { role: 'assistant' as const, content: aiResponse }].slice(-6);
-        await env.LUMINARA_KV.put(histKey, JSON.stringify(nextHist), { expirationTtl: 86400 });
-      } catch (err) {
-        console.error('[Telegram Bot] Failed storing chat history in KV', err);
-      }
-    }
-
-    // 8. Deliver response. No parse_mode: model text is not valid Markdown, and Telegram
-    // rejects the whole message when the markup does not parse. No link preview: model text
-    // must not unfurl a page.
-    const sendResult = await api(env, 'sendMessage', {
-      chat_id: chatId,
-      text: aiResponse,
-      link_preview_options: { is_disabled: true },
-      reply_markup: replyKeyboard,
-    });
-
-    if (!sendResult.ok) {
-      console.error('[Telegram Bot] chat reply was not delivered', sendResult.description);
-    }
+    // 8. Update session memory and deliver the response
+    await deliverChatReply(aiResponse, replyKeyboard);
   } catch (e) {
     console.error('telegram update failed', e);
   }
@@ -2201,6 +2222,12 @@ export async function sendTelegramAlert(env: Env, chatId: number | string, text:
     };
   }
   const res = await api(env, 'sendMessage', payload);
-  return Boolean(res.ok);
+  if (res.ok) return true;
+  // An alert carries the user's own words (a domain, a keyword, competitor names). One stray
+  // underscore or asterisk in them and Telegram refuses the formatted message. The alert matters
+  // more than its formatting, so it is sent again as plain text, markers showing.
+  const { parse_mode: _formatted, ...plain } = payload;
+  const again = await api(env, 'sendMessage', plain);
+  return Boolean(again.ok);
 }
 
