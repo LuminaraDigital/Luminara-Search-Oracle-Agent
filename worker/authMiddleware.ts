@@ -178,7 +178,6 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/referrals\/(me|claim|qualify)$/ },
   { pattern: /^\/missions\/complete$/, methods: ['POST'] },
   { pattern: /^\/idea-scout(\/|$)/ },
-  { pattern: /^\/visibility\/crawler-files$/, methods: ['GET'] },
   // Agency API surfaces (W6+); also gated by requireApiAccess after identify.
   { pattern: /^\/oracle(\/|$)/ },
   { pattern: /^\/audit(\/|$)/ },

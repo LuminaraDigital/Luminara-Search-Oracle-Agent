@@ -79,6 +79,11 @@ describe('security headers', () => {
     expect(res.headers.get('cache-control')).toContain('max-age=3600');
   });
 
+  it('allows unauthenticated requests to /api/visibility/crawler-files without 401', async () => {
+    const res = await worker.fetch(req('/api/visibility/crawler-files?url=https://example.com'), makeEnv(), ctx);
+    expect(res.status).not.toBe(401);
+  });
+
   it('adds hardening headers and returns trimmed payload on public /api/health', async () => {
     const res = await worker.fetch(req('/api/health'), makeEnv(), ctx);
     expect(res.status).toBe(200);

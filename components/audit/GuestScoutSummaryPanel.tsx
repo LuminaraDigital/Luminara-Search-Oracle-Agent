@@ -102,15 +102,17 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
         </>
       )}
 
-      {/* Actionable Fix List with copyable code diffs */}
-      <ActionableFixList
-        domain={summary.domain}
-        findings={summary.failed.map((failText, idx) => ({
-          id: `finding-scout-${idx}`,
-          title: failText,
-          description: `Finding identified during scout: ${failText}`,
-        }))}
-      />
+      {/* Actionable Fix List with copyable code diffs: shown only when live evidence was measured */}
+      {!summary.evidenceEmpty && !summary.degraded && (
+        <ActionableFixList
+          domain={summary.domain}
+          findings={summary.failed.map((failText, idx) => ({
+            id: `finding-scout-${idx}`,
+            title: failText,
+            description: `Finding identified during scout: ${failText}`,
+          }))}
+        />
+      )}
 
       {/* Retention: Daily Verification Streak Card */}
       <DailyStreakCard domain={summary.domain} />
@@ -120,8 +122,9 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
           <button
             type="button"
             onClick={onShare}
-            disabled={sharing}
-            className="min-h-11 rounded-lg bg-gradient-to-r from-gold to-gold-dark px-4 py-2 text-[11px] font-black uppercase tracking-widest text-black disabled:opacity-50"
+            disabled={sharing || summary.evidenceEmpty}
+            className="min-h-11 rounded-lg bg-gradient-to-r from-gold to-gold-dark px-4 py-2 text-[11px] font-black uppercase tracking-widest text-black disabled:opacity-40 disabled:cursor-not-allowed"
+            title={summary.evidenceEmpty ? 'Cannot share an empty run with no evidence' : undefined}
           >
             {sharing ? 'Sharing...' : 'Share teaser'}
           </button>
@@ -130,8 +133,9 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
           <button
             type="button"
             onClick={onCopy}
-            disabled={sharing}
-            className="min-h-11 rounded-lg border border-white/15 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-gray-200"
+            disabled={sharing || summary.evidenceEmpty}
+            className="min-h-11 rounded-lg border border-white/15 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={summary.evidenceEmpty ? 'Cannot share an empty run with no evidence' : undefined}
           >
             Copy link
           </button>

@@ -275,7 +275,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
                     return `Hosted keys active (${hostedCount}). Your own keys stay in this browser and are relayed through Luminara so vendors never see the page origin.`;
                   }
                   if (health.ok) {
-                    return 'Your keys stay in this browser and are relayed through Luminara (no vendor CORS). Hosted server keys are not configured yet.';
+                    return 'Your keys stay in this browser and relay through Luminara (no vendor CORS). Free daily hosted allowance is provided on sign-in.';
                   }
                   return 'Your keys stay in this browser. Calls relay through Luminara when the Worker is reachable so keys work in production.';
                 })()}
@@ -488,9 +488,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
           </Button>
 
           <div className="flex items-center gap-2 text-[10px] text-gray-400">
-            <a href="#privacy" onClick={onClose} className="hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded">Privacy</a>
+            <a href="/privacy" onClick={onClose} className="hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded">Privacy</a>
             <span className="text-gray-600">·</span>
-            <a href="#terms" onClick={onClose} className="hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded">Terms</a>
+            <a href="/terms" onClick={onClose} className="hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded">Terms</a>
           </div>
 
           <div className="flex items-center gap-3">

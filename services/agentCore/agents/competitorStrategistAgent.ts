@@ -193,9 +193,13 @@ export class CompetitorStrategistAgent {
     if (topCompetitors.length > 0) {
       competitorGaps.push(`Competitor Authority Moat: Leading competitors (${topCompetitors.slice(0, 2).join(', ')}) possess established third-party review coverage.`);
       competitorGaps.push('Comparison Intent Gap: Lack of authoritative "vs" landing pages targeting high-converting evaluation queries.');
-    } else {
+    } else if (serpEvidence.length > 0) {
       competitorGaps.push('Niche Definition: Untapped brand authority opportunity with minimal direct head-to-head search competition.');
     }
+
+    const message = serpEvidence.length === 0
+      ? 'No search results collected. Competitor signals not measured.'
+      : `Identified ${topCompetitors.length} key competitor(s) and mapped ${competitorGaps.length} strategic keyword gaps.`;
 
     emit({
       id: `strat-done-${Date.now()}`,
@@ -203,10 +207,12 @@ export class CompetitorStrategistAgent {
       agentRole: 'competitor_strategist',
       agentName: this.name,
       phase: 'strategy_complete',
-      message: `Identified ${topCompetitors.length} key competitor(s) and mapped ${competitorGaps.length} strategic keyword gaps.`,
+      message,
       status: 'completed',
-      evidenceSnippet: `Competitors tracked: ${topCompetitors.join(', ') || 'None found in initial SERP slice'}`,
-      confidenceScore: 0.88,
+      evidenceSnippet: serpEvidence.length === 0
+        ? 'Search returned 0 results. Competitor gaps omitted.'
+        : `Competitors tracked: ${topCompetitors.join(', ') || 'None found in initial SERP slice'}`,
+      confidenceScore: serpEvidence.length === 0 ? 0 : 0.88,
     });
 
     return { topCompetitors, competitorGaps };

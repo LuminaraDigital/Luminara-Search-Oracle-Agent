@@ -586,7 +586,7 @@ export class ConfigService {
             : 'none') as 'env' | 'localStorage' | 'server' | 'none',
       },
       { id: 'firecrawl', name: 'Firecrawl Scraper', cat: 'scraping' as const, ...this.getKey('luminara_firecrawl_key', 'FIRECRAWL_API_KEY', 'VITE_FIRECRAWL_API_KEY', 'firecrawl') },
-      { id: 'patchright', name: 'Patchright Stealth Crawler', cat: 'scraping' as const, ...this.getKey('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL') },
+      { id: 'patchright', name: 'Browser Automation Scraper', cat: 'scraping' as const, ...this.getKey('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL') },
       { id: 'local_serp', name: 'Local Google SERP Scraper', cat: 'search' as const, ...this.getKey('luminara_local_serp_url', 'LOCAL_SERP_URL', 'VITE_LOCAL_SERP_URL') },
       { id: 'tinker', name: 'Tinker Runtime', cat: 'runtime' as const, ...this.getKey('luminara_tinker_key', 'TINKER_API_KEY', 'VITE_TINKER_API_KEY') },
     ];
