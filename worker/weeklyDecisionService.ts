@@ -360,7 +360,7 @@ export async function sendWeeklyDecisionDigest(
     const { results } = await env.DB.prepare(
       `SELECT wd.domain, wd.title, wd.why_text, wd.data_freshness, u.telegram_id
        FROM weekly_decisions wd
-       JOIN app_users u ON wd.account_id = u.id
+       JOIN users u ON wd.account_id = u.id
        WHERE u.telegram_id IS NOT NULL AND wd.week_key = ?
        LIMIT 100`,
     )
