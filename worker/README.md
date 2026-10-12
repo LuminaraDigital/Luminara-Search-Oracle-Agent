@@ -362,26 +362,57 @@ message and the reply went to the model chat.
   `not_measured` or "not verified" when data is missing; numeric claims
   without tool evidence are rejected. Live.
 - `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
-  nothing, and the model has no say over prices. The prompt gets the plan facts built
-  from `PLANS` on every turn and the rule not to state prices or offers. Before a
-  reply is stored in history or sent:
-  - Every sentence or list line about our own plans, prices or offers is removed,
-    and one block built from `PLANS` (each plan with its Stars and days, where to
-    buy, that plans do not renew, where billing help is) stands where the first one
-    was. The model's number is never checked: a correct price is replaced too.
+  nothing, and the model has no say over prices or payments.
+  - **Two kinds of message never reach the model.** `chatRoute` reads the user's
+    message (English, plus a short named list of words in Spanish, Portuguese,
+    Russian, French and German). A payment problem in the first person ("I paid but
+    nothing happened", "charged twice", "I want a refund") gets one fixed reply that
+    points to `/paysupport` and says not to pay again. A question about Luminara's
+    own plans, prices or how to pay gets one block built from `PLANS`, headed
+    "Luminara's own plans:", which also says that plans are paid with Telegram
+    Stars and do not renew on their own. Its last line is for a buyer whose payment
+    went wrong and who landed there: "Already paid? Send /paysupport. Do not pay
+    again." Both replies are stored in history like any reply, cost no quota and
+    need no plan.
+  - **It routes only when sure, and it has no memory.** A payment cue in the first
+    person ("I paid", "charged me", "my payment") wins over everything else in the
+    message. Without one, a message that names another company or tool, or is about
+    the user's own site, page, markup, policy, customers or pricing, goes to the
+    model. Each message is read by itself: what was said before never routes it.
+  - Every model reply passes through `filterChatReply` before it is stored or sent.
+    A sentence that tells the user to pay again ("Send /buy_starter again.",
+    "Retry the purchase."), or claims a change to the account that the model cannot
+    make ("I have activated it for you.", "Your plan is now active."), gives way to
+    the /paysupport text, once per reply.
+  - A sentence that names one of our plans as a plan with a number (a price, or a
+    limit such as "10 sites"), or gives a number of Stars, gives way to the plan
+    block. The model's number is never checked: a correct price is replaced too.
+    "Your Starter plan" is ours; beside "tier", "page" or "pricing" it is read as a
+    tier of the user's own product and left alone. Any other talk of money (price, pay,
+    refund, renew, trial, discount, free, card, crypto, subscription) stays word for
+    word, and one fixed line is added at the end of the reply: where plans and
+    prices are, where billing help is, and that this chat cannot quote prices or
+    take payments.
   - A sentence that states a measurement nobody made (a percentage, a rank, a score,
     a count of citations or visits, a claim of having looked at the site) becomes
-    one "not measured" sentence. Code, links, dates, phone and version numbers, HTTP
-    status codes and numbers the user wrote are set aside first. An instruction
-    keeps its count ("Add 3 FAQ questions") and loses a promised outcome. Status
-    comes from the claim ledger (`services/evidenceBound`).
-  - A link to a host that is neither luminarasuite.com (or `WEBAPP_URL`) nor one the
-    user wrote is spelled out in words. Code blocks are left as they are.
+    one "not measured" sentence. Links, dates, phone and version numbers and HTTP
+    status codes are set aside first. A number the user wrote is kept only where the
+    sentence hands it back ("you said"). An instruction keeps its count ("Add 3 FAQ
+    questions") and loses a promised outcome. Status comes from the claim ledger
+    (`services/evidenceBound`).
+  - Inline code is read as prose. Only JSON-LD (an object with `@context`) and head
+    tags (`meta`, `link`, `title`, a JSON-LD `script`) are set aside as something
+    to paste, fenced or not. Any other JSON, markup or fenced text, and everything
+    after an unclosed fence, is prose and is read for measurements.
+  - A link or bare host name is spelled out in words unless the host is
+    luminarasuite.com, the `WEBAPP_URL` host, one the user wrote, or a reference
+    host (`REFERENCE_LINK_HOSTS`). Links inside JSON-LD and head tags are checked
+    too. A sentence that asks for a code, password, seed phrase or key is removed.
   Business DNA enters the prompt only inside an untrusted-content fence whose
   markers carry a one-time code, with each field capped at 300 characters. The
   reply is sent with no `parse_mode` and with link previews off. The filter is a
-  backstop, English only and pattern based; the prompt rules are the main control.
-  Live.
+  backstop, pattern based and mostly English; the prompt rules and the plan-question
+  rule are the main controls. Live.
 - DataForSEO / Umami sidecars: live when env-bound; the front-end traffic
   path returns `not_configured` when unreachable. See `services/competitors/README.md`.
 - Telegram webhook, license service, sentinel scan: live when bindings exist.
