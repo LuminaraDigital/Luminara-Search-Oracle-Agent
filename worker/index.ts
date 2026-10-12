@@ -57,7 +57,7 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML, buildSitemapXml } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeShareHtml } from './marketingShell';
+import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -132,7 +132,7 @@ import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
 import { isCronMapped, jobsForCron } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
-import { handleWeeklyDecisionsRoute } from './weeklyDecisionService';
+import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
@@ -2155,6 +2155,12 @@ export default {
       return withSecurityHeaders(shareHtml);
     }
 
+    // Unlisted receipt verification OG HTML (before static marketing shells).
+    const receiptHtml = await maybeServeReceiptHtml(request, env);
+    if (receiptHtml) {
+      return withSecurityHeaders(receiptHtml);
+    }
+
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
     const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
     if (marketingHtml) {
@@ -2216,6 +2222,7 @@ export default {
     if (jobs.includes('domain_recheck')) ctx.waitUntil(recheckVerifiedDomains(env).then(() => undefined));
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
     if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
+    if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
     if (jobs.includes('ton_pending_sweep')) {
       ctx.waitUntil(
         sweepTonPendingOrders(env)

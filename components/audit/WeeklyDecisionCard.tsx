@@ -8,6 +8,7 @@ import { upsertWeeklyDecision } from '../../services/privacy/privacyClient';
 import { honestyChipLabel, normalizeMeasurementStatus } from '../../services/wdl/liveHonesty';
 
 import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
+import { probeLlmCrawlerReadiness } from '../../services/audit/llmCrawlerProbe';
 import { MindshareRadarCard } from '../visibility/MindshareRadarCard';
 import { PerceptionMatrix } from '../visibility/PerceptionMatrix';
 
@@ -74,6 +75,26 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
   }, [commitment?.actionId, commitment?.committedAt, domain, primary?.id, primary?.description, aiSaid]);
 
   const [exported, setExported] = useState(false);
+  const [proving, setProving] = useState(false);
+  const [verificationNote, setVerificationNote] = useState<string | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<'measured' | 'unverified' | null>(null);
+  const [telegramDigestOptIn, setTelegramDigestOptIn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('luminara_weekly_digest_opt_in') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleTelegramDigest = () => {
+    const next = !telegramDigestOptIn;
+    setTelegramDigestOptIn(next);
+    try {
+      localStorage.setItem('luminara_weekly_digest_opt_in', next ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  };
 
   const handleExportFixPack = () => {
     const raw = domain || 'domain';
@@ -126,6 +147,35 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
 
     setExported(true);
     setTimeout(() => setExported(false), 3000);
+  };
+
+  const handleRecheckAndProve = async () => {
+    if (!domain || proving) return;
+    setProving(true);
+    setVerificationNote(null);
+    try {
+      const clean = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+      const report = await probeLlmCrawlerReadiness(`https://${clean}`);
+      const llmsPass = report.checks.some((c) => c.id === 'llms_txt' && c.status === 'pass');
+      const anyDirective = report.checks.some((c) => (c.id === 'ai_bot_directives' || c.id === 'llms_structure') && c.status === 'pass');
+
+      if (llmsPass || anyDirective) {
+        setVerificationStatus('measured');
+        setVerificationNote(`Verified live on ${clean}: measured crawler evidence detected.`);
+        if (primary) {
+          const updated = await patchFindingStatus(domain, primary.id, 'done');
+          if (updated) onFindingUpdated?.(updated);
+        }
+      } else {
+        setVerificationStatus('unverified');
+        setVerificationNote(`Not detected yet on https://${clean}/llms.txt. Deploy the exported fix pack to your public root and re-check.`);
+      }
+    } catch {
+      setVerificationStatus('unverified');
+      setVerificationNote('Network check failed. Verify domain connectivity and try again.');
+    } finally {
+      setProving(false);
+    }
   };
 
   const markInProgress = async () => {
@@ -210,7 +260,35 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
                 </>
               )}
             </button>
+            <button
+              type="button"
+              disabled={busy || proving}
+              onClick={handleRecheckAndProve}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-[11px] font-bold uppercase tracking-wider text-white inline-flex items-center gap-1.5 transition-colors disabled:opacity-40"
+              title="Probe live domain to verify fix deployment"
+            >
+              {proving ? (
+                <>
+                  <ICONS.Radar className="w-3.5 h-3.5 animate-spin text-gold-light" />
+                  Checking...
+                </>
+              ) : (
+                <>
+                  <ICONS.Check className="w-3.5 h-3.5 text-gold-light" />
+                  Re-check &amp; Prove
+                </>
+              )}
+            </button>
           </div>
+          {verificationNote && (
+            <p
+              className={`mt-2 text-xs font-mono ${
+                verificationStatus === 'measured' ? 'text-green-400' : 'text-amber-400/90'
+              }`}
+            >
+              {verificationNote}
+            </p>
+          )}
         </div>
       )}
 
@@ -266,14 +344,29 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
         </ul>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 font-mono">
-        <span className="inline-flex items-center gap-1.5">
-          <ICONS.Radar className="w-3.5 h-3.5 text-gold/80" />
-          Verify by {verifyBy}
-        </span>
-        <span>
-          {findings.length} finding{findings.length === 1 ? '' : 's'} on board
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-white/10 text-[11px] text-gray-500 font-mono">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="inline-flex items-center gap-1.5">
+            <ICONS.Radar className="w-3.5 h-3.5 text-gold/80" />
+            Verify by {verifyBy}
+          </span>
+          <span>
+            {findings.length} finding{findings.length === 1 ? '' : 's'} on board
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={toggleTelegramDigest}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors ${
+            telegramDigestOptIn
+              ? 'border-gold/50 bg-gold/10 text-gold-light'
+              : 'border-white/10 text-gray-400 hover:text-white'
+          }`}
+          title="Toggle weekly decision summary notifications"
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${telegramDigestOptIn ? 'bg-gold' : 'bg-gray-600'}`} />
+          Weekly Telegram Briefing: {telegramDigestOptIn ? 'Enabled' : 'Disabled'}
+        </button>
       </div>
     </section>
   );
