@@ -25,6 +25,7 @@ Allow: /sample-report
 Allow: /privacy
 Allow: /terms
 Allow: /desktop
+Allow: /compare/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -47,6 +48,7 @@ Allow: /sample-report
 Allow: /privacy
 Allow: /terms
 Allow: /desktop
+Allow: /compare/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt

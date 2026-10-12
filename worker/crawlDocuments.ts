@@ -30,6 +30,7 @@ Allow: /sample-report
 Allow: /privacy
 Allow: /terms
 Allow: /desktop
+Allow: /compare/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -52,6 +53,7 @@ Allow: /sample-report
 Allow: /privacy
 Allow: /terms
 Allow: /desktop
+Allow: /compare/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -83,6 +85,10 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/docs/mcp.html</loc></url>
   <url><loc>${base}/docs/what-is-aeo.html</loc></url>
   <url><loc>${base}/desktop</loc></url>
+  <url><loc>${base}/compare/profound</loc></url>
+  <url><loc>${base}/compare/ahrefs</loc></url>
+  <url><loc>${base}/compare/otterly</loc></url>
+  <url><loc>${base}/compare/peec</loc></url>
   <url><loc>${base}/llms.txt</loc></url>
 </urlset>
 `;
@@ -161,6 +167,10 @@ Published USD labels. Plans are paid with Telegram Stars inside the Telegram Min
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
+- Profound comparison: https://www.luminarasuite.com/compare/profound
+- Ahrefs comparison: https://www.luminarasuite.com/compare/ahrefs
+- Otterly AI comparison: https://www.luminarasuite.com/compare/otterly
+- Peec AI comparison: https://www.luminarasuite.com/compare/peec
 
 ## Studio
 

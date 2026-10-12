@@ -45,6 +45,10 @@ const PATH_ALIASES: Record<string, AppView> = {
   dashboard: AppView.DASHBOARD,
   onboarding: AppView.BUSINESS_DNA,
   desktop: AppView.LANDING,
+  'compare/profound': AppView.WHY_US,
+  'compare/ahrefs': AppView.WHY_US,
+  'compare/otterly': AppView.WHY_US,
+  'compare/peec': AppView.WHY_US,
 };
 
 /** Legacy hash fragments that used to drive marketing views. */
@@ -124,6 +128,7 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
   if (path.startsWith('verify/r/')) return AppView.VERIFY_RECEIPT;
   if (path.startsWith('verify/')) return AppView.VERIFY_ATTESTATION;
   if (path.startsWith('reports/')) return AppView.AGENT_REPORT;
+  if (path.startsWith('compare/')) return AppView.WHY_US;
 
   const swap = parseUrlSwapRoute(rawPath);
   if (swap) return swap.view;

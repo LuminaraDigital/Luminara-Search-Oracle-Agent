@@ -30,22 +30,41 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
     /<meta\s+name="description"\s+content="[^"]*"\s*>/i,
     `<meta name="description" content="${description}">`,
   );
-  out = out.replace(
-    /<meta\s+property="og:title"\s+content="[^"]*"\s*>/i,
-    `<meta property="og:title" content="${title}">`,
-  );
-  out = out.replace(
-    /<meta\s+property="og:description"\s+content="[^"]*"\s*>/i,
-    `<meta property="og:description" content="${description}">`,
-  );
-  out = out.replace(
-    /<meta\s+property="og:url"\s+content="[^"]*"\s*>/i,
-    `<meta property="og:url" content="${canonical}">`,
-  );
-  out = out.replace(
-    /<meta\s+property="og:image"\s+content="[^"]*"\s*>/i,
-    `<meta property="og:image" content="${image}">`,
-  );
+  if (/<meta\s+property="og:title"/i.test(out)) {
+    out = out.replace(
+      /<meta\s+property="og:title"\s+content="[^"]*"\s*>/i,
+      `<meta property="og:title" content="${title}">`,
+    );
+  } else {
+    out = out.replace(/<\/head>/i, `  <meta property="og:title" content="${title}">\n</head>`);
+  }
+
+  if (/<meta\s+property="og:description"/i.test(out)) {
+    out = out.replace(
+      /<meta\s+property="og:description"\s+content="[^"]*"\s*>/i,
+      `<meta property="og:description" content="${description}">`,
+    );
+  } else {
+    out = out.replace(/<\/head>/i, `  <meta property="og:description" content="${description}">\n</head>`);
+  }
+
+  if (/<meta\s+property="og:url"/i.test(out)) {
+    out = out.replace(
+      /<meta\s+property="og:url"\s+content="[^"]*"\s*>/i,
+      `<meta property="og:url" content="${canonical}">`,
+    );
+  } else {
+    out = out.replace(/<\/head>/i, `  <meta property="og:url" content="${canonical}">\n</head>`);
+  }
+
+  if (/<meta\s+property="og:image"/i.test(out)) {
+    out = out.replace(
+      /<meta\s+property="og:image"\s+content="[^"]*"\s*>/i,
+      `<meta property="og:image" content="${image}">`,
+    );
+  } else {
+    out = out.replace(/<\/head>/i, `  <meta property="og:image" content="${image}">\n</head>`);
+  }
   out = out.replace(
     /<meta\s+name="twitter:card"\s+content="[^"]*"\s*>/i,
     '<meta name="twitter:card" content="summary_large_image">',
