@@ -6,6 +6,7 @@ import {
   refundStarPayment,
   normalizePlanId,
   premiumEnginesPhrase,
+  sendTelegramAlert,
   PLANS,
 } from '../worker/telegramBot';
 import type { Env } from '../worker/index';
@@ -436,6 +437,62 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       expect(body.text).toContain('Luminara Starter');
       expect(body.text).toContain('2,500 ⭐');
       expect(body.reply_markup.inline_keyboard[0][0].web_app.url).toContain('startapp=stars');
+    });
+
+    it('an alert that Telegram refuses as formatted text is sent again as plain text', async () => {
+      const text = '*Drift detected* for my_site.io\nKeyword: _best_crm_tool_';
+      // The first send is refused the way Telegram refuses an unmatched marker.
+      mockFetch
+        .mockResolvedValueOnce({ json: async () => ({ ok: false, description: "Bad Request: can't parse entities" }) })
+        .mockResolvedValueOnce({ json: async () => ({ ok: true }) });
+
+      expect(await sendTelegramAlert(env, 100, text, 'https://luminarasuite.com/fix')).toBe(true);
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const first = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const second = JSON.parse(mockFetch.mock.calls[1][1].body);
+      expect(first.parse_mode).toBe('Markdown');
+      expect(second).not.toHaveProperty('parse_mode');
+      // The same words and the same button, to the same chat.
+      expect(second.text).toBe(text);
+      expect(second.chat_id).toBe(100);
+      expect(second.reply_markup).toEqual(first.reply_markup);
+    });
+
+    it('an alert that goes through formatted is sent once', async () => {
+      mockFetch.mockResolvedValueOnce({ json: async () => ({ ok: true }) });
+      expect(await sendTelegramAlert(env, 100, '*Drift detected* for acme.io')).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('an alert that cannot be sent either way reports failure', async () => {
+      mockFetch.mockResolvedValue({ json: async () => ({ ok: false, description: 'Forbidden: bot was blocked by the user' }) });
+      expect(await sendTelegramAlert(env, 100, 'anything')).toBe(false);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('sends /plan as plain text, so the underscore in each /buy command survives and the command stays tappable', async () => {
+      mockFetch.mockResolvedValueOnce({
+        json: async () => ({ ok: true }),
+      });
+
+      await handleTelegramUpdate(
+        { message: { chat: { id: 100 }, from: { id: 100 }, text: '/plan' } },
+        env,
+      );
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      // With a parse mode Telegram reads "_" as the start of italics and "*" as bold.
+      expect(body).not.toHaveProperty('parse_mode');
+      expect(body.text).not.toContain('*');
+      for (const command of ['/buy_starter', '/buy_growth', '/buy_agency']) {
+        // Each command stands as a whole word: on its own line, and again in the closing sentence.
+        expect(body.text.split(command).length - 1, command).toBe(2);
+      }
+      // Every plan is still listed with its price and length.
+      for (const plan of Object.values(PLANS)) {
+        expect(body.text).toContain(`${plan.title} - ${plan.stars.toLocaleString()} ⭐ / ${plan.days} days`);
+      }
     });
 
     it('responds with terms and paysupport guidance on /terms and /paysupport', async () => {

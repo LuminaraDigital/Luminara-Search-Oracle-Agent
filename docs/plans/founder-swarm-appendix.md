@@ -97,6 +97,7 @@ One separate docs PR carries these (SW0-0), because other sessions work in those
 | Jetton opcode | `specs/0018` | Credit rule 2: the notification opcode is `0x7362d09c` (SW0a-1) |
 | Account data lists | Zoro 2.6 and P1-1; V2-1b, V3-1b; Ops F2, F4; TN section 2; Allora CL1-1 | "Classify the new table in `worker/accountData.ts` (Track SW SW0-9) as well as editing the lists." |
 | One claim checker | `docs/plans/evidence-bound-decision-100x.md` (another session's draft, uncommitted on 2026-10-10) | To agree with that session before either lands: "Track SW's output check (its section 4.3) and SW0a-8 use this plan's claim ledger where it covers the same rule. One checker is built." |
+| The Workers AI binding | V plan section 12, decision 3 | Decision 3: "Answered yes by `42880f5` for the hosted Groq chat fallback only (Track SW SW0a-11). Memory embeddings stay off: no Vectorize index is bound, and the Worker embeds nothing while no vector index is configured. Whether to bind one for memory search is still open under this decision." Recorded here by SW0a-11 on 2026-10-11; the V plan itself is edited by SW0-0 |
 
 ---
 
