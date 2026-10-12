@@ -57,7 +57,7 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML, buildSitemapXml } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeShareHtml } from './marketingShell';
+import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -2153,6 +2153,12 @@ export default {
     const shareHtml = await maybeServeShareHtml(request, env);
     if (shareHtml) {
       return withSecurityHeaders(shareHtml);
+    }
+
+    // Unlisted receipt verification OG HTML (before static marketing shells).
+    const receiptHtml = await maybeServeReceiptHtml(request, env);
+    if (receiptHtml) {
+      return withSecurityHeaders(receiptHtml);
     }
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.

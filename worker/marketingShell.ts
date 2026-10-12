@@ -262,3 +262,123 @@ export async function maybeServeShareHtml(
   });
 }
 
+const RECEIPT_PATH = /^\/verify\/r\/([^/?#]+)$/i;
+
+/**
+ * Public, unlisted verification cards (/verify/r/:receiptId):
+ * SPA shell with cryptographic proof metadata and noindex for bots.
+ */
+export async function maybeServeReceiptHtml(
+  request: Request,
+  env: ShareOgEnv,
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  const match = url.pathname.replace(/\/+$/, '').match(RECEIPT_PATH);
+  if (!match) return null;
+  if (request.method !== 'GET' && request.method !== 'HEAD') return null;
+  const accept = request.headers.get('accept') || '';
+  if (accept && !accept.includes('text/html') && !accept.includes('*/*')) return null;
+  if (!env.DB || !env.ASSETS) return null;
+
+  const receiptId = match[1];
+  const row = (await env.DB.prepare(
+    `SELECT id, subject_id, claim, level, payload_json, signature, kid, visibility, expires_at, revoked_at, revoked_reason, created_at FROM trust_receipts WHERE id = ? LIMIT 1`,
+  )
+    .bind(receiptId)
+    .first()) as {
+    id: string;
+    subject_id: string;
+    claim: string;
+    level: string;
+    payload_json: string;
+    signature: string;
+    kid: string;
+    visibility: string;
+    expires_at: number | null;
+    revoked_at: number | null;
+    revoked_reason: string | null;
+    created_at: string;
+  } | null;
+
+  let title = 'Trust Receipt | Luminara Suite';
+  let description =
+    'Cryptographically signed verification receipt. Strictly measured evidence. No invented scores.';
+  let crawlerBody = `
+<section>
+  <h1>Luminara Trust Receipt</h1>
+  <p>Cryptographic proof receipt for search and AI visibility verification.</p>
+  <p><a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
+</section>`;
+
+  if (!row) {
+    title = 'Receipt not found | Luminara Suite';
+    description = 'This trust receipt link was not found or is private.';
+    crawlerBody = `<section><h1>Receipt unavailable</h1><p>Not found or private.</p><p><a href="/">Home</a></p></section>`;
+  } else if (row.revoked_at) {
+    const subject = escapeHtml(row.subject_id);
+    title = `Withdrawn Receipt: ${subject} | Luminara Suite`;
+    description = `This trust receipt for ${subject} was withdrawn and no longer stands.`;
+    crawlerBody = `<section><h1>Receipt withdrawn</h1><p>This verification receipt for ${subject} no longer stands.</p><p><a href="/">Home</a></p></section>`;
+  } else {
+    const subject = escapeHtml(row.subject_id);
+    const claim = escapeHtml(row.claim);
+    const level = escapeHtml(row.level);
+    title = `Trust Receipt: ${subject} | Luminara Suite`;
+    description = `Cryptographically signed verification receipt for ${subject}. Claim: ${claim}. Level: ${level}. No invented scores.`;
+    crawlerBody = `<section>
+  <h1>Trust Receipt: ${subject}</h1>
+  <p>Verified claim: ${claim}. Level: ${level}.</p>
+  <p>Issued by Luminara Suite. Key ID: ${escapeHtml(row.kid)}.</p>
+  <p><a href="/">Home</a> · <a href="/how-it-works">How it works</a></p>
+</section>`;
+  }
+
+  const page: MarketingShellMeta = {
+    path: `/verify/r/${receiptId}`,
+    title,
+    description,
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'WebPage',
+      name: title,
+      description,
+      url: `${MARKETING_ORIGIN}/verify/r/${receiptId}`,
+    },
+    crawlerBody,
+  };
+
+  const shellReq = new Request(new URL('/', url).toString(), {
+    method: 'GET',
+    headers: request.headers,
+  });
+  const assetRes = await env.ASSETS.fetch(shellReq);
+  if (!assetRes.ok) return null;
+  const contentType = assetRes.headers.get('content-type') || '';
+  if (!contentType.includes('text/html')) return null;
+
+  if (request.method === 'HEAD') {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=120',
+        'X-Robots-Tag': 'noindex, nofollow',
+      },
+    });
+  }
+
+  let html = injectMarketingMeta(await assetRes.text(), page);
+  if (!/<meta\s+name="robots"/i.test(html)) {
+    html = html.replace(/<\/head>/i, '  <meta name="robots" content="noindex, nofollow">\n</head>');
+  }
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=120',
+      'X-Robots-Tag': 'noindex, nofollow',
+    },
+  });
+}
+
+
