@@ -82,7 +82,7 @@
     "buffer": "^6.0.3",
     "dompurify": "^3.4.15",
     "electron-updater": "^6.8.9",
-    "firebase": "^12.18.0",
+    "firebase": "^13.0.0",
     "jose": "^6.2.12",
     "marked": "^15.0.0",
     "react": "^19.0.0",
