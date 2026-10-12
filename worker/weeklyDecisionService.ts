@@ -5,6 +5,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { enqueueDreamEvent } from './dreamingQueue';
+import { api } from './telegramBot';
 
 function isoWeekKey(d = new Date()): string {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -344,3 +345,74 @@ export async function handleWeeklyDecisionsRoute(
 
   return null;
 }
+
+/**
+ * Scheduled job: sends weekly decision briefing to users with connected Telegram accounts.
+ * Plain-text formatting to prevent Markdown entity parse failures.
+ */
+export async function sendWeeklyDecisionDigest(
+  env: Env,
+): Promise<{ sent: number; skipped: number }> {
+  if (!env.DB || !env.BOT_TOKEN) return { sent: 0, skipped: 0 };
+  const week = isoWeekKey();
+
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT wd.domain, wd.title, wd.why_text, wd.data_freshness, u.telegram_id
+       FROM weekly_decisions wd
+       JOIN app_users u ON wd.account_id = u.id
+       WHERE u.telegram_id IS NOT NULL AND wd.week_key = ?
+       LIMIT 100`,
+    )
+      .bind(week)
+      .all<{
+        domain: string;
+        title: string;
+        why_text: string;
+        data_freshness: string;
+        telegram_id: number | string;
+      }>();
+
+    if (!results || results.length === 0) return { sent: 0, skipped: 0 };
+
+    let sent = 0;
+    let skipped = 0;
+
+    for (const row of results) {
+      const chatId = Number(row.telegram_id);
+      if (!chatId || !Number.isFinite(chatId)) {
+        skipped++;
+        continue;
+      }
+
+      const text = [
+        `Luminara Weekly Decision Digest (${week})`,
+        '',
+        `Domain: ${row.domain}`,
+        `Verdict: ${row.title}`,
+        `Action: ${row.why_text || 'Review your audit findings and ship the prioritized fix.'}`,
+        `Status: ${row.data_freshness === 'live' ? 'Measured live' : 'Sample fixture'}`,
+        '',
+        'Open Luminara Suite to export your fix pack or verify live deployment:',
+        `${env.WEBAPP_URL || 'https://www.luminarasuite.com'}/#instant_audit`,
+      ].join('\n');
+
+      const res = await api(env, 'sendMessage', {
+        chat_id: chatId,
+        text,
+      });
+
+      if (res.ok) {
+        sent++;
+      } else {
+        skipped++;
+      }
+    }
+
+    return { sent, skipped };
+  } catch (err) {
+    console.error('[WeeklyDecisionDigest] Sweep failed', err);
+    return { sent: 0, skipped: 0 };
+  }
+}
+
