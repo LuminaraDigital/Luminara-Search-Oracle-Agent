@@ -71,6 +71,14 @@ describe('security headers', () => {
     expect(res.headers.get('strict-transport-security')).toContain('max-age=');
   });
 
+  it('redirects naked luminarasuite.com to www.luminarasuite.com with 301 in production', async () => {
+    const prodEnv = makeEnv({ ENVIRONMENT: 'production' });
+    const res = await worker.fetch(new Request('https://luminarasuite.com/pricing?ref=test'), prodEnv, ctx);
+    expect(res.status).toBe(301);
+    expect(res.headers.get('location')).toBe('https://www.luminarasuite.com/pricing?ref=test');
+    expect(res.headers.get('cache-control')).toContain('max-age=3600');
+  });
+
   it('adds hardening headers and returns trimmed payload on public /api/health', async () => {
     const res = await worker.fetch(req('/api/health'), makeEnv(), ctx);
     expect(res.status).toBe(200);

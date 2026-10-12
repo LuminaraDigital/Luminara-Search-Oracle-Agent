@@ -63,22 +63,28 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
     `<meta name="twitter:image" content="${image}">`,
   );
 
+  if (/<script type="application\/ld\+json" id="luminara-(?:static|marketing)-jsonld">[\s\S]*?<\/script>/i.test(out)) {
+    out = out.replace(
+      /<script type="application\/ld\+json" id="luminara-(?:static|marketing)-jsonld">[\s\S]*?<\/script>/i,
+      `<script type="application/ld+json" id="luminara-marketing-jsonld">${jsonLd}</script>`,
+    );
+  } else if (!/id="luminara-marketing-jsonld"/i.test(out)) {
+    out = out.replace(
+      /<\/head>/i,
+      `  <script type="application/ld+json" id="luminara-marketing-jsonld">${jsonLd}</script>\n</head>`,
+    );
+  }
+
   if (!/<link\s+rel="canonical"/i.test(out)) {
     out = out.replace(
       /<\/head>/i,
-      `  <link rel="canonical" href="${canonical}">\n  <script type="application/ld+json" id="luminara-marketing-jsonld">${jsonLd}</script>\n</head>`,
+      `  <link rel="canonical" href="${canonical}">\n</head>`,
     );
   } else {
     out = out.replace(
       /<link\s+rel="canonical"\s+href="[^"]*"\s*>/i,
       `<link rel="canonical" href="${canonical}">`,
     );
-    if (!/id="luminara-marketing-jsonld"/i.test(out)) {
-      out = out.replace(
-        /<\/head>/i,
-        `  <script type="application/ld+json" id="luminara-marketing-jsonld">${jsonLd}</script>\n</head>`,
-      );
-    }
   }
 
   const crawlerBlock = `<noscript id="luminara-crawler-body">${page.crawlerBody.trim()}</noscript>`;

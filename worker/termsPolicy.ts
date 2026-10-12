@@ -14,7 +14,7 @@ export const TERMS_HTML = `<!DOCTYPE html>
   <meta property="og:description" content="Terms of Service for Luminara Suite.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.luminarasuite.com/terms">
-  <meta property="og:image" content="https://www.luminarasuite.com/icon-512.png">
+  <meta property="og:image" content="https://www.luminarasuite.com/og-image.png">
   <link rel="canonical" href="https://www.luminarasuite.com/terms">
   <link rel="icon" href="/favicon.ico" sizes="48x48 32x32 16x16">
   <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">

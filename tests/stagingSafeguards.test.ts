@@ -48,6 +48,7 @@ describe('Staging Environment & Branch Safety Controls', () => {
     expect(ciContent).toContain('staging');
     expect(ciContent).toContain('env:validate');
     expect(ciContent).toContain('smoke-check.mjs');
+    expect(ciContent).toContain('Enforce staging-only merges into main');
 
     const deployContent = readFileSync(deployPath, 'utf8');
     expect(deployContent).toContain('deploy_staging');
