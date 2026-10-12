@@ -13,6 +13,6 @@
     "cheerio": "^1.2.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "patchright": "^1.50.0"
+    "patchright": "^1.63.0"
   }
 }
