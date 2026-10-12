@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Local skill tools / side repositories
+ponytail/
+pstack/
+
 # Constellation bake intermediates
 scripts/constellation/budget-report.json
 
