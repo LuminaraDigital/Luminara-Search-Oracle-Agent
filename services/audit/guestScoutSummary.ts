@@ -223,12 +223,6 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     ? 'No page text and no search rows were collected in this run.'
     : `Pages with text or schema: ${input.scrapedPageCount}. ${searchUsed}`;
 
-  const firstFix = input.findings.map((f) => f.title.trim()).find(Boolean);
-  const topFix = firstFix
-    || (evidenceEmpty
-      ? 'Do not ship changes from this run. Fetch the homepage and a search sample, then scout again.'
-      : 'Ship the first measured gap before adding more pages.');
-
   const crawlerChecks = input.llmCrawler?.checks || [];
   const failureCodes = teaserFailureCodes({
     scrapedPageCount: input.scrapedPageCount,
@@ -241,6 +235,11 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     evidenceEmpty,
     failureCodes,
   });
+
+  const firstFix = input.findings.map((f) => f.title.trim()).find(Boolean);
+  const topFix = (degraded || evidenceEmpty)
+    ? 'Do not ship changes from this run. Fetch the homepage and a search sample, then scout again.'
+    : (firstFix || 'Ship the first measured gap before adding more pages.');
   const failed = failureCodes.map((code) => teaserFailureLine(code));
   const mentionCount = mentionCountOf(input.shareOfVoiceScore, input.serpCount);
   // Citation rate and share of voice were always the same two counts: search rows

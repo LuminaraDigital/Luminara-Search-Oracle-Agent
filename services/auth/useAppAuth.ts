@@ -56,6 +56,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'ECOSYSTEM_HUB',
   'TRUST_CENTER',
   'LAUNCHPAD',
+  'VISION',
 ]);
 
 /** Pure decision helper (tested). Soft-open only when signature was not rejected. */

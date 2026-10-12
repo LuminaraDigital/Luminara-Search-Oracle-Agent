@@ -720,9 +720,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-4 text-center text-[10px] text-gray-400 space-y-1">
             <p>
               By purchasing with Telegram Stars, you agree to our{' '}
-              <a href="#terms" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+              <a href="/terms" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Terms of Service</a>
               {' '}and{' '}
-              <a href="#privacy" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+              <a href="/privacy" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
             </p>
             <p className="text-gray-400 text-[9px]">
               Subscriptions activate immediately upon payment. Telegram Support does not handle merchant disputes; for billing help use /paysupport in the bot.

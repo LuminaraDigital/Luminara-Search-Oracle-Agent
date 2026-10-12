@@ -41,6 +41,8 @@ const PATH_ALIASES: Record<string, AppView> = {
   lab: AppView.ECOSYSTEM_HUB,
   launchpad: AppView.LAUNCHPAD,
   'smb-launchpad': AppView.LAUNCHPAD,
+  smb: AppView.LAUNCHPAD,
+  dashboard: AppView.DASHBOARD,
   onboarding: AppView.BUSINESS_DNA,
   desktop: AppView.LANDING,
 };
