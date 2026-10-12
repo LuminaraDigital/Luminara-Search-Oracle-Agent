@@ -3,7 +3,12 @@ import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
 import { isUserSubscribed, checkHostedQuota, type QuotaStatus } from './quotaMiddleware';
-import { runWorkersAiChatFallback } from './workersAiFallback';
+import {
+  WORKERS_AI_FALLBACK_PROVIDER,
+  runWorkersAiChatFallback,
+  type WorkersAiFallbackContext,
+  type WorkersAiFallbackOutcome,
+} from './workersAiFallback';
 import {
   MAX_BODY_BYTES,
   clampHostedChatCompletionsBody,
@@ -43,6 +48,53 @@ export function isChatCompletionsPath(providerId: string, subPath: string): bool
     return subPath === '/v1/chat/completions' || subPath === '/api/chat' || subPath === '/api/generate';
   }
   return subPath === '/chat/completions';
+}
+
+/**
+ * The one path the Workers AI fallback may answer: hosted Groq chat completions.
+ * Every other provider, and every other Groq path, returns its own result or its own error.
+ */
+export function isWorkersAiFallbackPath(providerId: string, subPath: string): boolean {
+  return providerId === 'groq' && subPath === '/chat/completions';
+}
+
+/**
+ * A caller gets a fallback answer only when it asks for one with this request header set to "1".
+ * The app's chat sends it, because the chat shows who answered. Nothing else does, so for every
+ * other caller the fallback model is not run at all: they get the upstream's own error.
+ */
+export const ACCEPT_FALLBACK_HEADER = 'x-accept-fallback';
+
+export function acceptsFallback(request: Request): boolean {
+  return request.headers.get(ACCEPT_FALLBACK_HEADER) === '1';
+}
+
+/** A short machine-readable value (an error code or type, at most 64 characters), or null. Free text never passes. */
+function upstreamErrorField(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const text = String(value);
+  return /^[A-Za-z0-9_.:-]{1,64}$/.test(text) ? text : null;
+}
+
+/**
+ * What an upstream error body says about itself, for a log line: its error code, type and
+ * status when they are short identifiers. The error message is never read into this, because a
+ * provider's message can quote the request or part of a key.
+ */
+export function upstreamErrorExcerpt(bodyText: string): { code: string | null; type: string | null; status: string | null } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    return { code: null, type: null, status: null };
+  }
+  const root = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  const err = root.error && typeof root.error === 'object' && !Array.isArray(root.error) ? (root.error as Record<string, unknown>) : {};
+  return {
+    code: upstreamErrorField(err.code) ?? upstreamErrorField(root.code),
+    type: upstreamErrorField(err.type) ?? upstreamErrorField(root.type),
+    status: upstreamErrorField(err.status) ?? upstreamErrorField(root.status),
+  };
 }
 
 export const PROVIDERS: Record<string, ProviderSpec> = {
@@ -186,12 +238,16 @@ export const PROVIDERS: Record<string, ProviderSpec> = {
 };
 
 function makeFallbackResponse(
-  aiResult: unknown,
-  isStreaming: boolean,
+  outcome: Extract<WorkersAiFallbackOutcome, { answered: true }>,
   quotaGate: QuotaStatus | null,
 ): Response {
+  // The client reads these to show "Answered by a fallback model" with the reply. They arrive
+  // before the body, so a streamed reply is labelled too. corsHeaders (workerUtils.ts) exposes
+  // them, so a client on another origin can read them as well.
   const fallbackHeaders: Record<string, string> = {
-    'X-Provider-Fallback': 'workers-ai',
+    'X-Provider-Fallback': WORKERS_AI_FALLBACK_PROVIDER,
+    'X-Provider-Fallback-Model': outcome.model,
+    'X-Provider-Fallback-Reason': outcome.reason,
   };
   if (quotaGate) {
     if (quotaGate.isUnlimited) {
@@ -206,16 +262,49 @@ function makeFallbackResponse(
       }
     }
   }
-  if (isStreaming) {
+  if (outcome.streaming) {
     const streamHeaders = new Headers({
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       ...fallbackHeaders,
     });
-    return new Response(aiResult as BodyInit, { status: 200, headers: streamHeaders });
+    return new Response(outcome.stream as BodyInit, { status: 200, headers: streamHeaders });
   }
-  return json(aiResult, 200, fallbackHeaders);
+  return json(outcome.completion, 200, fallbackHeaders);
+}
+
+/**
+ * Asks the Workers AI fallback to answer, or returns null so the caller sends its own error.
+ *
+ * It answers only a hosted-key POST to the groq chat-completions path with the binding present,
+ * and only for a caller that asked for a fallback answer (ACCEPT_FALLBACK_HEADER). For any other
+ * caller the fallback model is not run and nothing is logged.
+ * The three callers decide when: no hosted key, a network failure, or an upstream 5xx. A 4xx
+ * never gets here. The fallback itself refuses a typed, tool-using, non-text or over-long request,
+ * and a refusal or a binding error also comes back as null.
+ */
+async function tryWorkersAiFallback(
+  env: Env,
+  request: Request,
+  providerId: string,
+  subPath: string,
+  userKey: string,
+  body: unknown,
+  context: WorkersAiFallbackContext,
+  quotaGate: QuotaStatus | null,
+): Promise<Response | null> {
+  if (userKey || !env.AI || request.method !== 'POST') return null;
+  if (!isWorkersAiFallbackPath(providerId, subPath)) return null;
+  if (!acceptsFallback(request)) return null;
+  try {
+    const outcome = await runWorkersAiChatFallback(env.AI, body, context);
+    if (!outcome.answered) return null;
+    return makeFallbackResponse(outcome, quotaGate);
+  } catch (aiErr) {
+    console.warn(`[Workers AI fallback error: ${context.reason}]`, aiErr);
+    return null;
+  }
 }
 
 export async function proxyProvider(
@@ -364,19 +453,15 @@ export async function proxyProvider(
   } else {
     const auth = spec.auth(env, headers, body);
     if (!auth.ok) {
-      if (isChatCompletionsPath(providerId, subPath) && env.AI) {
-        if (request.method !== 'GET') {
-          const clamped = clampHostedChatCompletionsBody(body);
-          if (!clamped.ok) return json({ error: clamped.error }, 400);
-          body = clamped.body;
-        }
-        try {
-          const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
-          const aiResult = await runWorkersAiChatFallback(env.AI, body);
-          return makeFallbackResponse(aiResult, isStreaming, quotaGate);
-        } catch (aiErr) {
-          console.warn('[Workers AI fallback error for unconfigured provider]', aiErr);
-        }
+      // No hosted key at all. On the groq chat path the fallback may answer, and the reply says so.
+      if (isWorkersAiFallbackPath(providerId, subPath) && env.AI && request.method === 'POST' && acceptsFallback(request)) {
+        const clamped = clampHostedChatCompletionsBody(body);
+        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        body = clamped.body;
+        const fallback = await tryWorkersAiFallback(
+          env, request, providerId, subPath, userKey, body, { reason: 'provider_not_configured' }, quotaGate,
+        );
+        if (fallback) return fallback;
       }
       return json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503);
     }
@@ -436,15 +521,10 @@ export async function proxyProvider(
       body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
     });
   } catch (networkErr) {
-    if (!userKey && isChatCompletionsPath(providerId, subPath) && env.AI) {
-      try {
-        const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
-        const aiResult = await runWorkersAiChatFallback(env.AI, body);
-        return makeFallbackResponse(aiResult, isStreaming, quotaGate);
-      } catch (aiErr) {
-        console.warn('[Workers AI fallback error after network throw]', aiErr);
-      }
-    }
+    const fallback = await tryWorkersAiFallback(
+      env, request, providerId, subPath, userKey, body, { reason: 'network_error' }, quotaGate,
+    );
+    if (fallback) return fallback;
     return json({ error: `Upstream connection failed: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}` }, 502);
   }
 
@@ -470,15 +550,16 @@ export async function proxyProvider(
     }
   }
 
-  // Fallback to Cloudflare Workers AI edge model if hosted chat completions upstream fails
-  if (!userKey && isChatCompletionsPath(providerId, subPath) && env.AI && (!res.ok || res.status >= 400)) {
-    try {
-      const isStreaming = Boolean(body && typeof body === 'object' && (body as { stream?: boolean }).stream);
-      const aiResult = await runWorkersAiChatFallback(env.AI, body);
-      return makeFallbackResponse(aiResult, isStreaming, quotaGate);
-    } catch (aiErr) {
-      console.warn('[Workers AI fallback error]', aiErr);
-    }
+  // Workers AI fallback, after the second-key retry above: only when the upstream itself failed
+  // (5xx). A 4xx is the upstream's answer about this request or this key (429, 400, 413 and the
+  // rest). It is never replaced by another model's reply: it goes through the code below, where
+  // a hosted 402 is reported as HOSTED_PROVIDER_DEPLETED, a hosted 401 as
+  // HOSTED_PROVIDER_KEY_REFUSED and a hosted 403 as HOSTED_PROVIDER_REQUEST_REFUSED.
+  if (res.status >= 500 && res.status <= 599) {
+    const fallback = await tryWorkersAiFallback(
+      env, request, providerId, subPath, userKey, body, { reason: 'upstream_5xx', upstreamStatus: res.status }, quotaGate,
+    );
+    if (fallback) return fallback;
   }
 
   // Stream the upstream body straight through (SSE for chat completions works unchanged).
@@ -528,6 +609,47 @@ export async function proxyProvider(
       code: 'BYOK_PAYMENT_REQUIRED',
       provider: providerId,
     }, 402, Object.fromEntries(out.entries()));
+  }
+
+  // An upstream 401 or 403 on a hosted key says nothing about the caller's own sign-in, but the
+  // client reads a 401 or 403 from this route as exactly that (it stops calling every hosted
+  // provider for a while). So neither is passed through. Each becomes a 503 that says only what
+  // is known: a 401 means the provider refused the server's key; a 403 means it refused this
+  // request, which can be the key's permissions or the request itself (a moderation flag, a site
+  // it will not fetch). The relay's own 401s above are the caller's session and are unchanged,
+  // and a BYOK 401 or 403 is the caller's key and passes through.
+  if (!userKey && (res.status === 401 || res.status === 403)) {
+    // The upstream's body is replaced, so say what it was in the log: its status and its own
+    // error code or type. Never its message, which can quote the request or part of a key.
+    let excerpt = upstreamErrorExcerpt('');
+    try {
+      excerpt = upstreamErrorExcerpt((await res.text()).slice(0, 8_192));
+    } catch {
+      /* an unreadable body leaves the excerpt empty */
+    }
+    console.warn(JSON.stringify({
+      event: 'hosted_provider_refused',
+      provider: providerId,
+      upstream_status: res.status,
+      upstream_error_code: excerpt.code,
+      upstream_error_type: excerpt.type,
+      upstream_error_status: excerpt.status,
+    }));
+
+    // The body below is ours, so the upstream's content type (it may have sent HTML) is not kept.
+    const passed = Object.fromEntries(out.entries());
+    delete passed['content-type'];
+
+    const keyRefused = res.status === 401;
+    return json({
+      ok: false,
+      error: keyRefused
+        ? `The hosted ${providerId} service is temporarily unavailable: the provider refused the hosted key. This is not a problem with your sign-in. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`
+        : `The hosted ${providerId} service refused this request. This is not a problem with your sign-in. You can add your own ${providerId.toUpperCase()} key in Settings.`,
+      code: keyRefused ? 'HOSTED_PROVIDER_KEY_REFUSED' : 'HOSTED_PROVIDER_REQUEST_REFUSED',
+      provider: providerId,
+      upstreamStatus: res.status,
+    }, 503, passed);
   }
 
   return new Response(res.body, { status: res.status, headers: out });

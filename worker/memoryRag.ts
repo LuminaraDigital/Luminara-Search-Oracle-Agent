@@ -138,6 +138,9 @@ export async function upsertMemoryVector(
   metadata: Record<string, unknown> = {},
 ): Promise<{ provider: VectorProvider; vectorId: string | null }> {
   const provider = resolveVectorProvider(env);
+  // Memory embeddings are off until a vector index is configured (V decision 3). Workers AI is
+  // bound for the chat fallback only, so with no index nothing is embedded.
+  if (provider === 'none') return { provider: 'none', vectorId: null };
   const vectorId = `${accountId}:${factId}`;
   const values = await remoteEmbed(env, text);
   const meta = { accountId, factId, text: text.slice(0, 500), ...metadata };
@@ -196,7 +199,8 @@ export async function searchMemoryVectors(
   topK = 5,
 ): Promise<MemoryVectorHit[]> {
   const provider = resolveVectorProvider(env);
-  const values = await remoteEmbed(env, query);
+  // With no vector index the keyword search at the end needs no vector, so nothing is embedded.
+  const values = provider === 'none' ? [] : await remoteEmbed(env, query);
 
   if (provider === 'vectorize' && env.MEMORY_VECTORS) {
     const res = await env.MEMORY_VECTORS.query(values, {

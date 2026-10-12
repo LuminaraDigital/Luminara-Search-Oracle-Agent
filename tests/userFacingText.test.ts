@@ -36,6 +36,34 @@ describe('toUserFacingText', () => {
     expect(toUserFacingText(body)).toBe('Insufficient quota (insufficient_quota)');
   });
 
+  it('words a refused hosted key as the provider being unavailable, not as a sign-in problem', () => {
+    const relayBody = JSON.stringify({
+      ok: false,
+      error: 'The hosted groq service is temporarily unavailable: the provider refused the hosted key.',
+      code: 'HOSTED_PROVIDER_KEY_REFUSED',
+      provider: 'groq',
+      upstreamStatus: 401,
+    });
+    const shown = toUserFacingText(new Error(`Groq stream error: 503 ${relayBody}`));
+    expect(shown).toContain('temporarily unavailable');
+    expect(shown).toContain('not a problem with your sign-in');
+    expect(shown).not.toContain('{');
+  });
+
+  it('words a refused request as refused, without blaming the key or the sign-in', () => {
+    const relayBody = JSON.stringify({
+      ok: false,
+      error: 'The hosted groq service refused this request.',
+      code: 'HOSTED_PROVIDER_REQUEST_REFUSED',
+      provider: 'groq',
+      upstreamStatus: 403,
+    });
+    const shown = toUserFacingText(new Error(`Groq inference error (503): ${relayBody}`));
+    expect(shown).toContain('refused this request');
+    expect(shown).toContain('not a problem with your sign-in');
+    expect(shown).not.toContain('{');
+  });
+
   it('never returns a non-string (safe for React children)', () => {
     const samples: unknown[] = [
       { message: { message: 'deep', code: 'x', metadata: {} }, code: 'y', metadata: {} },
