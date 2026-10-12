@@ -3,7 +3,7 @@
 import { buildFaqPageJsonLd } from './marketingFaqContent';
 
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
-export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/icon-512.png`;
+export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/og-image.png`;
 
 export interface MarketingShellMeta {
   path: string;
@@ -19,7 +19,7 @@ const ORG_NODE = {
   '@id': `${MARKETING_ORIGIN}/#organization`,
   name: 'Luminara Digital',
   url: 'https://luminaradigital.io',
-  logo: DEFAULT_OG_IMAGE,
+  logo: `${MARKETING_ORIGIN}/icon-512.png`,
   sameAs: ['https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent'],
 };
 

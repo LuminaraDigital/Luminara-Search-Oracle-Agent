@@ -2022,6 +2022,19 @@ function permanentRedirect(url: URL, pathname: string): Response {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    // Canonical redirect: redirect naked domain to www.luminarasuite.com for web/marketing traffic in production
+    if (env.ENVIRONMENT === 'production' && url.hostname === 'luminarasuite.com' && !url.pathname.startsWith('/api/')) {
+      url.hostname = 'www.luminarasuite.com';
+      return new Response(null, {
+        status: 301,
+        headers: {
+          Location: url.toString(),
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    }
+
     if (url.pathname.startsWith('/api/')) {
       try {
         return withSecurityHeaders(await handleApi(request, env, ctx));

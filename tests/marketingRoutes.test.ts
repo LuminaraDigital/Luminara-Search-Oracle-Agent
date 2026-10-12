@@ -143,4 +143,17 @@ describe('marketing shell injection', () => {
     expect(marketingShellKey('/infrastructure')).toBe('/how-it-works');
     expect(marketingShellKey('/pricing/')).toBe('/pricing');
   });
+
+  it('de-duplicates existing JSON-LD script blocks', () => {
+    const shellWithStaticJsonLd = `<!DOCTYPE html><html><head>
+  <title>Old</title>
+  <script type="application/ld+json" id="luminara-marketing-jsonld">{"@context":"https://schema.org","@type":"Old"}</script>
+</head><body></body></html>`;
+    const page = MARKETING_SHELL_BY_PATH['/'];
+    const out = injectMarketingMeta(shellWithStaticJsonLd, page);
+    const matches = out.match(/application\/ld\+json/g);
+    expect(matches).toHaveLength(1);
+    expect(out).toContain('SoftwareApplication');
+  });
 });
+

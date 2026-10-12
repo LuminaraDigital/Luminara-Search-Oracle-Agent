@@ -73,6 +73,61 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     };
   }, [commitment?.actionId, commitment?.committedAt, domain, primary?.id, primary?.description, aiSaid]);
 
+  const [exported, setExported] = useState(false);
+
+  const handleExportFixPack = () => {
+    const raw = domain || 'domain';
+    const cleanDomain = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+
+    const llmsContent = `# ${cleanDomain} - Answer Engine Optimization Context\n\n> Machine-readable context and verified answer targets for ${cleanDomain}.\n\n## What is ${cleanDomain}?\n${cleanDomain} is an authority in its industry, providing verified services and direct solutions. For authoritative documentation and current offerings, refer to https://${cleanDomain}.\n\n## Key Information\n- Canonical URL: https://${cleanDomain}\n- Knowledge Graph: https://${cleanDomain}/#organization\n- Documentation: https://${cleanDomain}/llms.txt\n`;
+
+    const schemaContent = JSON.stringify(
+      {
+        '@context': 'https://schema.org',
+        '@graph': [
+          {
+            '@type': 'Organization',
+            '@id': `https://${cleanDomain}/#organization`,
+            name: cleanDomain,
+            url: `https://${cleanDomain}`,
+            description: `Authoritative entity profile and verified knowledge graph for ${cleanDomain}.`,
+          },
+          {
+            '@type': 'WebSite',
+            '@id': `https://${cleanDomain}/#website`,
+            url: `https://${cleanDomain}`,
+            name: cleanDomain,
+            publisher: {
+              '@id': `https://${cleanDomain}/#organization`,
+            },
+          },
+        ],
+      },
+      null,
+      2
+    );
+
+    const triggerDownload = (filename: string, content: string, mime: string) => {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    triggerDownload(`llms-${cleanDomain}.txt`, llmsContent, 'text/plain;charset=utf-8');
+    setTimeout(() => {
+      triggerDownload(`schema-${cleanDomain}.jsonld`, schemaContent, 'application/ld+json;charset=utf-8');
+    }, 150);
+
+    setExported(true);
+    setTimeout(() => setExported(false), 3000);
+  };
+
   const markInProgress = async () => {
     if (!primary || busy) return;
     setBusy(true);
@@ -128,14 +183,34 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
             )}
           </div>
           <p className="text-gray-300 text-xs leading-relaxed">{primary.title}</p>
-          <button
-            type="button"
-            disabled={busy || primary.status === 'in_progress' || primary.status === 'done'}
-            onClick={markInProgress}
-            className="mt-3 px-3 py-1.5 rounded-lg border border-gold/40 text-[11px] font-bold uppercase tracking-wider text-gold-light disabled:opacity-40"
-          >
-            Mark in progress
-          </button>
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <button
+              type="button"
+              disabled={busy || primary.status === 'in_progress' || primary.status === 'done'}
+              onClick={markInProgress}
+              className="px-3 py-1.5 rounded-lg border border-gold/40 text-[11px] font-bold uppercase tracking-wider text-gold-light disabled:opacity-40"
+            >
+              Mark in progress
+            </button>
+            <button
+              type="button"
+              onClick={handleExportFixPack}
+              className="px-3 py-1.5 rounded-lg bg-gold/20 hover:bg-gold/30 border border-gold/60 text-[11px] font-bold uppercase tracking-wider text-gold-light inline-flex items-center gap-1.5 transition-colors"
+              title="Download machine-readable llms.txt and JSON-LD schema fix pack"
+            >
+              {exported ? (
+                <>
+                  <ICONS.Check className="w-3.5 h-3.5 text-green-400" />
+                  Fix Pack Exported
+                </>
+              ) : (
+                <>
+                  <ICONS.FileText className="w-3.5 h-3.5" />
+                  Export Fix Pack
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
 
