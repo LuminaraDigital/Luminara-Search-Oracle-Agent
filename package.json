@@ -15,7 +15,7 @@
     "honesty:baseline": "node scripts/check-honesty-gates.mjs --write-baseline",
     "cf:dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy --env production",
-    "deploy:staging": "npm run build && wrangler deploy --env staging",
+    "deploy:staging": "npm run build -- --mode staging && wrangler deploy --env staging",
     "deploy:prod": "npm run deploy",
     "db:migrate": "wrangler d1 migrations apply luminara-users --remote",
     "db:migrate:staging": "wrangler d1 migrations apply luminara-users-staging --remote --env staging",

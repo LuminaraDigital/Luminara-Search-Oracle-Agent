@@ -8,6 +8,7 @@ import { identify, json, billingId, sha256Hex, secretEquals } from './workerUtil
 import { isTeaserFailureCode, teaserFailureLine } from '../services/audit/teaserFailureCodes';
 import { getActiveSubscription } from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
+import { PRODUCTION_MINI_APP_URL, resolveMiniAppUrl } from '../services/referrals/rules';
 
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_MARKDOWN_CHARS = 400_000;
@@ -153,7 +154,6 @@ export const TEASER_DAILY_LIMIT = 5;
 /** Deeper crawler rows (presence, structure, bots, cite paths, optional ai.txt) plus a little headroom. */
 export const TEASER_CRAWLER_CHECK_LIMIT = 8;
 const TEASER_TTL_MS = 14 * 24 * 60 * 60 * 1000;
-const TEASER_CTA = 'https://t.me/LuminaraSuiteBot/app';
 const BADGE_STATUS = new Set(['measured', 'estimated', 'not_measured']);
 const CHECK_STATUS = new Set(['pass', 'fail', 'not_measured']);
 
@@ -221,7 +221,10 @@ function teaserTextLooksLikeMetric(text: string): boolean {
   return TEASER_PERCENT_CLAIM.test(text);
 }
 
-export function parseTeaserCreateBody(raw: unknown): { ok: true; payload: TeaserPublic } | { ok: false; error: string } {
+export function parseTeaserCreateBody(
+  raw: unknown,
+  ctaUrl: string = PRODUCTION_MINI_APP_URL,
+): { ok: true; payload: TeaserPublic } | { ok: false; error: string } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'Teaser body required' };
   const body = sanitizeSharePayload(raw) as Record<string, unknown>;
   const domain = safePublicHostname(clipText(body.domain, 300)) || '';
@@ -299,7 +302,7 @@ export function parseTeaserCreateBody(raw: unknown): { ok: true; payload: Teaser
       crawlerChecks,
       failed,
       createdAt: Date.now(),
-      ctaUrl: TEASER_CTA,
+      ctaUrl,
     },
   };
 }
@@ -415,7 +418,7 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
     } catch {
       return json({ ok: false, error: 'Teaser not found or expired', code: 'TEASER_NOT_FOUND' }, 404);
     }
-    teaser.ctaUrl = TEASER_CTA;
+    teaser.ctaUrl = resolveMiniAppUrl(env.TELEGRAM_MINI_APP_URL);
     return json({ ok: true, teaser });
   }
 
@@ -424,7 +427,7 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
     if (!who.user) return json({ ok: false, error: who.error || 'Sign in required', code: 'AUTH_REQUIRED' }, 401);
     const read = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!read.ok) return json({ error: read.error }, read.status);
-    const parsed = parseTeaserCreateBody(read.value);
+    const parsed = parseTeaserCreateBody(read.value, resolveMiniAppUrl(env.TELEGRAM_MINI_APP_URL));
     if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
     const accountId = billingId(who.user);
     const meter = await meterTeaserCreate(env, accountId);

@@ -37,6 +37,9 @@ TON_RECEIVING_ADDRESS=
 # The address the owner has confirmed, in their own wallet app, to be theirs. Must equal TON_RECEIVING_ADDRESS.
 # Empty or different keeps TON checkout closed.
 TON_CONFIRMED_ADDRESS=
+# Mini App link of this environment's bot (https://t.me/<bot>/<app>), for links the Worker writes.
+# Empty means the production bot's published link.
+TELEGRAM_MINI_APP_URL=
 # "true" switches the community idea feed routes on. Off by default: 404 to a signed-in caller, 401 to a guest (the sign-in guard runs first).
 COMMUNITY_FEED_ENABLED=false
 # "true" switches points on (daily check-in, points in the referral summary). Off by default.
