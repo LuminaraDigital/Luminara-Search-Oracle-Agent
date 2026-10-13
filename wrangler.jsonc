@@ -7,7 +7,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // 24/7 Cloudflare Drift Sentinel Cron Trigger (runs daily at 08:00 UTC)
+  // Daily Drift Sentinel at 08:00 UTC. RSI weekly work rides this trigger on Mondays.
+  // A second cron expression would exceed the account's Workers cron-trigger cap.
   "triggers": {
     "crons": ["0 8 * * *"]
   },

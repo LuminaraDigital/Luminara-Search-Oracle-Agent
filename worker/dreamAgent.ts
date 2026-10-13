@@ -141,7 +141,8 @@ export function deterministicDreamConsolidator(input: ConsolidateInput): DreamAg
         }
       }
     } else if (evt.eventType === 'recommendation_updated') {
-      const p = evt.payload as { findingId?: string; title?: string; status?: string };
+      const p = evt.payload as { findingId?: string; title?: string; status?: string; citationLogged?: boolean };
+      if (p.citationLogged) continue;
       if (p.title) {
         proposals.push({
           action: 'create',
