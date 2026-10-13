@@ -134,6 +134,8 @@ import { isCronMapped, jobsForCron } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
+import { handleRsiRoute } from './rsiRoutes';
+import { runRsiSkillCurator } from './rsiCurator';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
@@ -1553,6 +1555,24 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (dreamRes) return withCors(dreamRes);
   }
 
+  // Learned skill library (0027). Session routes. Curator cron is Monday 09:00 UTC.
+  if (path.startsWith('/rsi/')) {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dual = await enforceDualRateLimit(env, {
+      action: 'rsi',
+      accountId: billingId(who.user),
+      ip,
+      limitPerKey: 30,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    const rsi = await handleRsiRoute(request, env, who.user, path);
+    if (rsi) return withCors(rsi);
+  }
+
   // SMB Launchpad (0018). Feature-flagged; see worker/launchpadService.ts.
   if (path === '/launchpad' || path.startsWith('/launchpad/')) {
     const who = await identify(request, env);
@@ -2223,6 +2243,7 @@ export default {
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
     if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
     if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
+    if (jobs.includes('rsi_skill_curator')) ctx.waitUntil(runRsiSkillCurator(env).then(() => undefined));
     if (jobs.includes('ton_pending_sweep')) {
       ctx.waitUntil(
         sweepTonPendingOrders(env)

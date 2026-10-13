@@ -7,9 +7,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // 24/7 Cloudflare Drift Sentinel Cron Trigger (runs daily at 08:00 UTC)
+  // Daily Drift Sentinel at 08:00 UTC, plus the Monday 09:00 UTC RSI skill curator.
   "triggers": {
-    "crons": ["0 8 * * *"]
+    "crons": ["0 8 * * *", "0 9 * * 1"]
   },
 
   // The Vite build output is served as static assets. Every request goes through the Worker first

@@ -91,6 +91,14 @@ describe('scheduled(): an unmapped cron runs no job and is reported', () => {
     expect(reported()[0]).toContain('no job was run');
   });
 
+  it('the Monday RSI cron starts each job that cron owns', async () => {
+    const monday = makeCtx();
+    await worker.scheduled(controller('0 9 * * 1'), {} as Env, monday.ctx);
+    await Promise.allSettled(monday.waited);
+    expect(monday.waitUntil).toHaveBeenCalledTimes(jobsForCron('0 9 * * 1').length);
+    expect(reported().filter((line) => line.startsWith('[Cron]'))).toEqual([]);
+  });
+
   it('the daily cron still starts every job it owns and reports no cron error', async () => {
     const { ctx, waitUntil, waited } = makeCtx();
     // With no bindings each job returns at once, so nothing leaves the process.
