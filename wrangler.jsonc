@@ -7,9 +7,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // Daily Drift Sentinel at 08:00 UTC, plus the Monday 09:00 UTC RSI skill curator.
+  // Daily Drift Sentinel at 08:00 UTC. RSI weekly work rides this trigger on Mondays.
+  // A second cron expression would exceed the account's Workers cron-trigger cap.
   "triggers": {
-    "crons": ["0 8 * * *", "0 9 * * 1"]
+    "crons": ["0 8 * * *"]
   },
 
   // The Vite build output is served as static assets. Every request goes through the Worker first

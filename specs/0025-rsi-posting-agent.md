@@ -13,7 +13,7 @@ The selected post is stored. This route does not call an external social network
 
 `POST /rsi/posts/:id/metrics` accepts a 24-hour or 72-hour snapshot. `not_measured` rejects impression and engagement numbers. A pattern can become a success only from a 72-hour measured engagement above the brand median, and only once the brand has at least 3 such snapshots.
 
-`POST /rsi/posts/reflect`, also run on the Monday 09:00 UTC cron, appends a pattern to that brand's posting playbook after 2 or more successes. At most 2 patterns per ISO week. The playbook is a learned skill, so the safety scan, evals, evidence rule, and pin lock apply. A pinned playbook is not edited.
+`POST /rsi/posts/reflect`, also run from the daily 08:00 UTC cron on Mondays, appends a pattern to that brand's posting playbook after 2 or more successes. At most 2 patterns per ISO week. The playbook is a learned skill, so the safety scan, evals, evidence rule, and pin lock apply. A pinned playbook is not edited.
 
 ## Alternatives
 - Ask a model to invent the winning post and a citation rate. That can publish a number the brand never measured.

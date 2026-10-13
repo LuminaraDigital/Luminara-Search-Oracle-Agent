@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import { AUDIT_QUEUE, AUDIT_QUEUE_STAGING, dispatchQueueBatch, isQueueMapped, type QueueBatchHandler } from '../worker/queueDispatch';
-import { DAILY_CRON, jobsForCron } from '../worker/scheduledJobs';
+import { DAILY_CRON, jobsForCron, shouldRunScheduledJob } from '../worker/scheduledJobs';
 import { parseJsonc } from '../scripts/lib/jsonc.mjs';
 import type { Env } from '../worker/env';
 
@@ -59,8 +59,8 @@ function makeCtx() {
   return { ctx: ctx as unknown as ExecutionContext, waitUntil: ctx.waitUntil, waited };
 }
 
-function controller(cron: string): ScheduledController {
-  return { cron, scheduledTime: 0, noRetry: () => {} } as unknown as ScheduledController;
+function controller(cron: string, scheduledTime = 0): ScheduledController {
+  return { cron, scheduledTime, noRetry: () => {} } as unknown as ScheduledController;
 }
 
 let errorSpy: ReturnType<typeof vi.spyOn>;
@@ -91,22 +91,24 @@ describe('scheduled(): an unmapped cron runs no job and is reported', () => {
     expect(reported()[0]).toContain('no job was run');
   });
 
-  it('the Monday RSI cron starts each job that cron owns', async () => {
+  it('the daily cron on Monday also starts the RSI jobs', async () => {
     const monday = makeCtx();
-    await worker.scheduled(controller('0 9 * * 1'), {} as Env, monday.ctx);
+    const mondayMs = Date.UTC(2026, 9, 12, 8, 0, 0);
+    await worker.scheduled(controller(DAILY_CRON, mondayMs), {} as Env, monday.ctx);
     await Promise.allSettled(monday.waited);
-    expect(monday.waitUntil).toHaveBeenCalledTimes(jobsForCron('0 9 * * 1').length);
+    expect(monday.waitUntil).toHaveBeenCalledTimes(jobsForCron(DAILY_CRON).length);
     expect(reported().filter((line) => line.startsWith('[Cron]'))).toEqual([]);
   });
 
-  it('the daily cron still starts every job it owns and reports no cron error', async () => {
+  it('the daily cron still starts every non-Monday job it owns and reports no cron error', async () => {
     const { ctx, waitUntil, waited } = makeCtx();
-    // With no bindings each job returns at once, so nothing leaves the process.
+    // scheduledTime 0 is a Thursday, so the RSI jobs stay idle.
     await worker.scheduled(controller(DAILY_CRON), {} as Env, ctx);
     await Promise.allSettled(waited);
-    const owned = jobsForCron(DAILY_CRON);
-    expect(owned.length).toBeGreaterThanOrEqual(3);
-    expect(waitUntil).toHaveBeenCalledTimes(owned.length);
+    const started = jobsForCron(DAILY_CRON).filter((job) => shouldRunScheduledJob(job, 0));
+    expect(started.length).toBeGreaterThanOrEqual(3);
+    expect(started).not.toContain('rsi_skill_curator');
+    expect(waitUntil).toHaveBeenCalledTimes(started.length);
     expect(reported().filter((line) => line.startsWith('[Cron]'))).toEqual([]);
   });
 });

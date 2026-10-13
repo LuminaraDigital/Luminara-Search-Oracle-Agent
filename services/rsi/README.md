@@ -32,7 +32,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 | `postingAgent.ts` | Draft posts, pick one from measured history, reflect a playbook |
 | `memorySearch.ts` | Rank indexed audits and chats, and suggest a brand fact |
 
-Worker persistence is `worker/rsiSkillStore.ts`. Monday 09:00 UTC runs `worker/rsiCurator.ts`.
+Worker persistence is `worker/rsiSkillStore.ts`. The daily 08:00 UTC cron runs `worker/rsiCurator.ts` and the posting reflection when that fire is a Monday.
 
 ## Attribution
 

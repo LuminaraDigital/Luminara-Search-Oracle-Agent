@@ -1,5 +1,5 @@
 /**
- * Monday curator: archive stale unpinned skills. One account failure does not stop the sweep.
+ * Curator: archive stale unpinned skills. The daily cron calls this on Mondays. One account failure does not stop the sweep.
  */
 import type { Env } from './env';
 import { curateRsiAccount, listCuratorAccountIds } from './rsiSkillStore';
