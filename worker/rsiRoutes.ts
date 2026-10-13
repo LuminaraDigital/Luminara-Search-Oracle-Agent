@@ -18,6 +18,7 @@ import {
 import { countAutomaticRsiChanges } from './rsiSkillStore';
 import { rankCitedFixes, recordCitedFix } from './rsiFixOutcomes';
 import { recordReplayNode, selectAndMaybeEnableStrategy, setReplayPinned } from './rsiReplay';
+import { draftAndSelectPost, ingestPostMetric, reflectBrandPlaybook } from './rsiPosting';
 import {
   applyRsiProposal,
   curateRsiAccount,
@@ -126,6 +127,58 @@ export async function handleRsiRoute(
       if (!body?.slug) return json({ ok: false, error: 'slug required.' }, 400);
       const result = await rollbackGatedPrompt(env, accountId, body.slug);
       return json({ ok: true, ...result });
+    }
+
+    if (path === '/rsi/posts/draft' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as {
+        brandId?: string;
+        brandName?: string;
+        offer?: string;
+        audience?: string;
+        count?: number;
+        sourceRefs?: unknown;
+      } | null;
+      if (!body) return json({ ok: false, error: 'JSON body required.' }, 400);
+      const sourceRefs = Array.isArray(body.sourceRefs) ? body.sourceRefs.filter((item) => typeof item === 'string') : [];
+      const drafted = await draftAndSelectPost(env, accountId, {
+        brandId: body.brandId || '',
+        brandName: body.brandName || '',
+        offer: body.offer || '',
+        audience: body.audience || '',
+        count: body.count,
+        sourceRefs,
+      });
+      return json({ ok: true, ...drafted });
+    }
+
+    const metricMatch = path.match(/^\/rsi\/posts\/([^/]+)\/metrics$/);
+    if (metricMatch && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as {
+        horizon?: '24h' | '72h';
+        measurementStatus?: 'measured' | 'not_measured';
+        impressions?: number | null;
+        engagements?: number | null;
+      } | null;
+      if (!body) return json({ ok: false, error: 'JSON body required.' }, 400);
+      if (body.horizon !== '24h' && body.horizon !== '72h') return json({ ok: false, error: 'horizon must be 24h or 72h.' }, 400);
+      if (body.measurementStatus !== 'measured' && body.measurementStatus !== 'not_measured') {
+        return json({ ok: false, error: 'measurementStatus must be measured or not_measured.' }, 400);
+      }
+      await ingestPostMetric(env, accountId, {
+        postId: decodeURIComponent(metricMatch[1]),
+        horizon: body.horizon,
+        measurementStatus: body.measurementStatus,
+        impressions: body.impressions ?? null,
+        engagements: body.engagements ?? null,
+      });
+      return json({ ok: true });
+    }
+
+    if (path === '/rsi/posts/reflect' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as { brandId?: string; brandName?: string } | null;
+      if (!body?.brandId) return json({ ok: false, error: 'brandId required.' }, 400);
+      const reflection = await reflectBrandPlaybook(env, accountId, body.brandId, body.brandName || body.brandId);
+      return json({ ok: true, ...reflection });
     }
 
     if (path === '/rsi/replay/nodes' && request.method === 'POST') {

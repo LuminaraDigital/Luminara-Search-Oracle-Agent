@@ -15,7 +15,8 @@ export type ScheduledJobName =
   | 'ton_pending_sweep'
   | 'payment_support_sweep'
   | 'weekly_decision_digest'
-  | 'rsi_skill_curator';
+  | 'rsi_skill_curator'
+  | 'rsi_posting_reflection';
 
 export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'sentinel',
@@ -26,6 +27,7 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'payment_support_sweep',
   'weekly_decision_digest',
   'rsi_skill_curator',
+  'rsi_posting_reflection',
 ];
 
 /**
@@ -41,7 +43,7 @@ export const DAILY_CRON = '0 8 * * *';
 export const RSI_WEEKLY_CRON = '0 9 * * 1';
 
 const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
-  [RSI_WEEKLY_CRON]: ['rsi_skill_curator'],
+  [RSI_WEEKLY_CRON]: ['rsi_skill_curator', 'rsi_posting_reflection'],
   [DAILY_CRON]: [
     'sentinel',
     'privacy_purge',
