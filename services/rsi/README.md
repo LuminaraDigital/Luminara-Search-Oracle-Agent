@@ -16,6 +16,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 10. A fix is a citation success only when both rates are measured and the later rate is higher. `not_measured` stores no rate. Ranking uses those measured effects and leaves unknown signatures at score 0.
 11. A new audit, probe, or ranking strategy is enabled only when replay on logged measured runs beats the current strategy. One enable per domain and kind per week. Pinned strategies stay fixed. Unmeasured runs do not enter the mean.
 12. A posting pattern is added only after two measured 72h successes above the brand median, with at most two playbook edits per week. A pinned playbook stays fixed. Cold-start winner choice is `not_measured`.
+13. Memory search is account-scoped. A brand-fact nudge is a suggestion, not a write. The person saves it with `saveBrandFact`.
 
 ## Layout
 
@@ -29,6 +30,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 | `fixOutcomes.ts` | Classify citation before/after and rank fixes |
 | `offlineReplay.ts` | Score a strategy on logged runs before enabling it |
 | `postingAgent.ts` | Draft posts, pick one from measured history, reflect a playbook |
+| `memorySearch.ts` | Rank indexed audits and chats, and suggest a brand fact |
 
 Worker persistence is `worker/rsiSkillStore.ts`. Monday 09:00 UTC runs `worker/rsiCurator.ts`.
 

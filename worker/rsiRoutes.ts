@@ -19,6 +19,7 @@ import { countAutomaticRsiChanges } from './rsiSkillStore';
 import { rankCitedFixes, recordCitedFix } from './rsiFixOutcomes';
 import { recordReplayNode, selectAndMaybeEnableStrategy, setReplayPinned } from './rsiReplay';
 import { draftAndSelectPost, ingestPostMetric, reflectBrandPlaybook } from './rsiPosting';
+import { indexMemoryDocument, searchAccountMemory } from './rsiMemorySearch';
 import {
   applyRsiProposal,
   curateRsiAccount,
@@ -179,6 +180,32 @@ export async function handleRsiRoute(
       if (!body?.brandId) return json({ ok: false, error: 'brandId required.' }, 400);
       const reflection = await reflectBrandPlaybook(env, accountId, body.brandId, body.brandName || body.brandId);
       return json({ ok: true, ...reflection });
+    }
+
+    if (path === '/rsi/memory/documents' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as {
+        kind?: 'audit' | 'chat';
+        title?: string;
+        body?: string;
+        domain?: string;
+        sourceId?: string;
+      } | null;
+      if (!body) return json({ ok: false, error: 'JSON body required.' }, 400);
+      if (body.kind !== 'audit' && body.kind !== 'chat') return json({ ok: false, error: 'kind must be audit or chat.' }, 400);
+      const indexed = await indexMemoryDocument(env, accountId, {
+        kind: body.kind,
+        title: body.title || '',
+        body: body.body || '',
+        domain: body.domain,
+        sourceId: body.sourceId,
+      });
+      return json({ ok: true, ...indexed });
+    }
+
+    if (path === '/rsi/memory/search' && request.method === 'GET') {
+      const q = new URL(request.url).searchParams.get('q') || '';
+      const found = await searchAccountMemory(env, accountId, q);
+      return json({ ok: true, ...found });
     }
 
     if (path === '/rsi/replay/nodes' && request.method === 'POST') {
