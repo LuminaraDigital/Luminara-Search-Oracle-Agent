@@ -14,6 +14,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 8. A user correction becomes an active eval case. Skill and prompt publishes fail while their text still contains that rejected excerpt.
 9. Reward weights move at most once per ISO week, from measured outcome signals, and a pinned profile does not move. Rollback restores the previous weights.
 10. A fix is a citation success only when both rates are measured and the later rate is higher. `not_measured` stores no rate. Ranking uses those measured effects and leaves unknown signatures at score 0.
+11. A new audit, probe, or ranking strategy is enabled only when replay on logged measured runs beats the current strategy. One enable per domain and kind per week. Pinned strategies stay fixed. Unmeasured runs do not enter the mean.
 
 ## Layout
 
@@ -25,6 +26,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 | `skillLibrary.ts` | Propose, apply, usage, curator plan, rollback |
 | `corrections.ts` | Turn a user correction into an eval case and YAML |
 | `fixOutcomes.ts` | Classify citation before/after and rank fixes |
+| `offlineReplay.ts` | Score a strategy on logged runs before enabling it |
 
 Worker persistence is `worker/rsiSkillStore.ts`. Monday 09:00 UTC runs `worker/rsiCurator.ts`.
 

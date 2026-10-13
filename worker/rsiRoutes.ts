@@ -17,6 +17,7 @@ import {
 } from './rsiCorrections';
 import { countAutomaticRsiChanges } from './rsiSkillStore';
 import { rankCitedFixes, recordCitedFix } from './rsiFixOutcomes';
+import { recordReplayNode, selectAndMaybeEnableStrategy, setReplayPinned } from './rsiReplay';
 import {
   applyRsiProposal,
   curateRsiAccount,
@@ -124,6 +125,67 @@ export async function handleRsiRoute(
       const body = (await request.json().catch(() => null)) as { slug?: string } | null;
       if (!body?.slug) return json({ ok: false, error: 'slug required.' }, 400);
       const result = await rollbackGatedPrompt(env, accountId, body.slug);
+      return json({ ok: true, ...result });
+    }
+
+    if (path === '/rsi/replay/nodes' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as {
+        domain?: string;
+        kind?: string;
+        strategyId?: string;
+        outcomeScore?: number | null;
+        measurementStatus?: 'measured' | 'not_measured';
+        cost?: number;
+        sourceRefs?: unknown;
+      } | null;
+      if (!body) return json({ ok: false, error: 'JSON body required.' }, 400);
+      const sourceRefs = Array.isArray(body.sourceRefs) ? body.sourceRefs.filter((item) => typeof item === 'string') : [];
+      const node = await recordReplayNode(env, accountId, {
+        domain: body.domain || '',
+        kind: body.kind || '',
+        strategyId: body.strategyId || '',
+        outcomeScore: body.outcomeScore ?? null,
+        measurementStatus: body.measurementStatus === 'measured' ? 'measured' : body.measurementStatus === 'not_measured' ? 'not_measured' : ('' as 'measured'),
+        cost: body.cost,
+        sourceRefs,
+      });
+      return json({ ok: true, node });
+    }
+
+    if (path === '/rsi/replay/select' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as {
+        domain?: string;
+        kind?: string;
+        currentStrategyId?: string;
+        candidateIds?: unknown;
+      } | null;
+      if (!body) return json({ ok: false, error: 'JSON body required.' }, 400);
+      const candidateIds = Array.isArray(body.candidateIds) ? body.candidateIds.filter((item) => typeof item === 'string') : [];
+      const decision = await selectAndMaybeEnableStrategy(env, accountId, {
+        domain: body.domain || '',
+        kind: body.kind || '',
+        currentStrategyId: body.currentStrategyId || '',
+        candidateIds,
+      });
+      return json({ ok: true, ...decision });
+    }
+
+    if (path === '/rsi/replay/pin' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as {
+        domain?: string;
+        kind?: string;
+        strategyId?: string;
+        pinned?: unknown;
+      } | null;
+      if (!body || typeof body.pinned !== 'boolean') {
+        return json({ ok: false, error: 'Body must include pinned: true or false.' }, 400);
+      }
+      const result = await setReplayPinned(env, accountId, {
+        domain: body.domain || '',
+        kind: body.kind || '',
+        strategyId: body.strategyId || '',
+        pinned: body.pinned,
+      });
       return json({ ok: true, ...result });
     }
 
