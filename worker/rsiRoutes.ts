@@ -16,6 +16,7 @@ import {
   setRewardPinned,
 } from './rsiCorrections';
 import { countAutomaticRsiChanges } from './rsiSkillStore';
+import { rankCitedFixes, recordCitedFix } from './rsiFixOutcomes';
 import {
   applyRsiProposal,
   curateRsiAccount,
@@ -124,6 +125,60 @@ export async function handleRsiRoute(
       if (!body?.slug) return json({ ok: false, error: 'slug required.' }, 400);
       const result = await rollbackGatedPrompt(env, accountId, body.slug);
       return json({ ok: true, ...result });
+    }
+
+    if (path === '/rsi/fixes' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as {
+        domain?: string;
+        signature?: string;
+        title?: string;
+        sourceRefs?: unknown;
+        beforeCitationRate?: unknown;
+        afterCitationRate?: unknown;
+        measurementStatus?: unknown;
+      } | null;
+      if (!body) return json({ ok: false, error: 'JSON body required.' }, 400);
+      if (body.measurementStatus !== 'measured' && body.measurementStatus !== 'not_measured') {
+        return json({ ok: false, error: 'measurementStatus must be measured or not_measured.' }, 400);
+      }
+      const sourceRefs = Array.isArray(body.sourceRefs) ? body.sourceRefs.filter((item) => typeof item === 'string') : [];
+      const rate = (value: unknown): number | null => (typeof value === 'number' ? value : value == null ? null : Number.NaN);
+      const recorded = await recordCitedFix(env, accountId, {
+        domain: body.domain || '',
+        signature: body.signature || '',
+        title: body.title || '',
+        outcome: 'failure',
+        sourceRefs,
+        beforeCitationRate: rate(body.beforeCitationRate),
+        afterCitationRate: rate(body.afterCitationRate),
+        measurementStatus: body.measurementStatus,
+      });
+      return json({
+        ok: true,
+        effect: recorded.effect,
+        memoryId: recorded.memoryId,
+        observation: recorded.observation,
+        proposal: recorded.proposal,
+        reason: recorded.reason,
+        content: recorded.memory.content,
+      });
+    }
+
+    if (path === '/rsi/fixes/rank' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as {
+        domain?: string;
+        fixes?: Array<{ signature?: string; title?: string }>;
+      } | null;
+      if (!body || !Array.isArray(body.fixes) || body.fixes.length === 0) {
+        return json({ ok: false, error: 'domain and a fixes array are required.' }, 400);
+      }
+      const fixes = body.fixes.slice(0, 50).filter((item) => item && typeof item.signature === 'string' && typeof item.title === 'string') as Array<{
+        signature: string;
+        title: string;
+      }>;
+      if (fixes.length === 0) return json({ ok: false, error: 'Each fix needs a signature and a title.' }, 400);
+      const ranked = await rankCitedFixes(env, accountId, body.domain || '', fixes);
+      return json({ ok: true, fixes: ranked });
     }
 
     if (path === '/rsi/skills' && request.method === 'GET') {

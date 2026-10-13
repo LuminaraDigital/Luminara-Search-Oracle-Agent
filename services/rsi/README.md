@@ -13,6 +13,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 7. The same fix signature proposes a skill only after two successes.
 8. A user correction becomes an active eval case. Skill and prompt publishes fail while their text still contains that rejected excerpt.
 9. Reward weights move at most once per ISO week, from measured outcome signals, and a pinned profile does not move. Rollback restores the previous weights.
+10. A fix is a citation success only when both rates are measured and the later rate is higher. `not_measured` stores no rate. Ranking uses those measured effects and leaves unknown signatures at score 0.
 
 ## Layout
 
@@ -23,6 +24,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 | `skillEvals.ts` | Built-in evals. Correction cases append later |
 | `skillLibrary.ts` | Propose, apply, usage, curator plan, rollback |
 | `corrections.ts` | Turn a user correction into an eval case and YAML |
+| `fixOutcomes.ts` | Classify citation before/after and rank fixes |
 
 Worker persistence is `worker/rsiSkillStore.ts`. Monday 09:00 UTC runs `worker/rsiCurator.ts`.
 
