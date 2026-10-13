@@ -98,7 +98,7 @@
     "uuid": "^11.1.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261009.1",
+    "@cloudflare/workers-types": "^5.20261010.1",
     "@eslint/js": "^9.39.5",
     "@types/dompurify": "^3.2.0",
     "@types/node": "^22.14.0",
