@@ -9,7 +9,9 @@ The skill library refuses a live change that fails its built-in evals. Those eva
 ## Design
 A correction stores the prompt, the rejected excerpt, the replacement excerpt, and source-event refs. The rejected excerpt becomes a `mustNotContain` eval case for that account. The replacement is rendered as YAML the self-hosted eval runner can parse (`evals/yaml-subset.mjs`). The case is active immediately.
 
-`POST /rsi/skills/proposals/:id/apply` loads those cases. A skill body that still contains a rejected excerpt does not go live. `POST /rsi/prompts/publish` runs the same safety scan, the metric eval, and the correction cases before it writes a new `agent_skills` version. Prompt publishes share the 3-change daily cap with skill creates, patches, and curator writes. Rollback disables that version and re-enables the previous one without spending the cap.
+`POST /rsi/skills/proposals/:id/apply` loads those cases. A skill body that still contains a rejected excerpt does not go live.
+
+`POST /rsi/prompts/publish` and `POST /rsi/prompts/rollback` write the global `agent_skills` catalog, which the Oracle reads for every account. They require `x-admin-secret`, the same authorization as `POST /admin/skills/:slug/versions`. A signed-in session is refused before any write. The admin request still runs the safety scan, the metric eval, and that admin actor's correction cases. Prompt publishes share the 3-change daily cap. Rollback disables that version and re-enables the previous one without spending the cap.
 
 Reward weights start at the existing defaults. A nudge adds at most 0.02 to the weight that matches a measured miss (honesty, budget, format, grounding) or to the task weight when the outcome succeeded with no miss, then renormalizes. One nudge per account per ISO week. A pinned profile does not move. Rollback restores the weights from the previous revision.
 

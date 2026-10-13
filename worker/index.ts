@@ -1556,6 +1556,18 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (dreamRes) return withCors(dreamRes);
   }
 
+  // Global Oracle prompt catalog. Same gate as POST /admin/skills/:slug/versions.
+  // A signed-in session must not publish or roll back agent_skills.
+  if (path === '/rsi/prompts/publish' || path === '/rsi/prompts/rollback') {
+    const promptAdmin = isAdminAuthorized(env, request);
+    if (!promptAdmin.ok) return withCors(promptAdmin.response);
+    const promptLimit = limited('auth', RATE_AUTH_PER_MIN);
+    if (promptLimit) return promptLimit;
+    const promptActor: HostedIdentity = { id: 'admin', source: 'firebase', accountId: 'admin' };
+    const promptRoute = await handleRsiRoute(request, env, promptActor, path);
+    if (promptRoute) return withCors(promptRoute);
+  }
+
   // Learned skill library (0027). Session routes. Curator cron is Monday 09:00 UTC.
   if (path.startsWith('/rsi/')) {
     const who = await identify(request, env);

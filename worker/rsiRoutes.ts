@@ -32,6 +32,7 @@ import {
   setRsiSkillPinned,
 } from './rsiSkillStore';
 import { RsiUserError } from './rsiErrors';
+import { isAdminAuthorized } from './adminAuth';
 
 function presentSkill(skill: RsiSkill) {
   return { ...skill, successRate: skillSuccessRate(skill) };
@@ -110,6 +111,8 @@ export async function handleRsiRoute(
     }
 
     if (path === '/rsi/prompts/publish' && request.method === 'POST') {
+      const admin = isAdminAuthorized(env, request);
+      if (!admin.ok) return admin.response;
       const body = (await request.json().catch(() => null)) as { slug?: string; promptBody?: string; evidenceRefs?: unknown } | null;
       if (!body) return json({ ok: false, error: 'JSON body required.' }, 400);
       const evidenceRefs = Array.isArray(body.evidenceRefs) ? body.evidenceRefs.filter((item) => typeof item === 'string') : [];
@@ -124,6 +127,8 @@ export async function handleRsiRoute(
     }
 
     if (path === '/rsi/prompts/rollback' && request.method === 'POST') {
+      const admin = isAdminAuthorized(env, request);
+      if (!admin.ok) return admin.response;
       const body = (await request.json().catch(() => null)) as { slug?: string } | null;
       if (!body?.slug) return json({ ok: false, error: 'slug required.' }, 400);
       const result = await rollbackGatedPrompt(env, accountId, body.slug);

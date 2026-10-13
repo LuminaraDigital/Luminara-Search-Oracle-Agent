@@ -11,7 +11,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 5. Rollback appends a revision. It restores the previous live body and runs the same scan and evals on that body.
 6. Success rate is null until a use is marked success or failure. The library does not invent one.
 7. The same fix signature proposes a skill only after two successes.
-8. A user correction becomes an active eval case. Skill and prompt publishes fail while their text still contains that rejected excerpt.
+8. A user correction becomes an active eval case. Skill publishes for that account fail while their text still contains that rejected excerpt. Publishing or rolling back the global `agent_skills` catalog requires `ADMIN_SECRET`. A session cannot do it.
 9. Reward weights move at most once per ISO week, from measured outcome signals, and a pinned profile does not move. Rollback restores the previous weights.
 10. A fix is a citation success only when both rates are measured and the later rate is higher. `not_measured` stores no rate. Ranking uses those measured effects and leaves unknown signatures at score 0.
 11. A new audit, probe, or ranking strategy is enabled only when replay on logged measured runs beats the current strategy. One enable per domain and kind per week. Pinned strategies stay fixed. Unmeasured runs do not enter the mean.
