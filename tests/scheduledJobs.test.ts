@@ -68,6 +68,11 @@ describe('jobsForCron', () => {
     ]);
   });
 
+  it('runs the RSI skill curator on Monday 09:00 UTC and leaves 09:00 daily unmapped', () => {
+    expect(jobsForCron('0 9 * * 1')).toEqual(['rsi_skill_curator', 'rsi_posting_reflection']);
+    expect(isCronMapped('0 9 * * *')).toBe(false);
+  });
+
   it('gives every cron configured in wrangler.jsonc an explicit map entry', () => {
     const crons = configuredCrons();
     expect(crons).toContain(DAILY_CRON);
