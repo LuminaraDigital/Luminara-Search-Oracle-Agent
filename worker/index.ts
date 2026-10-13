@@ -130,7 +130,7 @@ import { handleMcpOAuthRoute } from './mcpOAuth';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
-import { isCronMapped, jobsForCron } from './scheduledJobs';
+import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
@@ -1568,7 +1568,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (promptRoute) return withCors(promptRoute);
   }
 
-  // Learned skill library (0027). Session routes. Curator cron is Monday 09:00 UTC.
+  // Learned skill library (0027). Session routes. The curator runs on the daily cron, Mondays only.
   if (path.startsWith('/rsi/')) {
     const who = await identify(request, env);
     if (who.error || !who.user) {
@@ -2245,7 +2245,7 @@ export default {
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).
-    const jobs = jobsForCron(controller.cron);
+    const jobs = jobsForCron(controller.cron).filter((job) => shouldRunScheduledJob(job, controller.scheduledTime));
     if (!isCronMapped(controller.cron)) {
       console.error(`[Cron] Cron "${controller.cron}" is not mapped in worker/scheduledJobs.ts; no job was run.`);
       return;

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ALL_SCHEDULED_JOBS, DAILY_CRON, isCronMapped, jobsForCron } from '../worker/scheduledJobs';
+import { ALL_SCHEDULED_JOBS, DAILY_CRON, isCronMapped, jobsForCron, shouldRunScheduledJob } from '../worker/scheduledJobs';
 
 /** Every expression listed under a `"crons": [...]` key in wrangler.jsonc (top level and per env). */
 function configuredCrons(): string[] {
@@ -25,6 +25,8 @@ describe('jobsForCron', () => {
       'ton_pending_sweep',
       'payment_support_sweep',
       'weekly_decision_digest',
+      'rsi_skill_curator',
+      'rsi_posting_reflection',
     ]);
   });
 
@@ -37,6 +39,8 @@ describe('jobsForCron', () => {
       'ton_pending_sweep',
       'payment_support_sweep',
       'weekly_decision_digest',
+      'rsi_skill_curator',
+      'rsi_posting_reflection',
     ]);
   });
 
@@ -65,12 +69,20 @@ describe('jobsForCron', () => {
       'ton_pending_sweep',
       'payment_support_sweep',
       'weekly_decision_digest',
+      'rsi_skill_curator',
+      'rsi_posting_reflection',
     ]);
   });
 
-  it('runs the RSI skill curator on Monday 09:00 UTC and leaves 09:00 daily unmapped', () => {
-    expect(jobsForCron('0 9 * * 1')).toEqual(['rsi_skill_curator', 'rsi_posting_reflection']);
-    expect(isCronMapped('0 9 * * *')).toBe(false);
+  it('owns the RSI jobs on the daily cron and starts them only on Monday UTC', () => {
+    expect(isCronMapped('0 9 * * 1')).toBe(false);
+    expect(jobsForCron('0 9 * * 1')).toEqual([]);
+    const monday = Date.UTC(2026, 9, 12, 8, 0, 0);
+    const thursday = Date.UTC(1970, 0, 1, 0, 0, 0);
+    expect(shouldRunScheduledJob('rsi_skill_curator', monday)).toBe(true);
+    expect(shouldRunScheduledJob('rsi_posting_reflection', monday)).toBe(true);
+    expect(shouldRunScheduledJob('rsi_skill_curator', thursday)).toBe(false);
+    expect(shouldRunScheduledJob('sentinel', thursday)).toBe(true);
   });
 
   it('gives every cron configured in wrangler.jsonc an explicit map entry', () => {

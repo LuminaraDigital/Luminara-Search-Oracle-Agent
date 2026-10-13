@@ -13,7 +13,7 @@ A skill row is a versioned markdown body with usage counts, a success rate, a st
 
 Recording a fix outcome does not publish anything. The second measured success for the same signature proposes a create, or a patch when that slug is already live. Apply runs four checks: evidence present, skill not pinned, safety scan clean, built-in evals pass, and fewer than 3 automatic changes in the last 24 hours. A miss on the cap leaves the proposal pending. Any other miss blocks it.
 
-The Monday 09:00 UTC cron marks an unpinned skill stale after 45 days without use, then archives it after 14 days stale. Pinned skills are listed and skipped. A body that fails the safety scan is archived ahead of the idle clock, still inside the cap, and still never when pinned.
+The daily 08:00 UTC cron, on Mondays only, marks an unpinned skill stale after 45 days without use, then archives it after 14 days stale. A separate cron expression is not used: the account is already at its cron-trigger cap. Pinned skills are listed and skipped. A body that fails the safety scan is archived ahead of the idle clock, still inside the cap, and still never when pinned.
 
 Rollback writes a new revision whose body is the previous live body, after that body passes the current scan and evals. Pin and unpin are human actions and do not spend the change cap.
 
