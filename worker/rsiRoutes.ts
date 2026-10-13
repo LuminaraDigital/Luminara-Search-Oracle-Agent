@@ -6,6 +6,17 @@ import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { skillSuccessRate, type RsiSkill, type SkillProposal } from '../services/rsi/skillLibrary';
 import {
+  getRewardProfile,
+  listCorrectionCases,
+  nudgeRewardProfile,
+  publishGatedPrompt,
+  recordCorrection,
+  rollbackGatedPrompt,
+  rollbackRewardProfile,
+  setRewardPinned,
+} from './rsiCorrections';
+import { countAutomaticRsiChanges } from './rsiSkillStore';
+import {
   applyRsiProposal,
   curateRsiAccount,
   getRsiSkill,
@@ -14,9 +25,9 @@ import {
   recordFixObservation,
   recordRsiSkillUsage,
   rollbackRsiSkill,
-  RsiUserError,
   setRsiSkillPinned,
 } from './rsiSkillStore';
+import { RsiUserError } from './rsiErrors';
 
 function presentSkill(skill: RsiSkill) {
   return { ...skill, successRate: skillSuccessRate(skill) };
@@ -35,6 +46,86 @@ export async function handleRsiRoute(
   if (!path.startsWith('/rsi/')) return null;
   const accountId = billingId(user);
   try {
+    if (path === '/rsi/corrections' && request.method === 'GET') {
+      const corrections = await listCorrectionCases(env, accountId);
+      return json({ ok: true, corrections });
+    }
+
+    if (path === '/rsi/corrections' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as {
+        domain?: string;
+        prompt?: string;
+        badExcerpt?: string;
+        goodExcerpt?: string;
+        sourceRefs?: unknown;
+      } | null;
+      if (!body) return json({ ok: false, error: 'JSON body required.' }, 400);
+      const sourceRefs = Array.isArray(body.sourceRefs) ? body.sourceRefs.filter((item) => typeof item === 'string') : [];
+      const correction = await recordCorrection(env, accountId, {
+        domain: body.domain || '',
+        prompt: body.prompt || '',
+        badExcerpt: body.badExcerpt || '',
+        goodExcerpt: body.goodExcerpt || '',
+        sourceRefs,
+      });
+      return json({ ok: true, correction });
+    }
+
+    if (path === '/rsi/rewards' && request.method === 'GET') {
+      const profile = await getRewardProfile(env, accountId);
+      return json({ ok: true, ...profile });
+    }
+
+    if (path === '/rsi/rewards/outcomes' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as { signals?: unknown; sourceRefs?: unknown } | null;
+      if (!body || !Array.isArray(body.signals)) return json({ ok: false, error: 'signals array required.' }, 400);
+      const sourceRefs = Array.isArray(body.sourceRefs) ? body.sourceRefs.filter((item) => typeof item === 'string') : [];
+      const signals = body.signals.filter((item) => item && typeof item === 'object') as Array<{
+        honestyMiss?: boolean;
+        budgetMiss?: boolean;
+        formatMiss?: boolean;
+        groundMiss?: boolean;
+        taskSuccess?: boolean;
+      }>;
+      const result = await nudgeRewardProfile(env, accountId, { signals, sourceRefs });
+      return json({ ok: true, ...result });
+    }
+
+    if (path === '/rsi/rewards/pin' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as { pinned?: unknown } | null;
+      if (!body || typeof body.pinned !== 'boolean') {
+        return json({ ok: false, error: 'Body must include pinned: true or false.' }, 400);
+      }
+      const result = await setRewardPinned(env, accountId, body.pinned);
+      return json({ ok: true, ...result });
+    }
+
+    if (path === '/rsi/rewards/rollback' && request.method === 'POST') {
+      const weights = await rollbackRewardProfile(env, accountId);
+      return json({ ok: true, weights });
+    }
+
+    if (path === '/rsi/prompts/publish' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as { slug?: string; promptBody?: string; evidenceRefs?: unknown } | null;
+      if (!body) return json({ ok: false, error: 'JSON body required.' }, 400);
+      const evidenceRefs = Array.isArray(body.evidenceRefs) ? body.evidenceRefs.filter((item) => typeof item === 'string') : [];
+      const spent = await countAutomaticRsiChanges(env, accountId);
+      const published = await publishGatedPrompt(env, accountId, {
+        slug: body.slug || '',
+        promptBody: body.promptBody || '',
+        evidenceRefs,
+        changesAlreadyThisRound: spent,
+      });
+      return json({ ok: true, version: published.version });
+    }
+
+    if (path === '/rsi/prompts/rollback' && request.method === 'POST') {
+      const body = (await request.json().catch(() => null)) as { slug?: string } | null;
+      if (!body?.slug) return json({ ok: false, error: 'slug required.' }, 400);
+      const result = await rollbackGatedPrompt(env, accountId, body.slug);
+      return json({ ok: true, ...result });
+    }
+
     if (path === '/rsi/skills' && request.method === 'GET') {
       const url = new URL(request.url);
       const stateParam = url.searchParams.get('state');

@@ -18,18 +18,12 @@ import {
   type SkillRevision,
 } from '../services/rsi/skillLibrary';
 import { requireEvidence } from '../services/rsi/guardrails';
+import { RsiUserError } from './rsiErrors';
+import { countPromptChangesThisRound, listCorrectionEvalCases } from './rsiCorrections';
 
 const ROUND_MS = 24 * 60 * 60 * 1000;
 const KV_TTL_SECONDS = 300;
 const MISSING_TABLE = /no such table: rsi_/i;
-
-export class RsiUserError extends Error {
-  status: number;
-  constructor(message: string, status = 400) {
-    super(message);
-    this.status = status;
-  }
-}
 
 type SkillRow = {
   id: string;
@@ -282,7 +276,7 @@ async function loadSuccesses(env: Env, accountId: string, signature: string): Pr
   }));
 }
 
-async function changesThisRound(env: Env, accountId: string, now: number): Promise<number> {
+export async function countAutomaticRsiChanges(env: Env, accountId: string, now = Date.now()): Promise<number> {
   const db = requireDb(env);
   const row = await db
     .prepare(
@@ -291,7 +285,8 @@ async function changesThisRound(env: Env, accountId: string, now: number): Promi
     )
     .bind(accountId, now - ROUND_MS)
     .first<{ n: number }>();
-  return Number(row?.n || 0);
+  const prompts = await countPromptChangesThisRound(env, accountId, now);
+  return Number(row?.n || 0) + prompts;
 }
 
 async function saveProposal(env: Env, proposal: SkillProposal, existingId: string | null): Promise<void> {
@@ -515,7 +510,8 @@ export async function applyRsiProposal(env: Env, accountId: string, proposalId: 
     if (!row) throw new RsiUserError('Proposal not found.', 404);
     const proposal = proposalFromRow(row);
     const skills = await loadLiveSkills(env, accountId);
-    const spent = await changesThisRound(env, accountId, now);
+    const spent = await countAutomaticRsiChanges(env, accountId, now);
+    const extraCases = await listCorrectionEvalCases(env, accountId);
     const applied = applySkillProposal({
       proposal,
       skills,
@@ -523,6 +519,7 @@ export async function applyRsiProposal(env: Env, accountId: string, proposalId: 
       skillId: crypto.randomUUID(),
       revisionId: crypto.randomUUID(),
       changesAlreadyThisRound: spent,
+      extraCases,
     });
     if (!applied.ok || !applied.skill || !applied.revision) {
       await saveProposal(env, applied.proposal, proposal.id);
@@ -654,7 +651,7 @@ export async function curateRsiAccount(
 ): Promise<{ staled: number; archived: number; skippedPinned: string[]; deferred: string[] }> {
   try {
     const skills = await loadLiveSkills(env, accountId);
-    const spent = await changesThisRound(env, accountId, now);
+    const spent = await countAutomaticRsiChanges(env, accountId, now);
     const plan = planCuratorRound({
       skills,
       now,

@@ -62,6 +62,13 @@ export function runSkillEvals(body: string, extra: readonly SkillEvalCase[] = []
   return { passed: cases.every((item) => item.passed), cases };
 }
 
+/** Prompt text is not a SKILL.md file, so it skips the title and Evidence headings. */
+export function runPromptEvals(body: string, extra: readonly SkillEvalCase[] = []): SkillEvalReport {
+  const planned: SkillEvalCase[] = [{ name: 'no-invented-metrics', forbidInventedMetrics: true }, ...extra];
+  const cases = planned.map((evalCase) => evaluateSkillCase(body, evalCase));
+  return { passed: cases.every((item) => item.passed), cases };
+}
+
 export function failedEvalNames(report: SkillEvalReport): string[] {
   return report.cases.filter((item) => !item.passed).map((item) => item.name);
 }

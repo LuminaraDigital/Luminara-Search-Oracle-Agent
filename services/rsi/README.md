@@ -11,6 +11,8 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 5. Rollback appends a revision. It restores the previous live body and runs the same scan and evals on that body.
 6. Success rate is null until a use is marked success or failure. The library does not invent one.
 7. The same fix signature proposes a skill only after two successes.
+8. A user correction becomes an active eval case. Skill and prompt publishes fail while their text still contains that rejected excerpt.
+9. Reward weights move at most once per ISO week, from measured outcome signals, and a pinned profile does not move. Rollback restores the previous weights.
 
 ## Layout
 
@@ -20,6 +22,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 | `skillGuard.ts` | Safety scan before a skill body goes live |
 | `skillEvals.ts` | Built-in evals. Correction cases append later |
 | `skillLibrary.ts` | Propose, apply, usage, curator plan, rollback |
+| `corrections.ts` | Turn a user correction into an eval case and YAML |
 
 Worker persistence is `worker/rsiSkillStore.ts`. Monday 09:00 UTC runs `worker/rsiCurator.ts`.
 
