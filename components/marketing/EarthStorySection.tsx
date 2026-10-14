@@ -1,5 +1,5 @@
 /* Earth story: Visibility Field section. HTML owns all copy and controls; the canvas is decorative.
- * One activeChapter state drives both the panel and the lazily loaded Canvas2D scene.
+ * One activeChapter state (plus optional selectedHub focus) drives both the panel and the lazily loaded Canvas2D scene.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -7,11 +7,15 @@ import {
   EARTH_BUSINESS,
   EARTH_CHAPTERS,
   EARTH_COPY,
+  EARTH_HUBS,
   EVIDENCE_EXAMPLES,
   EXAMPLE_ACTION,
   chapterForKey,
   chapterIndex,
+  formatLatLon,
+  greatCircleKm,
   type ChapterId,
+  type EarthHubId,
   type EvidenceState,
 } from './earth/earthStory';
 import type { EarthScene } from './earth/earthScene';
@@ -104,20 +108,28 @@ const ChapterDetail: React.FC<{ id: ChapterId }> = ({ id }) => {
 
 export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingClassName, onOpenAudit, onSignUp }) => {
   const [chapterId, setChapterId] = useState<ChapterId>(EARTH_CHAPTERS[0].id);
+  const [selectedHub, setSelectedHub] = useState<EarthHubId | null>(null);
   const [paused, setPaused] = useState(false);
   const [status, setStatus] = useState<SceneStatus>('loading');
   const [reduced] = useState(prefersReducedMotion);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<EarthScene | null>(null);
   const chapterRef = useRef(chapterId);
+  const hubRef = useRef(selectedHub);
   const pausedRef = useRef(paused);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const chapter = EARTH_CHAPTERS[chapterIndex(chapterId)];
+  const activeHub = selectedHub ? EARTH_HUBS.find((h) => h.id === selectedHub) ?? null : null;
 
   useEffect(() => {
     chapterRef.current = chapterId;
     sceneRef.current?.setChapter(chapterId);
   }, [chapterId]);
+
+  useEffect(() => {
+    hubRef.current = selectedHub;
+    sceneRef.current?.setHub(selectedHub);
+  }, [selectedHub]);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -136,9 +148,11 @@ export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingCla
           if (cancelled) return;
           sceneRef.current = createEarthScene(canvas, {
             chapter: chapterRef.current,
+            selectedHub: hubRef.current,
             paused: pausedRef.current,
             reducedMotion: reduced,
             lowPower: isLowPower(),
+            onSelectHub: (id) => setSelectedHub(id),
           });
           setStatus('ready');
         })
@@ -160,19 +174,41 @@ export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingCla
     };
   }, [reduced]);
 
+  const selectChapter = (id: ChapterId) => {
+    setSelectedHub(null);
+    setChapterId(id);
+  };
+
   const onTabKey = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     const next = chapterForKey(e.key, chapterId);
     if (!next) return;
     e.preventDefault();
-    setChapterId(next);
+    selectChapter(next);
     tabRefs.current[chapterIndex(next)]?.focus();
   };
+
+  const resetGlobeView = () => {
+    if (selectedHub !== null) {
+      setSelectedHub(null);
+    } else {
+      sceneRef.current?.resetView();
+    }
+  };
+
+  const focusCoords = activeHub
+    ? formatLatLon(activeHub.lat, activeHub.lon)
+    : formatLatLon(chapter.focus.lat, chapter.focus.lon);
+
+  const hubDistanceKm =
+    activeHub && !activeHub.isBusiness
+      ? greatCircleKm(EARTH_BUSINESS, activeHub)
+      : null;
 
   return (
     <section
       id="visibility-map"
       aria-labelledby="earth-story-heading"
-      className="mkt-section mkt-section-alt scroll-mt-24 overflow-x-clip"
+      className="mkt-section mkt-section-alt scroll-mt-28 overflow-x-clip"
     >
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-x-16 gap-y-10 items-center">
         <div className="lg:col-span-5 lg:col-start-1 lg:row-start-1 min-w-0 self-end">
@@ -184,40 +220,103 @@ export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingCla
         </div>
 
         <figure className="lg:col-span-7 lg:col-start-6 lg:row-start-1 lg:row-span-2 min-w-0 m-0">
-          <div className="relative mx-auto w-full max-w-[min(640px,85vw)] aspect-square">
-            <div role="img" aria-label={`Illustrative globe. ${chapter.scene}`} className="absolute inset-0">
-              {status === 'loading' && (
-                <div className="absolute inset-[10%] rounded-full border border-[var(--color-rule)] bg-[radial-gradient(circle_at_38%_32%,rgb(26_21_12),rgb(0_0_0)_75%)]" />
-              )}
-              {status === 'failed' && (
-                <img
-                  src="/brand/earth-fallback.webp"
-                  alt=""
-                  width={720}
-                  height={720}
-                  decoding="async"
-                  className="absolute inset-0 h-full w-full"
-                />
-              )}
-              <canvas
-                ref={canvasRef}
-                aria-hidden="true"
-                className={`absolute inset-0 h-full w-full transition-opacity duration-700 motion-reduce:transition-none ${
-                  status === 'ready' ? 'opacity-100' : 'opacity-0'
-                }`}
-              />
-            </div>
-            {status === 'ready' && !reduced && (
-              <button
-                type="button"
-                onClick={() => setPaused((p) => !p)}
-                className={`absolute right-0 top-0 min-h-[36px] px-3 text-[11px] font-mono tracking-wide border border-[var(--color-rule)] bg-black/60 text-[var(--color-ink-2)] hover:text-[var(--color-ink)] ${FOCUS_RING}`}
+          <div className="mx-auto w-full max-w-[min(640px,88vw)]">
+            <div className="min-h-[34px] flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2 border-b border-[var(--color-rule)] text-[11px] font-mono text-[var(--color-ink-2)]">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                <span className="text-[var(--color-accent)] uppercase tracking-[0.12em]">
+                  {activeHub ? `${activeHub.label} (${activeHub.country})` : chapter.label}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>{focusCoords}</span>
+                {hubDistanceKm !== null && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>{hubDistanceKm.toLocaleString('en-US')} km arc</span>
+                  </>
+                )}
+                {activeHub && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="text-[var(--color-ink)]">{activeHub.role}</span>
+                  </>
+                )}
+              </div>
+              <div
+                aria-hidden={status !== 'ready'}
+                className={`flex items-center gap-1.5 ${status === 'ready' ? '' : 'invisible'}`}
               >
-                {paused ? 'Play motion' : 'Pause motion'}
-              </button>
-            )}
+                <button
+                  type="button"
+                  disabled={status !== 'ready'}
+                  onClick={resetGlobeView}
+                  className={`min-h-[30px] px-2.5 text-[11px] font-mono tracking-wide border border-[var(--color-rule)] bg-black/60 text-[var(--color-ink-2)] hover:text-[var(--color-ink)] ${FOCUS_RING}`}
+                >
+                  Reset view
+                </button>
+                {!reduced && (
+                  <button
+                    type="button"
+                    disabled={status !== 'ready'}
+                    onClick={() => setPaused((p) => !p)}
+                    className={`min-h-[30px] px-2.5 text-[11px] font-mono tracking-wide border border-[var(--color-rule)] bg-black/60 text-[var(--color-ink-2)] hover:text-[var(--color-ink)] ${FOCUS_RING}`}
+                  >
+                    {paused ? 'Play motion' : 'Pause motion'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="relative mx-auto w-full aspect-square">
+              <div role="img" aria-label={`Illustrative globe. ${chapter.scene}`} className="absolute inset-0">
+                {status === 'loading' && (
+                  <div className="absolute inset-[10%] rounded-full border border-[var(--color-rule)] bg-[radial-gradient(circle_at_38%_32%,rgb(26_21_12),rgb(0_0_0)_75%)]" />
+                )}
+                {status === 'failed' && (
+                  <img
+                    src="/brand/earth-fallback.webp"
+                    alt=""
+                    width={720}
+                    height={720}
+                    decoding="async"
+                    className="absolute inset-0 h-full w-full"
+                  />
+                )}
+                <canvas
+                  ref={canvasRef}
+                  aria-hidden="true"
+                  className={`absolute inset-0 h-full w-full transition-opacity duration-700 motion-reduce:transition-none ${
+                    status === 'ready' ? 'opacity-100' : 'opacity-0'
+                  }`}
+                />
+              </div>
+            </div>
+
+            <div
+              role="group"
+              aria-label="Illustrative market locations"
+              className="mt-2 flex flex-wrap items-center justify-center gap-1.5"
+            >
+              {EARTH_HUBS.map((h) => {
+                const active = selectedHub === h.id;
+                return (
+                  <button
+                    key={h.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setSelectedHub(active ? null : h.id)}
+                    className={`min-h-[32px] px-2.5 py-1 text-[11px] font-mono tracking-wide border transition-colors motion-reduce:transition-none ${FOCUS_RING} ${
+                      active
+                        ? 'border-[var(--color-accent)] bg-black/60 text-[var(--color-ink)]'
+                        : 'border-[var(--color-rule)] bg-black/30 text-[var(--color-ink-2)] hover:text-[var(--color-ink)]'
+                    }`}
+                  >
+                    {h.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <figcaption className="mt-3 text-center text-[13px] text-[var(--color-ink-2)]">{EARTH_COPY.notice}</figcaption>
+          <figcaption className="mt-2.5 text-center text-[13px] text-[var(--color-ink-2)]">{EARTH_COPY.notice}</figcaption>
         </figure>
 
         <div className="lg:col-span-5 lg:col-start-1 lg:row-start-2 min-w-0 self-start">
@@ -236,7 +335,7 @@ export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingCla
                   aria-selected={selected}
                   aria-controls="earth-panel"
                   tabIndex={selected ? 0 : -1}
-                  onClick={() => setChapterId(c.id)}
+                  onClick={() => selectChapter(c.id)}
                   onKeyDown={onTabKey}
                   className={`min-h-[44px] px-3 py-2 text-left border transition-colors motion-reduce:transition-none ${FOCUS_RING} ${
                     selected

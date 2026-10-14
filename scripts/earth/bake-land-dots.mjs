@@ -1,20 +1,23 @@
 #!/usr/bin/env node
-// Bakes the landing-page Earth assets from Natural Earth 110m land (public domain).
-//   npm run earth:bake [-- path-or-url-to-ne_110m_land.geojson]
+// Bakes the landing-page Earth assets from Natural Earth 110m land (public domain)
+// and topojson/world-atlas 2.0.2 countries-110m.json (ISC license, Natural Earth 1:110m PD).
+//   npm run earth:bake [-- path-or-url-to-ne_110m_land.geojson [path-or-url-to-countries-110m.json]]
 // Outputs:
-//   components/marketing/earth/landDots.generated.ts  land bitset over a Fibonacci sphere
-//   public/brand/earth-fallback.webp                    static globe for no-canvas fallback
+//   components/marketing/earth/landDots.generated.ts  land bitset + coastline & market country rings
+//   public/brand/earth-fallback.webp                  static globe for no-canvas fallback
 // Sampling and projection must match components/marketing/earth/earthScene.ts
-// (tests/earthStory.test.ts asserts known land/ocean points).
+// (tests/earthStory.test.ts asserts known land/ocean points and ring decoding).
 
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
-import { EARTH_BUSINESS, EARTH_CHAPTERS, EARTH_PALETTE } from '../../components/marketing/earth/earthStory.ts';
+import { EARTH_BUSINESS, EARTH_CHAPTERS, EARTH_HUBS, EARTH_PALETTE } from '../../components/marketing/earth/earthStory.ts';
 
 const SOURCE_URL =
   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_110m_land.geojson';
+const TOPO_URL =
+  'https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json';
 const SAMPLE_COUNT = 20000;
 const FOCUS = EARTH_CHAPTERS[0].focus;
 const MARKER = EARTH_BUSINESS;
@@ -23,8 +26,9 @@ const GOLD_LIGHT = EARTH_PALETTE.goldLight;
 
 const root = process.cwd();
 const src = process.argv[2] ?? SOURCE_URL;
+const topoSrc = process.argv[3] ?? TOPO_URL;
 
-async function loadGeoJson(input) {
+async function loadJson(input) {
   if (/^https?:\/\//.test(input)) {
     const res = await fetch(input);
     if (!res.ok) throw new Error(`Fetch ${input} failed: ${res.status}`);
@@ -82,6 +86,75 @@ function isLand(polys, lat, lon) {
   return false;
 }
 
+/** Decode TopoJSON arcs and rings from world-atlas 2.0.2 countries-110m.json. */
+function extractTopoRings(topo, stepDeg = 1.4) {
+  const [sx, sy] = topo.transform.scale;
+  const [tx, ty] = topo.transform.translate;
+  const decodeArc = (idx) => {
+    const rev = idx < 0;
+    const raw = topo.arcs[rev ? ~idx : idx];
+    let x = 0, y = 0;
+    const pts = raw.map(([dx, dy]) => {
+      x += dx;
+      y += dy;
+      return [x * sx + tx, y * sy + ty];
+    });
+    return rev ? pts.reverse() : pts;
+  };
+  const decodeRing = (indices, step) => {
+    const raw = [];
+    for (const i of indices) {
+      const a = decodeArc(i);
+      for (let k = raw.length ? 1 : 0; k < a.length; k += 1) raw.push(a[k]);
+    }
+    if (raw.length < 4) return [];
+    const out = [raw[0]];
+    for (let i = 1; i < raw.length - 1; i += 1) {
+      const prev = out[out.length - 1];
+      let dlon = raw[i][0] - prev[0];
+      if (dlon > 180) dlon -= 360;
+      else if (dlon < -180) dlon += 360;
+      const dlat = raw[i][1] - prev[1];
+      if (Math.hypot(dlon, dlat) >= step) out.push(raw[i]);
+    }
+    out.push(raw[0]);
+    return out;
+  };
+
+  const landGeom = topo.objects.land.geometries ? topo.objects.land.geometries[0] : topo.objects.land;
+  const coastRings = landGeom.arcs.map((p) => decodeRing(p[0], stepDeg)).filter((r) => r.length >= 5);
+
+  const marketIsos = Array.from(new Set(EARTH_HUBS.map((h) => h.iso)));
+  const marketRings = {};
+  for (const iso of marketIsos) {
+    const geom = topo.objects.countries.geometries.find((c) => String(c.id) === iso);
+    if (!geom) continue;
+    const polys = geom.type === 'Polygon' ? [geom.arcs] : geom.arcs;
+    const rings = polys.map((p) => decodeRing(p[0], 1.1)).filter((r) => r.length >= 5);
+    if (rings.length > 0) marketRings[iso] = rings;
+  }
+  return { coastRings, marketRings };
+}
+
+/** Pack rings into Uint16LE [len, uLon0, uLat0, ...] base64 string. */
+function packRings(rings) {
+  const totalPts = rings.reduce((s, r) => s + r.length, 0);
+  const buf = Buffer.alloc(rings.length * 2 + totalPts * 4);
+  let off = 0;
+  for (const r of rings) {
+    buf.writeUInt16LE(r.length, off);
+    off += 2;
+    for (const [lon, lat] of r) {
+      const nlon = ((lon + 540) % 360) - 180;
+      const clat = Math.max(-90, Math.min(90, lat));
+      buf.writeUInt16LE(Math.round(((nlon + 180) / 360) * 65535), off);
+      buf.writeUInt16LE(Math.round(((clat + 90) / 180) * 65535), off + 2);
+      off += 4;
+    }
+  }
+  return buf.toString('base64');
+}
+
 /** Same rotation as viewRotate() in earthScene.ts: bring (lat0, lon0) to the viewer (+z). */
 function view([x, y, z], lat0, lon0) {
   const a = (lon0 * Math.PI) / 180;
@@ -97,10 +170,31 @@ function fromLatLon(lat, lon) {
   return [Math.cos(p) * Math.sin(l), Math.sin(p), Math.cos(p) * Math.cos(l)];
 }
 
-function fallbackSvg(landPoints) {
+function fallbackSvg(landPoints, coastRings, ausRings) {
   const S = 720;
   const R = S * 0.4;
   const c = S / 2;
+
+  const projectRingPath = (rings) => {
+    const cmds = [];
+    for (const ring of rings) {
+      let pen = false;
+      for (const [lon, lat] of ring) {
+        const [x, y, z] = view(fromLatLon(lat, lon), FOCUS.lat, FOCUS.lon);
+        if (z <= 0.01) {
+          pen = false;
+          continue;
+        }
+        cmds.push(`${pen ? 'L' : 'M'}${(c + x * R).toFixed(1)} ${(c - y * R).toFixed(1)}`);
+        pen = true;
+      }
+    }
+    return cmds.join(' ');
+  };
+
+  const coastPath = projectRingPath(coastRings);
+  const ausPath = projectRingPath(ausRings ?? []);
+
   const dots = [];
   for (const pt of landPoints) {
     const [x, y, z] = view(pt, FOCUS.lat, FOCUS.lon);
@@ -114,16 +208,18 @@ function fallbackSvg(landPoints) {
   const py = (c - my * R).toFixed(1);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}">
 <defs>
-<radialGradient id="body" cx="38%" cy="32%" r="75%"><stop offset="0%" stop-color="rgb(24,20,12)"/><stop offset="60%" stop-color="rgb(8,7,5)"/><stop offset="100%" stop-color="rgb(0,0,0)"/></radialGradient>
+<radialGradient id="body" cx="34%" cy="30%" r="75%"><stop offset="0%" stop-color="rgb(28,23,14)"/><stop offset="60%" stop-color="rgb(9,8,5)"/><stop offset="100%" stop-color="rgb(0,0,0)"/></radialGradient>
 </defs>
-<circle cx="${c}" cy="${c}" r="${R}" fill="url(#body)" stroke="rgba(${GOLD},0.35)" stroke-width="1"/>
+<circle cx="${c}" cy="${c}" r="${R}" fill="url(#body)" stroke="rgba(${GOLD},0.42)" stroke-width="1.2"/>
+<path d="${coastPath}" fill="none" stroke="rgba(${GOLD},0.28)" stroke-width="0.9"/>
+<path d="${ausPath}" fill="rgba(${GOLD},0.12)" stroke="rgba(${GOLD_LIGHT},0.55)" stroke-width="1.2"/>
 ${dots.join('')}
-<circle cx="${px}" cy="${py}" r="11" fill="none" stroke="rgba(${GOLD_LIGHT},0.6)" stroke-width="1.2"/>
+<circle cx="${px}" cy="${py}" r="12" fill="none" stroke="rgba(${GOLD_LIGHT},0.7)" stroke-width="1.2"/>
 <circle cx="${px}" cy="${py}" r="4.5" fill="rgb(${GOLD_LIGHT})"/>
 </svg>`;
 }
 
-const geo = await loadGeoJson(src);
+const geo = await loadJson(src);
 const polys = buildPolygons(geo);
 const bits = new Uint8Array(Math.ceil(SAMPLE_COUNT / 8));
 const landPoints = [];
@@ -136,21 +232,38 @@ for (let i = 0; i < SAMPLE_COUNT; i += 1) {
   }
 }
 
+const topo = await loadJson(topoSrc);
+const { coastRings, marketRings } = extractTopoRings(topo, 1.4);
+const coastB64 = packRings(coastRings);
+const marketEntries = Object.entries(marketRings)
+  .map(([iso, rings]) => `  '${iso}': '${packRings(rings)}',`)
+  .join('\n');
+
 const tsOut = path.join(root, 'components/marketing/earth/landDots.generated.ts');
 fs.writeFileSync(
   tsOut,
-  `// GENERATED by scripts/earth/bake-land-dots.mjs from Natural Earth ne_110m_land (public domain).
+  `// GENERATED by scripts/earth/bake-land-dots.mjs from Natural Earth ne_110m_land (public domain)
+// and topojson/world-atlas 2.0.2 countries-110m.json (ISC license, Natural Earth 1:110m PD).
 // Do not edit. Bit i set = Fibonacci sample i (of LAND_SAMPLE_COUNT) is land.
 export const LAND_SAMPLE_COUNT = ${SAMPLE_COUNT};
 export const LAND_BITSET_B64 =
   '${Buffer.from(bits).toString('base64')}';
+
+/** Quantized Uint16LE coastline rings [len, uLon, uLat, ...] from world-atlas 110m land. */
+export const COAST_RINGS_B64 =
+  '${coastB64}';
+
+/** Quantized Uint16LE country rings keyed by ISO numeric code for market highlights. */
+export const MARKET_RINGS_B64: Readonly<Record<string, string>> = {
+${marketEntries}
+};
 `,
   'utf8',
 );
 
 const webpOut = path.join(root, 'public/brand/earth-fallback.webp');
-await sharp(Buffer.from(fallbackSvg(landPoints))).webp({ quality: 70, alphaQuality: 60, effort: 6 }).toFile(webpOut);
+await sharp(Buffer.from(fallbackSvg(landPoints, coastRings, marketRings['036']))).webp({ quality: 72, alphaQuality: 65, effort: 6 }).toFile(webpOut);
 
 const share = ((landPoints.length / SAMPLE_COUNT) * 100).toFixed(1);
-console.log(`land dots: ${landPoints.length}/${SAMPLE_COUNT} (${share}%)`);
+console.log(`land dots: ${landPoints.length}/${SAMPLE_COUNT} (${share}%), coast rings: ${coastRings.length}, market ISOs: ${Object.keys(marketRings).join(',')}`);
 console.log(`wrote ${path.relative(root, tsOut)} and ${path.relative(root, webpOut)} (${fs.statSync(webpOut).size} bytes)`);

@@ -91,21 +91,88 @@ export const EARTH_CHAPTERS: readonly EarthChapter[] = [
 ];
 
 /** Illustrative places. Not customers, offices or traffic sources. */
-export const EARTH_BUSINESS = { name: 'an example business in Sydney', lat: -33.87, lon: 151.21 } as const;
+export const EARTH_BUSINESS = {
+  id: 'sydney',
+  name: 'an example business in Sydney',
+  shortLabel: 'Sydney',
+  country: 'Australia',
+  iso: '036',
+  role: 'Example business',
+  lat: -33.87,
+  lon: 151.21,
+} as const;
 
 export const EARTH_AUDIENCES = [
-  { name: 'Singapore', lat: 1.35, lon: 103.82, priority: true },
-  { name: 'Tokyo', lat: 35.68, lon: 139.69, priority: false },
-  { name: 'Auckland', lat: -36.85, lon: 174.76, priority: false },
-  { name: 'Los Angeles', lat: 34.05, lon: -118.24, priority: true },
-  { name: 'London', lat: 51.51, lon: -0.13, priority: false },
+  { id: 'singapore', name: 'Singapore', country: 'Singapore', iso: '702', role: 'Example audience', lat: 1.35, lon: 103.82, priority: true },
+  { id: 'tokyo', name: 'Tokyo', country: 'Japan', iso: '392', role: 'Example audience', lat: 35.68, lon: 139.69, priority: false },
+  { id: 'auckland', name: 'Auckland', country: 'New Zealand', iso: '554', role: 'Example audience', lat: -36.85, lon: 174.76, priority: false },
+  { id: 'los-angeles', name: 'Los Angeles', country: 'United States', iso: '840', role: 'Example audience', lat: 34.05, lon: -118.24, priority: true },
+  { id: 'london', name: 'London', country: 'United Kingdom', iso: '826', role: 'Example audience', lat: 51.51, lon: -0.13, priority: false },
 ] as const;
+
+export type EarthHubId = typeof EARTH_BUSINESS.id | (typeof EARTH_AUDIENCES)[number]['id'];
+
+export interface EarthHub {
+  id: EarthHubId;
+  label: string;
+  country: string;
+  iso: string;
+  role: string;
+  lat: number;
+  lon: number;
+  isBusiness: boolean;
+  priority: boolean;
+}
+
+export const EARTH_HUBS: readonly EarthHub[] = [
+  {
+    id: EARTH_BUSINESS.id,
+    label: EARTH_BUSINESS.shortLabel,
+    country: EARTH_BUSINESS.country,
+    iso: EARTH_BUSINESS.iso,
+    role: EARTH_BUSINESS.role,
+    lat: EARTH_BUSINESS.lat,
+    lon: EARTH_BUSINESS.lon,
+    isBusiness: true,
+    priority: true,
+  },
+  ...EARTH_AUDIENCES.map((a) => ({
+    id: a.id,
+    label: a.name,
+    country: a.country,
+    iso: a.iso,
+    role: a.role,
+    lat: a.lat,
+    lon: a.lon,
+    isBusiness: false,
+    priority: a.priority,
+  })),
+];
 
 /** RGB triplets mirroring tokens.css (--gold, --gold-light). Canvas needs literal colors. */
 export const EARTH_PALETTE = {
   gold: '191,149,63',
   goldLight: '252,246,186',
 } as const;
+
+const DEG_TO_RAD = Math.PI / 180;
+const EARTH_RADIUS_KM = 6371;
+
+/** Format latitude/longitude pair for the observatory HUD. */
+export function formatLatLon(lat: number, lon: number): string {
+  const ns = lat >= 0 ? 'N' : 'S';
+  const ew = lon >= 0 ? 'E' : 'W';
+  return `${Math.abs(lat).toFixed(1)}°${ns} · ${Math.abs(lon).toFixed(1)}°${ew}`;
+}
+
+/** Great-circle spherical distance in km between two coordinates on Earth. */
+export function greatCircleKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const p1 = a.lat * DEG_TO_RAD;
+  const p2 = b.lat * DEG_TO_RAD;
+  const dLon = (b.lon - a.lon) * DEG_TO_RAD;
+  const cosAngle = Math.min(1, Math.max(-1, Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dLon)));
+  return Math.round(Math.acos(cosAngle) * EARTH_RADIUS_KM);
+}
 
 export function chapterIndex(id: ChapterId): number {
   return EARTH_CHAPTERS.findIndex((c) => c.id === id);
