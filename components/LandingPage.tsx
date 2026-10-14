@@ -9,9 +9,8 @@ import { MarketingStage } from './marketing/MarketingStage';
 import { MarketingFooter } from './marketing/MarketingFooter';
 import { MarketingFaq } from './marketing/MarketingFaq';
 import { MarketingSellPoints } from './marketing/MarketingSellPoints';
-import { VisibilityFieldMap } from './marketing/VisibilityFieldMap';
+import { EarthStorySection } from './marketing/EarthStorySection';
 import { useMarketingChrome } from './marketing/marketingChrome';
-import { SAMPLE_FIXTURE } from './marketing/demo/demoFixtures';
 import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 
@@ -201,25 +200,12 @@ const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* Map: interactive constellation, separate from the Probe (design.md). */}
-      <section id="visibility-map" className="mkt-section mkt-section-alt scroll-mt-24">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
-          <div className="lg:col-span-5 min-w-0">
-            <p className="mkt-eyebrow mb-4">Visibility field</p>
-            <h2 className={`${H2} mb-5`}>One map of where answers happen.</h2>
-            <p className="mkt-body mb-8 max-w-md">
-              Google, AI Overviews, ChatGPT, and Perplexity as lit nodes on one map. Measured stays bright.
-              Gaps stay labeled. Sample data until you run Live.
-            </p>
-            <button type="button" onClick={() => (isAuthenticated ? onNavigateAudit() : onSignUpClick())} className="mkt-cta-secondary">
-              {isAuthenticated ? 'Open Instant Audit' : 'Create free account'}
-            </button>
-          </div>
-          <div className="lg:col-span-7 min-w-0">
-            <VisibilityFieldMap engines={SAMPLE_FIXTURE.engines} domainLabel={SAMPLE_FIXTURE.domain} />
-          </div>
-        </div>
-      </section>
+      {/* Earth story: illustrative narrative, separate from the Probe (design.md). */}
+      <EarthStorySection
+        headingClassName={H2}
+        onOpenAudit={() => onNavigateAudit()}
+        onSignUp={isAuthenticated ? undefined : () => onSignUpClick()}
+      />
 
       {/* Loop: the steps beside the real Instant Audit screen. */}
       <section className="mkt-section">
