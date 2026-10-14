@@ -43,6 +43,8 @@
     "contracts",
     "tmp",
     "pstack",
-    "ponytail"
+    "ponytail",
+    ".cursor",
+    ".claude"
   ]
 }
