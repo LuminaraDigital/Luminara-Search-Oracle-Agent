@@ -16,6 +16,7 @@ import {
   greatCircleKm,
   type ChapterId,
   type EarthHubId,
+  type EarthViewMode,
   type EvidenceState,
 } from './earth/earthStory';
 import type { EarthScene } from './earth/earthScene';
@@ -109,6 +110,7 @@ const ChapterDetail: React.FC<{ id: ChapterId }> = ({ id }) => {
 export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingClassName, onOpenAudit, onSignUp }) => {
   const [chapterId, setChapterId] = useState<ChapterId>(EARTH_CHAPTERS[0].id);
   const [selectedHub, setSelectedHub] = useState<EarthHubId | null>(null);
+  const [viewMode, setViewMode] = useState<EarthViewMode>('3d');
   const [paused, setPaused] = useState(false);
   const [status, setStatus] = useState<SceneStatus>('loading');
   const [reduced] = useState(prefersReducedMotion);
@@ -116,6 +118,7 @@ export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingCla
   const sceneRef = useRef<EarthScene | null>(null);
   const chapterRef = useRef(chapterId);
   const hubRef = useRef(selectedHub);
+  const viewModeRef = useRef(viewMode);
   const pausedRef = useRef(paused);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const chapter = EARTH_CHAPTERS[chapterIndex(chapterId)];
@@ -130,6 +133,11 @@ export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingCla
     hubRef.current = selectedHub;
     sceneRef.current?.setHub(selectedHub);
   }, [selectedHub]);
+
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+    sceneRef.current?.setViewMode(viewMode);
+  }, [viewMode]);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -149,6 +157,7 @@ export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingCla
           sceneRef.current = createEarthScene(canvas, {
             chapter: chapterRef.current,
             selectedHub: hubRef.current,
+            viewMode: viewModeRef.current,
             paused: pausedRef.current,
             reducedMotion: reduced,
             lowPower: isLowPower(),
@@ -243,8 +252,29 @@ export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingCla
               </div>
               <div
                 aria-hidden={status !== 'ready'}
-                className={`flex items-center gap-1.5 ${status === 'ready' ? '' : 'invisible'}`}
+                className={`flex flex-wrap items-center gap-1.5 ${status === 'ready' ? '' : 'invisible'}`}
               >
+                <div role="group" aria-label="Projection mode" className="inline-flex border border-[var(--color-rule)] bg-black/60">
+                  {(['3d', '2d'] as const).map((mode) => {
+                    const active = viewMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        disabled={status !== 'ready'}
+                        aria-pressed={active}
+                        onClick={() => setViewMode(mode)}
+                        className={`min-h-[28px] px-2.5 text-[11px] font-mono tracking-wide transition-colors motion-reduce:transition-none ${FOCUS_RING} ${
+                          active
+                            ? 'bg-[var(--color-accent)] text-black font-medium'
+                            : 'text-[var(--color-ink-2)] hover:text-[var(--color-ink)]'
+                        }`}
+                      >
+                        {mode === '3d' ? '3D globe' : '2D map'}
+                      </button>
+                    );
+                  })}
+                </div>
                 <button
                   type="button"
                   disabled={status !== 'ready'}
@@ -267,7 +297,7 @@ export const EarthStorySection: React.FC<EarthStorySectionProps> = ({ headingCla
             </div>
 
             <div className="relative mx-auto w-full aspect-square">
-              <div role="img" aria-label={`Illustrative globe. ${chapter.scene}`} className="absolute inset-0">
+              <div role="img" aria-label={`Illustrative ${viewMode === '2d' ? 'world map' : 'globe'}. ${chapter.scene}`} className="absolute inset-0">
                 {status === 'loading' && (
                   <div className="absolute inset-[10%] rounded-full border border-[var(--color-rule)] bg-[radial-gradient(circle_at_38%_32%,rgb(26_21_12),rgb(0_0_0)_75%)]" />
                 )}

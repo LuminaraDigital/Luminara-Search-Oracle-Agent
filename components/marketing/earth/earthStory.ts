@@ -6,6 +6,8 @@
 
 export type ChapterId = 'business' | 'discovery' | 'gaps' | 'action';
 
+export type EarthViewMode = '3d' | '2d';
+
 export type EvidenceState = 'Measured' | 'Estimated' | 'Not measured';
 
 export type EvidenceExample = { state: EvidenceState; channels: readonly string[]; definition: string };

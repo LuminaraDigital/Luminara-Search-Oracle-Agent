@@ -170,10 +170,134 @@ function fromLatLon(lat, lon) {
   return [Math.cos(p) * Math.sin(l), Math.sin(p), Math.cos(p) * Math.cos(l)];
 }
 
-function fallbackSvg(landPoints, coastRings, ausRings) {
+async function buildDaymapWebp(daymapOut) {
+  const scratchSolar = path.resolve(
+    root,
+    '../../.gemini/antigravity/brain/654561e0-2560-4a22-ada7-75ac6aed86cd/scratch/world-map-reality/public/solar/2k_earth_daymap.jpg',
+  );
+  const scratchTilesDir = path.resolve(
+    root,
+    '../../.gemini/antigravity/brain/654561e0-2560-4a22-ada7-75ac6aed86cd/scratch/world-map-reality/public/maps/sea-level-overview/imagery/2',
+  );
+  const W = 1024;
+  const H = 512;
+
+  if (fs.existsSync(scratchSolar)) {
+    const baseRaw = await sharp(scratchSolar).resize(W, H, { fit: 'fill' }).removeAlpha().raw().toBuffer();
+    const out = Buffer.from(baseRaw);
+
+    // Blend NASA Blue Marble ocean bathymetry from zoom-2 Web Mercator tiles if available.
+    if (fs.existsSync(scratchTilesDir)) {
+      const mercSize = 1024;
+      const mercBuf = Buffer.alloc(mercSize * mercSize * 3);
+      for (let ty = 0; ty < 4; ty += 1) {
+        for (let tx = 0; tx < 4; tx += 1) {
+          const tilePath = path.join(scratchTilesDir, String(tx), `${ty}.jpg`);
+          if (!fs.existsSync(tilePath)) continue;
+          const tileRaw = await sharp(tilePath).resize(256, 256).removeAlpha().raw().toBuffer();
+          for (let py = 0; py < 256; py += 1) {
+            const srcOff = py * 256 * 3;
+            const dstOff = ((ty * 256 + py) * mercSize + tx * 256) * 3;
+            tileRaw.copy(mercBuf, dstOff, srcOff, srcOff + 256 * 3);
+          }
+        }
+      }
+
+      for (let y = 0; y < H; y += 1) {
+        const lat = 90 - ((y + 0.5) / H) * 180;
+        const absLat = Math.abs(lat);
+        if (absLat > 82) continue;
+        const latRad = (lat * Math.PI) / 180;
+        const mercY = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) * 0.5;
+        const my = Math.max(0, Math.min(mercSize - 1, Math.floor(mercY * mercSize)));
+        const polarWeight = absLat > 70 ? (82 - absLat) / 12 : 1;
+
+        for (let x = 0; x < W; x += 1) {
+          const idx = (y * W + x) * 3;
+          const r = out[idx];
+          const g = out[idx + 1];
+          const b = out[idx + 2];
+          const mx = Math.min(mercSize - 1, Math.floor(((x + 0.5) / W) * mercSize));
+          const mIdx = (my * mercSize + mx) * 3;
+          const mr = mercBuf[mIdx];
+          const mg = mercBuf[mIdx + 1];
+          const mb = mercBuf[mIdx + 2];
+
+          // Ocean pixels in 2k_earth_daymap have strong blue dominance; blend rich bathymetry + vibrant land.
+          const isOcean = b > r * 1.35 && b > g * 1.15 && b > 70;
+          const wBlend = (isOcean ? 0.68 : 0.28) * polarWeight;
+          out[idx] = Math.round(r * (1 - wBlend) + mr * wBlend);
+          out[idx + 1] = Math.round(g * (1 - wBlend) + mg * wBlend);
+          out[idx + 2] = Math.round(b * (1 - wBlend) + mb * wBlend);
+        }
+      }
+    }
+
+    await sharp(out, { raw: { width: W, height: H, channels: 3 } })
+      .webp({ quality: 82, effort: 6 })
+      .toFile(daymapOut);
+    return { data: out, width: W, height: H };
+  }
+
+  if (fs.existsSync(daymapOut)) {
+    const { data, info } = await sharp(daymapOut).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    return { data, width: info.width, height: info.height };
+  }
+
+  throw new Error(`Missing source daymap texture at ${daymapOut}`);
+}
+
+async function renderFallbackGlobeBuffer(daymap, coastRings, ausRings) {
   const S = 720;
   const R = S * 0.4;
   const c = S / 2;
+  const rgba = Buffer.alloc(S * S * 4, 0);
+  const { data: tex, width: texW, height: texH } = daymap;
+
+  const a = (FOCUS.lon * Math.PI) / 180;
+  const b = (FOCUS.lat * Math.PI) / 180;
+  const ca = Math.cos(a), sa = Math.sin(a);
+  const cb = Math.cos(b), sb = Math.sin(b);
+
+  for (let py = 0; py < S; py += 1) {
+    const ny = (c - (py + 0.5)) / R;
+    for (let px = 0; px < S; px += 1) {
+      const nx = (px + 0.5 - c) / R;
+      const r2 = nx * nx + ny * ny;
+      if (r2 > 1) continue;
+      const nz = Math.sqrt(1 - r2);
+
+      // Inverse view rotation to world unit vector (wx, wy, wz).
+      const wy = ny * cb + nz * sb;
+      const z1 = -ny * sb + nz * cb;
+      const wx = nx * ca + z1 * sa;
+      const wz = -nx * sa + z1 * ca;
+
+      const lat = Math.asin(Math.max(-1, Math.min(1, wy)));
+      const lon = Math.atan2(wx, wz);
+      const u = Math.min(texW - 1, Math.max(0, Math.floor((lon / (Math.PI * 2) + 0.5) * texW)));
+      const v = Math.min(texH - 1, Math.max(0, Math.floor((0.5 - lat / Math.PI) * texH)));
+      const tIdx = (v * texW + u) * 3;
+
+      const tr = tex[tIdx];
+      const tg = tex[tIdx + 1];
+      const tb = tex[tIdx + 2];
+
+      const sun = Math.max(0, -0.34 * nx + 0.38 * ny + 0.86 * nz);
+      const limb = Math.pow(nz, 0.32);
+      const shade = limb * (0.42 + 0.68 * sun);
+      const isOcean = tb > tr * 1.2 && tb > tg * 1.08;
+      const spec = isOcean ? Math.pow(Math.max(0, -0.18 * nx + 0.2 * ny + 0.96 * nz), 28) * 36 : 0;
+      const atmo = Math.pow(1 - nz, 2.6) * 42;
+
+      const edgeAlpha = Math.min(1, (1 - Math.sqrt(r2)) * (R * 0.5));
+      const dst = (py * S + px) * 4;
+      rgba[dst] = Math.min(255, Math.round(tr * shade + spec + atmo * 0.95));
+      rgba[dst + 1] = Math.min(255, Math.round(tg * shade + spec * 0.95 + atmo * 0.78));
+      rgba[dst + 2] = Math.min(255, Math.round(tb * shade + spec * 0.8 + atmo * 0.45));
+      rgba[dst + 3] = Math.round(edgeAlpha * 255);
+    }
+  }
 
   const projectRingPath = (rings) => {
     const cmds = [];
@@ -194,29 +318,22 @@ function fallbackSvg(landPoints, coastRings, ausRings) {
 
   const coastPath = projectRingPath(coastRings);
   const ausPath = projectRingPath(ausRings ?? []);
-
-  const dots = [];
-  for (const pt of landPoints) {
-    const [x, y, z] = view(pt, FOCUS.lat, FOCUS.lon);
-    if (z <= 0) continue;
-    const a = (0.25 + 0.75 * z).toFixed(2);
-    const s = (1.1 + 0.9 * z).toFixed(2);
-    dots.push(`<circle cx="${(c + x * R).toFixed(1)}" cy="${(c - y * R).toFixed(1)}" r="${s}" fill="rgba(${GOLD},${a})"/>`);
-  }
   const [mx, my] = view(fromLatLon(MARKER.lat, MARKER.lon), FOCUS.lat, FOCUS.lon);
   const px = (c + mx * R).toFixed(1);
   const py = (c - my * R).toFixed(1);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}">
-<defs>
-<radialGradient id="body" cx="34%" cy="30%" r="75%"><stop offset="0%" stop-color="rgb(28,23,14)"/><stop offset="60%" stop-color="rgb(9,8,5)"/><stop offset="100%" stop-color="rgb(0,0,0)"/></radialGradient>
-</defs>
-<circle cx="${c}" cy="${c}" r="${R}" fill="url(#body)" stroke="rgba(${GOLD},0.42)" stroke-width="1.2"/>
-<path d="${coastPath}" fill="none" stroke="rgba(${GOLD},0.28)" stroke-width="0.9"/>
-<path d="${ausPath}" fill="rgba(${GOLD},0.12)" stroke="rgba(${GOLD_LIGHT},0.55)" stroke-width="1.2"/>
-${dots.join('')}
-<circle cx="${px}" cy="${py}" r="12" fill="none" stroke="rgba(${GOLD_LIGHT},0.7)" stroke-width="1.2"/>
+
+  const overlaySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}">
+<circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="rgba(${GOLD},0.48)" stroke-width="1.3"/>
+<path d="${coastPath}" fill="none" stroke="rgba(${GOLD},0.32)" stroke-width="0.85"/>
+<path d="${ausPath}" fill="rgba(${GOLD},0.16)" stroke="rgba(${GOLD_LIGHT},0.72)" stroke-width="1.3"/>
+<circle cx="${px}" cy="${py}" r="12" fill="none" stroke="rgba(${GOLD_LIGHT},0.8)" stroke-width="1.4"/>
 <circle cx="${px}" cy="${py}" r="4.5" fill="rgb(${GOLD_LIGHT})"/>
 </svg>`;
+
+  return sharp(rgba, { raw: { width: S, height: S, channels: 4 } })
+    .composite([{ input: Buffer.from(overlaySvg), top: 0, left: 0 }])
+    .webp({ quality: 78, alphaQuality: 70, effort: 6 })
+    .toBuffer();
 }
 
 const geo = await loadJson(src);
@@ -261,9 +378,13 @@ ${marketEntries}
   'utf8',
 );
 
+const daymapOut = path.join(root, 'public/brand/earth-daymap.webp');
+const daymap = await buildDaymapWebp(daymapOut);
+
 const webpOut = path.join(root, 'public/brand/earth-fallback.webp');
-await sharp(Buffer.from(fallbackSvg(landPoints, coastRings, marketRings['036']))).webp({ quality: 72, alphaQuality: 65, effort: 6 }).toFile(webpOut);
+const fallbackBuf = await renderFallbackGlobeBuffer(daymap, coastRings, marketRings['036']);
+fs.writeFileSync(webpOut, fallbackBuf);
 
 const share = ((landPoints.length / SAMPLE_COUNT) * 100).toFixed(1);
 console.log(`land dots: ${landPoints.length}/${SAMPLE_COUNT} (${share}%), coast rings: ${coastRings.length}, market ISOs: ${Object.keys(marketRings).join(',')}`);
-console.log(`wrote ${path.relative(root, tsOut)} and ${path.relative(root, webpOut)} (${fs.statSync(webpOut).size} bytes)`);
+console.log(`wrote ${path.relative(root, tsOut)}, ${path.relative(root, daymapOut)} (${fs.statSync(daymapOut).size} bytes), and ${path.relative(root, webpOut)} (${fs.statSync(webpOut).size} bytes)`);

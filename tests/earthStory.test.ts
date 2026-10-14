@@ -182,7 +182,7 @@ describe('EarthStorySection markup', () => {
       }),
     );
 
-  it('renders the narrative, tabs, observatory HUD, market pills, CTA and notice as HTML', () => {
+  it('renders the narrative, tabs, observatory HUD, 3D/2D toggle, market pills, CTA and notice as HTML', () => {
     const html = render(false);
     expect(html.match(/role="tab"/g)).toHaveLength(4);
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
@@ -192,6 +192,9 @@ describe('EarthStorySection markup', () => {
     expect(html).toContain('>Open Instant Audit<');
     expect(html).toContain(EARTH_COPY.notice);
     expect(html).toContain(`aria-label="Illustrative globe. ${EARTH_CHAPTERS[0].scene}"`);
+    expect(html).toContain('aria-label="Projection mode"');
+    expect(html).toContain('>3D globe<');
+    expect(html).toContain('>2D map<');
     expect(html).toMatch(/<canvas aria-hidden="true"/);
     expect(html).toContain('aria-label="Illustrative market locations"');
     for (const h of EARTH_HUBS) expect(html).toContain(`>${h.label}<`);
@@ -201,4 +204,17 @@ describe('EarthStorySection markup', () => {
   it('keeps the guest sign-up path when provided', () => {
     expect(render(true)).toContain('Create free account');
   });
+
+  it('ships baked satellite daymap and fallback WebP assets under public/brand', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const daymapStat = fs.statSync(path.resolve(process.cwd(), 'public/brand/earth-daymap.webp'));
+    const fallbackStat = fs.statSync(path.resolve(process.cwd(), 'public/brand/earth-fallback.webp'));
+    expect(daymapStat.size).toBeGreaterThan(20_000);
+    expect(daymapStat.size).toBeLessThan(120_000);
+    expect(fallbackStat.size).toBeGreaterThan(10_000);
+    expect(fallbackStat.size).toBeLessThan(80_000);
+  });
 });
+
+
