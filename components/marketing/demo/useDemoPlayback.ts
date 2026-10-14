@@ -57,7 +57,10 @@ export function useDemoPlayback(): DemoPlayback {
     timers.current = [];
   }, []);
 
-  useEffect(() => () => clearTimers(), [clearTimers]);
+  useEffect(() => () => {
+    runIdRef.current += 1;
+    clearTimers();
+  }, [clearTimers]);
 
   const setUrl = useCallback(
     (v: string) => {

@@ -1361,7 +1361,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
       const body = read.value as Record<string, unknown>;
-      return withCors(generateBadgeResponse(body as any));
+      return withCors(await generateBadgeResponse(body as any, env));
     }
   }
 
@@ -1974,6 +1974,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // ZetaChain Track ZP: Universal Oracle Gateway (Pattern 1 & 2)
   if (path === '/gateway/execute' && request.method === 'POST') {
     const who = await identify(request, env);
+    if (who.error) return withCors(json({ error: who.error }, 401));
     const body = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!body.ok) return withCors(json({ error: body.error }, body.status));
     let reqData: OracleGatewayRequest;

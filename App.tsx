@@ -202,7 +202,8 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>(() => {
     try {
       const saved = sessionStorage.getItem(CHAT_STORAGE_KEY);
-      return saved ? (JSON.parse(saved) as Message[]) : [];
+      const parsed: unknown = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? (parsed as Message[]) : [];
     } catch {
       return [];
     }
@@ -435,7 +436,8 @@ const App: React.FC = () => {
       }
       try {
         const chat = sessionStorage.getItem(CHAT_STORAGE_KEY);
-        if (chat) setMessages(JSON.parse(chat) as Message[]);
+        const parsed: unknown = chat ? JSON.parse(chat) : null;
+        if (chat) setMessages(Array.isArray(parsed) ? (parsed as Message[]) : []);
       } catch {
         /* ignore */
       }
@@ -779,7 +781,7 @@ const App: React.FC = () => {
         }
       }
 
-      if (!usedServerOracle) {
+      if (!usedServerOracle && !controller.signal.aborted) {
         for await (const chunk of geminiService.streamQuery(content, mode, dna, {
           history,
           skipSearch: opts.skipSearch,

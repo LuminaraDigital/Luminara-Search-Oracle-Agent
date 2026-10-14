@@ -69,11 +69,11 @@ export const VerifyAttestationView: React.FC<{ onBack?: () => void }> = ({ onBac
             </p>
             <p>
               <span className="text-gray-500">Health score: </span>
-              <span className="text-gold-light">{String(attestation.healthScore ?? '')}</span>
+              <span className="text-gold-light">{attestation.healthScore == null ? 'Not measured' : String(attestation.healthScore)}</span>
             </p>
             <p>
               <span className="text-gray-500">Citation rate: </span>
-              <span className="text-white">{String(attestation.citationRatePercent ?? '')}%</span>
+              <span className="text-white">{attestation.citationRatePercent == null ? 'Not measured' : `${String(attestation.citationRatePercent)}%`}</span>
             </p>
             <p className="break-all">
               <span className="text-gray-500">Digest: </span>

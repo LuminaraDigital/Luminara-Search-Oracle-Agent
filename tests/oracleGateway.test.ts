@@ -13,6 +13,15 @@ describe('worker/oracleGateway', () => {
     expect(body.code).toBe('INVALID_DOMAIN');
   });
 
+  it('returns 400, not a crash, when targetDomain is missing or not a string', async () => {
+    const env = {} as Env;
+    for (const req of [{}, { targetDomain: 42 }, { targetDomain: ['a.com'] }, null]) {
+      const res = await executeOracleGatewayTask(env, null, req as never);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code: string }).code).toBe('INVALID_DOMAIN');
+    }
+  });
+
   it('returns 429 when quota check fails', async () => {
     const env = {
       REQUIRE_TG_AUTH: 'true',

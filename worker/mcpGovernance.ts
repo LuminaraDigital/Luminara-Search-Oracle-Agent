@@ -87,7 +87,7 @@ export function decideToolCall(
 // D1-backed action request approval flow
 // ---------------------------------------------------------------------------
 
-export type ActionRequestStatus = 'pending' | 'approved' | 'denied';
+export type ActionRequestStatus = 'pending' | 'approved' | 'denied' | 'consumed';
 
 export type ActionRequestKind = 'tool' | 'budget_override';
 
@@ -109,7 +109,7 @@ const APPROVAL_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Create an action request for a destructive tool call. Dedupe: one pending
- * request per (user_id, tool_name, project_id); a second create returns the
+ * request per (user_id, tool_name, project_id, args); a second create returns the
  * existing id.
  */
 export async function createActionRequest(
@@ -123,20 +123,20 @@ export async function createActionRequest(
 ): Promise<{ id: string; existing: boolean }> {
   if (!env.DB) return { id: crypto.randomUUID(), existing: false };
   const projectId = params.projectId ?? null;
+  const argsJson = JSON.stringify(redactSensitive(params.args || {}));
 
   const existing = await env.DB.prepare(
     `SELECT id FROM mcp_action_requests
      WHERE user_id = ? AND tool_name = ? AND status = 'pending' AND kind = 'tool'
-       AND (project_id IS ? OR project_id = ?)
+       AND (project_id IS ? OR project_id = ?) AND args_json = ?
      ORDER BY created_at DESC LIMIT 1`,
   )
-    .bind(params.userId, params.toolName, projectId, projectId)
+    .bind(params.userId, params.toolName, projectId, projectId, argsJson)
     .first<{ id: string }>();
   if (existing?.id) return { id: existing.id, existing: true };
 
   const id = crypto.randomUUID();
   const now = Date.now();
-  const argsJson = JSON.stringify(redactSensitive(params.args || {}));
   await env.DB.prepare(
     `INSERT INTO mcp_action_requests
      (id, user_id, project_id, tool_name, args_json, status, expires_at, created_at, kind)
@@ -208,24 +208,30 @@ export function denyActionRequest(
 }
 
 /**
- * True when the user holds an approved, unexpired request for this
- * tool+project. Expired approvals never authorize.
+ * Consumes one approved, unexpired request for this tool+project whose stored args
+ * match `args`. True only when this call flipped it to 'consumed', so an approval
+ * authorizes exactly one call with the args the operator saw. Expired approvals never authorize.
  */
-export async function hasApprovedRequest(
+export async function consumeApprovedRequest(
   env: UserStoreEnv,
   userId: string,
   toolName: string,
   projectId?: string | null,
+  args?: Record<string, unknown>,
 ): Promise<boolean> {
   if (!env.DB) return false;
   const pid = projectId ?? null;
-  const row = await env.DB.prepare(
-    `SELECT id FROM mcp_action_requests
-     WHERE user_id = ? AND tool_name = ? AND status = 'approved' AND kind = 'tool' AND expires_at > ?
-       AND (project_id IS ? OR project_id = ?)
-     LIMIT 1`,
+  const argsJson = JSON.stringify(redactSensitive(args || {}));
+  const result = await env.DB.prepare(
+    `UPDATE mcp_action_requests SET status = 'consumed'
+     WHERE status = 'approved' AND id = (
+       SELECT id FROM mcp_action_requests
+       WHERE user_id = ? AND tool_name = ? AND status = 'approved' AND kind = 'tool' AND expires_at > ?
+         AND (project_id IS ? OR project_id = ?) AND args_json = ?
+       ORDER BY created_at LIMIT 1
+     )`,
   )
-    .bind(userId, toolName, Date.now(), pid, pid)
-    .first<{ id: string }>();
-  return !!row;
+    .bind(userId, toolName, Date.now(), pid, pid, argsJson)
+    .run();
+  return (result.meta?.changes ?? 0) > 0;
 }

@@ -158,15 +158,20 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         productTelemetry.track('payment_completed', { planId, method: 'stars', status: 'confirmed' });
         setIsSuccess(true);
         setStatusMessage('Payment received! Activating your subscription…');
-        for (let i = 0; i < 6; i++) {
+        let activated = false;
+        for (let i = 0; i < 6 && !activated; i++) {
           await new Promise(r => setTimeout(r, 1200));
           const q = await fetchQuotaStatus();
-          if (q && (q.isUnlimited || q.plan !== 'free')) break;
+          activated = Boolean(q && (q.isUnlimited || q.plan !== 'free'));
         }
-        setStatusMessage('Subscription active! Enjoy your upgraded access.');
-        setTimeout(() => {
-          handleClose();
-        }, 1500);
+        if (activated) {
+          setStatusMessage('Subscription active! Enjoy your upgraded access.');
+          setTimeout(() => {
+            handleClose();
+          }, 1500);
+        } else {
+          setStatusMessage('Payment received. Activation pending, refresh in a minute.');
+        }
       } else if (status === 'cancelled') {
         setStatusMessage('Checkout was cancelled.');
       } else if (status === 'failed') {

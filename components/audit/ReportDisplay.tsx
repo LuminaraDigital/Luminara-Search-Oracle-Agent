@@ -299,7 +299,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     return sections;
   }, [markdownText]);
 
-  const validSources = sources?.filter(s => s && s.uri);
+  const validSources = sources?.filter(s => s && /^https?:\/\//i.test(s.uri ?? ''));
   const sourceCount = validSources?.length || 0;
   const hasEvidence = Boolean(
     (!hideLiveNumbers && empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,

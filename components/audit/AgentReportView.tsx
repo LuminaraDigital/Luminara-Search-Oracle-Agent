@@ -32,7 +32,7 @@ export const AgentReportView: React.FC = () => {
           }
           return;
         }
-        const meta = (await metaRes.json()) as { report?: { title?: string }; error?: string };
+        const meta = (await metaRes.json().catch(() => ({}))) as { report?: { title?: string }; error?: string };
         if (!metaRes.ok) throw new Error(meta.error || `HTTP ${metaRes.status}`);
         if (meta.report?.title) setTitle(meta.report.title);
 

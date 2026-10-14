@@ -77,7 +77,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       syncToVfs(extracted);
       draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
       productTelemetry.recordOnboardingStep('business_dna');
-      setEditing(false);
+      setEditing(!extracted.mission && !extracted.usp);
     } catch (err: any) {
       const msg = err?.message || 'Could not build your business profile. Check your AI key in Settings.';
       setError(msg);
@@ -234,7 +234,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
                     className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
                   />
                 ) : (
-                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">{formData.mission}</p>
+                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">{formData.mission || 'Not set'}</p>
                 )}
               </div>
 
@@ -247,7 +247,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
                     className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
                   />
                 ) : (
-                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 font-medium">{formData.usp}</p>
+                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 font-medium">{formData.usp || 'Not set'}</p>
                 )}
               </div>
 

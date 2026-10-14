@@ -1204,11 +1204,11 @@ Strict Formatting Guidelines:
         const parsed = safeJsonParse<any>(result.text, {});
         return {
           name: parsed.name || input,
-          mission: parsed.mission || 'Strategic market leadership.',
-          usp: parsed.usp || 'High-performance proprietary technology.',
-          targetAudience: parsed.targetAudience || 'Enterprise and growth organizations.',
-          competitors: Array.isArray(parsed.competitors) && parsed.competitors.length ? parsed.competitors : [],
-          perceivedGaps: Array.isArray(parsed.perceivedGaps) && parsed.perceivedGaps.length ? parsed.perceivedGaps : ['Brand awareness', 'AEO citation coverage'],
+          mission: typeof parsed.mission === 'string' ? parsed.mission : '',
+          usp: typeof parsed.usp === 'string' ? parsed.usp : '',
+          targetAudience: typeof parsed.targetAudience === 'string' ? parsed.targetAudience : '',
+          competitors: Array.isArray(parsed.competitors) ? parsed.competitors : [],
+          perceivedGaps: Array.isArray(parsed.perceivedGaps) ? parsed.perceivedGaps : [],
           rawContext: parsed.rawContext || result.text
         };
       }
@@ -1251,7 +1251,7 @@ Strict Formatting Guidelines:
       }
     }
 
-    // 3. Resilient heuristic profile synthesis so founders are never blocked
+    // 3. No model answered: return the name only so the founder can fill in the rest (never invent claims).
     const cleanBrand = input
       .replace(/^https?:\/\//i, '')
       .replace(/^www\./i, '')
@@ -1260,12 +1260,12 @@ Strict Formatting Guidelines:
     const capitalized = cleanBrand.charAt(0).toUpperCase() + cleanBrand.slice(1);
     return {
       name: capitalized,
-      mission: `Deliver premier solutions and distinct market value for ${capitalized} customers.`,
-      usp: 'Domain expertise, client dedication, and high-performance delivery.',
-      targetAudience: 'Prospective clients, business partners, and industry customers.',
+      mission: '',
+      usp: '',
+      targetAudience: '',
       competitors: [],
-      perceivedGaps: ['Search and AI visibility', 'Entity authority', 'AEO direct answer coverage'],
-      rawContext: `Strategic Business Profile for ${capitalized}. Created from domain scan; review and customize your USP and competitors above.`
+      perceivedGaps: [],
+      rawContext: `Profile for ${capitalized} could not be extracted automatically. Add your mission, USP, audience and competitors.`
     };
   }
 

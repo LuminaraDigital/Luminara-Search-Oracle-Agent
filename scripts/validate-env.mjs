@@ -114,6 +114,16 @@ function checkAppCheckConfig(config, envName) {
         'Worker would return 503 APP_CHECK_MISCONFIGURED.',
     };
   }
+  const envFile = resolve(root, envName === 'staging' ? '.env.staging' : '.env.production');
+  const fileHasKey = existsSync(envFile) && /^VITE_FIREBASE_APPCHECK_SITE_KEY=\S+/m.test(readFileSync(envFile, 'utf8'));
+  if (!String(process.env.VITE_FIREBASE_APPCHECK_SITE_KEY || '').trim() && !fileHasKey) {
+    return {
+      ok: false,
+      message:
+        `${envName}: REQUIRE_APP_CHECK=true but VITE_FIREBASE_APPCHECK_SITE_KEY is in neither the job env nor ${envFile}. ` +
+        'The client would send no App Check token and every sign-in would be rejected.',
+    };
+  }
   return { ok: true };
 }
 

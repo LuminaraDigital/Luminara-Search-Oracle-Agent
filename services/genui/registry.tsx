@@ -89,7 +89,7 @@ export const LUMINARA_GENUI_REGISTRY: ComponentRegistry = {
   ROICalculator: {
     component: ROICalculator,
     signature: 'ROICalculator()',
-    description: 'Interactive organic search & AEO ROI runway calculator.',
+    description: 'Illustrative ROI calculator from user-entered inputs (not measured data).',
   },
 
   ShipActionGate: {

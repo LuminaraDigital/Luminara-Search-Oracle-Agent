@@ -147,11 +147,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     };
   }, [hostedRail]);
 
-  const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runSeq = useRef(0);
   const continuumRef = useRef<string | undefined>(ideaScoutId);
   useEffect(() => { continuumRef.current = ideaScoutId; }, [ideaScoutId]);
-  useEffect(() => () => { if (stageTimerRef.current) clearInterval(stageTimerRef.current); }, []);
 
   // Hydrate Decision Card from session board when revisiting a domain (always swap domain).
   useEffect(() => {
@@ -208,6 +206,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setCrewEvents([]);
     setCrewMeasurement(null);
     setScoutSummary(null);
+    setReport(null);
+    setStrategySaved(false);
     setShareNote(null);
     setAttestation(null);
     setProgressStage('Starting audit…');

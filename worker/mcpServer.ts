@@ -24,8 +24,10 @@ import { startRun, completeRun } from './runProvenance';
 import {
   decideToolCall,
   createActionRequest,
-  hasApprovedRequest,
+  consumeApprovedRequest,
+  governanceFor,
 } from './mcpGovernance';
+import { MAX_BODY_BYTES, readBody } from './security';
 import {
   BYOK_PAID_CALL_COST_CENTS,
   HOSTED_PAID_CALL_COST_CENTS,
@@ -619,7 +621,10 @@ async function callTool(
     );
   }
 
-  const approved = await hasApprovedRequest(ctx.env, ctx.accountId, name, projectId);
+  // Only a destructive call spends an approval: each one authorizes a single call with its args.
+  const approved =
+    governanceFor(name).risk === 'destructive' &&
+    (await consumeApprovedRequest(ctx.env, ctx.accountId, name, projectId, args));
   const decision = decideToolCall(
     name,
     { subscriptionActive, creditClass, identityPlan: ctx.planId },
@@ -734,6 +739,9 @@ async function callTool(
   return result;
 }
 
+/** One request may carry at most this many JSON-RPC messages. */
+const MAX_MCP_BATCH = 20;
+
 function rpcResult(id: unknown, result: unknown) {
   return { jsonrpc: '2.0', id: id ?? null, result };
 }
@@ -771,13 +779,13 @@ export async function handleMcpRequest(
   }
 
   const ctx = await buildCtx(env, user, request, credential);
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return mcpJson(rpcError(null, -32700, 'Parse error'), 400);
-  }
+  const read = await readBody(request, MAX_BODY_BYTES);
+  if (!read.ok) return mcpJson(rpcError(null, read.status === 400 ? -32700 : -32600, read.error), read.status);
+  const body = read.value;
 
+  if (Array.isArray(body) && body.length > MAX_MCP_BATCH) {
+    return mcpJson(rpcError(null, -32600, `Batch too large: at most ${MAX_MCP_BATCH} messages per request`), 400);
+  }
   const messages = Array.isArray(body) ? body : [body];
   const responses: unknown[] = [];
 

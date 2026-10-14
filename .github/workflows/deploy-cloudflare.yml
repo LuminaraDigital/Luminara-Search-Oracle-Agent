@@ -63,6 +63,9 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint:ci
+
       - name: Run automated test suite
         run: npm test
 
@@ -79,7 +82,7 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_TELEGRAM_MINI_APP_URL: ${{ vars.VITE_TELEGRAM_MINI_APP_URL }}
-        run: npx vite build --mode staging
+        run: npm run build -- --mode staging
 
       # The restore point. If the migration below goes wrong, this log holds the bookmark to
       # give `wrangler d1 time-travel restore`. No bookmark, no migration: a failure here stops the job.
@@ -182,6 +185,9 @@ jobs:
 
       - name: Type check
         run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint:ci
 
       - name: Run automated test suite
         run: npm test
