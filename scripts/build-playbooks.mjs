@@ -95,9 +95,18 @@ function compile(spec) {
 
 const playbooks = PLAYBOOKS.map(compile);
 mkdirSync(dirname(outFile), { recursive: true });
+let generatedAt = new Date().toISOString().slice(0, 10);
+if (existsSync(outFile)) {
+  try {
+    const prev = JSON.parse(readFileSync(outFile, 'utf8'));
+    if (prev?.generatedAt && JSON.stringify(prev.playbooks) === JSON.stringify(playbooks)) {
+      generatedAt = prev.generatedAt;
+    }
+  } catch { /* regenerate */ }
+}
 writeFileSync(outFile, JSON.stringify({
   source: 'AgriciDaniel/claude-seo (MIT). Compiled by scripts/build-playbooks.mjs; do not edit by hand.',
-  generatedAt: new Date().toISOString().slice(0, 10),
+  generatedAt,
   playbooks,
 }, null, 2) + '\n');
 console.log(playbooks.map(p => `${p.id.padEnd(10)} ${String(p.chars).padStart(6)} chars`).join('\n'));

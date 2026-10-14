@@ -116,7 +116,11 @@ import {
   approveActionRequest,
   denyActionRequest,
 } from './mcpGovernance';
-import { handleOracleChatSse, isOracleServerEnabled } from './oracleChat';
+import {
+  handleOracleChatSse,
+  handleOracleSessionControlRoute,
+  isOracleServerEnabled,
+} from './oracleChat';
 import { OracleSession } from './oracleSession';
 import { handlePagespeedRoute } from './pagespeedRoute';
 import { handleDeployReadbackRoute } from './deployReadback';
@@ -1936,6 +1940,43 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
     if (!dual.ok) return withCors(dual.response);
     return withCors(await handleOracleChatSse(request, env, who.user));
+  }
+
+  const oracleSessionMatch = path.match(
+    /^\/oracle\/session\/([^/]+)\/(events|approval|callback|state(?:\/patch)?|history)$/,
+  );
+  if (oracleSessionMatch) {
+    if (!isOracleServerEnabled(env)) {
+      return withCors(
+        json(
+          {
+            ok: false,
+            error: 'Server Oracle disabled. Set ORACLE_SERVER_ENABLED=true after staging soak.',
+            code: 'ORACLE_DISABLED',
+          },
+          503,
+        ),
+      );
+    }
+    const who = await identify(request, env);
+    if (who.error || !who.user) return withCors(json({ error: who.error || 'Unauthorized' }, 401));
+    const dual = await enforceDualRateLimit(env, {
+      action: 'oracle_session',
+      accountId: billingId(who.user),
+      ip,
+      limitPerKey: RATE_API_PER_MIN,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    let sessionId: string;
+    try {
+      sessionId = decodeURIComponent(oracleSessionMatch[1]!);
+    } catch {
+      return withCors(json({ ok: false, error: 'Invalid session ID', code: 'INVALID_SESSION_ID' }, 400));
+    }
+    return withCors(
+      await handleOracleSessionControlRoute(request, env, who.user, sessionId, oracleSessionMatch[2]!),
+    );
   }
 
   if (path === '/audit/run' && request.method === 'POST') {

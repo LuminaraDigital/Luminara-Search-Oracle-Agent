@@ -68,11 +68,17 @@ export interface StateGraphNode<TContext> {
   handler: StateGraphNodeHandler<TContext>;
 }
 
+import type { JsonPatchOp } from './jsonPatch';
+
 export interface StateGraphCheckpoint<TContext> {
   nodeId: string;
   iteration: number;
   timestamp: number;
   context: TContext;
+  /** RFC 6902 JSON Patch ops from the previous checkpoint (Temporal Harness state_patch pattern). */
+  patchOps?: JsonPatchOp[];
+  /** Monotonic state version incremented only when dirty (`patchOps.length > 0`). */
+  stateVersion?: number;
 }
 
 // ============================================================================
