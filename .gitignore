@@ -12,9 +12,9 @@ dist
 dist-ssr
 *.local
 
-# Local skill tools / side repositories
-ponytail/
-pstack/
+# Local skill tools / side repositories (repo root only)
+/ponytail/
+/pstack/
 
 # Constellation bake intermediates
 scripts/constellation/budget-report.json
@@ -89,7 +89,12 @@ docs/internal/
 .claude/*
 !.claude/skills/
 coverage/
-.cursor/
+# IDE state stays local. Shared skills and always-on rules are part of the repo.
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
+!.cursor/rules/
+!.cursor/rules/**
 tasks/
 Claude outputs/
 
