@@ -47,7 +47,7 @@ Ban on marketing: gradient wordmarks (`.gold-text`); glassmorphism panels; fake 
 ## Craft gates (shipping checklist)
 
 - The claim is the hero headline at display size. Brand sits in the nav and one eyebrow above the claim
-- Landing hero is cinematic underlay + claim column + Probe workbench (no FieldHero glow plate, no glass)
+- Landing hero is a full-viewport visibility sphere with the claim centered on it. The Probe is the next section. No cinematic floor grid on the landing hero. Sphere structure is neutral ink. Gold is the hairline, the engine nodes, and the primary button.
 - Menu pages share MarketingCinematicStage + MarketingPageShell
 - One nav link set and one footer on every marketing page (MarketingChromeContext, built in App.tsx)
 - Font sizes from tokens use `text-[length:var(--token)]`. A bare `text-[var(--token)]` is parsed as a color and silently drops the size

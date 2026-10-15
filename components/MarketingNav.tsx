@@ -17,6 +17,8 @@ interface MarketingNavProps {
   primaryCta: { label: string; onClick: () => void };
   secondaryCta?: { label: string; onClick: () => void };
   trailing?: React.ReactNode;
+  /** overlay: transparent over a full-bleed scene until the page scrolls. */
+  tone?: 'solid' | 'overlay';
 }
 
 /**
@@ -30,9 +32,21 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
   primaryCta,
   secondaryCta,
   trailing,
+  tone = 'solid',
 }) => {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(() => typeof window !== 'undefined' && window.scrollY > 12);
   const panelId = useId();
+
+  useEffect(() => {
+    if (tone !== 'overlay') return;
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [tone]);
+
+  const settled = tone !== 'overlay' || scrolled || open;
 
   useEffect(() => {
     if (!open) return;
@@ -55,7 +69,11 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
 
   return (
     <nav
-      className="fixed z-50 left-0 right-0 top-0 border-b border-[var(--color-rule)] bg-[var(--color-paper)]"
+      className={`fixed z-50 left-0 right-0 top-0 motion-reduce:transition-none transition-colors duration-200 ${
+        settled
+          ? 'border-b border-[var(--color-rule)] bg-[var(--color-paper)]'
+          : 'border-b border-transparent bg-transparent'
+      }`}
       style={{
         paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
         paddingLeft: 'max(0px, env(safe-area-inset-left, 0px))',

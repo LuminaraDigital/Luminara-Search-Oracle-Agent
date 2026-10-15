@@ -9,6 +9,7 @@ import {
   type ConstellationEngineId,
 } from './constellationLayout';
 import type { DemoEngineRow, DemoEngineStatus } from './demo/demoFixtures';
+import { fibSphere, pctToSphere, type SpherePoint } from './sphereField';
 
 interface VisibilityFieldMapProps {
   engines: DemoEngineRow[];
@@ -16,13 +17,7 @@ interface VisibilityFieldMapProps {
   className?: string;
 }
 
-type Particle = {
-  x: number;
-  y: number;
-  z: number;
-  bright: number;
-  engine?: ConstellationEngineId;
-};
+type Particle = SpherePoint & { engine?: ConstellationEngineId };
 
 function statusBright(status: DemoEngineStatus): number {
   switch (status) {
@@ -37,36 +32,6 @@ function statusBright(status: DemoEngineStatus): number {
     default:
       return 0.18;
   }
-}
-
-/** Fibonacci sphere points (deterministic, no Math.random metrics). */
-function fibSphere(count: number): Particle[] {
-  const out: Particle[] = [];
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < count; i += 1) {
-    const y = 1 - (i / Math.max(count - 1, 1)) * 2;
-    const r = Math.sqrt(Math.max(0, 1 - y * y));
-    const theta = golden * i;
-    out.push({
-      x: Math.cos(theta) * r,
-      y,
-      z: Math.sin(theta) * r,
-      bright: 0.18 + (i % 7) * 0.04,
-    });
-  }
-  return out;
-}
-
-function pctToSphere(x: number, y: number): { x: number; y: number; z: number } {
-  // Map layout % into a mild ellipsoid shell so engines sit on the field.
-  const lon = ((x - 50) / 50) * 0.95;
-  const lat = ((50 - y) / 50) * 0.85;
-  const cl = Math.cos(lat);
-  return {
-    x: Math.sin(lon) * cl,
-    y: Math.sin(lat),
-    z: Math.cos(lon) * cl,
-  };
 }
 
 /**
@@ -92,7 +57,7 @@ export const VisibilityFieldMap: React.FC<VisibilityFieldMapProps> = ({
     if (!ctx) return;
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const base = fibSphere(reduced ? 420 : 980);
+    const base: Particle[] = fibSphere(reduced ? 420 : 980);
     // Seed brighter shells around each engine seat
     (Object.keys(CONSTELLATION_NODE_POS) as ConstellationEngineId[]).forEach((id, idx) => {
       const seat = pctToSphere(CONSTELLATION_NODE_POS[id].x, CONSTELLATION_NODE_POS[id].y);
@@ -115,7 +80,7 @@ export const VisibilityFieldMap: React.FC<VisibilityFieldMapProps> = ({
     let running = true;
     let visible = true;
     let pointer = { x: 0, y: 0 };
-    let smooth = { x: 0, y: 0 };
+    const smooth = { x: 0, y: 0 };
     let yaw = 0.15;
     let pitch = -0.12;
 
@@ -136,7 +101,7 @@ export const VisibilityFieldMap: React.FC<VisibilityFieldMapProps> = ({
       const sy = Math.sin(y);
       const cx = Math.cos(x);
       const sx = Math.sin(x);
-      let X = p.x * cy + p.z * sy;
+      const X = p.x * cy + p.z * sy;
       let Z = -p.x * sy + p.z * cy;
       const Y = p.y * cx - Z * sx;
       Z = p.y * sx + Z * cx;
@@ -170,7 +135,8 @@ export const VisibilityFieldMap: React.FC<VisibilityFieldMapProps> = ({
       ctx.fillStyle = well;
       ctx.fillRect(0, 0, w, h);
 
-      const scale = Math.min(w, h) * 0.42;
+      // Tighter crop than the hero (about 1.6x) so this reads as the instrument, not a second hero.
+      const scale = Math.min(w, h) * 0.42 * 1.6;
       const cx = w * 0.52;
       const cy = h * 0.48;
       const projected: Array<{
