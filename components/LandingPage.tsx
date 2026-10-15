@@ -1,10 +1,10 @@
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5
- * Claim-led hero + Probe workbench, facts band, alternating split sections.
+ * Full-viewport visibility sphere, claim on the sphere, Probe in the next section.
  * design-system: design.md · Night Foundry · no glass · no invented metrics
  */
 import React, { useCallback } from 'react';
 import { MarketingNav } from './MarketingNav';
-import { MarketingAtmosphere } from './marketing/MarketingAtmosphere';
+import { VisibilitySphere } from './marketing/VisibilitySphere';
 import { MarketingStage } from './marketing/MarketingStage';
 import { MarketingFooter } from './marketing/MarketingFooter';
 import { MarketingFaq } from './marketing/MarketingFaq';
@@ -91,13 +91,13 @@ const LandingPage: React.FC<LandingPageProps> = ({
 
   return (
     <div className="min-h-[100dvh] bg-[var(--color-paper)] text-[var(--color-ink)] selection:bg-gold selection:text-black font-sans antialiased relative overflow-x-clip">
-      <MarketingAtmosphere intensity="hero" />
       <MarketingNav
         brandLabel="Luminara Suite"
         onBrandClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         links={chrome.links}
         secondaryCta={chrome.secondaryCta}
         primaryCta={chrome.primaryCta}
+        tone="overlay"
         trailing={
           chrome.userLabel ? (
             <span className="hidden lg:inline-block text-[11px] text-[var(--color-ink-2)] font-mono max-w-[140px] truncate">
@@ -107,62 +107,88 @@ const LandingPage: React.FC<LandingPageProps> = ({
         }
       />
 
-      {/* Hero: the claim is the headline; the Probe is the product. */}
-      <section className="relative z-10 min-h-[min(100dvh,54rem)] flex flex-col justify-center pt-28 sm:pt-32 pb-16 sm:pb-20 px-4 sm:px-6 md:px-10 overflow-x-clip">
-        <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-14 items-center">
-          <div className="lg:col-span-7 min-w-0">
-            <p className="mkt-eyebrow mb-5">Luminara Suite</p>
-            <h1 className="font-display text-[clamp(2.75rem,6.4vw,4.9rem)] text-[var(--color-ink)] tracking-tight leading-[1.02] mb-6 [overflow-wrap:anywhere]">
-              See if AI recommends your business, and fix it.
-            </h1>
-            <p className="max-w-xl text-lg sm:text-xl text-[var(--color-ink-2)] leading-relaxed mb-8">
-              Check whether ChatGPT, Perplexity, and Google AI Overviews mention your business when customers search. Leave with an actionable fix list to get cited.
-            </p>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-3 mb-5">
-              {isAuthenticated ? (
-                <>
-                  <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-primary">
-                    Open Instant Audit
-                  </button>
-                  <button type="button" onClick={onNavigateSuite} className="mkt-cta-secondary">
-                    Open dashboard
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button type="button" onClick={scrollToProbe} className="mkt-cta-primary">
-                    Run sample scout
-                  </button>
-                  <button type="button" onClick={() => onSignUpClick()} className="mkt-cta-secondary">
-                    Create free account
-                  </button>
-                </>
-              )}
-            </div>
-            <p className="max-w-xl text-[13px] text-[var(--color-ink-2)] leading-relaxed">
-              Sample is labeled. Live Instant Audit is free with an account (daily hosted allowance).
-              {!isAuthenticated && (
-                <>
-                  {' '}
-                  Guests can still{' '}
-                  <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-tertiary">
-                    open Instant Audit
-                  </button>{' '}
-                  with their own keys.
-                </>
-              )}
-            </p>
+      {/* Hero: one sphere, the claim on it, two actions on the limb. */}
+      <section className="relative z-10 min-h-[100dvh] overflow-x-clip">
+        <VisibilitySphere />
+        <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[40rem] flex-col items-center px-4 pt-[max(6.5rem,14vh)] text-center sm:px-6">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-10 -z-10 h-[640px] w-[680px] -translate-x-1/2"
+            style={{
+              background:
+                'radial-gradient(circle, color-mix(in oklab, var(--color-paper) 72%, transparent) 0%, transparent 72%)',
+            }}
+          />
+          <p className="mkt-eyebrow mb-5">Visibility</p>
+          <h1 className="font-display text-[clamp(3.25rem,7.2vw,5.5rem)] text-[var(--color-ink)] tracking-tight leading-[0.96] text-balance [overflow-wrap:anywhere]">
+            Where answers happen.
+          </h1>
+          <div className="mx-auto mt-6 h-px w-10 bg-[var(--color-accent)]" />
+          <p className="mkt-body mx-auto mt-6 max-w-[42ch]">
+            See whether Google, ChatGPT, and Perplexity mention your business. Leave with one fix.
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            {isAuthenticated ? (
+              <>
+                <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-primary">
+                  Open Instant Audit
+                </button>
+                <button type="button" onClick={onNavigateSuite} className="mkt-cta-secondary">
+                  Open dashboard
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={scrollToProbe} className="mkt-cta-primary">
+                  Run sample scout
+                </button>
+                <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-secondary">
+                  Open Instant Audit
+                </button>
+              </>
+            )}
           </div>
+        </div>
+        <button
+          type="button"
+          onClick={scrollToProbe}
+          aria-label="Scroll to the sample scout"
+          className="absolute bottom-7 left-1/2 z-10 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-[var(--color-accent)] text-[var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="M7 2.5v8M3.5 7.5 7 11l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.25" />
+          </svg>
+        </button>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute bottom-0 left-0 right-0 z-[1] h-[120px]"
+          style={{ background: 'linear-gradient(to bottom, transparent, var(--color-paper))' }}
+        />
+      </section>
 
-          <div id="visibility-workbench" className="lg:col-span-5 relative min-w-0 scroll-mt-28">
-            <MarketingStage
-              isAuthenticated={isAuthenticated}
-              onOpenAudit={onNavigateAudit}
-              onSignIn={onSignInClick}
-              onSignUp={onSignUpClick}
-              onSeePricing={onNavigatePricing}
-            />
-          </div>
+      <section id="visibility-workbench" className="mkt-section scroll-mt-28">
+        <div className="mx-auto max-w-xl">
+          <h2 className={`${H2} mb-8 text-center`}>Run a labeled sample.</h2>
+          <MarketingStage
+            isAuthenticated={isAuthenticated}
+            onOpenAudit={onNavigateAudit}
+            onSignIn={onSignInClick}
+            onSignUp={onSignUpClick}
+            onSeePricing={onNavigatePricing}
+          />
+          <p className="mt-6 text-center text-[13px] leading-relaxed text-[var(--color-ink-2)]">
+            Sample is labeled. Live Instant Audit is free with an account (daily hosted allowance).
+            {!isAuthenticated && (
+              <>
+                {' '}
+                Guests can still{' '}
+                <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-tertiary">
+                  open Instant Audit
+                </button>{' '}
+                with their own keys.
+              </>
+            )}
+          </p>
         </div>
       </section>
 

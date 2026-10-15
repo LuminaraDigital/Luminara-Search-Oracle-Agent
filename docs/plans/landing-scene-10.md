@@ -1,6 +1,6 @@
 # Landing scene: from template to a 10
 
-**Status:** Plan, ready to implement  
+**Status:** Implemented. Horizon sits at 62% of the desktop viewport (78% on a phone) so the face of the sphere fills the lower frame and the stacked mobile actions stay in the sky. Desktop cap is about 2600 points, because 1100 on a viewport-scale sphere reads as dust.  
 **Surface:** Marketing landing only (`components/LandingPage.tsx`)  
 **Companions:** `design.md`, `docs/plans/landing-moat-100x.md`, `docs/plans/premium-craft-surface.md`
 
