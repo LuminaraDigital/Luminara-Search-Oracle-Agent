@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useAppAuth } from '../../services/auth/useAppAuth';
 import type { IdeaScoutCard } from '../../services/ideaScout/rules';
 import {
   continuumAuditStartParam,
-  parseIdeaScoutRequest,
+  gateIdeaScoutSubmit,
   validateIdeaScoutCard,
 } from '../../services/ideaScout/rules';
 import { createIdeaScout, fetchIdeaScout, linkIdeaScout } from '../../services/ideaScout/ideaScoutClient';
@@ -22,6 +23,7 @@ function StatusLine({ status }: { status: string }) {
 }
 
 export const IdeaScoutView: React.FC<IdeaScoutViewProps> = ({ launchIdeaId, onRunAudit }) => {
+  const auth = useAppAuth();
   const [idea, setIdea] = useState('');
   const [niche, setNiche] = useState('');
   const [urls, setUrls] = useState(['', '', '']);
@@ -60,12 +62,12 @@ export const IdeaScoutView: React.FC<IdeaScoutViewProps> = ({ launchIdeaId, onRu
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    const parsed = parseIdeaScoutRequest({
+    const parsed = gateIdeaScoutSubmit({
       idea,
       niche: niche.trim() || undefined,
       competitorUrls: urls,
       pulseOptIn,
-    });
+    }, auth);
     if (!parsed.ok) {
       setError(parsed.error);
       return;
@@ -125,8 +127,6 @@ export const IdeaScoutView: React.FC<IdeaScoutViewProps> = ({ launchIdeaId, onRu
           <textarea
             value={idea}
             onChange={(event) => setIdea(event.target.value)}
-            required
-            minLength={8}
             maxLength={500}
             rows={4}
             placeholder="A clinic booking tool that answers after-hours questions."

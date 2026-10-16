@@ -2,8 +2,7 @@
  * Talks to the Luminara Cloudflare Worker (/api/*).
  *
  * "Proxy mode" means provider calls go through the Worker, which injects the real API keys.
- * It is on automatically when the app is served by the Worker (luminarasuite.com or `wrangler dev`)
- * and can be forced for local Vite dev with VITE_API_BASE=http://localhost:8787.
+ * Proxy mode is on when the Worker serves the app, or when VITE_API_BASE points at it.
  */
 import { getInitDataRaw } from './telegram/tma';
 import { ensureFirebaseIdTokenCached, getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
@@ -38,6 +37,7 @@ export interface ServerHealth {
   jettonCheckout?: boolean;
   /** Stripe card Checkout is live (secrets + STRIPE_CHECKOUT_LIVE). Absent or false = hide Card rail. */
   stripeCheckout?: boolean;
+  lumens?: boolean;
   /** Q402 pay-per-call settlement is live. */
   q402?: boolean;
   tiers?: { free?: string[]; paid?: string[] };

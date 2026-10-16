@@ -24,6 +24,7 @@ const TOKEN = '123456:MOCK_TOKEN';
 // The browser's check-in call, with the network replaced: each test says what the server answers.
 const checkin = vi.hoisted(() => ({
   base: 'https://luminarasuite.com',
+  lumens: true,
   calls: [] as string[],
   respond: (async () => new Response('{}')) as () => Promise<Response>,
 }));
@@ -31,6 +32,8 @@ const checkin = vi.hoisted(() => ({
 vi.mock('../services/apiClient', async (original) => ({
   ...(await original<typeof import('../services/apiClient')>()),
   apiBase: () => checkin.base,
+  getServerHealthSync: () => ({ ok: true, lumens: checkin.lumens, telegram: false, requireAuth: false, plans: {} }),
+  loadServerHealth: async () => ({ ok: true, lumens: checkin.lumens, telegram: false, requireAuth: false, plans: {} }),
   workerFetchWithAuthRetry: async (url: string) => {
     checkin.calls.push(url);
     return checkin.respond();
@@ -184,6 +187,7 @@ describe('the points switch', () => {
 describe('whether the streak card is drawn', () => {
   beforeEach(() => {
     checkin.base = 'https://luminarasuite.com';
+    checkin.lumens = true;
     checkin.calls.length = 0;
   });
 
@@ -225,6 +229,14 @@ describe('whether the streak card is drawn', () => {
     };
     const result = await postDailyCheckin();
     expect(result).toEqual({ ok: false, error: 'Failed to fetch' });
+    expect(streakCardVisible(result)).toBe(false);
+  });
+
+  it('does not call check-in when points are off', async () => {
+    checkin.lumens = false;
+    const result = await postDailyCheckin();
+    expect(checkin.calls).toEqual([]);
+    expect(result).toEqual({ ok: false, error: 'Not found', unavailable: true });
     expect(streakCardVisible(result)).toBe(false);
   });
 
