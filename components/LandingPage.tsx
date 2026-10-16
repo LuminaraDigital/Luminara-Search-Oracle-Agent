@@ -1,17 +1,14 @@
-/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5
- * Claim-led hero + Probe workbench, facts band, alternating split sections.
- * design-system: design.md · Night Foundry · no glass · no invented metrics
+/* Landing: one full-viewport world, then a short path into the scout.
+ * Black and gold. The claim is the headline. The globe carries the four engines.
+ * No split workbench, no second visual system, no invented metrics.
  */
 import React, { useCallback } from 'react';
 import { MarketingNav } from './MarketingNav';
-import { MarketingAtmosphere } from './marketing/MarketingAtmosphere';
 import { MarketingStage } from './marketing/MarketingStage';
 import { MarketingFooter } from './marketing/MarketingFooter';
 import { MarketingFaq } from './marketing/MarketingFaq';
-import { MarketingSellPoints } from './marketing/MarketingSellPoints';
-import { VisibilityFieldMap } from './marketing/VisibilityFieldMap';
+import { WorldStage } from './marketing/WorldStage';
 import { useMarketingChrome } from './marketing/marketingChrome';
-import { SAMPLE_FIXTURE } from './marketing/demo/demoFixtures';
 import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 
@@ -40,34 +37,26 @@ function statusCopy(status: string): string {
   }
 }
 
-/** The four surfaces one scout covers. */
-const SURFACES = ['Google Search', 'AI Overviews', 'ChatGPT', 'Perplexity'] as const;
-
-/** Free MCP tools exposed to Growth and above (worker MCP server). */
-const MCP_TOOLS = [
-  { name: 'list_projects', note: 'Your sites and clients' },
-  { name: 'get_project_context', note: 'Brand, audience, competitors' },
-  { name: 'list_reports', note: 'Past audits and findings' },
-  { name: 'save_report', note: 'Write a new report back' },
-] as const;
-
-const HOW_STEPS = [
+const STEPS = [
   {
+    n: '01',
     title: 'Enter a domain',
-    body: 'Run a labeled Sample scout. No card required.',
+    body: 'Run a labeled sample scout. No card required.',
   },
   {
-    title: 'Read engine status',
-    body: 'Each engine is marked Measured, Estimated, or Not measured. Sample never claims Measured without a Live run.',
+    n: '02',
+    title: 'Read each engine',
+    body: 'Every result is Measured, Estimated, or Not measured. A sample never claims Measured without a live run.',
   },
   {
+    n: '03',
     title: 'Ship one fix',
-    body: 'Take the Weekly Decision Card: a verdict and one next action. Create a free account to run Live Instant Audit.',
+    body: 'The report ends on a verdict and one next action. A free account runs Live Instant Audit.',
   },
 ] as const;
 
 const H2 =
-  'font-display text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.08] [overflow-wrap:anywhere]';
+  'font-display text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.05] [overflow-wrap:anywhere]';
 
 const LandingPage: React.FC<LandingPageProps> = ({
   onNavigateAudit,
@@ -83,16 +72,16 @@ const LandingPage: React.FC<LandingPageProps> = ({
   const chrome = useMarketingChrome();
 
   const scrollToProbe = useCallback(() => {
-    document.getElementById('visibility-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('visibility-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     window.setTimeout(() => {
       window.dispatchEvent(new Event('luminara:focus-probe'));
-    }, 350);
+    }, 400);
   }, []);
 
   return (
-    <div className="min-h-[100dvh] bg-[var(--color-paper)] text-[var(--color-ink)] selection:bg-gold selection:text-black font-sans antialiased relative overflow-x-clip">
-      <MarketingAtmosphere intensity="hero" />
+    <div className="isolate min-h-[100dvh] bg-black text-[var(--color-ink)] selection:bg-gold selection:text-black font-sans antialiased relative overflow-x-clip">
       <MarketingNav
+        overlay
         brandLabel="Luminara Suite"
         onBrandClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         links={chrome.links}
@@ -107,44 +96,54 @@ const LandingPage: React.FC<LandingPageProps> = ({
         }
       />
 
-      {/* Hero: the claim is the headline; the Probe is the product. */}
-      <section className="relative z-10 min-h-[min(100dvh,54rem)] flex flex-col justify-center pt-28 sm:pt-32 pb-16 sm:pb-20 px-4 sm:px-6 md:px-10 overflow-x-clip">
-        <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-14 items-center">
-          <div className="lg:col-span-7 min-w-0">
-            <p className="mkt-eyebrow mb-5">Luminara Suite</p>
-            <h1 className="font-display text-[clamp(2.75rem,6.4vw,4.9rem)] text-[var(--color-ink)] tracking-tight leading-[1.02] mb-6 [overflow-wrap:anywhere]">
-              See if AI recommends your business, and fix it.
+      <section className="relative min-h-[100dvh] overflow-hidden" aria-label="Will AI mention your brand">
+        <WorldStage />
+        <div className="relative z-10 flex min-h-[100dvh] flex-col items-center px-5 sm:px-8 pt-28 sm:pt-32 pb-28 text-center">
+          <div className="relative max-w-3xl">
+            <div
+              className="pointer-events-none absolute -inset-x-24 -inset-y-16 -z-10"
+              style={{
+                background:
+                  'radial-gradient(ellipse at center, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.42) 52%, transparent 74%)',
+              }}
+            />
+            <p className="mkt-eyebrow mb-5">AI visibility</p>
+            <h1 className="font-display text-[clamp(3.1rem,7.2vw,6.4rem)] leading-[0.92] tracking-tight text-white">
+              Will AI mention
+              <br />
+              your brand?
             </h1>
-            <p className="max-w-xl text-lg sm:text-xl text-[var(--color-ink-2)] leading-relaxed mb-8">
-              Check whether ChatGPT, Perplexity, and Google AI Overviews mention your business when customers search. Leave with an actionable fix list to get cited.
+            <div className="mx-auto mt-6 h-[3px] w-16 rounded-full bg-[var(--color-accent)]" />
+            <p className="mx-auto mt-6 max-w-xl text-lg sm:text-xl leading-relaxed text-white/90">
+              One scout across Google, AI Overviews, ChatGPT, and Perplexity. You leave with a plain verdict and the one fix to ship first.
             </p>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-3 mb-5">
+            <div className="mt-8 flex flex-col items-center gap-4">
               {isAuthenticated ? (
                 <>
-                  <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-primary">
+                  <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-gloss">
                     Open Instant Audit
                   </button>
-                  <button type="button" onClick={onNavigateSuite} className="mkt-cta-secondary">
+                  <button type="button" onClick={onNavigateSuite} className="mkt-cta-tertiary">
                     Open dashboard
                   </button>
                 </>
               ) : (
                 <>
-                  <button type="button" onClick={scrollToProbe} className="mkt-cta-primary">
-                    Run sample scout
+                  <button type="button" onClick={scrollToProbe} className="mkt-cta-gloss">
+                    Run a sample scout
                   </button>
-                  <button type="button" onClick={() => onSignUpClick()} className="mkt-cta-secondary">
-                    Create free account
+                  <button type="button" onClick={() => onSignUpClick()} className="mkt-cta-tertiary">
+                    Create a free account
                   </button>
                 </>
               )}
             </div>
-            <p className="max-w-xl text-[13px] text-[var(--color-ink-2)] leading-relaxed">
-              Sample is labeled. Live Instant Audit is free with an account (daily hosted allowance).
+            <p className="mx-auto mt-5 max-w-md text-[13px] leading-relaxed text-white/70">
+              Sample is labeled. Live Instant Audit is free with an account.
               {!isAuthenticated && (
                 <>
                   {' '}
-                  Guests can still{' '}
+                  Guests can{' '}
                   <button type="button" onClick={() => onNavigateAudit()} className="mkt-cta-tertiary">
                     open Instant Audit
                   </button>{' '}
@@ -154,122 +153,74 @@ const LandingPage: React.FC<LandingPageProps> = ({
             </p>
           </div>
 
-          <div id="visibility-workbench" className="lg:col-span-5 relative min-w-0 scroll-mt-28">
-            <MarketingStage
-              isAuthenticated={isAuthenticated}
-              onOpenAudit={onNavigateAudit}
-              onSignIn={onSignInClick}
-              onSignUp={onSignUpClick}
-              onSeePricing={onNavigatePricing}
-            />
+          <div className="mt-auto hidden w-full max-w-6xl md:flex items-end justify-between px-2 pt-16 pointer-events-none">
+            <ul className="space-y-4 text-left" aria-label="Search engines">
+              <li className="font-display text-lg tracking-[0.22em] uppercase [text-shadow:0_2px_18px_rgba(0,0,0,0.85)]">Google Search</li>
+              <li className="font-display text-lg tracking-[0.22em] uppercase text-white/80 [text-shadow:0_2px_18px_rgba(0,0,0,0.85)]">AI Overviews</li>
+            </ul>
+            <ul className="space-y-4 text-right" aria-label="Answer engines">
+              <li className="font-display text-lg tracking-[0.22em] uppercase [text-shadow:0_2px_18px_rgba(0,0,0,0.85)]">ChatGPT</li>
+              <li className="font-display text-lg tracking-[0.22em] uppercase text-white/80 [text-shadow:0_2px_18px_rgba(0,0,0,0.85)]">Perplexity</li>
+            </ul>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={scrollToProbe}
+          aria-label="Scroll to the sample scout"
+          className="absolute bottom-6 left-1/2 z-10 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full border border-white/20 bg-black/50 text-white"
+        >
+          <svg viewBox="0 0 26 33" className="h-5 w-4" fill="none" aria-hidden>
+            <path
+              d="M13 1.5 V31.5 M1.9 20.4 L13 31.5 L24.1 20.4"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="square"
+            />
+          </svg>
+        </button>
       </section>
 
-      {/* Coverage strip: the four surfaces, stated once. */}
-      <section className="mkt-section mkt-section-alt !py-12 sm:!py-14" aria-label="What one scout covers">
-        <div className="max-w-7xl mx-auto">
-          <p className="mkt-eyebrow mb-6">One scout covers</p>
-          <ul className="grid grid-cols-2 lg:grid-cols-4 gap-x-10 gap-y-6 list-none">
-            {SURFACES.map((name) => (
-              <li
-                key={name}
-                className="font-display text-[clamp(1.75rem,3.2vw,2.5rem)] leading-none text-[var(--color-ink)] border-t border-[var(--color-rule)] pt-5"
-              >
-                {name}
+      <section className="relative z-10 bg-black border-t border-[var(--color-rule)]">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-16 sm:py-20">
+          <p className="mkt-eyebrow mb-4">The path</p>
+          <h2 className={`${H2} max-w-xl mb-14`}>From a domain to the one fix.</h2>
+          <ol className="grid grid-cols-1 md:grid-cols-3 gap-12 list-none">
+            {STEPS.map((step) => (
+              <li key={step.n} className="min-w-0">
+                <p className="font-display text-5xl text-[var(--color-accent)] leading-none mb-4">{step.n}</p>
+                <h3 className="text-2xl text-[var(--color-ink)] font-medium mb-2">{step.title}</h3>
+                <p className="mkt-body max-w-sm">{step.body}</p>
               </li>
             ))}
-          </ul>
+          </ol>
+          <button type="button" onClick={onNavigateInfrastructure} className="mkt-cta-tertiary mt-12">
+            How an audit runs
+          </button>
         </div>
       </section>
 
-      {/* Category: cost-displacement, visibility as the proof. */}
-      <section className="mkt-section">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 mb-16 sm:mb-20">
-            <div className="lg:col-span-7 min-w-0">
-              <p className="mkt-eyebrow mb-4">Why Luminara</p>
-              <h2 className={H2}>Cut tool sprawl. Adopt AI without rebuilding.</h2>
-            </div>
-            <p className="lg:col-span-5 mkt-body lg:pt-10">
-              Most teams pay for a rank tracker, an audit tool, a retainer, and a chat assistant that never
-              talk to each other. Luminara Suite runs the audit, labels the evidence, and hands you the next
-              action in one place, on the stack you already run.
-            </p>
-          </div>
-          <MarketingSellPoints heading="" />
+      <section id="visibility-workbench" className="relative z-10 scroll-mt-24 bg-[var(--color-paper-2)] border-t border-[var(--color-rule)]">
+        <div className="max-w-xl mx-auto px-5 sm:px-8 py-16 sm:py-20">
+          <p className="mkt-eyebrow mb-4">Try it</p>
+          <h2 className={`${H2} mb-4`}>Run it on your domain.</h2>
+          <p className="mkt-body mb-8">
+            The sample scout shows the engine layout. It does not invent a score. Answer engines stay Not measured until a live run.
+          </p>
+          <MarketingStage
+            isAuthenticated={isAuthenticated}
+            onOpenAudit={onNavigateAudit}
+            onSignIn={onSignInClick}
+            onSignUp={onSignUpClick}
+            onSeePricing={onNavigatePricing}
+          />
         </div>
       </section>
 
-      {/* Map: interactive constellation, separate from the Probe (design.md). */}
-      <section id="visibility-map" className="mkt-section mkt-section-alt scroll-mt-24">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
-          <div className="lg:col-span-5 min-w-0">
-            <p className="mkt-eyebrow mb-4">Visibility field</p>
-            <h2 className={`${H2} mb-5`}>One map of where answers happen.</h2>
-            <p className="mkt-body mb-8 max-w-md">
-              Google, AI Overviews, ChatGPT, and Perplexity as lit nodes on one map. Measured stays bright.
-              Gaps stay labeled. Sample data until you run Live.
-            </p>
-            <button type="button" onClick={() => (isAuthenticated ? onNavigateAudit() : onSignUpClick())} className="mkt-cta-secondary">
-              {isAuthenticated ? 'Open Instant Audit' : 'Create free account'}
-            </button>
-          </div>
-          <div className="lg:col-span-7 min-w-0">
-            <VisibilityFieldMap engines={SAMPLE_FIXTURE.engines} domainLabel={SAMPLE_FIXTURE.domain} />
-          </div>
-        </div>
-      </section>
-
-      {/* Loop: the steps beside the real Instant Audit screen. */}
-      <section className="mkt-section">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
-          <div className="lg:col-span-5 min-w-0">
-            <p className="mkt-eyebrow mb-4">Weekly Decision Loop</p>
-            <h2 className={`${H2} mb-10`}>From a domain to the next action.</h2>
-            <ol className="space-y-7 list-none mb-10">
-              {HOW_STEPS.map((step, index) => (
-                <li key={step.title} className="min-w-0 border-t border-[var(--color-rule)] pt-5">
-                  <p className="text-[12px] font-mono text-[var(--color-accent)] mb-2">
-                    {String(index + 1).padStart(2, '0')}
-                  </p>
-                  <h3 className="text-xl text-[var(--color-ink)] font-medium mb-1.5">{step.title}</h3>
-                  <p className="mkt-body">{step.body}</p>
-                </li>
-              ))}
-            </ol>
-            <button type="button" onClick={onNavigateInfrastructure} className="mkt-cta-tertiary">
-              How an audit runs
-            </button>
-          </div>
-          <figure className="lg:col-span-7 min-w-0">
-            <button
-              type="button"
-              onClick={() => onNavigateAudit()}
-              className="block w-full border border-[var(--color-rule)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
-              aria-label="Open Instant Audit"
-            >
-              <img
-                src="/brand/instant-audit.webp"
-                alt="The Instant Audit screen: a domain field, SEO, AEO and GEO report types, and focus lenses."
-                width={1440}
-                height={740}
-                loading="lazy"
-                decoding="async"
-                className="block w-full h-auto"
-              />
-            </button>
-            <figcaption className="mt-3 text-[13px] text-[var(--color-ink-2)]">
-              Instant Audit as a guest sees it. Select the image to open it.
-            </figcaption>
-          </figure>
-        </div>
-      </section>
-
-      {/* Sample report: visual left, copy right. */}
-      <section id="sample-report" className="mkt-section mkt-section-alt scroll-mt-24">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
-          <div className="lg:col-span-6 min-w-0 order-2 lg:order-1 border border-[var(--color-rule)] bg-[var(--color-paper)] p-5 sm:p-7 space-y-5">
+      <section id="sample-report" className="relative z-10 scroll-mt-24 bg-black border-t border-[var(--color-rule)]">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20 sm:py-28 grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+          <div className="lg:col-span-6 min-w-0 border border-[var(--color-rule)] p-5 sm:p-7 space-y-5">
             <div className="flex items-baseline justify-between gap-3 min-w-0">
               <p className="text-base text-[var(--color-ink)] truncate">{LIVE_SAMPLE_SNAPSHOT.domain}</p>
               <p className="text-[12px] font-mono text-[var(--color-accent)] shrink-0">
@@ -294,12 +245,11 @@ const LandingPage: React.FC<LandingPageProps> = ({
               </p>
             </div>
           </div>
-          <div className="lg:col-span-6 min-w-0 order-1 lg:order-2">
+          <div className="lg:col-span-6 min-w-0">
             <p className="mkt-eyebrow mb-4">The report</p>
-            <h2 className={`${H2} mb-5`}>A verdict and one fix, not a 40-page PDF.</h2>
+            <h2 className={`${H2} mb-5`}>A verdict and one fix.</h2>
             <p className="mkt-body mb-8 max-w-md">
-              Each engine gets a status, the report gives a plain-English verdict, and you leave with
-              the one fix to make first.
+              Each engine gets a status. The page gives you the verdict in plain English and the single change to make first.
             </p>
             <button type="button" onClick={onNavigateSampleReport} className="mkt-cta-secondary">
               Full sample report
@@ -308,85 +258,29 @@ const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* IDE access: Growth tooling as the visual. */}
-      <section className="mkt-section">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
-          <div className="lg:col-span-6 min-w-0">
-            <p className="mkt-eyebrow mb-4">Growth and above</p>
-            <h2 className={`${H2} mb-5`}>The same reports inside Cursor and Claude.</h2>
+      <section className="relative z-10 bg-black border-t border-[var(--color-rule)]">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20 sm:py-28 grid grid-cols-1 lg:grid-cols-12 gap-10 items-end">
+          <div className="lg:col-span-7 min-w-0">
+            <h2 className={`${H2} mb-5`}>See if AI mentions you.</h2>
             <p className="mkt-body mb-8 max-w-lg">
-              Growth unlocks IDE connectors so the agents you already use can read your projects, context,
-              and reports, and save their own. Agency adds API access for paid research.
+              Start with the sample. Create a free account when you want the live audit. Growth reads the same reports inside Cursor and Claude.
             </p>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-              <button type="button" onClick={onNavigatePricing} className="mkt-cta-secondary">
+              <button type="button" className="mkt-cta-gloss" onClick={scrollToProbe}>
+                Run a sample scout
+              </button>
+              <button type="button" onClick={onNavigatePricing} className="mkt-cta-tertiary">
                 See plans
               </button>
-              <a href="/docs/mcp.html" className="mkt-cta-tertiary">
-                IDE setup guide
-              </a>
               <button type="button" onClick={onNavigateMethodology} className="mkt-cta-tertiary">
                 How we measure
               </button>
             </div>
           </div>
-          <div className="lg:col-span-6 min-w-0 border border-[var(--color-rule)] bg-[var(--color-paper-2)]">
-            <p className="px-5 sm:px-6 py-3.5 border-b border-[var(--color-rule)] text-[12px] font-mono text-[var(--color-ink-2)]">
-              luminara IDE tools
-            </p>
-            <ul className="divide-y divide-[var(--color-rule)] list-none">
-              {MCP_TOOLS.map((tool) => (
-                <li key={tool.name} className="flex items-baseline justify-between gap-4 px-5 sm:px-6 py-3.5">
-                  <code className="text-[13px] font-mono text-[var(--color-ink)]">{tool.name}</code>
-                  <span className="text-[14px] text-[var(--color-ink-2)] text-right">{tool.note}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       </section>
 
       <MarketingFaq className="mkt-section-alt" />
-
-      {/* Closing CTA plus the one builder credit (dual-brand lock). */}
-      <section className="mkt-section">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-end">
-          <div className="lg:col-span-7 min-w-0">
-            <h2 className={`${H2} mb-5`}>Run a free sample scout.</h2>
-            <p className="mkt-body mb-8 max-w-lg">
-              Enter your site in the Probe. Create a free account when you want Live Instant Audit.
-            </p>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-3">
-              <button type="button" className="mkt-cta-primary" onClick={scrollToProbe}>
-                Run sample scout
-              </button>
-              <button
-                type="button"
-                className="mkt-cta-secondary"
-                onClick={() => (isAuthenticated ? onNavigateAudit() : onSignUpClick())}
-              >
-                {isAuthenticated ? 'Open Instant Audit' : 'Create free account'}
-              </button>
-            </div>
-          </div>
-          <div className="lg:col-span-5 min-w-0 border-t border-[var(--color-rule)] pt-5">
-            <p className="text-lg text-[var(--color-ink)] font-medium mb-2">Visibility is only the beginning.</p>
-            <p className="mkt-body">
-              Built by{' '}
-              <a
-                href="https://luminaradigital.io"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[var(--color-ink)] underline underline-offset-4"
-              >
-                Luminara Digital
-              </a>
-              . Optional implementation and stack review, so you modernise without a rip-and-replace.
-            </p>
-          </div>
-        </div>
-      </section>
-
       <MarketingFooter />
     </div>
   );

@@ -21,7 +21,7 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
 }) => {
   const chrome = useMarketingChrome();
   return (
-    <div className="min-h-[100dvh] bg-[var(--color-paper)] text-[var(--color-ink)] selection:bg-gold selection:text-black font-sans antialiased relative overflow-x-clip">
+    <div className="isolate min-h-[100dvh] bg-[var(--color-paper)] text-[var(--color-ink)] selection:bg-gold selection:text-black font-sans antialiased relative overflow-x-clip">
       <MarketingAtmosphere intensity="page" />
       <MarketingNav
         brandLabel="Luminara Suite"
