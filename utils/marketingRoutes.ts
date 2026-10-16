@@ -62,6 +62,12 @@ const HASH_TO_VIEW: Record<string, AppView> = {
   ONBOARDING: AppView.BUSINESS_DNA,
 };
 
+/**
+ * Screens taken offline. LAUNCHPAD is still an AppView, so the generic hash
+ * fallback would open a blank page. These hashes show Not Found instead.
+ */
+const OFFLINE_HASHES = new Set(['LAUNCHPAD']);
+
 export function isMarketingView(view: AppView): boolean {
   return view in MARKETING_PATH_BY_VIEW;
 }
@@ -130,7 +136,7 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
       if (h.startsWith('HARNESS')) return AppView.HARNESS;
       if (h.startsWith('ORACLE_AGENT')) return AppView.ORACLE_AGENT;
       if (h.startsWith('NOTEBOOK') || h.startsWith('STUDIO')) return AppView.NOTEBOOK;
-      if (h === 'LAUNCHPAD') return AppView.NOT_FOUND;
+      if (OFFLINE_HASHES.has(h)) return AppView.NOT_FOUND;
       const fromMarketingHash = marketingViewFromHash(hash);
       if (fromMarketingHash) return fromMarketingHash;
       return (Object.values(AppView) as string[]).includes(h) ? (h as AppView) : null;

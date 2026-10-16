@@ -57,6 +57,8 @@ describe('marketingRoutes', () => {
     expect(resolveAppView('/dashboard', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/verify', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/trust', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/trust-center', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/smb-launchpad', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/audit', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/geo', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/seo', '')).toBe(AppView.NOT_FOUND);
