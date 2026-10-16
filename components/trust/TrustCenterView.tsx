@@ -28,6 +28,13 @@ import type { BusinessDNA } from '../../types';
 
 type SectionState = 'loading' | 'ready' | 'disabled' | 'error';
 
+/** Public path copy. Bare /verify is not a page. Receipts live at /verify/r/<id>. */
+export function publicVerificationCopy(live: boolean): string {
+  return live
+    ? 'Anyone can independently verify a public receipt at its /verify/r/<id> link.'
+    : 'Public verification is not enabled yet. Receipt links stay off until trust receipts are on.';
+}
+
 type PendingProof = {
   domain: string;
   tokenExpiresAt: string;
@@ -603,9 +610,7 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
                 <span className="text-gold">3.</span> Public Verifiability
               </h4>
               <p className="text-gray-400 leading-relaxed">
-                {badgeLive
-                  ? 'Anyone can independently verify your brand claims via public link at /verify or via programmatic MCP tools.'
-                  : 'Public verification is not enabled yet. Receipt links stay off until trust receipts are on.'}
+                {publicVerificationCopy(badgeLive)}
               </p>
             </div>
             <div className="space-y-1">

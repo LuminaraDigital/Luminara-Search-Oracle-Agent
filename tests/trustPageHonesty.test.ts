@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { TrustCenterView } from '../components/trust/TrustCenterView';
+import { TrustCenterView, publicVerificationCopy } from '../components/trust/TrustCenterView';
 import { badgeCaption, badgePreviewLabel } from '../components/trust/UniversalBrandPassportView';
 
 describe('Trust page honesty', () => {
@@ -20,5 +20,13 @@ describe('Trust page honesty', () => {
     expect(html).not.toContain('Not named yet');
     expect(html).toContain('Public verification is not enabled yet');
     expect(html).not.toContain('Anyone can independently verify');
+  });
+
+  it('points a live receipt at /verify/r and never at bare /verify', () => {
+    const live = publicVerificationCopy(true);
+    expect(live).toContain('/verify/r/');
+    expect(live).not.toMatch(/\/verify(?!\/r\/)/);
+    expect(live).not.toMatch(/MCP/);
+    expect(publicVerificationCopy(false)).toContain('not enabled');
   });
 });
