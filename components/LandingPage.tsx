@@ -202,7 +202,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
       </section>
 
       <section id="visibility-workbench" className="relative z-10 scroll-mt-24 bg-[var(--color-paper-2)] border-t border-[var(--color-rule)]">
-        <div className="max-w-xl mx-auto px-5 sm:px-8 py-16 sm:py-20">
+        <div className="max-w-xl mx-auto px-5 sm:px-8 pt-14 pb-10 sm:pt-16 sm:pb-12">
           <p className="mkt-eyebrow mb-4">Try it</p>
           <h2 className={`${H2} mb-4`}>Run it on your domain.</h2>
           <p className="mkt-body mb-8">
@@ -219,7 +219,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
       </section>
 
       <section id="sample-report" className="relative z-10 scroll-mt-24 bg-black border-t border-[var(--color-rule)]">
-        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20 sm:py-28 grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-12 sm:py-14 grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
           <div className="lg:col-span-6 min-w-0 border border-[var(--color-rule)] p-5 sm:p-7 space-y-5">
             <div className="flex items-baseline justify-between gap-3 min-w-0">
               <p className="text-base text-[var(--color-ink)] truncate">{LIVE_SAMPLE_SNAPSHOT.domain}</p>
@@ -259,8 +259,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
       </section>
 
       <section className="relative z-10 bg-black border-t border-[var(--color-rule)]">
-        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20 sm:py-28 grid grid-cols-1 lg:grid-cols-12 gap-10 items-end">
-          <div className="lg:col-span-7 min-w-0">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 pt-12 pb-8 sm:pt-14 sm:pb-10">
+          <div className="max-w-2xl min-w-0">
             <h2 className={`${H2} mb-5`}>See if AI mentions you.</h2>
             <p className="mkt-body mb-8 max-w-lg">
               Start with the sample. Create a free account when you want the live audit. Growth reads the same reports inside Cursor and Claude.
@@ -280,7 +280,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      <MarketingFaq className="mkt-section-alt" />
+      <MarketingFaq className="mkt-section-alt !py-12 sm:!py-14" />
       <MarketingFooter />
     </div>
   );
