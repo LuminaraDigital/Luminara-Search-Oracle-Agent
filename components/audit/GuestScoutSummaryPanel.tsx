@@ -117,33 +117,35 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       {/* Retention: Daily Verification Streak Card */}
       <DailyStreakCard domain={summary.domain} />
 
-      <div className="mt-8 flex flex-col gap-2 sm:flex-row">
-        {onShare && (
-          <button
-            type="button"
-            onClick={onShare}
-            disabled={sharing || summary.evidenceEmpty}
-            className="min-h-11 rounded-lg bg-gradient-to-r from-gold to-gold-dark px-4 py-2 text-[11px] font-black uppercase tracking-widest text-black disabled:opacity-40 disabled:cursor-not-allowed"
-            title={summary.evidenceEmpty ? 'Cannot share an empty run with no evidence' : undefined}
-          >
-            {sharing ? 'Sharing...' : 'Share teaser'}
-          </button>
-        )}
-        {onCopy && (
-          <button
-            type="button"
-            onClick={onCopy}
-            disabled={sharing || summary.evidenceEmpty}
-            className="min-h-11 rounded-lg border border-white/15 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
-            title={summary.evidenceEmpty ? 'Cannot share an empty run with no evidence' : undefined}
-          >
-            Copy link
-          </button>
-        )}
-      </div>
-      <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
-        The teaser is a redacted summary and a link back to the Mini App. It is not a full branded share report. Those stay on Growth and Agency.
-      </p>
+      {!summary.degraded && !summary.evidenceEmpty && (onShare || onCopy) && (
+        <>
+          <div className="mt-8 flex flex-col gap-2 sm:flex-row">
+            {onShare && (
+              <button
+                type="button"
+                onClick={onShare}
+                disabled={sharing}
+                className="min-h-11 rounded-lg bg-gradient-to-r from-gold to-gold-dark px-4 py-2 text-[11px] font-black uppercase tracking-widest text-black disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {sharing ? 'Sharing...' : 'Share teaser'}
+              </button>
+            )}
+            {onCopy && (
+              <button
+                type="button"
+                onClick={onCopy}
+                disabled={sharing}
+                className="min-h-11 rounded-lg border border-white/15 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Copy link
+              </button>
+            )}
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
+            The teaser is a redacted summary and a link back to the Mini App. It is not a full branded share report. Those stay on Growth and Agency.
+          </p>
+        </>
+      )}
       {shareNote && <p className="mt-2 text-[12px] text-gold-light">{shareNote}</p>}
     </section>
   );

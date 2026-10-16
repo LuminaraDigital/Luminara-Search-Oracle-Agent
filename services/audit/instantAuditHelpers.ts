@@ -19,6 +19,7 @@ import {
 } from './guestScoutSummary';
 import { healthChecklist } from '../agentCore/auditEvidenceGate';
 import { entitlementsFor } from '../plans/planEntitlements';
+import { getAnswerDepth } from './answerDepth';
 import type { HostedScoutRail } from './hostedScoutRail';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, isFullAudit: boolean): string {
@@ -93,6 +94,8 @@ export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: Hosted
     plainEnglishBrief: crew.plainEnglishBrief,
     llmCrawler: crew.llmCrawlerReadiness,
     hostedRail,
+    focus: crew.focus,
+    depth: getAnswerDepth(),
   });
 }
 
