@@ -733,7 +733,7 @@ describe('Instant Audit honesty on empty evidence', () => {
 describe('Mission Control copy', () => {
   it('does not claim ground-truth verification when metrics were not measured', () => {
     expect(missionControlHeadline(true, 'not_measured')).toBe(
-      'Audit finished. Some signals were not measured.',
+      'This run did not measure the site, so no full report was generated.',
     );
     expect(missionControlHeadline(true, 'not_measured')).not.toContain('ground-truth');
     expect(missionControlHeadline(true, 'measured')).not.toContain('ground-truth');
@@ -762,7 +762,7 @@ describe('Mission Control copy', () => {
     expect(html).toContain('NOT MEASURED');
     expect(html).not.toContain('100% COMPLETE');
     expect(missionControlProgressLabel(true, 'measured', 100)).toBe('100% COMPLETE');
-    expect(html).toContain('Audit finished. Some signals were not measured.');
+    expect(html).toContain('This run did not measure the site, so no full report was generated.');
     expect(html).toContain('agent progress, not evidence quality');
     expect(html).not.toContain('ground-truth');
     expect(html).not.toContain('45%');
@@ -910,7 +910,8 @@ describe('Instant Audit degraded provider failures', () => {
     expect(localScrape).not.toHaveBeenCalled();
 
     const decision = events.find((event) => event.phase === 'provider_decisions');
-    expect(decision?.message).toMatch(/Page fetch:/);
+    expect(decision?.message).toMatch(/Page fetch/);
+    expect(decision?.message).not.toMatch(/Firecrawl|Jina|Tavily|Groq|sign-in token/);
     expect(decision?.message).toMatch(/Search/);
     expect(result.errors.some((err) => err.startsWith('provider_decisions '))).toBe(true);
 

@@ -130,7 +130,7 @@ describe('UnifiedScraperService', () => {
 
     expect(first.success).toBe(true);
     expect(first.providerUsed).toBe('jina');
-    expect(first.fallbackNote).toBe('Page fetch: Jina (Firecrawl: provider status not ready)');
+    expect(first.fallbackNote).toBe('Page fetch did not run (status not ready)');
     expect(second.success).toBe(true);
     expect(second.fallbackNote).toBeUndefined();
   });
