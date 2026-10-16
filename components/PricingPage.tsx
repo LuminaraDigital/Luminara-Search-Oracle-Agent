@@ -11,45 +11,13 @@ import { getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isTonAvailable } from './paywall/paymentOptions';
-import { PAID_PLAN_PRICES, type PaidPlanId } from './paywall/planPrices';
+import { PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './paywall/planCopy';
+
+export { pricingTiers };
 
 interface PricingPageProps {
   onTerminal: () => void;
 }
-
-export const pricingTiers: Array<{
-  id: PaidPlanId;
-  priceLabel: string;
-  stars: string;
-  ton: string;
-  blurb: string;
-  highlight: boolean;
-}> = [
-  {
-    id: 'starter',
-    priceLabel: PAID_PLAN_PRICES.starter.usdLabel,
-    stars: PAID_PLAN_PRICES.starter.starsLabel,
-    ton: PAID_PLAN_PRICES.starter.tonLabel,
-    blurb: 'Web audits for up to 2 sites. No IDE connectors or public share links.',
-    highlight: false,
-  },
-  {
-    id: 'growth',
-    priceLabel: PAID_PLAN_PRICES.growth.usdLabel,
-    stars: PAID_PLAN_PRICES.growth.starsLabel,
-    ton: PAID_PLAN_PRICES.growth.tonLabel,
-    blurb: 'The growth plan: IDE access, shareable reports, 3 seats, weekly re-audits.',
-    highlight: true,
-  },
-  {
-    id: 'agency',
-    priceLabel: PAID_PLAN_PRICES.agency.usdLabel,
-    stars: PAID_PLAN_PRICES.agency.starsLabel,
-    ton: PAID_PLAN_PRICES.agency.tonLabel,
-    blurb: 'API access for paid research, 10 client workspaces, 10 team seats, daily re-audits, white-label PDF.',
-    highlight: false,
-  },
-];
 
 /** The line the paywall opens with when a plan is chosen here. TON is named only while its checkout is open. */
 export function planChoiceLine(title: string, tier: { stars: string; ton: string }, tonOpen: boolean): string {
@@ -63,21 +31,6 @@ const ONE_OFFS = [
   { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit. Self-reported, not independently checked.' },
   { title: 'Deep multi-agent crawl', price: '75 Stars', body: 'One deep crawl with competitor gap findings.' },
 ] as const;
-
-function bulletsFor(id: PaidPlanId): string[] {
-  const e = PLAN_ENTITLEMENTS[id];
-  const lines = [
-    `${e.domainLimit} monitored domains`,
-    e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audits`,
-    id === 'agency' ? 'White-label PDF exports' : id === 'growth' ? 'Branded PDF exports' : 'Standard PDF exports',
-    e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',
-    e.shareLinks ? 'Public share links' : 'No public share links',
-    `${e.teamSeats} team seat${e.teamSeats === 1 ? '' : 's'}`,
-  ];
-  if (e.apiAccess) lines.push('Paid research API (Agency plan or your own DataForSEO login)');
-  if (e.agencyClientLimit > 0) lines.push(`${e.agencyClientLimit} client workspaces`);
-  return lines;
-}
 
 const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
   useEffect(() => {
@@ -139,8 +92,8 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
 
       <section className="mb-10 grid grid-cols-1 lg:grid-cols-3 gap-px bg-[var(--color-rule)] border border-[var(--color-rule)]">
         {pricingTiers.map((tier) => {
-          const lines = bulletsFor(tier.id);
-          const title = PLAN_ENTITLEMENTS[tier.id].title;
+          const lines = planBullets(tier.id);
+          const title = planTitle(tier.id);
           return (
             <div
               key={tier.id}
@@ -150,7 +103,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
             >
               <div className="flex items-baseline justify-between gap-3 mb-4">
                 <h2 className="text-xl font-medium text-[var(--color-ink)]">{title}</h2>
-                {tier.highlight && <p className="mkt-eyebrow">Recommended</p>}
+                {tier.highlight && <p className="mkt-eyebrow">{PLAN_CARD_BADGE}</p>}
               </div>
               <p className="font-display text-4xl sm:text-5xl leading-none text-[var(--color-ink)] mb-2">
                 {inTelegram ? tier.stars : tier.priceLabel}
