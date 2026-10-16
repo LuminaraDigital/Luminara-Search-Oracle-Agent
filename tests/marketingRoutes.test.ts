@@ -52,8 +52,17 @@ describe('marketingRoutes', () => {
     expect(resolveAppView('/', '#pricing')).toBe(AppView.PRICING);
     expect(resolveAppView('/', '#settings')).toBe(null);
     expect(resolveAppView('/random-made-up-page', '')).toBe(AppView.NOT_FOUND);
-    expect(resolveAppView('/smb', '')).toBe(AppView.LAUNCHPAD);
-    expect(resolveAppView('/dashboard', '')).toBe(AppView.DASHBOARD);
+    expect(resolveAppView('/smb', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/launchpad', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/dashboard', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/verify', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/trust', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/audit', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/geo', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/seo', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/aeo', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/', '#launchpad')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/', '#trust_center')).toBe(AppView.TRUST_CENTER);
   });
 
   it('routes /verify/r/<id> to the receipt view without breaking /verify/<digest>', () => {

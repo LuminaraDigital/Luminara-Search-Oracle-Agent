@@ -34,15 +34,8 @@ const PATH_ALIASES: Record<string, AppView> = {
   terms: AppView.TERMS,
   'terms-of-service': AppView.TERMS,
   tos: AppView.TERMS,
-  verify: AppView.TRUST_CENTER,
-  trust: AppView.TRUST_CENTER,
-  'trust-center': AppView.TRUST_CENTER,
   labs: AppView.ECOSYSTEM_HUB,
   lab: AppView.ECOSYSTEM_HUB,
-  launchpad: AppView.LAUNCHPAD,
-  'smb-launchpad': AppView.LAUNCHPAD,
-  smb: AppView.LAUNCHPAD,
-  dashboard: AppView.DASHBOARD,
   onboarding: AppView.BUSINESS_DNA,
   desktop: AppView.LANDING,
   'compare/profound': AppView.WHY_US,
@@ -65,12 +58,7 @@ const HASH_TO_VIEW: Record<string, AppView> = {
   TERMS: AppView.TERMS,
   'TERMS-OF-SERVICE': AppView.TERMS,
   TOS: AppView.TERMS,
-  VERIFY: AppView.TRUST_CENTER,
-  TRUST: AppView.TRUST_CENTER,
-  'TRUST-CENTER': AppView.TRUST_CENTER,
   LABS: AppView.ECOSYSTEM_HUB,
-  LAUNCHPAD: AppView.LAUNCHPAD,
-  'SMB-LAUNCHPAD': AppView.LAUNCHPAD,
   ONBOARDING: AppView.BUSINESS_DNA,
 };
 
@@ -123,7 +111,6 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
   const rawPath = pathname.replace(/^\/|\/$/g, '');
   const path = rawPath.toLowerCase();
 
-  if (path === 'verify') return AppView.TRUST_CENTER;
   if (path.startsWith('share/')) return AppView.SHARED_REPORT;
   if (path.startsWith('verify/r/')) return AppView.VERIFY_RECEIPT;
   if (path.startsWith('verify/')) return AppView.VERIFY_ATTESTATION;
@@ -143,6 +130,7 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
       if (h.startsWith('HARNESS')) return AppView.HARNESS;
       if (h.startsWith('ORACLE_AGENT')) return AppView.ORACLE_AGENT;
       if (h.startsWith('NOTEBOOK') || h.startsWith('STUDIO')) return AppView.NOTEBOOK;
+      if (h === 'LAUNCHPAD') return AppView.NOT_FOUND;
       const fromMarketingHash = marketingViewFromHash(hash);
       if (fromMarketingHash) return fromMarketingHash;
       return (Object.values(AppView) as string[]).includes(h) ? (h as AppView) : null;
