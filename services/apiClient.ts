@@ -583,35 +583,35 @@ export function hostedProviderDecisionReason(providerId: string): HostedProvider
 
 function firecrawlSkipDetail(reason: HostedProviderDecisionReason): string {
   switch (reason) {
-    case 'no_identity': return 'no identity';
-    case 'no_health': return 'provider status not ready';
-    case 'not_configured': return 'not configured';
-    case 'paid_required': return 'paid plan required';
+    case 'no_identity': return 'add a key in Settings, or sign in';
+    case 'no_health': return 'status not ready';
+    case 'not_configured': return 'not set up';
+    case 'paid_required': return 'needs a paid plan or your key';
     case 'byok': return 'your key';
-    case 'hosted': return 'hosted';
+    case 'hosted': return 'ready';
   }
 }
 
-/** Short Firecrawl clause. Empty when a key or the hosted proxy will be used. */
+/** Short page-fetch clause. Empty when a key or the hosted proxy will be used. */
 export function formatFirecrawlSkipDetail(reason: HostedProviderDecisionReason): string {
   if (reason === 'hosted' || reason === 'byok') return '';
-  return `Firecrawl: ${firecrawlSkipDetail(reason)}`;
+  return `Page fetch did not run (${firecrawlSkipDetail(reason)})`;
 }
 
 export function formatPageFetchClause(reason: HostedProviderDecisionReason): string {
-  if (reason === 'hosted') return 'Page fetch: hosted Firecrawl';
-  if (reason === 'byok') return 'Page fetch: your Firecrawl key';
-  return `Page fetch: Jina (Firecrawl: ${firecrawlSkipDetail(reason)})`;
+  if (reason === 'hosted') return 'Page fetch is ready';
+  if (reason === 'byok') return 'Page fetch is using your key';
+  return `Page fetch did not run (${firecrawlSkipDetail(reason)})`;
 }
 
 export function formatSearchSkipReason(reason: HostedProviderDecisionReason): string {
   switch (reason) {
-    case 'no_identity': return 'Search off: sign-in token not ready.';
-    case 'no_health': return 'Search off: provider status not ready.';
-    case 'not_configured': return 'Search off: Tavily is not configured.';
-    case 'paid_required': return 'Search off: a paid plan is required.';
-    case 'byok': return 'Search: your Tavily key.';
-    case 'hosted': return 'Search: hosted Tavily.';
+    case 'no_identity': return 'Search did not run.';
+    case 'no_health': return 'Search is not ready.';
+    case 'not_configured': return 'Search is not set up.';
+    case 'paid_required': return 'Search needs a paid plan or your key.';
+    case 'byok': return 'Search is using your key.';
+    case 'hosted': return 'Search is ready.';
   }
 }
 
@@ -620,21 +620,21 @@ function formatModelClause(reason: HostedProviderDecisionReason): string {
     case 'hosted':
     case 'byok':
       return '';
-    case 'no_identity': return 'Model off: sign-in token not ready';
-    case 'no_health': return 'Model off: provider status not ready';
-    case 'not_configured': return 'Model off: Groq is not configured';
-    case 'paid_required': return 'Model off: a paid plan is required';
+    case 'no_identity': return 'Writing model did not run';
+    case 'no_health': return 'Writing model is not ready';
+    case 'not_configured': return 'Writing model is not set up';
+    case 'paid_required': return 'Writing model needs a paid plan or your key';
   }
 }
 
-/** One Mission Control line for Firecrawl, Tavily, and Groq. Groq is included only when it will not run. */
+/** One Mission Control line for page fetch, search, and the writing model. The model is named only when it will not run. */
 export function formatInstantAuditProviderSummary(): string {
   const page = formatPageFetchClause(hostedProviderDecisionReason('firecrawl'));
   const tavily = hostedProviderDecisionReason('tavily');
   const search = tavily === 'hosted'
-    ? 'Search: hosted Tavily'
+    ? 'Search is ready'
     : tavily === 'byok'
-      ? 'Search: your Tavily key'
+      ? 'Search is using your key'
       : formatSearchSkipReason(tavily).replace(/\.$/, '');
   const model = formatModelClause(hostedProviderDecisionReason('groq'));
   return model ? `${page} · ${search} · ${model}` : `${page} · ${search}`;

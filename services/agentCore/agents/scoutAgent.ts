@@ -65,7 +65,7 @@ export class ScoutAgent {
     try {
       const pack = await siteEvidencePackService.buildPack(url, { mode: 'smart', maxPages: 4 });
       fallbackNote = pack.pages.find((p) => p.fallbackNote)?.fallbackNote
-        || pack.warnings.find((w) => w.startsWith('Page fetch:'))
+        || pack.warnings.find((w) => w.startsWith('Page fetch'))
         || '';
       if (pack.success && pack.pages.length > 0) {
         for (const p of pack.pages) {
