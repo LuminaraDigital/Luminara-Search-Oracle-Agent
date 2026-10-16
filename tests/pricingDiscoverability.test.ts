@@ -7,6 +7,7 @@ import { TELEGRAM_MINI_APP_URL } from '../components/paywall/paymentOptions';
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { TelegramAccountPanel } from '../components/telegram/TelegramAccountPanel';
 import PricingPage, { planChoiceLine } from '../components/PricingPage';
+import { BYOK_CHECKOUT_LINE, PLAN_CARD_BADGE, planBullets, planTitle } from '../components/paywall/planCopy';
 import { PLANS } from '../worker/telegramBot';
 import { TON_PRICING } from '../worker/tonPayment';
 
@@ -145,5 +146,28 @@ describe('copy outside the paywall while TON and card checkout are closed', () =
     const source = readFileSync(resolve(__dirname, '..', 'components', 'PricingPage.tsx'), 'utf8');
     expect(source).toContain('openPaywallModal(planChoiceLine(title, tier, tonOpen))');
     expect(source).not.toMatch(/\$\{tier\.ton\} inside the Mini App/);
+  });
+
+  it('checkout and pricing share badge, names, and bullets, with no 3-day code hint', () => {
+    expect(PLAN_CARD_BADGE).toBe('Recommended');
+    expect(planTitle('starter')).toBe('Starter');
+    expect(planTitle('growth')).toBe('Growth');
+    expect(planTitle('agency')).toBe('Pro / Agency');
+    expect(planBullets('agency')).toContain('Paid research API (Agency plan or your own DataForSEO login)');
+    expect(planBullets('growth').join('\n')).not.toMatch(/Sentinel|Unlimited AI|Hosted API/);
+    const settings = readFileSync(resolve(__dirname, '..', 'components/settings/tabs/ApiKeyOverviewTab.tsx'), 'utf8');
+    expect(settings).toContain(BYOK_CHECKOUT_LINE);
+    const modal = readFileSync(resolve(__dirname, '..', 'components/paywall/PaywallModal.tsx'), 'utf8');
+    const page = readFileSync(resolve(__dirname, '..', 'components/PricingPage.tsx'), 'utf8');
+    expect(page).toContain('planBullets(tier.id)');
+    expect(page).toContain('{PLAN_CARD_BADGE}');
+    expect(modal).toContain('planBullets(tier.id)');
+    expect(modal).toContain('planTitle(tier.id)');
+    expect(modal).toContain('{PLAN_CARD_BADGE}');
+    expect(modal).toContain('BYOK_CHECKOUT_LINE');
+    expect(modal).not.toContain('LUM-GROWTH-3DAY');
+    expect(modal).not.toContain('Most popular');
+    expect(modal).not.toContain('Agency Plan');
+    expect(modal).not.toContain('after sign-in');
   });
 });
