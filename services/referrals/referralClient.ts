@@ -2,7 +2,7 @@
  * Signed-in referral and mission calls. Payloads never include SEO percentages.
  */
 
-import { apiBase, workerFetchWithAuthRetry } from '../apiClient';
+import { apiBase, getServerHealthSync, loadServerHealth, workerFetchWithAuthRetry } from '../apiClient';
 import type { HonestMeasurementStatus, MissionKey, VisibilityLevel } from './rules';
 import { clearPendingReferral, readPendingReferral } from './pendingReferral';
 import { takeScoutReceipt } from './scoutReceiptCapture';
@@ -148,6 +148,9 @@ export function streakCardVisible(result: Pick<DailyCheckinResult, 'ok' | 'statu
 export async function postDailyCheckin(): Promise<DailyCheckinResult> {
   const base = apiBase();
   if (!base) return { ok: false, error: 'API unavailable' };
+  const known = getServerHealthSync();
+  const health = known.ok ? known : await loadServerHealth();
+  if (health.lumens !== true) return { ok: false, error: 'Not found', unavailable: true };
   try {
     const res = await workerFetchWithAuthRetry(`${base}/api/referrals/checkin`, {
       method: 'POST',

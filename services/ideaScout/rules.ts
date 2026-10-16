@@ -190,6 +190,23 @@ export function parseIdeaScoutRequest(body: unknown):
   };
 }
 
+export const IDEA_SCOUT_SIGN_IN =
+  'Sign in with Telegram or your web account. Anonymous browsers do not use hosted keys.';
+
+/** Validate first, then refuse a guest. Neither path calls the API. */
+export function gateIdeaScoutSubmit(
+  body: { idea: string; niche?: string; competitorUrls: string[]; pulseOptIn: boolean },
+  auth: { loading: boolean; authenticated: boolean },
+): ReturnType<typeof parseIdeaScoutRequest> {
+  const parsed = parseIdeaScoutRequest(body);
+  if (!parsed.ok) return parsed;
+  if (auth.loading) {
+    return { ok: false, error: 'Checking your sign-in. Try again in a moment.', code: 'AUTH_LOADING' };
+  }
+  if (!auth.authenticated) return { ok: false, error: IDEA_SCOUT_SIGN_IN, code: 'AUTH_REQUIRED' };
+  return parsed;
+}
+
 function decodeEntities(text: string): string {
   return text
     .replace(/&nbsp;/gi, ' ')

@@ -323,7 +323,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         // The public Stars catalogue. The account panel in the Mini App builds its plan buttons
         // from this; without it the panel has nothing to list.
         plans: publicPlanCatalogue(),
-        stripeCheckout: isStripeCheckoutLive(env),
+        stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
       }));
     }
 
@@ -361,7 +361,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       tonPricing: TON_PRICING,
       jettonPricing: JETTON_PRICING,
       jettonCheckout: JETTON_CHECKOUT_LIVE,
-      stripeCheckout: isStripeCheckoutLive(env),
+      stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
       q402: Q402_SETTLEMENT_LIVE,
       chainNetwork,
       xdcRpcOk,
