@@ -182,6 +182,14 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     const validationErr = validateAuditTargetUrl(targetUrl);
     if (validationErr) {
       setInlineValidationError(validationErr);
+      setScoutSummary(null);
+      setReport(null);
+      setError(null);
+      setPersistHint(null);
+      setCrewEvents([]);
+      setCrewMeasurement(null);
+      setShareNote(null);
+      setAttestation(null);
       productTelemetry.recordError('InstantAuditView', validationErr);
       return;
     }
@@ -390,7 +398,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const { requestConfirm, confirmModal } = useConfirm();
 
   const shareTeaser = async (mode: 'share' | 'copy') => {
-    if (!scoutSummary || sharing) return;
+    if (!scoutSummary || sharing || scoutSummary.degraded || scoutSummary.evidenceEmpty) return;
     setSharing(true);
     setShareNote(null);
     try {

@@ -79,7 +79,7 @@ export function probeUiForPhase(phase: DemoPhase): {
   }
 }
 
-function statusLabel(status: string): string {
+export function statusLabel(status: string): string {
   switch (status) {
     case 'measured':
       return 'Measured';
@@ -90,7 +90,7 @@ function statusLabel(status: string): string {
     case 'not_measured':
       return 'Not measured';
     default:
-      return 'Ready';
+      return 'Not run yet';
   }
 }
 

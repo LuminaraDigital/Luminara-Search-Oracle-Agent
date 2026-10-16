@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS } from './types';
+import { setAnswerDepth } from './services/audit/answerDepth';
 import { geminiService, toChatHistory } from './services/geminiService';
 import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
@@ -1486,12 +1487,11 @@ const App: React.FC = () => {
             <ICONS.Settings className="w-4 h-4" />
           </Button>
 
-          {/* Mode Selector - Quick / Thorough */}
           <div className="hidden sm:flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
             <Button
               variant="ghost"
               size="none"
-              onClick={() => setMode(OracleMode.FLASH)}
+              onClick={() => { setMode(OracleMode.FLASH); setAnswerDepth('quick'); }}
               aria-pressed={mode === OracleMode.FLASH}
               className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.FLASH ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
@@ -1502,7 +1502,7 @@ const App: React.FC = () => {
             <Button
               variant="ghost"
               size="none"
-              onClick={() => setMode(OracleMode.DEEP_THINK)}
+              onClick={() => { setMode(OracleMode.DEEP_THINK); setAnswerDepth('thorough'); }}
               aria-pressed={mode === OracleMode.DEEP_THINK}
               className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.DEEP_THINK ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
