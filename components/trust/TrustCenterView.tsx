@@ -329,6 +329,8 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
   }, []);
 
   const activeDomain = domains.find((d) => d.status === 'verified')?.domain || domains[0]?.domain || domainInput;
+  const passportDomain = activeDomain.trim();
+  const badgeLive = domainState === 'ready' && receiptState === 'ready';
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-10">
@@ -343,12 +345,14 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
         </p>
       </header>
 
-      {/* Universal Brand Passport */}
-      <section aria-label="Universal Brand Passport">
-        <UniversalBrandPassportView
-          passport={buildBrandPassport(activeDomain || 'yourdomain.com', savedDna, receipts)}
-        />
-      </section>
+      {passportDomain && (
+        <section aria-label="Universal Brand Passport">
+          <UniversalBrandPassportView
+            passport={buildBrandPassport(passportDomain, savedDna, receipts)}
+            badgeLive={badgeLive}
+          />
+        </section>
+      )}
 
       {loadError && (
         <p role="alert" className="text-sm text-danger-400">
@@ -599,7 +603,9 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
                 <span className="text-gold">3.</span> Public Verifiability
               </h4>
               <p className="text-gray-400 leading-relaxed">
-                Anyone can independently verify your brand claims via public link at /verify or via programmatic MCP tools.
+                {badgeLive
+                  ? 'Anyone can independently verify your brand claims via public link at /verify or via programmatic MCP tools.'
+                  : 'Public verification is not enabled yet. Receipt links stay off until trust receipts are on.'}
               </p>
             </div>
             <div className="space-y-1">

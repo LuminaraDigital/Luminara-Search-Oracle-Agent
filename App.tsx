@@ -1691,7 +1691,7 @@ const App: React.FC = () => {
 
         {/* VIEW: Trust (domain verification + signed receipts) */}
         {view === AppView.TRUST_CENTER && (
-          <TrustCenterView initialDomain={draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL)} />
+          <TrustCenterView />
         )}
 
         {/* VIEW: Ecosystem & Playbook Hub */}
