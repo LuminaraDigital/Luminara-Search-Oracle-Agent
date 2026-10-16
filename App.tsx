@@ -509,8 +509,8 @@ const App: React.FC = () => {
       { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
     ],
     primaryCta: appAuth.authenticated
-      ? { label: 'Open Instant Audit', onClick: () => enterInstantAudit() }
-      : { label: 'Create free account', onClick: () => openLoginWall('signup') },
+      ? { label: 'New audit', onClick: () => enterInstantAudit() }
+      : { label: 'Start free', onClick: () => openLoginWall('signup') },
     secondaryCta: appAuth.authenticated
       ? { label: 'Dashboard', onClick: () => enterApp(AppView.DASHBOARD) }
       : { label: 'Sign in', onClick: () => openLoginWall('signin') },

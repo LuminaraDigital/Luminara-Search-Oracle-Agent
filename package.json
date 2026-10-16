@@ -70,7 +70,6 @@
     "grounding:score": "node --experimental-strip-types services/grounding/cli.ts",
     "constellation:bake": "node scripts/constellation/bake.mjs",
     "constellation:bake:check": "node scripts/constellation/bake.mjs --check-only",
-    "earth:bake": "node --experimental-strip-types scripts/earth/bake-land-dots.mjs",
     "rl:transmute": "node scripts/rl/transmute-datasets.mjs",
     "rl:dpo": "node --experimental-strip-types scripts/rl/dpo-alignment-orchestrator.mjs"
   },

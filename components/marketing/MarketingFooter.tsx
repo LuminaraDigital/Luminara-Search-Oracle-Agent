@@ -3,6 +3,8 @@ import { ICONS } from '../../constants';
 
 interface MarketingFooterProps {
   statement?: string;
+  /** Hairline above the footer; off when the footer sits over a horizon. */
+  divider?: boolean;
 }
 
 const LINKS = [
@@ -19,19 +21,20 @@ const LINKS = [
 /** Ft5 Statement footer for marketing pages. */
 export const MarketingFooter: React.FC<MarketingFooterProps> = ({
   statement = 'Know where AI recommends you. Fix what matters first.',
+  divider = true,
 }) => (
   <footer
-    className="relative z-10 py-14 sm:py-16 px-4 sm:px-6 md:px-20 border-t border-[var(--color-rule)]"
+    className={`relative z-10 py-14 sm:py-16 px-4 sm:px-6 md:px-20 ${divider ? 'border-t border-[var(--color-rule)]' : ''}`}
     style={{ paddingBottom: 'max(3.5rem, env(safe-area-inset-bottom, 0px))' }}
   >
     <div className="max-w-5xl mx-auto flex flex-col items-center gap-8 text-center">
       <div className="flex items-center gap-3">
         <ICONS.LuminaraLogo className="w-9 h-9 shrink-0" />
-        <span className="font-display text-2xl sm:text-3xl text-[var(--color-ink)] tracking-tight">
+        <span className="font-serif text-2xl sm:text-3xl text-[var(--color-ink)] tracking-tight">
           Luminara Suite
         </span>
       </div>
-      <p className="font-display text-xl sm:text-2xl text-[var(--color-ink-2)] max-w-xl leading-snug">
+      <p className="font-serif italic text-xl sm:text-2xl text-[var(--gold-light)]/85 max-w-xl leading-snug">
         {statement}
       </p>
       <nav className="flex flex-wrap justify-center gap-x-6 gap-y-3" aria-label="Footer">
