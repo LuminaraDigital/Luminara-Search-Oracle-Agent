@@ -89,8 +89,10 @@ function statusLabel(status: string): string {
       return 'Checking';
     case 'not_measured':
       return 'Not measured';
+    case 'idle':
+      return 'Not run';
     default:
-      return 'Ready';
+      return 'Not run';
   }
 }
 

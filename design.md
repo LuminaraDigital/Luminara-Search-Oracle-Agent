@@ -9,8 +9,8 @@ Atmospheric dark visibility tool (Night Foundry register).
 
 ## Macrostructure family
 
-- Marketing pages: Workbench base
-  - Landing: Workbench + Visibility Probe (+ constellation Map/Diagram)
+- Marketing pages: one night sky, then the page
+  - Landing: full-viewport world (starfield + gold globe) with the claim centered. The four engines are labels on the limbs. The Visibility Probe is the next section, not a side card. No second hero system, no coverage-strip, no screenshot of the app chrome.
   - Pricing: Catalogue-within-Workbench
   - Why / How / AI: Narrative Workflow or Split Studio variants
 - App pages: util Workbench (tool chrome; atmosphere subtle only)
@@ -47,7 +47,7 @@ Ban on marketing: gradient wordmarks (`.gold-text`); glassmorphism panels; fake 
 ## Craft gates (shipping checklist)
 
 - The claim is the hero headline at display size. Brand sits in the nav and one eyebrow above the claim
-- Landing hero is cinematic underlay + claim column + Probe workbench (no FieldHero glow plate, no glass)
+- Landing hero is the world stage: claim centered on black sky, gold globe below, one gloss pill. The Probe sits in the next section (no FieldHero glow plate, no glass, no fixed overlay over copy)
 - Menu pages share MarketingCinematicStage + MarketingPageShell
 - One nav link set and one footer on every marketing page (MarketingChromeContext, built in App.tsx)
 - Font sizes from tokens use `text-[length:var(--token)]`. A bare `text-[var(--token)]` is parsed as a color and silently drops the size

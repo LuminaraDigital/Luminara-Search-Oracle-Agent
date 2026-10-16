@@ -121,6 +121,42 @@
   color: var(--color-ink);
 }
 
+/* One physical pill for the landing hero. Gold family only. */
+.mkt-cta-gloss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.4rem;
+  padding: 0.95rem 2rem;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  background: linear-gradient(180deg, #fff6d4 0%, #f4e2a6 16%, #d7b15a 74%, #bf953f 100%);
+  color: #0a0a0a;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow:
+    0 14px 36px rgba(191, 149, 63, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: transform var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out);
+}
+
+.mkt-cta-gloss:hover {
+  filter: brightness(1.06);
+}
+
+.mkt-cta-gloss:active {
+  transform: translateY(1px);
+}
+
+.mkt-cta-gloss:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
 /* Marketing type helpers: one eyebrow, one body size, one section rhythm. */
 .mkt-eyebrow {
   font-family: var(--font-mono);
@@ -163,7 +199,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mkt-cta-primary,
-  .mkt-cta-secondary {
+  .mkt-cta-secondary,
+  .mkt-cta-gloss {
     transition: none;
   }
 }

@@ -17,6 +17,8 @@ interface MarketingNavProps {
   primaryCta: { label: string; onClick: () => void };
   secondaryCta?: { label: string; onClick: () => void };
   trailing?: React.ReactNode;
+  /** Transparent over a full-bleed hero. Fills in after the page scrolls. */
+  overlay?: boolean;
 }
 
 /**
@@ -30,9 +32,34 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
   primaryCta,
   secondaryCta,
   trailing,
+  overlay = false,
 }) => {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const panelId = useId();
+  const navRef = React.useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!overlay) return;
+    const node = navRef.current;
+    let parent: HTMLElement | Window = window;
+    let el: HTMLElement | null = node?.parentElement ?? null;
+    while (el) {
+      const oy = getComputedStyle(el).overflowY;
+      if (oy === 'auto' || oy === 'scroll') {
+        parent = el;
+        break;
+      }
+      el = el.parentElement;
+    }
+    const onScroll = () => {
+      const y = parent === window ? window.scrollY : (parent as HTMLElement).scrollTop;
+      setScrolled(y > 12);
+    };
+    onScroll();
+    parent.addEventListener('scroll', onScroll, { passive: true });
+    return () => parent.removeEventListener('scroll', onScroll);
+  }, [overlay]);
 
   useEffect(() => {
     if (!open) return;
@@ -55,7 +82,12 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
 
   return (
     <nav
-      className="fixed z-50 left-0 right-0 top-0 border-b border-[var(--color-rule)] bg-[var(--color-paper)]"
+      ref={navRef}
+      className={`fixed z-50 left-0 right-0 top-0 border-b transition-colors duration-200 ${
+        !overlay || open || scrolled
+          ? 'border-[var(--color-rule)] bg-[var(--color-paper)]/95'
+          : 'border-transparent bg-transparent'
+      }`}
       style={{
         paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
         paddingLeft: 'max(0px, env(safe-area-inset-left, 0px))',
