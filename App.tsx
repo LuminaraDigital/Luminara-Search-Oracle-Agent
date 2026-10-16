@@ -61,7 +61,6 @@ const BusinessDNAView = lazyWithReload(() => import('./components/suite/Business
 const BrandMemoryView = lazyWithReload(() => import('./components/suite/BrandMemoryView').then(m => ({ default: m.BrandMemoryView })));
 const DashboardView = lazyWithReload(() => import('./components/suite/DashboardView').then(m => ({ default: m.DashboardView })));
 const IdeaScoutView = lazyWithReload(() => import('./components/suite/IdeaScoutView').then(m => ({ default: m.IdeaScoutView })));
-const MerchantLaunchpadView = lazyWithReload(() => import('./components/launchpad/MerchantLaunchpadView').then(m => ({ default: m.MerchantLaunchpadView })));
 const TrustCenterView = lazyWithReload(() => import('./components/trust/TrustCenterView').then(m => ({ default: m.TrustCenterView })));
 const VerifyReceiptView = lazyWithReload(() => import('./components/trust/VerifyReceiptView').then(m => ({ default: m.VerifyReceiptView })));
 const StressTestView = lazyWithReload(() => import('./components/suite/StressTestView').then(m => ({ default: m.StressTestView })));
@@ -1688,18 +1687,6 @@ const App: React.FC = () => {
         {/* VIEW: Luminara Intelligence Studio */}
         {view === AppView.NOTEBOOK && (
           <NotebookView dna={dna} />
-        )}
-
-        {/* VIEW: Oceania SMB Web3 Launchpad & Loyalty */}
-        {view === AppView.LAUNCHPAD && (
-          <MerchantLaunchpadView
-            onRunAudit={(host) => {
-              draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, host);
-              setAuditHandoff(null);
-              setTelegramAuditUrl(host);
-              setView(AppView.INSTANT_AUDIT);
-            }}
-          />
         )}
 
         {/* VIEW: Trust (domain verification + signed receipts) */}
