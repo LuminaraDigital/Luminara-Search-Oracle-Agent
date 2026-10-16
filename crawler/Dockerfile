@@ -27,14 +27,16 @@ RUN apt-get update && apt-get install -y \
 # Browser binaries live in a shared, world-readable path so the unprivileged runtime user can use them.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-COPY package.json ./
-RUN npm install --omit=dev
+# Install exactly the versions pinned in the lockfile so security fixes land in every build.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 # Install Patchright Chromium binaries
 RUN npx patchright install chromium || true
 RUN chmod -R a+rX /ms-playwright 2>/dev/null || true
 
-COPY server.mjs ssrf.mjs limits.mjs ./
+# Every local module server.mjs imports. Add new ones here or the container fails to start.
+COPY server.mjs ssrf.mjs limits.mjs actionSnapshot.mjs sessionStore.mjs ./
 
 # Run as the unprivileged `node` user (uid 1000). Chromium keeps --no-sandbox because user
 # namespaces are usually unavailable in containers; the container itself is the sandbox.
