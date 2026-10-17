@@ -139,7 +139,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
   // Community feed (0033): the cards this account shared, each with its vote count, and the votes it
   // cast. Who voted on its cards is not exported. Deleted with the account.
   const communityFeedCards = await q<Record<string, unknown>>(
-    `SELECT c.id, c.idea_id, c.idea_text, c.niche, c.status, c.shared_at,
+    `SELECT c.id, c.idea_id, c.idea_text, c.niche, c.card_json, c.status, c.utc_day, c.shared_at,
             (SELECT COUNT(*) FROM community_feed_votes v WHERE v.card_id = c.id) AS upvotes
        FROM community_feed_cards c WHERE c.account_id = ?`,
     accountId,

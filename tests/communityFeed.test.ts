@@ -22,6 +22,7 @@ const DAY = 24 * 60 * 60_000;
 const ALICE = 5550001;
 const BOB = 5550002;
 const CAROL = 5550003;
+const IDEA = 'Appointment reminders by text message for independent repair shops';
 
 function memoryKv() {
   const store = new Map<string, string>();
@@ -41,9 +42,9 @@ function memoryKv() {
   };
 }
 
-function makeEnv() {
+function makeEnv(options: { skipMigrations?: string[] } = {}) {
   const kv = memoryKv();
-  const db = createSqliteD1();
+  const db = createSqliteD1(options);
   const env = {
     ASSETS: {} as Env['ASSETS'],
     DB: db as D1Database,
@@ -72,16 +73,20 @@ function authHeaders(id: number): Record<string, string> {
   return { 'content-type': 'application/json', 'x-telegram-init-data': params.toString() };
 }
 
-function call(env: Env, path: string, method: string, opts: { tgId?: number; body?: unknown; query?: string; now?: number } = {}) {
+type CallOptions = { tgId?: number; body?: unknown; query?: string; now?: number; ip?: string };
+
+function call(env: Env, path: string, method: string, opts: CallOptions = {}) {
+  const headers: Record<string, string> = opts.tgId ? authHeaders(opts.tgId) : { 'content-type': 'application/json' };
+  if (opts.ip) headers['cf-connecting-ip'] = opts.ip;
   const request = new Request(`https://luminarasuite.com/api${path}${opts.query ?? ''}`, {
     method,
-    headers: opts.tgId ? authHeaders(opts.tgId) : { 'content-type': 'application/json' },
+    headers,
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   return handleIdeaScoutRoute(request, env, path, { now: () => opts.now ?? NOON });
 }
 
-const feed = (env: Env, query?: string) => call(env, '/idea-scout/feed', 'GET', { query });
+const feed = (env: Env, opts: CallOptions = {}) => call(env, '/idea-scout/feed', 'GET', opts);
 const share = (env: Env, tgId: number, ideaId: string, now?: number) => call(env, '/idea-scout/share', 'POST', { tgId, body: { ideaId }, now });
 const vote = (env: Env, tgId: number, cardId: string) => call(env, '/idea-scout/vote', 'POST', { tgId, body: { id: cardId } });
 
@@ -92,16 +97,15 @@ async function accountOf(env: Env, tgId: number): Promise<string> {
 
 let ideaSeq = 0;
 /** Stores an idea card the way POST /idea-scout does, owned by the Telegram user's account. */
-async function ownIdea(env: Env, db: SqliteD1, tgId: number): Promise<string> {
+async function ownIdea(env: Env, db: SqliteD1, tgId: number, cardJson?: string): Promise<string> {
   const id = `is_${String(++ideaSeq).padStart(16, '0')}`;
-  const idea = 'Appointment reminders by text message for independent repair shops';
-  const card = buildIdeaScoutCard({ idea, niche: 'Auto repair', snapshots: [] });
+  const card = cardJson ?? JSON.stringify(buildIdeaScoutCard({ idea: IDEA, niche: 'Auto repair', snapshots: [] }));
   db.sqlite
     .prepare(
       `INSERT INTO idea_scouts (id, account_id, idea_text, niche, competitor_urls_json, card_json, status, created_at)
        VALUES (?, ?, ?, 'Auto repair', '[]', ?, 'ready', ?)`,
     )
-    .run(id, await accountOf(env, tgId), idea, JSON.stringify(card), NOON);
+    .run(id, await accountOf(env, tgId), IDEA, card, NOON);
   return id;
 }
 
@@ -118,16 +122,33 @@ const votes = (db: SqliteD1) =>
 const cards = (db: SqliteD1) =>
   db.sqlite.prepare(`SELECT id, account_id FROM community_feed_cards ORDER BY id`).all().map((r: object) => ({ ...r }));
 
-/** Every key and every scalar value in a JSON body, as strings. */
-function keysAndValues(value: unknown, out: string[] = []): string[] {
-  if (Array.isArray(value)) value.forEach((v) => keysAndValues(v, out));
+/** Every key in a JSON body, at any depth. */
+function keysOf(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) value.forEach((v) => keysOf(v, out));
   else if (value && typeof value === 'object') {
     for (const [k, v] of Object.entries(value)) {
       out.push(k);
-      keysAndValues(v, out);
+      keysOf(v, out);
     }
-  } else if (value != null) out.push(String(value));
+  }
   return out;
+}
+
+/** The same database, with `change` applied to every statement whose SQL matches `pattern`. */
+function withStatements(db: SqliteD1, pattern: RegExp, change: (stmt: any) => object): D1Database {
+  const wrap = (stmt: any, sql: string): any => {
+    const bound = { ...stmt, bind: (...args: unknown[]) => wrap(stmt.bind(...args), sql) };
+    return pattern.test(sql) ? { ...bound, ...change(stmt) } : bound;
+  };
+  return { ...db, prepare: (sql: string) => wrap(db.prepare(sql), sql) } as unknown as D1Database;
+}
+
+/** Any statement whose SQL matches `pattern` fails when it runs, alone or inside a batch. */
+function failingOn(db: SqliteD1, pattern: RegExp): D1Database {
+  const fail = () => {
+    throw new Error('D1_ERROR: Network connection lost.');
+  };
+  return withStatements(db, pattern, () => ({ execute: fail, run: async () => fail() }));
 }
 
 describe('the community feed in D1', () => {
@@ -139,22 +160,34 @@ describe('the community feed in D1', () => {
     expect(await res.json()).toEqual({ ok: true, cards: [] });
   });
 
-  it('a feed response contains no account id, and the public id is the card\'s own, never the idea\'s', async () => {
+  it('no feed response, success or refusal, contains an account id or an idea id', async () => {
     const { env, db } = makeEnv();
-    const ideaId = await ownIdea(env, db, ALICE);
-    const shared = await share(env, ALICE, ideaId);
-    const shareBody = (await shared.json()) as { id: string };
-    const voted = await vote(env, BOB, shareBody.id);
-    const listed = await feed(env);
-    const feedBody = (await listed.json()) as { cards: Array<{ id: string; upvotes: number }> };
+    const bodies: string[] = [];
+    const seen = async (pending: Promise<Response>) => {
+      const res = await pending;
+      bodies.push(await res.clone().text());
+      return res;
+    };
 
-    expect(shareBody.id).toMatch(/^cf_[a-f0-9]{16}$/);
-    expect(feedBody.cards).toHaveLength(1);
-    expect(feedBody.cards[0]).toMatchObject({ id: shareBody.id, upvotes: 1 });
+    const ideaId = await ownIdea(env, db, ALICE);
+    const { id: cardId } = (await (await seen(share(env, ALICE, ideaId))).json()) as { id: string };
+    await seen(share(env, ALICE, ideaId));
+    await seen(share(env, BOB, ideaId));
+    for (let i = 1; i < FEED_SHARES_PER_UTC_DAY; i++) await seen(share(env, ALICE, await ownIdea(env, db, ALICE)));
+    expect((await seen(share(env, ALICE, await ownIdea(env, db, ALICE)))).status).toBe(429);
+    await seen(vote(env, BOB, cardId));
+    await seen(vote(env, BOB, cardId));
+    await seen(vote(env, BOB, ideaId));
+    await seen(call(env, '/idea-scout/vote', 'POST', { body: { id: cardId } }));
+    await seen(feed(env));
+    await seen(feed(env, { tgId: ALICE }));
+    await seen(feed(env, { tgId: BOB, query: '?sort=top' }));
+
+    expect(cardId).toMatch(/^cf_[a-f0-9]{16}$/);
     const forbidden = [await accountOf(env, ALICE), await accountOf(env, BOB), ideaId];
-    for (const body of [shareBody, await voted.json(), feedBody]) {
-      const seen = keysAndValues(body);
-      expect(seen.filter((s) => /account/i.test(s) || forbidden.includes(s))).toEqual([]);
+    for (const text of bodies) {
+      for (const value of forbidden) expect(text, text).not.toContain(value);
+      expect(keysOf(JSON.parse(text)).filter((k) => /account|owner|user/i.test(k)), text).toEqual([]);
     }
   });
 
@@ -190,9 +223,9 @@ describe('the community feed in D1', () => {
   it('a vote names a visible feed card, nothing else', async () => {
     const { env, db } = makeEnv();
     const ideaId = await ownIdea(env, db, ALICE);
-    await share(env, ALICE, ideaId);
-    for (const id of [ideaId, 'cf_0000000000000000', '']) {
-      expect((await vote(env, BOB, id)).status, id).toBe(404);
+    const { id: cardId } = (await (await share(env, ALICE, ideaId)).json()) as { id: string };
+    for (const id of [ideaId, 'cf_0000000000000000', '', [cardId]]) {
+      expect((await call(env, '/idea-scout/vote', 'POST', { tgId: BOB, body: { id } })).status, JSON.stringify(id)).toBe(404);
     }
     expect(count(db, 'community_feed_votes')).toBe(0);
   });
@@ -201,13 +234,26 @@ describe('the community feed in D1', () => {
     const { env, db } = makeEnv();
     const ideas: string[] = [];
     for (let i = 0; i < FEED_SHARES_PER_UTC_DAY + 2; i++) ideas.push(await ownIdea(env, db, ALICE));
+    // Hold every share at its idea lookup until all of them are there, so they reach the insert together.
+    let waiting = 0;
+    let release!: () => void;
+    const together = new Promise<void>((done) => (release = done));
+    env.DB = withStatements(db, /SELECT card_json FROM idea_scouts/, (stmt) => ({
+      first: async (column?: string) => {
+        if (++waiting === ideas.length) release();
+        await together;
+        return stmt.first(column);
+      },
+    }));
+
     const results = await Promise.all(ideas.map((id) => share(env, ALICE, id)));
-    const statuses = results.map((r) => r.status).sort();
+    const statuses = results.map((r) => r.status).sort((a, b) => a - b);
     expect(statuses).toEqual([...Array(FEED_SHARES_PER_UTC_DAY).fill(200), 429, 429]);
     const refused = await results.find((r) => r.status === 429)!.json();
     expect(refused).toMatchObject({ ok: false, code: 'SHARE_DAILY_CAP', limit: FEED_SHARES_PER_UTC_DAY });
     expect(count(db, 'community_feed_cards')).toBe(FEED_SHARES_PER_UTC_DAY);
 
+    env.DB = db;
     const unshared = ideas.find((id) => !db.sqlite.prepare(`SELECT 1 FROM community_feed_cards WHERE idea_id = ?`).get(id))!;
     expect((await share(env, ALICE, unshared, NOON + DAY)).status).toBe(200);
   });
@@ -225,26 +271,81 @@ describe('the community feed in D1', () => {
     expect(count(db, 'community_feed_votes')).toBe(0);
   });
 
+  it('the public card is the problem, prompts and hypotheses: no competitor URL or scraped page text', async () => {
+    const { env, db } = makeEnv();
+    const withCompetitor = buildIdeaScoutCard({
+      idea: IDEA,
+      niche: 'Auto repair',
+      snapshots: [{
+        url: 'https://acme-tools.com/pricing?token=private',
+        hostname: 'acme-tools.com',
+        title: 'Acme pricing page',
+        metaDescription: 'Scraped description',
+        headings: ['Scraped heading'],
+        fetchStatus: 'fetched',
+      }],
+    });
+    expect((await share(env, ALICE, await ownIdea(env, db, ALICE, JSON.stringify(withCompetitor)))).status).toBe(200);
+
+    const text = await (await feed(env)).text();
+    const body = JSON.parse(text) as { cards: Array<{ card: Record<string, unknown> }> };
+    expect(Object.keys(body.cards[0].card).sort()).toEqual(['contentBets', 'problem', 'whoAsksAi']);
+    for (const leaked of ['acme-tools', 'token=private', 'Scraped', 'Acme pricing']) expect(text).not.toContain(leaked);
+    expect(text).not.toMatch(/\d+(?:\.\d+)?\s*%/);
+    expect(text).not.toContain(String.fromCharCode(0x2014));
+  });
+
+  it('a stored card that fails the honesty checks is neither shared nor shown', async () => {
+    const { env, db } = makeEnv();
+    const percent = JSON.stringify({ ...buildIdeaScoutCard({ idea: IDEA, niche: null, snapshots: [] }), problem: 'Repair shops lose 40% of bookings to no-shows' });
+    const res = await share(env, ALICE, await ownIdea(env, db, ALICE, percent));
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { code: string }).code).toBe('CARD_REJECTED');
+    expect(count(db, 'community_feed_cards')).toBe(0);
+
+    db.sqlite
+      .prepare(
+        `INSERT INTO community_feed_cards (id, account_id, idea_id, idea_text, niche, card_json, utc_day, shared_at)
+         VALUES ('cf_00000000000000aa', 'acct_other', 'is_00000000000000aa', 'An idea', NULL, ?, '2026-10-11', 1)`,
+      )
+      .run(percent);
+    expect(await (await feed(env)).json()).toEqual({ ok: true, cards: [] });
+  });
+
   it('sort=top orders by votes, the default by newest first', async () => {
     const { env, db } = makeEnv();
     const older = await sharedCard(env, db, ALICE);
     const newer = (await (await share(env, BOB, await ownIdea(env, db, BOB), NOON + 1)).json()) as { id: string };
     await vote(env, CAROL, older);
-    const ids = async (query?: string) => ((await (await feed(env, query)).json()) as { cards: Array<{ id: string }> }).cards.map((c) => c.id);
+    const ids = async (query?: string) => ((await (await feed(env, { query })).json()) as { cards: Array<{ id: string }> }).cards.map((c) => c.id);
     expect(await ids()).toEqual([newer.id, older]);
     expect(await ids('?sort=top')).toEqual([older, newer.id]);
+  });
+
+  it.each([
+    ['/idea-scout/vote', 30, { id: 'cf_0000000000000000' }],
+    ['/idea-scout/share', 10, { ideaId: 'is_ffffffffffffffff' }],
+  ] as const)('%s allows %i a minute per account, from any address', async (path, limit, body) => {
+    const { env } = makeEnv();
+    for (let i = 0; i < limit; i++) {
+      expect((await call(env, path, 'POST', { tgId: ALICE, body, ip: `10.0.0.${i + 1}` })).status).not.toBe(429);
+    }
+    const over = await call(env, path, 'POST', { tgId: ALICE, body, ip: '10.0.1.1' });
+    expect(over.status).toBe(429);
+    expect(((await over.json()) as { code: string }).code).toBe('RATE_LIMITED');
+    expect((await call(env, path, 'POST', { tgId: BOB, body, ip: '10.0.1.1' })).status).not.toBe(429);
   });
 
   it.each([
     ['/idea-scout/feed', 'GET', 60, undefined],
     ['/idea-scout/vote', 'POST', 30, { id: 'cf_0000000000000000' }],
     ['/idea-scout/share', 'POST', 10, { ideaId: 'is_ffffffffffffffff' }],
-  ] as const)('%s %s is rate limited at %i a minute', async (path, method, limit, body) => {
+  ] as const)('%s %s allows %i a minute per address, across accounts', async (path, method, limit, body) => {
     const { env } = makeEnv();
     for (let i = 0; i < limit; i++) {
-      expect((await call(env, path, method, { tgId: ALICE, body })).status).not.toBe(429);
+      expect((await call(env, path, method, { tgId: 6_000_000 + i, body, ip: '10.9.9.9' })).status).not.toBe(429);
     }
-    const over = await call(env, path, method, { tgId: ALICE, body });
+    const over = await call(env, path, method, { tgId: 7_000_000, body, ip: '10.9.9.9' });
     expect(over.status).toBe(429);
     expect(((await over.json()) as { code: string }).code).toBe('RATE_LIMITED');
   });
@@ -259,11 +360,13 @@ describe('the feed and the account behind it', () => {
   it('deleting an account removes its cards, its votes, and other accounts\' votes on its cards', async () => {
     const { env, db } = makeEnv();
     const a = await sharedCard(env, db, ALICE);
+    const hidden = await sharedCard(env, db, ALICE);
     const b = await sharedCard(env, db, BOB);
     const c = await sharedCard(env, db, CAROL);
-    for (const [who, card] of [[ALICE, b], [ALICE, c], [BOB, a], [BOB, c], [CAROL, a]] as const) {
+    for (const [who, card] of [[ALICE, b], [ALICE, c], [BOB, a], [BOB, hidden], [BOB, c], [CAROL, a]] as const) {
       expect((await vote(env, who, card)).status).toBe(200);
     }
+    db.sqlite.prepare(`UPDATE community_feed_cards SET status = 'hidden' WHERE id = ?`).run(hidden);
 
     expect((await createPrivacyJob(env, await userOf(env, ALICE), 'delete')).status).toBe(200);
 
@@ -289,6 +392,7 @@ describe('the feed and the account behind it', () => {
     const a = await sharedCard(env, db, ALICE);
     const b = await sharedCard(env, db, BOB);
     await vote(env, BOB, a);
+    await vote(env, CAROL, a);
     await vote(env, ALICE, b);
 
     const exported = await createPrivacyJob(env, await userOf(env, ALICE), 'export');
@@ -296,26 +400,33 @@ describe('the feed and the account behind it', () => {
     const raw = (await kv.get(`privacy:export:${jobId}`)) as string;
     const body = JSON.parse(raw);
     expect(body.processors).toEqual(expect.arrayContaining(['community_feed_cards', 'community_feed_votes']));
-    expect(body.communityFeedCards).toEqual([expect.objectContaining({ id: a, status: 'visible', upvotes: 1 })]);
+    expect(body.communityFeedCards).toEqual([
+      expect.objectContaining({ id: a, status: 'visible', utc_day: '2026-10-11', upvotes: 2, card_json: expect.any(String) }),
+    ]);
     expect(body.communityFeedVotes).toEqual([{ card_id: b, created_at: NOON }]);
-    expect(raw).not.toContain(`"${await accountOf(env, BOB)}"`);
+    for (const voter of [BOB, CAROL]) expect(raw).not.toContain(await accountOf(env, voter));
   });
+
+  const insertCard = (db: SqliteD1, id: string, accountId: string, ideaId: string) =>
+    db.sqlite
+      .prepare(
+        `INSERT INTO community_feed_cards (id, account_id, idea_id, idea_text, niche, card_json, utc_day, shared_at)
+         VALUES (?, ?, ?, 'An idea', NULL, '{}', '2026-10-11', 1)`,
+      )
+      .run(id, accountId, ideaId);
+  const insertVote = (db: SqliteD1, cardId: string, accountId: string) =>
+    db.sqlite.prepare(`INSERT INTO community_feed_votes (card_id, account_id, created_at) VALUES (?, ?, 1)`).run(cardId, accountId);
 
   it('cards and votes follow the surviving account on a link; a collision keeps the survivor\'s row', async () => {
     const { env, kv, db } = makeEnv();
-    const insertCard = db.sqlite.prepare(
-      `INSERT INTO community_feed_cards (id, account_id, idea_id, idea_text, niche, card_json, utc_day, shared_at)
-       VALUES (?, ?, ?, 'An idea', NULL, '{}', '2026-10-11', 1)`,
-    );
-    const insertVote = db.sqlite.prepare(`INSERT INTO community_feed_votes (card_id, account_id, created_at) VALUES (?, ?, 1)`);
-    insertCard.run('cf_tg_only', '777', 'is_a');
-    insertCard.run('cf_tg_clash', '777', 'is_same');
-    insertCard.run('cf_fb_clash', 'fb:uid-1', 'is_same');
-    insertCard.run('cf_other', 'acct_other', 'is_b');
-    insertVote.run('cf_other', '777');
-    insertVote.run('cf_other', 'fb:uid-1');
-    insertVote.run('cf_fb_clash', '777');
-    insertVote.run('cf_tg_clash', 'acct_other');
+    insertCard(db, 'cf_tg_only', '777', 'is_a');
+    insertCard(db, 'cf_tg_clash', '777', 'is_same');
+    insertCard(db, 'cf_fb_clash', 'fb:uid-1', 'is_same');
+    insertCard(db, 'cf_other', 'acct_other', 'is_b');
+    insertVote(db, 'cf_other', '777');
+    insertVote(db, 'cf_other', 'fb:uid-1');
+    insertVote(db, 'cf_fb_clash', '777');
+    insertVote(db, 'cf_tg_clash', 'acct_other');
 
     // The web account holds the paid plan, so it is the one that survives.
     await kv.put('sub:fb:uid-1', JSON.stringify({ plan: 'starter', expiresAt: Date.now() + DAY }));
@@ -332,6 +443,38 @@ describe('the feed and the account behind it', () => {
       { card_id: 'cf_other', account_id: 'fb:uid-1' },
     ]);
   });
+
+  it('when the Telegram account is the one kept, the web account\'s cards and votes move to it', async () => {
+    const { env, db } = makeEnv();
+    insertCard(db, 'cf_fb_only', 'fb:uid-2', 'is_c');
+    insertCard(db, 'cf_other', 'acct_other', 'is_d');
+    insertVote(db, 'cf_other', 'fb:uid-2');
+
+    // Neither side is paid, and the Telegram row is written first, so it is the older and survives.
+    const linked = await linkTelegramAndFirebase(env, '778', 'uid-2');
+    expect(linked.accountId).toBe('778');
+
+    expect(cards(db)).toEqual([
+      { id: 'cf_fb_only', account_id: '778' },
+      { id: 'cf_other', account_id: 'acct_other' },
+    ]);
+    expect(votes(db)).toEqual([{ card_id: 'cf_other', account_id: '778' }]);
+  });
+});
+
+describe('a database without migration 0033', () => {
+  it('the feed routes say the migration is missing; export, delete and link still work', async () => {
+    const { env, db } = makeEnv({ skipMigrations: ['0033'] });
+    const ideaId = await ownIdea(env, db, ALICE);
+    for (const res of [await feed(env), await share(env, ALICE, ideaId), await vote(env, BOB, 'cf_0000000000000000')]) {
+      expect(res.status).toBe(503);
+      expect(((await res.json()) as { code: string }).code).toBe('MIGRATION_REQUIRED');
+    }
+    const alice = { id: String(ALICE), accountId: await accountOf(env, ALICE), source: 'telegram' } as HostedIdentity;
+    expect((await createPrivacyJob(env, alice, 'export')).status).toBe(200);
+    expect((await createPrivacyJob(env, alice, 'delete')).status).toBe(200);
+    expect((await linkTelegramAndFirebase(env, '779', 'uid-3')).accountId).toBe('779');
+  });
 });
 
 describe('the release checks know the tables', () => {
@@ -342,17 +485,3 @@ describe('the release checks know the tables', () => {
     expect(source).toContain("'community_feed_votes'");
   });
 });
-
-/** The same database, except that any statement whose SQL matches `pattern` fails when it runs. */
-function failingOn(db: SqliteD1, pattern: RegExp): D1Database {
-  const fail = (sql: string) => {
-    if (pattern.test(sql)) throw new Error('D1_ERROR: Network connection lost.');
-  };
-  const wrap = (stmt: any, sql: string): any => ({
-    ...stmt,
-    bind: (...args: unknown[]) => wrap(stmt.bind(...args), sql),
-    execute: () => (fail(sql), stmt.execute()),
-    run: async () => (fail(sql), stmt.run()),
-  });
-  return { ...db, prepare: (sql: string) => wrap(db.prepare(sql), sql) } as unknown as D1Database;
-}

@@ -899,6 +899,7 @@ CREATE INDEX IF NOT EXISTS idx_community_feed_votes_account ON community_feed_vo
 - `status` exists so a reported card can be hidden without deleting the row (section 14.6).
 - Deleting an account deletes every vote on its cards, then its own votes, then its cards, in that order in one batch. Cards first would leave the votes on them with nothing to find them by.
 - On account link, cards and votes move to the surviving account; a `(account_id, idea_id)` or `(card_id, account_id)` collision keeps the surviving account's row.
+- As built (draft PR #139), from review: the migration is `0033_community_feed.sql`. The feed shows a card's problem, prompts and hypotheses; its competitor URLs and scraped page titles and headings stay out, because a URL can carry a query token and the text is someone else's page. Links in the founder's own text still wait for 14.6's allow-list. Share checks ownership and the daily cap (5) inside the insert. The old KV value `idea_scout:community_feed` is not migrated, since it holds sharers' account ids and cards shared by accounts that did not own them; nothing reads it after this change. **Owner step:** delete that key from `LUMINARA_KV` in staging and production. Until then, export and delete do not reach it.
 
 **C. Release safety and unblockers.**
 

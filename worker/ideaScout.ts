@@ -684,12 +684,15 @@ const FEED_LIMITS = {
   share: { action: 'idea_feed_share', limitPerKey: 10, windowSec: 60 },
 };
 
-/** What anyone reading the feed sees of a card. */
+/**
+ * What anyone reading the feed sees of a card. The card's competitor snapshots stay out: their URLs
+ * can carry query tokens, and their titles and headings are text scraped from someone else's page.
+ */
 export interface CommunityFeedCard {
   id: string;
   ideaText: string;
   niche: string | null;
-  card: IdeaScoutCard;
+  card: Pick<IdeaScoutCard, 'problem' | 'whoAsksAi' | 'contentBets'>;
   upvotes: number;
   sharedAt: number;
 }
@@ -725,6 +728,8 @@ async function readFeedBody(request: Request): Promise<Record<string, unknown> |
 export async function getCommunityFeed(request: Request, env: Env): Promise<Response> {
   const blocked = await feedGate(request, env, FEED_LIMITS.read, null);
   if (blocked) return blocked;
+  // shortcut: sort=top counts the votes of every visible card before the limit; revisit if the feed
+  // grows past a few thousand cards (the plan rules out a counter column).
   const order = new URL(request.url).searchParams.get('sort') === 'top' ? 'upvotes DESC, c.shared_at DESC' : 'c.shared_at DESC';
   try {
     const rows = await env.DB!.prepare(
@@ -746,7 +751,14 @@ export async function getCommunityFeed(request: Request, env: Env): Promise<Resp
     for (const row of rows.results || []) {
       const card = cardFromRow(row.card_json);
       if (!card) continue;
-      cards.push({ id: row.id, ideaText: row.idea_text, niche: row.niche, card, upvotes: Number(row.upvotes), sharedAt: row.shared_at });
+      cards.push({
+        id: row.id,
+        ideaText: row.idea_text,
+        niche: row.niche,
+        card: { problem: card.problem, whoAsksAi: card.whoAsksAi, contentBets: card.contentBets },
+        upvotes: Number(row.upvotes),
+        sharedAt: row.shared_at,
+      });
     }
     return json({ ok: true, cards });
   } catch (err) {
@@ -759,33 +771,35 @@ export async function shareIdeaToFeed(request: Request, env: Env, accountId: str
   if (blocked) return blocked;
   const body = await readFeedBody(request);
   if (body instanceof Response) return body;
-  const ideaId = String(body.ideaId ?? body.id ?? '').trim();
+  const raw = body.ideaId ?? body.id;
+  const ideaId = typeof raw === 'string' ? raw.trim() : '';
   const unknown = json({ ok: false, error: 'Unknown idea card.', code: 'NOT_FOUND' }, 404);
   if (!IDEA_ID_RE.test(ideaId)) return unknown;
   try {
     // Only the caller's own card: another account's id finds nothing and adds nothing.
     const idea = await env.DB!.prepare(
-      `SELECT idea_text, niche, card_json FROM idea_scouts WHERE id = ? AND account_id = ?`,
-    ).bind(ideaId, accountId).first<{ idea_text: string; niche: string | null; card_json: string }>();
+      `SELECT card_json FROM idea_scouts WHERE id = ? AND account_id = ?`,
+    ).bind(ideaId, accountId).first<{ card_json: string }>();
     if (!idea) return unknown;
     const card = cardFromRow(idea.card_json);
     if (!card) return json({ ok: false, error: 'Stored card failed honesty checks.', code: 'CARD_REJECTED' }, 500);
     const day = utcDay(now);
-    // The daily cap is counted inside the insert, so shares sent at the same moment cannot pass it.
+    // Ownership and the daily cap are checked again inside the insert, so neither shares sent at the
+    // same moment nor an account deleted after the lookup above can get a card past them.
     const inserted = await env.DB!.prepare(
       `INSERT INTO community_feed_cards (id, account_id, idea_id, idea_text, niche, card_json, status, utc_day, shared_at)
-       SELECT ?, ?, ?, ?, ?, ?, 'visible', ?, ?
-       WHERE (SELECT COUNT(*) FROM community_feed_cards WHERE account_id = ? AND utc_day = ?) < ?
+       SELECT ?, account_id, id, idea_text, niche, ?, 'visible', ?, ?
+       FROM idea_scouts
+       WHERE id = ? AND account_id = ?
+         AND (SELECT COUNT(*) FROM community_feed_cards WHERE account_id = ? AND utc_day = ?) < ?
        ON CONFLICT DO NOTHING`,
     ).bind(
       newId('cf'),
-      accountId,
-      ideaId,
-      idea.idea_text,
-      idea.niche,
       JSON.stringify(card),
       day,
       now,
+      ideaId,
+      accountId,
       accountId,
       day,
       FEED_SHARES_PER_UTC_DAY,
@@ -812,7 +826,7 @@ export async function voteCommunityIdea(request: Request, env: Env, accountId: s
   if (blocked) return blocked;
   const body = await readFeedBody(request);
   if (body instanceof Response) return body;
-  const cardId = String(body.id ?? '').trim();
+  const cardId = typeof body.id === 'string' ? body.id.trim() : '';
   const unknown = json({ ok: false, error: 'Unknown community idea card.', code: 'NOT_FOUND' }, 404);
   if (!FEED_CARD_ID_RE.test(cardId)) return unknown;
   try {
