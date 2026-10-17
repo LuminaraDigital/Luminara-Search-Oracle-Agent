@@ -16,9 +16,9 @@ export const LIVE_SAMPLE_SNAPSHOT = {
   focus: 'AEO' as const,
   /** ISO date of the crawl collection (UTC calendar day). */
   measuredAt: '2026-10-02',
-  label: 'Live crawl',
+  label: 'Example report (snapshot from 2 Oct 2026)',
   verdict:
-    'Live crawl on 2026-10-02: robots.txt and llms.txt are present on luminarasuite.com. Google, AI Overviews, ChatGPT, and Perplexity were not measured in this snapshot. Run Instant Audit for engine evidence.',
+    'Example snapshot from 2 Oct 2026: robots.txt and llms.txt are present on luminarasuite.com. Google, AI Overviews, ChatGPT, and Perplexity were not measured in this snapshot. Run Instant Audit for engine evidence.',
   shipAction:
     'Keep llms.txt current, then run Instant Audit to measure answer-engine presence and pick one fix.',
   rows: [
@@ -26,7 +26,7 @@ export const LIVE_SAMPLE_SNAPSHOT = {
       id: 'crawl_readiness',
       label: 'Crawl readiness',
       status: 'measured' as const,
-      note: 'Live crawl · robots.txt found; llms.txt found. Collected 2026-10-02.',
+      note: 'Example snapshot · robots.txt found; llms.txt found. Collected 2 Oct 2026.',
     },
     {
       id: 'web_serp',

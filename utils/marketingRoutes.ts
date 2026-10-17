@@ -28,6 +28,7 @@ const PATH_ALIASES: Record<string, AppView> = {
   pricing: AppView.PRICING,
   methodology: AppView.METHODOLOGY,
   'sample-report': AppView.SAMPLE_REPORT,
+  dashboard: AppView.DASHBOARD,
   sample: AppView.SAMPLE_REPORT,
   privacy: AppView.PRIVACY,
   'privacy-policy': AppView.PRIVACY,

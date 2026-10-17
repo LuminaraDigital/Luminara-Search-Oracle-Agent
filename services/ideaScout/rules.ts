@@ -157,6 +157,10 @@ export function parseIdeaScoutRequest(body: unknown):
       };
     }
   }
+  const ideaRaw = typeof rec.idea === 'string' ? rec.idea.replace(/\s+/g, ' ').trim() : '';
+  if (!ideaRaw) {
+    return { ok: false, error: IDEA_FIELD_EMPTY, code: 'BAD_IDEA' };
+  }
   const idea = readText(rec.idea, MAX_IDEA_CHARS);
   if (!idea || idea.length < MIN_IDEA_CHARS) {
     return {
@@ -190,8 +194,11 @@ export function parseIdeaScoutRequest(body: unknown):
   };
 }
 
+export const IDEA_FIELD_EMPTY =
+  'The idea field is empty. Write what you want to offer before you build a card.';
+
 export const IDEA_SCOUT_SIGN_IN =
-  'Sign in with Telegram or your web account. Anonymous browsers do not use hosted keys.';
+  'Sign in to build an idea card. A free account saves the card and includes 2 hosted cards a day.';
 
 /** Validate first, then refuse a guest. Neither path calls the API. */
 export function gateIdeaScoutSubmit(

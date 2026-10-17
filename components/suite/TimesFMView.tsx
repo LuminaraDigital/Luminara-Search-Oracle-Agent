@@ -361,7 +361,7 @@ export const TimesFMView: React.FC<TimesFMViewProps> = ({ dna, initialData, init
           {dna && (
             <div className="glass-morphism rounded-xl px-3.5 py-2 border border-success-500/30 flex items-center gap-2.5 bg-success-950/20 text-xs">
               <span className="w-2 h-2 rounded-full bg-success-400 shadow-sm shadow-success-500/30"></span>
-              <span className="text-gray-300">DNA Linked: <strong className="text-white">{dna.name}</strong></span>
+              <span className="text-gray-300">Business profile: <strong className="text-white">{dna.name}</strong></span>
             </div>
           )}
 

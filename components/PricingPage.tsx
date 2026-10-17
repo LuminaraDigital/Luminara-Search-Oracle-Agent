@@ -10,8 +10,8 @@ import React, { useEffect } from 'react';
 import { getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
-import { TELEGRAM_MINI_APP_URL, isTonAvailable } from './paywall/paymentOptions';
-import { PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './paywall/planCopy';
+import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
+import { CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
 
 export { pricingTiers };
 
@@ -41,6 +41,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
   // TON is paid on the web with a connected wallet, never inside Telegram, and only while the
   // Worker reports that checkout open. Until then this page names Stars alone.
   const tonOpen = !inTelegram && isTonAvailable(getServerHealthSync());
+  const cardOpen = !inTelegram && isStripeCheckoutAvailable(getServerHealthSync(), false);
   const payLine = tonOpen
     ? 'Pay with Telegram Stars inside the Mini App, or with TON on the web.'
     : 'Pay with Telegram Stars inside the Mini App.';
@@ -74,8 +75,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         lede="Free covers Sample scouts and a daily hosted Instant Audit allowance after you create an account. Starter is web audits only. Growth adds IDE access and shareable reports. Agency adds API access and client workspaces."
       />
       <p className="lx-enter-rise lx-d4 mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
-        Every paid plan runs 30 days. {payLine} USD amounts are list prices; card checkout is available on request
-        during closed beta.
+        {CHECKOUT_TERM_LINE} {payLine} {TELEGRAM_STARS_HANDOFF}
       </p>
 
       <section aria-labelledby="plans-heading" className="lx-enter-rise lx-d5 mt-16 sm:mt-20">
@@ -108,14 +108,14 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                     tier.highlight ? 'lx-gold-text' : 'text-[var(--color-ink)]'
                   }`}
                 >
-                  {inTelegram ? tier.stars : tier.priceLabel}
+                  {cardOpen ? tier.priceLabel : tier.stars}
                 </p>
                 <p className="mt-3 text-[13px] text-[var(--color-ink-2)]">
-                  {inTelegram
-                    ? `30 days · list ${tier.priceLabel}`
+                  {cardOpen
+                    ? `or ${tier.stars} in Telegram`
                     : tonOpen
-                      ? `or ${tier.stars} in Telegram · ${tier.ton} on TON`
-                      : `or ${tier.stars} in Telegram`}
+                      ? `30 days · or ${tier.ton} on the web`
+                      : '30 days'}
                 </p>
                 <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">{tier.blurb}</p>
                 <ul className="m-0 mt-7 flex-1 list-none space-y-3 border-t p-0 pt-6 lx-hairline">
@@ -143,7 +143,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                   }
                   className={`lx-btn mt-9 w-full ${tier.highlight ? 'lx-btn-gold' : 'lx-btn-ghost'}`}
                 >
-                  Subscribe to {title}
+                  {cardOpen ? `Pay ${tier.priceLabel} by card` : starsPayLabel(tier.stars, inTelegram)}
                 </button>
               </article>
             );
@@ -191,17 +191,12 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
             How payment <span className="italic lx-gold-text pr-[0.08em]">works.</span>
           </h2>
           <p className="lx-lede mt-6">
-            Stars checkout runs inside the Luminara Mini App in Telegram.{tonOpen ? ' TON checkout runs here on the web, with a connected wallet.' : ''} On the web, the payment panel
-            opens Telegram for you, or takes a license key.
-          </p>
-          <p className="mt-5 leading-relaxed text-[var(--color-ink-2)]">
-            Card checkout is available on request during closed beta: for card payments or corporate invoicing,
-            email support@luminarasuite.com.
+            {TELEGRAM_STARS_HANDOFF} {payLine}{tonOpen ? ' TON checkout runs on this page with a connected wallet.' : ''} A license key, if you have one, is entered in the payment panel.
           </p>
         </div>
         <div className="min-w-0 lg:col-span-7" data-reveal>
           <p className="text-[15px] leading-relaxed text-[var(--color-ink)]">
-            Open the Mini App to pay with Telegram Stars.{tonOpen ? ' TON is paid here on the web, from the payment panel.' : ''}
+            {TELEGRAM_STARS_HANDOFF}{tonOpen ? ' TON is paid on this page, from the payment panel.' : ''}
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <a href={TELEGRAM_MINI_APP_URL} {...miniAppLinkProps} className="lx-btn lx-btn-ghost">
@@ -213,7 +208,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           </div>
           <div className="mt-8">{inTelegram ? <TelegramAccountPanel /> : <TelegramAccountPanel compact />}</div>
           <p className="mt-6 text-[13px] leading-relaxed text-[var(--color-ink-2)]">
-            {payLine} Plans run for 30 days. Plan limits apply per account. Credit card checkout is available on request during closed beta.
+            {CHECKOUT_TERM_LINE} {payLine} Plan limits apply per account.
           </p>
         </div>
       </section>

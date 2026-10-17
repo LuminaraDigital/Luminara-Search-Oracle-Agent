@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { TonConnectButton, useTonWallet } from '@tonconnect/ui-react';
 import { isInTelegram, getTelegramUserUnsafe, payWithStars, haptic } from '../../services/telegram/tma';
 import { telegramAuth, createStarsInvoice, activateLicenseKey, fetchQuotaStatus, getServerHealthSync, type TelegramSession } from '../../services/apiClient';
-import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
+import { TELEGRAM_MINI_APP_URL, isTonAvailable } from '../paywall/paymentOptions';
+import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../paywall/planCopy';
 
 interface Props {
   compact?: boolean;
@@ -22,6 +23,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
   const wallet = useTonWallet();
   const plans = getServerHealthSync().plans ?? {};
   const inTg = isInTelegram();
+  const tonOpen = !inTg && isTonAvailable(getServerHealthSync());
 
   const refresh = async () => {
     try {
@@ -102,7 +104,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       <div className="rounded-xl bg-[var(--color-paper-2)] border border-[var(--color-rule)] p-5 space-y-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-gold">Telegram</p>
         <p className="text-xs text-gray-400 leading-relaxed">
-          Pay with Telegram Stars inside the Mini App. Card checkout is available on request.
+          {TELEGRAM_STARS_HANDOFF} {CHECKOUT_TERM_LINE}
         </p>
         <p className="text-xs text-gray-400 leading-relaxed">
           Link Telegram and web account - shares subscription. Open the Mini App, sign in there, and confirm the link. Signing in does not merge plans by itself.
@@ -116,7 +118,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
           Open Mini App in Telegram
         </a>
         <p className="text-[10px] font-mono text-gray-500 break-all">{TELEGRAM_MINI_APP_URL}</p>
-        <TonConnectButton />
+        {tonOpen && <TonConnectButton />}
       </div>
     );
   }
@@ -155,7 +157,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       {!inTg && (
         <div className="space-y-1">
           <p className="text-xs text-gray-400 leading-relaxed">
-            Stars checkout opens in the Mini App. Card checkout is available on request.
+            {TELEGRAM_STARS_HANDOFF} {CHECKOUT_TERM_LINE}
           </p>
           <a
             href={TELEGRAM_MINI_APP_URL}
@@ -223,7 +225,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       </div>
 
       {/* Inside Telegram only Stars may be offered, so no wallet connect is drawn there. */}
-      {!inTg && (
+      {tonOpen && (
         <div className="flex items-center justify-between gap-3 pt-1 border-t border-white/5">
           <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">TON wallet</span>
           <TonConnectButton />

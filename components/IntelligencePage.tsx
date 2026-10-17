@@ -13,7 +13,7 @@ const nodes = [
   },
   {
     title: 'Your keys or hosted',
-    desc: 'Bring Groq, NVIDIA NIM, Ollama, or OpenRouter keys, or use hosted quota on a plan. Failover follows your settings.',
+    desc: 'Add your own model keys, or use the hosted allowance on a plan. If one provider fails, the next one you saved takes over.',
   },
   {
     title: 'Structured checks',
@@ -46,9 +46,8 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({
         ),
         body: (
           <>
-            Groq, NVIDIA NIM, Ollama, OpenRouter, Firecrawl, Tavily, and Google-oriented APIs where you connect
-            them in Settings. No invented engine names. Configure providers once, then run audits and chat against
-            that setup.
+            Connect the model and search providers you already use in Settings, or use the hosted allowance on a plan.
+            Configure them once, then run audits and chat against that setup.
           </>
         ),
         cta: { label: 'Open Instant Audit', onClick: onTerminal },

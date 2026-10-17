@@ -64,10 +64,10 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
         eyebrow="Sample report"
         title={
           <>
-            What a Live crawl report <span className="italic lx-gold-text pr-[0.08em]">looks like.</span>
+            What an example report <span className="italic lx-gold-text pr-[0.08em]">looks like.</span>
           </>
         }
-        lede={`Dated Live crawl of luminarasuite.com (${LIVE_SAMPLE_SNAPSHOT.measuredAt}). Crawl readiness is Measured. Answer engines stay Not measured until Instant Audit. No invented KPI scores.`}
+        lede="Example report for luminarasuite.com, a snapshot from 2 Oct 2026. Crawl readiness is Measured. Answer engines stay Not measured until Instant Audit. Same Sample versus Live split as Methodology. No invented KPI scores."
       />
 
       <figure className="lx-glass mx-auto mb-0 mt-20 max-w-4xl rounded-3xl p-6 sm:mt-24 sm:p-10" data-reveal>
@@ -77,7 +77,7 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
             <p className="mt-2 truncate font-serif text-2xl text-[var(--color-ink)] sm:text-3xl">{LIVE_SAMPLE_SNAPSHOT.domain}</p>
           </div>
           <span className="shrink-0 rounded-full border border-[var(--color-rule)] px-3 py-1 text-xs text-[var(--gold-light)]">
-            {LIVE_SAMPLE_SNAPSHOT.label} · {LIVE_SAMPLE_SNAPSHOT.measuredAt}
+            {LIVE_SAMPLE_SNAPSHOT.label}
           </span>
         </div>
 

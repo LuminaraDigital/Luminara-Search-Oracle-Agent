@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppAuth } from '../../services/auth/useAppAuth';
 import type { IdeaScoutCard } from '../../services/ideaScout/rules';
 import {
+  IDEA_SCOUT_SIGN_IN,
   continuumAuditStartParam,
   gateIdeaScoutSubmit,
   validateIdeaScoutCard,
@@ -81,9 +82,7 @@ export const IdeaScoutView: React.FC<IdeaScoutViewProps> = ({ launchIdeaId, onRu
     });
     setLoading(false);
     if (!created.ok) {
-      setError(created.status === 401
-        ? 'Sign in with Telegram or your web account. Anonymous browsers do not use hosted keys.'
-        : created.error);
+      setError(created.status === 401 ? IDEA_SCOUT_SIGN_IN : created.error);
       return;
     }
     const verdict = validateIdeaScoutCard(created.result.card);
@@ -117,8 +116,10 @@ export const IdeaScoutView: React.FC<IdeaScoutViewProps> = ({ launchIdeaId, onRu
         <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">No domain yet</h1>
         <p className="text-sm text-gray-400 mt-2 max-w-2xl leading-relaxed">
           Describe the idea. The card is a hypothesis, not a measured ranking. Free accounts get 2 hosted cards per UTC day.
-          Anonymous browsers do not use hosted keys.
         </p>
+        {!auth.loading && !auth.authenticated && (
+          <p className="text-sm text-gray-200 mt-3 max-w-2xl leading-relaxed">{IDEA_SCOUT_SIGN_IN}</p>
+        )}
       </div>
 
       <form onSubmit={(event) => { void submit(event); }} className="glass-morphism rounded-2xl border border-white/10 p-6 bg-black/50 space-y-4 mb-8">
