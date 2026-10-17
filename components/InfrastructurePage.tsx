@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { MarketingPageShell } from './marketing/MarketingPageShell';
+import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 
 interface InfrastructurePageProps {
   onTerminal: () => void;
@@ -54,45 +54,52 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
       brandSub="How"
       footerStatement="From crawl to a prioritized plan."
       wide
+      closing={{
+        eyebrow: 'From crawl to plan',
+        title: (
+          <>
+            Run it on <span className="italic lx-gold-text pr-[0.08em]">your own site.</span>
+          </>
+        ),
+        body: 'Enter a URL, choose SEO, AEO, or GEO focus, and the app grounds findings in live search where credentials allow. You get a short action list, not a 40-page PDF.',
+        cta: { label: 'Open Instant Audit', onClick: onTerminal },
+        links: [{ label: 'How we measure', onClick: onNavigateMethodology }],
+      }}
     >
-      <header className="mb-14 sm:mb-20 max-w-3xl">
-        <h1 className="font-display text-[length:var(--text-display)] tracking-tight leading-[1.05] mb-6 [overflow-wrap:anywhere]">
-          What runs when you audit a site
-        </h1>
-        <p className="text-lg text-[var(--color-ink-2)] leading-relaxed">
-          A fixed set of checks across search and AI answers, then a ranked list of fixes in plain English.
-          Every run covers the same surfaces, labels its evidence, and ends in one ship action.
-        </p>
-      </header>
+      <MarketingPageHeader
+        eyebrow="How it works"
+        title={
+          <>
+            What runs when <span className="italic lx-gold-text pr-[0.08em]">you audit a site.</span>
+          </>
+        }
+        lede="A fixed set of checks across search and AI answers, then a ranked list of fixes in plain English. Every run covers the same surfaces, labels its evidence, and ends in one ship action."
+      />
 
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10 mb-20">
-        {pillars.map((p, idx) => (
-          <div key={p.title} className="min-w-0 border-t border-[var(--color-rule)] pt-5">
-            <p className="text-[12px] font-mono text-[var(--color-accent)] mb-3">
-              {(idx + 1).toString().padStart(2, '0')}
-            </p>
-            <h2 className="text-xl font-medium text-[var(--color-ink)] mb-2">{p.title}</h2>
-            <p className="mkt-body">{p.desc}</p>
+      <section
+        aria-labelledby="checks-heading"
+        className="mt-28 grid gap-14 border-t pt-24 lx-hairline sm:mt-36 sm:pt-28 lg:grid-cols-12 lg:gap-16"
+      >
+        <div className="lg:col-span-4" data-reveal>
+          <div className="lg:sticky lg:top-32">
+            <p className="lx-eyebrow">What it checks</p>
+            <h2 id="checks-heading" className="lx-display lx-h3 mt-5">
+              Same surfaces, <span className="italic lx-gold-text pr-[0.08em]">every run.</span>
+            </h2>
           </div>
-        ))}
-      </section>
-
-      <section className="border-t border-[var(--color-rule)] pt-14 sm:pt-20 max-w-2xl">
-        <h2 className="font-display text-[length:var(--text-display-s)] tracking-tight mb-4 [overflow-wrap:anywhere]">
-          From crawl to a prioritized plan
-        </h2>
-        <p className="mkt-body mb-8">
-          Enter a URL, choose SEO, AEO, or GEO focus, and the app grounds findings in live search where
-          credentials allow. You get a short action list, not a 40-page PDF.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button type="button" onClick={onTerminal} className="mkt-cta-primary">
-            Open Instant Audit
-          </button>
-          <button type="button" onClick={onNavigateMethodology} className="mkt-cta-secondary">
-            How we measure
-          </button>
         </div>
+        <ol className="m-0 grid list-none gap-x-10 gap-y-14 p-0 sm:grid-cols-2 lg:col-span-8">
+          {pillars.map((p, idx) => (
+            <li key={p.title} className="min-w-0" data-reveal style={{ transitionDelay: `${(idx % 2) * 90}ms` }}>
+              <span aria-hidden className="font-serif text-4xl leading-none lx-gold-text">
+                {(idx + 1).toString().padStart(2, '0')}
+              </span>
+              <div aria-hidden className="mt-5 h-px w-full bg-gradient-to-r from-gold/60 to-transparent" />
+              <h3 className="mt-5 text-xl font-medium text-[var(--color-ink)]">{p.title}</h3>
+              <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">{p.desc}</p>
+            </li>
+          ))}
+        </ol>
       </section>
     </MarketingPageShell>
   );
