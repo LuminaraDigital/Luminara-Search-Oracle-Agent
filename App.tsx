@@ -989,13 +989,10 @@ const App: React.FC = () => {
         {introOverlay}
         <LandingPage
           onNavigateAudit={(handoff) => enterInstantAudit(handoff)}
-          onNavigateSuite={() => enterApp(AppView.DASHBOARD)}
-          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
           onNavigatePricing={() => setView(AppView.PRICING)}
           onNavigateMethodology={() => setView(AppView.METHODOLOGY)}
           onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
           isAuthenticated={appAuth.authenticated}
-          onSignInClick={(handoff) => openLoginWall('signin', handoff)}
           onSignUpClick={(handoff) => openLoginWall('signup', handoff)}
         />
         {marketingOverlays}

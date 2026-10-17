@@ -57,7 +57,8 @@ export interface GlobeRendererOptions {
   businessLabel: string;
   getTarget: (width: number, height: number) => GlobeTarget;
   onReady?: () => void;
-  onLost?: () => void;
+  /** The renderer can no longer draw (link failure, lost context): show the static fallback. */
+  onFail?: () => void;
 }
 
 export interface GlobeRenderer {
@@ -87,7 +88,6 @@ uniform vec4 uFlare;
 uniform vec4 uDots;
 uniform vec4 uMisc;
 uniform vec2 uPx;
-uniform sampler2D uLand;
 uniform sampler2D uDay;
 
 float hash12(vec2 p) {
@@ -110,6 +110,10 @@ float starLayer(vec2 p, float cell, float density, float seed, float t) {
   return b * tw * mix(0.3, 1.0, h2);
 }
 
+// Blue Marble oceans (shelves included) are blue-dominant; ice is bright and neutral.
+float landOf(vec3 c) { return 1.0 - step(c.r + 0.118, c.b) * step(c.g - 0.031, c.b); }
+float iceOf(vec3 c) { return step(0.667, min(min(c.r, c.g), c.b)); }
+
 vec3 dotField(float latD, float lonD, float pitch, float aaDeg) {
   float row = floor((latD + 90.0) / pitch);
   float latC = (row + 0.5) * pitch - 90.0;
@@ -120,12 +124,12 @@ vec3 dotField(float latD, float lonD, float pitch, float aaDeg) {
   float dlat = latD - latC;
   float dlon = (lonD - lonC) * cos(radians(latD));
   float d = sqrt(dlat * dlat + dlon * dlon);
-  vec4 m = texture2D(uLand, vec2(lonC / 360.0 + 0.5, 0.5 - latC / 180.0));
-  float land = step(0.5, m.r);
+  vec3 m = texture2D(uDay, vec2(lonC / 360.0 + 0.5, 0.5 - latC / 180.0)).rgb;
+  float land = landOf(m);
   float rad = pitch * 0.27;
   float a = 1.0 - smoothstep(rad - aaDeg, rad + aaDeg, d);
   float h = hash12(vec2(row, col) + pitch * 13.0);
-  return vec3(a * land, h, m.g);
+  return vec3(a * land, h, iceOf(m) * land);
 }
 
 void main() {
@@ -174,16 +178,16 @@ void main() {
     float latD = degrees(lat);
     float lonD = degrees(lon);
     vec2 uv = vec2(lon / 6.2831853 + 0.5, 0.5 - lat / 3.1415927);
-    vec4 lm = texture2D(uLand, uv);
+    vec3 dayTex = texture2D(uDay, uv).rgb;
+    float landHere = landOf(dayTex);
     float lam = dot(n, sun);
     float day = smoothstep(-0.06, 0.38, lam);
 
     vec3 ocean = vec3(0.004, 0.006, 0.012);
     vec3 landNight = vec3(0.028, 0.022, 0.013);
-    vec3 base = mix(ocean, landNight, lm.r);
-    vec3 dayTex = texture2D(uDay, uv).rgb;
+    vec3 base = mix(ocean, landNight, landHere);
     vec3 dayCol = pow(dayTex, vec3(1.3)) * vec3(1.02, 0.95, 0.8) * 0.8;
-    vec3 dayFallback = mix(vec3(0.03, 0.04, 0.06), vec3(0.3, 0.24, 0.14), lm.r);
+    vec3 dayFallback = mix(vec3(0.03, 0.04, 0.06), vec3(0.3, 0.24, 0.14), landHere);
     dayCol = mix(dayFallback, dayCol, uMisc.y);
     vec3 surf = mix(base, dayCol, day);
 
@@ -203,14 +207,15 @@ void main() {
     surf += vec3(0.55, 0.28, 0.07) * term * 0.1;
 
     vec3 hv = normalize(sun + vec3(0.0, 0.0, 1.0));
-    float spec = pow(max(dot(n, hv), 0.0), 28.0) * (1.0 - lm.r) * day;
+    float spec = pow(max(dot(n, hv), 0.0), 28.0) * (1.0 - landHere) * day;
     surf += vec3(0.95, 0.78, 0.48) * spec * 0.14;
 
     float bk = (q.x - uDots.w) / 0.022;
     float band = exp(-bk * bk) * uMisc.z;
     surf += gold * band * 0.16 * limbFade + dotCol * dots * band * 1.6;
 
-    float fres = pow(1.0 - nz, 3.0);
+    float fo = max(1.0 - nz, 0.0);
+    float fres = fo * fo * fo;
     float rimFacing = smoothstep(-0.3, 0.8, dot(normalize(q + vec2(0.00001)), sunDir2));
     vec3 rimCol = mix(vec3(0.4, 0.26, 0.09), vec3(1.0, 0.82, 0.5), rimFacing * (0.4 + 0.6 * max(day, behind)));
     surf += rimCol * fres * 0.7 * uHalo.z;
@@ -247,11 +252,6 @@ function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLSha
   if (!sh) throw new Error('createShader failed');
   gl.shaderSource(sh, src);
   gl.compileShader(sh);
-  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-    const log = gl.getShaderInfoLog(sh);
-    gl.deleteShader(sh);
-    throw new Error(`Shader compile failed: ${log ?? 'unknown'}`);
-  }
   return sh;
 }
 
@@ -263,27 +263,28 @@ function makeTexture(gl: WebGLRenderingContext): WebGLTexture {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 120, 255]));
   return tex;
 }
 
-/**
- * Land mask from the satellite daymap: R = land, G = ice. Ocean in the Blue Marble
- * texture is blue-dominant (including shallow shelves); ice is bright and neutral.
- */
-export function landMaskFromPixels(rgba: Uint8ClampedArray): Uint8Array {
-  const out = new Uint8Array(rgba.length);
-  for (let i = 0; i < rgba.length; i += 4) {
-    const r = rgba[i];
-    const g = rgba[i + 1];
-    const b = rgba[i + 2];
-    const ocean = b > r + 30 && b >= g - 8;
-    const ice = !ocean && r > 170 && g > 170 && b > 170;
-    out[i] = ocean ? 0 : 255;
-    out[i + 1] = ice ? 255 : 0;
-    out[i + 3] = 255;
+/** Decode the daymap off the main thread where possible; fall back to an <img>. */
+async function loadDaymap(): Promise<TexImageSource | null> {
+  try {
+    if (typeof createImageBitmap === 'function' && typeof fetch === 'function') {
+      const res = await fetch(DAYMAP_URL);
+      if (!res.ok) return null;
+      return await createImageBitmap(await res.blob());
+    }
+  } catch {
+    /* fall back to an <img> below */
   }
-  return out;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = DAYMAP_URL;
+  });
 }
 
 export function createGlobeRenderer(
@@ -298,7 +299,9 @@ export function createGlobeRenderer(
     stencil: false,
     premultipliedAlpha: false,
     preserveDrawingBuffer: false,
-    powerPreference: opts.lowPower ? 'low-power' : 'high-performance',
+    // Software rasterisers would run this full-viewport shader on the CPU, so refuse them.
+    failIfMajorPerformanceCaveat: true,
+    powerPreference: opts.lowPower ? 'low-power' : 'default',
   };
   const glMaybe = (canvas.getContext('webgl', attrs) ??
     canvas.getContext('experimental-webgl', attrs)) as WebGLRenderingContext | null;
@@ -308,48 +311,68 @@ export function createGlobeRenderer(
   const gl: WebGLRenderingContext = glMaybe;
   const ctx: CanvasRenderingContext2D = ctxMaybe;
 
+  // fp16 breaks the limb anti-aliasing and the hashes, so fall back to CSS instead.
   const highp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
-  const frag = highp && highp.precision > 0 ? FRAG : FRAG.replace('precision highp float;', 'precision mediump float;');
+  if (!highp || highp.precision <= 0) throw new Error('highp float unavailable');
 
-  const program = gl.createProgram();
-  if (!program) throw new Error('createProgram failed');
-  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERT));
-  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, frag));
+  const programMaybe = gl.createProgram();
+  if (!programMaybe) throw new Error('createProgram failed');
+  const program: WebGLProgram = programMaybe;
+  const vs = compile(gl, gl.VERTEX_SHADER, VERT);
+  const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
   gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    throw new Error(`Program link failed: ${gl.getProgramInfoLog(program) ?? 'unknown'}`);
-  }
-  gl.useProgram(program);
+  // With KHR_parallel_shader_compile the driver links in the background; poll once per
+  // frame instead of blocking the main thread on LINK_STATUS.
+  const parallel = gl.getExtension('KHR_parallel_shader_compile') as { COMPLETION_STATUS_KHR: number } | null;
 
   const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  const aPos = gl.getAttribLocation(program, 'aPos');
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-
   const u = (name: string) => gl.getUniformLocation(program, name);
-  const U = {
-    res: u('uRes'),
-    globe: u('uGlobe'),
-    rot: u('uRot'),
-    sun: u('uSun'),
-    halo: u('uHalo'),
-    flare: u('uFlare'),
-    dots: u('uDots'),
-    misc: u('uMisc'),
-    px: u('uPx'),
-    land: u('uLand'),
-    day: u('uDay'),
-  };
+  type UniformName = 'res' | 'globe' | 'rot' | 'sun' | 'halo' | 'flare' | 'dots' | 'misc' | 'px';
+  let U: Record<UniformName, WebGLUniformLocation | null> | null = null;
 
-  const landTex = makeTexture(gl);
+  /** True once the program is linked and bound; false while still linking or after failure. */
+  function finishLink(): boolean {
+    if (U) return true;
+    if (parallel && !gl.getProgramParameter(program, parallel.COMPLETION_STATUS_KHR)) return false;
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.warn(
+        '[globe] shader link failed',
+        gl.getProgramInfoLog(program) || gl.getShaderInfoLog(fs) || gl.getShaderInfoLog(vs),
+      );
+      fail();
+      return false;
+    }
+    gl.useProgram(program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const aPos = gl.getAttribLocation(program, 'aPos');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    gl.uniform1i(u('uDay'), 0);
+    U = {
+      res: u('uRes'),
+      globe: u('uGlobe'),
+      rot: u('uRot'),
+      sun: u('uSun'),
+      halo: u('uHalo'),
+      flare: u('uFlare'),
+      dots: u('uDots'),
+      misc: u('uMisc'),
+      px: u('uPx'),
+    };
+    return true;
+  }
+
   const dayTex = makeTexture(gl);
-  gl.uniform1i(U.land, 0);
-  gl.uniform1i(U.day, 1);
   let dayMix = 0;
+  let textureDone = false;
 
   const maxDpr = opts.lowPower ? 1 : 1.75;
+  // About 4.5 megapixels keeps the shader near 3 ms on integrated GPUs.
+  const PIXEL_BUDGET = 4.5e6;
+  const minFrameMs = opts.lowPower ? 33 : 15;
   let dpr = 1;
   let cssW = 0;
   let cssH = 0;
@@ -395,7 +418,7 @@ export function createGlobeRenderer(
     const rect = canvas.getBoundingClientRect();
     cssW = Math.max(1, rect.width);
     cssH = Math.max(1, rect.height);
-    dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+    dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, maxDpr, Math.sqrt(PIXEL_BUDGET / (cssW * cssH))));
     const w = Math.round(cssW * dpr);
     const h = Math.round(cssH * dpr);
     if (canvas.width !== w || canvas.height !== h) {
@@ -408,53 +431,63 @@ export function createGlobeRenderer(
     }
   }
 
-  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { resize(); invalidate(); }) : null;
+  // Resizing clears the canvas, so repaint in the same task to avoid a black frame.
+  const ro =
+    typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => {
+          resize();
+          if (ready && !lost && !destroyed) render(0);
+        })
+      : null;
   ro?.observe(canvas);
   resize();
 
-  const img = new Image();
-  img.decoding = 'async';
-  img.onload = () => {
-    if (destroyed) return;
-    try {
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      const scratch = document.createElement('canvas');
-      scratch.width = w;
-      scratch.height = h;
-      const sctx = scratch.getContext('2d', { willReadFrequently: true });
-      if (sctx) {
-        sctx.drawImage(img, 0, 0);
-        const mask = landMaskFromPixels(sctx.getImageData(0, 0, w, h).data);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, landTex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, mask);
-      }
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, dayTex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
-      dayMix = 1;
-    } catch (err) {
-      console.warn('[globe] texture upload failed', err);
+  void loadDaymap().then((source) => {
+    if (destroyed || lost) {
+      if (source && 'close' in source) source.close();
+      return;
     }
+    if (source) {
+      try {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, dayTex);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, source);
+        dayMix = 1;
+      } catch (err) {
+        console.warn('[globe] texture upload failed', err);
+      }
+      if ('close' in source) source.close();
+    }
+    textureDone = true;
     markReady();
+  });
+
+  // Poll the background link once per frame until it settles.
+  const pollLink = () => {
+    if (destroyed || lost) return;
+    if (finishLink()) markReady();
+    else if (!lost) requestAnimationFrame(pollLink);
   };
-  img.onerror = () => markReady();
-  img.src = DAYMAP_URL;
+  requestAnimationFrame(pollLink);
 
   function markReady(): void {
-    if (ready || destroyed || lost) return;
+    if (ready || destroyed || lost || !textureDone || !U) return;
     ready = true;
     invalidate();
     opts.onReady?.();
   }
 
-  const onLost = (e: Event) => {
-    e.preventDefault();
+  function fail(): void {
+    if (lost) return;
     lost = true;
     stop();
-    opts.onLost?.();
+    opts.onFail?.();
+  }
+
+  const onLost = (e: Event) => {
+    e.preventDefault();
+    fail();
   };
   canvas.addEventListener('webglcontextlost', onLost);
 
@@ -626,6 +659,7 @@ export function createGlobeRenderer(
   }
 
   function render(dt: number): void {
+    if (!U) return;
     const target = opts.getTarget(cssW, cssH);
     const snap = opts.reducedMotion || !state.pose;
     const kFast = snap ? 1 : 1 - Math.exp(-dt / 0.07);
@@ -676,8 +710,6 @@ export function createGlobeRenderer(
     gl.uniform4f(U.misc, clock, dayMix, L.scan, target.starShift * dpr);
     gl.uniform2f(U.px, dpr, 1);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, landTex);
-    gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, dayTex);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -687,6 +719,11 @@ export function createGlobeRenderer(
   function frame(now: number): void {
     raf = 0;
     if (destroyed || !visible) return;
+    // Cap near 60 fps (30 on low-power devices); 120 Hz panels would otherwise double the work.
+    if (!opts.reducedMotion && last && now - last < minFrameMs) {
+      schedule();
+      return;
+    }
     const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
     last = now;
     if (!opts.reducedMotion) clock += dt;
@@ -723,9 +760,6 @@ export function createGlobeRenderer(
       ro?.disconnect();
       canvas.removeEventListener('webglcontextlost', onLost);
       document.removeEventListener('visibilitychange', onVisibility);
-      img.onload = null;
-      img.onerror = null;
-      gl.deleteTexture(landTex);
       gl.deleteTexture(dayTex);
       gl.deleteBuffer(buf);
       gl.deleteProgram(program);

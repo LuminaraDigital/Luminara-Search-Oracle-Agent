@@ -203,9 +203,12 @@
 .lx-hairline { border-color: rgb(252 246 186 / 0.12); }
 
 /* ---------- Hero entrance (runs once, never hides content without motion) ---------- */
+/* Layout stays outside the motion query so the headline keeps its two lines either way. */
+.lx-enter-mask,
+.lx-enter-line { display: block; }
 @media (prefers-reduced-motion: no-preference) {
-  .lx-enter-mask { display: block; overflow: hidden; padding-bottom: 0.12em; margin-bottom: -0.12em; }
-  .lx-enter-line { display: block; animation: lx-reveal 1.05s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .lx-enter-mask { overflow: hidden; padding-bottom: 0.12em; margin-bottom: -0.12em; }
+  .lx-enter-line { animation: lx-reveal 1.05s cubic-bezier(0.16, 1, 0.3, 1) both; }
   .lx-enter-rise { animation: lx-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
   .lx-enter-draw { animation: lx-draw 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
   .lx-d1 { animation-delay: 0.15s; }
@@ -226,6 +229,10 @@
 .lx-armed [data-reveal]:not([data-in]) {
   opacity: 0;
   transform: translateY(22px);
+}
+@media print {
+  .lx-armed [data-reveal]:not([data-in]) { opacity: 1; transform: none; }
+  .lx-stage { display: none; }
 }
 
 /* ---------- Story chapters ---------- */

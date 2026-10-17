@@ -287,3 +287,15 @@ npm run build
 1. Approve **S0** craft-isolated commit/PR (required).  
 2. Confirm **S1** after S0.  
 3. Default remains **no Three**; Instant Audit depth only with written CEO override after S5.
+
+## Decision log
+
+**2026-10-16, space rebrand (PR #131).** On 2026-10-16 the owner asked for a full rebrand of the landing page. The brief was a space and globe direction that kept only the black and gold palette, and it rejected the mix of old and new sections. To carry the globe, the landing now uses **one raw WebGL fragment shader** (`components/marketing/earth/globeRenderer.ts`). This falls under this plan's "prefer a fragment shader over Three if depth is the only ask" clause, not under a Three override:
+
+- No `three`, no R3F, no runtime GLB and no new dependencies.
+- The renderer is a lazy chunk of about 6.6 KB gzip, loaded on idle after first paint. It reuses the committed 54 KB `earth-daymap.webp`.
+- It is capped at about 4.5 megapixels and about 60 fps (30 on low-power devices).
+- It refuses software rasterisers.
+- A static CSS planet covers no WebGL, Save-Data, link failure and context loss.
+
+The Blender constellation plates, the bake pipeline and the archive GLB were retired with the old landing, because nothing renders them any more. They remain in git history before this PR.

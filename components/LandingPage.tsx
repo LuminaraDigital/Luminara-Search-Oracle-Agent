@@ -7,15 +7,16 @@
  * 6. FAQ (1:1 with FAQPage JSON-LD)
  * 7. Closing call to action over a second horizon, then the footer
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './marketing/space.css';
 import { MarketingNav } from './MarketingNav';
 import { MarketingFooter } from './marketing/MarketingFooter';
 import { MarketingFaq } from './marketing/MarketingFaq';
 import { SpaceStage } from './marketing/SpaceStage';
 import { DomainCheck } from './marketing/DomainCheck';
+import { EvidenceGlyph } from './marketing/EvidenceGlyph';
 import { useMarketingChrome } from './marketing/marketingChrome';
-import { prefersReducedMotion } from './marketing/constellationCapability';
+import { prefersReducedMotion } from './marketing/deviceCapability';
 import {
   ENGINES,
   EVIDENCE_LEGEND,
@@ -27,17 +28,15 @@ import type { AuditHandoff } from '../services/activation/auditHandoff';
 
 interface LandingPageProps {
   onNavigateAudit: (handoff?: AuditHandoff) => void;
-  onNavigateSuite: () => void;
-  onNavigateInfrastructure: () => void;
   onNavigatePricing: () => void;
   onNavigateMethodology: () => void;
   onNavigateSampleReport: () => void;
   isAuthenticated?: boolean;
-  onSignInClick: (handoff?: AuditHandoff) => void;
   onSignUpClick: (handoff?: AuditHandoff) => void;
 }
 
-const MCP_COMMAND = 'claude mcp add luminara --transport http https://luminarasuite.com/api/mcp';
+const MCP_COMMAND =
+  'claude mcp add --transport http luminara https://luminarasuite.com/api/mcp --header "Authorization: Bearer lm_live_YOUR_KEY"';
 
 const VALUE_PROPS = [
   {
@@ -46,11 +45,11 @@ const VALUE_PROPS = [
   },
   {
     title: 'One fix at a time',
-    body: 'A single prioritized change each week, with copy and schema ready to paste. Not a backlog of warnings.',
+    body: 'One prioritized change at a time, with copy and schema ready to paste. Not a backlog of warnings.',
   },
   {
     title: 'Works where you work',
-    body: 'Use it on the web, on Windows or in Telegram, and hand the fix to your developer in Cursor or Claude.',
+    body: 'Use it on the web, on Windows or in Telegram. On Growth and Agency, your developer can pull the fix into Cursor or Claude.',
   },
 ] as const;
 
@@ -62,21 +61,6 @@ const EXAMPLE_REPORT_ROWS: ReadonlyArray<{ label: string; state: EvidenceState; 
   { label: 'ChatGPT', state: 'Measured', note: 'Not named for "best dentist in Sydney".' },
   { label: 'Perplexity', state: 'Not measured', note: 'No data yet. Missing, not a poor result.' },
 ];
-
-function EvidenceGlyph({ state }: { state: EvidenceState }) {
-  if (state === 'Measured') {
-    return <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-accent)]" />;
-  }
-  if (state === 'Estimated') {
-    return (
-      <span
-        aria-hidden
-        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full border border-[var(--color-accent)] bg-[linear-gradient(90deg,var(--color-accent)_50%,transparent_50%)]"
-      />
-    );
-  }
-  return <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full border border-dashed border-[var(--color-ink-2)]" />;
-}
 
 const LandingPage: React.FC<LandingPageProps> = ({
   onNavigateAudit,
@@ -92,12 +76,9 @@ const LandingPage: React.FC<LandingPageProps> = ({
   const [chapter, setChapter] = useState(-1);
   const [copied, setCopied] = useState(false);
 
-  const setAnchor = useCallback(
-    (i: number) => (el: HTMLElement | null) => {
-      anchorsRef.current[i] = el;
-    },
-    [],
-  );
+  const setAnchor = (i: number) => (el: HTMLElement | null) => {
+    anchorsRef.current[i] = el;
+  };
 
   const fullAudit = (handoff?: AuditHandoff) => {
     if (isAuthenticated) onNavigateAudit(handoff);
@@ -162,12 +143,14 @@ const LandingPage: React.FC<LandingPageProps> = ({
         primaryCta={chrome.primaryCta}
       />
 
+      <main id="main">
       {/* Story sequence: the sticky globe stage sits behind hero, statement and chapters. */}
       <div className="relative">
         <SpaceStage anchors={anchorsRef} onChapterChange={setChapter} />
 
-        <header
+        <section
           ref={setAnchor(0)}
+          aria-labelledby="hero-heading"
           className="relative z-10 flex min-h-[100svh] flex-col items-center px-5 pb-[30svh] pt-[max(6.5rem,13svh)] text-center sm:px-8"
         >
           <div
@@ -175,10 +158,10 @@ const LandingPage: React.FC<LandingPageProps> = ({
             className="pointer-events-none absolute left-1/2 top-[8svh] -z-10 h-[78svh] w-[min(1100px,130vw)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_center,rgb(0_0_0/0.62)_0%,rgb(0_0_0/0.35)_45%,transparent_70%)]"
           />
           <p className="lx-eyebrow lx-enter-rise lx-d1">AI visibility, measured</p>
-          <h1 className="lx-display lx-h1 mt-6 max-w-5xl">
+          <h1 id="hero-heading" className="lx-display lx-h1 mt-6 max-w-5xl">
             <span className="lx-enter-mask">
               <span className="lx-enter-line lx-d2">Be the answer</span>
-            </span>
+            </span>{' '}
             <span className="lx-enter-mask">
               <span className="lx-enter-line lx-d3 italic lx-gold-text pr-[0.08em]">AI gives.</span>
             </span>
@@ -209,7 +192,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               </svg>
             </span>
           </a>
-        </header>
+        </section>
 
         <section
           ref={setAnchor(1)}
@@ -241,7 +224,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               className="flex min-h-[92svh] items-end px-5 pb-[7svh] sm:px-8 lg:items-center lg:px-0 lg:pb-0"
             >
               <article
-                className="lx-chapter w-full max-w-xl rounded-3xl bg-black/60 p-6 backdrop-blur-md lg:ml-[6vw] lg:max-w-[min(34rem,40vw)] lg:bg-transparent lg:p-0 lg:backdrop-blur-none xl:ml-[8vw]"
+                className="lx-chapter w-full max-w-xl rounded-3xl bg-black/75 p-6 lg:ml-[6vw] lg:max-w-[min(34rem,40vw)] lg:bg-transparent lg:p-0 xl:ml-[8vw]"
                 data-active={chapter === -1 || chapter === i ? 'true' : 'false'}
               >
                 {i === 0 && (
@@ -251,7 +234,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 )}
                 <p className="flex items-center gap-4 text-[var(--gold-light)]">
                   <span className="font-serif text-3xl leading-none">{c.step}</span>
-                  <span aria-hidden className="h-px w-10 bg-[var(--color-accent)]/60" />
+                  <span aria-hidden className="h-px w-10 bg-gold/60" />
                   <span className="text-[11px] uppercase tracking-[0.26em]">{c.stage}</span>
                 </p>
                 <h3 className="lx-display lx-h3 mt-6">{c.title}</h3>
@@ -271,6 +254,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 )}
 
                 {c.id === 'prove' && (
+                  <>
                   <ul className="m-0 mt-7 list-none space-y-3 p-0">
                     {EVIDENCE_LEGEND.map((row) => (
                       <li key={row.state} className="flex items-baseline gap-3">
@@ -283,12 +267,10 @@ const LandingPage: React.FC<LandingPageProps> = ({
                       </li>
                     ))}
                   </ul>
-                )}
-
-                {c.id === 'prove' && (
                   <button type="button" onClick={onNavigateMethodology} className="lx-link mt-6 text-sm">
                     How we measure
                   </button>
+                  </>
                 )}
 
                 {i === 0 && <p className="mt-6 text-xs text-[var(--color-ink-2)]">{GLOBE_NOTICE}</p>}
@@ -305,7 +287,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
       >
         <div
           aria-hidden
-          className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[min(1100px,140vw)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_top,rgb(191_149_63/0.16),transparent_65%)]"
+          className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[min(1100px,140vw)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_top,color-mix(in_srgb,var(--gold)_16%,transparent),transparent_65%)]"
         />
         <div className="relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-12">
           <div className="lg:col-span-5" data-reveal>
@@ -313,7 +295,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <h2 id="report-heading" className="lx-display lx-h2 mt-6">
               <span className="block">One verdict.</span>
               <span className="block">One fix.</span>
-              <span className="block italic lx-gold-text">Every week.</span>
+              <span className="block italic lx-gold-text">Ready to ship.</span>
             </h2>
             <p className="lx-lede mt-7">
               No 40-page PDF and no made-up score. A report you can read in a minute, with the exact change to
@@ -359,7 +341,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               answer the question directly.
             </p>
 
-            <div className="mt-6 rounded-2xl border border-[var(--color-accent)]/45 bg-[var(--color-accent)]/10 p-5">
+            <div className="mt-6 rounded-2xl border border-gold/45 bg-gold/10 p-5">
               <p className="text-[11px] uppercase tracking-[0.26em] text-[var(--gold-light)]">Your next fix</p>
               <p className="mt-2 font-serif text-xl leading-snug text-[var(--color-ink)] sm:text-2xl">
                 Add a 50-word direct answer under the heading on /services, with FAQ schema for your top three
@@ -391,7 +373,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             {VALUE_PROPS.map((v, i) => (
               <div key={v.title} data-reveal style={{ transitionDelay: `${i * 90}ms` }}>
                 <span className="font-serif text-5xl leading-none lx-gold-text">{`0${i + 1}`}</span>
-                <div aria-hidden className="mt-6 h-px w-full bg-gradient-to-r from-[var(--color-accent)]/60 to-transparent" />
+                <div aria-hidden className="mt-6 h-px w-full bg-gradient-to-r from-gold/60 to-transparent" />
                 <h3 className="mt-6 text-xl font-medium text-[var(--color-ink)]">{v.title}</h3>
                 <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">{v.body}</p>
               </div>
@@ -430,6 +412,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
       </section>
 
       <MarketingFaq className="relative z-10" />
+      </main>
 
       <div className="relative overflow-hidden border-t lx-hairline">
         <div aria-hidden className="lx-stars absolute inset-0 opacity-80" />

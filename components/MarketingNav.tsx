@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { ICONS } from '../constants';
 import './marketing/space.css';
 
@@ -35,6 +35,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const panelId = useId();
+  const burgerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -46,7 +47,10 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        burgerRef.current?.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     // Lock the root, not body: html has overflow-x: clip, so a body lock would not stop
@@ -106,7 +110,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
                   onClick={link.onClick}
                   aria-current={link.current ? 'page' : undefined}
                   className={`whitespace-nowrap text-sm hover:text-[var(--color-ink)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded py-1 ${
-                    link.current ? 'text-[var(--gold-light)]' : 'text-[var(--color-ink)]/75'
+                    link.current ? 'text-[var(--gold-light)]' : 'text-ink/75'
                   }`}
                 >
                   {link.label}
@@ -118,7 +122,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
             <button
               type="button"
               onClick={secondaryCta.onClick}
-              className="hidden sm:inline-flex whitespace-nowrap text-sm text-[var(--color-ink)]/75 hover:text-[var(--color-ink)] transition-colors min-h-11 items-center px-2 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded"
+              className="hidden sm:inline-flex whitespace-nowrap text-sm text-ink/75 hover:text-[var(--color-ink)] transition-colors min-h-11 items-center px-2 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded"
             >
               {secondaryCta.label}
             </button>
@@ -135,6 +139,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
           {trailing}
 
           <button
+            ref={burgerRef}
             type="button"
             className="md:hidden inline-flex items-center justify-center w-11 h-11 rounded-full border border-[var(--color-rule)] bg-black/40 text-[var(--color-ink)] focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none"
             aria-expanded={open}

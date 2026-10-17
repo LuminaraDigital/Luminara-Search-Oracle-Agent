@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AuthPanel } from './AuthPanel';
 import { isInTelegram, getTelegramUserUnsafe } from '../../services/telegram/tma';
 import type { AppAuthState } from '../../services/auth/useAppAuth';
@@ -50,6 +50,14 @@ export const AuthRequiredScreen: React.FC<{
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isModal, onClose]);
 
+  // Move focus into the dialog so keyboard and screen reader users start in the form.
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isModal || auth.loading) return;
+    const root = contentRef.current;
+    (root?.querySelector<HTMLElement>('input') ?? root?.querySelector<HTMLElement>('button'))?.focus();
+  }, [isModal, auth.loading]);
+
   if (auth.loading) {
     return (
       <div className={`${isModal ? 'fixed inset-0 z-[80] bg-black/95' : 'min-h-[100dvh] bg-black'} text-ink flex items-center justify-center px-4 relative overflow-hidden`}>
@@ -60,7 +68,7 @@ export const AuthRequiredScreen: React.FC<{
   }
 
   const content = (
-    <div className="relative w-full max-w-md space-y-6 my-auto max-h-[calc(100dvh-2rem)]">
+    <div ref={contentRef} className="relative w-full max-w-md space-y-6 my-auto max-h-[calc(100dvh-2rem)]">
       {isModal && onClose && (
         <button
           type="button"
@@ -93,7 +101,11 @@ export const AuthRequiredScreen: React.FC<{
           </div>
         ) : null}
         <h1 className="font-display font-normal text-[2rem] sm:text-4xl text-[var(--color-ink)] tracking-tight leading-[1.08]">
-          {inTelegram ? 'Confirm your Telegram session' : 'Sign in to Luminara Suite'}
+          {inTelegram
+            ? 'Confirm your Telegram session'
+            : initialMode === 'signup'
+              ? 'Create your free account'
+              : 'Sign in to Luminara Suite'}
         </h1>
         {featureExplanation(featureView) && (
           <div className="p-3 rounded-xl bg-gold/10 border border-gold/30 text-xs text-gold-light max-w-sm mx-auto text-left leading-relaxed">
