@@ -348,7 +348,8 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(result.healthScore).toBeNull();
     expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(false);
     const text = events.map((event) => event.message).join(' ');
-    expect(text).toContain('Jina-only');
+    expect(text).toContain('a fallback');
+    expect(text).not.toMatch(/Firecrawl|Jina|Tavily|Groq|sign-in token/);
     expect(text).toContain('not measured');
     expect(text).not.toMatch(/\/100/);
     expect(text).not.toContain('73');
@@ -358,7 +359,8 @@ describe('Instant Audit honesty on empty evidence', () => {
       measurementStatus: 'not_measured',
     }));
     expect(html).toContain('Not measured');
-    expect(html).toContain('Jina-only');
+    expect(html).toContain('a fallback');
+    expect(html).not.toMatch(/Jina/);
     expect(html).not.toMatch(/\/100/);
     expect(html).not.toContain('73');
     const summary = buildGuestScoutSummary({

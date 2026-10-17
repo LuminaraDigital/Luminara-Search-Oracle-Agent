@@ -89,9 +89,9 @@ export function unmeasuredHealthMessage(reason: HealthScoreBlockReason): string 
     case 'auth':
       return 'Compliance audit finished. Health score not measured: live data unavailable after a provider authentication failure.';
     case 'jina':
-      return 'Compliance audit finished. Health score not measured: page text is Jina-only and cannot support a health score.';
+      return 'Compliance audit finished. Health score not measured: the page text is a fallback read and cannot support a health score.';
     case 'jina_search':
-      return 'Compliance audit finished. Health score not measured: page evidence is Jina-only and search evidence is empty or a sample.';
+      return 'Compliance audit finished. Health score not measured: the page read is a fallback and search evidence is empty or a sample.';
     case 'search':
       return 'Compliance audit finished. Health score not measured: search evidence is empty or a sample.';
     case 'no_page':
