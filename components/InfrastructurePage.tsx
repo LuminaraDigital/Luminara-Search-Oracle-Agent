@@ -51,7 +51,6 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
 
   return (
     <MarketingPageShell
-      brandSub="How"
       footerStatement="From crawl to a prioritized plan."
       wide
       closing={{

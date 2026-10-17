@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useDemoPlayback } from './demo/useDemoPlayback';
-import { normalizeDemoUrl } from './demo/demoFixtures';
+import { normalizeDemoUrl, visibleProbeHost } from './demo/demoFixtures';
 import { EngineStatusChip } from './EvidenceGlyph';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import type { AuditHandoff } from '../../services/activation/auditHandoff';
@@ -77,10 +77,10 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
           inputMode="url"
           autoComplete="url"
           spellCheck={false}
-          value={demo.url}
+          value={visibleProbeHost(demo.url)}
           readOnly={running}
           onChange={(e) => {
-            demo.setUrl(e.target.value);
+            demo.setUrl(visibleProbeHost(e.target.value));
             if (error) setError(null);
           }}
           placeholder="yoursite.com"

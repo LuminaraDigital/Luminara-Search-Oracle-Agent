@@ -11,6 +11,7 @@
     <link rel="icon" href="/favicon.ico" sizes="48x48 32x32 16x16" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="stylesheet" href="/static-chrome.css" />
     <style>
       :root {
         color-scheme: dark;
@@ -25,16 +26,17 @@
       body {
         margin: 0;
         min-height: 100vh;
-        font-family: "Segoe UI", system-ui, sans-serif;
+        font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
         background: radial-gradient(100% 70% at 50% -10%, #1c1610 0%, var(--bg) 50%);
         color: var(--text);
-        display: grid;
-        place-items: center;
-        padding: 2rem;
+        display: block;
+        padding: 0;
       }
       main {
         max-width: 36rem;
+        margin: 2rem auto;
         text-align: center;
+        padding: 0 1.25rem 3rem;
       }
       h1 {
         font-weight: 600;
@@ -88,6 +90,13 @@
     </style>
   </head>
   <body>
+    <nav class="site-nav" aria-label="Site">
+      <a class="brand" href="/">Luminara Suite</a>
+      <a href="/how-it-works">How it works</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/why">Why Luminara</a>
+      <a href="/ai">Our AI</a>
+    </nav>
     <main>
       <h1>Luminara Suite for Windows</h1>
       <p>

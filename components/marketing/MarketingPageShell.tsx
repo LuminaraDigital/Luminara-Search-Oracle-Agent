@@ -22,7 +22,6 @@ export interface MarketingClosing {
 }
 
 interface MarketingPageShellProps {
-  brandSub?: string;
   footerStatement?: string;
   children: React.ReactNode;
   /** Wider main for tables / grids */
@@ -69,7 +68,6 @@ export const MarketingPageHeader: React.FC<{
 
 /** Shared marketing chrome: starfield backdrop, the one nav, a closing horizon and the one footer. */
 export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
-  brandSub,
   footerStatement,
   children,
   wide = false,
@@ -113,7 +111,6 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
       <MarketingAtmosphere intensity="page" />
       <MarketingNav
         brandLabel="Luminara Suite"
-        brandSub={brandSub}
         onBrandClick={chrome.onHome}
         links={chrome.links}
         primaryCta={chrome.primaryCta}

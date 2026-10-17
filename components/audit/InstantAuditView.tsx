@@ -545,7 +545,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Radar className="w-4 h-4 text-gold-light" />
           <span className="text-[10px] font-semibold tracking-wide text-gold-light">
-            {isFullAudit ? 'Full audit' : 'Quick scout'}
+            Instant Audit
             {sampleSource && !report ? ' · from Sample' : ''}
             {sampleSource && report ? ' · was Sample handoff' : ''}
           </span>
@@ -587,8 +587,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-gold"></span>
             <span className="text-gray-300">
-              No business profile yet. You can still run a <strong className="text-white">Quick scout</strong>.
-              Set your profile to unlock a full, USP-aware audit.
+              No business profile yet. You can still run <strong className="text-white">Instant Audit</strong>.
+              Set your profile to unlock a USP-aware audit.
             </span>
           </div>
           {onNavigateDNA && (
@@ -677,11 +677,12 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-white/5">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Report type:</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus:</span>
                 {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                   <button
                     key={f}
                     type="button"
+                    title={f === 'SEO' ? 'Search' : f === 'AEO' ? 'Answer engines' : 'AI answers'}
                     aria-pressed={focus === f}
                     onClick={() => setFocus(f)}
                     className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
@@ -755,7 +756,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
               <div className="flex items-center gap-3">
                 <div className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse" />
                 <span className="text-xs text-white font-medium">
-                  {isFullAudit ? 'Conducting full brand audit…' : 'Quick scout in progress…'}
+                  Instant Audit in progress…
                 </span>
               </div>
               <span className="text-[11px] font-mono text-gold-light truncate max-w-xs">{progressStage || 'Initializing agents…'}</span>

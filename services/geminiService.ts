@@ -855,10 +855,10 @@ Respect these consolidated business memories and historical recommendation outco
       searchGrounding = searchGrounding.slice(0, 3500) + '\n[...search evidence truncated for token budget]';
     }
 
-    const auditMode = dna?.name ? 'Full audit' : 'Quick scout';
+    const auditMode = dna?.name ? 'Full audit' : 'Instant Audit';
     const pastExperienceText = postAuditReflectionService.formatExperienceForPrompt(displayUrl);
     const prompt = `
-${dnaContext || '[MODE: Quick scout - no Business DNA. Keep recommendations general. Label the report Mode: Quick scout.]'}
+${dnaContext || '[MODE: Instant Audit - no Business DNA. Keep recommendations general. Label the report Mode: Instant Audit.]'}
 ${methodology}
 ${pastExperienceText ? `${pastExperienceText}\n` : ''}${wrapUntrustedContent('SCRAPED_PAGE', scrapedContent)}
 ${wrapUntrustedContent('SEARCH_GROUNDING', searchGrounding)}

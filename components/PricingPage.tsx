@@ -28,7 +28,7 @@ export function planChoiceLine(title: string, tier: { stars: string; ton: string
 
 /** One-off runs sold by the Worker alongside the plans. */
 const ONE_OFFS = [
-  { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit. Self-reported, not independently checked.' },
+  { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit. Luminara records the result. It is not an independent certification.' },
   { title: 'Deep multi-agent crawl', price: '75 Stars', body: 'One deep crawl with competitor gap findings.' },
 ] as const;
 
@@ -50,7 +50,6 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
 
   return (
     <MarketingPageShell
-      brandSub="Pricing"
       wide
       closing={{
         eyebrow: 'Start free',

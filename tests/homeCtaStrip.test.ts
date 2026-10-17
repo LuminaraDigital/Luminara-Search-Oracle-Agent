@@ -29,7 +29,7 @@ describe('HomeCtaStrip content contract', () => {
     expect(HOME_CTA_SUB).toContain('SEO, AEO and GEO');
     expect(HOME_CTA_PRIMARY_LABEL).toBe('Start Instant Audit');
     expect(HOME_CTA_SECONDARY_LABEL).toBe('Set up business profile first');
-    expect(HOME_CTA_IDEA_LABEL).toBe('No domain yet? Idea Scout');
+    expect(HOME_CTA_IDEA_LABEL).toBe('Start from an idea');
   });
 
   it('primary CTA targets INSTANT_AUDIT (what onNavigate receives)', () => {

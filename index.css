@@ -32,6 +32,10 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  /* gray-500 (#6b7280) is 4.34:1 on black. Captions need 4.5:1. */
+  .text-gray-500 { color: #a8a39a; }
+  .text-gray-600 { color: #9a958c; }
 }
 
 @media (pointer: coarse) {

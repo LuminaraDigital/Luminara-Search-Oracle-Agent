@@ -325,7 +325,9 @@ async function workerCredential(
   };
 }
 
-async function applyAuthPersistence(keepSignedIn = true): Promise<void> {
+export const MIN_PASSWORD_LENGTH = 8;
+
+async function applyAuthPersistence(keepSignedIn = false): Promise<void> {
   try {
     const a = ensureAuth();
     const setPersistenceFn = (firebaseAuthSdk as { setPersistence?: (auth: Auth, p: unknown) => Promise<void> })
@@ -393,7 +395,7 @@ export async function signUpWithEmail(
   password: string,
   opts?: { keepSignedIn?: boolean },
 ): Promise<User> {
-  await applyAuthPersistence(opts?.keepSignedIn ?? true);
+  await applyAuthPersistence(opts?.keepSignedIn ?? false);
   const gated = await workerCredential('/api/auth/sign-up', email, password);
   if (!gated.ok) {
     if (!shouldFallbackToBrowserSdk(gated)) {
@@ -427,7 +429,7 @@ export async function signInWithEmail(
   password: string,
   opts?: { keepSignedIn?: boolean },
 ): Promise<User> {
-  await applyAuthPersistence(opts?.keepSignedIn ?? true);
+  await applyAuthPersistence(opts?.keepSignedIn ?? false);
   const gated = await workerCredential('/api/auth/sign-in', email, password);
   if (!gated.ok) {
     if (!shouldFallbackToBrowserSdk(gated)) {
@@ -439,7 +441,7 @@ export async function signInWithEmail(
 }
 
 export async function signInWithGoogle(opts?: { keepSignedIn?: boolean }): Promise<User> {
-  await applyAuthPersistence(opts?.keepSignedIn ?? true);
+  await applyAuthPersistence(opts?.keepSignedIn ?? false);
   ensureAuth();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -534,7 +536,7 @@ export function friendlyFirebaseError(err: unknown): string {
     case 'auth/invalid-email':
       return 'Enter a valid email address.';
     case 'auth/weak-password':
-      return 'Use a password with at least 6 characters.';
+      return `Use a password with at least ${MIN_PASSWORD_LENGTH} characters.`;
     case 'auth/user-not-found':
     case 'auth/wrong-password':
     case 'auth/invalid-credential':

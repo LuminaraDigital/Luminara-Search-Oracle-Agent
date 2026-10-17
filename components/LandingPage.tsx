@@ -50,7 +50,7 @@ const VALUE_PROPS = [
   },
   {
     title: 'Works where you work',
-    body: 'Use it on the web, on Windows or in Telegram. On Growth and Agency, your developer can pull the fix into Cursor or Claude.',
+    body: 'Use it on the web, on Windows or in Telegram. On Growth and Pro / Agency, your developer can pull the fix into Cursor or Claude.',
   },
 ] as const;
 
@@ -157,7 +157,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         <section
           ref={anchorRefs[0]}
           aria-labelledby="hero-heading"
-          className="relative z-10 flex min-h-[100svh] flex-col items-center px-5 pb-[30svh] pt-[max(6.5rem,13svh)] text-center sm:px-8"
+          className="relative z-10 flex min-h-[100svh] flex-col items-center px-5 pb-16 pt-[max(6.5rem,13svh)] text-center sm:px-8"
         >
           <div
             aria-hidden
@@ -203,7 +203,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         <section
           ref={anchorRefs[1]}
           aria-labelledby="shift-heading"
-          className="relative z-10 flex min-h-[100svh] items-center justify-center px-5 py-24 text-center sm:px-8"
+          className="relative z-10 flex items-center justify-center px-5 py-16 text-center sm:px-8 sm:py-20"
         >
           <div className="relative max-w-4xl" data-reveal>
             <div
@@ -227,7 +227,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <div
               key={c.id}
               ref={anchorRefs[2 + i]}
-              className="flex min-h-[80svh] items-end px-5 pb-[5svh] sm:px-8 lg:min-h-[92svh] lg:items-center lg:px-0 lg:pb-0"
+              className="flex items-center px-5 py-12 sm:px-8 lg:px-0 lg:py-16"
             >
               <article
                 className="lx-chapter w-full max-w-xl rounded-3xl bg-black/75 p-6 lg:ml-[6vw] lg:max-w-[min(34rem,40vw)] lg:bg-transparent lg:p-0 xl:ml-[8vw]"
@@ -289,7 +289,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
       <section
         id="report"
         aria-labelledby="report-heading"
-        className="relative z-10 overflow-hidden border-t lx-hairline px-5 py-28 sm:px-8 sm:py-36"
+        className="relative z-10 overflow-hidden border-t lx-hairline px-5 py-16 sm:px-8 sm:py-20"
       >
         <div
           aria-hidden
@@ -364,7 +364,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
       <section
         id="why"
         aria-labelledby="why-heading"
-        className="relative z-10 border-t lx-hairline px-5 py-28 sm:px-8 sm:py-36"
+        className="relative z-10 border-t lx-hairline px-5 py-16 sm:px-8 sm:py-20"
       >
         <div className="mx-auto max-w-6xl">
           <div className="max-w-3xl" data-reveal>
@@ -392,14 +392,14 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <div className="max-w-md">
               <p className="text-[15px] font-medium text-[var(--color-ink)]">For developers and agencies</p>
               <p className="mt-1 text-sm leading-relaxed text-[var(--color-ink-2)]">
-                Pull your latest verdict and fix into Cursor or Claude Code over MCP. Included on Growth and Agency.{' '}
+                Pull your latest verdict and fix into Cursor or Claude Code over MCP. Included on Growth and Pro / Agency.{' '}
                 <a href="/docs/mcp.html" className="lx-link">
                   Setup guide
                 </a>
               </p>
             </div>
-            <div className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--color-rule)] bg-black/50 py-1.5 pl-4 pr-1.5">
-              <code className="min-w-0 truncate font-mono text-xs text-[var(--color-ink)]">{MCP_COMMAND}</code>
+            <div className="flex min-w-0 w-full max-w-xl items-center gap-2 rounded-2xl border border-[var(--color-rule)] bg-black/50 py-1.5 pl-4 pr-1.5">
+              <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-[var(--color-ink)]">{MCP_COMMAND}</code>
               <button type="button" onClick={copyMcp} className="lx-btn lx-btn-ghost !min-h-8 shrink-0 !px-3.5 !py-1.5 text-xs">
                 {copied ? 'Copied' : 'Copy'}
               </button>

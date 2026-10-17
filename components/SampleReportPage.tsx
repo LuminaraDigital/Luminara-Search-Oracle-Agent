@@ -43,7 +43,6 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
 
   return (
     <MarketingPageShell
-      brandSub="Sample"
       footerStatement="Know where AI recommends you. Fix what matters first."
       closing={{
         eyebrow: 'Your turn',

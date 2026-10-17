@@ -4,7 +4,7 @@ import {
   evaluateLlmCrawlerReadiness,
   unevaluatedLlmCrawlerReport,
 } from '../services/audit/llmCrawlerReadiness';
-import { suiteCitabilityChecklist } from '../services/audit/suiteCitabilityChecklist';
+import { citabilityStatusLabel, suiteCitabilityChecklist } from '../services/audit/suiteCitabilityChecklist';
 import { LLMS_TXT, ROBOTS_TXT } from '../worker/crawlDocuments';
 import { parseTeaserCreateBody, TEASER_CRAWLER_CHECK_LIMIT } from '../worker/shareService';
 
@@ -121,28 +121,27 @@ describe('Suite GEO checklist', () => {
   it('stays not_measured until a probe status is supplied', () => {
     const items = suiteCitabilityChecklist();
     expect(items.map((item) => item.id)).toEqual([
-      'suite_llms',
-      'suite_robots',
-      'suite_sitemap',
-      'suite_aeo',
-      'suite_honesty',
-      'suite_entity',
-      'suite_teaser',
+      'site_robots',
+      'site_llms',
+      'site_sitemap',
+      'site_answers',
+      'site_entity',
+      'site_schema',
     ]);
     expect(items.every((item) => item.status === 'not_measured')).toBe(true);
-    expect(items.find((item) => item.id === 'suite_aeo')?.href).toBe('/docs/what-is-aeo.html');
-    expect(items.find((item) => item.id === 'suite_honesty')?.href).toContain('#honesty');
+    expect(items.every((item) => !('href' in item))).toBe(true);
+    expect(citabilityStatusLabel('not_measured')).toBe('Not measured');
     noScore(items);
   });
 
   it('accepts a probe status and ignores anything else', () => {
     const items = suiteCitabilityChecklist({
-      suite_llms: 'pass',
-      suite_robots: 'nope' as 'pass',
+      site_llms: 'pass',
+      site_robots: 'nope' as 'pass',
     });
-    expect(items.find((item) => item.id === 'suite_llms')?.status).toBe('pass');
-    expect(items.find((item) => item.id === 'suite_robots')?.status).toBe('not_measured');
-    expect(items.filter((item) => item.id !== 'suite_llms').every((item) => item.status === 'not_measured')).toBe(true);
+    expect(items.find((item) => item.id === 'site_llms')?.status).toBe('pass');
+    expect(items.find((item) => item.id === 'site_robots')?.status).toBe('not_measured');
+    expect(items.filter((item) => item.id !== 'site_llms').every((item) => item.status === 'not_measured')).toBe(true);
   });
 });
 
@@ -178,7 +177,8 @@ describe('What is AEO page', () => {
     expect(html).toContain('id="honesty"');
     expect(html).toContain('id="methodology"');
     expect(html).toContain('id="faq"');
-    expect(html).toContain('not_measured');
+    expect(html).toContain('Not measured');
+    expect(html).not.toContain('not_measured');
     expect(html).toContain('/share/teaser/');
     expect(html).toContain('FAQPage');
     expect(html).not.toContain('\u2014');

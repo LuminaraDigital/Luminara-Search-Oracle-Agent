@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { subscribeQuota, fetchQuotaStatus, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
+import { useAppAuth } from '../../services/auth/useAppAuth';
 
 interface Props {
   className?: string;
@@ -8,11 +9,12 @@ interface Props {
 
 export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = true }) => {
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
+  const auth = useAppAuth();
 
   useEffect(() => {
-    fetchQuotaStatus();
+    if (!auth.loading && auth.authenticated) void fetchQuotaStatus();
     return subscribeQuota(q => setQuota(q));
-  }, []);
+  }, [auth.loading, auth.authenticated]);
 
   if (!quota) {
     return null;

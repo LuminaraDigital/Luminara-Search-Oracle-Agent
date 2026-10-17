@@ -1028,7 +1028,7 @@ describe('Instant Audit degraded provider failures', () => {
       instantAuditPrimaryLabel(loading, false),
     ));
     expect(html).not.toContain('Scanning');
-    expect(html).toContain('Run quick scout');
+    expect(html).toContain('Run Instant Audit');
     expect(html).not.toContain('disabled');
   });
 

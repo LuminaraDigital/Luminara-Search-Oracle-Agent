@@ -84,7 +84,7 @@ function graph(
 export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/': {
     path: '/',
-    title: 'Luminara Suite | AI visibility audit and action plan',
+    title: 'AI visibility audit | Luminara Suite',
     description:
       'Find out whether AI search recommends your business. Audit Google, AI Overviews, ChatGPT and Perplexity, then get a prioritised action plan. No invented scores.',
     jsonLd: graph(
@@ -98,7 +98,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Be the answer AI gives.</h1>
   <p>Customers now ask ChatGPT, Perplexity, Google and AI Overviews who to trust. Luminara Suite checks whether those answers name your business, then gives you the one fix to ship next.</p>
-  <p>Start with a free live crawl check of your site: no card, no signup. Create a free account to run the full audit. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
+  <p>Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
     <li><a href="/methodology">Methodology</a></li>
@@ -214,7 +214,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account.</p>
   <p>Starter: web audits for a small site set. No MCP. No share links.</p>
   <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>
-  <p>Agency: Growth capabilities plus API access and client workspaces.</p>
+  <p>Pro / Agency: Growth capabilities plus API access and client workspaces.</p>
   <p>Telegram Stars billing is available in the Mini App. No invented SEO scores on any plan.</p>
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
 </section>`,
