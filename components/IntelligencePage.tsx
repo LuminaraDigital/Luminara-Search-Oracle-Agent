@@ -73,7 +73,7 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({
           {nodes.map((node, idx) => (
             <li key={node.title} className="min-w-0" data-reveal style={{ transitionDelay: `${(idx % 2) * 90}ms` }}>
               <span aria-hidden className="font-serif text-4xl leading-none lx-gold-text">{`0${idx + 1}`}</span>
-              <div aria-hidden className="mt-5 h-px w-full bg-gradient-to-r from-[var(--color-accent)]/60 to-transparent" />
+              <div aria-hidden className="mt-5 h-px w-full bg-gradient-to-r from-gold/60 to-transparent" />
               <h3 className="mt-5 font-serif text-3xl leading-tight text-[var(--color-ink)]">{node.title}</h3>
               <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">{node.desc}</p>
             </li>

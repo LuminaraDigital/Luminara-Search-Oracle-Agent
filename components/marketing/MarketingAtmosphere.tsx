@@ -19,7 +19,7 @@ export const MarketingAtmosphere: React.FC<{ intensity?: Intensity; className?: 
       <div
         className="absolute left-1/2 top-0 h-[60vh] w-[140vw] -translate-x-1/2"
         style={{
-          background: `radial-gradient(ellipse 50% 60% at 50% 0%, rgb(191 149 63 / ${strong ? 0.16 : 0.09}), transparent 70%)`,
+          background: `radial-gradient(ellipse 50% 60% at 50% 0%, color-mix(in srgb, var(--gold) ${strong ? 16 : 9}%, transparent), transparent 70%)`,
         }}
       />
     </div>

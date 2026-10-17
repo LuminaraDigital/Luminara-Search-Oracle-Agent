@@ -34,7 +34,7 @@ export const MarketingFooter: React.FC<MarketingFooterProps> = ({
           Luminara Suite
         </span>
       </div>
-      <p className="font-serif italic text-xl sm:text-2xl text-[var(--gold-light)]/85 max-w-xl leading-snug">
+      <p className="font-serif italic text-xl sm:text-2xl text-gold-light/85 max-w-xl leading-snug">
         {statement}
       </p>
       <nav className="flex flex-wrap justify-center gap-x-6 gap-y-3" aria-label="Footer">
@@ -54,7 +54,7 @@ export const MarketingFooter: React.FC<MarketingFooterProps> = ({
           href="https://luminaradigital.io"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[var(--gold)]/80 hover:text-[var(--gold-light)] transition-colors"
+          className="text-gold/80 hover:text-gold-light transition-colors"
         >
           Luminara Digital
         </a>

@@ -140,9 +140,12 @@ export function centerPose(w: number, h: number): GlobePose {
   return { cx: w / 2, cy: h * 0.5, r, sun: CENTER_SUN, flare: 0.2, dim: 0.5, dots: 0.9 };
 }
 
-/** Story chapters: globe to the right on wide screens, above the copy on narrow ones. */
-export function storyPose(w: number, h: number): GlobePose {
-  if (w >= 1024) {
+/**
+ * Story chapters: globe to the right on wide screens, above the copy on narrow ones.
+ * `wide` follows the CSS lg breakpoint (viewport width), not the canvas width, so a classic scrollbar cannot flip layouts.
+ */
+export function storyPose(w: number, h: number, wide = w >= 1024): GlobePose {
+  if (wide) {
     return { cx: w * 0.72, cy: h * 0.5, r: Math.min(w * 0.24, h * 0.37), sun: STORY_SUN, flare: 0, dim: 1, dots: 1 };
   }
   return { cx: w / 2, cy: h * 0.25, r: Math.min(w * 0.38, h * 0.18), sun: STORY_SUN, flare: 0, dim: 1, dots: 1 };

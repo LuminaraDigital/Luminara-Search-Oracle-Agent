@@ -94,7 +94,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
               <span aria-hidden className="font-serif text-4xl leading-none lx-gold-text">
                 {(idx + 1).toString().padStart(2, '0')}
               </span>
-              <div aria-hidden className="mt-5 h-px w-full bg-gradient-to-r from-[var(--color-accent)]/60 to-transparent" />
+              <div aria-hidden className="mt-5 h-px w-full bg-gradient-to-r from-gold/60 to-transparent" />
               <h3 className="mt-5 text-xl font-medium text-[var(--color-ink)]">{p.title}</h3>
               <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">{p.desc}</p>
             </li>

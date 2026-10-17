@@ -68,8 +68,6 @@
     "grounding:fetch": "node --experimental-strip-types services/grounding/cli.ts --fetch",
     "grounding:gate": "node --experimental-strip-types services/grounding/cli.ts",
     "grounding:score": "node --experimental-strip-types services/grounding/cli.ts",
-    "constellation:bake": "node scripts/constellation/bake.mjs",
-    "constellation:bake:check": "node scripts/constellation/bake.mjs --check-only",
     "rl:transmute": "node scripts/rl/transmute-datasets.mjs",
     "rl:dpo": "node --experimental-strip-types scripts/rl/dpo-alignment-orchestrator.mjs"
   },

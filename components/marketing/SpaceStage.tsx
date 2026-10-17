@@ -16,9 +16,9 @@ import {
   storyProgress,
   type GlobePose,
 } from './earth/globeMath';
-import { STORY_CHAPTERS } from './earth/globeStory';
+import { STORY_CHAPTERS, type StoryChapter } from './earth/globeStory';
 import type { GlobeLayers, GlobeRenderer, GlobeTarget } from './earth/globeRenderer';
-import { isLowMemoryDevice, isSaveDataEnabled, prefersReducedMotion } from './constellationCapability';
+import { isLowMemoryDevice, isSaveDataEnabled, prefersReducedMotion } from './deviceCapability';
 
 interface SpaceStageProps {
   /** Scroll anchors in order: hero, statement, then one per story chapter. */
@@ -27,14 +27,20 @@ interface SpaceStageProps {
   onChapterChange: (index: number) => void;
 }
 
-type Status = 'loading' | 'ready' | 'fallback';
+/** What the globe shows for each chapter (the ambient network is hero-only). */
+const CHAPTER_LAYERS: Record<StoryChapter['id'], Omit<GlobeLayers, 'network'>> = {
+  scan: { story: 0, marker: 1, proof: 0, fix: 0, scan: 1 },
+  ask: { story: 1, marker: 1, proof: 0, fix: 0, scan: 0 },
+  prove: { story: 0.35, marker: 1, proof: 1, fix: 0, scan: 0 },
+  fix: { story: 1, marker: 1, proof: 0, fix: 1, scan: 0 },
+};
 
-const CHAPTER_LAYERS: readonly GlobeLayers[] = [
-  { network: 0, story: 0, marker: 1, proof: 0, fix: 0, scan: 1 },
-  { network: 0, story: 1, marker: 1, proof: 0, fix: 0, scan: 0 },
-  { network: 0, story: 0.35, marker: 1, proof: 1, fix: 0, scan: 0 },
-  { network: 0, story: 1, marker: 1, proof: 0, fix: 1, scan: 0 },
-];
+export interface StageLayout {
+  /** Viewport is at or above the CSS lg breakpoint. */
+  wide: boolean;
+  /** Reduced motion: one still pose per section, no scroll-linked zoom or parallax. */
+  reduced: boolean;
+}
 
 /** Story scalar S: 0 hero, 1 statement centred, 2 + i chapter i centred. */
 export function chapterForProgress(s: number): number {
@@ -42,11 +48,19 @@ export function chapterForProgress(s: number): number {
   return clamp(Math.round(s - 2), 0, STORY_CHAPTERS.length - 1);
 }
 
-export function targetForProgress(s: number, w: number, h: number): GlobeTarget {
+export function targetForProgress(
+  rawS: number,
+  w: number,
+  h: number,
+  layout: StageLayout = { wide: w >= 1024, reduced: false },
+): GlobeTarget {
+  const s = layout.reduced ? Math.round(rawS) : rawS;
+  const story = storyPose(w, h, layout.wide);
   let pose: GlobePose;
   if (s <= 1) pose = lerpPose(horizonPose(w, h), centerPose(w, h), easeInOut(s));
-  else if (s <= 2) pose = lerpPose(centerPose(w, h), storyPose(w, h), easeInOut(s - 1));
-  else pose = storyPose(w, h);
+  else if (s <= 2) pose = lerpPose(centerPose(w, h), story, easeInOut(s - 1));
+  else pose = story;
+  const starShift = layout.reduced ? 0 : s * 90;
 
   const chapter = chapterForProgress(s);
   if (chapter < 0) {
@@ -63,12 +77,12 @@ export function targetForProgress(s: number, w: number, h: number): GlobeTarget 
         fix: 0,
         scan: 0,
       },
-      starShift: s * 90,
+      starShift,
     };
   }
-  const focus = STORY_CHAPTERS[chapter].focus;
+  const { id, focus } = STORY_CHAPTERS[chapter];
   const fadeIn = smoothstep(1.5, 1.95, s);
-  const base = CHAPTER_LAYERS[chapter];
+  const base = CHAPTER_LAYERS[id];
   return {
     pose,
     lat: focus.lat,
@@ -81,7 +95,7 @@ export function targetForProgress(s: number, w: number, h: number): GlobeTarget 
       fix: base.fix * fadeIn,
       scan: base.scan * fadeIn,
     },
-    starShift: s * 90,
+    starShift,
   };
 }
 
@@ -92,7 +106,7 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
   const rendererRef = useRef<GlobeRenderer | null>(null);
   const chapterRef = useRef(-1);
   const onChapterRef = useRef(onChapterChange);
-  const [status, setStatus] = useState<Status>('loading');
+  const [ready, setReady] = useState(false);
 
   onChapterRef.current = onChapterChange;
 
@@ -104,6 +118,7 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
 
     let cancelled = false;
     const reduced = prefersReducedMotion();
+    const wideQuery = window.matchMedia('(min-width: 1024px)');
     const lowPower =
       isLowMemoryDevice() || (navigator.hardwareConcurrency || 8) <= 4 || window.innerWidth < 640;
 
@@ -135,18 +150,17 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
     onScroll();
 
     let visible = true;
-    const io = new IntersectionObserver((entries) => {
-      visible = entries.some((e) => e.isIntersecting);
-      rendererRef.current?.setVisible(visible);
-    });
-    io.observe(stage);
+    const io =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver((entries) => {
+            visible = entries.some((e) => e.isIntersecting);
+            rendererRef.current?.setVisible(visible);
+          });
+    io?.observe(stage);
 
     const start = () => {
-      if (cancelled) return;
-      if (isSaveDataEnabled()) {
-        setStatus('fallback');
-        return;
-      }
+      if (cancelled || isSaveDataEnabled()) return;
       import('./earth/globeRenderer')
         .then(({ createGlobeRenderer }) => {
           if (cancelled) return;
@@ -157,20 +171,20 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
             getTarget: (w, h) => {
               const s = readProgress();
               reportChapter(s);
-              return targetForProgress(s, w, h);
+              return targetForProgress(s, w, h, { wide: wideQuery.matches, reduced });
             },
             onReady: () => {
-              if (!cancelled) setStatus('ready');
+              if (!cancelled) setReady(true);
             },
-            onLost: () => {
-              if (!cancelled) setStatus('fallback');
+            onFail: () => {
+              if (!cancelled) setReady(false);
             },
           });
           rendererRef.current.setVisible(visible);
         })
         .catch((err: unknown) => {
+          // No WebGL, a software rasteriser or a missing chunk: the CSS planet stays.
           console.warn('[SpaceStage] static fallback:', err);
-          if (!cancelled) setStatus('fallback');
         });
     };
 
@@ -190,7 +204,7 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
       cancelled = true;
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
-      io.disconnect();
+      io?.disconnect();
       if (idleId !== null) idleWin.cancelIdleCallback?.(idleId);
       if (timerId !== null) window.clearTimeout(timerId);
       rendererRef.current?.destroy();
@@ -198,22 +212,20 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
     };
   }, [anchors]);
 
+  const shown = ready ? 'opacity-100' : 'opacity-0';
+  const fallback = ready ? 'opacity-0' : 'opacity-100';
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0">
       <div ref={stageRef} className="lx-stage sticky top-0 h-[100svh] overflow-hidden">
-        <div className={`lx-stars absolute inset-0 transition-opacity duration-1000 ${status === 'ready' ? 'opacity-0' : 'opacity-100'}`} />
-        <div className={`lx-planet-fallback transition-opacity duration-1000 ${status === 'ready' ? 'opacity-0' : 'opacity-100'}`} />
+        <div className={`lx-stars absolute inset-0 transition-opacity duration-1000 motion-reduce:transition-none ${fallback}`} />
+        <div className={`lx-planet-fallback transition-opacity duration-1000 motion-reduce:transition-none ${fallback}`} />
         <canvas
           ref={canvasRef}
-          className={`absolute inset-0 h-full w-full transition-opacity duration-1000 motion-reduce:transition-none ${
-            status === 'ready' ? 'opacity-100' : 'opacity-0'
-          }`}
+          className={`absolute inset-0 h-full w-full transition-opacity duration-1000 motion-reduce:transition-none ${shown}`}
         />
         <canvas
           ref={overlayRef}
-          className={`absolute inset-0 h-full w-full transition-opacity duration-1000 motion-reduce:transition-none ${
-            status === 'ready' ? 'opacity-100' : 'opacity-0'
-          }`}
+          className={`absolute inset-0 h-full w-full transition-opacity duration-1000 motion-reduce:transition-none ${shown}`}
         />
       </div>
     </div>

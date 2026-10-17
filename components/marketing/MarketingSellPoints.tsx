@@ -12,7 +12,7 @@ export const MARKETING_SELL_POINTS = [
   },
   {
     title: 'One action you can ship',
-    body: 'Sample scout to Instant Audit to a plain-English next step. Growth adds shareable report links and IDE access.',
+    body: 'Live crawl check to Instant Audit to a plain-English next step. Growth adds shareable report links and IDE access.',
   },
 ] as const;
 
@@ -39,7 +39,7 @@ export const MarketingSellPoints: React.FC<MarketingSellPointsProps> = ({
       {MARKETING_SELL_POINTS.map((point, idx) => (
         <li key={point.title} className="min-w-0" data-reveal style={{ transitionDelay: `${idx * 90}ms` }}>
           <span aria-hidden className="font-serif text-5xl leading-none lx-gold-text">{`0${idx + 1}`}</span>
-          <div aria-hidden className="mt-6 h-px w-full bg-gradient-to-r from-[var(--color-accent)]/60 to-transparent" />
+          <div aria-hidden className="mt-6 h-px w-full bg-gradient-to-r from-gold/60 to-transparent" />
           <h3 className="mt-6 text-xl font-medium text-[var(--color-ink)]">{point.title}</h3>
           <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">{point.body}</p>
         </li>

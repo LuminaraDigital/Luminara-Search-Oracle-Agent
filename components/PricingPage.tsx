@@ -11,45 +11,13 @@ import { getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isTonAvailable } from './paywall/paymentOptions';
-import { PAID_PLAN_PRICES, type PaidPlanId } from './paywall/planPrices';
+import { PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './paywall/planCopy';
+
+export { pricingTiers };
 
 interface PricingPageProps {
   onTerminal: () => void;
 }
-
-export const pricingTiers: Array<{
-  id: PaidPlanId;
-  priceLabel: string;
-  stars: string;
-  ton: string;
-  blurb: string;
-  highlight: boolean;
-}> = [
-  {
-    id: 'starter',
-    priceLabel: PAID_PLAN_PRICES.starter.usdLabel,
-    stars: PAID_PLAN_PRICES.starter.starsLabel,
-    ton: PAID_PLAN_PRICES.starter.tonLabel,
-    blurb: 'Web audits for up to 2 sites. No IDE connectors or public share links.',
-    highlight: false,
-  },
-  {
-    id: 'growth',
-    priceLabel: PAID_PLAN_PRICES.growth.usdLabel,
-    stars: PAID_PLAN_PRICES.growth.starsLabel,
-    ton: PAID_PLAN_PRICES.growth.tonLabel,
-    blurb: 'The growth plan: IDE access, shareable reports, 3 seats, weekly re-audits.',
-    highlight: true,
-  },
-  {
-    id: 'agency',
-    priceLabel: PAID_PLAN_PRICES.agency.usdLabel,
-    stars: PAID_PLAN_PRICES.agency.starsLabel,
-    ton: PAID_PLAN_PRICES.agency.tonLabel,
-    blurb: 'API access for paid research, 10 client workspaces, 10 team seats, daily re-audits, white-label PDF.',
-    highlight: false,
-  },
-];
 
 /** The line the paywall opens with when a plan is chosen here. TON is named only while its checkout is open. */
 export function planChoiceLine(title: string, tier: { stars: string; ton: string }, tonOpen: boolean): string {
@@ -63,21 +31,6 @@ const ONE_OFFS = [
   { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit. Self-reported, not independently checked.' },
   { title: 'Deep multi-agent crawl', price: '75 Stars', body: 'One deep crawl with competitor gap findings.' },
 ] as const;
-
-function bulletsFor(id: PaidPlanId): string[] {
-  const e = PLAN_ENTITLEMENTS[id];
-  const lines = [
-    `${e.domainLimit} monitored domains`,
-    e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audits`,
-    id === 'agency' ? 'White-label PDF exports' : id === 'growth' ? 'Branded PDF exports' : 'Standard PDF exports',
-    e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',
-    e.shareLinks ? 'Public share links' : 'No public share links',
-    `${e.teamSeats} team seat${e.teamSeats === 1 ? '' : 's'}`,
-  ];
-  if (e.apiAccess) lines.push('Paid research API (Agency plan or your own DataForSEO login)');
-  if (e.agencyClientLimit > 0) lines.push(`${e.agencyClientLimit} client workspaces`);
-  return lines;
-}
 
 const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
   useEffect(() => {
@@ -131,13 +84,13 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         </h2>
         <div className="lx-glass grid overflow-hidden rounded-3xl lg:grid-cols-3">
           {pricingTiers.map((tier) => {
-            const lines = bulletsFor(tier.id);
-            const title = PLAN_ENTITLEMENTS[tier.id].title;
+            const lines = planBullets(tier.id);
+            const title = planTitle(tier.id);
             return (
               <article
                 key={tier.id}
                 className={`relative flex min-w-0 flex-col border-t p-7 lx-hairline first:border-t-0 sm:p-9 lg:border-l lg:border-t-0 lg:first:border-l-0 ${
-                  tier.highlight ? 'bg-[radial-gradient(ellipse_at_top,rgb(191_149_63/0.18),transparent_70%)]' : ''
+                  tier.highlight ? 'bg-[radial-gradient(ellipse_at_top,color-mix(in_srgb,var(--gold)_18%,transparent),transparent_70%)]' : ''
                 }`}
               >
                 {tier.highlight && (
@@ -148,7 +101,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 )}
                 <div className="flex items-baseline justify-between gap-3">
                   <h3 className="font-serif text-3xl leading-tight text-[var(--color-ink)]">{title}</h3>
-                  {tier.highlight && <p className="lx-eyebrow shrink-0 !text-[11px]">Recommended</p>}
+                  {tier.highlight && <p className="lx-eyebrow shrink-0 !text-[11px]">{PLAN_CARD_BADGE}</p>}
                 </div>
                 <p
                   className={`mt-7 font-serif text-6xl leading-none ${

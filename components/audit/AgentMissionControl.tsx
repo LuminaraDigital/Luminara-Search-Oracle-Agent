@@ -45,7 +45,7 @@ export function missionControlHeadline(
   if (measurementStatus === 'measured') {
     return 'Multi-agent audit complete. Measured signals come from live page and search evidence.';
   }
-  return 'Audit finished. Some signals were not measured.';
+  return 'This run did not measure the site, so no full report was generated.';
 }
 
 export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({

@@ -51,8 +51,8 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
   {
     id: 'fix',
     step: '04',
-    stage: 'Weekly fix',
-    title: 'Ship one fix. Re-check. Repeat.',
+    stage: 'Next fix',
+    title: 'Ship one fix, then check again.',
     body: 'You get the single change most likely to help, with copy and schema ready to paste. Publish it, re-check in one click, and see what moved.',
     focus: { lat: 44, lon: -18 },
   },

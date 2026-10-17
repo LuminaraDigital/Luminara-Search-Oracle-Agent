@@ -4,7 +4,8 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useDemoPlayback } from './demo/useDemoPlayback';
-import { normalizeDemoUrl, type DemoEngineRow } from './demo/demoFixtures';
+import { normalizeDemoUrl } from './demo/demoFixtures';
+import { EngineStatusChip } from './EvidenceGlyph';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import type { AuditHandoff } from '../../services/activation/auditHandoff';
 
@@ -13,42 +14,12 @@ interface DomainCheckProps {
   isAuthenticated?: boolean;
   /** Guests go to sign-up with the handoff; signed-in users go straight to the audit. */
   onFullAudit: (handoff?: AuditHandoff) => void;
-  align?: 'center' | 'left';
-}
-
-function StatusChip({ row }: { row: DemoEngineRow }) {
-  if (row.status === 'pending') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-ink-2)]">
-        <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--gold-light)] animate-pulse" />
-        Checking
-      </span>
-    );
-  }
-  if (row.status === 'measured') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--gold-light)]">
-        <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--color-accent)]" />
-        Measured
-      </span>
-    );
-  }
-  if (row.status === 'idle') {
-    return <span className="text-[12px] text-[var(--color-ink-2)]">Waiting</span>;
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-ink-2)]">
-      <span aria-hidden className="h-2 w-2 rounded-full border border-dashed border-[var(--color-ink-2)]" />
-      Not measured
-    </span>
-  );
 }
 
 export const DomainCheck: React.FC<DomainCheckProps> = ({
   inputId,
   isAuthenticated,
   onFullAudit,
-  align = 'center',
 }) => {
   const demo = useDemoPlayback();
   const [error, setError] = useState<string | null>(null);
@@ -90,8 +61,8 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
   const message = error || demo.error;
 
   return (
-    <div className={`w-full ${align === 'center' ? 'mx-auto' : ''} max-w-2xl`}>
-      <form onSubmit={submit} noValidate aria-label="Check your website" className="lx-domain">
+    <div className="mx-auto w-full max-w-2xl">
+      <form onSubmit={submit} noValidate className="lx-domain">
         <label htmlFor={inputId} className="sr-only">
           Your website
         </label>
@@ -111,10 +82,10 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
             demo.setUrl(e.target.value);
             if (error) setError(null);
           }}
-          placeholder="yourbusiness.com"
+          placeholder="yoursite.com"
           aria-invalid={Boolean(message)}
           aria-describedby={message ? `${inputId}-error` : undefined}
-          className="min-w-0 flex-1 bg-transparent pl-4 sm:pl-0 pr-2 py-3 text-base text-[var(--color-ink)] placeholder:text-[var(--color-ink-2)]/70 focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent pl-4 sm:pl-0 pr-2 py-3 text-base text-[var(--color-ink)] placeholder:text-ink/45 focus:outline-none"
         />
         <button
           type="submit"
@@ -154,13 +125,13 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
             {crawl && (
               <li className="col-span-2 sm:col-span-1 min-w-0">
                 <p className="text-[13px] text-[var(--color-ink)]">Crawl access</p>
-                <StatusChip row={crawl} />
+                <EngineStatusChip status={crawl.status} />
               </li>
             )}
             {engines.map((row) => (
               <li key={row.id} className="min-w-0">
                 <p className="truncate text-[13px] text-[var(--color-ink)]">{row.label}</p>
-                <StatusChip row={row} />
+                <EngineStatusChip status={row.status} />
               </li>
             ))}
           </ul>
@@ -173,8 +144,8 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
             <div className="mt-5 border-t border-[var(--color-rule)] pt-4">
               <p className="text-sm leading-relaxed text-[var(--color-ink-2)]">
                 {demo.resultKind === 'live_crawl'
-                  ? `${(crawl?.note ?? '').replace(/\s*Engines still need Instant Audit\.?$/, '')} The four engines are measured in the full audit.`
-                  : 'We could not reach the site for a live crawl just now. The full audit measures crawl access and all four engines.'}
+                  ? crawl?.note
+                  : 'We could not reach the site for a live crawl just now. Try again, or run the full audit.'}
               </p>
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <button
@@ -182,7 +153,7 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
                   onClick={() => onFullAudit(handoffFor(demo.fixture?.domain || demo.url))}
                   className="lx-btn lx-btn-gold"
                 >
-                  {isAuthenticated ? 'Run the full audit' : 'Measure all four engines, free'}
+                  {isAuthenticated ? 'Run the full audit' : 'Run the full audit, free'}
                 </button>
                 {!isAuthenticated && (
                   <span className="text-xs text-[var(--color-ink-2)]">Free account. No card.</span>

@@ -22,7 +22,7 @@ import {
   NETWORK_PLACES,
   STORY_CHAPTERS,
 } from '../components/marketing/earth/globeStory';
-import { landMaskFromPixels } from '../components/marketing/earth/globeRenderer';
+import { ENGINE_STATUS_LABEL } from '../components/marketing/EvidenceGlyph';
 import { chapterForProgress, targetForProgress } from '../components/marketing/SpaceStage';
 
 describe('globe math', () => {
@@ -121,23 +121,33 @@ describe('stage choreography', () => {
     expect(targetForProgress(4, 1440, 900).layers.proof).toBe(1);
     expect(targetForProgress(5, 1440, 900).layers.fix).toBe(1);
   });
+
+  it('holds one still pose per section under reduced motion', () => {
+    const reduced = { wide: true, reduced: true };
+    const a = targetForProgress(0.3, 1440, 900, reduced);
+    const b = targetForProgress(0.45, 1440, 900, reduced);
+    expect(a.pose).toEqual(b.pose);
+    expect(a.starShift).toBe(0);
+    expect(targetForProgress(0.7, 1440, 900, reduced).pose).toEqual(targetForProgress(1, 1440, 900).pose);
+  });
+
+  it('follows the viewport breakpoint, not the canvas width, for the story layout', () => {
+    const narrowLayout = targetForProgress(3, 1030, 900, { wide: false, reduced: false });
+    const wideLayout = targetForProgress(3, 1010, 900, { wide: true, reduced: false });
+    expect(narrowLayout.pose.cx).toBe(515);
+    expect(wideLayout.pose.cx).toBeGreaterThan(1010 * 0.6);
+  });
 });
 
-describe('land mask from the daymap', () => {
-  it('classifies blue ocean, shelves, land and ice', () => {
-    const px = Uint8ClampedArray.from([
-      10, 30, 90, 255, // deep ocean
-      60, 140, 190, 255, // shelf
-      60, 90, 40, 255, // forest
-      200, 170, 130, 255, // desert
-      235, 240, 245, 255, // ice
-      120, 130, 150, 255, // grey tundra
-    ]);
-    const m = landMaskFromPixels(px);
-    const land = [0, 1, 2, 3, 4, 5].map((i) => m[i * 4]);
-    const ice = [0, 1, 2, 3, 4, 5].map((i) => m[i * 4 + 1]);
-    expect(land).toEqual([0, 0, 255, 255, 255, 255]);
-    expect(ice).toEqual([0, 0, 0, 0, 255, 0]);
+describe('engine status labels', () => {
+  it('names every status, with methodology wording for the evidence states', () => {
+    expect(ENGINE_STATUS_LABEL).toEqual({
+      idle: 'Not run yet',
+      pending: 'Checking',
+      measured: 'Measured',
+      estimated: 'Estimated',
+      not_measured: 'Not measured',
+    });
   });
 });
 
@@ -152,6 +162,8 @@ describe('landing story copy stays honest', () => {
     expect(copy).not.toMatch(/\d+\s?%/);
     expect(copy).not.toMatch(/\b\d+x\b/i);
     expect(copy).not.toMatch(/guarantee/i);
+    // Weekly re-audits are a Growth feature, so the story must not promise a weekly cadence.
+    expect(copy).not.toMatch(/\bweek/i);
     expect(copy).not.toContain('—');
   });
 

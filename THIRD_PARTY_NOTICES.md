@@ -12,6 +12,30 @@ Luminara Suite is licensed under AGPL-3.0 (see LICENSE). It includes the followi
 
 Upstream credits individual contributors for several skills (seo-cluster by Lutfiya Miller, seo-sxo by Florian Schmitz, seo-drift by Dan Colta, seo-ecommerce by Matej Marjanovic, seo-content-brief by puneetindersingh); those credits are preserved in the vendored files.
 
+## ponytail
+
+- Source: https://github.com/DietrichGebert/ponytail (commit `2961b52fc1fe6a5a87c7a959a79512e5c2f3ffe5`)
+- Copyright (c) 2026 DietrichGebert
+- License: MIT. Full text in `.cursor/skills/ponytail/LICENSE` and in each other vendored ponytail skill directory. The same files are copied under `.claude/skills/`.
+- What we use: the skill markdown from `skills/` (`ponytail`, `ponytail-audit`, `ponytail-review`, `ponytail-debt`, `ponytail-gain`, `ponytail-help`).
+- Changes: skill files are unmodified. The upstream always-apply rule is not copied, because it repeats the skill body. This repo's rule points at the skill instead.
+
+## pstack
+
+- Source: https://github.com/cursor/plugins/tree/837067b75aa20ab58d7b2a2f6c0531e37118c596/pstack (commit `837067b75aa20ab58d7b2a2f6c0531e37118c596`)
+- Copyright (c) 2026 Lauren Tan
+- License: MIT. Full text in `.cursor/skills/poteto-mode/LICENSE` and in each other vendored pstack skill directory. The same files are copied under `.claude/skills/`.
+- What we use: every skill directory under `pstack/skills/` at that commit, installed as sibling folders so `poteto-mode` can resolve `../<name>/SKILL.md`.
+- Changes: skill files are unmodified. Plugin images, the Benny automation, and the guide docs are not vendored. `scripts/build-playbooks.mjs` compiles only its named SEO playbooks, so these skills do not enter `services/skills/playbooks.generated.json`.
+
+## thermo-nuclear-code-quality-review
+
+- Source: https://github.com/cursor/plugins/blob/837067b75aa20ab58d7b2a2f6c0531e37118c596/cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md (commit `837067b75aa20ab58d7b2a2f6c0531e37118c596`)
+- Copyright (c) 2026 Cursor
+- License: MIT. Full text in `.cursor/skills/thermo-nuclear-code-quality-review/LICENSE` and the copy under `.claude/skills/thermo-nuclear-code-quality-review/LICENSE`.
+- What we use: `SKILL.md` only.
+- Changes: none. The skill sets `disable-model-invocation: true`. `.cursor/rules/default-code-standards.mdc` names it and requires the review before a pull request is opened.
+
 ## Self-hosted helper services (not bundled; used over HTTP only)
 
 - **LanguageTool** (https://languagetool.org, https://github.com/languagetool-org/languagetool) — LGPL-2.1. Runs as a separate container (`erikvl87/languagetool`) started by `docker-compose.yml`; the app sends text to its `/v2/check` endpoint for the "Writing check" feature. No LanguageTool code is included in this repository.

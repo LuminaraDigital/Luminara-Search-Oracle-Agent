@@ -12,7 +12,7 @@ interface MethodologyPageProps {
 const ENUMS = [
   {
     title: 'Measured',
-    body: 'Live evidence from a run you signed in for (or paid for). Tied to the engines and prompts in that audit. Shown only when data was actually collected.',
+    body: 'Live evidence from a run. Your own keys on this device work without signing in. Hosted keys need a sign-in. Tied to the engines and prompts in that audit. Shown only when data was actually collected.',
   },
   {
     title: 'Estimated',
@@ -77,7 +77,7 @@ const MethodologyPage: React.FC<MethodologyPageProps> = ({
                 <EvidenceGlyph state={item.title} large />
                 {item.title}
               </h3>
-              <div aria-hidden className="mt-6 h-px w-full bg-gradient-to-r from-[var(--color-accent)]/60 to-transparent" />
+              <div aria-hidden className="mt-6 h-px w-full bg-gradient-to-r from-gold/60 to-transparent" />
               <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">{item.body}</p>
             </li>
           ))}
@@ -95,8 +95,8 @@ const MethodologyPage: React.FC<MethodologyPageProps> = ({
           </h2>
         </div>
         <p className="lx-lede md:col-span-7 md:pt-12" data-reveal>
-          The landing Probe shows Sample engine rows (always Not measured) and may add a Live crawl check
-          for robots.txt and llms.txt. Instant Audit measures answer engines after you create a free
+          The live crawl check on the landing page reads robots.txt and llms.txt for the domain you type, and
+          keeps the four engine rows Not measured. Instant Audit measures answer engines after you create a free
           account (hosted daily allowance) or sign in. Public share previews never invent scores.
         </p>
       </section>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS } from './types';
+import { setAnswerDepth } from './services/audit/answerDepth';
 import { geminiService, toChatHistory } from './services/geminiService';
 import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
@@ -61,7 +62,6 @@ const BusinessDNAView = lazyWithReload(() => import('./components/suite/Business
 const BrandMemoryView = lazyWithReload(() => import('./components/suite/BrandMemoryView').then(m => ({ default: m.BrandMemoryView })));
 const DashboardView = lazyWithReload(() => import('./components/suite/DashboardView').then(m => ({ default: m.DashboardView })));
 const IdeaScoutView = lazyWithReload(() => import('./components/suite/IdeaScoutView').then(m => ({ default: m.IdeaScoutView })));
-const MerchantLaunchpadView = lazyWithReload(() => import('./components/launchpad/MerchantLaunchpadView').then(m => ({ default: m.MerchantLaunchpadView })));
 const TrustCenterView = lazyWithReload(() => import('./components/trust/TrustCenterView').then(m => ({ default: m.TrustCenterView })));
 const VerifyReceiptView = lazyWithReload(() => import('./components/trust/VerifyReceiptView').then(m => ({ default: m.VerifyReceiptView })));
 const StressTestView = lazyWithReload(() => import('./components/suite/StressTestView').then(m => ({ default: m.StressTestView })));
@@ -989,13 +989,10 @@ const App: React.FC = () => {
         {introOverlay}
         <LandingPage
           onNavigateAudit={(handoff) => enterInstantAudit(handoff)}
-          onNavigateSuite={() => enterApp(AppView.DASHBOARD)}
-          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
           onNavigatePricing={() => setView(AppView.PRICING)}
           onNavigateMethodology={() => setView(AppView.METHODOLOGY)}
           onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
           isAuthenticated={appAuth.authenticated}
-          onSignInClick={(handoff) => openLoginWall('signin', handoff)}
           onSignUpClick={(handoff) => openLoginWall('signup', handoff)}
         />
         {marketingOverlays}
@@ -1489,12 +1486,11 @@ const App: React.FC = () => {
             <ICONS.Settings className="w-4 h-4" />
           </Button>
 
-          {/* Mode Selector - Quick / Thorough */}
           <div className="hidden sm:flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
             <Button
               variant="ghost"
               size="none"
-              onClick={() => setMode(OracleMode.FLASH)}
+              onClick={() => { setMode(OracleMode.FLASH); setAnswerDepth('quick'); }}
               aria-pressed={mode === OracleMode.FLASH}
               className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.FLASH ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
@@ -1505,7 +1501,7 @@ const App: React.FC = () => {
             <Button
               variant="ghost"
               size="none"
-              onClick={() => setMode(OracleMode.DEEP_THINK)}
+              onClick={() => { setMode(OracleMode.DEEP_THINK); setAnswerDepth('thorough'); }}
               aria-pressed={mode === OracleMode.DEEP_THINK}
               className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.DEEP_THINK ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
@@ -1692,21 +1688,9 @@ const App: React.FC = () => {
           <NotebookView dna={dna} />
         )}
 
-        {/* VIEW: Oceania SMB Web3 Launchpad & Loyalty */}
-        {view === AppView.LAUNCHPAD && (
-          <MerchantLaunchpadView
-            onRunAudit={(host) => {
-              draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, host);
-              setAuditHandoff(null);
-              setTelegramAuditUrl(host);
-              setView(AppView.INSTANT_AUDIT);
-            }}
-          />
-        )}
-
         {/* VIEW: Trust (domain verification + signed receipts) */}
         {view === AppView.TRUST_CENTER && (
-          <TrustCenterView initialDomain={draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL)} />
+          <TrustCenterView />
         )}
 
         {/* VIEW: Ecosystem & Playbook Hub */}

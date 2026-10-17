@@ -105,7 +105,7 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
           {LIVE_SAMPLE_SNAPSHOT.verdict}
         </p>
 
-        <div className="mt-7 rounded-2xl border border-[var(--color-accent)]/45 bg-[var(--color-accent)]/10 p-5 sm:p-6">
+        <div className="mt-7 rounded-2xl border border-gold/45 bg-gold/10 p-5 sm:p-6">
           <p className="text-[11px] uppercase tracking-[0.26em] text-[var(--gold-light)]">Next</p>
           <p className="mt-2 font-serif text-xl leading-snug text-[var(--color-ink)] sm:text-2xl">
             {LIVE_SAMPLE_SNAPSHOT.shipAction}

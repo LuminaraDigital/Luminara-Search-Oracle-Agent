@@ -103,7 +103,7 @@ describe('hostedProviderDecisionReason', () => {
     const { api } = await loadApi();
     expect(api.hostedProviderDecisionReason('firecrawl')).toBe('byok');
     expect(api.canUseHostedProviderKey('firecrawl')).toBe(false);
-    expect(api.formatPageFetchClause('byok')).toBe('Page fetch: your Firecrawl key');
+    expect(api.formatPageFetchClause('byok')).toBe('Page fetch is using your key');
   });
 
   it('returns byok ahead of a ready hosted proxy', async () => {
@@ -127,7 +127,7 @@ describe('hostedProviderDecisionReason', () => {
     expect(api.hostedProviderDecisionReason('tavily')).toBe('hosted');
     expect(api.hostedProviderDecisionReason('groq')).toBe('hosted');
     expect(api.canUseHostedProviderKey('tavily')).toBe(true);
-    expect(api.formatInstantAuditProviderSummary()).toBe('Page fetch: hosted Firecrawl · Search: hosted Tavily');
+    expect(api.formatInstantAuditProviderSummary()).toBe('Page fetch is ready · Search is ready');
   });
 
   it('keeps hosted keys on when public health carries no provider inventory', async () => {
@@ -170,7 +170,7 @@ describe('hostedProviderDecisionReason', () => {
     expect(api.getServerHealthSync().ok).toBe(false);
     expect(api.hostedProviderDecisionReason('tavily')).toBe('no_health');
     expect(api.hostedProviderDecisionReason('groq')).toBe('no_health');
-    expect(api.formatSearchSkipReason('no_health')).toBe('Search off: provider status not ready.');
+    expect(api.formatSearchSkipReason('no_health')).toBe('Search is not ready.');
   });
 
   it('returns not_configured when health is ok but the provider is absent', async () => {
@@ -194,8 +194,9 @@ describe('hostedProviderDecisionReason', () => {
     expect(api.hostedProviderDecisionReason('firecrawl')).toBe('no_identity');
     expect(api.canUseHostedProviderKey('firecrawl')).toBe(false);
     expect(api.formatInstantAuditProviderSummary()).toBe(
-      'Page fetch: Jina (Firecrawl: no identity) · Search off: sign-in token not ready · Model off: sign-in token not ready',
+      'Page fetch did not run (add a key in Settings, or sign in) · Search did not run · Writing model did not run',
     );
+    expect(api.formatInstantAuditProviderSummary()).not.toMatch(/Firecrawl|Jina|Tavily|Groq|sign-in token/);
     expect(api.providerDecisionsErrorRecord()).toBe(
       'provider_decisions firecrawl=no_identity tavily=no_identity groq=no_identity',
     );
@@ -235,7 +236,8 @@ describe('hostedProviderDecisionReason', () => {
     const done = events.map((event) => event.message).join(' ');
     expect(done).toContain('Analyzed 0 SERP results');
     expect(done).toContain('Citation rate and share of voice were not measured.');
-    expect(done).toContain('Search off: sign-in token not ready.');
+    expect(done).toContain('Search did not run.');
+    expect(done).not.toMatch(/Tavily|sign-in token/);
   });
 });
 
@@ -249,7 +251,7 @@ describe('provider decision surfaces', () => {
           agentRole: 'scout',
           agentName: 'Scout Agent',
           phase: 'provider_decisions',
-          message: 'Page fetch: Jina (Firecrawl: no identity) · Search off: sign-in token not ready',
+          message: 'Page fetch did not run (add a key in Settings, or sign in) · Search did not run',
           status: 'running',
         },
         {
@@ -265,8 +267,9 @@ describe('provider decision surfaces', () => {
       isComplete: true,
       measurementStatus: 'not_measured',
     }));
-    expect(html).toContain('Firecrawl: no identity');
-    expect(html).toContain('Search off: sign-in token not ready');
+    expect(html).toContain('Page fetch did not run');
+    expect(html).toContain('Search did not run');
+    expect(html).not.toMatch(/Firecrawl|sign-in token/);
     expect(html).toContain('Scouted 1 page(s).');
   });
 

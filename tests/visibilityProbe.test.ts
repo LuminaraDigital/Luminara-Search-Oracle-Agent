@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   SAMPLE_FIXTURE,
   idleEngines,
   normalizeDemoUrl,
 } from '../components/marketing/demo/demoFixtures';
+import { ENGINE_STATUS_LABEL } from '../components/marketing/EvidenceGlyph';
 import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
 import { summarizeProbeCrawl } from '../worker/probeCrawlRoute';
 import type { LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
@@ -15,8 +17,17 @@ describe('landing Visibility Probe fixtures', () => {
       host: 'luminarasuite.com',
     });
     expect(normalizeDemoUrl('yourbrand.com').ok).toBe(true);
-    expect(normalizeDemoUrl('').ok).toBe(false);
+    const empty = normalizeDemoUrl('');
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) {
+      expect(empty.error).toBe('Enter a domain or URL.');
+      expect(empty.error).not.toContain('luminarasuite.com');
+    }
     expect(normalizeDemoUrl('not-a-domain').ok).toBe(false);
+    expect(ENGINE_STATUS_LABEL.idle).toBe('Not run yet');
+    const playback = readFileSync(new URL('../components/marketing/demo/useDemoPlayback.ts', import.meta.url), 'utf8');
+    expect(playback).toContain('normalizeDemoUrl(url)');
+    expect(playback).not.toContain('SAMPLE_FIXTURE.domain');
   });
 
   it('keeps sample engines honest (never Measured; Sample notes only)', () => {

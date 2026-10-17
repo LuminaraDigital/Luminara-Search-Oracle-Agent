@@ -4,7 +4,7 @@ import { MarketingNav } from '../MarketingNav';
 import { MarketingAtmosphere } from './MarketingAtmosphere';
 import { MarketingFooter } from './MarketingFooter';
 import { useMarketingChrome } from './marketingChrome';
-import { prefersReducedMotion } from './constellationCapability';
+import { prefersReducedMotion } from './deviceCapability';
 import type { EvidenceState } from './earth/globeStory';
 
 interface MarketingAction {
