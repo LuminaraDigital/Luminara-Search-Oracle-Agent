@@ -1120,7 +1120,7 @@ const App: React.FC = () => {
     >
       <PremiumAtmosphere intensity="subtle" />
       {/* Universal Top Header - Responsive, guaranteed no overflow */}
-      <header className="flex items-center justify-between gap-2 px-2.5 sm:px-6 py-2 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
+      <header className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-6 py-1 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
         {/* Left: Brand Identity */}
         <button
           type="button"
@@ -1147,13 +1147,13 @@ const App: React.FC = () => {
         </button>
 
         {/* Center: Suite Switcher & Quick Navigation */}
-        <nav className="flex items-center gap-0.5 sm:gap-2 shrink min-w-0 px-0.5 sm:px-1 overflow-x-auto no-scrollbar overscroll-x-contain" aria-label="Primary tools">
+        <nav className="order-last flex basis-full flex-nowrap items-center gap-1 overflow-x-auto no-scrollbar overscroll-x-contain [mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)] sm:order-none sm:basis-auto sm:[mask-image:none] shrink min-w-0 px-0.5" aria-label="Primary tools">
           <Button
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.ORACLE_AGENT)}
             aria-pressed={view === AppView.ORACLE_AGENT}
-            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.ORACLE_AGENT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1165,7 +1165,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.IDEA_SCOUT)}
             aria-pressed={view === AppView.IDEA_SCOUT}
-            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-2 min-h-11 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
               view === AppView.IDEA_SCOUT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1177,7 +1177,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.INSTANT_AUDIT)}
             aria-pressed={view === AppView.INSTANT_AUDIT}
-            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1189,7 +1189,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.BRAND_MEMORY)}
             aria-pressed={view === AppView.BRAND_MEMORY}
-            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.BRAND_MEMORY ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1201,7 +1201,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.NOTEBOOK)}
             aria-pressed={view === AppView.NOTEBOOK}
-            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.NOTEBOOK ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
             title="Luminara Studio - Grounded Research Dossiers & Audio Overviews"
@@ -1218,7 +1218,7 @@ const App: React.FC = () => {
               aria-haspopup="menu"
               aria-expanded={showSuiteMenu}
               aria-pressed={[AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
-              className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+              className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
                 [AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)
                   ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
                   : ''
@@ -1276,7 +1276,7 @@ const App: React.FC = () => {
                     className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Home</span>
+                    <span>Dashboard</span>
                   </button>
                   <button
                     type="button"
@@ -1303,7 +1303,7 @@ const App: React.FC = () => {
                     className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
-                    <span>My business profile</span>
+                    <span>Business profile</span>
                   </button>
                   {advancedUi && (<>
                   <button
@@ -1403,7 +1403,7 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsOmnibarOpen(true)}
-            className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-2 min-h-10 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
+            className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-2 min-h-11 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
             title="Open Omnibar (Cmd+K)"
             aria-label="Jump to a tool"
           >
@@ -1414,7 +1414,7 @@ const App: React.FC = () => {
         </nav>
 
         {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Settings, Log out */}
-        <div className="flex items-center justify-end gap-1 sm:gap-2.5 shrink-0">
+        <div className="flex flex-nowrap items-center justify-end gap-1 overflow-x-auto no-scrollbar sm:gap-2.5 shrink min-w-0">
           {/* Native Trinity (Groq, NVIDIA NIM, Ollama) Engine Status & Priority */}
           {advancedUi && <NativeEngineHUD />}
 
@@ -1466,7 +1466,7 @@ const App: React.FC = () => {
                 ? 'bg-success-500/10 border-success-500/30 text-success-400 hover:text-success-300 hover:bg-success-500/20'
                 : 'bg-white/5 border-white/10 hover:text-gold-light hover:bg-white/5'
             }`}
-            title="Strategic Business DNA Context"
+            title="Business profile"
           >
             <span className={`w-1.5 h-1.5 rounded-full ${dna ? 'bg-success-400 shadow-[0_0_8px_theme(colors.success.500)]' : 'bg-gold'}`}></span>
             <span className="truncate max-w-[90px]">{dna ? dna.name : 'Add my business'}</span>
@@ -1482,20 +1482,20 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsKeyModalOpen(true)}
-            className="p-2.5 min-h-10 min-w-10 rounded border border-[var(--color-rule)] text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-colors"
+            className="p-2.5 min-h-11 min-w-10 rounded border border-[var(--color-rule)] text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-colors"
             title="Settings (AI Keys & Config)"
             aria-label="Settings and AI keys"
           >
             <ICONS.Settings className="w-4 h-4" />
           </Button>
 
-          <div className="hidden sm:flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
+          <div className="flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
             <Button
               variant="ghost"
               size="none"
               onClick={() => { setMode(OracleMode.FLASH); setAnswerDepth('quick'); }}
               aria-pressed={mode === OracleMode.FLASH}
-              className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
+              className={`min-h-11 px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.FLASH ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
@@ -1506,7 +1506,7 @@ const App: React.FC = () => {
               size="none"
               onClick={() => { setMode(OracleMode.DEEP_THINK); setAnswerDepth('thorough'); }}
               aria-pressed={mode === OracleMode.DEEP_THINK}
-              className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
+              className={`min-h-11 px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.DEEP_THINK ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
@@ -1519,7 +1519,7 @@ const App: React.FC = () => {
               variant="ghost"
               size="none"
               onClick={() => void logoutToLanding()}
-              className="hidden sm:inline-flex px-2.5 sm:px-3 py-1.5 min-h-10 border border-[var(--color-rule)] rounded text-[11px] text-[var(--color-ink-2)] hover:text-[var(--color-ink)] hover:bg-transparent shrink-0 whitespace-nowrap"
+              className="hidden sm:inline-flex px-2.5 sm:px-3 py-1.5 min-h-11 border border-[var(--color-rule)] rounded text-[11px] text-[var(--color-ink-2)] hover:text-[var(--color-ink)] hover:bg-transparent shrink-0 whitespace-nowrap"
             >
               Log out
             </Button>
@@ -1528,7 +1528,7 @@ const App: React.FC = () => {
             <button
               type="button"
               onClick={() => openLoginWall('signin')}
-              className="mkt-cta-primary !min-h-10 !py-2 !px-4 shrink-0 whitespace-nowrap"
+              className="mkt-cta-primary !min-h-11 !py-2 !px-4 shrink-0 whitespace-nowrap"
             >
               Sign in
             </button>

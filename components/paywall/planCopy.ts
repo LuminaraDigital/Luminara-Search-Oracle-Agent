@@ -75,3 +75,15 @@ export const pricingTiers: Array<{
     highlight: false,
   },
 ];
+
+/** Stars and card grants both last 30 days, start at confirmation, and do not renew. */
+export const CHECKOUT_TERM_LINE =
+  'Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does not renew on its own.';
+
+/** Shown before a control that leaves this page for Telegram Stars. */
+export const TELEGRAM_STARS_HANDOFF = 'Payment happens in Telegram with Stars.';
+
+/** Same Stars button on /pricing and in the checkout modal. */
+export function starsPayLabel(starsLabel: string, inTelegram: boolean): string {
+  return inTelegram ? `Pay ${starsLabel} · 30 days` : `Pay ${starsLabel} in Telegram`;
+}

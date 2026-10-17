@@ -129,7 +129,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
     },
     {
       id: AppView.BUSINESS_DNA,
-      title: 'My business profile',
+      title: 'Business profile',
       desc: dna
         ? `Linked to ${dna.name}. Required for a full (not scout) audit.`
         : 'Set this once so every audit reinforces what you sell and who you beat.',

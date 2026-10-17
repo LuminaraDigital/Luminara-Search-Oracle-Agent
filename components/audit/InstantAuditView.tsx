@@ -892,7 +892,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
               onClick={async () => {
                 if (!report?.text || briefing) return;
                 if (!freeLlmModalitiesService.isAvailable()) {
-                  setError('Configure FreeLLMAPI in Settings → LLM to enable audit voice briefings.');
+                  setError('Add a model gateway key in Settings to enable audit voice briefings.');
                   return;
                 }
                 setBriefing(true);
@@ -903,14 +903,14 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                     `Audit briefing for ${url}. Focus ${focus}. ${summary}`,
                   );
                 } catch (e: any) {
-                  setError(toUserFacingText(e, 'Voice briefing failed. Check FreeLLMAPI speech models.'));
+                  setError(toUserFacingText(e, 'Voice briefing failed. Check the speech models on your gateway.'));
                 } finally {
                   setBriefing(false);
                 }
               }}
               disabled={briefing || loading}
               className="px-4 py-1.5 rounded-lg glass-morphism border border-gold/30 text-xs text-gold-light hover:text-white uppercase tracking-wider font-bold transition-all disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-              title="Speak a short audit briefing via FreeLLMAPI TTS"
+              title="Speak a short audit briefing"
             >
               {briefing ? 'Speaking…' : 'Brief aloud'}
             </button>

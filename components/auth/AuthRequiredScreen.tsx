@@ -25,17 +25,17 @@ const FREE_ACCOUNT_POINTS = [
 function featureExplanation(view?: string): string | null {
   switch (view) {
     case 'ORACLE_AGENT':
-      return 'Ask requires an account to ground conversations in your verified Business DNA and preserve message memory.';
+      return 'Ask needs a free account so your questions and answers stay on this login.';
     case 'BRAND_MEMORY':
-      return 'Brand Memory requires an account to securely save and synchronize your company facts across devices.';
+      return 'Memory needs a free account so company facts stay on this login.';
     case 'NOTEBOOK':
-      return 'Studio requires an account to save interactive audit notebooks and research history.';
+      return 'Studio needs a free account so research notebooks stay on this login.';
     case 'BUSINESS_DNA':
-      return 'Business DNA requires an account to establish verified entity ownership and private tenant storage.';
+      return 'Business profile needs a free account so what you sell and who you compete with stay on this login.';
     case 'DASHBOARD':
-      return 'Workspace requires an account to load your saved audits, readiness metrics, and tracked domains.';
+      return 'Dashboard needs a free account so saved audits stay on this login.';
     case 'AGENT_REPORT':
-      return 'Agent Reports require an account to view and manage saved diagnostic reports.';
+      return 'Reports need a free account so saved audits stay on this login.';
     default:
       return null;
   }
@@ -131,7 +131,7 @@ export const AuthRequiredScreen: React.FC<{
           <p className="text-sm text-[var(--color-ink-2)] leading-relaxed max-w-sm mx-auto">
             {tgUser?.first_name
               ? `${tgUser.first_name}, we could not verify this open. Reopen from the bot menu or retry below.`
-              : 'Your Telegram account is your identity. Audits, Stars, and Business DNA stay tied to this session.'}
+              : 'Your Telegram account is your identity. Audits, Stars, and your business profile stay tied to this session.'}
           </p>
         </div>
 
@@ -220,7 +220,7 @@ export const AuthRequiredScreen: React.FC<{
             </h1>
             <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
               {mode === 'signup'
-                ? 'Start your Luminara Suite account to save audits, build your Business DNA, and run hosted AI visibility diagnostics.'
+                ? 'Start your Luminara Suite account to save audits, build your business profile, and run hosted checks.'
                 : 'Access your account and continue your journey with us across web, Telegram, and desktop.'}
             </p>
           </div>

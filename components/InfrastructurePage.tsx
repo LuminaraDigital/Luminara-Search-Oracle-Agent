@@ -29,15 +29,15 @@ const pillars = [
   },
   {
     title: 'Impact ranking',
-    desc: 'Orders fixes by likely leverage so you start with the work that changes visibility soonest.',
+    desc: 'A signed-in audit can order fixes by likely leverage. A guest run leaves this Not measured.',
   },
   {
     title: 'Competitor scan',
-    desc: 'Compares rivals on the same checks so you can see where they win and where you can take ground.',
+    desc: 'A signed-in audit can compare rivals you name in your business profile. A guest run leaves this Not measured.',
   },
   {
     title: 'Progress tracking',
-    desc: 'Keeps audits and priorities in your workspace so the next run is not starting from zero.',
+    desc: 'A signed-in account keeps earlier audits so the next run is not starting from zero. Guests do not get a saved history.',
   },
 ] as const;
 
@@ -73,7 +73,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
             What runs when <span className="italic lx-gold-text pr-[0.08em]">you audit a site.</span>
           </>
         }
-        lede="A fixed set of checks across search and AI answers, then a ranked list of fixes in plain English. Every run covers the same surfaces, labels its evidence, and ends in one ship action."
+        lede="A fixed set of checks across search and AI answers, then a short list of fixes in plain English. Guest runs leave competitor scan, impact ranking, and saved progress as Not measured until you sign in."
       />
 
       <section

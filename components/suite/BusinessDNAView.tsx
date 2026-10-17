@@ -126,7 +126,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold-light">Your business</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-bold gold-text tracking-tight mb-3">
-          My business profile
+          Business profile
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
           Define your brand mission, USP, and market competitors to personalize all audits and simulations.

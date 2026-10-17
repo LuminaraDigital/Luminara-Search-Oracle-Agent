@@ -17,7 +17,7 @@ import { BaseAIProvider } from './BaseAIProvider';
  */
 export class FreeLlmProvider extends BaseAIProvider {
   id = 'freellm';
-  name = 'FreeLLMAPI Gateway';
+  name = 'Your model gateway';
   type: AIProviderType = 'freellm';
   config = {
     model: 'auto',

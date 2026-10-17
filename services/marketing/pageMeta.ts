@@ -155,7 +155,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/how-it-works',
     title: 'How it works | Luminara Suite',
     description:
-      'How Luminara Suite audits SEO, AI answers, schema gaps and competitors, then ranks the highest-impact fixes.',
+      'How an audit checks a site. Competitor scan, impact ranking, and saved progress need sign-in.',
     jsonLd: graph('/how-it-works', 'How it works', 'Audit modules and workflow.'),
     crawlerBody: `
 <section>
@@ -164,8 +164,8 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <ul>
     <li>Site crawl for titles, meta and technical blockers</li>
     <li>AI visibility across ChatGPT, Perplexity and AI Overviews</li>
-    <li>Schema mapping and competitor comparison</li>
-    <li>Impact-ranked action list</li>
+    <li>Schema mapping. Competitor comparison needs a signed-in business profile</li>
+    <li>Impact ranking and saved progress need sign-in. Guests see Not measured</li>
   </ul>
   <p><a href="/docs/what-is-aeo.html">What is AEO</a> · <a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
@@ -174,13 +174,13 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/ai',
     title: 'Our AI | Luminara Suite',
     description:
-      'Luminara Suite combines live search grounding with your chosen AI providers (Groq, NIM, Ollama, OpenRouter) for factual audits.',
+      'Live search grounding plus the models you connect in Settings. Findings stay tied to evidence you actually collected.',
     jsonLd: graph('/ai', 'Our AI', 'Search grounding and AI providers.'),
     crawlerBody: `
 <section>
   <h1>Our AI</h1>
   <p>Live search grounding plus the models you choose. Findings stay tied to evidence when data is available; otherwise the product marks them as not measured.</p>
-  <p>Supported providers include Groq, NVIDIA NIM, Ollama, OpenRouter, Firecrawl and Tavily.</p>
+  <p>Connect your own model and search providers in Settings, or use the hosted allowance on a plan.</p>
   <p><a href="/">Home</a> · <a href="/how-it-works">How it works</a></p>
 </section>`,
   },

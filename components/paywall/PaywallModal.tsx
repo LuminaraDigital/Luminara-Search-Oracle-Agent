@@ -12,7 +12,7 @@ import {
   TELEGRAM_MINI_APP_URL,
   type PaymentRail,
 } from './paymentOptions';
-import { BYOK_CHECKOUT_LINE, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './planCopy';
+import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle, pricingTiers, starsPayLabel } from './planCopy';
 import { ICONS } from '../../constants';
 import '../marketing/space.css';
 import { toUserFacingText } from '../../utils/userFacingText';
@@ -331,9 +331,8 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       return 'Checkout with Card · $349';
     }
     if (tab === 'stars') {
-      if (plan === 'starter') return inTg ? 'Pay 2,500 Stars · 30 days' : 'Open in Telegram · 2,500 Stars';
-      if (plan === 'growth') return inTg ? 'Pay 7,500 Stars · 30 days' : 'Open in Telegram · 7,500 Stars';
-      return inTg ? 'Pay 18,000 Stars · 30 days' : 'Open in Telegram · 18,000 Stars';
+      const stars = plan === 'starter' ? '2,500 Stars' : plan === 'growth' ? '7,500 Stars' : '18,000 Stars';
+      return starsPayLabel(stars, inTg);
     }
     if (tonAsset === 'TON') {
       if (plan === 'starter') return 'Pay 15 TON · 30 days';
@@ -550,6 +549,10 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </div>
         )}
 
+        {tab === 'stars' && !inTg && (
+          <p className="mb-4 text-sm leading-relaxed text-gray-300">{TELEGRAM_STARS_HANDOFF} Choosing a plan opens Telegram so you can pay there.</p>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           {pricingTiers.map((tier) => (
             <div
@@ -628,7 +631,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             <div className="text-left">
               <p className="text-xs font-bold text-white">Pay with Telegram Stars</p>
               <p className="text-[11px] text-gray-400">
-                Stars checkout runs inside the Luminara Mini App. Open it in Telegram to subscribe, or activate a license key above.
+                {TELEGRAM_STARS_HANDOFF} {CHECKOUT_TERM_LINE}
               </p>
             </div>
             <a
@@ -652,17 +655,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <a href="/privacy" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
             </p>
             <p className="text-gray-400 text-[11px]">
-              Subscriptions activate immediately upon payment. Telegram Support does not handle merchant disputes; for billing help use /paysupport in the bot.
-            </p>
-          </div>
-        )}
-
-        {/* Card checkout guidance when Card rail is not live. Never inside Telegram, where only Stars may be offered. */}
-        {paymentOptions.showCardGuidance && (
-          <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[11px] text-gray-400">
-            <p>
-              Card checkout is available on request during closed beta. For credit card payments or corporate invoicing, email{' '}
-              <a href="mailto:support@luminarasuite.com" className="text-gold underline hover:text-gold-light">support@luminarasuite.com</a>.
+              {CHECKOUT_TERM_LINE} For billing help, use /paysupport in the bot.
             </p>
           </div>
         )}

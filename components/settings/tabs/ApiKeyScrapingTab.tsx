@@ -70,7 +70,7 @@ export const ApiKeyScrapingTab: React.FC<ApiKeyScrapingTabProps> = ({
           className="w-full bg-black/70 border border-white/15 focus:border-gold rounded-xl px-3 py-2 text-xs text-white focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
         >
           <option value="auto">Auto-Resolve (local crawler when configured, then Firecrawl, then Jina)</option>
-          <option value="patchright">Patchright Stealth Runner (Local / Docker Sidecar)</option>
+          <option value="patchright">Local browser crawler (on this computer)</option>
           <option value="firecrawl">Firecrawl Managed Cloud API</option>
           <option value="jina">Jina Reader (Direct Zero-Key Fallback)</option>
         </select>
@@ -115,7 +115,7 @@ export const ApiKeyScrapingTab: React.FC<ApiKeyScrapingTabProps> = ({
       <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">Patchright Stealth Runner</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">Local browser crawler</span>
             <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-success-500/20 text-success-400 border border-success-500/30">Zero-Cost</span>
           </div>
           <Button
@@ -303,7 +303,7 @@ export const ApiKeyScrapingTab: React.FC<ApiKeyScrapingTabProps> = ({
           </Button>
         </div>
         <p className="text-[10px] text-gray-400 mt-1">
-          BYOK unlocks /map and /crawl without the hosted plan gate. Without a key, smart mode still expands from homepage links via Patchright or Jina.
+          Your own key unlocks site maps and crawls without the hosted plan gate. Without a key, smart mode still expands from homepage links via the local crawler or the reader fallback.
         </p>
       </div>
     </div>

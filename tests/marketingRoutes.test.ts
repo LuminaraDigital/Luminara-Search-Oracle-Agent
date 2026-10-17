@@ -54,7 +54,7 @@ describe('marketingRoutes', () => {
     expect(resolveAppView('/random-made-up-page', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/smb', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/launchpad', '')).toBe(AppView.NOT_FOUND);
-    expect(resolveAppView('/dashboard', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/dashboard', '')).toBe(AppView.DASHBOARD);
     expect(resolveAppView('/verify', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/trust', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/trust-center', '')).toBe(AppView.NOT_FOUND);
