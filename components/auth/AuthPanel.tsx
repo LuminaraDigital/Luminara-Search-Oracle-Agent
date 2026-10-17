@@ -13,7 +13,6 @@ import { isInTelegram } from '../../services/telegram/tma';
 import { linkTelegramFirebaseAccounts } from '../../services/apiClient';
 import { pullWorkspaceOnLogin } from '../../services/sync/workspaceSyncService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
-import { Button } from '../ui/Button';
 import '../marketing/space.css';
 import { ConfirmModal } from '../ui/ConfirmModal';
 
@@ -114,18 +113,18 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
 
   if (inTelegram) {
     return (
-      <div className={`glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
-        <p className="text-sm text-gray-200 font-medium">Signed in with Telegram</p>
-        <p className="text-xs text-gray-400 leading-relaxed">
+      <div className={`lx-glass rounded-3xl ${compact ? 'p-4 space-y-3' : 'p-6 space-y-4'}`}>
+        <p className="lx-eyebrow">Account</p>
+        <p className="text-sm text-ink font-medium">Signed in with Telegram</p>
+        <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
           Link Telegram and web account - shares subscription. Confirm in the dialog before plans are shared. Opening the Mini App while you are signed in on the web does not merge accounts.
         </p>
         {configured && (
-          <Button variant="secondary" disabled={busy} onClick={() => void linkWebAccount()} className="w-full text-xs normal-case tracking-normal">
+          <button type="button" disabled={busy} onClick={() => void linkWebAccount()} className="lx-btn lx-btn-ghost w-full whitespace-normal text-center disabled:opacity-50">
             Link Telegram and web account - shares subscription
-          </Button>
+          </button>
         )}
-        {userLabel && <p className="text-[11px] text-gold/80 truncate">Web login: {userLabel}</p>}
+        {userLabel && <p className="text-xs text-gold-light/85 truncate">Web login: {userLabel}</p>}
         {error && <p className="text-xs text-danger-400" role="alert">{error}</p>}
         {info && <p className="text-xs text-success-400" role="status">{info}</p>}
         <ConfirmModal
@@ -143,9 +142,9 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
 
   if (!configured) {
     return (
-      <div className="glass-morphism rounded-2xl border border-white/10 p-5 space-y-2">
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
-        <p className="text-xs text-gray-400 leading-relaxed">
+      <div className="lx-glass rounded-3xl p-6 space-y-2">
+        <p className="lx-eyebrow">Account</p>
+        <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
           Firebase Auth is not configured yet. Add <span className="font-mono text-gray-300">VITE_FIREBASE_*</span> to
           your env and set <span className="font-mono text-gray-300">FIREBASE_PROJECT_ID</span> on the Worker.
         </p>

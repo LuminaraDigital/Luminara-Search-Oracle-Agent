@@ -371,15 +371,15 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold tracking-wide text-gold">Plans</span>
+                <span className="text-[11px] font-semibold tracking-wide text-gold">Plans</span>
                 {paymentOptions.tonAvailable && (
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold tracking-wide bg-gold/15 text-gold-light border border-gold/30">
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-gold/15 text-gold-light border border-gold/30">
                     Stars + TON
                   </span>
                 )}
               </div>
               <h3 id="paywall-modal-title" className="lx-display mt-1 text-3xl md:text-4xl">
-                Unlock Unlimited AI Intelligence
+                Unlock unlimited AI intelligence
               </h3>
             </div>
           </div>
@@ -562,7 +562,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               }`}
             >
               {tier.highlight && (
-                <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-semibold text-[9px] tracking-wide">
+                <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-semibold text-[11px] tracking-wide">
                   {PLAN_CARD_BADGE}
                 </div>
               )}
@@ -597,7 +597,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           <div className="p-4 rounded-2xl bg-black/40 border border-gold/30 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-left">
               <p className="text-xs font-bold text-white">Card checkout (30 days)</p>
-              <p className="text-[10px] text-gray-400">
+              <p className="text-[11px] text-gray-400">
                 Secure hosted checkout. One-time 30-day plan grant (not auto-renew unless stated at purchase).
               </p>
             </div>
@@ -609,7 +609,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           <div className="p-4 rounded-2xl bg-black/40 border border-white/10 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-left">
               <p className="text-xs font-bold text-white">TON Wallet Connection</p>
-              <p className="text-[10px] text-gray-400">
+              <p className="text-[11px] text-gray-400">
                 {wallet ? `Connected: ${wallet.account.address.slice(0, 8)}…${wallet.account.address.slice(-6)}` : 'Connect Tonkeeper, Telegram Wallet, or any TON wallet.'}
               </p>
             </div>
@@ -621,7 +621,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           <div className="p-4 rounded-2xl bg-black/40 border border-gold/30 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-left">
               <p className="text-xs font-bold text-white">Pay with Telegram Stars</p>
-              <p className="text-[10px] text-gray-400">
+              <p className="text-[11px] text-gray-400">
                 Stars checkout runs inside the Luminara Mini App. Open it in Telegram to subscribe, or activate a license key above.
               </p>
             </div>
@@ -638,14 +638,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
         {/* Telegram Stars Terms & Support Notice */}
         {tab === 'stars' && (
-          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-4 text-center text-[10px] text-gray-400 space-y-1">
+          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-4 text-center text-[11px] text-gray-400 space-y-1">
             <p>
               By purchasing with Telegram Stars, you agree to our{' '}
               <a href="/terms" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Terms of Service</a>
               {' '}and{' '}
               <a href="/privacy" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
             </p>
-            <p className="text-gray-400 text-[9px]">
+            <p className="text-gray-400 text-[11px]">
               Subscriptions activate immediately upon payment. Telegram Support does not handle merchant disputes; for billing help use /paysupport in the bot.
             </p>
           </div>
@@ -653,7 +653,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
         {/* Card checkout guidance when Card rail is not live. Never inside Telegram, where only Stars may be offered. */}
         {paymentOptions.showCardGuidance && (
-          <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[10px] text-gray-400">
+          <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[11px] text-gray-400">
             <p>
               Card checkout is available on request during closed beta. For credit card payments or corporate invoicing, email{' '}
               <a href="mailto:support@luminarasuite.com" className="text-gold underline hover:text-gold-light">support@luminarasuite.com</a>.
@@ -683,7 +683,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             >
               {checkingTon ? 'Checking…' : 'Check my payment'}
             </button>
-            <p className="mt-2 text-[10px] text-gray-500 font-mono break-all">Order {pendingTonOrder}</p>
+            <p className="mt-2 text-[11px] text-gray-500 font-mono break-all">Order {pendingTonOrder}</p>
           </div>
         )}
 
@@ -716,7 +716,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </button>
         </div>
 
-        <p className="mt-3 text-center text-[10px] text-gray-400">
+        <p className="mt-3 text-center text-[11px] text-gray-400">
           Produced by{' '}
           <a
             href="https://luminaradigital.io"

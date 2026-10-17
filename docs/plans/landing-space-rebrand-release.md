@@ -1,6 +1,8 @@
 # Landing space rebrand: release plan
 
-**Status:** CEO gate round 2 returned GO WITH CONDITIONS for `staging` and NO-GO for `main` until B1-B4 close. B1-B3 are fixed in this branch. B4 is an owner dashboard check (precondition 1). Round 3 re-gates the fixes.
+**Status:** CEO gate round 3:
+- `staging`: GO WITH CONDITIONS (hold #139).
+- `main`: GO once the owner completes preconditions 1-3 and ticks 6. No code blockers remain.
 **Scope:** PR #131 (landing, now based on `staging`), PR #140 (inner marketing pages, stacked on #131), and PR #126 underneath #131.
 **Owner action required:** every merge in this plan is the owner's. Claude prepares and verifies but does not merge or push to `staging` or `main`.
 
@@ -37,13 +39,18 @@
    Confirm `MCP_OAUTH_SECRET` is set in production with `npx wrangler secret list --env production`.
 3. **Hold every open non-draft PR outside this plan** until the release is out:
    - Dependabot #109, #110, #111, #112, #113, #114;
-   - #137.
+   - #137;
+   - **#139**, which adds `migrations/0033_community_feed.sql` plus worker and smoke changes and would make this release's migrations no longer a no-op.
 
-   You bulk-merge non-draft PRs, so any of them merged now would ride this release.
+   You bulk-merge non-draft PRs, so any of them merged now would ride this release. Convert them to draft, or simply do not merge them yet. Also consider converting #124 and #126 to draft: both are non-draft, and merging either on its own would put an intermediate landing on `staging` (see Sequence).
 4. **Close superseded landing PRs.** This is your call, since other agents authored them.
    - #124's commits are already inside #131, so GitHub marks it merged when #131 lands.
    - #127 and #128 target `main` directly, CI blocks them, and they conflict with #131.
-5. **No release PR is open:** `gh pr list --base main --head staging` returns nothing.
+5. **No release PR is open, and no stray PR is ready:**
+   - `gh pr list --base main --head staging` returns nothing.
+   - Right before step 1, run `gh pr list --base staging --state open --json number,isDraft,title`.
+   - Hold any non-draft PR other than #124, #126, #131 and #140.
+6. **Tick the `telegram-web-app.js` decision.** The script still loads on the public web landing. Either accept the deferral for this release (recommended, because changing it touches the Mini App boot path), or ask for that change before `main`.
 
 ## Sequence
 
@@ -99,13 +106,14 @@ Run steps 1 to 3 in one sitting. Do not open a release PR between them: merging 
 
 ## Decisions taken and follow-ups (dated 2026-10-17)
 
-- **`telegram-web-app.js` on the public landing:** deferred deliberately. Loading it only inside Telegram changes the Mini App boot path (see `tests/tmaLoginGate.test.ts`), so it needs its own change and a TMA device test. Owner to accept the deferral or ask for it before `main`.
+- **`telegram-web-app.js` on the public landing:** deferred deliberately; owner ticks this in precondition 6. Loading it only inside Telegram changes the Mini App boot path (see `tests/tmaLoginGate.test.ts`), so it needs its own change and a TMA device test.
 - **Lazy-load the off-landing chunks** (TON Connect, genai, Firebase, markdown, telegram). This is the biggest conversion and LCP lever left. Follow-up PR.
 - **Old styles still reachable from the landing:**
   - `/docs/mcp.html` and `/docs/what-is-aeo.html` (static pages);
   - `LegalPage`;
   - `NotFoundPage`;
-  - `TelegramAccountPanel` on /pricing;
+  - `TelegramAccountPanel` on /pricing and in Settings, next to the now space-styled compact `AuthPanel`;
+  - the rest of the Settings shell;
   - `TelegramBottomNav` (Mini App).
 
   Restyle them in a follow-up PR.
@@ -118,4 +126,5 @@ Run steps 1 to 3 in one sitting. Do not open a release PR between them: merging 
 | 1 | Code quality (ponytail-review, thermo-nuclear, pstack), frontend/SEO/a11y, WebGL/performance, deploy/CI | 2 blockers, about 15 should-fix and several nits. All fixed in 27f11f4. Staging merged in bbcde99. |
 | 2a | Fix verifier | 15 of 15 FIXED, with minor leftovers: stale constellation references in docs and `.gitignore`, methodology and sample-report meta copy, print opacity, the WebGL context on highp failure, anchor ref churn. All fixed in the round 2 commit. |
 | 2b | CEO gate | `staging`: GO WITH CONDITIONS. `main`: NO-GO until:<br>B1 (the hero check acted out engine work);<br>B2 (the closing CTA overclaimed);<br>B3 (the sign-up modal and paywall were the old design);<br>B4 (Workers Builds).<br>B1-B3 fixed in the round 2 commit. B4 is precondition 1. Conditions C1-C8 are folded into this plan. |
-| 3 | CEO re-gate | Pending |
+| 3a | Final double-check of round 2 | PASS with fixes: print override specificity, #139 missing from holds, crawler copy naming ai.txt and not promising measurement, the AuthPanel Telegram and not-configured views restyled, `.gitignore` blank line, `og-image.png` compressed to 282 KB. All fixed in the round 3 commit. |
+| 3b | CEO re-gate | B1-B3 confirmed closed in code. `staging`: GO WITH CONDITIONS (hold #139). `main`: NO-GO on owner actions only (precondition 1 Workers Builds, precondition 2 sign-off, hold #139). Should-fix applied: Telegram decision moved to precondition 6, draft advice for #124/#126, paywall title in sentence case and no sub-11px text. |

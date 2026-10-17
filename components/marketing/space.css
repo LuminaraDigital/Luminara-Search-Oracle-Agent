@@ -232,7 +232,7 @@
 }
 @media print {
   .lx-armed [data-reveal]:not([data-in]) { opacity: 1; transform: none; }
-  .lx-chapter[data-active='false'] { opacity: 1; }
+  .lx-root .lx-chapter[data-active='false'] { opacity: 1; }
   .lx-stage { display: none; }
 }
 
