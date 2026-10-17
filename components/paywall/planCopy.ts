@@ -7,6 +7,14 @@ import { PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
 
 export const PLAN_CARD_BADGE = 'Recommended';
 
+/** Checkout title. Plans have domain, seat, and feature caps, so this cannot say unlimited. */
+export const PAYWALL_HEADLINE = 'Choose a plan with a published cap';
+
+/** Exclusion lines start with "No ". Included lines do not. */
+export function planBulletIncluded(line: string): boolean {
+  return !line.startsWith('No ');
+}
+
 /** Same sentence as Settings: keys on this device, no sign-in required. */
 export const BYOK_CHECKOUT_LINE = 'Your keys stay on this device and work without signing in.';
 

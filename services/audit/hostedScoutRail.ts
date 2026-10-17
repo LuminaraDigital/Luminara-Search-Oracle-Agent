@@ -5,6 +5,20 @@
  */
 export type HostedScoutRail = 'tma_hosted' | 'signed_in_hosted' | 'byok_or_signin';
 
+/** Homepage probe is crawl files only. A full audit is a different product. */
+export const GUEST_HERO_NOTE =
+  'Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys.';
+
+export const GUEST_REPORT_NOTE =
+  'No 40-page PDF and no made-up score. A full verdict needs sign-in or your own keys.';
+
+export const GUEST_FULL_AUDIT_CTA = 'Sign in to run a full audit';
+
+export function requestGuestFullAuditSignIn(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('luminara-open-login', { detail: { mode: 'signin' } }));
+}
+
 export function resolveHostedScoutRail(input: {
   inTelegram: boolean;
   hasInitData: boolean;

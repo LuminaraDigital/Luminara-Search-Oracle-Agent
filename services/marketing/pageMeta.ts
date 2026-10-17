@@ -206,7 +206,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/pricing',
     title: 'Pricing | Luminara Suite',
     description:
-      'Free live crawl check and a daily hosted audit allowance. Starter for web audits. Growth adds share links and MCP for Cursor and Claude. Agency adds API access.',
+      'Free check of robots.txt and llms.txt. A full audit needs an account or your own keys. Starter, Growth, and Agency plans each have a published cap.',
     jsonLd: graph('/pricing', 'Pricing', 'Plans: Free insight, Starter audits, Growth MCP and share, Agency API.'),
     crawlerBody: `
 <section>

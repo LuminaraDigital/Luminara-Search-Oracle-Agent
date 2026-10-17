@@ -239,7 +239,9 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     : 'No web results were collected.';
   const evidenceUsed = evidenceEmpty
     ? 'No page text and no search rows were collected in this run.'
-    : `Pages with text or schema: ${input.scrapedPageCount}. ${searchUsed}`;
+    : input.measurementStatus === 'not_measured' && input.serpCount === 0
+      ? 'No web results were collected. This run did not measure the site.'
+      : `Pages with text or schema: ${input.scrapedPageCount}. ${searchUsed}`;
 
   const crawlerChecks = input.llmCrawler?.checks || [];
   const failureCodes = teaserFailureCodes({

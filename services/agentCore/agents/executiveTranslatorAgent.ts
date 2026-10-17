@@ -129,15 +129,18 @@ export class ExecutiveTranslatorAgent {
 
     const brief = sections.join('\n');
 
+    const measuredBrief = healthKnown || citationKnown;
     emit({
       id: `exec-done-${Date.now()}`,
       timestamp: Date.now(),
       agentRole: 'executive_translator',
       agentName: this.name,
       phase: 'synthesis_complete',
-      message: 'Executive brief compiled. Ready for non-technical stakeholders.',
+      message: measuredBrief
+        ? 'Executive brief compiled from the counts this run measured.'
+        : 'Executive brief compiled. Counts were not measured.',
       status: 'completed',
-      confidenceScore: 0.98,
+      confidenceScore: measuredBrief ? 0.98 : undefined,
     });
 
     return brief;

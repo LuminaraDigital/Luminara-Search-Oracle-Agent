@@ -11,7 +11,7 @@ import { getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isTonAvailable } from './paywall/paymentOptions';
-import { PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './paywall/planCopy';
+import { PLAN_CARD_BADGE, planBulletIncluded, planBullets, planTitle, pricingTiers } from './paywall/planCopy';
 
 export { pricingTiers };
 
@@ -120,7 +120,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">{tier.blurb}</p>
                 <ul className="m-0 mt-7 flex-1 list-none space-y-3 border-t p-0 pt-6 lx-hairline">
                   {lines.map((line) => {
-                    const off = line.startsWith('No ');
+                    const off = !planBulletIncluded(line);
                     return (
                       <li
                         key={line}

@@ -737,7 +737,7 @@ describe('Mission Control copy', () => {
     );
     expect(missionControlHeadline(true, 'not_measured')).not.toContain('ground-truth');
     expect(missionControlHeadline(true, 'measured')).not.toContain('ground-truth');
-    expect(missionControlHeadline(false, 'not_measured')).toContain('collaborating');
+    expect(missionControlHeadline(false, 'not_measured')).toBe('Running the audit steps. Each card shows what that step returned.');
 
     const events = (Object.keys(CREW_PROFILES) as AgentRole[]).map((role) => ({
       id: role,
@@ -770,7 +770,7 @@ describe('Mission Control copy', () => {
 
   it('badges completed unmeasured scout and auditor cards as Not measured', () => {
     expect(missionControlCardBadge('completed', 'Page fetch failed. On-page evidence not measured.')).toBe('not_measured');
-    expect(missionControlCardBadge('completed', 'Compliance audit finished. Health score not measured: no page evidence.')).toBe('not_measured');
+    expect(missionControlCardBadge('completed', 'Compliance checks not measured: no page evidence.')).toBe('not_measured');
     expect(missionControlCardBadge('completed', 'Scouted 2 page(s). Discovered 1 structured schema entity block(s).')).toBe('done');
     expect(missionControlCardBadge('failed', 'Page fetch failed.')).toBe('not_measured');
 
@@ -784,7 +784,7 @@ describe('Mission Control copy', () => {
         role === 'scout'
           ? 'Page fetch failed. On-page evidence not measured.'
           : role === 'playbook_auditor'
-            ? 'Compliance audit finished. Health score not measured: no page evidence.'
+            ? 'Compliance checks not measured: no page evidence.'
             : 'Step finished.',
       status: 'completed' as const,
     }));
@@ -797,7 +797,7 @@ describe('Mission Control copy', () => {
     );
     expect(html).toContain('Not measured');
     expect(html).toContain('On-page evidence not measured');
-    expect(html).toContain('Health score not measured');
+    expect(html).toContain('Compliance checks not measured');
     expect(html).toContain('NOT MEASURED');
     expect(html).not.toContain('100% COMPLETE');
   });
