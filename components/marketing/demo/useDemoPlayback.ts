@@ -93,7 +93,7 @@ export function useDemoPlayback(): DemoPlayback {
 
   const runSample = useCallback(() => {
     clearTimers();
-    const parsed = normalizeDemoUrl(url || SAMPLE_FIXTURE.domain);
+    const parsed = normalizeDemoUrl(url);
     if (!parsed.ok) {
       setError(parsed.error);
       setPhase('error');

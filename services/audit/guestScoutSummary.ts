@@ -5,7 +5,9 @@
  * Share, teaser, and clipboard use verdict: the same text with heading
  * and emphasis markers removed. The worker still clips that plain field.
  */
+import type { ReportFocus } from '../../types';
 import { isProviderDecisionRecord } from '../apiClient';
+import type { AnswerDepth } from './answerDepth';
 import type { LlmCrawlerCheck, LlmCrawlerReport } from './llmCrawlerReadiness';
 import { hostedAuthRecoveryHint, type HostedScoutRail } from './hostedScoutRail';
 import { teaserFailureCodes, teaserFailureLine, type TeaserFailureCode } from './teaserFailureCodes';
@@ -64,6 +66,21 @@ export interface GuestScoutSummaryInput {
   plainEnglishBrief?: string;
   llmCrawler?: LlmCrawlerReport | null;
   hostedRail: HostedScoutRail;
+  /** SEO, AEO, or GEO. Omitted means the Quick answer-engine pass. */
+  focus?: ReportFocus;
+  /** Header Thorough. Omitted means Quick. */
+  depth?: AnswerDepth;
+}
+
+const EMPTY_COLLECTED = 'This run collected no page text and no search rows, so there is no citation rate, share of voice, or health score.';
+
+/** Unmeasured empty runs must not all print the Quick answer-engine sentence. */
+export function emptyUnmeasuredVerdict(domain: string, focus: ReportFocus = 'AEO', depth: AnswerDepth = 'quick'): string {
+  if (focus === 'AEO' && depth === 'quick') {
+    return `AI mention readiness for ${domain} was not measured. ${EMPTY_COLLECTED}`;
+  }
+  const pass = depth === 'thorough' ? `${focus} thorough` : focus;
+  return `${pass} for ${domain} was not measured, and this is not the Quick result. ${EMPTY_COLLECTED}`;
 }
 
 function hostLabel(targetUrl: string): string {
@@ -198,8 +215,9 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     && input.citationRatePercent == null
     && input.serpCount === 0
     && input.scrapedPageCount === 0;
+  const emptyVerdict = emptyUnmeasuredVerdict(domain, input.focus ?? 'AEO', input.depth ?? 'quick');
   if (evidenceEmpty || notMeasuredEmpty) {
-    verdict = `AI mention readiness for ${domain} was not measured. This run collected no page text and no search rows, so there is no citation rate, share of voice, or health score.`;
+    verdict = emptyVerdict;
     verdictMarkdown = verdict;
   } else if (input.measurementStatus === 'not_measured') {
     const reason = (input.measurementReason || '').trim();
@@ -256,7 +274,7 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
 
   if (degraded) {
     verdict = evidenceEmpty
-      ? `AI mention readiness for ${domain} was not measured. This run collected no page text and no search rows, so there is no citation rate, share of voice, or health score.`
+      ? emptyVerdict
       : `Live data unavailable for ${domain}. Some signals were not measured. Missing figures are omitted rather than guessed.`;
     verdictMarkdown = verdict;
   }

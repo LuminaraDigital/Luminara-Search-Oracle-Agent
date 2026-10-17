@@ -134,10 +134,13 @@ import { handleMcpOAuthRoute } from './mcpOAuth';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
-import { isCronMapped, jobsForCron } from './scheduledJobs';
+import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
+import { handleRsiRoute } from './rsiRoutes';
+import { runRsiSkillCurator } from './rsiCurator';
+import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
@@ -324,7 +327,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         // The public Stars catalogue. The account panel in the Mini App builds its plan buttons
         // from this; without it the panel has nothing to list.
         plans: publicPlanCatalogue(),
-        stripeCheckout: isStripeCheckoutLive(env),
+        stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
       }));
     }
 
@@ -362,7 +365,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       tonPricing: TON_PRICING,
       jettonPricing: JETTON_PRICING,
       jettonCheckout: JETTON_CHECKOUT_LIVE,
-      stripeCheckout: isStripeCheckoutLive(env),
+      stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
       q402: Q402_SETTLEMENT_LIVE,
       chainNetwork,
       xdcRpcOk,
@@ -1557,6 +1560,36 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (dreamRes) return withCors(dreamRes);
   }
 
+  // Global Oracle prompt catalog. Same gate as POST /admin/skills/:slug/versions.
+  // A signed-in session must not publish or roll back agent_skills.
+  if (path === '/rsi/prompts/publish' || path === '/rsi/prompts/rollback') {
+    const promptAdmin = isAdminAuthorized(env, request);
+    if (!promptAdmin.ok) return withCors(promptAdmin.response);
+    const promptLimit = limited('auth', RATE_AUTH_PER_MIN);
+    if (promptLimit) return promptLimit;
+    const promptActor: HostedIdentity = { id: 'admin', source: 'firebase', accountId: 'admin' };
+    const promptRoute = await handleRsiRoute(request, env, promptActor, path);
+    if (promptRoute) return withCors(promptRoute);
+  }
+
+  // Learned skill library (0027). Session routes. The curator runs on the daily cron, Mondays only.
+  if (path.startsWith('/rsi/')) {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dual = await enforceDualRateLimit(env, {
+      action: 'rsi',
+      accountId: billingId(who.user),
+      ip,
+      limitPerKey: 30,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    const rsi = await handleRsiRoute(request, env, who.user, path);
+    if (rsi) return withCors(rsi);
+  }
+
   // SMB Launchpad (0018). Feature-flagged; see worker/launchpadService.ts.
   if (path === '/launchpad' || path.startsWith('/launchpad/')) {
     const who = await identify(request, env);
@@ -2254,7 +2287,7 @@ export default {
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).
-    const jobs = jobsForCron(controller.cron);
+    const jobs = jobsForCron(controller.cron).filter((job) => shouldRunScheduledJob(job, controller.scheduledTime));
     if (!isCronMapped(controller.cron)) {
       console.error(`[Cron] Cron "${controller.cron}" is not mapped in worker/scheduledJobs.ts; no job was run.`);
       return;
@@ -2265,6 +2298,8 @@ export default {
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
     if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
     if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
+    if (jobs.includes('rsi_skill_curator')) ctx.waitUntil(runRsiSkillCurator(env).then(() => undefined));
+    if (jobs.includes('rsi_posting_reflection')) ctx.waitUntil(runPostingReflection(env).then(() => undefined));
     if (jobs.includes('ton_pending_sweep')) {
       ctx.waitUntil(
         sweepTonPendingOrders(env)

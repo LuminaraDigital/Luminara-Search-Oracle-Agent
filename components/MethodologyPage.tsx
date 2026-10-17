@@ -12,7 +12,7 @@ interface MethodologyPageProps {
 const ENUMS = [
   {
     title: 'Measured',
-    body: 'Live evidence from a run you signed in for (or paid for). Tied to the engines and prompts in that audit. Shown only when data was actually collected.',
+    body: 'Live evidence from a run. Your own keys on this device work without signing in. Hosted keys need a sign-in. Tied to the engines and prompts in that audit. Shown only when data was actually collected.',
   },
   {
     title: 'Estimated',

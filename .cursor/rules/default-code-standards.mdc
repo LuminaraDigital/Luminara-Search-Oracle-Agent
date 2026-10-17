@@ -1,0 +1,38 @@
+---
+description: Default code standards. Apply ponytail and the pstack principles on every code change, and run the thermo-nuclear review before opening a pull request.
+alwaysApply: true
+---
+
+# Default code standards
+
+The skills named here are vendored unmodified under `.cursor/skills/` and `.claude/skills/`. Licenses and commit pins are in `THIRD_PARTY_NOTICES.md`. Read the skill file. Do not rely on a paraphrase.
+
+## When writing code
+
+Read `.cursor/skills/ponytail/SKILL.md` and apply level `full` on every coding task. Take the smallest complete change. Finish every caller, test, and fixture the change breaks. Leave one small test for new non-trivial logic. Keep validation at trust boundaries, error handling that prevents data loss, security, and accessibility.
+
+pstack skills set `disable-model-invocation: true`, so this rule is what loads them. Before writing code, read and apply:
+
+- `.cursor/skills/principle-laziness-protocol/SKILL.md`
+- `.cursor/skills/principle-subtract-before-you-add/SKILL.md`
+- `.cursor/skills/principle-minimize-reader-load/SKILL.md`
+
+When a change matches another `principle-*` description, read that leaf before editing. `.cursor/skills/poteto-mode/SKILL.md` is the index. When editing `.ts` or `.tsx`, also read `.cursor/skills/typescript-best-practices/SKILL.md` and `.cursor/skills/principle-type-system-discipline/SKILL.md`.
+
+`principle-build-the-lever` applies when the same edit would be repeated. A one-off change stays the small ponytail diff.
+
+`ponytail-audit`, `ponytail-review`, `ponytail-debt`, `ponytail-gain`, `ponytail-help`, and the other pstack command skills are installed and stay opt-in.
+
+## Before opening a pull request
+
+Read `.cursor/skills/thermo-nuclear-code-quality-review/SKILL.md` and run that review on the branch diff. The skill sets `disable-model-invocation: true`, so it does not start on its own. This rule is the invocation. Fix structural findings before the pull request is opened.
+
+## Repo constraints that stay in force
+
+Release only through a pull request into `staging`, merged with a merge commit. pstack shipping, autopilot, and merge playbooks are out of scope here.
+
+`AGENTS.md` stays in force: no invented SEO metrics, validation at trust boundaries, and edit an existing file when it already covers the change.
+
+User-facing prose uses `.agents/skills/deslop/SKILL.md`. pstack `unslop` is a separate installed skill. New copy uses no em dash (U+2014).
+
+These skills are agent instructions. `scripts/build-playbooks.mjs` does not compile them into the product.

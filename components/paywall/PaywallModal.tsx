@@ -7,14 +7,12 @@ import { executeJettonPayment } from '../../services/ton/jettonService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import {
   effectiveTab,
-  formatEngineList,
-  isFreeEngineConfigured,
   isJettonCheckoutAvailable,
-  paidEngineLabels,
   resolvePaymentOptions,
   TELEGRAM_MINI_APP_URL,
   type PaymentRail,
 } from './paymentOptions';
+import { BYOK_CHECKOUT_LINE, PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './planCopy';
 import { ICONS } from '../../constants';
 import { toUserFacingText } from '../../utils/userFacingText';
 
@@ -33,9 +31,6 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   const paymentOptions = resolvePaymentOptions({ inTelegram: inTg, health });
   const [activeTab, setActiveTab] = useState<PaymentRail>(paymentOptions.defaultTab);
   const tab = effectiveTab(activeTab, paymentOptions);
-  const engineLabels = paidEngineLabels(health);
-  const engineList = formatEngineList(engineLabels);
-  const groqLive = isFreeEngineConfigured(health);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
@@ -428,7 +423,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           {showLicenseInput && (
             <div className="mt-3 pt-3 border-t border-white/10 space-y-2.5 animate-fade-in">
               <p className="text-[11px] text-gray-400">
-                Enter your 3-day Growth pass, referral key, or enterprise license code (e.g. <span className="font-mono text-gold">LUM-GROWTH-3DAY</span>).
+                Enter a license key if you have one.
               </p>
               <div className="flex gap-2">
                 <label htmlFor="paywall-license-key-input" className="sr-only">License key</label>
@@ -437,7 +432,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                   type="text"
                   value={licenseKeyInput}
                   onChange={(e) => setLicenseKeyInput(e.target.value.toUpperCase())}
-                  placeholder="LUM-GROWTH-3DAY..."
+                  placeholder="License key"
                   className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/20 focus:border-gold focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none text-xs font-mono text-white placeholder-gray-500"
                 />
                 <button
@@ -553,127 +548,49 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </div>
         )}
 
-        {/* Plans Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-          {/* Starter Plan */}
-          <div className="p-5 rounded-2xl border border-gold/40 bg-gold/5 flex flex-col justify-between space-y-4 hover:border-gold transition-all relative">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-gold-light">Starter Plan</span>
-                <span className="text-xs font-mono text-gold font-bold">
-                  {planPriceLabel('starter')}
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                Full AI visibility audits for up to 2 domains with monthly re-checks and plain-English action briefs.
-              </p>
-              <ul className="mt-3 space-y-1.5 text-[11px] text-gray-300">
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> <strong>{engineLabels.length ? `Unlocks ${engineList}` : engineList}</strong>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Unlimited AI Search Queries{groqLive ? ' (Groq + Premium)' : ''}
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 2 Monitored Domains
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> PDF &amp; Google Docs Exports
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Web audits only (no MCP, no share links)
-                </li>
-              </ul>
-            </div>
-            <button
-              type="button"
-              onClick={() => handlePlanCheckout('starter')}
-              disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-gold text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+          {pricingTiers.map((tier) => (
+            <div
+              key={tier.id}
+              className={`p-5 rounded-2xl border flex flex-col justify-between space-y-4 hover:border-gold transition-all relative ${
+                tier.highlight
+                  ? 'border-white/15 bg-white/[0.02]'
+                  : tier.id === 'agency'
+                    ? 'border-gold/30 bg-gradient-to-br from-gold/10 to-transparent sm:col-span-2'
+                    : 'border-gold/40 bg-gold/5'
+              }`}
             >
-              {planButtonLabel('starter')}
-            </button>
-          </div>
-
-          {/* Growth Plan */}
-          <div className="p-5 rounded-2xl border border-white/15 bg-white/[0.02] flex flex-col justify-between space-y-4 hover:border-gold/60 transition-all relative">
-            <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-semibold text-[9px] tracking-wide">
-              Most popular
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-white">Growth Plan</span>
-                <span className="text-xs font-mono text-gold font-bold">
-                  {planPriceLabel('growth')}
-                </span>
+              {tier.highlight && (
+                <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-semibold text-[9px] tracking-wide">
+                  {PLAN_CARD_BADGE}
+                </div>
+              )}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-sm font-bold ${tier.highlight ? 'text-white' : 'text-gold-light'}`}>{planTitle(tier.id)}</span>
+                  <span className="text-xs font-mono text-gold font-bold">{planPriceLabel(tier.id)}</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-relaxed">{tier.blurb}</p>
+                <ul className={`mt-3 gap-1.5 text-[11px] text-gray-300 ${tier.id === 'agency' ? 'grid grid-cols-1 sm:grid-cols-2' : 'space-y-1.5'}`}>
+                  {planBullets(tier.id).map((line) => (
+                    <li key={line} className="flex items-center gap-2">
+                      <span className="text-gold">✓</span> {line}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                10 domains, automated weekly audits, competitor citation graphs, and 24/7 Telegram Drift Sentinel alerts.
-              </p>
-              <ul className="mt-3 space-y-1.5 text-[11px] text-gray-300">
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> <strong>{engineLabels.length ? `All Starter Engines (${engineList})` : 'All Starter Engines'}</strong>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> MCP access (Cursor / Claude / Codex)
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Public share links + 3 team seats
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 10 Domains + weekly Sentinel
-                </li>
-              </ul>
+              <button
+                type="button"
+                onClick={() => handlePlanCheckout(tier.id)}
+                disabled={busyPlan !== null}
+                className={`w-full py-3 rounded-xl font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
+                  tier.highlight ? 'bg-white text-black' : 'bg-gold text-black'
+                }`}
+              >
+                {planButtonLabel(tier.id)}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => handlePlanCheckout('growth')}
-              disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-white text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-            >
-              {planButtonLabel('growth')}
-            </button>
-          </div>
-
-          {/* Agency Plan */}
-          <div className="p-5 rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/10 to-transparent flex flex-col justify-between space-y-4 hover:border-gold transition-all relative sm:col-span-2">
-            <div className="absolute -top-2.5 left-4 px-2.5 py-0.5 rounded-full bg-white text-black font-black text-[9px] uppercase tracking-widest">
-              Moat
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-gold-light">Agency Plan</span>
-                <span className="text-xs font-mono text-gold font-bold">
-                  {planPriceLabel('agency')}
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                25 domains, audit memory timeline, competitor citation deltas, 10 client workspaces, white-label PDF, API access, daily Sentinel.
-              </p>
-              <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] text-gray-300">
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> MCP + share links (everything in Growth)
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Hosted API / research access
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 10 Agency client workspaces
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 10 team seats + daily Sentinel
-                </li>
-              </ul>
-            </div>
-            <button
-              type="button"
-              onClick={() => handlePlanCheckout('agency')}
-              disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-gold text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-            >
-              {planButtonLabel('agency')}
-            </button>
-          </div>
+          ))}
         </div>
 
         {/* Stripe Card helper if in Card tab (only when stripeCheckout live) */}
@@ -774,7 +691,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         {/* BYOK alternative */}
         <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-400">
           <p>
-            Prefer your own models? <span className="text-gray-300">Add a Groq / NVIDIA / Ollama key after sign-in.</span>
+            <span className="text-gray-300">{BYOK_CHECKOUT_LINE}</span>
           </p>
           <button
             type="button"

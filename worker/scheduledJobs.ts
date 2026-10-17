@@ -14,7 +14,9 @@ export type ScheduledJobName =
   | 'stars_charge_sweep'
   | 'ton_pending_sweep'
   | 'payment_support_sweep'
-  | 'weekly_decision_digest';
+  | 'weekly_decision_digest'
+  | 'rsi_skill_curator'
+  | 'rsi_posting_reflection';
 
 export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'sentinel',
@@ -24,6 +26,8 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'ton_pending_sweep',
   'payment_support_sweep',
   'weekly_decision_digest',
+  'rsi_skill_curator',
+  'rsi_posting_reflection',
 ];
 
 /**
@@ -31,9 +35,13 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
  * Trust Network domain re-check (each verified domain is re-checked every 7 days), and the
  * Stars charge sweep (settles charges a webhook left undecided and retries refunds), and the TON
  * pending-order sweep (re-checks unpaid orders inside their 48 hours), the payment support
- * sweep, and the weekly decision digest.
+ * sweep, the weekly decision digest, and the RSI jobs.
+ * The RSI jobs are owned by this expression so the account does not gain a cron trigger.
+ * scheduled() starts them only when the fire falls on Monday UTC.
  */
 export const DAILY_CRON = '0 8 * * *';
+
+const MONDAY_ONLY_JOBS = new Set<ScheduledJobName>(['rsi_skill_curator', 'rsi_posting_reflection']);
 
 const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
   [DAILY_CRON]: [
@@ -44,8 +52,16 @@ const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
     'ton_pending_sweep',
     'payment_support_sweep',
     'weekly_decision_digest',
+    'rsi_skill_curator',
+    'rsi_posting_reflection',
   ],
 };
+
+/** RSI maintenance runs on the daily trigger, and only on Monday UTC. */
+export function shouldRunScheduledJob(name: ScheduledJobName, scheduledTime: number): boolean {
+  if (!MONDAY_ONLY_JOBS.has(name)) return true;
+  return new Date(scheduledTime).getUTCDay() === 1;
+}
 
 function cronKey(cron: string): string {
   return String(cron || '').trim().replace(/\s+/g, ' ');

@@ -21,7 +21,8 @@ export type BrandMemoryEventType =
   | 'competitor_mention'
   | 'dna_sync'
   | 'watchlist_alert'
-  | 'experience_heuristic';
+  | 'experience_heuristic'
+  | 'brand_fact';
 
 export interface BrandMemoryEvent {
   id: string;
@@ -227,6 +228,24 @@ export function ingestAuditExperience(exp: PostAuditExperience): BrandMemoryEven
   });
 }
 
+export function saveBrandFact(opts: { title: string; summary: string; domain?: string }): BrandMemoryEvent {
+  const title = opts.title.trim().slice(0, 160) || 'Brand fact';
+  const summary = opts.summary.trim().slice(0, 500);
+  try {
+    vfsMemoryService.addMemoryItem('events', title, summary, ['brand-fact'], 'STRATEGY');
+  } catch {
+    /* optional */
+  }
+  return pushEvent({
+    type: 'brand_fact',
+    title,
+    summary,
+    domain: opts.domain,
+    clientId: getActiveClientId(),
+    tags: ['brand-fact'],
+  });
+}
+
 export function listEvents(limit = 50): BrandMemoryEvent[] {
   return loadEvents()
     .slice()
@@ -238,6 +257,7 @@ export const brandMemoryVaultService = {
   ingestAudit,
   ingestAuditExperience,
   ingestChatInsight,
+  saveBrandFact,
   syncDna,
   listEvents,
   EVENT_KEY,
