@@ -201,13 +201,16 @@ describe('the community feed in D1', () => {
     expect((await (await feed(env)).json()) as unknown).toEqual({ ok: true, cards: [] });
   });
 
-  it('ownership is checked again inside the insert: a card deleted after the lookup is not published', async () => {
+  it.each([
+    ['deleted', `DELETE FROM idea_scouts WHERE id = ?`],
+    ['moved to another account', `UPDATE idea_scouts SET account_id = 'acct_other' WHERE id = ?`],
+  ])('ownership is checked again inside the insert: a card %s after the lookup is not published', async (_, change) => {
     const { env, db } = makeEnv();
     const ideaId = await ownIdea(env, db, ALICE);
     env.DB = withStatements(db, /SELECT card_json FROM idea_scouts/, (stmt) => ({
       first: async (column?: string) => {
         const row = await stmt.first(column);
-        db.sqlite.prepare(`DELETE FROM idea_scouts WHERE id = ?`).run(ideaId);
+        db.sqlite.prepare(change).run(ideaId);
         return row;
       },
     }));
@@ -264,8 +267,7 @@ describe('the community feed in D1', () => {
       },
     }));
 
-    const results = await Promise.all(ideas.map((id) => share(env, ALICE, id)));
-    clearTimeout(fallback);
+    const results = await Promise.all(ideas.map((id) => share(env, ALICE, id))).finally(() => clearTimeout(fallback));
     expect(waiting, 'every share was held at the lookup').toBe(ideas.length);
     const statuses = results.map((r) => r.status).sort((a, b) => a - b);
     expect(statuses).toEqual([...Array(FEED_SHARES_PER_UTC_DAY).fill(200), 429, 429]);
