@@ -201,6 +201,21 @@ describe('the community feed in D1', () => {
     expect((await (await feed(env)).json()) as unknown).toEqual({ ok: true, cards: [] });
   });
 
+  it('ownership is checked again inside the insert: a card deleted after the lookup is not published', async () => {
+    const { env, db } = makeEnv();
+    const ideaId = await ownIdea(env, db, ALICE);
+    env.DB = withStatements(db, /SELECT card_json FROM idea_scouts/, (stmt) => ({
+      first: async (column?: string) => {
+        const row = await stmt.first(column);
+        db.sqlite.prepare(`DELETE FROM idea_scouts WHERE id = ?`).run(ideaId);
+        return row;
+      },
+    }));
+    const res = await share(env, ALICE, ideaId);
+    expect(res.status).toBe(404);
+    expect(count(db, 'community_feed_cards')).toBe(0);
+  });
+
   it('sharing one card twice keeps one row and answers with the same feed id', async () => {
     const { env, db } = makeEnv();
     const ideaId = await ownIdea(env, db, ALICE);
@@ -232,12 +247,15 @@ describe('the community feed in D1', () => {
 
   it('the daily share cap is counted inside the insert, so shares sent together cannot pass it', async () => {
     const { env, db } = makeEnv();
+    // Eight shares in all from one account, under the share rate limit of 10 a minute.
+    expect(FEED_SHARES_PER_UTC_DAY + 3).toBeLessThanOrEqual(10);
     const ideas: string[] = [];
     for (let i = 0; i < FEED_SHARES_PER_UTC_DAY + 2; i++) ideas.push(await ownIdea(env, db, ALICE));
     // Hold every share at its idea lookup until all of them are there, so they reach the insert together.
     let waiting = 0;
     let release!: () => void;
     const together = new Promise<void>((done) => (release = done));
+    const fallback = setTimeout(release, 2_000);
     env.DB = withStatements(db, /SELECT card_json FROM idea_scouts/, (stmt) => ({
       first: async (column?: string) => {
         if (++waiting === ideas.length) release();
@@ -247,6 +265,8 @@ describe('the community feed in D1', () => {
     }));
 
     const results = await Promise.all(ideas.map((id) => share(env, ALICE, id)));
+    clearTimeout(fallback);
+    expect(waiting, 'every share was held at the lookup').toBe(ideas.length);
     const statuses = results.map((r) => r.status).sort((a, b) => a - b);
     expect(statuses).toEqual([...Array(FEED_SHARES_PER_UTC_DAY).fill(200), 429, 429]);
     const refused = await results.find((r) => r.status === 429)!.json();
@@ -285,12 +305,21 @@ describe('the community feed in D1', () => {
         fetchStatus: 'fetched',
       }],
     });
-    expect((await share(env, ALICE, await ownIdea(env, db, ALICE, JSON.stringify(withCompetitor)))).status).toBe(200);
+    // A field the card schema does not name, nested where the public card copies from.
+    const stored = {
+      ...withCompetitor,
+      whoAsksAi: { ...withCompetitor.whoAsksAi, internal: 'Private note' },
+      contentBets: withCompetitor.contentBets.map((bet) => ({ ...bet, internal: 'Private note' })),
+    };
+    expect((await share(env, ALICE, await ownIdea(env, db, ALICE, JSON.stringify(stored)))).status).toBe(200);
 
     const text = await (await feed(env)).text();
-    const body = JSON.parse(text) as { cards: Array<{ card: Record<string, unknown> }> };
-    expect(Object.keys(body.cards[0].card).sort()).toEqual(['contentBets', 'problem', 'whoAsksAi']);
-    for (const leaked of ['acme-tools', 'token=private', 'Scraped', 'Acme pricing']) expect(text).not.toContain(leaked);
+    const body = JSON.parse(text) as { cards: Array<{ card: { whoAsksAi: object; contentBets: object[] } }> };
+    const card = body.cards[0].card;
+    expect(Object.keys(card).sort()).toEqual(['contentBets', 'problem', 'whoAsksAi']);
+    expect(Object.keys(card.whoAsksAi).sort()).toEqual(['label', 'persona', 'promptPatterns']);
+    for (const bet of card.contentBets) expect(Object.keys(bet).sort()).toEqual(['hypothesis', 'label']);
+    for (const leaked of ['acme-tools', 'token=private', 'Scraped', 'Acme pricing', 'Private note']) expect(text).not.toContain(leaked);
     expect(text).not.toMatch(/\d+(?:\.\d+)?\s*%/);
     expect(text).not.toContain(String.fromCharCode(0x2014));
   });

@@ -685,8 +685,9 @@ const FEED_LIMITS = {
 };
 
 /**
- * What anyone reading the feed sees of a card. The card's competitor snapshots stay out: their URLs
- * can carry query tokens, and their titles and headings are text scraped from someone else's page.
+ * What anyone reading the feed sees of a card, field by field. The card's competitor snapshots stay
+ * out: their URLs can carry query tokens, and their titles and headings are text scraped from
+ * someone else's page. Model-written prompts and hypotheses may still name a competitor.
  */
 export interface CommunityFeedCard {
   id: string;
@@ -755,7 +756,11 @@ export async function getCommunityFeed(request: Request, env: Env): Promise<Resp
         id: row.id,
         ideaText: row.idea_text,
         niche: row.niche,
-        card: { problem: card.problem, whoAsksAi: card.whoAsksAi, contentBets: card.contentBets },
+        card: {
+          problem: card.problem,
+          whoAsksAi: { label: card.whoAsksAi.label, persona: card.whoAsksAi.persona, promptPatterns: card.whoAsksAi.promptPatterns },
+          contentBets: card.contentBets.map((bet) => ({ label: bet.label, hypothesis: bet.hypothesis })),
+        },
         upvotes: Number(row.upvotes),
         sharedAt: row.shared_at,
       });
@@ -808,6 +813,11 @@ export async function shareIdeaToFeed(request: Request, env: Env, accountId: str
       `SELECT id FROM community_feed_cards WHERE account_id = ? AND idea_id = ?`,
     ).bind(accountId, ideaId).first<{ id: string }>();
     if (!shared) {
+      // Nothing was inserted: the cap, or the idea card was deleted after the lookup above.
+      const stillOwned = await env.DB!.prepare(
+        `SELECT 1 FROM idea_scouts WHERE id = ? AND account_id = ?`,
+      ).bind(ideaId, accountId).first();
+      if (!stillOwned) return unknown;
       return json({
         ok: false,
         error: `You can share ${FEED_SHARES_PER_UTC_DAY} idea cards a day. Try again after midnight UTC.`,
