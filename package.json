@@ -74,7 +74,7 @@
   "dependencies": {
     "@formepdf/core": "^0.28.0",
     "@formepdf/react": "^0.28.0",
-    "@google/genai": "1.34.0",
+    "@google/genai": "2.29.1",
     "@telegram-apps/sdk-react": "^3.3.9",
     "@ton/core": "^0.63.1",
     "@tonconnect/ui-react": "^3.0.2",
