@@ -1,4 +1,5 @@
 import React from 'react';
+import './space.css';
 
 export const MARKETING_SELL_POINTS = [
   {
@@ -25,17 +26,22 @@ export const MarketingSellPoints: React.FC<MarketingSellPointsProps> = ({
   className = '',
   heading = 'What you get from one scout',
 }) => (
-  <section className={className}>
+  <section className={className} aria-labelledby={heading ? 'sell-points-heading' : undefined}>
     {heading && (
-      <h2 className="font-display text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.08] mb-12 max-w-2xl [overflow-wrap:anywhere]">
-        {heading}
-      </h2>
+      <div className="max-w-3xl" data-reveal>
+        <p className="lx-eyebrow">What you get</p>
+        <h2 id="sell-points-heading" className="lx-display lx-h3 mt-5 [overflow-wrap:anywhere]">
+          {heading}
+        </h2>
+      </div>
     )}
-    <ul className="grid grid-cols-1 md:grid-cols-3 gap-10 list-none">
-      {MARKETING_SELL_POINTS.map((point) => (
-        <li key={point.title} className="min-w-0 border-t border-[var(--color-rule)] pt-5">
-          <h3 className="text-xl text-[var(--color-ink)] font-medium mb-2">{point.title}</h3>
-          <p className="mkt-body">{point.body}</p>
+    <ul className="m-0 mt-14 grid list-none gap-12 p-0 md:grid-cols-3 md:gap-10">
+      {MARKETING_SELL_POINTS.map((point, idx) => (
+        <li key={point.title} className="min-w-0" data-reveal style={{ transitionDelay: `${idx * 90}ms` }}>
+          <span aria-hidden className="font-serif text-5xl leading-none lx-gold-text">{`0${idx + 1}`}</span>
+          <div aria-hidden className="mt-6 h-px w-full bg-gradient-to-r from-[var(--color-accent)]/60 to-transparent" />
+          <h3 className="mt-6 text-xl font-medium text-[var(--color-ink)]">{point.title}</h3>
+          <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">{point.body}</p>
         </li>
       ))}
     </ul>

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
-import { MarketingPageShell } from './marketing/MarketingPageShell';
-import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
+import { EvidenceGlyph, MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
+import { LIVE_SAMPLE_SNAPSHOT, type LiveSampleRow } from '../services/marketing/liveSampleSnapshot';
+import type { EvidenceState } from './marketing/earth/globeStory';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 
 interface SampleReportPageProps {
@@ -11,7 +12,7 @@ interface SampleReportPageProps {
   isAuthenticated?: boolean;
 }
 
-function statusCopy(status: string): string {
+function statusCopy(status: LiveSampleRow['status'] | 'estimated'): EvidenceState {
   switch (status) {
     case 'measured':
       return 'Measured';
@@ -19,8 +20,6 @@ function statusCopy(status: string): string {
       return 'Estimated';
     case 'not_measured':
       return 'Not measured';
-    default:
-      return status;
   }
 }
 
@@ -46,66 +45,77 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
     <MarketingPageShell
       brandSub="Sample"
       footerStatement="Know where AI recommends you. Fix what matters first."
+      closing={{
+        eyebrow: 'Your turn',
+        title: (
+          <>
+            See what AI says <span className="italic lx-gold-text pr-[0.08em]">about you.</span>
+          </>
+        ),
+        body: 'Run Instant Audit on your own site to measure Google, AI Overviews, ChatGPT, and Perplexity.',
+        cta: { label: isAuthenticated ? 'Open Instant Audit' : 'Create free account', onClick: primary },
+        links: [
+          { label: 'Methodology', onClick: onNavigateMethodology },
+          { label: 'Pricing', onClick: onNavigatePricing },
+        ],
+      }}
     >
-      <header className="mb-12 max-w-3xl">
-        <h1 className="font-display text-[length:var(--text-display)] tracking-tight leading-[1.05] mb-5 [overflow-wrap:anywhere]">
-          What a Live crawl report looks like
-        </h1>
-        <p className="text-lg text-[var(--color-ink-2)] leading-relaxed">
-          Dated Live crawl of luminarasuite.com ({LIVE_SAMPLE_SNAPSHOT.measuredAt}). Crawl readiness is
-          Measured. Answer engines stay Not measured until Instant Audit. No invented KPI scores.
-        </p>
-      </header>
+      <MarketingPageHeader
+        eyebrow="Sample report"
+        title={
+          <>
+            What a Live crawl report <span className="italic lx-gold-text pr-[0.08em]">looks like.</span>
+          </>
+        }
+        lede={`Dated Live crawl of luminarasuite.com (${LIVE_SAMPLE_SNAPSHOT.measuredAt}). Crawl readiness is Measured. Answer engines stay Not measured until Instant Audit. No invented KPI scores.`}
+      />
 
-      <figure className="border border-[var(--color-rule)] bg-[var(--color-paper)]/80 mb-10">
-        <div className="flex items-baseline justify-between gap-3 px-5 pt-4 pb-3 border-b border-[var(--color-rule)]">
+      <figure className="lx-glass mx-auto mb-0 mt-20 max-w-4xl rounded-3xl p-6 sm:mt-24 sm:p-10" data-reveal>
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-[var(--color-ink)] truncate">{LIVE_SAMPLE_SNAPSHOT.domain}</p>
-            <p className="text-[12px] text-[var(--color-ink-2)] mt-0.5">Focus {LIVE_SAMPLE_SNAPSHOT.focus}</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-[var(--color-ink-2)]">Focus {LIVE_SAMPLE_SNAPSHOT.focus}</p>
+            <p className="mt-2 truncate font-serif text-2xl text-[var(--color-ink)] sm:text-3xl">{LIVE_SAMPLE_SNAPSHOT.domain}</p>
           </div>
-          <p className="shrink-0 text-[12px] font-mono text-[var(--color-accent)]">
+          <span className="shrink-0 rounded-full border border-[var(--color-rule)] px-3 py-1 text-xs text-[var(--gold-light)]">
             {LIVE_SAMPLE_SNAPSHOT.label} · {LIVE_SAMPLE_SNAPSHOT.measuredAt}
-          </p>
+          </span>
         </div>
 
-        <ul className="divide-y divide-[var(--color-rule)]">
-          {LIVE_SAMPLE_SNAPSHOT.rows.map((row) => (
-            <li key={row.id} className="flex items-start justify-between gap-4 px-5 py-3.5">
-              <div className="min-w-0">
-                <p className="text-sm text-[var(--color-ink)]">{row.label}</p>
-                <p className="text-[13px] text-[var(--color-ink-2)] mt-0.5 leading-snug">{row.note}</p>
-              </div>
-              <span className="shrink-0 text-[12px] font-mono tracking-wide text-[var(--color-ink)]">
-                {statusCopy(row.status)}
-              </span>
-            </li>
-          ))}
+        <ul className="m-0 mt-7 list-none divide-y divide-[var(--color-rule)] border-y border-[var(--color-rule)] p-0">
+          {LIVE_SAMPLE_SNAPSHOT.rows.map((row) => {
+            const state = statusCopy(row.status);
+            return (
+              <li
+                key={row.id}
+                className="grid grid-cols-[minmax(0,9rem)_minmax(0,8rem)_1fr] items-center gap-3 py-4 max-sm:grid-cols-2"
+              >
+                <span className="text-sm text-[var(--color-ink)]">{row.label}</span>
+                <span className="flex items-center gap-2 text-[13px] text-[var(--gold-light)]">
+                  <EvidenceGlyph state={state} />
+                  {state}
+                </span>
+                <span className="text-[13px] leading-snug text-[var(--color-ink-2)] max-sm:col-span-2">{row.note}</span>
+              </li>
+            );
+          })}
         </ul>
 
-        <div className="border-t border-[var(--color-rule)] px-5 py-4 space-y-2">
-          <p className="text-sm text-[var(--color-ink)] leading-relaxed">{LIVE_SAMPLE_SNAPSHOT.verdict}</p>
-          <p className="text-sm text-[var(--color-ink-2)]">
-            <span className="text-[var(--color-ink)] font-medium">Next: </span>
+        <p className="mt-7 text-[15px] leading-relaxed text-[var(--color-ink-2)]">
+          <span className="text-[var(--color-ink)]">Verdict. </span>
+          {LIVE_SAMPLE_SNAPSHOT.verdict}
+        </p>
+
+        <div className="mt-7 rounded-2xl border border-[var(--color-accent)]/45 bg-[var(--color-accent)]/10 p-5 sm:p-6">
+          <p className="text-[11px] uppercase tracking-[0.26em] text-[var(--gold-light)]">Next</p>
+          <p className="mt-2 font-serif text-xl leading-snug text-[var(--color-ink)] sm:text-2xl">
             {LIVE_SAMPLE_SNAPSHOT.shipAction}
           </p>
         </div>
 
-        <figcaption className="px-5 pb-4 text-[13px] text-[var(--color-ink-2)]">
+        <figcaption className="mt-6 text-xs leading-relaxed text-[var(--color-ink-2)]">
           Static dated snapshot at /sample-report. Answer-engine Live runs happen in Instant Audit.
         </figcaption>
       </figure>
-
-      <div className="flex flex-col sm:flex-row flex-wrap gap-3">
-        <button type="button" className="mkt-cta-primary" onClick={primary}>
-          {isAuthenticated ? 'Open Instant Audit' : 'Create free account'}
-        </button>
-        <button type="button" className="mkt-cta-secondary" onClick={onNavigateMethodology}>
-          Methodology
-        </button>
-        <button type="button" className="mkt-cta-secondary" onClick={onNavigatePricing}>
-          Pricing
-        </button>
-      </div>
     </MarketingPageShell>
   );
 };

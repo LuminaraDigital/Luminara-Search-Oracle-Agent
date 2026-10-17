@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { MarketingPageShell } from './marketing/MarketingPageShell';
+import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { MarketingSellPoints } from './marketing/MarketingSellPoints';
 
 interface WhyLuminaraPageProps {
@@ -14,6 +14,9 @@ const contrasts = [
   { label: 'Cost model', manual: 'Retainer or project fees', luminara: 'Subscription or your own AI keys' },
 ] as const;
 
+const MANUAL_LABEL = 'Manual project';
+const LUMINARA_LABEL = 'Luminara Suite';
+
 const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
   onTerminal,
   onNavigatePricing,
@@ -27,68 +30,92 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
       brandSub="Why"
       footerStatement="Measure when we can. Label when we cannot."
       wide
+      closing={{
+        eyebrow: 'Start free',
+        title: (
+          <>
+            Start with one <span className="italic lx-gold-text pr-[0.08em]">site audit.</span>
+          </>
+        ),
+        body: 'Run Instant Audit on the URL that matters most. Create a free account to save results and use the hosted daily allowance, or bring your own AI keys as a guest.',
+        cta: { label: 'Create free account', onClick: onTerminal },
+      }}
     >
-      <header className="mb-14 sm:mb-20 max-w-3xl">
-        <h1 className="font-display text-[length:var(--text-display)] tracking-tight leading-[1.05] mb-6 [overflow-wrap:anywhere]">
-          Replace tool sprawl with one clear plan.
-        </h1>
-        <p className="text-lg text-[var(--color-ink-2)] leading-relaxed mb-8">
-          Luminara Suite is for founders and small teams who need a clear plan for Google and AI answers
-          without buying a full agency engagement or rebuilding their stack. Audit, labeled evidence, one
-          next action, and optional IDE access when you grow into Growth.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button type="button" onClick={onTerminal} className="mkt-cta-primary">
-            Create free account
-          </button>
-          <button type="button" onClick={onNavigatePricing} className="mkt-cta-secondary">
-            View pricing
-          </button>
+      <MarketingPageHeader
+        eyebrow="Why Luminara"
+        title={
+          <>
+            Replace tool sprawl with <span className="italic lx-gold-text pr-[0.08em]">one clear plan.</span>
+          </>
+        }
+        lede="Luminara Suite is for founders and small teams who need a clear plan for Google and AI answers without buying a full agency engagement or rebuilding their stack. Audit, labeled evidence, one next action, and optional IDE access when you grow into Growth."
+      >
+        <button type="button" onClick={onTerminal} className="lx-btn lx-btn-gold">
+          Create free account
+        </button>
+        <button type="button" onClick={onNavigatePricing} className="lx-link text-sm">
+          View pricing
+        </button>
+      </MarketingPageHeader>
+
+      <MarketingSellPoints className="mt-28 border-t pt-24 lx-hairline sm:mt-36 sm:pt-28" />
+
+      <section aria-labelledby="compare-heading" className="mt-28 border-t pt-24 lx-hairline sm:mt-36 sm:pt-28">
+        <div className="max-w-3xl" data-reveal>
+          <p className="lx-eyebrow">The difference</p>
+          <h2 id="compare-heading" className="lx-display lx-h3 mt-5 [overflow-wrap:anywhere]">
+            Compared to a <span className="italic lx-gold-text pr-[0.08em]">manual SEO project</span>
+          </h2>
+          <p className="mt-6 max-w-2xl text-sm leading-relaxed text-[var(--color-ink-2)]">
+            Qualitative differences only. We do not invent conversion rates or customer counts.
+          </p>
         </div>
-      </header>
 
-      <MarketingSellPoints className="mb-20 sm:mb-28" />
-
-      <section className="mb-20 sm:mb-28">
-        <h2 className="font-display text-[length:var(--text-display-s)] tracking-tight mb-3 [overflow-wrap:anywhere]">
-          Compared to a manual SEO project
-        </h2>
-        <p className="text-sm text-[var(--color-ink-2)] font-light mb-8 max-w-2xl">
-          Qualitative differences only. We do not invent conversion rates or customer counts.
-        </p>
-        <div className="overflow-x-auto border border-[var(--color-rule)] bg-[var(--color-paper)]/70">
-          <table className="w-full text-left min-w-[32rem]">
-            <thead>
-              <tr className="border-b border-[var(--color-rule)]">
-                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--gold-light)]">Dimension</th>
-                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--color-ink-2)]">Manual project</th>
-                <th className="p-4 sm:p-5 text-[11px] font-mono text-[var(--color-ink)]">Luminara Suite</th>
+        <div className="lx-glass mt-12 rounded-3xl px-6 py-2 sm:px-8" data-reveal>
+          <table className="block w-full text-left md:table">
+            <thead className="hidden md:table-header-group">
+              <tr>
+                <th scope="col" className="py-5 pr-6 text-[11px] font-medium uppercase tracking-[0.24em] text-[var(--color-ink-2)]">
+                  Dimension
+                </th>
+                <th scope="col" className="py-5 pr-6 text-[11px] font-medium uppercase tracking-[0.24em] text-[var(--color-ink-2)]">
+                  {MANUAL_LABEL}
+                </th>
+                <th scope="col" className="py-5 text-[11px] font-medium uppercase tracking-[0.24em] text-[var(--gold-light)]">
+                  {LUMINARA_LABEL}
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--color-rule)]">
+            <tbody className="block md:table-row-group">
               {contrasts.map((row) => (
-                <tr key={row.label}>
-                  <td className="p-4 sm:p-5 text-sm text-[var(--color-ink)]">{row.label}</td>
-                  <td className="p-4 sm:p-5 text-sm text-[var(--color-ink-2)] font-light">{row.manual}</td>
-                  <td className="p-4 sm:p-5 text-sm text-[var(--gold-light)] font-light">{row.luminara}</td>
+                <tr
+                  key={row.label}
+                  className="block border-t py-6 lx-hairline first:border-t-0 md:table-row md:py-0 md:first:border-t"
+                >
+                  <th
+                    scope="row"
+                    className="block font-serif text-2xl font-normal leading-tight text-[var(--color-ink)] md:table-cell md:w-[24%] md:py-6 md:pr-6 md:align-top md:text-xl"
+                  >
+                    {row.label}
+                  </th>
+                  <td className="mt-4 block text-[15px] leading-relaxed text-[var(--color-ink-2)] md:mt-0 md:table-cell md:w-[36%] md:py-6 md:pr-6 md:align-top">
+                    <span className="mb-1 block text-[11px] uppercase tracking-[0.22em] md:hidden">{MANUAL_LABEL}</span>
+                    {row.manual}
+                  </td>
+                  <td className="mt-4 block text-[15px] leading-relaxed text-[var(--color-ink)] md:mt-0 md:table-cell md:py-6 md:align-top">
+                    <span className="mb-1 block text-[11px] uppercase tracking-[0.22em] text-[var(--gold-light)] md:hidden">
+                      {LUMINARA_LABEL}
+                    </span>
+                    <span className="flex gap-3">
+                      <span aria-hidden className="mt-[0.5em] h-2 w-2 shrink-0 rounded-full bg-[var(--color-accent)]" />
+                      {row.luminara}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </section>
-
-      <section className="border-t border-[var(--color-rule)] pt-14 sm:pt-20 max-w-2xl">
-        <h2 className="font-display text-[length:var(--text-display-s)] tracking-tight mb-4 [overflow-wrap:anywhere]">
-          Start with one site audit
-        </h2>
-        <p className="mkt-body mb-8">
-          Run Instant Audit on the URL that matters most. Create a free account to save results and use the
-          hosted daily allowance, or bring your own AI keys as a guest.
-        </p>
-        <button type="button" onClick={onTerminal} className="mkt-cta-primary">
-          Create free account
-        </button>
       </section>
     </MarketingPageShell>
   );
