@@ -102,6 +102,7 @@ import {
   mintOpaqueSession,
   revokeOpaqueSession,
   isOpaqueSessionId,
+  looksLikeJwt,
 } from './authMiddleware';
 import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
@@ -563,7 +564,17 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
     const bearer = bearerFromAuthorization(request.headers.get('authorization'));
     const cookieTok = getSessionTokenFromCookie(request);
-    const idToken = String(bearer || cookieTok || '').trim();
+    const jwtCookie = cookieTok && !isOpaqueSessionId(cookieTok) && looksLikeJwt(cookieTok) ? cookieTok : '';
+    let bodyToken = '';
+    if (!bearer && !jwtCookie) {
+      try {
+        const parsed = (await request.clone().json()) as { idToken?: unknown };
+        if (typeof parsed?.idToken === 'string') bodyToken = parsed.idToken.trim();
+      } catch {
+        /* ignore non-JSON body */
+      }
+    }
+    const idToken = String(bearer || bodyToken || jwtCookie || '').trim();
     return withCors(
       handleSendVerification(request, env, ip, billingId(who.user), idToken),
     );

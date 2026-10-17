@@ -11,11 +11,13 @@ import type { PrefetchedCitationGroup, QueryIntent } from './empiricalCitationSe
 export interface AuditReportCrewEvidence {
   scrapedPages?: readonly ScrapedPageEvidence[] | null;
   serpEvidence?: readonly SerpEvidenceItem[] | null;
+  rlmCorpus?: Record<string, string> | null;
 }
 
 export interface ReusedPageEvidence {
   formattedEvidence: string;
   combinedText: string;
+  rlmCorpus: Record<string, string>;
 }
 
 export interface ReusedSerpEvidence {
@@ -63,28 +65,38 @@ export function formatCrewPagesForReport(
     '',
   ];
   const textParts: string[] = [];
+  const rlmCorpus: Record<string, string> = {};
 
-  for (const page of usable) {
+  for (let idx = 0; idx < usable.length; idx++) {
+    const page = usable[idx];
     const source = page.source || 'crew';
-    blocks.push(`--- PAGE ${page.url} via ${source} ---`);
-    if (page.title) blocks.push(`Title: ${page.title}`);
-    if (page.description) blocks.push(`Description: ${page.description}`);
-    if (page.h1s?.length) blocks.push(`H1: ${page.h1s.join(' | ')}`);
+    const headerLines: string[] = [`--- PAGE ${page.url} via ${source} ---`];
+    if (page.title) headerLines.push(`Title: ${page.title}`);
+    if (page.description) headerLines.push(`Description: ${page.description}`);
+    if (page.h1s?.length) headerLines.push(`H1: ${page.h1s.join(' | ')}`);
     if (page.schemasFound?.length) {
-      blocks.push(`Schemas: ${page.schemasFound.map((schema) => schema.type).filter(Boolean).join(', ')}`);
+      headerLines.push(`Schemas: ${page.schemasFound.map((schema) => schema.type).filter(Boolean).join(', ')}`);
     }
-    blocks.push(`Word count: ${page.wordCount}`);
-    const snippet = (page.rawTextSnippet || '').trim().slice(0, PAGE_SNIPPET_CHARS);
-    if (snippet) {
-      blocks.push(snippet);
-      textParts.push(snippet);
+    headerLines.push(`Word count: ${page.wordCount}`);
+    const pageLines = [...headerLines];
+    const rlmLines = [...headerLines];
+    const fullSnippet = (page.rawTextSnippet || '').trim();
+    if (fullSnippet) {
+      pageLines.push(fullSnippet.slice(0, PAGE_SNIPPET_CHARS));
+      rlmLines.push(fullSnippet);
+      textParts.push(fullSnippet.slice(0, PAGE_SNIPPET_CHARS));
     }
-    blocks.push('');
+    const corpusKey = Object.prototype.hasOwnProperty.call(rlmCorpus, page.url)
+      ? `${page.url}#${idx + 1}`
+      : page.url;
+    rlmCorpus[corpusKey] = rlmLines.join('\n');
+    blocks.push(...pageLines, '');
   }
 
   return {
     formattedEvidence: blocks.join('\n').trim(),
     combinedText: textParts.join('\n\n'),
+    rlmCorpus,
   };
 }
 

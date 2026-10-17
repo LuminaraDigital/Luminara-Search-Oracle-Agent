@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { fetchAttestationByDigest } from '../../services/share/shareReportClient';
 import { AUDIT_DIGEST_DISCLOSURE } from '../../services/agentCore/tonAttestationService';
 import { Button } from '../ui/Button';
+import { VerificationCardSkeleton } from '../ui/Skeleton';
 
 function digestFromLocation(): string {
   if (typeof window === 'undefined') return '';
@@ -55,7 +56,7 @@ export const VerifyAttestationView: React.FC<{ onBack?: () => void }> = ({ onBac
         )}
       </header>
       <main className="max-w-xl mx-auto px-4 py-8 space-y-4">
-        {loading && <p className="text-sm text-gray-400 font-mono">Looking up digest...</p>}
+        {loading && <VerificationCardSkeleton title="Looking up digest..." />}
         {error && (
           <p className="text-sm text-danger-400 font-mono" role="alert">
             {error}

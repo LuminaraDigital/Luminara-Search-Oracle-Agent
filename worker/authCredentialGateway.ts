@@ -20,7 +20,7 @@ import {
   type DualRateLimitResult,
 } from './securityHardening';
 import { padMinLatency, normalizeResetEmail, PASSWORD_RESET_MIN_LATENCY_MS } from './authTollFraud';
-import { enforceAppCheckIfRequired } from './appCheck';
+import { enforceAppCheckIfRequired, extractAppCheckToken } from './appCheck';
 
 const IDENTITY_SIGN_UP = 'https://identitytoolkit.googleapis.com/v1/accounts:signUp';
 const IDENTITY_SIGN_IN = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword';
@@ -58,7 +58,8 @@ async function gateCredential(
   const burst = enforceBurstLimit(ip, 5);
   if (!burst.ok) return burst;
 
-  const edge = await enforceEdgeBindingLimit(env.AUTH_MESSAGING_LIMITER, `${kind}:${ip || 'unknown'}`, {
+  const edgeBinding = kind === 'signup' ? env.AUTH_MESSAGING_LIMITER : (env.HIGH_COST_RATE_LIMITER || env.AUTH_MESSAGING_LIMITER);
+  const edge = await enforceEdgeBindingLimit(edgeBinding, `${kind}:${ip || 'unknown'}`, {
     action: `${kind}_edge`,
     limit: kind === 'signup' ? 5 : 20,
     windowSec: 60,
@@ -89,6 +90,16 @@ type ToolkitAuthErr = {
   providerCode?: string;
 };
 
+export function identityReferer(env: Env): string {
+  const raw = String(env.WEBAPP_URL || '').trim();
+  if (!raw) return 'https://luminarasuite.com/';
+  try {
+    return new URL(raw).href;
+  } catch {
+    return raw.endsWith('/') ? raw : `${raw}/`;
+  }
+}
+
 async function callIdentityAuth(
   env: Env,
   url: string,
@@ -98,7 +109,10 @@ async function callIdentityAuth(
   const apiKey = String(env.FIREBASE_WEB_API_KEY || '').trim();
   if (!apiKey) return { ok: false, kind: 'misconfigured' };
 
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    Referer: identityReferer(env),
+  };
   const appCheck = String(opts?.appCheckToken || '').trim();
   if (appCheck) headers['X-Firebase-AppCheck'] = appCheck;
 
@@ -120,7 +134,7 @@ async function callIdentityAuth(
     localId?: string;
     email?: string;
     expiresIn?: string;
-    error?: { message?: string };
+    error?: { message?: string; status?: string };
   } = {};
   try {
     parsed = (await res.json()) as typeof parsed;
@@ -148,6 +162,22 @@ async function callIdentityAuth(
   }
   if (code.includes('WEAK_PASSWORD') || code.includes('PASSWORD_LOGIN_DISABLED')) {
     return { ok: false, kind: 'weak_password', providerCode: code.slice(0, 80) };
+  }
+  if (
+    res.status === 403 ||
+    code.includes('REFERRER') ||
+    code.includes('REFERER') ||
+    code.includes('API_KEY_') ||
+    code.includes('OPERATION_NOT_ALLOWED')
+  ) {
+    console.warn(
+      JSON.stringify({
+        event: 'credential_auth_provider_misconfigured',
+        status: res.status,
+        code: code.slice(0, 80) || 'forbidden',
+      }),
+    );
+    return { ok: false, kind: 'misconfigured', providerCode: code.slice(0, 80) };
   }
   // EMAIL_EXISTS, EMAIL_NOT_FOUND, INVALID_PASSWORD, INVALID_LOGIN_CREDENTIALS, etc.
   // Collapse to auth_failed so callers can apply constant anti-enumeration copy.
@@ -226,11 +256,12 @@ export async function handleSignUp(
     return appCheckGate.response;
   }
 
+  const resolvedAppCheck = extractAppCheckToken(request, parsed.appCheckToken);
   const result = await callIdentityAuth(
     env,
     IDENTITY_SIGN_UP,
     { email: parsed.email, password: parsed.password, returnSecureToken: true },
-    { fetchImpl: opts?.fetchImpl, appCheckToken: parsed.appCheckToken },
+    { fetchImpl: opts?.fetchImpl, appCheckToken: resolvedAppCheck },
   );
 
   await padMinLatency(started, minLatency);
@@ -319,11 +350,12 @@ export async function handleSignIn(
     return accountGate.response;
   }
 
+  const resolvedAppCheck = extractAppCheckToken(request, parsed.appCheckToken);
   const result = await callIdentityAuth(
     env,
     IDENTITY_SIGN_IN,
     { email: parsed.email, password: parsed.password, returnSecureToken: true },
-    { fetchImpl: opts?.fetchImpl, appCheckToken: parsed.appCheckToken },
+    { fetchImpl: opts?.fetchImpl, appCheckToken: resolvedAppCheck },
   );
 
   await padMinLatency(started, minLatency);

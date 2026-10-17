@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { plainScoutVerdict } from '../../services/audit/guestScoutSummary';
 import { fetchShareTeaser, type TeaserPublic } from '../../services/share/shareReportClient';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
+import { VerificationCardSkeleton } from '../ui/Skeleton';
 
 function tokenFromLocation(): string {
   if (typeof window === 'undefined') return '';
@@ -63,8 +64,12 @@ export const TeaserShareView: React.FC<{ onOpenApp?: () => void }> = ({ onOpenAp
         </a>
       </header>
       <main className="max-w-2xl mx-auto px-5 py-10">
-        {loading && <p className="text-sm text-gray-400">Loading teaser...</p>}
-        {!loading && error && <p className="text-sm text-gray-300">{error}</p>}
+        {loading && <VerificationCardSkeleton title="Loading teaser..." />}
+        {!loading && error && (
+          <p className="text-sm text-gray-300" role="alert">
+            {error}
+          </p>
+        )}
         {!loading && teaser && (
           <article>
             <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Redacted teaser, not a verified measurement</p>

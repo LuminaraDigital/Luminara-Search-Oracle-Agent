@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { apiBase, workerFetchWithAuthRetry } from '../../services/apiClient';
+import { AuditReportSkeleton } from '../ui/Skeleton';
 
 /**
  * Sandboxed agent report viewer for /reports/:id
@@ -61,7 +62,7 @@ export const AgentReportView: React.FC = () => {
 
   if (error) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-16 text-center text-gray-300">
+      <div role="alert" className="max-w-xl mx-auto px-4 py-16 text-center text-gray-300">
         <h1 className="text-xl font-semibold text-white mb-2">
           {needsSignIn ? 'Sign in required' : 'Report unavailable'}
         </h1>
@@ -71,11 +72,15 @@ export const AgentReportView: React.FC = () => {
   }
 
   if (!html) {
-    return <div className="max-w-xl mx-auto px-4 py-16 text-center text-gray-400 text-sm">Loading report…</div>;
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <AuditReportSkeleton message="Loading report…" />
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white animate-in fade-in duration-200">
       <div className="border-b border-gray-200 px-4 py-2 text-xs text-gray-500 flex justify-between">
         <span>{title}</span>
         <span>Luminara</span>
@@ -91,3 +96,4 @@ export const AgentReportView: React.FC = () => {
 };
 
 export default AgentReportView;
+
