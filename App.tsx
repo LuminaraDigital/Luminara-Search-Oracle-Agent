@@ -1401,7 +1401,7 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsOmnibarOpen(true)}
-            className="inline-flex items-center gap-1.5 px-1.5 py-2 min-h-11 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal min-w-0 shrink"
+            className="inline-flex items-center gap-1.5 px-1.5 py-2 min-h-11 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
             title="Open Omnibar (Cmd+K)"
             aria-label="Jump to a tool"
           >
