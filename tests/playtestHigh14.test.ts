@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentMissionControl, missionControlCardBadge, missionControlHeadline } from '../components/audit/AgentMissionControl';
 import LandingPage from '../components/LandingPage';
-import { PAYWALL_HEADLINE, planBulletIncluded, planBullets } from '../components/paywall/planCopy';
+import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPanel';
+import { PAYWALL_HEADLINE, PAYWALL_SUBLINE, planBullets } from '../components/paywall/planCopy';
 import { unmeasuredHealthMessage } from '../services/agentCore/auditEvidenceGate';
 import { scoutAgent } from '../services/agentCore/agents/scoutAgent';
 import { CREW_PROFILES } from '../services/agentCore/crewOrchestrator';
@@ -134,6 +137,22 @@ describe('Mission Control status', () => {
     });
     expect(summary.evidenceUsed).toBe('No web results were collected. This run did not measure the site.');
     expect(summary.evidenceUsed).not.toContain('Pages with text or schema');
+    expect(summary.banner).toBe('Live data unavailable. Sample / not measured.');
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, {
+      summary,
+      onSignIn: () => {},
+    }));
+    const bannerAt = html.indexOf('Live data unavailable');
+    const signInAt = html.indexOf(GUEST_FULL_AUDIT_CTA);
+    const keysAt = html.indexOf('Or add your own keys in Settings.');
+    expect(bannerAt).toBeGreaterThan(-1);
+    expect(signInAt).toBeGreaterThan(bannerAt);
+    expect(keysAt).toBeGreaterThan(signInAt);
+    const view = readFileSync(resolve(__dirname, '..', 'components/audit/InstantAuditView.tsx'), 'utf8');
+    const hoisted = view.indexOf('{guestResultFirst && scoutPanel}');
+    const form = view.indexOf('audit-target-url');
+    expect(hoisted).toBeGreaterThan(-1);
+    expect(hoisted).toBeLessThan(form);
   });
 
   it('marks a Jina-only crawl as not measured instead of done', async () => {
@@ -175,13 +194,18 @@ describe('Mission Control status', () => {
 
 describe('checkout honesty', () => {
   it('uses a capped headline and marks Starter exclusions as not included', () => {
+    expect(PAYWALL_HEADLINE).toBe('Pick the plan that fits your sites');
+    expect(PAYWALL_SUBLINE).toBe('Every plan has clear monthly limits.');
     expect(PAYWALL_HEADLINE.toLowerCase()).not.toContain('unlimited');
-    expect(planBullets('starter').filter((line) => !planBulletIncluded(line))).toEqual([
+    expect(planBullets('starter').filter((line) => !line.included).map((line) => line.text)).toEqual([
       'No IDE access (web app only)',
       'No public share links',
     ]);
+    expect(planBullets('growth').find((line) => line.text.startsWith('IDE access'))?.included).toBe(true);
     const html = renderToStaticMarkup(createElement(PaywallModal, { isOpen: true, onClose: () => {} }));
     expect(html).toContain(PAYWALL_HEADLINE);
+    expect(html).toContain(PAYWALL_SUBLINE);
+    expect(html).not.toContain('See the caps on each plan');
     expect(html.toLowerCase()).not.toContain('unlimited');
     expect(html).toContain('Not included: </span>No IDE access (web app only)');
     expect(html).toContain('Not included: </span>No public share links');

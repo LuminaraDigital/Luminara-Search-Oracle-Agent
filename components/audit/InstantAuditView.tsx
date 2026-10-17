@@ -29,7 +29,7 @@ import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
 import { SuiteCitabilityChecklist } from './SuiteCitabilityChecklist';
 import { buildGuestScoutSummary, isDegradedScout, plainScoutVerdict, shouldGenerateAuditReport, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
-import { GUEST_FULL_AUDIT_CTA, hostedScoutPreRunCopy, requestGuestFullAuditSignIn, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
+import { hostedScoutPreRunCopy, requestGuestFullAuditSignIn, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import { canMintTeaserShare, createShareTeaser } from '../../services/share/shareReportClient';
 import { shareExternalLink } from '../../services/telegram/tma';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
@@ -524,6 +524,20 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     }
   };
 
+  const guestResultFirst = Boolean(
+    isGuest && hostedRail === 'byok_or_signin' && scoutSummary && !loading && scoutSummary.banner,
+  );
+  const scoutPanel = scoutSummary && !loading ? (
+    <GuestScoutSummaryPanel
+      summary={scoutSummary}
+      shareNote={shareNote}
+      sharing={sharing}
+      onShare={() => { void shareTeaser('share'); }}
+      onCopy={() => { void shareTeaser('copy'); }}
+      onSignIn={isGuest && hostedRail === 'byok_or_signin' ? requestGuestFullAuditSignIn : undefined}
+    />
+  ) : null;
+
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
       {confirmModal}
@@ -551,19 +565,12 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </p>
       </div>
 
+      {guestResultFirst && scoutPanel}
+
       <div className="mb-4 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-gray-300 leading-relaxed">
         {hostedScoutPreRunCopy(hostedRail, { hostedGateOpen: preRunGate })}
         {isGuest && hostedRail === 'byok_or_signin' && (
-          <div className="mt-2 text-gray-400">
-            <p>Saving a project strategy and full branded share links still need sign-in. Growth and Agency include those share links.</p>
-            <button
-              type="button"
-              onClick={requestGuestFullAuditSignIn}
-              className="mt-3 flex min-h-11 w-full items-center justify-center rounded-lg bg-gold px-4 text-[11px] font-semibold tracking-wide text-black hover:bg-gold-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold sm:w-auto"
-            >
-              {GUEST_FULL_AUDIT_CTA}
-            </button>
-          </div>
+          <p className="mt-2 text-gray-400">Saving a project strategy and full branded share links still need sign-in. Growth and Agency include those share links.</p>
         )}
       </div>
 
@@ -719,15 +726,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       <SuiteCitabilityChecklist />
 
-      {scoutSummary && !loading && (
-        <GuestScoutSummaryPanel
-          summary={scoutSummary}
-          shareNote={shareNote}
-          sharing={sharing}
-          onShare={() => { void shareTeaser('share'); }}
-          onCopy={() => { void shareTeaser('copy'); }}
-        />
-      )}
+      {!guestResultFirst && scoutPanel}
 
       {/* Agent Mission Control: Real-time Multi-Agent Activity Stream */}
       {crewEvents.length > 0 && (

@@ -92,7 +92,7 @@ function hostLabel(targetUrl: string): string {
 /** Degraded Instant Audit banner. Signed-in and Telegram rails never ask the user to sign in. */
 export function liveDataUnavailableCopy(hostedRail: HostedScoutRail): string {
   if (hostedRail === 'byok_or_signin') {
-    return 'Live data unavailable. Sample / not measured. Add your own keys in Settings, or sign in.';
+    return 'Live data unavailable. Sample / not measured.';
   }
   return `Live search or page fetch did not run. ${hostedAuthRecoveryHint({ rail: hostedRail })}`;
 }
