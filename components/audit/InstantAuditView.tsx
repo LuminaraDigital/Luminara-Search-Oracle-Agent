@@ -147,11 +147,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     };
   }, [hostedRail]);
 
-  const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runSeq = useRef(0);
   const continuumRef = useRef<string | undefined>(ideaScoutId);
   useEffect(() => { continuumRef.current = ideaScoutId; }, [ideaScoutId]);
-  useEffect(() => () => { if (stageTimerRef.current) clearInterval(stageTimerRef.current); }, []);
 
   // Hydrate Decision Card from session board when revisiting a domain (always swap domain).
   useEffect(() => {
@@ -216,6 +214,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setCrewEvents([]);
     setCrewMeasurement(null);
     setScoutSummary(null);
+    setReport(null);
+    setStrategySaved(false);
     setShareNote(null);
     setAttestation(null);
     setProgressStage('Starting audit…');
@@ -245,11 +245,14 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         evidenceEmpty: summary.evidenceEmpty,
         failureCodes: summary.failureCodes,
       });
-      // Crew is terminal. Re-enable Retry / New domain before any report enrichment.
-      setLoading(false);
-      setProgressStage('');
       setCrewMeasurement(crewResult.measurementStatus);
       setScoutSummary(summary);
+      if (degraded) {
+        setLoading(false);
+        setProgressStage('');
+      } else {
+        setProgressStage('Synthesizing executive report & action plan…');
+      }
       if (linkId && summary.domain) {
         const measured = !isGuest && crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty;
         try {
@@ -737,18 +740,20 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       )}
 
       {/* Loading Skeleton */}
-      {loading && crewEvents.length === 0 && (
+      {loading && !report && (
         <div className="space-y-4">
-          <div className="glass-morphism rounded-xl px-4 py-3 border border-gold/30 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse" />
-              <span className="text-xs text-white font-medium">
-                {isFullAudit ? 'Conducting full brand audit…' : 'Quick scout in progress…'}
-              </span>
+          {crewEvents.length === 0 && (
+            <div className="glass-morphism rounded-xl px-4 py-3 border border-gold/30 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse" />
+                <span className="text-xs text-white font-medium">
+                  {isFullAudit ? 'Conducting full brand audit…' : 'Quick scout in progress…'}
+                </span>
+              </div>
+              <span className="text-[11px] font-mono text-gold-light truncate max-w-xs">{progressStage || 'Initializing agents…'}</span>
             </div>
-            <span className="text-[11px] font-mono text-gold-light truncate max-w-xs">{progressStage || 'Initializing agents…'}</span>
-          </div>
-          <AuditReportSkeleton />
+          )}
+          <AuditReportSkeleton message={progressStage || 'Scanning website & answer engines…'} />
         </div>
       )}
 
@@ -933,6 +938,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             hostedRail={hostedRail}
             sourceGraph={report.sourceGraph}
             enterpriseTrust={report.enterpriseTrust}
+            rlmTrajectory={report.rlmTrajectory}
             boardFindings={boardFindings}
           />
         </div>

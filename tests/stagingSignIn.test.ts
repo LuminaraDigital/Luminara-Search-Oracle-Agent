@@ -754,7 +754,7 @@ describe('the deploy workflow', () => {
       expect(stagingJob).toContain(`${name}: \${{ vars.${name} }}`);
     }
     expect(stagingJob).toContain('environment: staging');
-    expect(stagingJob).toContain('run: npx vite build --mode staging');
+    expect(stagingJob).toContain('run: npm run build -- --mode staging');
   });
 
   it('leaves the production build exactly as it was: no build-time overrides', () => {

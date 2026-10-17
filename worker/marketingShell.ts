@@ -7,7 +7,7 @@ import {
 } from '../services/marketing/pageMeta';
 import { sha256Hex } from './workerUtils';
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

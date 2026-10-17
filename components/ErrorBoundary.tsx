@@ -37,7 +37,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     const chunkMiss = isChunkLoadError(this.state.error);
 
     return (
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div role="alert" aria-live="assertive" className="flex-1 flex items-center justify-center p-8">
         <div className="max-w-lg w-full glass-morphism border border-danger-500/30 rounded-3xl p-8 space-y-4 bg-danger-950/10">
           <p className="text-[10px] font-black uppercase tracking-[0.4em] text-danger-400">
             {this.props.scope ? `${this.props.scope} crashed` : 'Something went wrong'}

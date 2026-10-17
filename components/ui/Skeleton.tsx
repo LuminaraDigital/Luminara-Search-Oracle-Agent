@@ -373,15 +373,77 @@ export const StudioNotebookSkeleton: React.FC = () => (
 );
 
 /**
+ * Geometric skeleton mirroring Verification / Receipt / Teaser cards.
+ */
+export const VerificationCardSkeleton: React.FC<{ title?: string }> = ({
+  title = 'Verifying cryptographic record…',
+}) => (
+  <div
+    role="status"
+    aria-label={title}
+    aria-busy="true"
+    className="max-w-2xl mx-auto px-4 py-8 space-y-5 min-h-[360px] animate-in fade-in duration-300"
+  >
+    <div className="glass-morphism rounded-2xl border border-gold/30 p-6 space-y-4">
+      <div className="flex items-center justify-between border-b border-white/10 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse shrink-0" />
+          <span className="text-xs font-mono uppercase tracking-widest text-gold-light font-bold">
+            {title}
+          </span>
+        </div>
+        <Skeleton className="h-5 w-20 rounded-full" />
+      </div>
+      <Skeleton className="h-7 w-2/3" />
+      <SkeletonText lines={3} />
+      <div className="grid grid-cols-2 gap-3 pt-2">
+        <Skeleton className="h-12 rounded-xl" />
+        <Skeleton className="h-12 rounded-xl" />
+      </div>
+    </div>
+  </div>
+);
+
+/**
  * Universal View Skeleton based on requested view name to preserve layout stability during lazy loading.
  */
 export const ViewSkeleton: React.FC<{ viewName?: string }> = ({ viewName = 'workspace' }) => {
   const normalized = viewName.toLowerCase();
-  if (normalized.includes('audit')) return <div className="max-w-5xl mx-auto px-4 py-8"><AuditReportSkeleton /></div>;
+  if (
+    normalized.includes('audit') ||
+    normalized.includes('shared_report') ||
+    normalized.includes('shared report') ||
+    normalized.includes('sample_report') ||
+    normalized.includes('sample report') ||
+    normalized.includes('agent_report') ||
+    normalized === 'report' ||
+    normalized === 'loading report'
+  ) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <AuditReportSkeleton />
+      </div>
+    );
+  }
   if (normalized.includes('dashboard') || normalized.includes('home')) return <DashboardSkeleton />;
   if (normalized.includes('dna') || normalized.includes('business')) return <BusinessDnaSkeleton />;
-  if (normalized.includes('memory')) return <div className="max-w-5xl mx-auto px-4 py-8"><BrandMemorySkeleton /></div>;
+  if (normalized.includes('memory')) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <BrandMemorySkeleton />
+      </div>
+    );
+  }
   if (normalized.includes('studio') || normalized.includes('notebook')) return <StudioNotebookSkeleton />;
+  if (
+    normalized.includes('verify') ||
+    normalized.includes('receipt') ||
+    normalized.includes('attestation') ||
+    normalized.includes('teaser') ||
+    normalized.includes('trust')
+  ) {
+    return <VerificationCardSkeleton />;
+  }
 
   // Default clean geometric workspace skeleton with zero layout shift
   return (
@@ -409,3 +471,4 @@ export const ViewSkeleton: React.FC<{ viewName?: string }> = ({ viewName = 'work
 };
 
 export default Skeleton;
+

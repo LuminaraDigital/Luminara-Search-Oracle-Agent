@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  ANALYZE_STAGES,
   SAMPLE_FIXTURE,
   idleEngines,
   normalizeDemoUrl,
-  type DemoPhase,
+  sampleEngineRowsForHost,
 } from '../components/marketing/demo/demoFixtures';
-import { probeUiForPhase, statusLabel } from '../components/marketing/VisibilityProbe';
+import { ENGINE_STATUS_LABEL } from '../components/marketing/EvidenceGlyph';
 import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
 import { summarizeProbeCrawl } from '../worker/probeCrawlRoute';
 import type { LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
@@ -25,10 +26,21 @@ describe('landing Visibility Probe fixtures', () => {
       expect(empty.error).not.toContain('luminarasuite.com');
     }
     expect(normalizeDemoUrl('not-a-domain').ok).toBe(false);
-    expect(statusLabel('idle')).toBe('Not run yet');
+    expect(ENGINE_STATUS_LABEL.idle).toBe('Not run yet');
     const playback = readFileSync(new URL('../components/marketing/demo/useDemoPlayback.ts', import.meta.url), 'utf8');
     expect(playback).toContain('normalizeDemoUrl(url)');
     expect(playback).not.toContain('SAMPLE_FIXTURE.domain');
+  });
+
+  it('only shows crawl work in progress: the engines are never presented as being checked', () => {
+    expect(ANALYZE_STAGES.join(' ')).not.toMatch(/engine|rank|fix/i);
+    expect(ANALYZE_STAGES.join(' ')).toMatch(/robots\.txt/);
+    const playback = readFileSync(new URL('../components/marketing/demo/useDemoPlayback.ts', import.meta.url), 'utf8');
+    expect(playback).not.toMatch(/idleEngines\(\)\.map\(\(e\) => \(\{ \.\.\.e, status: 'pending'/);
+    expect(playback).toContain('sampleEngineRowsForHost(parsed.host)]');
+    for (const row of sampleEngineRowsForHost('example.com')) {
+      expect(row.status).toBe('not_measured');
+    }
   });
 
   it('keeps sample engines honest (never Measured; Sample notes only)', () => {
@@ -70,52 +82,5 @@ describe('probeCrawl summarize', () => {
     expect(crawl.robotsPresent).toBe(true);
     expect(crawl.llmsPresent).toBe(true);
     expect(crawl.note.toLowerCase()).toContain('live crawl');
-  });
-});
-
-describe('probeUiForPhase progressive disclosure', () => {
-  const phases: DemoPhase[] = ['empty', 'typing', 'analyzing', 'results_sample', 'error'];
-
-  it('keeps idle minimal: run CTA, engine rows idle, no reveal', () => {
-    const ui = probeUiForPhase('empty');
-    expect(ui.primaryAction).toBe('run');
-    expect(ui.showEngineRows).toBe(true);
-    expect(ui.showReveal).toBe(false);
-    expect(ui.showPresets).toBe(false);
-    expect(ui.showFocusTune).toBe(false);
-  });
-
-  it('gates results primary to results_sample only', () => {
-    for (const phase of phases) {
-      const ui = probeUiForPhase(phase);
-      if (phase === 'results_sample') {
-        expect(ui.primaryAction).toBe('open_audit');
-        expect(ui.showReveal).toBe(true);
-        expect(ui.showEngineRows).toBe(true);
-      } else {
-        expect(ui.primaryAction).not.toBe('open_audit');
-        expect(ui.showReveal).toBe(false);
-      }
-    }
-  });
-
-  it('shows analyzing engine rows without a competing primary CTA', () => {
-    const ui = probeUiForPhase('analyzing');
-    expect(ui.showEngineRows).toBe(true);
-    expect(ui.primaryAction).toBe('none');
-  });
-
-  it('offers examples while typing', () => {
-    const ui = probeUiForPhase('typing');
-    expect(ui.showPresets).toBe(true);
-    expect(ui.showFocusTune).toBe(true);
-    expect(ui.primaryAction).toBe('run');
-  });
-
-  it('hides focus tune on results so the live CTA stays the only primary control', () => {
-    const ui = probeUiForPhase('results_sample');
-    expect(ui.showFocusTune).toBe(false);
-    expect(ui.showPresets).toBe(false);
-    expect(ui.primaryAction).toBe('open_audit');
   });
 });

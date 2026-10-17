@@ -16,9 +16,6 @@ dist-ssr
 /ponytail/
 /pstack/
 
-# Constellation bake intermediates
-scripts/constellation/budget-report.json
-
 # Environment / Worker secrets (never commit real values)
 .env
 .env.*

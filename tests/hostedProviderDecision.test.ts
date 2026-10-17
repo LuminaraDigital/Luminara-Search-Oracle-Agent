@@ -217,8 +217,9 @@ describe('hostedProviderDecisionReason', () => {
       'x-quota-remaining': 'unlimited',
       'x-quota-limit': 'unlimited',
     }));
-    expect(api.hostedProviderDecisionReason('dataforseo')).toBe('hosted');
-    expect(api.canUseHostedProviderKey('dataforseo')).toBe(true);
+    // An unnamed paid plan is not Agency: hosted DataForSEO needs apiAccess (APS invariant 2).
+    expect(api.hostedProviderDecisionReason('dataforseo')).toBe('paid_required');
+    expect(api.canUseHostedProviderKey('dataforseo')).toBe(false);
   });
 
   it('names the Tavily skip reason on the SERP empty-key path', async () => {

@@ -6,15 +6,11 @@ import type { Env } from './env';
 import { billingId, identify, json } from './workerUtils';
 import { resolvesToPublicAddress, safePublicHostname, safePublicUrl, type DohFetch } from './security';
 import { mintScoutReceipt } from './referrals';
+import { readCapped } from './domainVerification';
 import type { LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 
 const MAX_BYTES = 64_000;
 const FETCH_MS = 5_000;
-
-async function readCapped(res: Response): Promise<string> {
-  const text = await res.text();
-  return text.slice(0, MAX_BYTES);
-}
 
 async function fetchOne(url: string, fetcher: typeof fetch): Promise<{ status: number | null; body: string | null }> {
   const ac = new AbortController();
@@ -31,7 +27,7 @@ async function fetchOne(url: string, fetcher: typeof fetch): Promise<{ status: n
     }
     if (res.status === 404) return { status: 404, body: '' };
     if (!res.ok) return { status: res.status, body: null };
-    return { status: res.status, body: await readCapped(res) };
+    return { status: res.status, body: await readCapped(res, MAX_BYTES) };
   } catch {
     return { status: null, body: null };
   } finally {

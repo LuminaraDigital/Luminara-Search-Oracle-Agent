@@ -7,6 +7,7 @@ import { useConfirm } from '../ui/ConfirmModal';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { dreamingClient } from '../../services/dreaming/dreamingClient';
+import { BusinessDnaSkeleton } from '../ui/Skeleton';
 
 interface BusinessDNAViewProps {
   currentDNA: BusinessDNA | null;
@@ -15,7 +16,7 @@ interface BusinessDNAViewProps {
   onRouteToOracleMind?: () => void;
 }
 
-export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, onDNAGenerated, onNavigateToTool, onRouteToOracleMind }) => {
+export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, onDNAGenerated, onNavigateToTool, onRouteToOracleMind: _onRouteToOracleMind }) => {
   const [input, setInput] = useState(() => draftPersistenceService.getDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +78,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       syncToVfs(extracted);
       draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
       productTelemetry.recordOnboardingStep('business_dna');
-      setEditing(false);
+      setEditing(!extracted.mission && !extracted.usp);
     } catch (err: any) {
       const msg = err?.message || 'Could not build your business profile. Check your AI key in Settings.';
       setError(msg);
@@ -180,6 +181,9 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
         </div>
       </div>
 
+      {/* Loading Skeleton during extraction */}
+      {loading && !formData && <BusinessDnaSkeleton />}
+
       {/* Active DNA Profile Display */}
       {formData && (
         <div className="glass-morphism rounded-2xl border border-gold/40 p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
@@ -234,7 +238,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
                     className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
                   />
                 ) : (
-                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">{formData.mission}</p>
+                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">{formData.mission || 'Not set'}</p>
                 )}
               </div>
 
@@ -247,7 +251,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
                     className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
                   />
                 ) : (
-                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 font-medium">{formData.usp}</p>
+                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 font-medium">{formData.usp || 'Not set'}</p>
                 )}
               </div>
 
@@ -312,16 +316,6 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           <div className="pt-4 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center gap-3">
             <span className="text-[11px] text-gray-400">Brand profile active across audits, agent sessions, and intelligence models.</span>
             <div className="flex items-center gap-3">
-              {onRouteToOracleMind && (
-                <button
-                  type="button"
-                  onClick={onRouteToOracleMind}
-                  className="px-3 py-1.5 rounded-lg border border-gold/40 bg-gold/15 text-xs font-bold text-gold-light hover:bg-gold/25 uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-                >
-                  <ICONS.Brain className="w-3.5 h-3.5 text-gold-light" />
-                  <span>Fine-Tune SLM &rarr;</span>
-                </button>
-              )}
               {onNavigateToTool && (
                 <button
                   type="button"

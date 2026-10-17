@@ -102,7 +102,6 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
         env,
         {
           domain: 'acme.org',
-          auditRunId: 'run_abc_123',
           healthScore: 90,
           citationRatePercent: 82,
           findings: [{ id: 'f1', severity: 'low', title: 'Minor schema warning' }],
@@ -111,7 +110,7 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
         mockFetcher as unknown as typeof fetch,
       );
       // And once more through the default fetcher, as the route calls it.
-      await recordAuditProof(env, { domain: 'second.org', auditRunId: 'run_abc_124', healthScore: 60, citationRatePercent: 30 });
+      await recordAuditProof(env, { domain: 'second.org', healthScore: 60, citationRatePercent: 30 });
       expect(mockFetcher).not.toHaveBeenCalled();
       expect(globalFetch).not.toHaveBeenCalled();
     } finally {
@@ -156,7 +155,6 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
 
     const result = await recordAuditProof(unconfiguredEnv, {
       domain: 'honest-offchain.org',
-      auditRunId: 'run_honest_123',
       healthScore: 85,
       citationRatePercent: 75,
     });
@@ -195,14 +193,13 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
       env,
       {
         domain: 'verify-me.com',
-        auditRunId: 'audit_run_999',
         healthScore: 94,
         citationRatePercent: 88,
       },
       mockFetcher as unknown as typeof fetch,
     );
 
-    for (const query of [{ evidenceHash: recorded.evidenceHash }, { domain: 'verify-me.com', auditRunId: 'audit_run_999' }]) {
+    for (const query of [{ evidenceHash: recorded.evidenceHash }, { domain: 'verify-me.com', auditRunId: recorded.auditRunId }]) {
       const verify = await verifyAuditProof(env, query);
       expect(verify.ok).toBe(true);
       expect(verify.verified).toBe(true);
@@ -325,21 +322,74 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
     expect(verify.disclosure).toContain('Self-reported, off-chain digest');
   });
 
-  it('generates badge metadata with network-aware labels', async () => {
-    const response = generateBadgeResponse({
-      domain: 'badgedomain.com',
-      evidenceHash: 'f'.repeat(64),
-      healthScore: 92,
-      source: 'on_chain',
-      network: 'testnet',
-      explorerUrl: 'https://testnet.tonviewer.com/transaction/abc',
-    });
+  it('public verification never hands out the owner account id', async () => {
+    const recorded = await recordAuditProof(env, { domain: 'owner.org', healthScore: 70, citationRatePercent: 40, actorId: 'usr_secret_owner' });
+    // Through KV only, where the owner id is stored.
+    const kvOnly = { ...env, DB: undefined } as unknown as Env;
+    const verify = await verifyAuditProof(kvOnly, { evidenceHash: recorded.evidenceHash });
+    expect(verify.ok).toBe(true);
+    expect(JSON.stringify(verify)).not.toContain('usr_secret_owner');
+    expect(verify.record).not.toHaveProperty('ownerId');
+  });
 
+  it('mints auditRunId server-side and rejects malformed fields', async () => {
+    const result = await recordAuditProof(env, {
+      domain: 'acme.org',
+      healthScore: 90,
+      citationRatePercent: 82,
+      auditRunId: 'run_chosen_by_caller',
+    } as Parameters<typeof recordAuditProof>[1]);
+    expect(result.ok).toBe(true);
+    expect(result.auditRunId).toMatch(/^audit_/);
+    expect(result.auditRunId).not.toBe('run_chosen_by_caller');
+    const shadow = await verifyAuditProof(env, { domain: 'acme.org', auditRunId: 'run_chosen_by_caller' });
+    expect(shadow.ok).toBe(false);
+
+    for (const bad of [{ healthScore: '90' }, { citationRatePercent: null }, { findings: 'x' }, { timestamp: 'now' }]) {
+      const res = await recordAuditProof(env, { domain: 'acme.org', healthScore: 90, citationRatePercent: 82, ...bad } as never);
+      expect(res.ok).toBe(false);
+    }
+  });
+
+  it('builds a badge only from the stored proof, never from caller values', async () => {
+    const recorded = await recordAuditProof(env, { domain: 'badgedomain.com', healthScore: 42, citationRatePercent: 10 });
+    const response = await generateBadgeResponse(
+      {
+        evidenceHash: recorded.evidenceHash,
+        healthScore: 99,
+        domain: 'forged.com',
+        explorerUrl: 'javascript:alert(1)',
+        network: '<script>x</script>',
+      } as { evidenceHash: string },
+      env,
+    );
+    expect(response.status).toBe(200);
     const data = await response.json();
-    expect(data.ok).toBe(true);
-    expect(data.badge.scoreColor).toBe('#10b981');
-    expect(data.badge.embedHtml).toContain('TON testnet');
-    expect(data.badge.embedHtml).toContain('https://testnet.tonviewer.com/transaction/abc');
+    expect(data.badge.healthScore).toBe(42);
+    expect(data.badge.domain).toBe('badgedomain.com');
+    expect(data.badge.scoreColor).toBe('#ef4444');
+    expect(data.badge.embedHtml).toContain('42/100');
+    expect(data.badge.embedHtml).toContain(`https://luminarasuite.com/verify/${recorded.evidenceHash}`);
+    expect(data.badge.embedHtml).not.toMatch(/99\/100|forged|javascript:|<script/);
+  });
+
+  it('badge is 404 for an unrecorded hash, 400 for a malformed one, and never defaults a score', async () => {
+    expect((await generateBadgeResponse({ evidenceHash: 'f'.repeat(64) }, env)).status).toBe(404);
+    expect((await generateBadgeResponse({ evidenceHash: '"><img src=x>' }, env)).status).toBe(400);
+    expect((await generateBadgeResponse({ evidenceHash: 'f'.repeat(64) })).status).toBe(404);
+
+    // A stored row with no score reads "not measured", not 85.
+    await recordProofAnchorBestEffort(env, {
+      kind: 'ton_payment',
+      orderId: 'ord_badge_1',
+      evidenceHash: '4'.repeat(64),
+      chain: 'ton',
+      network: 'testnet',
+      status: 'pending',
+    });
+    const data = await (await generateBadgeResponse({ evidenceHash: '4'.repeat(64) }, env)).json();
+    expect(data.badge.healthScore).toBeNull();
+    expect(data.badge.embedHtml).toContain('not measured');
   });
 
   it('routes /api/proof/verify publicly and /api/proof/anchor with auth guard', async () => {
@@ -361,7 +411,7 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
     );
     expect(unauthAnchor.status).toBe(401);
 
-    // 3. /api/proof/badge without auth -> 200
+    // 3. /api/proof/badge for a proof that was never recorded -> 404, whatever the body claims
     const badgeRes = await worker.fetch(
       new Request('https://example.com/api/proof/badge', {
         method: 'POST',
@@ -376,8 +426,6 @@ describe('Proof Service & Verifiable Citation Oracle', () => {
       }),
       env,
     );
-    expect(badgeRes.status).toBe(200);
-    const badgeJson = await badgeRes.json();
-    expect(badgeJson.ok).toBe(true);
+    expect(badgeRes.status).toBe(404);
   });
 });
