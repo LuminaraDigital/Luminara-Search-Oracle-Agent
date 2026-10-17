@@ -447,38 +447,38 @@ const App: React.FC = () => {
     return () => { cancelled = true; };
   }, [appAuth.authenticated, appAuth.loading]);
 
-  // Any card can ask for the Settings dialog (e.g. "Set up results tracking") without prop drilling.
   useEffect(() => {
-    const open = () => setIsKeyModalOpen(true);
+    const openSettings = () => setIsKeyModalOpen(true);
+    const openLogin = (event: Event) => {
+      const mode = (event as CustomEvent<{ mode?: 'signin' | 'signup' }>).detail?.mode;
+      setLoginWallMode(mode === 'signup' ? 'signup' : 'signin');
+    };
     const checkHash = () => {
       const h = window.location.hash.toUpperCase();
-      if (h.includes('SETTINGS') || h.includes('KEYS')) {
-        setIsKeyModalOpen(true);
-      }
+      if (h.includes('SETTINGS') || h.includes('KEYS')) openSettings();
     };
     checkHash();
     window.addEventListener('hashchange', checkHash);
-    window.addEventListener('luminara-open-settings', open);
+    window.addEventListener('luminara-open-settings', openSettings);
+    window.addEventListener('luminara-open-login', openLogin);
     return () => {
       window.removeEventListener('hashchange', checkHash);
-      window.removeEventListener('luminara-open-settings', open);
+      window.removeEventListener('luminara-open-settings', openSettings);
+      window.removeEventListener('luminara-open-login', openLogin);
     };
   }, []);
 
-  // Wiki competitor chips and alerts deep-link into Brand Memory Vault.
   useEffect(() => {
     const openMemory = () => setView(AppView.BRAND_MEMORY);
     window.addEventListener('luminara-open-brand-memory', openMemory);
     return () => window.removeEventListener('luminara-open-brand-memory', openMemory);
   }, []);
 
-  // Harness & Theming states
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
   const [currentTheme, setCurrentTheme] = useState(themingService.getTheme());
   const [activeRemindersCount, setActiveRemindersCount] = useState(reminderService.getActiveReminders().length);
   const [defaultAgentName, setDefaultAgentName] = useState(agentMatrixService.getDefaultAgent().name);
 
-  /** Open the sign-in modal, keeping a Probe domain so the visitor lands back on their audit. */
   const openLoginWall = (mode: 'signin' | 'signup', handoff?: AuditHandoff) => {
     if (handoff?.url) {
       setAuditHandoff({

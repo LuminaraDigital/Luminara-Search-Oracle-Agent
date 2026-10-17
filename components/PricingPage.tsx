@@ -119,25 +119,22 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 </p>
                 <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">{tier.blurb}</p>
                 <ul className="m-0 mt-7 flex-1 list-none space-y-3 border-t p-0 pt-6 lx-hairline">
-                  {lines.map((line) => {
-                    const off = line.startsWith('No ');
-                    return (
-                      <li
-                        key={line}
-                        className={`flex gap-3 text-[15px] leading-snug ${
-                          off ? 'text-[var(--color-ink-2)]' : 'text-[var(--color-ink)]'
+                  {lines.map((line) => (
+                    <li
+                      key={line.text}
+                      className={`flex gap-3 text-[15px] leading-snug ${
+                        line.included ? 'text-[var(--color-ink)]' : 'text-[var(--color-ink-2)]'
+                      }`}
+                    >
+                      <span
+                        aria-hidden
+                        className={`mt-[0.4em] h-2 w-2 shrink-0 rounded-full ${
+                          line.included ? 'bg-[var(--color-accent)]' : 'border border-dashed border-[var(--color-ink-2)]'
                         }`}
-                      >
-                        <span
-                          aria-hidden
-                          className={`mt-[0.4em] h-2 w-2 shrink-0 rounded-full ${
-                            off ? 'border border-dashed border-[var(--color-ink-2)]' : 'bg-[var(--color-accent)]'
-                          }`}
-                        />
-                        {line}
-                      </li>
-                    );
-                  })}
+                      />
+                      {line.included ? line.text : <><span className="sr-only">Not included: </span>{line.text}</>}
+                    </li>
+                  ))}
                 </ul>
                 <button
                   type="button"

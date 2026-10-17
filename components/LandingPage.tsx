@@ -25,6 +25,7 @@ import {
   type EvidenceState,
 } from './marketing/earth/globeStory';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
+import { GUEST_HERO_NOTE, GUEST_REPORT_NOTE } from '../services/audit/hostedScoutRail';
 
 interface LandingPageProps {
   onNavigateAudit: (handoff?: AuditHandoff) => void;
@@ -180,7 +181,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <DomainCheck inputId="hero-domain" isAuthenticated={isAuthenticated} onFullAudit={fullAudit} />
           </div>
           <p className="lx-enter-rise lx-d6 mt-5 text-sm text-[var(--color-ink-2)]">
-            Free live crawl check. No card, no signup.{' '}
+            {GUEST_HERO_NOTE}{' '}
             <button type="button" onClick={onNavigateSampleReport} className="lx-link">
               See a sample report
             </button>
@@ -303,8 +304,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <span className="block italic lx-gold-text">Ready to ship.</span>
             </h2>
             <p className="lx-lede mt-7">
-              No 40-page PDF and no made-up score. A report you can read in a minute, with the exact change to
-              make and the evidence behind it.
+              {GUEST_REPORT_NOTE}
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-6">
               <button type="button" onClick={focusHeroInput} className="lx-btn lx-btn-gold">

@@ -12,7 +12,7 @@ import {
   TELEGRAM_MINI_APP_URL,
   type PaymentRail,
 } from './paymentOptions';
-import { BYOK_CHECKOUT_LINE, PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './planCopy';
+import { BYOK_CHECKOUT_LINE, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './planCopy';
 import { ICONS } from '../../constants';
 import '../marketing/space.css';
 import { toUserFacingText } from '../../utils/userFacingText';
@@ -379,8 +379,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                 )}
               </div>
               <h3 id="paywall-modal-title" className="lx-display mt-1 text-3xl md:text-4xl">
-                Unlock unlimited AI intelligence
+                {PAYWALL_HEADLINE}
               </h3>
+              <p className="mt-2 max-w-md text-sm leading-snug text-gray-400">{PAYWALL_SUBLINE}</p>
             </div>
           </div>
           <button
@@ -574,8 +575,13 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                 <p className="text-[11px] text-gray-400 leading-relaxed">{tier.blurb}</p>
                 <ul className={`mt-3 gap-1.5 text-[11px] text-gray-300 ${tier.id === 'agency' ? 'grid grid-cols-1 sm:grid-cols-2' : 'space-y-1.5'}`}>
                   {planBullets(tier.id).map((line) => (
-                    <li key={line} className="flex items-center gap-2">
-                      <span className="text-gold">✓</span> {line}
+                    <li key={line.text} className={`flex items-center gap-2 ${line.included ? 'text-gray-300' : 'text-gray-400'}`}>
+                      {line.included ? (
+                        <span aria-hidden className="text-gold">✓</span>
+                      ) : (
+                        <span aria-hidden className="text-gray-400">-</span>
+                      )}
+                      {line.included ? line.text : <><span className="sr-only">Not included: </span>{line.text}</>}
                     </li>
                   ))}
                 </ul>
