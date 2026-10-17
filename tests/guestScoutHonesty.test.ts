@@ -399,8 +399,9 @@ describe('hosted scout rail', () => {
     expect(resolveHostedScoutRail({ inTelegram: true, hasInitData: true, signedIn: false })).toBe('tma_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: true })).toBe('signed_in_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: false })).toBe('byok_or_signin');
-    expect(hostedScoutPreRunCopy('byok_or_signin').toLowerCase()).toContain('anonymous');
-    expect(hostedScoutPreRunCopy('byok_or_signin')).toMatch(/sign in/i);
+    expect(hostedScoutPreRunCopy('byok_or_signin')).toBe(
+      'Sign in for a full audit, or add your own AI keys in Settings.',
+    );
     expect(hostedScoutPreRunCopy('tma_hosted').toLowerCase()).toContain('no api key');
     expect(hostedScoutPreRunCopy('signed_in_hosted').toLowerCase()).not.toContain('sign in');
     expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: false })).toMatch(/off for this session/i);

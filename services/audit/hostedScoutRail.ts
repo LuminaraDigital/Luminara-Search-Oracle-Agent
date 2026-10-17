@@ -60,5 +60,5 @@ export function hostedScoutPreRunCopy(
     }
     return 'Signed in: hosted engines use your daily free allowance when provider status is ready, or your own keys in Settings. Premium engines still need an active plan.';
   }
-  return 'Signed-out on the web: add your own AI keys in Settings, or sign in. Hosted spend stays off for anonymous visitors so the free allowance cannot be drained.';
+  return 'Sign in for a full audit, or add your own AI keys in Settings.';
 }
