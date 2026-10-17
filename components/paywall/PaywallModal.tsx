@@ -14,6 +14,7 @@ import {
 } from './paymentOptions';
 import { BYOK_CHECKOUT_LINE, PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './planCopy';
 import { ICONS } from '../../constants';
+import '../marketing/space.css';
 import { toUserFacingText } from '../../utils/userFacingText';
 
 interface Props {
@@ -377,7 +378,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                   </span>
                 )}
               </div>
-              <h3 id="paywall-modal-title" className="text-xl md:text-2xl font-bold tracking-tight text-white mt-0.5">
+              <h3 id="paywall-modal-title" className="lx-display mt-1 text-3xl md:text-4xl">
                 Unlock Unlimited AI Intelligence
               </h3>
             </div>
@@ -415,7 +416,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             <button
               type="button"
               onClick={() => setShowLicenseInput(!showLicenseInput)}
-              className="text-[10px] uppercase font-mono px-3 py-1 rounded-lg bg-gold/15 text-gold border border-gold/40 hover:bg-gold/25 transition-all font-bold focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="lx-btn lx-btn-ghost !min-h-8 !px-3.5 !py-1 text-xs"
             >
               {showLicenseInput ? 'Close' : 'Enter Key'}
             </button>
@@ -439,7 +440,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                   type="button"
                   onClick={handleActivateLicense}
                   disabled={activatingLicense || !licenseKeyInput.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-wider hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 transition-all shadow-md focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                  className="lx-btn lx-btn-gold text-sm disabled:opacity-50"
                 >
                   {activatingLicense ? 'Activating…' : 'Activate'}
                 </button>
@@ -461,7 +462,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               }`}
             >
               <span>Card</span>
-              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/20 text-black font-semibold">
                 30 days
               </span>
             </button>
@@ -477,7 +478,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           >
             <span>Stars</span>
             {inTg && (
-              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/20 text-black font-semibold">
                 1-Click
               </span>
             )}
@@ -497,11 +498,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             >
               <span>TON</span>
               {!paymentOptions.tonAvailable ? (
-                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-black">
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-gray-400 font-semibold">
                   Soon
                 </span>
               ) : wallet && (
-                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/20 text-black font-semibold">
                   Connected
                 </span>
               )}
@@ -568,7 +569,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className={`text-sm font-bold ${tier.highlight ? 'text-white' : 'text-gold-light'}`}>{planTitle(tier.id)}</span>
-                  <span className="text-xs font-mono text-gold font-bold">{planPriceLabel(tier.id)}</span>
+                  <span className="text-sm font-semibold text-gold-light">{planPriceLabel(tier.id)}</span>
                 </div>
                 <p className="text-[11px] text-gray-400 leading-relaxed">{tier.blurb}</p>
                 <ul className={`mt-3 gap-1.5 text-[11px] text-gray-300 ${tier.id === 'agency' ? 'grid grid-cols-1 sm:grid-cols-2' : 'space-y-1.5'}`}>
@@ -583,9 +584,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                 type="button"
                 onClick={() => handlePlanCheckout(tier.id)}
                 disabled={busyPlan !== null}
-                className={`w-full py-3 rounded-xl font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
-                  tier.highlight ? 'bg-white text-black' : 'bg-gold text-black'
-                }`}
+                className={`lx-btn w-full text-sm disabled:opacity-50 ${tier.highlight ? 'lx-btn-gold' : 'lx-btn-ghost'}`}
               >
                 {planButtonLabel(tier.id)}
               </button>
@@ -630,7 +629,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               href={TELEGRAM_MINI_APP_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-wider hover:scale-[1.02] active:scale-[0.98] transition-all shadow-md focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="lx-btn lx-btn-gold shrink-0 text-sm"
             >
               Open in Telegram
             </a>

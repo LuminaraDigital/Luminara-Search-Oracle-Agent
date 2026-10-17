@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  ANALYZE_STAGES,
   SAMPLE_FIXTURE,
   idleEngines,
   normalizeDemoUrl,
+  sampleEngineRowsForHost,
 } from '../components/marketing/demo/demoFixtures';
 import { ENGINE_STATUS_LABEL } from '../components/marketing/EvidenceGlyph';
 import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
@@ -28,6 +30,17 @@ describe('landing Visibility Probe fixtures', () => {
     const playback = readFileSync(new URL('../components/marketing/demo/useDemoPlayback.ts', import.meta.url), 'utf8');
     expect(playback).toContain('normalizeDemoUrl(url)');
     expect(playback).not.toContain('SAMPLE_FIXTURE.domain');
+  });
+
+  it('only shows crawl work in progress: the engines are never presented as being checked', () => {
+    expect(ANALYZE_STAGES.join(' ')).not.toMatch(/engine|rank|fix/i);
+    expect(ANALYZE_STAGES.join(' ')).toMatch(/robots\.txt/);
+    const playback = readFileSync(new URL('../components/marketing/demo/useDemoPlayback.ts', import.meta.url), 'utf8');
+    expect(playback).not.toMatch(/idleEngines\(\)\.map\(\(e\) => \(\{ \.\.\.e, status: 'pending'/);
+    expect(playback).toContain('sampleEngineRowsForHost(parsed.host)]');
+    for (const row of sampleEngineRowsForHost('example.com')) {
+      expect(row.status).toBe('not_measured');
+    }
   });
 
   it('keeps sample engines honest (never Measured; Sample notes only)', () => {

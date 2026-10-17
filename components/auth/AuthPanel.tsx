@@ -14,6 +14,7 @@ import { linkTelegramFirebaseAccounts } from '../../services/apiClient';
 import { pullWorkspaceOnLogin } from '../../services/sync/workspaceSyncService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { Button } from '../ui/Button';
+import '../marketing/space.css';
 import { ConfirmModal } from '../ui/ConfirmModal';
 
 type Mode = 'signin' | 'signup';
@@ -154,39 +155,39 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
 
   if (userLabel) {
     return (
-      <div className={`glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
-        <p className="text-sm text-gray-200 font-medium truncate">{userLabel}</p>
-        <p className="text-xs text-gray-400 leading-relaxed">
+      <div className={`lx-glass rounded-3xl ${compact ? 'p-4 space-y-3' : 'p-6 space-y-4'}`}>
+        <p className="lx-eyebrow">Account</p>
+        <p className="text-sm text-ink font-medium truncate">{userLabel}</p>
+        <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
           Signed in with Firebase. Hosted AI keys and saved workspace use this account. Inside Telegram, confirm "Link Telegram and web account - shares subscription" so Stars payments follow you on the web.
         </p>
-        <Button
-          variant="secondary"
+        <button
+          type="button"
           disabled={busy}
           onClick={() => run(() => signOutFirebase())}
-          className="w-full text-xs"
+          className="lx-btn lx-btn-ghost w-full disabled:opacity-50"
         >
           Sign out
-        </Button>
+        </button>
       </div>
     );
   }
 
   return (
-    <div className={`glass-morphism rounded-2xl border border-white/10 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
+    <div className={`lx-glass rounded-3xl ${compact ? 'p-4 space-y-3' : 'p-6 space-y-5'}`}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
-        <div className="flex gap-1 text-[10px] font-bold uppercase tracking-wider">
+        <p className="lx-eyebrow">Account</p>
+        <div className="flex gap-1 rounded-full border border-gold/20 bg-black/40 p-1 text-sm">
           <button
             type="button"
-            className={`px-2 py-1 rounded transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signin' ? 'bg-gold/20 text-gold-light' : 'text-gray-400 hover:text-gray-200'}`}
+            className={`px-3.5 py-1.5 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signin' ? 'bg-gold/15 text-gold-light' : 'text-[var(--color-ink-2)] hover:text-ink'}`}
             onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
           >
             Sign in
           </button>
           <button
             type="button"
-            className={`px-2 py-1 rounded transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signup' ? 'bg-gold/20 text-gold-light' : 'text-gray-400 hover:text-gray-200'}`}
+            className={`px-3.5 py-1.5 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signup' ? 'bg-gold/15 text-gold-light' : 'text-[var(--color-ink-2)] hover:text-ink'}`}
             onClick={() => { setMode('signup'); setError(null); setInfo(null); }}
           >
             Sign up
@@ -194,12 +195,12 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
         </div>
       </div>
 
-      <p className="text-xs text-gray-400 leading-relaxed">
+      <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
         Web accounts use Firebase. Open the Mini App in Telegram and confirm "Link Telegram and web account - shares subscription" so Telegram and the website share one plan.
       </p>
 
       <form
-        className="space-y-2.5"
+        className="space-y-3.5"
         onSubmit={(e) => {
           e.preventDefault();
           if (mode === 'signup') {
@@ -213,7 +214,7 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
         }}
       >
         <div className="space-y-1">
-          <label htmlFor="auth-email" className="block text-[10px] font-mono uppercase text-gray-400">Email</label>
+          <label htmlFor="auth-email" className="block text-sm text-ink">Email</label>
           <input
             id="auth-email"
             type="email"
@@ -221,12 +222,12 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 outline-none focus:border-gold/50 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+            className="w-full rounded-xl bg-black/50 border border-gold/20 px-4 py-3 text-base text-ink placeholder:text-ink/40 outline-none transition-colors focus:border-gold/60 focus-visible:ring-2 focus-visible:ring-gold/40 focus-visible:outline-none"
             placeholder="you@example.com"
           />
         </div>
         <div className="space-y-1">
-          <label htmlFor="auth-password" className="block text-[10px] font-mono uppercase text-gray-400">Password</label>
+          <label htmlFor="auth-password" className="block text-sm text-ink">Password</label>
           <input
             id="auth-password"
             type="password"
@@ -235,7 +236,7 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
             minLength={6}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 outline-none focus:border-gold/50 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+            className="w-full rounded-xl bg-black/50 border border-gold/20 px-4 py-3 text-base text-ink placeholder:text-ink/40 outline-none transition-colors focus:border-gold/60 focus-visible:ring-2 focus-visible:ring-gold/40 focus-visible:outline-none"
             placeholder="At least 6 characters"
           />
         </div>
@@ -244,7 +245,7 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
             <button
               type="button"
               disabled={busy || !email.trim()}
-              className="text-[10px] font-bold uppercase tracking-wider text-gray-400 hover:text-gold disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded transition-colors"
+              className="lx-link text-sm disabled:opacity-40"
               onClick={() => run(async () => {
                 const result = await resetPasswordWithEmail(email);
                 setInfo(result.message);
@@ -256,20 +257,20 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
         )}
         {error && <p className="text-xs text-danger-400" role="alert">{error}</p>}
         {info && <p className="text-xs text-success-400" role="status">{info}</p>}
-        <Button type="submit" disabled={busy || !email || password.length < 6} className="w-full text-xs">
-          {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
-        </Button>
+        <button type="submit" disabled={busy || !email || password.length < 6} className="lx-btn lx-btn-gold w-full disabled:opacity-50">
+          {busy ? 'Working…' : mode === 'signup' ? 'Create free account' : 'Sign in'}
+        </button>
       </form>
 
       <div className="relative py-1">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10" /></div>
-        <div className="relative flex justify-center"><span className="px-2 text-[10px] uppercase tracking-wider text-gray-400 bg-transparent">or</span></div>
+        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gold/15" /></div>
+        <div className="relative flex justify-center"><span className="px-3 text-sm text-[var(--color-ink-2)] bg-transparent">or</span></div>
       </div>
 
-      <Button
-        variant="secondary"
+      <button
+        type="button"
         disabled={busy}
-        className="w-full text-xs flex items-center justify-center gap-2 font-medium"
+        className="lx-btn lx-btn-ghost w-full disabled:opacity-50"
         onClick={() => run(async () => {
           await signInWithGoogle();
           productTelemetry.track('signup_completed', { method: 'google' });
@@ -277,7 +278,7 @@ export const AuthPanel: React.FC<{ compact?: boolean; initialMode?: Mode }> = ({
       >
         <GoogleIcon className="w-4 h-4" />
         Continue with Google
-      </Button>
+      </button>
     </div>
   );
 };

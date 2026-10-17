@@ -148,7 +148,7 @@ export function storyPose(w: number, h: number, wide = w >= 1024): GlobePose {
   if (wide) {
     return { cx: w * 0.72, cy: h * 0.5, r: Math.min(w * 0.24, h * 0.37), sun: STORY_SUN, flare: 0, dim: 1, dots: 1 };
   }
-  return { cx: w / 2, cy: h * 0.25, r: Math.min(w * 0.38, h * 0.18), sun: STORY_SUN, flare: 0, dim: 1, dots: 1 };
+  return { cx: w / 2, cy: h * 0.23, r: Math.min(w * 0.36, h * 0.16), sun: STORY_SUN, flare: 0, dim: 1, dots: 1 };
 }
 
 /**

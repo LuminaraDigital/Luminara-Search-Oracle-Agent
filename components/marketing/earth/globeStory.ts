@@ -37,7 +37,7 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
     step: '02',
     stage: 'Four-engine check',
     title: 'Ask the engines your buyers ask.',
-    body: 'Buyer questions in your category go to Google Search, AI Overviews, ChatGPT and Perplexity. You see who gets named, and whether it is you.',
+    body: 'Buyer questions in your category are checked across Google Search, AI Overviews, ChatGPT and Perplexity. You see who gets named, whether it is you, and how each answer was measured.',
     focus: { lat: 22, lon: -34 },
   },
   {

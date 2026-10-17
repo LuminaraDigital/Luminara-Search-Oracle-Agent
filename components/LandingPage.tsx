@@ -7,7 +7,7 @@
  * 6. FAQ (1:1 with FAQPage JSON-LD)
  * 7. Closing call to action over a second horizon, then the footer
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './marketing/space.css';
 import { MarketingNav } from './MarketingNav';
 import { MarketingFooter } from './marketing/MarketingFooter';
@@ -76,9 +76,14 @@ const LandingPage: React.FC<LandingPageProps> = ({
   const [chapter, setChapter] = useState(-1);
   const [copied, setCopied] = useState(false);
 
-  const setAnchor = (i: number) => (el: HTMLElement | null) => {
-    anchorsRef.current[i] = el;
-  };
+  // Stable callback refs (hero, statement, one per chapter) so anchors never detach on re-render.
+  const anchorRefs = useMemo(
+    () =>
+      Array.from({ length: 2 + STORY_CHAPTERS.length }, (_, i) => (el: HTMLElement | null) => {
+        anchorsRef.current[i] = el;
+      }),
+    [],
+  );
 
   const fullAudit = (handoff?: AuditHandoff) => {
     if (isAuthenticated) onNavigateAudit(handoff);
@@ -149,7 +154,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         <SpaceStage anchors={anchorsRef} onChapterChange={setChapter} />
 
         <section
-          ref={setAnchor(0)}
+          ref={anchorRefs[0]}
           aria-labelledby="hero-heading"
           className="relative z-10 flex min-h-[100svh] flex-col items-center px-5 pb-[30svh] pt-[max(6.5rem,13svh)] text-center sm:px-8"
         >
@@ -195,7 +200,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         </section>
 
         <section
-          ref={setAnchor(1)}
+          ref={anchorRefs[1]}
           aria-labelledby="shift-heading"
           className="relative z-10 flex min-h-[100svh] items-center justify-center px-5 py-24 text-center sm:px-8"
         >
@@ -220,8 +225,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
           {STORY_CHAPTERS.map((c, i) => (
             <div
               key={c.id}
-              ref={setAnchor(2 + i)}
-              className="flex min-h-[92svh] items-end px-5 pb-[7svh] sm:px-8 lg:items-center lg:px-0 lg:pb-0"
+              ref={anchorRefs[2 + i]}
+              className="flex min-h-[80svh] items-end px-5 pb-[5svh] sm:px-8 lg:min-h-[92svh] lg:items-center lg:px-0 lg:pb-0"
             >
               <article
                 className="lx-chapter w-full max-w-xl rounded-3xl bg-black/75 p-6 lg:ml-[6vw] lg:max-w-[min(34rem,40vw)] lg:bg-transparent lg:p-0 xl:ml-[8vw]"
@@ -424,7 +429,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               See what AI says <span className="italic lx-gold-text">about you.</span>
             </h2>
             <p className="lx-lede mx-auto mt-6 max-w-xl">
-              Run the live crawl check now. Create a free account to measure all four engines and get your first fix.
+              Run the live crawl check now. Create a free account to run the full audit and get your first fix, with every engine row labeled by how it was measured.
             </p>
           </div>
           <div className="mt-10">

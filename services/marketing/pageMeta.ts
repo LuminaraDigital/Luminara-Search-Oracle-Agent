@@ -130,7 +130,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Methodology</h1>
   <p>Measured means live evidence. Estimated is directional only. Not measured means missing data is labeled, never invented.</p>
-  <p>Sample scouts on the landing Workbench are labeled fixtures. Live Instant Audit follows account and key rules.</p>
+  <p>The live crawl check on the landing page reads robots.txt and llms.txt and keeps the four engines Not measured. Instant Audit measures the engines and follows account and key rules.</p>
   <p><a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
 </section>`,
   },
@@ -148,7 +148,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Sample report</h1>
   <p>Illustrative Sample for luminarasuite.com. Engines show Measured, Estimated, or Not measured. Verdict and ship action match Instant Audit shape.</p>
-  <p><a href="/">Run a scout</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
+  <p><a href="/">Check your site</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
   '/how-it-works': {

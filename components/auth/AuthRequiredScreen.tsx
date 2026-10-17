@@ -5,6 +5,7 @@ import type { AppAuthState } from '../../services/auth/useAppAuth';
 import { MINI_APP_URL, botUsernameFromMiniAppUrl } from '../../services/referrals/rules';
 import { BrandLoader } from '../intro/BrandLoader';
 import { ICONS } from '../../constants';
+import '../marketing/space.css';
 
 /**
  * Gated Product Access / Login Wall.
@@ -73,7 +74,7 @@ export const AuthRequiredScreen: React.FC<{
         <button
           type="button"
           onClick={onClose}
-          className="absolute -top-3 -right-2 w-9 h-9 rounded-full bg-[var(--color-paper-2)] border border-[var(--color-rule)] hover:border-gold/40 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm z-20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+          className="absolute -top-3 -right-2 w-10 h-10 rounded-full bg-black/70 border border-gold/25 hover:border-gold/50 text-[var(--color-ink-2)] hover:text-ink flex items-center justify-center transition-colors text-sm z-20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           title="Close (Esc)"
           aria-label="Close login dialog"
         >
@@ -95,12 +96,10 @@ export const AuthRequiredScreen: React.FC<{
                 <ICONS.LuminaraLogo className="w-8 h-8" />
               </div>
             )}
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-gold/80">
-              Telegram Mini App
-            </p>
+            <p className="lx-eyebrow">Telegram Mini App</p>
           </div>
         ) : null}
-        <h1 className="font-display font-normal text-[2rem] sm:text-4xl text-[var(--color-ink)] tracking-tight leading-[1.08]">
+        <h1 className="lx-display text-[2.4rem] sm:text-5xl">
           {inTelegram
             ? 'Confirm your Telegram session'
             : initialMode === 'signup'
@@ -108,8 +107,8 @@ export const AuthRequiredScreen: React.FC<{
               : 'Sign in to Luminara Suite'}
         </h1>
         {featureExplanation(featureView) && (
-          <div className="p-3 rounded-xl bg-gold/10 border border-gold/30 text-xs text-gold-light max-w-sm mx-auto text-left leading-relaxed">
-            <span className="font-bold uppercase tracking-wider block mb-1 text-[10px] text-gold">Account Required</span>
+          <div className="lx-glass rounded-2xl p-4 text-sm text-gold-light max-w-sm mx-auto text-left leading-relaxed">
+            <span className="lx-eyebrow block mb-1.5">Account required</span>
             {featureExplanation(featureView)}
           </div>
         )}
@@ -123,20 +122,20 @@ export const AuthRequiredScreen: React.FC<{
       </div>
 
       {inTelegram ? (
-        <div className="rounded-xl bg-[var(--color-paper-2)] border border-[var(--color-rule)] p-5 space-y-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
-          <p className="text-sm text-gray-300 leading-relaxed">
+        <div className="lx-glass rounded-3xl p-6 space-y-4">
+          <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
             {auth.reason || 'Could not verify Telegram. Close this view and open Luminara again from the bot menu.'}
           </p>
           {auth.retryTelegram && (
             <button
               type="button"
               onClick={() => auth.retryTelegram?.()}
-              className="w-full rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black text-xs font-bold uppercase tracking-wider py-3 hover:brightness-110 active:scale-[0.99] transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="lx-btn lx-btn-gold w-full"
             >
               Retry Telegram sign-in
             </button>
           )}
-          <p className="text-[11px] text-gray-500 leading-relaxed text-center">
+          <p className="text-xs text-[var(--color-ink-2)] leading-relaxed text-center">
             Tip: close the Mini App fully, then open it again from @{botUsernameFromMiniAppUrl(MINI_APP_URL)}.
           </p>
         </div>
@@ -148,7 +147,7 @@ export const AuthRequiredScreen: React.FC<{
         <button
           type="button"
           onClick={onBackToMarketing}
-          className="w-full text-xs text-gray-400 hover:text-gold transition-colors py-1 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+          className="lx-link mx-auto block text-sm"
         >
           ← Back to home
         </button>
@@ -162,8 +161,10 @@ export const AuthRequiredScreen: React.FC<{
         role="dialog"
         aria-modal="true"
         aria-label="Account access"
-        className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/95 overflow-y-auto"
+        className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/95 overflow-y-auto overflow-x-hidden"
       >
+        <div aria-hidden className="lx-stars pointer-events-none fixed inset-0 opacity-70" />
+        <div aria-hidden className="lx-horizon pointer-events-none fixed top-[80%]" />
         <div className="absolute inset-0" onClick={onClose} />
         {content}
       </div>
@@ -172,7 +173,8 @@ export const AuthRequiredScreen: React.FC<{
 
   return (
     <div className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-10 relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_35%_15%,rgba(191,149,63,0.1)_0%,transparent_55%)]" />
+      <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
+      <div aria-hidden className="lx-horizon pointer-events-none top-[82%]" />
       {content}
     </div>
   );

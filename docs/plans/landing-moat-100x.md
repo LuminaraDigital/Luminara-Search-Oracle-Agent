@@ -68,7 +68,7 @@ Close the gap between a competent Instant Audit SaaS landing and a **category-de
 
 1. **S0-S5:** Blender + Canvas2D/SVG only. No `three` in `package.json`.  
 2. **Runtime load of archive GLB: KILL forever on marketing** (and do not use Draco to “fix” it).  
-3. **Optional later (CEO override in writing):** vanilla Three **only** if a named Instant Audit Live depth interaction fails without true 3D camera, lazy after idle, **nodes from `constellationLayout` (no GLB)**, chunk ≤120 KB gzip, fail >200 KB, no R3F/drei, product enums only. Prefer a fragment shader over Three if depth is the only ask.  
+3. **Optional later (CEO override in writing):** vanilla Three **only** if a named Instant Audit Live depth interaction fails without true 3D camera, lazy after idle, **nodes from product data (the constellation layout was retired on 2026-10-16; no GLB)**, chunk ≤120 KB gzip, fail >200 KB, no R3F/drei, product enums only. Prefer a fragment shader over Three if depth is the only ask.  
 4. **10x path:** category copy, Workbench continuity, Map twin, packaging honesty, deslop - not WebGL.
 
 Sources: [Solaya GLB + posters](https://blog.solaya.ai/blog/how-to-export-3d-visuals-for-web-a-marketers-guide), [Praxvon WebGL earns vs tanks](https://praxvon.com/en/blog/3d-on-the-web-webgl-performance).
@@ -79,7 +79,7 @@ Sources: [Solaya GLB + posters](https://blog.solaya.ai/blog/how-to-export-3d-vis
 2. **APS honesty:** Sample vs Live labeled? Enums only? No bare score / citation % / fake logos / $ savings?  
 3. **Proof job:** Makes Probe → Instant Audit → (MCP/share) clearer? Decorative only → kill.  
 4. **Budget / 3D:** Would it add `three`, R3F, Framer, GSAP, or runtime GLB to marketing? → kill.  
-5. **Blender path:** Plates/layout touched? → `npm run constellation:bake:check`. Runtime still no GLB/Three on marketing.  
+5. **Blender path:** retired on 2026-10-16 with the constellation plates (see Decision log). Runtime still no GLB/Three on marketing.  
 6. **Entity:** Suite vs Digital still one product + one builder attribution?  
 7. **Packaging:** Free/Starter/Growth/Agency claims match APS?  
 8. **Merge hygiene:** Craft PR vs MCP PR? Mixed → stop and split.  
@@ -179,7 +179,7 @@ CEO reorder: hygiene → category → proof → entity/packaging → Map twin �
 **Acceptance:**
 - [ ] `public/brand/constellation/**`, `scripts/constellation/**`, `design/constellation/**`, constellation components/tests, bake:check in CI land together  
 - [ ] No Worker/MCP secrets churn in craft PR  
-- [ ] `constellation:bake:check` green in CI  
+- [x] ~~`constellation:bake:check` green in CI~~ (retired 2026-10-16, see Decision log)  
 
 **Kill:** Mega-PR mixing MCP + craft.
 
@@ -245,9 +245,9 @@ CEO reorder: hygiene → category → proof → entity/packaging → Map twin �
 ## Verify commands
 
 ```bash
-npm run constellation:bake:check
+# constellation:bake:check retired 2026-10-16 (see Decision log)
 npm run typecheck
-npx vitest run tests/constellationLayout.test.ts tests/constellationCapability.test.ts tests/visibilityProbe.test.ts
+npx vitest run tests/landingGlobe.test.ts tests/deviceCapability.test.ts tests/visibilityProbe.test.ts
 npm run lint:ci
 npm test
 npm run build

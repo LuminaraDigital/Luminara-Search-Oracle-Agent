@@ -310,14 +310,17 @@ export function createGlobeRenderer(
   if (!ctxMaybe) throw new Error('Canvas 2D unavailable');
   const gl: WebGLRenderingContext = glMaybe;
   const ctx: CanvasRenderingContext2D = ctxMaybe;
+  /** Release the context before giving up, so failed attempts do not pile up live contexts. */
+  const bail = (message: string): never => {
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    throw new Error(message);
+  };
 
   // fp16 breaks the limb anti-aliasing and the hashes, so fall back to CSS instead.
   const highp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
-  if (!highp || highp.precision <= 0) throw new Error('highp float unavailable');
+  if (!highp || highp.precision <= 0) bail('highp float unavailable');
 
-  const programMaybe = gl.createProgram();
-  if (!programMaybe) throw new Error('createProgram failed');
-  const program: WebGLProgram = programMaybe;
+  const program: WebGLProgram = gl.createProgram() ?? bail('createProgram failed');
   const vs = compile(gl, gl.VERTEX_SHADER, VERT);
   const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
   gl.attachShader(program, vs);
