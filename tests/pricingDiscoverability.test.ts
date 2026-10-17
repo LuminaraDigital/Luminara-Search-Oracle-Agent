@@ -64,7 +64,7 @@ describe('pricing page discoverability', () => {
 
   it('names Stars alone, with no TON price, while TON checkout is closed', () => {
     const html = renderPricing();
-    expect(html).toContain(CHECKOUT_TERM_LINE);
+    expect(html.split(CHECKOUT_TERM_LINE).length - 1).toBe(1);
     expect(html).toContain(TELEGRAM_STARS_HANDOFF);
     expect(html.split(TELEGRAM_STARS_HANDOFF).length - 1).toBe(1);
     expect(html).not.toContain('Pay with Telegram Stars inside the Mini App.');
@@ -85,6 +85,7 @@ describe('pricing page discoverability', () => {
     state.inTelegram = true;
     state.health = { ok: true, ton: true, jettonCheckout: true, stripeCheckout: true, plans: {} };
     const html = renderPricing();
+    expect(html.split(CHECKOUT_TERM_LINE).length - 1).toBe(1);
     expect(html).not.toMatch(/\d+ TON/);
     expect(html).not.toMatch(/Stars (or|and) TON/);
     expect(html).not.toContain('with TON on the web');
@@ -93,6 +94,7 @@ describe('pricing page discoverability', () => {
   it('shows the Mini App link, Stars and TON amounts, and unavailable card checkout once TON checkout is open', () => {
     state.health = { ok: true, ton: true, jettonCheckout: false, stripeCheckout: false, plans: {} };
     const html = renderPricing();
+    expect(html.split(CHECKOUT_TERM_LINE).length - 1).toBe(1);
     expect(html).toContain(TELEGRAM_STARS_HANDOFF);
     expect(html).toContain('Or with TON on the web.');
     expect(html).not.toContain('Pay with Telegram Stars inside the Mini App');

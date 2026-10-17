@@ -205,9 +205,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
               See payment options
             </button>
           </div>
-          <div className="mt-8">{inTelegram ? <TelegramAccountPanel /> : <TelegramAccountPanel compact />}</div>
+          <div className="mt-8">{inTelegram ? <TelegramAccountPanel showTermLine={false} /> : <TelegramAccountPanel compact showTermLine={false} />}</div>
           <p className="mt-6 text-[13px] leading-relaxed text-[var(--color-ink-2)]">
-            {CHECKOUT_TERM_LINE} Plan limits apply per account.
+            Plan limits apply per account.
           </p>
         </div>
       </section>

@@ -894,7 +894,7 @@ const App: React.FC = () => {
 
   if (view === AppView.NOT_FOUND) {
     return (
-      <Suspense fallback={<ViewLoader label="Loading page" />}>
+      <Suspense fallback={null}>
         <NotFoundPage onHome={() => setView(AppView.LANDING)} />
       </Suspense>
     );
