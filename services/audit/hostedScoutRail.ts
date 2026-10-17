@@ -49,7 +49,7 @@ export function hostedScoutPreRunCopy(
   options?: { hostedGateOpen?: boolean },
 ): string {
   if (rail === 'tma_hosted') {
-    return 'Telegram session: this quick scout can use a capped hosted allowance. No API key is required. Each hosted call counts against the daily free limit. When that limit is used, add your own key in Settings or upgrade.';
+    return 'Telegram session: Instant Audit can use a capped hosted allowance. No API key is required. Each hosted call counts against the daily free limit. When that limit is used, add your own key in Settings or upgrade.';
   }
   if (rail === 'signed_in_hosted') {
     if (options?.hostedGateOpen === false) {

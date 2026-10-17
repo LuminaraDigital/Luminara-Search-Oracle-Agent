@@ -402,10 +402,8 @@ const App: React.FC = () => {
 
   const appAuth = useAppAuth();
 
-  // Account-only calls (quota, workspace sync) are skipped for confirmed guests.
-  useEffect(() => {
-    setAccountSignedIn(appAuth.loading ? null : appAuth.authenticated);
-  }, [appAuth.loading, appAuth.authenticated]);
+  // Before child effects, so a signed-out Instant Audit does not call /api/auth/quota.
+  setAccountSignedIn(appAuth.loading ? null : appAuth.authenticated);
 
   // Hold ref_* until Telegram or Firebase auth exists, then claim once.
   useEffect(() => {
@@ -1403,12 +1401,12 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsOmnibarOpen(true)}
-            className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-2 min-h-11 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
+            className="inline-flex items-center gap-1.5 px-1.5 py-2 min-h-11 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal min-w-0 shrink"
             title="Open Omnibar (Cmd+K)"
             aria-label="Jump to a tool"
           >
             <ICONS.Search className="w-3.5 h-3.5 text-gold" />
-            <span className="hidden xl:inline truncate">Jump to a tool</span>
+            <span className="hidden 2xl:inline truncate">Jump to a tool</span>
             <kbd className="hidden lg:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
           </Button>
         </nav>

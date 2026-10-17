@@ -12,6 +12,7 @@ import {
 } from './apiKeysTabUtils';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../../services/mcp/cursorMcpSnippet';
 import { productTelemetry } from '../../../services/analytics/productTelemetry';
+import { useAppAuth } from '../../../services/auth/useAppAuth';
 
 type CreatedKey = { key: string; name: string };
 
@@ -22,6 +23,7 @@ type CreatedKey = { key: string; name: string };
  * revoke calls only ever touch id / name / prefix metadata.
  */
 export const ApiKeysTab: React.FC = () => {
+  const auth = useAppAuth();
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +159,8 @@ export const ApiKeysTab: React.FC = () => {
     setSnippetCopied(false);
   };
 
+  const guest = signedOut || (!auth.loading && !auth.authenticated);
+
   return (
     <div className="space-y-3">
       <p className="text-xs text-gray-400 leading-relaxed">
@@ -182,7 +186,7 @@ export const ApiKeysTab: React.FC = () => {
             size="sm"
             onClick={createKey}
             loading={creating}
-            disabled={creating || !apiBase()}
+            disabled={creating || !apiBase() || guest}
           >
             Create key
           </Button>
@@ -194,7 +198,7 @@ export const ApiKeysTab: React.FC = () => {
           {error}
         </p>
       )}
-      {signedOut && (
+      {guest && (
         <p className="text-[11px] text-gray-400 leading-relaxed" role="status">
           Sign in (Overview tab) to manage hosted MCP keys.
         </p>

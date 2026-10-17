@@ -113,7 +113,7 @@ export const IdeaScoutView: React.FC<IdeaScoutViewProps> = ({ launchIdeaId, onRu
     <div className="max-w-3xl mx-auto px-4 py-8 animate-in fade-in duration-700">
       <div className="mb-8 border-b border-white/10 pb-8">
         <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gold mb-3">Idea Scout</p>
-        <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">No domain yet</h1>
+        <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">Start from an idea</h1>
         <p className="text-sm text-gray-400 mt-2 max-w-2xl leading-relaxed">
           Describe the idea. The card is a hypothesis, not a measured ranking. Free accounts get 2 hosted cards per UTC day.
         </p>

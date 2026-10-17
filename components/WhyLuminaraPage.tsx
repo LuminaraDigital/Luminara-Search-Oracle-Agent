@@ -27,7 +27,6 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
 
   return (
     <MarketingPageShell
-      brandSub="Why"
       footerStatement="Measure when we can. Label when we cannot."
       wide
       closing={{
@@ -58,9 +57,9 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
         </button>
       </MarketingPageHeader>
 
-      <MarketingSellPoints className="mt-28 border-t pt-24 lx-hairline sm:mt-36 sm:pt-28" />
+      <MarketingSellPoints className="mt-16 border-t pt-16 lx-hairline" />
 
-      <section aria-labelledby="compare-heading" className="mt-28 border-t pt-24 lx-hairline sm:mt-36 sm:pt-28">
+      <section aria-labelledby="compare-heading" className="mt-16 border-t pt-16 lx-hairline">
         <div className="max-w-3xl" data-reveal>
           <p className="lx-eyebrow">The difference</p>
           <h2 id="compare-heading" className="lx-display lx-h3 mt-5 [overflow-wrap:anywhere]">

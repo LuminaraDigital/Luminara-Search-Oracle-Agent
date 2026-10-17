@@ -2,6 +2,7 @@
  * Sample Instant Audit playback for the landing Visibility Probe.
  * Fixtures only. Never invent live SEO metrics. Never mark engines Measured.
  */
+import { EMPTY_SITE_INPUT_MESSAGE } from '../../../services/audit/auditTargetUrl';
 
 export type DemoPhase =
   | 'empty'
@@ -71,9 +72,18 @@ export const SAMPLE_FIXTURE: DemoFixture = {
 /** What the anonymous check really does: it reads crawl files. It never asks an answer engine. */
 export const ANALYZE_STAGES = ['Reading robots.txt…', 'Reading llms.txt and ai.txt…'] as const;
 
+/** Drop a repeated scheme so the probe prefix is not shown twice. */
+export function visibleProbeHost(raw: string): string {
+  let value = raw.trim();
+  while (/^https?:\/\/\s*/i.test(value)) {
+    value = value.replace(/^https?:\/\/\s*/i, '');
+  }
+  return value;
+}
+
 export function normalizeDemoUrl(raw: string): { ok: true; host: string } | { ok: false; error: string } {
-  const trimmed = raw.trim().toLowerCase();
-  if (!trimmed) return { ok: false, error: 'Enter a domain or URL.' };
+  const trimmed = visibleProbeHost(raw).toLowerCase();
+  if (!trimmed) return { ok: false, error: EMPTY_SITE_INPUT_MESSAGE };
   try {
     const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
     const u = new URL(withProto);

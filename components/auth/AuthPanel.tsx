@@ -8,6 +8,7 @@ import {
   resetPasswordWithEmail,
   signOutFirebase,
   friendlyFirebaseError,
+  MIN_PASSWORD_LENGTH,
 } from '../../services/auth/firebaseAuthService';
 import { isInTelegram } from '../../services/telegram/tma';
 import { linkTelegramFirebaseAccounts } from '../../services/apiClient';
@@ -87,7 +88,7 @@ export const AuthPanel: React.FC<{
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [keepSignedIn, setKeepSignedIn] = useState(true);
+  const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -219,8 +220,8 @@ export const AuthPanel: React.FC<{
       setError('Enter a valid email address.');
       return;
     }
-    if (password.length < 6) {
-      setError('Use a password with at least 6 characters.');
+    if (mode === 'signup' && password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Use a password with at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     if (mode === 'signup') {
@@ -309,8 +310,8 @@ export const AuthPanel: React.FC<{
               Password
             </label>
             {mode === 'signup' && (
-              <span className={`text-xs ${password.length >= 6 ? 'text-success-400' : 'text-[var(--color-ink-2)]'}`}>
-                {password.length >= 6 ? '6+ chars ready' : 'Min. 6 characters'}
+              <span className={`text-xs ${password.length >= MIN_PASSWORD_LENGTH ? 'text-success-400' : 'text-[var(--color-ink-2)]'}`}>
+                {password.length >= MIN_PASSWORD_LENGTH ? `${MIN_PASSWORD_LENGTH}+ characters` : `Min. ${MIN_PASSWORD_LENGTH} characters`}
               </span>
             )}
           </div>
@@ -320,14 +321,14 @@ export const AuthPanel: React.FC<{
               type={showPassword ? 'text' : 'password'}
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               required
-              minLength={6}
+              minLength={mode === 'signup' ? MIN_PASSWORD_LENGTH : 1}
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
                 if (error) setError(null);
               }}
               className="w-full rounded-xl bg-transparent pl-4 pr-11 py-3.5 text-base text-ink placeholder:text-ink/40 outline-none"
-              placeholder={mode === 'signup' ? 'Create a password (min. 6 characters)' : 'Enter your password'}
+              placeholder={mode === 'signup' ? `Create a password (min. ${MIN_PASSWORD_LENGTH} characters)` : 'Enter your password'}
             />
             <button
               type="button"
