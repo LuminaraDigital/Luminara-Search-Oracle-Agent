@@ -23,9 +23,11 @@ describe('instant audit top bar on a narrow screen', () => {
   it('wraps the primary tools and keeps Memory, Studio, and Quick/Thorough in the bar', () => {
     const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8');
     const navAt = app.indexOf('aria-label="Primary tools"');
-    const nav = app.slice(navAt - 220, navAt);
-    expect(nav).toContain('flex-wrap');
-    expect(nav).not.toContain('no-scrollbar');
+    const nav = app.slice(navAt - 420, navAt);
+    expect(nav).toContain('flex-nowrap');
+    expect(nav).toContain('overflow-x-auto');
+    expect(nav).toContain('mask-image:linear-gradient');
+    expect(nav).not.toContain('flex-wrap items-center');
 
     const memoryAt = app.indexOf('aria-pressed={view === AppView.BRAND_MEMORY}');
     const memory = app.slice(memoryAt, memoryAt + 220);

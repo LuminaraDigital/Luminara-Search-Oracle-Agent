@@ -42,9 +42,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
   // Worker reports that checkout open. Until then this page names Stars alone.
   const tonOpen = !inTelegram && isTonAvailable(getServerHealthSync());
   const cardOpen = !inTelegram && isStripeCheckoutAvailable(getServerHealthSync(), false);
-  const payLine = tonOpen
-    ? 'Pay with Telegram Stars inside the Mini App, or with TON on the web.'
-    : 'Pay with Telegram Stars inside the Mini App.';
+  const tonClause = tonOpen ? ' Or with TON on the web.' : '';
   const free = PLAN_ENTITLEMENTS.free;
   const miniAppLinkProps = inTelegram
     ? { rel: 'noopener noreferrer' as const }
@@ -75,7 +73,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         lede="Free covers Sample scouts and a daily hosted Instant Audit allowance after you create an account. Starter is web audits only. Growth adds IDE access and shareable reports. Agency adds API access and client workspaces."
       />
       <p className="lx-enter-rise lx-d4 mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
-        {CHECKOUT_TERM_LINE} {payLine} {TELEGRAM_STARS_HANDOFF}
+        {CHECKOUT_TERM_LINE}{tonClause}
       </p>
 
       <section aria-labelledby="plans-heading" className="lx-enter-rise lx-d5 mt-16 sm:mt-20">
@@ -191,24 +189,26 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
             How payment <span className="italic lx-gold-text pr-[0.08em]">works.</span>
           </h2>
           <p className="lx-lede mt-6">
-            {TELEGRAM_STARS_HANDOFF} {payLine}{tonOpen ? ' TON checkout runs on this page with a connected wallet.' : ''} A license key, if you have one, is entered in the payment panel.
+            {tonOpen ? 'TON checkout runs on this page with a connected wallet. ' : ''}A license key, if you have one, is entered in the payment panel.
           </p>
         </div>
         <div className="min-w-0 lg:col-span-7" data-reveal>
-          <p className="text-[15px] leading-relaxed text-[var(--color-ink)]">
-            {TELEGRAM_STARS_HANDOFF}{tonOpen ? ' TON is paid on this page, from the payment panel.' : ''}
-          </p>
+          {tonOpen && (
+            <p className="text-[15px] leading-relaxed text-[var(--color-ink)]">
+              TON is paid on this page, from the payment panel.
+            </p>
+          )}
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <a href={TELEGRAM_MINI_APP_URL} {...miniAppLinkProps} className="lx-btn lx-btn-ghost">
               Open in Telegram
             </a>
-            <button type="button" onClick={() => openPaywallModal(payLine)} className="lx-btn lx-btn-ghost">
+            <button type="button" onClick={() => openPaywallModal(`${TELEGRAM_STARS_HANDOFF}${tonClause}`)} className="lx-btn lx-btn-ghost">
               See payment options
             </button>
           </div>
           <div className="mt-8">{inTelegram ? <TelegramAccountPanel /> : <TelegramAccountPanel compact />}</div>
           <p className="mt-6 text-[13px] leading-relaxed text-[var(--color-ink-2)]">
-            {CHECKOUT_TERM_LINE} {payLine} Plan limits apply per account.
+            {CHECKOUT_TERM_LINE} Plan limits apply per account.
           </p>
         </div>
       </section>

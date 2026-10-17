@@ -1120,7 +1120,7 @@ const App: React.FC = () => {
     >
       <PremiumAtmosphere intensity="subtle" />
       {/* Universal Top Header - Responsive, guaranteed no overflow */}
-      <header className="flex flex-wrap items-center justify-between gap-2 px-2.5 sm:px-6 py-2 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
+      <header className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-6 py-1 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
         {/* Left: Brand Identity */}
         <button
           type="button"
@@ -1147,7 +1147,7 @@ const App: React.FC = () => {
         </button>
 
         {/* Center: Suite Switcher & Quick Navigation */}
-        <nav className="order-last flex basis-full flex-wrap items-center gap-1 sm:order-none sm:basis-auto sm:gap-2 shrink min-w-0 px-0.5 sm:px-1" aria-label="Primary tools">
+        <nav className="order-last flex basis-full flex-nowrap items-center gap-1 overflow-x-auto no-scrollbar overscroll-x-contain [mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)] sm:order-none sm:basis-auto sm:[mask-image:none] shrink min-w-0 px-0.5" aria-label="Primary tools">
           <Button
             variant="ghost"
             size="none"
@@ -1414,7 +1414,7 @@ const App: React.FC = () => {
         </nav>
 
         {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Settings, Log out */}
-        <div className="flex flex-wrap items-center justify-end gap-1 sm:gap-2.5 shrink min-w-0">
+        <div className="flex flex-nowrap items-center justify-end gap-1 overflow-x-auto no-scrollbar sm:gap-2.5 shrink min-w-0">
           {/* Native Trinity (Groq, NVIDIA NIM, Ollama) Engine Status & Priority */}
           {advancedUi && <NativeEngineHUD />}
 

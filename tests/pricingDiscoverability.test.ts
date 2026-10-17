@@ -64,9 +64,10 @@ describe('pricing page discoverability', () => {
 
   it('names Stars alone, with no TON price, while TON checkout is closed', () => {
     const html = renderPricing();
-    expect(html).toContain('Pay with Telegram Stars inside the Mini App.');
     expect(html).toContain(CHECKOUT_TERM_LINE);
     expect(html).toContain(TELEGRAM_STARS_HANDOFF);
+    expect(html.split(TELEGRAM_STARS_HANDOFF).length - 1).toBe(1);
+    expect(html).not.toContain('Pay with Telegram Stars inside the Mini App.');
     expect(html).toContain('Pay 2,500 Stars in Telegram');
     expect(html).not.toContain('Connect Wallet');
     expect(html).not.toContain('US$');
@@ -92,7 +93,9 @@ describe('pricing page discoverability', () => {
   it('shows the Mini App link, Stars and TON amounts, and unavailable card checkout once TON checkout is open', () => {
     state.health = { ok: true, ton: true, jettonCheckout: false, stripeCheckout: false, plans: {} };
     const html = renderPricing();
-    expect(html).toContain('Pay with Telegram Stars inside the Mini App, or with TON on the web.');
+    expect(html).toContain(TELEGRAM_STARS_HANDOFF);
+    expect(html).toContain('Or with TON on the web.');
+    expect(html).not.toContain('Pay with Telegram Stars inside the Mini App');
     expect(html).toContain(`href="${TELEGRAM_MINI_APP_URL}"`);
     expect(html).toContain('https://t.me/LuminaraSuiteBot/app');
     expect(html).toContain('Open Mini App in Telegram');
