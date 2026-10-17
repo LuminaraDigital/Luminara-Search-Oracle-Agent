@@ -606,16 +606,6 @@
     }
     html.lx-skip-splash #boot-splash { display: none; }
   </style>
-  <script>
-    (function () {
-      try {
-        var nav = performance.getEntriesByType('navigation')[0];
-        var path = (location.pathname || '/').replace(/\/+$/, '') || '/';
-        var known = { '/': 1, '/how-it-works': 1, '/how': 1, '/ai': 1, '/why': 1, '/pricing': 1, '/methodology': 1, '/sample-report': 1, '/privacy': 1, '/terms': 1 };
-        if ((nav && nav.responseStatus === 404) || !known[path]) document.documentElement.classList.add('lx-skip-splash');
-      } catch (e) {}
-    })();
-  </script>
 </head>
 <body class="overflow-x-clip">
   <div id="boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Loading Luminara Suite" title="Click to skip">

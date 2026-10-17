@@ -221,7 +221,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   },
   '/compare/profound': {
     path: '/compare/profound',
-    title: 'Luminara vs Profound | AI Search Visibility Comparison',
+    title: 'Luminara vs Profound | Luminara Suite',
     description:
       'Compare Luminara Suite and Profound. Evidence-bound citation tracking versus synthetic visibility scores. Prioritized weekly fixes without opaque indexes.',
     jsonLd: graph('/compare/profound', 'Luminara vs Profound', 'Empirical comparison of AI visibility tracking methodology.'),
@@ -245,7 +245,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   },
   '/compare/ahrefs': {
     path: '/compare/ahrefs',
-    title: 'Luminara vs Ahrefs Brand Monitoring | Traditional SEO vs AEO',
+    title: 'Luminara vs Ahrefs | Luminara Suite',
     description:
       'Compare traditional keyword rank tracking with LLM Answer Engine Optimization. Why blue link ranks differ from conversational AI search citations.',
     jsonLd: graph('/compare/ahrefs', 'Luminara vs Ahrefs', 'Comparing traditional SEO search monitoring with LLM citability and answer targets.'),
@@ -269,7 +269,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   },
   '/compare/otterly': {
     path: '/compare/otterly',
-    title: 'Luminara vs Otterly AI | Honest AEO & GEO Audits',
+    title: 'Luminara vs Otterly | Luminara Suite',
     description:
       'Compare Luminara Suite and Otterly AI. Evidence-bound Measured vs Estimated labels, reproducible receipts, and single-action weekly decisions.',
     jsonLd: graph('/compare/otterly', 'Luminara vs Otterly AI', 'Comparative audit of LLM search tracking and generative engine optimization.'),
@@ -293,7 +293,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   },
   '/compare/peec': {
     path: '/compare/peec',
-    title: 'Luminara vs Peec AI | Empirical AI Search Monitoring',
+    title: 'Luminara vs Peec | Luminara Suite',
     description:
       'Luminara Suite versus Peec AI. Contrast synthetic composite scores with strict evidence-bound labeling and verifiable remediation fix packs.',
     jsonLd: graph('/compare/peec', 'Luminara vs Peec AI', 'Comparing synthetic AI visibility scores with verifiable search receipts.'),
@@ -316,6 +316,25 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 </section>`,
   },
 };
+
+export const DASHBOARD_TAB_TITLE = 'Dashboard | Luminara Suite';
+
+const TAB_TITLE_MAX = 60;
+const TAB_TITLE_SUFFIX = ' | Luminara Suite';
+
+/** `Topic | Luminara Suite`, with the topic cut so the whole title stays within 60 characters. */
+function brandedTabTitle(topic: string): string {
+  const full = `${topic}${TAB_TITLE_SUFFIX}`;
+  if (full.length <= TAB_TITLE_MAX) return full;
+  const room = TAB_TITLE_MAX - TAB_TITLE_SUFFIX.length - 3;
+  return `${topic.slice(0, Math.max(0, room)).trimEnd()}...${TAB_TITLE_SUFFIX}`;
+}
+
+/** Tab title for Instant Audit. A long host is shortened so the title stays within 60 characters. */
+export function instantAuditTabTitle(target: string | undefined): string {
+  const domain = (target || '').replace(/^https?:\/\//i, '').split(/[/?#]/)[0] || '';
+  return brandedTabTitle(domain ? `Instant Audit: ${domain}` : 'Instant Audit');
+}
 
 /** Normalize pathname to a marketing shell key, or null. */
 export function marketingShellKey(pathname: string): string | null {

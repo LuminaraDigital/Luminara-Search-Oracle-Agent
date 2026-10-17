@@ -7,13 +7,16 @@ import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../paywall/planCopy'
 
 interface Props {
   compact?: boolean;
+  /** Pricing already shows CHECKOUT_TERM_LINE once. Leave this on for Settings. */
+  showTermLine?: boolean;
 }
 
 /**
  * Shows who is signed in through Telegram, their plan, Telegram Stars checkout, and a TON wallet connect.
  * Identity shown here comes from the server-validated session, not from client launch params.
  */
-export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
+export const TelegramAccountPanel: React.FC<Props> = ({ compact, showTermLine = true }) => {
+  const starsLine = showTermLine ? `${TELEGRAM_STARS_HANDOFF} ${CHECKOUT_TERM_LINE}` : TELEGRAM_STARS_HANDOFF;
   const [session, setSession] = useState<TelegramSession | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
@@ -104,7 +107,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       <div className="rounded-xl bg-[var(--color-paper-2)] border border-[var(--color-rule)] p-5 space-y-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-gold">Telegram</p>
         <p className="text-xs text-gray-400 leading-relaxed">
-          {TELEGRAM_STARS_HANDOFF} {CHECKOUT_TERM_LINE}
+          {starsLine}
         </p>
         <p className="text-xs text-gray-400 leading-relaxed">
           Link Telegram and web account - shares subscription. Open the Mini App, sign in there, and confirm the link. Signing in does not merge plans by itself.
@@ -157,7 +160,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact }) => {
       {!inTg && (
         <div className="space-y-1">
           <p className="text-xs text-gray-400 leading-relaxed">
-            {TELEGRAM_STARS_HANDOFF} {CHECKOUT_TERM_LINE}
+            {starsLine}
           </p>
           <a
             href={TELEGRAM_MINI_APP_URL}
