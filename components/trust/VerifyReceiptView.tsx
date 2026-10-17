@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '../ui/Button';
+import { VerificationCardSkeleton } from '../ui/Skeleton';
 import { ICONS } from '../ui/icons';
 import { receiptIdFromLocation } from '../../utils/marketingRoutes';
 import {
@@ -243,7 +244,7 @@ export const VerifyReceiptView: React.FC<{ onBack?: () => void }> = ({ onBack })
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-8 space-y-5">
-        {loading && <p className="text-sm text-gray-400 font-mono">Loading receipt...</p>}
+        {loading && <VerificationCardSkeleton title="Loading receipt..." />}
         {error && (
           <p className="text-sm text-gray-300" role="alert">
             {error}

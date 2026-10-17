@@ -200,21 +200,26 @@ export function synthesizeSummaryFromMessages(messagesToSummarize: Message[]): S
 
 /**
  * Compact conversation history by summarizing older turns and keeping recent turns intact.
+ * Preserves the full pre-compaction segment (archivedSegment) so RLM ContextStore (`history`)
+ * can still inspect exact numbers or quotes on demand.
  */
 export function compactConversation(
   messages: Message[],
-  options: CompactorOptions = {}
+  options: CompactorOptions & {
+    onArchiveSegment?: (segment: Array<{ role: string; content: string }>, summary: StructuredSummary) => void;
+  } = {}
 ): {
   messages: Message[];
   summary: StructuredSummary | null;
   compacted: boolean;
+  archivedSegment: Message[];
 } {
   const contextLimit = options.contextLimitTokens ?? DEFAULT_CONTEXT_LIMIT_TOKENS;
   const threshold = options.thresholdPercent ?? DEFAULT_COMPACT_THRESHOLD_PERCENT;
   const recentTurnsToKeep = Math.max(2, options.recentTurnsToKeep ?? 4);
 
   if (!needsCompaction(messages, contextLimit, threshold)) {
-    return { messages, summary: null, compacted: false };
+    return { messages, summary: null, compacted: false, archivedSegment: [] };
   }
 
   // Prune images first
@@ -226,10 +231,15 @@ export function compactConversation(
   const recentMessages = pruned.slice(splitIndex);
 
   if (olderMessages.length === 0) {
-    return { messages: pruned, summary: null, compacted: false };
+    return { messages: pruned, summary: null, compacted: false, archivedSegment: [] };
   }
 
   const summary = synthesizeSummaryFromMessages(olderMessages);
+  options.onArchiveSegment?.(
+    olderMessages.map((m) => ({ role: m.role, content: m.content })),
+    summary
+  );
+
   const summaryMessage: Message = {
     id: `summary-${Date.now()}`,
     role: 'system',
@@ -241,5 +251,6 @@ export function compactConversation(
     messages: [summaryMessage, ...recentMessages],
     summary,
     compacted: true,
+    archivedSegment: olderMessages,
   };
 }

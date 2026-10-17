@@ -41,6 +41,8 @@ import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary'
 import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
 import { gateReportText, readTableAt } from '../../services/audit/reportColumnGate';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
+import type { RLMTrajectoryMetadata } from '../../services/rlm/types';
+import { RlmTrajectoryViewer } from '../rlm/RlmTrajectoryViewer';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
 
@@ -61,6 +63,7 @@ interface ReportDisplayProps {
   shareOfVoice?: ShareOfVoiceSummary;
   sourceGraph?: SourceCitationGraph;
   enterpriseTrust?: EnterpriseTrustPack;
+  rlmTrajectory?: RLMTrajectoryMetadata;
   /** Instant Audit crew findings for Weekly Decision Card (never Oracle validators). */
   boardFindings?: BoardFinding[];
   /** Hide PDF / share / deploy chrome (public share pages). */
@@ -97,6 +100,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   shareOfVoice,
   sourceGraph,
   enterpriseTrust,
+  rlmTrajectory,
   boardFindings: boardFindingsProp,
   hideAgencyActions = false,
   suppressLiveMetrics = false,
@@ -112,6 +116,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
   const [showWhiteLabelModal, setShowWhiteLabelModal] = useState(false);
+  const [showRlmModal, setShowRlmModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shipCommitment, setShipCommitment] = useState<ShipCommitment | null>(() =>
@@ -438,6 +443,17 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
               </button>
             )}
 
+            {rlmTrajectory && (
+              <button
+                type="button"
+                onClick={() => setShowRlmModal(true)}
+                className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-gold/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              >
+                <ICONS.Terminal className="w-4 h-4 text-gold" />
+                <span>RLM Trace ({rlmTrajectory.iterations.length})</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowWhiteLabelModal(true)}
@@ -583,6 +599,26 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         targetDomain={targetDomain || remediationPayload?.domain}
         dnaName={dnaName}
       />
+
+      {showRlmModal && rlmTrajectory && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="RLM Execution Trajectory"
+          onClick={() => setShowRlmModal(false)}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 print:hidden"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-6xl h-[82vh]"
+          >
+            <RlmTrajectoryViewer
+              trajectory={rlmTrajectory}
+              onClose={() => setShowRlmModal(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

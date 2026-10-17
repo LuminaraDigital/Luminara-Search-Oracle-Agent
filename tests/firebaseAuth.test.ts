@@ -63,3 +63,29 @@ describe('bearerFromAuthorization', () => {
     expect(bearerFromAuthorization('')).toBeNull();
   });
 });
+
+describe('friendlyFirebaseError', () => {
+  it('maps Worker and Firebase error codes to actionable user messages', async () => {
+    const { friendlyFirebaseError } = await import('../services/auth/firebaseAuthService');
+
+    expect(friendlyFirebaseError({ code: 'AUTH_UNAVAILABLE', message: 'raw' })).toMatch(
+      /temporarily unavailable/i,
+    );
+    expect(friendlyFirebaseError({ code: 'RESET_UNAVAILABLE', message: 'raw' })).toMatch(
+      /Password reset is temporarily unavailable/i,
+    );
+    expect(friendlyFirebaseError({ code: 'NETWORK_ERROR', message: 'raw' })).toMatch(
+      /Network error/i,
+    );
+    expect(friendlyFirebaseError({ code: 'ACCOUNT_RATE_LIMITED', message: 'Account locked for 15m' })).toBe(
+      'Account locked for 15m',
+    );
+    expect(friendlyFirebaseError({ code: 'auth/email-already-in-use', message: 'raw' })).toMatch(
+      /Could not create an account with those details/i,
+    );
+    expect(friendlyFirebaseError({ code: 'auth/invalid-credential', message: 'raw' })).toMatch(
+      /Email or password is incorrect/i,
+    );
+  });
+});
+

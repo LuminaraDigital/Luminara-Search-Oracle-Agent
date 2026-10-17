@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS } from './types';
+import { OracleMode, Message, AppView, BusinessDNA, LAB_VIEWS } from './types';
 import { setAnswerDepth } from './services/audit/answerDepth';
 import { geminiService, toChatHistory } from './services/geminiService';
 import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
@@ -29,7 +29,6 @@ import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
-import { hasSeenIntroThisSession } from './services/intro/appIntro';
 import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
@@ -347,11 +346,11 @@ const App: React.FC = () => {
   const [mode, setMode] = useState<OracleMode>(OracleMode.FLASH);
   const [isThinking, setIsThinking] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
+  const [_isSearching, setIsSearching] = useState(false);
   const [agentStep, setAgentStep] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
+  const [_progress, setProgress] = useState(0);
   const [activeTool, setActiveTool] = useState<{ name: string; stage: string; output?: string } | null>(null);
-  const [headerSearch, setHeaderSearch] = useState('');
+  const [_headerSearch, setHeaderSearch] = useState('');
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const { requestConfirm, confirmModal } = useConfirm();
   const [showSuiteMenu, setShowSuiteMenu] = useState(false);
@@ -416,14 +415,17 @@ const App: React.FC = () => {
     void claimStoredReferral();
   }, [appAuth.authenticated, appAuth.loading]);
 
+  // Dismiss login wall modal immediately when authenticated.
+  useEffect(() => {
+    if (!appAuth.authenticated || appAuth.loading || !loginWallMode) return;
+    setLoginWallMode(null);
+    // Signing in from the Probe or from inside Instant Audit returns to the audit, not Home.
+    setView(viewAfterSignIn(auditHandoff?.url, view));
+  }, [appAuth.authenticated, appAuth.loading, loginWallMode, auditHandoff?.url, view]);
+
   // After sign-in, restore DNA / audits / keys / chat from the linked account workspace.
   useEffect(() => {
     if (!appAuth.authenticated || appAuth.loading) return;
-    if (loginWallMode) {
-      setLoginWallMode(null);
-      // Signing in from the Probe or from inside Instant Audit returns to the audit, not Home.
-      setView(viewAfterSignIn(auditHandoff?.url, view));
-    }
     let cancelled = false;
     void (async () => {
       const result = await pullWorkspaceOnLogin();
@@ -548,7 +550,7 @@ const App: React.FC = () => {
     try {
       const saved = localStorage.getItem('luminara_business_dna');
       return saved ? JSON.parse(saved) : null;
-    } catch (e) {
+    } catch (_e) {
       return null;
     }
   });
@@ -938,6 +940,7 @@ const App: React.FC = () => {
           {introOverlay}
           <AuthRequiredScreen
             auth={appAuth}
+            featureView={view}
             onBackToMarketing={skipMarketing ? undefined : () => setView(AppView.LANDING)}
           />
         </>
@@ -1254,7 +1257,7 @@ const App: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Zap className="w-3.5 h-3.5 text-gold-light" />
                     <span>Idea Scout</span>
@@ -1286,7 +1289,7 @@ const App: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
                     <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
@@ -1738,23 +1741,26 @@ const App: React.FC = () => {
               <MessageList messages={messages} isThinking={isThinking} activeTool={activeTool} onSimplify={handleSimplify} />
               
               {agentStep && (
-                <div className="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-40 w-full max-w-lg px-6">
+                <div
+                  role="status"
+                  aria-live="polite"
+                  aria-busy="true"
+                  className="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-40 w-full max-w-lg px-6"
+                >
                   <div className="w-full flex items-center gap-4 px-6 py-4 rounded-[24px] border border-gold/40 bg-black/90 shadow-xl animate-in slide-in-from-top-6 duration-700">
                     <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                      <div className="w-full h-full border-2 border-gold/20 border-t-gold rounded-full animate-spin"></div>
+                      <div className="w-full h-full border-2 border-gold/20 border-t-gold rounded-full animate-spin" aria-hidden="true"></div>
                     </div>
                     <div className="flex-1 flex flex-col">
                       <div className="flex items-center justify-between mb-2 gap-3">
                         <span className="text-[11px] text-gold-light font-semibold tracking-wide truncate">{agentStep}</span>
                         <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-[10px] text-gray-400 font-mono font-bold">{progress}%</span>
                           <button type="button" onClick={handleStop} className="text-[10px] font-semibold tracking-wide text-danger-400 hover:text-danger-300 border border-danger-500/30 rounded-lg px-2 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-danger-400" title="Stop generating" aria-label="Stop generating">Stop</button>
                         </div>
                       </div>
                       <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
                         <div 
-                          className="h-full progress-gold transition-all duration-1000 ease-in-out rounded-full"
-                          style={{ width: `${progress}%` }}
+                          className="h-full w-2/5 progress-gold rounded-full"
                         ></div>
                       </div>
                     </div>
