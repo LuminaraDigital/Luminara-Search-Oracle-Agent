@@ -1439,9 +1439,9 @@ describe('Workers AI fallback (SW0a-11)', () => {
         Object.fromEntries(Object.keys(keys).map(k => [k, undefined])) as Partial<Env>;
 
       beforeEach(async () => {
-        // Hosted NIM, Ollama, OpenRouter and DataForSEO need a plan; give the caller one so each
-        // request gets as far as the upstream call.
-        await kv.put('sub:999', JSON.stringify({ plan: 'starter', expiresAt: Date.now() + 86_400_000 }));
+        // Hosted NIM, Ollama and OpenRouter need a plan; DataForSEO needs Agency apiAccess. Agency
+        // covers all of them, so each request gets as far as the upstream call.
+        await kv.put('sub:999', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 86_400_000 }));
       });
 
       it('names the path with one predicate', () => {

@@ -39,13 +39,11 @@ describe('URL-Swap Route Parser (parseUrlSwapRoute)', () => {
     });
   });
 
-  it('handles /audit with no target specified', () => {
-    const route = parseUrlSwapRoute('/audit');
-    expect(route).toEqual({
-      view: AppView.INSTANT_AUDIT,
-      targetUrl: undefined,
-      focus: 'AEO',
-    });
+  it('does not treat a bare /audit, /geo, /seo, or /aeo as a public page', () => {
+    expect(parseUrlSwapRoute('/audit')).toBeNull();
+    expect(parseUrlSwapRoute('/geo')).toBeNull();
+    expect(parseUrlSwapRoute('/seo')).toBeNull();
+    expect(parseUrlSwapRoute('/aeo')).toBeNull();
   });
 
   it('returns null for non-audit application routes', () => {

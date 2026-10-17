@@ -10,7 +10,13 @@ export const BrandLoader: React.FC<BrandLoaderProps> = ({
   caption = 'Loading',
   compact = false,
 }) => (
-  <div className={`flex flex-col items-center text-center ${compact ? 'gap-3' : 'gap-4'}`}>
+  <div
+    role="status"
+    aria-live="polite"
+    aria-busy="true"
+    aria-label={caption}
+    className={`flex flex-col items-center text-center ${compact ? 'gap-3' : 'gap-4'}`}
+  >
     <div className="relative flex items-center justify-center">
       <div
         className={`absolute rounded-full bg-[radial-gradient(circle,rgba(191,149,63,0.28)_0%,transparent_70%)] blur-md animate-pulse ${

@@ -3,6 +3,7 @@ import { fetchPagespeedInsights, type PagespeedMetrics } from '../../services/te
 import { configService } from '../../services/configService';
 import { apiBase, workerFetchWithAuthRetry } from '../../services/apiClient';
 import { Button } from '../ui/Button';
+import { Skeleton } from '../ui/Skeleton';
 import { PsiEmptyState } from './psiGscEmptyStates';
 
 type Props = {
@@ -64,18 +65,26 @@ export const PageSpeedPanel: React.FC<Props> = ({ url }) => {
   };
 
   return (
-    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
+    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-2" aria-busy={loading}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-bold text-gray-200">PageSpeed / CWV</p>
         <Button variant="secondary" size="xs" loading={loading} onClick={run} className="normal-case tracking-normal">
           {loading ? 'Measuring…' : 'Measure'}
         </Button>
       </div>
-      {!metrics && <PsiEmptyState />}
-      {metrics && metrics.measurementStatus === 'not_measured' && (
+      {loading && (
+        <div role="status" aria-label="Measuring PageSpeed Insights" className="grid grid-cols-2 gap-1.5 pt-1">
+          <Skeleton className="h-4 w-full rounded" />
+          <Skeleton className="h-4 w-full rounded" />
+          <Skeleton className="h-4 w-full rounded" />
+          <Skeleton className="h-4 w-full rounded" />
+        </div>
+      )}
+      {!loading && !metrics && <PsiEmptyState />}
+      {!loading && metrics && metrics.measurementStatus === 'not_measured' && (
         <p className="text-[11px] text-warning-400">{metrics.errorReason || 'Not measured'}</p>
       )}
-      {metrics && metrics.measurementStatus === 'measured' && (
+      {!loading && metrics && metrics.measurementStatus === 'measured' && (
         <dl className="grid grid-cols-2 gap-1 text-[11px] font-mono text-gray-300">
           <dt>Score</dt>
           <dd>{metrics.performanceScore ?? 'n/a'}</dd>
@@ -90,3 +99,4 @@ export const PageSpeedPanel: React.FC<Props> = ({ url }) => {
     </div>
   );
 };
+

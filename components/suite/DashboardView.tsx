@@ -199,15 +199,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 animate-in fade-in duration-700">
-      <div className="mb-8 border-b border-[var(--color-rule)] pb-8">
-        <p className="mkt-eyebrow mb-3">
-          Home
-        </p>
+      <div className="mb-8 mkt-chassis p-6 sm:p-7">
+        <span aria-hidden className="pointer-events-none absolute -top-px -left-px h-2.5 w-2.5 border-t-2 border-l-2 border-[var(--color-accent)]" />
+        <span aria-hidden className="pointer-events-none absolute -top-px -right-px h-2.5 w-2.5 border-t-2 border-r-2 border-[var(--color-accent)]" />
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-4 border-b border-[var(--color-rule)] text-[11px] font-mono">
+          <div className="flex items-center gap-2">
+            <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--color-accent)] shadow-[0_0_8px_var(--gold)]" />
+            <span className="text-[var(--color-accent)] uppercase tracking-[0.14em]">
+              OBSERVATORY COMMAND DECK · LUMINARA SUITE
+            </span>
+          </div>
+          <span className="text-[var(--color-ink-2)]">
+            {homeDomain ? `ACTIVE TARGET // ${homeDomain}` : '4 ENGINES + CRAWL · WEEKLY DECISION LOOP'}
+          </span>
+        </div>
         <h1 className="font-display font-normal text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.08]">
           Will AI mention your brand?
         </h1>
         <p className="text-base text-[var(--color-ink-2)] mt-3 max-w-2xl leading-relaxed">
-          Audit citation health and pick the next optimization move across Google and AI answer engines.
+          Audit citation health across Google, AI Overviews, ChatGPT, and Perplexity, then ship your prioritized weekly fix.
         </p>
       </div>
 
@@ -237,24 +247,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
 
       {/* Guided Onboarding Tracker */}
       {!onboardingComplete && (
-        <div className="mb-10 rounded-lg bg-[var(--color-paper-2)] border border-gold/40 p-6 relative overflow-hidden">
+        <div className="mb-10 mkt-chassis p-6 relative overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-widest text-gold">
+                <span className="text-xs font-mono uppercase tracking-[0.14em] text-[var(--color-accent)]">
                   Guided Onboarding
                 </span>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-gold/15 text-gold-light border border-gold/30">
+                <span className="text-[11px] font-mono px-2 py-0.5 bg-black/60 text-[var(--gold-light)] border border-[var(--color-rule-strong)]">
                   {completedStepsCount} of 3 completed
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-[var(--color-ink-2)] mt-1">
                 Three steps: audit, profile, then save to a project.
               </p>
             </div>
-            <div className="w-full sm:w-36 h-2 bg-white/10 rounded-full overflow-hidden shrink-0">
+            <div className="w-full sm:w-36 h-2 bg-black/60 border border-[var(--color-rule)] overflow-hidden shrink-0">
               <div
-                className="h-full bg-[var(--color-accent)] transition-all duration-500 rounded-full"
+                className="h-full bg-[var(--color-accent)] transition-all duration-500"
                 style={{ width: `${(completedStepsCount / 3) * 100}%` }}
               />
             </div>
@@ -264,28 +274,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
             {onboardingSteps.map((step) => (
               <div
                 key={step.id}
-                className={`p-4 rounded border transition-all flex flex-col justify-between gap-3 ${
+                className={`p-4 border transition-all flex flex-col justify-between gap-3 ${
                   step.done
-                    ? 'border-success-500/30 bg-success-500/[0.04]'
-                    : 'border-white/10 bg-white/[0.02] hover:border-gold/40'
+                    ? 'border-success-500/40 bg-success-500/[0.05]'
+                    : 'border-[var(--color-rule)] bg-black/40 hover:border-[var(--color-accent)]'
                 }`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-white">{step.title}</span>
+                    <span className="text-xs font-semibold text-[var(--color-ink)]">{step.title}</span>
                     {step.done ? (
-                      <span className="text-[11px] font-mono uppercase text-success-400 font-bold">✓ Done</span>
+                      <span className="text-[11px] font-mono uppercase text-success-400 font-semibold">✓ Done</span>
                     ) : (
-                      <span className="text-[11px] font-mono uppercase text-gold font-bold">Next</span>
+                      <span className="text-[11px] font-mono uppercase text-[var(--color-accent)]">Next</span>
                     )}
                   </div>
-                  <p className="text-[11px] text-gray-400 leading-relaxed">{step.desc}</p>
+                  <p className="text-[12px] text-[var(--color-ink-2)] leading-relaxed">{step.desc}</p>
                 </div>
                 {!step.done && (
                   <button
                     type="button"
                     onClick={() => handleStepClick(step.view, step.id)}
-                    className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-black text-[11px] font-semibold uppercase tracking-wider hover:opacity-90 active:scale-95 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                    className="mkt-cta-primary w-full !min-h-9 !py-1.5 !px-3 !text-xs"
                   >
                     {step.cta}
                   </button>
@@ -296,24 +306,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
         </div>
       )}
 
-      <div className="rounded-lg bg-[var(--color-paper-2)] p-4 border border-gold/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-10">
+      <div className="mkt-chassis-subtle p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-10">
         <div className="flex items-center gap-4">
-          <div className={`w-3 h-3 rounded-full ${dna ? 'bg-success-400 shadow-sm shadow-success-500/30' : 'bg-gold animate-pulse'}`} />
+          <div className={`w-2.5 h-2.5 rounded-full ${dna ? 'bg-success-400 shadow-sm shadow-success-500/30' : 'bg-[var(--color-accent)] animate-pulse'}`} />
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Business profile</div>
-            <div className="text-sm font-bold text-white">{dna ? dna.name : 'Not set - full audits stay locked to scout mode'}</div>
+            <div className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--color-accent)]">Business profile</div>
+            <div className="text-sm font-medium text-[var(--color-ink)] mt-0.5">{dna ? dna.name : 'Not set - full audits stay locked to scout mode'}</div>
           </div>
         </div>
         <button
           type="button"
           onClick={() => onNavigate(AppView.BUSINESS_DNA)}
-          className="px-4 py-2 rounded-lg bg-gold/10 border border-gold/30 text-[11px] font-bold uppercase tracking-wider text-gold-light hover:bg-gold/20 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+          className="mkt-cta-secondary !min-h-9 !py-1.5 !px-4 !text-xs font-mono uppercase tracking-wider"
         >
           {dna ? 'View profile' : 'Set up profile'}
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12">
         {doors.map((card) => {
           const Icon = card.icon;
           return (
@@ -321,18 +331,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
               key={card.id}
               type="button"
               onClick={() => onNavigate(card.id)}
-              className="text-left rounded-lg bg-[var(--color-paper-2)] border border-white/10 hover:border-gold/50 p-6 transition-all duration-300 group focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="text-left mkt-chassis p-6 transition-colors duration-200 group hover:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none"
             >
               <div className="flex items-start justify-between mb-4">
-                <div className="p-3 rounded bg-gold/10 border border-gold/30 text-gold-light group-hover:scale-105 transition-transform">
+                <div className="p-2.5 bg-black/60 border border-[var(--color-rule-strong)] text-[var(--gold-light)] group-hover:border-[var(--color-accent)] transition-colors">
                   <Icon className="w-5 h-5" />
                 </div>
-                <span className="px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-mono uppercase tracking-widest text-gray-400">
+                <span className="px-2.5 py-0.5 bg-black/50 border border-[var(--color-rule)] text-[11px] font-mono uppercase tracking-widest text-[var(--color-accent)]">
                   {card.badge}
                 </span>
               </div>
-              <h2 className="text-lg font-bold text-white mb-2 group-hover:text-gold-light transition-colors">{card.title}</h2>
-              <p className="text-sm text-gray-400 leading-relaxed">{card.desc}</p>
+              <h2 className="text-lg font-medium text-[var(--color-ink)] mb-2 group-hover:text-[var(--gold-light)] transition-colors">{card.title}</h2>
+              <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">{card.desc}</p>
             </button>
           );
         })}
@@ -340,8 +350,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
 
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gold">Support</span>
-          <div className="flex-1 h-[1px] bg-white/5" />
+          <span className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--color-accent)]">Support & Workspace</span>
+          <div className="flex-1 h-[1px] bg-[var(--color-rule)]" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {secondary.map((card) => {
@@ -351,14 +361,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
                 key={card.id}
                 type="button"
                 onClick={() => onNavigate(card.id)}
-                className="text-left rounded-lg bg-[var(--color-paper-2)] border border-white/10 hover:border-gold/40 p-5 transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                className="text-left mkt-chassis-subtle p-5 hover:border-[var(--color-accent)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none"
               >
                 <div className="flex items-center gap-3 mb-2">
-                  <Icon className="w-4 h-4 text-gold-light" />
-                  <span className="text-sm font-bold text-white">{card.title}</span>
-                  <span className="ml-auto text-[11px] uppercase tracking-widest text-gray-400">{card.badge}</span>
+                  <Icon className="w-4 h-4 text-[var(--gold-light)]" />
+                  <span className="text-sm font-medium text-[var(--color-ink)]">{card.title}</span>
+                  <span className="ml-auto text-[11px] font-mono uppercase tracking-widest text-[var(--color-ink-2)]">{card.badge}</span>
                 </div>
-                <p className="text-sm text-gray-400 leading-relaxed">{card.desc}</p>
+                <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">{card.desc}</p>
               </button>
             );
           })}
@@ -366,11 +376,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       </div>
 
       {advancedUi && (
-        <div className="space-y-4 pt-6 border-t border-gold/20">
+        <div className="space-y-4 pt-6 mt-6 border-t border-[var(--color-rule)]">
           <div className="flex items-center gap-3">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-warning-400">Labs & Advanced Intelligence</span>
-            <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-warning-500/20 text-warning-300 font-bold">DEV MODE</span>
-            <div className="flex-1 h-[1px] bg-white/5" />
+            <span className="text-[11px] font-mono uppercase tracking-[0.14em] text-warning-400">Labs & Advanced Intelligence</span>
+            <span className="text-[11px] font-mono px-1.5 py-0.5 bg-warning-500/20 text-warning-300 font-semibold">DEV MODE</span>
+            <div className="flex-1 h-[1px] bg-[var(--color-rule)]" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {labsDoors.map((card) => {
@@ -380,18 +390,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
                   key={card.id}
                   type="button"
                   onClick={() => onNavigate(card.id)}
-                  className="text-left rounded-lg bg-[var(--color-paper-2)] border border-white/10 hover:border-gold/50 p-4 transition-all group hover:scale-[1.01] focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                  className="text-left mkt-chassis-subtle p-4 hover:border-[var(--color-accent)] transition-all group focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none"
                 >
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="p-2 rounded bg-gold/10 text-gold-light group-hover:bg-gold/20 transition-colors">
+                    <div className="p-2 bg-black/50 border border-[var(--color-rule)] text-[var(--gold-light)]">
                       <Icon className="w-4 h-4" />
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-warning-500/10 border border-warning-500/30 text-[11px] font-mono uppercase tracking-wider text-warning-300 font-bold">
+                    <span className="px-2 py-0.5 bg-warning-500/10 border border-warning-500/30 text-[11px] font-mono uppercase tracking-wider text-warning-300">
                       {card.badge}
                     </span>
                   </div>
-                  <h3 className="text-sm font-bold text-white mb-1 group-hover:text-gold-light transition-colors">{card.title}</h3>
-                  <p className="text-[11px] text-gray-400 leading-relaxed">{card.desc}</p>
+                  <h3 className="text-sm font-medium text-[var(--color-ink)] mb-1 group-hover:text-[var(--gold-light)] transition-colors">{card.title}</h3>
+                  <p className="text-[12px] text-[var(--color-ink-2)] leading-relaxed">{card.desc}</p>
                 </button>
               );
             })}

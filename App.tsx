@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { OracleMode, Message, AppView, ReportFocus, BusinessDNA, LAB_VIEWS } from './types';
+import { OracleMode, Message, AppView, BusinessDNA, LAB_VIEWS } from './types';
+import { setAnswerDepth } from './services/audit/answerDepth';
 import { geminiService, toChatHistory } from './services/geminiService';
 import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
 import { OracleLiveService, LiveVoiceError } from './services/liveService';
@@ -28,7 +29,6 @@ import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
-import { hasSeenIntroThisSession } from './services/intro/appIntro';
 import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
@@ -61,7 +61,6 @@ const BusinessDNAView = lazyWithReload(() => import('./components/suite/Business
 const BrandMemoryView = lazyWithReload(() => import('./components/suite/BrandMemoryView').then(m => ({ default: m.BrandMemoryView })));
 const DashboardView = lazyWithReload(() => import('./components/suite/DashboardView').then(m => ({ default: m.DashboardView })));
 const IdeaScoutView = lazyWithReload(() => import('./components/suite/IdeaScoutView').then(m => ({ default: m.IdeaScoutView })));
-const MerchantLaunchpadView = lazyWithReload(() => import('./components/launchpad/MerchantLaunchpadView').then(m => ({ default: m.MerchantLaunchpadView })));
 const TrustCenterView = lazyWithReload(() => import('./components/trust/TrustCenterView').then(m => ({ default: m.TrustCenterView })));
 const VerifyReceiptView = lazyWithReload(() => import('./components/trust/VerifyReceiptView').then(m => ({ default: m.VerifyReceiptView })));
 const StressTestView = lazyWithReload(() => import('./components/suite/StressTestView').then(m => ({ default: m.StressTestView })));
@@ -202,7 +201,8 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>(() => {
     try {
       const saved = sessionStorage.getItem(CHAT_STORAGE_KEY);
-      return saved ? (JSON.parse(saved) as Message[]) : [];
+      const parsed: unknown = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? (parsed as Message[]) : [];
     } catch {
       return [];
     }
@@ -346,11 +346,11 @@ const App: React.FC = () => {
   const [mode, setMode] = useState<OracleMode>(OracleMode.FLASH);
   const [isThinking, setIsThinking] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
+  const [_isSearching, setIsSearching] = useState(false);
   const [agentStep, setAgentStep] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
+  const [_progress, setProgress] = useState(0);
   const [activeTool, setActiveTool] = useState<{ name: string; stage: string; output?: string } | null>(null);
-  const [headerSearch, setHeaderSearch] = useState('');
+  const [_headerSearch, setHeaderSearch] = useState('');
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const { requestConfirm, confirmModal } = useConfirm();
   const [showSuiteMenu, setShowSuiteMenu] = useState(false);
@@ -415,14 +415,17 @@ const App: React.FC = () => {
     void claimStoredReferral();
   }, [appAuth.authenticated, appAuth.loading]);
 
+  // Dismiss login wall modal immediately when authenticated.
+  useEffect(() => {
+    if (!appAuth.authenticated || appAuth.loading || !loginWallMode) return;
+    setLoginWallMode(null);
+    // Signing in from the Probe or from inside Instant Audit returns to the audit, not Home.
+    setView(viewAfterSignIn(auditHandoff?.url, view));
+  }, [appAuth.authenticated, appAuth.loading, loginWallMode, auditHandoff?.url, view]);
+
   // After sign-in, restore DNA / audits / keys / chat from the linked account workspace.
   useEffect(() => {
     if (!appAuth.authenticated || appAuth.loading) return;
-    if (loginWallMode) {
-      setLoginWallMode(null);
-      // Signing in from the Probe or from inside Instant Audit returns to the audit, not Home.
-      setView(viewAfterSignIn(auditHandoff?.url, view));
-    }
     let cancelled = false;
     void (async () => {
       const result = await pullWorkspaceOnLogin();
@@ -435,7 +438,8 @@ const App: React.FC = () => {
       }
       try {
         const chat = sessionStorage.getItem(CHAT_STORAGE_KEY);
-        if (chat) setMessages(JSON.parse(chat) as Message[]);
+        const parsed: unknown = chat ? JSON.parse(chat) : null;
+        if (chat) setMessages(Array.isArray(parsed) ? (parsed as Message[]) : []);
       } catch {
         /* ignore */
       }
@@ -507,8 +511,8 @@ const App: React.FC = () => {
       { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
     ],
     primaryCta: appAuth.authenticated
-      ? { label: 'Open Instant Audit', onClick: () => enterInstantAudit() }
-      : { label: 'Create free account', onClick: () => openLoginWall('signup') },
+      ? { label: 'New audit', onClick: () => enterInstantAudit() }
+      : { label: 'Start free', onClick: () => openLoginWall('signup') },
     secondaryCta: appAuth.authenticated
       ? { label: 'Dashboard', onClick: () => enterApp(AppView.DASHBOARD) }
       : { label: 'Sign in', onClick: () => openLoginWall('signin') },
@@ -546,7 +550,7 @@ const App: React.FC = () => {
     try {
       const saved = localStorage.getItem('luminara_business_dna');
       return saved ? JSON.parse(saved) : null;
-    } catch (e) {
+    } catch (_e) {
       return null;
     }
   });
@@ -779,7 +783,7 @@ const App: React.FC = () => {
         }
       }
 
-      if (!usedServerOracle) {
+      if (!usedServerOracle && !controller.signal.aborted) {
         for await (const chunk of geminiService.streamQuery(content, mode, dna, {
           history,
           skipSearch: opts.skipSearch,
@@ -936,6 +940,7 @@ const App: React.FC = () => {
           {introOverlay}
           <AuthRequiredScreen
             auth={appAuth}
+            featureView={view}
             onBackToMarketing={skipMarketing ? undefined : () => setView(AppView.LANDING)}
           />
         </>
@@ -987,13 +992,10 @@ const App: React.FC = () => {
         {introOverlay}
         <LandingPage
           onNavigateAudit={(handoff) => enterInstantAudit(handoff)}
-          onNavigateSuite={() => enterApp(AppView.DASHBOARD)}
-          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
           onNavigatePricing={() => setView(AppView.PRICING)}
           onNavigateMethodology={() => setView(AppView.METHODOLOGY)}
           onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
           isAuthenticated={appAuth.authenticated}
-          onSignInClick={(handoff) => openLoginWall('signin', handoff)}
           onSignUpClick={(handoff) => openLoginWall('signup', handoff)}
         />
         {marketingOverlays}
@@ -1255,7 +1257,7 @@ const App: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Zap className="w-3.5 h-3.5 text-gold-light" />
                     <span>Idea Scout</span>
@@ -1287,7 +1289,7 @@ const App: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
                     <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
@@ -1487,12 +1489,11 @@ const App: React.FC = () => {
             <ICONS.Settings className="w-4 h-4" />
           </Button>
 
-          {/* Mode Selector - Quick / Thorough */}
           <div className="hidden sm:flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
             <Button
               variant="ghost"
               size="none"
-              onClick={() => setMode(OracleMode.FLASH)}
+              onClick={() => { setMode(OracleMode.FLASH); setAnswerDepth('quick'); }}
               aria-pressed={mode === OracleMode.FLASH}
               className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.FLASH ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
@@ -1503,7 +1504,7 @@ const App: React.FC = () => {
             <Button
               variant="ghost"
               size="none"
-              onClick={() => setMode(OracleMode.DEEP_THINK)}
+              onClick={() => { setMode(OracleMode.DEEP_THINK); setAnswerDepth('thorough'); }}
               aria-pressed={mode === OracleMode.DEEP_THINK}
               className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.DEEP_THINK ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
@@ -1690,21 +1691,9 @@ const App: React.FC = () => {
           <NotebookView dna={dna} />
         )}
 
-        {/* VIEW: Oceania SMB Web3 Launchpad & Loyalty */}
-        {view === AppView.LAUNCHPAD && (
-          <MerchantLaunchpadView
-            onRunAudit={(host) => {
-              draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, host);
-              setAuditHandoff(null);
-              setTelegramAuditUrl(host);
-              setView(AppView.INSTANT_AUDIT);
-            }}
-          />
-        )}
-
         {/* VIEW: Trust (domain verification + signed receipts) */}
         {view === AppView.TRUST_CENTER && (
-          <TrustCenterView initialDomain={draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL)} />
+          <TrustCenterView />
         )}
 
         {/* VIEW: Ecosystem & Playbook Hub */}
@@ -1752,23 +1741,26 @@ const App: React.FC = () => {
               <MessageList messages={messages} isThinking={isThinking} activeTool={activeTool} onSimplify={handleSimplify} />
               
               {agentStep && (
-                <div className="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-40 w-full max-w-lg px-6">
+                <div
+                  role="status"
+                  aria-live="polite"
+                  aria-busy="true"
+                  className="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-40 w-full max-w-lg px-6"
+                >
                   <div className="w-full flex items-center gap-4 px-6 py-4 rounded-[24px] border border-gold/40 bg-black/90 shadow-xl animate-in slide-in-from-top-6 duration-700">
                     <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                      <div className="w-full h-full border-2 border-gold/20 border-t-gold rounded-full animate-spin"></div>
+                      <div className="w-full h-full border-2 border-gold/20 border-t-gold rounded-full animate-spin" aria-hidden="true"></div>
                     </div>
                     <div className="flex-1 flex flex-col">
                       <div className="flex items-center justify-between mb-2 gap-3">
                         <span className="text-[11px] text-gold-light font-semibold tracking-wide truncate">{agentStep}</span>
                         <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-[10px] text-gray-400 font-mono font-bold">{progress}%</span>
                           <button type="button" onClick={handleStop} className="text-[10px] font-semibold tracking-wide text-danger-400 hover:text-danger-300 border border-danger-500/30 rounded-lg px-2 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-danger-400" title="Stop generating" aria-label="Stop generating">Stop</button>
                         </div>
                       </div>
                       <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
                         <div 
-                          className="h-full progress-gold transition-all duration-1000 ease-in-out rounded-full"
-                          style={{ width: `${progress}%` }}
+                          className="h-full w-2/5 progress-gold rounded-full"
                         ></div>
                       </div>
                     </div>

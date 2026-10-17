@@ -68,11 +68,8 @@ export const SAMPLE_FIXTURE: DemoFixture = {
   ],
 };
 
-export const ANALYZE_STAGES = [
-  'Fetching page evidence…',
-  'Checking answer engines…',
-  'Ranking owner-first fixes…',
-] as const;
+/** What the anonymous check really does: it reads crawl files. It never asks an answer engine. */
+export const ANALYZE_STAGES = ['Reading robots.txt…', 'Reading llms.txt and ai.txt…'] as const;
 
 export function normalizeDemoUrl(raw: string): { ok: true; host: string } | { ok: false; error: string } {
   const trimmed = raw.trim().toLowerCase();

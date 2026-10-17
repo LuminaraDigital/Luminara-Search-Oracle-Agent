@@ -4,7 +4,6 @@ export type { StreamChunk };
 import { compactConversation } from "./oracle/contextCompactorService";
 import { SYSTEM_INSTRUCTIONS } from "../constants";
 import { vfsRetrievalService } from "./vfs/vfsRetrievalService";
-import { vfsMemoryService } from "./vfs/vfsMemoryService";
 import { configService } from "./configService";
 import { aiProviderService, safeJsonParse } from "./aiProviderService";
 import { tavilyService } from "./search/tavilyService";
@@ -85,6 +84,7 @@ import { competitorWatchlistService } from './competitors/competitorWatchlistSer
 import { WIKI_LINK_PROMPT_HINT } from './audit/wikiLinkService';
 import { postAuditReflectionService } from './audit/postAuditReflectionService';
 import { dreamingClient } from './dreaming/dreamingClient';
+import { synthesizeRlmAuditEvidence, type RLMTrajectoryMetadata } from './rlm';
 
 export interface AuditReportResult {
   text: string;
@@ -105,6 +105,7 @@ export interface AuditReportResult {
   shareOfVoice?: ShareOfVoiceSummary;
   sourceGraph?: SourceCitationGraph;
   enterpriseTrust?: EnterpriseTrustPack;
+  rlmTrajectory?: RLMTrajectoryMetadata;
 }
 
 import { shouldSearch, toSearchQuery } from './search/searchIntent';
@@ -673,10 +674,15 @@ Respect these consolidated business memories and historical recommendation outco
     // Crew pages with observable text or schema skip this second pack.
     let scrapedContent = '';
     let scrapedText = '';
+    let rlmCorpus: Record<string, string> = crewEvidence?.rlmCorpus ? { ...crewEvidence.rlmCorpus } : {};
+    let rlmTrajectory: RLMTrajectoryMetadata | undefined;
     const reusedPages = formatCrewPagesForReport(websiteUrl, crewEvidence?.scrapedPages);
     if (reusedPages) {
       scrapedContent = `\n${reusedPages.formattedEvidence}\n`;
       scrapedText = reusedPages.combinedText;
+      if (Object.keys(rlmCorpus).length === 0) {
+        rlmCorpus = reusedPages.rlmCorpus;
+      }
     } else {
       try {
         const pack = await siteEvidencePackService.buildPack(websiteUrl, {
@@ -685,12 +691,14 @@ Respect these consolidated business memories and historical recommendation outco
         if (pack.success && pack.formattedEvidence) {
           scrapedContent = `\n${pack.formattedEvidence}\n`;
           scrapedText = pack.combinedText || '';
+          rlmCorpus = pack.rlmCorpus || {};
         } else {
           // Hard fallback: single-page scrape if pack failed entirely.
           const scrapeRes = await unifiedScraperService.scrapeAndDistill(websiteUrl, { maxChars: 8000 });
           if (scrapeRes.success && scrapeRes.formattedEvidence) {
             scrapedContent = `\n${scrapeRes.formattedEvidence}\n`;
             scrapedText = scrapeRes.distilled?.distilledText || '';
+            rlmCorpus = { [websiteUrl]: scrapeRes.formattedEvidence };
           }
         }
       } catch (e) {
@@ -816,6 +824,28 @@ Respect these consolidated business memories and historical recommendation outco
       preliminaryTrustText = buildPreliminaryTrustPromptSection(prelim);
     } catch (e) {
       console.warn('[Audit] Preliminary trust pack fallback', e);
+    }
+
+    if (Object.keys(rlmCorpus).length > 1 || scrapedContent.length > 4000) {
+      const corpusKeys = Object.keys(rlmCorpus);
+      const effectiveCorpus =
+        corpusKeys.length === 0 && scrapedContent.trim().length > 0
+          ? { [websiteUrl]: scrapedContent.trim() }
+          : corpusKeys.length === 1 &&
+              scrapedContent.trim().length > (rlmCorpus[corpusKeys[0]]?.length || 0)
+            ? { [corpusKeys[0]]: scrapedContent.trim() }
+            : rlmCorpus;
+      const rlmOut = await synthesizeRlmAuditEvidence({
+        rlmCorpus: effectiveCorpus,
+        websiteUrl,
+        focus: mainTopic,
+      });
+      if (rlmOut) {
+        rlmTrajectory = rlmOut.trajectory;
+        if (rlmOut.synthesisText) {
+          scrapedContent = `${scrapedContent.slice(0, 3200)}\n\n[RLM MULTI-PAGE SYNTHESIS]\n${rlmOut.synthesisText.slice(0, 1200)}`;
+        }
+      }
     }
 
     if (scrapedContent.length > 4000) {
@@ -1068,26 +1098,23 @@ Strict Formatting Guidelines:
         shareOfVoice,
         sourceGraph,
         enterpriseTrust,
+        rlmTrajectory,
       };
     };
 
     let lastError: unknown = null;
+    let attemptedNativeFailover = false;
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama with auto-failover
     try {
       const best = await aiProviderService.getBestAvailableProvider();
       if (best) {
+        attemptedNativeFailover = true;
         const result = await aiProviderService.generateWithFailover(prompt, {
           systemPrompt: ORACLE_SYSTEM_PROMPT,
           temperature: 0.3,
         });
-        const text = result.text;
-        try {
-          vfsMemoryService.ingestAuditAsResource(gateReportText(text), websiteUrl);
-        } catch (e) {
-          console.warn('VFS audit ingestion fallback', e);
-        }
-        return buildReportResult(text);
+        return buildReportResult(result.text);
       }
     } catch (e) {
       lastError = e;
@@ -1117,12 +1144,6 @@ Strict Formatting Guidelines:
           });
         }
 
-        try {
-          vfsMemoryService.ingestAuditAsResource(gateReportText(text), websiteUrl);
-        } catch (e) {
-          console.warn('VFS audit ingestion fallback', e);
-        }
-
         return buildReportResult(text);
       } catch (error) {
         if (!lastError) lastError = error;
@@ -1130,22 +1151,19 @@ Strict Formatting Guidelines:
       }
     }
 
-    // 3. Resilient Multi-Provider Fallback: Groq / NIM / OpenRouter via aiProviderService
-    try {
-      const fallbackResult = await aiProviderService.generateWithFailover(prompt, {
-        maxTokens: 4000,
-        temperature: 0.2,
-      });
-      if (fallbackResult && fallbackResult.text && fallbackResult.text.trim()) {
-        try {
-          vfsMemoryService.ingestAuditAsResource(gateReportText(fallbackResult.text), websiteUrl);
-        } catch (e) {
-          console.warn('VFS audit ingestion fallback', e);
+    // 3. Resilient Multi-Provider Fallback (only if step 1 did not already run generateWithFailover)
+    if (!attemptedNativeFailover) {
+      try {
+        const fallbackResult = await aiProviderService.generateWithFailover(prompt, {
+          maxTokens: 4000,
+          temperature: 0.2,
+        });
+        if (fallbackResult && fallbackResult.text && fallbackResult.text.trim()) {
+          return buildReportResult(fallbackResult.text);
         }
-        return buildReportResult(fallbackResult.text);
+      } catch (fallbackError) {
+        console.warn('Audit generation aiProviderService fallback error:', fallbackError);
       }
-    } catch (fallbackError) {
-      console.warn('Audit generation aiProviderService fallback error:', fallbackError);
     }
 
     const detail = toUserFacingText(lastError, '');
@@ -1204,11 +1222,11 @@ Strict Formatting Guidelines:
         const parsed = safeJsonParse<any>(result.text, {});
         return {
           name: parsed.name || input,
-          mission: parsed.mission || 'Strategic market leadership.',
-          usp: parsed.usp || 'High-performance proprietary technology.',
-          targetAudience: parsed.targetAudience || 'Enterprise and growth organizations.',
-          competitors: Array.isArray(parsed.competitors) && parsed.competitors.length ? parsed.competitors : [],
-          perceivedGaps: Array.isArray(parsed.perceivedGaps) && parsed.perceivedGaps.length ? parsed.perceivedGaps : ['Brand awareness', 'AEO citation coverage'],
+          mission: typeof parsed.mission === 'string' ? parsed.mission : '',
+          usp: typeof parsed.usp === 'string' ? parsed.usp : '',
+          targetAudience: typeof parsed.targetAudience === 'string' ? parsed.targetAudience : '',
+          competitors: Array.isArray(parsed.competitors) ? parsed.competitors : [],
+          perceivedGaps: Array.isArray(parsed.perceivedGaps) ? parsed.perceivedGaps : [],
           rawContext: parsed.rawContext || result.text
         };
       }
@@ -1251,7 +1269,7 @@ Strict Formatting Guidelines:
       }
     }
 
-    // 3. Resilient heuristic profile synthesis so founders are never blocked
+    // 3. No model answered: return the name only so the founder can fill in the rest (never invent claims).
     const cleanBrand = input
       .replace(/^https?:\/\//i, '')
       .replace(/^www\./i, '')
@@ -1260,12 +1278,12 @@ Strict Formatting Guidelines:
     const capitalized = cleanBrand.charAt(0).toUpperCase() + cleanBrand.slice(1);
     return {
       name: capitalized,
-      mission: `Deliver premier solutions and distinct market value for ${capitalized} customers.`,
-      usp: 'Domain expertise, client dedication, and high-performance delivery.',
-      targetAudience: 'Prospective clients, business partners, and industry customers.',
+      mission: '',
+      usp: '',
+      targetAudience: '',
       competitors: [],
-      perceivedGaps: ['Search and AI visibility', 'Entity authority', 'AEO direct answer coverage'],
-      rawContext: `Strategic Business Profile for ${capitalized}. Created from domain scan; review and customize your USP and competitors above.`
+      perceivedGaps: [],
+      rawContext: `Profile for ${capitalized} could not be extracted automatically. Add your mission, USP, audience and competitors.`
     };
   }
 

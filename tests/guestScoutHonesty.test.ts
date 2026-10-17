@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPanel';
 import { validateAuditTargetUrl } from '../services/audit/auditTargetUrl';
-import { buildGuestScoutSummary, liveDataUnavailableCopy, plainScoutVerdict, shouldGenerateAuditReport } from '../services/audit/guestScoutSummary';
+import { getAnswerDepth, setAnswerDepth } from '../services/audit/answerDepth';
+import { buildGuestScoutSummary, emptyUnmeasuredVerdict, liveDataUnavailableCopy, plainScoutVerdict, shouldGenerateAuditReport } from '../services/audit/guestScoutSummary';
 import { executiveTranslatorAgent } from '../services/agentCore/agents/executiveTranslatorAgent';
 import type { AuditFinding } from '../services/agentCore/types';
 import { renderMarkdown } from '../utils/markdown';
@@ -581,5 +582,59 @@ describe('LLM crawler readiness', () => {
     const audit = await playbookAuditorAgent.execute('AEO', [], [], null, () => {});
     expect(audit.healthScore).toBeNull();
     expect(audit.llmCrawler.checks.every((check) => check.status === 'not_measured')).toBe(true);
+  });
+
+  it('does not repeat the Quick sentence for SEO, GEO, or Thorough when nothing was measured', () => {
+    const base = {
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured' as const,
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 0,
+      serpCount: 0,
+      findings: [],
+      hostedRail: 'byok_or_signin' as const,
+    };
+    const quick = buildGuestScoutSummary(base).verdict;
+    expect(quick).toBe(emptyUnmeasuredVerdict('example.com'));
+    const seo = buildGuestScoutSummary({ ...base, focus: 'SEO' }).verdict;
+    const geo = buildGuestScoutSummary({ ...base, focus: 'GEO' }).verdict;
+    const thorough = buildGuestScoutSummary({ ...base, depth: 'thorough' }).verdict;
+    const seoThorough = buildGuestScoutSummary({ ...base, focus: 'SEO', depth: 'thorough' }).verdict;
+    for (const verdict of [seo, geo, thorough, seoThorough]) {
+      expect(verdict).not.toBe(quick);
+      expect(verdict.toLowerCase()).toContain('not measured');
+      expect(verdict).toContain('not the Quick result');
+    }
+    expect(new Set([quick, seo, geo, thorough, seoThorough]).size).toBe(5);
+  });
+
+  it('hides Share and Copy when the run measured nothing', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 0,
+      serpCount: 0,
+      findings: [],
+      hostedRail: 'byok_or_signin',
+    });
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, {
+      summary,
+      onShare: () => {},
+      onCopy: () => {},
+    }));
+    expect(html).not.toContain('Share teaser');
+    expect(html).not.toContain('Copy link');
+  });
+
+  it('remembers Quick and Thorough for the scout summary', () => {
+    setAnswerDepth('thorough');
+    expect(getAnswerDepth()).toBe('thorough');
+    setAnswerDepth('quick');
+    expect(getAnswerDepth()).toBe('quick');
   });
 });

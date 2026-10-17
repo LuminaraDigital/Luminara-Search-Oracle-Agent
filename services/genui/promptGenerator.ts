@@ -43,7 +43,7 @@ export const GENUI_COMPONENTS_SPEC: Record<string, GenUISchemaDef> = {
   ROICalculator: {
     name: 'ROICalculator',
     signature: 'ROICalculator()',
-    description: 'Interactive organic search & AEO ROI runway calculator.',
+    description: 'Illustrative ROI calculator from user-entered inputs (not measured data).',
   },
   ShipActionGate: {
     name: 'ShipActionGate',

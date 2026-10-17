@@ -7,15 +7,14 @@ import { executeJettonPayment } from '../../services/ton/jettonService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import {
   effectiveTab,
-  formatEngineList,
-  isFreeEngineConfigured,
   isJettonCheckoutAvailable,
-  paidEngineLabels,
   resolvePaymentOptions,
   TELEGRAM_MINI_APP_URL,
   type PaymentRail,
 } from './paymentOptions';
+import { BYOK_CHECKOUT_LINE, PLAN_CARD_BADGE, planBullets, planTitle, pricingTiers } from './planCopy';
 import { ICONS } from '../../constants';
+import '../marketing/space.css';
 import { toUserFacingText } from '../../utils/userFacingText';
 
 interface Props {
@@ -33,9 +32,6 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   const paymentOptions = resolvePaymentOptions({ inTelegram: inTg, health });
   const [activeTab, setActiveTab] = useState<PaymentRail>(paymentOptions.defaultTab);
   const tab = effectiveTab(activeTab, paymentOptions);
-  const engineLabels = paidEngineLabels(health);
-  const engineList = formatEngineList(engineLabels);
-  const groqLive = isFreeEngineConfigured(health);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
@@ -158,15 +154,20 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         productTelemetry.track('payment_completed', { planId, method: 'stars', status: 'confirmed' });
         setIsSuccess(true);
         setStatusMessage('Payment received! Activating your subscription…');
-        for (let i = 0; i < 6; i++) {
+        let activated = false;
+        for (let i = 0; i < 6 && !activated; i++) {
           await new Promise(r => setTimeout(r, 1200));
           const q = await fetchQuotaStatus();
-          if (q && (q.isUnlimited || q.plan !== 'free')) break;
+          activated = Boolean(q && (q.isUnlimited || q.plan !== 'free'));
         }
-        setStatusMessage('Subscription active! Enjoy your upgraded access.');
-        setTimeout(() => {
-          handleClose();
-        }, 1500);
+        if (activated) {
+          setStatusMessage('Subscription active! Enjoy your upgraded access.');
+          setTimeout(() => {
+            handleClose();
+          }, 1500);
+        } else {
+          setStatusMessage('Payment received. Activation pending, refresh in a minute.');
+        }
       } else if (status === 'cancelled') {
         setStatusMessage('Checkout was cancelled.');
       } else if (status === 'failed') {
@@ -370,15 +371,15 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold tracking-wide text-gold">Plans</span>
+                <span className="text-[11px] font-semibold tracking-wide text-gold">Plans</span>
                 {paymentOptions.tonAvailable && (
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold tracking-wide bg-gold/15 text-gold-light border border-gold/30">
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-gold/15 text-gold-light border border-gold/30">
                     Stars + TON
                   </span>
                 )}
               </div>
-              <h3 id="paywall-modal-title" className="text-xl md:text-2xl font-bold tracking-tight text-white mt-0.5">
-                Unlock Unlimited AI Intelligence
+              <h3 id="paywall-modal-title" className="lx-display mt-1 text-3xl md:text-4xl">
+                Unlock unlimited AI intelligence
               </h3>
             </div>
           </div>
@@ -415,7 +416,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             <button
               type="button"
               onClick={() => setShowLicenseInput(!showLicenseInput)}
-              className="text-[10px] uppercase font-mono px-3 py-1 rounded-lg bg-gold/15 text-gold border border-gold/40 hover:bg-gold/25 transition-all font-bold focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="lx-btn lx-btn-ghost !min-h-8 !px-3.5 !py-1 text-xs"
             >
               {showLicenseInput ? 'Close' : 'Enter Key'}
             </button>
@@ -423,7 +424,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           {showLicenseInput && (
             <div className="mt-3 pt-3 border-t border-white/10 space-y-2.5 animate-fade-in">
               <p className="text-[11px] text-gray-400">
-                Enter your 3-day Growth pass, referral key, or enterprise license code (e.g. <span className="font-mono text-gold">LUM-GROWTH-3DAY</span>).
+                Enter a license key if you have one.
               </p>
               <div className="flex gap-2">
                 <label htmlFor="paywall-license-key-input" className="sr-only">License key</label>
@@ -432,14 +433,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                   type="text"
                   value={licenseKeyInput}
                   onChange={(e) => setLicenseKeyInput(e.target.value.toUpperCase())}
-                  placeholder="LUM-GROWTH-3DAY..."
+                  placeholder="License key"
                   className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/20 focus:border-gold focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none text-xs font-mono text-white placeholder-gray-500"
                 />
                 <button
                   type="button"
                   onClick={handleActivateLicense}
                   disabled={activatingLicense || !licenseKeyInput.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-wider hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 transition-all shadow-md focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                  className="lx-btn lx-btn-gold text-sm disabled:opacity-50"
                 >
                   {activatingLicense ? 'Activating…' : 'Activate'}
                 </button>
@@ -461,7 +462,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               }`}
             >
               <span>Card</span>
-              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/20 text-black font-semibold">
                 30 days
               </span>
             </button>
@@ -477,7 +478,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           >
             <span>Stars</span>
             {inTg && (
-              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/20 text-black font-semibold">
                 1-Click
               </span>
             )}
@@ -497,11 +498,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             >
               <span>TON</span>
               {!paymentOptions.tonAvailable ? (
-                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-black">
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-gray-400 font-semibold">
                   Soon
                 </span>
               ) : wallet && (
-                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-black/20 text-black font-black">
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/20 text-black font-semibold">
                   Connected
                 </span>
               )}
@@ -548,127 +549,47 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </div>
         )}
 
-        {/* Plans Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-          {/* Starter Plan */}
-          <div className="p-5 rounded-2xl border border-gold/40 bg-gold/5 flex flex-col justify-between space-y-4 hover:border-gold transition-all relative">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-gold-light">Starter Plan</span>
-                <span className="text-xs font-mono text-gold font-bold">
-                  {planPriceLabel('starter')}
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                Full AI visibility audits for up to 2 domains with monthly re-checks and plain-English action briefs.
-              </p>
-              <ul className="mt-3 space-y-1.5 text-[11px] text-gray-300">
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> <strong>{engineLabels.length ? `Unlocks ${engineList}` : engineList}</strong>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Unlimited AI Search Queries{groqLive ? ' (Groq + Premium)' : ''}
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 2 Monitored Domains
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> PDF &amp; Google Docs Exports
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Web audits only (no MCP, no share links)
-                </li>
-              </ul>
-            </div>
-            <button
-              type="button"
-              onClick={() => handlePlanCheckout('starter')}
-              disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-gold text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+          {pricingTiers.map((tier) => (
+            <div
+              key={tier.id}
+              className={`p-5 rounded-2xl border flex flex-col justify-between space-y-4 hover:border-gold transition-all relative ${
+                tier.highlight
+                  ? 'border-white/15 bg-white/[0.02]'
+                  : tier.id === 'agency'
+                    ? 'border-gold/30 bg-gradient-to-br from-gold/10 to-transparent sm:col-span-2'
+                    : 'border-gold/40 bg-gold/5'
+              }`}
             >
-              {planButtonLabel('starter')}
-            </button>
-          </div>
-
-          {/* Growth Plan */}
-          <div className="p-5 rounded-2xl border border-white/15 bg-white/[0.02] flex flex-col justify-between space-y-4 hover:border-gold/60 transition-all relative">
-            <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-semibold text-[9px] tracking-wide">
-              Most popular
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-white">Growth Plan</span>
-                <span className="text-xs font-mono text-gold font-bold">
-                  {planPriceLabel('growth')}
-                </span>
+              {tier.highlight && (
+                <div className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded-full bg-gold text-black font-semibold text-[11px] tracking-wide">
+                  {PLAN_CARD_BADGE}
+                </div>
+              )}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-sm font-bold ${tier.highlight ? 'text-white' : 'text-gold-light'}`}>{planTitle(tier.id)}</span>
+                  <span className="text-sm font-semibold text-gold-light">{planPriceLabel(tier.id)}</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-relaxed">{tier.blurb}</p>
+                <ul className={`mt-3 gap-1.5 text-[11px] text-gray-300 ${tier.id === 'agency' ? 'grid grid-cols-1 sm:grid-cols-2' : 'space-y-1.5'}`}>
+                  {planBullets(tier.id).map((line) => (
+                    <li key={line} className="flex items-center gap-2">
+                      <span className="text-gold">✓</span> {line}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                10 domains, automated weekly audits, competitor citation graphs, and 24/7 Telegram Drift Sentinel alerts.
-              </p>
-              <ul className="mt-3 space-y-1.5 text-[11px] text-gray-300">
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> <strong>{engineLabels.length ? `All Starter Engines (${engineList})` : 'All Starter Engines'}</strong>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> MCP access (Cursor / Claude / Codex)
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Public share links + 3 team seats
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 10 Domains + weekly Sentinel
-                </li>
-              </ul>
+              <button
+                type="button"
+                onClick={() => handlePlanCheckout(tier.id)}
+                disabled={busyPlan !== null}
+                className={`lx-btn w-full text-sm disabled:opacity-50 ${tier.highlight ? 'lx-btn-gold' : 'lx-btn-ghost'}`}
+              >
+                {planButtonLabel(tier.id)}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => handlePlanCheckout('growth')}
-              disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-white text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-            >
-              {planButtonLabel('growth')}
-            </button>
-          </div>
-
-          {/* Agency Plan */}
-          <div className="p-5 rounded-2xl border border-gold/30 bg-gradient-to-br from-gold/10 to-transparent flex flex-col justify-between space-y-4 hover:border-gold transition-all relative sm:col-span-2">
-            <div className="absolute -top-2.5 left-4 px-2.5 py-0.5 rounded-full bg-white text-black font-black text-[9px] uppercase tracking-widest">
-              Moat
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-gold-light">Agency Plan</span>
-                <span className="text-xs font-mono text-gold font-bold">
-                  {planPriceLabel('agency')}
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                25 domains, audit memory timeline, competitor citation deltas, 10 client workspaces, white-label PDF, API access, daily Sentinel.
-              </p>
-              <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] text-gray-300">
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> MCP + share links (everything in Growth)
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> Hosted API / research access
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 10 Agency client workspaces
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-gold">✓</span> 10 team seats + daily Sentinel
-                </li>
-              </ul>
-            </div>
-            <button
-              type="button"
-              onClick={() => handlePlanCheckout('agency')}
-              disabled={busyPlan !== null}
-              className="w-full py-3 rounded-xl bg-gold text-black font-semibold tracking-wide text-[11px] hover:bg-gold-light active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-            >
-              {planButtonLabel('agency')}
-            </button>
-          </div>
+          ))}
         </div>
 
         {/* Stripe Card helper if in Card tab (only when stripeCheckout live) */}
@@ -676,7 +597,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           <div className="p-4 rounded-2xl bg-black/40 border border-gold/30 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-left">
               <p className="text-xs font-bold text-white">Card checkout (30 days)</p>
-              <p className="text-[10px] text-gray-400">
+              <p className="text-[11px] text-gray-400">
                 Secure hosted checkout. One-time 30-day plan grant (not auto-renew unless stated at purchase).
               </p>
             </div>
@@ -688,7 +609,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           <div className="p-4 rounded-2xl bg-black/40 border border-white/10 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-left">
               <p className="text-xs font-bold text-white">TON Wallet Connection</p>
-              <p className="text-[10px] text-gray-400">
+              <p className="text-[11px] text-gray-400">
                 {wallet ? `Connected: ${wallet.account.address.slice(0, 8)}…${wallet.account.address.slice(-6)}` : 'Connect Tonkeeper, Telegram Wallet, or any TON wallet.'}
               </p>
             </div>
@@ -700,7 +621,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           <div className="p-4 rounded-2xl bg-black/40 border border-gold/30 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-left">
               <p className="text-xs font-bold text-white">Pay with Telegram Stars</p>
-              <p className="text-[10px] text-gray-400">
+              <p className="text-[11px] text-gray-400">
                 Stars checkout runs inside the Luminara Mini App. Open it in Telegram to subscribe, or activate a license key above.
               </p>
             </div>
@@ -708,7 +629,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               href={TELEGRAM_MINI_APP_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-[10px] tracking-wider hover:scale-[1.02] active:scale-[0.98] transition-all shadow-md focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="lx-btn lx-btn-gold shrink-0 text-sm"
             >
               Open in Telegram
             </a>
@@ -717,14 +638,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
         {/* Telegram Stars Terms & Support Notice */}
         {tab === 'stars' && (
-          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-4 text-center text-[10px] text-gray-400 space-y-1">
+          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 mb-4 text-center text-[11px] text-gray-400 space-y-1">
             <p>
               By purchasing with Telegram Stars, you agree to our{' '}
               <a href="/terms" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Terms of Service</a>
               {' '}and{' '}
               <a href="/privacy" className="text-gold underline hover:text-gold-light" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
             </p>
-            <p className="text-gray-400 text-[9px]">
+            <p className="text-gray-400 text-[11px]">
               Subscriptions activate immediately upon payment. Telegram Support does not handle merchant disputes; for billing help use /paysupport in the bot.
             </p>
           </div>
@@ -732,7 +653,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
         {/* Card checkout guidance when Card rail is not live. Never inside Telegram, where only Stars may be offered. */}
         {paymentOptions.showCardGuidance && (
-          <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[10px] text-gray-400">
+          <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 mb-6 text-center text-[11px] text-gray-400">
             <p>
               Card checkout is available on request during closed beta. For credit card payments or corporate invoicing, email{' '}
               <a href="mailto:support@luminarasuite.com" className="text-gold underline hover:text-gold-light">support@luminarasuite.com</a>.
@@ -762,14 +683,14 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
             >
               {checkingTon ? 'Checking…' : 'Check my payment'}
             </button>
-            <p className="mt-2 text-[10px] text-gray-500 font-mono break-all">Order {pendingTonOrder}</p>
+            <p className="mt-2 text-[11px] text-gray-500 font-mono break-all">Order {pendingTonOrder}</p>
           </div>
         )}
 
         {/* BYOK alternative */}
         <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-400">
           <p>
-            Prefer your own models? <span className="text-gray-300">Add a Groq / NVIDIA / Ollama key after sign-in.</span>
+            <span className="text-gray-300">{BYOK_CHECKOUT_LINE}</span>
           </p>
           <button
             type="button"
@@ -795,7 +716,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
           </button>
         </div>
 
-        <p className="mt-3 text-center text-[10px] text-gray-400">
+        <p className="mt-3 text-center text-[11px] text-gray-400">
           Produced by{' '}
           <a
             href="https://luminaradigital.io"

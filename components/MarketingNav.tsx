@@ -1,5 +1,6 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { ICONS } from '../constants';
+import './marketing/space.css';
 
 export interface MarketingNavLink {
   label: string;
@@ -20,7 +21,7 @@ interface MarketingNavProps {
 }
 
 /**
- * Fixed marketing nav: hairline bar, no glass morph pill (design.md ban).
+ * Fixed marketing nav: transparent over the space hero, a dark blurred bar once scrolled.
  */
 export const MarketingNav: React.FC<MarketingNavProps> = ({
   brandLabel,
@@ -32,19 +33,34 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
   trailing,
 }) => {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const panelId = useId();
+  const burgerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        burgerRef.current?.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // Lock the root, not body: html has overflow-x: clip, so a body lock would not stop
+    // scrolling and would turn body into a scroll container that breaks sticky stages.
+    const root = document.documentElement;
+    const prev = root.style.overflow;
+    root.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      root.style.overflow = prev;
     };
   }, [open]);
 
@@ -55,14 +71,15 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
 
   return (
     <nav
-      className="fixed z-50 left-0 right-0 top-0 border-b border-[var(--color-rule)] bg-[var(--color-paper)]"
+      data-solid={scrolled || open}
+      className="lx-nav fixed z-50 left-0 right-0 top-0 border-b border-transparent"
       style={{
         paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
         paddingLeft: 'max(0px, env(safe-area-inset-left, 0px))',
         paddingRight: 'max(0px, env(safe-area-inset-right, 0px))',
       }}
     >
-      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 md:px-8 py-3 min-h-[3.25rem] max-w-7xl mx-auto">
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 md:px-8 py-3 min-h-[4.25rem] max-w-7xl mx-auto">
         <button
           type="button"
           className="flex items-center gap-2.5 group cursor-pointer text-left min-w-0 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded"
@@ -71,7 +88,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
         >
           <ICONS.LuminaraLogo className="w-7 h-7 shrink-0" />
           <div className="flex flex-col leading-none min-w-0">
-            <span className="text-sm font-semibold tracking-tight text-[var(--color-ink)] truncate">
+            <span className="font-serif text-xl tracking-tight text-[var(--color-ink)] truncate">
               {brandLabel}
             </span>
             {brandSub && (
@@ -83,7 +100,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
         </button>
 
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-          <div className="hidden md:flex items-center gap-5">
+          <div className="hidden md:flex items-center gap-7 mr-2">
             {links
               .filter((l) => !l.desktopHidden)
               .map((link) => (
@@ -92,8 +109,8 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
                   type="button"
                   onClick={link.onClick}
                   aria-current={link.current ? 'page' : undefined}
-                  className={`whitespace-nowrap text-sm hover:text-[var(--color-ink)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded px-1 py-1 ${
-                    link.current ? 'text-[var(--color-ink)]' : 'text-[var(--color-ink-2)]'
+                  className={`whitespace-nowrap text-sm hover:text-[var(--color-ink)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded py-1 ${
+                    link.current ? 'text-[var(--gold-light)]' : 'text-ink/75'
                   }`}
                 >
                   {link.label}
@@ -105,7 +122,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
             <button
               type="button"
               onClick={secondaryCta.onClick}
-              className="hidden sm:inline-flex whitespace-nowrap text-sm text-[var(--color-ink-2)] hover:text-[var(--color-ink)] transition-colors min-h-11 items-center px-2 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded"
+              className="hidden sm:inline-flex whitespace-nowrap text-sm text-ink/75 hover:text-[var(--color-ink)] transition-colors min-h-11 items-center px-2 focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded"
             >
               {secondaryCta.label}
             </button>
@@ -114,7 +131,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
           <button
             type="button"
             onClick={primaryCta.onClick}
-            className="hidden sm:inline-flex mkt-cta-primary !min-h-10 !py-2 !px-4 text-sm"
+            className="hidden sm:inline-flex lx-btn lx-btn-gold !min-h-10 !py-2 !px-5 text-sm"
           >
             {primaryCta.label}
           </button>
@@ -122,8 +139,9 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
           {trailing}
 
           <button
+            ref={burgerRef}
             type="button"
-            className="md:hidden inline-flex items-center justify-center w-11 h-11 border border-[var(--color-rule)] text-[var(--color-ink)] focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none"
+            className="md:hidden inline-flex items-center justify-center w-11 h-11 rounded-full border border-[var(--color-rule)] bg-black/40 text-[var(--color-ink)] focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none"
             aria-expanded={open}
             aria-controls={panelId}
             aria-label={open ? 'Close menu' : 'Open menu'}
@@ -137,7 +155,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
       {open && (
         <div
           id={panelId}
-          className="md:hidden border-t border-[var(--color-rule)] bg-[var(--color-paper)]"
+          className="md:hidden border-t border-[var(--color-rule)] bg-black/95"
           style={{
             maxHeight: 'min(70dvh, 28rem)',
             overflowY: 'auto',
@@ -170,7 +188,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
               </button>
             )}
             <div className="px-2 pt-2 pb-3">
-              <button type="button" onClick={() => run(primaryCta.onClick)} className="mkt-cta-primary w-full">
+              <button type="button" onClick={() => run(primaryCta.onClick)} className="lx-btn lx-btn-gold w-full">
                 {primaryCta.label}
               </button>
             </div>

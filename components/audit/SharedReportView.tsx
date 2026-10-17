@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ReportDisplay } from './ReportDisplay';
 import { fetchSharedReport, type SharedReportResponse } from '../../services/share/shareReportClient';
 import { Button } from '../ui/Button';
+import { AuditReportSkeleton } from '../ui/Skeleton';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 
 function tokenFromLocation(): string {
@@ -79,7 +80,7 @@ export const SharedReportView: React.FC<{
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-8">
-        {loading && <p className="text-sm text-gray-400 font-mono">Loading shared report...</p>}
+        {loading && <AuditReportSkeleton message="Loading shared report..." />}
 
         {!loading && needsPassword && (
           <form
@@ -105,9 +106,14 @@ export const SharedReportView: React.FC<{
         )}
 
         {!loading && error && (
-          <p className="text-sm text-danger-400 font-mono" role="alert">
-            {error}
-          </p>
+          <div className="rounded-2xl border border-danger-500/30 bg-danger-950/10 p-5 flex items-center justify-between gap-4" role="alert">
+            <p className="text-sm text-danger-400 font-mono">{error}</p>
+            {token && (
+              <Button variant="secondary" size="sm" onClick={() => void load()}>
+                Retry
+              </Button>
+            )}
+          </div>
         )}
 
         {!loading && payload && (

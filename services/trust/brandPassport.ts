@@ -79,7 +79,7 @@ export function buildBrandPassport(
 ): BrandPassport {
   const shownHost = safePublicHostname(domain);
   const cleanDomain = shownHost ?? domain.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0];
-  const brandName = dna?.name?.trim() || cleanDomain;
+  const brandName = dna?.name?.trim() || 'Not named yet';
   const liveReceipts =
     shownHost === null
       ? []

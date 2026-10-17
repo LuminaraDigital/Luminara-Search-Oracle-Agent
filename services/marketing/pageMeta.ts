@@ -96,9 +96,9 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     ),
     crawlerBody: `
 <section>
-  <h1>Luminara Suite</h1>
-  <p>See if AI search recommends you. Luminara audits your website across Google, AI Overviews, ChatGPT and Perplexity, then gives a prioritised action plan so you grow without rebuilding your stack.</p>
-  <p>Sample scouts are labeled Measured, Estimated or Not measured. Live Instant Audit follows account and key rules. No bare composite AI visibility scores.</p>
+  <h1>Be the answer AI gives.</h1>
+  <p>Customers now ask ChatGPT, Perplexity, Google and AI Overviews who to trust. Luminara Suite checks whether those answers name your business, then gives you the one fix to ship next.</p>
+  <p>Start with a free live crawl check of your site: no card, no signup. Create a free account to run the full audit. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
     <li><a href="/methodology">Methodology</a></li>
@@ -130,7 +130,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Methodology</h1>
   <p>Measured means live evidence. Estimated is directional only. Not measured means missing data is labeled, never invented.</p>
-  <p>Sample scouts on the landing Workbench are labeled fixtures. Live Instant Audit follows account and key rules.</p>
+  <p>The live crawl check on the landing page reads robots.txt, llms.txt and ai.txt and keeps the four engines Not measured. Instant Audit checks the engines and labels each row Measured, Estimated or Not measured.</p>
   <p><a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
 </section>`,
   },
@@ -148,7 +148,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Sample report</h1>
   <p>Illustrative Sample for luminarasuite.com. Engines show Measured, Estimated, or Not measured. Verdict and ship action match Instant Audit shape.</p>
-  <p><a href="/">Run a scout</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
+  <p><a href="/">Check your site</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
   '/how-it-works': {
@@ -206,7 +206,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/pricing',
     title: 'Pricing | Luminara Suite',
     description:
-      'Free insight and sample scouts. Starter for web audits. Growth adds share links and MCP for Cursor and Claude. Agency adds API access.',
+      'Free live crawl check and a daily hosted audit allowance. Starter for web audits. Growth adds share links and MCP for Cursor and Claude. Agency adds API access.',
     jsonLd: graph('/pricing', 'Pricing', 'Plans: Free insight, Starter audits, Growth MCP and share, Agency API.'),
     crawlerBody: `
 <section>

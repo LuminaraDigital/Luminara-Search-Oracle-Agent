@@ -45,7 +45,7 @@ export function missionControlHeadline(
   if (measurementStatus === 'measured') {
     return 'Multi-agent audit complete. Measured signals come from live page and search evidence.';
   }
-  return 'Audit finished. Some signals were not measured.';
+  return 'This run did not measure the site, so no full report was generated.';
 }
 
 export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
@@ -87,7 +87,12 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
   const progressPercent = Math.min(100, Math.round((completedCount / 7) * 100));
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 mb-8 shadow-2xl backdrop-blur-sm">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy={!isComplete}
+      className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 mb-8 shadow-2xl backdrop-blur-sm"
+    >
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
         <div>

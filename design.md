@@ -10,7 +10,7 @@ Atmospheric dark visibility tool (Night Foundry register).
 ## Macrostructure family
 
 - Marketing pages: Workbench base
-  - Landing: Workbench + Visibility Probe (+ constellation Map/Diagram)
+  - Landing: space story (sunrise globe hero with the inline live crawl check, statement, four-chapter globe story, report, value props, FAQ, closing horizon)
   - Pricing: Catalogue-within-Workbench
   - Why / How / AI: Narrative Workflow or Split Studio variants
 - App pages: util Workbench (tool chrome; atmosphere subtle only)
@@ -47,9 +47,10 @@ Ban on marketing: gradient wordmarks (`.gold-text`); glassmorphism panels; fake 
 ## Craft gates (shipping checklist)
 
 - The claim is the hero headline at display size. Brand sits in the nav and one eyebrow above the claim
-- Landing hero is cinematic underlay + claim column + Probe workbench (no FieldHero glow plate, no glass)
-- Menu pages share MarketingCinematicStage + MarketingPageShell
+- Landing hero is the SpaceStage sunrise horizon + serif claim + one domain input (see components/marketing/earth/README.md)
+- Menu pages share MarketingAtmosphere (starfield) + MarketingPageShell
 - One nav link set and one footer on every marketing page (MarketingChromeContext, built in App.tsx)
+- Opacity modifiers need theme colors (`bg-gold/10`, `text-ink/75`). `bg-[var(--token)]/10` compiles to nothing in Tailwind 3
 - Font sizes from tokens use `text-[length:var(--token)]`. A bare `text-[var(--token)]` is parsed as a color and silently drops the size
 - Marketing body copy is `.mkt-body` (17px). No 14px light gray paragraphs
 - Section surfaces alternate paper / paper-2. Eyebrows are the only accent text
