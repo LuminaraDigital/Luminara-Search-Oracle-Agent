@@ -9,11 +9,13 @@ import { billingId, identify, json } from './workerUtils';
 import { checkHostedQuota, isUserSubscribed } from './quotaMiddleware';
 import {
   MAX_SMALL_BODY_BYTES,
+  clientIp,
   readBody,
   resolvesToPublicAddress,
   safePublicUrl,
   type DohFetch,
 } from './security';
+import { enforceDualRateLimit } from './securityHardening';
 import { safePublicHostname } from '../services/security/publicHostname';
 import {
   FREE_IDEA_CARDS_PER_UTC_DAY,
@@ -311,10 +313,11 @@ async function deleteIdeaRow(env: Env, id: string, accountId: string): Promise<v
   ).bind(id, accountId).run();
 }
 
-function newIdeaId(): string {
+/** `is_` for an idea card, `cf_` for its copy in the community feed. */
+function newId(prefix: 'is' | 'cf'): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
-  return `is_${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  return `${prefix}_${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 async function requireUser(request: Request, env: Env): Promise<{ user: HostedIdentity; accountId: string } | Response> {
@@ -440,7 +443,7 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
   const finalVerdict = validateIdeaScoutCard(card);
   const stored = finalVerdict.ok ? finalVerdict.card : baseVerdict.card;
 
-  const id = newIdeaId();
+  const id = newId('is');
   try {
     await env.DB!.prepare(
       `INSERT INTO idea_scouts (id, account_id, idea_text, niche, competitor_urls_json, card_json, status, created_at, linked_domain, linked_audit_run_id)
@@ -667,234 +670,174 @@ async function upsertPulse(request: Request, env: Env, accountId: string): Promi
   });
 }
 
-export interface CommunityIdeaCard {
+/**
+ * Community idea feed (migrations/0033_community_feed.sql). A feed card is a copy of an idea card
+ * its owner chose to share, under its own `cf_` id. Nothing here returns an account id or an idea
+ * id, and a card's vote count is COUNT(*) over its votes.
+ */
+export const FEED_SHARES_PER_UTC_DAY = 5;
+const FEED_PAGE_SIZE = 50;
+const FEED_CARD_ID_RE = /^cf_[a-f0-9]{16}$/;
+const FEED_LIMITS = {
+  read: { action: 'idea_feed_read', limitPerKey: 60, windowSec: 60 },
+  vote: { action: 'idea_feed_vote', limitPerKey: 30, windowSec: 60 },
+  share: { action: 'idea_feed_share', limitPerKey: 10, windowSec: 60 },
+};
+
+/** What anyone reading the feed sees of a card. */
+export interface CommunityFeedCard {
   id: string;
   ideaText: string;
   niche: string | null;
-  card: IdeaScoutCard | unknown;
+  card: IdeaScoutCard;
   upvotes: number;
   sharedAt: number;
-  accountId?: string;
 }
 
-export const SEED_COMMUNITY_FEED: CommunityIdeaCard[] = [
-  {
-    id: 'is_seed_offline_crm',
-    ideaText: 'Local-first CRM for independent plumbers and electricians',
-    niche: 'Trades and Services',
-    card: {
-      problem: 'Independent tradespeople struggle with complex CRMs requiring constant connectivity on job sites.',
-      whoAsksAi: {
-        label: 'model_inference',
-        persona: 'Self-employed trade contractor',
-        promptPatterns: ['best offline crm for plumbers', 'simple customer tracker for trades'],
-      },
-      contentBets: [
-        { label: 'hypothesis', hypothesis: 'Guides comparing local storage vs cloud sync on work sites.' },
-        { label: 'hypothesis', hypothesis: 'Downloadable invoice and job estimation templates.' },
-        { label: 'hypothesis', hypothesis: 'Job costing calculators tailored for plumbing and electrical work.' },
-      ],
-      fetchStatus: 'not_measured',
-    },
-    upvotes: 12,
-    sharedAt: 1728000000000,
-  },
-  {
-    id: 'is_seed_indie_tracker',
-    ideaText: 'Discovery engine and release tracker for solo indie game developers',
-    niche: 'Gaming and Creators',
-    card: {
-      problem: 'Solo developers lack visibility on algorithmic game discovery platforms.',
-      whoAsksAi: {
-        label: 'model_inference',
-        persona: 'Indie game developer',
-        promptPatterns: ['how to get my indie game noticed', 'steam algorithm launch checklist'],
-      },
-      contentBets: [
-        { label: 'hypothesis', hypothesis: 'Case studies analyzing successful Steam launches.' },
-        { label: 'hypothesis', hypothesis: 'Interactive launch timing calendars by genre.' },
-        { label: 'hypothesis', hypothesis: 'Trailer pacing and steam page optimization breakdowns.' },
-      ],
-      fetchStatus: 'not_measured',
-    },
-    upvotes: 8,
-    sharedAt: 1728050000000,
-  },
-];
-
-const memoryCommunityFeed: CommunityIdeaCard[] = [];
-
-export async function loadCommunityFeed(env: Env): Promise<CommunityIdeaCard[]> {
-  if (env.LUMINARA_KV) {
-    try {
-      const stored = await env.LUMINARA_KV.get('idea_scout:community_feed', 'json');
-      if (Array.isArray(stored) && stored.length > 0) return stored as CommunityIdeaCard[];
-    } catch {
-      // Non-blocking fallback
-    }
-  }
-  if (memoryCommunityFeed.length > 0) {
-    return [...memoryCommunityFeed];
-  }
-  return [...SEED_COMMUNITY_FEED];
+/** Rate limit, then storage. Null means the route may go ahead. */
+async function feedGate(
+  request: Request,
+  env: Env,
+  limit: (typeof FEED_LIMITS)[keyof typeof FEED_LIMITS],
+  accountId: string | null,
+): Promise<Response | null> {
+  const dual = await enforceDualRateLimit(env, { ...limit, accountId, ip: clientIp(request) });
+  if (!dual.ok) return dual.response;
+  if (!env.DB) return json({ ok: false, error: 'The community feed needs the D1 database.', code: 'DB_UNBOUND' }, 503);
+  return null;
 }
 
-export async function saveCommunityFeed(env: Env, feed: CommunityIdeaCard[]): Promise<void> {
-  memoryCommunityFeed.length = 0;
-  memoryCommunityFeed.push(...feed);
-  if (env.LUMINARA_KV) {
-    try {
-      await env.LUMINARA_KV.put('idea_scout:community_feed', JSON.stringify(feed));
-    } catch {
-      // Non-blocking fallback
-    }
+function feedStoreFailed(err: unknown): Response {
+  if (/no such table: community_feed_/i.test(String((err as Error)?.message || err))) {
+    return json({ ok: false, error: 'The community feed needs D1 migration 0033_community_feed.sql.', code: 'MIGRATION_REQUIRED' }, 503);
   }
+  return json({ ok: false, error: 'The community feed could not be read or written.', code: 'STORE_FAILED' }, 503);
+}
+
+async function readFeedBody(request: Request): Promise<Record<string, unknown> | Response> {
+  const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!read.ok) return json({ ok: false, error: read.error }, read.status);
+  return (read.value && typeof read.value === 'object' && !Array.isArray(read.value))
+    ? (read.value as Record<string, unknown>)
+    : {};
 }
 
 export async function getCommunityFeed(request: Request, env: Env): Promise<Response> {
-  const feed = await loadCommunityFeed(env);
-  const url = new URL(request.url);
-  const sort = url.searchParams.get('sort');
-  if (sort === 'top') {
-    feed.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
-  } else if (sort === 'recent') {
-    feed.sort((a, b) => (b.sharedAt || 0) - (a.sharedAt || 0));
+  const blocked = await feedGate(request, env, FEED_LIMITS.read, null);
+  if (blocked) return blocked;
+  const order = new URL(request.url).searchParams.get('sort') === 'top' ? 'upvotes DESC, c.shared_at DESC' : 'c.shared_at DESC';
+  try {
+    const rows = await env.DB!.prepare(
+      `SELECT c.id, c.idea_text, c.niche, c.card_json, c.shared_at,
+              (SELECT COUNT(*) FROM community_feed_votes v WHERE v.card_id = c.id) AS upvotes
+       FROM community_feed_cards c
+       WHERE c.status = 'visible'
+       ORDER BY ${order}
+       LIMIT ?`,
+    ).bind(FEED_PAGE_SIZE).all<{
+      id: string;
+      idea_text: string;
+      niche: string | null;
+      card_json: string;
+      shared_at: number;
+      upvotes: number;
+    }>();
+    const cards: CommunityFeedCard[] = [];
+    for (const row of rows.results || []) {
+      const card = cardFromRow(row.card_json);
+      if (!card) continue;
+      cards.push({ id: row.id, ideaText: row.idea_text, niche: row.niche, card, upvotes: Number(row.upvotes), sharedAt: row.shared_at });
+    }
+    return json({ ok: true, cards });
+  } catch (err) {
+    return feedStoreFailed(err);
   }
-  return json({
-    ok: true,
-    feed,
-    cards: feed,
-  });
 }
 
-export async function shareIdeaToFeed(request: Request, env: Env, callerAccountId?: string): Promise<Response> {
-  const who = await identify(request, env);
-  const accountId = callerAccountId || (who.user ? billingId(who.user) : 'anonymous');
-  const read = await readBody(request, MAX_SMALL_BODY_BYTES);
-  if (!read.ok) return json({ ok: false, error: read.error }, read.status);
-  const body = (read.value && typeof read.value === 'object' && !Array.isArray(read.value))
-    ? (read.value as Record<string, unknown>)
-    : {};
-
-  const targetId = String(body.id || body.ideaId || '').trim();
-  let ideaText = typeof body.ideaText === 'string' ? body.ideaText : typeof body.idea === 'string' ? body.idea : '';
-  let niche = typeof body.niche === 'string' ? body.niche : null;
-  let card: unknown = body.card || null;
-
-  if (targetId && env.DB) {
-    try {
-      const row = await env.DB.prepare(
-        `SELECT id, idea_text, niche, card_json FROM idea_scouts WHERE id = ?`
-      ).bind(targetId).first<{ id: string; idea_text: string; niche: string | null; card_json: string }>();
-      if (row) {
-        ideaText = ideaText || row.idea_text;
-        niche = niche || row.niche;
-        if (!card) {
-          card = cardFromRow(row.card_json);
-        }
-      }
-    } catch {
-      // Non-blocking fallback
+export async function shareIdeaToFeed(request: Request, env: Env, accountId: string, now: number): Promise<Response> {
+  const blocked = await feedGate(request, env, FEED_LIMITS.share, accountId);
+  if (blocked) return blocked;
+  const body = await readFeedBody(request);
+  if (body instanceof Response) return body;
+  const ideaId = String(body.ideaId ?? body.id ?? '').trim();
+  const unknown = json({ ok: false, error: 'Unknown idea card.', code: 'NOT_FOUND' }, 404);
+  if (!IDEA_ID_RE.test(ideaId)) return unknown;
+  try {
+    // Only the caller's own card: another account's id finds nothing and adds nothing.
+    const idea = await env.DB!.prepare(
+      `SELECT idea_text, niche, card_json FROM idea_scouts WHERE id = ? AND account_id = ?`,
+    ).bind(ideaId, accountId).first<{ idea_text: string; niche: string | null; card_json: string }>();
+    if (!idea) return unknown;
+    const card = cardFromRow(idea.card_json);
+    if (!card) return json({ ok: false, error: 'Stored card failed honesty checks.', code: 'CARD_REJECTED' }, 500);
+    const day = utcDay(now);
+    // The daily cap is counted inside the insert, so shares sent at the same moment cannot pass it.
+    const inserted = await env.DB!.prepare(
+      `INSERT INTO community_feed_cards (id, account_id, idea_id, idea_text, niche, card_json, status, utc_day, shared_at)
+       SELECT ?, ?, ?, ?, ?, ?, 'visible', ?, ?
+       WHERE (SELECT COUNT(*) FROM community_feed_cards WHERE account_id = ? AND utc_day = ?) < ?
+       ON CONFLICT DO NOTHING`,
+    ).bind(
+      newId('cf'),
+      accountId,
+      ideaId,
+      idea.idea_text,
+      idea.niche,
+      JSON.stringify(card),
+      day,
+      now,
+      accountId,
+      day,
+      FEED_SHARES_PER_UTC_DAY,
+    ).run();
+    const shared = await env.DB!.prepare(
+      `SELECT id FROM community_feed_cards WHERE account_id = ? AND idea_id = ?`,
+    ).bind(accountId, ideaId).first<{ id: string }>();
+    if (!shared) {
+      return json({
+        ok: false,
+        error: `You can share ${FEED_SHARES_PER_UTC_DAY} idea cards a day. Try again after midnight UTC.`,
+        code: 'SHARE_DAILY_CAP',
+        limit: FEED_SHARES_PER_UTC_DAY,
+      }, 429);
     }
+    return json({ ok: true, id: shared.id, alreadyShared: inserted.meta?.changes !== 1 });
+  } catch (err) {
+    return feedStoreFailed(err);
   }
-
-  if (card && typeof card === 'object') {
-    const verdict = validateIdeaScoutCard(card);
-    if (!verdict.ok) {
-      return json({ ok: false, error: verdict.error, code: verdict.code }, 400);
-    }
-    card = verdict.card;
-  } else if (ideaText) {
-    card = buildIdeaScoutCard({
-      idea: ideaText,
-      niche: niche || null,
-      snapshots: [],
-    });
-  }
-
-  if (!card || !ideaText) {
-    return json({
-      ok: false,
-      error: 'Send an existing idea card id or card content to publish to the community feed.',
-      code: 'BAD_REQUEST',
-    }, 400);
-  }
-
-  const feed = await loadCommunityFeed(env);
-  const id = targetId || ('is_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16));
-
-  const existing = feed.find((item) => item.id === id);
-  if (existing) {
-    return json({
-      ok: true,
-      card: existing,
-      id: existing.id,
-      alreadyShared: true,
-    });
-  }
-
-  const communityCard: CommunityIdeaCard = {
-    id,
-    ideaText,
-    niche: niche || null,
-    card,
-    upvotes: 0,
-    sharedAt: Date.now(),
-    accountId,
-  };
-
-  feed.unshift(communityCard);
-  await saveCommunityFeed(env, feed);
-
-  return json({
-    ok: true,
-    card: communityCard,
-    id: communityCard.id,
-    alreadyShared: false,
-  });
 }
 
-export async function voteCommunityIdea(request: Request, env: Env): Promise<Response> {
-  const read = await readBody(request, MAX_SMALL_BODY_BYTES);
-  if (!read.ok) return json({ ok: false, error: read.error }, read.status);
-  const body = (read.value && typeof read.value === 'object' && !Array.isArray(read.value))
-    ? (read.value as Record<string, unknown>)
-    : {};
-
-  const targetId = String(body.id || body.ideaId || '').trim();
-  if (!targetId) {
-    return json({
-      ok: false,
-      error: 'Send an idea card ID to upvote.',
-      code: 'BAD_ID',
-    }, 400);
+export async function voteCommunityIdea(request: Request, env: Env, accountId: string, now: number): Promise<Response> {
+  const blocked = await feedGate(request, env, FEED_LIMITS.vote, accountId);
+  if (blocked) return blocked;
+  const body = await readFeedBody(request);
+  if (body instanceof Response) return body;
+  const cardId = String(body.id ?? '').trim();
+  const unknown = json({ ok: false, error: 'Unknown community idea card.', code: 'NOT_FOUND' }, 404);
+  if (!FEED_CARD_ID_RE.test(cardId)) return unknown;
+  try {
+    // The primary key is (card_id, account_id), so a second vote from one account adds nothing.
+    const inserted = await env.DB!.prepare(
+      `INSERT INTO community_feed_votes (card_id, account_id, created_at)
+       SELECT id, ?, ? FROM community_feed_cards WHERE id = ? AND status = 'visible'
+       ON CONFLICT DO NOTHING`,
+    ).bind(accountId, now, cardId).run();
+    const row = await env.DB!.prepare(
+      `SELECT (SELECT COUNT(*) FROM community_feed_votes WHERE card_id = ?) AS upvotes
+       FROM community_feed_cards WHERE id = ? AND status = 'visible'`,
+    ).bind(cardId, cardId).first<{ upvotes: number }>();
+    if (!row) return unknown;
+    return json({ ok: true, id: cardId, upvotes: Number(row.upvotes), alreadyVoted: inserted.meta?.changes !== 1 });
+  } catch (err) {
+    return feedStoreFailed(err);
   }
-
-  const feed = await loadCommunityFeed(env);
-  const card = feed.find((item) => item.id === targetId);
-  if (!card) {
-    return json({
-      ok: false,
-      error: 'Unknown community idea card.',
-      code: 'NOT_FOUND',
-    }, 404);
-  }
-
-  card.upvotes = (card.upvotes || 0) + 1;
-  await saveCommunityFeed(env, feed);
-
-  return json({
-    ok: true,
-    id: card.id,
-    upvotes: card.upvotes,
-  });
 }
 
 export async function handleIdeaScoutRoute(request: Request, env: Env, path: string, deps: IdeaScoutDeps = {}): Promise<Response> {
   const normPath = path.startsWith('/api/') ? path.slice(4) : path;
 
-  // The community feed is off unless switched on: its responses carry account ids, and it has no
-  // tables, limits or moderation of its own yet (Track SW, SW0a-9).
+  // The community feed is off unless switched on. It stays off until the chat rules and a named
+  // moderator exist (Track SW, SW0a-9 and plan section 14.6).
   const feedRoute = normPath === '/idea-scout/feed' || normPath === '/idea-scout/vote' || normPath === '/idea-scout/share';
   if (feedRoute && env.COMMUNITY_FEED_ENABLED !== 'true') {
     return json({ ok: false, error: 'Not found', code: 'NOT_FOUND' }, 404);
@@ -903,16 +846,17 @@ export async function handleIdeaScoutRoute(request: Request, env: Env, path: str
   if (normPath === '/idea-scout/feed' && request.method === 'GET') {
     return getCommunityFeed(request, env);
   }
-  if (normPath === '/idea-scout/vote' && request.method === 'POST') {
-    return voteCommunityIdea(request, env);
-  }
 
   const auth = await requireUser(request, env);
   if (auth instanceof Response) return auth;
   const { user, accountId } = auth;
+  const now = deps.now ? deps.now() : Date.now();
 
+  if (normPath === '/idea-scout/vote' && request.method === 'POST') {
+    return voteCommunityIdea(request, env, accountId, now);
+  }
   if (normPath === '/idea-scout/share' && request.method === 'POST') {
-    return shareIdeaToFeed(request, env, accountId);
+    return shareIdeaToFeed(request, env, accountId, now);
   }
 
   if (normPath === '/idea-scout' && request.method === 'POST') return createIdea(request, env, user, accountId, deps);

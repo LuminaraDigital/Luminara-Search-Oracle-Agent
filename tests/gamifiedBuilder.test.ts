@@ -12,11 +12,6 @@ import {
   handleReferralRoute,
   readRetentionSnapshot,
 } from '../worker/referrals';
-import {
-  handleIdeaScoutRoute,
-  loadCommunityFeed,
-  type CommunityIdeaCard,
-} from '../worker/ideaScout';
 
 function memoryKv() {
   const store = new Map<string, string>();
@@ -45,8 +40,8 @@ function envWithDb(): Env {
     REQUIRE_TG_AUTH: 'true',
     WEBAPP_URL: 'https://luminarasuite.com',
     BOT_TOKEN: '123456:MOCK_TOKEN',
-    // These suites describe the features switched on. tests/featureSwitches.test.ts covers them off.
-    COMMUNITY_FEED_ENABLED: 'true',
+    // These suites describe points switched on. tests/featureSwitches.test.ts covers them off.
+    // The community feed is tested in tests/communityFeed.test.ts.
     LUMENS_ENABLED: 'true',
   };
 }
@@ -320,132 +315,5 @@ describe('Daily check-in endpoint (Phase 1)', () => {
     expect(res.status).toBe(401);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe('AUTH_REQUIRED');
-  });
-});
-
-describe('Build in Public Community Feed (Phase 2)', () => {
-  it('retrieves public community feed without authentication', async () => {
-    const env = envWithDb();
-    const req = new Request('https://luminarasuite.com/api/idea-scout/feed', {
-      method: 'GET',
-    });
-
-    const res = await handleIdeaScoutRoute(req, env, '/idea-scout/feed');
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; feed: CommunityIdeaCard[] };
-    expect(body.ok).toBe(true);
-    expect(Array.isArray(body.feed)).toBe(true);
-    expect(body.feed.length).toBeGreaterThanOrEqual(2);
-
-    // Verify honesty guarantees on seed cards
-    for (const card of body.feed) {
-      expect(card.id).toBeDefined();
-      expect(card.ideaText).toBeDefined();
-      expect(card.upvotes).toBeGreaterThanOrEqual(0);
-      const str = JSON.stringify(card);
-      // No percentage theater or em dashes
-      expect(str).not.toMatch(/\d+(?:\.\d+)?\s*%/);
-      expect(str).not.toContain('\u2014');
-    }
-  });
-
-  it('allows a founder to publish their Idea Scout card to the feed', async () => {
-    const env = envWithDb();
-    const accountId = '6001';
-
-    // Store an idea card in DB first
-    const cardData = {
-      problem: 'Independent mechanics need customer appointment reminders that work via SMS.',
-      whoAsksAi: {
-        label: 'model_inference',
-        persona: 'Auto shop owner',
-        promptPatterns: ['simple sms reminder software for auto repair'],
-      },
-      contentBets: [
-        { label: 'hypothesis', hypothesis: 'SMS reminder best practices for independent mechanics.' },
-        { label: 'hypothesis', hypothesis: 'No-show reduction benchmarks across repair trades.' },
-        { label: 'hypothesis', hypothesis: 'Free downloadable repair estimate templates.' },
-      ],
-      siteChecklist: [{ key: 'schema', label: 'Schema', status: 'not_measured' }],
-      competitorCitation: { status: 'not_measured', competitors: [] },
-      fetchStatus: 'not_measured',
-    };
-
-    await env.DB!.prepare(
-      `INSERT INTO idea_scouts (
-         id, account_id, idea_text, niche, competitor_urls_json, card_json, status, created_at
-       ) VALUES ('is_mechanic_01', ?, 'SMS appointment reminders for auto repair shops', 'Auto Repair', '[]', ?, 'ready', ?)`,
-    ).bind(accountId, JSON.stringify(cardData), Date.now()).run();
-
-    // Share card to community feed
-    const shareReq = new Request('https://luminarasuite.com/api/idea-scout/share', {
-      method: 'POST',
-      headers: authHeaders(6001, 'mechanic_dev'),
-      body: JSON.stringify({ id: 'is_mechanic_01' }),
-    });
-
-    const shareRes = await handleIdeaScoutRoute(shareReq, env, '/idea-scout/share');
-    expect(shareRes.status).toBe(200);
-    const shareBody = (await shareRes.json()) as { ok: boolean; card: CommunityIdeaCard; alreadyShared: boolean };
-    expect(shareBody.ok).toBe(true);
-    expect(shareBody.card.id).toBe('is_mechanic_01');
-    expect(shareBody.card.ideaText).toContain('SMS appointment reminders');
-    expect(shareBody.alreadyShared).toBe(false);
-
-    // Verify it is now present in the community feed
-    const feed = await loadCommunityFeed(env);
-    const found = feed.find((item) => item.id === 'is_mechanic_01');
-    expect(found).toBeDefined();
-    expect(found?.upvotes).toBe(0);
-
-    // Sharing again returns alreadyShared: true
-    const reShareReq = new Request('https://luminarasuite.com/api/idea-scout/share', {
-      method: 'POST',
-      headers: authHeaders(6001, 'mechanic_dev'),
-      body: JSON.stringify({ id: 'is_mechanic_01' }),
-    });
-    const reShareRes = await handleIdeaScoutRoute(reShareReq, env, '/idea-scout/share');
-    const reShareBody = (await reShareRes.json()) as { alreadyShared: boolean };
-    expect(reShareBody.alreadyShared).toBe(true);
-  });
-
-  it('upvotes a community idea card successfully', async () => {
-    const env = envWithDb();
-
-    // Fetch initial feed to get an existing card ID
-    const feedRes = await handleIdeaScoutRoute(
-      new Request('https://luminarasuite.com/api/idea-scout/feed', { method: 'GET' }),
-      env,
-      '/idea-scout/feed',
-    );
-    const feedBody = (await feedRes.json()) as { feed: CommunityIdeaCard[] };
-    const targetCard = feedBody.feed[0]!;
-    const initialUpvotes = targetCard.upvotes;
-
-    // Upvote the card
-    const voteReq = new Request('https://luminarasuite.com/api/idea-scout/vote', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: targetCard.id }),
-    });
-
-    const voteRes = await handleIdeaScoutRoute(voteReq, env, '/idea-scout/vote');
-    expect(voteRes.status).toBe(200);
-    const voteBody = (await voteRes.json()) as { ok: boolean; id: string; upvotes: number };
-    expect(voteBody.ok).toBe(true);
-    expect(voteBody.id).toBe(targetCard.id);
-    expect(voteBody.upvotes).toBe(initialUpvotes + 1);
-
-    // Upvoting a non-existent card returns 404
-    const badVoteRes = await handleIdeaScoutRoute(
-      new Request('https://luminarasuite.com/api/idea-scout/vote', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: 'is_nonexistent_9999' }),
-      }),
-      env,
-      '/idea-scout/vote',
-    );
-    expect(badVoteRes.status).toBe(404);
   });
 });
