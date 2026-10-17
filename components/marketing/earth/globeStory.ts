@@ -30,7 +30,7 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
     stage: 'Site crawl',
     title: 'Read your site the way AI does.',
     body: 'Luminara checks whether search crawlers and AI bots can reach your pages, and whether robots.txt, llms.txt and your schema tell them who you are.',
-    focus: { lat: 36, lon: 8 },
+    focus: { lat: -30, lon: 140 },
   },
   {
     id: 'ask',
@@ -38,7 +38,7 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
     stage: 'Four-engine check',
     title: 'Ask the engines your buyers ask.',
     body: 'Buyer questions in your category are checked across Google Search, AI Overviews, ChatGPT and Perplexity. You see who gets named, whether it is you, and how each answer was measured.',
-    focus: { lat: 22, lon: -34 },
+    focus: { lat: -14, lon: 126 },
   },
   {
     id: 'prove',
@@ -46,7 +46,7 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
     stage: 'Evidence labels',
     title: 'Know what is proven, and what is not.',
     body: 'Every result carries a label. No blended visibility score, no guesswork dressed up as data.',
-    focus: { lat: 22, lon: 26 },
+    focus: { lat: -6, lon: 118 },
   },
   {
     id: 'fix',
@@ -54,7 +54,7 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
     stage: 'Next fix',
     title: 'Ship one fix, then check again.',
     body: 'You get the single change most likely to help, with copy and schema ready to paste. Publish it, re-check in one click, and see what moved.',
-    focus: { lat: 44, lon: -18 },
+    focus: { lat: -24, lon: 132 },
   },
 ];
 
@@ -69,71 +69,86 @@ export const ENGINES = ['Google Search', 'AI Overviews', 'ChatGPT', 'Perplexity'
 
 export const GLOBE_NOTICE = 'Illustrative globe. Your results come from a live audit.';
 
-/** The example business the story arcs point at. Illustrative, not a customer. */
-export const EXAMPLE_BUSINESS: GlobePlace = { id: 'business', lat: 51.51, lon: -0.13 };
+/**
+ * The example business the story arcs point at: Melbourne, where Luminara is based.
+ * Illustrative, not a customer.
+ */
+export const EXAMPLE_BUSINESS: GlobePlace = { id: 'business', lat: -37.81, lon: 144.96 };
 
-/** Example audience locations for the story chapters, with an illustrative evidence state each. */
+/**
+ * Example audience locations for the story chapters, with an illustrative evidence state each.
+ * Oceania and Southeast Asia first: the markets closest to a Melbourne business.
+ */
 export const AUDIENCE_PLACES: ReadonlyArray<GlobePlace & { state: EvidenceState }> = [
-  { id: 'new-york', lat: 40.71, lon: -74.0, state: 'Measured' },
-  { id: 'toronto', lat: 43.65, lon: -79.38, state: 'Not measured' },
-  { id: 'sao-paulo', lat: -23.55, lon: -46.63, state: 'Estimated' },
-  { id: 'lagos', lat: 6.52, lon: 3.38, state: 'Measured' },
-  { id: 'cairo', lat: 30.04, lon: 31.24, state: 'Estimated' },
-  { id: 'nairobi', lat: -1.29, lon: 36.82, state: 'Not measured' },
-  { id: 'dubai', lat: 25.2, lon: 55.27, state: 'Measured' },
-  { id: 'istanbul', lat: 41.01, lon: 28.98, state: 'Estimated' },
-  { id: 'madrid', lat: 40.42, lon: -3.7, state: 'Measured' },
-  { id: 'stockholm', lat: 59.33, lon: 18.07, state: 'Not measured' },
-  { id: 'mumbai', lat: 19.08, lon: 72.88, state: 'Estimated' },
-  { id: 'johannesburg', lat: -26.2, lon: 28.05, state: 'Measured' },
+  { id: 'sydney', lat: -33.87, lon: 151.21, state: 'Measured' },
+  { id: 'brisbane', lat: -27.47, lon: 153.03, state: 'Estimated' },
+  { id: 'adelaide', lat: -34.93, lon: 138.6, state: 'Not measured' },
+  { id: 'perth', lat: -31.95, lon: 115.86, state: 'Measured' },
+  { id: 'auckland', lat: -36.85, lon: 174.76, state: 'Estimated' },
+  { id: 'singapore', lat: 1.35, lon: 103.82, state: 'Measured' },
+  { id: 'jakarta', lat: -6.21, lon: 106.85, state: 'Not measured' },
+  { id: 'kuala-lumpur', lat: 3.14, lon: 101.69, state: 'Estimated' },
+  { id: 'bangkok', lat: 13.76, lon: 100.5, state: 'Measured' },
+  { id: 'manila', lat: 14.6, lon: 120.98, state: 'Not measured' },
+  { id: 'ho-chi-minh-city', lat: 10.82, lon: 106.63, state: 'Estimated' },
+  { id: 'hong-kong', lat: 22.32, lon: 114.17, state: 'Measured' },
 ];
 
 /** The one arc the "fix" chapter lights up. */
-export const FIX_PLACE_ID = 'new-york';
+export const FIX_PLACE_ID = 'singapore';
 
-/** Ambient network for the hero and the statement: illustrative links between world cities. */
+/**
+ * Ambient network for the hero and the statement: illustrative links across Oceania,
+ * Southeast and East Asia, with a few long-haul routes out to the wider world.
+ */
 export const NETWORK_PLACES: readonly GlobePlace[] = [
-  { id: 'london', lat: 51.51, lon: -0.13 },
-  { id: 'paris', lat: 48.86, lon: 2.35 },
-  { id: 'berlin', lat: 52.52, lon: 13.4 },
-  { id: 'moscow', lat: 55.76, lon: 37.62 },
-  { id: 'istanbul', lat: 41.01, lon: 28.98 },
-  { id: 'dubai', lat: 25.2, lon: 55.27 },
-  { id: 'delhi', lat: 28.61, lon: 77.21 },
-  { id: 'beijing', lat: 39.9, lon: 116.4 },
+  { id: 'melbourne', lat: -37.81, lon: 144.96 },
+  { id: 'sydney', lat: -33.87, lon: 151.21 },
+  { id: 'brisbane', lat: -27.47, lon: 153.03 },
+  { id: 'perth', lat: -31.95, lon: 115.86 },
+  { id: 'darwin', lat: -12.46, lon: 130.84 },
+  { id: 'auckland', lat: -36.85, lon: 174.76 },
+  { id: 'suva', lat: -18.14, lon: 178.44 },
+  { id: 'port-moresby', lat: -9.44, lon: 147.18 },
+  { id: 'singapore', lat: 1.35, lon: 103.82 },
+  { id: 'jakarta', lat: -6.21, lon: 106.85 },
+  { id: 'kuala-lumpur', lat: 3.14, lon: 101.69 },
+  { id: 'bangkok', lat: 13.76, lon: 100.5 },
+  { id: 'ho-chi-minh-city', lat: 10.82, lon: 106.63 },
+  { id: 'manila', lat: 14.6, lon: 120.98 },
+  { id: 'hong-kong', lat: 22.32, lon: 114.17 },
+  { id: 'taipei', lat: 25.03, lon: 121.57 },
+  { id: 'shanghai', lat: 31.23, lon: 121.47 },
   { id: 'seoul', lat: 37.57, lon: 126.98 },
   { id: 'tokyo', lat: 35.68, lon: 139.69 },
-  { id: 'new-york', lat: 40.71, lon: -74.0 },
-  { id: 'chicago', lat: 41.88, lon: -87.63 },
-  { id: 'san-francisco', lat: 37.77, lon: -122.42 },
-  { id: 'mexico-city', lat: 19.43, lon: -99.13 },
-  { id: 'reykjavik', lat: 64.15, lon: -21.94 },
-  { id: 'madrid', lat: 40.42, lon: -3.7 },
-  { id: 'cairo', lat: 30.04, lon: 31.24 },
-  { id: 'almaty', lat: 43.24, lon: 76.89 },
-  { id: 'anchorage', lat: 61.22, lon: -149.9 },
-  { id: 'vancouver', lat: 49.28, lon: -123.12 },
+  { id: 'mumbai', lat: 19.08, lon: 72.88 },
+  { id: 'dubai', lat: 25.2, lon: 55.27 },
+  { id: 'los-angeles', lat: 34.05, lon: -118.24 },
 ];
 
 export const NETWORK_LINKS: ReadonlyArray<readonly [string, string]> = [
-  ['london', 'new-york'],
-  ['london', 'dubai'],
-  ['paris', 'moscow'],
-  ['berlin', 'istanbul'],
-  ['madrid', 'reykjavik'],
-  ['dubai', 'delhi'],
-  ['delhi', 'beijing'],
-  ['moscow', 'almaty'],
-  ['beijing', 'seoul'],
-  ['seoul', 'tokyo'],
-  ['tokyo', 'anchorage'],
-  ['anchorage', 'vancouver'],
-  ['vancouver', 'chicago'],
-  ['san-francisco', 'new-york'],
-  ['chicago', 'mexico-city'],
-  ['new-york', 'reykjavik'],
-  ['cairo', 'istanbul'],
-  ['almaty', 'delhi'],
+  ['melbourne', 'sydney'],
+  ['melbourne', 'perth'],
+  ['melbourne', 'singapore'],
+  ['sydney', 'auckland'],
+  ['sydney', 'tokyo'],
+  ['sydney', 'los-angeles'],
+  ['brisbane', 'port-moresby'],
+  ['auckland', 'suva'],
+  ['perth', 'singapore'],
+  ['darwin', 'jakarta'],
+  ['singapore', 'kuala-lumpur'],
+  ['singapore', 'bangkok'],
+  ['singapore', 'mumbai'],
+  ['bangkok', 'ho-chi-minh-city'],
+  ['ho-chi-minh-city', 'manila'],
+  ['manila', 'hong-kong'],
+  ['hong-kong', 'taipei'],
+  ['taipei', 'tokyo'],
+  ['tokyo', 'seoul'],
+  ['seoul', 'shanghai'],
+  ['shanghai', 'hong-kong'],
+  ['mumbai', 'dubai'],
 ];
 
 /** Literal RGB triplets mirroring tokens.css gold scale (canvas needs literal colors). */

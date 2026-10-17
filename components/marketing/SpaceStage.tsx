@@ -27,6 +27,13 @@ interface SpaceStageProps {
   onChapterChange: (index: number) => void;
 }
 
+/**
+ * Hero camera: facing far south, so the horizon shows Southeast Asia and northern Australia.
+ * The statement then centres on Australia. Luminara is a Melbourne business.
+ */
+const HERO_LAT = -68;
+const STATEMENT_LAT = -20;
+
 /** What the globe shows for each chapter (the ambient network is hero-only). */
 const CHAPTER_LAYERS: Record<StoryChapter['id'], Omit<GlobeLayers, 'network'>> = {
   scan: { story: 0, marker: 1, proof: 0, fix: 0, scan: 1 },
@@ -67,7 +74,7 @@ export function targetForProgress(
     const toCenter = clamp(s, 0, 1);
     return {
       pose,
-      lat: lerp(-18, 12, easeInOut(toCenter)),
+      lat: lerp(HERO_LAT, STATEMENT_LAT, easeInOut(toCenter)),
       lon: null,
       layers: {
         network: lerp(0.6, 0.8, toCenter) * (1 - smoothstep(1.15, 1.5, s)),

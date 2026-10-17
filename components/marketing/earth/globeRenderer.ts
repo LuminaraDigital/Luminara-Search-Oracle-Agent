@@ -69,7 +69,9 @@ export interface GlobeRenderer {
 }
 
 const DAYMAP_URL = '/brand/earth-daymap.webp';
-const SPIN_DEG_PER_S = 2.4;
+const SPIN_DEG_PER_S = 1.6;
+/** Free spin starts over the Asia-Pacific. */
+const START_LON = 122;
 const DOT_SPACING_CSS = 8.5;
 
 const VERT = `
@@ -391,8 +393,8 @@ export function createGlobeRenderer(
   // Damped view state.
   const state = {
     pose: null as GlobePose | null,
-    lat: 10,
-    lon: 20,
+    lat: 0,
+    lon: START_LON,
     layers: { network: 0, story: 0, marker: 0, proof: 0, fix: 0, scan: 0 } as GlobeLayers,
   };
 
@@ -670,6 +672,9 @@ export function createGlobeRenderer(
     const tp = target.pose;
     if (!state.pose) {
       state.pose = { ...tp, sun: [...tp.sun] as Vec3 };
+      // First frame: no visible swing from the initial orientation.
+      state.lat = target.lat;
+      if (target.lon !== null) state.lon = target.lon;
     } else {
       const sp = state.pose;
       sp.cx += (tp.cx - sp.cx) * kFast;
