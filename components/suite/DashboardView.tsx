@@ -129,9 +129,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
     },
     {
       id: AppView.BUSINESS_DNA,
-      title: 'My business profile',
+      title: 'Business profile',
       desc: dna
-        ? `Linked to ${dna.name}. Required for a full (not scout) audit.`
+        ? `Linked to ${dna.name}. Required for a full audit.`
         : 'Set this once so every audit reinforces what you sell and who you beat.',
       icon: ICONS.DNA,
       badge: dna ? 'Linked' : 'Set up',
@@ -139,7 +139,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
     {
       id: AppView.IDEA_SCOUT,
       title: 'Idea Scout',
-      desc: 'No domain yet. Turn an idea into a hypothesis card, then hand off to Instant Audit.',
+      desc: 'Turn an idea into a hypothesis card, then hand off to Instant Audit.',
       icon: ICONS.Zap,
       badge: 'Idea',
     },

@@ -43,7 +43,7 @@ export const UniversalBrandPassportView: React.FC<UniversalBrandPassportViewProp
             <h3 className="text-lg font-semibold text-ink">Universal Brand Passport</h3>
           </div>
           <p className="mt-1 text-xs text-ink-muted">
-            Portable brand authority for {passport.domain}. Combines verified domain control, Business DNA, and Trust Receipts.
+            Portable brand authority for {passport.domain}. Combines verified domain control, your business profile, and signed receipts.
           </p>
         </div>
 

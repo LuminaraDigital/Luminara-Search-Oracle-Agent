@@ -8,7 +8,7 @@ import { ICONS } from '../../constants';
 import '../marketing/space.css';
 
 const FREE_ACCOUNT_POINTS = [
-  'Live checks across Google Search, AI Overviews, ChatGPT and Perplexity.',
+  'Checks across Google Search, AI Overviews, ChatGPT and Perplexity.',
   'Every result labeled Measured, Estimated or Not measured.',
   'One fix to ship first, with copy and schema ready to paste.',
   'A daily hosted allowance. No card needed.',
@@ -25,17 +25,17 @@ const FREE_ACCOUNT_POINTS = [
 function featureExplanation(view?: string): string | null {
   switch (view) {
     case 'ORACLE_AGENT':
-      return 'Ask requires an account to ground conversations in your verified Business DNA and preserve message memory.';
+      return 'Ask needs a free account so your questions and answers stay on this login.';
     case 'BRAND_MEMORY':
-      return 'Brand Memory requires an account to securely save and synchronize your company facts across devices.';
+      return 'Memory needs a free account so company facts stay on this login.';
     case 'NOTEBOOK':
-      return 'Studio requires an account to save interactive audit notebooks and research history.';
+      return 'Studio needs a free account so research notebooks stay on this login.';
     case 'BUSINESS_DNA':
-      return 'Business DNA requires an account to establish verified entity ownership and private tenant storage.';
+      return 'Business profile needs a free account so what you sell and who you compete with stay on this login.';
     case 'DASHBOARD':
-      return 'Workspace requires an account to load your saved audits, readiness metrics, and tracked domains.';
+      return 'Dashboard needs a free account so saved audits stay on this login.';
     case 'AGENT_REPORT':
-      return 'Agent Reports require an account to view and manage saved diagnostic reports.';
+      return 'Reports need a free account so saved audits stay on this login.';
     default:
       return null;
   }
@@ -75,14 +75,15 @@ export const AuthRequiredScreen: React.FC<{
 
   useEffect(() => {
     if (!isModal || auth.loading) return;
-    const firstInput = contentRef.current?.querySelector<HTMLElement>('input, button');
-    firstInput?.focus();
+    // Start in the form: the email field, not the close button that comes first in the DOM.
+    const root = contentRef.current;
+    (root?.querySelector<HTMLElement>('input') ?? root?.querySelector<HTMLElement>('button'))?.focus();
   }, [isModal, auth.loading]);
 
   if (auth.loading) {
     return (
       <div className={`${isModal ? 'fixed inset-0 z-[80] bg-black/95' : 'min-h-[100dvh] bg-black'} text-ink flex items-center justify-center px-4 relative overflow-hidden`}>
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_35%_20%,rgba(191,149,63,0.14)_0%,transparent_52%)]" />
+        <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
         <BrandLoader caption={inTelegram ? 'Opening your Mini App session' : 'Verifying your account session'} />
       </div>
     );
@@ -95,7 +96,7 @@ export const AuthRequiredScreen: React.FC<{
           <button
             type="button"
             onClick={onClose}
-            className="absolute -top-3 -right-2 w-10 h-10 rounded-full bg-[var(--color-paper-2)] border border-[var(--color-rule)] hover:border-gold/40 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm z-20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+            className="absolute -top-3 -right-2 w-10 h-10 rounded-full bg-black/70 border border-gold/25 hover:border-gold/50 text-[var(--color-ink-2)] hover:text-ink flex items-center justify-center transition-colors text-sm z-20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             title="Close (Esc)"
             aria-label="Close login dialog"
           >
@@ -116,40 +117,38 @@ export const AuthRequiredScreen: React.FC<{
                 <ICONS.LuminaraLogo className="w-8 h-8" />
               </div>
             )}
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-gold/80">
-              Telegram Mini App
-            </p>
+            <p className="lx-eyebrow">Telegram Mini App</p>
           </div>
-          <h1 id={headingId} className="font-display font-normal text-[2rem] sm:text-4xl text-[var(--color-ink)] tracking-tight leading-[1.08]">
+          <h1 id={headingId} className="lx-display text-[2.4rem] sm:text-5xl">
             Confirm your Telegram session
           </h1>
           {featureExplanation(featureView) && (
-            <div className="p-3 rounded-xl bg-gold/10 border border-gold/30 text-xs text-gold-light max-w-sm mx-auto text-left leading-relaxed">
-              <span className="font-bold uppercase tracking-wider block mb-1 text-[10px] text-gold">Account Required</span>
+            <div className="lx-glass rounded-2xl p-4 text-sm text-gold-light max-w-sm mx-auto text-left leading-relaxed">
+              <span className="lx-eyebrow block mb-1.5">Account required</span>
               {featureExplanation(featureView)}
             </div>
           )}
           <p className="text-sm text-[var(--color-ink-2)] leading-relaxed max-w-sm mx-auto">
             {tgUser?.first_name
               ? `${tgUser.first_name}, we could not verify this open. Reopen from the bot menu or retry below.`
-              : 'Your Telegram account is your identity. Audits, Stars, and Business DNA stay tied to this session.'}
+              : 'Your Telegram account is your identity. Audits, Stars, and your business profile stay tied to this session.'}
           </p>
         </div>
 
-        <div className="rounded-xl bg-[var(--color-paper-2)] border border-[var(--color-rule)] p-5 space-y-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
-          <p className="text-sm text-gray-300 leading-relaxed">
+        <div className="lx-glass rounded-3xl p-6 space-y-4">
+          <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
             {auth.reason || 'Could not verify Telegram. Close this view and open Luminara again from the bot menu.'}
           </p>
           {auth.retryTelegram && (
             <button
               type="button"
               onClick={() => auth.retryTelegram?.()}
-              className="w-full rounded-lg bg-gradient-to-r from-gold to-gold-dark text-black text-xs font-bold uppercase tracking-wider py-3 hover:brightness-110 active:scale-[0.99] transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+              className="lx-btn lx-btn-gold w-full"
             >
               Retry Telegram sign-in
             </button>
           )}
-          <p className="text-[11px] text-gray-500 leading-relaxed text-center">
+          <p className="text-xs text-[var(--color-ink-2)] leading-relaxed text-center">
             Tip: close the Mini App fully, then open it again from @{botUsernameFromMiniAppUrl(MINI_APP_URL)}.
           </p>
         </div>
@@ -162,14 +161,16 @@ export const AuthRequiredScreen: React.FC<{
         aria-modal="true"
         aria-labelledby={headingId}
         aria-label="Account access"
-        className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/95 overflow-y-auto"
+        className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/95 overflow-y-auto overflow-x-hidden"
       >
+        <div aria-hidden className="lx-stars pointer-events-none fixed inset-0 opacity-70" />
         <div className="absolute inset-0" onClick={onClose} />
         {tgContent}
       </div>
     ) : (
       <div className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-10 relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_35%_15%,rgba(191,149,63,0.1)_0%,transparent_55%)]" />
+        <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
+        <div aria-hidden className="lx-horizon pointer-events-none top-[82%]" />
         {tgContent}
       </div>
     );
@@ -178,12 +179,12 @@ export const AuthRequiredScreen: React.FC<{
   const featureNote = featureExplanation(featureView);
 
   const webSplitCard = (
-    <div ref={contentRef} className="relative z-10 w-full max-w-[1040px] my-auto rounded-[28px] bg-surface-0 border border-white/10 shadow-[0_36px_100px_rgba(0,0,0,0.92)] overflow-hidden grid grid-cols-1 lg:grid-cols-12">
+    <div ref={contentRef} className="lx-glass relative z-10 w-full max-w-[1040px] my-auto rounded-[28px] overflow-hidden grid grid-cols-1 lg:grid-cols-12">
       {isModal && onClose && (
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/70 border border-white/15 hover:border-gold/50 text-neutral-400 hover:text-white flex items-center justify-center transition-colors text-sm z-30 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+          className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/70 border border-gold/25 hover:border-gold/50 text-[var(--color-ink-2)] hover:text-ink flex items-center justify-center transition-colors text-sm z-30 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           title="Close (Esc)"
           aria-label="Close login dialog"
         >
@@ -199,16 +200,14 @@ export const AuthRequiredScreen: React.FC<{
               <div className="w-7 h-7 rounded-full bg-gold/15 border border-gold/40 flex items-center justify-center">
                 <ICONS.LuminaraLogo className="w-4 h-4" />
               </div>
-              <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-gold-light">
-                Luminara Suite
-              </span>
+              <span className="font-serif text-lg text-ink">Luminara Suite</span>
             </div>
 
             {onBackToMarketing && !isModal && (
               <button
                 type="button"
                 onClick={onBackToMarketing}
-                className="text-xs text-neutral-400 hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+                className="lx-link text-sm"
               >
                 ← Back to home
               </button>
@@ -216,21 +215,19 @@ export const AuthRequiredScreen: React.FC<{
           </div>
 
           <div className="space-y-2">
-            <h1 id={headingId} className="font-display font-semibold text-3xl sm:text-[2.5rem] text-[var(--color-ink)] tracking-tight leading-[1.08]">
-              {mode === 'signup' ? 'Create Account' : 'Welcome'}
+            <h1 id={headingId} className="lx-display text-[2.4rem] sm:text-5xl">
+              {mode === 'signup' ? 'Create your free account' : 'Welcome back'}
             </h1>
             <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
               {mode === 'signup'
-                ? 'Start your Luminara Suite account to save audits, build your Business DNA, and run hosted AI visibility diagnostics.'
+                ? 'Start your Luminara Suite account to save audits, build your business profile, and run hosted checks.'
                 : 'Access your account and continue your journey with us across web, Telegram, and desktop.'}
             </p>
           </div>
 
           {featureNote && (
-            <div className="p-3.5 rounded-2xl bg-gold/10 border border-gold/30 text-xs text-gold-light leading-relaxed">
-              <span className="font-mono uppercase tracking-widest block mb-1 text-[10px] text-gold">
-                Account Required
-              </span>
+            <div className="lx-glass rounded-2xl p-4 text-sm text-gold-light leading-relaxed">
+              <span className="lx-eyebrow block mb-1.5">Account required</span>
               {featureNote}
             </div>
           )}
@@ -252,7 +249,7 @@ export const AuthRequiredScreen: React.FC<{
           <div className="relative z-10">
             <p className="lx-eyebrow">Free account</p>
             <p className="mt-5 font-serif text-[2.6rem] leading-[1.02] text-[var(--color-ink)]">
-              Measure all four <span className="italic lx-gold-text">engines.</span>
+              See what AI says <span className="italic lx-gold-text">about you.</span>
             </p>
             <ul className="mt-8 space-y-4 list-none p-0 m-0">
               {FREE_ACCOUNT_POINTS.map((point) => (
@@ -278,8 +275,9 @@ export const AuthRequiredScreen: React.FC<{
         aria-modal="true"
         aria-labelledby={headingId}
         aria-label="Account access"
-        className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/90 overflow-y-auto"
+        className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/90 overflow-y-auto overflow-x-hidden"
       >
+        <div aria-hidden className="lx-stars pointer-events-none fixed inset-0 opacity-70" />
         <div className="absolute inset-0" onClick={onClose} />
         {webSplitCard}
       </div>
@@ -288,7 +286,8 @@ export const AuthRequiredScreen: React.FC<{
 
   return (
     <div className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-8 sm:py-10 relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_35%_15%,rgba(191,149,63,0.12)_0%,transparent_55%)]" />
+      <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
+      <div aria-hidden className="lx-horizon pointer-events-none top-[84%]" />
       {webSplitCard}
     </div>
   );

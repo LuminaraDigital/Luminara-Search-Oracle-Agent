@@ -47,7 +47,7 @@ export const StressTestView: React.FC<StressTestViewProps> = ({ dna }) => {
         <div className="mb-6 glass-morphism rounded-xl px-4 py-3 border border-success-500/30 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-success-400"></span>
-            <span className="text-gray-300">Evaluating against DNA Profile: <strong className="text-white">{dna.name}</strong></span>
+            <span className="text-gray-300">Evaluating against business profile: <strong className="text-white">{dna.name}</strong></span>
           </div>
           <span className="text-[10px] font-mono text-success-400 uppercase tracking-widest">USP & Gaps Active</span>
         </div>

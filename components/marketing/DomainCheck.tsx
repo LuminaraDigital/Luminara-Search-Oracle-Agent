@@ -4,10 +4,11 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useDemoPlayback } from './demo/useDemoPlayback';
-import { normalizeDemoUrl } from './demo/demoFixtures';
+import { normalizeDemoUrl, visibleProbeHost } from './demo/demoFixtures';
 import { EngineStatusChip } from './EvidenceGlyph';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import type { AuditHandoff } from '../../services/activation/auditHandoff';
+import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
 
 interface DomainCheckProps {
   inputId: string;
@@ -76,10 +77,10 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
           inputMode="url"
           autoComplete="url"
           spellCheck={false}
-          value={demo.url}
+          value={visibleProbeHost(demo.url)}
           readOnly={running}
           onChange={(e) => {
-            demo.setUrl(e.target.value);
+            demo.setUrl(visibleProbeHost(e.target.value));
             if (error) setError(null);
           }}
           placeholder="yoursite.com"
@@ -153,10 +154,10 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
                   onClick={() => onFullAudit(handoffFor(demo.fixture?.domain || demo.url))}
                   className="lx-btn lx-btn-gold"
                 >
-                  {isAuthenticated ? 'Run the full audit' : 'Run the full audit, free'}
+                  {isAuthenticated ? 'Run the full audit' : GUEST_FULL_AUDIT_CTA}
                 </button>
                 {!isAuthenticated && (
-                  <span className="text-xs text-[var(--color-ink-2)]">Free account. No card.</span>
+                  <span className="text-xs text-[var(--color-ink-2)]">Hosted engines stay off until you sign in or add your own keys.</span>
                 )}
               </div>
             </div>

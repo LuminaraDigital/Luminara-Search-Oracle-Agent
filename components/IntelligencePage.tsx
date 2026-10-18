@@ -8,20 +8,20 @@ interface IntelligencePageProps {
 
 const nodes = [
   {
-    title: 'Live search grounding',
-    desc: 'Connects to search and scrape providers so audits can cite what is on the web now, not only model memory.',
+    title: 'Live search',
+    desc: 'Reads the public page and a search sample, so the audit can quote what is online now.',
   },
   {
-    title: 'Your keys or hosted',
-    desc: 'Bring Groq, NVIDIA NIM, Ollama, or OpenRouter keys, or use hosted quota on a plan. Failover follows your settings.',
+    title: 'Your models',
+    desc: 'Connect a model in Settings, or use the hosted allowance on a plan. If one provider fails, the next one you saved takes over.',
   },
   {
-    title: 'Structured checks',
-    desc: 'Runs playbook-style checks for SEO, AEO, and GEO instead of a single free-form chat reply.',
+    title: 'Three checks',
+    desc: 'SEO, AEO, and GEO stay separate: search, answer engines, and AI answers. They are not mixed into one score.',
   },
   {
-    title: 'Ask, by text or voice',
-    desc: 'Use Ask, by text or voice, when you want to dig into a finding without leaving the app.',
+    title: 'A follow-up',
+    desc: 'Ask a question in chat when you want to understand one finding.',
   },
 ] as const;
 
@@ -35,22 +35,15 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({
 
   return (
     <MarketingPageShell
-      brandSub="AI"
       footerStatement="Facts before advice."
       closing={{
         eyebrow: 'Your stack',
         title: (
           <>
-            Use the stack <span className="italic lx-gold-text pr-[0.08em]">you already trust.</span>
+            Connect a model, <span className="italic lx-gold-text pr-[0.08em]">then run an audit.</span>
           </>
         ),
-        body: (
-          <>
-            Groq, NVIDIA NIM, Ollama, OpenRouter, Firecrawl, Tavily, and Google-oriented APIs where you connect
-            them in Settings. No invented engine names. Configure providers once, then run audits and chat against
-            that setup.
-          </>
-        ),
+        body: 'Add a model in Settings, or use the hosted allowance on a plan. The report only states what that run collected. If a figure was not collected, it says Not measured.',
         cta: { label: 'Open Instant Audit', onClick: onTerminal },
         links: [{ label: 'How it works', onClick: onNavigateInfrastructure }],
       }}
@@ -59,13 +52,13 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({
         eyebrow="The AI"
         title={
           <>
-            AI that checks facts <span className="italic lx-gold-text pr-[0.08em]">before it advises.</span>
+            The models check the page <span className="italic lx-gold-text pr-[0.08em]">before they advise.</span>
           </>
         }
-        lede="Live search paired with the models you choose. Findings stay tied to evidence when data is available; otherwise the UI marks them as not measured."
+        lede="An audit uses live search and the models you connect in Settings. If a number was not collected, the report says Not measured."
       />
 
-      <section aria-labelledby="ai-heading" className="mt-28 border-t pt-24 lx-hairline sm:mt-36 sm:pt-28">
+      <section aria-labelledby="ai-heading" className="mt-16 border-t pt-16 lx-hairline">
         <h2 id="ai-heading" className="lx-eyebrow" data-reveal>
           What powers it
         </h2>

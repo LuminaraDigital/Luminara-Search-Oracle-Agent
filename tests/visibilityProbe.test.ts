@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { EMPTY_SITE_INPUT_MESSAGE } from '../services/audit/auditTargetUrl';
 import {
   ANALYZE_STAGES,
   SAMPLE_FIXTURE,
   idleEngines,
   normalizeDemoUrl,
   sampleEngineRowsForHost,
+  visibleProbeHost,
 } from '../components/marketing/demo/demoFixtures';
 import { ENGINE_STATUS_LABEL } from '../components/marketing/EvidenceGlyph';
 import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
@@ -22,7 +24,9 @@ describe('landing Visibility Probe fixtures', () => {
     const empty = normalizeDemoUrl('');
     expect(empty.ok).toBe(false);
     if (!empty.ok) {
-      expect(empty.error).toBe('Enter a domain or URL.');
+      expect(empty.error).toBe(EMPTY_SITE_INPUT_MESSAGE);
+    expect(visibleProbeHost('https:// https://example.com/path')).toBe('example.com/path');
+    expect(normalizeDemoUrl('https://https://Example.com')).toEqual({ ok: true, host: 'example.com' });
       expect(empty.error).not.toContain('luminarasuite.com');
     }
     expect(normalizeDemoUrl('not-a-domain').ok).toBe(false);

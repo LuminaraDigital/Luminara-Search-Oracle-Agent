@@ -8,12 +8,13 @@ import {
   resetPasswordWithEmail,
   signOutFirebase,
   friendlyFirebaseError,
+  MIN_PASSWORD_LENGTH,
 } from '../../services/auth/firebaseAuthService';
 import { isInTelegram } from '../../services/telegram/tma';
 import { linkTelegramFirebaseAccounts } from '../../services/apiClient';
 import { pullWorkspaceOnLogin } from '../../services/sync/workspaceSyncService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
-import { Button } from '../ui/Button';
+import '../marketing/space.css';
 import { ConfirmModal } from '../ui/ConfirmModal';
 
 export type AuthMode = 'signin' | 'signup';
@@ -87,7 +88,7 @@ export const AuthPanel: React.FC<{
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [keepSignedIn, setKeepSignedIn] = useState(true);
+  const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -153,18 +154,18 @@ export const AuthPanel: React.FC<{
 
   if (inTelegram) {
     return (
-      <div className={chromeless ? 'space-y-4' : `glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
-        {!chromeless && <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>}
-        <p className="text-sm text-gray-200 font-medium">Signed in with Telegram</p>
-        <p className="text-xs text-gray-400 leading-relaxed">
+      <div className={chromeless ? 'space-y-4' : `lx-glass rounded-3xl ${compact ? 'p-4 space-y-3' : 'p-6 space-y-4'}`}>
+        {!chromeless && <p className="lx-eyebrow">Account</p>}
+        <p className="text-sm text-ink font-medium">Signed in with Telegram</p>
+        <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
           Link Telegram and web account - shares subscription. Confirm in the dialog before plans are shared. Opening the Mini App while you are signed in on the web does not merge accounts.
         </p>
         {configured && (
-          <Button variant="secondary" disabled={busy} onClick={() => void linkWebAccount()} className="w-full text-xs normal-case tracking-normal">
+          <button type="button" disabled={busy} onClick={() => void linkWebAccount()} className="lx-btn lx-btn-ghost w-full whitespace-normal text-center disabled:opacity-50">
             Link Telegram and web account - shares subscription
-          </Button>
+          </button>
         )}
-        {userLabel && <p className="text-[11px] text-gold/80 truncate">Web login: {userLabel}</p>}
+        {userLabel && <p className="text-xs text-gold-light/85 truncate">Web login: {userLabel}</p>}
         {error && <p className="text-xs text-danger-400" role="alert">{error}</p>}
         {info && <p className="text-xs text-success-400" role="status">{info}</p>}
         <ConfirmModal
@@ -182,9 +183,9 @@ export const AuthPanel: React.FC<{
 
   if (!configured) {
     return (
-      <div className={chromeless ? 'rounded-2xl border border-white/10 bg-surface/60 p-4 space-y-2' : 'glass-morphism rounded-2xl border border-white/10 p-5 space-y-2'}>
-        {!chromeless && <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>}
-        <p className="text-xs text-gray-400 leading-relaxed">
+      <div className={chromeless ? 'rounded-2xl border border-gold/15 bg-black/40 p-4 space-y-2' : 'lx-glass rounded-3xl p-6 space-y-2'}>
+        {!chromeless && <p className="lx-eyebrow">Account</p>}
+        <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
           Firebase Auth is not configured yet. Add <span className="font-mono text-gray-300">VITE_FIREBASE_*</span> to
           your env and set <span className="font-mono text-gray-300">FIREBASE_PROJECT_ID</span> on the Worker.
         </p>
@@ -194,20 +195,20 @@ export const AuthPanel: React.FC<{
 
   if (userLabel) {
     return (
-      <div className={chromeless ? 'space-y-4' : `glass-morphism rounded-2xl border border-gold/30 ${compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}`}>
-        {!chromeless && <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>}
-        <p className="text-sm text-gray-200 font-medium truncate">{userLabel}</p>
-        <p className="text-xs text-gray-400 leading-relaxed">
+      <div className={chromeless ? 'space-y-4' : `lx-glass rounded-3xl ${compact ? 'p-4 space-y-3' : 'p-6 space-y-4'}`}>
+        {!chromeless && <p className="lx-eyebrow">Account</p>}
+        <p className="text-sm text-ink font-medium truncate">{userLabel}</p>
+        <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
           Signed in with Firebase. Hosted AI keys and saved workspace use this account. Inside Telegram, confirm "Link Telegram and web account - shares subscription" so Stars payments follow you on the web.
         </p>
-        <Button
-          variant="secondary"
+        <button
+          type="button"
           disabled={busy}
           onClick={() => run(() => signOutFirebase())}
-          className="w-full text-xs"
+          className="lx-btn lx-btn-ghost w-full disabled:opacity-50"
         >
           Sign out
-        </Button>
+        </button>
       </div>
     );
   }
@@ -219,8 +220,8 @@ export const AuthPanel: React.FC<{
       setError('Enter a valid email address.');
       return;
     }
-    if (password.length < 6) {
-      setError('Use a password with at least 6 characters.');
+    if (mode === 'signup' && password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Use a password with at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     if (mode === 'signup') {
@@ -249,24 +250,24 @@ export const AuthPanel: React.FC<{
 
   const wrapperClass = chromeless
     ? 'space-y-5'
-    : `glass-morphism rounded-2xl border border-white/10 ${compact ? 'p-4 space-y-3.5' : 'p-6 space-y-5'}`;
+    : `lx-glass rounded-3xl ${compact ? 'p-4 space-y-3.5' : 'p-6 space-y-5'}`;
 
   return (
     <div className={wrapperClass}>
       {!chromeless && (
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Account</p>
-          <div className="flex gap-1 rounded-xl bg-black/50 p-1 border border-white/10 text-[10px] font-bold uppercase tracking-wider">
+          <p className="lx-eyebrow">Account</p>
+          <div className="flex gap-1 rounded-full border border-gold/20 bg-black/40 p-1 text-sm">
             <button
               type="button"
-              className={`px-2.5 py-1 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signin' ? 'bg-gold/20 text-gold-light' : 'text-gray-400 hover:text-gray-200'}`}
+              className={`px-3.5 py-1.5 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signin' ? 'bg-gold/15 text-gold-light' : 'text-[var(--color-ink-2)] hover:text-ink'}`}
               onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
             >
               Sign in
             </button>
             <button
               type="button"
-              className={`px-2.5 py-1 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signup' ? 'bg-gold/20 text-gold-light' : 'text-gray-400 hover:text-gray-200'}`}
+              className={`px-3.5 py-1.5 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${mode === 'signup' ? 'bg-gold/15 text-gold-light' : 'text-[var(--color-ink-2)] hover:text-ink'}`}
               onClick={() => { setMode('signup'); setError(null); setInfo(null); }}
             >
               Sign up
@@ -276,17 +277,17 @@ export const AuthPanel: React.FC<{
       )}
 
       {!chromeless && (
-        <p className="text-xs text-gray-400 leading-relaxed">
+        <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
           Web accounts use Firebase. Open the Mini App in Telegram and confirm "Link Telegram and web account - shares subscription" so Telegram and the website share one plan.
         </p>
       )}
 
       <form className="space-y-4" onSubmit={handleSubmit} noValidate>
         <div className="space-y-1.5">
-          <label htmlFor={emailId} className="block text-xs font-medium text-[var(--color-ink-2)]">
-            Email Address
+          <label htmlFor={emailId} className="block text-sm text-ink">
+            Email
           </label>
-          <div className="rounded-2xl border border-white/10 bg-surface/90 transition-colors focus-within:border-gold/60 focus-within:bg-gold/[0.03]">
+          <div className="rounded-xl border border-gold/20 bg-black/50 transition-colors focus-within:border-gold/60">
             <input
               id={emailId}
               type="email"
@@ -297,7 +298,7 @@ export const AuthPanel: React.FC<{
                 setEmail(e.target.value);
                 if (error) setError(null);
               }}
-              className="w-full rounded-2xl bg-transparent px-4 py-3.5 text-sm text-[var(--color-ink)] placeholder:text-neutral-500 outline-none"
+              className="w-full rounded-xl bg-transparent px-4 py-3.5 text-base text-ink placeholder:text-ink/40 outline-none"
               placeholder="Enter your email address"
             />
           </div>
@@ -305,29 +306,29 @@ export const AuthPanel: React.FC<{
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label htmlFor={passwordId} className="block text-xs font-medium text-[var(--color-ink-2)]">
+            <label htmlFor={passwordId} className="block text-sm text-ink">
               Password
             </label>
             {mode === 'signup' && (
-              <span className={`text-[11px] font-mono ${password.length >= 6 ? 'text-success-400' : 'text-neutral-500'}`}>
-                {password.length >= 6 ? '6+ chars ready' : 'Min. 6 characters'}
+              <span className={`text-xs ${password.length >= MIN_PASSWORD_LENGTH ? 'text-success-400' : 'text-[var(--color-ink-2)]'}`}>
+                {password.length >= MIN_PASSWORD_LENGTH ? `${MIN_PASSWORD_LENGTH}+ characters` : `Min. ${MIN_PASSWORD_LENGTH} characters`}
               </span>
             )}
           </div>
-          <div className="relative rounded-2xl border border-white/10 bg-surface/90 transition-colors focus-within:border-gold/60 focus-within:bg-gold/[0.03]">
+          <div className="relative rounded-xl border border-gold/20 bg-black/50 transition-colors focus-within:border-gold/60">
             <input
               id={passwordId}
               type={showPassword ? 'text' : 'password'}
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               required
-              minLength={6}
+              minLength={mode === 'signup' ? MIN_PASSWORD_LENGTH : 1}
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
                 if (error) setError(null);
               }}
-              className="w-full rounded-2xl bg-transparent pl-4 pr-11 py-3.5 text-sm text-[var(--color-ink)] placeholder:text-neutral-500 outline-none"
-              placeholder={mode === 'signup' ? 'Create a password (min. 6 characters)' : 'Enter your password'}
+              className="w-full rounded-xl bg-transparent pl-4 pr-11 py-3.5 text-base text-ink placeholder:text-ink/40 outline-none"
+              placeholder={mode === 'signup' ? `Create a password (min. ${MIN_PASSWORD_LENGTH} characters)` : 'Enter your password'}
             />
             <button
               type="button"
@@ -364,7 +365,7 @@ export const AuthPanel: React.FC<{
               type="button"
               disabled={busy}
               onClick={handlePasswordReset}
-              className="text-xs font-medium text-gold hover:text-gold-light disabled:opacity-40 transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+              className="lx-link text-xs disabled:opacity-40"
             >
               Reset password
             </button>
@@ -385,16 +386,16 @@ export const AuthPanel: React.FC<{
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-2xl py-3.5 px-5 text-sm font-semibold text-black bg-gradient-to-r from-gold-light via-gold to-gold-dark shadow-[0_14px_34px_-8px_rgba(191,149,63,0.45)] hover:brightness-105 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none transition-all focus-visible:ring-2 focus-visible:ring-gold-light focus-visible:outline-none"
+          className="lx-btn lx-btn-gold w-full disabled:opacity-50 disabled:pointer-events-none"
         >
-          {busy ? 'Working...' : mode === 'signup' ? 'Create Account' : 'Sign In'}
+          {busy ? 'Working...' : mode === 'signup' ? 'Create free account' : 'Sign in'}
         </button>
       </form>
 
       <div className="flex items-center gap-3 py-1">
-        <div className="h-px flex-1 bg-white/10" />
-        <span className="text-xs text-neutral-400">Or continue with</span>
-        <div className="h-px flex-1 bg-white/10" />
+        <div className="h-px flex-1 bg-gold/15" />
+        <span className="text-xs text-[var(--color-ink-2)]">Or continue with</span>
+        <div className="h-px flex-1 bg-gold/15" />
       </div>
 
       <button
@@ -408,16 +409,16 @@ export const AuthPanel: React.FC<{
             }
           })
         }
-        className="w-full rounded-2xl border border-white/10 bg-surface/90 hover:border-gold/40 hover:bg-white/[0.04] py-3.5 px-5 text-sm font-medium text-[var(--color-ink)] flex items-center justify-center gap-3 transition-all disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+        className="lx-btn lx-btn-ghost w-full disabled:opacity-50"
       >
         <GoogleIcon className="w-4 h-4" />
         <span>Continue with Google</span>
       </button>
 
-      <p className="text-center text-xs text-neutral-400 pt-1">
+      <p className="text-center text-sm text-[var(--color-ink-2)] pt-1">
         {mode === 'signin' ? (
           <>
-            New to our platform?{' '}
+            New to Luminara?{' '}
             <button
               type="button"
               onClick={() => {
@@ -425,9 +426,9 @@ export const AuthPanel: React.FC<{
                 setError(null);
                 setInfo(null);
               }}
-              className="text-gold hover:text-gold-light font-medium transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+              className="lx-link"
             >
-              Create Account
+              Create a free account
             </button>
           </>
         ) : (
@@ -440,9 +441,9 @@ export const AuthPanel: React.FC<{
                 setError(null);
                 setInfo(null);
               }}
-              className="text-gold hover:text-gold-light font-medium transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+              className="lx-link"
             >
-              Sign In
+              Sign in
             </button>
           </>
         )}

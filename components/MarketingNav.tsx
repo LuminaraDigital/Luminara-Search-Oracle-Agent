@@ -12,7 +12,6 @@ export interface MarketingNavLink {
 
 interface MarketingNavProps {
   brandLabel: string;
-  brandSub?: string;
   onBrandClick: () => void;
   links: MarketingNavLink[];
   primaryCta: { label: string; onClick: () => void };
@@ -25,7 +24,6 @@ interface MarketingNavProps {
  */
 export const MarketingNav: React.FC<MarketingNavProps> = ({
   brandLabel,
-  brandSub,
   onBrandClick,
   links,
   primaryCta,
@@ -87,16 +85,9 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
           aria-label="Luminara Suite home"
         >
           <ICONS.LuminaraLogo className="w-7 h-7 shrink-0" />
-          <div className="flex flex-col leading-none min-w-0">
-            <span className="font-serif text-xl tracking-tight text-[var(--color-ink)] truncate">
-              {brandLabel}
-            </span>
-            {brandSub && (
-              <span className="hidden sm:block text-[11px] text-[var(--color-ink-2)] mt-0.5 truncate">
-                {brandSub}
-              </span>
-            )}
-          </div>
+          <span className="font-serif text-xl tracking-tight text-[var(--color-ink)] truncate">
+            {brandLabel}
+          </span>
         </button>
 
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">

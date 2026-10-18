@@ -1,5 +1,6 @@
 import React from 'react';
 import type { GuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
 import { renderMarkdown } from '../../utils/markdown';
 import { ActionableFixList } from '../retention/ActionableFixList';
 import { DailyStreakCard } from '../retention/DailyStreakCard';
@@ -18,6 +19,8 @@ interface GuestScoutSummaryPanelProps {
   onShare?: () => void;
   onCopy?: () => void;
   sharing?: boolean;
+  /** Guest degraded result: primary sign-in. Omitted for signed-in rails. */
+  onSignIn?: () => void;
 }
 
 export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
@@ -26,6 +29,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
   onShare,
   onCopy,
   sharing = false,
+  onSignIn,
 }) => {
   return (
     <section
@@ -44,6 +48,24 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
         <p role="status" className="mt-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm leading-relaxed text-gray-200">
           {summary.banner}
         </p>
+      )}
+      {summary.banner && onSignIn && (
+        <div className="mt-3 flex flex-col items-start gap-1">
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="flex min-h-11 w-full items-center justify-center rounded-lg bg-gold px-4 text-[11px] font-semibold tracking-wide text-black hover:bg-gold-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold sm:w-auto"
+          >
+            {GUEST_FULL_AUDIT_CTA}
+          </button>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('luminara-open-settings'))}
+            className="min-h-11 px-1 text-left text-sm text-gray-400 underline-offset-2 hover:text-gray-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+          >
+            Or add your own keys in Settings.
+          </button>
+        </div>
       )}
       <p className="mt-3 text-[11px] text-gray-500">
         Signals are measured, estimated, or not measured. This scout does not invent scores.
