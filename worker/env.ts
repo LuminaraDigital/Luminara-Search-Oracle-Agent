@@ -121,8 +121,9 @@ export interface Env {
    * "true" turns the community idea feed on (GET /idea-scout/feed, POST /idea-scout/vote,
    * POST /idea-scout/share). Anything else: those three routes serve nothing. The sign-in guard
    * (worker/authMiddleware.ts) runs before the handler on every /idea-scout route, so a guest gets
-   * 401 from the guard and a signed-in caller gets 404 from the handler. Off until the feed
-   * stops returning account ids and has its own tables, limits and moderation (Track SW, SW0a-9).
+   * 401 from the guard and a signed-in caller gets 404 from the handler. The feed lives in D1
+   * (migrations/0033_community_feed.sql). Off until the chat rules and a named moderator exist
+   * (Track SW, SW0a-9 and plan section 14.6).
    */
   COMMUNITY_FEED_ENABLED?: string;
   /**
