@@ -6,6 +6,7 @@ import {
   MARKETING_SHELL_BY_PATH,
   instantAuditTabTitle,
   marketingShellKey,
+  perDomainShell,
   type MarketingShellMeta,
 } from './pageMeta';
 import { MARKETING_PATH_BY_VIEW } from '../../utils/marketingRoutes';
@@ -44,6 +45,24 @@ function ensureCanonical(href: string) {
   link.href = href;
 }
 
+function ensureRobots(content: string | null) {
+  const existing = document.head.querySelector('meta[name="robots"]');
+  if (!content) {
+    existing?.remove();
+    return;
+  }
+  const el = existing instanceof HTMLMetaElement ? existing : document.createElement('meta');
+  if (!(existing instanceof HTMLMetaElement)) {
+    el.setAttribute('name', 'robots');
+    document.head.appendChild(el);
+  }
+  el.content = content;
+}
+
+export function canonicalHrefForPage(page: MarketingShellMeta): string {
+  return page.path === '/' ? `${MARKETING_ORIGIN}/` : `${MARKETING_ORIGIN}${page.path}`;
+}
+
 function ensureJsonLd(data: Record<string, unknown>) {
   const legacyScript = document.getElementById('luminara-static-jsonld');
   if (legacyScript) {
@@ -60,7 +79,7 @@ function ensureJsonLd(data: Record<string, unknown>) {
 }
 
 function applyShell(page: MarketingShellMeta) {
-  const url = page.path === '/' ? `${MARKETING_ORIGIN}/` : `${MARKETING_ORIGIN}${page.path}`;
+  const url = canonicalHrefForPage(page);
   document.title = page.title;
   ensureMeta('name', 'description', page.description);
   ensureMeta('property', 'og:title', page.title);
@@ -69,6 +88,7 @@ function applyShell(page: MarketingShellMeta) {
   ensureMeta('property', 'og:type', 'website');
   ensureMeta('property', 'og:image', DEFAULT_OG_IMAGE);
   ensureCanonical(url);
+  ensureRobots(page.robots ?? null);
   ensureJsonLd(page.jsonLd);
 }
 
@@ -83,7 +103,21 @@ function shellFor(pathname: string, view: AppView): MarketingShellMeta | undefin
   // `/` plus a hash is a product view. A real path such as /compare/profound wins over the shared view.
   const key = path === '/' ? null : marketingShellKey(path);
   const shellPath = key ?? VIEW_TO_SHELL[view];
-  return shellPath ? MARKETING_SHELL_BY_PATH[shellPath] : undefined;
+  const shell = shellPath ? MARKETING_SHELL_BY_PATH[shellPath] : undefined;
+  if (shell) return shell;
+  return perDomainShell(path) ?? undefined;
+}
+
+/** Canonical the client will set. Per-domain audits point at themselves. Other app shells stay on the homepage. */
+export function resolveCanonicalHref(pathname: string, view: AppView): string {
+  const page = shellFor(pathname, view);
+  if (page) return canonicalHrefForPage(page);
+  return `${MARKETING_ORIGIN}${MARKETING_PATH_BY_VIEW[AppView.LANDING] || '/'}`;
+}
+
+/** noindex for per-domain audits. Null means the page may be indexed. */
+export function resolveRobotsDirective(pathname: string, view: AppView): string | null {
+  return shellFor(pathname, view)?.robots ?? null;
 }
 
 /** Browser tab title for a path and view. Marketing shells, dashboard, and Instant Audit included. */
@@ -110,6 +144,6 @@ export function applyDocumentMetaForView(view: AppView): void {
   ensureMeta('name', 'description', DEFAULT_APP_META.description);
   ensureMeta('property', 'og:title', DEFAULT_APP_META.title);
   ensureMeta('property', 'og:description', DEFAULT_APP_META.description);
-  const canonicalPath = MARKETING_PATH_BY_VIEW[AppView.LANDING] || '/';
-  ensureCanonical(`${MARKETING_ORIGIN}${canonicalPath}`);
+  ensureCanonical(resolveCanonicalHref(path, view));
+  ensureRobots(resolveRobotsDirective(path, view));
 }

@@ -1,8 +1,7 @@
 import {
   DEFAULT_OG_IMAGE,
   MARKETING_ORIGIN,
-  MARKETING_SHELL_BY_PATH,
-  marketingShellKey,
+  marketingPageForPath,
   type MarketingShellMeta,
 } from '../services/marketing/pageMeta';
 import { sha256Hex } from './workerUtils';
@@ -120,6 +119,18 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
     );
   }
 
+  if (page.robots) {
+    const robots = escapeHtml(page.robots);
+    if (/<meta\s+name="robots"/i.test(out)) {
+      out = out.replace(
+        /<meta\s+name="robots"\s+content="[^"]*"\s*>/i,
+        `<meta name="robots" content="${robots}">`,
+      );
+    } else {
+      out = out.replace(/<\/head>/i, `  <meta name="robots" content="${robots}">\n</head>`);
+    }
+  }
+
   const crawlerBlock = `<noscript id="luminara-crawler-body">${page.crawlerBody.trim()}</noscript>`;
   if (/id="luminara-crawler-body"/i.test(out)) {
     out = out.replace(/<noscript id="luminara-crawler-body">[\s\S]*?<\/noscript>/i, crawlerBlock);
@@ -135,15 +146,12 @@ export async function maybeServeMarketingHtml(
   assets: Fetcher,
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  const key = marketingShellKey(url.pathname);
-  if (!key) return null;
+  const page = marketingPageForPath(url.pathname);
+  if (!page) return null;
   // Only rewrite document navigations; leave asset requests alone.
   const accept = request.headers.get('accept') || '';
   if (request.method !== 'GET' && request.method !== 'HEAD') return null;
   if (accept && !accept.includes('text/html') && !accept.includes('*/*')) return null;
-
-  const page = MARKETING_SHELL_BY_PATH[key];
-  if (!page) return null;
 
   const shellReq = new Request(new URL('/', url).toString(), {
     method: 'GET',
@@ -154,24 +162,18 @@ export async function maybeServeMarketingHtml(
   const contentType = assetRes.headers.get('content-type') || '';
   if (!contentType.includes('text/html')) return null;
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'public, max-age=300',
+  };
+  if (page.robots) headers['X-Robots-Tag'] = page.robots;
+
   if (request.method === 'HEAD') {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'public, max-age=300',
-      },
-    });
+    return new Response(null, { status: 200, headers });
   }
 
   const html = injectMarketingMeta(await assetRes.text(), page);
-  return new Response(html, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=300',
-    },
-  });
+  return new Response(html, { status: 200, headers });
 }
 
 const SHARE_TOKEN_PATH = /^\/share\/([a-f0-9]{64})$/i;

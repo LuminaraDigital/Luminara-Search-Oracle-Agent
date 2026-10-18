@@ -1,11 +1,21 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AppView } from '../../types';
+import { fetchTrustFlags, type TrustFeatureFlags } from '../../services/trust/trustClient';
 import { ICONS } from '../ui/icons';
 import { Button } from '../ui/Button';
+
+const NOT_AVAILABLE_YET = 'Not available yet';
 
 export interface EcosystemHubViewProps {
   onSelectView: (view: AppView) => void;
   onOpenVaultManager?: () => void;
+  /** When set, skip /api/health. Null means the flags could not be read, so trust stays closed. */
+  trustFlags?: TrustFeatureFlags | null;
+}
+
+/** The Trust Center card promises domain verification and Trust Receipts. Both flags must be on. */
+export function trustDirectoryOpen(flags: { receiptsEnabled?: boolean; domainVerifyEnabled?: boolean } | null): boolean {
+  return flags?.receiptsEnabled === true && flags?.domainVerifyEnabled === true;
 }
 
 interface CapabilityItem {
@@ -112,9 +122,47 @@ const CAPABILITIES: CapabilityItem[] = [
 
 type CategoryFilter = 'all' | 'audit' | 'forecast' | 'trust' | 'agent';
 
-export const EcosystemHubView: React.FC<EcosystemHubViewProps> = ({ onSelectView, onOpenVaultManager }) => {
+function CapabilityAction({ open, featured, onOpen }: { open: boolean; featured: boolean; onOpen: () => void }) {
+  if (!open) {
+    return (
+      <Button type="button" variant={featured ? 'primary' : 'ghost'} size="sm" disabled className="min-h-11 font-mono text-xs">
+        {NOT_AVAILABLE_YET}
+      </Button>
+    );
+  }
+  return (
+    <Button
+      type="button"
+      variant={featured ? 'primary' : 'ghost'}
+      size="sm"
+      onClick={onOpen}
+      className={`min-h-11 font-mono text-xs${featured ? '' : ' hover:text-gold'}`}
+    >
+      {featured ? 'Launch Surface →' : 'Open'}
+    </Button>
+  );
+}
+
+export const EcosystemHubView: React.FC<EcosystemHubViewProps> = ({ onSelectView, onOpenVaultManager, trustFlags: trustFlagsProp }) => {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<CategoryFilter>('all');
+  const [loadedFlags, setLoadedFlags] = useState<TrustFeatureFlags | null>(null);
+  const trustFlags = trustFlagsProp === undefined ? loadedFlags : trustFlagsProp;
+  const trustOpen = trustDirectoryOpen(trustFlags);
+
+  useEffect(() => {
+    if (trustFlagsProp !== undefined) return;
+    let cancelled = false;
+    void fetchTrustFlags().then((flags) => {
+      if (!cancelled) setLoadedFlags(flags);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [trustFlagsProp]);
+
+  const cardOpen = (id: string) => (id === 'trust-center' ? trustOpen : true);
+  const cardBadge = (item: CapabilityItem) => (item.id === 'trust-center' && !trustOpen ? NOT_AVAILABLE_YET : item.badge);
 
   const filteredItems = useMemo(() => {
     return CAPABILITIES.filter((item) => {
@@ -124,10 +172,11 @@ export const EcosystemHubView: React.FC<EcosystemHubViewProps> = ({ onSelectView
         !q ||
         item.title.toLowerCase().includes(q) ||
         item.tagline.toLowerCase().includes(q) ||
-        item.badge?.toLowerCase().includes(q);
+        item.badge?.toLowerCase().includes(q) ||
+        (item.id === 'trust-center' && !trustOpen && NOT_AVAILABLE_YET.toLowerCase().includes(q));
       return matchCat && matchSearch;
     });
-  }, [category, search]);
+  }, [category, search, trustOpen]);
 
   const featured = useMemo(() => CAPABILITIES.filter((c) => c.isFeatured), []);
 
@@ -217,7 +266,7 @@ export const EcosystemHubView: React.FC<EcosystemHubViewProps> = ({ onSelectView
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="rounded bg-gold/10 border border-gold/30 px-2 py-0.5 text-[10px] font-mono text-gold">
-                      {item.badge}
+                      {cardBadge(item)}
                     </span>
                     <div className="flex items-center gap-1 text-[10px] font-mono text-ink-2 uppercase">
                       {item.platforms.join(' • ')}
@@ -229,15 +278,7 @@ export const EcosystemHubView: React.FC<EcosystemHubViewProps> = ({ onSelectView
                   <p className="text-xs text-ink-2 line-clamp-2">{item.tagline}</p>
                 </div>
                 <div className="pt-2 border-t border-rule flex justify-end">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => onSelectView(item.view)}
-                    className="font-mono text-xs"
-                  >
-                    Launch Surface →
-                  </Button>
+                  <CapabilityAction featured open={cardOpen(item.id)} onOpen={() => onSelectView(item.view)} />
                 </div>
               </div>
             ))}
@@ -265,9 +306,9 @@ export const EcosystemHubView: React.FC<EcosystemHubViewProps> = ({ onSelectView
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] font-mono uppercase text-ink-2">{item.category}</span>
-                    {item.badge && (
+                    {cardBadge(item) && (
                       <span className="rounded bg-surface border border-rule px-1.5 py-0.5 text-[9px] font-mono text-gold">
-                        {item.badge}
+                        {cardBadge(item)}
                       </span>
                     )}
                   </div>
@@ -279,15 +320,7 @@ export const EcosystemHubView: React.FC<EcosystemHubViewProps> = ({ onSelectView
                   <div className="flex items-center gap-1 text-[9px] font-mono text-ink-2 uppercase">
                     {item.platforms.join('/')}
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onSelectView(item.view)}
-                    className="font-mono text-xs hover:text-gold"
-                  >
-                    Open
-                  </Button>
+                  <CapabilityAction featured={false} open={cardOpen(item.id)} onOpen={() => onSelectView(item.view)} />
                 </div>
               </div>
             ))}

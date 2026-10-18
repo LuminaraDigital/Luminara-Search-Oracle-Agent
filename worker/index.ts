@@ -56,7 +56,7 @@ import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
-import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML, buildSitemapXml } from './crawlDocuments';
+import { LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
 import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
@@ -317,7 +317,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
-    // Public health: ok + payment-rail booleans only (no provider inventory / pricing internals).
     const adminCheck = isAdminAuthorized(env, request);
     if (!adminCheck.ok) {
       return withCors(json({
@@ -329,6 +328,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         // from this; without it the panel has nothing to list.
         plans: publicPlanCatalogue(),
         stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
+        trust: { receiptsEnabled: isTrustReceiptsEnabled(env), domainVerifyEnabled: isDomainVerifyEnabled(env) },
       }));
     }
 
@@ -2108,6 +2108,7 @@ function permanentRedirect(url: URL, pathname: string): Response {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const guard = (res: Response) => applyHostRobots(url, env.ENVIRONMENT, withSecurityHeaders(res));
 
     // Canonical redirect: redirect naked domain to www.luminarasuite.com for web/marketing traffic in production
     if (env.ENVIRONMENT === 'production' && url.hostname === 'luminarasuite.com' && !url.pathname.startsWith('/api/')) {
@@ -2123,12 +2124,12 @@ export default {
 
     if (url.pathname.startsWith('/api/')) {
       try {
-        return withSecurityHeaders(await handleApi(request, env, ctx));
+        return guard(await handleApi(request, env, ctx));
       } catch (e) {
         // Never echo internal error details (stack traces, upstream messages, env hints) to callers.
         console.error('[api] unhandled error', request.method, url.pathname, e);
         reportWorkerException(env, e, { path: url.pathname, method: request.method });
-        return withSecurityHeaders(json({ error: 'Internal error' }, 500));
+        return guard(json({ error: 'Internal error' }, 500));
       }
     }
 
@@ -2140,7 +2141,7 @@ export default {
       url.pathname === '/privacy-policy' ||
       url.pathname === '/privacy-policy/'
     ) {
-      return withSecurityHeaders(
+      return guard(
         new Response(PRIVACY_HTML, {
           status: 200,
           headers: {
@@ -2160,7 +2161,7 @@ export default {
       url.pathname === '/tos' ||
       url.pathname === '/tos/'
     ) {
-      return withSecurityHeaders(
+      return guard(
         new Response(TERMS_HTML, {
           status: 200,
           headers: {
@@ -2171,10 +2172,9 @@ export default {
       );
     }
 
-    // Crawl surfaces must never fall through to the SPA HTML shell.
     if (url.pathname === '/robots.txt') {
-      return withSecurityHeaders(
-        new Response(ROBOTS_TXT, {
+      return guard(
+        new Response(robotsTxtForHost(url.hostname, env.ENVIRONMENT), {
           status: 200,
           headers: {
             'Content-Type': 'text/plain; charset=utf-8',
@@ -2184,7 +2184,7 @@ export default {
       );
     }
     if (url.pathname === '/sitemap.xml') {
-      return withSecurityHeaders(
+      return guard(
         new Response(SITEMAP_XML, {
           status: 200,
           headers: {
@@ -2195,7 +2195,7 @@ export default {
       );
     }
     if (url.pathname === '/llms.txt') {
-      return withSecurityHeaders(
+      return guard(
         new Response(LLMS_TXT, {
           status: 200,
           headers: {
@@ -2208,7 +2208,7 @@ export default {
 
     // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
     if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
-      return withSecurityHeaders(await desktopWindowsDownload(env, request));
+      return guard(await desktopWindowsDownload(env, request));
     }
 
     // Windows desktop landing page: fetch static doc directly without SPA fallback loop.
@@ -2217,7 +2217,7 @@ export default {
       docUrl.search = url.search;
       const docRequest = new Request(docUrl.toString(), request);
       const docRes = await env.ASSETS.fetch(docRequest);
-      return withSecurityHeaders(docRes);
+      return guard(docRes);
     }
 
     // Extensionless citability URL: fetch static doc directly without redirect loop.
@@ -2227,30 +2227,30 @@ export default {
       docUrl.search = url.search;
       const docRequest = new Request(docUrl.toString(), request);
       const docRes = await env.ASSETS.fetch(docRequest);
-      return withSecurityHeaders(docRes);
+      return guard(docRes);
     }
 
     // Short marketing alias. Canonical page is /how-it-works.
     if (url.pathname === '/how' || url.pathname === '/how/') {
-      return withSecurityHeaders(permanentRedirect(url, '/how-it-works'));
+      return guard(permanentRedirect(url, '/how-it-works'));
     }
 
     // Unlisted share OG HTML (before static marketing shells).
     const shareHtml = await maybeServeShareHtml(request, env);
     if (shareHtml) {
-      return withSecurityHeaders(shareHtml);
+      return guard(shareHtml);
     }
 
     // Unlisted receipt verification OG HTML (before static marketing shells).
     const receiptHtml = await maybeServeReceiptHtml(request, env);
     if (receiptHtml) {
-      return withSecurityHeaders(receiptHtml);
+      return guard(receiptHtml);
     }
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
     const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
     if (marketingHtml) {
-      return withSecurityHeaders(marketingHtml);
+      return guard(marketingHtml);
     }
 
     // Static assets with SPA fallback (configured in wrangler.jsonc); security headers + CSP on the HTML shell.
@@ -2265,7 +2265,7 @@ export default {
         url.pathname,
       );
     if (isStaticFile && assetResponse.ok && contentType.includes('text/html')) {
-      return withSecurityHeaders(
+      return guard(
         new Response('Not found', {
           status: 404,
           headers: {
@@ -2283,7 +2283,7 @@ export default {
       resolveAppView(url.pathname, '') === AppView.NOT_FOUND
     ) {
       const html = request.method === 'HEAD' ? null : (assetResponse.ok ? withSkippedBootSplash(await assetResponse.text()) : 'Not Found');
-      return withSecurityHeaders(
+      return guard(
         new Response(html, {
           status: 404,
           statusText: 'Not Found',
@@ -2294,7 +2294,7 @@ export default {
         }),
       );
     }
-    return withSecurityHeaders(assetResponse);
+    return guard(assetResponse);
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).

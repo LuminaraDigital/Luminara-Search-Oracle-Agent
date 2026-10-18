@@ -10,8 +10,6 @@ export const PLAN_CARD_BADGE = 'Recommended';
 /** Checkout title. Plans have domain, seat, and feature caps, so this cannot say unlimited. */
 export const PAYWALL_HEADLINE = 'Pick the plan that fits your sites';
 
-export const PAYWALL_SUBLINE = 'Every plan has clear monthly limits.';
-
 export type PlanBullet = { included: boolean; text: string };
 
 /** Same sentence as Settings: keys on this device, no sign-in required. */
@@ -19,6 +17,10 @@ export const BYOK_CHECKOUT_LINE = 'Your keys stay on this device and work withou
 
 export function planTitle(id: PaidPlanId): string {
   return PLAN_ENTITLEMENTS[id].title;
+}
+
+function withLeadCapital(text: string): string {
+  return /^[a-z]/.test(text) ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
 export function planBullets(id: PaidPlanId): PlanBullet[] {
@@ -39,7 +41,7 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
   ];
   if (e.apiAccess) lines.push({ included: true, text: 'Paid research API (Agency plan or your own DataForSEO login)' });
   if (e.agencyClientLimit > 0) lines.push({ included: true, text: `${e.agencyClientLimit} client workspaces` });
-  return lines;
+  return lines.map((line) => ({ ...line, text: withLeadCapital(line.text) }));
 }
 
 export const pricingTiers: Array<{
@@ -79,6 +81,9 @@ export const pricingTiers: Array<{
 /** Stars and card grants both last 30 days, start at confirmation, and do not renew. */
 export const CHECKOUT_TERM_LINE =
   'Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does not renew on its own.';
+
+/** Plan modal subline. Same term as checkout: these are not monthly subscriptions. */
+export const PAYWALL_SUBLINE = CHECKOUT_TERM_LINE;
 
 /** Shown before a control that leaves this page for Telegram Stars. */
 export const TELEGRAM_STARS_HANDOFF = 'Payment happens in Telegram with Stars.';
