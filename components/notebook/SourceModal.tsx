@@ -83,7 +83,7 @@ export const SourceModal: React.FC<SourceModalProps> = ({
       onSourceAdded();
       onClose();
     } catch (err: any) {
-      setError(err?.message || 'Failed to import Business DNA');
+      setError(err?.message || 'Failed to import business profile');
     }
   };
 
@@ -279,7 +279,7 @@ export const SourceModal: React.FC<SourceModalProps> = ({
                 <div>
                   <div className="text-xs font-bold text-white flex items-center gap-1.5">
                     <ICONS.DNA className="w-3.5 h-3.5 text-gold" />
-                    <span>Business Profile: {dna.name}</span>
+                    <span>Business profile: {dna.name}</span>
                   </div>
                   <div className="text-[11px] text-gray-400 mt-1 line-clamp-1">
                     {dna.usp || dna.industry || 'Saved business identity'}

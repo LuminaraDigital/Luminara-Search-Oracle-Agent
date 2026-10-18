@@ -88,13 +88,13 @@ export const VfsStudioPanel: React.FC = () => {
     } catch (e) {}
 
     if (!savedDna) {
-      setSyncStatus('No Business DNA found in storage. Configure Business DNA first.');
+      setSyncStatus('No business profile found in storage. Set up your business profile first.');
       setTimeout(() => setSyncStatus(null), 3500);
       return;
     }
 
     const res = vfsMemoryService.syncFromBusinessDNA(savedDna);
-    setSyncStatus(`Successfully synced DNA for ${savedDna.name} (${res.nodesCreated} nodes updated).`);
+    setSyncStatus(`Synced business profile for ${savedDna.name} (${res.nodesCreated} nodes updated).`);
     setTimeout(() => setSyncStatus(null), 4000);
   };
 
@@ -176,10 +176,10 @@ export const VfsStudioPanel: React.FC = () => {
             <button
               onClick={handleSyncDna}
               className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-gold/20 to-gold-dark/20 border border-gold/40 hover:border-gold text-xs font-mono text-gold-light transition-all flex items-center gap-1.5 shadow-sm"
-              title="Synchronize Business DNA into .memories/"
+              title="Synchronize your business profile into memory"
             >
               <span>🧬</span>
-              <span>Sync Business DNA</span>
+              <span>Sync business profile</span>
             </button>
             <button
               onClick={() => setIsCreatingNode(true)}

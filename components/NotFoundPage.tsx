@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { dismissBootSplash } from '../services/intro/bootSplash';
 
 interface Props {
   onHome: () => void;
@@ -6,7 +7,8 @@ interface Props {
 
 export const NotFoundPage: React.FC<Props> = ({ onHome }) => {
   useEffect(() => {
-    document.title = '404 - Page Not Found | Luminara Suite';
+    document.title = 'Page not found | Luminara Suite';
+    dismissBootSplash(0);
   }, []);
 
   return (
@@ -19,7 +21,7 @@ export const NotFoundPage: React.FC<Props> = ({ onHome }) => {
           Page Not Found
         </h1>
         <p className="text-sm text-gray-400 leading-relaxed">
-          The requested page does not exist or has moved. Every URL is handled honestly.
+          This page is not here. Check the address, or return home.
         </p>
         <div className="pt-2">
           <button

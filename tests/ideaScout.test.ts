@@ -14,6 +14,7 @@ import {
   ideaCardSlot,
   normalizeCompetitorUrl,
   parseCompetitorUrls,
+  gateIdeaScoutSubmit,
   parseIdeaScoutRequest,
   parseIdeaStartParam,
   validateIdeaScoutCard,
@@ -210,6 +211,23 @@ describe('idea scout hostname guards', () => {
     expect(normalizeCompetitorUrl('https://stripe.com/pricing')).toBe('https://stripe.com/pricing');
     expect(parseCompetitorUrls(['https://stripe.com', 'https://shop.example.org', 'https://a.com', 'https://b.com']).code).toBe('TOO_MANY_COMPETITORS');
     expect(parseIdeaScoutRequest({ idea: 'short', competitorUrls: ['http://localhost'] }).code).toBe('BAD_IDEA');
+    const empty = gateIdeaScoutSubmit({ idea: '', competitorUrls: [], pulseOptIn: false }, { loading: false, authenticated: false });
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.error).toBe('The idea field is empty. Write what you want to offer before you build a card.');
+    const blank = gateIdeaScoutSubmit({ idea: '   ', competitorUrls: [], pulseOptIn: false }, { loading: false, authenticated: true });
+    expect(blank.ok).toBe(false);
+    if (!blank.ok) expect(blank.code).toBe('BAD_IDEA');
+    const guest = gateIdeaScoutSubmit(
+      { idea: 'A clinic booking tool for after-hours questions.', competitorUrls: [], pulseOptIn: false },
+      { loading: false, authenticated: false },
+    );
+    expect(guest.ok).toBe(false);
+    if (!guest.ok) expect(guest.error).toBe('Sign in to build an idea card. A free account saves the card and includes 2 hosted cards a day.');
+    const ready = gateIdeaScoutSubmit(
+      { idea: 'A clinic booking tool for after-hours questions.', competitorUrls: [], pulseOptIn: false },
+      { loading: false, authenticated: true },
+    );
+    expect(ready.ok).toBe(true);
     expect(parseIdeaScoutRequest({
       idea: ideaBody.idea,
       competitorUrls: ['http://localhost'],

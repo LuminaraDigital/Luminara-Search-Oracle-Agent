@@ -19,11 +19,12 @@ import {
 } from './guestScoutSummary';
 import { healthChecklist } from '../agentCore/auditEvidenceGate';
 import { entitlementsFor } from '../plans/planEntitlements';
+import { getAnswerDepth } from './answerDepth';
 import type { HostedScoutRail } from './hostedScoutRail';
 
-export function instantAuditPrimaryLabel(crewRunning: boolean, isFullAudit: boolean): string {
+export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
   if (crewRunning) return 'Scanning...';
-  return isFullAudit ? 'Run full audit' : 'Run quick scout';
+  return 'Run Instant Audit';
 }
 
 export type InstantAuditPersistOutcome = 'unmeasured' | 'unsaved';
@@ -32,12 +33,12 @@ export type InstantAuditPersistOutcome = 'unmeasured' | 'unsaved';
 export function instantAuditPersistHint(signedIn: boolean, outcome: InstantAuditPersistOutcome): string {
   if (!signedIn) {
     if (outcome === 'unmeasured') {
-      return 'Scout finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.';
+      return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Pro / Agency.';
     }
-    return 'Scout finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.';
+    return 'Instant Audit finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Pro / Agency.';
   }
   if (outcome === 'unmeasured') {
-    return 'Scout finished. Use the summary above. This run did not measure the site, so no full report was generated. Strategy was not saved. Retry, or check Settings → provider status.';
+    return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Strategy was not saved. Retry, or check Settings → provider status.';
   }
   return 'Audit complete. Strategy was not saved to a project. Retry, or check Settings for share links and MCP on your plan.';
 }
@@ -93,6 +94,8 @@ export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: Hosted
     plainEnglishBrief: crew.plainEnglishBrief,
     llmCrawler: crew.llmCrawlerReadiness,
     hostedRail,
+    focus: crew.focus,
+    depth: getAnswerDepth(),
   });
 }
 

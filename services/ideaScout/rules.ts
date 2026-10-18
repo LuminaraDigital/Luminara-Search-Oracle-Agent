@@ -157,6 +157,10 @@ export function parseIdeaScoutRequest(body: unknown):
       };
     }
   }
+  const ideaRaw = typeof rec.idea === 'string' ? rec.idea.replace(/\s+/g, ' ').trim() : '';
+  if (!ideaRaw) {
+    return { ok: false, error: IDEA_FIELD_EMPTY, code: 'BAD_IDEA' };
+  }
   const idea = readText(rec.idea, MAX_IDEA_CHARS);
   if (!idea || idea.length < MIN_IDEA_CHARS) {
     return {
@@ -188,6 +192,26 @@ export function parseIdeaScoutRequest(body: unknown):
     competitorUrls: competitors.urls,
     pulseOptIn: rec.pulseOptIn === true,
   };
+}
+
+export const IDEA_FIELD_EMPTY =
+  'The idea field is empty. Write what you want to offer before you build a card.';
+
+export const IDEA_SCOUT_SIGN_IN =
+  'Sign in to build an idea card. A free account saves the card and includes 2 hosted cards a day.';
+
+/** Validate first, then refuse a guest. Neither path calls the API. */
+export function gateIdeaScoutSubmit(
+  body: { idea: string; niche?: string; competitorUrls: string[]; pulseOptIn: boolean },
+  auth: { loading: boolean; authenticated: boolean },
+): ReturnType<typeof parseIdeaScoutRequest> {
+  const parsed = parseIdeaScoutRequest(body);
+  if (!parsed.ok) return parsed;
+  if (auth.loading) {
+    return { ok: false, error: 'Checking your sign-in. Try again in a moment.', code: 'AUTH_LOADING' };
+  }
+  if (!auth.authenticated) return { ok: false, error: IDEA_SCOUT_SIGN_IN, code: 'AUTH_REQUIRED' };
+  return parsed;
 }
 
 function decodeEntities(text: string): string {

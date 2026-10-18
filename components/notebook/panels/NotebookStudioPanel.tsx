@@ -5,6 +5,7 @@ import { AudioOverviewPlayer } from '../AudioOverviewPlayer';
 import { ICONS } from '../../../constants';
 import { renderMarkdown } from '../../../utils/markdown';
 import { useClipboard } from '../../../hooks/useClipboard';
+import { SynthesisSkeleton } from '../../ui/Skeleton';
 
 interface NotebookStudioPanelProps {
   activeNotebook: Notebook;
@@ -138,7 +139,10 @@ export const NotebookStudioPanel: React.FC<NotebookStudioPanelProps> = ({
         </div>
 
         {/* Selected Artifact Viewer */}
-        {selectedArtifact && (
+        {generatingArtifactType && (
+          <SynthesisSkeleton title="Synthesizing studio artifact…" />
+        )}
+        {!generatingArtifactType && selectedArtifact && (
           <div className="p-4 rounded-2xl bg-surface-1 border border-white/10 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-white/10">
               <h5 className="text-xs font-bold text-white truncate max-w-[180px]">

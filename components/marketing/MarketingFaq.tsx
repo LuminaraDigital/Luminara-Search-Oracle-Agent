@@ -1,5 +1,6 @@
 import React from 'react';
 import { MARKETING_FAQ } from '../../services/marketing/marketingFaqContent';
+import './space.css';
 
 /** Visible FAQ that must stay 1:1 with FAQPage JSON-LD in pageMeta. */
 export const MarketingFaq: React.FC<{ className?: string; embedded?: boolean }> = ({
@@ -10,24 +11,35 @@ export const MarketingFaq: React.FC<{ className?: string; embedded?: boolean }> 
     id="faq"
     aria-labelledby="faq-heading"
     className={`${
-      embedded ? 'relative border-t border-[var(--color-rule)] pt-14 sm:pt-20' : 'mkt-section'
+      embedded
+        ? 'relative border-t lx-hairline pt-14 sm:pt-20'
+        : 'border-t lx-hairline px-5 py-28 sm:px-8 sm:py-36'
     } ${className}`}
   >
-    <div className={embedded ? 'max-w-3xl' : 'max-w-3xl mx-auto'}>
+    <div className={embedded ? 'max-w-3xl' : 'mx-auto max-w-3xl'}>
+      {!embedded && <p className="lx-eyebrow">Questions</p>}
       <h2
         id="faq-heading"
-        className="font-display text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-tight mb-8 [overflow-wrap:anywhere]"
+        className={embedded ? 'lx-display lx-h3 mb-8' : 'lx-display lx-h2 mt-6 mb-12'}
       >
-        Questions before you run a scout.
+        Common questions.
       </h2>
-      <dl className="space-y-6">
+      <div className="border-b lx-hairline">
         {MARKETING_FAQ.map((item) => (
-          <div key={item.question} className="border-t border-[var(--color-rule)] pt-4">
-            <dt className="text-lg text-[var(--color-ink)] font-medium mb-2">{item.question}</dt>
-            <dd className="mkt-body">{item.answer}</dd>
-          </div>
+          <details key={item.question} className="lx-faq group border-t lx-hairline">
+            <summary className="flex items-start justify-between gap-6 py-6">
+              <span className="text-lg leading-snug text-[var(--color-ink)] sm:text-xl">{item.question}</span>
+              <span
+                aria-hidden
+                className="lx-faq-icon mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--color-rule)] text-lg leading-none text-[var(--gold-light)]"
+              >
+                +
+              </span>
+            </summary>
+            <p className="-mt-1 max-w-2xl pb-7 leading-relaxed text-[var(--color-ink-2)]">{item.answer}</p>
+          </details>
         ))}
-      </dl>
+      </div>
     </div>
   </section>
 );

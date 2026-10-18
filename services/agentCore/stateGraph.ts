@@ -16,6 +16,7 @@ import {
   StateGraphCheckpoint,
   AgentActivityEvent,
 } from './types';
+import { cloneJson, diffJsonPatch } from './jsonPatch';
 
 export const END_NODE = '__END__';
 
@@ -97,8 +98,27 @@ export class StateGraph<TContext extends Record<string, any>> {
 
     let currentNodeId: string = this.entryNode;
     let context: TContext = { ...initialContext };
+    let prevSnapshot: TContext | null = null;
+    let stateVersion = 0;
     let iteration = 0;
     this.checkpoints = [];
+
+    const recordCheckpoint = (nodeId: string, stepIteration: number, current: TContext) => {
+      const snapshot = cloneJson(current);
+      const patchOps = prevSnapshot === null ? [] : diffJsonPatch(prevSnapshot, snapshot);
+      if (patchOps.length > 0) {
+        stateVersion++;
+      }
+      prevSnapshot = snapshot;
+      this.checkpoints.push({
+        nodeId,
+        iteration: stepIteration,
+        timestamp: Date.now(),
+        context: snapshot,
+        patchOps,
+        stateVersion,
+      });
+    };
 
     const emit = (event: AgentActivityEvent) => {
       if (onEvent) {
@@ -118,12 +138,7 @@ export class StateGraph<TContext extends Record<string, any>> {
       }
 
       // Checkpoint before node execution
-      this.checkpoints.push({
-        nodeId: currentNodeId,
-        iteration,
-        timestamp: Date.now(),
-        context: JSON.parse(JSON.stringify(context)),
-      });
+      recordCheckpoint(currentNodeId, iteration, context);
 
       try {
         const delta = await node.handler(context, emit);
@@ -157,12 +172,7 @@ export class StateGraph<TContext extends Record<string, any>> {
     }
 
     // Final checkpoint
-    this.checkpoints.push({
-      nodeId: END_NODE,
-      iteration,
-      timestamp: Date.now(),
-      context: JSON.parse(JSON.stringify(context)),
-    });
+    recordCheckpoint(END_NODE, iteration, context);
 
     return {
       finalContext: context,

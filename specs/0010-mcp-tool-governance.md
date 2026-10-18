@@ -23,7 +23,8 @@ Layer governance over the existing `worker/mcpServer.ts` tools/call path: risk-c
 ## Edge cases
 - Unknown tool name still executes but is classified write/active and logged.
 - Expired approvals never authorize; second call after expiry opens a new request.
-- Pending request dedupe: one pending request per (user_id, tool_name, project_id); creating again returns the existing id.
+- Approvals are single use and bound to args: `consumeApprovedRequest` flips one matching approved row to `consumed` (matched on the redacted `args_json`) and authorizes only if that update changed a row. A replay, or the same tool with different args, needs a new approval.
+- Pending request dedupe: one pending request per (user_id, tool_name, project_id, args_json); creating again returns the existing id.
 - args_json stored redacted with `redactSensitive`.
 
 ## Definition of done

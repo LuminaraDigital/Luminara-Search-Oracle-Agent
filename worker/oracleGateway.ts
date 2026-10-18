@@ -77,7 +77,7 @@ export async function executeOracleGatewayTask(
   req: OracleGatewayRequest,
   headers?: Headers,
 ): Promise<Response> {
-  const domain = sanitizeDomain(req.targetDomain);
+  const domain = typeof req?.targetDomain === 'string' ? sanitizeDomain(req.targetDomain) : '';
   if (!domain || !domain.includes('.')) {
     return json({ ok: false, error: 'Valid target domain is required', code: 'INVALID_DOMAIN' }, 400);
   }

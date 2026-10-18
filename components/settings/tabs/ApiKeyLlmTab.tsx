@@ -71,20 +71,20 @@ export const ApiKeyLlmTab: React.FC<ApiKeyLlmTabProps> = ({
   return (
     <div className="space-y-4 text-xs">
       <div className="rounded-xl border border-gold/30 bg-gold/5 p-3 text-[11px] text-gray-300 leading-relaxed">
-        <b className="text-gold-light">One-key gateway or Native Trinity.</b> Point Luminara at a local{' '}
-        <a href="https://github.com/tashfeenahmed/freellmapi" target="_blank" rel="noopener noreferrer" className="text-gold-light underline">FreeLLMAPI</a>{' '}
-        sidecar for a single unified key with automatic free-tier failover. Or wire NVIDIA NIM, Groq, OpenRouter, and Ollama individually. Gemini stays an optional fallback. FreeLLMAPI is BYOK / personal use only (not the multi-tenant hosted brain).
+        <b className="text-gold-light">One key, or one key per provider.</b> Point Luminara at a local
+        OpenAI-compatible gateway for a single key, or add each provider key in the sections below.
+        Your keys stay on this device.
       </div>
 
       {/* 0. FreeLLMAPI One-Key Gateway */}
       <div className="p-3 rounded-xl bg-gold/10 border border-gold/40 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
-            0. FreeLLMAPI Gateway (Recommended for self-host)
+            0. Your model gateway
           </span>
           <div className="flex items-center gap-2">
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-gold/20 text-gold-light border border-gold/40 font-bold">
-              One key · auto:fast / auto:smart
+              One key
             </span>
             <Button
               variant="ghost"
@@ -112,7 +112,7 @@ export const ApiKeyLlmTab: React.FC<ApiKeyLlmTabProps> = ({
         </div>
         <div>
           <label htmlFor="freellm-api-key" className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-            Unified API Key · from FreeLLMAPI Keys page
+            Gateway API key
           </label>
           <div className="relative">
             <input
@@ -120,7 +120,7 @@ export const ApiKeyLlmTab: React.FC<ApiKeyLlmTabProps> = ({
               type={visibleKeys['freellm'] ? 'text' : 'password'}
               value={freeLlmKey}
               onChange={e => setFreeLlmKey(e.target.value)}
-              placeholder="freellmapi-..."
+              placeholder="Gateway key"
               className="w-full bg-black/60 border border-white/15 focus:border-gold rounded-xl px-4 py-2 text-xs text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none pr-16"
             />
             <Button
@@ -128,7 +128,7 @@ export const ApiKeyLlmTab: React.FC<ApiKeyLlmTabProps> = ({
               size="none"
               onClick={() => toggleVisibility('freellm')}
               aria-pressed={!!visibleKeys['freellm']}
-              aria-label={visibleKeys['freellm'] ? 'Hide FreeLLMAPI key' : 'Show FreeLLMAPI key'}
+              aria-label={visibleKeys['freellm'] ? 'Hide gateway key' : 'Show gateway key'}
               className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono text-gold-light"
             >
               {visibleKeys['freellm'] ? 'Hide' : 'Show'}
@@ -149,13 +149,12 @@ export const ApiKeyLlmTab: React.FC<ApiKeyLlmTabProps> = ({
             className="mt-0.5 accent-[#bf953f]"
           />
           <span>
-            Prefer FreeLLMAPI as primary gateway (puts it first for chat, audits, and Switchyard{' '}
-            <code className="text-gold-light">auto:fast</code> / <code className="text-gold-light">auto:smart</code> routing).
-            Turn off to keep pinned Groq/NIM for stricter JSON quality.
+            Use this gateway first for chat and audits. It chooses a fast or careful model for you.
+            Turn it off to keep your other saved keys first.
           </span>
         </label>
         <p className="text-[10px] text-gray-400">
-          Runs in your browser against your sidecar only. Hosted web does not call the default http://localhost:3001/v1 until you save a different base URL. The desktop app and local dev still use that address when this field is empty. Same base URL + key can power Cursor, Claude Code, and Codex. See docs/freellmapi.md.
+          Runs in your browser against your gateway only. Hosted web does not call the default http://localhost:3001/v1 until you save a different base URL. The desktop app and local dev still use that address when this field is empty.
         </p>
       </div>
 

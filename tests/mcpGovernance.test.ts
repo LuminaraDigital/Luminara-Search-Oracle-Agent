@@ -13,7 +13,7 @@ import {
   listActionRequests,
   approveActionRequest,
   denyActionRequest,
-  hasApprovedRequest,
+  consumeApprovedRequest,
 } from '../worker/mcpGovernance';
 import { redactSensitive } from '../worker/logRedaction';
 import { handleMcpRequest } from '../worker/mcpServer';
@@ -181,16 +181,27 @@ describe('action request lifecycle', () => {
     expect(rows[0].decided_by).toBe('admin_2');
   });
 
-  it('hasApprovedRequest true for approved unexpired, false for pending/denied', async () => {
+  it('consumeApprovedRequest: false for pending/denied, true once for approved, then consumed', async () => {
     const env = makeEnv();
     const pending = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', projectId: 'p1' });
-    expect(await hasApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(false);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(false);
     await approveActionRequest(env, pending.id, 'admin');
-    expect(await hasApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(true);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(true);
+    // Single use: the same approval never authorizes a second call.
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(false);
+    expect((await listActionRequests(env, 'u1'))[0].status).toBe('consumed');
 
     const denied = await createActionRequest(env, { userId: 'u1', toolName: 'browse_close' });
     await denyActionRequest(env, denied.id, 'admin');
-    expect(await hasApprovedRequest(env, 'u1', 'browse_close', null)).toBe(false);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_close', null)).toBe(false);
+  });
+
+  it('an approval only authorizes the args it was requested with', async () => {
+    const env = makeEnv();
+    const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { url: 'https://a.test' } });
+    await approveActionRequest(env, id, 'admin');
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://evil.test' })).toBe(false);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test' })).toBe(true);
   });
 
   it('expired approvals never authorize', async () => {
@@ -200,7 +211,7 @@ describe('action request lifecycle', () => {
     await env.DB.prepare(`UPDATE mcp_action_requests SET expires_at = ? WHERE id = ?`)
       .bind(Date.now() - 1000, id)
       .run();
-    expect(await hasApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(false);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(false);
   });
 
   it('second call after expiry opens a new request', async () => {
@@ -220,7 +231,7 @@ describe('action request lifecycle', () => {
     const created = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal' });
     expect(created.id).toBeTruthy();
     expect(await listActionRequests(env, 'u1')).toEqual([]);
-    expect(await hasApprovedRequest(env, 'u1', 'browse_goal', null)).toBe(false);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null)).toBe(false);
   });
 });
 
@@ -303,6 +314,42 @@ describe('mcp integration', () => {
       result?: { structuredContent?: { requiresApproval?: boolean } };
     };
     expect(secondBody.result?.structuredContent?.requiresApproval).toBeUndefined();
+
+    // The approval was spent: a third identical call needs a new one.
+    const third = await handleMcpRequest(mcpCall('browse_close', { sessionId: 's1' }), env, user);
+    const thirdBody = (await third.json()) as { result?: { structuredContent?: { requiresApproval?: boolean } } };
+    expect(thirdBody.result?.structuredContent?.requiresApproval).toBe(true);
+  });
+
+  it('rejects a JSON-RPC batch of more than 20 messages', async () => {
+    const env = makeEnv();
+    const batch = Array.from({ length: 21 }, (_, i) => ({ jsonrpc: '2.0', id: i, method: 'ping' }));
+    const res = await handleMcpRequest(
+      new Request('https://luminarasuite.com/api/mcp', { method: 'POST', body: JSON.stringify(batch) }),
+      env,
+      user,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: { code?: number } };
+    expect(body.error?.code).toBe(-32600);
+
+    const ok = await handleMcpRequest(
+      new Request('https://luminarasuite.com/api/mcp', { method: 'POST', body: JSON.stringify(batch.slice(0, 20)) }),
+      env,
+      user,
+    );
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as unknown[]).length).toBe(20);
+  });
+
+  it('rejects an oversized request body with 413', async () => {
+    const env = makeEnv();
+    const res = await handleMcpRequest(
+      new Request('https://luminarasuite.com/api/mcp', { method: 'POST', body: 'x'.repeat(1_000_001) }),
+      env,
+      user,
+    );
+    expect(res.status).toBe(413);
   });
 
   it('unknown tool still logged then TOOL_NOT_FOUND via full worker path', async () => {

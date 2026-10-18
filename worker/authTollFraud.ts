@@ -11,7 +11,7 @@
  */
 import type { Env } from './env';
 import { json } from './workerUtils';
-import { enforceAppCheckIfRequired } from './appCheck';
+import { enforceAppCheckIfRequired, extractAppCheckToken } from './appCheck';
 import {
   checkOutboundDailyBudget,
   enforceBurstLimit,
@@ -40,6 +40,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const IDENTITY_TOOLKIT_OOB =
   'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode';
 
+function toolkitReferer(env: Env): string {
+  const raw = String(env.WEBAPP_URL || '').trim();
+  if (!raw) return 'https://luminarasuite.com/';
+  try {
+    return new URL(raw).href;
+  } catch {
+    return raw.endsWith('/') ? raw : `${raw}/`;
+  }
+}
+
 export function normalizeResetEmail(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const email = raw.trim().toLowerCase();
@@ -65,7 +75,7 @@ type ToolkitResult =
 export async function sendPasswordResetOob(
   env: Env,
   email: string,
-  opts?: { fetchImpl?: typeof fetch; continueUrl?: string },
+  opts?: { fetchImpl?: typeof fetch; continueUrl?: string; appCheckToken?: string },
 ): Promise<ToolkitResult> {
   const apiKey = String(env.FIREBASE_WEB_API_KEY || '').trim();
   if (!apiKey) {
@@ -78,12 +88,19 @@ export async function sendPasswordResetOob(
   };
   if (opts?.continueUrl) body.continueUrl = opts.continueUrl;
 
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    Referer: toolkitReferer(env),
+  };
+  const appCheck = String(opts?.appCheckToken || '').trim();
+  if (appCheck) headers['X-Firebase-AppCheck'] = appCheck;
+
   const fetchImpl = opts?.fetchImpl || fetch;
   let res: Response;
   try {
     res = await fetchImpl(`${IDENTITY_TOOLKIT_OOB}?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
   } catch {
@@ -100,11 +117,28 @@ export async function sendPasswordResetOob(
     message = '';
   }
 
-  if (message.includes('EMAIL_NOT_FOUND') || message.includes('USER_NOT_FOUND')) {
+  const upper = message.toUpperCase();
+  if (upper.includes('EMAIL_NOT_FOUND') || upper.includes('USER_NOT_FOUND')) {
     return { dispatched: false, reason: 'not_found' };
   }
-  if (message.includes('INVALID_EMAIL')) {
+  if (upper.includes('INVALID_EMAIL')) {
     return { dispatched: false, reason: 'invalid' };
+  }
+  if (
+    res.status === 403 ||
+    upper.includes('REFERRER') ||
+    upper.includes('REFERER') ||
+    upper.includes('API_KEY_') ||
+    upper.includes('OPERATION_NOT_ALLOWED')
+  ) {
+    console.warn(
+      JSON.stringify({
+        event: 'password_reset_provider_misconfigured',
+        status: res.status,
+        code: upper.slice(0, 80) || 'forbidden',
+      }),
+    );
+    return { dispatched: false, reason: 'misconfigured' };
   }
   console.warn(
     JSON.stringify({
@@ -205,9 +239,11 @@ export async function handlePasswordResetRequest(
     return budget.response;
   }
 
+  const resolvedAppCheck = extractAppCheckToken(request, appCheckToken);
   const toolkit = await sendPasswordResetOob(env, email, {
     fetchImpl: opts?.fetchImpl,
     continueUrl: env.WEBAPP_URL || undefined,
+    appCheckToken: resolvedAppCheck,
   });
 
   if (toolkit.dispatched === false && toolkit.reason === 'misconfigured') {
@@ -324,11 +360,15 @@ export async function handleSendVerification(
   }
 
   const fetchImpl = opts?.fetchImpl || fetch;
+  const referer = toolkitReferer(env);
   let dispatched = false;
   try {
     const res = await fetchImpl(`${IDENTITY_TOOLKIT_OOB}?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        Referer: referer,
+      },
       body: JSON.stringify({
         requestType: 'VERIFY_EMAIL',
         idToken,

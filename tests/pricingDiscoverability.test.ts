@@ -7,6 +7,7 @@ import { TELEGRAM_MINI_APP_URL } from '../components/paywall/paymentOptions';
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { TelegramAccountPanel } from '../components/telegram/TelegramAccountPanel';
 import PricingPage, { planChoiceLine } from '../components/PricingPage';
+import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle } from '../components/paywall/planCopy';
 import { PLANS } from '../worker/telegramBot';
 import { TON_PRICING } from '../worker/tonPayment';
 
@@ -16,7 +17,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('@tonconnect/ui-react', () => ({
-  TonConnectButton: () => null,
+  TonConnectButton: () => createElement('button', { type: 'button' }, 'Connect Wallet'),
   useTonWallet: () => null,
 }));
 
@@ -63,7 +64,15 @@ describe('pricing page discoverability', () => {
 
   it('names Stars alone, with no TON price, while TON checkout is closed', () => {
     const html = renderPricing();
-    expect(html).toContain('Pay with Telegram Stars inside the Mini App.');
+    expect(html.split(CHECKOUT_TERM_LINE).length - 1).toBe(1);
+    expect(html).toContain(TELEGRAM_STARS_HANDOFF);
+    expect(html.split(TELEGRAM_STARS_HANDOFF).length - 1).toBe(1);
+    expect(html).not.toContain('Pay with Telegram Stars inside the Mini App.');
+    expect(html).toContain('Pay 2,500 Stars in Telegram');
+    expect(html).not.toContain('Connect Wallet');
+    expect(html).not.toContain('US$');
+    expect(html).not.toContain('Subscribe');
+    expect(html).not.toMatch(/card checkout/i);
     expect(html).toContain('2,500 Stars');
     expect(html).not.toContain('15 TON');
     expect(html).not.toContain('45 TON');
@@ -76,6 +85,7 @@ describe('pricing page discoverability', () => {
     state.inTelegram = true;
     state.health = { ok: true, ton: true, jettonCheckout: true, stripeCheckout: true, plans: {} };
     const html = renderPricing();
+    expect(html.split(CHECKOUT_TERM_LINE).length - 1).toBe(1);
     expect(html).not.toMatch(/\d+ TON/);
     expect(html).not.toMatch(/Stars (or|and) TON/);
     expect(html).not.toContain('with TON on the web');
@@ -84,11 +94,15 @@ describe('pricing page discoverability', () => {
   it('shows the Mini App link, Stars and TON amounts, and unavailable card checkout once TON checkout is open', () => {
     state.health = { ok: true, ton: true, jettonCheckout: false, stripeCheckout: false, plans: {} };
     const html = renderPricing();
-    expect(html).toContain('Pay with Telegram Stars inside the Mini App, or with TON on the web.');
+    expect(html.split(CHECKOUT_TERM_LINE).length - 1).toBe(1);
+    expect(html).toContain(TELEGRAM_STARS_HANDOFF);
+    expect(html).toContain('Or with TON on the web.');
+    expect(html).not.toContain('Pay with Telegram Stars inside the Mini App');
     expect(html).toContain(`href="${TELEGRAM_MINI_APP_URL}"`);
     expect(html).toContain('https://t.me/LuminaraSuiteBot/app');
     expect(html).toContain('Open Mini App in Telegram');
-    expect(html).toContain('Card checkout is available on request');
+    expect(html).toContain(TELEGRAM_STARS_HANDOFF);
+    expect(html).not.toMatch(/card checkout/i);
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
     expect(html).toContain('2,500 Stars');
@@ -97,6 +111,8 @@ describe('pricing page discoverability', () => {
     expect(html).toContain('15 TON');
     expect(html).toContain('45 TON');
     expect(html).toContain('120 TON');
+    expect(html).toContain('Connect Wallet');
+    expect(html).not.toMatch(/card checkout/i);
     expect(html).not.toContain('Instant self-serve card checkout');
     expect(html).not.toContain('Pay with Card (Stripe)');
     expect(html).not.toContain('instant Stripe checkout');
@@ -106,12 +122,17 @@ describe('pricing page discoverability', () => {
 });
 
 describe('Settings Telegram and TON section', () => {
-  it('links the web panel to the published Mini App', () => {
+  it('links the web panel to the published Mini App and hides the wallet while TON is closed', () => {
+    state.inTelegram = false;
+    state.health = { ok: true, ton: false, jettonCheckout: false, stripeCheckout: false, plans: {} };
     const html = renderToStaticMarkup(createElement(TelegramAccountPanel, { compact: true }));
     expect(html).toContain('Telegram');
     expect(html).toContain(`href="${TELEGRAM_MINI_APP_URL}"`);
     expect(html).toContain('Open Mini App in Telegram');
-    expect(html).toContain('Card checkout is available on request');
+    expect(html).toContain(TELEGRAM_STARS_HANDOFF);
+    expect(html).toContain(CHECKOUT_TERM_LINE);
+    expect(html).not.toMatch(/card checkout/i);
+    expect(html).not.toContain('Connect Wallet');
     expect(html).toContain('Link Telegram and web account - shares subscription');
   });
 });
@@ -145,5 +166,28 @@ describe('copy outside the paywall while TON and card checkout are closed', () =
     const source = readFileSync(resolve(__dirname, '..', 'components', 'PricingPage.tsx'), 'utf8');
     expect(source).toContain('openPaywallModal(planChoiceLine(title, tier, tonOpen))');
     expect(source).not.toMatch(/\$\{tier\.ton\} inside the Mini App/);
+  });
+
+  it('checkout and pricing share badge, names, and bullets, with no 3-day code hint', () => {
+    expect(PLAN_CARD_BADGE).toBe('Recommended');
+    expect(planTitle('starter')).toBe('Starter');
+    expect(planTitle('growth')).toBe('Growth');
+    expect(planTitle('agency')).toBe('Pro / Agency');
+    expect(planBullets('agency').map((line) => line.text)).toContain('Paid research API (Agency plan or your own DataForSEO login)');
+    expect(planBullets('growth').map((line) => line.text).join('\n')).not.toMatch(/Sentinel|Unlimited AI|Hosted API/);
+    const settings = readFileSync(resolve(__dirname, '..', 'components/settings/tabs/ApiKeyOverviewTab.tsx'), 'utf8');
+    expect(settings).toContain(BYOK_CHECKOUT_LINE);
+    const modal = readFileSync(resolve(__dirname, '..', 'components/paywall/PaywallModal.tsx'), 'utf8');
+    const page = readFileSync(resolve(__dirname, '..', 'components/PricingPage.tsx'), 'utf8');
+    expect(page).toContain('planBullets(tier.id)');
+    expect(page).toContain('{PLAN_CARD_BADGE}');
+    expect(modal).toContain('planBullets(tier.id)');
+    expect(modal).toContain('planTitle(tier.id)');
+    expect(modal).toContain('{PLAN_CARD_BADGE}');
+    expect(modal).toContain('BYOK_CHECKOUT_LINE');
+    expect(modal).not.toContain('LUM-GROWTH-3DAY');
+    expect(modal).not.toContain('Most popular');
+    expect(modal).not.toContain('Agency Plan');
+    expect(modal).not.toContain('after sign-in');
   });
 });

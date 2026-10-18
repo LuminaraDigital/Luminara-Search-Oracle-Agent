@@ -111,7 +111,7 @@ export const NativeEngineHUD: React.FC = () => {
       case 'ollama':
         return { label: 'OLLAMA', icon: '🦙', isAvail, sub: s?.isLocal ? 'Local :11434' : 'Cloud' };
       case 'freellm':
-        return { label: 'FREELLM', icon: '∞', isAvail, sub: s?.isLocal ? 'Local gateway' : 'Remote gateway' };
+        return { label: 'GATEWAY', icon: '∞', isAvail, sub: s?.isLocal ? 'Local gateway' : 'Remote gateway' };
       default:
         return { label: id, icon: '•', isAvail: false, sub: '' };
     }
@@ -123,7 +123,7 @@ export const NativeEngineHUD: React.FC = () => {
       <div 
         onClick={() => { setIsModalOpen(true); probeEngines(); }}
         className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-gold/30 bg-black/60 hover:bg-gold/10 hover:border-gold/60 cursor-pointer transition-all shadow-[0_0_15px_rgba(191,149,63,0.1)] group shrink-0"
-        title="Native AI engines: FreeLLMAPI, Groq, NVIDIA NIM, OpenRouter, Ollama (Click to configure failover hub)"
+        title="Saved model providers. Open settings to choose the order."
       >
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
         <span className="text-[9px] font-mono font-bold tracking-wider text-gold-light uppercase flex items-center gap-1">
@@ -184,7 +184,7 @@ export const NativeEngineHUD: React.FC = () => {
                     Native LLM Engines & Auto-Failover Hub
                   </h3>
                   <p className="text-[11px] sm:text-xs text-gray-400 font-mono">
-                    FreeLLMAPI · Groq LPU · NVIDIA NIM · OpenRouter · Ollama
+                    Your saved model providers
                   </p>
                 </div>
               </div>
@@ -205,7 +205,7 @@ export const NativeEngineHUD: React.FC = () => {
               <div className="p-3.5 rounded-2xl bg-gold/10 border border-gold/20 text-xs text-gray-300 leading-relaxed">
                 <span className="text-gold-light font-bold">Autonomous Failover Architecture: </span>
                 When any provider hits rate limits (429), timeouts, or errors, it cools down for 60s and the next healthy engine
-                <span className="text-gold-light font-semibold"> automatically continues the run</span>. FreeLLMAPI (when preferred) stacks free tiers behind one key.
+                <span className="text-gold-light font-semibold"> automatically continues the run</span>. Your model gateway, when preferred, uses one key.
               </div>
 
               {/* Providers Status & Priority Order Table */}
@@ -249,7 +249,7 @@ export const NativeEngineHUD: React.FC = () => {
                               {id === 'nim' && '🟢 NVIDIA NIM Enterprise'}
                               {id === 'openrouter' && '🌐 OpenRouter Frontier'}
                               {id === 'ollama' && (s?.isLocal ? '🦙 Ollama (Local :11434)' : '🦙 Ollama Cloud Gateway')}
-                              {id === 'freellm' && '∞ FreeLLMAPI Gateway'}
+                              {id === 'freellm' && 'Your model gateway'}
                             </span>
                             {isCurrent && (
                               <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-gold/30 text-gold-light font-bold">

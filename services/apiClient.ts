@@ -2,14 +2,14 @@
  * Talks to the Luminara Cloudflare Worker (/api/*).
  *
  * "Proxy mode" means provider calls go through the Worker, which injects the real API keys.
- * It is on automatically when the app is served by the Worker (luminarasuite.com or `wrangler dev`)
- * and can be forced for local Vite dev with VITE_API_BASE=http://localhost:8787.
+ * Proxy mode is on when the Worker serves the app, or when VITE_API_BASE points at it.
  */
 import { getInitDataRaw } from './telegram/tma';
 import { ensureFirebaseIdTokenCached, getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
 import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
+import { entitlementsFor } from './plans/planEntitlements';
 
 export interface ServerHealth {
   ok: boolean;
@@ -38,6 +38,7 @@ export interface ServerHealth {
   jettonCheckout?: boolean;
   /** Stripe card Checkout is live (secrets + STRIPE_CHECKOUT_LIVE). Absent or false = hide Card rail. */
   stripeCheckout?: boolean;
+  lumens?: boolean;
   /** Q402 pay-per-call settlement is live. */
   q402?: boolean;
   tiers?: { free?: string[]; paid?: string[] };
@@ -506,11 +507,19 @@ export function hostedProviderKeyDecision(input: {
  * True when the Worker may inject a hosted key for this provider for the current user.
  * Sync only. Call ensureHostedProviderReady() before Instant Audit resolves keys.
  */
+/** Hosted DataForSEO is paid research: Agency apiAccess only (APS invariant 2), matching the Worker. */
+function hasPlanForHostedProvider(providerId: string): boolean {
+  return providerId === 'dataforseo'
+    ? entitlementsFor(getCurrentQuotaSync()?.plan).apiAccess
+    : hasActivePaidPlanSync();
+}
+
 export function canUseHostedProviderKey(providerId: string): boolean {
   return hostedProviderKeyDecision({
     proxyReady: isProxyMode() && isProviderConfiguredOnServer(providerId),
     paidProvider: isPaidHostedProvider(providerId),
-    paidPlan: hasActivePaidPlanSync(),
+    paidPlan: hasPlanForHostedProvider(providerId),
+
     hasIdentity: clientHasHostedIdentity(),
   });
 }
@@ -576,42 +585,42 @@ export function hostedProviderDecisionReason(providerId: string): HostedProvider
   if (!isProxyMode()) return 'no_health';
   if (!isProviderConfiguredOnServer(providerId)) return 'not_configured';
   if (isPaidHostedProvider(providerId)) {
-    return hasActivePaidPlanSync() ? 'hosted' : 'paid_required';
+    return hasPlanForHostedProvider(providerId) ? 'hosted' : 'paid_required';
   }
   return clientHasHostedIdentity() ? 'hosted' : 'no_identity';
 }
 
 function firecrawlSkipDetail(reason: HostedProviderDecisionReason): string {
   switch (reason) {
-    case 'no_identity': return 'no identity';
-    case 'no_health': return 'provider status not ready';
-    case 'not_configured': return 'not configured';
-    case 'paid_required': return 'paid plan required';
+    case 'no_identity': return 'add a key in Settings, or sign in';
+    case 'no_health': return 'status not ready';
+    case 'not_configured': return 'not set up';
+    case 'paid_required': return 'needs a paid plan or your key';
     case 'byok': return 'your key';
-    case 'hosted': return 'hosted';
+    case 'hosted': return 'ready';
   }
 }
 
-/** Short Firecrawl clause. Empty when a key or the hosted proxy will be used. */
+/** Short page-fetch clause. Empty when a key or the hosted proxy will be used. */
 export function formatFirecrawlSkipDetail(reason: HostedProviderDecisionReason): string {
   if (reason === 'hosted' || reason === 'byok') return '';
-  return `Firecrawl: ${firecrawlSkipDetail(reason)}`;
+  return `Page fetch did not run (${firecrawlSkipDetail(reason)})`;
 }
 
 export function formatPageFetchClause(reason: HostedProviderDecisionReason): string {
-  if (reason === 'hosted') return 'Page fetch: hosted Firecrawl';
-  if (reason === 'byok') return 'Page fetch: your Firecrawl key';
-  return `Page fetch: Jina (Firecrawl: ${firecrawlSkipDetail(reason)})`;
+  if (reason === 'hosted') return 'Page fetch is ready';
+  if (reason === 'byok') return 'Page fetch is using your key';
+  return `Page fetch did not run (${firecrawlSkipDetail(reason)})`;
 }
 
 export function formatSearchSkipReason(reason: HostedProviderDecisionReason): string {
   switch (reason) {
-    case 'no_identity': return 'Search off: sign-in token not ready.';
-    case 'no_health': return 'Search off: provider status not ready.';
-    case 'not_configured': return 'Search off: Tavily is not configured.';
-    case 'paid_required': return 'Search off: a paid plan is required.';
-    case 'byok': return 'Search: your Tavily key.';
-    case 'hosted': return 'Search: hosted Tavily.';
+    case 'no_identity': return 'Search did not run.';
+    case 'no_health': return 'Search is not ready.';
+    case 'not_configured': return 'Search is not set up.';
+    case 'paid_required': return 'Search needs a paid plan or your key.';
+    case 'byok': return 'Search is using your key.';
+    case 'hosted': return 'Search is ready.';
   }
 }
 
@@ -620,21 +629,21 @@ function formatModelClause(reason: HostedProviderDecisionReason): string {
     case 'hosted':
     case 'byok':
       return '';
-    case 'no_identity': return 'Model off: sign-in token not ready';
-    case 'no_health': return 'Model off: provider status not ready';
-    case 'not_configured': return 'Model off: Groq is not configured';
-    case 'paid_required': return 'Model off: a paid plan is required';
+    case 'no_identity': return 'Writing model did not run';
+    case 'no_health': return 'Writing model is not ready';
+    case 'not_configured': return 'Writing model is not set up';
+    case 'paid_required': return 'Writing model needs a paid plan or your key';
   }
 }
 
-/** One Mission Control line for Firecrawl, Tavily, and Groq. Groq is included only when it will not run. */
+/** One Mission Control line for page fetch, search, and the writing model. The model is named only when it will not run. */
 export function formatInstantAuditProviderSummary(): string {
   const page = formatPageFetchClause(hostedProviderDecisionReason('firecrawl'));
   const tavily = hostedProviderDecisionReason('tavily');
   const search = tavily === 'hosted'
-    ? 'Search: hosted Tavily'
+    ? 'Search is ready'
     : tavily === 'byok'
-      ? 'Search: your Tavily key'
+      ? 'Search is using your key'
       : formatSearchSkipReason(tavily).replace(/\.$/, '');
   const model = formatModelClause(hostedProviderDecisionReason('groq'));
   return model ? `${page} · ${search} · ${model}` : `${page} · ${search}`;
@@ -717,8 +726,8 @@ export function updateQuotaFromHeaders(headers: Headers): void {
 }
 
 /**
- * App-level sign-in state for account-only endpoints. `null` means auth has not resolved yet,
- * so calls still go out (a returning user's first request must not be dropped).
+ * App-level sign-in state. Quota waits until this is true so a guest load
+ * does not call /api/auth/quota. Other account calls use accountCallsAllowed.
  */
 let accountSignedIn: boolean | null = null;
 
@@ -732,10 +741,9 @@ export function accountCallsAllowed(): boolean {
 }
 
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
+  if (accountSignedIn !== true) return null;
   const base = apiBase();
   if (!base) return null;
-  // The Worker answers 401 to guests; skip the request instead of logging a failure.
-  if (!accountCallsAllowed()) return null;
   try {
     const r = await workerFetchWithAuthRetry(`${base}/api/auth/quota`);
     if (!r.ok) return null;
@@ -1039,18 +1047,30 @@ export async function* streamOracleChat(input: {
     yield { type: 'error', error: 'Worker API is unreachable', code: 'NO_API' };
     return;
   }
-  const r = await workerFetchWithAuthRetry(`${base}/api/oracle/chat`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({
-      message: input.message,
-      sessionId: input.sessionId,
-      projectId: input.projectId,
-      history: input.history,
-      ...(input.invokeTool ? { invokeTool: input.invokeTool, confirmTool: Boolean(input.confirmTool) } : {}),
-    }),
-    signal: input.signal,
+  const networkError = (err: unknown) => ({
+    type: 'error' as const,
+    error: err instanceof Error && err.message ? err.message : 'Network error',
+    code: 'NETWORK',
   });
+  let r: Response;
+  try {
+    r = await workerFetchWithAuthRetry(`${base}/api/oracle/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify({
+        message: input.message,
+        sessionId: input.sessionId,
+        projectId: input.projectId,
+        history: input.history,
+        ...(input.invokeTool ? { invokeTool: input.invokeTool, confirmTool: Boolean(input.confirmTool) } : {}),
+      }),
+      signal: input.signal,
+    });
+  } catch (err) {
+    if (input.signal?.aborted) return;
+    yield networkError(err);
+    return;
+  }
   if (!r.ok || !r.body) {
     const data = await r.json().catch(() => ({}));
     yield {
@@ -1067,7 +1087,15 @@ export async function* streamOracleChat(input: {
   let eventName = 'message';
 
   while (true) {
-    const { done, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (err) {
+      if (input.signal?.aborted) return;
+      yield networkError(err);
+      return;
+    }
+    const { done, value } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split('\n');

@@ -52,16 +52,6 @@ const CAPABILITIES: CapabilityItem[] = [
     badge: 'Labs',
   },
   {
-    id: 'merchant-launchpad',
-    view: AppView.LAUNCHPAD,
-    title: 'SMB Merchant Launchpad',
-    tagline: 'Non-custodial milestone pre-order escrow and loyalty voucher tokens.',
-    category: 'trust',
-    platforms: ['web', 'desktop'],
-    isPopular: true,
-    badge: 'Web3',
-  },
-  {
     id: 'brand-memory',
     view: AppView.BRAND_MEMORY,
     title: 'Brand Memory Vault',

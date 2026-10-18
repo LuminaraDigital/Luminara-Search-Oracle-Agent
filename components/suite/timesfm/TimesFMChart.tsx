@@ -327,11 +327,11 @@ export const TimesFMChart: React.FC<TimesFMChartProps> = ({
                 </div>
                 <div className="flex items-center justify-between gap-3 text-gray-400">
                   <span>p10 - p90:</span>
-                  <span>{hoverPoint.p10?.toLocaleString()} — {hoverPoint.p90?.toLocaleString()}</span>
+                  <span>{hoverPoint.p10?.toLocaleString()} - {hoverPoint.p90?.toLocaleString()}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 text-gray-500 text-[10px]">
                   <span>p25 - p75:</span>
-                  <span>{hoverPoint.p25?.toLocaleString()} — {hoverPoint.p75?.toLocaleString()}</span>
+                  <span>{hoverPoint.p25?.toLocaleString()} - {hoverPoint.p75?.toLocaleString()}</span>
                 </div>
               </div>
             )}

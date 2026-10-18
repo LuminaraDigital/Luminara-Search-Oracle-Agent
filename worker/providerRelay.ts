@@ -3,6 +3,7 @@ import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
 import { isUserSubscribed, checkHostedQuota, type QuotaStatus } from './quotaMiddleware';
+import { requireApiAccess } from './apiAccess';
 import {
   WORKERS_AI_FALLBACK_PROVIDER,
   runWorkersAiChatFallback,
@@ -379,6 +380,11 @@ export async function proxyProvider(
           'X-Quota-Tier': 'paid_required',
         }
       );
+    }
+    // APS invariant 2: hosted paid research needs Agency apiAccess (BYOK skips this block entirely).
+    if (providerId === 'dataforseo' && who.user) {
+      const denied = await requireApiAccess(env, who.user);
+      if (denied) return denied;
     }
 
     // Site-wide Firecrawl crawls are expensive; require an active plan on hosted keys.

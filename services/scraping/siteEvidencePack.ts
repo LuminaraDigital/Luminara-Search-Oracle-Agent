@@ -49,6 +49,8 @@ export interface SiteEvidencePack {
   formattedEvidence: string;
   /** Concatenated distilled text for writing-quality checks. */
   combinedText: string;
+  /** Uncapped per-page evidence map keyed by URL for RLM ContextStore inspection. */
+  rlmCorpus: Record<string, string>;
   discovery: {
     source: 'firecrawl_map' | 'homepage_links' | 'firecrawl_crawl' | 'homepage_only' | 'none';
     candidateCount: number;
@@ -337,6 +339,13 @@ export class SiteEvidencePackService {
       return { page: p, pageType };
     });
 
+    // Build uncapped per-page corpus for RLM ContextStore (not truncated by GLOBAL_BUDGET_CHARS).
+    const rlmCorpus: Record<string, string> = {};
+    for (const { page, pageType } of typed) {
+      const fullBody = page.markdown || page.distilled.distilledText || page.formattedEvidence || '';
+      rlmCorpus[page.url] = `[PAGE (${pageType.toUpperCase()}) ${page.url}]\nTitle: ${page.title}\nSchemas: ${(page.distilled.schemaTypes || []).join(', ') || 'none'}\n\n${fullBody.trim()}`;
+    }
+
     // Re-budget distilled content under a global cap (home keeps largest share).
     let remaining = GLOBAL_BUDGET_CHARS;
     const blocks: string[] = [];
@@ -390,6 +399,7 @@ export class SiteEvidencePackService {
       slots,
       formattedEvidence,
       combinedText: textParts.join('\n\n'),
+      rlmCorpus,
       discovery,
       latencyMs: Math.round(performance.now() - start),
       warnings,

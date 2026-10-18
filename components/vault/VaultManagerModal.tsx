@@ -194,7 +194,7 @@ export const VaultManagerModal: React.FC<VaultManagerModalProps> = ({ isOpen, on
         {activeTab === 'export' && (
           <form onSubmit={handleExport} className="mt-4 space-y-4">
             <p className="text-xs text-ink-2">
-              Package your Brand Memory, Business DNA, and BYOK API keys into an AES-256 encrypted file.
+              Package your Brand Memory, business profile, and your own API keys into an encrypted file.
               The app never sends your master password to any server.
             </p>
 
@@ -217,7 +217,7 @@ export const VaultManagerModal: React.FC<VaultManagerModalProps> = ({ isOpen, on
                     onChange={(e) => setOptions({ ...options, includeBusinessDna: e.target.checked })}
                     className="rounded border-rule text-gold focus:ring-gold"
                   />
-                  Business DNA
+                  Business profile
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer text-ink">
                   <input
@@ -358,7 +358,7 @@ export const VaultManagerModal: React.FC<VaultManagerModalProps> = ({ isOpen, on
                       <dd className="text-ink font-semibold">{decryptedSummary?.apiKeysCount || 0} keys</dd>
                     </div>
                     <div className="flex justify-between">
-                      <dt className="text-ink-2">Business DNA:</dt>
+                      <dt className="text-ink-2">Business profile:</dt>
                       <dd className="text-ink font-semibold">{decryptedSummary?.hasBusinessDna ? 'Included' : 'None'}</dd>
                     </div>
                     <div className="flex justify-between">

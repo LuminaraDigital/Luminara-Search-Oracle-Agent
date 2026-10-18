@@ -14,7 +14,7 @@ export const InteractiveTable: React.FC<{ headers: string[]; rows: string[][] }>
           <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light flex items-center gap-1.5">
             <ICONS.ChartBar className="w-3.5 h-3.5" /> Interactive Matrix Analysis
           </span>
-          <span className="text-[9px] text-gray-500 uppercase tracking-widest">Click cells to inspect trends</span>
+          <span className="text-[9px] text-gray-500 uppercase tracking-widest">Click a cell for detail</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
@@ -41,7 +41,7 @@ export const InteractiveTable: React.FC<{ headers: string[]; rows: string[][] }>
                         className={`px-4 py-3 align-top cursor-pointer transition-colors ${
                           cIdx === 0 ? 'font-bold text-white' : 'text-gray-300 hover:text-gold-light hover:bg-white/[0.02]'
                         }`}
-                        title="Click to analyze trend"
+                        title="Click for detail"
                       >
                         {parseInlineFormatting(cell)}
                       </td>

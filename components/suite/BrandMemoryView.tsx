@@ -443,7 +443,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
                 <div>
                   <div className="text-sm font-bold text-white">{c.name}</div>
                   <div className="text-[10px] text-gray-400 mt-1">
-                    {c.domains.join(', ') || 'No domains'} · DNA {c.dna?.name || 'none'}
+                    {c.domains.join(', ') || 'No domains'} · Business profile {c.dna?.name || 'none'}
                   </div>
                 </div>
                 <div className="flex gap-2">

@@ -3,11 +3,23 @@ import { ICONS } from '../ui/icons';
 import { Button } from '../ui/Button';
 import type { BrandPassport } from '../../services/trust/brandPassport';
 
-export interface UniversalBrandPassportViewProps {
-  passport: BrandPassport;
+export function badgeCaption(badgeLive: boolean): string {
+  return badgeLive
+    ? 'Live embeddable HTML badge linking to your verifiable Luminara Trust profile.'
+    : 'Preview HTML badge. Domain verification and trust receipts are not enabled, so this is not a live badge.';
 }
 
-export const UniversalBrandPassportView: React.FC<UniversalBrandPassportViewProps> = ({ passport }) => {
+export function badgePreviewLabel(badgeLive: boolean): string {
+  return badgeLive ? 'Live Preview:' : 'Preview:';
+}
+
+export interface UniversalBrandPassportViewProps {
+  passport: BrandPassport;
+  /** True only when domain verification and trust receipts are both enabled. */
+  badgeLive?: boolean;
+}
+
+export const UniversalBrandPassportView: React.FC<UniversalBrandPassportViewProps> = ({ passport, badgeLive = false }) => {
   const [activeTab, setActiveTab] = useState<'schema' | 'badge'>('schema');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -31,7 +43,7 @@ export const UniversalBrandPassportView: React.FC<UniversalBrandPassportViewProp
             <h3 className="text-lg font-semibold text-ink">Universal Brand Passport</h3>
           </div>
           <p className="mt-1 text-xs text-ink-muted">
-            Portable brand authority for {passport.domain}. Combines verified domain control, Business DNA, and Trust Receipts.
+            Portable brand authority for {passport.domain}. Combines verified domain control, your business profile, and signed receipts.
           </p>
         </div>
 
@@ -116,9 +128,7 @@ export const UniversalBrandPassportView: React.FC<UniversalBrandPassportViewProp
           ) : (
             <div>
               <div className="flex items-center justify-between pb-2">
-                <span className="text-xs text-ink-muted">
-                  Live embeddable HTML badge linking to your verifiable Luminara Trust profile.
-                </span>
+                <span className="text-xs text-ink-muted">{badgeCaption(badgeLive)}</span>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -129,7 +139,7 @@ export const UniversalBrandPassportView: React.FC<UniversalBrandPassportViewProp
                 </Button>
               </div>
               <div className="rounded-lg border border-white/10 bg-black/60 p-4">
-                <span className="text-[11px] text-ink-muted block mb-2">Live Preview:</span>
+                <span className="text-[11px] text-ink-muted block mb-2">{badgePreviewLabel(badgeLive)}</span>
                 <div
                   dangerouslySetInnerHTML={{ __html: passport.embedBadgeSnippet }}
                   className="inline-block"

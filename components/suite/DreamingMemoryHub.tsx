@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { BusinessDNA, BusinessMemoryItem, DreamProposal, DreamRun } from '../../types';
 import { dreamingClient, type DreamStatusResult } from '../../services/dreaming/dreamingClient';
 import { ICONS } from '../../constants';
+import { BrandMemorySkeleton } from '../ui/Skeleton';
+import { useConfirm } from '../ui/ConfirmModal';
 
 interface DreamingMemoryHubProps {
   domain: string;
@@ -17,12 +19,14 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
   const [status, setStatus] = useState<DreamStatusResult | null>(null);
   const [memories, setMemories] = useState<BusinessMemoryItem[]>([]);
   const [proposals, setProposals] = useState<DreamProposal[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isDreaming, setIsDreaming] = useState<boolean>(false);
   const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
   const [editingProposalId, setEditingProposalId] = useState<string | null>(null);
   const [editedContent, setEditedContent] = useState<string>('');
+  const { requestConfirm, confirmModal } = useConfirm();
 
   const targetDomain = useMemo(() => {
     if (domain) return domain.replace(/^https?:\/\//i, '').split('/')[0].toLowerCase();
@@ -31,6 +35,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
   }, [domain, dna]);
 
   const loadData = async () => {
+    setIsLoading(true);
     try {
       const [s, mems, props] = await Promise.all([
         dreamingClient.getStatus(targetDomain),
@@ -42,6 +47,8 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
       setProposals(props);
     } catch {
       /* ignore load errors */
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -86,7 +93,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
       if (res.ok) {
         setEditingProposalId(null);
         setMsg({
-          text: `Proposal ${action === 'approve' ? 'approved and added to Business DNA' : 'rejected'}.`,
+          text: `Proposal ${action === 'approve' ? 'approved and added to your business profile' : 'rejected'}.`,
           type: 'success',
         });
         await loadData();
@@ -98,24 +105,31 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
     }
   };
 
-  const handleRollback = async (runId: string) => {
-    if (!window.confirm('Roll back this Dream Run? Reverted mutations will be restored to their prior state.')) {
-      return;
-    }
-    try {
-      const res = await dreamingClient.rollbackRun(runId);
-      if (res.ok) {
-        setMsg({
-          text: `Rollback complete: ${res.revertedCount || 0} proposal mutations reverted.`,
-          type: 'success',
-        });
-        await loadData();
-      } else {
-        setMsg({ text: res.error || 'Rollback failed.', type: 'error' });
+  const handleRollback = (runId: string) => {
+    requestConfirm(
+      {
+        title: 'Roll back Dream Run?',
+        description: 'Reverted mutations will be restored to their prior state.',
+        confirmLabel: 'Roll Back',
+        variant: 'danger',
+      },
+      async () => {
+        try {
+          const res = await dreamingClient.rollbackRun(runId);
+          if (res.ok) {
+            setMsg({
+              text: `Rollback complete: ${res.revertedCount || 0} proposal mutations reverted.`,
+              type: 'success',
+            });
+            await loadData();
+          } else {
+            setMsg({ text: res.error || 'Rollback failed.', type: 'error' });
+          }
+        } catch (err: any) {
+          setMsg({ text: err?.message || 'Rollback failed.', type: 'error' });
+        }
       }
-    } catch (err: any) {
-      setMsg({ text: err?.message || 'Rollback failed.', type: 'error' });
-    }
+    );
   };
 
   const pendingProposals = proposals.filter((p) => p.status === 'pending');
@@ -138,7 +152,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
               Business Memory & Reflection
             </h2>
             <p className="text-xs sm:text-sm text-gray-400 mt-1 max-w-xl">
-              Consolidates audit results, recommendation outcomes, and brand positioning into durable Business DNA for {targetDomain}.
+              Consolidates audit results, recommendation outcomes, and brand positioning into your business profile for {targetDomain}.
             </p>
           </div>
 
@@ -229,7 +243,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
             </span>
           </div>
           <p className="text-xs text-gray-300 mb-4">
-            High-impact mutations (positioning shifts, new competitors, deprecations) require your approval before updating live Business DNA.
+            High-impact mutations (positioning shifts, new competitors, deprecations) require your approval before updating your live business profile.
           </p>
 
           <div className="space-y-4">
@@ -362,7 +376,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
           <div className="flex flex-wrap gap-1.5 p-1 bg-black/40 rounded-xl border border-white/10">
             {[
               { id: 'all', label: 'All' },
-              { id: 'business_dna', label: 'Business DNA' },
+              { id: 'business_dna', label: 'Business profile' },
               { id: 'visibility_profile', label: 'Visibility' },
               { id: 'action_memory', label: 'Actions' },
               { id: 'preference_memory', label: 'Preferences' },
@@ -383,7 +397,9 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
           </div>
         </div>
 
-        {filteredMemories.length === 0 ? (
+        {isLoading && memories.length === 0 ? (
+          <BrandMemorySkeleton />
+        ) : filteredMemories.length === 0 ? (
           <div className="text-center py-12 border border-dashed border-white/10 rounded-xl">
             <ICONS.DNA className="w-8 h-8 text-gray-500 mx-auto mb-2 opacity-50" />
             <p className="text-xs text-gray-400">
@@ -489,6 +505,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
           </div>
         </div>
       )}
+      {confirmModal}
     </div>
   );
 };

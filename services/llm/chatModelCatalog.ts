@@ -29,7 +29,7 @@ export const PROVIDER_LABELS: Record<NativeEngineId, string> = {
   nim: 'NVIDIA NIM',
   openrouter: 'OpenRouter',
   ollama: 'Ollama',
-  freellm: 'FreeLLMAPI',
+  freellm: 'Your model gateway',
 };
 
 /** Curated composer catalog (Hermes-style: provider parent, model children). */

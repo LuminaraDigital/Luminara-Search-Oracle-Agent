@@ -8,14 +8,14 @@ export interface UrlSwapRouteParams {
 
 /**
  * Parses URL-swap routes like /audit/:target, /geo/:target, /aeo/:target, /seo/:target.
- * Returns AppView.INSTANT_AUDIT with decoded target and mapped focus, or null if not matched.
+ * A bare /audit, /geo, /aeo, or /seo is not a page. Returns null unless a target is present.
  */
 export const parseUrlSwapRoute = (pathname: string): UrlSwapRouteParams | null => {
   if (!pathname) return null;
   const clean = pathname.replace(/^\/+|\/+$/g, '');
   if (!clean) return null;
 
-  const match = clean.match(/^(audit|geo|aeo|seo)(?:\/(.+))?$/i);
+  const match = clean.match(/^(audit|geo|aeo|seo)\/(.+)$/i);
   if (!match) return null;
 
   const prefix = match[1].toUpperCase();

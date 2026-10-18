@@ -643,6 +643,10 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         await api(env, 'sendMessage', { chat_id: chatId, text: 'Unauthorized. Only configured bot administrators can access admin commands.' });
         return;
       }
+      if (!isPrivateChat(msg)) {
+        await api(env, 'sendMessage', { chat_id: chatId, text: 'Use this command in a private chat with the bot.' });
+        return;
+      }
 
       const users = await listAllUsers(env, 20);
       const lines = users.slice(0, 10).map((u, i) => {
@@ -673,6 +677,10 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       const isSenderAdmin = adminIds.includes(String(msg.from?.id));
       if (!isSenderAdmin) {
         await api(env, 'sendMessage', { chat_id: chatId, text: 'Unauthorized. Only configured bot administrators can issue refunds.' });
+        return;
+      }
+      if (!isPrivateChat(msg)) {
+        await api(env, 'sendMessage', { chat_id: chatId, text: 'Use this command in a private chat with the bot.' });
         return;
       }
       const targetUserId = Number(refundMatch[1]);
