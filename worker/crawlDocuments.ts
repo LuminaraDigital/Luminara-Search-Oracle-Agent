@@ -69,6 +69,37 @@ Sitemap: https://www.luminarasuite.com/sitemap.xml
 Sitemap: https://luminarasuite.com/sitemap.xml
 `;
 
+const PRODUCTION_CRAWL_HOSTS = new Set(['luminarasuite.com', 'www.luminarasuite.com']);
+const STAGING_CRAWL_HOST = 'staging.luminarasuite.com';
+
+/**
+ * Staging is not for indexing. Production hostnames stay indexable even when ENVIRONMENT is wrong.
+ * Any other host is treated as staging only when ENVIRONMENT is staging.
+ */
+export function isStagingCrawlHost(hostname: string, environment: string | undefined): boolean {
+  const host = hostname.toLowerCase().split(':')[0];
+  if (PRODUCTION_CRAWL_HOSTS.has(host)) return false;
+  if (host === STAGING_CRAWL_HOST) return true;
+  return String(environment || '').trim().toLowerCase() === 'staging';
+}
+
+export const STAGING_ROBOTS_TXT = `# Staging is not for search indexing.
+User-agent: *
+Disallow: /
+`;
+
+export function robotsTxtForHost(hostname: string, environment: string | undefined): string {
+  return isStagingCrawlHost(hostname, environment) ? STAGING_ROBOTS_TXT : ROBOTS_TXT;
+}
+
+/** Adds X-Robots-Tag on staging responses. Production responses are returned unchanged. */
+export function applyHostRobots(url: URL, environment: string | undefined, res: Response): Response {
+  if (!isStagingCrawlHost(url.hostname, environment)) return res;
+  const headers = new Headers(res.headers);
+  headers.set('X-Robots-Tag', 'noindex, nofollow');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
 export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'): string {
   const base = origin.replace(/\/+$/, '');
   return `<?xml version="1.0" encoding="UTF-8"?>

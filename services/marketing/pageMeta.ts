@@ -1,5 +1,6 @@
 /** Shared marketing page meta (browser + Worker). No DOM APIs. */
 
+import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 import { buildFaqPageJsonLd } from './marketingFaqContent';
 
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
@@ -12,6 +13,8 @@ export interface MarketingShellMeta {
   jsonLd: Record<string, unknown>;
   /** Plain HTML fragment for noscript / non-JS crawlers (already trusted static copy). */
   crawlerBody: string;
+  /** Set on unbounded per-domain pages so they are not indexed and not folded into another URL. */
+  robots?: 'noindex, nofollow';
 }
 
 const ORG_NODE = {
@@ -37,15 +40,8 @@ const SOFTWARE_NODE = {
   description:
     'Audits whether AI search recommends your brand across Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix first.',
   publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
-  offers: {
-    '@type': 'AggregateOffer',
-    lowPrice: '49',
-    highPrice: '149',
-    priceCurrency: 'USD',
-    offerCount: 3,
-    url: `${MARKETING_ORIGIN}/pricing`,
-  },
 };
+// No Offer price here. The page sells Telegram Stars, which are not an ISO 4217 currency, and card checkout is off.
 
 const WEBSITE_NODE = {
   '@type': 'WebSite',
@@ -219,6 +215,19 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
 </section>`,
   },
+  '/labs': {
+    path: '/labs',
+    title: 'Labs | Luminara Suite',
+    description:
+      'Directory of Luminara tools. A tool whose feature flag is off is marked not available yet.',
+    jsonLd: graph('/labs', 'Labs', 'Luminara Suite tool directory.'),
+    crawlerBody: `
+<section>
+  <h1>Labs</h1>
+  <p>Directory of Luminara tools. A tool whose feature flag is off is marked not available yet.</p>
+  <p><a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
+</section>`,
+  },
   '/compare/profound': {
     path: '/compare/profound',
     title: 'Luminara vs Profound | Luminara Suite',
@@ -342,6 +351,39 @@ export function marketingShellKey(pathname: string): string | null {
   if (clean === '/how' || clean === '/infrastructure' || clean === '/modules') return '/how-it-works';
   if (clean === '/intelligence') return '/ai';
   if (clean === '/why-us') return '/why';
+  if (clean === '/lab') return '/labs';
   if (MARKETING_SHELL_BY_PATH[clean]) return clean;
   return null;
+}
+
+/**
+ * Per-domain audit, geo, aeo, and seo URLs. They are not in the sitemap.
+ * noindex, with a self canonical, so a crawler does not treat them as the homepage.
+ */
+export function perDomainShell(pathname: string): MarketingShellMeta | null {
+  const clean = pathname.replace(/\/+$/, '') || '/';
+  const swap = parseUrlSwapRoute(clean);
+  if (!swap?.targetUrl) return null;
+  const title = instantAuditTabTitle(swap.targetUrl);
+  const description = 'Per-domain Instant Audit. This page is not indexed.';
+  return {
+    path: clean,
+    title,
+    description,
+    robots: 'noindex, nofollow',
+    jsonLd: graph(clean, title, description),
+    crawlerBody: `
+<section>
+  <h1>Instant Audit</h1>
+  <p>This per-domain audit page is not indexed.</p>
+  <p><a href="/">Home</a></p>
+</section>`,
+  };
+}
+
+/** Marketing shell, or a per-domain audit shell. Null for app paths the SPA shell serves as-is. */
+export function marketingPageForPath(pathname: string): MarketingShellMeta | null {
+  const key = marketingShellKey(pathname);
+  if (key) return MARKETING_SHELL_BY_PATH[key] ?? null;
+  return perDomainShell(pathname);
 }

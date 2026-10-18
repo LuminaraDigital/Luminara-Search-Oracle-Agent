@@ -10,7 +10,7 @@ import {
   urlForView,
 } from '../utils/marketingRoutes';
 import { DASHBOARD_TAB_TITLE, MARKETING_SHELL_BY_PATH, instantAuditTabTitle, marketingShellKey } from '../services/marketing/pageMeta';
-import { resolveDocumentTitle } from '../services/marketing/documentMeta';
+import { resolveCanonicalHref, resolveDocumentTitle, resolveRobotsDirective } from '../services/marketing/documentMeta';
 import { injectMarketingMeta } from '../worker/marketingShell';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML } from '../worker/crawlDocuments';
 
@@ -92,6 +92,7 @@ describe('tab titles', () => {
     expect(resolveDocumentTitle('/why', AppView.WHY_US)).toBe('Why Luminara | Luminara Suite');
     expect(resolveDocumentTitle('/dashboard', AppView.DASHBOARD)).toBe('Dashboard | Luminara Suite');
     expect(resolveDocumentTitle('/', AppView.DASHBOARD)).toBe('Dashboard | Luminara Suite');
+    expect(resolveDocumentTitle('/labs', AppView.ECOSYSTEM_HUB)).toBe('Labs | Luminara Suite');
     expect(resolveDocumentTitle('/audit/example.com', AppView.INSTANT_AUDIT)).toBe('Instant Audit: example.com | Luminara Suite');
     expect(resolveDocumentTitle('/audit/https://shop.example/pricing', AppView.INSTANT_AUDIT)).toBe('Instant Audit: shop.example | Luminara Suite');
     const exact = instantAuditTabTitle('a'.repeat(28));
@@ -199,6 +200,8 @@ describe('marketing shell injection', () => {
     expect(marketingShellKey('/how/')).toBe('/how-it-works');
     expect(marketingShellKey('/infrastructure')).toBe('/how-it-works');
     expect(marketingShellKey('/pricing/')).toBe('/pricing');
+    expect(marketingShellKey('/labs')).toBe('/labs');
+    expect(marketingShellKey('/lab')).toBe('/labs');
     expect(marketingShellKey('/compare/profound')).toBe('/compare/profound');
     expect(marketingShellKey('/compare/ahrefs/')).toBe('/compare/ahrefs');
   });
@@ -213,6 +216,31 @@ describe('marketing shell injection', () => {
     const matches = out.match(/application\/ld\+json/g);
     expect(matches).toHaveLength(1);
     expect(out).toContain('SoftwareApplication');
+  });
+});
+
+describe('pricing schema and route canonicals', () => {
+  it('does not publish a USD offer that the page does not sell', () => {
+    for (const path of ['/', '/pricing', '/labs'] as const) {
+      const graph = MARKETING_SHELL_BY_PATH[path].jsonLd['@graph'] as Array<Record<string, unknown>>;
+      const software = graph.find((node) => node['@type'] === 'SoftwareApplication');
+      expect(software?.offers, path).toBeUndefined();
+      expect(JSON.stringify(MARKETING_SHELL_BY_PATH[path].jsonLd), path).not.toMatch(/"price"|"lowPrice"|"highPrice"|"priceCurrency"/);
+    }
+    expect(readFileSync('index.html', 'utf8')).not.toMatch(/"price"\s*:/);
+  });
+
+  it('gives /labs a self canonical and noindexes per-domain audits', () => {
+    expect(resolveCanonicalHref('/labs', AppView.ECOSYSTEM_HUB)).toBe('https://www.luminarasuite.com/labs');
+    expect(resolveRobotsDirective('/labs', AppView.ECOSYSTEM_HUB)).toBeNull();
+    expect(resolveCanonicalHref('/audit/example.com', AppView.INSTANT_AUDIT)).toBe('https://www.luminarasuite.com/audit/example.com');
+    expect(resolveRobotsDirective('/audit/example.com', AppView.INSTANT_AUDIT)).toBe('noindex, nofollow');
+    expect(resolveCanonicalHref('/geo/example.com', AppView.INSTANT_AUDIT)).toBe('https://www.luminarasuite.com/geo/example.com');
+    expect(resolveRobotsDirective('/geo/example.com', AppView.INSTANT_AUDIT)).toBe('noindex, nofollow');
+    expect(resolveCanonicalHref('/pricing', AppView.PRICING)).toBe('https://www.luminarasuite.com/pricing');
+    expect(resolveCanonicalHref('/', AppView.LANDING)).toBe('https://www.luminarasuite.com/');
+    expect(resolveRobotsDirective('/', AppView.LANDING)).toBeNull();
+    expect(resolveRobotsDirective('/dashboard', AppView.DASHBOARD)).toBeNull();
   });
 });
 
