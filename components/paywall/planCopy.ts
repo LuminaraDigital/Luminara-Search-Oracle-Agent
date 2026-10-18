@@ -7,6 +7,13 @@ import { PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
 
 export const PLAN_CARD_BADGE = 'Recommended';
 
+/** Checkout title. Plans have domain, seat, and feature caps, so this cannot say unlimited. */
+export const PAYWALL_HEADLINE = 'Pick the plan that fits your sites';
+
+export const PAYWALL_SUBLINE = 'Every plan has clear monthly limits.';
+
+export type PlanBullet = { included: boolean; text: string };
+
 /** Same sentence as Settings: keys on this device, no sign-in required. */
 export const BYOK_CHECKOUT_LINE = 'Your keys stay on this device and work without signing in.';
 
@@ -14,18 +21,24 @@ export function planTitle(id: PaidPlanId): string {
   return PLAN_ENTITLEMENTS[id].title;
 }
 
-export function planBullets(id: PaidPlanId): string[] {
+export function planBullets(id: PaidPlanId): PlanBullet[] {
   const e = PLAN_ENTITLEMENTS[id];
-  const lines = [
-    `${e.domainLimit} monitored domains`,
-    e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audits`,
-    id === 'agency' ? 'White-label PDF exports' : id === 'growth' ? 'Branded PDF exports' : 'Standard PDF exports',
-    e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',
-    e.shareLinks ? 'Public share links' : 'No public share links',
-    `${e.teamSeats} team seat${e.teamSeats === 1 ? '' : 's'}`,
+  const lines: PlanBullet[] = [
+    { included: true, text: `${e.domainLimit} monitored domains` },
+    { included: true, text: e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audits` },
+    { included: true, text: id === 'agency' ? 'White-label PDF exports' : id === 'growth' ? 'Branded PDF exports' : 'Standard PDF exports' },
+    {
+      included: e.mcpAccess,
+      text: e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',
+    },
+    {
+      included: e.shareLinks,
+      text: e.shareLinks ? 'Public share links' : 'No public share links',
+    },
+    { included: true, text: `${e.teamSeats} team seat${e.teamSeats === 1 ? '' : 's'}` },
   ];
-  if (e.apiAccess) lines.push('Paid research API (Agency plan or your own DataForSEO login)');
-  if (e.agencyClientLimit > 0) lines.push(`${e.agencyClientLimit} client workspaces`);
+  if (e.apiAccess) lines.push({ included: true, text: 'Paid research API (Agency plan or your own DataForSEO login)' });
+  if (e.agencyClientLimit > 0) lines.push({ included: true, text: `${e.agencyClientLimit} client workspaces` });
   return lines;
 }
 
@@ -62,3 +75,15 @@ export const pricingTiers: Array<{
     highlight: false,
   },
 ];
+
+/** Stars and card grants both last 30 days, start at confirmation, and do not renew. */
+export const CHECKOUT_TERM_LINE =
+  'Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does not renew on its own.';
+
+/** Shown before a control that leaves this page for Telegram Stars. */
+export const TELEGRAM_STARS_HANDOFF = 'Payment happens in Telegram with Stars.';
+
+/** Same Stars button on /pricing and in the checkout modal. */
+export function starsPayLabel(starsLabel: string, inTelegram: boolean): string {
+  return inTelegram ? `Pay ${starsLabel} · 30 days` : `Pay ${starsLabel} in Telegram`;
+}

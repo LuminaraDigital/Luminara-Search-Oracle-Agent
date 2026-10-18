@@ -44,7 +44,7 @@ export const RouterTelemetryBoard: React.FC = () => {
     nim: { label: 'NVIDIA NIM Enterprise', colorClass: 'bg-lime-500' },
     ollama: { label: 'Ollama Local / Sovereign', colorClass: 'bg-sky-500' },
     openrouter: { label: 'OpenRouter Multi-Model', colorClass: 'bg-purple-500' },
-    freellm: { label: 'FreeLLM BYOK Gateway', colorClass: 'bg-amber-500' },
+    freellm: { label: 'Your model gateway', colorClass: 'bg-amber-500' },
   };
 
   const providers = Object.entries(usage.providers).map(([key, data]) => {

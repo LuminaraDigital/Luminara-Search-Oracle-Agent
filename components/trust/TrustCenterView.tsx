@@ -112,9 +112,9 @@ const StatusChip: React.FC<{ status: DomainVerificationStatus }> = ({ status }) 
   );
 };
 
-const NotEnabled: React.FC<{ what: string }> = ({ what }) => (
+const NotEnabled: React.FC<{ message: string }> = ({ message }) => (
   <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-gray-400">
-    {what} is not enabled on this deployment yet.
+    {message}
   </div>
 );
 
@@ -379,7 +379,7 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
             <Skeleton className="h-16 w-full rounded-xl" />
           </div>
         )}
-        {domainState === 'disabled' && <NotEnabled what="Domain verification" />}
+        {domainState === 'disabled' && <NotEnabled message="Domain checks are not turned on for this site yet." />}
 
         {(domainState === 'ready' || domainState === 'error') && (
           <>
@@ -527,7 +527,7 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
             <Skeleton className="h-14 w-full rounded-xl" />
           </div>
         )}
-        {receiptState === 'disabled' && <NotEnabled what="Trust receipts" />}
+        {receiptState === 'disabled' && <NotEnabled message="Signed receipts are not turned on for this site yet." />}
         {receiptState === 'ready' && receipts.length === 0 && (
           <p className="text-sm text-gray-400">No receipts yet. Verify a domain to get your first one.</p>
         )}
@@ -618,7 +618,7 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
                 <span className="text-gold">4.</span> Entity Graph Export
               </h4>
               <p className="text-gray-400 leading-relaxed">
-                Seamlessly injects into Schema.org JSON-LD to anchor entity recognition in Google Knowledge Graph and ChatGPT.
+                Exports organization schema you can paste into your site. Search and answer engines are measured in Instant Audit.
               </p>
             </div>
           </div>

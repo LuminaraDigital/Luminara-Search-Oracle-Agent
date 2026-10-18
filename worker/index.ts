@@ -57,7 +57,7 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML, buildSitemapXml } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml } from './marketingShell';
+import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -2282,7 +2282,7 @@ export default {
       contentType.includes('text/html') &&
       resolveAppView(url.pathname, '') === AppView.NOT_FOUND
     ) {
-      const html = request.method === 'HEAD' ? null : (assetResponse.ok ? await assetResponse.text() : 'Not Found');
+      const html = request.method === 'HEAD' ? null : (assetResponse.ok ? withSkippedBootSplash(await assetResponse.text()) : 'Not Found');
       return withSecurityHeaders(
         new Response(html, {
           status: 404,

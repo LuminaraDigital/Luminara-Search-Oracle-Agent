@@ -11,6 +11,7 @@ import { unifiedScraperService, type ScrapedPageEvidence as ProviderPage } from 
 import { clientHasHostedIdentity, formatFirecrawlSkipDetail, hostedProviderDecisionReason } from '../../apiClient';
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
+import { pageSupportsHealthScore } from '../auditEvidenceGate';
 import { AgentActivityEvent, ScrapedPageEvidence } from '../types';
 
 function withFallbackNote(message: string, note: string): string {
@@ -88,21 +89,27 @@ export class ScoutAgent {
       }
     }
 
-    if (pages.length === 0) {
+    if (pages.length === 0 || !pages.some(pageSupportsHealthScore)) {
+      const unread = pages.length === 0;
       const skipDetail = fallbackNote || formatFirecrawlSkipDetail(hostedProviderDecisionReason('firecrawl'));
+      const message = !unread
+        ? 'Page text was read, but this crawl was not measured. On-page evidence not measured.'
+        : hostedAuthBlocked()
+          ? `Page fetch failed. On-page evidence not measured. ${hostedAuthRecoveryHint({ signedIn: clientHasHostedIdentity() })}`
+          : withFallbackNote('Page fetch failed. On-page evidence not measured.', skipDetail);
       emit({
         id: `scout-unmeasured-${Date.now()}`,
         timestamp: Date.now(),
         agentRole: 'scout',
         agentName: this.name,
         phase: 'crawling_complete',
-        message: hostedAuthBlocked()
-          ? `Page fetch failed. On-page evidence not measured. ${hostedAuthRecoveryHint({ signedIn: clientHasHostedIdentity() })}`
-          : withFallbackNote('Page fetch failed. On-page evidence not measured.', skipDetail),
+        message,
         status: 'completed',
-        evidenceSnippet: 'Scraper returned no page text, headings, or schema.',
+        evidenceSnippet: unread
+          ? 'Scraper returned no page text, headings, or schema.'
+          : 'Page text is not a measured crawl.',
       });
-      return [];
+      return pages;
     }
 
     const schemaCount = pages.reduce((acc, p) => acc + p.schemasFound.length, 0);
