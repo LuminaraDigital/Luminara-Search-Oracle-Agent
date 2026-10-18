@@ -1,5 +1,6 @@
 /** Shared marketing page meta (browser + Worker). No DOM APIs. */
 
+import { PAID_PLAN_PRICES } from '../../components/paywall/planPrices';
 import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 import { buildFaqPageJsonLd } from './marketingFaqContent';
 
@@ -76,6 +77,11 @@ function graph(
     : [ORG_NODE, SOFTWARE_NODE, pageNode(path, name, description), ...extraNodes];
   return { '@context': 'https://schema.org', '@graph': nodes };
 }
+
+/** Slash list of the Stars amounts checkout charges. Not a monthly USD price. */
+const soldStarsAmounts = [PAID_PLAN_PRICES.starter, PAID_PLAN_PRICES.growth, PAID_PLAN_PRICES.agency]
+  .map((plan) => plan.starsLabel.replace(/ Stars$/, ''))
+  .join(' / ');
 
 export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/': {
@@ -246,7 +252,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
       <tr><td>Metric Validity</td><td>Proprietary 0-100 composite scores</td><td>Strictly Measured, Estimated, or Not measured labels</td></tr>
       <tr><td>Search Grounding</td><td>Simulated engine scrapes</td><td>Search-grounded live probes with tamper-evident receipts</td></tr>
       <tr><td>Remediation</td><td>Data dashboards and telemetry</td><td>Exportable llms.txt and JSON-LD schema fix packs</td></tr>
-      <tr><td>Pricing Model</td><td>Enterprise retainers</td><td>Self-serve plans from $49/mo, BYOK, or Telegram Stars</td></tr>
+      <tr><td>Pricing Model</td><td>Enterprise retainers</td><td>30-day Telegram Stars plans (${soldStarsAmounts}), or bring your own keys</td></tr>
     </tbody>
   </table>
   <p><a href="/">Run Instant Audit</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>

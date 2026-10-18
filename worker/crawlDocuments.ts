@@ -2,6 +2,8 @@
  * Crawl surfaces served by the Worker (and mirrored under public/ for Vite).
  * Keep copy factual; no invented metrics.
  */
+import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
+import { CHECKOUT_TERM_LINE } from '../components/paywall/planCopy';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
 # Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
@@ -170,11 +172,11 @@ Answer Engine Optimization (AEO) is the discipline of structuring web content, t
 
 ## Pricing (30 days)
 
-Published USD labels. Plans are paid with Telegram Stars inside the Telegram Mini App. Card checkout is not available yet.
+${CHECKOUT_TERM_LINE} Payment is Telegram Stars.
 
-- Starter: US$49. Up to 2 sites. No MCP. No full public share links.
-- Growth: US$149. MCP, full share links, 3 seats, weekly re-audits.
-- Agency: US$349. API access, 10 client seats, daily Sentinel, white-label PDF.
+- Starter: ${PAID_PLAN_PRICES.starter.starsLabel}. Up to 2 sites. No MCP. No full public share links.
+- Growth: ${PAID_PLAN_PRICES.growth.starsLabel}. MCP, full share links, 3 seats, weekly re-audits.
+- Agency: ${PAID_PLAN_PRICES.agency.starsLabel}. API access, 10 client seats, daily Sentinel, white-label PDF.
 - Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
 
 ## MCP

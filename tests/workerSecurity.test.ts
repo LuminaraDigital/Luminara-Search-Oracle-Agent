@@ -490,6 +490,8 @@ describe('crawl surfaces', () => {
     expect(text).toContain('Luminara Suite');
     expect(text).toContain('/docs/mcp.html');
     expect(text).toContain('/docs/what-is-aeo.html');
+    expect(text).toContain('2,500 Stars');
+    expect(text).not.toMatch(/US\$\s?\d|\$\s?\d|\/mo\b|per month/i);
   });
 
   it('injects pricing meta into the marketing shell HTML', async () => {
