@@ -17,12 +17,13 @@ interface AgentMissionControlProps {
 export function missionControlCardBadge(
   status: AgentStatus,
   message: string,
-): 'running' | 'reflecting' | 'done' | 'not_measured' | 'queued' {
+): 'running' | 'reflecting' | 'done' | 'not_measured' | 'skipped' | 'queued' {
   if (status === 'running') return 'running';
   if (status === 'reflecting') return 'reflecting';
-  if (status === 'failed' || (status === 'completed' && /not measured/i.test(message))) return 'not_measured';
-  if (status === 'completed') return 'done';
-  return 'queued';
+  if (status !== 'completed' && status !== 'failed') return 'queued';
+  if (/\bskipped\b/i.test(message)) return 'skipped';
+  if (status === 'failed' || /not measured/i.test(message)) return 'not_measured';
+  return 'done';
 }
 
 export function missionControlProgressLabel(
@@ -40,7 +41,7 @@ export function missionControlHeadline(
   measurementStatus?: 'measured' | 'not_measured' | null,
 ): string {
   if (!isComplete) {
-    return 'Autonomous specialist agents actively collaborating on your audit…';
+    return 'Running the audit steps. Each card shows what that step returned.';
   }
   if (measurementStatus === 'measured') {
     return 'Multi-agent audit complete. Measured signals come from live page and search evidence.';
@@ -87,7 +88,12 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
   const progressPercent = Math.min(100, Math.round((completedCount / 7) * 100));
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 mb-8 shadow-2xl backdrop-blur-sm">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy={!isComplete}
+      className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 mb-8 shadow-2xl backdrop-blur-sm"
+    >
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
         <div>
@@ -162,6 +168,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
           const isRunning = badge === 'running' || badge === 'reflecting';
           const isDone = badge === 'done';
           const isUnmeasured = badge === 'not_measured';
+          const isSkipped = badge === 'skipped';
 
           return (
             <div
@@ -171,6 +178,8 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
                   ? 'bg-indigo-950/40 border-indigo-500/60 shadow-lg shadow-indigo-500/10'
                   : isUnmeasured
                   ? 'bg-slate-800/40 border-amber-500/30'
+                  : isSkipped
+                  ? 'bg-slate-900/50 border-slate-700/70'
                   : isDone
                   ? 'bg-slate-800/40 border-slate-700/60'
                   : 'bg-slate-900/40 border-slate-800/40 opacity-60'
@@ -202,6 +211,11 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
                   {isUnmeasured && (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30">
                       Not measured
+                    </span>
+                  )}
+                  {isSkipped && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-600">
+                      Skipped
                     </span>
                   )}
                   {state.status === 'idle' && (

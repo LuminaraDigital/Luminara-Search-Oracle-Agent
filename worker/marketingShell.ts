@@ -7,7 +7,21 @@ import {
 } from '../services/marketing/pageMeta';
 import { sha256Hex } from './workerUtils';
 
-function escapeHtml(value: string): string {
+/**
+ * Unknown paths are served as this shell with HTTP 404. The old inline skip
+ * script never ran: CSP script-src is 'self' only. The class is in the first
+ * tag, so #boot-splash stays display:none before first paint.
+ */
+export function withSkippedBootSplash(html: string): string {
+  return html.replace(/<html\b([^>]*)>/i, (full, attrs: string) => {
+    const rest = attrs ?? '';
+    if (/(?:^|\s)class="[^"]*\blx-skip-splash\b/.test(rest)) return full;
+    if (/class="/.test(rest)) return `<html${rest.replace('class="', 'class="lx-skip-splash ')}>`;
+    return `<html class="lx-skip-splash"${rest}>`;
+  });
+}
+
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

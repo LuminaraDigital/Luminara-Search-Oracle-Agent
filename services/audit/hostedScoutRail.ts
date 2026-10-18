@@ -5,6 +5,20 @@
  */
 export type HostedScoutRail = 'tma_hosted' | 'signed_in_hosted' | 'byok_or_signin';
 
+/** Homepage probe is crawl files only. A full audit is a different product. */
+export const GUEST_HERO_NOTE =
+  'Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys.';
+
+export const GUEST_REPORT_NOTE =
+  'No 40-page PDF and no made-up score. A full verdict needs sign-in or your own keys.';
+
+export const GUEST_FULL_AUDIT_CTA = 'Sign in to run a full audit';
+
+export function requestGuestFullAuditSignIn(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('luminara-open-login', { detail: { mode: 'signin' } }));
+}
+
 export function resolveHostedScoutRail(input: {
   inTelegram: boolean;
   hasInitData: boolean;
@@ -35,7 +49,7 @@ export function hostedScoutPreRunCopy(
   options?: { hostedGateOpen?: boolean },
 ): string {
   if (rail === 'tma_hosted') {
-    return 'Telegram session: this quick scout can use a capped hosted allowance. No API key is required. Each hosted call counts against the daily free limit. When that limit is used, add your own key in Settings or upgrade.';
+    return 'Telegram session: Instant Audit can use a capped hosted allowance. No API key is required. Each hosted call counts against the daily free limit. When that limit is used, add your own key in Settings or upgrade.';
   }
   if (rail === 'signed_in_hosted') {
     if (options?.hostedGateOpen === false) {
@@ -46,5 +60,5 @@ export function hostedScoutPreRunCopy(
     }
     return 'Signed in: hosted engines use your daily free allowance when provider status is ready, or your own keys in Settings. Premium engines still need an active plan.';
   }
-  return 'Signed-out on the web: add your own AI keys in Settings, or sign in. Hosted spend stays off for anonymous visitors so the free allowance cannot be drained.';
+  return 'Sign in for a full audit, or add your own AI keys in Settings.';
 }

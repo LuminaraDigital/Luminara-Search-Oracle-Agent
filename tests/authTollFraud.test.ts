@@ -228,6 +228,44 @@ describe('password reset anti-enumeration', () => {
     });
     expect(result).toEqual({ dispatched: false, reason: 'not_found' });
   });
+
+  it('sendPasswordResetOob sends normalized Referer and maps 403 referrer block to 503 RESET_UNAVAILABLE', async () => {
+    const store = new Map<string, string>();
+    const env = {
+      LUMINARA_KV: mockKv(store),
+      FIREBASE_WEB_API_KEY: 'k',
+      WEBAPP_URL: 'https://staging.luminarasuite.com',
+      OUTBOUND_EMAIL_DAILY_LIMIT: '50',
+      REQUIRE_TG_AUTH: 'true',
+    } as Env;
+
+    let capturedReferer = '';
+    const blockedFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      const headers = (init?.headers || {}) as Record<string, string>;
+      capturedReferer = headers.Referer || headers.referer || '';
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 403,
+            message: 'Requests from referer <empty> are blocked.',
+            status: 'PERMISSION_DENIED',
+          },
+        }),
+        { status: 403 },
+      );
+    });
+
+    const res = await handlePasswordResetRequest(resetReq('user@example.com'), env, '203.0.113.45', {
+      fetchImpl: blockedFetch as unknown as typeof fetch,
+      minLatencyMs: 0,
+    });
+
+    expect(capturedReferer).toBe('https://staging.luminarasuite.com/');
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { ok?: boolean; code?: string };
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe('RESET_UNAVAILABLE');
+  });
 });
 
 describe('passwordResetIpLimiter preset', () => {
@@ -713,6 +751,43 @@ describe('Worker-mediated sign-up / sign-in', () => {
     });
     expect(subsequent.status).toBe(401);
     expect(badPass).toHaveBeenCalledTimes(5);
+  });
+
+  it('sends Referer header to Identity Toolkit and maps 403 referrer blocks to 503 AUTH_UNAVAILABLE', async () => {
+    const store = new Map<string, string>();
+    const env = {
+      LUMINARA_KV: mockKv(store),
+      FIREBASE_WEB_API_KEY: 'k',
+      WEBAPP_URL: 'https://luminarasuite.com/',
+      REQUIRE_TG_AUTH: 'true',
+    } as Env;
+
+    let capturedReferer = '';
+    const blockedFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      const headers = (init?.headers || {}) as Record<string, string>;
+      capturedReferer = headers.Referer || headers.referer || '';
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 403,
+            message: 'Requests from referer <empty> are blocked.',
+            status: 'PERMISSION_DENIED',
+          },
+        }),
+        { status: 403 },
+      );
+    });
+
+    const res = await handleSignUp(credReq('new@example.com', 'password123'), env, '203.0.113.140', {
+      fetchImpl: blockedFetch as unknown as typeof fetch,
+      minLatencyMs: 0,
+    });
+
+    expect(capturedReferer).toBe('https://luminarasuite.com/');
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { ok?: boolean; code?: string };
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe('AUTH_UNAVAILABLE');
   });
 });
 

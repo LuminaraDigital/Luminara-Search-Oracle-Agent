@@ -244,7 +244,7 @@ export const OracleMindView: React.FC<OracleMindViewProps> = ({ dna, onRouteToDN
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-morphism border border-gold/30 hover:border-gold text-gold-light text-xs transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 <ICONS.AlertCircle className="w-3.5 h-3.5 text-gold" />
-                <span className="text-[11px]">Link Business DNA</span>
+                <span className="text-[11px]">Link business profile</span>
               </button>
             )}
           </div>

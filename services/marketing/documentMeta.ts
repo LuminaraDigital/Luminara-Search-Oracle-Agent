@@ -1,11 +1,15 @@
 import { AppView } from '../../types';
 import {
+  DASHBOARD_TAB_TITLE,
   DEFAULT_OG_IMAGE,
   MARKETING_ORIGIN,
   MARKETING_SHELL_BY_PATH,
+  instantAuditTabTitle,
+  marketingShellKey,
   type MarketingShellMeta,
 } from './pageMeta';
 import { MARKETING_PATH_BY_VIEW } from '../../utils/marketingRoutes';
+import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 
 const JSON_LD_ID = 'luminara-marketing-jsonld';
 
@@ -74,18 +78,35 @@ const DEFAULT_APP_META = {
     'Luminara Suite audits how your brand shows up in Google, AI Overviews, ChatGPT and Perplexity.',
 };
 
+function shellFor(pathname: string, view: AppView): MarketingShellMeta | undefined {
+  const path = pathname || '/';
+  // `/` plus a hash is a product view. A real path such as /compare/profound wins over the shared view.
+  const key = path === '/' ? null : marketingShellKey(path);
+  const shellPath = key ?? VIEW_TO_SHELL[view];
+  return shellPath ? MARKETING_SHELL_BY_PATH[shellPath] : undefined;
+}
+
+/** Browser tab title for a path and view. Marketing shells, dashboard, and Instant Audit included. */
+export function resolveDocumentTitle(pathname: string, view: AppView): string {
+  const page = shellFor(pathname, view);
+  if (page) return page.title;
+  if (view === AppView.DASHBOARD) return DASHBOARD_TAB_TITLE;
+  if (view === AppView.INSTANT_AUDIT) return instantAuditTabTitle(parseUrlSwapRoute(pathname)?.targetUrl);
+  return DEFAULT_APP_META.title;
+}
+
 /** Update document head for marketing views. Product shells get a short app title. */
 export function applyDocumentMetaForView(view: AppView): void {
   if (typeof document === 'undefined') return;
 
-  const shellPath = VIEW_TO_SHELL[view];
-  const page = shellPath ? MARKETING_SHELL_BY_PATH[shellPath] : undefined;
+  const path = typeof location !== 'undefined' ? location.pathname : '/';
+  const page = shellFor(path, view);
   if (page) {
     applyShell(page);
     return;
   }
 
-  document.title = DEFAULT_APP_META.title;
+  document.title = resolveDocumentTitle(path, view);
   ensureMeta('name', 'description', DEFAULT_APP_META.description);
   ensureMeta('property', 'og:title', DEFAULT_APP_META.title);
   ensureMeta('property', 'og:description', DEFAULT_APP_META.description);

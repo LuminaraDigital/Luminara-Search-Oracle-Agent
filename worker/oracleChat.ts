@@ -21,6 +21,7 @@ import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { runAllValidators, summarizeFindings } from './agentOutputValidators';
 import {
   buildOracleSystemPrompt,
+  extractKeywordSeed,
   fenceToolResult,
   monitorOracleOutput,
   parseAllowRegexAutoTools,
@@ -36,11 +37,23 @@ import {
   formatOraclePointer,
   routeIntentDeterministic,
 } from '../services/evidenceBound';
+import {
+  bindInjectedToolArgs,
+  isControlPlaneToolName,
+  type AgentEventEnvelope,
+  type AgentStreamItem,
+  type MidTurnPolicy,
+} from '../services/agentCore/harnessProtocol';
 import { markProjectContextLoaded, requireProjectContextBeforePaid } from './mcpServer';
 import { getProjectContext } from './projectContextService';
 
 /** Runtime skill slug for hosted Oracle chat (admin-seedable via agent_skills). */
 const ORACLE_CHAT_SKILL_SLUG = 'oracle-chat';
+
+/** Cap for control-plane POST bodies (approval, callback, state patch). */
+const MAX_CONTROL_BODY_CHARS = 64 * 1024;
+/** Cap for tool_end text persisted in DO event log so 500 events stay well below the 2 MB DO value limit. */
+const MAX_HARNESS_TOOL_OUTPUT_CHARS = 2048;
 
 export function isOracleServerEnabled(env: Env): boolean {
   return String(env.ORACLE_SERVER_ENABLED || '').toLowerCase() === 'true';
@@ -57,12 +70,111 @@ type OracleChatBody = {
   history?: Array<{ role: string; content: string }>;
   /** Explicit paid tool name; regex auto-invoke is off unless ORACLE_AUTO_TOOLS=true. */
   invokeTool?: string;
-  /** Required when invokeTool is set: confirms paid side effects. */
+  /** Optional explicit tool arguments (injected keys like accountId/projectId are stripped). */
+  toolArgs?: Record<string, unknown>;
+  /** Required when invokeTool is set (unless already remembered in session): confirms paid side effects. */
   confirmTool?: boolean;
+  /** When true alongside confirmTool:true, allow-lists the tool for subsequent turns in this session. */
+  rememberTool?: boolean;
+  /** Busy-turn policy: `accept` joins the active turn, `reject` (default on chat) returns 409. */
+  midTurn?: MidTurnPolicy;
 };
 
 /**
- * Stream tokens + tool stages as SSE. Uses hosted Groq when configured.
+ * Out-of-band Control & Observability Plane router for `/api/oracle/session/:sessionId/:action`.
+ * Exposes `events` (GET `?after=offset`), `approval` (POST), `callback` (POST),
+ * `state` (GET), `state/patch` (POST), and `history` (GET).
+ */
+export async function handleOracleSessionControlRoute(
+  request: Request,
+  env: Env,
+  user: HostedIdentity,
+  sessionIdRaw: string,
+  actionPath: string,
+): Promise<Response> {
+  if (!isOracleServerEnabled(env)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: 'Server Oracle is disabled. Set ORACLE_SERVER_ENABLED=true after staging soak.',
+        code: 'ORACLE_DISABLED',
+      }),
+      { status: 503, headers: { 'content-type': 'application/json' } },
+    );
+  }
+  if (!env.ORACLE_SESSION) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: 'OracleSession Durable Object binding is not configured.',
+        code: 'DO_UNAVAILABLE',
+      }),
+      { status: 503, headers: { 'content-type': 'application/json' } },
+    );
+  }
+
+  // Clients may only read the log/state and resolve gates. Event publishing, turn admission,
+  // settle, and truncate stay server-internal so a caller cannot forge tool_end/approval events.
+  const allowed =
+    (request.method === 'GET' && ['events', 'state', 'history'].includes(actionPath)) ||
+    (request.method === 'POST' && ['approval', 'callback', 'state/patch'].includes(actionPath));
+  if (!allowed) {
+    return new Response(JSON.stringify({ ok: false, error: 'Not found', code: 'NOT_FOUND' }), {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  const sessionId = String(sessionIdRaw || `sess_${user.id}`).slice(0, 128);
+  const accountId = billingId(user);
+  const id = env.ORACLE_SESSION.idFromName(`${accountId}:${sessionId}`);
+  const stub = env.ORACLE_SESSION.get(id);
+  const url = new URL(request.url);
+  const targetUrl = `https://oracle-session/${actionPath}${url.search}`;
+
+  let bodyText: string | undefined;
+  if (request.method === 'POST') {
+    bodyText = await request.text();
+    if (bodyText.length > MAX_CONTROL_BODY_CHARS) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Request body too large', code: 'PAYLOAD_TOO_LARGE' }),
+        { status: 413, headers: { 'content-type': 'application/json' } },
+      );
+    }
+  }
+
+  const doRes = await stub.fetch(targetUrl, {
+    method: request.method,
+    headers: { 'content-type': 'application/json' },
+    body: bodyText,
+  });
+
+  if (actionPath === 'approval' && request.method === 'POST' && doRes.ok) {
+    const cloned = (await doRes.clone().json().catch(() => ({}))) as {
+      toolName?: string;
+      approved?: boolean;
+      remember?: boolean;
+    };
+    await recordAuditLogBestEffort(env, {
+      org_id: auditOrgIdFor(accountId),
+      actor_id: user.id,
+      action: cloned.approved ? 'oracle_tool_allow' : 'oracle_tool_block',
+      target_id: cloned.toolName || 'tool_approval',
+      details: {
+        surface: 'control_plane',
+        sessionId,
+        approved: Boolean(cloned.approved),
+        remember: Boolean(cloned.remember),
+      },
+    });
+  }
+
+  return doRes;
+}
+
+/**
+ * Stream tokens + tool stages + 3-plane `harness_event` envelopes as SSE.
+ * Uses hosted Groq when configured.
  */
 export async function handleOracleChatSse(
   request: Request,
@@ -89,6 +201,17 @@ export async function handleOracleChatSse(
     });
   }
 
+  if (body.invokeTool && isControlPlaneToolName(body.invokeTool)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: `Tool "${body.invokeTool}" belongs to the out-of-band control plane and cannot be invoked via chat.`,
+        code: 'CONTROL_PLANE_VIOLATION',
+      }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    );
+  }
+
   const sessionId = (body.sessionId || `sess_${user.id}`).slice(0, 128);
   const accountId = billingId(user);
   const runHandle = await startRun(env, {
@@ -107,40 +230,160 @@ export async function handleOracleChatSse(
   const dfsCred =
     byok && hasDataForSeoCredentials({ luminara_dataforseo_key: byok }) ? byok : null;
 
-  const { readable, writable } = new TransformStream();
+  const durableObjectAvailable = Boolean(env.ORACLE_SESSION);
+  let sessionStub: ReturnType<DurableObjectNamespace['get']> | null = null;
+  if (env.ORACLE_SESSION) {
+    const id = env.ORACLE_SESSION.idFromName(`${accountId}:${sessionId}`);
+    sessionStub = env.ORACLE_SESSION.get(id);
+  }
+
+  let doHistory: SessionTurn[] = [];
+  let rememberedTools: string[] = [];
+  let localOffset = 1;
+  let activeTurnId = 'turn_1';
+  let activeTurnNumber = 1;
+  let turnAdmitted = false;
+
+  if (sessionStub) {
+    try {
+      const histRes = await sessionStub.fetch('https://oracle-session/history', { method: 'GET' });
+      if (histRes.ok) {
+        const histJson = (await histRes.json()) as {
+          turns?: SessionTurn[];
+          rememberedTools?: string[];
+        };
+        doHistory = Array.isArray(histJson.turns) ? histJson.turns : [];
+        rememberedTools = Array.isArray(histJson.rememberedTools)
+          ? histJson.rememberedTools
+          : [];
+      }
+    } catch {
+      doHistory = [];
+    }
+
+    // Plane 1: Two-phase turn admission before opening the SSE stream.
+    // Chat has no background queue drainer, so default to 'reject' when busy unless 'accept' is requested.
+    const effectiveMidTurn: MidTurnPolicy = body.midTurn === 'accept' ? 'accept' : 'reject';
+    const admitRes = await sessionStub.fetch('https://oracle-session/admit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        messageId: runHandle?.runId || `msg_${Date.now()}`,
+        messageType: 'user_message',
+        content: message,
+        midTurn: effectiveMidTurn,
+      }),
+    });
+    const admitData = (await admitRes.json().catch(() => ({}))) as {
+      disposition?: string;
+      turnId?: string;
+      activeTurnId?: string;
+      turnNumber?: number;
+      acceptedOffset?: number;
+    };
+    if (
+      admitRes.status === 409 ||
+      admitData?.disposition === 'reject' ||
+      admitData?.disposition === 'rejected' ||
+      admitData?.disposition === 'enqueued' ||
+      admitData?.disposition === 'queued'
+    ) {
+      if (runHandle) await completeRun(env, runHandle.runId, 'failed');
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: 'Session already has an active turn',
+          code: 'TURN_ACTIVE',
+          activeTurnId: admitData?.activeTurnId ?? admitData?.turnId ?? null,
+        }),
+        { status: 409, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (admitRes.ok) {
+      turnAdmitted = true;
+      if (admitData.turnId) activeTurnId = admitData.turnId;
+      if (typeof admitData.turnNumber === 'number') activeTurnNumber = admitData.turnNumber;
+    }
+  }
+
+  const { readable, writable } = new TransformStream(
+    undefined,
+    { highWaterMark: 128 },
+    { highWaterMark: 128 },
+  );
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
 
+  let clientGone = false;
   const write = async (event: string, data: unknown) => {
-    await writer.write(encoder.encode(sseLine(event, data)));
+    if (clientGone) return;
+    try {
+      await writer.write(encoder.encode(sseLine(event, data)));
+    } catch {
+      // Client disconnected: keep running so the turn still settles and the run is recorded.
+      clientGone = true;
+    }
   };
 
   const run = async () => {
-    try {
-      let sessionStub: ReturnType<DurableObjectNamespace['get']> | null = null;
-      const durableObjectAvailable = Boolean(env.ORACLE_SESSION);
-      if (env.ORACLE_SESSION) {
-        const id = env.ORACLE_SESSION.idFromName(`${accountId}:${sessionId}`);
-        sessionStub = env.ORACLE_SESSION.get(id);
-      }
-
-      // Load Durable Object history before appending this turn (session continuity).
-      let doHistory: SessionTurn[] = [];
+    const emitHarnessEvents = async (items: AgentStreamItem[]) => {
+      if (items.length === 0) return;
       if (sessionStub) {
         try {
-          const histRes = await sessionStub.fetch('https://oracle-session/history', { method: 'GET' });
-          if (histRes.ok) {
-            const histJson = (await histRes.json()) as { turns?: SessionTurn[] };
-            doHistory = Array.isArray(histJson.turns) ? histJson.turns : [];
+          const evRes = await sessionStub.fetch('https://oracle-session/events', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              agentId: 'oracle',
+              turnId: activeTurnId,
+              turnNumber: activeTurnNumber,
+              events: items,
+            }),
+          });
+          if (evRes.ok) {
+            const evJson = (await evRes.json()) as { published?: AgentEventEnvelope[] };
+            if (Array.isArray(evJson.published)) {
+              for (const envFrame of evJson.published) {
+                localOffset = envFrame.offset + 1;
+                await write('harness_event', envFrame);
+              }
+              return;
+            }
           }
         } catch {
-          doHistory = [];
+          /* fallback to local envelope below */
         }
+      }
+      for (const item of items) {
+        const fallbackFrame: AgentEventEnvelope = {
+          offset: localOffset++,
+          agent_id: 'oracle',
+          turn_id: activeTurnId,
+          turn_number: activeTurnNumber,
+          timestamp: Date.now(),
+          event: item,
+        };
+        await write('harness_event', fallbackFrame);
+      }
+    };
+
+    try {
+      if (sessionStub) {
         await sessionStub.fetch('https://oracle-session/append', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ role: 'user', content: message }),
         });
+      } else {
+        await emitHarnessEvents([
+          {
+            type: 'message_accepted',
+            message_id: runHandle?.runId || `msg_${Date.now()}`,
+            message_type: 'user_message',
+            disposition: 'started',
+          },
+          { type: 'turn_started' },
+        ]);
       }
 
       await write('status', { stage: 'thinking' });
@@ -152,11 +395,13 @@ export async function handleOracleChatSse(
         allowRegexAutoTools,
         invokeTool: body.invokeTool,
         confirmTool: Boolean(body.confirmTool),
+        rememberedTools,
       });
 
       const wantsPaidTool = Boolean(body.projectId && caps.apiAccess && toolDecision.invoke && toolDecision.seed);
       const toolNow = Date.now();
       const budgetHalted = wantsPaidTool ? await isBudgetHalted(env, accountId, toolNow) : false;
+      const toolCallId = `call_${toolNow}`;
 
       if (wantsPaidTool && budgetHalted) {
         // Same budget gate as MCP callTool: the account hard stop wins over chat confirmTool.
@@ -167,6 +412,14 @@ export async function handleOracleChatSse(
           target_id: 'research_keywords',
           details: { tool: 'research_keywords', decision: 'block', reason: 'budget_exhausted', projectId: body.projectId },
         });
+        await emitHarnessEvents([
+          {
+            type: 'tool_error',
+            tool_id: toolCallId,
+            tool_name: 'research_keywords',
+            message: 'budget_exhausted',
+          },
+        ]);
         await write('tool', {
           tool: 'research_keywords',
           stage: 'blocked',
@@ -195,6 +448,9 @@ export async function handleOracleChatSse(
           }),
         );
         if (contextBlock || route.intent === 'clarify') {
+          const blockReason = contextBlock
+            ? String((contextBlock.structuredContent as { reason?: string } | undefined)?.reason || 'CONTEXT_REQUIRED')
+            : route.clarifyReason || 'intent_clarify';
           await recordAuditLogBestEffort(env, {
             org_id: auditOrgIdFor(accountId),
             actor_id: user.id,
@@ -203,12 +459,18 @@ export async function handleOracleChatSse(
             details: {
               tool: 'research_keywords',
               decision: 'block',
-              reason: contextBlock
-                ? String((contextBlock.structuredContent as { reason?: string } | undefined)?.reason || 'CONTEXT_REQUIRED')
-                : route.clarifyReason || 'intent_clarify',
+              reason: blockReason,
               projectId,
             },
           });
+          await emitHarnessEvents([
+            {
+              type: 'tool_error',
+              tool_id: toolCallId,
+              tool_name: 'research_keywords',
+              message: blockReason,
+            },
+          ]);
           await write('tool', {
             tool: 'research_keywords',
             stage: 'blocked',
@@ -220,6 +482,59 @@ export async function handleOracleChatSse(
             intentRoute: route,
           });
         } else {
+          // Bind Injected<T> context (strips any spoofed accountId/projectId from model/body args)
+          const { modelFacingInput, executionArgs } = bindInjectedToolArgs(
+            { ...(body.toolArgs || {}), seeds: [seed] },
+            { projectId: body.projectId, accountId },
+          );
+
+          await emitHarnessEvents([
+            {
+              type: 'tool_requested',
+              tool_id: toolCallId,
+              tool_name: 'research_keywords',
+              tool_input: modelFacingInput,
+            },
+          ]);
+
+          // If caller passed rememberTool: true with confirmTool: true, register a pending gate
+          // and resolve it on the Control Plane so the event log has the full approval pair.
+          if (sessionStub && body.confirmTool && body.rememberTool) {
+            try {
+              await emitHarnessEvents([
+                {
+                  type: 'tool_approval_requested',
+                  tool_id: toolCallId,
+                  tool_name: 'research_keywords',
+                  tool_input: modelFacingInput,
+                  risk_tier: 'paid_research',
+                },
+              ]);
+              await sessionStub.fetch('https://oracle-session/approval', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  toolId: toolCallId,
+                  toolName: 'research_keywords',
+                  approved: true,
+                  remember: true,
+                  reason: 'explicit_confirm_with_remember',
+                }),
+              });
+            } catch {
+              /* best effort */
+            }
+          }
+
+          await emitHarnessEvents([
+            {
+              type: 'tool_start',
+              tool_id: toolCallId,
+              tool_name: 'research_keywords',
+              tool_input: modelFacingInput,
+            },
+          ]);
+
           const rt = buildPaidToolRuntime({
             env,
             accountId,
@@ -230,12 +545,13 @@ export async function handleOracleChatSse(
           await write('tool', {
             tool: 'research_keywords',
             stage: 'running',
-            args: { projectId: body.projectId, seeds: [seed] },
+            args: modelFacingInput,
+            modelFacingInput,
             reason: toolDecision.reason,
           });
           const toolResult = await executePaidTool(
             'research_keywords',
-            { projectId: body.projectId, seeds: [seed] },
+            executionArgs,
             rt,
           );
           hadToolEvidence = true;
@@ -289,6 +605,17 @@ export async function handleOracleChatSse(
                 ? [{ kind: 'dfs', excerpt: toolResult.text.slice(0, 240) }]
                 : [{ kind: 'other', excerpt: 'tool result without measured status' }],
           });
+
+          await emitHarnessEvents([
+            {
+              type: 'tool_end',
+              tool_id: toolCallId,
+              tool_name: 'research_keywords',
+              tool_output: toolResult.text.slice(0, MAX_HARNESS_TOOL_OUTPUT_CHARS),
+              measurement_status: rawStatus,
+            },
+          ]);
+
           await write('tool', {
             tool: 'research_keywords',
             stage: 'done',
@@ -306,11 +633,22 @@ export async function handleOracleChatSse(
           });
         }
       } else if (body.invokeTool === 'research_keywords' && !toolDecision.invoke) {
+        const seedPreview = extractKeywordSeed(message) || 'general';
+        await emitHarnessEvents([
+          {
+            type: 'tool_approval_requested',
+            tool_id: toolCallId,
+            tool_name: 'research_keywords',
+            tool_input: { seeds: [seedPreview] },
+            risk_tier: 'paid_research',
+          },
+        ]);
         await write('tool', {
           tool: 'research_keywords',
+          toolId: toolCallId,
           stage: 'blocked',
           reason: toolDecision.reason,
-          hint: 'Pass confirmTool:true with invokeTool, or set ORACLE_AUTO_TOOLS=true for legacy regex auto-invoke.',
+          hint: 'Pass confirmTool:true with invokeTool, approve via POST /api/oracle/session/:id/approval, or set ORACLE_AUTO_TOOLS=true.',
         });
       }
 
@@ -419,7 +757,7 @@ export async function handleOracleChatSse(
         });
       }
 
-      // Chat → facts pipeline (best-effort; high-confidence lines auto-store)
+      // Chat -> facts pipeline (best-effort; high-confidence lines auto-store)
       try {
         const { extractFactsFromChat } = await import('./memoryRag');
         await extractFactsFromChat(env, user, {
@@ -434,6 +772,8 @@ export async function handleOracleChatSse(
       await write('done', {
         ok: true,
         sessionId,
+        turnId: activeTurnId,
+        turnNumber: activeTurnNumber,
         monitor: monitor.ok ? { ok: true, flags: [] } : { ok: false, flags: monitor.flags, notes: monitor.notes },
         validation: { ok: validation.ok, summary: validationSummary },
         toolsAvailable: [
@@ -465,11 +805,26 @@ export async function handleOracleChatSse(
       });
       await write('done', { ok: false });
     } finally {
-      await writer.close();
+      if (turnAdmitted && sessionStub) {
+        try {
+          await sessionStub.fetch('https://oracle-session/settle', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ turnId: activeTurnId }),
+          });
+        } catch {
+          /* best effort */
+        }
+      } else if (!sessionStub) {
+        await emitHarnessEvents([{ type: 'turn_end' }]);
+      }
+      await writer.close().catch(() => {
+        /* client already disconnected */
+      });
     }
   };
 
-  void run();
+  run().catch((err) => console.error('[oracleChat] stream run failed:', err));
 
   return new Response(readable, {
     status: 200,

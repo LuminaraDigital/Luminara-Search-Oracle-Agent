@@ -75,7 +75,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
             <div className="p-6 rounded-[24px] text-center border border-gold/20 bg-black/50 hover:border-gold/40 transition-all group">
               <div className="text-3xl font-semibold text-gold-light mb-2">DNA</div>
               <div className="text-[10px] text-gold font-semibold tracking-wide mb-3">Business profile</div>
-              <div className="text-[10px] text-gray-400 leading-relaxed">Link your Business DNA once and every audit is personalised to your USP and competitors.</div>
+              <div className="text-[10px] text-gray-400 leading-relaxed">Link your business profile once and every audit is personalised to your offer and competitors.</div>
             </div>
 
             <div className="p-6 rounded-[24px] text-center border border-gold/20 bg-black/50 hover:border-gold/40 transition-all group">

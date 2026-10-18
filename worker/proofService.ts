@@ -13,6 +13,7 @@ import { resolveChainNetwork, tonExplorerTxUrl } from './chainNetwork';
 import { recordProofAnchorBestEffort, type ProofAnchorInput } from './proofAnchors';
 import { anchorAuditCitation, type CitationPayload } from './chain/ton/citationRegistry';
 import { safePublicHostname } from './security';
+import { escapeHtml } from './marketingShell';
 import { json, secretEquals, sha256Hex } from './workerUtils';
 
 export interface CanonicalAuditFinding {
@@ -32,7 +33,6 @@ export interface CanonicalEvidencePayload {
 
 export interface AnchorAuditInput {
   domain: string;
-  auditRunId?: string;
   healthScore: number;
   citationRatePercent: number;
   findings?: CanonicalAuditFinding[];
@@ -48,7 +48,7 @@ export interface AnchorAuditInput {
 export function buildFindingsFingerprint(findings: CanonicalAuditFinding[] = []): string {
   if (!findings || findings.length === 0) return '';
   return findings
-    .map((f) => `${String(f.id || '').trim()}:${String(f.severity || '').trim()}:${String(f.title || '').trim()}`)
+    .map((f) => `${String(f?.id || '').trim()}:${String(f?.severity || '').trim()}:${String(f?.title || '').trim()}`)
     .sort()
     .join(';');
 }
@@ -85,11 +85,24 @@ export async function recordAuditProof(
   explorerUrl?: string | null;
   network?: string;
   chain?: string;
+  auditRunId?: string;
   error?: string;
 }> {
   const cleanDomain = safePublicHostname(input.domain);
   if (!cleanDomain) {
     return { ok: false, evidenceHash: '', anchorId: '', status: 'failed', error: 'Invalid domain' };
+  }
+  // The route hands the request body straight in: check every field read below.
+  const percent = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100;
+  if (
+    !percent(input.healthScore) ||
+    !percent(input.citationRatePercent) ||
+    (input.timestamp !== undefined && !Number.isFinite(input.timestamp)) ||
+    (input.findings !== undefined && !Array.isArray(input.findings)) ||
+    (input.findingsFingerprint !== undefined && typeof input.findingsFingerprint !== 'string') ||
+    (input.evidenceHash !== undefined && typeof input.evidenceHash !== 'string')
+  ) {
+    return { ok: false, evidenceHash: '', anchorId: '', status: 'failed', error: 'healthScore and citationRatePercent must be numbers from 0 to 100; findings an array; findingsFingerprint and evidenceHash strings' };
   }
 
   const timestamp = input.timestamp || Date.now();
@@ -110,8 +123,8 @@ export async function recordAuditProof(
     return { ok: false, evidenceHash: computedHash, anchorId: '', status: 'failed', error: 'Provided evidenceHash does not match computed digest' };
   }
 
-  const randomSuffix = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36);
-  const auditRunId = input.auditRunId || `audit_${Date.now().toString(36)}_${randomSuffix}`;
+  // Always minted here: a caller-chosen id could shadow another proof in domain + auditRunId lookups.
+  const auditRunId = `audit_${Date.now().toString(36)}_${crypto.randomUUID()}`;
   const network = resolveChainNetwork(env) || 'unknown';
   const anchorId = `pa_ton_${computedHash.slice(0, 32)}`;
 
@@ -168,6 +181,7 @@ export async function recordAuditProof(
     ok: true,
     evidenceHash: computedHash,
     anchorId,
+    auditRunId,
     status: anchorResult.ok ? 'anchored' : 'off_chain',
     txHash,
     explorerUrl,
@@ -257,7 +271,8 @@ export async function verifyAuditProof(
   if (hash && env.LUMINARA_KV) {
     const raw = await env.LUMINARA_KV.get(`poa:${hash}`, 'json');
     if (raw) {
-      const rec = raw as Record<string, unknown>;
+      // The route is public: the owner's account id stays private.
+      const { ownerId: _ownerId, ...rec } = raw as Record<string, unknown>;
       return {
         ok: true,
         verified: true,
@@ -281,37 +296,49 @@ export async function verifyAuditProof(
 }
 
 /**
- * Generates badge metadata and embed HTML for an audit proof.
+ * Generates badge metadata and embed HTML for a stored audit proof. Only the evidence hash
+ * is read from the caller: score, network and link come from the stored record, so a badge
+ * cannot be forged for a proof that was never recorded. Without `env` nothing can be read,
+ * so every badge is 404.
  */
-export function generateBadgeResponse(proof: {
-  domain: string;
-  evidenceHash: string;
-  healthScore?: number;
-  source: 'on_chain' | 'off_chain_digest';
-  network?: string;
-  explorerUrl?: string | null;
-}) {
-  const score = proof.healthScore ?? 85;
-  const scoreColor = score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
-  const label = proof.source === 'on_chain' ? `TON ${proof.network || 'Mainnet'}` : 'Luminara Digest';
+export async function generateBadgeResponse(input: { evidenceHash?: unknown }, env?: Env): Promise<Response> {
+  const hash = typeof input?.evidenceHash === 'string' ? input.evidenceHash.toLowerCase().trim() : '';
+  if (!/^[0-9a-f]{64}$/.test(hash)) {
+    return json({ ok: false, error: 'evidenceHash must be a 64-character hex SHA-256 digest' }, 400);
+  }
+  const proof = env ? await verifyAuditProof(env, { evidenceHash: hash }) : null;
+  if (!proof?.ok) return json({ ok: false, error: 'Proof not found' }, 404);
+
+  // D1 rows carry no score; the KV record written by recordAuditProof does.
+  const stored = env?.LUMINARA_KV ? ((await env.LUMINARA_KV.get(`poa:${hash}`, 'json')) as Record<string, unknown> | null) : null;
+  const score = typeof stored?.healthScore === 'number' && Number.isFinite(stored.healthScore) ? Math.round(stored.healthScore) : null;
+  const scoreColor = score === null ? '#64748b' : score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
+  const label = proof.source === 'on_chain' ? `TON ${proof.network || 'unknown'}` : 'Self-reported digest';
+  let explorerUrl: string | null = null;
+  try {
+    if (proof.explorerUrl && new URL(proof.explorerUrl).protocol === 'https:') explorerUrl = proof.explorerUrl;
+  } catch {
+    explorerUrl = null;
+  }
+  const href = explorerUrl || `https://luminarasuite.com/verify/${hash}`;
 
   const embedHtml = `<!-- Luminara Proof Badge -->
-<a href="${proof.explorerUrl || `https://luminarasuite.com/verify/${proof.evidenceHash}`}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:#0f172a;color:#f8fafc;border-radius:8px;font-family:sans-serif;font-size:12px;text-decoration:none;border:1px solid #334155;">
+<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:#0f172a;color:#f8fafc;border-radius:8px;font-family:sans-serif;font-size:12px;text-decoration:none;border:1px solid #334155;">
   <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${scoreColor};"></span>
-  <span>AEO Health: <strong>${score}/100</strong></span>
-  <span style="color:#64748b;">| ${label}</span>
+  <span>AEO Health: <strong>${score === null ? 'not measured' : `${score}/100`}</strong></span>
+  <span style="color:#64748b;">| ${escapeHtml(label)}</span>
 </a>`;
 
   return json({
     ok: true,
     badge: {
       domain: proof.domain,
-      evidenceHash: proof.evidenceHash,
+      evidenceHash: hash,
       healthScore: score,
       scoreColor,
       source: proof.source,
       network: proof.network || 'unknown',
-      explorerUrl: proof.explorerUrl,
+      explorerUrl,
       embedHtml,
     },
   });

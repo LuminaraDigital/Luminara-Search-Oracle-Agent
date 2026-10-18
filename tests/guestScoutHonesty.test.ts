@@ -214,8 +214,8 @@ describe('guest scout summary honesty', () => {
     expect(summary.evidenceEmpty).toBe(true);
     expect(summary.degraded).toBe(true);
     expect(summary.failureCodes).toEqual(['page_fetch_empty', 'search_empty', 'provider_failed']);
-    expect(summary.banner).toMatch(/Live data unavailable/);
-    expect(summary.banner).toMatch(/sign in/i);
+    expect(summary.banner).toBe('Live data unavailable. Sample / not measured.');
+    expect(summary.banner?.toLowerCase()).not.toContain('sign in');
     expect(summary.badges.every((badge) => badge.status === 'not_measured' && !badge.value)).toBe(true);
     const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
     expect(html).toContain('Live data unavailable');
@@ -250,8 +250,9 @@ describe('guest scout summary honesty', () => {
     }
   });
 
-  it('keeps a sign-in step on the guest degraded banner', () => {
-    expect(liveDataUnavailableCopy('byok_or_signin')).toMatch(/sign in/i);
+  it('states the measurement fact on the guest degraded banner', () => {
+    expect(liveDataUnavailableCopy('byok_or_signin')).toBe('Live data unavailable. Sample / not measured.');
+    expect(liveDataUnavailableCopy('byok_or_signin').toLowerCase()).not.toContain('sign in');
     expect(hostedAuthRecoveryHint({ rail: 'byok_or_signin' })).toMatch(/sign in/i);
     expect(hostedAuthRecoveryHint({ signedIn: false })).toMatch(/sign in/i);
   });
@@ -398,8 +399,9 @@ describe('hosted scout rail', () => {
     expect(resolveHostedScoutRail({ inTelegram: true, hasInitData: true, signedIn: false })).toBe('tma_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: true })).toBe('signed_in_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: false })).toBe('byok_or_signin');
-    expect(hostedScoutPreRunCopy('byok_or_signin').toLowerCase()).toContain('anonymous');
-    expect(hostedScoutPreRunCopy('byok_or_signin')).toMatch(/sign in/i);
+    expect(hostedScoutPreRunCopy('byok_or_signin')).toBe(
+      'Sign in for a full audit, or add your own AI keys in Settings.',
+    );
     expect(hostedScoutPreRunCopy('tma_hosted').toLowerCase()).toContain('no api key');
     expect(hostedScoutPreRunCopy('signed_in_hosted').toLowerCase()).not.toContain('sign in');
     expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: false })).toMatch(/off for this session/i);

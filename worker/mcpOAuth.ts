@@ -227,12 +227,16 @@ async function token(request: Request, env: Env): Promise<Response> {
   const contentType = request.headers.get('content-type') || '';
   let body: Record<string, string> = {};
   if (contentType.includes('application/json')) {
-    body = (await request.json().catch(() => ({}))) as Record<string, string>;
+    body = ((await request.json().catch(() => null)) || {}) as Record<string, string>;
   } else {
-    const form = await request.formData();
-    form.forEach((v, k) => {
-      body[k] = String(v);
-    });
+    try {
+      const form = await request.formData();
+      form.forEach((v, k) => {
+        body[k] = String(v);
+      });
+    } catch {
+      return json({ error: 'invalid_request', error_description: 'Body must be form-encoded or JSON.' }, 400);
+    }
   }
 
   if (body.grant_type !== 'authorization_code') {

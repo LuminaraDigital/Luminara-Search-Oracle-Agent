@@ -9,6 +9,7 @@ import { ensureFirebaseIdTokenCached, getFirebaseIdToken, getFirebaseIdTokenSync
 import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
+import { entitlementsFor } from './plans/planEntitlements';
 
 export interface ServerHealth {
   ok: boolean;
@@ -506,11 +507,19 @@ export function hostedProviderKeyDecision(input: {
  * True when the Worker may inject a hosted key for this provider for the current user.
  * Sync only. Call ensureHostedProviderReady() before Instant Audit resolves keys.
  */
+/** Hosted DataForSEO is paid research: Agency apiAccess only (APS invariant 2), matching the Worker. */
+function hasPlanForHostedProvider(providerId: string): boolean {
+  return providerId === 'dataforseo'
+    ? entitlementsFor(getCurrentQuotaSync()?.plan).apiAccess
+    : hasActivePaidPlanSync();
+}
+
 export function canUseHostedProviderKey(providerId: string): boolean {
   return hostedProviderKeyDecision({
     proxyReady: isProxyMode() && isProviderConfiguredOnServer(providerId),
     paidProvider: isPaidHostedProvider(providerId),
-    paidPlan: hasActivePaidPlanSync(),
+    paidPlan: hasPlanForHostedProvider(providerId),
+
     hasIdentity: clientHasHostedIdentity(),
   });
 }
@@ -576,7 +585,7 @@ export function hostedProviderDecisionReason(providerId: string): HostedProvider
   if (!isProxyMode()) return 'no_health';
   if (!isProviderConfiguredOnServer(providerId)) return 'not_configured';
   if (isPaidHostedProvider(providerId)) {
-    return hasActivePaidPlanSync() ? 'hosted' : 'paid_required';
+    return hasPlanForHostedProvider(providerId) ? 'hosted' : 'paid_required';
   }
   return clientHasHostedIdentity() ? 'hosted' : 'no_identity';
 }
@@ -717,8 +726,8 @@ export function updateQuotaFromHeaders(headers: Headers): void {
 }
 
 /**
- * App-level sign-in state for account-only endpoints. `null` means auth has not resolved yet,
- * so calls still go out (a returning user's first request must not be dropped).
+ * App-level sign-in state. Quota waits until this is true so a guest load
+ * does not call /api/auth/quota. Other account calls use accountCallsAllowed.
  */
 let accountSignedIn: boolean | null = null;
 
@@ -732,10 +741,9 @@ export function accountCallsAllowed(): boolean {
 }
 
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
+  if (accountSignedIn !== true) return null;
   const base = apiBase();
   if (!base) return null;
-  // The Worker answers 401 to guests; skip the request instead of logging a failure.
-  if (!accountCallsAllowed()) return null;
   try {
     const r = await workerFetchWithAuthRetry(`${base}/api/auth/quota`);
     if (!r.ok) return null;
@@ -1039,18 +1047,30 @@ export async function* streamOracleChat(input: {
     yield { type: 'error', error: 'Worker API is unreachable', code: 'NO_API' };
     return;
   }
-  const r = await workerFetchWithAuthRetry(`${base}/api/oracle/chat`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({
-      message: input.message,
-      sessionId: input.sessionId,
-      projectId: input.projectId,
-      history: input.history,
-      ...(input.invokeTool ? { invokeTool: input.invokeTool, confirmTool: Boolean(input.confirmTool) } : {}),
-    }),
-    signal: input.signal,
+  const networkError = (err: unknown) => ({
+    type: 'error' as const,
+    error: err instanceof Error && err.message ? err.message : 'Network error',
+    code: 'NETWORK',
   });
+  let r: Response;
+  try {
+    r = await workerFetchWithAuthRetry(`${base}/api/oracle/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify({
+        message: input.message,
+        sessionId: input.sessionId,
+        projectId: input.projectId,
+        history: input.history,
+        ...(input.invokeTool ? { invokeTool: input.invokeTool, confirmTool: Boolean(input.confirmTool) } : {}),
+      }),
+      signal: input.signal,
+    });
+  } catch (err) {
+    if (input.signal?.aborted) return;
+    yield networkError(err);
+    return;
+  }
   if (!r.ok || !r.body) {
     const data = await r.json().catch(() => ({}));
     yield {
@@ -1067,7 +1087,15 @@ export async function* streamOracleChat(input: {
   let eventName = 'message';
 
   while (true) {
-    const { done, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (err) {
+      if (input.signal?.aborted) return;
+      yield networkError(err);
+      return;
+    }
+    const { done, value } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split('\n');

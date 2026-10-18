@@ -60,6 +60,9 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
   // Studio Artifacts state
   const [generatingArtifactType, setGeneratingArtifactType] = useState<StudioArtifactType | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<StudioArtifact | null>(null);
+  const [studioNotice, setStudioNotice] = useState<{ text: string; type: 'info' | 'error' } | null>(null);
+  const [isCreatingNotebook, setIsCreatingNotebook] = useState(false);
+  const [newNotebookTitle, setNewNotebookTitle] = useState('');
 
   // Responsive Mobile / TMA Tab Switcher ('sources' | 'chat' | 'studio')
   const [mobileTab, setMobileTab] = useState<'sources' | 'chat' | 'studio'>('chat');
@@ -107,11 +110,18 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
   };
 
   const handleCreateNewNotebook = () => {
-    const title = prompt('Enter a title for the new notebook:', 'Competitor Intelligence Dossier');
+    setNewNotebookTitle('Competitor Intelligence Dossier');
+    setIsCreatingNotebook(true);
+  };
+
+  const confirmCreateNotebook = (e: React.FormEvent) => {
+    e.preventDefault();
+    const title = newNotebookTitle.trim();
     if (!title) return;
     const nb = notebookService.createNotebook(title);
     refreshNotebooks();
     setActiveNotebookId(nb.id);
+    setIsCreatingNotebook(false);
   };
 
   const handleSendMessage = async (userText: string) => {
@@ -140,15 +150,22 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
     if (isGeneratingPodcast) return;
     if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
       openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
-      alert(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`);
+      setStudioNotice({
+        text: `Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`,
+        type: 'error',
+      });
       return;
     }
     setIsGeneratingPodcast(true);
+    setStudioNotice(null);
     try {
       await audioOverviewService.generatePodcast(activeNotebook.id);
       refreshNotebooks();
     } catch (err: any) {
-      alert(toUserFacingText(err, 'Failed to generate Audio Overview. Please try again shortly.'));
+      setStudioNotice({
+        text: toUserFacingText(err, 'Failed to generate Audio Overview. Please try again shortly.'),
+        type: 'error',
+      });
     } finally {
       setIsGeneratingPodcast(false);
     }
@@ -158,16 +175,23 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
     if (generatingArtifactType) return;
     if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
       openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
-      alert(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`);
+      setStudioNotice({
+        text: `Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`,
+        type: 'error',
+      });
       return;
     }
     setGeneratingArtifactType(type);
+    setStudioNotice(null);
     try {
       const art = await notebookService.generateArtifact(activeNotebook.id, type);
       refreshNotebooks();
       setSelectedArtifact(art);
     } catch (err: any) {
-      alert(toUserFacingText(err, 'Failed to generate studio artifact. Please try again shortly.'));
+      setStudioNotice({
+        text: toUserFacingText(err, 'Failed to generate studio artifact. Please try again shortly.'),
+        type: 'error',
+      });
     } finally {
       setGeneratingArtifactType(null);
     }
@@ -176,7 +200,7 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
   const handleSaveMessageAsNote = (content: string) => {
     notebookService.addNote(activeNotebook.id, 'Grounded Finding', content);
     refreshNotebooks();
-    alert('Answer saved to your Notebook Notes.');
+    setStudioNotice({ text: 'Answer saved to your Notebook Notes.', type: 'info' });
   };
 
   const handleExport = () => {
@@ -212,13 +236,40 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
             </div>
           </div>
 
-          <button
-            onClick={handleCreateNewNotebook}
-            className="p-1.5 rounded-lg border border-white/10 hover:border-gold/50 text-gray-400 hover:text-white transition-colors"
-            title="Create New Notebook"
-          >
-            <ICONS.Plus className="w-3.5 h-3.5" />
-          </button>
+          {isCreatingNotebook ? (
+            <form onSubmit={confirmCreateNotebook} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={newNotebookTitle}
+                onChange={(e) => setNewNotebookTitle(e.target.value)}
+                placeholder="Notebook title"
+                className="bg-black/80 border border-gold/40 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none"
+                autoFocus
+              />
+              <button
+                type="submit"
+                className="px-2.5 py-1 rounded-lg bg-gold text-black text-[11px] font-bold"
+              >
+                Create
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCreatingNotebook(false)}
+                className="px-2 py-1 rounded-lg border border-white/10 text-[11px] text-gray-400 hover:text-white"
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <button
+              onClick={handleCreateNewNotebook}
+              className="p-1.5 rounded-lg border border-white/10 hover:border-gold/50 text-gray-400 hover:text-white transition-colors"
+              title="Create New Notebook"
+              aria-label="Create New Notebook"
+            >
+              <ICONS.Plus className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Right Header Actions */}
@@ -268,6 +319,26 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
           </button>
         </div>
       </header>
+
+      {studioNotice && (
+        <div
+          role={studioNotice.type === 'error' ? 'alert' : 'status'}
+          className={`shrink-0 px-4 py-2 text-xs flex items-center justify-between border-b ${
+            studioNotice.type === 'error'
+              ? 'bg-danger-950/40 border-danger-500/30 text-danger-200'
+              : 'bg-gold/10 border-gold/30 text-gold-light'
+          }`}
+        >
+          <span>{studioNotice.text}</span>
+          <button
+            type="button"
+            onClick={() => setStudioNotice(null)}
+            className="text-[11px] font-semibold underline ml-4"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Main 3-Column Studio Layout */}
       <div className="flex-1 flex overflow-hidden">

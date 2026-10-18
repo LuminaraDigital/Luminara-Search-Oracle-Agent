@@ -16,6 +16,8 @@ export type OracleAutoToolPolicy = {
   invokeTool?: string | null;
   /** Caller must confirm paid side effects when invokeTool is set. */
   confirmTool?: boolean;
+  /** Session-level allow-listed tools unlocked via `remember: true` control-plane approval. */
+  rememberedTools?: readonly string[];
 };
 
 export type OutputMonitorFlag =
@@ -76,19 +78,26 @@ export function fenceToolResult(toolName: string, text: string): string {
 
 /**
  * Decide whether to auto-run research_keywords.
- * Production default: require invokeTool + confirmTool; regex alone is off unless allowRegexAutoTools.
+ * Production default: require invokeTool + (confirmTool or session rememberedTools);
+ * regex alone is off unless allowRegexAutoTools.
  */
 export function shouldInvokeResearchKeywords(
   message: string,
   policy: OracleAutoToolPolicy,
 ): { invoke: boolean; seed: string | null; reason: string } {
   const invoke = String(policy.invokeTool || '').trim().toLowerCase();
+  const isRemembered = Boolean(policy.rememberedTools?.includes('research_keywords'));
+
   if (invoke === 'research_keywords') {
-    if (!policy.confirmTool) {
+    if (!policy.confirmTool && !isRemembered) {
       return { invoke: false, seed: null, reason: 'confirmTool_required' };
     }
     const seed = extractKeywordSeed(message) || 'general';
-    return { invoke: true, seed, reason: 'explicit_confirm' };
+    return {
+      invoke: true,
+      seed,
+      reason: policy.confirmTool ? 'explicit_confirm' : 'remembered_policy',
+    };
   }
 
   if (!policy.allowRegexAutoTools) {
