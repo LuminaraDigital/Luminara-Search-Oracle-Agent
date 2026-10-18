@@ -2,6 +2,8 @@
  * Crawl surfaces served by the Worker (and mirrored under public/ for Vite).
  * Keep copy factual; no invented metrics.
  */
+import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
+import { CHECKOUT_TERM_LINE } from '../components/paywall/planCopy';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
 # Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
@@ -68,6 +70,37 @@ Disallow: /oauth/
 Sitemap: https://www.luminarasuite.com/sitemap.xml
 Sitemap: https://luminarasuite.com/sitemap.xml
 `;
+
+const PRODUCTION_CRAWL_HOSTS = new Set(['luminarasuite.com', 'www.luminarasuite.com']);
+const STAGING_CRAWL_HOST = 'staging.luminarasuite.com';
+
+/**
+ * Staging is not for indexing. Production hostnames stay indexable even when ENVIRONMENT is wrong.
+ * Any other host is treated as staging only when ENVIRONMENT is staging.
+ */
+export function isStagingCrawlHost(hostname: string, environment: string | undefined): boolean {
+  const host = hostname.toLowerCase().split(':')[0];
+  if (PRODUCTION_CRAWL_HOSTS.has(host)) return false;
+  if (host === STAGING_CRAWL_HOST) return true;
+  return String(environment || '').trim().toLowerCase() === 'staging';
+}
+
+export const STAGING_ROBOTS_TXT = `# Staging is not for search indexing.
+User-agent: *
+Disallow: /
+`;
+
+export function robotsTxtForHost(hostname: string, environment: string | undefined): string {
+  return isStagingCrawlHost(hostname, environment) ? STAGING_ROBOTS_TXT : ROBOTS_TXT;
+}
+
+/** Adds X-Robots-Tag on staging responses. Production responses are returned unchanged. */
+export function applyHostRobots(url: URL, environment: string | undefined, res: Response): Response {
+  if (!isStagingCrawlHost(url.hostname, environment)) return res;
+  const headers = new Headers(res.headers);
+  headers.set('X-Robots-Tag', 'noindex, nofollow');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
 
 export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'): string {
   const base = origin.replace(/\/+$/, '');
@@ -139,11 +172,11 @@ Answer Engine Optimization (AEO) is the discipline of structuring web content, t
 
 ## Pricing (30 days)
 
-Published USD labels. Plans are paid with Telegram Stars inside the Telegram Mini App. Card checkout is not available yet.
+${CHECKOUT_TERM_LINE} Payment is Telegram Stars.
 
-- Starter: US$49. Up to 2 sites. No MCP. No full public share links.
-- Growth: US$149. MCP, full share links, 3 seats, weekly re-audits.
-- Agency: US$349. API access, 10 client seats, daily Sentinel, white-label PDF.
+- Starter: ${PAID_PLAN_PRICES.starter.starsLabel}. Up to 2 sites. No MCP. No full public share links.
+- Growth: ${PAID_PLAN_PRICES.growth.starsLabel}. MCP, full share links, 3 seats, weekly re-audits.
+- Agency: ${PAID_PLAN_PRICES.agency.starsLabel}. API access, 10 client seats, daily Sentinel, white-label PDF.
 - Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
 
 ## MCP

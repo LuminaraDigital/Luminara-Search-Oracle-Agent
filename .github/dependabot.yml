@@ -1,6 +1,6 @@
 # Conservative dependency automation: weekly cadence, minor/patch grouped into
-# one PR per ecosystem so review load stays low. No ignores initially; add
-# targeted ignore rules only when an update is known to break the build.
+# one PR per ecosystem so review load stays low. Ignore a dependency only when
+# an update is known to break the build. TypeScript majors are ignored.
 #
 # Every entry targets staging. Nothing reaches main that staging has not run: the production
 # deploy refuses any commit on main that is not a release merge from staging, so an update
@@ -20,6 +20,10 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
     groups:
       minor-and-patch:
         update-types:
