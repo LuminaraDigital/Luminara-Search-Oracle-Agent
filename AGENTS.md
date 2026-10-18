@@ -12,6 +12,7 @@ This repository is **Luminara Suite**: React (Vite) + Cloudflare Workers + D1, w
 ## Engineering principles
 
 - Prefer simple, readable, flat code. Search before adding helpers.
+- Follow `.cursor/rules/default-code-standards.mdc` on every code change. Ponytail, the pstack principle skills, and the thermo-nuclear review are vendored under `.cursor/skills/` and `.claude/skills/`. pstack principles and `thermo-nuclear-code-quality-review` set `disable-model-invocation: true`, so that rule is what loads them. Run the thermo-nuclear review on the branch diff before opening a pull request.
 - Worker D1 access lives under `worker/`. Shared types under `services/` or `types.ts`.
 - Validate untrusted input at trust boundaries. Prefer instructive error messages.
 - No em dashes (U+2014) in new copy. Use `-`, `:`, or `.`.

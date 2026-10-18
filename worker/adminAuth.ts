@@ -2,7 +2,8 @@
  * Admin API authorization: ADMIN_SECRET separation (P1 hardening).
  *
  * TELEGRAM_WEBHOOK_SECRET authorizes only Telegram webhook delivery. Admin routes
- * (/admin/users, /admin/license/generate, /admin/license/seed, /telegram/refund)
+ * (/admin/users, /admin/license/generate, /admin/license/seed, /telegram/refund,
+ * /rsi/prompts/publish, /rsi/prompts/rollback)
  * require a dedicated ADMIN_SECRET sent as the x-admin-secret header and compared
  * timing-safely. When ADMIN_SECRET is unset the admin API fails closed with 503
  * instead of silently accepting the webhook secret the way pre-separation code did.

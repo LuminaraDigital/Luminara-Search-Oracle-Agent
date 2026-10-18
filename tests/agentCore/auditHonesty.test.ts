@@ -733,11 +733,11 @@ describe('Instant Audit honesty on empty evidence', () => {
 describe('Mission Control copy', () => {
   it('does not claim ground-truth verification when metrics were not measured', () => {
     expect(missionControlHeadline(true, 'not_measured')).toBe(
-      'Audit finished. Some signals were not measured.',
+      'This run did not measure the site, so no full report was generated.',
     );
     expect(missionControlHeadline(true, 'not_measured')).not.toContain('ground-truth');
     expect(missionControlHeadline(true, 'measured')).not.toContain('ground-truth');
-    expect(missionControlHeadline(false, 'not_measured')).toContain('collaborating');
+    expect(missionControlHeadline(false, 'not_measured')).toBe('Running the audit steps. Each card shows what that step returned.');
 
     const events = (Object.keys(CREW_PROFILES) as AgentRole[]).map((role) => ({
       id: role,
@@ -762,7 +762,7 @@ describe('Mission Control copy', () => {
     expect(html).toContain('NOT MEASURED');
     expect(html).not.toContain('100% COMPLETE');
     expect(missionControlProgressLabel(true, 'measured', 100)).toBe('100% COMPLETE');
-    expect(html).toContain('Audit finished. Some signals were not measured.');
+    expect(html).toContain('This run did not measure the site, so no full report was generated.');
     expect(html).toContain('agent progress, not evidence quality');
     expect(html).not.toContain('ground-truth');
     expect(html).not.toContain('45%');
@@ -770,7 +770,7 @@ describe('Mission Control copy', () => {
 
   it('badges completed unmeasured scout and auditor cards as Not measured', () => {
     expect(missionControlCardBadge('completed', 'Page fetch failed. On-page evidence not measured.')).toBe('not_measured');
-    expect(missionControlCardBadge('completed', 'Compliance audit finished. Health score not measured: no page evidence.')).toBe('not_measured');
+    expect(missionControlCardBadge('completed', 'Compliance checks not measured: no page evidence.')).toBe('not_measured');
     expect(missionControlCardBadge('completed', 'Scouted 2 page(s). Discovered 1 structured schema entity block(s).')).toBe('done');
     expect(missionControlCardBadge('failed', 'Page fetch failed.')).toBe('not_measured');
 
@@ -784,7 +784,7 @@ describe('Mission Control copy', () => {
         role === 'scout'
           ? 'Page fetch failed. On-page evidence not measured.'
           : role === 'playbook_auditor'
-            ? 'Compliance audit finished. Health score not measured: no page evidence.'
+            ? 'Compliance checks not measured: no page evidence.'
             : 'Step finished.',
       status: 'completed' as const,
     }));
@@ -797,7 +797,7 @@ describe('Mission Control copy', () => {
     );
     expect(html).toContain('Not measured');
     expect(html).toContain('On-page evidence not measured');
-    expect(html).toContain('Health score not measured');
+    expect(html).toContain('Compliance checks not measured');
     expect(html).toContain('NOT MEASURED');
     expect(html).not.toContain('100% COMPLETE');
   });
@@ -910,7 +910,8 @@ describe('Instant Audit degraded provider failures', () => {
     expect(localScrape).not.toHaveBeenCalled();
 
     const decision = events.find((event) => event.phase === 'provider_decisions');
-    expect(decision?.message).toMatch(/Page fetch:/);
+    expect(decision?.message).toMatch(/Page fetch/);
+    expect(decision?.message).not.toMatch(/Firecrawl|Jina|Tavily|Groq|sign-in token/);
     expect(decision?.message).toMatch(/Search/);
     expect(result.errors.some((err) => err.startsWith('provider_decisions '))).toBe(true);
 
@@ -1027,7 +1028,7 @@ describe('Instant Audit degraded provider failures', () => {
       instantAuditPrimaryLabel(loading, false),
     ));
     expect(html).not.toContain('Scanning');
-    expect(html).toContain('Run quick scout');
+    expect(html).toContain('Run Instant Audit');
     expect(html).not.toContain('disabled');
   });
 

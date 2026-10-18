@@ -5,6 +5,7 @@
  * Optional App Check (reCAPTCHA v3) attaches when VITE_FIREBASE_APPCHECK_SITE_KEY is set.
  */
 import { initializeApp, type FirebaseApp, getApps } from 'firebase/app';
+import * as firebaseAuthSdk from 'firebase/auth';
 import {
   getAuth,
   signInWithEmailAndPassword,
@@ -62,48 +63,78 @@ function ensureAuth(): Auth {
   return auth;
 }
 
+let lastSyncedToken: string | null = null;
+let inFlightSync: Promise<void> | null = null;
+
 async function syncSessionCookie(token: string): Promise<void> {
   if (typeof window === 'undefined' || !window.location) return;
   const base = window.location.origin || '';
   if (!base) return;
-  try {
-    await fetch(`${base}/api/auth/session`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ idToken: token }),
-    });
-  } catch {
-    /* ignore session cookie sync failures in offline/dev */
+  if (lastSyncedToken === token && inFlightSync) {
+    await inFlightSync;
+    return;
   }
+  if (lastSyncedToken === token) return;
+  lastSyncedToken = token;
+  const p = (async () => {
+    try {
+      await fetch(`${base}/api/auth/session`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ idToken: token }),
+      });
+    } catch {
+      lastSyncedToken = null;
+      /* ignore session cookie sync failures in offline/dev */
+    }
+  })();
+  inFlightSync = p;
+  await p;
+  if (inFlightSync === p) inFlightSync = null;
 }
 
+let inFlightClear: Promise<void> | null = null;
+
 async function clearSessionCookie(): Promise<void> {
+  lastSyncedToken = null;
   if (typeof window === 'undefined' || !window.location) return;
   const base = window.location.origin || '';
   if (!base) return;
-  try {
-    await fetch(`${base}/api/auth/logout`, {
-      method: 'POST',
-      credentials: 'same-origin',
-    });
-  } catch {
-    /* ignore logout cookie clearing errors */
+  if (inFlightClear) {
+    await inFlightClear;
+    return;
   }
+  const p = (async () => {
+    try {
+      await fetch(`${base}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+    } catch {
+      /* ignore logout cookie clearing errors */
+    }
+  })();
+  inFlightClear = p;
+  await p;
+  if (inFlightClear === p) inFlightClear = null;
 }
 
 async function refreshCachedToken(user: User | null): Promise<void> {
   cachedUser = user;
   if (!user) {
+    const hadSession = cachedIdToken !== null || lastSyncedToken !== null;
     cachedIdToken = null;
     notifyUserListeners(null);
-    void clearSessionCookie();
+    if (hadSession) {
+      await clearSessionCookie();
+    }
     return;
   }
   try {
     cachedIdToken = await user.getIdToken();
     if (cachedIdToken) {
-      void syncSessionCookie(cachedIdToken);
+      await syncSessionCookie(cachedIdToken);
     }
   } catch {
     cachedIdToken = null;
@@ -238,16 +269,29 @@ async function workerCredential(
   }
   ensureAuth();
   const appCheckToken = await getAppCheckTokenForBackend();
-  const res = await fetch(`${window.location.origin}${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify({
-      email: email.trim(),
-      password,
-      ...(appCheckToken ? { appCheckToken } : {}),
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${window.location.origin}${path}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        email: email.trim(),
+        password,
+        ...(appCheckToken ? { appCheckToken } : {}),
+      }),
+    });
+  } catch {
+    return {
+      ok: false,
+      status: 503,
+      error: 'Authentication service is unreachable. Check your connection and try again.',
+      code: 'NETWORK_ERROR',
+    };
+  }
   let body: {
     ok?: boolean;
     idToken?: string;
@@ -281,6 +325,24 @@ async function workerCredential(
   };
 }
 
+export const MIN_PASSWORD_LENGTH = 8;
+
+async function applyAuthPersistence(keepSignedIn = false): Promise<void> {
+  try {
+    const a = ensureAuth();
+    const setPersistenceFn = (firebaseAuthSdk as { setPersistence?: (auth: Auth, p: unknown) => Promise<void> })
+      .setPersistence;
+    const persistence = keepSignedIn
+      ? (firebaseAuthSdk as { browserLocalPersistence?: unknown }).browserLocalPersistence
+      : (firebaseAuthSdk as { browserSessionPersistence?: unknown }).browserSessionPersistence;
+    if (typeof setPersistenceFn === 'function' && persistence) {
+      await setPersistenceFn(a, persistence);
+    }
+  } catch {
+    /* ignore persistence errors in restricted storage or test mocks */
+  }
+}
+
 /**
  * Hydrate the Firebase client SDK after a successful Worker-mediated auth.
  * Reuses the same credentials once so onIdTokenChanged / persistence keep working.
@@ -294,26 +356,63 @@ async function hydrateClientSession(email: string, password: string): Promise<Us
 
 function throwWorkerAuthError(err: WorkerCredentialErr): never {
   const code =
-    err.status === 429
-      ? 'auth/too-many-requests'
-      : err.code === 'INVALID_EMAIL'
-        ? 'auth/invalid-email'
-        : err.code === 'WEAK_PASSWORD'
-          ? 'auth/weak-password'
-          : err.code === 'SIGN_UP_FAILED'
-            ? 'auth/email-already-in-use'
-            : err.code === 'SIGN_IN_FAILED'
-              ? 'auth/invalid-credential'
-              : 'auth/credential-gateway';
+    err.code === 'ACCOUNT_RATE_LIMITED'
+      ? 'ACCOUNT_RATE_LIMITED'
+      : err.status === 429
+        ? 'auth/too-many-requests'
+        : err.code === 'APP_CHECK_REQUIRED' || err.code === 'APP_CHECK_INVALID'
+          ? 'auth/app-check-required'
+          : err.code === 'INVALID_EMAIL'
+            ? 'auth/invalid-email'
+            : err.code === 'WEAK_PASSWORD'
+              ? 'auth/weak-password'
+              : err.code === 'AUTH_UNAVAILABLE'
+                ? 'AUTH_UNAVAILABLE'
+                : err.code === 'NETWORK_ERROR'
+                  ? 'NETWORK_ERROR'
+                  : err.code === 'SIGN_UP_FAILED'
+                    ? 'auth/email-already-in-use'
+                    : err.code === 'SIGN_IN_FAILED'
+                      ? 'auth/invalid-credential'
+                      : 'auth/credential-gateway';
   throw Object.assign(new Error(err.error), { code });
+}
+
+function shouldFallbackToBrowserSdk(err: WorkerCredentialErr): boolean {
+  if (err.status === 429) return false;
+  if (err.code === 'APP_CHECK_REQUIRED' || err.code === 'APP_CHECK_INVALID') return false;
+  if (err.code === 'INVALID_EMAIL' || err.code === 'WEAK_PASSWORD') return false;
+  return err.status >= 500 || err.code === 'AUTH_UNAVAILABLE' || err.code === 'NETWORK_ERROR';
 }
 
 /**
  * Sign up via Worker (rate-limited Identity Toolkit), then hydrate the client SDK.
+ * Falls back to the browser Firebase SDK only when the Worker gateway is unreachable or returns
+ * 503 AUTH_UNAVAILABLE (e.g. local dev without Worker or upstream API key restriction).
  */
-export async function signUpWithEmail(email: string, password: string): Promise<User> {
+export async function signUpWithEmail(
+  email: string,
+  password: string,
+  opts?: { keepSignedIn?: boolean },
+): Promise<User> {
+  await applyAuthPersistence(opts?.keepSignedIn ?? false);
   const gated = await workerCredential('/api/auth/sign-up', email, password);
-  if (!gated.ok) throwWorkerAuthError(gated);
+  if (!gated.ok) {
+    if (!shouldFallbackToBrowserSdk(gated)) {
+      throwWorkerAuthError(gated);
+    }
+    const createFn = (
+      firebaseAuthSdk as {
+        createUserWithEmailAndPassword?: (auth: Auth, email: string, password: string) => Promise<{ user: User }>;
+      }
+    ).createUserWithEmailAndPassword;
+    if (typeof createFn === 'function') {
+      const cred = await createFn(ensureAuth(), email.trim(), password);
+      await refreshCachedToken(cred.user);
+      return cred.user;
+    }
+    throwWorkerAuthError(gated);
+  }
   try {
     return await hydrateClientSession(email, password);
   } catch {
@@ -325,13 +424,24 @@ export async function signUpWithEmail(email: string, password: string): Promise<
 /**
  * Sign in via Worker (rate-limited Identity Toolkit), then hydrate the client SDK.
  */
-export async function signInWithEmail(email: string, password: string): Promise<User> {
+export async function signInWithEmail(
+  email: string,
+  password: string,
+  opts?: { keepSignedIn?: boolean },
+): Promise<User> {
+  await applyAuthPersistence(opts?.keepSignedIn ?? false);
   const gated = await workerCredential('/api/auth/sign-in', email, password);
-  if (!gated.ok) throwWorkerAuthError(gated);
+  if (!gated.ok) {
+    if (!shouldFallbackToBrowserSdk(gated)) {
+      throwWorkerAuthError(gated);
+    }
+    return hydrateClientSession(email, password);
+  }
   return hydrateClientSession(email, password);
 }
 
-export async function signInWithGoogle(): Promise<User> {
+export async function signInWithGoogle(opts?: { keepSignedIn?: boolean }): Promise<User> {
+  await applyAuthPersistence(opts?.keepSignedIn ?? false);
   ensureAuth();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -413,7 +523,6 @@ export async function signOutFirebase(): Promise<void> {
   if (!isFirebaseConfigured()) return;
   await signOut(ensureAuth());
   await refreshCachedToken(null);
-  await clearSessionCookie();
 }
 
 /** Maps Firebase Auth error codes to short user-facing copy (no account-existence leaks). */
@@ -427,11 +536,13 @@ export function friendlyFirebaseError(err: unknown): string {
     case 'auth/invalid-email':
       return 'Enter a valid email address.';
     case 'auth/weak-password':
-      return 'Use a password with at least 6 characters.';
+      return `Use a password with at least ${MIN_PASSWORD_LENGTH} characters.`;
     case 'auth/user-not-found':
     case 'auth/wrong-password':
     case 'auth/invalid-credential':
       return 'Email or password is incorrect.';
+    case 'ACCOUNT_RATE_LIMITED':
+      return (err as Error)?.message || 'Too many failed sign-in attempts. This account is temporarily locked.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Wait a minute and try again.';
     case 'auth/popup-closed-by-user':
@@ -442,8 +553,14 @@ export function friendlyFirebaseError(err: unknown): string {
       return 'This domain is not authorized in Firebase Authentication settings.';
     case 'auth/missing-email':
       return 'Enter your email to reset your password.';
+    case 'AUTH_UNAVAILABLE':
+      return 'Authentication is temporarily unavailable. Wait a moment and try again.';
+    case 'RESET_UNAVAILABLE':
     case 'auth/reset-unavailable':
       return 'Password reset is temporarily unavailable. Try again later.';
+    case 'NETWORK_ERROR':
+    case 'auth/network-request-failed':
+      return 'Network error while reaching authentication service. Check your connection and try again.';
     default:
       return (err as Error)?.message || 'Sign-in failed. Try again.';
   }

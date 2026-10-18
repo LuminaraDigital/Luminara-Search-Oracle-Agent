@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPanel';
 import { validateAuditTargetUrl } from '../services/audit/auditTargetUrl';
-import { buildGuestScoutSummary, liveDataUnavailableCopy, plainScoutVerdict, shouldGenerateAuditReport } from '../services/audit/guestScoutSummary';
+import { getAnswerDepth, setAnswerDepth } from '../services/audit/answerDepth';
+import { buildGuestScoutSummary, emptyUnmeasuredVerdict, liveDataUnavailableCopy, plainScoutVerdict, shouldGenerateAuditReport } from '../services/audit/guestScoutSummary';
 import { executiveTranslatorAgent } from '../services/agentCore/agents/executiveTranslatorAgent';
 import type { AuditFinding } from '../services/agentCore/types';
 import { renderMarkdown } from '../utils/markdown';
@@ -213,8 +214,8 @@ describe('guest scout summary honesty', () => {
     expect(summary.evidenceEmpty).toBe(true);
     expect(summary.degraded).toBe(true);
     expect(summary.failureCodes).toEqual(['page_fetch_empty', 'search_empty', 'provider_failed']);
-    expect(summary.banner).toMatch(/Live data unavailable/);
-    expect(summary.banner).toMatch(/sign in/i);
+    expect(summary.banner).toBe('Live data unavailable. Sample / not measured.');
+    expect(summary.banner?.toLowerCase()).not.toContain('sign in');
     expect(summary.badges.every((badge) => badge.status === 'not_measured' && !badge.value)).toBe(true);
     const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
     expect(html).toContain('Live data unavailable');
@@ -249,8 +250,9 @@ describe('guest scout summary honesty', () => {
     }
   });
 
-  it('keeps a sign-in step on the guest degraded banner', () => {
-    expect(liveDataUnavailableCopy('byok_or_signin')).toMatch(/sign in/i);
+  it('states the measurement fact on the guest degraded banner', () => {
+    expect(liveDataUnavailableCopy('byok_or_signin')).toBe('Live data unavailable. Sample / not measured.');
+    expect(liveDataUnavailableCopy('byok_or_signin').toLowerCase()).not.toContain('sign in');
     expect(hostedAuthRecoveryHint({ rail: 'byok_or_signin' })).toMatch(/sign in/i);
     expect(hostedAuthRecoveryHint({ signedIn: false })).toMatch(/sign in/i);
   });
@@ -397,8 +399,9 @@ describe('hosted scout rail', () => {
     expect(resolveHostedScoutRail({ inTelegram: true, hasInitData: true, signedIn: false })).toBe('tma_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: true })).toBe('signed_in_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: false })).toBe('byok_or_signin');
-    expect(hostedScoutPreRunCopy('byok_or_signin').toLowerCase()).toContain('anonymous');
-    expect(hostedScoutPreRunCopy('byok_or_signin')).toMatch(/sign in/i);
+    expect(hostedScoutPreRunCopy('byok_or_signin')).toBe(
+      'Sign in for a full audit, or add your own AI keys in Settings.',
+    );
     expect(hostedScoutPreRunCopy('tma_hosted').toLowerCase()).toContain('no api key');
     expect(hostedScoutPreRunCopy('signed_in_hosted').toLowerCase()).not.toContain('sign in');
     expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: false })).toMatch(/off for this session/i);
@@ -581,5 +584,59 @@ describe('LLM crawler readiness', () => {
     const audit = await playbookAuditorAgent.execute('AEO', [], [], null, () => {});
     expect(audit.healthScore).toBeNull();
     expect(audit.llmCrawler.checks.every((check) => check.status === 'not_measured')).toBe(true);
+  });
+
+  it('does not repeat the Quick sentence for SEO, GEO, or Thorough when nothing was measured', () => {
+    const base = {
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured' as const,
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 0,
+      serpCount: 0,
+      findings: [],
+      hostedRail: 'byok_or_signin' as const,
+    };
+    const quick = buildGuestScoutSummary(base).verdict;
+    expect(quick).toBe(emptyUnmeasuredVerdict('example.com'));
+    const seo = buildGuestScoutSummary({ ...base, focus: 'SEO' }).verdict;
+    const geo = buildGuestScoutSummary({ ...base, focus: 'GEO' }).verdict;
+    const thorough = buildGuestScoutSummary({ ...base, depth: 'thorough' }).verdict;
+    const seoThorough = buildGuestScoutSummary({ ...base, focus: 'SEO', depth: 'thorough' }).verdict;
+    for (const verdict of [seo, geo, thorough, seoThorough]) {
+      expect(verdict).not.toBe(quick);
+      expect(verdict.toLowerCase()).toContain('not measured');
+      expect(verdict).toContain('not the Quick result');
+    }
+    expect(new Set([quick, seo, geo, thorough, seoThorough]).size).toBe(5);
+  });
+
+  it('hides Share and Copy when the run measured nothing', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'not_measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 0,
+      serpCount: 0,
+      findings: [],
+      hostedRail: 'byok_or_signin',
+    });
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, {
+      summary,
+      onShare: () => {},
+      onCopy: () => {},
+    }));
+    expect(html).not.toContain('Share teaser');
+    expect(html).not.toContain('Copy link');
+  });
+
+  it('remembers Quick and Thorough for the scout summary', () => {
+    setAnswerDepth('thorough');
+    expect(getAnswerDepth()).toBe('thorough');
+    setAnswerDepth('quick');
+    expect(getAnswerDepth()).toBe('quick');
   });
 });

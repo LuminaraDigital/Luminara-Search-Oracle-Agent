@@ -78,7 +78,7 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
                   from Telegram launch data). We may link Telegram and Firebase to one account id.
                 </li>
                 <li>
-                  <span className="text-gray-200">Business content you enter:</span> Business DNA,
+                  <span className="text-gray-200">Business content you enter:</span> business profile,
                   domains, competitor names, chat messages, audit reports, Brand Memory events,
                   agency client workspaces, watchlists, CMS-related settings you save.
                 </li>

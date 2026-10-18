@@ -68,8 +68,6 @@
     "grounding:fetch": "node --experimental-strip-types services/grounding/cli.ts --fetch",
     "grounding:gate": "node --experimental-strip-types services/grounding/cli.ts",
     "grounding:score": "node --experimental-strip-types services/grounding/cli.ts",
-    "constellation:bake": "node scripts/constellation/bake.mjs",
-    "constellation:bake:check": "node scripts/constellation/bake.mjs --check-only",
     "rl:transmute": "node scripts/rl/transmute-datasets.mjs",
     "rl:dpo": "node --experimental-strip-types scripts/rl/dpo-alignment-orchestrator.mjs"
   },
@@ -81,14 +79,14 @@
     "@ton/core": "^0.63.1",
     "@tonconnect/ui-react": "^3.0.2",
     "buffer": "^6.0.3",
-    "dompurify": "^3.4.15",
+    "dompurify": "^3.4.17",
     "electron-updater": "^6.8.9",
     "firebase": "^12.18.0",
     "jose": "^6.2.12",
     "marked": "^15.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "viem": "^2.57.4"
+    "viem": "^2.57.6"
   },
   "overrides": {
     "valibot": "1.4.2",
@@ -98,7 +96,7 @@
     "uuid": "^11.1.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261009.1",
+    "@cloudflare/workers-types": "^5.20261014.1",
     "@eslint/js": "^9.39.5",
     "@types/dompurify": "^3.2.0",
     "@types/node": "^22.14.0",
@@ -112,17 +110,17 @@
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
-    "postcss": "^8.5.29",
+    "postcss": "^8.5.30",
     "sharp": "^0.35.5",
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "~5.8.2",
-    "typescript-eslint": "^8.71.1",
+    "typescript-eslint": "^8.71.2",
     "vite": "^6.2.0",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0",
     "vitest": "^4.1.11",
-    "wrangler": "^4.149.0"
+    "wrangler": "^4.151.0"
   },
   "description": "Open-source AI search visibility suite: SEO, AEO and GEO audits grounded in live search results, runs on your own Groq / NVIDIA NIM / Ollama keys. Web + Telegram Mini App + Windows desktop on Cloudflare.",
   "author": "Luminara Digital",

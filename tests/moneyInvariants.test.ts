@@ -279,7 +279,8 @@ describe('public health carries the Stars catalogue and nothing private', () => 
       expect(body.plans![id]).toEqual({ title: PLANS[id].title, description: PLANS[id].description, stars: PLANS[id].stars, days: PLANS[id].days });
       expect(body.plans![id].stars).toBeGreaterThan(0);
     }
-    expect(Object.keys(body).sort()).toEqual(['jettonCheckout', 'ok', 'plans', 'stripeCheckout', 'ton']);
+    expect(Object.keys(body).sort()).toEqual(['jettonCheckout', 'lumens', 'ok', 'plans', 'stripeCheckout', 'ton']);
+    expect(body.lumens).toBe(false);
   });
 });
 

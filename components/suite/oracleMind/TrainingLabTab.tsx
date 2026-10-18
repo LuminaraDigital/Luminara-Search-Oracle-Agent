@@ -168,7 +168,7 @@ export const TrainingLabTab: React.FC<TrainingLabTabProps> = ({
           </div>
 
           <p className="text-xs text-gray-400 leading-relaxed">
-            Synthesized automatically from your active <strong>Strategic Business DNA</strong> to fine-tune OracleMind on brand positioning and AEO schema.
+            Synthesized automatically from your active <strong>business profile</strong> to fine-tune answers on brand positioning and schema.
           </p>
 
           <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">

@@ -1,6 +1,7 @@
 import type { Env } from './env';
 import { MAX_SMALL_BODY_BYTES, fetchPublicUrl, readBody, safePublicHostname, resolvesToPublicAddress } from './security';
 import { identify, json } from './workerUtils';
+import { readCapped } from './domainVerification';
 import { getActiveSubscription } from './quotaMiddleware';
 import { sendTelegramAlert, planCapsFor } from './telegramBot';
 import { startRun, completeRun } from './runProvenance';
@@ -85,7 +86,7 @@ export async function auditSecurityOnEdge(domain: string): Promise<{
 
     const st = await fetchPublicUrl(`https://${clean}/.well-known/security.txt`, { method: 'GET' });
     if (st.ok && st.response.ok) {
-      const body = await st.response.text().catch(() => '');
+      const body = await readCapped(st.response, MAX_SMALL_BODY_BYTES).catch(() => '');
       securityTxtPresent = /contact\s*:/i.test(body) || /canonical\s*:/i.test(body);
     }
   } catch {

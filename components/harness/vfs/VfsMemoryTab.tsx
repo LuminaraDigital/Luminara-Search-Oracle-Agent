@@ -34,7 +34,7 @@ export const VfsMemoryTab: React.FC<VfsMemoryTabProps> = ({
             className="px-3 py-2 rounded-xl bg-gold/20 border border-gold/50 hover:border-gold text-xs font-mono text-gold-light transition-all flex items-center gap-2"
           >
             <span>🧬</span>
-            <span>Sync from Business DNA</span>
+            <span>Sync from business profile</span>
           </button>
         </div>
 

@@ -11,8 +11,8 @@ export const HOME_CTA_HEADING = 'Run your first audit';
 export const HOME_CTA_SUB =
   'Get an honest SEO, AEO and GEO read on one URL in ~20 seconds.';
 export const HOME_CTA_PRIMARY_LABEL = 'Start Instant Audit';
-export const HOME_CTA_SECONDARY_LABEL = 'Set up Business DNA first';
-export const HOME_CTA_IDEA_LABEL = 'No domain yet? Idea Scout';
+export const HOME_CTA_SECONDARY_LABEL = 'Set up business profile first';
+export const HOME_CTA_IDEA_LABEL = 'Start from an idea';
 
 /** Audit count from the persisted audit history source (localStorage-backed). */
 export function auditCountFromStorage(): number {

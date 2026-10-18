@@ -400,6 +400,19 @@ export async function linkTelegramAndFirebase(
       } catch (err) {
         console.error('[UserStore] Payment support requests were not moved to the linked account', err);
       }
+      // Community feed cards and votes. A row that would collide with one the surviving account
+      // already has is not moved; it is deleted, and a deleted card takes its votes with it.
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`UPDATE OR IGNORE community_feed_votes SET account_id = ? WHERE account_id = ?`).bind(accountId, from),
+          env.DB.prepare(`DELETE FROM community_feed_votes WHERE account_id = ?`).bind(from),
+          env.DB.prepare(`UPDATE OR IGNORE community_feed_cards SET account_id = ? WHERE account_id = ?`).bind(accountId, from),
+          env.DB.prepare(`DELETE FROM community_feed_votes WHERE card_id IN (SELECT id FROM community_feed_cards WHERE account_id = ?)`).bind(from),
+          env.DB.prepare(`DELETE FROM community_feed_cards WHERE account_id = ?`).bind(from),
+        ]);
+      } catch (err) {
+        console.error('[UserStore] Community feed rows were not moved to the linked account', err);
+      }
     }
   }
 

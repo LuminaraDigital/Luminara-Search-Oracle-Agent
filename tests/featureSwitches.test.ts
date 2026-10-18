@@ -12,6 +12,7 @@ import { billingId, identify } from '../worker/workerUtils';
 import { DailyStreakCard } from '../components/retention/DailyStreakCard';
 import { postDailyCheckin, streakCardVisible } from '../services/referrals/referralClient';
 import { parseJsonc } from '../scripts/lib/jsonc.mjs';
+import { buildIdeaScoutCard } from '../services/ideaScout/rules';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
 
 /**
@@ -24,6 +25,7 @@ const TOKEN = '123456:MOCK_TOKEN';
 // The browser's check-in call, with the network replaced: each test says what the server answers.
 const checkin = vi.hoisted(() => ({
   base: 'https://luminarasuite.com',
+  lumens: true,
   calls: [] as string[],
   respond: (async () => new Response('{}')) as () => Promise<Response>,
 }));
@@ -31,6 +33,8 @@ const checkin = vi.hoisted(() => ({
 vi.mock('../services/apiClient', async (original) => ({
   ...(await original<typeof import('../services/apiClient')>()),
   apiBase: () => checkin.base,
+  getServerHealthSync: () => ({ ok: true, lumens: checkin.lumens, telegram: false, requireAuth: false, plans: {} }),
+  loadServerHealth: async () => ({ ok: true, lumens: checkin.lumens, telegram: false, requireAuth: false, plans: {} }),
   workerFetchWithAuthRetry: async (url: string) => {
     checkin.calls.push(url);
     return checkin.respond();
@@ -93,23 +97,64 @@ const request = (path: string, method: string, body?: unknown, signedIn = true) 
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
+// Ids that work with the feed switched on: an idea card the signed-in caller owns, and a visible feed
+// card, so a 404 with the switch off is the switch and not an unknown id.
+const OWNED_IDEA = 'is_0123456789abcdef';
+const FEED_CARD = 'cf_0123456789abcdef';
+const SWITCH_OFF = { ok: false, error: 'Not found', code: 'NOT_FOUND' };
+
+async function seedFeed(env: Env, db: SqliteD1): Promise<void> {
+  const owner = billingId((await identify(request('/idea-scout', 'GET'), env)).user!);
+  const idea = 'Appointment reminders by text message for independent repair shops';
+  const card = JSON.stringify(buildIdeaScoutCard({ idea, niche: null, snapshots: [] }));
+  db.sqlite
+    .prepare(
+      `INSERT INTO idea_scouts (id, account_id, idea_text, niche, competitor_urls_json, card_json, status, created_at)
+       VALUES (?, ?, ?, NULL, '[]', ?, 'ready', 1)`,
+    )
+    .run(OWNED_IDEA, owner, idea, card);
+  db.sqlite
+    .prepare(
+      `INSERT INTO community_feed_cards (id, account_id, idea_id, idea_text, niche, card_json, utc_day, shared_at)
+       VALUES (?, 'acct_other', 'is_fedcba9876543210', ?, NULL, ?, '2026-10-11', 1)`,
+    )
+    .run(FEED_CARD, idea, card);
+}
+
+const feedRows = (db: SqliteD1) => ({
+  cards: Number(db.sqlite.prepare('SELECT COUNT(*) AS n FROM community_feed_cards').get().n),
+  votes: Number(db.sqlite.prepare('SELECT COUNT(*) AS n FROM community_feed_votes').get().n),
+});
+
 describe('the community idea feed switch', () => {
   const routes: Array<[string, string, unknown]> = [
     ['/idea-scout/feed', 'GET', undefined],
-    ['/idea-scout/vote', 'POST', { id: 'anything' }],
-    ['/idea-scout/share', 'POST', { ideaText: 'An idea', niche: 'saas' }],
+    ['/idea-scout/vote', 'POST', { id: FEED_CARD }],
+    ['/idea-scout/share', 'POST', { ideaId: OWNED_IDEA }],
   ];
 
   it.each([undefined, 'false', '', 'TRUE', '1'])('with COMMUNITY_FEED_ENABLED=%s all three feed routes are 404 and nothing is stored', async (value) => {
-    const { env, kv } = makeEnv({ COMMUNITY_FEED_ENABLED: value });
+    const { env, kv, db } = makeEnv({ COMMUNITY_FEED_ENABLED: value });
+    await seedFeed(env, db);
     for (const [path, method, body] of routes) {
       for (const signedIn of [true, false]) {
         const res = await handleIdeaScoutRoute(request(path, method, body, signedIn), env, path);
         expect(res.status, `${method} ${path}`).toBe(404);
-        expect(await res.json()).toEqual({ ok: false, error: 'Not found', code: 'NOT_FOUND' });
+        expect(await res.json()).toEqual(SWITCH_OFF);
       }
     }
     expect(kv.store.has('idea_scout:community_feed')).toBe(false);
+    expect(feedRows(db)).toEqual({ cards: 1, votes: 0 });
+  });
+
+  it('switched on, the same vote and share go through, so the 404 above is the switch', async () => {
+    const { env, db } = makeEnv({ COMMUNITY_FEED_ENABLED: 'true' });
+    await seedFeed(env, db);
+    for (const [path, method, body] of routes) {
+      const res = await handleIdeaScoutRoute(request(path, method, body), env, path);
+      expect(res.status, `${method} ${path}`).toBe(200);
+    }
+    expect(feedRows(db)).toEqual({ cards: 2, votes: 1 });
   });
 
   it('a feed already stored is neither served nor deleted while the switch is off', async () => {
@@ -184,6 +229,7 @@ describe('the points switch', () => {
 describe('whether the streak card is drawn', () => {
   beforeEach(() => {
     checkin.base = 'https://luminarasuite.com';
+    checkin.lumens = true;
     checkin.calls.length = 0;
   });
 
@@ -225,6 +271,14 @@ describe('whether the streak card is drawn', () => {
     };
     const result = await postDailyCheckin();
     expect(result).toEqual({ ok: false, error: 'Failed to fetch' });
+    expect(streakCardVisible(result)).toBe(false);
+  });
+
+  it('does not call check-in when points are off', async () => {
+    checkin.lumens = false;
+    const result = await postDailyCheckin();
+    expect(checkin.calls).toEqual([]);
+    expect(result).toEqual({ ok: false, error: 'Not found', unavailable: true });
     expect(streakCardVisible(result)).toBe(false);
   });
 
@@ -308,16 +362,17 @@ describe('the switches through the Worker, with its sign-in guard in front', () 
 
   const feedRoutes: Array<[string, string, unknown]> = [
     ['/idea-scout/feed', 'GET', undefined],
-    ['/idea-scout/vote', 'POST', { id: 'card_1' }],
-    ['/idea-scout/share', 'POST', { ideaText: 'An idea', niche: 'saas' }],
+    ['/idea-scout/vote', 'POST', { id: FEED_CARD }],
+    ['/idea-scout/share', 'POST', { ideaId: OWNED_IDEA }],
   ];
   const storedFeed = JSON.stringify([
     { id: 'card_1', ideaText: 'x', niche: null, card: null, upvotes: 3, sharedAt: 1, accountId: 'acct_private_owner' },
   ]);
 
   it('feed off: a guest gets 401 or 404, a signed-in user gets 404, and neither answer names an account', async () => {
-    const { env, kv } = workerEnv();
+    const { env, kv, db } = workerEnv();
     kv.store.set('idea_scout:community_feed', storedFeed);
+    await seedFeed(env, db);
     const caller = await identify(request('/idea-scout/feed', 'GET'), env);
     const callerAccountId = billingId(caller.user!);
     expect(callerAccountId).toBeTruthy();
@@ -327,6 +382,7 @@ describe('the switches through the Worker, with its sign-in guard in front', () 
       expect([401, 404], `guest ${method} ${path}`).toContain(guest.status);
       const signedIn = await worker.fetch(viaWorker(path, method, body, true), env, ctx);
       expect(signedIn.status, `signed-in ${method} ${path}`).toBe(404);
+      expect(await signedIn.clone().json()).toEqual(SWITCH_OFF);
       for (const res of [guest, signedIn]) {
         const text = await res.text();
         expect(text).not.toContain('acct_private_owner');
@@ -335,12 +391,17 @@ describe('the switches through the Worker, with its sign-in guard in front', () 
       }
     }
     expect(kv.store.get('idea_scout:community_feed')).toBe(storedFeed);
+    expect(feedRows(db)).toEqual({ cards: 1, votes: 0 });
   });
 
-  it('feed on: the same signed-in request reaches the feed, so the 404 above is the switch', async () => {
-    const { env } = workerEnv({ COMMUNITY_FEED_ENABLED: 'true' });
-    const res = await worker.fetch(viaWorker('/idea-scout/feed', 'GET', undefined, true), env, ctx);
-    expect(res.status).toBe(200);
+  it('feed on: the same signed-in requests go through, so the 404 above is the switch', async () => {
+    const { env, db } = workerEnv({ COMMUNITY_FEED_ENABLED: 'true' });
+    await seedFeed(env, db);
+    for (const [path, method, body] of feedRoutes) {
+      const res = await worker.fetch(viaWorker(path, method, body, true), env, ctx);
+      expect(res.status, `${method} ${path}`).toBe(200);
+    }
+    expect(feedRows(db)).toEqual({ cards: 2, votes: 1 });
   });
 
   it('points off: the check-in is 404 for a guest and for a signed-in user, so the card is hidden for both', async () => {

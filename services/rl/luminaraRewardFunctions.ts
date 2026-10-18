@@ -58,6 +58,73 @@ export const DEFAULT_LUMINARA_REWARD_WEIGHTS: RewardWeights = {
   wGround: 0.10,
 };
 
+const WEIGHT_KEYS = ['wTask', 'wHonesty', 'wBudget', 'wFormat', 'wGround'] as const;
+const REWARD_NUDGE_STEP = 0.02;
+const REWARD_WEIGHT_FLOOR = 0.05;
+const REWARD_WEIGHT_CEILING = 0.55;
+
+export interface OutcomeSignal {
+  honestyMiss?: boolean;
+  budgetMiss?: boolean;
+  formatMiss?: boolean;
+  groundMiss?: boolean;
+  taskSuccess?: boolean;
+}
+
+/**
+ * Move reward weights a small step from measured misses, then renormalize.
+ * Callers decide whether the profile is pinned or the weekly cap is spent.
+ */
+export function nudgeRewardWeights(
+  current: RewardWeights,
+  signals: readonly OutcomeSignal[],
+): { weights: RewardWeights; changed: boolean; notes: string[] } {
+  if (signals.length === 0) {
+    return { weights: { ...current }, changed: false, notes: ['No outcome signals.'] };
+  }
+  const delta: Record<(typeof WEIGHT_KEYS)[number], number> = {
+    wTask: 0,
+    wHonesty: 0,
+    wBudget: 0,
+    wFormat: 0,
+    wGround: 0,
+  };
+  for (const signal of signals) {
+    if (signal.honestyMiss) delta.wHonesty += REWARD_NUDGE_STEP;
+    if (signal.budgetMiss) delta.wBudget += REWARD_NUDGE_STEP;
+    if (signal.formatMiss) delta.wFormat += REWARD_NUDGE_STEP;
+    if (signal.groundMiss) delta.wGround += REWARD_NUDGE_STEP;
+    const missed = signal.honestyMiss || signal.budgetMiss || signal.formatMiss || signal.groundMiss;
+    if (signal.taskSuccess && !missed) delta.wTask += REWARD_NUDGE_STEP;
+  }
+  for (const key of WEIGHT_KEYS) {
+    delta[key] = Math.max(-REWARD_NUDGE_STEP, Math.min(REWARD_NUDGE_STEP, delta[key]));
+  }
+  const bumped: RewardWeights = { ...current };
+  const notes: string[] = [];
+  let any = false;
+  for (const key of WEIGHT_KEYS) {
+    if (delta[key] === 0) continue;
+    any = true;
+    bumped[key] = current[key] + delta[key];
+    notes.push(`${key} moved by ${delta[key] > 0 ? '+' : ''}${delta[key]} from measured outcomes.`);
+  }
+  if (!any) return { weights: { ...current }, changed: false, notes: ['Signals did not move a weight.'] };
+  for (const key of WEIGHT_KEYS) {
+    bumped[key] = Math.min(REWARD_WEIGHT_CEILING, Math.max(REWARD_WEIGHT_FLOOR, bumped[key]));
+  }
+  const sum = WEIGHT_KEYS.reduce((acc, key) => acc + bumped[key], 0);
+  const next: RewardWeights = { ...bumped };
+  for (const key of WEIGHT_KEYS) next[key] = Number((bumped[key] / sum).toFixed(4));
+  const rounded = WEIGHT_KEYS.reduce((acc, key) => acc + next[key], 0);
+  const drift = Number((1 - rounded).toFixed(4));
+  if (drift !== 0) {
+    const largest = [...WEIGHT_KEYS].sort((a, b) => next[b] - next[a])[0];
+    next[largest] = Number((next[largest] + drift).toFixed(4));
+  }
+  return { weights: next, changed: true, notes };
+}
+
 /**
  * Computes deterministic multi-objective reward for an agent rollout.
  */

@@ -78,6 +78,15 @@ describe('services/trust/brandPassport', () => {
     expect(passport.embedBadgeSnippet).toContain('Verified by Luminara');
   });
 
+  it('does not use the domain as the Organization name', () => {
+    const passport = buildBrandPassport('seamossvibes.com.au', null, []);
+    const parsed = JSON.parse(passport.schemaJsonLd) as { name: string; url: string };
+    expect(passport.brandName).toBe('Not named yet');
+    expect(parsed.name).toBe('Not named yet');
+    expect(parsed.name).not.toBe(passport.domain);
+    expect(parsed.url).toBe('https://seamossvibes.com.au');
+  });
+
   /** A live, verified domain control receipt for `subjectId`. */
   function domainReceipt(subjectId: string, overrides: Partial<TrustReceiptView> = {}): TrustReceiptView {
     const id = `rcpt_${subjectId}`;

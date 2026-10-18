@@ -1,5 +1,6 @@
 import React from 'react';
 import type { GuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
 import { renderMarkdown } from '../../utils/markdown';
 import { ActionableFixList } from '../retention/ActionableFixList';
 import { DailyStreakCard } from '../retention/DailyStreakCard';
@@ -18,6 +19,8 @@ interface GuestScoutSummaryPanelProps {
   onShare?: () => void;
   onCopy?: () => void;
   sharing?: boolean;
+  /** Guest degraded result: primary sign-in. Omitted for signed-in rails. */
+  onSignIn?: () => void;
 }
 
 export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
@@ -26,6 +29,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
   onShare,
   onCopy,
   sharing = false,
+  onSignIn,
 }) => {
   return (
     <section
@@ -44,6 +48,24 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
         <p role="status" className="mt-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm leading-relaxed text-gray-200">
           {summary.banner}
         </p>
+      )}
+      {summary.banner && onSignIn && (
+        <div className="mt-3 flex flex-col items-start gap-1">
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="flex min-h-11 w-full items-center justify-center rounded-lg bg-gold px-4 text-[11px] font-semibold tracking-wide text-black hover:bg-gold-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold sm:w-auto"
+          >
+            {GUEST_FULL_AUDIT_CTA}
+          </button>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('luminara-open-settings'))}
+            className="min-h-11 px-1 text-left text-sm text-gray-400 underline-offset-2 hover:text-gray-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+          >
+            Or add your own keys in Settings.
+          </button>
+        </div>
       )}
       <p className="mt-3 text-[11px] text-gray-500">
         Signals are measured, estimated, or not measured. This scout does not invent scores.
@@ -117,33 +139,35 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       {/* Retention: Daily Verification Streak Card */}
       <DailyStreakCard domain={summary.domain} />
 
-      <div className="mt-8 flex flex-col gap-2 sm:flex-row">
-        {onShare && (
-          <button
-            type="button"
-            onClick={onShare}
-            disabled={sharing || summary.evidenceEmpty}
-            className="min-h-11 rounded-lg bg-gradient-to-r from-gold to-gold-dark px-4 py-2 text-[11px] font-black uppercase tracking-widest text-black disabled:opacity-40 disabled:cursor-not-allowed"
-            title={summary.evidenceEmpty ? 'Cannot share an empty run with no evidence' : undefined}
-          >
-            {sharing ? 'Sharing...' : 'Share teaser'}
-          </button>
-        )}
-        {onCopy && (
-          <button
-            type="button"
-            onClick={onCopy}
-            disabled={sharing || summary.evidenceEmpty}
-            className="min-h-11 rounded-lg border border-white/15 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
-            title={summary.evidenceEmpty ? 'Cannot share an empty run with no evidence' : undefined}
-          >
-            Copy link
-          </button>
-        )}
-      </div>
-      <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
-        The teaser is a redacted summary and a link back to the Mini App. It is not a full branded share report. Those stay on Growth and Agency.
-      </p>
+      {!summary.degraded && !summary.evidenceEmpty && (onShare || onCopy) && (
+        <>
+          <div className="mt-8 flex flex-col gap-2 sm:flex-row">
+            {onShare && (
+              <button
+                type="button"
+                onClick={onShare}
+                disabled={sharing}
+                className="min-h-11 rounded-lg bg-gradient-to-r from-gold to-gold-dark px-4 py-2 text-[11px] font-black uppercase tracking-widest text-black disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {sharing ? 'Sharing...' : 'Share teaser'}
+              </button>
+            )}
+            {onCopy && (
+              <button
+                type="button"
+                onClick={onCopy}
+                disabled={sharing}
+                className="min-h-11 rounded-lg border border-white/15 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Copy link
+              </button>
+            )}
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
+            The teaser is a redacted summary and a link back to the Mini App. It is not a full branded share report. Those stay on Growth and Agency.
+          </p>
+        </>
+      )}
       {shareNote && <p className="mt-2 text-[12px] text-gold-light">{shareNote}</p>}
     </section>
   );

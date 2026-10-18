@@ -81,6 +81,8 @@ describe('P1 ADMIN_SECRET separation', () => {
     { path: '/api/admin/license/generate', init: { method: 'POST', body: JSON.stringify({ plan: 'growth' }) }, name: 'admin generate' },
     { path: '/api/admin/license/seed', init: { method: 'POST', body: JSON.stringify({ keys: [{ key: 'LUM-GROWTH-30D-TEST-TEST', plan: 'growth' }] }) }, name: 'admin seed' },
     { path: '/api/telegram/refund', init: { method: 'POST', body: JSON.stringify({ userId: 123, chargeId: 'ch_x' }) }, name: 'telegram refund' },
+    { path: '/api/rsi/prompts/publish', init: { method: 'POST', body: JSON.stringify({ slug: 'oracle-chat', promptBody: 'Say not_measured.', evidenceRefs: ['edit-1'] }) }, name: 'rsi prompt publish' },
+    { path: '/api/rsi/prompts/rollback', init: { method: 'POST', body: JSON.stringify({ slug: 'oracle-chat' }) }, name: 'rsi prompt rollback' },
   ];
 
   it('isAdminAuthorized fails closed with 503 when ADMIN_SECRET is unset', async () => {
@@ -103,6 +105,30 @@ describe('P1 ADMIN_SECRET separation', () => {
       expect(body.code).toBe('ADMIN_SECRET_REQUIRED');
       expect(body.error).toContain('x-admin-secret');
     }
+  });
+
+  it('refuses a signed-in session that tries to publish the global prompt catalog', async () => {
+    const env = makeEnv({ ADMIN_SECRET: 'real-admin-secret', BOT_TOKEN: botToken, REQUIRE_TG_AUTH: 'true' });
+    const initData = signInitData({
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      user: JSON.stringify({ id: 4242, first_name: 'Ada' }),
+    });
+    const res = await worker.fetch(
+      req('/api/rsi/prompts/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-telegram-init-data': initData },
+        body: JSON.stringify({
+          slug: 'oracle-chat',
+          promptBody: 'Answer with one verdict. If a metric was not measured, say not_measured.',
+          evidenceRefs: ['session-1'],
+        }),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe('ADMIN_SECRET_REQUIRED');
   });
 
   it('accepts the correct ADMIN_SECRET', () => {

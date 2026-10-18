@@ -57,7 +57,10 @@ export function useDemoPlayback(): DemoPlayback {
     timers.current = [];
   }, []);
 
-  useEffect(() => () => clearTimers(), [clearTimers]);
+  useEffect(() => () => {
+    runIdRef.current += 1;
+    clearTimers();
+  }, [clearTimers]);
 
   const setUrl = useCallback(
     (v: string) => {
@@ -90,7 +93,7 @@ export function useDemoPlayback(): DemoPlayback {
 
   const runSample = useCallback(() => {
     clearTimers();
-    const parsed = normalizeDemoUrl(url || SAMPLE_FIXTURE.domain);
+    const parsed = normalizeDemoUrl(url);
     if (!parsed.ok) {
       setError(parsed.error);
       setPhase('error');
@@ -102,7 +105,11 @@ export function useDemoPlayback(): DemoPlayback {
     setFixture(null);
     setResultKind('sample');
     setPhase('analyzing');
-    setEngines(idleEngines().map((e) => ({ ...e, status: 'pending', note: 'Checking…' })));
+    // Only the crawl row is in flight; the engines are never asked here, so they read
+    // Not measured from the first frame instead of pretending to be checked.
+    const [crawlIdle] = idleEngines();
+    setEngines([{ ...crawlIdle, status: 'pending', note: 'Checking…' }, ...sampleEngineRowsForHost(parsed.host)]);
+    const startedAt = Date.now();
 
     const stepMs = reducedRef.current ? 80 : 480;
     ANALYZE_STAGES.forEach((label, i) => {
@@ -154,27 +161,8 @@ export function useDemoPlayback(): DemoPlayback {
         engines: [crawlRow, ...engineRows],
       };
 
-      resultBase.engines.forEach((row, i) => {
-        const at = ANALYZE_STAGES.length * stepMs + (i + 1) * (reducedRef.current ? 40 : 280);
-        const id = window.setTimeout(() => {
-          if (runIdRef.current !== runId) return;
-          setEngines(() =>
-            idleEngines().map((base) => {
-              const idx = resultBase.engines.findIndex((r) => r.id === base.id);
-              const revealed = resultBase.engines[idx];
-              if (idx >= 0 && idx <= i && revealed) return { ...revealed };
-              if (idx > i) return { ...base, status: 'pending' as const, note: 'Checking…' };
-              return base;
-            }),
-          );
-        }, at);
-        timers.current.push(id);
-      });
-
-      const doneAt =
-        ANALYZE_STAGES.length * stepMs +
-        resultBase.engines.length * (reducedRef.current ? 40 : 280) +
-        (reducedRef.current ? 40 : 180);
+      // Let each crawl stage show for a beat, but never wait longer than the request itself.
+      const doneAt = Math.max(0, ANALYZE_STAGES.length * stepMs - (Date.now() - startedAt));
       const doneId = window.setTimeout(() => {
         if (runIdRef.current !== runId) return;
         setFixture(resultBase);

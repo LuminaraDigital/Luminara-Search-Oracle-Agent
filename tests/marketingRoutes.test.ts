@@ -9,7 +9,8 @@ import {
   resolveAppView,
   urlForView,
 } from '../utils/marketingRoutes';
-import { marketingShellKey, MARKETING_SHELL_BY_PATH } from '../services/marketing/pageMeta';
+import { DASHBOARD_TAB_TITLE, MARKETING_SHELL_BY_PATH, instantAuditTabTitle, marketingShellKey } from '../services/marketing/pageMeta';
+import { resolveDocumentTitle } from '../services/marketing/documentMeta';
 import { injectMarketingMeta } from '../worker/marketingShell';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML } from '../worker/crawlDocuments';
 
@@ -52,8 +53,19 @@ describe('marketingRoutes', () => {
     expect(resolveAppView('/', '#pricing')).toBe(AppView.PRICING);
     expect(resolveAppView('/', '#settings')).toBe(null);
     expect(resolveAppView('/random-made-up-page', '')).toBe(AppView.NOT_FOUND);
-    expect(resolveAppView('/smb', '')).toBe(AppView.LAUNCHPAD);
+    expect(resolveAppView('/smb', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/launchpad', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/dashboard', '')).toBe(AppView.DASHBOARD);
+    expect(resolveAppView('/verify', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/trust', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/trust-center', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/smb-launchpad', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/audit', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/geo', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/seo', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/aeo', '')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/', '#launchpad')).toBe(AppView.NOT_FOUND);
+    expect(resolveAppView('/', '#trust_center')).toBe(AppView.TRUST_CENTER);
   });
 
   it('routes /verify/r/<id> to the receipt view without breaking /verify/<digest>', () => {
@@ -68,6 +80,45 @@ describe('marketingRoutes', () => {
     expect(receiptIdFromLocation('/', `#verify/r/${id}`)).toBe(id);
     expect(receiptIdFromLocation(`/verify/${digest}`, '')).toBe('');
     expect(receiptIdFromLocation('/verify/r/%E0%A4%A', '')).toBe('');
+  });
+});
+
+describe('tab titles', () => {
+  it('uses Topic | Luminara Suite, unique, under 60 characters', () => {
+    expect(resolveDocumentTitle('/compare/profound', AppView.WHY_US)).toBe('Luminara vs Profound | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/ahrefs', AppView.WHY_US)).toBe('Luminara vs Ahrefs | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/otterly', AppView.WHY_US)).toBe('Luminara vs Otterly | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/peec', AppView.WHY_US)).toBe('Luminara vs Peec | Luminara Suite');
+    expect(resolveDocumentTitle('/why', AppView.WHY_US)).toBe('Why Luminara | Luminara Suite');
+    expect(resolveDocumentTitle('/dashboard', AppView.DASHBOARD)).toBe('Dashboard | Luminara Suite');
+    expect(resolveDocumentTitle('/', AppView.DASHBOARD)).toBe('Dashboard | Luminara Suite');
+    expect(resolveDocumentTitle('/audit/example.com', AppView.INSTANT_AUDIT)).toBe('Instant Audit: example.com | Luminara Suite');
+    expect(resolveDocumentTitle('/audit/https://shop.example/pricing', AppView.INSTANT_AUDIT)).toBe('Instant Audit: shop.example | Luminara Suite');
+    const exact = instantAuditTabTitle('a'.repeat(28));
+    expect(exact).toBe(`Instant Audit: ${'a'.repeat(28)} | Luminara Suite`);
+    expect(exact.length).toBe(60);
+    const shortened = `Instant Audit: ${'a'.repeat(25)}... | Luminara Suite`;
+    expect(instantAuditTabTitle('a'.repeat(80))).toBe(shortened);
+    expect(resolveDocumentTitle(`/audit/${'a'.repeat(80)}`, AppView.INSTANT_AUDIT)).toBe(shortened);
+
+    const titles = [
+      ...Object.values(MARKETING_SHELL_BY_PATH).map((page) => page.title),
+      DASHBOARD_TAB_TITLE,
+      instantAuditTabTitle('example.com'),
+      instantAuditTabTitle(undefined),
+      'Windows app | Luminara Suite',
+      'MCP server | Luminara Suite',
+    ];
+    for (const title of titles) {
+      expect(title.length, title).toBeLessThanOrEqual(60);
+      expect(title.endsWith(' | Luminara Suite'), title).toBe(true);
+    }
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(readFileSync('public/desktop/index.html', 'utf8')).toContain('<title>Windows app | Luminara Suite</title>');
+    expect(readFileSync('public/docs/mcp.html', 'utf8')).toContain('<title>MCP server | Luminara Suite</title>');
+    const shell = readFileSync('index.html', 'utf8');
+    expect(shell).not.toContain('var known');
+    expect(shell).toContain('html.lx-skip-splash #boot-splash { display: none; }');
   });
 });
 

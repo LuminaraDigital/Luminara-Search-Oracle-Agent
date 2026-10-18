@@ -49,7 +49,12 @@ export async function validateInitData(
     if (!pair) continue;
     const eqIdx = pair.indexOf('=');
     const rawKey = eqIdx === -1 ? pair : pair.slice(0, eqIdx);
-    const key = decodeURIComponent(rawKey);
+    let key: string;
+    try {
+      key = decodeURIComponent(rawKey);
+    } catch {
+      return { ok: false, reason: 'initData is not a query string' };
+    }
     if (seenKeys.has(key)) {
       return { ok: false, reason: 'initData contains duplicate parameters' };
     }

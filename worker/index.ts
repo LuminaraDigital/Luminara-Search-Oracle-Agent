@@ -57,7 +57,7 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML, buildSitemapXml } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml } from './marketingShell';
+import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -102,6 +102,7 @@ import {
   mintOpaqueSession,
   revokeOpaqueSession,
   isOpaqueSessionId,
+  looksLikeJwt,
 } from './authMiddleware';
 import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
@@ -116,7 +117,11 @@ import {
   approveActionRequest,
   denyActionRequest,
 } from './mcpGovernance';
-import { handleOracleChatSse, isOracleServerEnabled } from './oracleChat';
+import {
+  handleOracleChatSse,
+  handleOracleSessionControlRoute,
+  isOracleServerEnabled,
+} from './oracleChat';
 import { OracleSession } from './oracleSession';
 import { handlePagespeedRoute } from './pagespeedRoute';
 import { handleDeployReadbackRoute } from './deployReadback';
@@ -130,10 +135,13 @@ import { handleMcpOAuthRoute } from './mcpOAuth';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
-import { isCronMapped, jobsForCron } from './scheduledJobs';
+import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
+import { handleRsiRoute } from './rsiRoutes';
+import { runRsiSkillCurator } from './rsiCurator';
+import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
@@ -320,7 +328,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         // The public Stars catalogue. The account panel in the Mini App builds its plan buttons
         // from this; without it the panel has nothing to list.
         plans: publicPlanCatalogue(),
-        stripeCheckout: isStripeCheckoutLive(env),
+        stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
       }));
     }
 
@@ -358,7 +366,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       tonPricing: TON_PRICING,
       jettonPricing: JETTON_PRICING,
       jettonCheckout: JETTON_CHECKOUT_LIVE,
-      stripeCheckout: isStripeCheckoutLive(env),
+      stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
       q402: Q402_SETTLEMENT_LIVE,
       chainNetwork,
       xdcRpcOk,
@@ -556,7 +564,17 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
     const bearer = bearerFromAuthorization(request.headers.get('authorization'));
     const cookieTok = getSessionTokenFromCookie(request);
-    const idToken = String(bearer || cookieTok || '').trim();
+    const jwtCookie = cookieTok && !isOpaqueSessionId(cookieTok) && looksLikeJwt(cookieTok) ? cookieTok : '';
+    let bodyToken = '';
+    if (!bearer && !jwtCookie) {
+      try {
+        const parsed = (await request.clone().json()) as { idToken?: unknown };
+        if (typeof parsed?.idToken === 'string') bodyToken = parsed.idToken.trim();
+      } catch {
+        /* ignore non-JSON body */
+      }
+    }
+    const idToken = String(bearer || bodyToken || jwtCookie || '').trim();
     return withCors(
       handleSendVerification(request, env, ip, billingId(who.user), idToken),
     );
@@ -1361,7 +1379,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
       const body = read.value as Record<string, unknown>;
-      return withCors(generateBadgeResponse(body as any));
+      return withCors(await generateBadgeResponse(body as any, env));
     }
   }
 
@@ -1551,6 +1569,36 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
     const dreamRes = await handleDreamingRoute(request, env, who.user, path);
     if (dreamRes) return withCors(dreamRes);
+  }
+
+  // Global Oracle prompt catalog. Same gate as POST /admin/skills/:slug/versions.
+  // A signed-in session must not publish or roll back agent_skills.
+  if (path === '/rsi/prompts/publish' || path === '/rsi/prompts/rollback') {
+    const promptAdmin = isAdminAuthorized(env, request);
+    if (!promptAdmin.ok) return withCors(promptAdmin.response);
+    const promptLimit = limited('auth', RATE_AUTH_PER_MIN);
+    if (promptLimit) return promptLimit;
+    const promptActor: HostedIdentity = { id: 'admin', source: 'firebase', accountId: 'admin' };
+    const promptRoute = await handleRsiRoute(request, env, promptActor, path);
+    if (promptRoute) return withCors(promptRoute);
+  }
+
+  // Learned skill library (0027). Session routes. The curator runs on the daily cron, Mondays only.
+  if (path.startsWith('/rsi/')) {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dual = await enforceDualRateLimit(env, {
+      action: 'rsi',
+      accountId: billingId(who.user),
+      ip,
+      limitPerKey: 30,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    const rsi = await handleRsiRoute(request, env, who.user, path);
+    if (rsi) return withCors(rsi);
   }
 
   // SMB Launchpad (0018). Feature-flagged; see worker/launchpadService.ts.
@@ -1938,6 +1986,43 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(await handleOracleChatSse(request, env, who.user));
   }
 
+  const oracleSessionMatch = path.match(
+    /^\/oracle\/session\/([^/]+)\/(events|approval|callback|state(?:\/patch)?|history)$/,
+  );
+  if (oracleSessionMatch) {
+    if (!isOracleServerEnabled(env)) {
+      return withCors(
+        json(
+          {
+            ok: false,
+            error: 'Server Oracle disabled. Set ORACLE_SERVER_ENABLED=true after staging soak.',
+            code: 'ORACLE_DISABLED',
+          },
+          503,
+        ),
+      );
+    }
+    const who = await identify(request, env);
+    if (who.error || !who.user) return withCors(json({ error: who.error || 'Unauthorized' }, 401));
+    const dual = await enforceDualRateLimit(env, {
+      action: 'oracle_session',
+      accountId: billingId(who.user),
+      ip,
+      limitPerKey: RATE_API_PER_MIN,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    let sessionId: string;
+    try {
+      sessionId = decodeURIComponent(oracleSessionMatch[1]!);
+    } catch {
+      return withCors(json({ ok: false, error: 'Invalid session ID', code: 'INVALID_SESSION_ID' }, 400));
+    }
+    return withCors(
+      await handleOracleSessionControlRoute(request, env, who.user, sessionId, oracleSessionMatch[2]!),
+    );
+  }
+
   if (path === '/audit/run' && request.method === 'POST') {
     if (!isAuditQueueEnabled(env)) {
       return withCors(
@@ -1974,6 +2059,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // ZetaChain Track ZP: Universal Oracle Gateway (Pattern 1 & 2)
   if (path === '/gateway/execute' && request.method === 'POST') {
     const who = await identify(request, env);
+    if (who.error) return withCors(json({ error: who.error }, 401));
     const body = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!body.ok) return withCors(json({ error: body.error }, body.status));
     let reqData: OracleGatewayRequest;
@@ -2196,7 +2282,7 @@ export default {
       contentType.includes('text/html') &&
       resolveAppView(url.pathname, '') === AppView.NOT_FOUND
     ) {
-      const html = request.method === 'HEAD' ? null : (assetResponse.ok ? await assetResponse.text() : 'Not Found');
+      const html = request.method === 'HEAD' ? null : (assetResponse.ok ? withSkippedBootSplash(await assetResponse.text()) : 'Not Found');
       return withSecurityHeaders(
         new Response(html, {
           status: 404,
@@ -2212,7 +2298,7 @@ export default {
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).
-    const jobs = jobsForCron(controller.cron);
+    const jobs = jobsForCron(controller.cron).filter((job) => shouldRunScheduledJob(job, controller.scheduledTime));
     if (!isCronMapped(controller.cron)) {
       console.error(`[Cron] Cron "${controller.cron}" is not mapped in worker/scheduledJobs.ts; no job was run.`);
       return;
@@ -2223,6 +2309,8 @@ export default {
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
     if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
     if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
+    if (jobs.includes('rsi_skill_curator')) ctx.waitUntil(runRsiSkillCurator(env).then(() => undefined));
+    if (jobs.includes('rsi_posting_reflection')) ctx.waitUntil(runPostingReflection(env).then(() => undefined));
     if (jobs.includes('ton_pending_sweep')) {
       ctx.waitUntil(
         sweepTonPendingOrders(env)

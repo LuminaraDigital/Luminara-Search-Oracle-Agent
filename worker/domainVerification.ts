@@ -100,7 +100,8 @@ function extractTokens(text: string): string[] {
   return Array.from(text.matchAll(TOKEN_RE), (m) => m[0]);
 }
 
-async function readCapped(res: Response, maxBytes: number): Promise<string> {
+/** Reads at most `maxBytes` of a response body, cancelling the stream past the cap. */
+export async function readCapped(res: Response, maxBytes: number): Promise<string> {
   if (!res.body) return '';
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];

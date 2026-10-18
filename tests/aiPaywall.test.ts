@@ -354,6 +354,38 @@ describe('AI Paywall & Quota Engine', () => {
       }
     });
 
+    it('hosted DataForSEO requires Agency apiAccess (APS invariant 2), not just any plan', async () => {
+      const kv = createMockKv();
+      const env = { ...createEnv(kv), DATAFORSEO_LOGIN: 'dfs-login', DATAFORSEO_PASSWORD: 'dfs-pass' };
+      const initData = signInitData({
+        auth_date: String(Math.floor(Date.now() / 1000)),
+        user: JSON.stringify({ id: 206, first_name: 'StarterUser' }),
+      });
+      const call = async () => {
+        const req = new Request('https://luminarasuite.com/api/providers/dataforseo/v3/serp/google/organic/live/advanced', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-telegram-init-data': initData },
+          body: JSON.stringify([{ keyword: 'test' }]),
+        });
+        const { proxyProvider } = await import('../worker/index');
+        return proxyProvider(req, env as any, 'dataforseo', '/v3/serp/google/organic/live/advanced');
+      };
+
+      await kv.put('sub:206', JSON.stringify({ plan: 'starter', expiresAt: Date.now() + 86400_000 }));
+      const starter = await call();
+      expect(starter.status).toBe(403);
+      expect(((await starter.json()) as any).code).toBe('API_ACCESS_REQUIRED');
+
+      await kv.put('sub:206', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 86400_000 }));
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+      try {
+        expect((await call()).status).toBe(200);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
     it('allows BYOK user to access any engine without subscription or quota tracking', async () => {
       const kv = createMockKv();
       const env = createEnv(kv);

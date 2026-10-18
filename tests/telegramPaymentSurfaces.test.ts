@@ -34,6 +34,7 @@ vi.mock('../services/apiClient', async (importActual) => ({
 }));
 
 import { PaywallModal } from '../components/paywall/PaywallModal';
+import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../components/paywall/planCopy';
 import { TelegramAccountPanel } from '../components/telegram/TelegramAccountPanel';
 
 const everythingOn = () => ({
@@ -95,6 +96,17 @@ describe('the paywall on the web', () => {
     expect(html).toContain('Soon');
     expect(html).not.toContain('USDT');
   });
+
+  it('uses the same Stars terms as pricing and does not offer a card while Stripe is off', () => {
+    state.health = { ...everythingOn(), ton: false, jettonCheckout: false, stripeCheckout: false };
+    const html = paywall();
+    expect(html).toContain(CHECKOUT_TERM_LINE);
+    expect(html).toContain(TELEGRAM_STARS_HANDOFF);
+    expect(html).toContain('Pay 2,500 Stars in Telegram');
+    expect(html).not.toMatch(/card checkout/i);
+    expect(html).not.toContain('US$');
+    expect(html).not.toContain('Subscribe');
+  });
 });
 
 describe('the account panel inside Telegram', () => {
@@ -142,5 +154,30 @@ describe('the account panel on the web with a wallet connected', () => {
     state.inTelegram = true;
     state.wallet = null;
     expect(panel()).toContain('Subscribe');
+  });
+});
+
+describe('the account panel on the web while TON is closed', () => {
+  beforeEach(() => {
+    state.inTelegram = false;
+    state.wallet = null;
+    state.health = { ...everythingOn(), ton: false, jettonCheckout: false, stripeCheckout: false };
+  });
+
+  it('hides the wallet button', () => {
+    expect(panel()).not.toContain('TON-CONNECT-BUTTON');
+    expect(panel()).not.toContain('TON wallet');
+  });
+});
+
+describe('the account panel on the web while TON is open', () => {
+  beforeEach(() => {
+    state.inTelegram = false;
+    state.wallet = null;
+    state.health = { ...everythingOn(), ton: true, jettonCheckout: false, stripeCheckout: false };
+  });
+
+  it('shows the wallet button', () => {
+    expect(panel()).toContain('TON-CONNECT-BUTTON');
   });
 });

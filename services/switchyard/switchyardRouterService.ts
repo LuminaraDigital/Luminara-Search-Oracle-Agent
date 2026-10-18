@@ -9,7 +9,6 @@
  */
 
 import {
-  SwitchyardRouteType,
   SwitchyardTarget,
   SwitchyardRouteConfig,
   SwitchyardDecisionLog,
@@ -131,9 +130,9 @@ export const DEFAULT_SWITCHYARD_ROUTES: SwitchyardRouteConfig[] = [
     id: 'escalation_primary',
     name: 'Autonomous Escalation Router',
     type: 'escalation_router',
-    description: 'Starts with high-speed Groq LPU (285 tok/s). Escalates dynamically to NVIDIA NIM Capable tier on complex schema or low-confidence audits.',
-    efficientTarget: 'groq_llama70b',
-    capableTarget: 'nvidia_nim_70b',
+    description: 'Starts with high-speed Groq LPU (500 tok/s). Escalates dynamically to NVIDIA NIM Capable tier on complex schema or low-confidence audits.',
+    efficientTarget: 'groq_gpt_oss_120b',
+    capableTarget: 'nvidia_nim_90b',
     advisorTarget: 'nvidia_nim_r1',
     picker: 'efficient_first',
     confidenceThreshold: 0.65,
@@ -144,8 +143,8 @@ export const DEFAULT_SWITCHYARD_ROUTES: SwitchyardRouteConfig[] = [
     name: 'Multi-Stage SERP & AEO Pipeline',
     type: 'stage_router',
     description: 'Decomposes audit into Stage 1 (Fast Intent) -> Stage 2 (Technical Parsing) -> Stage 3 (Executive Capable Synthesis).',
-    efficientTarget: 'groq_llama70b',
-    capableTarget: 'nvidia_nim_70b',
+    efficientTarget: 'groq_gpt_oss_120b',
+    capableTarget: 'nvidia_nim_90b',
     advisorTarget: 'nvidia_nim_r1',
     picker: 'efficient_first',
     confidenceThreshold: 0.70,
@@ -156,8 +155,8 @@ export const DEFAULT_SWITCHYARD_ROUTES: SwitchyardRouteConfig[] = [
     name: 'Capability Intent Classifier',
     type: 'llm_classifier',
     description: 'Heuristic and token classification routing directly to optimal provider based on complexity and context length.',
-    efficientTarget: 'groq_llama70b',
-    capableTarget: 'nvidia_nim_70b',
+    efficientTarget: 'groq_gpt_oss_120b',
+    capableTarget: 'nvidia_nim_90b',
     picker: 'classifier_guided',
     confidenceThreshold: 0.60,
     maxEscalationRounds: 1,
@@ -167,8 +166,8 @@ export const DEFAULT_SWITCHYARD_ROUTES: SwitchyardRouteConfig[] = [
     name: 'Advisor Gate Verification',
     type: 'advisor_gate',
     description: 'Generates draft on fast tier, then passes through an adversarial advisor model to certify Schema.org compliance.',
-    efficientTarget: 'groq_llama70b',
-    capableTarget: 'nvidia_nim_70b',
+    efficientTarget: 'groq_gpt_oss_120b',
+    capableTarget: 'nvidia_nim_90b',
     advisorTarget: 'nvidia_nim_r1',
     picker: 'efficient_first',
     confidenceThreshold: 0.80,
@@ -480,14 +479,15 @@ export class SwitchyardRouterService {
         `*Rationale:* ${steps.map(s => `\n- **${s.stage}**: ${s.reason}`).join('')}`;
     }
 
-    const durationMs = Date.now() - startTime;
+    const durationMs = Math.max(1, Date.now() - startTime);
     const tokensProcessed = Math.round(prompt.length / 4 + outputText.length / 4 + 120);
 
     // Calculate cost savings compared to running 100% on Capable baseline (e.g. $3.50/M)
     const baselineCost = (tokensProcessed / 1_000_000) * 3.50;
     const actualCost = (tokensProcessed / 1_000_000) * activeTarget.costPerMillionTokens;
     const costSavedUsd = Math.max(0, baselineCost - actualCost);
-    const latencySavedMs = Math.max(0, 920 - activeTarget.latencyBaselineMs);
+    const effectiveLatencyMs = liveExecute ? durationMs : activeTarget.latencyBaselineMs;
+    const latencySavedMs = Math.max(0, 920 - effectiveLatencyMs);
 
     const decisionLog: SwitchyardDecisionLog = {
       id: `sy_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -534,12 +534,14 @@ export class SwitchyardRouterService {
 
     let tokens = 0;
     let saved = 0;
+    let totalLatencyMs = 0;
     let escalatedCount = 0;
     const dist: Record<string, number> = {};
 
     this.decisionLogs.forEach(d => {
       tokens += d.tokensProcessed;
       saved += d.costSavedUsd;
+      totalLatencyMs += Math.max(80, 920 - (d.latencySavedMs || 0));
       if (d.escalated) escalatedCount++;
       dist[d.finalTarget] = (dist[d.finalTarget] || 0) + 1;
     });
@@ -548,7 +550,7 @@ export class SwitchyardRouterService {
       totalRoutedRequests: totalRouted,
       totalTokensRouted: tokens,
       totalCostSavedUsd: Number(saved.toFixed(4)),
-      avgLatencyMs: 245,
+      avgLatencyMs: Math.round(totalLatencyMs / totalRouted),
       escalationRatePct: Number(((escalatedCount / totalRouted) * 100).toFixed(1)),
       targetDistribution: dist,
     };

@@ -7,7 +7,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // 24/7 Cloudflare Drift Sentinel Cron Trigger (runs daily at 08:00 UTC)
+  // Daily Drift Sentinel at 08:00 UTC. RSI weekly work rides this trigger on Mondays.
+  // A second cron expression would exceed the account's Workers cron-trigger cap.
   "triggers": {
     "crons": ["0 8 * * *"]
   },
@@ -85,6 +86,8 @@
   //   DATAFORSEO_LOGIN, DATAFORSEO_PASSWORD, TON_API_KEY (Toncenter), UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD).
   //   ADMIN_SECRET (required for admin routes: /api/admin/users, /api/admin/license/generate,
   //   /api/admin/license/seed, /api/telegram/refund; sent as x-admin-secret header; separate from the webhook secret).
+  //   MCP_OAUTH_SECRET (required in production: MCP OAuth fails closed without it), STRIPE_SECRET_KEY +
+  //   STRIPE_WEBHOOK_SECRET (card rail stays off without both), RECEIPT_SIGNING_KEY, AUTH_WEBHOOK_SECRET, TELEGRAM_ADMIN_ID.
   // Non-secret TON merchant wallet (safe in vars): TON_RECEIVING_ADDRESS
   // Chain network gate (Phase 0): CHAIN_NETWORK, CHAIN_TON_API_BASE, CHAIN_TON_API_FALLBACK_BASE, CHAIN_XDC_RPC_URL
   // TON_API_KEY must be network-specific: `wrangler secret put TON_API_KEY --env staging|production`
@@ -335,7 +338,8 @@
         "FREE_DAILY_LIMIT": "25",
         "FIREBASE_PROJECT_ID": "luminara-suite",
         "FIREBASE_PROJECT_NUMBER": "274315225068",
-        "REQUIRE_APP_CHECK": "true",
+        // Keep false until the prod build step passes VITE_FIREBASE_APPCHECK_SITE_KEY (validate-env enforces this).
+        "REQUIRE_APP_CHECK": "false",
         "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
         "OUTBOUND_EMAIL_DAILY_LIMIT": "200",
         "CHAIN_NETWORK": "mainnet",

@@ -563,6 +563,26 @@ describe('crawl surfaces', () => {
     expect(text).not.toContain('Luminara Suite | AI search and AEO visibility');
   });
 
+  it('hides the boot splash on an unknown path and keeps it for real routes', async () => {
+    const shell = `<!DOCTYPE html><html lang="en"><head><style>html.lx-skip-splash #boot-splash { display: none; }</style></head><body><div id="boot-splash">Preparing your workspace</div></body></html>`;
+    const env = makeEnv({
+      ASSETS: {
+        fetch: async () => new Response(shell, { headers: { 'content-type': 'text/html; charset=utf-8' } }),
+      } as unknown as Fetcher,
+    });
+    const unknown = await worker.fetch(req('/some-unknown-page', { headers: { accept: 'text/html' } }), env, ctx);
+    expect(unknown.status).toBe(404);
+    const unknownHtml = await unknown.text();
+    expect(unknownHtml).toContain('<html class="lx-skip-splash" lang="en">');
+    expect(unknownHtml).toContain('html.lx-skip-splash #boot-splash { display: none; }');
+
+    for (const path of ['/dashboard', '/labs', '/audit/example.com', '/']) {
+      const res = await worker.fetch(req(path, { headers: { accept: 'text/html' } }), env, ctx);
+      expect(res.status, path).toBe(200);
+      expect(await res.text(), path).not.toContain('class="lx-skip-splash"');
+    }
+  });
+
   it('redirects /how to /how-it-works', async () => {
     for (const path of ['/how', '/how/']) {
       const res = await worker.fetch(req(`${path}?ref=nav`), makeEnv(), ctx);
