@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
+import { STAGING_ROBOTS_TXT } from '../worker/crawlDocuments';
 import {
   HTML_CSP,
   HOSTED_MAX_TOKENS,
@@ -489,6 +490,8 @@ describe('crawl surfaces', () => {
     expect(text).toContain('Luminara Suite');
     expect(text).toContain('/docs/mcp.html');
     expect(text).toContain('/docs/what-is-aeo.html');
+    expect(text).toContain('2,500 Stars');
+    expect(text).not.toMatch(/US\$\s?\d|\$\s?\d|\/mo\b|per month/i);
   });
 
   it('injects pricing meta into the marketing shell HTML', async () => {
@@ -521,6 +524,92 @@ describe('crawl surfaces', () => {
     expect(text).toContain('luminara-crawler-body');
     expect(text).toContain('Growth');
     expect(text).toContain('MCP');
+    expect(text).not.toMatch(/"price"|"lowPrice"|"highPrice"|"priceCurrency"/);
+    expect(res.headers.get('x-robots-tag')).toBeNull();
+  });
+
+  it('gives /labs its own title and canonical on production', async () => {
+    const env = makeEnv({
+      ENVIRONMENT: 'production',
+      ASSETS: {
+        fetch: async () =>
+          new Response(
+            `<!DOCTYPE html><html><head><title>Old</title><link rel="canonical" href="https://www.luminarasuite.com/"></head><body>app</body></html>`,
+            { headers: { 'content-type': 'text/html; charset=utf-8' } },
+          ),
+      } as unknown as Fetcher,
+    });
+    const res = await worker.fetch(
+      new Request('https://www.luminarasuite.com/labs', { headers: { accept: 'text/html', 'cf-connecting-ip': '10.8.1.1' } }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-robots-tag')).toBeNull();
+    const text = await res.text();
+    expect(text).toContain('<title>Labs | Luminara Suite</title>');
+    expect(text).toContain('rel="canonical" href="https://www.luminarasuite.com/labs"');
+    expect(text).not.toContain('rel="canonical" href="https://www.luminarasuite.com/"');
+  });
+
+  it('noindexes per-domain /audit pages and points canonical at that page', async () => {
+    const env = makeEnv({
+      ENVIRONMENT: 'production',
+      ASSETS: {
+        fetch: async () =>
+          new Response(
+            `<!DOCTYPE html><html><head><title>Old</title><link rel="canonical" href="https://www.luminarasuite.com/"></head><body>app</body></html>`,
+            { headers: { 'content-type': 'text/html; charset=utf-8' } },
+          ),
+      } as unknown as Fetcher,
+    });
+    const res = await worker.fetch(
+      new Request('https://www.luminarasuite.com/audit/example.com', { headers: { accept: 'text/html', 'cf-connecting-ip': '10.8.1.2' } }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    const text = await res.text();
+    expect(text).toContain('rel="canonical" href="https://www.luminarasuite.com/audit/example.com"');
+    expect(text).toContain('name="robots" content="noindex, nofollow"');
+    expect(text).not.toContain('rel="canonical" href="https://www.luminarasuite.com/"');
+  });
+
+  it('noindexes staging and leaves production crawlable', async () => {
+    const prodRobots = await worker.fetch(
+      new Request('https://www.luminarasuite.com/robots.txt', { headers: { 'cf-connecting-ip': '10.8.1.3' } }),
+      makeEnv({ ENVIRONMENT: 'production' }),
+      ctx,
+    );
+    expect(prodRobots.headers.get('x-robots-tag')).toBeNull();
+    const prodBody = await prodRobots.text();
+    expect(prodBody).toContain('Allow: /pricing');
+    expect(prodBody).not.toBe(STAGING_ROBOTS_TXT);
+
+    const prodPage = await worker.fetch(
+      new Request('https://www.luminarasuite.com/', { headers: { accept: 'text/html', 'cf-connecting-ip': '10.8.1.4' } }),
+      makeEnv({ ENVIRONMENT: 'staging' }),
+      ctx,
+    );
+    expect(prodPage.headers.get('x-robots-tag')).toBeNull();
+
+    const stagingRobots = await worker.fetch(
+      new Request('https://staging.luminarasuite.com/robots.txt', { headers: { 'cf-connecting-ip': '10.8.0.2' } }),
+      makeEnv({ ENVIRONMENT: 'production' }),
+      ctx,
+    );
+    expect(stagingRobots.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect(await stagingRobots.text()).toBe(STAGING_ROBOTS_TXT);
+
+    const stagingPage = await worker.fetch(
+      new Request('https://staging.luminarasuite.com/pricing', {
+        headers: { accept: 'text/html', 'cf-connecting-ip': '10.8.0.3' },
+      }),
+      makeEnv({ ENVIRONMENT: 'staging' }),
+      ctx,
+    );
+    expect(stagingPage.headers.get('x-robots-tag')).toBe('noindex, nofollow');
   });
 
   it('serves extensionless What is AEO from static doc directly without redirect loop', async () => {

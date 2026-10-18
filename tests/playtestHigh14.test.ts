@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentMissionControl, missionControlCardBadge, missionControlHeadline } from '../components/audit/AgentMissionControl';
 import LandingPage from '../components/LandingPage';
 import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPanel';
-import { PAYWALL_HEADLINE, PAYWALL_SUBLINE, planBullets } from '../components/paywall/planCopy';
+import { CHECKOUT_TERM_LINE, PAYWALL_HEADLINE, PAYWALL_SUBLINE, planBullets } from '../components/paywall/planCopy';
 import { unmeasuredHealthMessage } from '../services/agentCore/auditEvidenceGate';
 import { scoutAgent } from '../services/agentCore/agents/scoutAgent';
 import { CREW_PROFILES } from '../services/agentCore/crewOrchestrator';
@@ -195,7 +195,14 @@ describe('Mission Control status', () => {
 describe('checkout honesty', () => {
   it('uses a capped headline and marks Starter exclusions as not included', () => {
     expect(PAYWALL_HEADLINE).toBe('Pick the plan that fits your sites');
-    expect(PAYWALL_SUBLINE).toBe('Every plan has clear monthly limits.');
+    expect(PAYWALL_SUBLINE).toBe(CHECKOUT_TERM_LINE);
+    expect(PAYWALL_SUBLINE.toLowerCase()).not.toContain('monthly limits');
+    expect(planBullets('starter').map((line) => line.text)).toContain('Monthly re-audits');
+    expect(planBullets('growth').map((line) => line.text)).toContain('Weekly re-audits');
+    expect(planBullets('agency').map((line) => line.text)).toContain('Daily re-audits');
+    for (const id of ['starter', 'growth', 'agency'] as const) {
+      for (const line of planBullets(id)) expect(line.text).not.toMatch(/^[a-z]/);
+    }
     expect(PAYWALL_HEADLINE.toLowerCase()).not.toContain('unlimited');
     expect(planBullets('starter').filter((line) => !line.included).map((line) => line.text)).toEqual([
       'No IDE access (web app only)',
