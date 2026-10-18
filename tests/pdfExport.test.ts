@@ -3,6 +3,7 @@ import { createExecutiveTheme } from '../components/pdf/theme';
 import { marked } from 'marked';
 import React from 'react';
 import { ExecutiveReportDocument } from '../components/pdf/ExecutiveReportDocument';
+import { generateExecutiveReportPdfBytes } from '../components/pdf/pdfService';
 
 describe('Executive PDF Export System', () => {
   it('creates executive theme with custom and default primary colors', () => {
@@ -65,6 +66,22 @@ Target domain has 72/100 readiness score.
     expect(element.props.agencyName).toBe('Apex Growth Partners');
     expect(element.props.clientName).toBe('Acme Health Corp');
     expect(element.props.primaryColor).toBe('#BF953F');
+  });
+
+  it('renders the executive report to PDF bytes', async () => {
+    const bytes = await generateExecutiveReportPdfBytes({
+      agencyName: 'Apex Growth Partners',
+      clientName: 'Acme Health Corp',
+      targetDomain: 'acmehealth.com',
+      preparedBy: 'Luminara AI Strategy Practice',
+      executiveNotes: 'Immediate remediation advised.',
+      primaryColor: '#BF953F',
+      markdownText: '# Executive Audit\n\nAll metrics grounded.',
+      auditDate: 'March 15, 2026',
+    });
+
+    expect(Buffer.from(bytes.subarray(0, 5)).toString('utf8')).toBe('%PDF-');
+    expect(bytes.byteLength).toBeGreaterThan(500);
   });
 
   it('handles empty or malformed markdown gracefully', () => {
