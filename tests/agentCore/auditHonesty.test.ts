@@ -327,7 +327,7 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(withSchema.healthScore).toBeNull();
   });
 
-  it('does not invent a 73 health score from Jina-only page text', async () => {
+  it('does not invent a 73 health score from a fallback page read', async () => {
     const events: AgentActivityEvent[] = [];
     const result = await playbookAuditorAgent.execute(
       'AEO',
@@ -348,7 +348,7 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(result.healthScore).toBeNull();
     expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(false);
     const text = events.map((event) => event.message).join(' ');
-    expect(text).toContain('Jina-only');
+    expect(text.includes('a fallback read') && !/Jina/.test(text)).toBe(true);
     expect(text).toContain('not measured');
     expect(text).not.toMatch(/\/100/);
     expect(text).not.toContain('73');
@@ -358,7 +358,7 @@ describe('Instant Audit honesty on empty evidence', () => {
       measurementStatus: 'not_measured',
     }));
     expect(html).toContain('Not measured');
-    expect(html).toContain('Jina-only');
+    expect(html.includes('a fallback read') && !/Jina/.test(html)).toBe(true);
     expect(html).not.toMatch(/\/100/);
     expect(html).not.toContain('73');
     const summary = buildGuestScoutSummary({

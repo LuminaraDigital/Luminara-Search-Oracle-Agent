@@ -86,8 +86,8 @@ export function healthChecklist(findings: readonly { id: string }[]): HealthChec
 
 const UNMEASURED_HEALTH_WHY: Record<HealthScoreBlockReason, string> = {
   auth: 'live data unavailable after a provider authentication failure',
-  jina: 'page text is Jina-only and cannot support a health score',
-  jina_search: 'page evidence is Jina-only and search evidence is empty or a sample',
+  jina: 'page text is a fallback read and cannot support a health score',
+  jina_search: 'page evidence is a fallback read and search evidence is empty or a sample',
   search: 'search evidence is empty or a sample',
   no_page: 'no page evidence',
   none: 'no page or search evidence',
