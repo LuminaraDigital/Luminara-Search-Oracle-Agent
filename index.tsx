@@ -17,10 +17,18 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-// Mount React immediately: zero delay for landing page and application shell
+/** Splash stays up until this commits, so a slow bundle never fades onto an empty root. */
+function ReleaseBootSplash() {
+  React.useEffect(() => {
+    dismissBootSplash(0);
+  }, []);
+  return null;
+}
+
 const root = createRoot(rootElement!);
 root.render(
   <React.StrictMode>
+    <ReleaseBootSplash />
     <ErrorBoundary scope="root">
       <ErrorBoundary scope="app">
         <App />
@@ -28,11 +36,6 @@ root.render(
     </ErrorBoundary>
   </React.StrictMode>
 );
-
-// Dismiss the HTML boot splash smoothly right after the initial React render
-requestAnimationFrame(() => dismissBootSplash(60));
-// Automatic failsafe: guarantee boot splash is dismissed within 1.5 seconds regardless
-setTimeout(() => dismissBootSplash(0), 1500);
 
 // Non-blocking background initialization (Telegram environment + server provider health)
 Promise.allSettled([initTelegram(), loadServerHealth()]).catch((err) => {

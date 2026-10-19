@@ -9,7 +9,8 @@ import { sha256Hex } from './workerUtils';
 /**
  * Unknown paths are served as this shell with HTTP 404. The old inline skip
  * script never ran: CSP script-src is 'self' only. The class is in the first
- * tag, so #boot-splash stays display:none before first paint.
+ * tag, so #boot-splash stays display:none before first paint. The shell CSS
+ * paints a static mark on the empty root so that hide is not a blank flash.
  */
 export function withSkippedBootSplash(html: string): string {
   return html.replace(/<html\b([^>]*)>/i, (full, attrs: string) => {

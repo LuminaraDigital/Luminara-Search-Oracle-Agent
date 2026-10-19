@@ -587,6 +587,9 @@
       100% { transform: translateX(280%); }
     }
     @media (prefers-reduced-motion: reduce) {
+      #boot-splash {
+        transition: none;
+      }
       #boot-splash .boot-glow,
       #boot-splash .boot-mark,
       #boot-splash .boot-fill {
@@ -598,6 +601,12 @@
       }
     }
     html.lx-skip-splash #boot-splash { display: none; }
+    html.lx-skip-splash,
+    html.lx-skip-splash body { background: #000; }
+    html.lx-skip-splash #root:empty {
+      min-height: 100vh;
+      background: #000 url("/boot-mark.webp") center / 88px 88px no-repeat;
+    }
   </style>
 </head>
 <body class="overflow-x-clip">
