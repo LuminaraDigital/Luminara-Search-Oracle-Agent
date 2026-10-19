@@ -4,6 +4,7 @@
  * Pure helpers for unit tests; no CF bindings.
  */
 import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from '../utils/untrustedContent';
+import { withHealthClaimRule } from '../services/audit/healthClaimGuard';
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string };
 
@@ -44,7 +45,7 @@ const CONDUCT_SNIPPET =
 
 /** System prompt for hosted Oracle SSE (fencing + conduct). */
 export function buildOracleSystemPrompt(): string {
-  return `${ORACLE_SYSTEM_CORE}\n${UNTRUSTED_CONTENT_RULE}\n${CONDUCT_SNIPPET}`;
+  return withHealthClaimRule(`${ORACLE_SYSTEM_CORE}\n${UNTRUSTED_CONTENT_RULE}\n${CONDUCT_SNIPPET}`);
 }
 
 /**

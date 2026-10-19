@@ -21,6 +21,7 @@ import { healthChecklist } from '../agentCore/auditEvidenceGate';
 import { entitlementsFor } from '../plans/planEntitlements';
 import { getAnswerDepth } from './answerDepth';
 import type { HostedScoutRail } from './hostedScoutRail';
+import { guardPasteReadyCopy, siteLooksHealthRelated } from './healthClaimGuard';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
   if (crewRunning) return 'Scanning...';
@@ -50,6 +51,10 @@ export function signedInHostedGateOpen(rail: HostedScoutRail): boolean | undefin
   return canUseHostedProviderKey('firecrawl') || canUseHostedProviderKey('tavily');
 }
 
+export type GuardedAuditReport = Awaited<ReturnType<typeof geminiService.generateAuditReport>> & {
+  healthSite: boolean;
+};
+
 export async function generateAuditReportUnlessDegraded(input: {
   isGuest: boolean;
   summary: GuestScoutSummary;
@@ -60,12 +65,12 @@ export async function generateAuditReportUnlessDegraded(input: {
   lenses: AuditLens[];
   scrapedPages?: AuditStateGraphContext['scrapedPages'];
   serpEvidence?: AuditStateGraphContext['serpEvidence'];
-}): Promise<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null> {
+}): Promise<GuardedAuditReport | null> {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
   }
   await ensureHostedProviderReady();
-  return geminiService.generateAuditReport(
+  const report = await geminiService.generateAuditReport(
     input.formattedUrl,
     input.targetFocus,
     input.dna,
@@ -75,6 +80,20 @@ export async function generateAuditReportUnlessDegraded(input: {
       serpEvidence: input.serpEvidence,
     },
   );
+  const pages = input.scrapedPages ?? [];
+  return {
+    ...report,
+    text: guardPasteReadyCopy(report.text).text,
+    unifiedDiff: report.unifiedDiff ? guardPasteReadyCopy(report.unifiedDiff).text : report.unifiedDiff,
+    remediationPayload: report.remediationPayload
+      ? { ...report.remediationPayload, schemaJsonLd: guardPasteReadyCopy(report.remediationPayload.schemaJsonLd).text }
+      : report.remediationPayload,
+    healthSite: siteLooksHealthRelated({
+      domain: input.formattedUrl,
+      title: [input.dna?.name, ...pages.map((page) => page.title)].filter(Boolean).join(' '),
+      content: [input.dna?.mission, input.dna?.usp, ...pages.map((page) => page.rawTextSnippet)].filter(Boolean).join('\n'),
+    }),
+  };
 }
 
 export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {

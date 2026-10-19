@@ -6,6 +6,7 @@ import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
+import { guardPasteReadyCopy } from '../services/audit/healthClaimGuard';
 import { businessDnaPromptBlock, chatRoute, chatRouteReply, filterChatReply, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
 import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
@@ -46,7 +47,6 @@ import {
   type StarsRefundOutcome,
   type StarsSweepSummary,
 } from './starsCharges';
-
 const PREMIUM_ENGINE_LABELS: Record<string, string> = {
   nim: 'NVIDIA NIM',
   ollama: 'Sovereign Ollama',
@@ -868,7 +868,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.billingSentences > 0 || honest.linksRemoved > 0 || honest.secretRequests > 0)) {
       console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan price sentence(s), ${honest.billingSentences} pay-again or account sentence(s), money note ${honest.moneyNote ? 'added' : 'not added'}, ${honest.linksRemoved} link(s), ${honest.secretRequests} request(s) for a secret`);
     }
-    const aiResponse = honest ? honest.text : null;
+    const aiResponse = honest ? guardPasteReadyCopy(honest.text).text : null;
 
     // Dynamic action keyboard (Hermes-like deep actions)
     const replyKeyboard = targetDomain

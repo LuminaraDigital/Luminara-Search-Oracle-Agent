@@ -22,11 +22,11 @@
  *    Only JSON-LD and head tags are set aside as something to paste. Any other JSON, markup
  *    or fenced text is read as prose.
  *
- * The filter is a backstop. The router and the prompt rules are the main controls.
  * Pure functions only: no I/O, no env, no model calls.
  */
 import { ClaimLedger, coerceClaimStatus } from '../services/evidenceBound';
 import type { Claim, ClaimSource } from '../services/evidenceBound';
+import { HEALTH_CLAIM_RULE } from '../services/audit/healthClaimGuard';
 import { UNTRUSTED_CONTENT_RULE, wrapUntrustedContent } from '../utils/untrustedContent';
 
 /** Appended to the Telegram chat system prompt. */
@@ -34,7 +34,7 @@ export const TELEGRAM_CHAT_HONESTY_RULES = `Honesty rules (these override the st
 - Cite or stay silent. State a number about the user's site (visibility, rank, citations, traffic, score, share of voice or any other metric) only when that number was measured and supplied in this conversation. Otherwise say plainly that it has not been measured. Do not estimate or guess one.
 - This chat does not fetch, crawl or audit any website. Do not describe the current state of a site as if you had looked at it.
 - Write plain text. This reply is shown without formatting, so do not use Markdown symbols such as asterisks or underscores.
-- ${UNTRUSTED_CONTENT_RULE}`;
+- ${UNTRUSTED_CONTENT_RULE}\n- ${HEALTH_CLAIM_RULE}`;
 
 // ---------------------------------------------------------------------------------------
 // Business DNA: saved profile text, fenced and capped.
