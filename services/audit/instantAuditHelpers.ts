@@ -30,8 +30,18 @@ export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boo
 
 export type InstantAuditPersistOutcome = 'unmeasured' | 'unsaved';
 
+export const FAILED_CHECK_NOTE =
+  "This check couldn't finish, it didn't count against your free checks.";
+
 /** Save-status line under Instant Audit. Signed-in sessions are never told to sign in. */
-export function instantAuditPersistHint(signedIn: boolean, outcome: InstantAuditPersistOutcome): string {
+export function instantAuditPersistHint(
+  signedIn: boolean,
+  outcome: InstantAuditPersistOutcome,
+  metered = false,
+): string {
+  if (signedIn && outcome === 'unmeasured' && metered) {
+    return `${FAILED_CHECK_NOTE} Retry, or check Settings → provider status.`;
+  }
   if (!signedIn) {
     if (outcome === 'unmeasured') {
       return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Pro / Agency.';

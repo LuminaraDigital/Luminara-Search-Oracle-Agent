@@ -134,6 +134,18 @@ describe('idea scout card schema', () => {
     expect(JSON.stringify(card)).not.toMatch(/\d+(?:\.\d+)?\s*%/);
   });
 
+  it('clips a long idea on a word boundary', () => {
+    const idea = `${'Buyers ask an assistant about sourcing '.repeat(8)}tail`;
+    const card = buildIdeaScoutCard({ idea, niche: null, snapshots: [] });
+    const clipped = card.contentBets[0].hypothesis.match(/problem \("([^"]*)"\)/)?.[1] || '';
+    const clean = idea.replace(/\s+/g, ' ').trim();
+    const body = clipped.slice(0, -1);
+    expect(clipped.endsWith('…')).toBe(true);
+    expect(clean.startsWith(body)).toBe(true);
+    expect(clean[body.length]).toBe(' ');
+    expect(body.endsWith('sourc')).toBe(false);
+  });
+
   it('rejects SERP percentages, score keys, and measured badges', () => {
     const card = baseCard() as unknown as Record<string, unknown>;
     expect(validateIdeaScoutCard({ ...card, serpShare: '42%' }).code).toBe('PERCENT_NOT_ACCEPTED');

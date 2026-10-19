@@ -2,7 +2,7 @@ import type { Env } from './env';
 import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
-import { isUserSubscribed, checkHostedQuota, type QuotaStatus } from './quotaMiddleware';
+import { isUserSubscribed, checkHostedQuota, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
 import { requireApiAccess } from './apiAccess';
 import {
   WORKERS_AI_FALLBACK_PROVIDER,
@@ -425,6 +425,15 @@ export async function proxyProvider(
     }
   }
 
+  const releaseUnmeasured = async (response: Response): Promise<Response> => {
+    if (quotaGate?.meterKey) {
+      const released = await refundMeteredQuota(env, quotaGate);
+      quotaGate = { ...quotaGate, meterKey: undefined };
+      if (released.refunded) response.headers.set('X-Quota-Refunded', '1');
+    }
+    return response;
+  };
+
   const url = new URL(request.url);
   const baseUrl = typeof spec.base === 'function' ? spec.base(env) : spec.base;
   const upstream = new URL(baseUrl + subPath + url.search);
@@ -436,7 +445,7 @@ export async function proxyProvider(
   let body: unknown = undefined;
   if (request.method !== 'GET') {
     const read = await readBody(request, MAX_BODY_BYTES, false);
-    if (!read.ok) return json({ error: read.error }, read.status);
+    if (!read.ok) return releaseUnmeasured(json({ error: read.error }, read.status));
     const text = read.text;
     try {
       body = text ? JSON.parse(text) : {};
@@ -462,14 +471,14 @@ export async function proxyProvider(
       // No hosted key at all. On the groq chat path the fallback may answer, and the reply says so.
       if (isWorkersAiFallbackPath(providerId, subPath) && env.AI && request.method === 'POST' && acceptsFallback(request)) {
         const clamped = clampHostedChatCompletionsBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
         const fallback = await tryWorkersAiFallback(
           env, request, providerId, subPath, userKey, body, { reason: 'provider_not_configured' }, quotaGate,
         );
         if (fallback) return fallback;
       }
-      return json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503);
+      return releaseUnmeasured(json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503));
     }
     if (auth.body !== undefined) body = auth.body;
 
@@ -477,15 +486,15 @@ export async function proxyProvider(
     if (request.method !== 'GET') {
       if (isChatCompletionsPath(providerId, subPath)) {
         const clamped = clampHostedChatCompletionsBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
       } else if (providerId === 'gemini') {
         const clamped = clampHostedGeminiBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
       } else if (providerId === 'firecrawl' && subPath === '/crawl') {
         const clamped = clampHostedFirecrawlCrawlBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
       }
     }
@@ -504,17 +513,17 @@ export async function proxyProvider(
     for (const target of targets) {
       const parsed = safePublicUrl(target);
       if (!parsed) {
-        return json(
+        return releaseUnmeasured(json(
           { error: 'Target URL is invalid or targets a private/local host (SSRF blocked)', code: 'SSRF_BLOCKED' },
           400,
-        );
+        ));
       }
       const isPublic = await resolvesToPublicAddress(parsed.hostname);
       if (!isPublic) {
-        return json(
+        return releaseUnmeasured(json(
           { error: 'Target hostname does not resolve to a public address (SSRF blocked)', code: 'SSRF_BLOCKED' },
           400,
-        );
+        ));
       }
     }
   }
@@ -531,7 +540,7 @@ export async function proxyProvider(
       env, request, providerId, subPath, userKey, body, { reason: 'network_error' }, quotaGate,
     );
     if (fallback) return fallback;
-    return json({ error: `Upstream connection failed: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}` }, 502);
+    return releaseUnmeasured(json({ error: `Upstream connection failed: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}` }, 502));
   }
 
   // Seamless Groq failover if hosted primary key hits billing (402), auth (401), or rate limit (429)
@@ -600,12 +609,12 @@ export async function proxyProvider(
   // If the upstream provider returned 402 Payment Required (e.g. out of credits on Groq/Firecrawl/Tavily),
   // distinguish server hosted key depletion (503) from caller BYOK key depletion (402) so the user's paywall isn't triggered.
   if (!userKey && res.status === 402) {
-    return json({
+    return releaseUnmeasured(json({
       ok: false,
       error: `The hosted ${providerId} service is temporarily unavailable due to upstream provider credit limits. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`,
       code: 'HOSTED_PROVIDER_DEPLETED',
       provider: providerId,
-    }, 503, Object.fromEntries(out.entries()));
+    }, 503, Object.fromEntries(out.entries())));
   }
 
   if (userKey && res.status === 402) {
@@ -647,7 +656,7 @@ export async function proxyProvider(
     delete passed['content-type'];
 
     const keyRefused = res.status === 401;
-    return json({
+    return releaseUnmeasured(json({
       ok: false,
       error: keyRefused
         ? `The hosted ${providerId} service is temporarily unavailable: the provider refused the hosted key. This is not a problem with your sign-in. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`
@@ -655,8 +664,9 @@ export async function proxyProvider(
       code: keyRefused ? 'HOSTED_PROVIDER_KEY_REFUSED' : 'HOSTED_PROVIDER_REQUEST_REFUSED',
       provider: providerId,
       upstreamStatus: res.status,
-    }, 503, passed);
+    }, 503, passed));
   }
 
+  if (!res.ok) return releaseUnmeasured(new Response(res.body, { status: res.status, headers: out }));
   return new Response(res.body, { status: res.status, headers: out });
 }

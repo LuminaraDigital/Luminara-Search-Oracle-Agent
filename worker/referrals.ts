@@ -567,28 +567,30 @@ export async function qualifyReferral(
     }
   }
 
-  const prog = await loadProgression(env, input.accountId);
-  const week = isoWeekKey(new Date(now));
-  if (prog.week_scout_key !== week) {
-    prog.week_scout_key = week;
-    prog.week_scout_count = 0;
-  }
-  let scoutAdvanced = false;
-  if (prog.last_honest_scout_day !== today) {
-    prog.honest_scout_count += 1;
-    prog.last_honest_scout_day = today;
-    prog.week_scout_count += 1;
-    scoutAdvanced = true;
-  } else if (prog.week_scout_count < 2) {
-    // The second honest run of this week can land on the same UTC day. Later runs are once per day.
-    prog.week_scout_count += 1;
-    if (prog.honest_scout_count < 2) prog.honest_scout_count += 1;
-    scoutAdvanced = true;
-  }
-  const missionsCompleted = await completedMissionCount(env, input.accountId);
-  await saveProgression(env, input.accountId, prog, missionsCompleted);
-  if (scoutAdvanced && prog.week_scout_count >= 2) {
-    await markMissionComplete(env, input.accountId, 'rescout');
+  if (assessed.measurementStatus === 'measured') {
+    const prog = await loadProgression(env, input.accountId);
+    const week = isoWeekKey(new Date(now));
+    if (prog.week_scout_key !== week) {
+      prog.week_scout_key = week;
+      prog.week_scout_count = 0;
+    }
+    let scoutAdvanced = false;
+    if (prog.last_honest_scout_day !== today) {
+      prog.honest_scout_count += 1;
+      prog.last_honest_scout_day = today;
+      prog.week_scout_count += 1;
+      scoutAdvanced = true;
+    } else if (prog.week_scout_count < 2) {
+      // The second honest run of this week can land on the same UTC day. Later runs are once per day.
+      prog.week_scout_count += 1;
+      if (prog.honest_scout_count < 2) prog.honest_scout_count += 1;
+      scoutAdvanced = true;
+    }
+    const missionsCompleted = await completedMissionCount(env, input.accountId);
+    await saveProgression(env, input.accountId, prog, missionsCompleted);
+    if (scoutAdvanced && prog.week_scout_count >= 2) {
+      await markMissionComplete(env, input.accountId, 'rescout');
+    }
   }
 
   return {

@@ -3,6 +3,9 @@
  * Telegram initData and signed-in accounts use the existing daily free meter.
  * Anonymous web stays on BYOK so hosted keys cannot be drained without identity.
  */
+import { configService } from '../configService';
+import { draftPersistenceService, DRAFT_KEYS } from '../state/draftPersistenceService';
+
 export type HostedScoutRail = 'tma_hosted' | 'signed_in_hosted' | 'byok_or_signin';
 
 /** Homepage probe is crawl files only. A full audit is a different product. */
@@ -14,7 +17,29 @@ export const GUEST_REPORT_NOTE =
 
 export const GUEST_FULL_AUDIT_CTA = 'Sign in to run a full audit';
 
-export function requestGuestFullAuditSignIn(): void {
+const GUEST_AUDIT_KEY_STORES = [
+  'luminara_tavily_key',
+  'luminara_firecrawl_key',
+  'luminara_groq_key',
+  'luminara_api_key',
+  'luminara_openrouter_key',
+  'luminara_nvidia_key',
+  'luminara_ollama_key',
+] as const;
+
+/** Browser-saved vendor keys only. The hosted "proxy" sentinel is not a guest key. */
+export function guestHasOwnAuditKeys(): boolean {
+  return GUEST_AUDIT_KEY_STORES.some((storageKey) => configService.getByokKey(storageKey).length > 0);
+}
+
+/** A guest full audit with no own keys has nowhere to run. Send them to sign-in. */
+export function guestNeedsFullAuditSignIn(rail: HostedScoutRail): boolean {
+  return rail === 'byok_or_signin' && !guestHasOwnAuditKeys();
+}
+
+export function requestGuestFullAuditSignIn(domain?: string): void {
+  const trimmed = domain?.trim();
+  if (trimmed) draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, trimmed);
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('luminara-open-login', { detail: { mode: 'signin' } }));
 }

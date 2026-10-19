@@ -7,6 +7,7 @@ import { McpUsageStrip } from '../McpUsageStrip';
 import { RouterTelemetryBoard } from '../RouterTelemetryBoard';
 import { Button } from '../../ui/Button';
 import { autoLockService, type AutoLockTimeout } from '../../../services/security/autoLockService';
+import { labsToggleVisible } from '../../../services/ui/labsAccess';
 
 export interface ApiKeyOverviewTabProps {
   statuses: ProviderStatus[];
@@ -107,7 +108,7 @@ export const ApiKeyOverviewTab: React.FC<ApiKeyOverviewTabProps> = ({
         </div>
       </div>
 
-      <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
+      {labsToggleVisible() && <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
         <span className="text-xs text-gray-300">Show developer tools (engine status, themes, Labs previews)</span>
         <input
           type="checkbox"
@@ -118,7 +119,7 @@ export const ApiKeyOverviewTab: React.FC<ApiKeyOverviewTabProps> = ({
           }}
           className="accent-gold w-4 h-4"
         />
-      </label>
+      </label>}
 
       <DesktopUpdatesPanel />
       <McpUsageStrip />
