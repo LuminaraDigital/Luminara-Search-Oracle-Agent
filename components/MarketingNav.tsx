@@ -100,7 +100,7 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({
                   type="button"
                   onClick={link.onClick}
                   aria-current={link.current ? 'page' : undefined}
-                  className={`whitespace-nowrap text-sm hover:text-[var(--color-ink)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded py-1 ${
+                  className={`inline-flex items-center justify-center whitespace-nowrap text-sm hover:text-[var(--color-ink)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded min-h-6 min-w-6 px-1.5 py-1 ${
                     link.current ? 'text-[var(--gold-light)]' : 'text-ink/75'
                   }`}
                 >

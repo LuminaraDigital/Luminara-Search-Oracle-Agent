@@ -149,7 +149,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         primaryCta={chrome.primaryCta}
       />
 
-      <main id="main">
+      <main id="main" tabIndex={-1} className="outline-none">
       {/* Story sequence: the sticky globe stage sits behind hero, statement and chapters. */}
       <div className="relative">
         <SpaceStage anchors={anchorsRef} onChapterChange={setChapter} />
@@ -399,7 +399,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               </p>
             </div>
             <div className="flex min-w-0 w-full max-w-xl items-center gap-2 rounded-2xl border border-[var(--color-rule)] bg-black/50 py-1.5 pl-4 pr-1.5">
-              <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-[var(--color-ink)]">{MCP_COMMAND}</code>
+              <code tabIndex={0} className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded font-mono text-xs text-[var(--color-ink)] outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold-light)]">{MCP_COMMAND}</code>
               <button type="button" onClick={copyMcp} className="lx-btn lx-btn-ghost !min-h-8 shrink-0 !px-3.5 !py-1.5 text-xs">
                 {copied ? 'Copied' : 'Copy'}
               </button>

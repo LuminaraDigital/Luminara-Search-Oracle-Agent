@@ -55,7 +55,7 @@ export const VerifyAttestationView: React.FC<{ onBack?: () => void }> = ({ onBac
           </Button>
         )}
       </header>
-      <main className="max-w-xl mx-auto px-4 py-8 space-y-4">
+      <main id="main" tabIndex={-1} className="max-w-xl mx-auto px-4 py-8 space-y-4 outline-none">
         {loading && <VerificationCardSkeleton title="Looking up digest..." />}
         {error && (
           <p className="text-sm text-danger-400 font-mono" role="alert">

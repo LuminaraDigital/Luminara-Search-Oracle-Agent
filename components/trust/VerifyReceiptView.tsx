@@ -243,7 +243,7 @@ export const VerifyReceiptView: React.FC<{ onBack?: () => void }> = ({ onBack })
         )}
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-8 space-y-5">
+      <main id="main" tabIndex={-1} className="max-w-2xl mx-auto px-4 py-8 space-y-5 outline-none">
         {loading && <VerificationCardSkeleton title="Loading receipt..." />}
         {error && (
           <p className="text-sm text-gray-300" role="alert">

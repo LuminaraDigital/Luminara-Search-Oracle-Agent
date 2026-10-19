@@ -51,6 +51,11 @@ export interface GlobeTarget {
   starShift: number;
 }
 
+/** The globe keeps spinning only when the visitor allows motion. */
+export function globeKeepsSpinning(reducedMotion: boolean): boolean {
+  return !reducedMotion;
+}
+
 export interface GlobeRendererOptions {
   reducedMotion: boolean;
   lowPower: boolean;
@@ -740,6 +745,10 @@ export function createGlobeRenderer(
   }
 
   function schedule(): void {
+    if (!globeKeepsSpinning(opts.reducedMotion)) {
+      if (ready && visible && !destroyed && !lost) render(0);
+      return;
+    }
     if (!raf && visible && !destroyed && !lost && document.visibilityState === 'visible') {
       raf = requestAnimationFrame(frame);
     }

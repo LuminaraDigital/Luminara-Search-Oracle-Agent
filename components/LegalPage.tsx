@@ -24,7 +24,7 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
     return bindTelegramBackButton(onBack);
   }, [onBack]);
   return (
-    <div className="min-h-screen bg-black text-gray-300">
+    <main id="main" tabIndex={-1} className="min-h-screen bg-black text-gray-300 outline-none">
       <div className="max-w-3xl mx-auto px-6 py-12">
         <button
           type="button"
@@ -368,6 +368,6 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 };
