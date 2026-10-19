@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ReportFocus, BusinessDNA } from '../../types';
-import { geminiService } from '../../services/geminiService';
 import { AUDIT_LENSES, inferLenses, type AuditLens } from '../../services/skills/seoPlaybooks';
 import { contextGraphService } from '../../services/contextGraph/contextGraphService';
 import { freeLlmModalitiesService } from '../../services/freellm/modalitiesService';
@@ -41,6 +40,7 @@ import {
   instantAuditPrimaryLabel,
   instantAuditPersistHint,
   type InstantAuditPersistOutcome,
+  type GuardedAuditReport,
   signedInHostedGateOpen,
   generateAuditReportUnlessDegraded,
   summaryFromCrew,
@@ -106,7 +106,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   }, [initialFocus]);
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState('');
-  const [report, setReport] = useState<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null>(null);
+  const [report, setReport] = useState<GuardedAuditReport | null>(null);
   const [boardFindings, setBoardFindings] = useState<
     import('../../services/audit/findingBoardService').BoardFinding[]
   >([]);
@@ -948,6 +948,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             sourceGraph={report.sourceGraph}
             enterpriseTrust={report.enterpriseTrust}
             rlmTrajectory={report.rlmTrajectory}
+            healthSite={report.healthSite}
             boardFindings={boardFindings}
           />
         </div>
