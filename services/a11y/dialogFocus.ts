@@ -9,6 +9,8 @@ function canFocus(value: EventTarget | Element | null): value is HTMLElement {
 export interface DialogFrame {
   dialog: HTMLElement;
   trigger: HTMLElement | null;
+  /** True once the dialog's text field has taken focus, so later edits do not steal it. */
+  settled: boolean;
 }
 
 export interface DialogFocusState {
@@ -34,9 +36,14 @@ function openDialogs(doc: Document): HTMLElement[] {
   return Array.from(doc.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'));
 }
 
+const FIELD = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([disabled]), textarea:not([disabled]), select:not([disabled])';
+
+function preferredField(dialog: HTMLElement): HTMLElement | null {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(FIELD)).find(shown) ?? null;
+}
+
 export function preferredFocus(dialog: HTMLElement): HTMLElement | null {
-  const field = Array.from(dialog.querySelectorAll<HTMLElement>('input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])')).find(shown);
-  return field ?? listFocusable(dialog)[0] ?? null;
+  return preferredField(dialog) ?? listFocusable(dialog)[0] ?? null;
 }
 
 function closer(dialog: HTMLElement): HTMLElement | null {
@@ -45,14 +52,15 @@ function closer(dialog: HTMLElement): HTMLElement | null {
   return listFocusable(dialog).find((el) => /^(close|cancel|dismiss)$/i.test((el.textContent || '').trim())) ?? null;
 }
 
-function triggerFor(doc: Document, dialog: HTMLElement): HTMLElement | null {
+function triggerFor(doc: Document, dialog: HTMLElement, fallback: HTMLElement | null): HTMLElement | null {
   const prev = doc.activeElement;
-  if (!canFocus(prev) || prev === doc.body || dialog.contains(prev)) return null;
-  return prev;
+  if (canFocus(prev) && prev !== doc.body && !dialog.contains(prev)) return prev;
+  if (fallback && fallback.isConnected && !dialog.contains(fallback)) return fallback;
+  return null;
 }
 
 /** Move focus into a new dialog, and back to the control that opened it when it closes. */
-export function syncDialogFocus(doc: Document, state: DialogFocusState): void {
+export function syncDialogFocus(doc: Document, state: DialogFocusState, fallback: HTMLElement | null = null): void {
   const live = new Set(openDialogs(doc));
   const closed: DialogFrame[] = [];
   state.frames = state.frames.filter((frame) => {
@@ -67,9 +75,20 @@ export function syncDialogFocus(doc: Document, state: DialogFocusState): void {
     else if (parent) preferredFocus(parent.dialog)?.focus();
   }
   for (const dialog of live) {
-    if (state.frames.some((frame) => frame.dialog === dialog)) continue;
-    state.frames.push({ dialog, trigger: triggerFor(doc, dialog) });
-    preferredFocus(dialog)?.focus();
+    let frame = state.frames.find((item) => item.dialog === dialog);
+    const created = !frame;
+    if (!frame) {
+      frame = { dialog, trigger: triggerFor(doc, dialog, fallback), settled: false };
+      state.frames.push(frame);
+    }
+    if (frame.settled) continue;
+    const field = preferredField(dialog);
+    if (field) {
+      frame.settled = true;
+      if (doc.activeElement !== field) field.focus();
+    } else if (created) {
+      listFocusable(dialog)[0]?.focus();
+    }
   }
 }
 
@@ -112,13 +131,20 @@ export function onDialogKey(doc: Document, event: KeyboardEvent): void {
 
 export function installDialogFocus(doc: Document = document): () => void {
   const state = createDialogFocusState();
-  const sync = () => syncDialogFocus(doc, state);
+  let pending: HTMLElement | null = null;
+  const remember = (event: FocusEvent) => {
+    if (openDialogs(doc).length > 0) return;
+    if (canFocus(event.target) && event.target !== doc.body) pending = event.target;
+  };
+  const sync = () => syncDialogFocus(doc, state, pending);
   const onKey = (event: KeyboardEvent) => onDialogKey(doc, event);
+  doc.addEventListener('focusin', remember, true);
   doc.addEventListener('keydown', onKey, true);
   const observer = new MutationObserver(sync);
   if (doc.body) observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role', 'aria-modal'] });
   sync();
   return () => {
+    doc.removeEventListener('focusin', remember, true);
     doc.removeEventListener('keydown', onKey, true);
     observer.disconnect();
   };

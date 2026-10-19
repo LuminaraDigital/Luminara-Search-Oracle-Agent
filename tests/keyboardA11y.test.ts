@@ -119,6 +119,32 @@ describe('dialog focus', () => {
     syncDialogFocus(doc as unknown as Document, state);
     expect(doc.activeElement).toBe(trigger);
   });
+
+  it('keeps the outside trigger when focus is already inside, and waits for the text field', () => {
+    const trigger = make('button', {}, 'Sign in');
+    const close = make('button', { 'aria-label': 'Close login dialog' }, 'x');
+    const dialog = make('div', { role: 'dialog', 'aria-modal': 'true' });
+    dialog.children.push(close);
+    doc.body.children = [trigger, dialog];
+    doc.activeElement = close;
+
+    const state = createDialogFocusState();
+    syncDialogFocus(doc as unknown as Document, state, trigger);
+    expect(doc.activeElement).toBe(close);
+
+    const email = make('input', { type: 'email' });
+    dialog.children.push(email);
+    syncDialogFocus(doc as unknown as Document, state, trigger);
+    expect(doc.activeElement).toBe(email);
+
+    doc.activeElement = close;
+    syncDialogFocus(doc as unknown as Document, state, trigger);
+    expect(doc.activeElement).toBe(close);
+
+    doc.body.children = [trigger];
+    syncDialogFocus(doc as unknown as Document, state, trigger);
+    expect(doc.activeElement).toBe(trigger);
+  });
 });
 
 describe('skip link and reduced motion', () => {
