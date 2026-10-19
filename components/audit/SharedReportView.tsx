@@ -79,7 +79,7 @@ export const SharedReportView: React.FC<{
         )}
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main id="main" tabIndex={-1} className="max-w-4xl mx-auto px-4 py-8 outline-none">
         {loading && <AuditReportSkeleton message="Loading shared report..." />}
 
         {!loading && needsPassword && (

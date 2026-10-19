@@ -343,7 +343,7 @@ export const AuthPanel: React.FC<{
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-xs">
-          <label className="inline-flex items-center gap-2.5 cursor-pointer select-none text-[var(--color-ink-2)] hover:text-[var(--color-ink)] transition-colors">
+          <label className="inline-flex min-h-6 items-center gap-2.5 cursor-pointer select-none text-[var(--color-ink-2)] hover:text-[var(--color-ink)] transition-colors">
             <input
               type="checkbox"
               checked={keepSignedIn}

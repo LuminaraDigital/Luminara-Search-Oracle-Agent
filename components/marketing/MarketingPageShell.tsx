@@ -117,7 +117,9 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
         secondaryCta={chrome.secondaryCta}
       />
       <main
-        className={`relative z-10 mx-auto px-5 pb-24 pt-32 sm:px-8 sm:pb-32 sm:pt-44 ${wide ? 'max-w-6xl' : 'max-w-5xl'}`}
+        id="main"
+        tabIndex={-1}
+        className={`relative z-10 mx-auto px-5 pb-24 pt-32 sm:px-8 sm:pb-32 sm:pt-44 outline-none ${wide ? 'max-w-6xl' : 'max-w-5xl'}`}
       >
         {children}
       </main>

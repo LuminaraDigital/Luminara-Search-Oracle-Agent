@@ -12,7 +12,7 @@ export const NotFoundPage: React.FC<Props> = ({ onHome }) => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-black text-gray-300 flex flex-col items-center justify-center px-6 py-12 selection:bg-gold/30">
+    <main id="main" tabIndex={-1} className="min-h-screen bg-black text-gray-300 flex flex-col items-center justify-center px-6 py-12 selection:bg-gold/30 outline-none">
       <div className="max-w-md w-full text-center space-y-6">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/10 text-gold mb-2">
           <span className="text-2xl font-mono font-bold">404</span>
@@ -33,6 +33,6 @@ export const NotFoundPage: React.FC<Props> = ({ onHome }) => {
           </button>
         </div>
       </div>
-    </div>
+    </main>
   );
 };

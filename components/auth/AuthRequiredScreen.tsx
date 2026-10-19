@@ -85,7 +85,7 @@ export const AuthRequiredScreen: React.FC<{
 
   if (auth.loading) {
     return (
-      <div className={`${isModal ? 'fixed inset-0 z-[80] bg-black/95' : 'min-h-[100dvh] bg-black'} text-ink flex items-center justify-center px-4 relative overflow-hidden`}>
+      <div id={isModal ? undefined : 'main'} tabIndex={isModal ? undefined : -1} className={`${isModal ? 'fixed inset-0 z-[80] bg-black/95' : 'min-h-[100dvh] bg-black outline-none'} text-ink flex items-center justify-center px-4 relative overflow-hidden`}>
         <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
         <BrandLoader caption={inTelegram ? 'Opening your Mini App session' : 'Verifying your account session'} />
       </div>
@@ -163,7 +163,6 @@ export const AuthRequiredScreen: React.FC<{
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
-        aria-label="Account access"
         className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/95 overflow-y-auto overflow-x-hidden"
       >
         <div aria-hidden className="lx-stars pointer-events-none fixed inset-0 opacity-70" />
@@ -171,11 +170,11 @@ export const AuthRequiredScreen: React.FC<{
         {tgContent}
       </div>
     ) : (
-      <div className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-10 relative overflow-hidden">
+      <main id="main" tabIndex={-1} className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-10 relative overflow-hidden outline-none">
         <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
         <div aria-hidden className="lx-horizon pointer-events-none top-[82%]" />
         {tgContent}
-      </div>
+      </main>
     );
   }
 
@@ -279,7 +278,6 @@ export const AuthRequiredScreen: React.FC<{
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
-        aria-label="Account access"
         className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/90 overflow-y-auto overflow-x-hidden"
       >
         <div aria-hidden className="lx-stars pointer-events-none fixed inset-0 opacity-70" />
@@ -290,10 +288,10 @@ export const AuthRequiredScreen: React.FC<{
   }
 
   return (
-    <div className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-8 sm:py-10 relative overflow-hidden">
+    <main id="main" tabIndex={-1} className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-8 sm:py-10 relative overflow-hidden outline-none">
       <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
       <div aria-hidden className="lx-horizon pointer-events-none top-[84%]" />
       {webSplitCard}
-    </div>
+    </main>
   );
 };

@@ -607,9 +607,29 @@
       min-height: 100vh;
       background: #000 url("/boot-mark.webp") center / 88px 88px no-repeat;
     }
+    .skip-link {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      z-index: 2147483001;
+      padding: 0.55rem 1rem;
+      min-height: 24px;
+      min-width: 24px;
+      border-radius: 999px;
+      background: #000;
+      color: #FCF6BA;
+      border: 1px solid #BF953F;
+      font: 600 13px/1.2 system-ui, sans-serif;
+      text-decoration: none;
+      transform: translateY(-160%);
+    }
+    .skip-link:focus {
+      transform: none;
+    }
   </style>
 </head>
 <body class="overflow-x-clip">
+  <a class="skip-link" href="#main">Skip to content</a>
   <div id="boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Loading Luminara Suite" title="Click to skip">
     <div class="boot-glow" aria-hidden="true"></div>
     <div class="boot-mark">

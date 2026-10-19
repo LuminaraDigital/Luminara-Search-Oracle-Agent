@@ -1532,7 +1532,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main App Container - min-h-0 ensures flex child heights and scrollbars calculate cleanly */}
-      <main className="flex-1 min-h-0 relative z-10 flex flex-col overflow-y-auto">
+      <main id="main" tabIndex={-1} className="flex-1 min-h-0 relative z-10 flex flex-col overflow-y-auto outline-none">
         {LAB_VIEWS.has(view) && (
           <div className="shrink-0 px-4 py-2 text-center text-[10px] uppercase tracking-[0.25em] font-bold bg-warning-500/10 border-b border-warning-500/20 text-warning-300">
             Labs preview · figures on this screen are simulated for demonstration, not measured
