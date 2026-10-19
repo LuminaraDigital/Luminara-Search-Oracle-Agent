@@ -36,6 +36,13 @@ Upstream credits individual contributors for several skills (seo-cluster by Lutf
 - What we use: `SKILL.md` only.
 - Changes: none. The skill sets `disable-model-invocation: true`. `.cursor/rules/default-code-standards.mdc` names it and requires the review before a pull request is opened.
 
+## Outfit and Instrument Serif
+
+- Source: https://fonts.google.com/specimen/Outfit and https://fonts.google.com/specimen/Instrument+Serif
+- Copyright: Outfit by Rodrigo Fuenzalida. Instrument Serif by Rodrigo Fuenzalida, licensed under the SIL Open Font License 1.1.
+- What we use: the latin woff2 files in `public/fonts/` (`outfit-latin.woff2`, `instrument-serif-latin.woff2`, `instrument-serif-italic-latin.woff2`), self-hosted so the marketing pages do not request Google Fonts CSS.
+- Changes: subset files as published by Google Fonts for the latin unicode range. `font-display: swap`.
+
 ## Self-hosted helper services (not bundled; used over HTTP only)
 
 - **LanguageTool** (https://languagetool.org, https://github.com/languagetool-org/languagetool) — LGPL-2.1. Runs as a separate container (`erikvl87/languagetool`) started by `docker-compose.yml`; the app sends text to its `/v2/check` endpoint for the "Writing check" feature. No LanguageTool code is included in this repository.

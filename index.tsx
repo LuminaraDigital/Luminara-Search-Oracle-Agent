@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { initTelegram } from './services/telegram/tma';
 import { loadServerHealth } from './services/apiClient';
 import { dismissBootSplash } from './services/intro/bootSplash';
+import { bindFirstPaintDismissal } from './services/marketing/releaseFirstPaint';
 import { installDialogFocus } from './services/a11y/dialogFocus';
 import { initBrowserSentry } from './services/observability/sentryBrowser';
 import './tokens.css';
@@ -13,6 +14,7 @@ import './index.css';
 
 initBrowserSentry();
 installDialogFocus();
+bindFirstPaintDismissal();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

@@ -1,3 +1,4 @@
+import { marketingHeroForPath, type MarketingHeroCopy } from '../services/marketing/marketingHeroCopy';
 import {
   DEFAULT_OG_IMAGE,
   MARKETING_ORIGIN,
@@ -12,13 +13,59 @@ import { sha256Hex } from './workerUtils';
  * tag, so #boot-splash stays display:none before first paint. The shell CSS
  * paints a static mark on the empty root so that hide is not a blank flash.
  */
-export function withSkippedBootSplash(html: string): string {
+function addHtmlClass(html: string, className: string): string {
+  const present = new RegExp(`(?:^|\\s)class="[^"]*\\b${className}\\b`);
   return html.replace(/<html\b([^>]*)>/i, (full, attrs: string) => {
     const rest = attrs ?? '';
-    if (/(?:^|\s)class="[^"]*\blx-skip-splash\b/.test(rest)) return full;
-    if (/class="/.test(rest)) return `<html${rest.replace('class="', 'class="lx-skip-splash ')}>`;
-    return `<html class="lx-skip-splash"${rest}>`;
+    if (present.test(rest)) return full;
+    if (/class="/.test(rest)) return `<html${rest.replace('class="', `class="${className} `)}>`;
+    return `<html class="${className}"${rest}>`;
   });
+}
+
+export function withSkippedBootSplash(html: string): string {
+  return addHtmlClass(html, 'lx-skip-splash');
+}
+
+function firstPaintBlock(hero: MarketingHeroCopy): string {
+  const layout = hero.layout === 'home' ? 'lx-fp-home' : 'lx-fp-pricing';
+  const titleClass = hero.layout === 'home' ? 'lx-display lx-h1' : 'lx-display lx-h2';
+  const title = hero.layout === 'home'
+    ? `<span class="lx-fp-line">${escapeHtml(hero.titleLead)}</span><span class="lx-fp-line lx-fp-em lx-gold-text">${escapeHtml(hero.titleEm)}</span>`
+    : `${escapeHtml(hero.titleLead)} <span class="lx-fp-em lx-gold-text">${escapeHtml(hero.titleEm)}</span>`;
+  return `<div id="lx-first-paint" class="${layout}" data-path="${hero.path}"><p class="lx-eyebrow">${escapeHtml(hero.eyebrow)}</p><h1 class="${titleClass}">${title}</h1><span class="lx-rule" aria-hidden="true"></span><p class="lx-lede">${escapeHtml(hero.lede)}</p></div>`;
+}
+
+function injectFirstPaint(html: string, hero: MarketingHeroCopy): string {
+  if (html.includes('id="lx-first-paint"')) return html;
+  const block = firstPaintBlock(hero);
+  if (html.includes('<div id="root">')) return html.replace('<div id="root">', `${block}\n  <div id="root">`);
+  return html.replace(/<\/body>/i, `${block}\n</body>`);
+}
+
+/** Stylesheet links block first paint. Preload them; public/promote-css.js applies them. */
+export function deferRenderBlockingCss(html: string): string {
+  return html.replace(/<link\b[^>]*>/gi, (tag) => {
+    if (!/\brel="stylesheet"/i.test(tag)) return tag;
+    const href = tag.match(/\bhref="([^"]+\.css)"/i);
+    if (!href || /fonts\.googleapis\.com/i.test(href[1])) return tag;
+    const cross = /\bcrossorigin\b/i.test(tag) ? ' crossorigin' : '';
+    return `<link rel="preload" as="style" href="${href[1]}" data-defer-css${cross}><noscript><link rel="stylesheet" href="${href[1]}"${cross}></noscript>`;
+  });
+}
+
+/**
+ * Meta plus, on / and /pricing, a visible hero so the lede paints before JS.
+ * shortcut: /real-estate-ready is not a route, so it gets no hero.
+ */
+export function applyMarketingDocument(html: string, page: MarketingShellMeta): string {
+  let out = injectMarketingMeta(html, page);
+  const hero = marketingHeroForPath(page.path);
+  if (!hero) return out;
+  out = addHtmlClass(withSkippedBootSplash(out), 'lx-fp-live');
+  out = injectFirstPaint(out, hero);
+  out = deferRenderBlockingCss(out);
+  return out.replace(/<img\b[^>]*\bsrc="\/boot-mark\.webp"[^>]*>/i, '');
 }
 
 export function escapeHtml(value: string): string {
@@ -173,7 +220,7 @@ export async function maybeServeMarketingHtml(
     return new Response(null, { status: 200, headers });
   }
 
-  const html = injectMarketingMeta(await assetRes.text(), page);
+  const html = applyMarketingDocument(await assetRes.text(), page);
   return new Response(html, { status: 200, headers });
 }
 

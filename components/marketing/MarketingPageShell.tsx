@@ -54,10 +54,10 @@ export const MarketingPageHeader: React.FC<{
   children?: React.ReactNode;
 }> = ({ eyebrow, title, lede, children }) => (
   <header className="relative mx-auto max-w-4xl text-center">
-    <p className="lx-eyebrow lx-enter-rise lx-d1">{eyebrow}</p>
-    <h1 className="lx-display lx-h2 lx-enter-rise lx-d2 mt-6 [overflow-wrap:anywhere]">{title}</h1>
-    <span aria-hidden className="lx-rule lx-enter-draw lx-d3 mx-auto mt-8" />
-    {lede && <p className="lx-lede lx-enter-rise lx-d3 mx-auto mt-7 max-w-2xl">{lede}</p>}
+    <p className="lx-eyebrow lx-enter-rise lx-d1 lx-fp-text">{eyebrow}</p>
+    <h1 className="lx-display lx-h2 lx-enter-rise lx-d2 mt-6 [overflow-wrap:anywhere] lx-fp-text">{title}</h1>
+    <span aria-hidden className="lx-rule lx-enter-draw lx-d3 mx-auto mt-8 lx-fp-text" />
+    {lede && <p className="lx-lede lx-enter-rise lx-d3 mx-auto mt-7 max-w-2xl lx-fp-text">{lede}</p>}
     {children && (
       <div className="lx-enter-rise lx-d4 mt-9 flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
         {children}

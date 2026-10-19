@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
   <title>AI visibility audit | Luminara Suite</title>
   <meta name="description" content="See if AI recommends your business, and fix it. Every plan checks your site and live web search for the questions your buyers ask. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. No invented scores.">
   <meta name="theme-color" content="#0a0a0a">
@@ -53,10 +52,33 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preload" href="/fonts/outfit-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/instrument-serif-latin.woff2" as="font" type="font/woff2" crossorigin>
   <style>
+    @font-face {
+      font-family: 'Outfit';
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: swap;
+      src: url('/fonts/outfit-latin.woff2') format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: 'Instrument Serif';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url('/fonts/instrument-serif-latin.woff2') format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: 'Instrument Serif';
+      font-style: italic;
+      font-weight: 400;
+      font-display: swap;
+      src: url('/fonts/instrument-serif-italic-latin.woff2') format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
     :root {
       --gold: #BF953F;
       --gold-light: #FCF6BA;
@@ -64,8 +86,14 @@
       --surface: #000000;
       --surface-1: #0a0a0a;
       --ink: #f1f1f1;
+      /* shortcut: mirrors tokens.css so the hero can paint before the deferred bundle */
+      --color-ink: oklch(96.8% 0.004 90);
+      --color-accent: oklch(69.3% 0.114 82.6);
+      --font-serif: 'Instrument Serif', Georgia, serif;
+      --font-body: 'Outfit', ui-sans-serif, system-ui, sans-serif;
     }
     body {
+      margin: 0;
       font-family: 'Outfit', sans-serif;
       background-color: #000000;
       color: #f1f1f1;
@@ -601,6 +629,79 @@
       }
     }
     html.lx-skip-splash #boot-splash { display: none; }
+    html.lx-fp-live .lx-fp-text { visibility: hidden; }
+    html.lx-fp-live #root:empty {
+      background: #000;
+      min-height: 100vh;
+    }
+    #lx-first-paint {
+      position: absolute;
+      z-index: 30;
+      top: 0;
+      left: 0;
+      right: 0;
+      text-align: center;
+      pointer-events: none;
+    }
+    #lx-first-paint .lx-fp-line { display: block; }
+    #lx-first-paint .lx-fp-em { font-style: italic; padding-right: 0.08em; }
+    .lx-fp-home {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: max(6.5rem, 13svh) 1.25rem 0;
+    }
+    .lx-fp-pricing { padding: 8rem 1.25rem 0; }
+    @media (min-width: 640px) {
+      .lx-fp-home { padding-left: 2rem; padding-right: 2rem; }
+      .lx-fp-pricing { padding: 11rem 2rem 0; }
+    }
+    .lx-eyebrow {
+      font-family: var(--font-body);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.32em;
+      text-transform: uppercase;
+      color: var(--gold-light);
+    }
+    .lx-display {
+      font-family: var(--font-serif);
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      line-height: 0.98;
+      color: var(--color-ink);
+      text-wrap: balance;
+    }
+    .lx-h1 { font-size: clamp(3rem, 7.6vw, 6.9rem); }
+    .lx-h2 { font-size: clamp(2.4rem, 5.6vw, 5rem); line-height: 1.02; }
+    .lx-gold-text {
+      background: linear-gradient(180deg, var(--gold-light) 0%, var(--color-accent) 70%, var(--gold-dark) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .lx-lede {
+      font-size: clamp(1.05rem, 1.4vw, 1.25rem);
+      line-height: 1.6;
+      color: color-mix(in oklch, var(--color-ink) 82%, transparent);
+      text-wrap: pretty;
+    }
+    .lx-rule {
+      display: block;
+      width: 72px;
+      height: 2px;
+      border-radius: 2px;
+      background: linear-gradient(90deg, transparent, var(--color-accent), var(--gold-light), var(--color-accent), transparent);
+    }
+    .lx-fp-home .lx-display { margin-top: 1.5rem; max-width: 64rem; }
+    .lx-fp-home .lx-rule { margin-top: 2rem; }
+    .lx-fp-home .lx-lede { width: min(42rem, 100%); margin-top: 1.75rem; }
+    .lx-fp-pricing .lx-display { margin-top: 1.5rem; overflow-wrap: anywhere; }
+    .lx-fp-pricing .lx-rule { margin: 2rem auto 0; }
+    .lx-fp-pricing .lx-lede { max-width: 42rem; margin: 1.75rem auto 0; }
+    @media (prefers-reduced-motion: reduce) {
+      #lx-first-paint { animation: none; transition: none; }
+    }
     html.lx-skip-splash,
     html.lx-skip-splash body { background: #000; }
     html.lx-skip-splash #root:empty {
@@ -640,7 +741,8 @@
     <div class="boot-track" aria-hidden="true"><div class="boot-fill"></div></div>
   </div>
   <div id="root"></div>
-  <script src="/boot-splash.js"></script>
+  <script defer src="/boot-splash.js"></script>
+  <script defer src="/promote-css.js"></script>
   <script type="module" src="./index.tsx"></script>
 </body>
 </html>
