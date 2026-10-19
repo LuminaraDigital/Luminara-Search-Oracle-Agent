@@ -2,7 +2,10 @@
 
 import { PAID_PLAN_PRICES } from '../../components/paywall/planPrices';
 import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
+import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage';
 import { buildFaqPageJsonLd } from './marketingFaqContent';
+
+const HOME_META = `${HONEST_VISIBILITY_PROMISE} No invented scores.`;
 
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
 export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/og-image.png`;
@@ -38,8 +41,7 @@ const SOFTWARE_NODE = {
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web, Windows',
   url: MARKETING_ORIGIN,
-  description:
-    'Audits whether AI search recommends your brand across Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix first.',
+  description: HOME_META,
   publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
 };
 // No Offer price here. The page sells Telegram Stars, which are not an ISO 4217 currency, and card checkout is off.
@@ -87,19 +89,18 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/': {
     path: '/',
     title: 'AI visibility audit | Luminara Suite',
-    description:
-      'Find out whether AI search recommends your business. Audit Google, AI Overviews, ChatGPT and Perplexity, then get a prioritised action plan. No invented scores.',
+    description: HOME_META,
     jsonLd: graph(
       '/',
       'Luminara Suite',
-      'AI visibility audits across Google, AI Overviews, ChatGPT and Perplexity with a prioritised action plan.',
+      HOME_META,
       true,
       [buildFaqPageJsonLd()],
     ),
     crawlerBody: `
 <section>
   <h1>Be the answer AI gives.</h1>
-  <p>Customers now ask ChatGPT, Perplexity, Google and AI Overviews who to trust. Luminara Suite checks whether those answers name your business, then gives you the one fix to ship next.</p>
+  <p>${HONEST_VISIBILITY_PROMISE}</p>
   <p>Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
@@ -120,7 +121,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/methodology',
     title: 'Methodology | Luminara Suite',
     description:
-      'How Luminara labels Measured, Estimated, and Not measured across Google, AI Overviews, ChatGPT and Perplexity. Sample versus Live explained.',
+      `How Luminara labels Measured, Estimated, and Not measured. ${LIVE_ANSWER_CHECKS} Sample versus Live explained.`,
     jsonLd: graph(
       '/methodology',
       'Methodology',
@@ -132,7 +133,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Methodology</h1>
   <p>Measured means live evidence. Estimated is directional only. Not measured means missing data is labeled, never invented.</p>
-  <p>The live crawl check on the landing page reads robots.txt, llms.txt and ai.txt and keeps the four engines Not measured. Instant Audit checks the engines and labels each row Measured, Estimated or Not measured.</p>
+  <p>The live crawl check on the landing page reads robots.txt, llms.txt and ai.txt. ${LIVE_ANSWER_CHECKS}</p>
   <p><a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
 </section>`,
   },
@@ -165,7 +166,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p>Luminara Suite runs checks across search and AI answers, then returns a ranked list of fixes in plain English.</p>
   <ul>
     <li>Site crawl for titles, meta and technical blockers</li>
-    <li>AI visibility across ChatGPT, Perplexity and AI Overviews</li>
+    <li>${LIVE_ANSWER_CHECKS}</li>
     <li>Schema mapping. Competitor comparison needs a signed-in business profile</li>
     <li>Impact ranking and saved progress need sign-in. Guests see Not measured</li>
   </ul>
@@ -216,7 +217,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account.</p>
   <p>Starter: web audits for a small site set. No MCP. No share links.</p>
   <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>
-  <p>Pro / Agency: Growth capabilities plus API access and client workspaces.</p>
+  <p>Pro / Agency: Growth capabilities plus API access and client workspaces saved in this browser. ${LIVE_ANSWER_CHECKS}</p>
   <p>Telegram Stars billing is available in the Mini App. No invented SEO scores on any plan.</p>
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
 </section>`,
@@ -273,7 +274,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
       <tr><th>Dimension</th><th>Ahrefs</th><th>Luminara Suite</th></tr>
     </thead>
     <tbody>
-      <tr><td>Search Surface</td><td>Traditional 10 blue links on Google</td><td>AI Overviews, ChatGPT Search, Claude, and Perplexity</td></tr>
+      <tr><td>Search Surface</td><td>Traditional 10 blue links on Google</td><td>Site crawl and live web search on every plan. ${LIVE_ANSWER_CHECKS}</td></tr>
       <tr><td>Measurement Target</td><td>Keyword rankings and backlink graphs</td><td>Entity citability, LLM answer targets, and crawler governance</td></tr>
       <tr><td>Action Guidance</td><td>Backlink acquisition and keyword stuffing</td><td>Structured knowledge graph and machine-readable llms.txt</td></tr>
       <tr><td>Verification</td><td>Third-party crawl estimates</td><td>Cryptographic verification receipts and crawler directives</td></tr>

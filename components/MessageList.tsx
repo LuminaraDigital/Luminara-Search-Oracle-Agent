@@ -6,6 +6,7 @@ import { ReportDisplay } from './audit/ReportDisplay';
 import { HybridMessageBody } from './genui/HybridMessageBody';
 import { fallbackAnswerLine } from '../services/llm/fallbackAnswer';
 import { gateReportTables, looksLikeAuditReport } from '../services/audit/reportColumnGate';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 
 interface MessageListProps {
   messages: Message[];
@@ -55,7 +56,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
               Ask Luminara
             </h1>
             <p className="text-gray-400 text-lg max-w-2xl mx-auto leading-relaxed px-4">
-              Ask anything about how your business shows up in Google and AI answers. Paste your website address to start with an audit.
+              Ask about your site and live web search. Paste your website address to start. {LIVE_ANSWER_CHECKS}
             </p>
           </div>
           

@@ -292,7 +292,7 @@ describe('Telegram Stars', () => {
     expect(link.ok).toBe(false);
     if (!link.ok) {
       expect(link.error).toContain('You already have Luminara Pro / Agency until');
-      expect(link.error).toContain('Single Autonomous Audit Run is a lower plan');
+      expect(link.error).toContain('24-hour pass is a lower plan');
       expect(link.error).toContain('nothing was charged');
     }
     expect(telegram.of('createInvoiceLink')).toHaveLength(0);

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { HONEST_VISIBILITY_PROMISE } from '../../services/marketing/engineCoverage';
 import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
@@ -210,14 +211,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
             </span>
           </div>
           <span className="text-[var(--color-ink-2)]">
-            {homeDomain ? `ACTIVE TARGET // ${homeDomain}` : '4 ENGINES + CRAWL · WEEKLY DECISION LOOP'}
+            {homeDomain ? `ACTIVE TARGET // ${homeDomain}` : 'SITE AND WEB SEARCH · WEEKLY DECISION LOOP'}
           </span>
         </div>
         <h1 className="font-display font-normal text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.08]">
           Will AI mention your brand?
         </h1>
         <p className="text-base text-[var(--color-ink-2)] mt-3 max-w-2xl leading-relaxed">
-          Audit citation health across Google, AI Overviews, ChatGPT, and Perplexity, then ship your prioritized weekly fix.
+          {HONEST_VISIBILITY_PROMISE}
         </p>
       </div>
 

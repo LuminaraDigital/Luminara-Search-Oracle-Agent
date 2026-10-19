@@ -7,7 +7,7 @@ import { PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
 
 export const PLAN_CARD_BADGE = 'Recommended';
 
-/** Checkout title. Plans have domain, seat, and feature caps, so this cannot say unlimited. */
+/** Checkout title. Plans have domain and feature caps, so this cannot say unlimited. */
 export const PAYWALL_HEADLINE = 'Pick the plan that fits your sites';
 
 export type PlanBullet = { included: boolean; text: string };
@@ -27,7 +27,7 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
   const e = PLAN_ENTITLEMENTS[id];
   const lines: PlanBullet[] = [
     { included: true, text: `${e.domainLimit} monitored domains` },
-    { included: true, text: e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audits` },
+    { included: true, text: e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audit reminders in Telegram` },
     { included: true, text: id === 'agency' ? 'White-label PDF exports' : id === 'growth' ? 'Branded PDF exports' : 'Standard PDF exports' },
     {
       included: e.mcpAccess,
@@ -37,10 +37,9 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
       included: e.shareLinks,
       text: e.shareLinks ? 'Public share links' : 'No public share links',
     },
-    { included: true, text: `${e.teamSeats} team seat${e.teamSeats === 1 ? '' : 's'}` },
   ];
   if (e.apiAccess) lines.push({ included: true, text: 'Paid research API (Agency plan or your own DataForSEO login)' });
-  if (e.agencyClientLimit > 0) lines.push({ included: true, text: `${e.agencyClientLimit} client workspaces` });
+  if (e.agencyClientLimit > 0) lines.push({ included: true, text: `${e.agencyClientLimit} client workspaces (saved in this browser)` });
   return lines.map((line) => ({ ...line, text: withLeadCapital(line.text) }));
 }
 
@@ -65,7 +64,7 @@ export const pricingTiers: Array<{
     priceLabel: PAID_PLAN_PRICES.growth.usdLabel,
     stars: PAID_PLAN_PRICES.growth.starsLabel,
     ton: PAID_PLAN_PRICES.growth.tonLabel,
-    blurb: 'The growth plan: IDE access, shareable reports, 3 seats, weekly re-audits.',
+    blurb: 'IDE access, shareable reports, and weekly re-audit reminders in Telegram.',
     highlight: true,
   },
   {
@@ -73,7 +72,7 @@ export const pricingTiers: Array<{
     priceLabel: PAID_PLAN_PRICES.agency.usdLabel,
     stars: PAID_PLAN_PRICES.agency.starsLabel,
     ton: PAID_PLAN_PRICES.agency.tonLabel,
-    blurb: 'API access for paid research, 10 client workspaces, 10 team seats, daily re-audits, white-label PDF.',
+    blurb: 'API access for paid research, 10 client workspaces saved in this browser, daily re-audit reminders in Telegram, white-label PDF.',
     highlight: false,
   },
 ];

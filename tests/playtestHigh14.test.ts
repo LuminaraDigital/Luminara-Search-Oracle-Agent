@@ -197,9 +197,9 @@ describe('checkout honesty', () => {
     expect(PAYWALL_HEADLINE).toBe('Pick the plan that fits your sites');
     expect(PAYWALL_SUBLINE).toBe(CHECKOUT_TERM_LINE);
     expect(PAYWALL_SUBLINE.toLowerCase()).not.toContain('monthly limits');
-    expect(planBullets('starter').map((line) => line.text)).toContain('Monthly re-audits');
-    expect(planBullets('growth').map((line) => line.text)).toContain('Weekly re-audits');
-    expect(planBullets('agency').map((line) => line.text)).toContain('Daily re-audits');
+    expect(planBullets('starter').map((line) => line.text)).toContain('Monthly re-audit reminders in Telegram');
+    expect(planBullets('growth').map((line) => line.text)).toContain('Weekly re-audit reminders in Telegram');
+    expect(planBullets('agency').map((line) => line.text)).toContain('Daily re-audit reminders in Telegram');
     for (const id of ['starter', 'growth', 'agency'] as const) {
       for (const line of planBullets(id)) expect(line.text).not.toMatch(/^[a-z]/);
     }

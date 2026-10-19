@@ -3,6 +3,7 @@ import { AppView } from '../../types';
 import { fetchTrustFlags, type TrustFeatureFlags } from '../../services/trust/trustClient';
 import { ICONS } from '../ui/icons';
 import { Button } from '../ui/Button';
+import { LIVE_ANSWER_CHECKS } from '../../services/marketing/engineCoverage';
 
 const NOT_AVAILABLE_YET = 'Not available yet';
 
@@ -35,7 +36,7 @@ const CAPABILITIES: CapabilityItem[] = [
     id: 'instant-audit',
     view: AppView.INSTANT_AUDIT,
     title: 'Instant Audit',
-    tagline: 'Multi-engine organic visibility analysis across Google, Perplexity, and AI Overviews.',
+    tagline: `Site crawl and live web search, then one fix. ${LIVE_ANSWER_CHECKS}`,
     category: 'audit',
     platforms: ['web', 'desktop', 'tma'],
     isFeatured: true,

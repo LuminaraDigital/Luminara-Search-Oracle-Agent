@@ -217,7 +217,7 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
             );
           }
           if (competitorChanges.length) reasons.push(`Competitor deltas: ${competitorChanges.join('; ')}.`);
-          const alertMsg = `⚠️ *Luminara 24/7 Drift Sentinel Alert*\n\n` +
+          const alertMsg = `⚠️ *Luminara daily drift check*\n\n` +
             `Your domain *${target.domain}* has detected an AEO citation or trust regression.\n` +
             `• Target query: _${keyword}_\n` +
             `• Current status: ${reasons.join(' ')}\n\n` +

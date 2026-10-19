@@ -139,7 +139,7 @@ const wordsForPlanRules = (s: string): string =>
   stripEmphasis(s).replace(LINK_OR_HOST_RE, ' ').replace(PRICING_PAGE_RE, ' ');
 
 type PlanNames = {
-  /** A title of several words: "Single Autonomous Audit Run". */
+  /** A title of several words: "24-hour pass". */
   phrases: RegExp[];
   /** A plan id of several words, as a user types it: "single audit" for single_audit. */
   idPhrases: RegExp[];

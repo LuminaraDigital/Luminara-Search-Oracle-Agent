@@ -6,12 +6,13 @@ import type { AppAuthState } from '../../services/auth/useAppAuth';
 import { MINI_APP_URL, botUsernameFromMiniAppUrl } from '../../services/referrals/rules';
 import { BrandLoader } from '../intro/BrandLoader';
 import { ICONS } from '../../constants';
+import { LIVE_ANSWER_CHECKS } from '../../services/marketing/engineCoverage';
 import '../marketing/space.css';
 
 const AuthPanel = lazyWithReload(() => import('./AuthPanel').then((m) => ({ default: m.AuthPanel })));
 
 const FREE_ACCOUNT_POINTS = [
-  'Checks across Google Search, AI Overviews, ChatGPT and Perplexity.',
+  `Checks your site and live web search. ${LIVE_ANSWER_CHECKS}`,
   'Every result labeled Measured, Estimated or Not measured.',
   'One fix to ship first, with copy and schema ready to paste.',
   'A daily hosted allowance. No card needed.',
