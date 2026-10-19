@@ -5,7 +5,7 @@
  * Proxy mode is on when the Worker serves the app, or when VITE_API_BASE points at it.
  */
 import { getInitDataRaw } from './telegram/tma';
-import { ensureFirebaseIdTokenCached, getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
+import { loadFirebaseAuth, readCachedFirebaseIdToken } from './auth/firebaseIdToken';
 import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
@@ -212,7 +212,7 @@ function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
-  const idToken = getFirebaseIdTokenSync();
+  const idToken = readCachedFirebaseIdToken();
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   return headers;
 }
@@ -222,9 +222,8 @@ async function authHeadersAsync(forceRefresh = false): Promise<Record<string, st
   const headers: Record<string, string> = {};
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
-  const idToken = forceRefresh
-    ? await getFirebaseIdToken(true)
-    : (getFirebaseIdTokenSync() ?? await getFirebaseIdToken(false));
+  const auth = await loadFirebaseAuth();
+  const idToken = forceRefresh ? await auth.getFirebaseIdToken(true) : (readCachedFirebaseIdToken() ?? await auth.getFirebaseIdToken(false));
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   return headers;
 }
@@ -484,7 +483,7 @@ export function clientHasHostedIdentity(): boolean {
     /* Telegram bridge absent */
   }
   try {
-    if (getFirebaseIdTokenSync()) return true;
+    if (readCachedFirebaseIdToken()) return true;
   } catch {
     /* Firebase absent */
   }
@@ -694,7 +693,7 @@ export async function ensureHostedProviderReady(): Promise<HostedProviderReady> 
     getServerHealthSync().ok === true;
   await Promise.all([
     healthFresh ? Promise.resolve(getServerHealthSync()) : loadServerHealth({ force: true }),
-    ensureFirebaseIdTokenCached(),
+    loadFirebaseAuth().then((auth) => auth.ensureFirebaseIdTokenCached()),
   ]);
   if (getServerHealthSync().ok === true) hostedReadyAt = Date.now();
   return readHostedProviderReady();

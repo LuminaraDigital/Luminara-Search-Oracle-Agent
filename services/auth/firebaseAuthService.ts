@@ -16,9 +16,17 @@ import {
   type Auth,
   type User,
 } from 'firebase/auth';
-export type { User };
 import { resolveFirebaseWebConfig } from './firebasePublicConfig';
+import { readCachedFirebaseIdToken, writeCachedFirebaseIdToken } from './firebaseIdToken';
 import { ensureAppCheck, getAppCheckTokenForBackend, isAppCheckConfigured } from './firebaseAppCheck';
+
+export type { User };
+export { isAppCheckConfigured };
+
+/** True when VITE_FIREBASE_* is present (signup/signin UI can show). */
+export function isFirebaseConfigured(): boolean {
+  return readConfig() !== null;
+}
 
 export interface FirebasePublicConfig {
   apiKey: string;
@@ -31,7 +39,6 @@ export interface FirebasePublicConfig {
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
-let cachedIdToken: string | null = null;
 let cachedUser: User | null = null;
 let initAttempted = false;
 const userListeners = new Set<(user: User | null) => void>();
@@ -45,13 +52,6 @@ function notifyUserListeners(user: User | null): void {
 function readConfig(): FirebasePublicConfig | null {
   return resolveFirebaseWebConfig((import.meta as any).env || {});
 }
-
-/** True when VITE_FIREBASE_* is present (signup/signin UI can show). */
-export function isFirebaseConfigured(): boolean {
-  return readConfig() !== null;
-}
-
-export { isAppCheckConfigured };
 
 function ensureAuth(): Auth {
   if (auth) return auth;
@@ -123,8 +123,8 @@ async function clearSessionCookie(): Promise<void> {
 async function refreshCachedToken(user: User | null): Promise<void> {
   cachedUser = user;
   if (!user) {
-    const hadSession = cachedIdToken !== null || lastSyncedToken !== null;
-    cachedIdToken = null;
+    const hadSession = readCachedFirebaseIdToken() !== null || lastSyncedToken !== null;
+    writeCachedFirebaseIdToken(null);
     notifyUserListeners(null);
     if (hadSession) {
       await clearSessionCookie();
@@ -132,12 +132,11 @@ async function refreshCachedToken(user: User | null): Promise<void> {
     return;
   }
   try {
-    cachedIdToken = await user.getIdToken();
-    if (cachedIdToken) {
-      await syncSessionCookie(cachedIdToken);
-    }
+    const nextToken = await user.getIdToken();
+    writeCachedFirebaseIdToken(nextToken);
+    if (nextToken) await syncSessionCookie(nextToken);
   } catch {
-    cachedIdToken = null;
+    writeCachedFirebaseIdToken(null);
   }
   notifyUserListeners(user);
 }
@@ -167,7 +166,7 @@ export function subscribeFirebaseUser(fn: (user: User | null) => void): () => vo
 
 /** Sync snapshot used by Worker proxy headers (refreshed by the auth listener). */
 export function getFirebaseIdTokenSync(): string | null {
-  return cachedIdToken;
+  return readCachedFirebaseIdToken();
 }
 
 export function getFirebaseUserSync(): User | null {
@@ -180,12 +179,12 @@ export async function getFirebaseIdToken(forceRefresh = false): Promise<string |
   const a = ensureAuth();
   const user = a.currentUser;
   if (!user) {
-    cachedIdToken = null;
+    writeCachedFirebaseIdToken(null);
     cachedUser = null;
     return null;
   }
   const token = await user.getIdToken(forceRefresh);
-  cachedIdToken = token;
+  writeCachedFirebaseIdToken(token);
   cachedUser = user;
   return token;
 }

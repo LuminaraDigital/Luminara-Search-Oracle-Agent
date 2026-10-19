@@ -1,11 +1,14 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
-import { AuthPanel, type AuthMode } from './AuthPanel';
+import React, { Suspense, useEffect, useId, useRef, useState } from 'react';
+import type { AuthMode } from './AuthPanel';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 import { isInTelegram, getTelegramUserUnsafe } from '../../services/telegram/tma';
 import type { AppAuthState } from '../../services/auth/useAppAuth';
 import { MINI_APP_URL, botUsernameFromMiniAppUrl } from '../../services/referrals/rules';
 import { BrandLoader } from '../intro/BrandLoader';
 import { ICONS } from '../../constants';
 import '../marketing/space.css';
+
+const AuthPanel = lazyWithReload(() => import('./AuthPanel').then((m) => ({ default: m.AuthPanel })));
 
 const FREE_ACCOUNT_POINTS = [
   'Checks across Google Search, AI Overviews, ChatGPT and Perplexity.',
@@ -232,12 +235,14 @@ export const AuthRequiredScreen: React.FC<{
             </div>
           )}
 
-          <AuthPanel
-            initialMode={initialMode}
-            mode={mode}
-            onModeChange={setMode}
-            chromeless
-          />
+          <Suspense fallback={<BrandLoader />}>
+            <AuthPanel
+              initialMode={initialMode}
+              mode={mode}
+              onModeChange={setMode}
+              chromeless
+            />
+          </Suspense>
         </div>
       </div>
 

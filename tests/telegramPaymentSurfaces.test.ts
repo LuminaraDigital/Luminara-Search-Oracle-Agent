@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('@tonconnect/ui-react', () => ({
+  TonConnectUIProvider: ({ children }) => children,
   TonConnectButton: () => createElement('span', null, 'TON-CONNECT-BUTTON'),
   useTonWallet: () => state.wallet,
   useTonConnectUI: () => [{}, () => {}],
@@ -36,6 +37,7 @@ vi.mock('../services/apiClient', async (importActual) => ({
 import { PaywallModal } from '../components/paywall/PaywallModal';
 import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../components/paywall/planCopy';
 import { TelegramAccountPanel } from '../components/telegram/TelegramAccountPanel';
+import { TelegramAccountTon } from '../components/telegram/TelegramAccountTon';
 
 const everythingOn = () => ({
   ok: true,
@@ -177,7 +179,7 @@ describe('the account panel on the web while TON is open', () => {
     state.health = { ...everythingOn(), ton: true, jettonCheckout: false, stripeCheckout: false };
   });
 
-  it('shows the wallet button', () => {
-    expect(panel()).toContain('TON-CONNECT-BUTTON');
+  it('shows the wallet button from the TonConnect chunk', () => {
+    expect(renderToStaticMarkup(createElement(TelegramAccountTon, {}))).toContain('TON-CONNECT-BUTTON');
   });
 });

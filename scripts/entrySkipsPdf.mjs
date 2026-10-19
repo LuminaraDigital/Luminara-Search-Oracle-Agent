@@ -68,13 +68,34 @@ function moduleEntrySrc(html) {
   return null;
 }
 
-export function entryPdfImportsFromDist(distDir) {
+const TON_CHUNK = /(?:^|\/)tonconnect-[^/]+\.js$/;
+
+/** Static closure files whose basename is the TonConnect chunk. Dynamic import() is not an edge. */
+export function entryTonconnectImports(files, entryName) {
+  const hits = [];
+  const seen = new Set();
+  const queue = [entryName.split('/').pop()];
+  while (queue.length) {
+    const name = queue.pop();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    if (TON_CHUNK.test(name)) hits.push(name);
+    const source = files.get(name);
+    if (source == null) continue;
+    for (const dep of staticJsImports(source)) {
+      if (TON_CHUNK.test(dep)) hits.push(dep);
+      queue.push(dep);
+    }
+  }
+  return [...new Set(hits)];
+}
+
+function readEntryModules(distDir) {
   const html = readFileSync(join(distDir, 'index.html'), 'utf8');
   const src = moduleEntrySrc(html);
   if (!src) {
     throw new Error(`${distDir}/index.html has no module entry script`);
   }
-  const hits = modulePreloadPdfHrefs(html).map((href) => `modulepreload ${href}`);
   const files = new Map();
   const entryBase = src.split('/').pop();
   const queue = [entryBase];
@@ -89,5 +110,23 @@ export function entryPdfImportsFromDist(distDir) {
     files.set(name, source);
     for (const dep of staticJsImports(source)) queue.push(dep);
   }
+  return { html, entryBase, files };
+}
+
+export function entryPdfImportsFromDist(distDir) {
+  const { html, entryBase, files } = readEntryModules(distDir);
+  const hits = modulePreloadPdfHrefs(html).map((href) => `modulepreload ${href}`);
   return [...hits, ...entryPdfImports(files, entryBase)];
+}
+
+export function entryTonconnectImportsFromDist(distDir) {
+  const { html, entryBase, files } = readEntryModules(distDir);
+  const hits = [];
+  for (const tag of html.matchAll(/<link\b[^>]*>/g)) {
+    const text = tag[0];
+    if (!text.includes('modulepreload')) continue;
+    const href = text.match(/href="([^"]+)"/);
+    if (href && TON_CHUNK.test(href[1])) hits.push(`modulepreload ${href[1]}`);
+  }
+  return [...hits, ...entryTonconnectImports(files, entryBase)];
 }

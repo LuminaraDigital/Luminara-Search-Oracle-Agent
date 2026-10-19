@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { entryPdfImports, entryPdfImportsFromDist, modulePreloadPdfHrefs } from '../scripts/entrySkipsPdf.mjs';
+import { entryPdfImports, entryPdfImportsFromDist, entryTonconnectImports, modulePreloadPdfHrefs } from '../scripts/entrySkipsPdf.mjs';
 
 describe('entry static graph skips the PDF engine', () => {
   it('flags an entry that static-imports the PDF chunk', () => {
@@ -48,6 +48,20 @@ describe('entry static graph skips the PDF engine', () => {
     writeFileSync(join(dir, 'assets', 'pdf-abc.js'), 'const sr="/assets/forme_bg-hash.wasm";');
 
     expect(entryPdfImportsFromDist(dir)).toEqual(['pdf-abc.js']);
+  });
+
+  it('flags tonconnect on a static edge and ignores a dynamic import', () => {
+    const files = new Map<string, string>([
+      ['index-abc.js', 'import{a}from"./tonconnect-xyz.js";import("./pdf-later.js")'],
+      ['tonconnect-xyz.js', 'export const a = 1;'],
+    ]);
+    expect(entryTonconnectImports(files, 'index-abc.js')).toEqual(['tonconnect-xyz.js']);
+
+    const dynamicOnly = new Map<string, string>([
+      ['index-abc.js', 'import("./tonconnect-xyz.js")'],
+      ['tonconnect-xyz.js', 'export const a = 1;'],
+    ]);
+    expect(entryTonconnectImports(dynamicOnly, 'index-abc.js')).toEqual([]);
   });
 
   it('flags a modulepreload of the wasm asset', () => {

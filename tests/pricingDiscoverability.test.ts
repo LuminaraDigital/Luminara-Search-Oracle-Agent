@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TELEGRAM_MINI_APP_URL } from '../components/paywall/paymentOptions';
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { TelegramAccountPanel } from '../components/telegram/TelegramAccountPanel';
+import { TelegramAccountTon } from '../components/telegram/TelegramAccountTon';
 import PricingPage, { planChoiceLine } from '../components/PricingPage';
 import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle } from '../components/paywall/planCopy';
 import { PLANS } from '../worker/telegramBot';
@@ -17,6 +18,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('@tonconnect/ui-react', () => ({
+  TonConnectUIProvider: ({ children }) => children,
   TonConnectButton: () => createElement('button', { type: 'button' }, 'Connect Wallet'),
   useTonWallet: () => null,
 }));
@@ -111,7 +113,7 @@ describe('pricing page discoverability', () => {
     expect(html).toContain('15 TON');
     expect(html).toContain('45 TON');
     expect(html).toContain('120 TON');
-    expect(html).toContain('Connect Wallet');
+    expect(renderToStaticMarkup(createElement(TelegramAccountTon, { compact: true, showTermLine: false }))).toContain('Connect Wallet');
     expect(html).not.toMatch(/card checkout/i);
     expect(html).not.toContain('Instant self-serve card checkout');
     expect(html).not.toContain('Pay with Card (Stripe)');
