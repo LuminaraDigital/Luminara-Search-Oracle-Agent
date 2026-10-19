@@ -1,12 +1,14 @@
 import React, { useEffect } from 'react';
 import { bindTelegramBackButton } from '../services/telegram/tma';
+import { ACL_RIGHTS_CLAUSE, LIABILITY_CLAUSE, STARS_REFUND_CLAUSE, legalAbnLine } from '../services/legal/consumerTerms';
 
 interface Props {
   kind: 'privacy' | 'terms';
   onBack: () => void;
 }
 
-const UPDATED = '29 September 2026';
+const PRIVACY_UPDATED = '29 September 2026';
+const TERMS_UPDATED = '19 October 2026';
 const CONTROLLER = 'Luminara Digital Agency';
 const PRIVACY_EMAIL = 'privacy@luminarasuite.com';
 const SUPPORT_EMAIL = 'support@luminarasuite.com';
@@ -37,7 +39,7 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
           {isPrivacy ? 'Privacy Policy' : 'Terms of Service'}
         </h1>
         <p className="text-xs text-gray-500 mb-4">
-          Luminara Suite · Operated by {CONTROLLER} · Last updated {UPDATED}
+          {`Luminara Suite · Operated by ${CONTROLLER}${legalAbnLine() ? ` · ${legalAbnLine()}` : ''} · Last updated ${isPrivacy ? PRIVACY_UPDATED : TERMS_UPDATED}`}
         </p>
         {isPrivacy && (
           <p className="text-xs text-gray-500 mb-10 leading-relaxed border border-white/10 rounded-xl p-4 bg-white/[0.02]">
@@ -330,10 +332,8 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
               <h2 className="text-gold-light font-bold uppercase tracking-widest text-xs mb-2">Plans and payments</h2>
               <p>
                 Plans bought with Telegram Stars run for the stated number of days from purchase and do
-                not renew automatically. Where TON checkout is offered, a TON payment is verified
-                on-chain against the order memo you are shown. Refunds for Stars follow Telegram&apos;s
-                policy; for billing problems contact{' '}
-                {SUPPORT_EMAIL}.
+                not renew automatically. {STARS_REFUND_CLAUSE} Credit card checkout and corporate
+                invoicing are available on request during closed beta (email {SUPPORT_EMAIL}).
               </p>
             </section>
             <section>
@@ -352,11 +352,12 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
               </p>
             </section>
             <section>
+              <h2 className="text-gold-light font-bold uppercase tracking-widest text-xs mb-2">Australian Consumer Law</h2>
+              <p>{ACL_RIGHTS_CLAUSE}</p>
+            </section>
+            <section>
               <h2 className="text-gold-light font-bold uppercase tracking-widest text-xs mb-2">Liability</h2>
-              <p>
-                The service is provided &quot;as is&quot;. To the extent permitted by law, {CONTROLLER}{' '}
-                is not liable for indirect or consequential losses arising from use of the service.
-              </p>
+              <p>{LIABILITY_CLAUSE}</p>
             </section>
             <section>
               <h2 className="text-gold-light font-bold uppercase tracking-widest text-xs mb-2">Privacy</h2>

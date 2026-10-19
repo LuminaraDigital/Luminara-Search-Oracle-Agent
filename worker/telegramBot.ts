@@ -78,7 +78,7 @@ export type PlanMeta = {
 export const PLANS: Record<string, PlanMeta> = {
   starter: {
     title: 'Luminara Starter',
-    description: 'Unlock premium hosted AI engines. Unlimited AI audits for up to 2 sites, monthly re-check, Brand Memory. 30 days.',
+    description: 'Premium hosted AI engines for up to 2 sites, monthly re-audit reminders in Telegram, and Brand Memory. 30 days.',
     stars: 2500,
     days: 30,
     domainLimit: 2,
@@ -91,7 +91,7 @@ export const PLANS: Record<string, PlanMeta> = {
   },
   growth: {
     title: 'Luminara Growth',
-    description: '10 sites, weekly re-audits, competitor watchlist, citation deltas, 24/7 Drift Sentinel. 30 days.',
+    description: '10 sites, weekly re-audit reminders in Telegram, competitor watchlist, citation deltas, and a daily drift check. 30 days.',
     stars: 7500,
     days: 30,
     domainLimit: 10,
@@ -104,7 +104,7 @@ export const PLANS: Record<string, PlanMeta> = {
   },
   agency: {
     title: 'Luminara Pro / Agency',
-    description: '25+ domains, audit memory timeline, competitor citation deltas, 10 client workspaces, white-label PDF, API access, daily Sentinel. 30 days.',
+    description: '25 sites, audit memory, competitor citation deltas, 10 client workspaces saved in this browser, white-label PDF, API access, and a daily drift check. 30 days.',
     stars: 18000,
     days: 30,
     domainLimit: 25,
@@ -116,8 +116,8 @@ export const PLANS: Record<string, PlanMeta> = {
     mcpAccess: true,
   },
   single_audit: {
-    title: 'Single Autonomous Audit Run',
-    description: 'On-demand 7-agent autonomous search audit. Self-reported audit, not independently checked.',
+    title: '24-hour pass',
+    description: '24-hour pass: premium hosted engines and hosted calls past the free daily cap, for one site. ChatGPT, Perplexity and AI Overviews stay Not measured (Agency or your DataForSEO login). Self-reported audit, not independently checked.',
     stars: 25,
     days: 1,
     domainLimit: 1,
@@ -129,8 +129,8 @@ export const PLANS: Record<string, PlanMeta> = {
     mcpAccess: false,
   },
   multi_agent_crawl: {
-    title: 'Deep Multi-Agent Crawl',
-    description: 'On-demand deep crawl and competitor gap intelligence. Self-reported audit, not independently checked.',
+    title: '24-hour pass',
+    description: 'Same 24-hour pass as the 25 Star option: premium hosted engines and calls past the free daily cap, for one site. ChatGPT, Perplexity and AI Overviews stay Not measured (Agency or your DataForSEO login). Self-reported audit, not independently checked.',
     stars: 75,
     days: 1,
     domainLimit: 1,

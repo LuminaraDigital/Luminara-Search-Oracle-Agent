@@ -410,7 +410,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-white">Client workspaces</h3>
           <p className="text-[11px] text-gray-400">
-            Agency unlocks up to {entitlements.agencyClientLimit || 10} isolated clients (DNA + history).
+            Agency unlocks up to {entitlements.agencyClientLimit || 10} client workspaces saved in this browser (DNA + history).
             Current plan allows {entitlements.agencyClientLimit}.
           </p>
           <div className="flex gap-2">
@@ -430,7 +430,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
               <span className="text-2xl block mb-1">🏢</span>
               <p className="text-xs font-bold text-white">No Client Workspaces Created Yet</p>
               <p className="text-[11px] text-gray-400 max-w-sm mx-auto">
-                Isolate client Brand DNA, competitor watchlists, and citation histories. Type a client name above to create your first client workspace.
+                Saved in this browser: client Brand DNA, competitor watchlists, and citation histories. Type a client name above to create your first client workspace.
               </p>
             </div>
           )}

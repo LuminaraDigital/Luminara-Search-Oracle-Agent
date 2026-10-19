@@ -9,6 +9,7 @@ import {
   perDomainShell,
   type MarketingShellMeta,
 } from './pageMeta';
+import { HONEST_VISIBILITY_PROMISE } from './engineCoverage';
 import { MARKETING_PATH_BY_VIEW } from '../../utils/marketingRoutes';
 import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 
@@ -94,8 +95,7 @@ function applyShell(page: MarketingShellMeta) {
 
 const DEFAULT_APP_META = {
   title: 'Luminara Suite',
-  description:
-    'Luminara Suite audits how your brand shows up in Google, AI Overviews, ChatGPT and Perplexity.',
+  description: HONEST_VISIBILITY_PROMISE,
 };
 
 function shellFor(pathname: string, view: AppView): MarketingShellMeta | undefined {

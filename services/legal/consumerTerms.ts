@@ -1,0 +1,21 @@
+/**
+ * Terms sentences shared by the in-app page and the Worker HTML.
+ * LEGAL_ABN stays empty until the operator supplies it.
+ */
+
+export const LEGAL_ABN = '';
+
+export const ACL_RIGHTS_CLAUSE =
+  'Nothing in these terms excludes, restricts or modifies rights you have under the Australian Consumer Law, including a refund or remedy for a major failure.';
+
+export const STARS_REFUND_CLAUSE =
+  'For a Stars refund, contact support@luminarasuite.com first. Telegram\'s process is how a Stars refund is paid. Refunds are subject to the Australian Consumer Law.';
+
+export const LIABILITY_CLAUSE =
+  'Subject to the Australian Consumer Law, the service is provided as is. To the extent the Australian Consumer Law allows, Luminara Digital Agency is not liable for indirect or consequential losses arising from use of the service.';
+
+/** Empty when the ABN is blank, so the line is omitted rather than shown as "ABN ". */
+export function legalAbnLine(abn: string = LEGAL_ABN): string {
+  const value = abn.trim();
+  return value ? `ABN ${value}` : '';
+}

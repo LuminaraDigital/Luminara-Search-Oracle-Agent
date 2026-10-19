@@ -3,6 +3,7 @@
  * Fixtures only. Never invent live SEO metrics. Never mark engines Measured.
  */
 import { EMPTY_SITE_INPUT_MESSAGE } from '../../../services/audit/auditTargetUrl';
+import { LIVE_ANSWER_CHECKS } from '../../../services/marketing/engineCoverage';
 
 export type DemoPhase =
   | 'empty'
@@ -39,32 +40,32 @@ export const SAMPLE_FIXTURE: DemoFixture = {
   domain: 'luminarasuite.com',
   focus: 'AEO',
   verdict:
-    'Sample scout only: this is the shape of a report, not Live evidence for the domain you typed. Run a free Live Instant Audit to measure engines for your site.',
-  shipAction: 'Create a free account and run Instant Audit on your domain for Measured engine rows.',
+    `Sample scout only: this is the shape of a report, not Live evidence for the domain you typed. ${LIVE_ANSWER_CHECKS}`,
+  shipAction: 'Create a free account and run Instant Audit for a site and web-search check. Live answer-engine rows stay Not measured unless you are on Agency or bring your own DataForSEO login.',
   engines: [
     {
       id: 'web_serp',
       label: 'Google + SERP',
       status: 'not_measured',
-      note: 'Sample · not measured. Run Live Instant Audit to collect this engine.',
+      note: 'Sample · Not measured. A signed-in audit can check live web search.',
     },
     {
       id: 'google_aio',
       label: 'AI Overviews',
       status: 'not_measured',
-      note: 'Sample · not measured. Run Live Instant Audit to collect this engine.',
+      note: 'Sample · Not measured. Agency or your own DataForSEO login measures this.',
     },
     {
       id: 'chatgpt',
       label: 'ChatGPT',
       status: 'not_measured',
-      note: 'Sample · not measured. Run Live Instant Audit to collect this engine.',
+      note: 'Sample · Not measured. Agency or your own DataForSEO login measures this.',
     },
     {
       id: 'perplexity',
       label: 'Perplexity',
       status: 'not_measured',
-      note: 'Sample · not measured. Run Live Instant Audit to collect this engine.',
+      note: 'Sample · Not measured. Agency or your own DataForSEO login measures this.',
     },
   ],
 };
@@ -104,9 +105,9 @@ export function idleEngines(): DemoEngineRow[] {
       note: 'Not measured until run',
     },
     { id: 'web_serp', label: 'Google + SERP', status: 'idle', note: 'Not measured until run' },
-    { id: 'google_aio', label: 'AI Overviews', status: 'idle', note: 'Not measured until run' },
-    { id: 'chatgpt', label: 'ChatGPT', status: 'idle', note: 'Not measured until run' },
-    { id: 'perplexity', label: 'Perplexity', status: 'idle', note: 'Not measured until run' },
+    { id: 'google_aio', label: 'AI Overviews', status: 'idle', note: 'Not measured on Free, Starter and Growth. Agency or your DataForSEO login measures this.' },
+    { id: 'chatgpt', label: 'ChatGPT', status: 'idle', note: 'Not measured on Free, Starter and Growth. Agency or your DataForSEO login measures this.' },
+    { id: 'perplexity', label: 'Perplexity', status: 'idle', note: 'Not measured on Free, Starter and Growth. Agency or your DataForSEO login measures this.' },
   ];
 }
 

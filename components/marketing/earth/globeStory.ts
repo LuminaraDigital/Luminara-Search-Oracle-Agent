@@ -1,3 +1,5 @@
+import { LIVE_ANSWER_CHECKS, SITE_AND_SEARCH_CHECK } from '../../../services/marketing/engineCoverage';
+
 /**
  * Landing story copy and illustrative globe data.
  * ILLUSTRATIVE ONLY. Places, arcs and evidence markers are not customers, offices,
@@ -35,9 +37,9 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
   {
     id: 'ask',
     step: '02',
-    stage: 'Four-engine check',
-    title: 'Ask the engines your buyers ask.',
-    body: 'Buyer questions in your category are checked across Google Search, AI Overviews, ChatGPT and Perplexity. You see who gets named, whether it is you, and how each answer was measured.',
+    stage: 'Buyer questions',
+    title: 'Ask the questions your buyers ask.',
+    body: `${SITE_AND_SEARCH_CHECK} ${LIVE_ANSWER_CHECKS}`,
     focus: { lat: -14, lon: 126 },
   },
   {

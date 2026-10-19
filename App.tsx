@@ -883,7 +883,7 @@ const App: React.FC = () => {
   const quickActions = [
     { label: "Audit my website", query: "Run a full SEO, AEO and GEO audit of my website and give me a prioritised action plan in plain English." },
     { label: "Compare me with competitors", query: "Compare how my brand shows up in AI answers and search against my main competitors, and tell me where I lose." },
-    { label: "Where do I show up in AI answers?", query: "Check whether my brand is cited in AI Overviews, ChatGPT and Perplexity for the questions my customers ask, and what to change." },
+    { label: "Where do I show up in AI answers?", query: "Check my site and live web search for the questions my customers ask, and what to change. Live ChatGPT, Perplexity and AI Overviews answers need Agency or my own DataForSEO login." },
     { label: "What's missing on my site?", query: "Check my site for missing schema markup, unclear entity information and content gaps that stop AI engines from quoting it." }
   ];
 
@@ -1623,7 +1623,7 @@ const App: React.FC = () => {
           <BrandMemoryView
             dna={dna}
             onNavigate={(v) => setView(v)}
-            onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Unlock Pro / Agency for client workspaces and deeper memory' } }))}
+            onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Unlock Pro / Agency for client workspaces saved in this browser, and deeper memory' } }))}
           />
         )}
 

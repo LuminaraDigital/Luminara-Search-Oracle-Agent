@@ -26,6 +26,7 @@ import {
 } from './marketing/earth/globeStory';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 import { GUEST_HERO_NOTE, GUEST_REPORT_NOTE } from '../services/audit/hostedScoutRail';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 
 interface LandingPageProps {
   onNavigateAudit: (handoff?: AuditHandoff) => void;
@@ -174,8 +175,11 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </h1>
           <span aria-hidden className="lx-rule lx-enter-draw lx-d4 mt-8" />
           <p className="lx-lede lx-enter-rise lx-d4 mt-7 max-w-2xl">
-            Customers now ask ChatGPT, Perplexity, Google and AI Overviews who to trust. Luminara checks
-            whether those answers name your business, then gives you the one fix to ship next.
+            See if AI recommends your business, and fix it. Every plan checks your site and live web search
+            for the questions your buyers ask.
+          </p>
+          <p className="lx-enter-rise lx-d4 mt-4 max-w-2xl text-sm leading-relaxed text-[var(--color-ink-2)]">
+            {LIVE_ANSWER_CHECKS}
           </p>
           <div className="lx-enter-rise lx-d5 mt-9 w-full">
             <DomainCheck inputId="hero-domain" isAuthenticated={isAuthenticated} onFullAudit={fullAudit} />
@@ -217,7 +221,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             </h2>
             <p className="lx-lede mx-auto mt-8 max-w-2xl">
               When a buyer asks ChatGPT or Perplexity who to hire, there is no second page. The answer names
-              you, or it names someone else. Luminara shows you which, and what to change.
+              you, or it names someone else. Luminara checks your site and live web search, then one fix. {LIVE_ANSWER_CHECKS}
             </p>
           </div>
         </section>
@@ -323,7 +327,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 <p className="mt-2 font-serif text-2xl text-[var(--color-ink)] sm:text-3xl">A dental clinic in Sydney</p>
               </div>
               <span className="shrink-0 rounded-full border border-[var(--color-rule)] px-3 py-1 text-xs text-[var(--gold-light)]">
-                Illustrative
+                Agency example
               </span>
             </div>
 
@@ -355,7 +359,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <p className="mt-3 text-xs text-[var(--color-ink-2)]">Copy and schema included, ready to paste.</p>
             </div>
             <figcaption className="mt-5 text-xs text-[var(--color-ink-2)]">
-              Illustrative example, not a real customer. Your report uses live evidence from your own audit.
+              Illustrative Agency example, not a real customer. {LIVE_ANSWER_CHECKS}
             </figcaption>
           </figure>
         </div>

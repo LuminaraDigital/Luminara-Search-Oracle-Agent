@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
 import { STAGING_ROBOTS_TXT } from '../worker/crawlDocuments';
+import { publicPlanCatalogue } from '../worker/telegramBot';
 import {
   HTML_CSP,
   HOSTED_MAX_TOKENS,
@@ -95,6 +96,18 @@ describe('security headers', () => {
     expect(data.providers).toBeUndefined();
     expect(data.tonPricing).toBeUndefined();
     expect(data.jettonPricing).toBeUndefined();
+    expect(data.plans).toEqual(publicPlanCatalogue());
+    const described = Object.values(publicPlanCatalogue()).map((plan) => plan.description).join('\n');
+    expect(described).not.toMatch(/unlimited/i);
+    expect(described).not.toMatch(/team seats/i);
+    expect(described).not.toMatch(/24\/7/);
+    expect(described).not.toMatch(/\bre-audits\b/);
+    expect(described).toContain('re-audit reminders in Telegram');
+    expect(described).toContain('daily drift check');
+    expect(described).toContain('saved in this browser');
+    expect(data.plans.starter.stars).toBe(2500);
+    expect(data.plans.growth.stars).toBe(7500);
+    expect(data.plans.agency.stars).toBe(18000);
   });
 
   it('withSecurityHeaders only applies CSP to text/html', () => {

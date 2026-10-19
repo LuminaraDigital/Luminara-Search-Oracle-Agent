@@ -12,6 +12,7 @@ import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPa
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
 import { CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 
 export { pricingTiers };
 
@@ -26,10 +27,18 @@ export function planChoiceLine(title: string, tier: { stars: string; ton: string
     : `Choose ${title}: ${tier.stars} inside the Mini App.`;
 }
 
-/** One-off runs sold by the Worker alongside the plans. */
+/** One-off Stars purchases. Each writes a 1-day plan with the same paid-engine access. */
 const ONE_OFFS = [
-  { title: 'Single audit run', price: '25 Stars', body: 'One on-demand audit. Luminara records the result. It is not an independent certification.' },
-  { title: 'Deep multi-agent crawl', price: '75 Stars', body: 'One deep crawl with competitor gap findings.' },
+  {
+    title: '24-hour pass',
+    price: '25 Stars',
+    body: 'Premium hosted AI engines and hosted calls past the free daily cap, for one site, for 24 hours. ChatGPT, Perplexity and AI Overviews stay Not measured unless you are on Agency or use your own DataForSEO login.',
+  },
+  {
+    title: '24-hour pass',
+    price: '75 Stars',
+    body: 'The same 24-hour access as the 25 Star pass: premium hosted AI engines and hosted calls past the free daily cap, for one site. Live answer-engine checks stay Not measured.',
+  },
 ] as const;
 
 const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
@@ -66,10 +75,10 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         eyebrow="Pricing"
         title={
           <>
-            Plans for audits, share links, <span className="italic lx-gold-text pr-[0.08em]">and team seats.</span>
+            Plans for audits, share links, <span className="italic lx-gold-text pr-[0.08em]">and reminders.</span>
           </>
         }
-        lede="Free covers Sample scouts and a daily hosted Instant Audit allowance after you create an account. Starter is web audits only. Growth adds IDE access and shareable reports. Agency adds API access and client workspaces."
+        lede={`Free covers Sample scouts and a daily hosted Instant Audit allowance after you create an account. Starter is web audits only. Growth adds IDE access and shareable reports. Agency adds API access and client workspaces saved in this browser. ${LIVE_ANSWER_CHECKS}`}
       />
       <p className="lx-enter-rise lx-d4 mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
         {CHECKOUT_TERM_LINE}{tonClause}
@@ -163,7 +172,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           </div>
           {ONE_OFFS.map((item, i) => (
             <div
-              key={item.title}
+              key={`${item.title}-${item.price}`}
               className="min-w-0 border-t pt-6 lx-hairline"
               data-reveal
               style={{ transitionDelay: `${(i + 1) * 90}ms` }}

@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 
 interface InfrastructurePageProps {
@@ -13,7 +14,7 @@ const pillars = [
   },
   {
     title: 'AI visibility',
-    desc: 'Tests whether answer engines can find and use your brand context when people ask for services like yours.',
+    desc: `On every plan, checks whether your pages and live web search cover the questions buyers ask. ${LIVE_ANSWER_CHECKS}`,
   },
   {
     title: 'Citation gaps',
@@ -72,7 +73,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
             What runs when <span className="italic lx-gold-text pr-[0.08em]">you audit a site.</span>
           </>
         }
-        lede="A fixed set of checks across search and AI answers, then a short list of fixes in plain English. Guest runs leave competitor scan, impact ranking, and saved progress as Not measured until you sign in."
+        lede={`A site crawl and a live web search, then a short list of fixes in plain English. ${LIVE_ANSWER_CHECKS} Guest runs leave competitor scan, impact ranking, and saved progress as Not measured until you sign in.`}
       />
 
       <section
@@ -83,7 +84,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
           <div className="lg:sticky lg:top-32">
             <p className="lx-eyebrow">What it checks</p>
             <h2 id="checks-heading" className="lx-display lx-h3 mt-5">
-              Same surfaces, <span className="italic lx-gold-text pr-[0.08em]">every run.</span>
+              What a run <span className="italic lx-gold-text pr-[0.08em]">includes.</span>
             </h2>
           </div>
         </div>

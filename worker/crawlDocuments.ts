@@ -4,6 +4,7 @@
  */
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { CHECKOUT_TERM_LINE } from '../components/paywall/planCopy';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
 # Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
@@ -131,7 +132,7 @@ export const SITEMAP_XML = buildSitemapXml('https://www.luminarasuite.com');
 
 export const LLMS_TXT = `# Luminara Suite
 
-> Luminara Suite audits how a website shows up in Google, AI Overviews, ChatGPT, and Perplexity, then ranks one next fix. Web app, Windows desktop, and a Telegram Mini App.
+> Luminara Suite checks a website and live web search, then ranks one next fix. ${LIVE_ANSWER_CHECKS} Web app, Windows desktop, and a Telegram Mini App.
 
 ## Methodology
 
@@ -158,10 +159,10 @@ LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt pres
 ## Answer engine targets
 
 ### What is Luminara Suite?
-Luminara Suite is an Answer Engine Optimization (AEO) and AI visibility platform that audits brand citations across Google Search, AI Overviews, ChatGPT, and Perplexity. Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week.
+Luminara Suite checks a site and live web search, then ranks one fix. ${LIVE_ANSWER_CHECKS} Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week.
 
 ### How does Luminara compare to traditional SEO suites?
-Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness, brand citation share in conversational models, and knowledge-graph grounding. Every metric is strictly labeled measured, estimated, or not_measured, refusing to fabricate visibility percentages when underlying evidence is unavailable.
+Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness and knowledge-graph grounding. ${LIVE_ANSWER_CHECKS} Every metric is labeled measured, estimated, or not_measured.
 
 ### What is Answer Engine Optimization (AEO)?
 Answer Engine Optimization (AEO) is the discipline of structuring web content, technical crawl assets, and entity schema so generative AI engines (Google AI Overviews, ChatGPT, Perplexity, Claude) extract, synthesize, and cite the brand as an authoritative source in direct conversational responses.
@@ -175,8 +176,8 @@ Answer Engine Optimization (AEO) is the discipline of structuring web content, t
 ${CHECKOUT_TERM_LINE} Payment is Telegram Stars.
 
 - Starter: ${PAID_PLAN_PRICES.starter.starsLabel}. Up to 2 sites. No MCP. No full public share links.
-- Growth: ${PAID_PLAN_PRICES.growth.starsLabel}. MCP, full share links, 3 seats, weekly re-audits.
-- Agency: ${PAID_PLAN_PRICES.agency.starsLabel}. API access, 10 client seats, daily Sentinel, white-label PDF.
+- Growth: ${PAID_PLAN_PRICES.growth.starsLabel}. MCP, full share links, weekly re-audit reminders in Telegram.
+- Agency: ${PAID_PLAN_PRICES.agency.starsLabel}. API access, 10 client workspaces saved in this browser, daily drift check, white-label PDF. ${LIVE_ANSWER_CHECKS}
 - Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
 
 ## MCP

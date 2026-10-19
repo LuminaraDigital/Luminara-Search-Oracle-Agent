@@ -23,12 +23,12 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
   if (quota.isUnlimited) {
     return (
       <button
-        onClick={() => openPaywallModal('You have an active unlimited plan.')}
+        onClick={() => openPaywallModal('You have an active plan. The free daily cap is lifted.')}
         className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gradient-to-r from-gold/20 to-gold-dark/20 text-gold border border-gold/40 hover:bg-gold/30 transition-all ${className}`}
-        title="Pro Unlimited AI Queries Active"
+        title="Active plan: the free daily cap is lifted."
       >
         {showIcon && <span>⭐</span>}
-        <span>Pro Unlimited</span>
+        <span>Plan active</span>
       </button>
     );
   }

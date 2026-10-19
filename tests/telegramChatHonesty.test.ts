@@ -422,7 +422,7 @@ describe('filterChatReply: a price of ours gives way to the plan block', () => {
     ['Our Growth plan covers 10 sites.'],
     ['Pro is 18k Stars.'],
     ['You get 14 days free on Growth.'],
-    ['Single Autonomous Audit Run is 30 Stars.'],
+    ['24-hour pass is 30 Stars.'],
     ['Starter | 1,000 | 30 days'],
     ['STARTER IS 1,000 STARS'],
     ['It costs 25 XTR.'],

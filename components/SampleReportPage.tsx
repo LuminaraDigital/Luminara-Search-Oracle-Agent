@@ -3,6 +3,7 @@ import { EvidenceGlyph, MarketingPageHeader, MarketingPageShell } from './market
 import { LIVE_SAMPLE_SNAPSHOT, type LiveSampleRow } from '../services/marketing/liveSampleSnapshot';
 import type { EvidenceState } from './marketing/earth/globeStory';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 
 interface SampleReportPageProps {
   onOpenAudit: (handoff?: AuditHandoff) => void;
@@ -51,7 +52,7 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
             See what AI says <span className="italic lx-gold-text pr-[0.08em]">about you.</span>
           </>
         ),
-        body: 'Run Instant Audit on your own site to measure Google, AI Overviews, ChatGPT, and Perplexity.',
+        body: `Run Instant Audit on your own site. It checks your site and live web search. ${LIVE_ANSWER_CHECKS}`,
         cta: { label: isAuthenticated ? 'Open Instant Audit' : 'Create free account', onClick: primary },
         links: [
           { label: 'Methodology', onClick: onNavigateMethodology },
@@ -66,7 +67,7 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
             What an example report <span className="italic lx-gold-text pr-[0.08em]">looks like.</span>
           </>
         }
-        lede="Example report for luminarasuite.com, a snapshot from 2 Oct 2026. Crawl readiness is Measured. Answer engines stay Not measured until Instant Audit. Same Sample versus Live split as Methodology. No invented KPI scores."
+        lede={`Example report for luminarasuite.com, a snapshot from 2 Oct 2026. Crawl readiness is Measured. ${LIVE_ANSWER_CHECKS} No invented KPI scores.`}
       />
 
       <figure className="lx-glass mx-auto mb-0 mt-20 max-w-4xl rounded-3xl p-6 sm:mt-24 sm:p-10" data-reveal>
