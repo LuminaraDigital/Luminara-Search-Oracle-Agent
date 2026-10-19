@@ -1,15 +1,15 @@
-// Boot splash dismissal failsafe for Luminara Suite SPA shell.
+// shortcut: duplicates services/intro/bootSplash.ts, this file runs before the module graph
 window.__dismissBootSplash = function() {
   var el = document.getElementById('boot-splash');
   if (el && !el.classList.contains('boot-splash--exit')) {
     el.classList.add('boot-splash--exit');
     el.setAttribute('aria-busy', 'false');
-    setTimeout(function() { try { el.remove(); } catch(e){} }, 800);
+    setTimeout(function() { try { el.remove(); } catch (e) {} }, 800);
   }
 };
 var splash = document.getElementById('boot-splash');
 if (splash) {
   splash.addEventListener('click', function() { window.__dismissBootSplash(); });
 }
-// Failsafe: Automatically dismiss the boot splash if React mounting stalls past 1.5s
-setTimeout(window.__dismissBootSplash, 1500);
+// Hang cap only. React dismisses on first paint; Slow 3G of the entry graph can exceed a short timer.
+setTimeout(window.__dismissBootSplash, 12000);
