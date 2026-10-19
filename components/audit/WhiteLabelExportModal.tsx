@@ -389,7 +389,7 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
           </div>
 
           {exportError && (
-            <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-red-200 text-xs flex items-center gap-2">
+            <div role="alert" className="p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-red-200 text-xs flex items-center gap-2">
               <ICONS.AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
               <span>{exportError}</span>
             </div>
@@ -424,6 +424,7 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
             <button
               onClick={handleDownloadPdf}
               disabled={isExportingPdf}
+              aria-busy={isExportingPdf}
               className="px-5 py-2 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black font-black uppercase text-xs tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shadow-gold/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               {isExportingPdf ? (
