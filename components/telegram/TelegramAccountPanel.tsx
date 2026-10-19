@@ -1,21 +1,32 @@
-import React, { useEffect, useState } from 'react';
-import { TonConnectButton, useTonWallet } from '@tonconnect/ui-react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { isInTelegram, getTelegramUserUnsafe, payWithStars, haptic } from '../../services/telegram/tma';
 import { telegramAuth, createStarsInvoice, activateLicenseKey, fetchQuotaStatus, getServerHealthSync, type TelegramSession } from '../../services/apiClient';
 import { TELEGRAM_MINI_APP_URL, isTonAvailable } from '../paywall/paymentOptions';
 import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../paywall/planCopy';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 
-interface Props {
+const TelegramAccountTon = lazyWithReload(() =>
+  import('./TelegramAccountTon').then((m) => ({ default: m.TelegramAccountTon })),
+);
+
+export interface TelegramAccountPanelProps {
   compact?: boolean;
   /** Pricing already shows CHECKOUT_TERM_LINE once. Leave this on for Settings. */
   showTermLine?: boolean;
+  wallet?: { account: { address: string } } | null;
+  connectSlot?: React.ReactNode;
 }
 
 /**
  * Shows who is signed in through Telegram, their plan, Telegram Stars checkout, and a TON wallet connect.
  * Identity shown here comes from the server-validated session, not from client launch params.
  */
-export const TelegramAccountPanel: React.FC<Props> = ({ compact, showTermLine = true }) => {
+export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
+  compact,
+  showTermLine = true,
+  wallet = null,
+  connectSlot = null,
+}) => {
   const starsLine = showTermLine ? `${TELEGRAM_STARS_HANDOFF} ${CHECKOUT_TERM_LINE}` : TELEGRAM_STARS_HANDOFF;
   const [session, setSession] = useState<TelegramSession | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -23,7 +34,6 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact, showTermLine = 
   const [showLicense, setShowLicense] = useState(false);
   const [licenseKey, setLicenseKey] = useState('');
   const [activating, setActivating] = useState(false);
-  const wallet = useTonWallet();
   const plans = getServerHealthSync().plans ?? {};
   const inTg = isInTelegram();
   const tonOpen = !inTg && isTonAvailable(getServerHealthSync());
@@ -121,7 +131,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact, showTermLine = 
           Open Mini App in Telegram
         </a>
         <p className="text-[10px] font-mono text-gray-500 break-all">{TELEGRAM_MINI_APP_URL}</p>
-        {tonOpen && <TonConnectButton />}
+        {tonOpen && connectSlot}
       </div>
     );
   }
@@ -231,7 +241,7 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact, showTermLine = 
       {tonOpen && (
         <div className="flex items-center justify-between gap-3 pt-1 border-t border-white/5">
           <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">TON wallet</span>
-          <TonConnectButton />
+          {connectSlot}
         </div>
       )}
       {!inTg && wallet && (
@@ -252,5 +262,16 @@ export const TelegramAccountPanel: React.FC<Props> = ({ compact, showTermLine = 
         </a>
       </div>
     </div>
+  );
+};
+
+/** Guest pricing keeps TonConnect out of the first load. The wallet chunk loads only when TON checkout is open. */
+export const TelegramAccountPanel: React.FC<TelegramAccountPanelProps> = (props) => {
+  const tonOpen = !isInTelegram() && isTonAvailable(getServerHealthSync());
+  if (!tonOpen) return <TelegramAccountBody {...props} />;
+  return (
+    <Suspense fallback={<TelegramAccountBody {...props} />}>
+      <TelegramAccountTon {...props} />
+    </Suspense>
   );
 };

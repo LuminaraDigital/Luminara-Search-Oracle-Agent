@@ -21,11 +21,13 @@ interface Props {
   isOpen?: boolean;
   onClose?: () => void;
   onOpenSettings?: () => void;
+  /** Reason from the event that mounted this modal. The listener is not attached yet for that first event. */
+  bootReason?: string;
 }
 
-export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose, onOpenSettings }) => {
+export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose, onOpenSettings, bootReason }) => {
   const [internalOpen, setInternalOpen] = useState(false);
-  const [triggerReason, setTriggerReason] = useState<string | null>(null);
+  const [triggerReason, setTriggerReason] = useState<string | null>(bootReason ?? null);
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
   const [health, setHealth] = useState(getServerHealthSync);
   const inTg = isInTelegram();

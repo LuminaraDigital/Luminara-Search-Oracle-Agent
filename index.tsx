@@ -1,7 +1,6 @@
 import './utils/bufferPolyfill';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { TonConnectUIProvider } from '@tonconnect/ui-react';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initTelegram } from './services/telegram/tma';
@@ -18,30 +17,14 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-function getSafeManifestUrl(): string {
-  try {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    if (origin && origin !== 'null' && (origin.startsWith('http://') || origin.startsWith('https://'))) {
-      return new URL('tonconnect-manifest.json', origin).toString();
-    }
-  } catch {
-    /* fallback */
-  }
-  return 'https://www.luminarasuite.com/tonconnect-manifest.json';
-}
-
-const manifestUrl = getSafeManifestUrl();
-
 // Mount React immediately: zero delay for landing page and application shell
 const root = createRoot(rootElement!);
 root.render(
   <React.StrictMode>
     <ErrorBoundary scope="root">
-      <TonConnectUIProvider manifestUrl={manifestUrl}>
-        <ErrorBoundary scope="app">
-          <App />
-        </ErrorBoundary>
-      </TonConnectUIProvider>
+      <ErrorBoundary scope="app">
+        <App />
+      </ErrorBoundary>
     </ErrorBoundary>
   </React.StrictMode>
 );

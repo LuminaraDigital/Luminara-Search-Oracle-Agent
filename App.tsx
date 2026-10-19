@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { OracleMode, Message, AppView, BusinessDNA, LAB_VIEWS } from './types';
 import { setAnswerDepth } from './services/audit/answerDepth';
-import { geminiService, toChatHistory } from './services/geminiService';
+import { toChatHistory } from './services/chat/messages';
 import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
-import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
@@ -14,8 +13,7 @@ import { holdPendingReferral } from './services/referrals/pendingReferral';
 import { claimStoredReferral } from './services/referrals/referralClient';
 import { resolveHostedScoutRail } from './services/audit/hostedScoutRail';
 import { resolveContinuumIdeaId, continuumEventForViewChange } from './services/ideaScout/continuum';
-import MessageList from './components/MessageList';
-import InputBar from './components/InputBar';
+import { ChatComposer, ChatTranscript } from './components/chat/DeferredChat';
 import Waveform from './components/Waveform';
 import LandingPage from './components/LandingPage';
 import { themingService } from './services/harness/themingService';
@@ -24,10 +22,10 @@ import { reminderService } from './services/harness/reminderService';
 import { NativeEngineHUD } from './components/llm/NativeEngineHUD';
 import { NativeFailoverPopup } from './components/llm/NativeFailoverPopup';
 import { ICONS } from './constants';
-import { startFirebaseAuthListener, isFirebaseConfigured, signOutFirebase } from './services/auth/firebaseAuthService';
 import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
+import { PaywallSlot } from './components/paywall/PaywallSlot';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
 import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
@@ -73,7 +71,6 @@ const OracleMindView = lazyWithReload(() => import('./components/suite/OracleMin
 const ArchyHarnessView = lazyWithReload(() => import('./components/harness/ArchyHarnessView').then(m => ({ default: m.ArchyHarnessView })));
 const OmnibarModal = lazyWithReload(() => import('./components/harness/OmnibarModal').then(m => ({ default: m.OmnibarModal })));
 const ApiKeyModal = lazyWithReload(() => import('./components/ApiKeyModal').then(m => ({ default: m.ApiKeyModal })));
-const PaywallModal = lazyWithReload(() => import('./components/paywall/PaywallModal').then(m => ({ default: m.PaywallModal })));
 import { ViewSkeleton } from './components/ui/Skeleton';
 
 const AppIntroOverlay = lazyWithReload(() => import('./components/intro/AppIntroOverlay').then(m => ({ default: m.AppIntroOverlay })));
@@ -289,6 +286,7 @@ const App: React.FC = () => {
    */
   const logoutToLanding = useCallback(async () => {
     try {
+      const { signOutFirebase } = await import('./services/auth/firebaseAuthService');
       await signOutFirebase();
     } catch {
       /* still leave the shell even if sign-out fails */
@@ -393,12 +391,6 @@ const App: React.FC = () => {
       setView(AppView.DASHBOARD);
     }
   }, [advancedUi, view]);
-
-  // Keep Firebase ID token cache warm for Worker hosted-key calls.
-  useEffect(() => {
-    if (!isFirebaseConfigured()) return;
-    return startFirebaseAuthListener();
-  }, []);
 
   const appAuth = useAppAuth();
 
@@ -523,7 +515,7 @@ const App: React.FC = () => {
     <>
       {loginWallModal}
       <Suspense fallback={null}>
-        <PaywallModal onOpenSettings={() => setIsKeyModalOpen(true)} />
+        <PaywallSlot onOpenSettings={() => setIsKeyModalOpen(true)} />
         {isKeyModalOpen && (
           <ApiKeyModal
             isOpen={isKeyModalOpen}
@@ -633,10 +625,13 @@ const App: React.FC = () => {
     };
   }, [applyContinuumForView]);
 
-  const liveServiceRef = useRef<OracleLiveService | null>(null);
+  const liveServiceRef = useRef<{ start: () => Promise<void>; stop: () => Promise<void> } | null>(null);
 
   useEffect(() => {
-    if (view === AppView.ORACLE_AGENT) {
+    if (view !== AppView.ORACLE_AGENT) return;
+    let cancelled = false;
+    void import('./services/liveService').then(({ OracleLiveService }) => {
+      if (cancelled) return;
       liveServiceRef.current = new OracleLiveService(
         (text, isUser) => {
           // Surface transcripts in the chat so voice turns are not lost.
@@ -653,9 +648,10 @@ const App: React.FC = () => {
         (active) => setIsVoiceActive(active),
         (err) => setVoiceError(err.message)
       );
-    }
+    });
 
     return () => {
+      cancelled = true;
       liveServiceRef.current?.stop();
       liveServiceRef.current = null;
     };
@@ -782,6 +778,7 @@ const App: React.FC = () => {
       }
 
       if (!usedServerOracle && !controller.signal.aborted) {
+        const { geminiService } = await import('./services/geminiService');
         for await (const chunk of geminiService.streamQuery(content, mode, dna, {
           history,
           skipSearch: opts.skipSearch,
@@ -870,7 +867,7 @@ const App: React.FC = () => {
       await liveServiceRef.current.start();
       // onopen flips isVoiceActive via onStateChange once the socket is live.
     } catch (e: any) {
-      const msg = e instanceof LiveVoiceError ? e.message : (e?.message || 'Could not start Live Voice.');
+      const msg = e instanceof Error && e.name === 'LiveVoiceError' ? e.message : (e?.message || 'Could not start Live Voice.');
       setVoiceError(msg);
       setIsVoiceActive(false);
     }
@@ -1736,7 +1733,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
-              <MessageList messages={messages} isThinking={isThinking} activeTool={activeTool} onSimplify={handleSimplify} />
+              <ChatTranscript messages={messages} isThinking={isThinking} activeTool={activeTool} onSimplify={handleSimplify} />
               
               {agentStep && (
                 <div
@@ -1807,7 +1804,7 @@ const App: React.FC = () => {
             ))}
           </div>
 
-          <InputBar
+          <ChatComposer
             onSendMessage={handleSendMessage}
             onVoiceToggle={toggleVoice}
             isVoiceActive={isVoiceActive}
@@ -1846,7 +1843,7 @@ const App: React.FC = () => {
         )}
 
         {/* Global Dual-Rail Paywall Modal (Stars + TON) */}
-        <PaywallModal onOpenSettings={() => setIsKeyModalOpen(true)} />
+        <PaywallSlot onOpenSettings={() => setIsKeyModalOpen(true)} />
 
         {/* Encrypted Brand Vault Modal */}
         {isVaultModalOpen && (

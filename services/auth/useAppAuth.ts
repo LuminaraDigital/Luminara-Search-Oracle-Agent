@@ -9,13 +9,9 @@ import {
   whenTelegramReady,
   subscribeTelegramReady,
 } from '../telegram/tma';
-import {
-  isFirebaseConfigured,
-  subscribeFirebaseUser,
-  startFirebaseAuthListener,
-  whenFirebaseAuthReady,
-  type User,
-} from './firebaseAuthService';
+import { isFirebaseConfigured } from './firebasePublicConfig';
+
+type FirebaseAccount = { email?: string | null; displayName?: string | null };
 import { telegramAuth } from '../apiClient';
 
 export type AppAuthSource = 'telegram' | 'firebase' | null;
@@ -82,7 +78,7 @@ export function decideTelegramGate(input: {
 
 export function useAppAuth(): AppAuthState {
   const [inTelegram, setInTelegram] = useState(() => isInTelegram());
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseAccount | null>(null);
   const [firebaseReady, setFirebaseReady] = useState(!isFirebaseConfigured());
   // Always wait for Telegram init (instant outside TMA) so we never race initData.
   const [tgReady, setTgReady] = useState(false);
@@ -100,18 +96,23 @@ export function useAppAuth(): AppAuthState {
       return;
     }
     let cancelled = false;
+    let unsub = () => {};
     // Cold-load protection: await persisted auth settlement from IndexedDB before marking ready.
-    void whenFirebaseAuthReady().then((u) => {
+    void import('./firebaseAuthService').then((mod) => {
       if (cancelled) return;
-      if (u) setFirebaseUser(u);
-      setFirebaseReady(true);
-    });
-
-    startFirebaseAuthListener();
-    const unsub = subscribeFirebaseUser((u) => {
-      if (cancelled) return;
-      setFirebaseUser(u);
-      if (u) setFirebaseReady(true);
+      void mod.whenFirebaseAuthReady().then((u) => {
+        if (cancelled) return;
+        if (u) setFirebaseUser(u);
+        setFirebaseReady(true);
+      });
+      mod.startFirebaseAuthListener();
+      unsub = mod.subscribeFirebaseUser((u) => {
+        if (cancelled) return;
+        setFirebaseUser(u);
+        if (u) setFirebaseReady(true);
+      });
+    }).catch(() => {
+      if (!cancelled) setFirebaseReady(true);
     });
 
     return () => {

@@ -33,7 +33,7 @@ export default {
         sans: ['Outfit', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         display: ['"Instrument Serif"', 'Georgia', 'Times New Roman', 'serif'],
         serif: ['"Instrument Serif"', 'Georgia', 'Times New Roman', 'serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
       },
     },
   },

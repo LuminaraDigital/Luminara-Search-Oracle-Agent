@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { entryPdfImportsFromDist } from './entrySkipsPdf.mjs';
+import { entryPdfImportsFromDist, entryTonconnectImportsFromDist } from './entrySkipsPdf.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -90,6 +90,13 @@ if (!existsSync(distPath)) {
     process.exit(1);
   }
   console.log('[SmokeCheck] [PASS] entry chunk does not import the PDF engine or WASM.');
+  const tonBlockers = entryTonconnectImportsFromDist(distPath);
+  if (tonBlockers.length) {
+    console.error('[SmokeCheck] FAILED: entry static graph reaches TonConnect:');
+    for (const hit of tonBlockers) console.error(`  ${hit}`);
+    process.exit(1);
+  }
+  console.log('[SmokeCheck] [PASS] entry chunk does not import TonConnect.');
 }
 
 // 2. Verify worker configuration
