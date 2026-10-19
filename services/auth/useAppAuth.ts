@@ -9,6 +9,7 @@ import {
   whenTelegramReady,
   subscribeTelegramReady,
 } from '../telegram/tma';
+import { hasPersistedAuthSession, persistedAuthSessionInIndexedDb } from './firebaseIdToken';
 import { isFirebaseConfigured } from './firebasePublicConfig';
 
 type FirebaseAccount = { email?: string | null; displayName?: string | null };
@@ -85,6 +86,8 @@ export function useAppAuth(): AppAuthState {
   const [tgOk, setTgOk] = useState(false);
   const [tgError, setTgError] = useState<string | null>(null);
   const [authAttempt, setAuthAttempt] = useState(0);
+  // Sync read during render, before paint. IndexedDB is checked after paint below.
+  const [resumePersistedSession] = useState(hasPersistedAuthSession);
 
   const retryTelegram = useCallback(() => {
     setAuthAttempt((n) => n + 1);
@@ -124,13 +127,17 @@ export function useAppAuth(): AppAuthState {
     };
     const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
     const quietMarketing = path === '/' || path === '/pricing';
-    if (quietMarketing) {
+    if (!quietMarketing || resumePersistedSession) {
+      start();
+    } else {
       window.addEventListener('pointerdown', start);
       window.addEventListener('keydown', start);
       // Lab traces end before this. A tap still starts auth immediately.
       timer = window.setTimeout(start, 12000);
-    } else {
-      start();
+      // shortcut: IndexedDB cannot be read before paint, so a session that lives only there starts once the store lists an authUser key.
+      void persistedAuthSessionInIndexedDb().then((yes) => {
+        if (yes) start();
+      });
     }
 
     return () => {
@@ -140,7 +147,7 @@ export function useAppAuth(): AppAuthState {
       if (timer) window.clearTimeout(timer);
       unsub();
     };
-  }, []);
+  }, [resumePersistedSession]);
 
   useEffect(() => {
     return subscribeTelegramReady((inside) => {

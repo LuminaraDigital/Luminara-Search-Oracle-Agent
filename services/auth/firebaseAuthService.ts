@@ -17,7 +17,12 @@ import {
   type User,
 } from 'firebase/auth';
 import { resolveFirebaseWebConfig } from './firebasePublicConfig';
-import { readCachedFirebaseIdToken, writeCachedFirebaseIdToken } from './firebaseIdToken';
+import {
+  clearPersistedAuthSession,
+  markPersistedAuthSession,
+  readCachedFirebaseIdToken,
+  writeCachedFirebaseIdToken,
+} from './firebaseIdToken';
 import { ensureAppCheck, getAppCheckTokenForBackend, isAppCheckConfigured } from './firebaseAppCheck';
 
 export type { User };
@@ -121,8 +126,10 @@ async function clearSessionCookie(): Promise<void> {
 }
 
 async function refreshCachedToken(user: User | null): Promise<void> {
+  const previous = cachedUser;
   cachedUser = user;
   if (!user) {
+    if (previous) clearPersistedAuthSession();
     const hadSession = readCachedFirebaseIdToken() !== null || lastSyncedToken !== null;
     writeCachedFirebaseIdToken(null);
     notifyUserListeners(null);
@@ -131,6 +138,7 @@ async function refreshCachedToken(user: User | null): Promise<void> {
     }
     return;
   }
+  markPersistedAuthSession();
   try {
     const nextToken = await user.getIdToken();
     writeCachedFirebaseIdToken(nextToken);
@@ -519,6 +527,7 @@ export async function resetPasswordWithEmail(email: string): Promise<{ success: 
 }
 
 export async function signOutFirebase(): Promise<void> {
+  clearPersistedAuthSession();
   if (!isFirebaseConfigured()) return;
   await signOut(ensureAuth());
   await refreshCachedToken(null);
