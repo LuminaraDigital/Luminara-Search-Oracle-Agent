@@ -43,8 +43,8 @@ function detectTelegramSync(): boolean {
     if (hasTelegramHashHints()) return true;
     const wa = w.Telegram?.WebApp;
     if (!wa) return false;
-    // Real Mini App sessions always carry signed initData; the script alone is not enough
-    // (telegram-web-app.js is also loaded on the public website).
+    // Real Mini App sessions always carry signed initData. The bridge script loads only
+    // inside Telegram, so a normal browser never downloads telegram-web-app.js.
     if (typeof wa.initData === 'string' && wa.initData.length > 0) return true;
     const platform = typeof wa.platform === 'string' ? wa.platform : '';
     if (platform && platform !== 'unknown') return true;
@@ -159,11 +159,39 @@ function nativeInitData(): string {
   }
 }
 
+const TELEGRAM_WEB_APP_SRC = 'https://telegram.org/js/telegram-web-app.js';
+
+function telegramHostLikely(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if ('TelegramWebviewProxy' in window || 'TelegramWebviewProxyProto' in window) return true;
+    if (hasTelegramHashHints()) return true;
+    if (hasTelegramLaunchHints()) return true;
+    return /Telegram/i.test(navigator.userAgent || '');
+  } catch {
+    return false;
+  }
+}
+
+function ensureTelegramScript(): Promise<void> {
+  if (!telegramHostLikely()) return Promise.resolve();
+  if (document.querySelector(`script[src="${TELEGRAM_WEB_APP_SRC}"]`)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = TELEGRAM_WEB_APP_SRC;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
+    document.head.appendChild(script);
+  });
+}
+
 /** Call once before rendering. Resolves instantly (0ms) outside Telegram. */
 export async function initTelegram(timeoutMs = 1200): Promise<boolean> {
   if (readySettled) return insideTelegram;
   if (initStarted) return readyPromise;
   initStarted = true;
+  if (telegramHostLikely()) await ensureTelegramScript();
 
   const syncHit = detectTelegramSync();
   // Absolute failsafe: readyPromise must never hang (auth gate waits on it).

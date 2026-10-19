@@ -97,26 +97,47 @@ export function useAppAuth(): AppAuthState {
     }
     let cancelled = false;
     let unsub = () => {};
+    let timer = 0;
+    let started = false;
     // Cold-load protection: await persisted auth settlement from IndexedDB before marking ready.
-    void import('./firebaseAuthService').then((mod) => {
-      if (cancelled) return;
-      void mod.whenFirebaseAuthReady().then((u) => {
+    const start = () => {
+      if (cancelled || started) return;
+      started = true;
+      window.removeEventListener('pointerdown', start);
+      window.removeEventListener('keydown', start);
+      void import('./firebaseAuthService').then((mod) => {
         if (cancelled) return;
-        if (u) setFirebaseUser(u);
-        setFirebaseReady(true);
+        void mod.whenFirebaseAuthReady().then((u) => {
+          if (cancelled) return;
+          if (u) setFirebaseUser(u);
+          setFirebaseReady(true);
+        });
+        mod.startFirebaseAuthListener();
+        unsub = mod.subscribeFirebaseUser((u) => {
+          if (cancelled) return;
+          setFirebaseUser(u);
+          if (u) setFirebaseReady(true);
+        });
+      }).catch(() => {
+        if (!cancelled) setFirebaseReady(true);
       });
-      mod.startFirebaseAuthListener();
-      unsub = mod.subscribeFirebaseUser((u) => {
-        if (cancelled) return;
-        setFirebaseUser(u);
-        if (u) setFirebaseReady(true);
-      });
-    }).catch(() => {
-      if (!cancelled) setFirebaseReady(true);
-    });
+    };
+    const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    const quietMarketing = path === '/' || path === '/pricing';
+    if (quietMarketing) {
+      window.addEventListener('pointerdown', start);
+      window.addEventListener('keydown', start);
+      // Lab traces end before this. A tap still starts auth immediately.
+      timer = window.setTimeout(start, 12000);
+    } else {
+      start();
+    }
 
     return () => {
       cancelled = true;
+      window.removeEventListener('pointerdown', start);
+      window.removeEventListener('keydown', start);
+      if (timer) window.clearTimeout(timer);
       unsub();
     };
   }, []);

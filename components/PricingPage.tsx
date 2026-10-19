@@ -12,7 +12,7 @@ import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPa
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
 import { CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
-import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
+import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
 
 export { pricingTiers };
 
@@ -72,13 +72,13 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
       }}
     >
       <MarketingPageHeader
-        eyebrow="Pricing"
+        eyebrow={PRICING_HERO.eyebrow}
         title={
           <>
-            Plans for audits, share links, <span className="italic lx-gold-text pr-[0.08em]">and reminders.</span>
+            {PRICING_HERO.titleLead} <span className="italic lx-gold-text pr-[0.08em]">{PRICING_HERO.titleEm}</span>
           </>
         }
-        lede={`Free covers Sample scouts and a daily hosted Instant Audit allowance after you create an account. Starter is web audits only. Growth adds IDE access and shareable reports. Agency adds API access and client workspaces saved in this browser. ${LIVE_ANSWER_CHECKS}`}
+        lede={PRICING_HERO.lede}
       />
       <p className="lx-enter-rise lx-d4 mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
         {CHECKOUT_TERM_LINE}{tonClause}

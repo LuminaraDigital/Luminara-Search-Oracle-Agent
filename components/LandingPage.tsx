@@ -27,6 +27,7 @@ import {
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 import { GUEST_HERO_NOTE, GUEST_REPORT_NOTE } from '../services/audit/hostedScoutRail';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
+import { HOME_HERO } from '../services/marketing/marketingHeroCopy';
 
 interface LandingPageProps {
   onNavigateAudit: (handoff?: AuditHandoff) => void;
@@ -164,19 +165,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
             aria-hidden
             className="pointer-events-none absolute left-1/2 top-[8svh] -z-10 h-[78svh] w-[min(1100px,130vw)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_center,rgb(0_0_0/0.62)_0%,rgb(0_0_0/0.35)_45%,transparent_70%)]"
           />
-          <p className="lx-eyebrow lx-enter-rise lx-d1">AI visibility, measured</p>
-          <h1 id="hero-heading" className="lx-display lx-h1 mt-6 max-w-5xl">
+          <p className="lx-eyebrow lx-enter-rise lx-d1 lx-fp-text">{HOME_HERO.eyebrow}</p>
+          <h1 id="hero-heading" className="lx-display lx-h1 mt-6 max-w-5xl lx-fp-text">
             <span className="lx-enter-mask">
-              <span className="lx-enter-line lx-d2">Be the answer</span>
+              <span className="lx-enter-line lx-d2">{HOME_HERO.titleLead}</span>
             </span>{' '}
             <span className="lx-enter-mask">
-              <span className="lx-enter-line lx-d3 italic lx-gold-text pr-[0.08em]">AI gives.</span>
+              <span className="lx-enter-line lx-d3 italic lx-gold-text pr-[0.08em]">{HOME_HERO.titleEm}</span>
             </span>
           </h1>
-          <span aria-hidden className="lx-rule lx-enter-draw lx-d4 mt-8" />
-          <p className="lx-lede lx-enter-rise lx-d4 mt-7 max-w-2xl">
-            See if AI recommends your business, and fix it. Every plan checks your site and live web search
-            for the questions your buyers ask.
+          <span aria-hidden className="lx-rule lx-enter-draw lx-d4 mt-8 lx-fp-text" />
+          <p className="lx-lede lx-enter-rise lx-d4 mt-7 max-w-2xl lx-fp-text">
+            {HOME_HERO.lede}
           </p>
           <p className="lx-enter-rise lx-d4 mt-4 max-w-2xl text-sm leading-relaxed text-[var(--color-ink-2)]">
             {LIVE_ANSWER_CHECKS}
