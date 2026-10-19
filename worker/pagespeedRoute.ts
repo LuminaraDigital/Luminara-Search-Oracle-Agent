@@ -7,7 +7,7 @@ import type { HostedIdentity } from './userTypes';
 import { json } from './workerUtils';
 import { clientIp, safePublicUrl } from './security';
 import { fetchPagespeedInsights } from '../services/technical/pageSpeedService';
-import { checkHostedQuota } from './quotaMiddleware';
+import { checkHostedQuota, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
 
 export async function handlePagespeedRoute(
   request: Request,
@@ -52,6 +52,7 @@ export async function handlePagespeedRoute(
     );
   }
 
+  let hostedQuota: QuotaStatus | null = null;
   if (usingHosted) {
     const quota = await checkHostedQuota(env, user, { clientIp: clientIp(request) });
     if (!quota.ok) {
@@ -66,6 +67,7 @@ export async function handlePagespeedRoute(
         429,
       );
     }
+    hostedQuota = quota;
   }
 
   const metrics = await fetchPagespeedInsights({
@@ -73,6 +75,9 @@ export async function handlePagespeedRoute(
     apiKey,
     strategy: body.strategy === 'desktop' ? 'desktop' : 'mobile',
   });
+  if (hostedQuota && metrics.measurementStatus !== 'measured') {
+    await refundMeteredQuota(env, hostedQuota);
+  }
 
   return json({
     ok: metrics.measurementStatus === 'measured',

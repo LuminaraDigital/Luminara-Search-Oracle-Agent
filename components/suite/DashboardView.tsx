@@ -11,10 +11,10 @@ import { DreamingDashboardCard } from './DreamingDashboardCard';
 import {
   listLocalFindings,
   pickPrimaryFinding,
-  readLastBoardDomain,
   type BoardFinding,
 } from '../../services/audit/findingBoardService';
 import { auditHistoryService } from '../../services/audit/auditHistoryService';
+import { labsVisible } from '../../services/ui/labsAccess';
 
 interface DashboardViewProps {
   onNavigate: (view: AppView) => void;
@@ -40,7 +40,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
   const telemetrySummary = productTelemetry.getSummary();
   const completedSteps = telemetrySummary.completedOnboardingSteps || [];
   const auditCount = auditCountFromStorage();
-  const hasRunAudit = auditCount > 0 || completedSteps.includes('quick_scout') || Boolean(readLastBoardDomain());
+  const hasRunAudit = auditCount > 0;
   const hasProfile = Boolean(dna) || completedSteps.includes('business_dna');
   const hasSavedProject = completedSteps.includes('strategy_saved') || completedSteps.includes('brand_memory') || (signedIn && hasRunAudit);
 
@@ -376,7 +376,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
         </div>
       </div>
 
-      {advancedUi && (
+      {advancedUi && labsVisible() && (
         <div className="space-y-4 pt-6 mt-6 border-t border-[var(--color-rule)]">
           <div className="flex items-center gap-3">
             <span className="text-[11px] font-mono uppercase tracking-[0.14em] text-warning-400">Labs & Advanced Intelligence</span>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { commandRouterService } from '../../services/harness/commandRouterService';
+import { labsVisible } from '../../services/ui/labsAccess';
 import { AppView } from '../../types';
 import { ICONS } from '../../constants';
 
@@ -42,9 +43,7 @@ const DESTINATIONS: Destination[] = [
   { id: 'harness', label: 'Developer harness (Lab)', description: 'Agent matrix, context graph, memory, tests, themes.', keywords: 'lab harness developer agents graph vfs memory cli terminal theme', view: AppView.HARNESS, icon: ICONS.Terminal, group: 'Labs' },
 ];
 
-const isAdvanced = () => {
-  try { return localStorage.getItem('luminara_advanced_ui') === '1'; } catch { return false; }
-};
+const isAdvanced = () => labsVisible();
 
 /**
  * Cmd+K palette. Founders see plain destinations; developer CLI commands are appended only when

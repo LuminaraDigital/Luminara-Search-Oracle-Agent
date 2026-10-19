@@ -238,7 +238,7 @@ function metaContent(html: string): string | null {
     if (name !== 'description' && name !== 'og:description') continue;
     const content = /\bcontent\s*=\s*("([^"]*)"|'([^']*)')/i.exec(tag);
     const text = visibleText(content?.[2] || content?.[3] || '');
-    if (text) return text.slice(0, 300);
+    if (text) return clip(text, 300);
   }
   return null;
 }
@@ -246,12 +246,12 @@ function metaContent(html: string): string | null {
 /** Title, meta description, and a short heading sample. The rest of the page is discarded. */
 export function extractPageSample(html: string): { title: string | null; metaDescription: string | null; headings: string[] } {
   const titleRaw = /<title[^>]*>([\s\S]{0,400}?)<\/title>/i.exec(html)?.[1] || '';
-  const title = visibleText(titleRaw).slice(0, 200) || null;
+  const title = clip(visibleText(titleRaw), 200) || null;
   const headings: string[] = [];
   const re = /<h[1-3]\b[^>]*>([\s\S]{0,500}?)<\/h[1-3]>/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(html)) && headings.length < MAX_HEADINGS) {
-    const text = visibleText(match[1] || '').slice(0, 140);
+    const text = clip(visibleText(match[1] || ''), 140);
     if (text) headings.push(text);
   }
   return { title, metaDescription: metaContent(html), headings };
@@ -260,7 +260,12 @@ export function extractPageSample(html: string): { title: string | null; metaDes
 function clip(text: string, max: number): string {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (clean.length <= max) return clean;
-  return clean.slice(0, max - 3).trim();
+  const room = max - 1;
+  if (room < 1) return '…';
+  const cut = clean.slice(0, room);
+  const space = cut.lastIndexOf(' ');
+  const base = (space > 0 ? cut.slice(0, space) : cut).trimEnd();
+  return `${base}…`;
 }
 
 export function buildIdeaScoutCard(input: {
@@ -501,7 +506,7 @@ export function continuumAuditStartParam(domain: string): string | null {
 }
 
 export function plainPulseField(value: string, max = 120): string {
-  return stripPercentageTheater(value.replace(/[*_`[\]]/g, '')).replace(/\s+/g, ' ').trim().slice(0, max);
+  return clip(stripPercentageTheater(value.replace(/[*_`[\]]/g, '')), max);
 }
 
 export function formatNichePulseMessage(input: { niche: string; tip: string | null }): string {

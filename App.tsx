@@ -39,6 +39,7 @@ import type { AuditHandoff } from './services/activation/auditHandoff';
 import { MarketingChromeContext, type MarketingChrome } from './components/marketing/marketingChrome';
 import { normalizeHandoffUrl } from './services/activation/auditHandoff';
 import { viewAfterSignIn } from './services/activation/postSignInView';
+import { labsVisible } from './services/ui/labsAccess';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
@@ -366,11 +367,9 @@ const App: React.FC = () => {
     }
   }, [showSuiteMenu]);
 
-  const [advancedUi, setAdvancedUi] = useState<boolean>(() => {
-    try { return localStorage.getItem('luminara_advanced_ui') === '1'; } catch { return false; }
-  });
+  const [advancedUi, setAdvancedUi] = useState(labsVisible);
   useEffect(() => {
-    const onChange = () => { try { setAdvancedUi(localStorage.getItem('luminara_advanced_ui') === '1'); } catch { /* noop */ } };
+    const onChange = () => setAdvancedUi(labsVisible());
     window.addEventListener('luminara-advanced-ui', onChange);
     return () => window.removeEventListener('luminara-advanced-ui', onChange);
   }, []);

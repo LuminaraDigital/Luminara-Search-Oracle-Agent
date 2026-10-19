@@ -20,7 +20,7 @@ import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
-import { apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
+import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
 import { Button } from '../ui/Button';
@@ -28,7 +28,8 @@ import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
 import { SuiteCitabilityChecklist } from './SuiteCitabilityChecklist';
 import { buildGuestScoutSummary, isDegradedScout, plainScoutVerdict, shouldGenerateAuditReport, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
-import { hostedScoutPreRunCopy, requestGuestFullAuditSignIn, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
+import { guestNeedsFullAuditSignIn, hostedScoutPreRunCopy, requestGuestFullAuditSignIn, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
+import { probeLlmCrawlerReadiness } from '../../services/audit/llmCrawlerProbe';
 import { canMintTeaserShare, createShareTeaser } from '../../services/share/shareReportClient';
 import { shareExternalLink } from '../../services/telegram/tma';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
@@ -98,6 +99,21 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       draftPersistenceService.setDraft(DRAFT_KEYS.AUDIT_URL, initialUrl);
     }
   }, [initialUrl]);
+
+  useEffect(() => {
+    if (!initialUrl || hostedRail !== 'byok_or_signin') return;
+    const tryOpen = () => {
+      if (accountCallsAllowed()) return false;
+      if (!guestNeedsFullAuditSignIn(hostedRail)) return true;
+      requestGuestFullAuditSignIn(initialUrl);
+      return true;
+    };
+    if (tryOpen()) return;
+    const timer = window.setInterval(() => {
+      if (tryOpen()) window.clearInterval(timer);
+    }, 300);
+    return () => window.clearInterval(timer);
+  }, [initialUrl, hostedRail]);
 
   useEffect(() => {
     if (initialFocus) {
@@ -192,6 +208,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       return;
     }
 
+    if (guestNeedsFullAuditSignIn(hostedRail)) {
+      const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
+      requestGuestFullAuditSignIn(formattedUrl);
+      void probeLlmCrawlerReadiness(formattedUrl);
+      return;
+    }
+
     if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
       openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited audits.`);
       setError(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan for unlimited audits or add your own API key in Settings.`);
@@ -219,7 +242,6 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setShareNote(null);
     setAttestation(null);
     setProgressStage('Starting audit…');
-    productTelemetry.recordOnboardingStep('quick_scout');
 
     try {
       const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
@@ -279,7 +301,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (seq !== runSeq.current) return;
 
       let inviteNote = '';
-      if (!isGuest && !summary.evidenceEmpty && (crewResult.measurementStatus === 'measured' || crewResult.measurementStatus === 'not_measured')) {
+      if (!isGuest && crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty) {
         const qualified = await qualifyHonestScout({
           domain: summary.domain,
           measurementStatus: crewResult.measurementStatus,
@@ -333,7 +355,11 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (seq !== runSeq.current) return;
       if (!result) {
         setStrategySaved(false);
-        setPersistHint(withInvite(instantAuditPersistHint(sessionSignedIn, 'unmeasured')));
+        setPersistHint(withInvite(instantAuditPersistHint(
+          sessionSignedIn,
+          'unmeasured',
+          Boolean(quota && !quota.isUnlimited),
+        )));
         return;
       }
       if (crewResult.plainEnglishBrief && !result.plainEnglishBrief) {
@@ -341,6 +367,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       }
       setReport(result);
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
+      if (crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty) {
+        productTelemetry.recordOnboardingStep('quick_scout');
+      }
       productTelemetry.recordFirstValue('audit');
       productTelemetry.track('instant_audit_completed', {
         focus: targetFocus,
@@ -730,7 +759,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       {!guestResultFirst && scoutPanel}
 
       {/* Agent Mission Control: Real-time Multi-Agent Activity Stream */}
-      {crewEvents.length > 0 && (
+      {crewEvents.length > 0 && !guestNeedsFullAuditSignIn(hostedRail) && (
         <AgentMissionControl
           events={crewEvents}
           isComplete={!loading && crewMeasurement != null}

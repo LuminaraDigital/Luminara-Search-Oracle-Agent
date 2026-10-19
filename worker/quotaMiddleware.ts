@@ -15,6 +15,8 @@ export interface QuotaStatus {
   bonusRemaining?: number;
   /** True when this request was allowed by a referral credit after the daily cap. */
   bonusConsumed?: boolean;
+  /** KV key incremented for this call. Set only when a free unit was taken. */
+  meterKey?: string;
 }
 
 /**
@@ -88,7 +90,35 @@ async function meterDailyQuota(
     remaining: Math.max(0, limit - newUsed),
     resetSec,
     isUnlimited: false,
+    meterKey: key,
   };
+}
+
+/**
+ * Give back one metered unit after a hosted call that produced no result.
+ * Refunds stop at FREE_DAILY_LIMIT per UTC day so forced failures cannot keep restoring the meter.
+ * shortcut: KV get-then-put can refund a concurrent call's unit, upgrade when the meter is atomic.
+ */
+export async function refundMeteredQuota(
+  env: Env,
+  status: QuotaStatus | null,
+): Promise<{ refunded: boolean; capped: boolean }> {
+  if (!status?.meterKey || !env.LUMINARA_KV || status.limit <= 0) {
+    return { refunded: false, capped: false };
+  }
+  const cap = status.limit;
+  const refundKey = status.meterKey.replace(/^quota:/, 'quota-refund:');
+  try {
+    const refunded = Number((await env.LUMINARA_KV.get(refundKey)) || 0);
+    if (refunded >= cap) return { refunded: false, capped: true };
+    const used = Number((await env.LUMINARA_KV.get(status.meterKey)) || 0);
+    if (used <= 0) return { refunded: false, capped: false };
+    await env.LUMINARA_KV.put(status.meterKey, String(used - 1), { expirationTtl: 2 * 86400 });
+    await env.LUMINARA_KV.put(refundKey, String(refunded + 1), { expirationTtl: 2 * 86400 });
+    return { refunded: true, capped: false };
+  } catch {
+    return { refunded: false, capped: false };
+  }
 }
 
 /**

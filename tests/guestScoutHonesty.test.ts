@@ -10,7 +10,8 @@ import type { AuditFinding } from '../services/agentCore/types';
 import { renderMarkdown } from '../utils/markdown';
 import * as markdownUtils from '../utils/markdown';
 import { hostedProviderKeyDecision } from '../services/apiClient';
-import { hostedAuthRecoveryHint, hostedScoutPreRunCopy, resolveHostedScoutRail } from '../services/audit/hostedScoutRail';
+import { guestNeedsFullAuditSignIn, hostedAuthRecoveryHint, hostedScoutPreRunCopy, requestGuestFullAuditSignIn, resolveHostedScoutRail } from '../services/audit/hostedScoutRail';
+import { draftPersistenceService, DRAFT_KEYS } from '../services/state/draftPersistenceService';
 import { hostedAuthSkipError } from '../services/resilience/hostedAuthCircuit';
 import { instantAuditPersistHint } from '../components/audit/InstantAuditView';
 import { ReportDisplay } from '../components/audit/ReportDisplay';
@@ -435,6 +436,9 @@ describe('signed-in degraded copy', () => {
   it('does not tell a signed-in user to sign in when strategy was not saved', () => {
     expect(instantAuditPersistHint(true, 'unsaved').toLowerCase()).not.toContain('sign in');
     expect(instantAuditPersistHint(true, 'unmeasured').toLowerCase()).not.toContain('sign in');
+    expect(instantAuditPersistHint(true, 'unmeasured', true)).toBe(
+      "This check couldn't finish, it didn't count against your free checks. Retry, or check Settings → provider status.",
+    );
     expect(instantAuditPersistHint(false, 'unsaved')).toMatch(/Sign in to save a project/);
     expect(instantAuditPersistHint(false, 'unmeasured')).toMatch(/Sign in to save a project/);
   });
@@ -638,5 +642,32 @@ describe('LLM crawler readiness', () => {
     expect(getAnswerDepth()).toBe('thorough');
     setAnswerDepth('quick');
     expect(getAnswerDepth()).toBe('quick');
+  });
+});
+
+describe('guest full audit sign-in', () => {
+  it('keeps the domain and opens sign-in when the guest has no own keys', () => {
+    const storage: Record<string, string> = {};
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage[key] ?? null,
+      setItem: (key: string, value: string) => { storage[key] = value; },
+      removeItem: (key: string) => { delete storage[key]; },
+    });
+    const seen: CustomEvent[] = [];
+    vi.stubGlobal('window', {
+      dispatchEvent: (event: Event) => {
+        seen.push(event as CustomEvent);
+        return true;
+      },
+      localStorage: { getItem: (key: string) => storage[key] ?? null },
+    });
+    expect(guestNeedsFullAuditSignIn('byok_or_signin')).toBe(true);
+    expect(guestNeedsFullAuditSignIn('signed_in_hosted')).toBe(false);
+    requestGuestFullAuditSignIn('clinic.example');
+    expect(seen[0]?.detail).toEqual({ mode: 'signin' });
+    expect(draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL)).toBe('clinic.example');
+    storage.luminara_groq_key = 'gsk_test';
+    expect(guestNeedsFullAuditSignIn('byok_or_signin')).toBe(false);
+    vi.unstubAllGlobals();
   });
 });
