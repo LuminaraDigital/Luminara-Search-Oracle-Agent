@@ -40,6 +40,7 @@ export function isMissingModelStatus(status: number, body: string): boolean {
  */
 export function isHostedRateLimit(status: number, body: string): boolean {
   if (status === 429) return true;
-  if (status !== 503) return false;
-  return /"code"\s*:\s*"rate_limit_exceeded"|rate limit reached/i.test(body);
+  // The relay keeps Groq's JSON on a leftover 429 (503). A single request over the cap is 413.
+  if (status !== 503 && status !== 413) return false;
+  return /"code"\s*:\s*"rate_limit_exceeded"|rate limit reached|request too large/i.test(body);
 }
