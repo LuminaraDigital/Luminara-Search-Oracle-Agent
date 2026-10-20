@@ -13,6 +13,7 @@
  *   POST /api/auth/link                   explicit Telegram + Firebase link ({ confirm: true })
  *   GET  /api/enrichment/entity           signed-in Wikidata & Wayback Machine edge resolution with KV cache
  *   POST /api/providers/:id/<path>        authenticated proxy to LLM / search / scrape vendors
+ *   POST /api/high-accuracy/schema        BYOK best-of-n JSON-LD (HIGH_ACCURACY=on)
  *   *    /api/sidecars/:id/<path>         relay to self-hosted helpers: "languagetool" (Writing check)
  *                                         and "umami" (Results tracking); allow-listed, not metered
  *   POST /api/telegram/webhook            Telegram bot updates (secret-token protected)
@@ -88,6 +89,7 @@ import { handleReferralRoute, referralBonusRemaining } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
 import { proxyProvider, PROVIDERS } from './providerRelay';
+import { handleHighAccuracySchema } from './highAccuracy';
 import { runSentinelScan, handleSentinelRoute } from './sentinel';
 import { handleEntityEnrichment } from './enrichmentService';
 import { handleAgentAttestation } from './attestationService';
@@ -298,7 +300,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     path === '/oracle/chat' ||
     path === '/audit/run' ||
     path === '/enrichment/entity' ||
-    path === '/pagespeed';
+    path === '/pagespeed' ||
+    path === '/high-accuracy/schema';
   if (isHighCostPath) {
     const edgeHigh = await enforceEdgeBindingLimit(env.HIGH_COST_RATE_LIMITER, `hc:${ip}:${path.split('/')[1] || 'root'}`, {
       action: 'high_cost_edge',
@@ -1620,6 +1623,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (hit) return hit;
     const res = await handleDomainVerificationRoute(request, env, path);
     if (res) return withCors(res);
+  }
+
+  // Best-of-n JSON-LD on the caller's own provider key. Dark unless HIGH_ACCURACY=on.
+  if (path === '/high-accuracy/schema') {
+    return withCors(handleHighAccuracySchema(request, env));
   }
 
   // PageSpeed Insights (BYOK header or hosted PAGESPEED_API_KEY)

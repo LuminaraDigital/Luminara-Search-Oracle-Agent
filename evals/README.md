@@ -43,6 +43,16 @@ block-level findings). `maxBlock` / `maxWarn` cap finding counts by severity
 (maxBlock defaults to 0). `mustContain` / `mustNotContain` are raw substring
 assertions on the response.
 
+## High-accuracy schema fixtures
+
+Cases with `kind: high_accuracy_schema` (or a `candidate0` key) are recorded
+model outputs. `npm run evals` runs them through `bestOfN` and
+`validateJsonLdCandidate` in `worker/highAccuracySelect.ts`. No model is
+called. `strategy` is `escalate` (default) or `parallel`. `expect.winnerIndex`
+is the 0-based winner, or `none`. `expect.calls` is how many candidates were
+generated. `expect.reason` is a validator code that must appear.
+`expect.mustContain` checks the canonical JSON of the winner.
+
 ## YAML subset limitation
 
 `evals/yaml-subset.mjs` is a tiny hand-rolled parser, not YAML. It supports

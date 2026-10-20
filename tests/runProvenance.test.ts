@@ -99,6 +99,20 @@ describe('runProvenance', () => {
     await expect(getRunChain(env, 'x')).resolves.toEqual([]);
   });
 
+  it('completeRun note replaces wake_comment and a later close without a note keeps it', async () => {
+    const env = { DB: createSqliteD1() };
+    const run = await startRun(env, { ...base, surface: 'high_accuracy', wakeComment: 'started' });
+    await completeRun(env, run!.runId, 'completed', 'best_of_n;byok;calls=1;winner=0');
+    const noted = env.DB.sqlite.prepare('SELECT status, wake_comment FROM run_provenance WHERE run_id = ?').get(run!.runId);
+    expect(noted.status).toBe('completed');
+    expect(noted.wake_comment).toBe('best_of_n;byok;calls=1;winner=0');
+
+    await completeRun(env, run!.runId, 'failed');
+    const kept = env.DB.sqlite.prepare('SELECT status, wake_comment FROM run_provenance WHERE run_id = ?').get(run!.runId);
+    expect(kept.status).toBe('failed');
+    expect(kept.wake_comment).toBe('best_of_n;byok;calls=1;winner=0');
+  });
+
   it('truncates wake_comment to 256 chars', async () => {
     const env = { DB: createSqliteD1() };
     const run = await startRun(env, { ...base, wakeComment: 'x'.repeat(500) });
