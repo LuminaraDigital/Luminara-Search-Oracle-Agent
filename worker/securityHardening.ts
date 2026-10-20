@@ -246,29 +246,39 @@ export async function enforceDualRateLimit(
   if (opts.accountId) keys.push(`rl:${opts.action}:acct:${opts.accountId}`);
 
   let worstRemaining = limit;
-  for (const key of keys) {
-    const raw = await env.LUMINARA_KV.get(key);
-    const count = Number(raw || 0) + 1;
-    if (count > limit) {
-      console.warn(
-        JSON.stringify({
-          event: 'rate_limit_exceeded',
-          action: opts.action,
-          key,
-          count,
-          limit,
-          windowSec,
-          accountId: opts.accountId || null,
-          ip: opts.ip,
-        }),
-      );
-      return {
-        ok: false,
-        response: rateLimitedResponse({ limit, windowSec, remaining: 0 }),
-      };
+  try {
+    for (const key of keys) {
+      const raw = await env.LUMINARA_KV.get(key);
+      const count = Number(raw || 0) + 1;
+      if (count > limit) {
+        console.warn(
+          JSON.stringify({
+            event: 'rate_limit_exceeded',
+            action: opts.action,
+            key,
+            count,
+            limit,
+            windowSec,
+            accountId: opts.accountId || null,
+            ip: opts.ip,
+          }),
+        );
+        return {
+          ok: false,
+          response: rateLimitedResponse({ limit, windowSec, remaining: 0 }),
+        };
+      }
+      // shortcut: 120s minimum, a 60s expiration has been failing the live KV put.
+      await env.LUMINARA_KV.put(key, String(count), { expirationTtl: Math.max(120, windowSec) });
+      worstRemaining = Math.min(worstRemaining, Math.max(0, limit - count));
     }
-    await env.LUMINARA_KV.put(key, String(count), { expirationTtl: windowSec });
-    worstRemaining = Math.min(worstRemaining, Math.max(0, limit - count));
+  } catch {
+    // shortcut: a failed KV write skips this window. The edge limiter already ran.
+    console.warn(JSON.stringify({ event: 'rate_limit_store_error', action: opts.action }));
+    return {
+      ok: true,
+      headers: rateLimitHeaders({ limit, remaining: limit, windowSec }),
+    };
   }
 
   return {
@@ -296,7 +306,21 @@ export async function enforceEdgeBindingLimit(
       }),
     };
   }
-  const { success } = await limiter.limit({ key });
+  let success = false;
+  try {
+    success = (await limiter.limit({ key })).success;
+  } catch {
+    // A broken binding must not 500 sign-up or the audit. The KV window still applies.
+    console.warn(JSON.stringify({ event: 'edge_rate_limit_unavailable', action: meta.action }));
+    return {
+      ok: true,
+      headers: rateLimitHeaders({
+        limit: meta.limit,
+        remaining: meta.limit,
+        windowSec: meta.windowSec,
+      }),
+    };
+  }
   if (!success) {
     console.warn(
       JSON.stringify({
@@ -387,44 +411,53 @@ export async function enforceKvSlidingWindow(
   const now = Date.now();
   const windowMs = windowSec * 1000;
   const cutoff = now - windowMs;
-  const prior = (await readSlidingBucket(env.LUMINARA_KV, opts.key)).filter((t) => t > cutoff);
-  if (prior.length >= limit) {
-    const oldest = Math.min(...prior);
-    const retryAfterSec = Math.max(1, Math.ceil((oldest + windowMs - now) / 1000));
-    console.warn(
-      JSON.stringify({
-        event: 'rate_limit_exceeded',
-        kind: 'sliding_window',
-        key: opts.key,
-        count: prior.length,
-        limit,
-        windowSec,
-      }),
-    );
+  try {
+    const prior = (await readSlidingBucket(env.LUMINARA_KV, opts.key)).filter((t) => t > cutoff);
+    if (prior.length >= limit) {
+      const oldest = Math.min(...prior);
+      const retryAfterSec = Math.max(1, Math.ceil((oldest + windowMs - now) / 1000));
+      console.warn(
+        JSON.stringify({
+          event: 'rate_limit_exceeded',
+          kind: 'sliding_window',
+          key: opts.key,
+          count: prior.length,
+          limit,
+          windowSec,
+        }),
+      );
+      return {
+        ok: false,
+        response: rateLimitedResponse({
+          limit,
+          windowSec,
+          remaining: 0,
+          retryAfterSec,
+          code: 'RATE_LIMITED',
+        }),
+      };
+    }
+
+    const next = [...prior, now];
+    // shortcut: 120s minimum, KV has been rejecting a 60s expiration on the live account.
+    await env.LUMINARA_KV.put(opts.key, JSON.stringify({ timestamps: next } satisfies SlidingBucket), {
+      expirationTtl: Math.max(120, windowSec + 60),
+    });
     return {
-      ok: false,
-      response: rateLimitedResponse({
+      ok: true,
+      headers: rateLimitHeaders({
         limit,
+        remaining: Math.max(0, limit - next.length),
         windowSec,
-        remaining: 0,
-        retryAfterSec,
-        code: 'RATE_LIMITED',
       }),
     };
+  } catch {
+    console.warn(JSON.stringify({ event: 'rate_limit_store_error' }));
+    return {
+      ok: true,
+      headers: rateLimitHeaders({ limit, remaining: limit, windowSec }),
+    };
   }
-
-  const next = [...prior, now];
-  await env.LUMINARA_KV.put(opts.key, JSON.stringify({ timestamps: next } satisfies SlidingBucket), {
-    expirationTtl: Math.max(60, windowSec + 60),
-  });
-  return {
-    ok: true,
-    headers: rateLimitHeaders({
-      limit,
-      remaining: Math.max(0, limit - next.length),
-      windowSec,
-    }),
-  };
 }
 
 /**

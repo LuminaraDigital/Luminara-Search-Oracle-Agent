@@ -128,6 +128,39 @@ describe('securityHardening', () => {
     }
   });
 
+  it('keeps serving when the KV rate-limit put throws', async () => {
+    const env = {
+      LUMINARA_KV: {
+        get: async () => null,
+        put: async () => {
+          throw new Error('KV put failed');
+        },
+      },
+      REQUIRE_TG_AUTH: 'true',
+    } as unknown as Env;
+    const result = await enforceDualRateLimit(env, {
+      action: 'probe_crawl',
+      ip: '203.0.113.9',
+      limitPerKey: 10,
+      windowSec: 60,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('keeps serving when the edge limiter binding throws', async () => {
+    const limiter = {
+      limit: async () => {
+        throw new Error('binding down');
+      },
+    };
+    const result = await enforceEdgeBindingLimit(limiter, 'signup:203.0.113.9', {
+      action: 'signup_edge',
+      limit: 3,
+      windowSec: 60,
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it('edge binding returns EDGE_RATE_LIMITED when limit() fails', async () => {
     const limiter = { limit: vi.fn(async () => ({ success: false })) };
     const result = await enforceEdgeBindingLimit(limiter, 'api:9.9.9.9', {
