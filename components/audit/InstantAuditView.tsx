@@ -235,6 +235,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (linkId && !linkedOk && continuumRef.current == null) continuumRef.current = linkId;
     };
     let measuredRun = false;
+    const auditScores = { healthScore: null as number | null, citationRate: null as number | null };
     setLoading(true);
     setCrewEvents([]);
     setCrewMeasurement(null);
@@ -266,6 +267,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       const summary = summaryFromCrew(crewResult, hostedRail);
       measuredRun = !isGuest && crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty;
+      auditScores.healthScore = crewResult.healthScore;
+      auditScores.citationRate = crewResult.citationRatePercent;
       const degraded = isDegradedScout({
         measurementStatus: crewResult.measurementStatus,
         evidenceEmpty: summary.evidenceEmpty,
@@ -424,7 +427,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       setError(userErr);
       productTelemetry.recordError('InstantAuditView', userErr);
     } finally {
-      void finishHostedAuditRun(measuredRun);
+      void finishHostedAuditRun(measuredRun, auditScores);
       if (seq === runSeq.current) {
         setLoading(false);
         setProgressStage('');

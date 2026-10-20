@@ -7,6 +7,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, identify, json } from './workerUtils';
 import { checkHostedQuota, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
+import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { safePublicHostname } from './security';
 
 export const AUDIT_RUN_TTL_SEC = 10 * 60;
@@ -30,7 +31,8 @@ interface AuditRunRecord {
 export type AuditRunClaim =
   | { kind: 'meter' }
   | { kind: 'covered'; token: string; domain: string }
-  | { kind: 'reject'; error: string };
+  | { kind: 'reject'; error: string }
+  | { kind: 'wrong-site'; error: string };
 
 export function auditHostname(input: string): string {
   const raw = input.trim();
@@ -114,7 +116,12 @@ export async function mintAuditRun(
   return json({ ok: true, token, domain, calls: AUDIT_RUN_CALL_CAP, ttlSec: AUDIT_RUN_TTL_SEC });
 }
 
-export async function refundAuditRun(env: Env, user: HostedIdentity, token: string): Promise<Response> {
+export async function refundAuditRun(
+  env: Env,
+  user: HostedIdentity,
+  token: string,
+  unmeasured = false,
+): Promise<Response> {
   const record = await readRun(env, token);
   if (!record || record.exp <= Date.now()) {
     return json({ ok: false, error: 'This audit run expired.', code: 'AUDIT_RUN_REJECTED' }, 401);
@@ -122,7 +129,8 @@ export async function refundAuditRun(env: Env, user: HostedIdentity, token: stri
   if (record.userId !== billingId(user)) {
     return json({ ok: false, error: 'This audit run belongs to another account.', code: 'AUDIT_RUN_REJECTED' }, 401);
   }
-  if (record.refunded || record.sawSuccess || !record.meterKey) {
+  // A 200 page can still leave both scores null. That run is unmeasured and gets its check back.
+  if (record.refunded || !record.meterKey || (record.sawSuccess && !unmeasured)) {
     return json({ ok: true, refunded: false });
   }
   const status: QuotaStatus = {
@@ -156,8 +164,8 @@ export async function takeAuditRunCall(env: Env, user: HostedIdentity, request: 
   if (record.userId !== billingId(user)) {
     return { kind: 'reject', error: 'This audit run belongs to another account.' };
   }
-  if (!domain || domain !== record.domain) {
-    return { kind: 'reject', error: 'This audit run is for a different site.' };
+  if (!domain || !sameSiteHost(domain, record.domain)) {
+    return { kind: 'wrong-site', error: 'This audit run is for a different site.' };
   }
   if (record.left <= 0) return { kind: 'meter' };
   record.left -= 1;
@@ -176,16 +184,17 @@ export async function handleAuditScoutRun(request: Request, env: Env): Promise<R
   if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   const who = await identify(request, env);
   if (who.error || !who.user) return json({ ok: false, error: who.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401);
-  let body: { domain?: unknown; token?: unknown; refund?: unknown };
+  let body: { domain?: unknown; token?: unknown; refund?: unknown; healthScore?: unknown; citationRate?: unknown };
   try {
-    body = (await request.json()) as { domain?: unknown; token?: unknown; refund?: unknown };
+    body = (await request.json()) as typeof body;
   } catch {
     return json({ ok: false, error: 'Invalid JSON body', code: 'INVALID_JSON' }, 400);
   }
   if (body.refund === true) {
     const token = typeof body.token === 'string' ? body.token.trim() : '';
     if (!token) return json({ ok: false, error: 'token required', code: 'BAD_REQUEST' }, 400);
-    return refundAuditRun(env, who.user, token);
+    const unmeasured = body.healthScore === null && body.citationRate === null;
+    return refundAuditRun(env, who.user, token, unmeasured);
   }
   const domain = typeof body.domain === 'string' ? body.domain : '';
   return mintAuditRun(env, who.user, domain);

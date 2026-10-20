@@ -1,8 +1,14 @@
+/** Drops the server-painted hero. Navigation and the first React commit share this. */
+export function dismissFirstPaint(): void {
+  document.getElementById('lx-first-paint')?.remove();
+  document.documentElement.classList.remove('lx-fp-live');
+}
+
 /** Remove the server-painted hero once the visitor leaves that URL. */
 export function bindFirstPaintDismissal(): void {
   const node = document.getElementById('lx-first-paint');
   if (!node) {
-    document.documentElement.classList.remove('lx-fp-live');
+    dismissFirstPaint();
     return;
   }
   const path = node.getAttribute('data-path') || '/';
@@ -10,8 +16,7 @@ export function bindFirstPaintDismissal(): void {
   const drop = () => {
     if (dropped) return;
     dropped = true;
-    node.remove();
-    document.documentElement.classList.remove('lx-fp-live');
+    dismissFirstPaint();
     window.removeEventListener('popstate', onNav);
   };
   const onNav = () => {
