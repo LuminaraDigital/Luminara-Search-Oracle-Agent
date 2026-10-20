@@ -11,6 +11,7 @@ import {
   type WorkersAiFallbackOutcome,
   type WorkersAiFallbackReason,
 } from './workersAiFallback';
+import { tryNvidiaChatFallback } from './nvidiaChatFallback';
 import {
   MAX_BODY_BYTES,
   clampHostedChatCompletionsBody,
@@ -53,7 +54,7 @@ export function isChatCompletionsPath(providerId: string, subPath: string): bool
 }
 
 /**
- * The one path the Workers AI fallback may answer: hosted Groq chat completions.
+ * Hosted Groq chat is the only path that may fall through to NVIDIA and then Workers AI.
  * Every other provider, and every other Groq path, returns its own result or its own error.
  */
 export function isWorkersAiFallbackPath(providerId: string, subPath: string): boolean {
@@ -321,6 +322,32 @@ async function tryWorkersAiFallback(
   }
 }
 
+/** NVIDIA, then Workers AI. Null means both declined, so the caller sends its own error. */
+async function tryChatFallbacks(
+  env: Env,
+  request: Request,
+  providerId: string,
+  subPath: string,
+  userKey: string,
+  body: unknown,
+  context: WorkersAiFallbackContext,
+  quotaGate: QuotaStatus | null,
+  accountId: string,
+  paid: boolean,
+): Promise<Response | null> {
+  if (userKey || request.method !== 'POST' || !isWorkersAiFallbackPath(providerId, subPath)) return null;
+  const nvidia = await tryNvidiaChatFallback({
+    env,
+    body,
+    reason: context.reason,
+    accountId,
+    paid,
+    quotaGate,
+  });
+  if (nvidia) return nvidia;
+  return tryWorkersAiFallback(env, request, providerId, subPath, userKey, body, context, quotaGate);
+}
+
 export async function proxyProvider(
   request: Request,
   env: Env,
@@ -349,6 +376,8 @@ export async function proxyProvider(
 
   let quotaGate: QuotaStatus | null = null;
   let scoutAccountId: string | null = null;
+  let paidSubscriber = false;
+  let fallbackAccountId = 'anon';
 
   if (!userKey) {
     const who = await identify(request, env);
@@ -378,6 +407,8 @@ export async function proxyProvider(
     // - Groq Cloud LPU is free (subject to daily free quota).
     // - NVIDIA NIM Enterprise, Sovereign Ollama, and OpenRouter are behind our Paid Tier!
     const isPaidSubscriber = await isUserSubscribed(env, who.user);
+    paidSubscriber = isPaidSubscriber;
+    fallbackAccountId = who.user ? (scoutAccountId || billingId(who.user)) : `anon:${(clientIp(request) || '').trim() || 'unknown'}`;
     const PAID_TIER_PROVIDERS = new Set(['nim', 'ollama', 'openrouter', 'dataforseo']);
     if (!isPaidSubscriber && PAID_TIER_PROVIDERS.has(providerId)) {
       return json(
@@ -481,13 +512,14 @@ export async function proxyProvider(
   } else {
     const auth = spec.auth(env, headers, body);
     if (!auth.ok) {
-      // No hosted Groq key. Chat completions fall through to Workers AI. Other providers keep their own error.
-      if (isWorkersAiFallbackPath(providerId, subPath) && env.AI && request.method === 'POST') {
+      // No hosted Groq key. Chat completions try NVIDIA, then Workers AI. Other providers keep their own error.
+      if (isWorkersAiFallbackPath(providerId, subPath) && request.method === 'POST') {
         const clamped = clampHostedChatCompletionsBody(body);
         if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
-        const fallback = await tryWorkersAiFallback(
-          env, request, providerId, subPath, userKey, body, { reason: 'provider_not_configured' }, quotaGate,
+        const fallback = await tryChatFallbacks(
+          env, request, providerId, subPath, userKey, body,
+          { reason: 'provider_not_configured' }, quotaGate, fallbackAccountId, paidSubscriber,
         );
         if (fallback) return fallback;
       }
@@ -546,8 +578,9 @@ export async function proxyProvider(
     fetch(upstream.toString(), { method: request.method, headers: hdrs, body: upstreamBody });
 
   const networkFailure = async (err: unknown): Promise<Response> => {
-    const fallback = await tryWorkersAiFallback(
-      env, request, providerId, subPath, userKey, body, { reason: 'network_error' }, quotaGate,
+    const fallback = await tryChatFallbacks(
+      env, request, providerId, subPath, userKey, body,
+      { reason: 'network_error' }, quotaGate, fallbackAccountId, paidSubscriber,
     );
     if (fallback) return fallback;
     const message = err instanceof Error ? err.message : String(err);
@@ -590,12 +623,12 @@ export async function proxyProvider(
     }
   }
 
-  // After the second key: 429, 5xx, and a timeout already handled above. 401 and 402 are not replaced.
+  // After the second key: 429 and 5xx try NVIDIA, then Workers AI. 401 and 402 are not replaced.
   if (workersAiStatus(res.status)) {
-    const fallback = await tryWorkersAiFallback(
+    const fallback = await tryChatFallbacks(
       env, request, providerId, subPath, userKey, body,
       { reason: workersAiReason(res.status), upstreamStatus: res.status },
-      quotaGate,
+      quotaGate, fallbackAccountId, paidSubscriber,
     );
     if (fallback) return fallback;
   }

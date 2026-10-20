@@ -1,8 +1,8 @@
 /**
  * Cloudflare Workers AI fallback for the hosted Groq chat-completions path (Track SW, SW0a-11).
  *
- * The relay calls this when hosted Groq cannot answer: no hosted key, a network failure or
- * timeout, an upstream 5xx, or a 429 after the fallback Groq key. It answers in the OpenAI
+ * The relay calls this after NVIDIA (missing, capped, or failed) when hosted Groq cannot
+ * answer: no hosted key, a network failure or timeout, an upstream 5xx, or a 429. It answers in the OpenAI
  * ChatCompletion shape (JSON or SSE) and always names the model that wrote the reply. It refuses
  * any request it cannot serve faithfully, so a typed,
  * tool-using or long call gets the upstream's own error instead of free text from a smaller model.

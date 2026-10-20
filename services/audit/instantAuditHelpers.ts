@@ -93,7 +93,9 @@ export async function generateAuditReportUnlessDegraded(input: {
   );
   const pages = input.scrapedPages ?? [];
   const guarded = guardPasteReadyCopy(report.text).text;
-  const modelLine = fallbackAnswerLine(report.answeredBy ? { model: report.answeredBy } : undefined);
+  const modelLine = fallbackAnswerLine(
+    report.answeredBy ? { model: report.answeredBy, provider: report.answeredByProvider } : undefined,
+  );
   return {
     ...report,
     text: modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded,

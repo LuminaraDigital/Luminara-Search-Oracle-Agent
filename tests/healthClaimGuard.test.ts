@@ -162,6 +162,37 @@ describe('health-claim guardrail', () => {
     spy.mockRestore();
   });
 
+  it('names NVIDIA on a fallback audit report', async () => {
+    const spy = vi.spyOn(geminiService, 'generateAuditReport').mockResolvedValue({
+      text: '# Luminara\n\nOne move this week.',
+      sources: [],
+      answeredBy: 'meta/llama-3.2-11b-vision-instruct',
+      answeredByProvider: 'nvidia',
+    } as Awaited<ReturnType<typeof geminiService.generateAuditReport>>);
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'measured',
+      citationRatePercent: 12,
+      shareOfVoiceScore: 20,
+      healthScore: 80,
+      scrapedPageCount: 1,
+      serpCount: 1,
+      findings: [],
+      hostedRail: 'signed_in_hosted',
+    });
+    const report = await generateAuditReportUnlessDegraded({
+      isGuest: false,
+      summary,
+      measurementStatus: 'measured',
+      formattedUrl: 'https://example.com',
+      targetFocus: 'AEO',
+      dna: null,
+      lenses: [],
+    });
+    expect(report?.text).toContain('Answered by a fallback model: NVIDIA (meta/llama-3.2-11b-vision-instruct)');
+    spy.mockRestore();
+  });
+
   it('strips a health claim from a paste-ready llms.txt patch', async () => {
     const patches = await remediationArchitectAgent.execute(
       'https://clinic.example',
