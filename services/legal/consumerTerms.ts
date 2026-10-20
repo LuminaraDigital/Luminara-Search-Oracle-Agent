@@ -1,9 +1,9 @@
 /**
  * Terms sentences shared by the in-app page and the Worker HTML.
- * LEGAL_ABN stays empty until the operator supplies it.
+ * LEGAL_ABN is the display form. Digits 90693125281 pass the ATO checksum.
  */
 
-export const LEGAL_ABN = '';
+export const LEGAL_ABN = '90 693 125 281';
 
 export const ACL_RIGHTS_CLAUSE =
   'Nothing in these terms excludes, restricts or modifies rights you have under the Australian Consumer Law, including a refund or remedy for a major failure.';
