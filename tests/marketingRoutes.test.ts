@@ -4,6 +4,7 @@ import { AppView } from '../types';
 import {
   marketingViewFromHash,
   marketingViewFromPathname,
+  auditReceiptIdFromLocation,
   pathForMarketingView,
   receiptIdFromLocation,
   resolveAppView,
@@ -76,6 +77,10 @@ describe('marketingRoutes', () => {
     expect(resolveAppView(`/verify/r/${id}`, '')).toBe(AppView.VERIFY_RECEIPT);
     expect(resolveAppView(`/verify/r/${id}/`, '')).toBe(AppView.VERIFY_RECEIPT);
     expect(resolveAppView('/', `#verify/r/${id}`)).toBe(AppView.VERIFY_RECEIPT);
+    expect(resolveAppView('/verify/audit', '')).toBe(AppView.VERIFY_AUDIT_RECEIPT);
+    expect(resolveAppView('/verify/audit/sar_abc', '')).toBe(AppView.VERIFY_AUDIT_RECEIPT);
+    expect(auditReceiptIdFromLocation('/verify/audit/sar_abc', '')).toBe('sar_abc');
+    expect(auditReceiptIdFromLocation('/verify/audit', '')).toBe('');
     expect(resolveAppView(`/verify/${digest}`, '')).toBe(AppView.VERIFY_ATTESTATION);
     expect(resolveAppView('/', `#verify/${digest}`)).toBe(AppView.VERIFY_ATTESTATION);
     expect(receiptIdFromLocation(`/verify/r/${id}`, '')).toBe(id);

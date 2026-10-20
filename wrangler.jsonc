@@ -87,7 +87,7 @@
   //   ADMIN_SECRET (required for admin routes: /api/admin/users, /api/admin/license/generate,
   //   /api/admin/license/seed, /api/telegram/refund; sent as x-admin-secret header; separate from the webhook secret).
   //   MCP_OAUTH_SECRET (required in production: MCP OAuth fails closed without it), STRIPE_SECRET_KEY +
-  //   STRIPE_WEBHOOK_SECRET (card rail stays off without both), RECEIPT_SIGNING_KEY, AUTH_WEBHOOK_SECRET, TELEGRAM_ADMIN_ID.
+  //   STRIPE_WEBHOOK_SECRET (card rail stays off without both), RECEIPT_SIGNING_KEY (Trust Receipts and Signed Audit Receipts), AUTH_WEBHOOK_SECRET, TELEGRAM_ADMIN_ID.
   // Non-secret TON merchant wallet (safe in vars): TON_RECEIVING_ADDRESS
   // Chain network gate (Phase 0): CHAIN_NETWORK, CHAIN_TON_API_BASE, CHAIN_TON_API_FALLBACK_BASE, CHAIN_XDC_RPC_URL
   // TON_API_KEY must be network-specific: `wrangler secret put TON_API_KEY --env staging|production`
@@ -121,6 +121,8 @@
     "PROOF_XDC_ENABLED": "false",
     // Trust Network (migration 0020). Off until staging soak; RECEIPT_SIGNING_KEY is a secret.
     "TRUST_RECEIPTS_ENABLED": "false",
+    // Citation Watch. The daily cron writes runs only when this is "true".
+    "CITATION_WATCH_LIVE": "false",
     "DOMAIN_VERIFY_ENABLED": "false",
     "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
     // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
@@ -248,6 +250,8 @@
         "PROOF_XDC_ENABLED": "false",
         // Trust Network (migration 0020). Off until staging soak; RECEIPT_SIGNING_KEY is a secret.
         "TRUST_RECEIPTS_ENABLED": "false",
+        // Citation Watch. The daily cron writes runs only when this is "true".
+        "CITATION_WATCH_LIVE": "false",
         "DOMAIN_VERIFY_ENABLED": "false",
         // REPLACE with your funded TON testnet merchant (kQ/0Q) before staging soak.
         // Synthetic CRC-valid placeholder for CI/validate-env; not a funded wallet.
@@ -350,6 +354,8 @@
         "PROOF_XDC_ENABLED": "false",
         // Trust Network (migration 0020). Off until staging soak; RECEIPT_SIGNING_KEY is a secret.
         "TRUST_RECEIPTS_ENABLED": "false",
+        // Citation Watch. The daily cron writes runs only when this is "true".
+        "CITATION_WATCH_LIVE": "false",
         "DOMAIN_VERIFY_ENABLED": "false",
         "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
         // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.

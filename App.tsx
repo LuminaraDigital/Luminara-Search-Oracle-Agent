@@ -48,6 +48,7 @@ const NotFoundPage = lazyWithReload(() => import('./components/NotFoundPage').th
 const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
 const TeaserShareView = lazyWithReload(() => import('./components/audit/TeaserShareView').then(m => ({ default: m.TeaserShareView })));
 const VerifyAttestationView = lazyWithReload(() => import('./components/audit/VerifyAttestationView').then(m => ({ default: m.VerifyAttestationView })));
+const VerifyAuditReceiptView = lazyWithReload(() => import('./components/audit/VerifyAuditReceiptView').then(m => ({ default: m.VerifyAuditReceiptView })));
 const AgentReportView = lazyWithReload(() => import('./components/audit/AgentReportView').then(m => ({ default: m.AgentReportView })));
 const InfrastructurePage = lazyWithReload(() => import('./components/InfrastructurePage'));
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
@@ -943,6 +944,14 @@ const App: React.FC = () => {
     return (
       <Suspense fallback={<ViewLoader label="Loading report" />}>
         <AgentReportView />
+      </Suspense>
+    );
+  }
+
+  if (view === AppView.VERIFY_AUDIT_RECEIPT) {
+    return (
+      <Suspense fallback={<ViewLoader label="Checking receipt" />}>
+        <VerifyAuditReceiptView onBack={() => setView(AppView.LANDING)} />
       </Suspense>
     );
   }

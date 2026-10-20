@@ -145,6 +145,8 @@ import { runRsiSkillCurator } from './rsiCurator';
 import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
+import { handleCitationWatchRoute, runCitationWatchTick } from './citationWatch';
+import { handleAuditReceiptRoute } from './auditReceipts';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -1622,6 +1624,18 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (res) return withCors(res);
   }
 
+  if (path === '/citation-watches' || path.startsWith('/citation-watches/')) {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401));
+    }
+    return withCors(handleCitationWatchRoute(request, env, who.user, path));
+  }
+  if (path === '/audit-receipts' || path.startsWith('/audit-receipts/')) {
+    const receipt = await handleAuditReceiptRoute(request, env, path);
+    if (receipt) return withCors(receipt);
+  }
+
   // PageSpeed Insights (BYOK header or hosted PAGESPEED_API_KEY)
   if (path === '/pagespeed') {
     const who = await identify(request, env);
@@ -2308,6 +2322,7 @@ export default {
     if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
     if (jobs.includes('rsi_skill_curator')) ctx.waitUntil(runRsiSkillCurator(env).then(() => undefined));
     if (jobs.includes('rsi_posting_reflection')) ctx.waitUntil(runPostingReflection(env).then(() => undefined));
+    if (jobs.includes('citation_watch')) ctx.waitUntil(runCitationWatchTick(env).then(() => undefined));
     if (jobs.includes('ton_pending_sweep')) {
       ctx.waitUntil(
         sweepTonPendingOrders(env)

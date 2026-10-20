@@ -182,10 +182,17 @@ export interface Env {
    */
   TRUST_RECEIPTS_ENABLED?: string;
   DOMAIN_VERIFY_ENABLED?: string;
-  /** Secret. Ed25519 private JWK (JSON) that signs Trust Receipts. Generate with `npm run keys:receipt`. */
+  /** Secret. Ed25519 private JWK (JSON) that signs Trust Receipts and Signed Audit Receipts. Generate with `npm run keys:receipt`. */
   RECEIPT_SIGNING_KEY?: string;
   /** JSON array of retired Ed25519 public JWKs still published so old receipts verify. */
   RECEIPT_RETIRED_PUBLIC_KEYS?: string;
+  /**
+   * "true" lets the daily Citation Watch cron record runs.
+   * The built-in probe records not_measured until a product per-prompt adapter is connected.
+   */
+  CITATION_WATCH_LIVE?: string;
+  /** Optional JSON override of per-engine Citation Watch thresholds. A bad field keeps the default. */
+  CITATION_WATCH_THRESHOLDS?: string;
   /** DNS-over-HTTPS JSON endpoint for domain verification. Default https://cloudflare-dns.com/dns-query. */
   DOMAIN_VERIFY_DOH_URL?: string;
   /** DataForSEO API login (hosted LLM Mentions / SERP). Pair with DATAFORSEO_PASSWORD. */

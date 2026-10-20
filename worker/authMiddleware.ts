@@ -158,6 +158,8 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/trust\/receipts$/, methods: ['GET'] },
   { pattern: /^\/trust\/receipts\/[^/]+\/(visibility|revoke)$/, methods: ['POST'] },
   { pattern: /^\/trust\/domains(\/|$)/ },
+  { pattern: /^\/citation-watches(\/|$)/ },
+  { pattern: /^\/audit-receipts$/, methods: ['POST'] },
   { pattern: /^\/auth\/quota$/, methods: ['GET'] },
   // /auth/link is not guarded here. guardApiRoute calls identify(), which upserts
   // each login. The link handler must reject a missing { confirm: true } before any
