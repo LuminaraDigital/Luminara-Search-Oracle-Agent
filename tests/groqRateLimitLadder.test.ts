@@ -55,7 +55,11 @@ describe('Groq rate-limit model ladder', () => {
   it('treats a relay 503 that still carries Groq\'s rate-limit JSON as a cap', () => {
     expect(isHostedRateLimit(503, rateLimitBody())).toBe(true);
     expect(isHostedRateLimit(429, '')).toBe(true);
+    expect(isHostedRateLimit(413, JSON.stringify({
+      error: { message: 'Request too large for model `openai/gpt-oss-20b` Limit 8000, Requested 10930', code: 'rate_limit_exceeded' },
+    }))).toBe(true);
     expect(isHostedRateLimit(503, '{"error":"The hosted groq service is temporarily unavailable"}')).toBe(false);
+    expect(isHostedRateLimit(413, '{"error":"Request body too large"}')).toBe(false);
   });
 
   it('writes the audit with the next Groq model after gpt-oss-120b is capped', async () => {
@@ -74,6 +78,28 @@ describe('Groq rate-limit model ladder', () => {
     expect(result.text).toBe('Movida rents cars across Australia.');
     const models = providerFetchMock.mock.calls.map(call => JSON.parse(String((call[3] as RequestInit).body)).model);
     expect(models).toEqual(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']);
+  });
+
+  it('shrinks max_tokens when the prompt fits and the completion budget does not', async () => {
+    configService.setKey('luminara_groq_key', 'gsk_test_rate_limit');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const tooLarge = JSON.stringify({
+      error: {
+        message: 'Request too large for model `openai/gpt-oss-20b` on tokens per minute (TPM): Limit 8000, Requested 10930, please reduce your message size and try again.',
+        type: 'tokens',
+        code: 'rate_limit_exceeded',
+      },
+    });
+    providerFetchMock
+      .mockResolvedValueOnce(new Response(rateLimitBody(), { status: 503 }))
+      .mockResolvedValueOnce(new Response(tooLarge, { status: 413 }))
+      .mockResolvedValueOnce(okReply('Movida publishes fleet sizes on its site.'));
+
+    const result = await new GroqProvider().generateText('Write the audit', { maxTokens: 4000 });
+    expect(result.text).toBe('Movida publishes fleet sizes on its site.');
+    const bodies = providerFetchMock.mock.calls.map(call => JSON.parse(String((call[3] as RequestInit).body)));
+    expect(bodies.map(body => body.model)).toEqual(['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'openai/gpt-oss-20b']);
+    expect(bodies[2].max_tokens).toBe(670);
   });
 
   it('does not burn the rest of the ladder on an ordinary hosted outage', async () => {
