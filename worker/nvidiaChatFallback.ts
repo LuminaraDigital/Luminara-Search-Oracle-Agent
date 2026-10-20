@@ -142,9 +142,7 @@ export async function tryNvidiaChatFallback(input: {
   if (!source) return null;
   const slot = await nvidiaSlot(input.env, input.accountId, input.paid);
   if (slot !== 'call') {
-    if (slot !== 'missing_key') {
-      console.warn(JSON.stringify({ event: 'nvidia_fallback_skipped', reason: slot }));
-    }
+    console.warn(JSON.stringify({ event: 'nvidia_fallback_skipped', reason: slot }));
     return null;
   }
 
@@ -195,6 +193,7 @@ export async function tryNvidiaChatFallback(input: {
   }
   if (!parsed || !messageText(parsed)) {
     if (!input.paid) await releaseNvidiaSlot(input.env, input.accountId);
+    console.warn(JSON.stringify({ event: 'nvidia_fallback_failed', status: res.status, reason: 'no_text' }));
     return null;
   }
   const model = typeof parsed.model === 'string' && parsed.model.trim() ? parsed.model.trim() : NVIDIA_FALLBACK_MODEL;

@@ -8,7 +8,14 @@
 
 import type { ChatTurn, GenerateOptions } from '../../types';
 import { aiProviderService } from '../aiProviderService';
+import { configService } from '../configService';
 import type { RlmLlmClient, RlmMessage } from './rlmRunner';
+
+/** Free hosted Groq is one shared minute. The audit write needs it more than these probes. */
+function hostedGroqMinute(): boolean {
+  if (configService.getByokKey('luminara_groq_key')) return false;
+  return configService.getGroqKey() === 'proxy';
+}
 
 export * from './types';
 export * from './prompts';
@@ -75,7 +82,7 @@ export async function synthesizeRlmAuditEvidence(options: {
     (sum, k) => sum + (options.rlmCorpus[k]?.length || 0),
     0
   );
-  if (keys.length === 0 || (keys.length === 1 && totalChars <= 4000)) {
+  if (hostedGroqMinute() || keys.length === 0 || (keys.length === 1 && totalChars <= 4000)) {
     return null;
   }
 

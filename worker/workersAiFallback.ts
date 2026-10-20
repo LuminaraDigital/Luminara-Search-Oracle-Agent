@@ -3,11 +3,11 @@
  *
  * The relay calls this after NVIDIA (missing, capped, or failed) when hosted Groq cannot
  * answer: no hosted key, a network failure or timeout, an upstream 5xx, or a 429. It answers in the OpenAI
- * ChatCompletion shape (JSON or SSE) and always names the model that wrote the reply. It refuses
- * any request it cannot serve faithfully, so a typed,
- * tool-using or long call gets the upstream's own error instead of free text from a smaller model.
+ * ChatCompletion shape (JSON or SSE) and always names the model that wrote the reply.
+ * A typed or tool-using call is refused. A long prompt is cut to the byte budget.
  *
- * It writes one structured log line per outcome and never more than one:
+ * A prompt over the byte budget is cut to that budget and still answered. Tools and typed
+ * output are still refused. It writes one structured log line per outcome and never more than one:
  * `workers_ai_fallback_answer`, `workers_ai_fallback_refused` or `workers_ai_fallback_failed`.
  * The failure line includes a short error. None of them carries the request prompt, the reply, or a user id.
  */
@@ -24,7 +24,8 @@ export const WORKERS_AI_FALLBACK_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
  * `@cf/meta/llama-3.1-8b-instruct-fast` (an active text model in the Cloudflare catalogue).
  * It stays low so a prompt which passes should fit with room left for the reply.
  *
- * A prompt over the budget is refused. It is never clipped, summarised or shortened.
+ * A prompt over the budget is cut down to it, from the end of the longest message.
+ * shortcut: the tail is dropped, upgrade when a later fact has to survive the cut.
  * Replace this with a figure taken from the catalogue once someone has read it.
  */
 export const WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET = 8_000;
@@ -57,8 +58,7 @@ export type WorkersAiFallbackRefusal =
   | 'malformed_message'
   | 'no_messages'
   | 'unsupported_parameter'
-  | 'invalid_parameter'
-  | 'prompt_too_long';
+  | 'invalid_parameter';
 
 /** Why the fallback tried and produced no answer. */
 export type WorkersAiFallbackFailure = 'binding_error' | 'no_text' | 'stream_error';
@@ -185,6 +185,41 @@ const utf8 = new TextEncoder();
  */
 export function promptBudgetUnits(text: string): number {
   return utf8.encode(text).length;
+}
+
+/** Longest prefix whose UTF-8 size is within maxUnits. */
+export function trimToBudget(text: string, maxUnits: number): string {
+  if (maxUnits <= 0) return '';
+  if (promptBudgetUnits(text) <= maxUnits) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (promptBudgetUnits(text.slice(0, mid)) <= maxUnits) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo);
+}
+
+function fitMessagesToBudget(
+  messages: Array<{ role: string; content: string }>,
+  budget: number,
+): Array<{ role: string; content: string }> {
+  const next = messages.map((message) => ({ ...message }));
+  let used = next.reduce((sum, message) => sum + promptBudgetUnits(message.content), 0);
+  while (used > budget) {
+    let longest = 0;
+    for (let i = 1; i < next.length; i++) {
+      if (promptBudgetUnits(next[i].content) > promptBudgetUnits(next[longest].content)) longest = i;
+    }
+    const size = promptBudgetUnits(next[longest].content);
+    if (size === 0) break;
+    next[longest].content = trimToBudget(next[longest].content, size - (used - budget));
+    const after = next.reduce((sum, message) => sum + promptBudgetUnits(message.content), 0);
+    if (after >= used) break;
+    used = after;
+  }
+  return next.filter((message) => message.content.length > 0);
 }
 
 function isCount(value: unknown): value is number {
@@ -396,12 +431,19 @@ export function planWorkersAiChatFallback(body: unknown): WorkersAiFallbackPlanR
   // The reply is one choice.
   if (carries(b.n) && b.n !== 1) return refuse('invalid_parameter', 'n');
 
-  if (prompt.units > WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET) return refuse('prompt_too_long');
+  const fitted = prompt.units > WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET
+    ? fitMessagesToBudget(messages, WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET)
+    : messages;
+  if (fitted.length === 0) return refuse('no_messages');
+  if (fitted !== messages) {
+    prompt.chars = fitted.reduce((sum, message) => sum + message.content.length, 0);
+    prompt.units = fitted.reduce((sum, message) => sum + promptBudgetUnits(message.content), 0);
+  }
 
   return {
     ok: true,
     plan: {
-      messages,
+      messages: fitted,
       temperature,
       maxTokens,
       stream,

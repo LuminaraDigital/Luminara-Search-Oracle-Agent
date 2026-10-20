@@ -293,9 +293,22 @@ function workersAiStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
 }
 
-/** Groq chat also falls through when the model rejects the request. 413 and 422 stay as themselves. */
+/** Groq chat also falls through when the model rejects the request. A plain 413 or 422 stays itself. */
 function chatFallbackStatus(status: number): boolean {
   return status === 400 || status === 404 || status === 408 || workersAiStatus(status);
+}
+
+const TOKEN_CAP_BODY = /rate_limit_exceeded|tokens per minute|rate limit reached/i;
+
+/** A 413 is a token cap when Groq says so. Any other 413 is the caller's own body limit. */
+async function chatShouldFallBack(res: Response): Promise<boolean> {
+  if (chatFallbackStatus(res.status)) return true;
+  if (res.status !== 413) return false;
+  try {
+    return TOKEN_CAP_BODY.test((await res.clone().text()).slice(0, 4_000));
+  } catch {
+    return false;
+  }
 }
 
 function workersAiReason(status: number): WorkersAiFallbackReason {
@@ -641,7 +654,7 @@ export async function proxyProvider(
     !triedFallbackKey &&
     !userKey &&
     providerId === 'groq' &&
-    (res.status === 401 || res.status === 402 || chatFallbackStatus(res.status))
+    (res.status === 401 || res.status === 402 || await chatShouldFallBack(res))
   ) {
     const altKey = groqFallbackKey(env, headers);
     if (altKey) {
@@ -655,8 +668,8 @@ export async function proxyProvider(
     }
   }
 
-  // After the second key: 400, 404, 408, 429, and 5xx try NVIDIA, then Workers AI. 401 and 402 are not replaced.
-  if (chatFallbackStatus(res.status)) {
+  // After the second key: 400, 404, 408, 429, 5xx, and a token-cap 413 try NVIDIA, then Workers AI.
+  if (await chatShouldFallBack(res)) {
     const fallback = await tryChatFallbacks(
       env, request, providerId, subPath, userKey, body,
       { reason: workersAiReason(res.status), upstreamStatus: res.status },
