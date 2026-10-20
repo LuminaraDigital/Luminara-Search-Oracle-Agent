@@ -10,6 +10,12 @@ import { canonicalJson, sha256HexOf } from '../trust/receiptCrypto';
 
 export const AUDIT_RECEIPT_KIND = 'signed_audit_receipt';
 export const AUDIT_RECEIPT_ISSUER = 'luminarasuite.com';
+/** Prepended to the signed bytes so this payload cannot verify as a Trust Receipt under the shared key. */
+export const AUDIT_RECEIPT_SIGNING_PREFIX = 'luminara:audit-receipt:v1\n';
+/** This route only signs what the account holder submitted. It is not a Luminara-run audit. */
+export const AUDIT_RECEIPT_SOURCE = 'caller_submitted';
+/** Paid accounts. Override with AUDIT_RECEIPT_DAILY_QUOTA (integer 1 to 1000). */
+export const DEFAULT_AUDIT_RECEIPT_DAILY_QUOTA = 10;
 
 export type AuditFieldStatus = 'measured' | 'not_measured';
 
@@ -37,6 +43,9 @@ export type AuditReceiptContent = {
   hashes: AuditReceiptHashes;
   models: AuditReceiptModel[] | null;
   fieldStatus: AuditReceiptFieldStatus;
+  source: typeof AUDIT_RECEIPT_SOURCE;
+  /** SHA-256 of a domain-separated account id. Not the account id itself. */
+  accountHash: string;
 };
 
 export type SignedAuditReceiptPayload = AuditReceiptContent & {
@@ -60,6 +69,10 @@ export async function contentSha256Of(content: AuditReceiptContent): Promise<str
   return sha256HexOf(canonicalJson(content));
 }
 
+export async function auditReceiptAccountHash(accountId: string): Promise<string> {
+  return sha256HexOf(`luminara:audit-receipt-account:${accountId}`);
+}
+
 export async function assembleAuditReceiptContent(input: {
   domain: string;
   issuedAt: string;
@@ -68,6 +81,7 @@ export async function assembleAuditReceiptContent(input: {
   prompts: string[] | null;
   models: AuditReceiptModel[] | null;
   observedAt: string | null;
+  accountId: string;
 }): Promise<AuditReceiptContent & { contentSha256: string }> {
   const content: AuditReceiptContent = {
     domain: input.domain,
@@ -87,6 +101,8 @@ export async function assembleAuditReceiptContent(input: {
       models: input.models === null ? 'not_measured' : 'measured',
       observedAt: input.observedAt === null ? 'not_measured' : 'measured',
     },
+    source: AUDIT_RECEIPT_SOURCE,
+    accountHash: await auditReceiptAccountHash(input.accountId),
   };
   return { ...content, contentSha256: await contentSha256Of(content) };
 }

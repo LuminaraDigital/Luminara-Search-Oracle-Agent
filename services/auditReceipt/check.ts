@@ -3,10 +3,13 @@
  * The signature is Ed25519 over canonical JSON. The content hash is recomputed
  * from the fields and compared with contentSha256.
  */
+import { own } from '../own';
 import { canonicalJson, verifyReceiptSignature, type ReceiptPublicJwk } from '../trust/receiptCrypto';
 import {
   AUDIT_RECEIPT_ISSUER,
   AUDIT_RECEIPT_KIND,
+  AUDIT_RECEIPT_SIGNING_PREFIX,
+  AUDIT_RECEIPT_SOURCE,
   contentSha256Of,
   type AuditFieldStatus,
   type AuditReceiptContent,
@@ -24,11 +27,6 @@ export type AuditReceiptCheck = {
 };
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;
-
-function own(value: object, key: string): unknown {
-  if (!Object.hasOwn(value, key)) return undefined;
-  return Reflect.get(value, key);
-}
 
 function hashField(value: unknown, status: AuditFieldStatus): string | null | undefined {
   if (status === 'not_measured') return value === null ? null : undefined;
@@ -67,6 +65,9 @@ export function readSignedAuditReceiptPayload(value: unknown): SignedAuditReceip
   const observedAt = own(value, 'observedAt');
   if (typeof id !== 'string' || typeof kid !== 'string' || typeof issuedAt !== 'string' || typeof domain !== 'string') return null;
   if (typeof contentSha256 !== 'string' || !SHA256_HEX.test(contentSha256)) return null;
+  if (own(value, 'source') !== AUDIT_RECEIPT_SOURCE) return null;
+  const accountHash = own(value, 'accountHash');
+  if (typeof accountHash !== 'string' || !SHA256_HEX.test(accountHash)) return null;
   const statusRaw = own(value, 'fieldStatus');
   const hashesRaw = own(value, 'hashes');
   if (!statusRaw || typeof statusRaw !== 'object' || Array.isArray(statusRaw)) return null;
@@ -105,6 +106,8 @@ export function readSignedAuditReceiptPayload(value: unknown): SignedAuditReceip
       observedAt: observedStatus,
     },
     contentSha256,
+    source: AUDIT_RECEIPT_SOURCE,
+    accountHash,
   };
 }
 
@@ -116,6 +119,8 @@ function contentOf(payload: SignedAuditReceiptPayload): AuditReceiptContent {
     hashes: payload.hashes,
     models: payload.models,
     fieldStatus: payload.fieldStatus,
+    source: payload.source,
+    accountHash: payload.accountHash,
   };
 }
 
@@ -133,7 +138,7 @@ export async function checkSignedAuditReceipt(input: {
   } catch {
     return { signature: 'invalid', contentHash: 'unread', payload: null };
   }
-  const signatureOk = await verifyReceiptSignature(key, parsed, input.signature);
+  const signatureOk = await verifyReceiptSignature(key, parsed, input.signature, AUDIT_RECEIPT_SIGNING_PREFIX);
   const payload = readSignedAuditReceiptPayload(parsed);
   if (!payload || payload.kid !== input.kid) {
     return { signature: signatureOk ? 'valid' : 'invalid', contentHash: 'unread', payload: null };

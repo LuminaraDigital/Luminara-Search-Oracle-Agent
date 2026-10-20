@@ -95,6 +95,7 @@ import { recordAuditProof, verifyAuditProof, generateBadgeResponse } from './pro
 import { checkTelegramUpdateThrottle } from './webhookThrottle';
 import {
   guardApiRoute,
+  identifiedForRequest,
   buildSessionCookie,
   buildLogoutCookie,
   verifyWebhookSignature,
@@ -1625,14 +1626,14 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
 
   if (path === '/citation-watches' || path.startsWith('/citation-watches/')) {
-    const who = await identify(request, env);
-    if (who.error || !who.user) {
-      return withCors(json({ ok: false, error: who.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401));
+    const who = identifiedForRequest(request);
+    if (!who?.user) {
+      return withCors(json({ ok: false, error: who?.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401));
     }
     return withCors(handleCitationWatchRoute(request, env, who.user, path));
   }
   if (path === '/audit-receipts' || path.startsWith('/audit-receipts/')) {
-    const receipt = await handleAuditReceiptRoute(request, env, path);
+    const receipt = await handleAuditReceiptRoute(request, env, path, identifiedForRequest(request)?.user ?? null);
     if (receipt) return withCors(receipt);
   }
 
@@ -2322,7 +2323,10 @@ export default {
     if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
     if (jobs.includes('rsi_skill_curator')) ctx.waitUntil(runRsiSkillCurator(env).then(() => undefined));
     if (jobs.includes('rsi_posting_reflection')) ctx.waitUntil(runPostingReflection(env).then(() => undefined));
-    if (jobs.includes('citation_watch')) ctx.waitUntil(runCitationWatchTick(env).then(() => undefined));
+    if (jobs.includes('citation_watch')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(runCitationWatchTick(env, { scheduledAt }).then(() => undefined));
+    }
     if (jobs.includes('ton_pending_sweep')) {
       ctx.waitUntil(
         sweepTonPendingOrders(env)

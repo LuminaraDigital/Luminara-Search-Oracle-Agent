@@ -23,7 +23,13 @@ function formatWhen(iso: string | null): string {
   return Number.isFinite(t) ? new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : iso;
 }
 
-function statusLine(check: AuditReceiptCheck): { title: string; detail: string } {
+function statusLine(check: AuditReceiptCheck, revoked: boolean): { title: string; detail: string } {
+  if (revoked && check.signature === 'valid' && check.contentHash === 'match') {
+    return {
+      title: 'Revoked',
+      detail: 'The account holder revoked this receipt. The signature still matches the signed fields. Submitted by the account holder. Luminara did not run this audit.',
+    };
+  }
   if (check.signature === 'key_not_published') {
     return { title: 'Key not published', detail: 'This key id is not in the published set, so the signature was not checked.' };
   }
@@ -36,7 +42,10 @@ function statusLine(check: AuditReceiptCheck): { title: string; detail: string }
   if (check.contentHash === 'mismatch') {
     return { title: 'Content hash mismatch', detail: 'The signature is valid, and the content hash does not match the fields.' };
   }
-  return { title: 'Signature valid', detail: 'The content hash matches the signed fields. This does not re-run the audit.' };
+  return {
+    title: 'Signature valid',
+    detail: 'The content hash matches the signed fields. Submitted by the account holder. Luminara did not run this audit.',
+  };
 }
 
 const FieldList: React.FC<{ payload: SignedAuditReceiptPayload }> = ({ payload }) => (
@@ -73,6 +82,7 @@ export const VerifyAuditReceiptView: React.FC<{ onBack?: () => void }> = ({ onBa
   const [loading, setLoading] = useState(Boolean(receiptId));
   const [error, setError] = useState<string | null>(null);
   const [check, setCheck] = useState<AuditReceiptCheck | null>(null);
+  const [revokedAt, setRevokedAt] = useState<string | null>(null);
 
   async function loadKeys(): Promise<ReceiptPublicJwk[]> {
     const response = await fetch(`${apiBase()}/api/audit-receipts/keys`);
@@ -92,7 +102,23 @@ export const VerifyAuditReceiptView: React.FC<{ onBack?: () => void }> = ({ onBa
     }
     const keys = await loadKeys();
     setCheck(await checkSignedAuditReceipt({ ...parsed, keys }));
+    const remoteRevoked = await lookupRevoked(parsed);
+    if (remoteRevoked) setRevokedAt(remoteRevoked);
     setError(null);
+  }
+
+  async function lookupRevoked(parsed: { payloadJson: string; signature: string; kid: string }): Promise<string | null> {
+    try {
+      const response = await fetch(`${apiBase()}/api/audit-receipts/verify`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(parsed),
+      });
+      const data = (await response.json()) as { revokedAt?: string | null };
+      return response.ok && typeof data.revokedAt === 'string' ? data.revokedAt : null;
+    } catch {
+      return null;
+    }
   }
 
   useEffect(() => {
@@ -110,6 +136,10 @@ export const VerifyAuditReceiptView: React.FC<{ onBack?: () => void }> = ({ onBa
         }
         const text = JSON.stringify(data.receipt);
         setPaste(text);
+        const revoked = typeof data.receipt === 'object' && data.receipt && 'revokedAt' in data.receipt
+          ? (data.receipt as { revokedAt?: string | null }).revokedAt
+          : null;
+        setRevokedAt(typeof revoked === 'string' ? revoked : null);
         await checkText(text);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'The receipt could not be loaded.');
@@ -124,7 +154,7 @@ export const VerifyAuditReceiptView: React.FC<{ onBack?: () => void }> = ({ onBa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receiptId]);
 
-  const line = check ? statusLine(check) : null;
+  const line = check ? statusLine(check, Boolean(revokedAt)) : null;
 
   return (
     <div className="min-h-[100dvh] bg-black text-gray-100">
@@ -141,13 +171,14 @@ export const VerifyAuditReceiptView: React.FC<{ onBack?: () => void }> = ({ onBa
       </header>
       <main className="max-w-xl mx-auto px-4 py-8 space-y-4">
         <p className="text-sm text-gray-300">
-          Paste a receipt, or open a link that already has one. This page checks the signature and the content hash with the published key.
+          Paste a receipt, or open a link that already has one. A Signed Audit Receipt is submitted by the account holder. Luminara signs the hashes. Luminara does not run the audit.
         </p>
         <form
           className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
             setLoading(true);
+            setRevokedAt(null);
             checkText(paste)
               .catch((err: unknown) => setError(err instanceof Error ? err.message : 'The receipt could not be checked.'))
               .finally(() => setLoading(false));
@@ -184,7 +215,7 @@ export const VerifyAuditReceiptView: React.FC<{ onBack?: () => void }> = ({ onBa
           </section>
         )}
         <p className="text-xs text-gray-500">
-          A valid signature means the receipt was not changed after Luminara signed it. A field marked Not measured was not included. This page does not re-crawl the site or call an engine.
+          A valid signature means the receipt was not changed after Luminara signed it. A field marked Not measured was not included. Revoked is shown when this page can read that mark from Luminara. This page does not re-crawl the site or call an engine.
         </p>
       </main>
     </div>

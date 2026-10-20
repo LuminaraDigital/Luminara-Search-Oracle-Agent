@@ -16,15 +16,17 @@ import {
   type WatchCadence,
   type WatchMeasurement,
 } from '../services/citationWatch/types';
+import { own } from '../services/own';
+import { parsePromptList } from '../services/promptList';
 import { sha256HexOf, canonicalJson } from '../services/trust/receiptCrypto';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import { getActiveSubscription } from './quotaMiddleware';
 import { billingId, json } from './workerUtils';
 import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
 
-const MAX_PROMPTS = 20;
-const MAX_PROMPT_CHARS = 400;
-const TICK_LIMIT = 10;
+const PAGE = 25;
+/** shortcut: one cron fire stops after this many runs, the next daily fire continues */
+const MAX_PER_TICK = 500;
 const RUN_HISTORY = 30;
 
 export type CitationProbeResult = WatchMeasurement;
@@ -38,6 +40,8 @@ export type CitationProbe = (input: {
 
 export type CitationWatchDeps = {
   now?: () => number;
+  /** Cron scheduledTime. Claim anchors here so a late start does not skip the next fire. */
+  scheduledAt?: number;
   probe?: CitationProbe;
 };
 
@@ -57,11 +61,6 @@ type WatchRow = {
 
 function nowMs(deps: CitationWatchDeps): number {
   return deps.now ? deps.now() : Date.now();
-}
-
-function own(value: object, key: string): unknown {
-  if (!Object.hasOwn(value, key)) return undefined;
-  return Reflect.get(value, key);
 }
 
 function missingTable(err: unknown): boolean {
@@ -87,25 +86,10 @@ export async function defaultCitationProbe(input: {
   };
 }
 
-function parsePrompts(value: unknown): string[] | { error: string } {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_PROMPTS) {
-    return { error: `prompts must be 1 to ${MAX_PROMPTS} strings.` };
-  }
-  const prompts: string[] = [];
-  for (const item of value) {
-    if (typeof item !== 'string') return { error: 'Each prompt must be a string.' };
-    const text = item.trim();
-    if (!text || text.length > MAX_PROMPT_CHARS) return { error: `Each prompt must be 1 to ${MAX_PROMPT_CHARS} characters.` };
-    prompts.push(text);
-  }
-  return prompts;
-}
-
 function storedPrompts(json: string): string[] | null {
   try {
-    const value: unknown = JSON.parse(json);
-    const parsed = parsePrompts(value);
-    return Array.isArray(parsed) ? parsed : null;
+    const parsed = parsePromptList(JSON.parse(json));
+    return parsed.ok ? parsed.prompts : null;
   } catch {
     return null;
   }
@@ -260,8 +244,9 @@ export async function handleCitationWatchRoute(
       if (typeof engineRaw !== 'string' || !isCitationWatchEngine(engineRaw)) {
         return json({ ok: false, error: 'engine must be chatgpt, google_aio, or perplexity.' }, 400);
       }
-      const prompts = parsePrompts(own(body, 'prompts'));
-      if (!Array.isArray(prompts)) return json({ ok: false, error: prompts.error }, 400);
+      const parsedPrompts = parsePromptList(own(body, 'prompts'));
+      if (!parsedPrompts.ok) return json({ ok: false, error: parsedPrompts.error }, 400);
+      const prompts = parsedPrompts.prompts;
       const clientRaw = own(body, 'clientId');
       const clientId = clientRaw == null || clientRaw === '' ? '' : typeof clientRaw === 'string' ? clientRaw.trim() : null;
       if (clientId === null || clientId.length > 64 || (clientId && !/^[a-zA-Z0-9_-]+$/.test(clientId))) {
@@ -306,7 +291,11 @@ export async function handleCitationWatchRoute(
         throw err;
       }
       const row = await readWatch(env, id, accountId);
-      return json({ ok: true, watch: row ? watchJson(row, true) : { id } }, 201);
+      const minPrompts = citationWatchThresholds(env.CITATION_WATCH_THRESHOLDS)[engineRaw].minPrompts;
+      const warning = prompts.length < minPrompts
+        ? `This set has ${prompts.length} prompts. Consistent and drift need ${minPrompts} measured prompts.`
+        : undefined;
+      return json({ ok: true, watch: row ? watchJson(row, true) : { id }, ...(warning ? { warning } : {}) }, 201);
     }
 
     const match = path.match(/^\/citation-watches\/(cw_[a-f0-9]{32})(\/run)?$/);
@@ -317,6 +306,27 @@ export async function handleCitationWatchRoute(
 
     if (match[2] === '/run') {
       if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+      if (row.active !== 1) return json({ ok: false, error: 'This watch is inactive.', code: 'WATCH_INACTIVE' }, 409);
+      if (String(env.CITATION_WATCH_LIVE || '') !== 'true') {
+        return json({ ok: false, error: 'Citation Watch live runs are off.', code: 'CITATION_WATCH_OFF' }, 403);
+      }
+      const sub = await getActiveSubscription(env, user);
+      const plan = entitlementsFor(sub?.plan);
+      if (plan.scheduledReaudit === 'none' || plan.sentinelLimit <= 0 || !isWatchCadence(row.cadence) || !watchCadenceAllowed(plan.scheduledReaudit, row.cadence)) {
+        return json({ ok: false, error: 'This plan cannot run this watch.', code: 'PLAN_LIMIT' }, 402);
+      }
+      const now = nowMs(deps);
+      if (row.next_run_at != null && row.next_run_at > now) {
+        return json({ ok: false, error: 'This watch is not due yet.', code: 'WATCH_NOT_DUE', nextRunAt: row.next_run_at }, 429);
+      }
+      const claimed = await env.DB.prepare(
+        `UPDATE citation_watches SET next_run_at = ? WHERE id = ? AND account_id = ? AND active = 1 AND (next_run_at IS NULL OR next_run_at <= ?)`,
+      )
+        .bind(now + cadenceIntervalMs(row.cadence), id, accountId, now)
+        .run();
+      if (Number(claimed.meta?.changes ?? 0) !== 1) {
+        return json({ ok: false, error: 'This watch is not due yet.', code: 'WATCH_NOT_DUE' }, 429);
+      }
       const prompts = storedPrompts(row.prompts_json);
       if (!prompts) return json({ ok: false, error: 'The stored prompt set could not be read.', code: 'PROMPT_SET_UNREADABLE' }, 500);
       const run = await recordRun(env, row, prompts, deps);
@@ -380,53 +390,63 @@ export async function runCitationWatchTick(env: Env, deps: CitationWatchDeps = {
   if (String(env.CITATION_WATCH_LIVE || '') !== 'true') return { checked: 0, skipped: 'live_off' };
   if (!env.DB) return { checked: 0, skipped: 'no_db' };
   const now = nowMs(deps);
-  let due: WatchRow[] = [];
-  try {
-    const selected = await env.DB.prepare(
-      `SELECT * FROM citation_watches WHERE active = 1 AND (next_run_at IS NULL OR next_run_at <= ?) ORDER BY next_run_at ASC LIMIT ?`,
-    )
-      .bind(now, TICK_LIMIT)
-      .all<WatchRow>();
-    due = selected.results || [];
-  } catch (err) {
-    if (missingTable(err)) return { checked: 0, skipped: 'no_db' };
-    throw err;
-  }
+  const anchor = deps.scheduledAt ?? now;
   let checked = 0;
-  for (const row of due) {
-    if (!isWatchCadence(row.cadence)) continue;
-    const claimed = await env.DB.prepare(
-      `UPDATE citation_watches SET next_run_at = ? WHERE id = ? AND active = 1 AND (next_run_at IS NULL OR next_run_at <= ?)`,
-    )
-      .bind(now + cadenceIntervalMs(row.cadence), row.id, now)
-      .run();
-    if (Number(claimed.meta?.changes ?? 0) !== 1) continue;
+  while (checked < MAX_PER_TICK) {
+    let due: WatchRow[] = [];
     try {
-      const prompts = storedPrompts(row.prompts_json);
-      if (!prompts) {
-        const reason = 'The stored prompt set could not be read.';
-        const measurement: WatchMeasurement = { status: 'not_measured', method: 'none', reason };
-        await insertRun(
-          env,
-          row.id,
-          row.account_id,
-          row.engine,
-          now,
-          measurement,
-          classifyCitationWatch({
-            engine: isCitationWatchEngine(row.engine) ? row.engine : 'chatgpt',
-            measurement,
-            priorMeasured: [],
-            thresholds: citationWatchThresholds(env.CITATION_WATCH_THRESHOLDS),
-          }),
-        );
-      } else {
-        await recordRun(env, row, prompts, deps);
-      }
-      checked += 1;
+      const selected = await env.DB.prepare(
+        `SELECT * FROM citation_watches WHERE active = 1 AND (next_run_at IS NULL OR next_run_at <= ?) ORDER BY next_run_at ASC LIMIT ?`,
+      )
+        .bind(now, PAGE)
+        .all<WatchRow>();
+      due = selected.results || [];
     } catch (err) {
-      console.error('[citation-watch] run failed', row.id, err instanceof Error ? err.name : 'error');
+      if (missingTable(err)) return { checked: 0, skipped: 'no_db' };
+      throw err;
     }
+    if (due.length === 0) break;
+    let claimedAny = false;
+    for (const row of due) {
+      if (checked >= MAX_PER_TICK) break;
+      const cadence = isWatchCadence(row.cadence) ? row.cadence : 'monthly';
+      const claimed = await env.DB.prepare(
+        `UPDATE citation_watches SET next_run_at = ? WHERE id = ? AND active = 1 AND (next_run_at IS NULL OR next_run_at <= ?)`,
+      )
+        .bind(anchor + cadenceIntervalMs(cadence), row.id, now)
+        .run();
+      if (Number(claimed.meta?.changes ?? 0) !== 1) continue;
+      claimedAny = true;
+      if (!isWatchCadence(row.cadence)) continue;
+      try {
+        const prompts = storedPrompts(row.prompts_json);
+        if (!prompts) {
+          const reason = 'The stored prompt set could not be read.';
+          const measurement: WatchMeasurement = { status: 'not_measured', method: 'none', reason };
+          await insertRun(
+            env,
+            row.id,
+            row.account_id,
+            row.engine,
+            now,
+            measurement,
+            classifyCitationWatch({
+              engine: isCitationWatchEngine(row.engine) ? row.engine : 'chatgpt',
+              measurement,
+              priorMeasured: [],
+              thresholds: citationWatchThresholds(env.CITATION_WATCH_THRESHOLDS),
+            }),
+          );
+        } else {
+          await recordRun(env, row, prompts, deps);
+        }
+        checked += 1;
+      } catch (err) {
+        console.error('[citation-watch] run failed', row.id, err instanceof Error ? err.name : 'error');
+      }
+    }
+    if (!claimedAny) break;
   }
+  if (checked >= MAX_PER_TICK) console.error('[citation-watch] tick stopped at the per-fire cap');
   return { checked, skipped: null };
 }

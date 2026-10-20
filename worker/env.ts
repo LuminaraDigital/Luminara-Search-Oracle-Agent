@@ -193,6 +193,8 @@ export interface Env {
   CITATION_WATCH_LIVE?: string;
   /** Optional JSON override of per-engine Citation Watch thresholds. A bad field keeps the default. */
   CITATION_WATCH_THRESHOLDS?: string;
+  /** Daily Signed Audit Receipt cap per account. Unset uses 10. Integer 1 to 1000. */
+  AUDIT_RECEIPT_DAILY_QUOTA?: string;
   /** DNS-over-HTTPS JSON endpoint for domain verification. Default https://cloudflare-dns.com/dns-query. */
   DOMAIN_VERIFY_DOH_URL?: string;
   /** DataForSEO API login (hosted LLM Mentions / SERP). Pair with DATAFORSEO_PASSWORD. */

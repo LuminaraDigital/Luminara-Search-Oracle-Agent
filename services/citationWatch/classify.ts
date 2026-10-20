@@ -43,7 +43,7 @@ export function classifyCitationWatch(input: {
   const threshold = input.thresholds[input.engine];
   const citedCount = cited.filter(Boolean).length;
   const promptCount = cited.length;
-  const share = citedCount / promptCount;
+  const share = roundShare(citedCount / promptCount);
 
   if (promptCount < threshold.minPrompts) {
     return measuredBase(
@@ -69,15 +69,16 @@ export function classifyCitationWatch(input: {
   }
 
   const prior = qualifying[qualifying.length - 1];
-  const deltaShare = share - prior.citedCount / prior.promptCount;
-  const abs = Math.abs(deltaShare);
-  if (abs <= threshold.maxConsistentShareDelta) {
+  const deltaShare = roundShare(share - prior.citedCount / prior.promptCount);
+  const absLabel = formatShare(Math.abs(deltaShare));
+  const limitLabel = formatShare(threshold.maxConsistentShareDelta);
+  if (withinConsistentDelta(citedCount, promptCount, prior.citedCount, prior.promptCount, threshold.maxConsistentShareDelta)) {
     return measuredBase(
       'consistent',
       citedCount,
       promptCount,
       share,
-      `Share changed by ${abs}, within ${threshold.maxConsistentShareDelta}.`,
+      `Share changed by ${absLabel}, within ${limitLabel}.`,
       prior.runId,
       deltaShare,
     );
@@ -87,8 +88,29 @@ export function classifyCitationWatch(input: {
     citedCount,
     promptCount,
     share,
-    `Share changed by ${abs}, above ${threshold.maxConsistentShareDelta}.`,
+    `Share changed by ${absLabel}, above ${limitLabel}.`,
     prior.runId,
     deltaShare,
   );
+}
+
+function roundShare(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
+}
+
+function formatShare(value: number): string {
+  return String(Math.round(value * 1000) / 1000);
+}
+
+/** Integer cross-multiply so a delta of exactly maxDelta stays consistent (0.8 - 0.5 is not above 0.3). */
+function withinConsistentDelta(
+  cited: number,
+  prompts: number,
+  priorCited: number,
+  priorPrompts: number,
+  maxDelta: number,
+): boolean {
+  const diff = Math.abs(cited * priorPrompts - priorCited * prompts);
+  const limit = maxDelta * prompts * priorPrompts;
+  return diff <= limit + 1e-6;
 }

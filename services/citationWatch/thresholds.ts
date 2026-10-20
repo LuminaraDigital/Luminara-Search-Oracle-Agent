@@ -6,6 +6,7 @@
  * maxConsistentShareDelta is an absolute change in share (cited prompts / prompts), from 0 to 1.
  * A change at or under it is consistent. A larger change is drift.
  */
+import { own } from '../own';
 import {
   isCitationWatchEngine,
   type CitationWatchEngine,
@@ -35,11 +36,6 @@ const CADENCE_RANK: Record<PlanReauditCadence, number> = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-function own(value: object, key: string): unknown {
-  if (!Object.hasOwn(value, key)) return undefined;
-  return Reflect.get(value, key);
-}
 
 function integerIn(value: unknown, min: number, max: number): number | null {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) return null;

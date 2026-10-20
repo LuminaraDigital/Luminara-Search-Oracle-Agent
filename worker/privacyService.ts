@@ -169,7 +169,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     return [] as Record<string, unknown>[];
   });
   const signedAuditReceipts = await q<Record<string, unknown>>(
-    `SELECT id, domain, payload_json, signature, kid, created_at FROM signed_audit_receipts WHERE account_id = ?`,
+    `SELECT id, domain, payload_json, signature, kid, created_at, revoked_at, revoked_reason FROM signed_audit_receipts WHERE account_id = ?`,
     accountId,
   ).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;

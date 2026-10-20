@@ -25,4 +25,6 @@ These sit above typical small-sample flips. They are policy defaults, not a meas
 
 ## Schedule
 
-The daily 08:00 UTC cron owns `citation_watch`. No second cron was added. `CITATION_WATCH_LIVE` must be the string `true` or the tick writes nothing. While the built-in probe is connected, a live tick still stores `not_measured`. A probe may return `measured` only when each prompt was actually observed. Cadence on a watch cannot be faster than the plan's `scheduledReaudit`. The active-watch cap reuses that plan's Sentinel limit.
+The daily 08:00 UTC cron owns `citation_watch`. No second cron was added. The tick anchors `next_run_at` on the cron's scheduled time, so a late start does not skip the next fire. It pages through due watches, up to 500 in one fire. `CITATION_WATCH_LIVE` must be the string `true` or neither the tick nor `POST /citation-watches/:id/run` writes a run. A manual run also requires the watch to be active, the plan to still allow that cadence, and `next_run_at` to be due. While the built-in probe is connected, a live run still stores `not_measured`. A probe may return `measured` only when each prompt was actually observed. Cadence on a watch cannot be faster than the plan's `scheduledReaudit`. The active-watch cap reuses that plan's Sentinel limit. Soft-deleted watches drop out of the unique index, so the same prompt set can be created again. A create response includes `warning` when the prompt set is shorter than `minPrompts`.
+
+Share changes are compared with integer counts, so a delta that lands on the threshold stays `consistent`.

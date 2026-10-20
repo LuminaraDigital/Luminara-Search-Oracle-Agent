@@ -1,7 +1,8 @@
 /**
  * Signed Audit Receipts. The Worker hashes the submitted audit fields and
  * signs that payload with RECEIPT_SIGNING_KEY. Raw crawl text is not stored.
- * No chain call.
+ * The signature says the account holder submitted these hashes. It is not a
+ * Luminara-run audit. No chain call.
  */
 import type { Env } from './env';
 import { checkSignedAuditReceipt, readSignedAuditReceiptPayload } from '../services/auditReceipt/check';
@@ -9,13 +10,20 @@ import {
   assembleAuditReceiptContent,
   AUDIT_RECEIPT_ISSUER,
   AUDIT_RECEIPT_KIND,
+  AUDIT_RECEIPT_SIGNING_PREFIX,
+  DEFAULT_AUDIT_RECEIPT_DAILY_QUOTA,
   type AuditReceiptModel,
   type SignedAuditReceiptPayload,
 } from '../services/auditReceipt/payload';
+import { own } from '../services/own';
+import { parsePromptList } from '../services/promptList';
 import { canonicalJson } from '../services/trust/receiptCrypto';
+import { entitlementsFor } from '../services/plans/planEntitlements';
 import { currentReceiptKid, receiptPublicKeySet, signReceiptPayload, ReceiptSigningUnavailable } from './receiptSigning';
 import { identify, billingId, json } from './workerUtils';
+import { getActiveSubscription } from './quotaMiddleware';
 import { MAX_BODY_BYTES, readBody, safePublicHostname } from './security';
+import type { HostedIdentity } from './userTypes';
 
 const ID_RE = /^sar_[a-f0-9]{32}$/;
 const OBSERVED_MIN = Date.UTC(2020, 0, 1);
@@ -23,18 +31,27 @@ const OBSERVED_SKEW_MS = 5 * 60 * 1000;
 
 type ReceiptRow = {
   id: string;
+  account_id: string;
   payload_json: string;
   signature: string;
   kid: string;
+  revoked_at: number | null;
+  revoked_reason: string | null;
 };
-
-function own(value: object, key: string): unknown {
-  if (!Object.hasOwn(value, key)) return undefined;
-  return Reflect.get(value, key);
-}
 
 function missingTable(err: unknown): boolean {
   return /no such table: signed_audit_receipts/i.test(err instanceof Error ? err.message : String(err));
+}
+
+function signingUnavailable(): Response {
+  return json(
+    { ok: false, error: 'RECEIPT_SIGNING_KEY is not configured. No receipt was signed.', code: 'RECEIPT_SIGNING_UNAVAILABLE' },
+    503,
+  );
+}
+
+function tableMissing(): Response {
+  return json({ ok: false, error: 'Signed Audit Receipt table is not migrated (0034).', code: 'AUDIT_RECEIPT_TABLE_MISSING' }, 503);
 }
 
 function optionalString(value: unknown, label: string, max: number): { ok: true; value: string | null } | { ok: false; error: string } {
@@ -65,15 +82,11 @@ function parseModels(value: unknown): { ok: true; value: AuditReceiptModel[] | n
 
 function parsePrompts(value: unknown): { ok: true; value: string[] | null } | { ok: false; error: string } {
   if (value == null) return { ok: true, value: null };
-  if (!Array.isArray(value) || value.length === 0 || value.length > 20) return { ok: false, error: 'prompts must be 1 to 20 strings, or null.' };
-  const prompts: string[] = [];
-  for (const item of value) {
-    if (typeof item !== 'string') return { ok: false, error: 'Each prompt must be a string.' };
-    const text = item.trim();
-    if (!text || text.length > 400) return { ok: false, error: 'Each prompt must be 1 to 400 characters.' };
-    prompts.push(text);
-  }
-  return { ok: true, value: prompts };
+  const parsed = parsePromptList(value);
+  if (!parsed.ok) return parsed.error === 'prompts must be 1 to 20 strings.'
+    ? { ok: false, error: 'prompts must be 1 to 20 strings, or null.' }
+    : parsed;
+  return { ok: true, value: parsed.prompts };
 }
 
 function parseObservedAt(value: unknown, now: number): { ok: true; value: string | null } | { ok: false; error: string } {
@@ -86,6 +99,17 @@ function parseObservedAt(value: unknown, now: number): { ok: true; value: string
   return { ok: true, value: new Date(parsed).toISOString() };
 }
 
+function quotaLimit(raw: string | undefined): number {
+  const n = Number(raw);
+  if (Number.isInteger(n) && n >= 1 && n <= 1000) return n;
+  return DEFAULT_AUDIT_RECEIPT_DAILY_QUOTA;
+}
+
+function utcDayStart(now: number): number {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
 function publicReceipt(row: ReceiptRow) {
   return {
     id: row.id,
@@ -93,10 +117,57 @@ function publicReceipt(row: ReceiptRow) {
     signature: row.signature,
     kid: row.kid,
     verifyPath: `/verify/audit/${row.id}`,
+    revokedAt: row.revoked_at == null ? null : new Date(row.revoked_at).toISOString(),
+    revokedReason: row.revoked_reason,
+    source: 'caller_submitted' as const,
   };
 }
 
-export async function handleAuditReceiptRoute(request: Request, env: Env, path: string): Promise<Response | null> {
+async function revokedForPayload(env: Env, payloadJson: string): Promise<{ revokedAt: string | null; revokedReason: string | null }> {
+  if (!env.DB) return { revokedAt: null, revokedReason: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadJson);
+  } catch {
+    return { revokedAt: null, revokedReason: null };
+  }
+  const payload = readSignedAuditReceiptPayload(parsed);
+  if (!payload || !ID_RE.test(payload.id)) return { revokedAt: null, revokedReason: null };
+  try {
+    const row = await env.DB.prepare(
+      `SELECT revoked_at, revoked_reason, payload_json FROM signed_audit_receipts WHERE id = ?`,
+    )
+      .bind(payload.id)
+      .first<{ revoked_at: number | null; revoked_reason: string | null; payload_json: string }>();
+    if (!row || row.payload_json !== payloadJson) return { revokedAt: null, revokedReason: null };
+    return {
+      revokedAt: row.revoked_at == null ? null : new Date(row.revoked_at).toISOString(),
+      revokedReason: row.revoked_reason,
+    };
+  } catch (err) {
+    if (missingTable(err)) return { revokedAt: null, revokedReason: null };
+    throw err;
+  }
+}
+
+async function domainIsVerified(env: Env, accountId: string, domain: string): Promise<'yes' | 'no' | 'missing_table'> {
+  try {
+    const row = await env.DB!.prepare(`SELECT status FROM domain_verifications WHERE account_id = ? AND domain = ?`)
+      .bind(accountId, domain)
+      .first<{ status: string }>();
+    return row?.status === 'verified' ? 'yes' : 'no';
+  } catch (err) {
+    if (/no such table: domain_verifications/i.test(err instanceof Error ? err.message : String(err))) return 'missing_table';
+    throw err;
+  }
+}
+
+export async function handleAuditReceiptRoute(
+  request: Request,
+  env: Env,
+  path: string,
+  user: HostedIdentity | null = null,
+): Promise<Response | null> {
   if (path === '/audit-receipts/keys') {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
     const set = await receiptPublicKeySet(env);
@@ -117,14 +188,46 @@ export async function handleAuditReceiptRoute(request: Request, env: Env, path: 
     }
     const keys = (await receiptPublicKeySet(env)).keys;
     const check = await checkSignedAuditReceipt({ payloadJson, signature, kid, keys });
-    return json({ ok: true, ...check, payload: check.payload });
+    const revoked = check.signature === 'valid' ? await revokedForPayload(env, payloadJson) : { revokedAt: null, revokedReason: null };
+    return json({ ok: true, ...check, payload: check.payload, ...revoked });
+  }
+
+  const revoke = path.match(/^\/audit-receipts\/(sar_[a-f0-9]{32})\/revoke$/);
+  if (revoke) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    if (!env.DB) return json({ ok: false, error: 'Signed Audit Receipts need D1.', code: 'D1_UNAVAILABLE' }, 503);
+    const who = user ? { user, error: undefined } : await identify(request, env);
+    if (who.error || !who.user) return json({ ok: false, error: who.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401);
+    const read = await readBody(request, MAX_BODY_BYTES);
+    if (!read.ok) return json({ ok: false, error: read.error }, read.status);
+    const reasonRaw = read.value && typeof read.value === 'object' && !Array.isArray(read.value) ? own(read.value, 'reason') : undefined;
+    const reason = typeof reasonRaw === 'string' && reasonRaw.trim() ? reasonRaw.trim().slice(0, 200) : 'Revoked by the account holder.';
+    try {
+      const res = await env.DB.prepare(
+        `UPDATE signed_audit_receipts SET revoked_at = ?, revoked_reason = ?
+         WHERE id = ? AND account_id = ? AND revoked_at IS NULL`,
+      )
+        .bind(Date.now(), reason, revoke[1], billingId(who.user))
+        .run();
+      if (Number(res.meta?.changes ?? 0) !== 1) return json({ ok: false, error: 'Receipt not found.', code: 'NOT_FOUND' }, 404);
+      const row = await env.DB.prepare(
+        `SELECT id, account_id, payload_json, signature, kid, revoked_at, revoked_reason FROM signed_audit_receipts WHERE id = ?`,
+      )
+        .bind(revoke[1])
+        .first<ReceiptRow>();
+      return json({ ok: true, receipt: row ? publicReceipt(row) : { id: revoke[1] } });
+    } catch (err) {
+      if (missingTable(err)) return tableMissing();
+      throw err;
+    }
   }
 
   if (path === '/audit-receipts') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
     if (!env.DB) return json({ ok: false, error: 'Signed Audit Receipts need D1.', code: 'D1_UNAVAILABLE' }, 503);
-    const who = await identify(request, env);
+    const who = user ? { user, error: undefined } : await identify(request, env);
     if (who.error || !who.user) return json({ ok: false, error: who.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401);
+    const accountId = billingId(who.user);
     const read = await readBody(request, MAX_BODY_BYTES);
     if (!read.ok) return json({ ok: false, error: read.error }, read.status);
     const body = read.value;
@@ -152,16 +255,37 @@ export async function handleAuditReceiptRoute(request: Request, env: Env, path: 
     if (crawl.value === null && engineValue === null && prompts.value === null && models.value === null && observedAt.value === null) {
       return json({ ok: false, error: 'Nothing to sign. Send at least one field, or omit a field to record it as not measured.' }, 400);
     }
+    const sub = await getActiveSubscription(env, who.user);
+    if (entitlementsFor(sub?.plan).scheduledReaudit === 'none') {
+      return json({ ok: false, error: 'Signed Audit Receipts need a paid plan.', code: 'PLAN_LIMIT' }, 402);
+    }
+    const verified = await domainIsVerified(env, accountId, domain);
+    if (verified === 'missing_table') {
+      return json({ ok: false, error: 'Domain verification table is not migrated (0020).', code: 'DOMAIN_VERIFY_TABLE_MISSING' }, 503);
+    }
+    if (verified === 'no') {
+      return json(
+        { ok: false, error: 'Verify this domain for the account before signing a receipt for it.', code: 'DOMAIN_NOT_VERIFIED' },
+        403,
+      );
+    }
+    const limit = quotaLimit(env.AUDIT_RECEIPT_DAILY_QUOTA);
+    const used = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM signed_audit_receipts WHERE account_id = ? AND created_at >= ?`,
+    )
+      .bind(accountId, utcDayStart(Date.now()))
+      .first<{ n: number }>();
+    if (Number(used?.n ?? 0) >= limit) {
+      return json({ ok: false, error: `Daily Signed Audit Receipt limit is ${limit}.`, code: 'QUOTA', limit }, 429);
+    }
     let kid: string | null;
     try {
       kid = await currentReceiptKid(env);
     } catch (err) {
-      if (err instanceof ReceiptSigningUnavailable) {
-        return json({ ok: false, error: 'RECEIPT_SIGNING_KEY is not configured. No receipt was signed.', code: 'RECEIPT_SIGNING_UNAVAILABLE' }, 503);
-      }
+      if (err instanceof ReceiptSigningUnavailable) return signingUnavailable();
       throw err;
     }
-    if (!kid) return json({ ok: false, error: 'RECEIPT_SIGNING_KEY is not configured. No receipt was signed.', code: 'RECEIPT_SIGNING_UNAVAILABLE' }, 503);
+    if (!kid) return signingUnavailable();
     const id = `sar_${crypto.randomUUID().replace(/-/g, '')}`;
     const issuedAt = new Date().toISOString();
     const content = await assembleAuditReceiptContent({
@@ -172,6 +296,7 @@ export async function handleAuditReceiptRoute(request: Request, env: Env, path: 
       prompts: prompts.value,
       models: models.value,
       observedAt: observedAt.value,
+      accountId,
     });
     const payload: SignedAuditReceiptPayload = {
       v: 1,
@@ -186,17 +311,21 @@ export async function handleAuditReceiptRoute(request: Request, env: Env, path: 
       hashes: content.hashes,
       models: content.models,
       fieldStatus: content.fieldStatus,
+      source: content.source,
+      accountHash: content.accountHash,
     };
     const payloadJson = canonicalJson(payload);
     let signature: string;
+    let signedKid: string;
     try {
-      signature = (await signReceiptPayload(env, payload)).signature;
+      const signed = await signReceiptPayload(env, payload, AUDIT_RECEIPT_SIGNING_PREFIX);
+      signature = signed.signature;
+      signedKid = signed.kid;
     } catch (err) {
-      if (err instanceof ReceiptSigningUnavailable) {
-        return json({ ok: false, error: 'RECEIPT_SIGNING_KEY is not configured. No receipt was signed.', code: 'RECEIPT_SIGNING_UNAVAILABLE' }, 503);
-      }
+      if (err instanceof ReceiptSigningUnavailable) return signingUnavailable();
       throw err;
     }
+    if (signedKid !== kid) return signingUnavailable();
     if (!readSignedAuditReceiptPayload(JSON.parse(payloadJson))) {
       return json({ ok: false, error: 'The receipt payload could not be read back. Nothing was stored.', code: 'RECEIPT_UNREADABLE' }, 500);
     }
@@ -205,15 +334,16 @@ export async function handleAuditReceiptRoute(request: Request, env: Env, path: 
         `INSERT INTO signed_audit_receipts (id, account_id, domain, payload_json, signature, kid, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-        .bind(id, billingId(who.user), domain, payloadJson, signature, kid, Date.now())
+        .bind(id, accountId, domain, payloadJson, signature, signedKid, Date.now())
         .run();
     } catch (err) {
-      if (missingTable(err)) {
-        return json({ ok: false, error: 'Signed Audit Receipt table is not migrated (0034).', code: 'AUDIT_RECEIPT_TABLE_MISSING' }, 503);
-      }
+      if (missingTable(err)) return tableMissing();
       throw err;
     }
-    return json({ ok: true, receipt: publicReceipt({ id, payload_json: payloadJson, signature, kid }) }, 201);
+    return json(
+      { ok: true, receipt: publicReceipt({ id, account_id: accountId, payload_json: payloadJson, signature, kid: signedKid, revoked_at: null, revoked_reason: null }) },
+      201,
+    );
   }
 
   const match = path.match(/^\/audit-receipts\/([^/]+)$/);
@@ -223,13 +353,15 @@ export async function handleAuditReceiptRoute(request: Request, env: Env, path: 
   if (!ID_RE.test(id)) return json({ ok: false, error: 'Receipt not found.' }, 404);
   if (!env.DB) return json({ ok: false, error: 'Signed Audit Receipts need D1.', code: 'D1_UNAVAILABLE' }, 503);
   try {
-    const row = await env.DB.prepare(`SELECT id, payload_json, signature, kid FROM signed_audit_receipts WHERE id = ?`)
+    const row = await env.DB.prepare(
+      `SELECT id, account_id, payload_json, signature, kid, revoked_at, revoked_reason FROM signed_audit_receipts WHERE id = ?`,
+    )
       .bind(id)
       .first<ReceiptRow>();
     if (!row) return json({ ok: false, error: 'Receipt not found.' }, 404);
     return json({ ok: true, receipt: publicReceipt(row) }, 200, { 'Cache-Control': 'no-store' });
   } catch (err) {
-    if (missingTable(err)) return json({ ok: false, error: 'Signed Audit Receipt table is not migrated (0034).', code: 'AUDIT_RECEIPT_TABLE_MISSING' }, 503);
+    if (missingTable(err)) return tableMissing();
     throw err;
   }
 }
