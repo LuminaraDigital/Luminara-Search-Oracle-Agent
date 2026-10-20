@@ -355,7 +355,41 @@ describe('TN2 domain verification', () => {
     expect(await check!.json()).toMatchObject({ status: 'verified', receiptIssued: false });
   });
 
-  it('a manual miss counts as a failure and leaves the row due for re-check', async () => {
+  it('two unreachable manual checks do not lapse the domain or revoke its Trust Receipt', async () => {
+    const env = makeEnv();
+    await asUser('acct_down');
+    const start = await handleDomainVerificationRoute(req('/trust/domains', 'POST', { domain: 'example.com' }), env, '/trust/domains');
+    const started = (await start!.json()) as { instructions: { dns_txt: { value: string } } };
+    const proved = fakeNet({ txt: { '_luminara-verify.example.com': [started.instructions.dns_txt.value] } });
+    const check = await handleDomainVerificationRoute(req('/trust/domains/example.com/check', 'POST'), env, '/trust/domains/example.com/check', proved);
+    const checked = (await check!.json()) as { status: string; receiptId: string };
+    expect(checked.status).toBe('verified');
+
+    const db = env.DB as unknown as { sqlite: { exec: (s: string) => void } };
+    db.sqlite.exec(`UPDATE domain_verifications SET last_checked_at = '2000-01-01T00:00:00.000Z', last_proved_at = '2000-01-01T00:00:00.000Z'`);
+    for (let i = 0; i < 2; i++) {
+      const missed = await handleDomainVerificationRoute(
+        req('/trust/domains/example.com/check', 'POST'),
+        env,
+        '/trust/domains/example.com/check',
+        fakeNet({ dnsDown: true, webDown: true }),
+      );
+      expect(await missed!.json()).toMatchObject({ status: 'unreachable' });
+    }
+    const afterMiss = await env.DB!.prepare(
+      `SELECT status, consecutive_failures, last_checked_at, last_proved_at FROM domain_verifications WHERE domain = 'example.com'`,
+    ).first<{ status: string; consecutive_failures: number; last_checked_at: string; last_proved_at: string }>();
+    expect(afterMiss).toEqual({
+      status: 'verified',
+      consecutive_failures: 0,
+      last_checked_at: '2000-01-01T00:00:00.000Z',
+      last_proved_at: '2000-01-01T00:00:00.000Z',
+    });
+    const receipt = await env.DB!.prepare(`SELECT revoked_at FROM trust_receipts WHERE id = ?`).bind(checked.receiptId).first<{ revoked_at: string | null }>();
+    expect(receipt?.revoked_at).toBeNull();
+  });
+
+  it('a manual not_found counts as a failure and leaves the row due for re-check', async () => {
     const env = makeEnv();
     await asUser('acct_miss');
     const start = await handleDomainVerificationRoute(req('/trust/domains', 'POST', { domain: 'example.com' }), env, '/trust/domains');
@@ -370,9 +404,9 @@ describe('TN2 domain verification', () => {
       req('/trust/domains/example.com/check', 'POST'),
       env,
       '/trust/domains/example.com/check',
-      fakeNet({ dnsDown: true, webDown: true }),
+      fakeNet({}),
     );
-    expect(await missed!.json()).toMatchObject({ status: 'unreachable' });
+    expect(await missed!.json()).toMatchObject({ status: 'not_found' });
     const afterMiss = await env.DB!.prepare(
       `SELECT status, consecutive_failures, last_checked_at, last_proved_at FROM domain_verifications WHERE domain = 'example.com'`,
     ).first<{ status: string; consecutive_failures: number; last_checked_at: string; last_proved_at: string }>();
@@ -420,6 +454,32 @@ describe('TN2 domain verification', () => {
     expect(recovered?.status).toBe('verified');
     expect(recovered?.consecutive_failures).toBe(0);
     expect(recovered?.last_proved_at).not.toBe('2000-01-01T00:00:00.000Z');
+  });
+
+  it('a cron unreachable leaves last_proved_at untouched', async () => {
+    const env = makeEnv();
+    await asUser('acct_cron_down');
+    const start = await handleDomainVerificationRoute(req('/trust/domains', 'POST', { domain: 'gamma.com' }), env, '/trust/domains');
+    const started = (await start!.json()) as { instructions: { dns_txt: { value: string } } };
+    await handleDomainVerificationRoute(
+      req('/trust/domains/gamma.com/check', 'POST'),
+      env,
+      '/trust/domains/gamma.com/check',
+      fakeNet({ txt: { '_luminara-verify.gamma.com': [started.instructions.dns_txt.value] } }),
+    );
+    const db = env.DB as unknown as { sqlite: { exec: (s: string) => void } };
+    db.sqlite.exec(
+      `UPDATE domain_verifications SET last_checked_at = '2000-01-01T00:00:00.000Z', last_proved_at = '2026-10-01T00:00:00.000Z' WHERE domain = 'gamma.com'`,
+    );
+    const due = await recheckVerifiedDomains(env, fakeNet({ dnsDown: true, webDown: true }));
+    expect(due).toEqual({ checked: 1, lapsed: 0 });
+    const row = await env.DB!.prepare(
+      `SELECT status, consecutive_failures, last_checked_at, last_proved_at FROM domain_verifications WHERE domain = 'gamma.com'`,
+    ).first<{ status: string; consecutive_failures: number; last_checked_at: string; last_proved_at: string }>();
+    expect(row?.status).toBe('verified');
+    expect(row?.consecutive_failures).toBe(0);
+    expect(row?.last_proved_at).toBe('2026-10-01T00:00:00.000Z');
+    expect(row?.last_checked_at).not.toBe('2000-01-01T00:00:00.000Z');
   });
 
   it('rejects private and malformed domains', async () => {

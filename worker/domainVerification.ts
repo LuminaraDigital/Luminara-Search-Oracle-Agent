@@ -13,10 +13,10 @@
  *
  * HTTP proof must come from the domain itself: redirects are followed through
  * the SSRF guard, but the final host must be the domain or its www twin.
- * A resolver or network failure is `unreachable`. The daily re-check does not
- * count it. A manual check counts `not_found` and `unreachable` as a failure
- * and does not move `last_checked_at`, so the row stays due. `last_proved_at`
- * is written only when the proof is found.
+ * A resolver or network failure is `unreachable`. Neither a manual check nor
+ * the daily re-check counts it. Only `not_found` increments the failure count.
+ * A manual `not_found` does not move `last_checked_at`, so the row stays due.
+ * `last_proved_at` is written only when the proof is found.
  *
  * Routes (404 unless DOMAIN_VERIFY_ENABLED):
  *   GET    /trust/domains
@@ -426,12 +426,13 @@ export async function handleDomainVerificationRoute(
   const result = await checkDomainProof(domain, row.token_hash, effectiveDeps);
   const now = new Date().toISOString();
 
-  if (result.status === 'unreachable' || result.status === 'not_found') {
+  if (result.status === 'unreachable') {
+    // A network miss is not a failed proof. Leave the failure count and both timestamps alone.
+    return json({ ok: false, status: 'unreachable', error: result.error, measurementStatus: 'not_measured' }, 200);
+  }
+  if (result.status === 'not_found') {
     // Leave last_checked_at and last_proved_at alone so a miss cannot look fresh or skip the daily re-check.
     await recordManualProofMiss(env, env.DB, row, now, who.user.id);
-    if (result.status === 'unreachable') {
-      return json({ ok: false, status: 'unreachable', error: result.error, measurementStatus: 'not_measured' }, 200);
-    }
     return json({
       ok: false,
       status: 'not_found',
@@ -478,8 +479,8 @@ export async function handleDomainVerificationRoute(
 }
 
 /**
- * A manual miss counts toward lapse. It does not write last_checked_at, so the
- * daily re-check still selects the row, and it does not write last_proved_at.
+ * A manual not_found counts toward lapse. It does not write last_checked_at, so
+ * the daily re-check still selects the row, and it does not write last_proved_at.
  */
 async function recordManualProofMiss(env: Env, db: NonNullable<Env['DB']>, row: DomainRow, now: string, actorId: string): Promise<void> {
   const failures = Number(row.consecutive_failures || 0) + 1;

@@ -191,8 +191,39 @@ describe('P1 ADMIN_SECRET separation', () => {
     expect(res.status).toBe(200);
     const row = await db.prepare(`SELECT revoked_reason FROM signed_audit_receipts WHERE id = ?`).bind(id).first<{ revoked_reason: string }>();
     expect(row?.revoked_reason).toBe('operator sweep');
-    const logs = await db.prepare(`SELECT action, target_id FROM org_audit_logs WHERE action = 'admin.audit_receipt.revoke'`).all<{ action: string; target_id: string }>();
-    expect(logs.results).toEqual([{ action: 'admin.audit_receipt.revoke', target_id: id }]);
+
+    const missingId = `sar_${'ab'.repeat(16)}`;
+    const missing = await worker.fetch(
+      req(`/api/admin/audit-receipts/${missingId}/revoke`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-admin-secret': 'real-admin-secret' },
+        body: JSON.stringify({ reason: 'missing' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(missing.status).toBe(404);
+
+    const repeat = await worker.fetch(
+      req(`/api/admin/audit-receipts/${id}/revoke`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-admin-secret': 'real-admin-secret' },
+        body: JSON.stringify({ reason: 'again' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(repeat.status).toBe(409);
+    expect(await repeat.json()).toMatchObject({ code: 'ALREADY_REVOKED' });
+
+    const logs = await db.prepare(
+      `SELECT action, target_id, details FROM org_audit_logs WHERE action = 'admin.audit_receipt.revoke' ORDER BY rowid`,
+    ).all<{ action: string; target_id: string; details: string }>();
+    expect(logs.results.map((entry) => ({ action: entry.action, target_id: entry.target_id, details: JSON.parse(entry.details) }))).toEqual([
+      { action: 'admin.audit_receipt.revoke', target_id: id, details: { status: 200 } },
+      { action: 'admin.audit_receipt.revoke', target_id: missingId, details: { status: 404, code: 'NOT_FOUND' } },
+      { action: 'admin.audit_receipt.revoke', target_id: id, details: { status: 409, code: 'ALREADY_REVOKED' } },
+    ]);
   });
 
   it('admin/users with a correct secret returns the projected list and records an audit entry', async () => {

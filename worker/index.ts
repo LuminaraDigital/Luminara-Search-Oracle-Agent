@@ -1278,16 +1278,22 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const reasonRaw = read.value && typeof read.value === 'object' && !Array.isArray(read.value) ? own(read.value, 'reason') : undefined;
     const reason = typeof reasonRaw === 'string' ? reasonRaw : '';
     const revoked = await revokeSignedAuditReceipt(env, { id: auditReceiptRevoke[1], reason, accountId: null });
-    if (revoked.status === 200) {
-      await recordAuditLogBestEffort(env, {
-        org_id: ADMIN_SYSTEM_ORG,
-        actor_id: 'admin',
-        action: 'admin.audit_receipt.revoke',
-        target_id: auditReceiptRevoke[1],
-        ip_address: clientIp(request),
-        user_agent: request.headers.get('user-agent') || undefined,
-      });
+    let code: string | undefined;
+    try {
+      const body: unknown = await revoked.clone().json();
+      if (body && typeof body === 'object' && 'code' in body && typeof body.code === 'string') code = body.code;
+    } catch {
+      code = undefined;
     }
+    await recordAuditLogBestEffort(env, {
+      org_id: ADMIN_SYSTEM_ORG,
+      actor_id: 'admin',
+      action: 'admin.audit_receipt.revoke',
+      target_id: auditReceiptRevoke[1],
+      details: code ? { status: revoked.status, code } : { status: revoked.status },
+      ip_address: clientIp(request),
+      user_agent: request.headers.get('user-agent') || undefined,
+    });
     return withCors(revoked);
   }
 

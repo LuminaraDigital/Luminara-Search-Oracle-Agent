@@ -242,7 +242,17 @@ export async function revokeSignedAuditReceipt(
       ? stmt.bind(Date.now(), reason, input.id, input.accountId)
       : stmt.bind(Date.now(), reason, input.id);
     const res = await bound.run();
-    if (Number(res.meta?.changes ?? 0) !== 1) return json({ ok: false, error: 'Receipt not found.', code: 'NOT_FOUND' }, 404);
+    if (Number(res.meta?.changes ?? 0) !== 1) {
+      const lookup = input.accountId
+        ? `SELECT revoked_at FROM signed_audit_receipts WHERE id = ? AND account_id = ?`
+        : `SELECT revoked_at FROM signed_audit_receipts WHERE id = ?`;
+      const found = env.DB.prepare(lookup);
+      const existing = await (input.accountId ? found.bind(input.id, input.accountId) : found.bind(input.id)).first<{ revoked_at: number | null }>();
+      if (existing?.revoked_at != null) {
+        return json({ ok: false, error: 'This receipt is already revoked.', code: 'ALREADY_REVOKED' }, 409);
+      }
+      return json({ ok: false, error: 'Receipt not found.', code: 'NOT_FOUND' }, 404);
+    }
     const row = await env.DB.prepare(
       `SELECT id, account_id, payload_json, signature, kid, revoked_at, revoked_reason FROM signed_audit_receipts WHERE id = ?`,
     )

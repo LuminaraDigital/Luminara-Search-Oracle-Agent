@@ -216,7 +216,9 @@ describe('signed audit receipts', () => {
       '/audit-receipts/verify',
     );
     expect(await remote!.json()).toMatchObject({ signature: 'valid', revokedReason: 'Wrong crawl.' });
-    expect((await handleAuditReceiptRoute(post({}), env, `/audit-receipts/${body.receipt.id}/revoke`))?.status).toBe(404);
+    const again = await handleAuditReceiptRoute(post({}), env, `/audit-receipts/${body.receipt.id}/revoke`);
+    expect(again?.status).toBe(409);
+    expect(await again!.json()).toMatchObject({ code: 'ALREADY_REVOKED' });
 
     await env.DB!.prepare(`UPDATE signed_audit_receipts SET account_id = 'other', revoked_at = NULL WHERE id = ?`).bind(body.receipt.id).run();
     expect((await handleAuditReceiptRoute(post({}), env, `/audit-receipts/${body.receipt.id}/revoke`))?.status).toBe(404);
@@ -349,12 +351,18 @@ describe('signed audit receipts', () => {
   it('starts a new quota at 00:00 UTC', async () => {
     const env = envWith(SIGNING_KEY, { plan: 'agency', quota: '1' });
     await verifyDomain(env);
-    expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), env, '/audit-receipts'))?.status).toBe(201);
-    const now = new Date();
-    const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-    await env.DB!.prepare(`UPDATE signed_audit_receipts SET created_at = ?`).bind(dayStart - 1).run();
-    expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', crawl: 'next day' }), env, '/audit-receipts'))?.status).toBe(201);
-    expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', crawl: 'same day' }), env, '/audit-receipts'))?.status).toBe(429);
+    const beforeMidnight = Date.parse('2026-10-20T23:59:00.000Z');
+    const afterMidnight = Date.parse('2026-10-21T00:01:00.000Z');
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      clock.mockReturnValue(beforeMidnight);
+      expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), env, '/audit-receipts'))?.status).toBe(201);
+      clock.mockReturnValue(afterMidnight);
+      expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', crawl: 'next day' }), env, '/audit-receipts'))?.status).toBe(201);
+      expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', crawl: 'same day' }), env, '/audit-receipts'))?.status).toBe(429);
+    } finally {
+      clock.mockRestore();
+    }
     expect(await env.DB!.prepare(`SELECT COUNT(*) AS n FROM signed_audit_receipts`).first<{ n: number }>()).toEqual({ n: 2 });
   });
 
@@ -409,6 +417,11 @@ describe('signed audit receipts', () => {
     expect((await handleAuditReceiptRoute(post({}), env, `/audit-receipts/${id}/revoke`))?.status).toBe(404);
     const revoked = await revokeSignedAuditReceipt(env, { id, reason: 'operator', accountId: null });
     expect(revoked.status).toBe(200);
+    const repeat = await revokeSignedAuditReceipt(env, { id, reason: 'operator', accountId: null });
+    expect(repeat.status).toBe(409);
+    expect(await repeat.json()).toMatchObject({ code: 'ALREADY_REVOKED' });
+    const missing = await revokeSignedAuditReceipt(env, { id: `sar_${'ab'.repeat(16)}`, reason: 'operator', accountId: null });
+    expect(missing.status).toBe(404);
     expect(await env.DB!.prepare(`SELECT revoked_reason FROM signed_audit_receipts WHERE id = ?`).bind(id).first<{ revoked_reason: string }>()).toEqual({
       revoked_reason: 'operator',
     });
