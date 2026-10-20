@@ -3,6 +3,9 @@ import type { HostedIdentity } from './userTypes';
 import { resolveAccountId } from './userStore';
 import { referralBonusRemaining, tryConsumeReferralCredit } from './referrals';
 
+/** Shown when the free meter cannot be read or written. Not a paywall. */
+export const QUOTA_CAPACITY_ERROR = "We're at capacity right now, please try again shortly.";
+
 export interface QuotaStatus {
   ok: boolean;
   error?: string;
@@ -94,9 +97,17 @@ async function meterDailyQuota(
       meterKey: key,
     };
   } catch {
-    // shortcut: a thrown quota read or write is not counted. Upgrade when KV puts succeed again.
+    // Fail closed. A missed write must not turn into an uncounted free audit.
     console.warn(JSON.stringify({ event: 'quota_store_error' }));
-    return { ok: true, limit, used: 0, remaining: limit, resetSec, isUnlimited: false };
+    return {
+      ok: false,
+      error: QUOTA_CAPACITY_ERROR,
+      limit,
+      used: 0,
+      remaining: 0,
+      resetSec,
+      isUnlimited: false,
+    };
   }
 }
 

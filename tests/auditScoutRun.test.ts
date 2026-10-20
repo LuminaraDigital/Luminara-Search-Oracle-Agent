@@ -261,19 +261,16 @@ describe('one Instant Audit run', () => {
     expect(quotaUsed(kv)).toBe('2');
   });
 
-  it('keeps going without a token when the run cannot be stored', async () => {
-    const { env, kv } = envFor();
-    kv.put = async () => {
+  it('refuses a free audit when the quota write throws, and does not invent a token', async () => {
+    const { env } = envFor();
+    env.LUMINARA_KV!.put = async () => {
       throw new Error('kv put');
     };
-    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { content: 'Groq hosted answer' }, finish_reason: 'stop' }],
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    globalThis.fetch = vi.fn(async () => new Response('should not run', { status: 200 }));
     const opened = await mint(env);
-    expect(opened.status).toBe(200);
-    expect(opened.body.ok).toBe(true);
+    expect(opened.status).toBe(503);
     expect(opened.body.token).toBeUndefined();
-    expect(quotaUsed(kv)).toBeUndefined();
+    expect(opened.body).toMatchObject({ ok: false, code: 'HOSTED_CAPACITY' });
 
     const chat = new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
       method: 'POST',
@@ -281,7 +278,22 @@ describe('one Instant Audit run', () => {
       body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: 'Hi' }] }),
     });
     const res = await proxyProvider(chat, env, 'groq', '/chat/completions');
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ choices: [{ message: { content: 'Groq hosted answer' } }] });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: 'HOSTED_CAPACITY' });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not hand out a token when the audit run cannot be stored', async () => {
+    const { env, kv } = envFor();
+    const realPut = kv.put.bind(kv);
+    kv.put = async (key: string, value: string) => {
+      if (key.startsWith('audit-run:')) throw new Error('kv put');
+      return realPut(key, value);
+    };
+    const opened = await mint(env);
+    expect(opened.status).toBe(200);
+    expect(opened.body.ok).toBe(true);
+    expect(opened.body.token).toBeUndefined();
+    expect(quotaUsed(kv)).toBe('0');
   });
 });

@@ -6,7 +6,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, identify, json } from './workerUtils';
-import { checkHostedQuota, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
+import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { safePublicHostname } from './security';
 
@@ -95,16 +95,17 @@ export async function mintAuditRun(
   }
   const quota = await checkHostedQuota(env, user);
   if (!quota.ok) {
+    const capacity = quota.error === QUOTA_CAPACITY_ERROR;
     return json(
       {
         ok: false,
         error: quota.error,
-        code: 'PAYWALL_EXCEEDED',
+        code: capacity ? 'HOSTED_CAPACITY' : 'PAYWALL_EXCEEDED',
         limit: quota.limit,
         used: quota.used,
         remaining: quota.remaining,
       },
-      402,
+      capacity ? 503 : 402,
     );
   }
   const token = crypto.randomUUID();
@@ -119,7 +120,7 @@ export async function mintAuditRun(
     refunded: false,
   };
   if (!(await writeRun(env, token, record))) {
-    // shortcut: no stored run, so this check is given back and later calls meter themselves.
+    // shortcut: no stored token. The check is given back when the refund write lands.
     if (quota.meterKey) await refundMeteredQuota(env, quota);
     return json({ ok: true, domain }, 200);
   }
