@@ -22,6 +22,7 @@ import { entitlementsFor } from '../plans/planEntitlements';
 import { getAnswerDepth } from './answerDepth';
 import type { HostedScoutRail } from './hostedScoutRail';
 import { guardPasteReadyCopy, siteLooksHealthRelated } from './healthClaimGuard';
+import { fallbackAnswerLine } from '../llm/fallbackAnswer';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
   if (crewRunning) return 'Scanning...';
@@ -91,9 +92,11 @@ export async function generateAuditReportUnlessDegraded(input: {
     },
   );
   const pages = input.scrapedPages ?? [];
+  const guarded = guardPasteReadyCopy(report.text).text;
+  const modelLine = fallbackAnswerLine(report.answeredBy ? { model: report.answeredBy } : undefined);
   return {
     ...report,
-    text: guardPasteReadyCopy(report.text).text,
+    text: modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded,
     unifiedDiff: report.unifiedDiff ? guardPasteReadyCopy(report.unifiedDiff).text : report.unifiedDiff,
     remediationPayload: report.remediationPayload
       ? { ...report.remediationPayload, schemaJsonLd: guardPasteReadyCopy(report.remediationPayload.schemaJsonLd).text }

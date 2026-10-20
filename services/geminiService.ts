@@ -88,6 +88,7 @@ import { synthesizeRlmAuditEvidence, type RLMTrajectoryMetadata } from './rlm';
 
 export interface AuditReportResult {
   text: string;
+  answeredBy?: string;
   sources: Array<{ uri: string; title: string }>;
   empiricalSummary?: EmpiricalCitationSummary;
   remediationPayload?: RemediationPayload;
@@ -909,7 +910,7 @@ Strict Formatting Guidelines:
 11. ${WIKI_LINK_PROMPT_HINT}
 `;
 
-    const buildReportResult = (modelText: string): AuditReportResult => {
+    const buildReportResult = (modelText: string, answeredBy?: string): AuditReportResult => {
       // Only the report's own table columns pass. No evidence block fills any other.
       // The copy each provider path writes to memory goes through the same gate.
       const text = gateReportText(modelText);
@@ -1099,13 +1100,13 @@ Strict Formatting Guidelines:
         sourceGraph,
         enterpriseTrust,
         rlmTrajectory,
+        answeredBy,
       };
     };
 
     let lastError: unknown = null;
     let attemptedNativeFailover = false;
 
-    // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama with auto-failover
     try {
       const best = await aiProviderService.getBestAvailableProvider();
       if (best) {
@@ -1114,7 +1115,7 @@ Strict Formatting Guidelines:
           systemPrompt: ORACLE_SYSTEM_PROMPT,
           temperature: 0.3,
         });
-        return buildReportResult(result.text);
+        return buildReportResult(result.text, result.fallback?.model);
       }
     } catch (e) {
       lastError = e;
@@ -1151,7 +1152,6 @@ Strict Formatting Guidelines:
       }
     }
 
-    // 3. Resilient Multi-Provider Fallback (only if step 1 did not already run generateWithFailover)
     if (!attemptedNativeFailover) {
       try {
         const fallbackResult = await aiProviderService.generateWithFailover(prompt, {
@@ -1159,7 +1159,7 @@ Strict Formatting Guidelines:
           temperature: 0.2,
         });
         if (fallbackResult && fallbackResult.text && fallbackResult.text.trim()) {
-          return buildReportResult(fallbackResult.text);
+          return buildReportResult(fallbackResult.text, fallbackResult.fallback?.model);
         }
       } catch (fallbackError) {
         console.warn('Audit generation aiProviderService fallback error:', fallbackError);
