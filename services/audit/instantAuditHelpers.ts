@@ -22,6 +22,7 @@ import { entitlementsFor } from '../plans/planEntitlements';
 import { getAnswerDepth } from './answerDepth';
 import type { HostedScoutRail } from './hostedScoutRail';
 import { guardPasteReadyCopy, siteLooksHealthRelated } from './healthClaimGuard';
+import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
 import { fallbackAnswerLine } from '../llm/fallbackAnswer';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
@@ -92,7 +93,20 @@ export async function generateAuditReportUnlessDegraded(input: {
     },
   );
   const pages = input.scrapedPages ?? [];
-  const guarded = guardPasteReadyCopy(report.text).text;
+  const serp = input.serpEvidence ?? [];
+  const facts: MeasuredClaimFacts = {
+    ...input.summary.measured,
+    wordCounts: pages.map((page) => page.wordCount),
+    schemaTypes: pages.flatMap((page) => page.schemasFound.map((schema) => schema.type)),
+    tavilyResultCount: input.serpEvidence
+      ? serp.filter((row) => row.engine === 'tavily').length
+      : input.summary.measured?.tavilyResultCount,
+    evidenceText: [
+      ...pages.flatMap((page) => [page.title, page.description, page.rawTextSnippet, ...page.h1s]),
+      ...serp.flatMap((row) => [row.title, row.snippet, row.query, row.aiOverviewText]),
+    ].filter((part): part is string => Boolean(part && part.trim())).join('\n'),
+  };
+  const guarded = guardUnmeasuredClaims(guardPasteReadyCopy(report.text).text, facts);
   const modelLine = fallbackAnswerLine(
     report.answeredBy ? { model: report.answeredBy, provider: report.answeredByProvider } : undefined,
   );
