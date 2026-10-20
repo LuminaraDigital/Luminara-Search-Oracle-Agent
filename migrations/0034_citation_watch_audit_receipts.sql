@@ -16,11 +16,8 @@ CREATE TABLE IF NOT EXISTS citation_watches (
   created_at INTEGER NOT NULL
 );
 
--- Inactive rows stay for history. Only a live watch holds the prompt-set key, so a
--- soft-deleted watch can be created again.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_citation_watches_prompt_set
-  ON citation_watches(account_id, client_id, domain, engine, prompts_sha256)
-  WHERE active = 1;
+  ON citation_watches(account_id, client_id, domain, engine, prompts_sha256);
 CREATE INDEX IF NOT EXISTS idx_citation_watches_due
   ON citation_watches(active, next_run_at);
 
@@ -58,11 +55,7 @@ CREATE TABLE IF NOT EXISTS citation_watch_runs (
 
 CREATE INDEX IF NOT EXISTS idx_citation_watch_runs_watch
   ON citation_watch_runs(watch_id, ran_at DESC);
-CREATE INDEX IF NOT EXISTS idx_citation_watch_runs_account
-  ON citation_watch_runs(account_id);
 
--- revoked_at is a mark, not a delete. A public verifier can show revoked.
--- The signature still covers the original payload.
 CREATE TABLE IF NOT EXISTS signed_audit_receipts (
   id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
@@ -70,9 +63,7 @@ CREATE TABLE IF NOT EXISTS signed_audit_receipts (
   payload_json TEXT NOT NULL,
   signature TEXT NOT NULL,
   kid TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  revoked_reason TEXT
+  created_at INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_signed_audit_receipts_account

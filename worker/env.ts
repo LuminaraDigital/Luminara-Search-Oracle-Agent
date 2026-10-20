@@ -193,8 +193,21 @@ export interface Env {
   CITATION_WATCH_LIVE?: string;
   /** Optional JSON override of per-engine Citation Watch thresholds. A bad field keeps the default. */
   CITATION_WATCH_THRESHOLDS?: string;
-  /** Daily Signed Audit Receipt cap per account. Unset uses 10. Integer 1 to 1000. */
+  /** Daily Signed Audit Receipt cap per account. Unset uses 10. Integer 1 to 1000. The day starts at 00:00 UTC (11:00 in Sydney during AEDT). */
   AUDIT_RECEIPT_DAILY_QUOTA?: string;
+  /**
+   * "true" allows minting and revoking Signed Audit Receipts. Unset and any other value refuse those writes.
+   * Public verify (GET keys, GET by id, POST verify) stays available. Default "false" in wrangler vars.
+   */
+  AUDIT_RECEIPTS_ENABLED?: string;
+  /**
+   * Secret. HMAC-SHA256 key for the account hash on a Signed Audit Receipt.
+   * Set with `wrangler secret put AUDIT_RECEIPT_ACCOUNT_HMAC_KEY` only. Not a wrangler var.
+   * Minting returns 503 and signs nothing when this is unset. Separate from RECEIPT_SIGNING_KEY.
+   */
+  AUDIT_RECEIPT_ACCOUNT_HMAC_KEY?: string;
+  /** Days since last_checked_at that a verified domain may still be signed. Unset uses 7. Integer 1 to 365. */
+  AUDIT_RECEIPT_DOMAIN_FRESH_DAYS?: string;
   /** DNS-over-HTTPS JSON endpoint for domain verification. Default https://cloudflare-dns.com/dns-query. */
   DOMAIN_VERIFY_DOH_URL?: string;
   /** DataForSEO API login (hosted LLM Mentions / SERP). Pair with DATAFORSEO_PASSWORD. */

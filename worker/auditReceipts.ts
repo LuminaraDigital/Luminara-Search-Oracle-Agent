@@ -12,6 +12,7 @@ import {
   AUDIT_RECEIPT_KIND,
   AUDIT_RECEIPT_SIGNING_PREFIX,
   DEFAULT_AUDIT_RECEIPT_DAILY_QUOTA,
+  DEFAULT_AUDIT_RECEIPT_DOMAIN_FRESH_DAYS,
   type AuditReceiptModel,
   type SignedAuditReceiptPayload,
 } from '../services/auditReceipt/payload';
@@ -22,6 +23,7 @@ import { entitlementsFor } from '../services/plans/planEntitlements';
 import { currentReceiptKid, receiptPublicKeySet, signReceiptPayload, ReceiptSigningUnavailable } from './receiptSigning';
 import { identify, billingId, json } from './workerUtils';
 import { getActiveSubscription } from './quotaMiddleware';
+import { isDomainVerifyEnabled } from './domainVerification';
 import { MAX_BODY_BYTES, readBody, safePublicHostname } from './security';
 import type { HostedIdentity } from './userTypes';
 
@@ -39,9 +41,6 @@ type ReceiptRow = {
   revoked_reason: string | null;
 };
 
-function missingTable(err: unknown): boolean {
-  return /no such table: signed_audit_receipts/i.test(err instanceof Error ? err.message : String(err));
-}
 
 function signingUnavailable(): Response {
   return json(
@@ -50,8 +49,30 @@ function signingUnavailable(): Response {
   );
 }
 
+function schemaMissing(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /no such table: signed_audit_receipts/i.test(msg) || /no such column: revoked_(at|reason)/i.test(msg);
+}
+
 function tableMissing(): Response {
-  return json({ ok: false, error: 'Signed Audit Receipt table is not migrated (0034).', code: 'AUDIT_RECEIPT_TABLE_MISSING' }, 503);
+  return json({ ok: false, error: 'Signed Audit Receipts need migrations 0034 and 0035.', code: 'AUDIT_RECEIPT_TABLE_MISSING' }, 503);
+}
+
+function receiptsWritable(env: Env): Response | null {
+  if (String(env.AUDIT_RECEIPTS_ENABLED || '') === 'true') return null;
+  return json({ ok: false, error: 'Signed Audit Receipt minting is off.', code: 'AUDIT_RECEIPTS_DISABLED' }, 403);
+}
+
+function accountHmacKey(env: Env): string | null {
+  const key = String(env.AUDIT_RECEIPT_ACCOUNT_HMAC_KEY || '').trim();
+  return key ? key : null;
+}
+
+function hmacUnavailable(): Response {
+  return json(
+    { ok: false, error: 'AUDIT_RECEIPT_ACCOUNT_HMAC_KEY is not configured. No receipt was signed.', code: 'AUDIT_RECEIPT_HMAC_UNAVAILABLE' },
+    503,
+  );
 }
 
 function optionalString(value: unknown, label: string, max: number): { ok: true; value: string | null } | { ok: false; error: string } {
@@ -105,6 +126,7 @@ function quotaLimit(raw: string | undefined): number {
   return DEFAULT_AUDIT_RECEIPT_DAILY_QUOTA;
 }
 
+/** 00:00 UTC. That is 11:00 in Sydney while AEDT (UTC+11) is in effect. */
 function utcDayStart(now: number): number {
   const d = new Date(now);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -145,17 +167,34 @@ async function revokedForPayload(env: Env, payloadJson: string): Promise<{ revok
       revokedReason: row.revoked_reason,
     };
   } catch (err) {
-    if (missingTable(err)) return { revokedAt: null, revokedReason: null };
+    if (schemaMissing(err)) return { revokedAt: null, revokedReason: null };
     throw err;
   }
 }
 
-async function domainIsVerified(env: Env, accountId: string, domain: string): Promise<'yes' | 'no' | 'missing_table'> {
+function domainFreshMs(raw: string | undefined): number {
+  const n = Number(raw);
+  const days = Number.isInteger(n) && n >= 1 && n <= 365 ? n : DEFAULT_AUDIT_RECEIPT_DOMAIN_FRESH_DAYS;
+  return days * 86_400_000;
+}
+
+async function domainGate(
+  env: Env,
+  accountId: string,
+  domain: string,
+  now: number,
+): Promise<'yes' | 'not_verified' | 'stale' | 'verify_off' | 'missing_table'> {
+  if (!isDomainVerifyEnabled(env)) return 'verify_off';
   try {
-    const row = await env.DB!.prepare(`SELECT status FROM domain_verifications WHERE account_id = ? AND domain = ?`)
+    const row = await env.DB!.prepare(
+      `SELECT status, last_checked_at FROM domain_verifications WHERE account_id = ? AND domain = ?`,
+    )
       .bind(accountId, domain)
-      .first<{ status: string }>();
-    return row?.status === 'verified' ? 'yes' : 'no';
+      .first<{ status: string; last_checked_at: string | null }>();
+    if (row?.status !== 'verified') return 'not_verified';
+    const checked = Date.parse(row.last_checked_at ?? '');
+    if (!Number.isFinite(checked) || now - checked > domainFreshMs(env.AUDIT_RECEIPT_DOMAIN_FRESH_DAYS)) return 'stale';
+    return 'yes';
   } catch (err) {
     if (/no such table: domain_verifications/i.test(err instanceof Error ? err.message : String(err))) return 'missing_table';
     throw err;
@@ -195,6 +234,8 @@ export async function handleAuditReceiptRoute(
   const revoke = path.match(/^\/audit-receipts\/(sar_[a-f0-9]{32})\/revoke$/);
   if (revoke) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    const closed = receiptsWritable(env);
+    if (closed) return closed;
     if (!env.DB) return json({ ok: false, error: 'Signed Audit Receipts need D1.', code: 'D1_UNAVAILABLE' }, 503);
     const who = user ? { user, error: undefined } : await identify(request, env);
     if (who.error || !who.user) return json({ ok: false, error: who.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401);
@@ -217,13 +258,15 @@ export async function handleAuditReceiptRoute(
         .first<ReceiptRow>();
       return json({ ok: true, receipt: row ? publicReceipt(row) : { id: revoke[1] } });
     } catch (err) {
-      if (missingTable(err)) return tableMissing();
+      if (schemaMissing(err)) return tableMissing();
       throw err;
     }
   }
 
   if (path === '/audit-receipts') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    const closed = receiptsWritable(env);
+    if (closed) return closed;
     if (!env.DB) return json({ ok: false, error: 'Signed Audit Receipts need D1.', code: 'D1_UNAVAILABLE' }, 503);
     const who = user ? { user, error: undefined } : await identify(request, env);
     if (who.error || !who.user) return json({ ok: false, error: who.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401);
@@ -259,25 +302,29 @@ export async function handleAuditReceiptRoute(
     if (entitlementsFor(sub?.plan).scheduledReaudit === 'none') {
       return json({ ok: false, error: 'Signed Audit Receipts need a paid plan.', code: 'PLAN_LIMIT' }, 402);
     }
-    const verified = await domainIsVerified(env, accountId, domain);
+    const now = Date.now();
+    const verified = await domainGate(env, accountId, domain, now);
     if (verified === 'missing_table') {
       return json({ ok: false, error: 'Domain verification table is not migrated (0020).', code: 'DOMAIN_VERIFY_TABLE_MISSING' }, 503);
     }
-    if (verified === 'no') {
+    if (verified === 'verify_off') {
+      return json({ ok: false, error: 'Domain verification is off, so a receipt cannot be signed.', code: 'DOMAIN_VERIFY_DISABLED' }, 403);
+    }
+    if (verified === 'stale') {
+      return json(
+        { ok: false, error: 'This domain verification is outside the re-check window. Check the domain again before signing.', code: 'DOMAIN_CHECK_STALE' },
+        403,
+      );
+    }
+    if (verified !== 'yes') {
       return json(
         { ok: false, error: 'Verify this domain for the account before signing a receipt for it.', code: 'DOMAIN_NOT_VERIFIED' },
         403,
       );
     }
+    const hmacKey = accountHmacKey(env);
+    if (!hmacKey) return hmacUnavailable();
     const limit = quotaLimit(env.AUDIT_RECEIPT_DAILY_QUOTA);
-    const used = await env.DB.prepare(
-      `SELECT COUNT(*) AS n FROM signed_audit_receipts WHERE account_id = ? AND created_at >= ?`,
-    )
-      .bind(accountId, utcDayStart(Date.now()))
-      .first<{ n: number }>();
-    if (Number(used?.n ?? 0) >= limit) {
-      return json({ ok: false, error: `Daily Signed Audit Receipt limit is ${limit}.`, code: 'QUOTA', limit }, 429);
-    }
     let kid: string | null;
     try {
       kid = await currentReceiptKid(env);
@@ -297,6 +344,7 @@ export async function handleAuditReceiptRoute(
       models: models.value,
       observedAt: observedAt.value,
       accountId,
+      accountHmacKey: hmacKey,
     });
     const payload: SignedAuditReceiptPayload = {
       v: 1,
@@ -329,16 +377,22 @@ export async function handleAuditReceiptRoute(
     if (!readSignedAuditReceiptPayload(JSON.parse(payloadJson))) {
       return json({ ok: false, error: 'The receipt payload could not be read back. Nothing was stored.', code: 'RECEIPT_UNREADABLE' }, 500);
     }
+    let inserted = 0;
     try {
-      await env.DB.prepare(
+      const res = await env.DB.prepare(
         `INSERT INTO signed_audit_receipts (id, account_id, domain, payload_json, signature, kid, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         SELECT ?, ?, ?, ?, ?, ?, ?
+         WHERE (SELECT COUNT(*) FROM signed_audit_receipts WHERE account_id = ? AND created_at >= ?) < ?`,
       )
-        .bind(id, accountId, domain, payloadJson, signature, signedKid, Date.now())
+        .bind(id, accountId, domain, payloadJson, signature, signedKid, now, accountId, utcDayStart(now), limit)
         .run();
+      inserted = Number(res.meta?.changes ?? 0);
     } catch (err) {
-      if (missingTable(err)) return tableMissing();
+      if (schemaMissing(err)) return tableMissing();
       throw err;
+    }
+    if (inserted !== 1) {
+      return json({ ok: false, error: `Daily Signed Audit Receipt limit is ${limit}. The day starts at 00:00 UTC.`, code: 'QUOTA', limit }, 429);
     }
     return json(
       { ok: true, receipt: publicReceipt({ id, account_id: accountId, payload_json: payloadJson, signature, kid: signedKid, revoked_at: null, revoked_reason: null }) },
@@ -361,7 +415,7 @@ export async function handleAuditReceiptRoute(
     if (!row) return json({ ok: false, error: 'Receipt not found.' }, 404);
     return json({ ok: true, receipt: publicReceipt(row) }, 200, { 'Cache-Control': 'no-store' });
   } catch (err) {
-    if (missingTable(err)) return tableMissing();
+    if (schemaMissing(err)) return tableMissing();
     throw err;
   }
 }

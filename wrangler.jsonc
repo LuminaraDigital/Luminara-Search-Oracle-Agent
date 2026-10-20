@@ -124,6 +124,8 @@
     // Citation Watch. The daily cron writes runs only when this is "true".
     "CITATION_WATCH_LIVE": "false",
     "DOMAIN_VERIFY_ENABLED": "false",
+    // Signed Audit Receipt mint and revoke. Public verify stays on. HMAC key is a secret, not a var.
+    "AUDIT_RECEIPTS_ENABLED": "false",
     "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
     // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
     // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
@@ -253,6 +255,7 @@
         // Citation Watch. The daily cron writes runs only when this is "true".
         "CITATION_WATCH_LIVE": "false",
         "DOMAIN_VERIFY_ENABLED": "false",
+        "AUDIT_RECEIPTS_ENABLED": "false",
         // REPLACE with your funded TON testnet merchant (kQ/0Q) before staging soak.
         // Synthetic CRC-valid placeholder for CI/validate-env; not a funded wallet.
         "TON_RECEIVING_ADDRESS": "kQClpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpWTU",
@@ -357,6 +360,7 @@
         // Citation Watch. The daily cron writes runs only when this is "true".
         "CITATION_WATCH_LIVE": "false",
         "DOMAIN_VERIFY_ENABLED": "false",
+        "AUDIT_RECEIPTS_ENABLED": "false",
         "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
         // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
         // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.

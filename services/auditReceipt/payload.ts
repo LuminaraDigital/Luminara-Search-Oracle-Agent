@@ -14,8 +14,11 @@ export const AUDIT_RECEIPT_ISSUER = 'luminarasuite.com';
 export const AUDIT_RECEIPT_SIGNING_PREFIX = 'luminara:audit-receipt:v1\n';
 /** This route only signs what the account holder submitted. It is not a Luminara-run audit. */
 export const AUDIT_RECEIPT_SOURCE = 'caller_submitted';
-/** Paid accounts. Override with AUDIT_RECEIPT_DAILY_QUOTA (integer 1 to 1000). */
+/** Paid accounts. Override with AUDIT_RECEIPT_DAILY_QUOTA (integer 1 to 1000). The day is UTC. */
 export const DEFAULT_AUDIT_RECEIPT_DAILY_QUOTA = 10;
+/** A verified domain must have been re-checked within this many days. Override with AUDIT_RECEIPT_DOMAIN_FRESH_DAYS. */
+export const DEFAULT_AUDIT_RECEIPT_DOMAIN_FRESH_DAYS = 7;
+const ACCOUNT_HASH_LABEL = 'luminara:audit-receipt-account:';
 
 export type AuditFieldStatus = 'measured' | 'not_measured';
 
@@ -44,7 +47,7 @@ export type AuditReceiptContent = {
   models: AuditReceiptModel[] | null;
   fieldStatus: AuditReceiptFieldStatus;
   source: typeof AUDIT_RECEIPT_SOURCE;
-  /** SHA-256 of a domain-separated account id. Not the account id itself. */
+  /** HMAC-SHA256 of the account id under AUDIT_RECEIPT_ACCOUNT_HMAC_KEY. Not the account id. */
   accountHash: string;
 };
 
@@ -69,8 +72,16 @@ export async function contentSha256Of(content: AuditReceiptContent): Promise<str
   return sha256HexOf(canonicalJson(content));
 }
 
-export async function auditReceiptAccountHash(accountId: string): Promise<string> {
-  return sha256HexOf(`luminara:audit-receipt-account:${accountId}`);
+export async function auditReceiptAccountHash(accountId: string, hmacKey: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(hmacKey),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${ACCOUNT_HASH_LABEL}${accountId}`));
+  return Array.from(new Uint8Array(mac), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function assembleAuditReceiptContent(input: {
@@ -82,6 +93,7 @@ export async function assembleAuditReceiptContent(input: {
   models: AuditReceiptModel[] | null;
   observedAt: string | null;
   accountId: string;
+  accountHmacKey: string;
 }): Promise<AuditReceiptContent & { contentSha256: string }> {
   const content: AuditReceiptContent = {
     domain: input.domain,
@@ -102,7 +114,7 @@ export async function assembleAuditReceiptContent(input: {
       observedAt: input.observedAt === null ? 'not_measured' : 'measured',
     },
     source: AUDIT_RECEIPT_SOURCE,
-    accountHash: await auditReceiptAccountHash(input.accountId),
+    accountHash: await auditReceiptAccountHash(input.accountId, input.accountHmacKey),
   };
   return { ...content, contentSha256: await contentSha256Of(content) };
 }
