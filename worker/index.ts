@@ -381,7 +381,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       },
       requireAuth: env.REQUIRE_TG_AUTH === 'true',
       requireSubscription: env.REQUIRE_SUBSCRIPTION === 'true',
-      freeDailyLimit: Number(env.FREE_DAILY_LIMIT || 0),
+      freeDailyLimit: Number(env.FREE_DAILY_LIMIT || 3),
       plans: PLANS,
     }));
   }
@@ -821,7 +821,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (path === '/auth/quota') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
     const who = await identify(request, env);
-    const limit = Number(env.FREE_DAILY_LIMIT || 0);
+    const limit = Number(env.FREE_DAILY_LIMIT || 3);
     const now = new Date();
     const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
     const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));

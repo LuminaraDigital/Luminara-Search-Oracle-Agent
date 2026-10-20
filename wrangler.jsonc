@@ -100,7 +100,7 @@
     // Users can always bring their own API keys in Settings (BYOK never paywalled).
     "REQUIRE_TG_AUTH": "true",
     "REQUIRE_SUBSCRIPTION": "false",
-    "FREE_DAILY_LIMIT": "25",
+    "FREE_DAILY_LIMIT": "3",
     // Sovereign Ollama Base URL (optional, defaults to https://ollama.com if unset)
     "OLLAMA_BASE_URL": "",
     // Firebase Auth project id (same as VITE_FIREBASE_PROJECT_ID). Empty disables Firebase token checks.
@@ -234,7 +234,7 @@
         "ALLOWED_ORIGINS": "https://staging.luminarasuite.com",
         "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",
-        "FREE_DAILY_LIMIT": "100",
+        "FREE_DAILY_LIMIT": "3",
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",
         "FIREBASE_PROJECT_NUMBER": "449283385852",
         "REQUIRE_APP_CHECK": "false",
@@ -335,7 +335,7 @@
         "ALLOWED_ORIGINS": "https://luminarasuite.com,https://www.luminarasuite.com",
         "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",
-        "FREE_DAILY_LIMIT": "25",
+        "FREE_DAILY_LIMIT": "3",
         "FIREBASE_PROJECT_ID": "luminara-suite",
         "FIREBASE_PROJECT_NUMBER": "274315225068",
         // Keep false until the prod build step passes VITE_FIREBASE_APPCHECK_SITE_KEY (validate-env enforces this).

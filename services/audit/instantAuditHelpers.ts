@@ -24,6 +24,8 @@ import type { HostedScoutRail } from './hostedScoutRail';
 import { guardPasteReadyCopy, siteLooksHealthRelated } from './healthClaimGuard';
 import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
 import { fallbackAnswerLine } from '../llm/fallbackAnswer';
+import { rememberScrapedBrand } from './brandName';
+import { recordAudit } from './auditHistoryService';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
   if (crewRunning) return 'Scanning...';
@@ -93,6 +95,8 @@ export async function generateAuditReportUnlessDegraded(input: {
     },
   );
   const pages = input.scrapedPages ?? [];
+  const firstPage = pages[0];
+  rememberScrapedBrand(input.formattedUrl, firstPage?.title || firstPage?.h1s?.[0]);
   const serp = input.serpEvidence ?? [];
   const facts: MeasuredClaimFacts = {
     ...input.summary.measured,
@@ -110,9 +114,21 @@ export async function generateAuditReportUnlessDegraded(input: {
   const modelLine = fallbackAnswerLine(
     report.answeredBy ? { model: report.answeredBy, provider: report.answeredByProvider } : undefined,
   );
+  const text = modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded;
+  try {
+    recordAudit({
+      domain: input.formattedUrl,
+      focus: input.targetFocus,
+      reportText: text,
+      healthScore: facts.healthScore ?? null,
+      citationRatePercent: facts.citationRatePercent ?? null,
+    });
+  } catch {
+    /* local history is optional */
+  }
   return {
     ...report,
-    text: modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded,
+    text,
     unifiedDiff: report.unifiedDiff ? guardPasteReadyCopy(report.unifiedDiff).text : report.unifiedDiff,
     remediationPayload: report.remediationPayload
       ? { ...report.remediationPayload, schemaJsonLd: guardPasteReadyCopy(report.remediationPayload.schemaJsonLd).text }

@@ -113,7 +113,24 @@ export async function mintAuditRun(
     refunded: false,
   };
   await writeRun(env, token, record);
-  return json({ ok: true, token, domain, calls: AUDIT_RUN_CALL_CAP, ttlSec: AUDIT_RUN_TTL_SEC });
+  return json(
+    { ok: true, token, domain, calls: AUDIT_RUN_CALL_CAP, ttlSec: AUDIT_RUN_TTL_SEC },
+    200,
+    quotaHeaders(quota),
+  );
+}
+
+function quotaHeaders(quota: QuotaStatus): Record<string, string> {
+  if (quota.isUnlimited) {
+    return { 'X-Quota-Limit': 'unlimited', 'X-Quota-Remaining': 'unlimited' };
+  }
+  const headers: Record<string, string> = {
+    'X-Quota-Limit': String(quota.limit),
+    'X-Quota-Remaining': String(quota.remaining),
+    'X-Quota-Reset': String(quota.resetSec),
+  };
+  if (typeof quota.bonusRemaining === 'number') headers['X-Quota-Bonus'] = String(quota.bonusRemaining);
+  return headers;
 }
 
 export async function refundAuditRun(

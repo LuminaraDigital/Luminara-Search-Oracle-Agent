@@ -87,4 +87,21 @@ describe('probeCrawl summarize', () => {
     expect(crawl.llmsPresent).toBe(true);
     expect(crawl.note.toLowerCase()).toContain('live crawl');
   });
+
+  it('says a 403 crawl file could not be checked', () => {
+    const snapshot: LlmCrawlerSnapshot = {
+      llmsTxt: null,
+      llmsHttpStatus: 403,
+      robotsTxt: null,
+      robotsHttpStatus: 403,
+      aiTxt: null,
+      aiHttpStatus: 403,
+    };
+    const crawl = summarizeProbeCrawl('movida.com.au', snapshot);
+    expect(crawl.note).toContain("robots.txt couldn't be checked (blocked)");
+    expect(crawl.note).toContain("llms.txt couldn't be checked (blocked)");
+    expect(crawl.note).toContain("ai.txt couldn't be checked (blocked)");
+    expect(crawl.note).not.toContain('missing');
+    expect(crawl.robotsPresent).toBe(false);
+  });
 });

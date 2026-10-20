@@ -6,6 +6,7 @@ import { SYSTEM_INSTRUCTIONS } from "../constants";
 import { vfsRetrievalService } from "./vfs/vfsRetrievalService";
 import { configService } from "./configService";
 import { aiProviderService, safeJsonParse } from "./aiProviderService";
+import { AUDIT_WRITE_UNAVAILABLE, writeHostedAuditReport } from "./audit/hostedAuditWrite";
 import { tavilyService } from "./search/tavilyService";
 import { localSerpService } from "./search/localSerpService";
 import { unifiedScraperService } from "./scraping/unifiedScraper";
@@ -1104,74 +1105,13 @@ Strict Formatting Guidelines:
       };
     };
 
-    let lastError: unknown = null;
-    let attemptedNativeFailover = false;
-
     try {
-      const best = await aiProviderService.getBestAvailableProvider();
-      if (best) {
-        attemptedNativeFailover = true;
-        const result = await aiProviderService.generateWithFailover(prompt, {
-          systemPrompt: ORACLE_SYSTEM_PROMPT,
-          temperature: 0.3,
-        });
-        return buildReportResult(result.text, result.fallback?.model, result.fallback?.provider);
-      }
-    } catch (e) {
-      lastError = e;
-      console.warn('Native Trinity generateAuditReport failed, falling back to secondary...', e);
+      const written = await writeHostedAuditReport(prompt, ORACLE_SYSTEM_PROMPT);
+      return buildReportResult(written.text, written.answeredBy, written.answeredByProvider);
+    } catch (error) {
+      console.warn('Hosted audit write failed', error);
+      throw new ProviderUnavailableError(AUDIT_WRITE_UNAVAILABLE);
     }
-
-    // 2. Secondary Gemini fallback
-    const geminiKey = getApiKey();
-    if (geminiKey) {
-      try {
-        const ai = this.getAI();
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-pro-preview',
-          contents: prompt,
-          config: {
-            tools: [{ googleSearch: {} }]
-          }
-        });
-
-        const text = response.text || "No report generated.";
-        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-        if (groundingChunks) {
-          groundingChunks.forEach((chunk: any) => {
-            if (chunk.web) {
-              sources.push({ uri: chunk.web.uri, title: chunk.web.title || chunk.web.uri });
-            }
-          });
-        }
-
-        return buildReportResult(text);
-      } catch (error) {
-        if (!lastError) lastError = error;
-        console.warn("Audit Generation Gemini error:", error);
-      }
-    }
-
-    if (!attemptedNativeFailover) {
-      try {
-        const fallbackResult = await aiProviderService.generateWithFailover(prompt, {
-          maxTokens: 4000,
-          temperature: 0.2,
-        });
-        if (fallbackResult && fallbackResult.text && fallbackResult.text.trim()) {
-          return buildReportResult(fallbackResult.text, fallbackResult.fallback?.model, fallbackResult.fallback?.provider);
-        }
-      } catch (fallbackError) {
-        console.warn('Audit generation aiProviderService fallback error:', fallbackError);
-      }
-    }
-
-    const detail = toUserFacingText(lastError, '');
-    throw new ProviderUnavailableError(
-      detail
-        ? `No native LLM responded. ${detail}`
-        : undefined,
-    );
   }
 
   /**

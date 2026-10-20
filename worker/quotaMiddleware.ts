@@ -134,7 +134,7 @@ export async function checkHostedQuota(
   const now = new Date();
   const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
   const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
-  const limit = Number(env.FREE_DAILY_LIMIT || 0);
+  const limit = Number(env.FREE_DAILY_LIMIT || 3);
 
   if (!user) {
     if (env.REQUIRE_TG_AUTH === 'true') {

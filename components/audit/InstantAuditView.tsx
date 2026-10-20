@@ -423,7 +423,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       }
     } catch (err: any) {
       restoreContinuum();
-      const userErr = toUserFacingText(err, 'Failed to complete the audit. Check your AI keys in Settings and try again.');
+      const userErr = toUserFacingText(err, "The AI write-up couldn't be generated this time. Your measured results above are still accurate. Try again.");
       setError(userErr);
       productTelemetry.recordError('InstantAuditView', userErr);
     } finally {
