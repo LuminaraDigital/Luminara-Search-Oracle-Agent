@@ -67,7 +67,9 @@ export async function fetchReferralProfile(): Promise<{ ok: true; profile: Refer
   const base = apiBase();
   if (!base) return { ok: false, error: 'API unavailable' };
   try {
-    const res = await workerFetchWithAuthRetry(`${base}/api/referrals/me`);
+    const res = await workerFetchWithAuthRetry(`${base}/api/referrals/me`, {
+      signal: AbortSignal.timeout(8000),
+    });
     const data = (await res.json().catch(() => ({}))) as ReferralProfile & { error?: string };
     if (!res.ok || !data.ok) return { ok: false, error: data.error || `HTTP ${res.status}` };
     return { ok: true, profile: data };

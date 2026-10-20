@@ -911,8 +911,22 @@ describe('Workers AI fallback (SW0a-11)', () => {
       });
     });
 
-    describe('never on a 4xx', () => {
-      it.each([400, 404, 413, 422])(
+    describe('hosted groq chat falls through on a model rejection', () => {
+      it.each([400, 404, 408])('answers an upstream %i with the backup model', async (status) => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));
+        const mockAi = answeringAi();
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }));
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('x-provider-fallback')).toBe('workers-ai');
+        expect(res.headers.get('x-provider-fallback-reason')).toBe('upstream_4xx');
+        expect(mockAi.run).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('never on a body or validation error', () => {
+      it.each([413, 422])(
         'returns an upstream %i as itself, with its own body and headers',
         async status => {
           globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));

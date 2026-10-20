@@ -124,7 +124,10 @@ export class GroqProvider extends BaseAIProvider {
     const fallback =
       marker && data.choices?.[0]?.finish_reason === 'length' ? { ...marker, truncated: true } : marker;
 
-    const text = data.choices?.[0]?.message?.content || '';
+    const message = data.choices?.[0]?.message;
+    const content = typeof message?.content === 'string' ? message.content : '';
+    const reasoning = typeof message?.reasoning === 'string' ? message.reasoning : '';
+    const text = content.trim() ? content : reasoning;
     const toolCalls = parseToolCallsFromMessage(data.choices?.[0]?.message);
     const latencyMs = Date.now() - startTime;
     const usage = data.usage || {};

@@ -293,8 +293,15 @@ function workersAiStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
 }
 
+/** Groq chat also falls through when the model rejects the request. 413 and 422 stay as themselves. */
+function chatFallbackStatus(status: number): boolean {
+  return status === 400 || status === 404 || status === 408 || workersAiStatus(status);
+}
+
 function workersAiReason(status: number): WorkersAiFallbackReason {
-  return status === 429 ? 'upstream_429' : 'upstream_5xx';
+  if (status === 429) return 'upstream_429';
+  if (status >= 500 && status <= 599) return 'upstream_5xx';
+  return 'upstream_4xx';
 }
 
 /**
@@ -634,22 +641,22 @@ export async function proxyProvider(
     !triedFallbackKey &&
     !userKey &&
     providerId === 'groq' &&
-    (res.status === 401 || res.status === 402 || workersAiStatus(res.status))
+    (res.status === 401 || res.status === 402 || chatFallbackStatus(res.status))
   ) {
     const altKey = groqFallbackKey(env, headers);
     if (altKey) {
       triedFallbackKey = true;
       try {
         const retryRes = await callUpstream(headersWithBearer(headers, altKey));
-        if (retryRes.ok || retryRes.status < 400 || workersAiStatus(retryRes.status)) res = retryRes;
+        if (retryRes.ok || retryRes.status < 400 || chatFallbackStatus(retryRes.status)) res = retryRes;
       } catch (err) {
         console.warn('[Groq failover error]', err);
       }
     }
   }
 
-  // After the second key: 429 and 5xx try NVIDIA, then Workers AI. 401 and 402 are not replaced.
-  if (workersAiStatus(res.status)) {
+  // After the second key: 400, 404, 408, 429, and 5xx try NVIDIA, then Workers AI. 401 and 402 are not replaced.
+  if (chatFallbackStatus(res.status)) {
     const fallback = await tryChatFallbacks(
       env, request, providerId, subPath, userKey, body,
       { reason: workersAiReason(res.status), upstreamStatus: res.status },

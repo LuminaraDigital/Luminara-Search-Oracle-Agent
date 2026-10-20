@@ -46,7 +46,7 @@ export const WORKERS_AI_FALLBACK_REFUSED_EVENT = 'workers_ai_fallback_refused';
 export const WORKERS_AI_FALLBACK_FAILED_EVENT = 'workers_ai_fallback_failed';
 
 /** Why the relay turned to the fallback. */
-export type WorkersAiFallbackReason = 'provider_not_configured' | 'network_error' | 'upstream_5xx' | 'upstream_429';
+export type WorkersAiFallbackReason = 'provider_not_configured' | 'network_error' | 'upstream_5xx' | 'upstream_429' | 'upstream_4xx';
 
 /** The rule under which the fallback would not answer a request. */
 export type WorkersAiFallbackRefusal =

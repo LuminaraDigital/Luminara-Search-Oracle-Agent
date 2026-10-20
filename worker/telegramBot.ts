@@ -791,7 +791,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         return;
       }
 
-      const limit = Number(env.FREE_DAILY_LIMIT || 0);
+      const limit = Number(env.FREE_DAILY_LIMIT || 3);
       if (limit > 0 && env.LUMINARA_KV) {
         const day = new Date().toISOString().slice(0, 10);
         const quotaKey = `quota:${accountId}:${day}`;

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { dismissFirstPaint } from '../services/marketing/releaseFirstPaint';
 import { MARKETING_SHELL_BY_PATH } from '../services/marketing/pageMeta';
-import { HOME_HERO, PRICING_HERO } from '../services/marketing/marketingHeroCopy';
+import { HOME_HERO, METHODOLOGY_HERO, PRICING_HERO } from '../services/marketing/marketingHeroCopy';
 import { applyMarketingDocument, deferRenderBlockingCss } from '../worker/marketingShell';
 
 const SHELL = `<!DOCTYPE html><html lang="en"><head>
@@ -24,6 +24,14 @@ describe('marketing first paint', () => {
     expect(out).toContain('rel="preload" as="style" href="/assets/index-abc.css" data-defer-css crossorigin');
     expect(out).toContain('<noscript><link rel="stylesheet" href="/assets/index-abc.css" crossorigin></noscript>');
     expect(out).toContain('luminara-crawler-body');
+  });
+
+  it('paints the methodology lede before JS', () => {
+    const out = applyMarketingDocument(SHELL, MARKETING_SHELL_BY_PATH['/methodology']);
+    expect(out).toContain('id="lx-first-paint"');
+    expect(out).toContain('data-path="/methodology"');
+    expect(out).toContain(METHODOLOGY_HERO.titleLead);
+    expect(out).toContain(METHODOLOGY_HERO.lede);
   });
 
   it('paints the home hero and leaves other marketing pages on the splash', () => {

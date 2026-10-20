@@ -25,7 +25,22 @@ if (!rootElement) {
 function ReleaseBootSplash() {
   React.useEffect(() => {
     dismissBootSplash(0);
-    dismissFirstPaint();
+    if (!document.querySelector('link[data-defer-css]')) {
+      dismissFirstPaint();
+      return;
+    }
+    let done = false;
+    const reveal = () => {
+      if (done) return;
+      done = true;
+      dismissFirstPaint();
+    };
+    window.addEventListener('luminara-css-ready', reveal);
+    const timer = window.setTimeout(reveal, 4000);
+    return () => {
+      window.removeEventListener('luminara-css-ready', reveal);
+      window.clearTimeout(timer);
+    };
   }, []);
   return null;
 }

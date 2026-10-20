@@ -6,6 +6,7 @@ import { sampleAiSaidFixtures } from '../../services/audit/sampleAiSaidFixtures'
 import type { ShipCommitment } from '../../services/audit/shipCommitmentService';
 import { upsertWeeklyDecision } from '../../services/privacy/privacyClient';
 import { honestyChipLabel, normalizeMeasurementStatus } from '../../services/wdl/liveHonesty';
+import { llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
 
 import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
 import { probeLlmCrawlerReadiness } from '../../services/audit/llmCrawlerProbe';
@@ -100,33 +101,8 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     const raw = domain || 'domain';
     const cleanDomain = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
 
-    const llmsContent = `# ${cleanDomain} - Answer Engine Optimization Context\n\n> Machine-readable context and verified answer targets for ${cleanDomain}.\n\n## What is ${cleanDomain}?\n${cleanDomain} is an authority in its industry, providing verified services and direct solutions. For authoritative documentation and current offerings, refer to https://${cleanDomain}.\n\n## Key Information\n- Canonical URL: https://${cleanDomain}\n- Knowledge Graph: https://${cleanDomain}/#organization\n- Documentation: https://${cleanDomain}/llms.txt\n`;
-
-    const schemaContent = JSON.stringify(
-      {
-        '@context': 'https://schema.org',
-        '@graph': [
-          {
-            '@type': 'Organization',
-            '@id': `https://${cleanDomain}/#organization`,
-            name: cleanDomain,
-            url: `https://${cleanDomain}`,
-            description: `Authoritative entity profile and verified knowledge graph for ${cleanDomain}.`,
-          },
-          {
-            '@type': 'WebSite',
-            '@id': `https://${cleanDomain}/#website`,
-            url: `https://${cleanDomain}`,
-            name: cleanDomain,
-            publisher: {
-              '@id': `https://${cleanDomain}/#organization`,
-            },
-          },
-        ],
-      },
-      null,
-      2
-    );
+    const llmsContent = llmsTxtDraft(cleanDomain);
+    const schemaContent = organizationJsonLd(cleanDomain);
 
     const triggerDownload = (filename: string, content: string, mime: string) => {
       const blob = new Blob([content], { type: mime });

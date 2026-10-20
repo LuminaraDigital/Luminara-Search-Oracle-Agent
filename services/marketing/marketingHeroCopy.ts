@@ -2,7 +2,7 @@ import { LIVE_ANSWER_CHECKS, SITE_AND_SEARCH_CHECK } from './engineCoverage';
 
 /** Hero copy shared by the React pages and the worker's first paint. */
 export interface MarketingHeroCopy {
-  path: '/' | '/pricing';
+  path: '/' | '/pricing' | '/methodology';
   layout: 'home' | 'pricing';
   eyebrow: string;
   titleLead: string;
@@ -28,7 +28,16 @@ export const PRICING_HERO: MarketingHeroCopy = {
   lede: `Free covers Sample scouts and a daily hosted Instant Audit allowance after you create an account. Starter is web audits only. Growth adds IDE access and shareable reports. Agency adds API access and client workspaces saved in this browser. ${LIVE_ANSWER_CHECKS}`,
 };
 
-const HEROES = [HOME_HERO, PRICING_HERO] as const;
+export const METHODOLOGY_HERO: MarketingHeroCopy = {
+  path: '/methodology',
+  layout: 'pricing',
+  eyebrow: 'Methodology',
+  titleLead: 'Measured, estimated,',
+  titleEm: 'or not measured.',
+  lede: 'Live evidence is labeled Measured. A directional read is Estimated. Missing data stays Not measured, and it is never filled in.',
+};
+
+const HEROES = [HOME_HERO, PRICING_HERO, METHODOLOGY_HERO] as const;
 
 export function marketingHeroForPath(path: string): MarketingHeroCopy | null {
   return HEROES.find((hero) => hero.path === path) ?? null;
