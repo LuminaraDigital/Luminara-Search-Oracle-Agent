@@ -11,6 +11,7 @@ import { buildChatMessages } from '../../chat/messages';
 import {
   GROQ_DEFAULT_MODEL,
   groqModelCandidates,
+  isHostedRateLimit,
   isMissingModelStatus,
 } from '../nativeModelDefaults';
 import { parseOpenAiSseStream } from '../../../utils/sse';
@@ -18,8 +19,10 @@ import { BaseAIProvider } from './BaseAIProvider';
 import { applyToolsToChatBody, parseToolCallsFromMessage } from '../openaiTools';
 import { readFallbackAnswer } from '../fallbackAnswer';
 
-function isGroqModelMissingStatus(status: number, body: string): boolean {
-  return isMissingModelStatus(status, body);
+/** A missing model and a per-model token cap both have another candidate. The last candidate stops. */
+function shouldTryNextGroqModel(status: number, body: string, model: string, models: readonly string[]): boolean {
+  if (model === models[models.length - 1]) return false;
+  return isMissingModelStatus(status, body) || isHostedRateLimit(status, body);
 }
 
 /**
@@ -106,7 +109,7 @@ export class GroqProvider extends BaseAIProvider {
 
       if (response.ok) break;
       lastErrText = await response.text();
-      if (isGroqModelMissingStatus(response.status, lastErrText) && model !== models[models.length - 1]) {
+      if (shouldTryNextGroqModel(response.status, lastErrText, model, models)) {
         console.warn(`[Groq] Model ${model} unavailable (${response.status}); trying next candidate...`);
         continue;
       }
@@ -193,7 +196,7 @@ export class GroqProvider extends BaseAIProvider {
 
       if (response.ok && response.body) break;
       lastErrText = await response.text();
-      if (isGroqModelMissingStatus(response.status, lastErrText) && model !== models[models.length - 1]) {
+      if (shouldTryNextGroqModel(response.status, lastErrText, model, models)) {
         console.warn(`[Groq] Model ${model} unavailable (${response.status}); trying next candidate...`);
         continue;
       }

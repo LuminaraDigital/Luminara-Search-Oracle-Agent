@@ -14,8 +14,8 @@ import type { WorkersAiFallbackReason } from './workersAiFallback';
 import { json } from './workerUtils';
 
 export const NVIDIA_FALLBACK_PROVIDER = 'nvidia';
-/** Text instruct model on integrate.api.nvidia.com. The paid direct path keeps NIM_DEFAULT_MODEL. */
-export const NVIDIA_FALLBACK_MODEL = 'meta/llama-3.3-70b-instruct';
+/** Text model. meta/llama-3.3-70b-instruct reached EOL on 2026-08-26 and answers 410. */
+export const NVIDIA_FALLBACK_MODEL = 'nvidia/llama-3.1-nemotron-70b-instruct';
 export const NVIDIA_FALLBACK_DAILY_CAP_DEFAULT = 200;
 export const NVIDIA_FALLBACK_USER_DAILY_CAP_DEFAULT = 5;
 const NVIDIA_CHAT_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
