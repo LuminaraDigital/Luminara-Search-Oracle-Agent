@@ -63,7 +63,7 @@ export const TERMS_HTML = `<!DOCTYPE html>
     <h2>Privacy</h2>
     <p>Personal data is handled as described in the <a href="/privacy">Privacy Policy</a>.</p>
   </main>
-  <footer>&copy; 2026 Luminara Digital Agency · Luminara Suite</footer>
+  <footer>&copy; 2026 Luminara Digital Agency${ABN_SUFFIX} · Melbourne · Luminara Suite</footer>
 </body>
 </html>
 `;

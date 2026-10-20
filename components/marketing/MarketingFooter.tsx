@@ -1,5 +1,6 @@
 import React from 'react';
 import { ICONS } from '../../constants';
+import { legalAbnLine } from '../../services/legal/consumerTerms';
 
 interface MarketingFooterProps {
   statement?: string;
@@ -58,6 +59,7 @@ export const MarketingFooter: React.FC<MarketingFooterProps> = ({
         >
           Luminara Digital
         </a>
+        {legalAbnLine() ? ` · ${legalAbnLine()}` : ''}
         {' · Melbourne'}
       </p>
     </div>
