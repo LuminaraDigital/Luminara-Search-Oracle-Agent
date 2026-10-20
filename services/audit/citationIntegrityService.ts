@@ -41,6 +41,25 @@ export function brandOverlapScore(brandName: string, haystack: string): number {
   return Math.round((hits / brandTokens.length) * 100);
 }
 
+const REVIEW_HOSTS = [
+  'trustpilot.com',
+  'yelp.com',
+  'productreview.com.au',
+  'tripadvisor.com',
+  'capterra.com',
+  'g2.com',
+];
+
+/** Review-site profiles are not measured here. The browser must not fetch them. */
+export function isUnmeasuredReviewUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    return REVIEW_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  } catch {
+    return false;
+  }
+}
+
 async function urlAlive(url: string): Promise<boolean> {
   // Browser-side probe only: scheme/host allowlist (no DoH). Worker SSRF uses fetchPublicUrl.
   try {
@@ -144,7 +163,7 @@ export class CitationIntegrityService {
     let measuredUrls = 0;
 
     for (const ev of summary.evidenceList) {
-      if (!ev.citedUrl) continue;
+      if (!ev.citedUrl || isUnmeasuredReviewUrl(ev.citedUrl)) continue;
       measuredUrls += 1;
       const alive = await urlAlive(ev.citedUrl);
       if (!alive) deadCitationCount += 1;

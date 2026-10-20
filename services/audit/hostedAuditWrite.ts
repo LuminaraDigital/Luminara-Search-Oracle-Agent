@@ -1,6 +1,7 @@
 import { configService } from '../configService';
 import { GroqProvider } from '../llm/providers/GroqProvider';
 import type { FallbackAnswerInfo } from '../../types';
+import { fitAuditWritePrompt } from './compactAuditEvidence';
 
 export const AUDIT_WRITE_UNAVAILABLE =
   "The AI write-up couldn't be generated this time. Your measured results above are still accurate. Try again.";
@@ -17,7 +18,8 @@ export async function writeHostedAuditReport(
     throw new Error(AUDIT_WRITE_UNAVAILABLE);
   }
   try {
-    const result = await new GroqProvider().generateText(prompt, {
+    const fitted = fitAuditWritePrompt(prompt, systemPrompt);
+    const result = await new GroqProvider().generateText(fitted.text, {
       systemPrompt,
       temperature: 0.3,
       maxTokens: 4000,
