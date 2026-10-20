@@ -1,10 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { guardUnmeasuredClaims } from '../services/audit/unmeasuredClaimGuard';
+import { guardUnmeasuredClaims, visibleGroundingSources } from '../services/audit/unmeasuredClaimGuard';
 import { EVIDENCE_LABEL_INSTRUCTION } from '../services/audit/evidencePromptLabels';
 
 describe('unmeasured claim guard', () => {
   it('strips a third-party rating that the evidence does not contain', () => {
     const text = guardUnmeasuredClaims('Trustpilot lists 3.6/5. Add Organization schema.', {});
+    expect(text).not.toMatch(/3\.6/);
+    expect(text).not.toMatch(/Trustpilot/i);
+    expect(text).toContain('Add Organization schema.');
+  });
+
+  it('hides review-site cards and rating titles we did not measure', () => {
+    const sources = visibleGroundingSources([
+      { uri: 'https://www.trustpilot.com/review/movida.com.au', title: 'MoVida is rated "Average" with 3.6 / 5 on Trustpilot' },
+      { uri: 'https://alternativeto.net/software/movida/', title: 'AlternativeTo is rated "Excellent" with 4.4 / 5 on Trustpilot' },
+      { uri: 'https://www.movida.com.au/', title: 'MoVida | Official Site' },
+    ]);
+    expect(sources.map((source) => source.title)).toEqual(['alternativeto.net', 'MoVida | Official Site']);
+    expect(JSON.stringify(sources)).not.toMatch(/3\.6|4\.4|Trustpilot/i);
+  });
+
+  it('drops a review-site rating even when the snippet quotes the score', () => {
+    const text = guardUnmeasuredClaims(
+      'MoVida is rated "Average" with 3.6 / 5 on Trustpilot. Add Organization schema.',
+      { evidenceText: 'MoVida is rated "Average" with 3.6 / 5 on Trustpilot' },
+    );
     expect(text).not.toMatch(/3\.6/);
     expect(text).not.toMatch(/Trustpilot/i);
     expect(text).toContain('Add Organization schema.');

@@ -26,6 +26,7 @@ import { EnrichedEntityIntelligence } from '../../services/enrichment/publicApis
 import type { WritingQualityReport } from '../../services/audit/writingQualityService';
 import type { TrafficImpact } from '../../services/analytics/trafficInsightsService';
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
+import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
 import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
@@ -309,7 +310,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     return sections;
   }, [markdownText]);
 
-  const validSources = sources?.filter(s => s && /^https?:\/\//i.test(s.uri ?? ''));
+  const validSources = visibleGroundingSources(sources);
   const sourceCount = validSources?.length || 0;
   const hasEvidence = Boolean(
     (!hideLiveNumbers && empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,

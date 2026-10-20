@@ -4,6 +4,8 @@
  * A third-party rating with no such support is removed with its sentence.
  */
 
+import { isUnmeasuredReviewRating, isUnmeasuredReviewUrl } from './citationIntegrityService';
+
 export interface MeasuredClaimFacts {
   healthScore?: number | null;
   citationRatePercent?: number | null;
@@ -57,6 +59,7 @@ function guardLine(line: string, facts: MeasuredClaimFacts, values: Set<number>,
   const sentences = line.split(/(?<=[.!?])\s+(?=[A-Z*])/);
   const kept: string[] = [];
   for (const sentence of sentences) {
+    if (isUnmeasuredReviewRating(sentence)) continue;
     const spans = sentence.match(CLAIM) || [];
     const unverified = spans.filter((span) => !verified(span, facts, values, percents));
     if (unverified.some(isRatingSpan)) continue;
@@ -69,6 +72,28 @@ function guardLine(line: string, facts: MeasuredClaimFacts, values: Set<number>,
     if (next.trim()) kept.push(next);
   }
   return kept.join(' ');
+}
+
+function hostLabel(uri: string): string {
+  try {
+    return new URL(uri).hostname.replace(/^www\./, '');
+  } catch {
+    return uri;
+  }
+}
+
+/** Drops review-site URLs. A rating title on any other page becomes the hostname. */
+export function visibleGroundingSources(
+  sources: ReadonlyArray<{ uri?: string; title?: string }> | null | undefined,
+): Array<{ uri: string; title: string }> {
+  const out: Array<{ uri: string; title: string }> = [];
+  for (const source of sources || []) {
+    const uri = source?.uri || '';
+    if (!/^https?:\/\//i.test(uri) || isUnmeasuredReviewUrl(uri)) continue;
+    const title = source.title?.trim() || uri;
+    out.push({ uri, title: isUnmeasuredReviewRating(title) ? hostLabel(uri) : title });
+  }
+  return out;
 }
 
 export function guardUnmeasuredClaims(text: string, facts: MeasuredClaimFacts = {}): string {

@@ -60,6 +60,14 @@ export function isUnmeasuredReviewUrl(url: string): boolean {
   }
 }
 
+const REVIEW_LABEL = new RegExp(`\\b(?:${REVIEW_HOSTS.map((host) => host.split('.')[0]).join('|')})\\b`, 'i');
+const REVIEW_SCORE = /\b(?:rated|rating|stars?)\b|\d+(?:\.\d+)?\s*\/\s*(?:5|10)\b/i;
+
+/** A review-site score in text we did not measure. A snippet that quotes it is still not a measurement. */
+export function isUnmeasuredReviewRating(text: string): boolean {
+  return REVIEW_LABEL.test(text) && REVIEW_SCORE.test(text);
+}
+
 async function urlAlive(url: string): Promise<boolean> {
   // Browser-side probe only: scheme/host allowlist (no DoH). Worker SSRF uses fetchPublicUrl.
   try {
