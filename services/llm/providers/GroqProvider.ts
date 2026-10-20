@@ -25,7 +25,17 @@ function shouldTryNextGroqModel(status: number, body: string, model: string, mod
   return isMissingModelStatus(status, body) || isHostedRateLimit(status, body);
 }
 
-const GROQ_TOKEN_MARGIN = 400;
+const GROQ_TOKEN_MARGIN = 80;
+
+/** One wait, and only for a large call. Groq names the second the cap will allow that request. */
+function groqRetryDelayMs(body: string): number | null {
+  const delay = /try again in ([0-9.]+)s/i.exec(body);
+  const requested = /Requested (\d+)/.exec(body);
+  if (!delay || !requested || Number(requested[1]) < 6000) return null;
+  const seconds = Number(delay[1]);
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 55) return null;
+  return Math.ceil(seconds * 1000) + 750;
+}
 
 /**
  * Groq's on_demand cap is per model and counts the completion budget up front.
@@ -108,6 +118,7 @@ export class GroqProvider extends BaseAIProvider {
     let response: Response | null = null;
     let lastErrText = '';
     let usedModel = models[0];
+    let waited = false;
 
     for (const model of models) {
       usedModel = model;
@@ -133,6 +144,15 @@ export class GroqProvider extends BaseAIProvider {
 
         if (response.ok) break;
         lastErrText = await response.text();
+        if (!waited && isHostedRateLimit(response.status, lastErrText)) {
+          const delay = groqRetryDelayMs(lastErrText);
+          if (delay) {
+            waited = true;
+            console.warn(`[Groq] Token cap on ${model}; retrying in ${delay}ms.`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
+        }
         const smaller = !shrunk && isHostedRateLimit(response.status, lastErrText)
           ? shrunkGroqMaxTokens(lastErrText, maxTokens)
           : null;

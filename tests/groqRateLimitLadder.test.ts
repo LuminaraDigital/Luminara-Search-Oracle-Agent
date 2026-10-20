@@ -99,7 +99,28 @@ describe('Groq rate-limit model ladder', () => {
     expect(result.text).toBe('Movida publishes fleet sizes on its site.');
     const bodies = providerFetchMock.mock.calls.map(call => JSON.parse(String((call[3] as RequestInit).body)));
     expect(bodies.map(body => body.model)).toEqual(['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'openai/gpt-oss-20b']);
-    expect(bodies[2].max_tokens).toBe(670);
+    expect(bodies[2].max_tokens).toBe(990);
+  });
+
+  it('retries a large capped call once after the delay Groq names', async () => {
+    configService.setKey('luminara_groq_key', 'gsk_test_rate_limit');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const capped = JSON.stringify({
+      error: {
+        message: 'Rate limit reached for model `openai/gpt-oss-120b` on tokens per minute (TPM): Limit 8000, Used 4294, Requested 7324. Please try again in 0.01s.',
+        type: 'tokens',
+        code: 'rate_limit_exceeded',
+      },
+    });
+    providerFetchMock
+      .mockResolvedValueOnce(new Response(capped, { status: 503 }))
+      .mockResolvedValueOnce(okReply('Movida lists its rental fleet on the homepage.'));
+
+    const result = await new GroqProvider().generateText('Write the audit', { maxTokens: 4000 });
+    expect(result.text).toBe('Movida lists its rental fleet on the homepage.');
+    const bodies = providerFetchMock.mock.calls.map(call => JSON.parse(String((call[3] as RequestInit).body)));
+    expect(bodies.map(body => body.model)).toEqual(['openai/gpt-oss-120b', 'openai/gpt-oss-120b']);
+    expect(bodies[1].max_tokens).toBe(4000);
   });
 
   it('does not burn the rest of the ladder on an ordinary hosted outage', async () => {
