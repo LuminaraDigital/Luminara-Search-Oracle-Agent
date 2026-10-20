@@ -3,6 +3,7 @@ import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
 import { isUserSubscribed, checkHostedQuota, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
+import { noteAuditRunSuccess, requestTargetHost, takeAuditRunCall } from './auditScoutRun';
 import { requireApiAccess } from './apiAccess';
 import {
   WORKERS_AI_FALLBACK_PROVIDER,
@@ -349,6 +350,8 @@ export async function proxyProvider(
 
   let quotaGate: QuotaStatus | null = null;
   let scoutAccountId: string | null = null;
+  let auditCoveredToken = '';
+  let auditDomain = '';
 
   if (!userKey) {
     const who = await identify(request, env);
@@ -416,8 +419,20 @@ export async function proxyProvider(
       );
     }
 
-    quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
-    if (!quotaGate.ok) {
+    if (who.user) {
+      const claim = await takeAuditRunCall(env, who.user, request);
+      if (claim.kind === 'reject') {
+        return json({ error: claim.error, code: 'AUDIT_RUN_REJECTED' }, 401);
+      }
+      if (claim.kind === 'covered') {
+        auditCoveredToken = claim.token;
+        auditDomain = claim.domain;
+      }
+    }
+    if (!auditCoveredToken) {
+      quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
+    }
+    if (quotaGate && !quotaGate.ok) {
       return json(
         {
           error: quotaGate.error,
@@ -437,6 +452,11 @@ export async function proxyProvider(
       );
     }
   }
+
+  const deliver = async (response: Response): Promise<Response> => {
+    if (auditCoveredToken && response.ok) await noteAuditRunSuccess(env, auditCoveredToken);
+    return response;
+  };
 
   const releaseUnmeasured = async (response: Response): Promise<Response> => {
     if (quotaGate?.meterKey) {
@@ -465,6 +485,10 @@ export async function proxyProvider(
     } catch {
       body = text;
     }
+    const targetHost = requestTargetHost(body);
+    if (auditCoveredToken && targetHost && targetHost !== auditDomain) {
+      return json({ error: 'This audit run is for a different site.', code: 'AUDIT_RUN_REJECTED' }, 401);
+    }
   }
   if (userKey) {
     const r = spec.byok(userKey, headers, body);
@@ -489,7 +513,7 @@ export async function proxyProvider(
         const fallback = await tryWorkersAiFallback(
           env, request, providerId, subPath, userKey, body, { reason: 'provider_not_configured' }, quotaGate,
         );
-        if (fallback) return fallback;
+        if (fallback) return deliver(fallback);
       }
       return releaseUnmeasured(json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503));
     }
@@ -549,7 +573,7 @@ export async function proxyProvider(
     const fallback = await tryWorkersAiFallback(
       env, request, providerId, subPath, userKey, body, { reason: 'network_error' }, quotaGate,
     );
-    if (fallback) return fallback;
+    if (fallback) return deliver(fallback);
     const message = err instanceof Error ? err.message : String(err);
     return releaseUnmeasured(json({ error: `Upstream connection failed: ${message}` }, 502));
   };
@@ -597,7 +621,7 @@ export async function proxyProvider(
       { reason: workersAiReason(res.status), upstreamStatus: res.status },
       quotaGate,
     );
-    if (fallback) return fallback;
+    if (fallback) return deliver(fallback);
   }
 
   // Stream the upstream body straight through (SSE for chat completions works unchanged).
@@ -698,5 +722,5 @@ export async function proxyProvider(
         : res.status;
     return releaseUnmeasured(new Response(res.body, { status, headers: out }));
   }
-  return new Response(res.body, { status: res.status, headers: out });
+  return deliver(new Response(res.body, { status: res.status, headers: out }));
 }

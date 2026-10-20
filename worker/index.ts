@@ -130,6 +130,7 @@ import {
   getAuditRun,
   isAuditQueueEnabled,
 } from './auditQueue';
+import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
 import { handleMcpOAuthRoute } from './mcpOAuth';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
@@ -321,6 +322,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!adminCheck.ok) {
       return withCors(json({
         ok: true,
+        hostedGemini: Boolean(String(env.GEMINI_API_KEY || '').trim()),
         // ton is true only when the config is valid AND the owner has confirmed the merchant address.
         ton: isTonCheckoutOpen(env),
         jettonCheckout: JETTON_CHECKOUT_LIVE && isTonCheckoutOpen(env),
@@ -2071,6 +2073,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(await executeOracleGatewayTask(env, who.user, reqData, request.headers));
   }
 
+  if (path === '/audit/scout-run' && request.method === 'POST') {
+    return withCors(await handleAuditScoutRun(request, env));
+  }
+
   if (
     path === '/oracle/chat' ||
     path.startsWith('/oracle/') ||
@@ -2079,16 +2085,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     path === '/tools' ||
     path.startsWith('/tools/')
   ) {
-    return withCors(
-      json(
-        {
-          ok: false,
-          error: 'Not implemented yet. Agency Oracle/audit APIs ship behind feature flags.',
-          code: 'NOT_IMPLEMENTED',
-        },
-        501,
-      ),
-    );
+    return withCors(json({ ok: false, error: 'Not implemented yet. Agency Oracle/audit APIs ship behind feature flags.', code: 'NOT_IMPLEMENTED' }, 501));
   }
 
   return withCors(json({ error: 'Not found' }, 404));

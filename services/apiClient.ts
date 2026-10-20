@@ -10,6 +10,7 @@ import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
 import { entitlementsFor } from './plans/planEntitlements';
+import { auditRunHeaders } from './audit/auditRunSlot';
 
 export interface ServerHealth {
   ok: boolean;
@@ -28,6 +29,8 @@ export interface ServerHealth {
   requireSubscription?: boolean;
   freeDailyLimit?: number;
   plans: Record<string, { title: string; description: string; stars: number; days: number }>;
+  /** Public health says whether the Worker has a Gemini key. Absent means it does not. */
+  hostedGemini?: boolean;
   /**
    * True only when TON checkout is open: the Worker has a valid receiving address AND the owner
    * has confirmed it is theirs. Absent or false means no TON rail is drawn.
@@ -102,10 +105,7 @@ export function canRelayWithOwnKey(providerId: string): boolean {
 function commitServerHealth(seq: number, h: ServerHealth | null): ServerHealth {
   if (seq !== healthSeq) return healthCache || EMPTY_HEALTH;
   if (h?.ok) {
-    // Public health is deliberately small, so `plans` may be absent; the Mini App account panel
-    // threw at render when it was. Fill in `plans` only. `providers` must stay absent when the
-    // server did not send it: isProviderConfiguredOnServer reads "absent" as "trust health.ok"
-    // and reads an empty object as "nothing is configured", which would switch every hosted key off.
+    // Public health omits `providers`. Absent means hosted engines stay on. An empty object means none.
     healthCache = { ...h, ok: true, plans: h.plans ?? {} };
     healthFailedAt = 0;
     return healthCache;
@@ -160,6 +160,8 @@ export async function loadServerHealth(opts: { force?: boolean } = {}): Promise<
 export function getServerHealthSync(): ServerHealth { return healthCache || EMPTY_HEALTH; }
 
 export function isProviderConfiguredOnServer(id: string): boolean {
+  // Gemini is not a hosted default. Only an explicit flag or the public hostedGemini bit turns it on.
+  if (id === 'gemini') return healthCache?.providers?.gemini === true || healthCache?.hostedGemini === true;
   if (healthCache?.providers && typeof healthCache.providers === 'object') {
     return Boolean(healthCache.providers[id]);
   }
@@ -342,10 +344,6 @@ export async function destroySessionCookie(): Promise<boolean> {
   }
 }
 
-/**
- * Sends a provider request either directly (browser holds the key) or through the Worker proxy.
- * `directUrl` is the vendor URL; `path` is the vendor path relative to the provider base.
- */
 export interface ProviderFetchOptions {
   /** The user's own key. When set and a Worker is reachable, the request is relayed with this key. */
   userKey?: string;
@@ -367,8 +365,6 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     return fetch(directUrl, init);
   }
 
-  // Run-scoped: after the first hosted 401/403, skip later /api/providers calls.
-  // workerFetchWithAuthRetry still refreshes a Firebase token once on the first 401.
   if (hostedAuthBlocked()) {
     return hostedAuthCircuitResponse(clientHasHostedIdentity());
   }
@@ -378,6 +374,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   headers.delete('x-api-key');
   headers.delete('nv-organization-id');
   headers.delete(ACCEPT_FALLBACK_HEADER);
+  for (const [name, value] of Object.entries(auditRunHeaders())) headers.set(name, value);
   let res: Response;
   if (relayOwnKey) {
     headers.set('x-provider-key', opts.userKey as string);

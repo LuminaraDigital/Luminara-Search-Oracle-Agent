@@ -35,6 +35,7 @@ import { shareExternalLink } from '../../services/telegram/tma';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 import { qualifyHonestScout } from '../../services/referrals/referralClient';
 import { clearScoutReceipt, takeScoutReceipt } from '../../services/referrals/scoutReceiptCapture';
+import { beginHostedAuditRun, finishHostedAuditRun } from '../../services/audit/hostedAuditRun';
 import { linkIdeaScout } from '../../services/ideaScout/ideaScoutClient';
 import { takeContinuumLink } from '../../services/ideaScout/continuum';
 import {
@@ -233,6 +234,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     const restoreContinuum = () => {
       if (linkId && !linkedOk && continuumRef.current == null) continuumRef.current = linkId;
     };
+    let measuredRun = false;
     setLoading(true);
     setCrewEvents([]);
     setCrewMeasurement(null);
@@ -248,6 +250,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       // Health and the ID token must be current before the crew or the report reads hosted keys.
       await ensureHostedProviderReady();
+      if (!isGuest) await beginHostedAuditRun(formattedUrl);
 
       // 1. Run the Autonomous Multi-Agent Search Crew with real-time streaming
       const crewResult = await crewOrchestrator.runAuditCrew(
@@ -262,6 +265,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (seq !== runSeq.current) return;
 
       const summary = summaryFromCrew(crewResult, hostedRail);
+      measuredRun = !isGuest && crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty;
       const degraded = isDegradedScout({
         measurementStatus: crewResult.measurementStatus,
         evidenceEmpty: summary.evidenceEmpty,
@@ -420,6 +424,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       setError(userErr);
       productTelemetry.recordError('InstantAuditView', userErr);
     } finally {
+      void finishHostedAuditRun(measuredRun);
       if (seq === runSeq.current) {
         setLoading(false);
         setProgressStage('');
