@@ -94,6 +94,8 @@ export interface ScrapedPageEvidence {
   wordCount: number;
   loadTimeMs?: number;
   rawTextSnippet: string;
+  /** http(s) links found in the scraped HTML or markdown. */
+  outboundLinks?: string[];
   /**
    * Scrape provider. `jina` is a markdown fallback and cannot support a health score.
    * Omitted means the caller already built a live page.

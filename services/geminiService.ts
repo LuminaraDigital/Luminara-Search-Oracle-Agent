@@ -7,6 +7,7 @@ import { vfsRetrievalService } from "./vfs/vfsRetrievalService";
 import { configService } from "./configService";
 import { aiProviderService, safeJsonParse } from "./aiProviderService";
 import { AUDIT_WRITE_UNAVAILABLE, writeHostedAuditReport } from "./audit/hostedAuditWrite";
+import { collectScrapedLinks, restrictReportJsonLdSameAs } from "./audit/scrapedSameAs";
 import { tavilyService } from "./search/tavilyService";
 import { localSerpService } from "./search/localSerpService";
 import { unifiedScraperService } from "./scraping/unifiedScraper";
@@ -903,7 +904,7 @@ Strict Formatting Guidelines:
    ${reportTableHeader('competitorMap')}
    Include the target brand and 3-4 actual competitors found via search. Competitors must be direct commercial rivals in the same region/niche. Exclude review aggregators (Trustpilot, Yelp), medical/reference encyclopedias (WebMD, Wikipedia), and directory platforms.
    Keep the header names in rules 5 to 7 exactly as written, in English. Add no other column and no other table. A column needs an evidence block above that supplies its values.
-8. Under "## 1. One move this week" or "## 3. Fix list", include one practical JSON-LD or schema code block when useful.
+8. Under "## 1. One move this week" or "## 3. Fix list", include one practical JSON-LD or schema code block when useful. Put a URL in sameAs only when that URL is a link in the scraped page. Otherwise omit sameAs.
 9. Tone: direct, calm, no hype, no "neural core" or fake document IDs. Do not add figures of your own. A number appears only when an evidence block above supplies it.
 10. ${trafficText
   ? 'Measured traffic / AI-referral data is present above. Cite it in "## 2. Plain verdict" as measured, in a sentence. Do not put it in a table: the app shows those figures itself, next to the report.'
@@ -914,27 +915,15 @@ Strict Formatting Guidelines:
     const buildReportResult = (modelText: string, answeredBy?: string, answeredByProvider?: 'nvidia'): AuditReportResult => {
       // Only the report's own table columns pass. No evidence block fills any other.
       // The copy each provider path writes to memory goes through the same gate.
-      const text = gateReportText(modelText);
+      const scrapedLinks = collectScrapedLinks(crewEvidence?.scrapedPages, scrapedContent);
+      const text = restrictReportJsonLdSameAs(gateReportText(modelText), scrapedLinks);
       const schemaMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"@type"[\s\S]*?\})\s*```/);
-      let schemaJsonLd = schemaMatch ? schemaMatch[1].trim() : JSON.stringify({
+      const schemaJsonLd = schemaMatch ? schemaMatch[1].trim() : JSON.stringify({
         "@context": "https://schema.org",
         "@type": "Organization",
         "name": dna?.name || displayUrl,
         "url": websiteUrl
       }, null, 2);
-
-      // Augment schema with sameAs URIs fetched from Wikidata / Wikipedia
-      if (enrichedEntity?.sameAsUrls && enrichedEntity.sameAsUrls.length > 0) {
-        try {
-          const parsed = JSON.parse(schemaJsonLd);
-          if (!parsed.sameAs) {
-            parsed.sameAs = enrichedEntity.sameAsUrls;
-            schemaJsonLd = JSON.stringify(parsed, null, 2);
-          }
-        } catch {
-          // keep original
-        }
-      }
 
       const schemaGate = schemaSafetyGate.validate(schemaJsonLd);
       const trustPack = aeoTrustPackService.build({

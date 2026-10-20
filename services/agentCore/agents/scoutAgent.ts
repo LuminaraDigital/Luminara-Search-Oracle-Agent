@@ -12,6 +12,7 @@ import { clientHasHostedIdentity, formatFirecrawlSkipDetail, hostedProviderDecis
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
 import { pageSupportsHealthScore } from '../auditEvidenceGate';
+import { extractScrapedLinks } from '../../audit/scrapedSameAs';
 import { AgentActivityEvent, ScrapedPageEvidence } from '../types';
 
 function withFallbackNote(message: string, note: string): string {
@@ -34,6 +35,7 @@ function toCrewPage(p: ProviderPage, fallbackUrl: string): ScrapedPageEvidence {
     wordCount: markdown.trim() ? markdown.trim().split(/\s+/).filter(Boolean).length : 0,
     loadTimeMs: p.latencyMs,
     rawTextSnippet: markdown ? markdown.slice(0, 1500) : '',
+    outboundLinks: extractScrapedLinks(`${p.rawHtml || ''}\n${markdown}`),
     source: p.providerUsed,
   };
 }
