@@ -83,6 +83,7 @@ describe('P1 ADMIN_SECRET separation', () => {
     { path: '/api/telegram/refund', init: { method: 'POST', body: JSON.stringify({ userId: 123, chargeId: 'ch_x' }) }, name: 'telegram refund' },
     { path: '/api/rsi/prompts/publish', init: { method: 'POST', body: JSON.stringify({ slug: 'oracle-chat', promptBody: 'Say not_measured.', evidenceRefs: ['edit-1'] }) }, name: 'rsi prompt publish' },
     { path: '/api/rsi/prompts/rollback', init: { method: 'POST', body: JSON.stringify({ slug: 'oracle-chat' }) }, name: 'rsi prompt rollback' },
+    { path: `/api/admin/audit-receipts/sar_${'ab'.repeat(16)}/revoke`, init: { method: 'POST', body: JSON.stringify({ reason: 'operator' }) }, name: 'admin audit receipt revoke' },
   ];
 
   it('isAdminAuthorized fails closed with 503 when ADMIN_SECRET is unset', async () => {
@@ -169,6 +170,29 @@ describe('P1 ADMIN_SECRET separation', () => {
       );
       expect(res.status, `${route.name} webhook secret via x-admin-secret`).toBe(401);
     }
+  });
+
+  it('admin audit receipt revoke marks another account while minting is off', async () => {
+    const env = makeEnv({ ADMIN_SECRET: 'real-admin-secret', AUDIT_RECEIPTS_ENABLED: 'false' });
+    const id = `sar_${'cd'.repeat(16)}`;
+    const db = env.DB!;
+    await db.prepare(
+      `INSERT INTO signed_audit_receipts (id, account_id, domain, payload_json, signature, kid, created_at) VALUES (?, 'acct_other', 'acme.com', '{}', 'sig', 'kid', 1)`,
+    ).bind(id).run();
+    const res = await worker.fetch(
+      req(`/api/admin/audit-receipts/${id}/revoke`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-admin-secret': 'real-admin-secret' },
+        body: JSON.stringify({ reason: 'operator sweep' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const row = await db.prepare(`SELECT revoked_reason FROM signed_audit_receipts WHERE id = ?`).bind(id).first<{ revoked_reason: string }>();
+    expect(row?.revoked_reason).toBe('operator sweep');
+    const logs = await db.prepare(`SELECT action, target_id FROM org_audit_logs WHERE action = 'admin.audit_receipt.revoke'`).all<{ action: string; target_id: string }>();
+    expect(logs.results).toEqual([{ action: 'admin.audit_receipt.revoke', target_id: id }]);
   });
 
   it('admin/users with a correct secret returns the projected list and records an audit entry', async () => {

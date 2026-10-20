@@ -200,5 +200,44 @@ function checkChainNetworkConfig(config, envName) {
   return { ok: true };
 }
 
+function checkAuditReceiptHmacPlaceholder(config) {
+  const blocks = [
+    ['top-level', config?.vars || {}],
+    ['staging', config?.env?.staging?.vars || {}],
+    ['production', config?.env?.production?.vars || {}],
+  ];
+  for (const [name, vars] of blocks) {
+    if (Object.prototype.hasOwnProperty.call(vars, 'AUDIT_RECEIPT_ACCOUNT_HMAC_KEY')) {
+      return {
+        ok: false,
+        message: `${name} vars must not set AUDIT_RECEIPT_ACCOUNT_HMAC_KEY. Set it with wrangler secret put. It is not a var.`,
+      };
+    }
+  }
+  for (const rel of ['.env.staging.example', '.env.production.example', '.dev.vars.example']) {
+    const text = readFileSync(resolve(root, rel), 'utf8');
+    if (!/^# AUDIT_RECEIPT_ACCOUNT_HMAC_KEY=\s*$/m.test(text)) {
+      return { ok: false, message: `${rel} must contain the commented placeholder: # AUDIT_RECEIPT_ACCOUNT_HMAC_KEY=` };
+    }
+    if (/^AUDIT_RECEIPT_ACCOUNT_HMAC_KEY=\S/m.test(text)) {
+      return { ok: false, message: `${rel} must not assign a value to AUDIT_RECEIPT_ACCOUNT_HMAC_KEY.` };
+    }
+  }
+  return { ok: true };
+}
+
+let wranglerConfig;
+try {
+  wranglerConfig = parseJsonc(wranglerContent);
+} catch (err) {
+  console.error(`[EnvValidation] wrangler.jsonc could not be parsed: ${err instanceof Error ? err.message : err}`);
+  process.exit(1);
+}
+const hmacPlaceholder = checkAuditReceiptHmacPlaceholder(wranglerConfig);
+if (!hmacPlaceholder.ok) {
+  console.error(`[EnvValidation] ${hmacPlaceholder.message}`);
+  process.exit(1);
+}
+
 console.log(`[EnvValidation] Environment checks passed for ${targetMode}. Staging-production isolation verified.`);
 process.exit(0);

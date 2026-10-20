@@ -37,6 +37,12 @@
   ],
 
   // D1: users, Telegram↔Firebase account linking, and per-account workspace blobs.
+  // This top-level binding is production D1. Non-production Workers Builds on this
+  // Worker run `npx wrangler versions upload`, which uses this block and ignores
+  // env.staging. preview_database_id only affects `wrangler dev`. Do not point this
+  // block at luminara-users-staging: a deploy without --env production would then
+  // serve luminarasuite.com from the staging database. The operator switch is in
+  // docs/runbooks/d1-backup-dr.md under "What these checks do not cover".
   "d1_databases": [
     {
       "binding": "DB",
@@ -124,7 +130,8 @@
     // Citation Watch. The daily cron writes runs only when this is "true".
     "CITATION_WATCH_LIVE": "false",
     "DOMAIN_VERIFY_ENABLED": "false",
-    // Signed Audit Receipt mint and revoke. Public verify stays on. HMAC key is a secret, not a var.
+    // Signed Audit Receipt minting. Owner and operator revoke stay available. Public verify stays on.
+    // HMAC key is a secret (wrangler secret put AUDIT_RECEIPT_ACCOUNT_HMAC_KEY), not a var.
     "AUDIT_RECEIPTS_ENABLED": "false",
     "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
     // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.

@@ -10,8 +10,9 @@ vi.mock('../worker/workerUtils', async (importOriginal) => {
 import { checkSignedAuditReceipt, parsePastedAuditReceipt } from '../services/auditReceipt/check';
 import { auditReceiptAccountHash } from '../services/auditReceipt/payload';
 import { canonicalJson, receiptKeyId, sha256HexOf, verifyReceiptSignature } from '../services/trust/receiptCrypto';
-import { handleAuditReceiptRoute } from '../worker/auditReceipts';
-import { receiptPublicKeySet, resetReceiptKeyCacheForTests } from '../worker/receiptSigning';
+import type { TrustReceiptPayload } from '../services/trust/receiptTypes';
+import { handleAuditReceiptRoute, revokeSignedAuditReceipt } from '../worker/auditReceipts';
+import { receiptPublicKeySet, resetReceiptKeyCacheForTests, signReceiptPayload } from '../worker/receiptSigning';
 import type { Env } from '../worker/env';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -38,7 +39,7 @@ function mockKv(store: Map<string, string>): KVNamespace {
   } as unknown as KVNamespace;
 }
 
-const HMAC_KEY = 'test-hmac-key';
+const HMAC_KEY = 'test-hmac-key-0123456789abcdef01';
 
 function envWith(
   key: string,
@@ -61,13 +62,20 @@ function envWith(
   } as unknown as Env;
 }
 
-async function verifyDomain(env: Env, domain = 'acme.com', status = 'verified', checkedAt?: string | null): Promise<void> {
-  const checked = checkedAt === undefined ? new Date().toISOString() : checkedAt;
+async function verifyDomain(
+  env: Env,
+  domain = 'acme.com',
+  status = 'verified',
+  provedAt?: string | null,
+  extras?: { failures?: number; checkedAt?: string | null },
+): Promise<void> {
+  const proved = provedAt === undefined ? new Date().toISOString() : provedAt;
+  const checked = extras?.checkedAt === undefined ? proved : extras.checkedAt;
   await env.DB!.prepare(
-    `INSERT INTO domain_verifications (account_id, domain, token_hash, token_hint, status, token_expires_at, consecutive_failures, created_at, updated_at, last_checked_at, verified_at)
-     VALUES ('acct_1', ?, 'hash', 'lv_test', ?, '2099-01-01T00:00:00.000Z', 0, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', ?, ?)`,
+    `INSERT INTO domain_verifications (account_id, domain, token_hash, token_hint, status, token_expires_at, consecutive_failures, created_at, updated_at, last_checked_at, last_proved_at, verified_at)
+     VALUES ('acct_1', ?, 'hash', 'lv_test', ?, '2099-01-01T00:00:00.000Z', ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', ?, ?, ?)`,
   )
-    .bind(domain, status, checked, status === 'verified' ? checked : null)
+    .bind(domain, status, extras?.failures ?? 0, checked, status === 'verified' ? proved : null, status === 'verified' ? proved : null)
     .run();
 }
 
@@ -260,7 +268,7 @@ describe('signed audit receipts', () => {
     expect(first).not.toBe(await sha256HexOf('luminara:audit-receipt-account:acct_1'));
   });
 
-  it('refuses mint and revoke when AUDIT_RECEIPTS_ENABLED is not true, and still verifies', async () => {
+  it('refuses mint when AUDIT_RECEIPTS_ENABLED is not true, and still lets the owner revoke and verify', async () => {
     const open = envWith(SIGNING_KEY, { plan: 'starter' });
     await verifyDomain(open);
     const minted = await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), open, '/audit-receipts');
@@ -270,7 +278,7 @@ describe('signed audit receipts', () => {
     const refused = await handleAuditReceiptRoute(post({ domain: 'acme.com', crawl: 'more' }), open, '/audit-receipts');
     expect(refused?.status).toBe(403);
     expect(await refused!.json()).toMatchObject({ code: 'AUDIT_RECEIPTS_DISABLED' });
-    expect((await handleAuditReceiptRoute(post({}), open, `/audit-receipts/${receipt.id}/revoke`))?.status).toBe(403);
+    expect((await handleAuditReceiptRoute(post({}), open, `/audit-receipts/${receipt.id}/revoke`))?.status).toBe(200);
     const loaded = await handleAuditReceiptRoute(
       new Request('https://luminarasuite.com/api/audit-receipts/' + receipt.id),
       open,
@@ -285,7 +293,7 @@ describe('signed audit receipts', () => {
       '/audit-receipts/verify',
     );
     expect(await verified!.json()).toMatchObject({ signature: 'valid' });
-    expect(await open.DB!.prepare(`SELECT COUNT(*) AS n FROM signed_audit_receipts`).first<{ n: number }>()).toEqual({ n: 1 });
+    expect(await open.DB!.prepare(`SELECT revoked_at IS NOT NULL AS revoked FROM signed_audit_receipts WHERE id = ?`).bind(receipt.id).first<{ revoked: number }>()).toEqual({ revoked: 1 });
   });
 
   it('rejects a lapsed domain, a stale re-check, and minting while domain verification is off', async () => {
@@ -307,6 +315,103 @@ describe('signed audit receipts', () => {
     expect(offRes?.status).toBe(403);
     expect(await offRes!.json()).toMatchObject({ code: 'DOMAIN_VERIFY_DISABLED' });
     expect(await off.DB!.prepare(`SELECT COUNT(*) AS n FROM signed_audit_receipts`).first<{ n: number }>()).toEqual({ n: 0 });
+  });
+
+  it('rejects a Trust Receipt as an audit receipt', async () => {
+    const env = envWith(SIGNING_KEY, { plan: 'starter' });
+    const kid = (await receiptPublicKeySet(env)).keys[0].kid;
+    const trust: TrustReceiptPayload = {
+      v: 1,
+      id: 'tr_test',
+      iss: 'luminarasuite.com',
+      kid,
+      issuedAt: '2026-10-01T00:00:00.000Z',
+      subject: { kind: 'domain', id: 'acme.com' },
+      claim: 'domain_control',
+      level: 'worker_verified',
+      method: 'dns_txt',
+      evidence: [],
+      measurementStatus: 'not_measured',
+    };
+    const signed = await signReceiptPayload(env, trust);
+    const payloadJson = canonicalJson(trust);
+    const keys = (await receiptPublicKeySet(env)).keys;
+    const check = await checkSignedAuditReceipt({ payloadJson, signature: signed.signature, kid: signed.kid, keys });
+    expect(check).toMatchObject({ signature: 'invalid', contentHash: 'unread', payload: null });
+    const remote = await handleAuditReceiptRoute(
+      post({ payloadJson, signature: signed.signature, kid: signed.kid }),
+      env,
+      '/audit-receipts/verify',
+    );
+    expect(await remote!.json()).toMatchObject({ signature: 'invalid', payload: null });
+  });
+
+  it('starts a new quota at 00:00 UTC', async () => {
+    const env = envWith(SIGNING_KEY, { plan: 'agency', quota: '1' });
+    await verifyDomain(env);
+    expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), env, '/audit-receipts'))?.status).toBe(201);
+    const now = new Date();
+    const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    await env.DB!.prepare(`UPDATE signed_audit_receipts SET created_at = ?`).bind(dayStart - 1).run();
+    expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', crawl: 'next day' }), env, '/audit-receipts'))?.status).toBe(201);
+    expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', crawl: 'same day' }), env, '/audit-receipts'))?.status).toBe(429);
+    expect(await env.DB!.prepare(`SELECT COUNT(*) AS n FROM signed_audit_receipts`).first<{ n: number }>()).toEqual({ n: 2 });
+  });
+
+  it('signs only a domain proved inside 10 days with no failures', async () => {
+    const recentMiss = envWith(SIGNING_KEY, { plan: 'starter' });
+    await verifyDomain(recentMiss, 'acme.com', 'verified', new Date(Date.now() - 30 * 86_400_000).toISOString(), {
+      checkedAt: new Date().toISOString(),
+    });
+    const faked = await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), recentMiss, '/audit-receipts');
+    expect(faked?.status).toBe(403);
+    expect(await faked!.json()).toMatchObject({ code: 'DOMAIN_CHECK_STALE' });
+
+    const failed = envWith(SIGNING_KEY, { plan: 'starter' });
+    await verifyDomain(failed, 'acme.com', 'verified', new Date().toISOString(), { failures: 1 });
+    const withFailure = await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), failed, '/audit-receipts');
+    expect(withFailure?.status).toBe(403);
+    expect(await withFailure!.json()).toMatchObject({ code: 'DOMAIN_CHECK_STALE' });
+
+    const inside = envWith(SIGNING_KEY, { plan: 'starter' });
+    await verifyDomain(inside, 'acme.com', 'verified', new Date(Date.now() - 9 * 86_400_000).toISOString());
+    expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), inside, '/audit-receipts'))?.status).toBe(201);
+
+    const outside = envWith(SIGNING_KEY, { plan: 'starter' });
+    await verifyDomain(outside, 'acme.com', 'verified', new Date(Date.now() - 11 * 86_400_000).toISOString());
+    expect((await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), outside, '/audit-receipts'))?.status).toBe(403);
+    expect(await recentMiss.DB!.prepare(`SELECT COUNT(*) AS n FROM signed_audit_receipts`).first<{ n: number }>()).toEqual({ n: 0 });
+    expect(await failed.DB!.prepare(`SELECT COUNT(*) AS n FROM signed_audit_receipts`).first<{ n: number }>()).toEqual({ n: 0 });
+  });
+
+  it('refuses a short HMAC key and a key equal to the signing key without storing a row', async () => {
+    const short = envWith(SIGNING_KEY, { plan: 'starter', hmac: 'a'.repeat(31) });
+    await verifyDomain(short);
+    const shortRes = await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), short, '/audit-receipts');
+    expect(shortRes?.status).toBe(503);
+    expect(await shortRes!.json()).toMatchObject({ code: 'AUDIT_RECEIPT_HMAC_UNAVAILABLE' });
+
+    const same = envWith(SIGNING_KEY, { plan: 'starter', hmac: SIGNING_KEY });
+    await verifyDomain(same);
+    const sameRes = await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), same, '/audit-receipts');
+    expect(sameRes?.status).toBe(503);
+    expect(await same.DB!.prepare(`SELECT COUNT(*) AS n FROM signed_audit_receipts`).first<{ n: number }>()).toEqual({ n: 0 });
+    expect(await short.DB!.prepare(`SELECT COUNT(*) AS n FROM signed_audit_receipts`).first<{ n: number }>()).toEqual({ n: 0 });
+  });
+
+  it('lets an operator revoke another account while minting is off', async () => {
+    const env = envWith(SIGNING_KEY, { plan: 'starter' });
+    await verifyDomain(env);
+    const minted = await handleAuditReceiptRoute(post({ domain: 'acme.com', prompts: ['what is acme'] }), env, '/audit-receipts');
+    const id = ((await minted!.json()) as { receipt: { id: string } }).receipt.id;
+    env.AUDIT_RECEIPTS_ENABLED = 'false';
+    await env.DB!.prepare(`UPDATE signed_audit_receipts SET account_id = 'other' WHERE id = ?`).bind(id).run();
+    expect((await handleAuditReceiptRoute(post({}), env, `/audit-receipts/${id}/revoke`))?.status).toBe(404);
+    const revoked = await revokeSignedAuditReceipt(env, { id, reason: 'operator', accountId: null });
+    expect(revoked.status).toBe(200);
+    expect(await env.DB!.prepare(`SELECT revoked_reason FROM signed_audit_receipts WHERE id = ?`).bind(id).first<{ revoked_reason: string }>()).toEqual({
+      revoked_reason: 'operator',
+    });
   });
 
   it('lets only one of several parallel mints through a quota of one', async () => {

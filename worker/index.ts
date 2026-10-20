@@ -147,7 +147,8 @@ import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
 import { handleCitationWatchRoute, runCitationWatchTick } from './citationWatch';
-import { handleAuditReceiptRoute } from './auditReceipts';
+import { handleAuditReceiptRoute, revokeSignedAuditReceipt } from './auditReceipts';
+import { own } from '../services/own';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -1262,6 +1263,32 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       user_agent: request.headers.get('user-agent') || undefined,
     });
     return withCors(json({ ok: true, ...swept }));
+  }
+
+  // Admin: revoke one Signed Audit Receipt. Minting can be off. The owner route stays separate.
+  const auditReceiptRevoke = path.match(/^\/admin\/audit-receipts\/(sar_[a-f0-9]{32})\/revoke$/);
+  if (auditReceiptRevoke) {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hitAuditRevoke = limited('auth', RATE_AUTH_PER_MIN);
+    if (hitAuditRevoke) return hitAuditRevoke;
+    const auditRevokeAdmin = isAdminAuthorized(env, request);
+    if (!auditRevokeAdmin.ok) return withCors(auditRevokeAdmin.response);
+    const read = await readBody(request, MAX_BODY_BYTES);
+    if (!read.ok) return withCors(json({ error: read.error }, read.status));
+    const reasonRaw = read.value && typeof read.value === 'object' && !Array.isArray(read.value) ? own(read.value, 'reason') : undefined;
+    const reason = typeof reasonRaw === 'string' ? reasonRaw : '';
+    const revoked = await revokeSignedAuditReceipt(env, { id: auditReceiptRevoke[1], reason, accountId: null });
+    if (revoked.status === 200) {
+      await recordAuditLogBestEffort(env, {
+        org_id: ADMIN_SYSTEM_ORG,
+        actor_id: 'admin',
+        action: 'admin.audit_receipt.revoke',
+        target_id: auditReceiptRevoke[1],
+        ip_address: clientIp(request),
+        user_agent: request.headers.get('user-agent') || undefined,
+      });
+    }
+    return withCors(revoked);
   }
 
   // Admin: runtime agent skill catalog (versioned methodology prompts in D1)

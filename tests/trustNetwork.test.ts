@@ -355,6 +355,73 @@ describe('TN2 domain verification', () => {
     expect(await check!.json()).toMatchObject({ status: 'verified', receiptIssued: false });
   });
 
+  it('a manual miss counts as a failure and leaves the row due for re-check', async () => {
+    const env = makeEnv();
+    await asUser('acct_miss');
+    const start = await handleDomainVerificationRoute(req('/trust/domains', 'POST', { domain: 'example.com' }), env, '/trust/domains');
+    const started = (await start!.json()) as { token: string; instructions: { dns_txt: { value: string } } };
+    const proved = fakeNet({ txt: { '_luminara-verify.example.com': [started.instructions.dns_txt.value] } });
+    const check = await handleDomainVerificationRoute(req('/trust/domains/example.com/check', 'POST'), env, '/trust/domains/example.com/check', proved);
+    expect((await check!.json()) as { status: string }).toMatchObject({ status: 'verified' });
+
+    const db = env.DB as unknown as { sqlite: { exec: (s: string) => void } };
+    db.sqlite.exec(`UPDATE domain_verifications SET last_checked_at = '2000-01-01T00:00:00.000Z', last_proved_at = '2000-01-01T00:00:00.000Z'`);
+    const missed = await handleDomainVerificationRoute(
+      req('/trust/domains/example.com/check', 'POST'),
+      env,
+      '/trust/domains/example.com/check',
+      fakeNet({ dnsDown: true, webDown: true }),
+    );
+    expect(await missed!.json()).toMatchObject({ status: 'unreachable' });
+    const afterMiss = await env.DB!.prepare(
+      `SELECT status, consecutive_failures, last_checked_at, last_proved_at FROM domain_verifications WHERE domain = 'example.com'`,
+    ).first<{ status: string; consecutive_failures: number; last_checked_at: string; last_proved_at: string }>();
+    expect(afterMiss).toEqual({
+      status: 'verified',
+      consecutive_failures: 1,
+      last_checked_at: '2000-01-01T00:00:00.000Z',
+      last_proved_at: '2000-01-01T00:00:00.000Z',
+    });
+
+    const again = await handleDomainVerificationRoute(
+      req('/trust/domains/example.com/check', 'POST'),
+      env,
+      '/trust/domains/example.com/check',
+      fakeNet({}),
+    );
+    expect(await again!.json()).toMatchObject({ status: 'not_found' });
+    const lapsed = await env.DB!.prepare(`SELECT status, consecutive_failures, last_checked_at FROM domain_verifications WHERE domain = 'example.com'`).first<{
+      status: string;
+      consecutive_failures: number;
+      last_checked_at: string;
+    }>();
+    expect(lapsed).toMatchObject({ status: 'lapsed', consecutive_failures: 2, last_checked_at: '2000-01-01T00:00:00.000Z' });
+
+    const other = await handleDomainVerificationRoute(req('/trust/domains', 'POST', { domain: 'beta.com' }), env, '/trust/domains');
+    const otherStarted = (await other!.json()) as { instructions: { dns_txt: { value: string } } };
+    await handleDomainVerificationRoute(
+      req('/trust/domains/beta.com/check', 'POST'),
+      env,
+      '/trust/domains/beta.com/check',
+      fakeNet({ txt: { '_luminara-verify.beta.com': [otherStarted.instructions.dns_txt.value] } }),
+    );
+    db.sqlite.exec(`UPDATE domain_verifications SET last_checked_at = '2000-01-01T00:00:00.000Z', last_proved_at = '2000-01-01T00:00:00.000Z' WHERE domain = 'beta.com'`);
+    await handleDomainVerificationRoute(
+      req('/trust/domains/beta.com/check', 'POST'),
+      env,
+      '/trust/domains/beta.com/check',
+      fakeNet({}),
+    );
+    const due = await recheckVerifiedDomains(env, fakeNet({ txt: { '_luminara-verify.beta.com': [otherStarted.instructions.dns_txt.value] } }));
+    expect(due.checked).toBe(1);
+    const recovered = await env.DB!.prepare(
+      `SELECT status, consecutive_failures, last_proved_at FROM domain_verifications WHERE domain = 'beta.com'`,
+    ).first<{ status: string; consecutive_failures: number; last_proved_at: string }>();
+    expect(recovered?.status).toBe('verified');
+    expect(recovered?.consecutive_failures).toBe(0);
+    expect(recovered?.last_proved_at).not.toBe('2000-01-01T00:00:00.000Z');
+  });
+
   it('rejects private and malformed domains', async () => {
     const env = makeEnv();
     await asUser('acct_bad');
