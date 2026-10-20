@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { dismissFirstPaint } from '../services/marketing/releaseFirstPaint';
 import { MARKETING_SHELL_BY_PATH } from '../services/marketing/pageMeta';
 import { HOME_HERO, PRICING_HERO } from '../services/marketing/marketingHeroCopy';
 import { applyMarketingDocument, deferRenderBlockingCss } from '../worker/marketingShell';
@@ -33,6 +34,21 @@ describe('marketing first paint', () => {
     const how = applyMarketingDocument(SHELL, MARKETING_SHELL_BY_PATH['/how-it-works']);
     expect(how).not.toContain('id="lx-first-paint"');
     expect(how).toContain('rel="stylesheet"');
+  });
+
+  it('removes the first-paint node after mount', () => {
+    const removed: string[] = [];
+    const classes = new Set(['lx-fp-live']);
+    vi.stubGlobal('document', {
+      getElementById: (id: string) => (id === 'lx-first-paint' ? { remove: () => removed.push(id) } : null),
+      documentElement: { classList: { remove: (name: string) => classes.delete(name) } },
+    });
+    dismissFirstPaint();
+    expect(removed).toEqual(['lx-first-paint']);
+    expect(classes.has('lx-fp-live')).toBe(false);
+    const boot = readFileSync('index.tsx', 'utf8');
+    expect(boot).toContain('dismissFirstPaint()');
+    vi.unstubAllGlobals();
   });
 
   it('does not rewrite a Google Fonts stylesheet', () => {

@@ -36,7 +36,10 @@ export async function beginHostedAuditRun(rawUrl: string): Promise<void> {
 }
 
 /** Refunds the one check when the run measured nothing. Clears the token either way. */
-export async function finishHostedAuditRun(measured: boolean): Promise<void> {
+export async function finishHostedAuditRun(
+  measured: boolean,
+  scores: { healthScore: number | null; citationRate: number | null } = { healthScore: null, citationRate: null },
+): Promise<void> {
   const open = currentAuditRun();
   setAuditRun(null);
   const base = apiBase();
@@ -45,7 +48,13 @@ export async function finishHostedAuditRun(measured: boolean): Promise<void> {
     await workerFetchWithAuthRetry(`${base}/api/audit/scout-run`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: open.token, domain: open.domain, refund: true }),
+      body: JSON.stringify({
+        token: open.token,
+        domain: open.domain,
+        refund: true,
+        healthScore: scores.healthScore,
+        citationRate: scores.citationRate,
+      }),
     });
   } catch {
     /* a missed refund leaves the one check spent */

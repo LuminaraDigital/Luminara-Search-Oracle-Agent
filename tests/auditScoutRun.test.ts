@@ -38,13 +38,13 @@ function initDataFor(id: number): string {
   });
 }
 
-function envFor() {
+function envFor(limit = '25') {
   const kv = memoryKv();
   const env = {
     LUMINARA_KV: kv,
     BOT_TOKEN,
     REQUIRE_TG_AUTH: 'true',
-    FREE_DAILY_LIMIT: '25',
+    FREE_DAILY_LIMIT: limit,
     GROQ_API_KEY: 'gsk_test',
     WEBAPP_URL: 'https://luminarasuite.com',
   } as Env;
@@ -177,8 +177,70 @@ describe('one Instant Audit run', () => {
     expect(other.status).toBe(401);
 
     const otherSite = await proxyProvider(providerCall(opened.body.token!, 'example.com'), env, 'groq', '/chat/completions');
-    expect(otherSite.status).toBe(401);
+    expect(otherSite.status).toBe(403);
+    expect(await otherSite.json()).toMatchObject({ code: 'AUDIT_RUN_REJECTED' });
     expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(quotaUsed(kv)).toBe('1');
+  });
+
+  it('treats www and a subdomain as the minted site', async () => {
+    const { env } = envFor();
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, data: { markdown: 'page' } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const www = await mint(env, 11, 'https://www.movida.com.au');
+    const bare = await proxyProvider(
+      providerCall(www.body.token!, 'www.movida.com.au', 11, 'https://movida.com.au/pages/about'),
+      env,
+      'groq',
+      '/chat/completions',
+    );
+    expect(bare.status).toBe(200);
+
+    const sub = await mint(env, 11, 'https://www.x.com');
+    const booking = await proxyProvider(
+      providerCall(sub.body.token!, 'www.x.com', 11, 'https://booking.x.com/book'),
+      env,
+      'groq',
+      '/chat/completions',
+    );
+    expect(booking.status).toBe(200);
+  });
+
+  it('refunds an unmeasured run after a homepage 200, and the daily cap still holds', async () => {
+    const { env, kv } = envFor('1');
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const refundUnmeasured = (token: string) => handleAuditScoutRun(new Request('https://luminarasuite.com/api/audit/scout-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-telegram-init-data': initDataFor(11) },
+      body: JSON.stringify({ refund: true, token, healthScore: null, citationRate: null }),
+    }), env);
+
+    const opened = await mint(env);
+    const page = await proxyProvider(
+      providerCall(opened.body.token!, 'movida.com.au', 11, 'https://movida.com.au'),
+      env,
+      'groq',
+      '/chat/completions',
+    );
+    expect(page.status).toBe(200);
+    expect(quotaUsed(kv)).toBe('1');
+    expect(await (await refundUnmeasured(opened.body.token!)).json()).toEqual({ ok: true, refunded: true });
+    expect(quotaUsed(kv)).toBe('0');
+
+    const again = await mint(env);
+    const secondPage = await proxyProvider(
+      providerCall(again.body.token!, 'movida.com.au', 11, 'https://movida.com.au'),
+      env,
+      'groq',
+      '/chat/completions',
+    );
+    expect(secondPage.status).toBe(200);
+    expect(await (await refundUnmeasured(again.body.token!)).json()).toEqual({ ok: true, refunded: false });
     expect(quotaUsed(kv)).toBe('1');
   });
 

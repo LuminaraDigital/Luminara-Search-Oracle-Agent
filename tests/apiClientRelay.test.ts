@@ -123,6 +123,33 @@ describe('the header that asks the Worker for a fallback answer', () => {
     expect(calls[0].headers.get(api.ACCEPT_FALLBACK_HEADER)).toBeNull();
   }, 15000);
 
+  it('a foreign audit site is a 403 and does not open the auth circuit or refresh the token', async () => {
+    vi.stubGlobal('window', {
+      location: { protocol: 'https:', hostname: 'luminarasuite.com', port: '', origin: 'https://luminarasuite.com' },
+      dispatchEvent: () => true,
+    });
+    let providerCalls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.endsWith('/api/health')) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      providerCalls += 1;
+      return new Response(JSON.stringify({
+        error: 'This audit run is for a different site.',
+        code: 'AUDIT_RUN_REJECTED',
+      }), { status: 403, headers: { 'content-type': 'application/json' } });
+    }));
+    const api = await import('../services/apiClient');
+    const circuit = await import('../services/resilience/hostedAuthCircuit');
+    circuit.resetHostedAuthCircuit();
+    await api.loadServerHealth();
+    const res = await api.providerFetch('firecrawl', '/scrape', 'https://api.firecrawl.dev/v1/scrape', init(), { userKey: 'proxy' });
+    expect(res.status).toBe(403);
+    expect(providerCalls).toBe(1);
+    expect(circuit.hostedAuthBlocked()).toBe(false);
+  }, 15000);
+
   it('is not added to a direct vendor call, which would fail the vendor CORS check', async () => {
     vi.stubGlobal('window', { location: { protocol: 'file:', hostname: '', port: '', origin: 'null' } });
     const seen: Array<{ url: string; headers: Headers }> = [];

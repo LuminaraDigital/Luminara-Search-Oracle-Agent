@@ -6,7 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { initTelegram } from './services/telegram/tma';
 import { loadServerHealth } from './services/apiClient';
 import { dismissBootSplash } from './services/intro/bootSplash';
-import { bindFirstPaintDismissal } from './services/marketing/releaseFirstPaint';
+import { bindFirstPaintDismissal, dismissFirstPaint } from './services/marketing/releaseFirstPaint';
 import { installDialogFocus } from './services/a11y/dialogFocus';
 import { initBrowserSentry } from './services/observability/sentryBrowser';
 import './tokens.css';
@@ -25,6 +25,7 @@ if (!rootElement) {
 function ReleaseBootSplash() {
   React.useEffect(() => {
     dismissBootSplash(0);
+    dismissFirstPaint();
   }, []);
   return null;
 }

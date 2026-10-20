@@ -1,3 +1,5 @@
+import { sameSiteHost } from '../audit/sameSiteHost';
+
 /**
  * Page-type classifier for sitewide SEO/AEO/GEO evidence packs.
  * Pure URL + title heuristics (no network). Used to budget crawl slots
@@ -68,9 +70,7 @@ function normalizeUrl(raw: string, base?: string): string | null {
 
 function sameHost(a: string, b: string): boolean {
   try {
-    const ha = new URL(a).hostname.replace(/^www\./i, '').toLowerCase();
-    const hb = new URL(b).hostname.replace(/^www\./i, '').toLowerCase();
-    return ha === hb || ha.endsWith(`.${hb}`) || hb.endsWith(`.${ha}`);
+    return sameSiteHost(new URL(a).hostname, new URL(b).hostname);
   } catch {
     return false;
   }

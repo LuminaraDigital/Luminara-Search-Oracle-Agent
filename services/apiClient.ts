@@ -7,7 +7,7 @@
 import { getInitDataRaw } from './telegram/tma';
 import { loadFirebaseAuth, readCachedFirebaseIdToken } from './auth/firebaseIdToken';
 import { toUserFacingText } from '../utils/userFacingText';
-import { hostedAuthBlocked, hostedAuthCircuitResponse, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
+import { hostedAuthBlocked, hostedAuthCircuitResponse, isAuditSiteMismatch, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
 import { entitlementsFor } from './plans/planEntitlements';
 import { auditRunHeaders } from './audit/auditRunSlot';
@@ -385,7 +385,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   }
   updateQuotaFromHeaders(res.headers);
   noteScoutReceipt(res.headers.get('x-scout-receipt'));
-  if (res.status === 401 || res.status === 403) {
+  if ((res.status === 401 || res.status === 403) && !(await isAuditSiteMismatch(res))) {
     noteHostedAuthFailure(res.status, providerId);
   }
   if (res.status === 402) {

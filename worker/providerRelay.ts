@@ -3,6 +3,7 @@ import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
 import { isUserSubscribed, checkHostedQuota, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
+import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { noteAuditRunSuccess, requestTargetHost, takeAuditRunCall } from './auditScoutRun';
 import { requireApiAccess } from './apiAccess';
 import {
@@ -451,8 +452,9 @@ export async function proxyProvider(
 
     if (who.user) {
       const claim = await takeAuditRunCall(env, who.user, request);
-      if (claim.kind === 'reject') {
-        return json({ error: claim.error, code: 'AUDIT_RUN_REJECTED' }, 401);
+      if (claim.kind === 'reject' || claim.kind === 'wrong-site') {
+        const status = claim.kind === 'wrong-site' ? 403 : 401;
+        return json({ error: claim.error, code: 'AUDIT_RUN_REJECTED' }, status);
       }
       if (claim.kind === 'covered') {
         auditCoveredToken = claim.token;
@@ -516,8 +518,8 @@ export async function proxyProvider(
       body = text;
     }
     const targetHost = requestTargetHost(body);
-    if (auditCoveredToken && targetHost && targetHost !== auditDomain) {
-      return json({ error: 'This audit run is for a different site.', code: 'AUDIT_RUN_REJECTED' }, 401);
+    if (auditCoveredToken && targetHost && !sameSiteHost(targetHost, auditDomain)) {
+      return json({ error: 'This audit run is for a different site.', code: 'AUDIT_RUN_REJECTED' }, 403);
     }
   }
   if (userKey) {
