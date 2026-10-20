@@ -128,7 +128,7 @@ describe('AudioOverviewService.generatePodcast: a script the model wrote, or not
 
   it('does the same when Groq is down and only the fallback model replied', async () => {
     vi.spyOn(aiProviderService, 'generateWithFallback').mockRejectedValue(
-      new FallbackAnswerNotAcceptedError('Groq Cloud Engine', { model: '@cf/meta/llama-3.1-8b-instruct' }),
+      new FallbackAnswerNotAcceptedError('Groq Cloud Engine', { model: '@cf/meta/llama-3.1-8b-instruct-fast' }),
     );
 
     await expect(audioOverviewService.generatePodcast(notebookId)).rejects.toThrow(/Groq Cloud Engine did not answer/);

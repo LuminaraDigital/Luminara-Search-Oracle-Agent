@@ -1,30 +1,28 @@
 /**
  * Cloudflare Workers AI fallback for the hosted Groq chat-completions path (Track SW, SW0a-11).
  *
- * The relay calls this when hosted Groq cannot answer: no hosted key, a network failure or
- * timeout, an upstream 5xx, or a 429 after the fallback Groq key. It answers in the OpenAI
+ * The relay calls this after NVIDIA (missing, capped, or failed) when hosted Groq cannot
+ * answer: no hosted key, a network failure or timeout, an upstream 5xx, or a 429. It answers in the OpenAI
  * ChatCompletion shape (JSON or SSE) and always names the model that wrote the reply. It refuses
  * any request it cannot serve faithfully, so a typed,
  * tool-using or long call gets the upstream's own error instead of free text from a smaller model.
  *
  * It writes one structured log line per outcome and never more than one:
  * `workers_ai_fallback_answer`, `workers_ai_fallback_refused` or `workers_ai_fallback_failed`.
- * None of them carries prompt text, reply text or a user id.
+ * The failure line includes a short error. None of them carries the request prompt, the reply, or a user id.
  */
 import type { Ai } from './env';
 
 export const WORKERS_AI_FALLBACK_PROVIDER = 'workers-ai';
-export const WORKERS_AI_FALLBACK_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+export const WORKERS_AI_FALLBACK_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 
 /**
  * Prompt budget for the fallback, in budget units summed over every message's content.
  * One ASCII character is one unit. See `promptBudgetUnits` for other characters.
  *
- * This is a conservative budget chosen by hand. It is NOT the context length that Cloudflare's
- * model catalogue states for @cf/meta/llama-3.1-8b-instruct, and nothing here measured it: the
- * repository does not record that figure, and the session that wrote this could not read the
- * catalogue. It is kept low on purpose so that a prompt which passes should fit the model with
- * room left for the reply. That has not been checked against the catalogue.
+ * This is a conservative budget chosen by hand. It is not the context window of
+ * `@cf/meta/llama-3.1-8b-instruct-fast` (an active text model in the Cloudflare catalogue).
+ * It stays low so a prompt which passes should fit with room left for the reply.
  *
  * A prompt over the budget is refused. It is never clipped, summarised or shortened.
  * Replace this with a figure taken from the catalogue once someone has read it.
@@ -471,8 +469,14 @@ function logFallbackFailure(
   stream: boolean,
   failure: WorkersAiFallbackFailure,
   textSent: boolean,
+  error: string,
 ): void {
-  logLine(WORKERS_AI_FALLBACK_FAILED_EVENT, context, { stream, failure, text_sent: textSent });
+  logLine(WORKERS_AI_FALLBACK_FAILED_EVENT, context, {
+    stream,
+    failure,
+    text_sent: textSent,
+    error: error.replace(/\s+/g, ' ').slice(0, 180),
+  });
 }
 
 /** The payloads a Workers AI result carries, one at a time. */
@@ -650,8 +654,8 @@ export async function openFallbackSseStream(
  * chat-completions path, and only for a missing hosted key, a network failure or an upstream 5xx.
  * This function decides whether the request itself can be answered faithfully.
  *
- * A thrown error means the binding failed or produced no text; a failure line has been logged and
- * the caller returns the upstream's own error. An empty or broken fallback is never sent as an answer.
+ * A thrown error means the binding failed or produced no text. A failure line is logged and the
+ * caller returns 503. An empty or broken fallback is never sent as an answer.
  */
 export async function runWorkersAiChatFallback(
   ai: Ai,
@@ -676,7 +680,8 @@ export async function runWorkersAiChatFallback(
       ...(seed !== undefined ? { seed } : {}),
     });
   } catch (err) {
-    logFallbackFailure(context, stream, 'binding_error', false);
+    const message = err instanceof Error ? err.message : String(err);
+    logFallbackFailure(context, stream, 'binding_error', false, message);
     throw new WorkersAiFallbackFailedError('binding_error', err);
   }
 
@@ -692,11 +697,12 @@ export async function runWorkersAiChatFallback(
         created,
         maxTokens,
         onEnd: (usage, finishReason) => logFallbackAnswer(context, true, usage, finishReason),
-        onFail: () => logFallbackFailure(context, true, 'stream_error', true),
+        onFail: () => logFallbackFailure(context, true, 'stream_error', true, 'stream error'),
       });
     } catch (err) {
       const failure = err instanceof WorkersAiFallbackFailedError ? err.failure : 'stream_error';
-      logFallbackFailure(context, true, failure, false);
+      const message = err instanceof Error ? err.message : String(err);
+      logFallbackFailure(context, true, failure, false, message);
       throw err;
     }
     return { answered: true, streaming: true, model: WORKERS_AI_FALLBACK_MODEL, reason: context.reason, stream: sse };
@@ -705,7 +711,7 @@ export async function runWorkersAiChatFallback(
   const responseText = textOf(aiResult);
   // No text is not an answer. The caller returns the upstream's error instead of an empty reply.
   if (!responseText) {
-    logFallbackFailure(context, false, 'no_text', false);
+    logFallbackFailure(context, false, 'no_text', false, 'no text');
     throw new WorkersAiFallbackFailedError('no_text');
   }
 

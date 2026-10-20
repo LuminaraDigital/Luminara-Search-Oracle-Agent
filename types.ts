@@ -142,11 +142,11 @@ export interface ToolExecution {
  * The chat shows it with the reply so a founder can see who answered.
  */
 export interface FallbackAnswerInfo {
-  /** Id of the model that answered, as the Worker reported it. Empty when it reported none. */
+  /** Model id the Worker reported. Empty when it reported none. `provider` is `nvidia` when NVIDIA wrote it. */
   model: string;
-  /** Why the fallback answered, as the Worker reported it (for example `upstream_5xx`). */
   reason?: string;
-  /** True when the Worker reported the reply as cut off at the fallback's length limit. */
+  provider?: 'nvidia';
+  /** True when the reply hit the fallback length limit. */
   truncated?: boolean;
 }
 
