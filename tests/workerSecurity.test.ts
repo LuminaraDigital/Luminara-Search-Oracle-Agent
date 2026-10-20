@@ -336,6 +336,22 @@ describe('error handling', () => {
     expect(body.error).not.toContain('/var/kv');
   });
 
+  it('still answers probe-crawl when the KV rate-limit put throws', async () => {
+    const env = makeEnv({
+      LUMINARA_KV: {
+        get: async () => null,
+        put: async () => {
+          throw new Error('KV put failed');
+        },
+      } as unknown as KVNamespace,
+    });
+    const res = await worker.fetch(req('/api/visibility/probe-crawl'), env, ctx);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string; code?: string };
+    expect(body.code).toBe('MISSING_URL');
+    expect(body.error).not.toContain('KV put');
+  });
+
   it('unknown API routes 404 with security headers', async () => {
     const res = await worker.fetch(req('/api/nope'), makeEnv(), ctx);
     expect(res.status).toBe(404);
