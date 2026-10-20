@@ -859,36 +859,33 @@ describe('Workers AI fallback (SW0a-11)', () => {
     /** The structured lines the relay itself writes with console.warn, parsed. */
     const relayWarnings = (name: string) => eventsNamed(warn, name);
 
-    describe('only for a caller that asked for a fallback answer', () => {
-      it.each([null, '0', 'true', ''])('does not run the fallback when the header is %j: upstream 5xx comes back', async header => {
+    describe('hosted groq chat falls back without a request header', () => {
+      it.each([null, '0', 'true', ''])('answers an upstream 503 when the header is %j', async header => {
         globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
         const mockAi = answeringAi();
 
         const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody(), header);
 
-        expect(res.status).toBe(503);
-        expect(res.headers.get('x-provider-fallback')).toBeNull();
-        expect(await res.json()).toEqual({ error: { message: 'upstream said 503' } });
-        expect(mockAi.run).not.toHaveBeenCalled();
-        // The fallback was not consulted, so there is no answer, refusal or failure line.
-        expect(log.mock.calls).toHaveLength(0);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('x-provider-fallback')).toBe('workers-ai');
+        expect(res.headers.get('x-quota-refunded')).toBeNull();
+        expect(mockAi.run).toHaveBeenCalledTimes(1);
       });
 
-      it('returns the connection error after a network throw', async () => {
+      it('answers a network throw when the header is absent', async () => {
         globalThis.fetch = vi.fn().mockRejectedValue(new Error('Connection reset by peer'));
         const mockAi = answeringAi();
 
         const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody(), null);
 
-        expect(res.status).toBe(502);
-        expect(((await res.json()) as any).error).toBe('Upstream connection failed: Connection reset by peer');
-        expect(mockAi.run).not.toHaveBeenCalled();
-        expect(log.mock.calls).toHaveLength(0);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('x-provider-fallback-reason')).toBe('network_error');
+        expect(mockAi.run).toHaveBeenCalledTimes(1);
       });
 
-      it('returns the not-configured error when there is no hosted key', async () => {
+      it('answers when no Groq key is configured and the header is absent', async () => {
         globalThis.fetch = vi.fn().mockRejectedValue(new Error('the upstream must not be called'));
-        const mockAi = answeringAi();
+        const mockAi = answeringAi('Handled when no Groq key configured');
 
         const res = await callGroq(
           createTestEnv({ AI: mockAi, GROQ_API_KEY: undefined, GROQ_API_KEY_FALLBACK: undefined }),
@@ -896,27 +893,17 @@ describe('Workers AI fallback (SW0a-11)', () => {
           null,
         );
 
-        expect(res.status).toBe(503);
-        expect(((await res.json()) as any).error).toMatch(/groq is not configured on the server/);
-        expect(mockAi.run).not.toHaveBeenCalled();
-        expect(log.mock.calls).toHaveLength(0);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('x-provider-fallback-reason')).toBe('provider_not_configured');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        expect(((await res.json()) as any).choices[0].message.content).toBe('Handled when no Groq key configured');
       });
 
-      it('does not stream a fallback either', async () => {
+      it('streams a fallback when the header is absent', async () => {
         globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
         const mockAi: Ai = { run: vi.fn().mockResolvedValue(sseStream(['{"response":"Streamed"}', '[DONE]'])) };
 
         const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ stream: true }), null);
-
-        expect(res.status).toBe(503);
-        expect(mockAi.run).not.toHaveBeenCalled();
-      });
-
-      it('answers the same request when the header is sent', async () => {
-        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
-        const mockAi = answeringAi();
-
-        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody(), '1');
 
         expect(res.status).toBe(200);
         expect(res.headers.get('x-provider-fallback')).toBe('workers-ai');
@@ -925,7 +912,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
     });
 
     describe('never on a 4xx', () => {
-      it.each([400, 404, 413, 422, 429])(
+      it.each([400, 404, 413, 422])(
         'returns an upstream %i as itself, with its own body and headers',
         async status => {
           globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));
@@ -1117,16 +1104,62 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(mockAi.run).not.toHaveBeenCalled();
       });
 
-      it('still returns the 429 when the second key fails too', async () => {
-        const fetchMock = vi.fn().mockResolvedValueOnce(upstreamError(429)).mockResolvedValueOnce(upstreamError(500));
+      it('tries the fallback key after a 500, then Workers AI when that key fails too', async () => {
+        const fetchMock = vi.fn().mockResolvedValueOnce(upstreamError(500)).mockResolvedValueOnce(upstreamError(500));
         globalThis.fetch = fetchMock;
-        const mockAi = answeringAi();
+        const mockAi = answeringAi('Recovered after both Groq keys');
 
-        const res = await callGroq(createTestEnv({ AI: mockAi, GROQ_API_KEY_FALLBACK: 'gsk_second_test_key' }));
+        const res = await callGroq(createTestEnv({ AI: mockAi, GROQ_API_KEY_FALLBACK: 'gsk_second_test_key' }), chatBody(), null);
 
-        expect(res.status).toBe(429);
+        expect(res.status).toBe(200);
         expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(mockAi.run).not.toHaveBeenCalled();
+        const secondHeaders = fetchMock.mock.calls[1][1].headers as Headers;
+        expect(secondHeaders.get('Authorization')).toBe('Bearer gsk_second_test_key');
+        expect(res.headers.get('x-provider-fallback')).toBe('workers-ai');
+        expect(res.headers.get('x-provider-fallback-reason')).toBe('upstream_5xx');
+        expect(res.headers.get('x-quota-refunded')).toBeNull();
+        expect(((await res.json()) as any).choices[0].message.content).toBe('Recovered after both Groq keys');
+        expect(mockAi.run).toHaveBeenCalledTimes(1);
+      });
+
+      it('returns 503 and refunds the quota when the fallback key and Workers AI both fail', async () => {
+        const fetchMock = vi.fn().mockResolvedValueOnce(upstreamError(500)).mockResolvedValueOnce(upstreamError(500));
+        globalThis.fetch = fetchMock;
+        const mockAi: Ai = { run: vi.fn().mockRejectedValue(new Error('binding down')) };
+
+        const res = await callGroq(createTestEnv({ AI: mockAi, GROQ_API_KEY_FALLBACK: 'gsk_second_test_key' }), chatBody(), null);
+
+        expect(res.status).toBe(503);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(mockAi.run).toHaveBeenCalledTimes(1);
+        expect(res.headers.get('x-provider-fallback')).toBeNull();
+        expect(res.headers.get('x-quota-refunded')).toBe('1');
+        expect(await res.json()).toEqual({ error: { message: 'upstream said 500' } });
+      });
+
+      it('returns 503 and refunds the quota when the binding is missing', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(503));
+
+        const res = await callGroq(createTestEnv({ AI: undefined }), chatBody(), null);
+
+        expect(res.status).toBe(503);
+        expect(res.headers.get('x-provider-fallback')).toBeNull();
+        expect(res.headers.get('x-quota-refunded')).toBe('1');
+        expect(await res.json()).toEqual({ error: { message: 'upstream said 503' } });
+      });
+
+      it('answers a 429 with Workers AI after the fallback key is also rate limited', async () => {
+        const fetchMock = vi.fn().mockResolvedValueOnce(upstreamError(429)).mockResolvedValueOnce(upstreamError(429));
+        globalThis.fetch = fetchMock;
+        const mockAi = answeringAi('Recovered after rate limits');
+
+        const res = await callGroq(createTestEnv({ AI: mockAi, GROQ_API_KEY_FALLBACK: 'gsk_second_test_key' }), chatBody(), null);
+
+        expect(res.status).toBe(200);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(res.headers.get('x-provider-fallback-reason')).toBe('upstream_429');
+        expect(((await res.json()) as any).x_fallback.reason).toBe('upstream_429');
+        expect(mockAi.run).toHaveBeenCalledTimes(1);
       });
     });
 
@@ -1322,15 +1355,15 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(await res.text()).toContain('"content":"fallback"');
       });
 
-      it('returns a streamed request its 429', async () => {
+      it('streams the fallback answer on a 429', async () => {
         globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(429));
         const mockAi = streamingAi();
 
-        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ stream: true }));
+        const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ stream: true }), null);
 
-        expect(res.status).toBe(429);
-        expect(res.headers.get('x-provider-fallback')).toBeNull();
-        expect(mockAi.run).not.toHaveBeenCalled();
+        expect(res.status).toBe(200);
+        expect(res.headers.get('x-provider-fallback-reason')).toBe('upstream_429');
+        expect(mockAi.run).toHaveBeenCalledTimes(1);
       });
 
       it.each(REFUSED_REQUESTS)('refuses a streamed request with $name', async ({ body }) => {
@@ -1401,9 +1434,15 @@ describe('Workers AI fallback (SW0a-11)', () => {
       });
 
       it('returns the not-configured error when the binding is absent', async () => {
-        const res = await callGroq(createTestEnv({ AI: undefined, GROQ_API_KEY: undefined, GROQ_API_KEY_FALLBACK: undefined }));
+        const res = await callGroq(
+          createTestEnv({ AI: undefined, GROQ_API_KEY: undefined, GROQ_API_KEY_FALLBACK: undefined }),
+          chatBody(),
+          null,
+        );
 
         expect(res.status).toBe(503);
+        expect(res.headers.get('x-provider-fallback')).toBeNull();
+        expect(res.headers.get('x-quota-refunded')).toBe('1');
         expect(((await res.json()) as any).error).toMatch(/groq is not configured on the server/);
       });
     });

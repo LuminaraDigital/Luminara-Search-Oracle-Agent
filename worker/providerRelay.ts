@@ -9,6 +9,7 @@ import {
   runWorkersAiChatFallback,
   type WorkersAiFallbackContext,
   type WorkersAiFallbackOutcome,
+  type WorkersAiFallbackReason,
 } from './workersAiFallback';
 import {
   MAX_BODY_BYTES,
@@ -60,15 +61,10 @@ export function isWorkersAiFallbackPath(providerId: string, subPath: string): bo
 }
 
 /**
- * A caller gets a fallback answer only when it asks for one with this request header set to "1".
- * The app's chat sends it, because the chat shows who answered. Nothing else does, so for every
- * other caller the fallback model is not run at all: they get the upstream's own error.
+ * Old clients send this header. Hosted Groq chat falls back without it. The header stays
+ * allowed so those clients are not rejected at CORS.
  */
 export const ACCEPT_FALLBACK_HEADER = 'x-accept-fallback';
-
-export function acceptsFallback(request: Request): boolean {
-  return request.headers.get(ACCEPT_FALLBACK_HEADER) === '1';
-}
 
 /** A short machine-readable value (an error code or type, at most 64 characters), or null. Free text never passes. */
 function upstreamErrorField(value: unknown): string | null {
@@ -275,15 +271,33 @@ function makeFallbackResponse(
   return json(outcome.completion, 200, fallbackHeaders);
 }
 
+/** The other hosted Groq key, when it is set and is not the key already on this request. */
+function groqFallbackKey(env: Env, headers: Headers): string | null {
+  const fallbackKey = env.GROQ_API_KEY_FALLBACK?.trim() || '';
+  if (!fallbackKey) return null;
+  const current = (headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  return fallbackKey === current ? null : fallbackKey;
+}
+
+function headersWithBearer(headers: Headers, key: string): Headers {
+  const next = new Headers(headers);
+  next.set('Authorization', `Bearer ${key}`);
+  return next;
+}
+
+/** 401 and 402 stay the hosted-key errors. 429 and 5xx may be answered by Workers AI. */
+function workersAiStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+function workersAiReason(status: number): WorkersAiFallbackReason {
+  return status === 429 ? 'upstream_429' : 'upstream_5xx';
+}
+
 /**
- * Asks the Workers AI fallback to answer, or returns null so the caller sends its own error.
- *
- * It answers only a hosted-key POST to the groq chat-completions path with the binding present,
- * and only for a caller that asked for a fallback answer (ACCEPT_FALLBACK_HEADER). For any other
- * caller the fallback model is not run and nothing is logged.
- * The three callers decide when: no hosted key, a network failure, or an upstream 5xx. A 4xx
- * never gets here. The fallback itself refuses a typed, tool-using, non-text or over-long request,
- * and a refusal or a binding error also comes back as null.
+ * Asks Workers AI to answer a hosted Groq chat call, or returns null so the caller sends its own error.
+ * Bring-your-own-key calls, other providers, and a missing binding are null. A refusal or a binding
+ * error is also null. No second quota check: the caller metered this request once.
  */
 async function tryWorkersAiFallback(
   env: Env,
@@ -297,7 +311,6 @@ async function tryWorkersAiFallback(
 ): Promise<Response | null> {
   if (userKey || !env.AI || request.method !== 'POST') return null;
   if (!isWorkersAiFallbackPath(providerId, subPath)) return null;
-  if (!acceptsFallback(request)) return null;
   try {
     const outcome = await runWorkersAiChatFallback(env.AI, body, context);
     if (!outcome.answered) return null;
@@ -468,8 +481,8 @@ export async function proxyProvider(
   } else {
     const auth = spec.auth(env, headers, body);
     if (!auth.ok) {
-      // No hosted key at all. On the groq chat path the fallback may answer, and the reply says so.
-      if (isWorkersAiFallbackPath(providerId, subPath) && env.AI && request.method === 'POST' && acceptsFallback(request)) {
+      // No hosted Groq key. Chat completions fall through to Workers AI. Other providers keep their own error.
+      if (isWorkersAiFallbackPath(providerId, subPath) && env.AI && request.method === 'POST') {
         const clamped = clampHostedChatCompletionsBody(body);
         if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
@@ -528,51 +541,61 @@ export async function proxyProvider(
     }
   }
 
-  let res: Response;
-  try {
-    res = await fetch(upstream.toString(), {
-      method: request.method,
-      headers,
-      body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-    });
-  } catch (networkErr) {
+  const upstreamBody = request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
+  const callUpstream = (hdrs: Headers) =>
+    fetch(upstream.toString(), { method: request.method, headers: hdrs, body: upstreamBody });
+
+  const networkFailure = async (err: unknown): Promise<Response> => {
     const fallback = await tryWorkersAiFallback(
       env, request, providerId, subPath, userKey, body, { reason: 'network_error' }, quotaGate,
     );
     if (fallback) return fallback;
-    return releaseUnmeasured(json({ error: `Upstream connection failed: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}` }, 502));
+    const message = err instanceof Error ? err.message : String(err);
+    return releaseUnmeasured(json({ error: `Upstream connection failed: ${message}` }, 502));
+  };
+
+  let res: Response;
+  let triedFallbackKey = false;
+  try {
+    res = await callUpstream(headers);
+  } catch (networkErr) {
+    // Timeout and other connection failures try the other Groq key before Workers AI.
+    const altKey = !userKey && providerId === 'groq' ? groqFallbackKey(env, headers) : null;
+    if (!altKey) return networkFailure(networkErr);
+    triedFallbackKey = true;
+    try {
+      res = await callUpstream(headersWithBearer(headers, altKey));
+    } catch (err) {
+      console.warn('[Groq failover error]', err);
+      return networkFailure(networkErr);
+    }
   }
 
-  // Seamless Groq failover if hosted primary key hits billing (402), auth (401), or rate limit (429)
-  if (!userKey && providerId === 'groq' && (res.status === 401 || res.status === 402 || res.status === 429) && env.GROQ_API_KEY_FALLBACK) {
-    const fallbackKey = env.GROQ_API_KEY_FALLBACK.trim();
-    const currentKey = (headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    if (fallbackKey && fallbackKey !== currentKey) {
-      const fallbackHeaders = new Headers(headers);
-      fallbackHeaders.set('Authorization', `Bearer ${fallbackKey}`);
+  // Primary key failed. One try with GROQ_API_KEY_FALLBACK when it is a different key.
+  if (
+    !triedFallbackKey &&
+    !userKey &&
+    providerId === 'groq' &&
+    (res.status === 401 || res.status === 402 || workersAiStatus(res.status))
+  ) {
+    const altKey = groqFallbackKey(env, headers);
+    if (altKey) {
+      triedFallbackKey = true;
       try {
-        const retryRes = await fetch(upstream.toString(), {
-          method: request.method,
-          headers: fallbackHeaders,
-          body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-        });
-        if (retryRes.ok || retryRes.status < 400) {
-          res = retryRes;
-        }
+        const retryRes = await callUpstream(headersWithBearer(headers, altKey));
+        if (retryRes.ok || retryRes.status < 400 || workersAiStatus(retryRes.status)) res = retryRes;
       } catch (err) {
         console.warn('[Groq failover error]', err);
       }
     }
   }
 
-  // Workers AI fallback, after the second-key retry above: only when the upstream itself failed
-  // (5xx). A 4xx is the upstream's answer about this request or this key (429, 400, 413 and the
-  // rest). It is never replaced by another model's reply: it goes through the code below, where
-  // a hosted 402 is reported as HOSTED_PROVIDER_DEPLETED, a hosted 401 as
-  // HOSTED_PROVIDER_KEY_REFUSED and a hosted 403 as HOSTED_PROVIDER_REQUEST_REFUSED.
-  if (res.status >= 500 && res.status <= 599) {
+  // After the second key: 429, 5xx, and a timeout already handled above. 401 and 402 are not replaced.
+  if (workersAiStatus(res.status)) {
     const fallback = await tryWorkersAiFallback(
-      env, request, providerId, subPath, userKey, body, { reason: 'upstream_5xx', upstreamStatus: res.status }, quotaGate,
+      env, request, providerId, subPath, userKey, body,
+      { reason: workersAiReason(res.status), upstreamStatus: res.status },
+      quotaGate,
     );
     if (fallback) return fallback;
   }
@@ -667,6 +690,13 @@ export async function proxyProvider(
     }, 503, passed));
   }
 
-  if (!res.ok) return releaseUnmeasured(new Response(res.body, { status: res.status, headers: out }));
+  if (!res.ok) {
+    // Groq 429/5xx that Workers AI also could not answer is one failed call: 503, quota refunded.
+    const status =
+      !userKey && request.method === 'POST' && isWorkersAiFallbackPath(providerId, subPath) && workersAiStatus(res.status)
+        ? 503
+        : res.status;
+    return releaseUnmeasured(new Response(res.body, { status, headers: out }));
+  }
   return new Response(res.body, { status: res.status, headers: out });
 }

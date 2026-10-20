@@ -1,10 +1,10 @@
 /**
  * Cloudflare Workers AI fallback for the hosted Groq chat-completions path (Track SW, SW0a-11).
  *
- * The relay calls this when hosted Groq cannot answer (no hosted key, a network failure, or an
- * upstream 5xx) and the caller asked for a fallback answer with the `x-accept-fallback` request
- * header. It answers in the OpenAI ChatCompletion shape (JSON or SSE) and always names the
- * model that wrote the reply. It refuses any request it cannot serve faithfully, so a typed,
+ * The relay calls this when hosted Groq cannot answer: no hosted key, a network failure or
+ * timeout, an upstream 5xx, or a 429 after the fallback Groq key. It answers in the OpenAI
+ * ChatCompletion shape (JSON or SSE) and always names the model that wrote the reply. It refuses
+ * any request it cannot serve faithfully, so a typed,
  * tool-using or long call gets the upstream's own error instead of free text from a smaller model.
  *
  * It writes one structured log line per outcome and never more than one:
@@ -48,7 +48,7 @@ export const WORKERS_AI_FALLBACK_REFUSED_EVENT = 'workers_ai_fallback_refused';
 export const WORKERS_AI_FALLBACK_FAILED_EVENT = 'workers_ai_fallback_failed';
 
 /** Why the relay turned to the fallback. */
-export type WorkersAiFallbackReason = 'provider_not_configured' | 'network_error' | 'upstream_5xx';
+export type WorkersAiFallbackReason = 'provider_not_configured' | 'network_error' | 'upstream_5xx' | 'upstream_429';
 
 /** The rule under which the fallback would not answer a request. */
 export type WorkersAiFallbackRefusal =

@@ -350,10 +350,8 @@ export interface ProviderFetchOptions {
   /** The user's own key. When set and a Worker is reachable, the request is relayed with this key. */
   userKey?: string;
   /**
-   * Ask the Worker for a fallback answer if the hosted provider cannot answer. The Worker runs
-   * its fallback model only for a request that says so. Set it only where the reply's fallback
-   * marker is shown with the text. It is sent on a hosted-key relay call and nowhere else: a
-   * direct vendor call or a call with the user's own key never gets a fallback answer.
+   * The chat still sends this. Hosted Groq chat falls back without it. A direct vendor call
+   * or a call with the user's own key never gets a fallback answer.
    */
   acceptFallback?: boolean;
 }
