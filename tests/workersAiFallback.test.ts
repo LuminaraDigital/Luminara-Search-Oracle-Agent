@@ -380,7 +380,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         ),
       );
 
-      expect(capturedModel).toBe('@cf/meta/llama-3.1-8b-instruct');
+      expect(capturedModel).toBe('@cf/meta/llama-3.1-8b-instruct-fast');
       // The caller asked for 0.5. It used to be overwritten with 0.7.
       expect(capturedInput).toEqual({
         messages: [{ role: 'user', content: 'What is the capital of France?' }],
@@ -392,7 +392,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
       expect(result.id).toMatch(/^chatcmpl-cf-\d+$/);
       expect(result.object).toBe('chat.completion');
       expect(typeof result.created).toBe('number');
-      expect(result.model).toBe('@cf/meta/llama-3.1-8b-instruct');
+      expect(result.model).toBe('@cf/meta/llama-3.1-8b-instruct-fast');
       expect(result.choices).toHaveLength(1);
       expect(result.choices[0]).toEqual({
         index: 0,
@@ -404,7 +404,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
       });
       expect(result.x_fallback).toEqual({
         provider: 'workers-ai',
-        model: '@cf/meta/llama-3.1-8b-instruct',
+        model: '@cf/meta/llama-3.1-8b-instruct-fast',
         reason: 'upstream_5xx',
       });
     });
@@ -518,7 +518,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
       expect(events[0]).toEqual({
         event: 'workers_ai_fallback_answer',
         provider: 'workers-ai',
-        model: '@cf/meta/llama-3.1-8b-instruct',
+        model: '@cf/meta/llama-3.1-8b-instruct-fast',
         reason: 'upstream_5xx',
         upstream_status: 502,
         stream: false,
@@ -564,7 +564,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
       expect(events[0]).toEqual({
         event: 'workers_ai_fallback_refused',
         provider: 'workers-ai',
-        model: '@cf/meta/llama-3.1-8b-instruct',
+        model: '@cf/meta/llama-3.1-8b-instruct-fast',
         reason: 'upstream_5xx',
         upstream_status: 503,
         refusal: 'prompt_too_long',
@@ -605,19 +605,20 @@ describe('Workers AI fallback (SW0a-11)', () => {
         {
           event: 'workers_ai_fallback_failed',
           provider: 'workers-ai',
-          model: '@cf/meta/llama-3.1-8b-instruct',
+          model: '@cf/meta/llama-3.1-8b-instruct-fast',
           reason: 'network_error',
           upstream_status: null,
           stream: false,
           failure: 'no_text',
           text_sent: false,
+          error: 'no text',
         },
       ]);
     });
 
     it('logs a failure when the binding throws', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-      const mockAi: Ai = { run: vi.fn().mockRejectedValue(new Error(`binding down while handling ${PROMPT}`)) };
+      const mockAi: Ai = { run: vi.fn().mockRejectedValue(new Error('binding down')) };
 
       await expect(
         runWorkersAiChatFallback(mockAi, { messages: [USER] }, { reason: 'upstream_5xx', upstreamStatus: 500 }),
@@ -625,8 +626,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
       expect(answerEvents(log)).toHaveLength(0);
       expect(failedEvents(log)).toHaveLength(1);
-      expect(failedEvents(log)[0]).toMatchObject({ failure: 'binding_error', text_sent: false });
-      // The binding's own error text is not copied into the event.
+      expect(failedEvents(log)[0]).toMatchObject({ failure: 'binding_error', text_sent: false, error: 'binding down' });
       expect(everythingLogged(log)).not.toContain(PROMPT);
     });
 
@@ -653,7 +653,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
       const parsedChunks = sseChunks(text);
       expect(parsedChunks).toHaveLength(3);
       expect(parsedChunks[0].object).toBe('chat.completion.chunk');
-      expect(parsedChunks[0].model).toBe('@cf/meta/llama-3.1-8b-instruct');
+      expect(parsedChunks[0].model).toBe('@cf/meta/llama-3.1-8b-instruct-fast');
       expect(parsedChunks[0].choices[0].delta.content).toBe('Edge');
       expect(parsedChunks[1].choices[0].delta.content).toBe(' AI');
       expect(parsedChunks[2].choices[0].finish_reason).toBe('stop');
@@ -1134,7 +1134,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(mockAi.run).toHaveBeenCalledTimes(1);
         expect(res.headers.get('x-provider-fallback')).toBeNull();
         expect(res.headers.get('x-quota-refunded')).toBe('1');
-        expect(await res.json()).toEqual({ error: { message: 'upstream said 500' } });
+        expect(await res.json()).toEqual({ error: 'The backup model did not answer.', code: 'BACKUP_MODEL_FAILED' });
       });
 
       it('returns 503 and refunds the quota when the binding is missing', async () => {
@@ -1175,8 +1175,8 @@ describe('Workers AI fallback (SW0a-11)', () => {
         expect(res.headers.get('x-provider-fallback-model')).toBe(WORKERS_AI_FALLBACK_MODEL);
         expect(res.headers.get('x-provider-fallback-reason')).toBe('upstream_5xx');
         const data = (await res.json()) as any;
-        expect(data.model).toBe('@cf/meta/llama-3.1-8b-instruct');
-        expect(data.x_fallback).toEqual({ provider: 'workers-ai', model: '@cf/meta/llama-3.1-8b-instruct', reason: 'upstream_5xx' });
+        expect(data.model).toBe('@cf/meta/llama-3.1-8b-instruct-fast');
+        expect(data.x_fallback).toEqual({ provider: 'workers-ai', model: '@cf/meta/llama-3.1-8b-instruct-fast', reason: 'upstream_5xx' });
         expect(data.choices[0].message.content).toBe(`Recovered via Workers AI on ${status}`);
         expect(mockAi.run).toHaveBeenCalledTimes(1);
 
@@ -1250,9 +1250,11 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
         expect(res.status).toBe(503);
         expect(res.headers.get('x-provider-fallback')).toBeNull();
-        expect(await res.json()).toEqual({ error: { message: 'upstream said 503' } });
+        expect(res.headers.get('x-quota-refunded')).toBe('1');
+        expect(await res.json()).toEqual({ error: 'The backup model did not answer.', code: 'BACKUP_MODEL_FAILED' });
         expect(answerEvents(log)).toHaveLength(0);
         expect(failedEvents(log)).toHaveLength(1);
+        expect(failedEvents(log)[0]).toMatchObject({ error: 'binding down' });
       });
 
       it('does not answer a GET', async () => {
@@ -1397,10 +1399,11 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
         expect(res.status).toBe(503);
         expect(res.headers.get('x-provider-fallback')).toBeNull();
-        expect(await res.json()).toEqual({ error: { message: 'upstream said 503' } });
+        expect(res.headers.get('x-quota-refunded')).toBe('1');
+        expect(await res.json()).toEqual({ error: 'The backup model did not answer.', code: 'BACKUP_MODEL_FAILED' });
         expect(answerEvents(log)).toHaveLength(0);
         expect(failedEvents(log)).toHaveLength(1);
-        expect(failedEvents(log)[0]).toMatchObject({ failure: 'no_text', stream: true });
+        expect(failedEvents(log)[0]).toMatchObject({ failure: 'no_text', stream: true, error: 'Workers AI fallback failed: no_text' });
       });
 
       it('returns the connection error when the fallback stream breaks before any text', async () => {
@@ -1409,8 +1412,10 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
         const res = await callGroq(createTestEnv({ AI: mockAi }), chatBody({ stream: true }));
 
-        expect(res.status).toBe(502);
+        expect(res.status).toBe(503);
         expect(res.headers.get('x-provider-fallback')).toBeNull();
+        expect(res.headers.get('x-quota-refunded')).toBe('1');
+        expect(await res.json()).toEqual({ error: 'The backup model did not answer.', code: 'BACKUP_MODEL_FAILED' });
         expect(answerEvents(log)).toHaveLength(0);
         expect(failedEvents(log)).toHaveLength(1);
       });

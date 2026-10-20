@@ -37,7 +37,7 @@ import {
 import MessageList from '../components/MessageList';
 import { OracleMode, type Message, type StreamChunk } from '../types';
 
-const MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 const FALLBACK_TEXT = 'Text only the fallback model wrote';
 const FALLBACK_HEADERS = {
   'x-provider-fallback': 'workers-ai',

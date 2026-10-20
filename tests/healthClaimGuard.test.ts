@@ -135,7 +135,7 @@ describe('health-claim guardrail', () => {
     const spy = vi.spyOn(geminiService, 'generateAuditReport').mockResolvedValue({
       text: '# Luminara\n\nOne move this week.',
       sources: [],
-      answeredBy: '@cf/meta/llama-3.1-8b-instruct',
+      answeredBy: '@cf/meta/llama-3.1-8b-instruct-fast',
     } as Awaited<ReturnType<typeof geminiService.generateAuditReport>>);
     const summary = buildGuestScoutSummary({
       targetUrl: 'https://example.com',
@@ -157,8 +157,8 @@ describe('health-claim guardrail', () => {
       dna: null,
       lenses: [],
     });
-    expect(report?.answeredBy).toBe('@cf/meta/llama-3.1-8b-instruct');
-    expect(report?.text).toContain('Answered by a fallback model: @cf/meta/llama-3.1-8b-instruct');
+    expect(report?.answeredBy).toBe('@cf/meta/llama-3.1-8b-instruct-fast');
+    expect(report?.text).toContain('Answered by a fallback model: @cf/meta/llama-3.1-8b-instruct-fast');
     spy.mockRestore();
   });
 

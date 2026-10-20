@@ -6,7 +6,7 @@ import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Ai, Env } from '../worker/env';
 import { proxyProvider } from '../worker/providerRelay';
-import { NIM_DEFAULT_MODEL } from '../services/llm/nativeModelDefaults';
+import { NVIDIA_FALLBACK_MODEL } from '../worker/nvidiaChatFallback';
 import { fallbackAnswerLine, readFallbackAnswer } from '../services/llm/fallbackAnswer';
 
 const BOT_TOKEN = '123456:TEST_BOT_TOKEN_NVIDIA_FALLBACK';
@@ -64,7 +64,7 @@ const chatBody = {
 
 function nvidiaReply(text = 'NVIDIA text') {
   return new Response(JSON.stringify({
-    model: NIM_DEFAULT_MODEL,
+    model: NVIDIA_FALLBACK_MODEL,
     choices: [{ message: { role: 'assistant', content: text } }],
   }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
@@ -107,20 +107,20 @@ describe('hosted Groq chat falls through NVIDIA', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get('x-provider-fallback')).toBe('nvidia');
-    expect(res.headers.get('x-provider-fallback-model')).toBe(NIM_DEFAULT_MODEL);
+    expect(res.headers.get('x-provider-fallback-model')).toBe(NVIDIA_FALLBACK_MODEL);
     expect(res.headers.get('x-provider-fallback-reason')).toBe('provider_not_configured');
     expect(res.headers.get('x-quota-refunded')).toBeNull();
     expect(res.headers.get('x-quota-remaining')).toBe('9');
     const data = await res.json() as { x_fallback: { provider: string; model: string }; choices: { message: { content: string } }[] };
     expect(data.x_fallback).toEqual({
       provider: 'nvidia',
-      model: NIM_DEFAULT_MODEL,
+      model: NVIDIA_FALLBACK_MODEL,
       reason: 'provider_not_configured',
     });
     expect(data.choices[0].message.content).toBe('NVIDIA text');
     expect(calls).toEqual([{
       url: 'https://integrate.api.nvidia.com/v1/chat/completions',
-      model: NIM_DEFAULT_MODEL,
+      model: NVIDIA_FALLBACK_MODEL,
       auth: 'Bearer nvapi-test',
     }]);
     expect(ai.run).not.toHaveBeenCalled();
@@ -279,10 +279,10 @@ describe('hosted Groq chat falls through NVIDIA', () => {
   it('names NVIDIA on the marker the chat reads', () => {
     const info = readFallbackAnswer(new Headers({
       'x-provider-fallback': 'nvidia',
-      'x-provider-fallback-model': NIM_DEFAULT_MODEL,
+      'x-provider-fallback-model': NVIDIA_FALLBACK_MODEL,
       'x-provider-fallback-reason': 'upstream_5xx',
     }));
-    expect(info).toEqual({ model: NIM_DEFAULT_MODEL, provider: 'nvidia', reason: 'upstream_5xx' });
-    expect(fallbackAnswerLine(info)).toBe(`Answered by a fallback model: NVIDIA (${NIM_DEFAULT_MODEL})`);
+    expect(info).toEqual({ model: NVIDIA_FALLBACK_MODEL, provider: 'nvidia', reason: 'upstream_5xx' });
+    expect(fallbackAnswerLine(info)).toBe(`Answered by a fallback model: NVIDIA (${NVIDIA_FALLBACK_MODEL})`);
   });
 });

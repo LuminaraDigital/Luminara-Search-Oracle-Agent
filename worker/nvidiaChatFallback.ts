@@ -3,15 +3,19 @@
  * Direct `/providers/nim` stays paid-tier. This step is for every tier.
  * Free accounts share a global daily cap and a per-account cap. Paid plans are not counted.
  * A missing key, a cap, or no KV skips this step. The caller then tries Workers AI.
- * shortcut: KV get-then-put can let a few calls past the cap, upgrade when the counter is atomic.
+ * The cap is a KV get-then-put. KV has no atomic add, so overlapping calls can pass together
+ * and the count can exceed the cap by about the number of calls in flight. A later read
+ * repairs a write that landed lower, so a stale write cannot reset the counter.
+ * A call NVIDIA does not answer gives the slot back. Paid plans are not counted.
  */
 import type { Env } from './env';
 import type { QuotaStatus } from './quotaMiddleware';
 import type { WorkersAiFallbackReason } from './workersAiFallback';
 import { json } from './workerUtils';
-import { NIM_DEFAULT_MODEL } from '../services/llm/nativeModelDefaults';
 
 export const NVIDIA_FALLBACK_PROVIDER = 'nvidia';
+/** Text instruct model on integrate.api.nvidia.com. The paid direct path keeps NIM_DEFAULT_MODEL. */
+export const NVIDIA_FALLBACK_MODEL = 'meta/llama-3.3-70b-instruct';
 export const NVIDIA_FALLBACK_DAILY_CAP_DEFAULT = 200;
 export const NVIDIA_FALLBACK_USER_DAILY_CAP_DEFAULT = 5;
 const NVIDIA_CHAT_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
@@ -59,6 +63,38 @@ function quotaHeaders(quotaGate: QuotaStatus | null): Record<string, string> {
   return headers;
 }
 
+const SLOT_TTL = { expirationTtl: 2 * 86400 };
+
+async function addCap(kv: NonNullable<Env['LUMINARA_KV']>, key: string, cap: number): Promise<'ok' | 'cap'> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const used = Number((await kv.get(key)) || 0);
+    if (!Number.isFinite(used) || used >= cap) return 'cap';
+    const next = used + 1;
+    await kv.put(key, String(next), SLOT_TTL);
+    const seen = Number((await kv.get(key)) || 0);
+    if (seen >= next) return 'ok';
+    await kv.put(key, String(Math.max(Number.isFinite(seen) ? seen : 0, next)), SLOT_TTL);
+  }
+  return 'cap';
+}
+
+async function releaseCap(kv: NonNullable<Env['LUMINARA_KV']>, key: string): Promise<void> {
+  const used = Number((await kv.get(key)) || 0);
+  if (!Number.isFinite(used) || used <= 0) return;
+  const next = used - 1;
+  await kv.put(key, String(next), SLOT_TTL);
+  const seen = Number((await kv.get(key)) || 0);
+  if (Number.isFinite(seen) && seen < next) await kv.put(key, String(next), SLOT_TTL);
+}
+
+function slotKeys(accountId: string): { globalKey: string; userKey: string } {
+  const day = dayStamp();
+  return {
+    globalKey: `nvidia-fallback:global:${day}`,
+    userKey: `nvidia-fallback:user:${accountId}:${day}`,
+  };
+}
+
 async function nvidiaSlot(env: Env, accountId: string, paid: boolean): Promise<'call' | NvidiaSkip> {
   const key = env.NVIDIA_API_KEY?.trim() || '';
   if (!key) return 'missing_key';
@@ -66,20 +102,27 @@ async function nvidiaSlot(env: Env, accountId: string, paid: boolean): Promise<'
   if (!env.LUMINARA_KV) return 'no_kv';
   const globalCap = capFromEnv(env.NVIDIA_FALLBACK_DAILY_CAP, NVIDIA_FALLBACK_DAILY_CAP_DEFAULT);
   const userCap = capFromEnv(env.NVIDIA_FALLBACK_USER_DAILY_CAP, NVIDIA_FALLBACK_USER_DAILY_CAP_DEFAULT);
-  const day = dayStamp();
-  const globalKey = `nvidia-fallback:global:${day}`;
-  const userKey = `nvidia-fallback:user:${accountId}:${day}`;
+  const { globalKey, userKey } = slotKeys(accountId);
   try {
-    const globalUsed = Number((await env.LUMINARA_KV.get(globalKey)) || 0);
-    const userUsed = Number((await env.LUMINARA_KV.get(userKey)) || 0);
-    if (globalUsed >= globalCap) return 'global_cap';
-    if (userUsed >= userCap) return 'user_cap';
-    const ttl = { expirationTtl: 2 * 86400 };
-    await env.LUMINARA_KV.put(globalKey, String(globalUsed + 1), ttl);
-    await env.LUMINARA_KV.put(userKey, String(userUsed + 1), ttl);
+    if (await addCap(env.LUMINARA_KV, globalKey, globalCap) !== 'ok') return 'global_cap';
+    if (await addCap(env.LUMINARA_KV, userKey, userCap) !== 'ok') {
+      await releaseCap(env.LUMINARA_KV, globalKey);
+      return 'user_cap';
+    }
     return 'call';
   } catch {
     return 'no_kv';
+  }
+}
+
+async function releaseNvidiaSlot(env: Env, accountId: string): Promise<void> {
+  if (!env.LUMINARA_KV) return;
+  const { globalKey, userKey } = slotKeys(accountId);
+  try {
+    await releaseCap(env.LUMINARA_KV, globalKey);
+    await releaseCap(env.LUMINARA_KV, userKey);
+  } catch {
+    /* a missed release leaves the slot spent */
   }
 }
 
@@ -117,20 +160,22 @@ export async function tryNvidiaChatFallback(input: {
     res = await fetch(NVIDIA_CHAT_URL, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ ...source, model: NIM_DEFAULT_MODEL }),
+      body: JSON.stringify({ ...source, model: NVIDIA_FALLBACK_MODEL }),
     });
   } catch {
+    if (!input.paid) await releaseNvidiaSlot(input.env, input.accountId);
     console.warn(JSON.stringify({ event: 'nvidia_fallback_failed', status: 0 }));
     return null;
   }
   if (!res.ok) {
+    if (!input.paid) await releaseNvidiaSlot(input.env, input.accountId);
     console.warn(JSON.stringify({ event: 'nvidia_fallback_failed', status: res.status }));
     return null;
   }
 
   const marker = {
     'X-Provider-Fallback': NVIDIA_FALLBACK_PROVIDER,
-    'X-Provider-Fallback-Model': NIM_DEFAULT_MODEL,
+    'X-Provider-Fallback-Model': NVIDIA_FALLBACK_MODEL,
     'X-Provider-Fallback-Reason': input.reason,
     ...quotaHeaders(input.quotaGate),
   };
@@ -148,8 +193,11 @@ export async function tryNvidiaChatFallback(input: {
   } catch {
     parsed = null;
   }
-  if (!parsed || !messageText(parsed)) return null;
-  const model = typeof parsed.model === 'string' && parsed.model.trim() ? parsed.model.trim() : NIM_DEFAULT_MODEL;
+  if (!parsed || !messageText(parsed)) {
+    if (!input.paid) await releaseNvidiaSlot(input.env, input.accountId);
+    return null;
+  }
+  const model = typeof parsed.model === 'string' && parsed.model.trim() ? parsed.model.trim() : NVIDIA_FALLBACK_MODEL;
   parsed.x_fallback = { provider: NVIDIA_FALLBACK_PROVIDER, model, reason: input.reason };
   return json(parsed, 200, { ...marker, 'X-Provider-Fallback-Model': model });
 }

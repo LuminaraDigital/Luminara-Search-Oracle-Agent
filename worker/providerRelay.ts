@@ -316,9 +316,8 @@ async function tryWorkersAiFallback(
     const outcome = await runWorkersAiChatFallback(env.AI, body, context);
     if (!outcome.answered) return null;
     return makeFallbackResponse(outcome, quotaGate);
-  } catch (aiErr) {
-    console.warn(`[Workers AI fallback error: ${context.reason}]`, aiErr);
-    return null;
+  } catch {
+    return json({ error: 'The backup model did not answer.', code: 'BACKUP_MODEL_FAILED' }, 503);
   }
 }
 
@@ -521,7 +520,7 @@ export async function proxyProvider(
           env, request, providerId, subPath, userKey, body,
           { reason: 'provider_not_configured' }, quotaGate, fallbackAccountId, paidSubscriber,
         );
-        if (fallback) return fallback;
+        if (fallback) return fallback.ok ? fallback : releaseUnmeasured(fallback);
       }
       return releaseUnmeasured(json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503));
     }
@@ -582,7 +581,7 @@ export async function proxyProvider(
       env, request, providerId, subPath, userKey, body,
       { reason: 'network_error' }, quotaGate, fallbackAccountId, paidSubscriber,
     );
-    if (fallback) return fallback;
+    if (fallback) return fallback.ok ? fallback : releaseUnmeasured(fallback);
     const message = err instanceof Error ? err.message : String(err);
     return releaseUnmeasured(json({ error: `Upstream connection failed: ${message}` }, 502));
   };
@@ -630,7 +629,7 @@ export async function proxyProvider(
       { reason: workersAiReason(res.status), upstreamStatus: res.status },
       quotaGate, fallbackAccountId, paidSubscriber,
     );
-    if (fallback) return fallback;
+    if (fallback) return fallback.ok ? fallback : releaseUnmeasured(fallback);
   }
 
   // Stream the upstream body straight through (SSE for chat completions works unchanged).
