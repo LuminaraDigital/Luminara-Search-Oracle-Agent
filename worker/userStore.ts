@@ -177,10 +177,14 @@ export async function listAllUsers(env: UserStoreEnv, limit = 100): Promise<Stor
 /** Resolves the billing/workspace account id for a login identity. */
 export async function resolveAccountId(env: UserStoreEnv, userId: string): Promise<string> {
   if (env.DB) {
-    const row = await env.DB.prepare(`SELECT account_id FROM users WHERE id = ?`)
-      .bind(userId)
-      .first<{ account_id: string | null }>();
-    if (row?.account_id) return row.account_id;
+    try {
+      const row = await env.DB.prepare(`SELECT account_id FROM users WHERE id = ?`)
+        .bind(userId)
+        .first<{ account_id: string | null }>();
+      if (row?.account_id) return row.account_id;
+    } catch {
+      console.warn(JSON.stringify({ event: 'account_store_error' }));
+    }
   }
   const kvUser = await readKvUser(env, userId);
   return kvUser?.account_id || userId;
@@ -190,8 +194,13 @@ export async function resolveAccountId(env: UserStoreEnv, userId: string): Promi
  * Attaches accountId onto a HostedIdentity after upsert.
  */
 export async function withAccountId(env: UserStoreEnv, user: HostedIdentity): Promise<HostedIdentity> {
-  const stored = await upsertAppUser(env, user);
-  return { ...user, accountId: stored.account_id };
+  try {
+    const stored = await upsertAppUser(env, user);
+    return { ...user, accountId: stored.account_id };
+  } catch {
+    console.warn(JSON.stringify({ event: 'account_store_error' }));
+    return { ...user, accountId: user.accountId || user.id };
+  }
 }
 
 async function hasActiveSub(env: UserStoreEnv, accountOrUserId: string): Promise<boolean> {

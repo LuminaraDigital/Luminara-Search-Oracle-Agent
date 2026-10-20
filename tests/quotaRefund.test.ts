@@ -66,4 +66,15 @@ describe('failed hosted checks', () => {
     const extra = await checkHostedQuota(env, user);
     expect(extra.ok).toBe(false);
   });
+
+  it('allows the call and does not count it when the quota write throws', async () => {
+    const { env } = envFor('3');
+    env.LUMINARA_KV!.put = async () => {
+      throw new Error('kv put');
+    };
+    const allowed = await checkHostedQuota(env, user);
+    expect(allowed.ok).toBe(true);
+    expect(allowed.meterKey).toBeUndefined();
+    expect(allowed.remaining).toBe(3);
+  });
 });

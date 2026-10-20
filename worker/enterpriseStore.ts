@@ -49,65 +49,70 @@ export async function getOrCreateUserOrg(
   const now = Date.now();
 
   if (env.DB) {
-    // 1. Check if user already has an active membership
-    const existingMembership = await env.DB.prepare(
-      `SELECT org_id, user_id, role, status, joined_at
-       FROM organization_memberships
-       WHERE user_id = ? AND status = 'active'
-       ORDER BY joined_at ASC
-       LIMIT 1`,
-    )
-      .bind(user.id)
-      .first<{ org_id: string; user_id: string; role: OrgRole; status: 'active'; joined_at: number }>();
-
-    if (existingMembership) {
-      const existingOrg = await env.DB.prepare(
-        `SELECT id, name, slug, tier, created_at, updated_at FROM organizations WHERE id = ?`,
+    try {
+      // 1. Check if user already has an active membership
+      const existingMembership = await env.DB.prepare(
+        `SELECT org_id, user_id, role, status, joined_at
+         FROM organization_memberships
+         WHERE user_id = ? AND status = 'active'
+         ORDER BY joined_at ASC
+         LIMIT 1`,
       )
-        .bind(existingMembership.org_id)
-        .first<Organization>();
+        .bind(user.id)
+        .first<{ org_id: string; user_id: string; role: OrgRole; status: 'active'; joined_at: number }>();
 
-      if (existingOrg) {
-        return { org: existingOrg, membership: existingMembership };
+      if (existingMembership) {
+        const existingOrg = await env.DB.prepare(
+          `SELECT id, name, slug, tier, created_at, updated_at FROM organizations WHERE id = ?`,
+        )
+          .bind(existingMembership.org_id)
+          .first<Organization>();
+
+        if (existingOrg) {
+          return { org: existingOrg, membership: existingMembership };
+        }
       }
+
+      // 2. Create default personal organization for user
+      const orgId = `org_${accountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+      const name = user.name ? `${user.name}'s Organization` : `Organization (${accountId})`;
+      const slug = `${sanitizeSlug(user.name || accountId)}-${orgId.slice(-6)}`;
+
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO organizations (id, name, slug, tier, created_at, updated_at)
+           VALUES (?, ?, ?, 'standard', ?, ?)
+           ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+        ).bind(orgId, name, slug, now, now),
+        env.DB.prepare(
+          `INSERT INTO organization_memberships (org_id, user_id, role, status, joined_at)
+           VALUES (?, ?, 'owner', 'active', ?)
+           ON CONFLICT(org_id, user_id) DO NOTHING`,
+        ).bind(orgId, user.id, now),
+      ]);
+
+      const org: Organization = {
+        id: orgId,
+        name,
+        slug,
+        tier: 'standard',
+        created_at: now,
+        updated_at: now,
+      };
+
+      const membership: OrganizationMembership = {
+        org_id: orgId,
+        user_id: user.id,
+        role: 'owner',
+        status: 'active',
+        joined_at: now,
+      };
+
+      return { org, membership };
+    } catch {
+      // shortcut: a D1 outage still answers with a personal org for this request. It is not stored.
+      console.warn(JSON.stringify({ event: 'org_store_error' }));
     }
-
-    // 2. Create default personal organization for user
-    const orgId = `org_${accountId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-    const name = user.name ? `${user.name}'s Organization` : `Organization (${accountId})`;
-    const slug = `${sanitizeSlug(user.name || accountId)}-${orgId.slice(-6)}`;
-
-    await env.DB.batch([
-      env.DB.prepare(
-        `INSERT INTO organizations (id, name, slug, tier, created_at, updated_at)
-         VALUES (?, ?, ?, 'standard', ?, ?)
-         ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-      ).bind(orgId, name, slug, now, now),
-      env.DB.prepare(
-        `INSERT INTO organization_memberships (org_id, user_id, role, status, joined_at)
-         VALUES (?, ?, 'owner', 'active', ?)
-         ON CONFLICT(org_id, user_id) DO NOTHING`,
-      ).bind(orgId, user.id, now),
-    ]);
-
-    const org: Organization = {
-      id: orgId,
-      name,
-      slug,
-      tier: 'standard',
-      created_at: now,
-      updated_at: now,
-    };
-
-    const membership: OrganizationMembership = {
-      org_id: orgId,
-      user_id: user.id,
-      role: 'owner',
-      status: 'active',
-      joined_at: now,
-    };
-
-    return { org, membership };
   }
 
   // Fallback for KV / memory test environment

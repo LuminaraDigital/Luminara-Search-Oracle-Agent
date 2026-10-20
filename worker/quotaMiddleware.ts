@@ -69,29 +69,35 @@ async function meterDailyQuota(
   }
   const day = new Date().toISOString().slice(0, 10);
   const key = `quota:${quotaKeyId}:${day}`;
-  const used = Number((await env.LUMINARA_KV.get(key)) || 0);
-  if (used >= limit) {
+  try {
+    const used = Number((await env.LUMINARA_KV.get(key)) || 0);
+    if (used >= limit) {
+      return {
+        ok: false,
+        error: `Daily free limit of ${limit} requests reached. Subscribe for unlimited use or add your own API key in Settings.`,
+        limit,
+        used,
+        remaining: 0,
+        resetSec,
+        isUnlimited: false,
+      };
+    }
+    const newUsed = used + 1;
+    await env.LUMINARA_KV.put(key, String(newUsed), { expirationTtl: 2 * 86400 });
     return {
-      ok: false,
-      error: `Daily free limit of ${limit} requests reached. Subscribe for unlimited use or add your own API key in Settings.`,
+      ok: true,
       limit,
-      used,
-      remaining: 0,
+      used: newUsed,
+      remaining: Math.max(0, limit - newUsed),
       resetSec,
       isUnlimited: false,
+      meterKey: key,
     };
+  } catch {
+    // shortcut: a thrown quota read or write is not counted. Upgrade when KV puts succeed again.
+    console.warn(JSON.stringify({ event: 'quota_store_error' }));
+    return { ok: true, limit, used: 0, remaining: limit, resetSec, isUnlimited: false };
   }
-  const newUsed = used + 1;
-  await env.LUMINARA_KV.put(key, String(newUsed), { expirationTtl: 2 * 86400 });
-  return {
-    ok: true,
-    limit,
-    used: newUsed,
-    remaining: Math.max(0, limit - newUsed),
-    resetSec,
-    isUnlimited: false,
-    meterKey: key,
-  };
 }
 
 /**

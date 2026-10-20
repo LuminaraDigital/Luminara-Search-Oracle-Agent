@@ -70,9 +70,15 @@ async function readRun(env: Env, token: string): Promise<AuditRunRecord | null> 
   }
 }
 
-async function writeRun(env: Env, token: string, record: AuditRunRecord): Promise<void> {
-  const ttl = Math.max(60, Math.ceil((record.exp - Date.now()) / 1000));
-  await env.LUMINARA_KV!.put(recordKey(token), JSON.stringify(record), { expirationTtl: ttl });
+async function writeRun(env: Env, token: string, record: AuditRunRecord): Promise<boolean> {
+  const ttl = Math.max(120, Math.ceil((record.exp - Date.now()) / 1000));
+  try {
+    await env.LUMINARA_KV!.put(recordKey(token), JSON.stringify(record), { expirationTtl: ttl });
+    return true;
+  } catch {
+    console.warn(JSON.stringify({ event: 'audit_run_store_error' }));
+    return false;
+  }
 }
 
 export async function mintAuditRun(
@@ -112,7 +118,11 @@ export async function mintAuditRun(
     sawSuccess: false,
     refunded: false,
   };
-  await writeRun(env, token, record);
+  if (!(await writeRun(env, token, record))) {
+    // shortcut: no stored run, so this check is given back and later calls meter themselves.
+    if (quota.meterKey) await refundMeteredQuota(env, quota);
+    return json({ ok: true, domain }, 200);
+  }
   return json(
     { ok: true, token, domain, calls: AUDIT_RUN_CALL_CAP, ttlSec: AUDIT_RUN_TTL_SEC },
     200,
@@ -186,7 +196,7 @@ export async function takeAuditRunCall(env: Env, user: HostedIdentity, request: 
   }
   if (record.left <= 0) return { kind: 'meter' };
   record.left -= 1;
-  await writeRun(env, token, record);
+  if (!(await writeRun(env, token, record))) return { kind: 'meter' };
   return { kind: 'covered', token, domain };
 }
 

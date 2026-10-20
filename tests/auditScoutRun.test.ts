@@ -260,4 +260,28 @@ describe('one Instant Audit run', () => {
     expect((await proxyProvider(chat(), env, 'groq', '/chat/completions')).status).toBe(200);
     expect(quotaUsed(kv)).toBe('2');
   });
+
+  it('keeps going without a token when the run cannot be stored', async () => {
+    const { env, kv } = envFor();
+    kv.put = async () => {
+      throw new Error('kv put');
+    };
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: 'Groq hosted answer' }, finish_reason: 'stop' }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const opened = await mint(env);
+    expect(opened.status).toBe(200);
+    expect(opened.body.ok).toBe(true);
+    expect(opened.body.token).toBeUndefined();
+    expect(quotaUsed(kv)).toBeUndefined();
+
+    const chat = new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-telegram-init-data': initDataFor(11) },
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: 'Hi' }] }),
+    });
+    const res = await proxyProvider(chat, env, 'groq', '/chat/completions');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ choices: [{ message: { content: 'Groq hosted answer' } }] });
+  });
 });
