@@ -80,6 +80,10 @@ export interface Env {
   GROQ_API_KEY_FALLBACK?: string;
   NVIDIA_API_KEY?: string;
   NVIDIA_ORG_ID?: string;
+  /** Free-tier NVIDIA fallback calls per UTC day, all free accounts. Default 200. 0 skips NVIDIA. */
+  NVIDIA_FALLBACK_DAILY_CAP?: string;
+  /** Free-tier NVIDIA fallback calls per UTC day for one account. Default 5. 0 skips NVIDIA. */
+  NVIDIA_FALLBACK_USER_DAILY_CAP?: string;
   OPENROUTER_API_KEY?: string;
   GEMINI_API_KEY?: string;
   OLLAMA_API_KEY?: string;

@@ -89,14 +89,14 @@ import { synthesizeRlmAuditEvidence, type RLMTrajectoryMetadata } from './rlm';
 export interface AuditReportResult {
   text: string;
   answeredBy?: string;
+  answeredByProvider?: 'nvidia';
   sources: Array<{ uri: string; title: string }>;
   empiricalSummary?: EmpiricalCitationSummary;
   remediationPayload?: RemediationPayload;
   unifiedDiff?: string;
   plainEnglishBrief?: string;
   enrichedEntity?: EnrichedEntityIntelligence;
-  /** "Writing check" of the scraped page (grammar/style + readability). Absent when the page had too little text. */
-  writingQuality?: WritingQualityReport;
+  writingQuality?: WritingQualityReport; // Grammar and readability of the scraped page. Absent when the page had too little text.
   /** "Results tracking": measured traffic and AI/search referrals; check `status` before rendering numbers. */
   trafficImpact?: TrafficImpact;
   citationIntegrity?: CitationIntegrityResult;
@@ -910,7 +910,7 @@ Strict Formatting Guidelines:
 11. ${WIKI_LINK_PROMPT_HINT}
 `;
 
-    const buildReportResult = (modelText: string, answeredBy?: string): AuditReportResult => {
+    const buildReportResult = (modelText: string, answeredBy?: string, answeredByProvider?: 'nvidia'): AuditReportResult => {
       // Only the report's own table columns pass. No evidence block fills any other.
       // The copy each provider path writes to memory goes through the same gate.
       const text = gateReportText(modelText);
@@ -1100,7 +1100,7 @@ Strict Formatting Guidelines:
         sourceGraph,
         enterpriseTrust,
         rlmTrajectory,
-        answeredBy,
+        answeredBy, answeredByProvider,
       };
     };
 
@@ -1115,7 +1115,7 @@ Strict Formatting Guidelines:
           systemPrompt: ORACLE_SYSTEM_PROMPT,
           temperature: 0.3,
         });
-        return buildReportResult(result.text, result.fallback?.model);
+        return buildReportResult(result.text, result.fallback?.model, result.fallback?.provider);
       }
     } catch (e) {
       lastError = e;
@@ -1159,7 +1159,7 @@ Strict Formatting Guidelines:
           temperature: 0.2,
         });
         if (fallbackResult && fallbackResult.text && fallbackResult.text.trim()) {
-          return buildReportResult(fallbackResult.text, fallbackResult.fallback?.model);
+          return buildReportResult(fallbackResult.text, fallbackResult.fallback?.model, fallbackResult.fallback?.provider);
         }
       } catch (fallbackError) {
         console.warn('Audit generation aiProviderService fallback error:', fallbackError);
