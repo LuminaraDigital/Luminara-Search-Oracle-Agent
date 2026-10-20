@@ -40,8 +40,11 @@ describe('health-claim guardrail', () => {
     expect(guarded.text).toContain(HEALTH_CLAIM_WARNING);
     expect(guarded.text.startsWith(`Sea moss gel ${REMOVED_HEALTH_CLAIM}`)).toBe(true);
 
-    const seo = guardPasteReadyCopy('Rewrite the title to prevent thin content. Treat the homepage as the main page.');
+    const seo = guardPasteReadyCopy('Rewrite the title to prevent thin content. Treat the homepage as the main page. The technical health, site health, and health score stay as written.');
     expect(seo.changed).toBe(false);
+    expect(seo.text).toContain('technical health');
+    expect(seo.text).toContain('site health');
+    expect(seo.text).toContain('health score');
     expect(seo.text).toContain('prevent thin content');
     expect(seo.text).not.toContain(HEALTH_CLAIM_WARNING);
 
