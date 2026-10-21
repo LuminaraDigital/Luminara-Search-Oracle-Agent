@@ -12,6 +12,13 @@
 import type { Env } from './env';
 import { identify, json, secretEquals } from './workerUtils';
 
+const identifiedOnRequest = new WeakMap<Request, Awaited<ReturnType<typeof identify>>>();
+
+/** Identity guardApiRoute already resolved for this request, so the route does not look it up again. */
+export function identifiedForRequest(request: Request): Awaited<ReturnType<typeof identify>> | null {
+  return identifiedOnRequest.get(request) ?? null;
+}
+
 export const SESSION_COOKIE_NAME = '__session';
 export const SESSION_COOKIE_MAX_AGE = 14 * 24 * 3600; // 14 days
 
@@ -158,6 +165,9 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/trust\/receipts$/, methods: ['GET'] },
   { pattern: /^\/trust\/receipts\/[^/]+\/(visibility|revoke)$/, methods: ['POST'] },
   { pattern: /^\/trust\/domains(\/|$)/ },
+  { pattern: /^\/citation-watches(\/|$)/ },
+  { pattern: /^\/audit-receipts$/, methods: ['POST'] },
+  { pattern: /^\/audit-receipts\/[^/]+\/revoke$/, methods: ['POST'] },
   { pattern: /^\/auth\/quota$/, methods: ['GET'] },
   // /auth/link is not guarded here. guardApiRoute calls identify(), which upserts
   // each login. The link handler must reject a missing { confirm: true } before any
@@ -217,6 +227,7 @@ export async function guardApiRoute(request: Request, env: Env, path: string): P
 
   // Check identity (via __session cookie, Authorization Bearer, or Telegram initData)
   const who = await identify(request, env);
+  identifiedOnRequest.set(request, who);
   if (who.error || !who.user) {
     return json(
       {

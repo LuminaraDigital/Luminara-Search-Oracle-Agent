@@ -154,6 +154,27 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const citationWatches = await q<Record<string, unknown>>(
+    `SELECT id, client_id, domain, engine, prompts_json, cadence, active, created_at FROM citation_watches WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const citationWatchRuns = await q<Record<string, unknown>>(
+    `SELECT id, watch_id, engine, ran_at, measurement_status, verdict, cited_count, prompt_count, share, reason FROM citation_watch_runs WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const signedAuditReceipts = await q<Record<string, unknown>>(
+    `SELECT id, domain, payload_json, signature, kid, created_at, revoked_at, revoked_reason FROM signed_audit_receipts WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -180,6 +201,9 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'payment_support_requests',
       'community_feed_cards',
       'community_feed_votes',
+      'citation_watches',
+      'citation_watch_runs',
+      'signed_audit_receipts',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -213,6 +237,9 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     paymentSupportRequests,
     communityFeedCards,
     communityFeedVotes,
+    citationWatches,
+    citationWatchRuns,
+    signedAuditReceipts,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -282,6 +309,15 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   });
   // Free text the buyer wrote, with their Telegram id: nothing here is a financial record, so the rows go.
   await run('payment_support_requests', `DELETE FROM payment_support_requests WHERE account_id = ?`, accountId).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  await run('citation_watch_runs', `DELETE FROM citation_watch_runs WHERE account_id = ?`, accountId).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  await run('citation_watches', `DELETE FROM citation_watches WHERE account_id = ?`, accountId).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  await run('signed_audit_receipts', `DELETE FROM signed_audit_receipts WHERE account_id = ?`, accountId).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
