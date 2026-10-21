@@ -47,7 +47,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
             Replace tool sprawl with <span className="italic lx-gold-text pr-[0.08em]">one clear plan.</span>
           </>
         }
-        lede="Luminara Suite is for founders and small teams who need a clear plan for Google and AI answers without buying a full agency engagement or rebuilding their stack. Audit, labeled evidence, one next action, and optional IDE access when you grow into Growth."
+        lede="Luminara Suite is for real estate agencies that need a clear plan for Google and AI answers, without buying a full consultancy engagement or rebuilding their website."
       >
         <button type="button" onClick={onTerminal} className="lx-btn lx-btn-gold">
           Create free account

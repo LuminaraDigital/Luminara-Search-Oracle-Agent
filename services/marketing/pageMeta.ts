@@ -1,11 +1,14 @@
 /** Shared marketing page meta (browser + Worker). No DOM APIs. */
 
+import { listPriceSummary } from '../../components/paywall/planCopy';
 import { PAID_PLAN_PRICES } from '../../components/paywall/planPrices';
+import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../legal/consumerTerms';
 import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage';
 import { buildFaqPageJsonLd } from './marketingFaqContent';
+import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
 
-const HOME_META = `${HONEST_VISIBILITY_PROMISE} No invented scores.`;
+const HOME_META = `${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE} No invented scores.`;
 
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
 export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/og-image.png`;
@@ -25,7 +28,7 @@ const ORG_NODE = {
   '@type': 'Organization',
   '@id': `${MARKETING_ORIGIN}/#organization`,
   name: 'Luminara Digital',
-  url: 'https://luminaradigital.io',
+  url: COMPANY_SITE_URL,
   logo: `${MARKETING_ORIGIN}/icon-512.png`,
   sameAs: [
     'https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent',
@@ -100,7 +103,8 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     crawlerBody: `
 <section>
   <h1>Be the answer AI gives.</h1>
-  <p>${HONEST_VISIBILITY_PROMISE}</p>
+  <p>${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE}</p>
+  <p>Illustrative example, not a real agency and not a measurement: an independent agency, checked for a suburb question.</p>
   <p>Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
@@ -114,7 +118,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     <li><a href="/privacy">Privacy</a></li>
     <li><a href="/terms">Terms</a></li>
   </ul>
-  <p>Produced by <a href="https://luminaradigital.io">Luminara Digital</a>.</p>
+  <p>Produced by <a href="${COMPANY_SERVICES_URL}">Luminara Digital</a>.</p>
 </section>`,
   },
   '/methodology': {
@@ -191,12 +195,12 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/why',
     title: 'Why Luminara | Luminara Suite',
     description:
-      'Owner-first search and AI visibility audits: plain-English priorities, BYOK or hosted keys, without agency report theater.',
-    jsonLd: graph('/why', 'Why Luminara', 'Why owners choose Luminara Suite.'),
+      'For real estate agencies that need a clear plan for Google and AI answers, without a full consultancy engagement or a new website.',
+    jsonLd: graph('/why', 'Why Luminara', 'Why real estate agencies choose Luminara Suite.'),
     crawlerBody: `
 <section>
   <h1>Why Luminara</h1>
-  <p>Built for owners who need a clear plan for Google and AI answers without buying a full agency engagement.</p>
+  <p>Luminara Suite is for real estate agencies that need a clear plan for Google and AI answers, without buying a full consultancy engagement or rebuilding their website.</p>
   <ul>
     <li>Instant audits with ranked fixes</li>
     <li>Honest AEO signals (not invented scores)</li>
@@ -208,12 +212,12 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/pricing': {
     path: '/pricing',
     title: 'Pricing | Luminara Suite',
-    description:
-      'Free check of robots.txt and llms.txt. A full audit needs an account or your own keys. Starter, Growth, and Agency plans each have a published cap.',
-    jsonLd: graph('/pricing', 'Pricing', 'Plans: Free insight, Starter audits, Growth MCP and share, Agency API.'),
+    description: `${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}`,
+    jsonLd: graph('/pricing', 'Pricing', `${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}`),
     crawlerBody: `
 <section>
   <h1>Pricing</h1>
+  <p>${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}</p>
   <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account.</p>
   <p>Starter: web audits for a small site set. No MCP. No share links.</p>
   <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>

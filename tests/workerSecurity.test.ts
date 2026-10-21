@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
+import { listPriceSummary } from '../components/paywall/planCopy';
 import { STAGING_ROBOTS_TXT } from '../worker/crawlDocuments';
 import { publicPlanCatalogue } from '../worker/telegramBot';
 import {
@@ -520,7 +521,8 @@ describe('crawl surfaces', () => {
     expect(text).toContain('/docs/mcp.html');
     expect(text).toContain('/docs/what-is-aeo.html');
     expect(text).toContain('2,500 Stars');
-    expect(text).not.toMatch(/US\$\s?\d|\$\s?\d|\/mo\b|per month/i);
+    expect(text).toContain(listPriceSummary());
+    expect(text).not.toMatch(/\/mo\b|per month/i);
   });
 
   it('injects pricing meta into the marketing shell HTML', async () => {

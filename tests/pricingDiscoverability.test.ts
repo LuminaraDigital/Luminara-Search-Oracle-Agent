@@ -8,7 +8,7 @@ import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { TelegramAccountPanel } from '../components/telegram/TelegramAccountPanel';
 import { TelegramAccountTon } from '../components/telegram/TelegramAccountTon';
 import PricingPage, { planChoiceLine } from '../components/PricingPage';
-import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle } from '../components/paywall/planCopy';
+import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, listPriceSummary, planBullets, planTitle } from '../components/paywall/planCopy';
 import { PLANS } from '../worker/telegramBot';
 import { TON_PRICING } from '../worker/tonPayment';
 
@@ -64,15 +64,18 @@ describe('pricing page discoverability', () => {
     state.health = { ok: true, ton: false, jettonCheckout: false, stripeCheckout: false, plans: {} };
   });
 
-  it('names Stars alone, with no TON price, while TON checkout is closed', () => {
+  it('names Stars checkout and the shared USD list prices while TON checkout is closed', () => {
     const html = renderPricing();
     expect(html.split(CHECKOUT_TERM_LINE).length - 1).toBe(1);
+    expect(html.split(listPriceSummary()).length - 1).toBe(1);
     expect(html).toContain(TELEGRAM_STARS_HANDOFF);
     expect(html.split(TELEGRAM_STARS_HANDOFF).length - 1).toBe(1);
     expect(html).not.toContain('Pay with Telegram Stars inside the Mini App.');
     expect(html).toContain('Pay 2,500 Stars in Telegram');
     expect(html).not.toContain('Connect Wallet');
-    expect(html).not.toContain('US$');
+    expect(html).toContain(PAID_PLAN_PRICES.starter.usdLabel);
+    expect(html).toContain(PAID_PLAN_PRICES.growth.usdLabel);
+    expect(html).toContain(PAID_PLAN_PRICES.agency.usdLabel);
     expect(html).not.toContain('Subscribe');
     expect(html).not.toMatch(/card checkout/i);
     expect(html).toContain('2,500 Stars');

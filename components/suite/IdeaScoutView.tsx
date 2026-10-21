@@ -130,7 +130,7 @@ export const IdeaScoutView: React.FC<IdeaScoutViewProps> = ({ launchIdeaId, onRu
             onChange={(event) => setIdea(event.target.value)}
             maxLength={500}
             rows={4}
-            placeholder="A clinic booking tool that answers after-hours questions."
+            placeholder="A suburb page that answers who sells homes in [suburb]."
             className="mt-2 w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-gold"
           />
         </label>
@@ -140,7 +140,7 @@ export const IdeaScoutView: React.FC<IdeaScoutViewProps> = ({ launchIdeaId, onRu
             value={niche}
             onChange={(event) => setNiche(event.target.value)}
             maxLength={80}
-            placeholder="dental clinics"
+            placeholder="real estate agencies"
             className="mt-2 w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-gold"
           />
         </label>
