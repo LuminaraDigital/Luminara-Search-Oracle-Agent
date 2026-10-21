@@ -1,5 +1,6 @@
 import React from 'react';
 import { ICONS } from '../../constants';
+import { COMPANY_SERVICES_URL, LEGAL_ENTITY_LINE } from '../../services/legal/consumerTerms';
 
 interface MarketingFooterProps {
   statement?: string;
@@ -51,13 +52,14 @@ export const MarketingFooter: React.FC<MarketingFooterProps> = ({
       <p className="text-[12px] text-[var(--color-ink-2)]">
         &copy; {new Date().getFullYear()} Luminara Suite. Produced by{' '}
         <a
-          href="https://luminaradigital.io"
+          href={COMPANY_SERVICES_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center min-h-6 text-gold/80 hover:text-gold-light transition-colors"
         >
           Luminara Digital
         </a>
+        {` · ${LEGAL_ENTITY_LINE}`}
         {' · Melbourne'}
       </p>
     </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { completeWeeklyMission } from '../../services/referrals/referralClient';
+import { llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
 
 export interface ActionableFixInputFinding {
   id: string;
@@ -30,8 +31,7 @@ interface ActionableFixListProps {
 }
 
 export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, findings, onFixCompleted }) => {
-  const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') || 'yourdomain.com';
-  const brandName = cleanDomain.split('.')[0] ? cleanDomain.split('.')[0].charAt(0).toUpperCase() + cleanDomain.split('.')[0].slice(1) : 'YourBrand';
+  const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '') || 'yourdomain.com';
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [completedFixes, setCompletedFixes] = useState<Record<string, boolean>>(() => {
@@ -53,19 +53,7 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
       difficulty: 'Easy',
       description: 'AI answer engines prefer concise markdown at /llms.txt to accurately summarize your core offerings without hallucinations.',
       filename: '/llms.txt',
-      snippet: `# ${brandName}
-> ${brandName} is a leading solution for modern teams.
-
-## Core Products & Services
-- Primary Offering: Verified AI visibility, tracking, and discovery optimization.
-- Target Audience: Fast-growing startups, agencies, and businesses looking to get recommended.
-- Official Website: https://${cleanDomain}
-- Contact & Support: https://${cleanDomain}/contact
-
-## Key Facts
-- Founded with verifiable evidence-based methodology.
-- Direct integrations with modern developer and search workflows.
-`,
+      snippet: llmsTxtDraft(domain),
     },
     {
       id: 'fix-schema-org',
@@ -75,23 +63,11 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
       difficulty: 'Easy',
       description: 'Search engines use JSON-LD entities to ground knowledge graph associations. Paste this into your website <head>.',
       filename: '<head> JSON-LD script',
-      snippet: `<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  "name": "${brandName}",
-  "url": "https://${cleanDomain}",
-  "description": "Verified business entity providing solutions for modern search and AI discovery.",
-  "sameAs": [
-    "https://twitter.com/${cleanDomain.split('.')[0]}",
-    "https://linkedin.com/company/${cleanDomain.split('.')[0]}"
-  ]
-}
-</script>`,
+      snippet: `<script type="application/ld+json">\n${organizationJsonLd(domain)}\n</script>`,
     },
     {
       id: 'fix-robots-txt',
-      title: 'Allow Verified AI Engine Crawlers in robots.txt',
+      title: 'Allow AI crawlers in robots.txt',
       targetEngine: 'GPTBot, PerplexityBot & ClaudeBot',
       timeEstimate: '3 min',
       difficulty: 'Easy',

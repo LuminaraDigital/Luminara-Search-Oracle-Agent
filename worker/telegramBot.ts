@@ -469,7 +469,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         text:
           '*Luminara Suite - Privacy Policy & Data Rights*\n\n' +
           'We value your privacy and transparency. Here is how personal data is handled:\n\n' +
-          '• *Controller:* Luminara Digital Agency (Contact: `privacy@luminarasuite.com`)\n' +
+          '• *Controller:* Luminara Digital Pty Ltd (ABN 90 693 125 281). Contact: `privacy@luminarasuite.com`\n' +
           '• *Telegram Data:* We receive your signed Telegram user ID, username, and language to identify your session and meter usage. We never receive or store payment cards or phone numbers.\n' +
           '• *Payments:* Plans bought here are paid in Telegram Stars and processed by Telegram. No credit card information is collected.\n' +
           '• *Audits & Prompts:* Audit domains and queries are processed via configured AI models (Groq, NVIDIA NIM, Gemini, OpenRouter) to deliver search intelligence.\n' +
@@ -791,7 +791,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         return;
       }
 
-      const limit = Number(env.FREE_DAILY_LIMIT || 0);
+      const limit = Number(env.FREE_DAILY_LIMIT || 3);
       if (limit > 0 && env.LUMINARA_KV) {
         const day = new Date().toISOString().slice(0, 10);
         const quotaKey = `quota:${accountId}:${day}`;

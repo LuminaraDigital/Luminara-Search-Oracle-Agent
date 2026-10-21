@@ -167,16 +167,6 @@ const REFUSED_REQUESTS: Array<{ name: string; refusal: string; body: Record<stri
     body: { messages: [{ role: 'user', content: [{ type: 'text', text: 'Ping' }] }] },
   },
   {
-    name: 'a prompt over the budget',
-    refusal: 'prompt_too_long',
-    body: {
-      messages: [
-        { role: 'system', content: 'a'.repeat(WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET) },
-        { role: 'user', content: 'b' },
-      ],
-    },
-  },
-  {
     name: 'a parameter it would have to ignore (stop)',
     refusal: 'unsupported_parameter',
     body: { messages: [USER], stop: ['\n'] },
@@ -312,8 +302,10 @@ describe('Workers AI fallback (SW0a-11)', () => {
 
         // One more character goes over the budget, at a third of the budget in characters.
         const over = planWorkersAiChatFallback({ messages: [{ role: 'user', content: cjk.repeat(fits + 1) }] });
-        expect(over.ok).toBe(false);
-        expect(over).toMatchObject({ refusal: 'prompt_too_long', prompt: { chars: fits + 1, units: (fits + 1) * 3 } });
+        expect(over.ok).toBe(true);
+        if (!over.ok) return;
+        expect(over.plan.messages[0].content).toBe(cjk.repeat(fits));
+        expect(over.prompt.units).toBeLessThanOrEqual(WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET);
         expect(fits + 1).toBeLessThan(WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET / 2);
       });
 
@@ -547,33 +539,24 @@ describe('Workers AI fallback (SW0a-11)', () => {
       expect(refusedEvents(log)[0].refusal).toBe(refusal);
     });
 
-    it('logs one refusal event with the rule and the size of the prompt, and no prompt text', async () => {
+    it('truncates a prompt over the budget and still calls the binding, with no prompt text in the log', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-      const mockAi: Ai = { run: vi.fn() };
+      const run = vi.fn().mockResolvedValue({ response: 'short answer' });
+      const mockAi: Ai = { run };
       const long = `${PROMPT} `.repeat(200);
 
-      await runWorkersAiChatFallback(
+      const outcome = await runWorkersAiChatFallback(
         mockAi,
         { messages: [{ role: 'system', content: long }, { role: 'user', content: PROMPT }], user: 'tg_999' },
         { reason: 'upstream_5xx', upstreamStatus: 503 },
       );
 
-      const events = refusedEvents(log);
-      expect(events).toHaveLength(1);
-      // The whole event is these fields: a rule, a known field name or null, and numbers.
-      expect(events[0]).toEqual({
-        event: 'workers_ai_fallback_refused',
-        provider: 'workers-ai',
-        model: '@cf/meta/llama-3.1-8b-instruct-fast',
-        reason: 'upstream_5xx',
-        upstream_status: 503,
-        refusal: 'prompt_too_long',
-        parameter: null,
-        prompt_chars: long.length + PROMPT.length,
-        prompt_budget_units: long.length + PROMPT.length,
-        budget: WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET,
-      });
-      expect(log.mock.calls).toHaveLength(1);
+      expect(outcome.answered).toBe(true);
+      expect(refusedEvents(log)).toHaveLength(0);
+      expect(run).toHaveBeenCalledTimes(1);
+      const sent = run.mock.calls[0][1] as { messages: Array<{ content: string }> };
+      const units = sent.messages.reduce((sum, message) => sum + new TextEncoder().encode(message.content).length, 0);
+      expect(units).toBeLessThanOrEqual(WORKERS_AI_FALLBACK_PROMPT_CHAR_BUDGET);
       expect(everythingLogged(log)).not.toContain(PROMPT);
       expect(everythingLogged(log)).not.toContain('tg_999');
     });
@@ -911,8 +894,22 @@ describe('Workers AI fallback (SW0a-11)', () => {
       });
     });
 
-    describe('never on a 4xx', () => {
-      it.each([400, 404, 413, 422])(
+    describe('hosted groq chat falls through on a model rejection', () => {
+      it.each([400, 404, 408])('answers an upstream %i with the backup model', async (status) => {
+        globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));
+        const mockAi = answeringAi();
+
+        const res = await callGroq(createTestEnv({ AI: mockAi }));
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('x-provider-fallback')).toBe('workers-ai');
+        expect(res.headers.get('x-provider-fallback-reason')).toBe('upstream_4xx');
+        expect(mockAi.run).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('never on a body or validation error', () => {
+      it.each([413, 422])(
         'returns an upstream %i as itself, with its own body and headers',
         async status => {
           globalThis.fetch = vi.fn().mockResolvedValue(upstreamError(status));

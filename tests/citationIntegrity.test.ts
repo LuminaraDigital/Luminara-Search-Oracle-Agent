@@ -3,6 +3,7 @@ import {
   brandOverlapScore,
   detectSameAsConflict,
   citationIntegrityService,
+  isUnmeasuredReviewUrl,
 } from '../services/audit/citationIntegrityService';
 import type { EmpiricalCitationSummary } from '../services/audit/empiricalCitationService';
 
@@ -82,5 +83,55 @@ describe('citationIntegrityService', () => {
     expect(result.integrityScore).toBeLessThanOrEqual(100);
     expect(result.details).toHaveLength(2);
     expect(['low', 'medium', 'high']).toContain(result.spoofRisk);
+  });
+
+  it('does not fetch Trustpilot or score it as a dead citation', async () => {
+    const urls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return { ok: true, status: 200 } as Response;
+    });
+    const summary: EmpiricalCitationSummary = {
+      targetDomain: 'movida.com.au',
+      brandName: 'MoVida',
+      citationRatePercent: 33,
+      queriesCitedCount: 1,
+      totalQueriesTested: 3,
+      entityClarityScore: 40,
+      topCitedCompetitor: null,
+      lastAudited: Date.now(),
+      evidenceList: [
+        {
+          id: '1',
+          query: 'movida reviews',
+          intent: 'commercial',
+          brandCited: true,
+          brandRank: 2,
+          competitorsCited: [],
+          snippet: 'MoVida restaurant',
+          citedUrl: 'https://www.trustpilot.com/review/movida.com.au',
+          citationConfidence: 50,
+        },
+        {
+          id: '2',
+          query: 'movida melbourne',
+          intent: 'informational',
+          brandCited: true,
+          brandRank: 1,
+          competitorsCited: [],
+          snippet: 'MoVida official',
+          citedUrl: 'https://www.movida.com.au/',
+          citationConfidence: 80,
+        },
+      ],
+    };
+    expect(isUnmeasuredReviewUrl('https://www.trustpilot.com/review/movida.com.au')).toBe(true);
+    const result = await citationIntegrityService.evaluate(summary, {
+      brandName: 'MoVida',
+      domain: 'movida.com.au',
+    });
+    expect(urls.some((url) => url.includes('trustpilot.com'))).toBe(false);
+    expect(result.details.map((detail) => detail.url)).toEqual(['https://www.movida.com.au/']);
+    expect(result.deadCitationCount).toBe(0);
   });
 });

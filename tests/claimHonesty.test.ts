@@ -13,9 +13,22 @@ import { MARKETING_SHELL_BY_PATH } from '../services/marketing/pageMeta';
 import { LLMS_TXT } from '../worker/crawlDocuments';
 import { STRIPE_PLAN_CONFIG } from '../worker/stripePayment';
 import { PLANS } from '../worker/telegramBot';
+import { PRIVACY_HTML } from '../worker/privacyPolicy';
 import { TERMS_HTML } from '../worker/termsPolicy';
+import { MarketingFooter } from '../components/marketing/MarketingFooter';
 
 const BANNED_PLAN_CLAIM = [/unlimited/i, /team seats/i, /\b24\/7\b/, /\bre-audits\b/];
+const ABN_WEIGHTS = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19];
+
+/** ATO checksum: subtract 1 from the first digit, apply the weights, sum mod 89 is 0. */
+function abnChecksumOk(abn: string): boolean {
+  const digits = abn.replace(/\s/g, '');
+  if (!/^\d{11}$/.test(digits)) return false;
+  const nums = digits.split('').map((char) => Number(char));
+  nums[0] -= 1;
+  const sum = nums.reduce((total, digit, index) => total + digit * ABN_WEIGHTS[index], 0);
+  return sum % 89 === 0;
+}
 
 function paragraphs(text: string): string[] {
   return text.split(/\n\s*\n/);
@@ -103,23 +116,40 @@ describe('claim honesty', () => {
     expect(PLANS.single_audit.description).toMatch(/Not measured/);
   });
 
-  it('keeps Australian Consumer Law rights and hides a blank ABN', () => {
-    expect(LEGAL_ABN).toBe('');
-    expect(legalAbnLine()).toBe('');
+  it('keeps Australian Consumer Law rights and shows the operator ABN', () => {
+    expect(LEGAL_ABN).toBe('90 693 125 281');
+    expect(abnChecksumOk(LEGAL_ABN)).toBe(true);
+    expect(abnChecksumOk('90693125282')).toBe(false);
+    expect(legalAbnLine()).toBe('ABN 90 693 125 281');
     expect(legalAbnLine('  ')).toBe('');
     expect(legalAbnLine('12 345 678 901')).toBe('ABN 12 345 678 901');
     expect(TERMS_HTML).toContain(ACL_RIGHTS_CLAUSE);
     expect(TERMS_HTML).toContain('Subject to the Australian Consumer Law, the service is provided as is.');
     expect(TERMS_HTML).toContain('contact support@luminarasuite.com first');
     expect(TERMS_HTML).toContain("Telegram's process is how a Stars refund is paid");
-    expect(TERMS_HTML).not.toMatch(/\bABN\b/);
+    expect(TERMS_HTML).toContain('ABN 90 693 125 281');
+    expect(PRIVACY_HTML).toContain('ABN 90 693 125 281');
     expect(TERMS_HTML).not.toContain("Refunds for Stars follow Telegram's policy");
     expect(TERMS_HTML).not.toContain('non-refundable once settled');
     expect(TERMS_HTML).not.toContain('Where TON checkout is offered');
-    const html = renderToStaticMarkup(createElement(LegalPage, { kind: 'terms', onBack: () => {} }));
-    expect(html).toContain(ACL_RIGHTS_CLAUSE);
-    expect(html).toContain('Subject to the Australian Consumer Law, the service is provided as is.');
-    expect(html).not.toMatch(/\bABN\b/);
-    expect(html).not.toContain('Where TON checkout is offered');
+    const terms = renderToStaticMarkup(createElement(LegalPage, { kind: 'terms', onBack: () => {} }));
+    const privacy = renderToStaticMarkup(createElement(LegalPage, { kind: 'privacy', onBack: () => {} }));
+    expect(terms).toContain(ACL_RIGHTS_CLAUSE);
+    expect(terms).toContain('Subject to the Australian Consumer Law, the service is provided as is.');
+    expect(terms).toContain('ABN 90 693 125 281');
+    expect(privacy).toContain('ABN 90 693 125 281');
+    expect(terms).not.toContain('Where TON checkout is offered');
+    const footer = renderToStaticMarkup(createElement(MarketingFooter));
+    expect(footer).toContain('Luminara Digital');
+    expect(footer).toContain('Luminara Digital Pty Ltd (ABN 90 693 125 281)');
+    expect(footer).toContain('https://luminara.digital/services/');
+    expect(footer).toContain('ABN 90 693 125 281');
+    expect(footer).toContain('Melbourne');
+    expect(footer).not.toMatch(/GST/i);
+    expect(TERMS_HTML).toContain('Luminara Digital Pty Ltd (ABN 90 693 125 281)');
+    expect(TERMS_HTML).not.toContain('Luminara Digital Agency');
+    expect(PRIVACY_HTML).toContain('Luminara Digital Pty Ltd (ABN 90 693 125 281)');
+    expect(PRIVACY_HTML).not.toContain('Luminara Digital Agency');
+    expect(terms).not.toMatch(/GST/i);
   });
 });

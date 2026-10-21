@@ -55,7 +55,7 @@ export function deferRenderBlockingCss(html: string): string {
 }
 
 /**
- * Meta plus, on / and /pricing, a visible hero so the lede paints before JS.
+ * Meta plus, on /, /pricing, and /methodology, a visible hero so the lede paints before JS.
  * shortcut: /real-estate-ready is not a route, so it gets no hero.
  */
 export function applyMarketingDocument(html: string, page: MarketingShellMeta): string {

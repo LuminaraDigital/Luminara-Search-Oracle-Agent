@@ -11,6 +11,7 @@ import { buildChatMessages } from '../../chat/messages';
 import {
   GROQ_DEFAULT_MODEL,
   groqModelCandidates,
+  isHostedRateLimit,
   isMissingModelStatus,
 } from '../nativeModelDefaults';
 import { parseOpenAiSseStream } from '../../../utils/sse';
@@ -18,8 +19,39 @@ import { BaseAIProvider } from './BaseAIProvider';
 import { applyToolsToChatBody, parseToolCallsFromMessage } from '../openaiTools';
 import { readFallbackAnswer } from '../fallbackAnswer';
 
-function isGroqModelMissingStatus(status: number, body: string): boolean {
-  return isMissingModelStatus(status, body);
+/** A missing model and a per-model token cap both have another candidate. The last candidate stops. */
+function shouldTryNextGroqModel(status: number, body: string, model: string, models: readonly string[]): boolean {
+  if (model === models[models.length - 1]) return false;
+  return isMissingModelStatus(status, body) || isHostedRateLimit(status, body);
+}
+
+const GROQ_TOKEN_MARGIN = 80;
+
+/** One wait, and only for a large call. Groq names the second the cap will allow that request. */
+function groqRetryDelayMs(body: string): number | null {
+  const delay = /try again in ([0-9.]+)s/i.exec(body);
+  const requested = /Requested (\d+)/.exec(body);
+  if (!delay || !requested || Number(requested[1]) < 6000) return null;
+  const seconds = Number(delay[1]);
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 55) return null;
+  return Math.ceil(seconds * 1000) + 750;
+}
+
+/**
+ * Groq's on_demand cap is per model and counts the completion budget up front.
+ * Shrink max_tokens when the prompt fits the room that is left. A prompt that
+ * does not fit returns null so the caller tries the next model.
+ */
+function shrunkGroqMaxTokens(body: string, maxTokens: number): number | null {
+  const limit = /Limit (\d+)/.exec(body);
+  const requested = /Requested (\d+)/.exec(body);
+  if (!limit || !requested) return null;
+  const used = /Used (\d+)/.exec(body);
+  const room = Number(limit[1]) - (used ? Number(used[1]) : 0) - GROQ_TOKEN_MARGIN;
+  const prompt = Number(requested[1]) - maxTokens;
+  const next = room - prompt;
+  if (next < 256 || next >= maxTokens) return null;
+  return next;
 }
 
 /**
@@ -59,12 +91,13 @@ export class GroqProvider extends BaseAIProvider {
     const models = groqModelCandidates(options?.model);
     const acceptFallback = Boolean(options?.allowFallback);
 
-    const doFetch = async (apiKey: string, model: string) => {
+    const startingMax = options?.maxTokens ?? this.config.maxTokens;
+    const doFetch = async (apiKey: string, model: string, maxTokens: number) => {
       const body: any = {
         model,
         messages,
         temperature: options?.temperature ?? this.config.temperature,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens,
+        max_tokens: maxTokens,
       };
 
       if (options?.jsonMode) {
@@ -85,32 +118,58 @@ export class GroqProvider extends BaseAIProvider {
     let response: Response | null = null;
     let lastErrText = '';
     let usedModel = models[0];
+    let waited = false;
 
     for (const model of models) {
       usedModel = model;
       let apiKey = key || fallbackKey;
-      try {
-        response = await doFetch(apiKey, model);
-        if ((response.status === 429 || response.status === 402 || response.status === 401) && fallbackKey && key !== fallbackKey) {
-          console.warn(`[Groq] Received status ${response.status} on primary key, rotating to fallback key...`);
-          response = await doFetch(fallbackKey, model);
-          apiKey = fallbackKey;
+      let maxTokens = startingMax;
+      let shrunk = false;
+      let tryNextModel = false;
+      while (!tryNextModel) {
+        try {
+          response = await doFetch(apiKey, model, maxTokens);
+          if ((response.status === 429 || response.status === 402 || response.status === 401) && fallbackKey && key !== fallbackKey) {
+            console.warn(`[Groq] Received status ${response.status} on primary key, rotating to fallback key...`);
+            response = await doFetch(fallbackKey, model, maxTokens);
+            apiKey = fallbackKey;
+          }
+        } catch (e: any) {
+          if (fallbackKey && key !== fallbackKey) {
+            response = await doFetch(fallbackKey, model, maxTokens);
+          } else {
+            throw e;
+          }
         }
-      } catch (e: any) {
-        if (fallbackKey && key !== fallbackKey) {
-          response = await doFetch(fallbackKey, model);
-        } else {
-          throw e;
-        }
-      }
 
-      if (response.ok) break;
-      lastErrText = await response.text();
-      if (isGroqModelMissingStatus(response.status, lastErrText) && model !== models[models.length - 1]) {
-        console.warn(`[Groq] Model ${model} unavailable (${response.status}); trying next candidate...`);
-        continue;
+        if (response.ok) break;
+        lastErrText = await response.text();
+        if (!waited && isHostedRateLimit(response.status, lastErrText)) {
+          const delay = groqRetryDelayMs(lastErrText);
+          if (delay) {
+            waited = true;
+            console.warn(`[Groq] Token cap on ${model}; retrying in ${delay}ms.`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
+        }
+        const smaller = !shrunk && isHostedRateLimit(response.status, lastErrText)
+          ? shrunkGroqMaxTokens(lastErrText, maxTokens)
+          : null;
+        if (smaller) {
+          shrunk = true;
+          maxTokens = smaller;
+          console.warn(`[Groq] Model ${model} over the token cap; retrying with max_tokens ${smaller}.`);
+          continue;
+        }
+        if (shouldTryNextGroqModel(response.status, lastErrText, model, models)) {
+          console.warn(`[Groq] Model ${model} unavailable (${response.status}); trying next candidate...`);
+          tryNextModel = true;
+          break;
+        }
+        throw new Error(`Groq inference error (${response.status}): ${lastErrText}`);
       }
-      throw new Error(`Groq inference error (${response.status}): ${lastErrText}`);
+      if (response?.ok) break;
     }
 
     if (!response || !response.ok) {
@@ -124,7 +183,10 @@ export class GroqProvider extends BaseAIProvider {
     const fallback =
       marker && data.choices?.[0]?.finish_reason === 'length' ? { ...marker, truncated: true } : marker;
 
-    const text = data.choices?.[0]?.message?.content || '';
+    const message = data.choices?.[0]?.message;
+    const content = typeof message?.content === 'string' ? message.content : '';
+    const reasoning = typeof message?.reasoning === 'string' ? message.reasoning : '';
+    const text = content.trim() ? content : reasoning;
     const toolCalls = parseToolCallsFromMessage(data.choices?.[0]?.message);
     const latencyMs = Date.now() - startTime;
     const usage = data.usage || {};
@@ -190,7 +252,7 @@ export class GroqProvider extends BaseAIProvider {
 
       if (response.ok && response.body) break;
       lastErrText = await response.text();
-      if (isGroqModelMissingStatus(response.status, lastErrText) && model !== models[models.length - 1]) {
+      if (shouldTryNextGroqModel(response.status, lastErrText, model, models)) {
         console.warn(`[Groq] Model ${model} unavailable (${response.status}); trying next candidate...`);
         continue;
       }

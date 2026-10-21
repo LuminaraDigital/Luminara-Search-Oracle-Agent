@@ -20,7 +20,6 @@ import { themingService } from './services/harness/themingService';
 import { agentMatrixService } from './services/harness/agentMatrixService';
 import { reminderService } from './services/harness/reminderService';
 import { NativeEngineHUD } from './components/llm/NativeEngineHUD';
-import { NativeFailoverPopup } from './components/llm/NativeFailoverPopup';
 import { ICONS } from './constants';
 import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
@@ -531,7 +530,6 @@ const App: React.FC = () => {
           />
         )}
       </Suspense>
-      <NativeFailoverPopup />
     </>
   );
 
@@ -1862,8 +1860,6 @@ const App: React.FC = () => {
         )}
       </Suspense>
 
-      {/* Real-time Native LLM Failover Floating Pop-up */}
-      <NativeFailoverPopup />
       <LockScreenOverlay />
       {confirmModal}
     </div>

@@ -276,6 +276,82 @@ describe('hosted Groq chat falls through NVIDIA', () => {
     expect((await res.json() as { choices: { message: { content: string } }[] }).choices[0].message.content).toBe('paid fallback');
   });
 
+  it('answers a Groq token cap with NVIDIA', async () => {
+    const hosts: string[] = [];
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      hosts.push(url);
+      if (url.includes('api.groq.com')) {
+        return new Response(JSON.stringify({
+          error: {
+            message: 'Rate limit reached for model `openai/gpt-oss-120b` on tokens per minute (TPM): Limit 8000, Requested 6057.',
+            code: 'rate_limit_exceeded',
+          },
+        }), { status: 429, headers: { 'content-type': 'application/json' } });
+      }
+      const body = JSON.parse(String(init?.body || '{}')) as { model?: string };
+      expect(body.model).toBe(NVIDIA_FALLBACK_MODEL);
+      return nvidiaReply('NVIDIA audit');
+    });
+    const res = await proxyProvider(chatRequest(51, chatBody), env(createMockKv(), {
+      GROQ_API_KEY: 'gsk_primary',
+    }), 'groq', '/chat/completions');
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-provider-fallback')).toBe('nvidia');
+    expect(res.headers.get('x-provider-fallback-model')).toBe(NVIDIA_FALLBACK_MODEL);
+    expect((await res.json() as { choices: { message: { content: string } }[] }).choices[0].message.content).toBe('NVIDIA audit');
+    expect(hosts.some((url) => url.includes('api.groq.com'))).toBe(true);
+    expect(hosts.some((url) => url.includes('integrate.api.nvidia.com'))).toBe(true);
+  });
+
+  it('answers a Groq 413 token cap with NVIDIA', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('api.groq.com')) {
+        return new Response(JSON.stringify({
+          error: { message: 'Request too large', code: 'rate_limit_exceeded' },
+        }), { status: 413, headers: { 'content-type': 'application/json' } });
+      }
+      return nvidiaReply('NVIDIA after 413');
+    });
+    const res = await proxyProvider(chatRequest(52, chatBody), env(createMockKv(), {
+      GROQ_API_KEY: 'gsk_primary',
+    }), 'groq', '/chat/completions');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-provider-fallback')).toBe('nvidia');
+    expect((await res.json() as { choices: { message: { content: string } }[] }).choices[0].message.content).toBe('NVIDIA after 413');
+  });
+
+  it('answers with Workers AI when NVIDIA fails on a long audit prompt', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('integrate.api.nvidia.com')) {
+        return new Response(JSON.stringify({ error: { message: 'nvidia down' } }), { status: 500 });
+      }
+      return new Response(JSON.stringify({
+        error: { message: 'Rate limit reached on tokens per minute', code: 'rate_limit_exceeded' },
+      }), { status: 429 });
+    });
+    const ai = answeringAi('Workers AI audit');
+    const long = 'measured fact. '.repeat(2_000);
+    const res = await proxyProvider(chatRequest(53, {
+      model: 'openai/gpt-oss-120b',
+      messages: [{ role: 'user', content: long }],
+    }), env(createMockKv(), {
+      GROQ_API_KEY: 'gsk_primary',
+      AI: ai,
+    }), 'groq', '/chat/completions');
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-provider-fallback')).toBe('workers-ai');
+    expect((await res.json() as { choices: { message: { content: string } }[] }).choices[0].message.content).toBe('Workers AI audit');
+    expect(ai.run).toHaveBeenCalledOnce();
+    const sent = (ai.run as ReturnType<typeof vi.fn>).mock.calls[0][1] as { messages: Array<{ content: string }> };
+    const units = sent.messages.reduce((sum, message) => sum + new TextEncoder().encode(message.content).length, 0);
+    expect(units).toBeLessThanOrEqual(8_000);
+    expect(long.length).toBeGreaterThan(8_000);
+  });
+
   it('names NVIDIA on the marker the chat reads', () => {
     const info = readFallbackAnswer(new Headers({
       'x-provider-fallback': 'nvidia',

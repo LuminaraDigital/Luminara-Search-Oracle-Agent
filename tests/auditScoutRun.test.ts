@@ -63,7 +63,7 @@ async function mint(env: Env, id = 11, domain = 'https://movida.com.au') {
     body: JSON.stringify({ domain }),
   }), env);
   const body = await res.json() as { ok: boolean; token?: string; domain?: string; error?: string };
-  return { status: res.status, body };
+  return { status: res.status, body, headers: res.headers };
 }
 
 function providerCall(token: string, domain: string, userId = 11, url = 'https://movida.com.au') {
@@ -99,6 +99,8 @@ describe('one Instant Audit run', () => {
     expect(opened.status).toBe(200);
     expect(opened.body.domain).toBe('movida.com.au');
     expect(quotaUsed(kv)).toBe('1');
+    expect(opened.headers.get('x-quota-limit')).toBe('25');
+    expect(opened.headers.get('x-quota-remaining')).toBe('24');
 
     for (let i = 0; i < 3; i++) {
       const res = await proxyProvider(

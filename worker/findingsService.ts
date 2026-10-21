@@ -163,7 +163,9 @@ export async function handleFindingsRoute(
       const stableKey =
         (item.stableKey && String(item.stableKey).slice(0, 64)) ||
         findingStableKey(domain, category, title);
-      const id = (item.id && String(item.id).slice(0, 64)) || randomId('fnd');
+      // Crew ids such as finding-schema-org are the same for every account.
+      // The primary key is global, so a second account's insert throws and /findings/bulk returns 500.
+      const id = randomId('fnd');
       let evidenceJson: string | null = null;
       if (item.evidence !== undefined) {
         try {

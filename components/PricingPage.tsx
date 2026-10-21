@@ -11,7 +11,7 @@ import { getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
-import { CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
+import { CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, listPriceSummary, planBullets, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
 import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
 
 export { pricingTiers };
@@ -82,6 +82,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
       />
       <p className="lx-enter-rise lx-d4 mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
         {CHECKOUT_TERM_LINE}{tonClause}
+      </p>
+      <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
+        {listPriceSummary()}
       </p>
 
       <section aria-labelledby="plans-heading" className="lx-enter-rise lx-d5 mt-16 sm:mt-20">

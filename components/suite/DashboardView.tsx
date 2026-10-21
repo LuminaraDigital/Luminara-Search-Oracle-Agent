@@ -78,14 +78,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       view: AppView.BUSINESS_DNA,
       cta: 'Set profile',
     },
-    {
-      id: 'step_save_project',
-      title: '3. Save to a project',
-      desc: 'Sign in to keep strategy and reports on the hosted project, not only in this browser.',
-      done: hasSavedProject,
-      view: AppView.INSTANT_AUDIT,
-      cta: 'Continue in audit',
-    },
+    ...(signedIn
+      ? []
+      : [
+          {
+            id: 'step_save_project',
+            title: '3. Save to a project',
+            desc: 'Sign in to keep strategy and reports on the hosted project, not only in this browser.',
+            done: hasSavedProject,
+            view: AppView.INSTANT_AUDIT,
+            cta: 'Continue in audit',
+          },
+        ]),
   ];
 
   const completedStepsCount = onboardingSteps.filter((s) => s.done).length;
@@ -256,17 +260,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
                   Guided Onboarding
                 </span>
                 <span className="text-[11px] font-mono px-2 py-0.5 bg-black/60 text-[var(--gold-light)] border border-[var(--color-rule-strong)]">
-                  {completedStepsCount} of 3 completed
+                  {completedStepsCount} of {onboardingSteps.length} completed
                 </span>
               </div>
               <p className="text-xs text-[var(--color-ink-2)] mt-1">
-                Three steps: audit, profile, then save to a project.
+                {signedIn ? 'Two steps: audit, then a business profile.' : 'Three steps: audit, profile, then save to a project.'}
               </p>
             </div>
             <div className="w-full sm:w-36 h-2 bg-black/60 border border-[var(--color-rule)] overflow-hidden shrink-0">
               <div
                 className="h-full bg-[var(--color-accent)] transition-all duration-500"
-                style={{ width: `${(completedStepsCount / 3) * 100}%` }}
+                style={{ width: `${(completedStepsCount / onboardingSteps.length) * 100}%` }}
               />
             </div>
           </div>

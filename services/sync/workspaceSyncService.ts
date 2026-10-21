@@ -3,7 +3,7 @@
  * signed-in account so logging back in restores DNA, audits, VFS, chat, and keys.
  */
 import {
-  accountCallsAllowed,
+  accountKnownSignedIn,
   apiBase,
   fetchWorkspace,
   putWorkspaceRemote,
@@ -234,7 +234,7 @@ let lastPushFailedAt = 0;
 export async function flushWorkspacePush(force = false): Promise<void> {
   if (!apiBase() || typeof window === 'undefined') return;
   // Guests have no account workspace; local state stays local until they sign in.
-  if (!accountCallsAllowed()) return;
+  if (!accountKnownSignedIn()) return;
   // If recently rate-limited (within 10s), back off
   if (Date.now() - lastPushFailedAt < 10_000 && !force) return;
 

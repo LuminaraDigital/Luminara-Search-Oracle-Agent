@@ -719,10 +719,6 @@ export function updateQuotaFromHeaders(headers: Headers): void {
   }
 }
 
-/**
- * App-level sign-in state. Quota waits until this is true so a guest load
- * does not call /api/auth/quota. Other account calls use accountCallsAllowed.
- */
 let accountSignedIn: boolean | null = null;
 
 export function setAccountSignedIn(value: boolean | null): void {
@@ -732,6 +728,10 @@ export function setAccountSignedIn(value: boolean | null): void {
 /** False only when auth has resolved and nobody is signed in. */
 export function accountCallsAllowed(): boolean {
   return accountSignedIn !== false;
+}
+
+export function accountKnownSignedIn(): boolean {
+  return accountSignedIn === true;
 }
 
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {

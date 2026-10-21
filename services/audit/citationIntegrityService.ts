@@ -41,6 +41,33 @@ export function brandOverlapScore(brandName: string, haystack: string): number {
   return Math.round((hits / brandTokens.length) * 100);
 }
 
+const REVIEW_HOSTS = [
+  'trustpilot.com',
+  'yelp.com',
+  'productreview.com.au',
+  'tripadvisor.com',
+  'capterra.com',
+  'g2.com',
+];
+
+/** Review-site profiles are not measured here. The browser must not fetch them. */
+export function isUnmeasuredReviewUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    return REVIEW_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  } catch {
+    return false;
+  }
+}
+
+const REVIEW_LABEL = new RegExp(`\\b(?:${REVIEW_HOSTS.map((host) => host.split('.')[0]).join('|')})\\b`, 'i');
+const REVIEW_SCORE = /\b(?:rated|rating|stars?)\b|\d+(?:\.\d+)?\s*\/\s*(?:5|10)\b/i;
+
+/** A review-site score in text we did not measure. A snippet that quotes it is still not a measurement. */
+export function isUnmeasuredReviewRating(text: string): boolean {
+  return REVIEW_LABEL.test(text) && REVIEW_SCORE.test(text);
+}
+
 async function urlAlive(url: string): Promise<boolean> {
   // Browser-side probe only: scheme/host allowlist (no DoH). Worker SSRF uses fetchPublicUrl.
   try {
@@ -144,7 +171,7 @@ export class CitationIntegrityService {
     let measuredUrls = 0;
 
     for (const ev of summary.evidenceList) {
-      if (!ev.citedUrl) continue;
+      if (!ev.citedUrl || isUnmeasuredReviewUrl(ev.citedUrl)) continue;
       measuredUrls += 1;
       const alive = await urlAlive(ev.citedUrl);
       if (!alive) deadCitationCount += 1;

@@ -29,6 +29,7 @@ import { publicApisEnrichmentService } from '../services/enrichment/publicApisEn
 import { writingQualityService } from '../services/audit/writingQualityService';
 import { trafficInsightsService } from '../services/analytics/trafficInsightsService';
 import { configService } from '../services/configService';
+import { GroqProvider } from '../services/llm/providers/GroqProvider';
 import { auditReportEvidenceFetch, geminiService } from '../services/geminiService';
 import { siteEvidencePackService } from '../services/scraping/siteEvidencePack';
 import { unifiedScraperService } from '../services/scraping/unifiedScraper';
@@ -169,6 +170,7 @@ describe('generateAuditReport crew evidence', () => {
   let probe: ReturnType<typeof vi.spyOn>;
   let scrape: ReturnType<typeof vi.spyOn>;
   let generate: ReturnType<typeof vi.spyOn>;
+  let write: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -192,7 +194,8 @@ describe('generateAuditReport crew evidence', () => {
     vi.spyOn(citationIntegrityService, 'evaluate').mockResolvedValue(undefined as never);
     vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue({ status: 'not_configured', domain: 'example.com' } as never);
     vi.spyOn(writingQualityService, 'checkText').mockResolvedValue(undefined as never);
-    vi.spyOn(aiProviderService, 'getBestAvailableProvider').mockResolvedValue({ id: 'groq' } as never);
+    vi.spyOn(configService, 'getGroqKey').mockReturnValue('proxy');
+    write = vi.spyOn(GroqProvider.prototype, 'generateText').mockResolvedValue({ text: '# Luminara report' } as never);
     generate = vi.spyOn(aiProviderService, 'generateWithFailover').mockResolvedValue({ text: '# Luminara report' } as never);
   });
 
@@ -201,7 +204,7 @@ describe('generateAuditReport crew evidence', () => {
   }
 
   function prompt(): string {
-    return String(generate.mock.calls[0]?.[0] || '');
+    return String(write.mock.calls[0]?.[0] || '');
   }
 
   it('skips pack, search rebuild, and extra Tavily calls when crew evidence is usable', async () => {
@@ -333,7 +336,7 @@ describe('generateAuditReport crew evidence', () => {
   // The system prompt is the template the model reads first. Assert on the one actually sent.
   it('sends the report call a system prompt with no rank, impact, AI Overview or trust signal column', async () => {
     await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
-    const options = generate.mock.calls[0]?.[1] as { systemPrompt?: string };
+    const options = write.mock.calls[0]?.[1] as { systemPrompt?: string };
     expect(typeof options.systemPrompt).toBe('string');
     expectNoOldTemplate(String(options.systemPrompt));
   });
@@ -377,7 +380,7 @@ describe('generateAuditReport crew evidence', () => {
   });
 
   it('returns a report with no rank or impact column even when the model writes them', async () => {
-    generate.mockResolvedValue({
+    write.mockResolvedValue({
       text: [
         '# Luminara: Will AI mention Example?',
         '',
@@ -461,7 +464,7 @@ describe('generateAuditReport crew evidence', () => {
 
     it('leaves a model-written "measured" table out of the report and of the memory copy, analytics or not', async () => {
       const remember = vi.spyOn(vfsMemoryService, 'ingestAuditAsResource');
-      generate.mockResolvedValue({ text: modelReport } as never);
+      write.mockResolvedValue({ text: modelReport } as never);
 
       vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue(readyTraffic as never);
       const withAnalytics = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
@@ -470,7 +473,7 @@ describe('generateAuditReport crew evidence', () => {
 
       vi.spyOn(trafficInsightsService, 'getImpact').mockResolvedValue({ status: 'not_configured', domain: 'example.com' } as never);
       const without = await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
-      const lastPrompt = String(generate.mock.calls[generate.mock.calls.length - 1]?.[0] || '');
+      const lastPrompt = String(write.mock.calls[write.mock.calls.length - 1]?.[0] || '');
       expect(lastPrompt).toContain('No measured traffic data is present above. State no traffic figure.');
       expect(lastPrompt).not.toContain('Visitors: 120');
 

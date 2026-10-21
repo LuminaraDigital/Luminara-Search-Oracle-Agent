@@ -33,3 +33,14 @@ export function isMissingModelStatus(status: number, body: string): boolean {
   if (status !== 404 && status !== 400) return false;
   return /does not exist|not found|decommission|deprecated|no longer|unknown model|model_not_found|end of life|gone/i.test(body);
 }
+
+/**
+ * Per-model token cap. Groq sends 429. The hosted relay rewrites a leftover 429 to 503
+ * and keeps Groq's JSON, so a 503 counts only when that JSON is still in the body.
+ */
+export function isHostedRateLimit(status: number, body: string): boolean {
+  if (status === 429) return true;
+  // The relay keeps Groq's JSON on a leftover 429 (503). A single request over the cap is 413.
+  if (status !== 503 && status !== 413) return false;
+  return /"code"\s*:\s*"rate_limit_exceeded"|rate limit reached|request too large/i.test(body);
+}

@@ -487,5 +487,28 @@ describe('RLM (alexzhang13/rlm MIT port) core engine & Evidence-Bound gates', ()
       spy.mockRestore();
     }
   });
+
+  it('skips RLM probes when the audit is on the hosted Groq key', async () => {
+    const { configService } = await import('../services/configService');
+    const { aiProviderService } = await import('../services/aiProviderService');
+    const { synthesizeRlmAuditEvidence } = await import('../services/rlm');
+    vi.spyOn(configService, 'getGroqKey').mockReturnValue('proxy');
+    vi.spyOn(configService, 'getByokKey').mockReturnValue('');
+    const spy = vi.spyOn(aiProviderService, 'generateWithFailover');
+    try {
+      const synth = await synthesizeRlmAuditEvidence({
+        rlmCorpus: {
+          'https://example.com': 'Home page content',
+          'https://example.com/pricing': 'Pricing page content',
+        },
+        websiteUrl: 'https://example.com',
+        focus: 'SEO',
+      });
+      expect(synth).toBeNull();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
 });
 
