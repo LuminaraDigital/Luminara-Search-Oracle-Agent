@@ -24,6 +24,8 @@ const COPY_FILES = [
   'public/privacy.html',
   'public/docs/what-is-aeo.html',
   'index.html',
+  'components/suite/BusinessDNAView.tsx',
+  'components/suite/IdeaScoutView.tsx',
 ] as const;
 
 describe('suite copy', () => {
@@ -41,6 +43,16 @@ describe('suite copy', () => {
     expect(landing).toContain('These rows show the report shape. They are not a measurement.');
     expect(landing).not.toMatch(/dental/i);
     expect(landing).not.toContain('\u2014');
+  });
+
+  it('uses real estate placeholders in the profile and idea forms', () => {
+    const dna = readFileSync('components/suite/BusinessDNAView.tsx', 'utf8');
+    const ideas = readFileSync('components/suite/IdeaScoutView.tsx', 'utf8');
+    expect(dna).toContain("independent real estate agency in [suburb]");
+    expect(ideas).toContain('who sells homes in [suburb]');
+    expect(ideas).toContain('real estate agencies');
+    expect(dna).not.toMatch(/dental/i);
+    expect(ideas).not.toMatch(/dental|clinic/i);
   });
 
   it('uses one legal line and does not name the company Agency', () => {
