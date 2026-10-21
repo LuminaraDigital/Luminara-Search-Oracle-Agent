@@ -56,12 +56,12 @@ const VALUE_PROPS = [
   },
 ] as const;
 
-/** Illustrative report rows. Not a customer; labeled on the page. */
+/** Illustrative report rows. Not a customer and not a measurement. Labeled on the page. */
 const EXAMPLE_REPORT_ROWS: ReadonlyArray<{ label: string; state: EvidenceState; note: string }> = [
   { label: 'Crawl access', state: 'Measured', note: 'Bots can read robots.txt and llms.txt.' },
-  { label: 'Google Search', state: 'Measured', note: 'Named for the brand, not for the category.' },
-  { label: 'AI Overviews', state: 'Estimated', note: 'A competitor page is quoted instead.' },
-  { label: 'ChatGPT', state: 'Measured', note: 'Not named for "best dentist in Sydney".' },
+  { label: 'Google Search', state: 'Measured', note: "Named for the agency name, not for 'real estate agent [suburb]'." },
+  { label: 'AI Overviews', state: 'Estimated', note: "A portal page is quoted instead of the agency's suburb page." },
+  { label: 'ChatGPT', state: 'Measured', note: "Not named for 'best real estate agent in [suburb]'." },
   { label: 'Perplexity', state: 'Not measured', note: 'No data yet. Missing, not a poor result.' },
 ];
 
@@ -178,9 +178,6 @@ const LandingPage: React.FC<LandingPageProps> = ({
           <p className="lx-lede lx-enter-rise lx-d4 mt-7 max-w-2xl lx-fp-text">
             {HOME_HERO.lede}
           </p>
-          <p className="lx-enter-rise lx-d4 mt-4 max-w-2xl text-sm leading-relaxed text-[var(--color-ink-2)]">
-            {LIVE_ANSWER_CHECKS}
-          </p>
           <div className="lx-enter-rise lx-d5 mt-9 w-full">
             <DomainCheck inputId="hero-domain" isAuthenticated={isAuthenticated} onFullAudit={fullAudit} />
           </div>
@@ -220,8 +217,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <span className="block italic lx-gold-text">AI gives them one answer.</span>
             </h2>
             <p className="lx-lede mx-auto mt-8 max-w-2xl">
-              When a buyer asks ChatGPT or Perplexity who to hire, there is no second page. The answer names
-              you, or it names someone else. Luminara checks your site and live web search, then one fix. {LIVE_ANSWER_CHECKS}
+              When a vendor asks an AI assistant who to list with in their suburb, there is no second page. The answer names your agency, or it names someone else. Luminara checks your site and live web search, then one fix. {LIVE_ANSWER_CHECKS}
             </p>
           </div>
         </section>
@@ -323,12 +319,9 @@ const LandingPage: React.FC<LandingPageProps> = ({
           <figure className="lx-glass m-0 rounded-3xl p-6 sm:p-8 lg:col-span-7" data-reveal>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-[var(--color-ink-2)]">Example report</p>
-                <p className="mt-2 font-serif text-2xl text-[var(--color-ink)] sm:text-3xl">A dental clinic in Sydney</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-[var(--color-ink-2)]">Illustrative example, not a real agency</p>
+                <p className="mt-2 font-serif text-2xl text-[var(--color-ink)] sm:text-3xl">An independent agency</p>
               </div>
-              <span className="shrink-0 rounded-full border border-[var(--color-rule)] px-3 py-1 text-xs text-[var(--gold-light)]">
-                Agency example
-              </span>
             </div>
 
             <ul className="m-0 mt-6 list-none divide-y divide-[var(--color-rule)] border-y border-[var(--color-rule)] p-0">
@@ -346,20 +339,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
 
             <p className="mt-6 text-[15px] leading-relaxed text-[var(--color-ink-2)]">
               <span className="text-[var(--color-ink)]">Verdict. </span>
-              The site is readable, but the services page opens with a slogan. AI engines quote competitors who
-              answer the question directly.
+              The site is readable, but the suburb page opens with a slogan. AI engines quote pages that answer the question directly.
             </p>
 
             <div className="mt-6 rounded-2xl border border-gold/45 bg-gold/10 p-5">
               <p className="text-[11px] uppercase tracking-[0.26em] text-[var(--gold-light)]">Your next fix</p>
               <p className="mt-2 font-serif text-xl leading-snug text-[var(--color-ink)] sm:text-2xl">
-                Add a 50-word direct answer under the heading on /services, with FAQ schema for your top three
-                questions.
+                {"Add a 50-word direct answer to 'Who sells homes in [suburb]?' on your suburb page, with FAQ schema for your top three vendor questions."}
               </p>
               <p className="mt-3 text-xs text-[var(--color-ink-2)]">Copy and schema included, ready to paste.</p>
             </div>
             <figcaption className="mt-5 text-xs text-[var(--color-ink-2)]">
-              Illustrative Agency example, not a real customer. {LIVE_ANSWER_CHECKS}
+              Illustrative example, not a real agency. These rows show the report shape. They are not a measurement. {LIVE_ANSWER_CHECKS}
             </figcaption>
           </figure>
         </div>
