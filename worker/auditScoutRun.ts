@@ -176,10 +176,13 @@ export async function refundAuditRun(
   return json({ ok: true, refunded: released.refunded });
 }
 
+const callsLeft = new Map<string, { left: number; exp: number }>();
+
 /**
  * A missing token meters normally (chat and other tools).
  * A bad token is rejected. A run that is over its call cap meters that call normally.
- * shortcut: the cap decrement is get-then-put, so two calls at once can both pass.
+ * shortcut: the cap lives in this isolate. KV is written only when the cap is spent,
+ * so another isolate can admit another full cap. Write each call again when KV writes are cheap.
  */
 export async function takeAuditRunCall(env: Env, user: HostedIdentity, request: Request): Promise<AuditRunClaim> {
   const token = request.headers.get(AUDIT_RUN_TOKEN_HEADER)?.trim() || '';
@@ -187,6 +190,7 @@ export async function takeAuditRunCall(env: Env, user: HostedIdentity, request: 
   const domain = auditHostname(request.headers.get(AUDIT_RUN_DOMAIN_HEADER) || '');
   const record = await readRun(env, token);
   if (!record || record.exp <= Date.now()) {
+    callsLeft.delete(token);
     return { kind: 'reject', error: 'This audit run expired.' };
   }
   if (record.userId !== billingId(user)) {
@@ -195,9 +199,21 @@ export async function takeAuditRunCall(env: Env, user: HostedIdentity, request: 
   if (!domain || !sameSiteHost(domain, record.domain)) {
     return { kind: 'wrong-site', error: 'This audit run is for a different site.' };
   }
-  if (record.left <= 0) return { kind: 'meter' };
-  record.left -= 1;
-  if (!(await writeRun(env, token, record))) return { kind: 'meter' };
+  const known = callsLeft.get(token);
+  let left = known && known.exp === record.exp ? known.left : record.left;
+  if (left <= 0) return { kind: 'meter' };
+  left -= 1;
+  callsLeft.set(token, { left, exp: record.exp });
+  if (callsLeft.size > 200) {
+    const now = Date.now();
+    for (const [k, v] of callsLeft) {
+      if (v.exp <= now) callsLeft.delete(k);
+    }
+  }
+  if (left === 0) {
+    record.left = 0;
+    await writeRun(env, token, record);
+  }
   return { kind: 'covered', token, domain };
 }
 

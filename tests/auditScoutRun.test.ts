@@ -261,6 +261,32 @@ describe('one Instant Audit run', () => {
     expect(quotaUsed(kv)).toBe('2');
   });
 
+  it('covers later calls without rewriting the run', async () => {
+    const { env, kv } = envFor();
+    let runPuts = 0;
+    const realPut = kv.put.bind(kv);
+    kv.put = async (key: string, value: string) => {
+      if (key.startsWith('audit-run:')) runPuts += 1;
+      return realPut(key, value);
+    };
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const opened = await mint(env);
+    const afterMint = runPuts;
+    for (let i = 0; i < 3; i++) {
+      const res = await proxyProvider(
+        providerCall(opened.body.token!, 'movida.com.au'),
+        env,
+        'groq',
+        '/chat/completions',
+      );
+      expect(res.status).toBe(200);
+    }
+    expect(runPuts - afterMint).toBe(1);
+    expect(quotaUsed(kv)).toBe('1');
+  });
+
   it('refuses a free audit when the quota write throws, and does not invent a token', async () => {
     const { env } = envFor();
     env.LUMINARA_KV!.put = async () => {

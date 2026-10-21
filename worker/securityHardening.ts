@@ -206,9 +206,32 @@ export type DualRateLimitResult =
   | { ok: true; headers: Record<string, string> }
   | { ok: false; response: Response };
 
+const rlSlots = new Map<string, { count: number; resetAt: number }>();
+
+function nextRlCount(key: string, windowSec: number, seeded: number): number {
+  const now = Date.now();
+  let slot = rlSlots.get(key);
+  if (!slot || slot.resetAt <= now) {
+    slot = { count: seeded, resetAt: now + windowSec * 1000 };
+    rlSlots.set(key, slot);
+    if (rlSlots.size > 400) {
+      for (const [k, v] of rlSlots) {
+        if (v.resetAt <= now) rlSlots.delete(k);
+      }
+    }
+  }
+  slot.count += 1;
+  return slot.count;
+}
+
 /**
- * Dual-key fixed window via KV (account + IP). Fail closed when KV missing
- * and auth is required. Returns standard X-RateLimit-* headers on allow or 429.
+ * Dual-key fixed window (account + IP). The count lives in this isolate.
+ * KV is read once per window to seed a new isolate, and written only when a key
+ * crosses the limit so the next isolate stays blocked.
+ * shortcut: calls under the limit do not write KV, so another isolate can admit
+ * its own window. The edge limiter still caps each IP. Write every call again
+ * when KV writes are cheap.
+ * Fail closed when KV is missing and auth is required.
  */
 export async function enforceDualRateLimit(
   env: Env,
@@ -246,39 +269,44 @@ export async function enforceDualRateLimit(
   if (opts.accountId) keys.push(`rl:${opts.action}:acct:${opts.accountId}`);
 
   let worstRemaining = limit;
-  try {
-    for (const key of keys) {
-      const raw = await env.LUMINARA_KV.get(key);
-      const count = Number(raw || 0) + 1;
-      if (count > limit) {
-        console.warn(
-          JSON.stringify({
-            event: 'rate_limit_exceeded',
-            action: opts.action,
-            key,
-            count,
-            limit,
-            windowSec,
-            accountId: opts.accountId || null,
-            ip: opts.ip,
-          }),
-        );
-        return {
-          ok: false,
-          response: rateLimitedResponse({ limit, windowSec, remaining: 0 }),
-        };
+  for (const key of keys) {
+    const now = Date.now();
+    const cached = rlSlots.get(key);
+    let seeded = 0;
+    if (!cached || cached.resetAt <= now) {
+      try {
+        const n = Number((await env.LUMINARA_KV.get(key)) || 0);
+        seeded = Number.isFinite(n) ? n : 0;
+      } catch {
+        seeded = 0;
       }
-      // shortcut: 120s minimum, a 60s expiration has been failing the live KV put.
-      await env.LUMINARA_KV.put(key, String(count), { expirationTtl: Math.max(120, windowSec) });
-      worstRemaining = Math.min(worstRemaining, Math.max(0, limit - count));
     }
-  } catch {
-    // shortcut: a failed KV write skips this window. The edge limiter already ran.
-    console.warn(JSON.stringify({ event: 'rate_limit_store_error', action: opts.action }));
-    return {
-      ok: true,
-      headers: rateLimitHeaders({ limit, remaining: limit, windowSec }),
-    };
+    const count = nextRlCount(key, windowSec, seeded);
+    if (count > limit) {
+      try {
+        // shortcut: 120s minimum, a 60s expiration has been failing the live KV put.
+        await env.LUMINARA_KV.put(key, String(count), { expirationTtl: Math.max(120, windowSec) });
+      } catch {
+        console.warn(JSON.stringify({ event: 'rate_limit_store_error', action: opts.action }));
+      }
+      console.warn(
+        JSON.stringify({
+          event: 'rate_limit_exceeded',
+          action: opts.action,
+          key,
+          count,
+          limit,
+          windowSec,
+          accountId: opts.accountId || null,
+          ip: opts.ip,
+        }),
+      );
+      return {
+        ok: false,
+        response: rateLimitedResponse({ limit, windowSec, remaining: 0 }),
+      };
+    }
+    worstRemaining = Math.min(worstRemaining, Math.max(0, limit - count));
   }
 
   return {
