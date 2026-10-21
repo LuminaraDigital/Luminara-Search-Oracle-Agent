@@ -206,17 +206,22 @@ export type DualRateLimitResult =
   | { ok: true; headers: Record<string, string> }
   | { ok: false; response: Response };
 
-const rlSlots = new Map<string, { count: number; resetAt: number }>();
+const rlByStore = new WeakMap<object, Map<string, { count: number; resetAt: number }>>();
 
-function nextRlCount(key: string, windowSec: number, seeded: number): number {
+function nextRlCount(store: object, key: string, windowSec: number, seeded: number): number {
   const now = Date.now();
-  let slot = rlSlots.get(key);
+  let slots = rlByStore.get(store);
+  if (!slots) {
+    slots = new Map();
+    rlByStore.set(store, slots);
+  }
+  let slot = slots.get(key);
   if (!slot || slot.resetAt <= now) {
     slot = { count: seeded, resetAt: now + windowSec * 1000 };
-    rlSlots.set(key, slot);
-    if (rlSlots.size > 400) {
-      for (const [k, v] of rlSlots) {
-        if (v.resetAt <= now) rlSlots.delete(k);
+    slots.set(key, slot);
+    if (slots.size > 400) {
+      for (const [k, v] of slots) {
+        if (v.resetAt <= now) slots.delete(k);
       }
     }
   }
@@ -271,7 +276,8 @@ export async function enforceDualRateLimit(
   let worstRemaining = limit;
   for (const key of keys) {
     const now = Date.now();
-    const cached = rlSlots.get(key);
+    const slots = rlByStore.get(env.LUMINARA_KV);
+    const cached = slots?.get(key);
     let seeded = 0;
     if (!cached || cached.resetAt <= now) {
       try {
@@ -281,7 +287,7 @@ export async function enforceDualRateLimit(
         seeded = 0;
       }
     }
-    const count = nextRlCount(key, windowSec, seeded);
+    const count = nextRlCount(env.LUMINARA_KV, key, windowSec, seeded);
     if (count > limit) {
       try {
         // shortcut: 120s minimum, a 60s expiration has been failing the live KV put.
