@@ -256,6 +256,38 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               </div>
 
               <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1" htmlFor="dna-suburb">Suburb</label>
+                {editing ? (
+                  <input
+                    id="dna-suburb"
+                    type="text"
+                    value={formData.suburb ?? ''}
+                    onChange={(e) => setFormData({ ...formData, suburb: e.target.value })}
+                    className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
+                    placeholder="Richmond"
+                  />
+                ) : (
+                  <p className="text-xs text-gray-300 bg-black/40 p-3 rounded-xl border border-white/5">{formData.suburb || 'Not set'}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1" htmlFor="dna-state">State</label>
+                {editing ? (
+                  <input
+                    id="dna-state"
+                    type="text"
+                    value={formData.state ?? ''}
+                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                    className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
+                    placeholder="VIC"
+                  />
+                ) : (
+                  <p className="text-xs text-gray-300 bg-black/40 p-3 rounded-xl border border-white/5">{formData.state || 'Not set'}</p>
+                )}
+              </div>
+
+              <div>
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1">Target Audience</label>
                 {editing ? (
                   <input

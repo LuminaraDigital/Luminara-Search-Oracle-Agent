@@ -128,6 +128,10 @@ export interface BusinessDNA {
   perceivedGaps: string[];
   rawContext: string; // Condensed summary for LLM context
   industry?: string;
+  /** Suburb the free AI answer asks about. Optional until the profile is filled in. */
+  suburb?: string;
+  /** State or territory that goes with suburb. */
+  state?: string;
   negativeConstraints?: string[]; // Topics to never bring up, blacklisted competitors, or banned claims
 }
 

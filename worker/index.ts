@@ -2082,7 +2082,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(await executeOracleGatewayTask(env, who.user, reqData, request.headers));
   }
 
-  if (path === '/audit/scout-run' && request.method === 'POST') {
+  if ((path === '/audit/scout-run' || path === '/audit/free-answer') && request.method === 'POST') {
     return withCors(await handleAuditScoutRun(request, env));
   }
 
