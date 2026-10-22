@@ -23,8 +23,8 @@ export const API_ACCESS_PATH_PATTERNS: RegExp[] = [
 export const MCP_ACCESS_PATH_PATTERNS: RegExp[] = [/^\/mcp(\/|$)/];
 
 export function isApiAccessRoute(path: string): boolean {
-  // Instant Audit mints one check here for every signed-in plan. The Agency audit queue stays gated.
-  if (path === '/audit/scout-run') return false;
+  // Instant Audit and the one free AI answer are for every signed-in plan. The Agency audit queue stays gated.
+  if (path === '/audit/scout-run' || path === '/audit/free-answer') return false;
   return API_ACCESS_PATH_PATTERNS.some((re) => re.test(path));
 }
 

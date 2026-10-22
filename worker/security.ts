@@ -39,6 +39,12 @@ const COMMON_HEADERS: Record<string, string> = {
   'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
 };
 
+/** Vite files under /assets/ carry a content hash, so the URL never serves a new body. */
+export function immutableAssetCache(pathname: string): string | null {
+  if (!/^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/i.test(pathname)) return null;
+  return 'public, max-age=31536000, immutable';
+}
+
 /** Adds security headers to a response. HTML documents additionally get the CSP. */
 export function withSecurityHeaders(res: Response): Response {
   const out = new Response(res.body, res);

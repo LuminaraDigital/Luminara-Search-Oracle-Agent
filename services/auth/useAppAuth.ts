@@ -57,6 +57,14 @@ export const PUBLIC_APP_VIEWS = new Set([
   'VISION',
 ]);
 
+/**
+ * Marketing nav while Firebase is still loading.
+ * A persisted session keeps Dashboard, so Sign in does not flash and then vanish.
+ */
+export function marketingNavSignedIn(loading: boolean, authenticated: boolean, persistedSession: boolean): boolean {
+  return authenticated || (loading && persistedSession);
+}
+
 /** Pure decision helper (tested). Soft-open only when signature was not rejected. */
 export function decideTelegramGate(input: {
   hasInitData: boolean;

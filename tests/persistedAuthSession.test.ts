@@ -5,6 +5,7 @@ import {
   markPersistedAuthSession,
   persistedAuthSessionInIndexedDb,
 } from '../services/auth/firebaseIdToken';
+import { marketingNavSignedIn } from '../services/auth/useAppAuth';
 
 type MemoryStorage = {
   getItem(key: string): string | null;
@@ -59,5 +60,12 @@ describe('hasPersistedAuthSession', () => {
     clearPersistedAuthSession();
     expect(hasPersistedAuthSession()).toBe(false);
     await expect(persistedAuthSessionInIndexedDb()).resolves.toBe(false);
+  });
+
+  it('keeps Dashboard during the auth load when a session is already stored', () => {
+    expect(marketingNavSignedIn(true, false, true)).toBe(true);
+    expect(marketingNavSignedIn(true, false, false)).toBe(false);
+    expect(marketingNavSignedIn(false, true, false)).toBe(true);
+    expect(marketingNavSignedIn(false, false, true)).toBe(false);
   });
 });
