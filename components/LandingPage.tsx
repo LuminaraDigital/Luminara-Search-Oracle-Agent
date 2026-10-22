@@ -26,7 +26,6 @@ import {
 } from './marketing/earth/globeStory';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 import { GUEST_HERO_NOTE, GUEST_REPORT_NOTE } from '../services/audit/hostedScoutRail';
-import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { HOME_HERO } from '../services/marketing/marketingHeroCopy';
 
 interface LandingPageProps {
@@ -217,7 +216,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <span className="block italic lx-gold-text">AI gives them one answer.</span>
             </h2>
             <p className="lx-lede mx-auto mt-8 max-w-2xl">
-              When a vendor asks an AI assistant who to list with in their suburb, there is no second page. The answer names your agency, or it names someone else. Luminara checks your site and live web search, then one fix. {LIVE_ANSWER_CHECKS}
+              When a vendor asks an AI assistant who to list with in their suburb, there is no second page. The answer names your agency, or it names someone else. Luminara checks your site and live web search, then one fix.
             </p>
           </div>
         </section>
@@ -350,7 +349,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <p className="mt-3 text-xs text-[var(--color-ink-2)]">Copy and schema included, ready to paste.</p>
             </div>
             <figcaption className="mt-5 text-xs text-[var(--color-ink-2)]">
-              Illustrative example, not a real agency. These rows show the report shape. They are not a measurement. {LIVE_ANSWER_CHECKS}
+              Illustrative example, not a real agency. These rows show the report shape. They are not a measurement.
             </figcaption>
           </figure>
         </div>

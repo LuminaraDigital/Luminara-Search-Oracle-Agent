@@ -54,7 +54,7 @@ export const SkeletonCard: React.FC<{ className?: string; children?: React.React
  * Explicit min-height ensures Cumulative Layout Shift (CLS) is zero.
  */
 export const AuditReportSkeleton: React.FC<{ message?: string }> = ({
-  message = 'Scanning website & answer engines…',
+  message = 'Loading…',
 }) => (
   <div
     role="status"

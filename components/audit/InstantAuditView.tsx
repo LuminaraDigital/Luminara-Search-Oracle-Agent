@@ -793,7 +793,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
               <span className="text-[11px] font-mono text-gold-light truncate max-w-xs">{progressStage || 'Initializing agents…'}</span>
             </div>
           )}
-          <AuditReportSkeleton message={progressStage || 'Scanning website & answer engines…'} />
+          <AuditReportSkeleton message={progressStage || 'Loading…'} />
         </div>
       )}
 

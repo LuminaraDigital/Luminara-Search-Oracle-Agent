@@ -7,17 +7,21 @@ import {
 } from '../../services/referrals/referralClient';
 import { OPERATOR_STREAK_WEEKS, type MissionKey } from '../../services/referrals/rules';
 import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
+import { isInTelegram } from '../../services/telegram/tma';
 
 interface VisibilityRetentionCardProps {
   signedIn: boolean;
   onNavigate: (view: AppView) => void;
+  /** Web default. Telegram and the labs flag keep streaks and invite credits. */
+  plainLanguage?: boolean;
 }
 
 /**
  * Visibility Level, invite link, and this week's missions.
  * Levels come from the Worker. This card does not invent audit scores.
  */
-export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = ({ signedIn, onNavigate }) => {
+export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = ({ signedIn, onNavigate, plainLanguage = true }) => {
+  const showGame = !plainLanguage || isInTelegram();
   const [profile, setProfile] = useState<ReferralProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,11 +40,11 @@ export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = (
     setLoading(false);
     if (!result.ok) {
       setProfile(null);
-      setError('Visibility Level could not be loaded.');
+      setError(showGame ? 'Visibility Level could not be loaded.' : 'This could not be loaded.');
       return;
     }
     setProfile(result.profile);
-  }, [signedIn]);
+  }, [signedIn, showGame]);
 
   useEffect(() => {
     void load();
@@ -79,8 +83,8 @@ export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = (
     <section className="mb-10 glass-morphism rounded-2xl border border-white/10 bg-black/50 p-6">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gold mb-2">Visibility Level</p>
-          {!signedIn && (
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gold mb-2">{showGame ? 'Visibility Level' : 'Next fix'}</p>
+          {!signedIn && showGame && (
             <>
               <p className="text-2xl font-bold text-white">Explorer</p>
               <p className="text-xs text-gray-400 mt-1 max-w-xl leading-relaxed">
@@ -88,9 +92,12 @@ export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = (
               </p>
             </>
           )}
-          {signedIn && loading && <p className="text-sm text-gray-300">Loading Visibility Level.</p>}
+          {!signedIn && !showGame && (
+            <p className="text-sm text-gray-300 max-w-xl leading-relaxed">Sign in to see your next fix.</p>
+          )}
+          {signedIn && loading && <p className="text-sm text-gray-300">{showGame ? 'Loading Visibility Level.' : 'Loading.'}</p>}
           {signedIn && error && <p className="text-sm text-gray-300">{error}</p>}
-          {profile && (
+          {profile && showGame && (
             <>
               <p className="text-2xl font-bold text-white">{profile.progression.label}</p>
               <p className="text-xs text-gray-400 mt-1 max-w-xl leading-relaxed">
@@ -100,8 +107,11 @@ export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = (
               </p>
             </>
           )}
+          {profile && !showGame && (
+            <p className="text-sm text-gray-300 max-w-xl leading-relaxed">Your AI visibility. Pick one open item below.</p>
+          )}
         </div>
-        {profile?.inviteUrl && (
+        {showGame && profile?.inviteUrl && (
           <button
             type="button"
             onClick={() => { void copyInvite(); }}
@@ -112,7 +122,7 @@ export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = (
         )}
       </div>
 
-      {profile?.inviteUrl && (
+      {showGame && profile?.inviteUrl && (
         <label className="block mt-4">
           <span className="text-[10px] uppercase tracking-widest text-gray-500">Invite link</span>
           <input

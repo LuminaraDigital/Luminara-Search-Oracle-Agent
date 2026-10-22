@@ -8,14 +8,16 @@ import { LIVE_SAMPLE_SNAPSHOT } from '../services/marketing/liveSampleSnapshot';
 
 describe('sample report label', () => {
   it('calls the dated snapshot an example, not a live crawl', () => {
-    expect(LIVE_SAMPLE_SNAPSHOT.label).toBe('Example report (snapshot from 2 Oct 2026)');
+    expect(LIVE_SAMPLE_SNAPSHOT.label).toBe('Illustrative example');
     const html = renderToStaticMarkup(createElement(SampleReportPage, {
       onOpenAudit: () => {},
       onNavigatePricing: () => {},
       onNavigateMethodology: () => {},
     }));
-    expect(html).toContain('Example report (snapshot from 2 Oct 2026)');
+    expect(html).toContain('Illustrative example');
+    expect(html).toContain('example-agency.com.au');
     expect(html).not.toContain('Live crawl');
+    expect(html.split('Live ChatGPT, Perplexity and AI Overviews').length - 1).toBe(1);
   });
 });
 

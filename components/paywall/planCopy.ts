@@ -3,7 +3,7 @@
  * Titles and limits come from PLAN_ENTITLEMENTS. Prices stay in planPrices.
  */
 import { PLAN_ENTITLEMENTS } from '../../services/plans/planEntitlements';
-import { PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
+import { PAID_PLAN_PRICES, approximateAudLabel, type PaidPlanId } from './planPrices';
 
 export const PLAN_CARD_BADGE = 'Recommended';
 
@@ -22,8 +22,23 @@ export function planTitle(id: PaidPlanId): string {
 /** One sentence for /pricing, llms.txt, and the pricing meta description. */
 export function listPriceSummary(): string {
   const ids = ['starter', 'growth', 'agency'] as const;
-  const parts = ids.map((id) => `${PLAN_ENTITLEMENTS[id].title} ${PAID_PLAN_PRICES[id].usdLabel}`);
-  return `List prices: ${parts.join(', ')}. You pay in Telegram Stars.`;
+  const parts = ids.map((id) => {
+    const usd = PAID_PLAN_PRICES[id].usdLabel;
+    return `${PLAN_ENTITLEMENTS[id].title} ${approximateAudLabel(usd)} (${usd})`;
+  });
+  return `Approximate list prices: ${parts.join(', ')}. About A$1.55 per US$1. You pay in Telegram Stars.`;
+}
+
+/** Free card lines. The daily allowance matches the Worker default of 3. */
+export function freePlanLines(): string[] {
+  const free = PLAN_ENTITLEMENTS.free;
+  return [
+    `${free.domainLimit} monitored domain`,
+    'On-demand audits',
+    '3 hosted Instant Audit checks a day',
+    'No IDE access (web app only)',
+    'No public share links',
+  ];
 }
 
 function withLeadCapital(text: string): string {
@@ -46,7 +61,7 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
     },
   ];
   if (e.apiAccess) lines.push({ included: true, text: 'Paid research API (Agency plan or your own DataForSEO login)' });
-  if (e.agencyClientLimit > 0) lines.push({ included: true, text: `${e.agencyClientLimit} client workspaces (saved in this browser)` });
+  if (e.agencyClientLimit > 0) lines.push({ included: true, text: `${e.agencyClientLimit} client workspaces` });
   return lines.map((line) => ({ ...line, text: withLeadCapital(line.text) }));
 }
 
@@ -79,7 +94,7 @@ export const pricingTiers: Array<{
     priceLabel: PAID_PLAN_PRICES.agency.usdLabel,
     stars: PAID_PLAN_PRICES.agency.starsLabel,
     ton: PAID_PLAN_PRICES.agency.tonLabel,
-    blurb: 'API access for paid research, 10 client workspaces saved in this browser, daily re-audit reminders in Telegram, white-label PDF.',
+    blurb: 'API access for paid research, 10 client workspaces, daily re-audit reminders in Telegram, white-label PDF.',
     highlight: false,
   },
 ];

@@ -1,24 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { ICONS } from '../../constants';
-import { AppView, BusinessDNA } from '../../types';
+import { AppView } from '../../types';
 import { dreamingClient, type DreamStatusResult } from '../../services/dreaming/dreamingClient';
 
 interface DreamingDashboardCardProps {
   domain?: string;
-  dna?: BusinessDNA | null;
   onNavigate: (view: AppView) => void;
 }
 
 export const DreamingDashboardCard: React.FC<DreamingDashboardCardProps> = ({
   domain,
-  dna,
   onNavigate,
 }) => {
   const [status, setStatus] = useState<DreamStatusResult | null>(null);
 
   const targetDomain = domain
     ? domain.replace(/^https?:\/\//i, '').split('/')[0].toLowerCase()
-    : dna?.name ? dna.name.toLowerCase().replace(/\s+/g, '') + '.com' : '';
+    : '';
 
   useEffect(() => {
     if (!targetDomain) return;
@@ -46,7 +44,7 @@ export const DreamingDashboardCard: React.FC<DreamingDashboardCardProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-gold-light">
-                Luminara Dreaming
+                Saved notes
               </span>
               {pendingCount > 0 ? (
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold animate-pulse">
