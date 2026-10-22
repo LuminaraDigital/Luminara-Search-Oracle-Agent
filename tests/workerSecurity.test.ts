@@ -21,6 +21,7 @@ import {
   safePublicUrl,
   stripUpstreamHeaders,
   immutableAssetCache,
+  withAssetCache,
   withSecurityHeaders,
 } from '../worker/security';
 
@@ -124,6 +125,11 @@ describe('security headers', () => {
     expect(immutableAssetCache('/assets/index-Ab12cd34.js')).toBe('public, max-age=31536000, immutable');
     expect(immutableAssetCache('/favicon.ico')).toBeNull();
     expect(immutableAssetCache('/assets/index.js')).toBeNull();
+    const locked = new Response('console.log(1)', { headers: { 'content-type': 'text/javascript' } });
+    locked.headers.set = () => { throw new TypeError('immutable'); };
+    const copied = withAssetCache(locked, '/assets/index-Ab12cd34.js');
+    expect(copied.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(await copied.text()).toBe('console.log(1)');
     const env = makeEnv({
       ASSETS: {
         fetch: async () => new Response('console.log(1)', { headers: { 'content-type': 'text/javascript' } }),

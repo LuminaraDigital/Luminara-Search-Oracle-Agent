@@ -45,6 +45,18 @@ export function immutableAssetCache(pathname: string): string | null {
   return 'public, max-age=31536000, immutable';
 }
 
+/**
+ * ASSETS responses have immutable headers. Copy them before setting Cache-Control.
+ */
+export function withAssetCache(res: Response, pathname: string): Response {
+  const cache = immutableAssetCache(pathname);
+  const contentType = res.headers.get('content-type') || '';
+  if (!cache || !res.ok || /text\/html/i.test(contentType)) return res;
+  const headers = new Headers(res.headers);
+  headers.set('Cache-Control', cache);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
 /** Adds security headers to a response. HTML documents additionally get the CSP. */
 export function withSecurityHeaders(res: Response): Response {
   const out = new Response(res.body, res);
