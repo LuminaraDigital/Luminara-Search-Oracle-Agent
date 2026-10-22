@@ -3,7 +3,7 @@
  * Keep copy factual; no invented metrics.
  */
 import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/planCopy';
-import { PAID_PLAN_PRICES, approximateAudLabel, type PaidPlanId } from '../components/paywall/planPrices';
+import { PAID_PLAN_PRICES, type PaidPlanId } from '../components/paywall/planPrices';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
 import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
@@ -145,7 +145,7 @@ function llmsPaidPlanBlock(): string {
     const price = PAID_PLAN_PRICES[id];
     const ent = PLAN_ENTITLEMENTS[id];
     const parts = [
-      `${ent.title}: list price ${approximateAudLabel(price.usdLabel)} (${price.usdLabel}), pay ${price.starsLabel}`,
+      `${ent.title}: list price ${price.audLabel}, pay ${price.starsLabel}`,
       `${ent.domainLimit} monitored domains`,
       ent.mcpAccess ? 'IDE access' : 'No IDE access',
       ent.shareLinks ? 'Public share links' : 'No public share links',

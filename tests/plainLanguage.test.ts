@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVACY_HTML } from '../worker/privacyPolicy';
 import PricingPage from '../components/PricingPage';
-import { approximateAudLabel } from '../components/paywall/planPrices';
+import { cardPayLabel, cardTermLabel, PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { freePlanLines, listPriceSummary, planBullets } from '../components/paywall/planCopy';
 import { DashboardView } from '../components/suite/DashboardView';
 import { auditHistoryService } from '../services/audit/auditHistoryService';
@@ -40,18 +40,24 @@ describe('plain language pricing', () => {
     state.health = { ok: true, ton: false, jettonCheckout: false, stripeCheckout: false, plans: {} };
   });
 
-  it('shows approximate AUD, a free card, and one 24-hour pass', () => {
-    expect(approximateAudLabel('US$49')).toBe('A$76');
-    expect(approximateAudLabel('US$149')).toBe('A$231');
-    expect(approximateAudLabel('US$349')).toBe('A$541');
-    expect(listPriceSummary()).toContain('About A$1.55 per US$1');
-    expect(listPriceSummary()).toContain('You pay in Telegram Stars');
+  it('shows the AUD card prices, a free card, and one 24-hour pass', () => {
+    expect(cardTermLabel('starter')).toBe('A$79 · 30 days');
+    expect(cardTermLabel('growth')).toBe('A$229 · 30 days');
+    expect(cardTermLabel('agency')).toBe('A$549 · 30 days');
+    expect(cardPayLabel('starter')).toBe('Pay A$79 by card');
+    expect(listPriceSummary()).toContain('Starter A$79, Growth A$229, Pro / Agency A$549');
+    expect(listPriceSummary()).not.toMatch(/Approximate|About A\$|US\$/i);
+    expect(listPriceSummary()).toContain('Telegram Stars');
     expect(freePlanLines().join(' ')).toContain('3 hosted Instant Audit checks a day');
     expect(planBullets('agency').map((line) => line.text).join(' ')).not.toContain('saved in this browser');
 
     const html = renderToStaticMarkup(createElement(PricingPage, { onTerminal: () => {} }));
     expect(html).toContain('A$0');
-    expect(html).toContain('A$76');
+    expect(html).toContain('A$79');
+    expect(html).toContain('A$229');
+    expect(html).toContain('A$549');
+    expect(html).toContain('info@luminara.digital');
+    expect(html).not.toMatch(/US\$|GST|0402|0422/i);
     expect(html).toContain('Start free');
     expect(html).toContain('24-hour pass');
     expect(html).toContain('75 Stars');

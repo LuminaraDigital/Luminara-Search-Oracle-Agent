@@ -182,7 +182,7 @@ The rail is off. These hold for the day it is switched on.
 - **Nobody pays while the payment could not be credited.** No session is created unless
   `isStripeLedgerReady` passes (migrations 0021 and 0024 applied) and KV is bound.
 - **The grant is decided by the server's own numbers.** Only `checkout.session.completed` with
-  `mode=payment`, `payment_status=paid`, `currency=usd`, a `payment_intent`, and `amount_total`
+  `mode=payment`, `payment_status=paid`, `currency=aud`, a `payment_intent`, and `amount_total`
   equal to `STRIPE_PLAN_CONFIG[plan].amountCents` is credited, to `metadata.userId` only.
   `invoice.payment_succeeded` and `client_reference_id` are not honoured. Turning on Stripe Tax
   or coupons changes `amount_total` and must change this check in the same PR. A session that
@@ -230,10 +230,10 @@ Known limits, each to be settled before the rail is switched on:
 - **The run of card purchases is remembered on the KV record.** A purchase on another rail writes
   a fresh record, so a card retry or reversal after it is judged without that memory.
 
-Before `STRIPE_CHECKOUT_LIVE` is set to true (its own PR, with `tests/moneyInvariants.test.ts`):
+Before `STRIPE_CHECKOUT_LIVE` is set to `true` in wrangler (its own change, with `tests/moneyInvariants.test.ts`):
 subscribe the Stripe endpoint to exactly `checkout.session.completed`, `charge.refunded`,
 `charge.dispute.created` and `charge.dispute.funds_withdrawn`; on staging, prove one test-mode
-purchase (also once with a `+location_FR` email, to see `currency` stay `usd` under Adaptive
+purchase (also once with a `+location_FR` email, to see `currency` stay `aud` under Adaptive
 Pricing), one refund, one dispute and one refused lower plan; add the two migrations and
 `stripe_credited_sessions` to `scripts/smoke-check.mjs`; and give the buyer a confirmation when
 they land on `/?payment=success` (nothing reads it today).
@@ -247,7 +247,7 @@ they land on `/?payment=success` (nothing reads it today).
   must equal `TON_RECEIVING_ADDRESS`. Until it does, no invoice is issued and public
   `/health` reports `ton: false`. Orders that already exist can still be verified.
 - **Q402 is off, and while it is off every `/q402/*` path is a 404**, including discovery.
-- **The Stripe card rail is off** (`STRIPE_CHECKOUT_LIVE`) until its own review.
+- **The Stripe card rail is off** (`env.STRIPE_CHECKOUT_LIVE === 'true'` is the only open state; wrangler sets `"false"`) until its own review.
 - Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
   catalogue: title, description, price in Stars, days). Nothing else.
 

@@ -2,18 +2,9 @@
  * Display prices for the public pricing page.
  * Stars and TON are mirrors of the checkout catalogs:
  * worker/telegramBot.ts PLANS.*.stars and worker/tonPayment.ts TON_PRICING.*.ton.
- * USD strings are the published marketing labels already shown on /pricing.
+ * AUD strings are the card prices in worker/stripePayment.ts (cents / 100).
  * tests/pricingDiscoverability.test.ts fails if Stars or TON drift from the worker.
  */
-
-/** Display-only. Stars stay the amount the Worker charges. About A$1.55 per US$1, rounded. */
-export const AUD_PER_USD = 1.55;
-
-export function approximateAudLabel(usdLabel: string): string {
-  const usd = Number(usdLabel.replace(/[^0-9.]/g, ''));
-  if (!Number.isFinite(usd)) return usdLabel;
-  return `A$${Math.round(usd * AUD_PER_USD)}`;
-}
 
 export type PaidPlanId = 'starter' | 'growth' | 'agency';
 
@@ -23,7 +14,7 @@ export interface PaidPlanPrice {
   starsLabel: string;
   ton: number;
   tonLabel: string;
-  usdLabel: string;
+  audLabel: string;
 }
 
 export const PAID_PLAN_PRICES: Record<PaidPlanId, PaidPlanPrice> = {
@@ -33,7 +24,7 @@ export const PAID_PLAN_PRICES: Record<PaidPlanId, PaidPlanPrice> = {
     starsLabel: '2,500 Stars',
     ton: 15,
     tonLabel: '15 TON',
-    usdLabel: 'US$49',
+    audLabel: 'A$79',
   },
   growth: {
     id: 'growth',
@@ -41,7 +32,7 @@ export const PAID_PLAN_PRICES: Record<PaidPlanId, PaidPlanPrice> = {
     starsLabel: '7,500 Stars',
     ton: 45,
     tonLabel: '45 TON',
-    usdLabel: 'US$149',
+    audLabel: 'A$229',
   },
   agency: {
     id: 'agency',
@@ -49,6 +40,16 @@ export const PAID_PLAN_PRICES: Record<PaidPlanId, PaidPlanPrice> = {
     starsLabel: '18,000 Stars',
     ton: 120,
     tonLabel: '120 TON',
-    usdLabel: 'US$349',
+    audLabel: 'A$549',
   },
 };
+
+/** Card price line. One-off 30-day pass, not a subscription. */
+export function cardTermLabel(id: PaidPlanId): string {
+  return `${PAID_PLAN_PRICES[id].audLabel} · 30 days`;
+}
+
+/** Card checkout button. */
+export function cardPayLabel(id: PaidPlanId): string {
+  return `Pay ${PAID_PLAN_PRICES[id].audLabel} by card`;
+}
