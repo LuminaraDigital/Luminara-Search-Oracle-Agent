@@ -263,8 +263,8 @@ describe('Stars is the only way to pay inside Telegram', () => {
   });
 });
 
-describe('the card rail stays off until its own review', () => {
-  it('Stripe checkout is off in every wrangler env until the var is true', () => {
+describe('the card rail is on for staging and off for production', () => {
+  it('Stripe checkout is true only in the staging wrangler env', () => {
     const wrangler = parseJsonc(readFileSync(join(ROOT, 'wrangler.jsonc'), 'utf8')) as {
       vars: { STRIPE_CHECKOUT_LIVE?: string };
       env: {
@@ -273,7 +273,7 @@ describe('the card rail stays off until its own review', () => {
       };
     };
     expect(wrangler.vars.STRIPE_CHECKOUT_LIVE).toBe('false');
-    expect(wrangler.env.staging.vars.STRIPE_CHECKOUT_LIVE).toBe('false');
+    expect(wrangler.env.staging.vars.STRIPE_CHECKOUT_LIVE).toBe('true');
     expect(wrangler.env.production.vars.STRIPE_CHECKOUT_LIVE).toBe('false');
     expect(isStripeCheckoutLive({ ENVIRONMENT: 'staging' } as Env)).toBe(false);
     expect(isStripeCheckoutLive({

@@ -119,7 +119,7 @@ export interface Env {
   STRIPE_WEBHOOK_SECRET?: string;
   /**
    * "true" opens card checkout after diagnoseStripeConfig accepts the key mode.
-   * Anything else keeps the rail closed. Wrangler sets "false" until test keys are in place.
+   * Anything else keeps the rail closed. Staging sets "true". Production stays "false".
    */
   STRIPE_CHECKOUT_LIVE?: string;
   TON_RECEIVING_ADDRESS?: string;

@@ -283,8 +283,8 @@
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
         "AUDIT_QUEUE_ENABLED": "true",
-        // Card checkout stays closed until test keys are set and this is flipped to "true".
-        "STRIPE_CHECKOUT_LIVE": "false",
+        // Test keys and the staging webhook are set. Production stays "false".
+        "STRIPE_CHECKOUT_LIVE": "true",
         "BUDGET_ENFORCEMENT": "soft"
       }
     },

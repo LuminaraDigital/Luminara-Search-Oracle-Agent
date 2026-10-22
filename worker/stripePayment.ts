@@ -20,8 +20,8 @@ import { normalizePlanId } from '../services/plans/planEntitlements';
 
 /**
  * Card checkout opens only when env.STRIPE_CHECKOUT_LIVE === 'true'.
- * Secrets alone must not light the Card rail. Wrangler keeps the var "false"
- * until a later change after test keys are set.
+ * Secrets alone must not light the Card rail. Staging sets "true" once test
+ * keys are in place. Production and the default vars stay "false".
  */
 
 /** True when both Stripe secrets are present (Worker can create sessions / verify webhooks). */
