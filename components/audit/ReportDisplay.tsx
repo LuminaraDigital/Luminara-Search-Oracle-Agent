@@ -285,6 +285,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         findings={boardFindings}
         whiteLabelAsk={whiteLabelAsk}
         onCloseWhiteLabel={() => setWhiteLabelAsk(false)}
+        measured={!hideLiveNumbers}
+        reportText={markdownText}
+        showWin={!hideAgencyActions}
       />
 
       {!reportUnlocked && !hideAgencyActions && (

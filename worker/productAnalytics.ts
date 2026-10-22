@@ -36,6 +36,8 @@ const ALLOWED_TYPES = new Set([
   'upgrade_prompt_shown',
   'upgrade_prompt_clicked',
   'upgrade_prompt_dismissed',
+  'share_clicked',
+  'share_page_view',
 ]);
 
 const MAX_BATCH = 40;

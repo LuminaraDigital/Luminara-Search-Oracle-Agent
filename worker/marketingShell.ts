@@ -6,6 +6,7 @@ import {
   type MarketingShellMeta,
 } from '../services/marketing/pageMeta';
 import { sha256Hex } from './workerUtils';
+import { maybeServeWinHtml } from './winShare';
 
 /**
  * Unknown paths are served as this shell with HTTP 404. The old inline skip
@@ -229,6 +230,7 @@ const SHARE_TOKEN_PATH = /^\/share\/([a-f0-9]{64})$/i;
 type ShareOgEnv = {
   ASSETS: Fetcher;
   DB?: D1Database;
+  WEBAPP_URL?: string;
 };
 
 /**
@@ -239,6 +241,8 @@ export async function maybeServeShareHtml(
   request: Request,
   env: ShareOgEnv,
 ): Promise<Response | null> {
+  const win = await maybeServeWinHtml(request, env);
+  if (win) return win;
   const url = new URL(request.url);
   const match = url.pathname.replace(/\/+$/, '').match(SHARE_TOKEN_PATH);
   if (!match) return null;

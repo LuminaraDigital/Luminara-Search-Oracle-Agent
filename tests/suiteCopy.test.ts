@@ -31,6 +31,9 @@ const COPY_FILES = [
   'components/suite/BusinessDNAView.tsx',
   'components/suite/IdeaScoutView.tsx',
   'components/upgrade/UpgradeSurfaces.tsx',
+  'components/share/WinSharePanel.tsx',
+  'services/share/winShare.ts',
+  'worker/winShare.ts',
 ] as const;
 
 describe('suite copy', () => {
