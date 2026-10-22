@@ -535,7 +535,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         {tab === 'stars' && !inTg && (
           <p className="mb-4 text-sm leading-relaxed text-gray-300">{TELEGRAM_STARS_HANDOFF} Choosing a plan opens Telegram so you can pay there.</p>
         )}
-        {!paymentOptions.cardAvailable && !paymentOptions.tonAvailable && (
+        {!inTg && !paymentOptions.cardAvailable && !paymentOptions.tonAvailable && (
           <p className="mb-4 text-sm leading-relaxed text-gray-300">{WAITLIST_LINE}</p>
         )}
 
