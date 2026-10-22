@@ -811,7 +811,7 @@ describe('cases the payments review asked for', () => {
     expect(rowOf(db, 'ch_pass')).toMatchObject({ status: 'refunded', refund_reason: 'plan_downgrade_refused' });
     expect(telegram.of('refundStarPayment')).toHaveLength(1);
     const told = telegram.messagesTo(PAYER)[0].body.text as string;
-    expect(told).toContain('You already have Luminara Pro / Agency');
+    expect(told).toContain('You already have Luminara Agency');
     expect(told).toContain('25 Stars have been refunded');
   });
 

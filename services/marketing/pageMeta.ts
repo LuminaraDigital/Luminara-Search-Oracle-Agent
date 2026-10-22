@@ -71,7 +71,7 @@ const SOFTWARE_NODE = {
   description: HOME_META,
   publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
 };
-// No Offer price here. The page sells Telegram Stars, which are not an ISO 4217 currency, and card checkout is off.
+// No Offer price here. Card prices are Australian dollars for a 30-day pass. Telegram Stars are not an ISO 4217 currency.
 
 const WEBSITE_NODE = {
   '@type': 'WebSite',
@@ -245,8 +245,8 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account.</p>
   <p>Starter: web audits for a small site set. No MCP. No share links.</p>
   <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>
-  <p>Pro / Agency: Growth capabilities plus API access and client workspaces. ${LIVE_ANSWER_CHECKS}</p>
-  <p>Telegram Stars billing is available in the Mini App. No invented SEO scores on any plan.</p>
+  <p>Agency: Growth capabilities plus API access and client workspaces. ${LIVE_ANSWER_CHECKS}</p>
+  <p>Pay by card for a 30-day pass, or with Telegram Stars in the Mini App. The Mini App takes Stars only. No invented SEO scores on any plan.</p>
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
 </section>`,
   },
@@ -281,7 +281,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
       <tr><td>Metric Validity</td><td>Proprietary 0-100 composite scores</td><td>Strictly Measured, Estimated, or Not measured labels</td></tr>
       <tr><td>Search Grounding</td><td>Simulated engine scrapes</td><td>Search-grounded live probes with tamper-evident receipts</td></tr>
       <tr><td>Remediation</td><td>Data dashboards and telemetry</td><td>Exportable llms.txt and JSON-LD schema fix packs</td></tr>
-      <tr><td>Pricing Model</td><td>Enterprise retainers</td><td>30-day Telegram Stars plans (${soldStarsAmounts}), or bring your own keys</td></tr>
+      <tr><td>Pricing Model</td><td>Enterprise retainers</td><td>30-day passes. Pay by card or Telegram Stars (${soldStarsAmounts}), or bring your own keys</td></tr>
     </tbody>
   </table>
   <p><a href="/">Run Instant Audit</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
@@ -405,6 +405,8 @@ export function instantAuditTabTitle(target: string | undefined): string {
 export function marketingShellKey(pathname: string): string | null {
   const clean = pathname.replace(/\/+$/, '') || '/';
   if (clean === '/how' || clean === '/infrastructure' || clean === '/modules') return '/how-it-works';
+  if (clean === '/help') return '/faq';
+  if (clean === '/upgrade') return '/pricing';
   if (clean === '/intelligence') return '/ai';
   if (clean === '/why-us') return '/why';
   if (clean === '/lab') return '/labs';

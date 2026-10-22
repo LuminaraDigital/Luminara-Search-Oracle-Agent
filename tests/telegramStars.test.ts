@@ -8,6 +8,7 @@ import {
   premiumEnginesPhrase,
   sendTelegramAlert,
   PLANS,
+  plansOfferedToBuyers,
 } from '../worker/telegramBot';
 import type { Env } from '../worker/index';
 import { createSqliteD1 } from './helpers/sqliteD1';
@@ -119,6 +120,13 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.payload).toBe('agency:67890');
       expect(body.prices[0].amount).toBe(18000);
+    });
+
+    it('does not open a new invoice for the legacy 75-Star pass', async () => {
+      const res = await createInvoiceLink(env, 12345, 'multi_agent_crawl');
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toContain('25 Stars');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('rejects unknown plan names', async () => {
@@ -492,10 +500,11 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
         // Each command stands as a whole word: on its own line, and again in the closing sentence.
         expect(body.text.split(command).length - 1, command).toBe(2);
       }
-      // Every plan is still listed with its price and length.
-      for (const plan of Object.values(PLANS)) {
+      // Offered plans are listed with their price and length. The legacy 75-Star pass is not.
+      for (const plan of Object.values(plansOfferedToBuyers())) {
         expect(body.text).toContain(`${plan.title} - ${plan.stars.toLocaleString()} ⭐ / ${plan.days} days`);
       }
+      expect(body.text).not.toContain('75 ⭐');
     });
 
     it('responds with terms and paysupport guidance on /terms and /paysupport', async () => {

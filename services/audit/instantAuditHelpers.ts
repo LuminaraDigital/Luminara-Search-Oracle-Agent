@@ -50,9 +50,9 @@ export function instantAuditPersistHint(
   }
   if (!signedIn) {
     if (outcome === 'unmeasured') {
-      return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Pro / Agency.';
+      return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.';
     }
-    return 'Instant Audit finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Pro / Agency.';
+    return 'Instant Audit finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.';
   }
   if (outcome === 'unmeasured') {
     return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Strategy was not saved. Retry, or check Settings → provider status.';

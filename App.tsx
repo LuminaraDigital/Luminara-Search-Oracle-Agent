@@ -1649,7 +1649,7 @@ const App: React.FC = () => {
           <BrandMemoryView
             dna={dna}
             onNavigate={(v) => setView(v)}
-            onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Unlock Pro / Agency for client workspaces and deeper memory' } }))}
+            onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Unlock Agency for client workspaces and deeper memory' } }))}
           />
         )}
 

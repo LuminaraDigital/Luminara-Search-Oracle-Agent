@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { bindTelegramBackButton, isInTelegram } from '../services/telegram/tma';
-import { ACL_RIGHTS_CLAUSE, LEGAL_ENTITY, LIABILITY_CLAUSE, OPERATOR_LINE, PUBLIC_CONTACT_LINE, STARS_REFUND_CLAUSE } from '../services/legal/consumerTerms';
+import { ACL_RIGHTS_CLAUSE, LEGAL_ENTITY, LIABILITY_CLAUSE, OPERATOR_LINE, PLANS_PAYMENTS_PARAGRAPH, PUBLIC_CONTACT_LINE, TERMS_UPDATED } from '../services/legal/consumerTerms';
 import { PRIVACY_INTRO, PRIVACY_SECTIONS, PRIVACY_UPDATED, type PrivacySection } from '../services/legal/privacyCopy';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { DOCUMENT_CHROME, MarketingChromeContext } from './marketing/marketingChrome';
@@ -9,9 +9,6 @@ interface Props {
   kind: 'privacy' | 'terms';
   onBack: () => void;
 }
-
-const TERMS_UPDATED = '19 October 2026';
-const SUPPORT_EMAIL = 'support@luminarasuite.com';
 
 function SectionList({ sections }: { sections: PrivacySection[] }) {
   return (
@@ -67,7 +64,7 @@ function TermsBody() {
     {
       title: 'Plans and payments',
       paragraphs: [
-        `Plans bought with Telegram Stars run for the stated number of days from purchase and do not renew automatically. ${STARS_REFUND_CLAUSE} Credit card checkout and corporate invoicing are available on request during closed beta (email ${SUPPORT_EMAIL}).`,
+        PLANS_PAYMENTS_PARAGRAPH,
       ],
     },
     {

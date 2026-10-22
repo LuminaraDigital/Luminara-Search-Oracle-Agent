@@ -43,7 +43,7 @@ export async function requireApiAccess(env: Env, user: HostedIdentity): Promise<
     return json(
       {
         ok: false,
-        error: 'Agency API access requires an active Pro / Agency plan. Upgrade or use the web app.',
+        error: 'Agency API access requires an active Agency plan. Upgrade or use the web app.',
         code: 'API_ACCESS_REQUIRED',
         requiredPlan: 'agency',
       },

@@ -19,11 +19,6 @@ export function planTitle(id: PaidPlanId): string {
   return PLAN_ENTITLEMENTS[id].title;
 }
 
-/** Starter and Growth are for one practice. Pro / Agency is the team plan. */
-export function planAudience(id: PaidPlanId): 'Solo Agent' | 'Agency' {
-  return id === 'agency' ? 'Agency' : 'Solo Agent';
-}
-
 export function planSeatLine(id: PaidPlanId): string {
   const seats = PLAN_ENTITLEMENTS[id].teamSeats;
   return seats === 1 ? '1 seat' : `${seats} seats`;
@@ -40,7 +35,7 @@ export const WAITLIST_LINE = 'Payment on the web is not open yet. Email info@lum
 export function listPriceSummary(): string {
   const ids = ['starter', 'growth', 'agency'] as const;
   const parts = ids.map((id) => `${PLAN_ENTITLEMENTS[id].title} ${PAID_PLAN_PRICES[id].audLabel}`);
-  return `${parts.join(', ')}. You can also pay in Telegram Stars.`;
+  return `${parts.join(', ')}. Pay by card for a 30-day pass that does not renew, or pay in Telegram Stars in the Mini App.`;
 }
 
 /** Free card lines. The daily allowance matches the Worker default of 3. */
@@ -64,7 +59,7 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
   const lines: PlanBullet[] = [
     { included: true, text: `${e.domainLimit} monitored domains` },
     { included: true, text: e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audit reminders in Telegram` },
-    { included: true, text: id === 'agency' ? 'White-label PDF exports' : id === 'growth' ? 'Branded PDF exports' : 'Standard PDF exports' },
+    { included: e.whiteLabelPdf, text: e.whiteLabelPdf ? 'White-label PDF exports' : 'No white-label PDF' },
     {
       included: e.mcpAccess,
       text: e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',

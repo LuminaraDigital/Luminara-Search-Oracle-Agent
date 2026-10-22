@@ -179,7 +179,7 @@ describe('copy outside the paywall while TON and card checkout are closed', () =
     expect(PLAN_CARD_BADGE).toBe('Recommended');
     expect(planTitle('starter')).toBe('Starter');
     expect(planTitle('growth')).toBe('Growth');
-    expect(planTitle('agency')).toBe('Pro / Agency');
+    expect(planTitle('agency')).toBe('Agency');
     expect(planBullets('agency').map((line) => line.text)).toContain('Paid research API (Agency plan or your own DataForSEO login)');
     expect(planBullets('growth').map((line) => line.text).join('\n')).not.toMatch(/Sentinel|Unlimited AI|Hosted API/);
     const settings = readFileSync(resolve(__dirname, '..', 'components/settings/tabs/ApiKeyOverviewTab.tsx'), 'utf8');

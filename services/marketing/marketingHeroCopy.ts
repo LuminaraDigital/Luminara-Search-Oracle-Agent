@@ -29,7 +29,7 @@ export const PRICING_HERO: MarketingHeroCopy = {
   eyebrow: 'Pricing',
   titleLead: 'Plans for audits, share links,',
   titleEm: 'and reminders.',
-  lede: `${REAL_ESTATE_AUDIENCE} Free covers Sample scouts and a daily hosted Instant Audit allowance after you create an account. Starter is web audits only. Growth adds IDE access and shareable reports. Pro / Agency adds API access and client workspaces. ${LIVE_ANSWER_CHECKS}`,
+  lede: `${REAL_ESTATE_AUDIENCE} Free covers Sample scouts and a daily hosted Instant Audit allowance after you create an account. Starter is web audits only. Growth adds IDE access and shareable reports. Agency adds API access and client workspaces. ${LIVE_ANSWER_CHECKS}`,
 };
 
 export const METHODOLOGY_HERO: MarketingHeroCopy = {

@@ -39,7 +39,7 @@ export function upgradePrompt(kind: UpgradePromptKind): { title: string; body: s
     case 'white_label':
       return {
         title: 'White-label PDF',
-        body: `Pro / Agency includes a white-label PDF and 10 seats for ${agency} for 30 days. Starter includes a standard PDF for ${starter}. It does not renew.`,
+        body: `${PLAN_ENTITLEMENTS.agency.title} includes a white-label PDF and 10 seats for ${agency} for 30 days. Starter includes a white-label PDF for ${starter}. It does not renew.`,
       };
     case 'tracking':
       return {

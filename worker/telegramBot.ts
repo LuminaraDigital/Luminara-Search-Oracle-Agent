@@ -104,7 +104,7 @@ export const PLANS: Record<string, PlanMeta> = {
     mcpAccess: true,
   },
   agency: {
-    title: 'Luminara Pro / Agency',
+    title: 'Luminara Agency',
     description: '25 sites, audit memory, competitor citation deltas, 10 client workspaces, white-label PDF, API access, and a daily drift check. 30 days.',
     stars: 18000,
     days: 30,
@@ -154,6 +154,18 @@ export const FREE_PLAN_CAPS = {
   shareLinks: false,
   mcpAccess: false,
 };
+
+/** Already-issued 75-Star invoices still credit. New invoices and the bot list do not offer it. */
+export const LEGACY_STAR_PLAN_ID = 'multi_agent_crawl';
+
+/** Plans a buyer can start from the bot, the Mini App invoice route, or /plan. */
+export function plansOfferedToBuyers(): Record<string, PlanMeta> {
+  const offered: Record<string, PlanMeta> = {};
+  for (const [id, plan] of Object.entries(PLANS)) {
+    if (id !== LEGACY_STAR_PLAN_ID) offered[id] = plan;
+  }
+  return offered;
+}
 
 /**
  * What a buyer may see before signing in: the 30-day plans, with their title, description, Stars
@@ -370,7 +382,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     if (text.startsWith('/plan') || text.startsWith('/subscribe')) {
       // A /buy command is shown only for a plan the command sells. The one-day plans are bought
       // in the app.
-      const lines = Object.entries(PLANS).map(
+      const lines = Object.entries(plansOfferedToBuyers()).map(
         ([id, p]) =>
           `• ${p.title} - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  ` +
           (BUY_COMMAND_ID.test(id) ? `/buy_${id}` : 'Buy this one in the app.'),
@@ -757,9 +769,10 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // 3. A payment problem, and a question about our own plans, prices or how to pay, never
     // reach the model (worker/chatHonesty.ts). Each gets a fixed reply that uses no quota and
     // needs no plan. Only this message is read: what was said before does not route it.
-    const route = chatRoute(text, PLANS);
+    const buyerPlans = plansOfferedToBuyers();
+    const route = chatRoute(text, buyerPlans);
     if (route) {
-      await deliverChatReply(chatRouteReply(route, PLANS), openAppKeyboard(env));
+      await deliverChatReply(chatRouteReply(route, buyerPlans), openAppKeyboard(env));
       return;
     }
 
@@ -843,7 +856,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       // Plan facts in the prompt are built from PLANS on every turn, never typed by hand.
-      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(PLANS) + dnaPromptAddition + domainPromptAddition },
+      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(plansOfferedToBuyers()) + dnaPromptAddition + domainPromptAddition },
       ...history.slice(-6),
       { role: 'user', content: text },
     ];
@@ -856,7 +869,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // a sentence that asks for a code, password or key is removed.
     const honest = modelReply
       ? filterChatReply(modelReply, {
-          plans: PLANS,
+          plans: plansOfferedToBuyers(),
           userTexts: [...history.filter((turn) => turn?.role === 'user').map((turn) => String(turn.content ?? '')), text],
           allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
         })
@@ -905,6 +918,9 @@ export async function createInvoiceLink(
   const normId = normalizePlanId(planId);
   const plan = PLANS[normId];
   if (!plan) return { ok: false, error: `Unknown plan "${planId}"` };
+  if (normId === LEGACY_STAR_PLAN_ID) {
+    return { ok: false, error: 'The 24-hour pass is 25 Stars. Buy that pass in the app.' };
+  }
   if (!userId || typeof userId !== 'number') return { ok: false, error: 'Valid userId required' };
 
   // Refused here so the buyer reads why before an invoice opens. Pre-checkout checks again.

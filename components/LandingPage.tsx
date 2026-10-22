@@ -51,17 +51,17 @@ const VALUE_PROPS = [
   },
   {
     title: 'Works where you work',
-    body: 'Use it on the web, on Windows or in Telegram. On Growth and Pro / Agency, your developer can pull the fix into Cursor or Claude.',
+    body: 'Use it on the web, on Windows or in Telegram. On Growth and Agency, your developer can pull the fix into Cursor or Claude.',
   },
 ] as const;
 
 /** Illustrative report rows. Not a customer and not a measurement. Labeled on the page. */
 const EXAMPLE_REPORT_ROWS: ReadonlyArray<{ label: string; state: EvidenceState; note: string }> = [
-  { label: 'Crawl access', state: 'Measured', note: 'Bots can read robots.txt and llms.txt.' },
-  { label: 'Google Search', state: 'Measured', note: "Named for the agency name, not for 'real estate agent [suburb]'." },
-  { label: 'AI Overviews', state: 'Estimated', note: "A portal page is quoted instead of the agency's suburb page." },
-  { label: 'ChatGPT', state: 'Measured', note: "Not named for 'best real estate agent in [suburb]'." },
-  { label: 'Perplexity', state: 'Not measured', note: 'No data yet. Missing, not a poor result.' },
+  { label: 'Crawl access', state: 'Measured', note: 'Example: robots.txt and llms.txt found.' },
+  { label: 'Google Search', state: 'Not measured', note: 'Example: not measured in this illustration.' },
+  { label: 'AI Overviews', state: 'Not measured', note: 'Example: not measured in this illustration.' },
+  { label: 'ChatGPT', state: 'Not measured', note: 'Example: not measured in this illustration.' },
+  { label: 'Perplexity', state: 'Not measured', note: 'Example: not measured in this illustration.' },
 ];
 
 const LandingPage: React.FC<LandingPageProps> = ({
@@ -338,7 +338,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
 
             <p className="mt-6 text-[15px] leading-relaxed text-[var(--color-ink-2)]">
               <span className="text-[var(--color-ink)]">Verdict. </span>
-              The site is readable, but the suburb page opens with a slogan. AI engines quote pages that answer the question directly.
+              Example: the suburb page opens with a slogan, so an answer engine has no direct sentence to quote for &apos;best real estate agent in [suburb]&apos;.
             </p>
 
             <div className="mt-6 rounded-2xl border border-gold/45 bg-gold/10 p-5">
@@ -386,7 +386,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <div className="max-w-md">
               <p className="text-[15px] font-medium text-[var(--color-ink)]">For developers and agencies</p>
               <p className="mt-1 text-sm leading-relaxed text-[var(--color-ink-2)]">
-                Pull your latest verdict and fix into Cursor or Claude Code over MCP. Included on Growth and Pro / Agency.{' '}
+                Pull your latest verdict and fix into Cursor or Claude Code over MCP. Included on Growth and Agency.{' '}
                 <a href="/docs/mcp.html" className="lx-link">
                   Setup guide
                 </a>

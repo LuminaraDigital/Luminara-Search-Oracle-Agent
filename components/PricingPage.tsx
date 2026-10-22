@@ -10,7 +10,7 @@ import { accountCallsAllowed, getServerHealthSync, openPaywallModal } from '../s
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
-import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planAudience, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
+import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
 import { redirectToCardCheckout } from './paywall/cardCheckout';
 import { cardPayLabel, cardTermLabel, type PaidPlanId } from './paywall/planPrices';
 import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
@@ -28,11 +28,11 @@ export function planChoiceLine(title: string, tier: { stars: string; ton: string
     : `Choose ${title}: ${tier.stars} inside the Mini App.`;
 }
 
-/** One public pass. The Worker still accepts the 75 Star SKU, which grants the same access. */
+/** One public pass, at 25 Stars. A legacy 75-Star invoice can still be credited. It is not offered here. */
 const DAY_PASS = {
   title: '24-hour pass',
   price: '25 Stars',
-  body: 'Premium hosted AI engines and hosted calls past the free daily cap, for one site, for 24 hours. ChatGPT, Perplexity and AI Overviews stay Not measured unless you are on Agency or use your own DataForSEO login. Telegram also lists this same pass at 75 Stars.',
+  body: 'Premium hosted AI engines and hosted calls past the free daily cap, for one site, for 24 hours. ChatGPT, Perplexity and AI Overviews stay Not measured unless you are on Agency or use your own DataForSEO login.',
 } as const;
 
 const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
@@ -111,9 +111,6 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         <h2 id="plans-heading" className="sr-only">
           Plans
         </h2>
-        <p className="mx-auto mb-8 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
-          Solo Agent is {planTitle('starter')} ({planSeatLine('starter')}) and {planTitle('growth')} ({planSeatLine('growth')}). Agency is {planTitle('agency')} ({planSeatLine('agency')}) and includes white-label PDF.
-        </p>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <article className="lx-glass relative flex min-w-0 flex-col rounded-3xl p-6 sm:p-8">
             <h3 className="font-serif text-3xl leading-tight text-[var(--color-ink)]">{PLAN_ENTITLEMENTS.free.title}</h3>
@@ -152,7 +149,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 )}
                 <div className="flex items-baseline justify-between gap-3">
                   <h3 className="font-serif text-3xl leading-tight text-[var(--color-ink)]">{title}</h3>
-                <p className="mt-2 text-[13px] text-[var(--color-ink-2)]">{planAudience(tier.id)} · {planSeatLine(tier.id)}</p>
+                <p className="mt-2 text-[13px] text-[var(--color-ink-2)]">{planSeatLine(tier.id)}</p>
                   {tier.highlight && <p className="lx-eyebrow shrink-0 !text-[11px]">{PLAN_CARD_BADGE}</p>}
                 </div>
                 <p
