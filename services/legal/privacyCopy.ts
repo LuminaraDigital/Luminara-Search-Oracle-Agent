@@ -19,7 +19,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
   {
     title: 'Who we are',
     paragraphs: [
-      `The controller is ${OPERATOR_LINE} ("we", "us"). The product is Luminara Suite: the website, the Telegram Mini App, and the Telegram bot @LuminaraSuiteBot. ${PUBLIC_CONTACT_LINE} Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com.`,
+      `We are ${OPERATOR_LINE} ("we", "us"). The product is Luminara Suite: the website, the Telegram Mini App, and the Telegram bot @LuminaraSuiteBot. ${PUBLIC_CONTACT_LINE} Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com.`,
     ],
   },
   {

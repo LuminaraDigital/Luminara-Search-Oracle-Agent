@@ -49,7 +49,7 @@ describe('plain language pricing', () => {
     expect(listPriceSummary()).toContain('Pay by card');
     expect(listPriceSummary()).not.toMatch(/Approximate|About A\$|US\$/i);
     expect(listPriceSummary()).toContain('Telegram Stars');
-    expect(freePlanLines().join(' ')).toContain('3 hosted Instant Audit checks a day');
+    expect(freePlanLines().map((line) => line.text).join(' ')).toContain('3 hosted Instant Audit checks a day');
     expect(planBullets('agency').map((line) => line.text).join(' ')).not.toContain('saved in this browser');
 
     const html = renderToStaticMarkup(createElement(PricingPage, { onTerminal: () => {} }));
@@ -66,6 +66,11 @@ describe('plain language pricing', () => {
     expect(planBullets('starter').map((line) => line.text)).toContain('White-label PDF exports');
     expect(html.split('24-hour pass').length - 1).toBe(1);
     expect(html).not.toContain('saved in this browser');
+    expect(html.split('Not included: </span>No IDE access (web app only)').length - 1).toBe(2);
+    expect(html.split('Not included: </span>No public share links').length - 1).toBe(2);
+    expect(html).toContain('Pay by card on the website and the desktop app.');
+    expect(html).toContain('Pay with Telegram Stars in the Mini App.');
+    expect(html).not.toContain('Payment happens in Telegram with Stars');
   });
 });
 
@@ -82,6 +87,8 @@ describe('plain language privacy page', () => {
     expect(PRIVACY_HTML).not.toContain('not finished yet');
     expect(PRIVACY_HTML).not.toContain('California (CCPA');
     expect(PRIVACY_HTML).toContain('class="site-nav"');
+    expect(PRIVACY_HTML).toContain('We are LUMINARA DIGITAL PTY LTD');
+    expect(PRIVACY_HTML).not.toContain('controller');
   });
 });
 
