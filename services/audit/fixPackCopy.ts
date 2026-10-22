@@ -29,10 +29,8 @@ export function llmsTxtDraft(host: string, siteNameOrEvidence?: string | FixPack
   const description = oneLine(evidence.description);
   const facts = (evidence.facts || []).map(oneLine).filter(Boolean);
   const lines = [
-    brand ? `# ${brand}` : `# ${clean}`,
-    description
-      ? `> ${description}`
-      : '> Template: add a one-line description. Only the lines below were copied from the site.',
+    brand ? `# ${brand}` : '# <Your agency name>',
+    ...(description ? [`> ${description}`] : []),
     '',
     '## Pages',
     `- Official website: https://${clean}`,
@@ -42,11 +40,10 @@ export function llmsTxtDraft(host: string, siteNameOrEvidence?: string | FixPack
   if (facts.length) {
     lines.push('', '## Facts', ...facts.map((fact) => `- ${fact}`));
   }
-  if (!brand) {
-    lines.push('', 'Template: the business name was not on the page we read. Replace the heading with the name you use.');
-  }
   return `${lines.join('\n')}\n`;
 }
+
+export const LLMS_NAME_NOTE = 'Replace <Your agency name> with the name you use.';
 
 /** Organization JSON-LD. Name and description are included only when the page had them. */
 export function organizationJsonLd(host: string, siteNameOrEvidence?: string | FixPackEvidence | null): string {

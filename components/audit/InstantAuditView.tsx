@@ -169,7 +169,15 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
   const runSeq = useRef(0);
   const continuumRef = useRef<string | undefined>(ideaScoutId);
+  const progressRef = useRef<HTMLDivElement>(null);
   useEffect(() => { continuumRef.current = ideaScoutId; }, [ideaScoutId]);
+  useEffect(() => {
+    if (!loading || report) return;
+    const node = progressRef.current;
+    if (!node) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, [loading, report]);
 
   // Hydrate Decision Card from session board when revisiting a domain (always swap domain).
   useEffect(() => {
@@ -363,6 +371,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         serpEvidence: crewResult.serpEvidence,
         siteType: crewResult.siteType,
         brandSupported: crewResult.brandSupported,
+        displayName: crewResult.displayName,
       });
       if (seq !== runSeq.current) return;
       if (!result) {
@@ -764,6 +773,12 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       {!guestResultFirst && scoutPanel}
 
+      {loading && !report && (
+        <div ref={progressRef}>
+          <AuditProgress stage={progressStage} />
+        </div>
+      )}
+
       {/* Agent Mission Control: Real-time Multi-Agent Activity Stream */}
       {crewEvents.length > 0 && !guestNeedsFullAuditSignIn(hostedRail) && (
         <AgentMissionControl
@@ -782,8 +797,6 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           onClose={() => setShowAttestationModal(false)}
         />
       )}
-
-      {loading && !report && <AuditProgress stage={progressStage} />}
 
       {/* Error State */}
       {error && (

@@ -101,6 +101,15 @@ export function tourCopy(step: TourStep): TourAnchor {
   }
 }
 
+/** Step 2 was requested and the result is not on screen yet. The tour stays visible. */
+export function tourIsWaiting(input: {
+  signedInWeb: boolean;
+  flag: TourFlag;
+  anchors: TourAnchors;
+}): boolean {
+  return input.signedInWeb && input.flag === '2' && !input.anchors.hasResult;
+}
+
 /** Which step to show. Null means wait, or the tour is finished. */
 export function tourStepToShow(input: {
   signedInWeb: boolean;

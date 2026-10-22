@@ -10,6 +10,7 @@
  * steps will cause.
  */
 
+import { readableStem } from '../../audit/brandName';
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
 import { HEALTH_CHECKS } from '../auditEvidenceGate';
@@ -60,7 +61,8 @@ export class ExecutiveTranslatorAgent {
     findings: AuditFinding[],
     patches: CodeRemediationPatch[],
     dna: BusinessDNA | null | undefined,
-    emit: (event: AgentActivityEvent) => void
+    emit: (event: AgentActivityEvent) => void,
+    displayName?: string | null,
   ): Promise<string> {
     emit({
       id: `exec-start-${Date.now()}`,
@@ -72,8 +74,7 @@ export class ExecutiveTranslatorAgent {
       status: 'running',
     });
 
-    const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
-    const brandName = dna?.name || cleanDomain;
+    const brandName = displayName || dna?.name || readableStem(domain);
     const critical = findings.filter((f) => f.severity === 'critical');
     const criticalCount = critical.length;
     // Counts that cannot be a count are treated as not measured.

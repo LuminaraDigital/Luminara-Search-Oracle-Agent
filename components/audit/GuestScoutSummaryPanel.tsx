@@ -38,8 +38,11 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
     >
       <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gold-light">Instant Audit</p>
       <h2 className="mt-3 text-[clamp(1.6rem,4vw,2.4rem)] font-semibold tracking-tight text-white [overflow-wrap:anywhere]">
-        {summary.domain}
+        {summary.brand || summary.domain}
       </h2>
+      {summary.brand && summary.brand.toLowerCase() !== summary.domain.toLowerCase() && (
+        <p className="mt-1 text-sm text-gray-400 [overflow-wrap:anywhere]">{summary.domain}</p>
+      )}
       <div
         id="tour-audit-result"
         className="markdown-content scout-brief mt-4 max-w-2xl text-[15px] leading-relaxed text-gray-200"

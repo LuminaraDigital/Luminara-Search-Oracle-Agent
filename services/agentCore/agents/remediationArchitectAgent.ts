@@ -8,6 +8,8 @@
 
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
+import { llmsTxtDraft } from '../../audit/fixPackCopy';
+import { readableStem } from '../../audit/brandName';
 import { guardPasteReadyCopy } from '../../audit/healthClaimGuard';
 
 export class RemediationArchitectAgent {
@@ -18,7 +20,8 @@ export class RemediationArchitectAgent {
     targetUrl: string,
     findings: AuditFinding[],
     dna: BusinessDNA | null | undefined,
-    emit: (event: AgentActivityEvent) => void
+    emit: (event: AgentActivityEvent) => void,
+    displayName?: string | null,
   ): Promise<CodeRemediationPatch[]> {
     emit({
       id: `coder-start-${Date.now()}`,
@@ -31,7 +34,8 @@ export class RemediationArchitectAgent {
     });
 
     const cleanDomain = targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
-    const brandName = dna?.name || cleanDomain.split('.')[0].toUpperCase();
+    const knownName = displayName || dna?.name || '';
+    const brandName = knownName || readableStem(cleanDomain);
     const patches: CodeRemediationPatch[] = [];
 
     // 1. Organization Schema Patch
@@ -61,15 +65,7 @@ export class RemediationArchitectAgent {
       id: 'patch-llms-txt',
       targetType: 'llms_txt',
       filename: 'llms.txt',
-      proposedSnippet: `# ${brandName}
-> ${dna?.mission || `${brandName} official search and generative answer documentation.`}
-
-## Primary Solutions
-- ${dna?.usp || 'Industry-leading solutions with verified empirical authority.'}
-
-## Key Documentation & Endpoints
-- ${targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`}
-`,
+      proposedSnippet: llmsTxtDraft(cleanDomain, knownName || null),
       explanation: 'Provides an llms.txt index file in site root to guide AI crawlers directly to high-authority entity context.',
       criticSyntaxValid: true,
     });

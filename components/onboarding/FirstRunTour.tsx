@@ -9,6 +9,7 @@ import {
   readTourFlag,
   replayTour,
   tourCopy,
+  tourIsWaiting,
   tourStepToShow,
   type TourAnchors,
   type TourFlag,
@@ -198,7 +199,30 @@ export function FirstRunTour({ signedInWeb }: { signedInWeb: boolean }) {
     return () => document.removeEventListener('keydown', onKey, true);
   }, [step, flag, anchors]);
 
-  if (step == null || typeof document === 'undefined') return null;
+  const waiting = tourIsWaiting({ signedInWeb: web, flag, anchors });
+  if (typeof document === 'undefined') return null;
+  if (waiting) {
+    return createPortal(
+      <div
+        role="status"
+        aria-live="polite"
+        className="fixed bottom-4 left-4 z-[90] w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-gold/50 bg-black p-4 text-gray-100 shadow-2xl"
+      >
+        <p className="text-[11px] font-semibold tracking-wide text-gold-light">{progressLabel(2)}</p>
+        <p className="mt-1 text-sm leading-relaxed text-gray-200">Waiting for your result.</p>
+        <button
+          type="button"
+          onClick={onSkip}
+          className="mt-3 min-h-11 px-2 text-sm text-gray-300 underline-offset-2 hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+        >
+          Skip
+        </button>
+      </div>,
+      document.body,
+    );
+  }
+
+  if (step == null) return null;
   const copy = tourCopy(step);
   const nextBlocked = flagAfterNext({ step, anchors }) === 'stay';
   const showBack = step > 1 && !(step === 2 && !anchors.hasUrl);
