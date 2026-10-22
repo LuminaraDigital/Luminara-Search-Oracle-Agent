@@ -318,12 +318,15 @@ const App: React.FC = () => {
 
   // Conversation survives reloads within the tab (sessionStorage), not across devices.
   useEffect(() => {
+    const next = JSON.stringify(messages.slice(-60));
+    let unchanged = false;
     try {
-      sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-60)));
+      unchanged = sessionStorage.getItem(CHAT_STORAGE_KEY) === next;
+      if (!unchanged) sessionStorage.setItem(CHAT_STORAGE_KEY, next);
     } catch {
       /* quota exceeded or storage disabled: chat just becomes ephemeral */
     }
-    if (messages.length) noteWorkspaceDirty();
+    if (!unchanged && messages.length) noteWorkspaceDirty();
   }, [messages]);
 
   // Telegram + Windows desktop: marketing views redirect into the functional app

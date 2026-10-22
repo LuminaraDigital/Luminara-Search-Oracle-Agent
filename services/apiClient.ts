@@ -6,6 +6,7 @@
  */
 import { getInitDataRaw } from './telegram/tma';
 import { loadFirebaseAuth, readCachedFirebaseIdToken } from './auth/firebaseIdToken';
+import { takeAccountBoot } from './auth/accountBoot';
 import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, isAuditSiteMismatch, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
@@ -736,6 +737,21 @@ export function accountKnownSignedIn(): boolean {
 
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
   if (accountSignedIn !== true) return null;
+  const booted = await takeAccountBoot();
+  if (booted) {
+    currentQuota = {
+      limit: booted.quota.limit,
+      used: booted.quota.used,
+      remaining: booted.quota.remaining,
+      resetSec: booted.quota.resetSec,
+      isUnlimited: booted.quota.isUnlimited,
+      plan: booted.quota.plan,
+      expiresAt: booted.quota.expiresAt,
+      bonusRemaining: booted.quota.bonusRemaining,
+    };
+    quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
+    return currentQuota;
+  }
   const base = apiBase();
   if (!base) return null;
   try {

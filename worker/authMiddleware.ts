@@ -171,6 +171,7 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/audit-receipts$/, methods: ['POST'] },
   { pattern: /^\/audit-receipts\/[^/]+\/revoke$/, methods: ['POST'] },
   { pattern: /^\/auth\/quota$/, methods: ['GET'] },
+  { pattern: /^\/boot$/, methods: ['GET'] },
   // /auth/link is not guarded here. guardApiRoute calls identify(), which upserts
   // each login. The link handler must reject a missing { confirm: true } before any
   // user-store write, then validate both credentials itself.

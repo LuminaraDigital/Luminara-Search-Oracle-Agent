@@ -62,6 +62,7 @@ describe('security headers', () => {
   it('adds CSP and hardening headers to the HTML shell', async () => {
     const res = await worker.fetch(req('/'), makeEnv(), ctx);
     expect(res.headers.get('content-security-policy')).toBe(HTML_CSP);
+    expect(res.headers.get('cache-control')).toBe('no-cache');
     expect(HTML_CSP).toContain('https://telegram.org');
     expect(HTML_CSP).toContain('https://fonts.googleapis.com');
     expect(HTML_CSP).toContain('https://fonts.gstatic.com');
