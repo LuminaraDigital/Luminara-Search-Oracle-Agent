@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  nextPaymentReturn,
   parsePaymentReturn,
   paymentCredit,
   paymentReturnMessage,
@@ -16,6 +17,13 @@ describe('payment return', () => {
       planId: 'starter',
     });
     expect(stripPaymentSearch('?payment=success&plan=starter&session_id=cs_test_1&keep=1')).toBe('?keep=1');
+    expect(nextPaymentReturn('', { kind: 'success', planId: 'starter' })).toEqual({
+      kind: 'success',
+      planId: 'starter',
+    });
+    expect(nextPaymentReturn('?payment=cancelled', { kind: 'success', planId: 'starter' })).toEqual({
+      kind: 'cancelled',
+    });
     expect(stripPaymentSearch('?payment=cancelled')).toBe('');
   });
 

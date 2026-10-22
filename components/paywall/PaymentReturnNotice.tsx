@@ -3,7 +3,7 @@ import { accountCallsAllowed, accountKnownSignedIn, fetchQuotaStatus } from '../
 import {
   paymentReturnMessage,
   paymentCredit,
-  parsePaymentReturn,
+  nextPaymentReturn,
   stripPaymentSearch,
   type PaymentReturn,
 } from './paymentReturn';
@@ -11,6 +11,14 @@ import {
 // shortcut: eight tries, 1.5s apart. A slower webhook needs a status page, not a longer poll.
 const POLL_ATTEMPTS = 8;
 const POLL_GAP_MS = 1500;
+
+/** Survives the landing-to-dashboard remount. A reload with a clean URL starts fresh. */
+let held: PaymentReturn | null = null;
+
+function remember(search: string): PaymentReturn | null {
+  held = nextPaymentReturn(search, held);
+  return held;
+}
 
 function replacePaymentUrl(): void {
   const nextSearch = stripPaymentSearch(window.location.search);
@@ -25,7 +33,7 @@ function replacePaymentUrl(): void {
  */
 export function PaymentReturnNotice() {
   const [payment, setPayment] = useState<PaymentReturn | null>(() =>
-    typeof window === 'undefined' ? null : parsePaymentReturn(window.location.search),
+    typeof window === 'undefined' ? null : remember(window.location.search),
   );
   const signedIn = accountKnownSignedIn();
   const authReady = signedIn || !accountCallsAllowed();
@@ -87,6 +95,7 @@ export function PaymentReturnNotice() {
   if (!payment || !message) return null;
 
   const dismiss = () => {
+    held = null;
     replacePaymentUrl();
     setPayment(null);
   };
