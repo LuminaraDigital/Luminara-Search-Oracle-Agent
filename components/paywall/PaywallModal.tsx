@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useTonConnectUI, useTonWallet, TonConnectButton } from '@tonconnect/ui-react';
 import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma';
-import { createStarsInvoice, createStripeCheckout, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
+import { createStarsInvoice, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
+import { redirectToCardCheckout } from './cardCheckout';
 import { checkPendingTonPayment, executeTonPayment, readPendingTonOrder } from '../../services/ton/tonService';
 import { executeJettonPayment } from '../../services/ton/jettonService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
@@ -273,19 +274,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   const handleCardCheckout = async (planId: string) => {
     setBusyPlan(planId);
     setStatusMessage('Connecting to secure Stripe card checkout…');
-    try {
-      const res = await createStripeCheckout({ planId });
-      if (res.ok && res.checkoutUrl) {
-        productTelemetry.track('checkout_started', { planId, method: 'stripe', status: 'initiated' });
-        window.location.href = res.checkoutUrl;
-      } else {
-        setStatusMessage(toUserFacingText(res.error, 'Could not initiate Stripe checkout. Please try again.'));
-      }
-    } catch (err: any) {
-      setStatusMessage(toUserFacingText(err, 'Failed to start card checkout.'));
-    } finally {
-      setBusyPlan(null);
-    }
+    const res = await redirectToCardCheckout(planId);
+    if (!res.ok) setStatusMessage(res.error);
+    setBusyPlan(null);
   };
 
   const handlePlanCheckout = (planId: 'starter' | 'growth' | 'agency') => {
