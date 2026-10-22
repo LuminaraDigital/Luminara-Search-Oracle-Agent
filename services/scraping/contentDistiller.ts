@@ -87,6 +87,10 @@ export class ContentDistiller {
           openGraph[ogMatch[1].toLowerCase()] = ogMatch[2].trim();
         }
       }
+      if (!openGraph.site_name) {
+        const flipped = rawHtml.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:site_name["']/i);
+        if (flipped?.[1]) openGraph.site_name = flipped[1].trim();
+      }
 
       // 2. Extract JSON-LD Schemas
       const jsonLdRegex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;

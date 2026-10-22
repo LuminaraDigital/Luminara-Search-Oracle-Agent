@@ -89,6 +89,12 @@ export interface ScrapedPageEvidence {
   url: string;
   title: string;
   description?: string;
+  /** og:site_name when the page published one. */
+  siteName?: string;
+  /** Name on Organization or LocalBusiness JSON-LD. */
+  organizationName?: string;
+  /** HTTP status of the page fetch, when the scraper recorded one. */
+  httpStatus?: number;
   h1s: string[];
   schemasFound: Array<{ type: string; rawJson: string; isValid: boolean }>;
   wordCount: number;

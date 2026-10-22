@@ -24,7 +24,7 @@ import type { HostedScoutRail } from './hostedScoutRail';
 import { guardPasteReadyCopy, siteLooksHealthRelated } from './healthClaimGuard';
 import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
 import { fallbackAnswerLine } from '../llm/fallbackAnswer';
-import { rememberScrapedBrand } from './brandName';
+import { brandFromEvidence, rememberScrapedBrand } from './brandName';
 import { recordAudit } from './auditHistoryService';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
@@ -96,7 +96,11 @@ export async function generateAuditReportUnlessDegraded(input: {
   );
   const pages = input.scrapedPages ?? [];
   const firstPage = pages[0];
-  rememberScrapedBrand(input.formattedUrl, firstPage?.title || firstPage?.h1s?.[0]);
+  rememberScrapedBrand(input.formattedUrl, brandFromEvidence({
+    siteName: firstPage?.siteName,
+    organizationName: firstPage?.organizationName,
+    title: firstPage?.title || firstPage?.h1s?.[0],
+  }));
   const serp = input.serpEvidence ?? [];
   const facts: MeasuredClaimFacts = {
     ...input.summary.measured,

@@ -478,7 +478,7 @@ describe('Instant Audit honesty on empty evidence', () => {
   it('says nothing about AI overviews in the zero mention finding, only what the search rows show', async () => {
     const result = await playbookAuditorAgent.execute('AEO', [livePage()], [liveSerp(false), liveSerp(false)], null, noop);
     const finding = result.findings.find((item) => item.id === 'finding-zero-citations');
-    expect(finding?.description).toBe('None of the 2 web search results this run collected mention the brand.');
+    expect(finding?.description).toBe('None of the 2 results for "example official" name the brand.');
   });
 
   it('keeps a connection-refused Jina fallback from inventing a health score', async () => {

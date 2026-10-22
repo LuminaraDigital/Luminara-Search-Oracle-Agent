@@ -13,7 +13,7 @@ export interface NarrativeCluster {
   totalQueries: number;
   brandCitations: number;
   competitorCitations: number;
-  brandMindsharePercent: number;
+  brandMindsharePercent: number | null;
   topCompetitor?: {
     name: string;
     citations: number;
@@ -29,7 +29,9 @@ export interface MindshareHistoryPoint {
 export interface BrandMindshareSummary {
   domain: string;
   measuredAt: number;
-  overallMindsharePercent: number;
+  overallMindsharePercent: number | null;
+  /** Where the percent came from. Null when the percent was not measured. */
+  source: string | null;
   velocityPercentWoW: number;
   totalAttentionSlots: number;
   brandCitations: number;
@@ -41,28 +43,11 @@ export interface BrandMindshareSummary {
   method: 'observed' | 'uncontested';
 }
 
-const DEFAULT_NARRATIVE_TEMPLATES = [
-  {
-    id: 'privacy_security',
-    name: 'Privacy, Security & Local-First',
-    keywords: ['privacy', 'security', 'soc2', 'local', 'self-host', 'compliance', 'encrypt', 'open source'],
-  },
-  {
-    id: 'pricing_value',
-    name: 'Cost, Pricing & Open Access',
-    keywords: ['price', 'pricing', 'cost', 'free', 'budget', 'cheap', 'roi', 'tier'],
-  },
-  {
-    id: 'developer_api',
-    name: 'Developer Experience & APIs',
-    keywords: ['api', 'sdk', 'developer', 'docs', 'integration', 'latency', 'webhook', 'code'],
-  },
-  {
-    id: 'speed_performance',
-    name: 'Performance & Fast Onboarding',
-    keywords: ['fast', 'speed', 'instant', 'quick', 'easy', 'simple', 'performance', 'real-time'],
-  },
-];
+function topicName(query: string): string {
+  const name = query.replace(/\s+/g, ' ').trim();
+  if (!name) return '';
+  return name.length > 80 ? `${name.slice(0, 77)}...` : name;
+}
 
 export function buildBrandMindshare(opts: {
   domain: string;
@@ -91,20 +76,17 @@ export function buildBrandMindshare(opts: {
   const totalCompetitorCitations = [...competitorMap.values()].reduce((a, b) => a + b, 0);
   const totalSlots = brandCitations + totalCompetitorCitations;
   const hasCompetitorEvidence = totalCompetitorCitations > 0;
+  const overallMindsharePercent = hasCompetitorEvidence && totalSlots > 0
+    ? Math.round((brandCitations / totalSlots) * 100)
+    : null;
+  const mentionPhrase = (count: number, singular: string, plural: string) =>
+    `${count} ${count === 1 ? singular : plural}`;
+  const source = overallMindsharePercent == null
+    ? null
+    : `${mentionPhrase(brandCitations, 'brand mention', 'brand mentions')} and ${mentionPhrase(totalCompetitorCitations, 'competitor mention', 'competitor mentions')} in this search sample.`;
 
-  // Never flash 100% brand mindshare when no competitor signals were measured in the sample.
-  let overallMindsharePercent = 0;
-  if (hasCompetitorEvidence) {
-    overallMindsharePercent = totalSlots > 0 ? Math.round((brandCitations / totalSlots) * 100) : 0;
-  } else if (list.length > 1) {
-    overallMindsharePercent = Math.round((brandCitations / list.length) * 100);
-  } else {
-    overallMindsharePercent = brandCitations > 0 ? 50 : 0;
-  }
-
-  // Compute velocity from previous historical point if available (7 days back)
   let velocityPercentWoW = 0;
-  if (opts.history && opts.history.length > 0) {
+  if (overallMindsharePercent != null && opts.history && opts.history.length > 0) {
     const prior = opts.history[opts.history.length - 1];
     if (prior && prior.mindsharePercent > 0) {
       velocityPercentWoW = Math.round(
@@ -113,62 +95,59 @@ export function buildBrandMindshare(opts: {
     }
   }
 
-  // Group evidence into narrative clusters
-  const narratives: NarrativeCluster[] = DEFAULT_NARRATIVE_TEMPLATES.map((tmpl) => {
-    let clusterTotal = 0;
+  const byQuery = new Map<string, EmpiricalEvidence[]>();
+  for (const ev of list) {
+    const name = topicName(ev.query || '');
+    if (!name) continue;
+    const rows = byQuery.get(name) || [];
+    rows.push(ev);
+    byQuery.set(name, rows);
+  }
+
+  const narratives: NarrativeCluster[] = [...byQuery.entries()].map(([name, rows]) => {
     let clusterBrand = 0;
     const clusterCompetitors = new Map<string, number>();
-
-    for (const ev of list) {
-      const queryLower = (ev.query + ' ' + (ev.snippet || '')).toLowerCase();
-      const matches = tmpl.keywords.some((kw) => queryLower.includes(kw));
-      if (matches) {
-        clusterTotal += 1;
-        if (ev.brandCited) clusterBrand += 1;
-        for (const comp of ev.competitorsCited || []) {
-          clusterCompetitors.set(comp, (clusterCompetitors.get(comp) || 0) + 1);
-        }
+    for (const ev of rows) {
+      if (ev.brandCited) clusterBrand += 1;
+      for (const comp of ev.competitorsCited || []) {
+        const trimmed = comp.trim();
+        if (trimmed) clusterCompetitors.set(trimmed, (clusterCompetitors.get(trimmed) || 0) + 1);
       }
     }
-
     const clusterCompTotal = [...clusterCompetitors.values()].reduce((a, b) => a + b, 0);
     const clusterSlots = clusterBrand + clusterCompTotal;
-    const clusterMindshare = clusterSlots > 0 ? Math.round((clusterBrand / clusterSlots) * 100) : 0;
-
     let topComp: { name: string; citations: number } | undefined;
-    let maxCitations = 0;
-    for (const [cName, cCount] of clusterCompetitors.entries()) {
-      if (cCount > maxCitations) {
-        maxCitations = cCount;
-        topComp = { name: cName, citations: cCount };
-      }
+    for (const [cName, cCount] of clusterCompetitors) {
+      if (!topComp || cCount > topComp.citations) topComp = { name: cName, citations: cCount };
     }
-
     return {
-      id: tmpl.id,
-      name: tmpl.name,
-      keywords: tmpl.keywords,
-      totalQueries: clusterTotal,
+      id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'query',
+      name,
+      keywords: [name],
+      totalQueries: rows.length,
       brandCitations: clusterBrand,
       competitorCitations: clusterCompTotal,
-      brandMindsharePercent: clusterMindshare,
+      brandMindsharePercent: clusterCompTotal > 0 && clusterSlots > 0
+        ? Math.round((clusterBrand / clusterSlots) * 100)
+        : null,
       topCompetitor: topComp,
-      velocityStatus: clusterBrand > (topComp?.citations ?? 0) ? 'surging' : clusterBrand === 0 ? 'decaying' : 'stable',
+      velocityStatus: 'stable' as const,
     };
   });
 
-  const activeNarratives = narratives.filter((n) => n.totalQueries > 0);
-  const topSurgingNarrative = [...activeNarratives].sort(
-    (a, b) => b.brandMindsharePercent - a.brandMindsharePercent
+  const measured = narratives.filter((item) => item.brandMindsharePercent != null);
+  const topSurgingNarrative = [...measured].sort(
+    (a, b) => (b.brandMindsharePercent ?? 0) - (a.brandMindsharePercent ?? 0)
   )[0];
-  const underperformingNarrative = [...activeNarratives].sort(
-    (a, b) => a.brandMindsharePercent - b.brandMindsharePercent
-  )[0];
+  const underperformingNarrative = measured.length > 1
+    ? [...measured].sort((a, b) => (a.brandMindsharePercent ?? 0) - (b.brandMindsharePercent ?? 0))[0]
+    : undefined;
 
   return {
     domain: opts.domain,
     measuredAt,
     overallMindsharePercent,
+    source,
     velocityPercentWoW,
     totalAttentionSlots: totalSlots,
     brandCitations,

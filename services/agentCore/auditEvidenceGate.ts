@@ -7,6 +7,7 @@
  */
 
 import type { ScrapedPageEvidence, SerpEvidenceItem } from './types';
+import { responseBlocked } from '../audit/llmCrawlerReadiness';
 
 export type LivePageSource = NonNullable<ScrapedPageEvidence['source']>;
 
@@ -18,11 +19,19 @@ export function pageHasObservableBody(page: Pick<ScrapedPageEvidence, 'wordCount
   return page.wordCount > 0 || page.schemasFound.length > 0 || (page.rawTextSnippet || '').trim().length > 0;
 }
 
+/** 403, 429, or a challenge page. That HTML was not a parse of the site. */
+export function pageFetchBlocked(
+  page: Pick<ScrapedPageEvidence, 'httpStatus' | 'title' | 'rawTextSnippet'>,
+): boolean {
+  return responseBlocked(page.httpStatus, `${page.title || ''}\n${page.rawTextSnippet || ''}`);
+}
+
 /**
  * Jina Reader markdown is not a DOM scrape: missing JSON-LD on that text is not a measured gap.
  * Omitted source stays eligible so callers that already built a live page are unchanged.
  */
 export function pageSupportsHealthScore(page: ScrapedPageEvidence): boolean {
+  if (pageFetchBlocked(page)) return false;
   if (!pageHasObservableBody(page)) return false;
   if (!page.source) return true;
   return LIVE_PAGE_SOURCES.has(page.source);

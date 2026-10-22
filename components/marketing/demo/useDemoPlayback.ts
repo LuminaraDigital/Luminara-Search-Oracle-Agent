@@ -130,15 +130,15 @@ export function useDemoPlayback(): DemoPlayback {
       let verdict = SAMPLE_FIXTURE.verdict;
       let shipAction = SAMPLE_FIXTURE.shipAction;
 
-      if (crawl.ok && crawl.crawl.status === 'measured') {
+      if (crawl.ok) {
         kind = 'live_crawl';
         crawlRow = {
           id: 'crawl_readiness',
           label: 'Crawl readiness',
-          status: 'measured',
+          status: crawl.crawl.status,
           note: crawl.crawl.note,
         };
-        verdict = `Live crawl for ${crawl.host}: ${crawl.crawl.note} Answer engines were not measured here.`;
+        verdict = crawl.crawl.note;
         shipAction = `Create a free account and run Instant Audit on ${crawl.host} for Measured engine rows.`;
       } else {
         crawlRow = {

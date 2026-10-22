@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { brandNameFor, clearRememberedBrand, hostBrandLabel, rememberScrapedBrand } from '../services/audit/brandName';
+import { brandFromEvidence, brandNameFor, clearRememberedBrand, organizationNameFromJson, rememberScrapedBrand } from '../services/audit/brandName';
 import { llmsTxtDraft, organizationJsonLd } from '../services/audit/fixPackCopy';
 import { AUDIT_WRITE_UNAVAILABLE, writeHostedAuditReport } from '../services/audit/hostedAuditWrite';
 import { GroqProvider } from '../services/llm/providers/GroqProvider';
@@ -9,23 +9,33 @@ import { configService } from '../services/configService';
 describe('brand name from a host', () => {
   afterEach(() => clearRememberedBrand());
 
-  it('strips www and a multi-part TLD', () => {
-    expect(hostBrandLabel('www.movida.com.au')).toBe('Movida');
-    expect(hostBrandLabel('https://movida.com.au/cars')).toBe('Movida');
-    expect(hostBrandLabel('blog.example.com')).toBe('Example');
+  it('keeps scraped casing and does not title-case the domain', () => {
+    expect(brandFromEvidence({ siteName: 'Ray White' })).toBe('Ray White');
+    expect(brandFromEvidence({ organizationName: 'McGrath', title: 'Home | Other' })).toBe('McGrath');
+    expect(brandFromEvidence({ title: 'Ray White | Real Estate' })).toBe('Ray White');
+    expect(brandFromEvidence({
+      siteName: 'Ray White',
+      organizationName: 'McGrath',
+      title: 'Other Brand | Homes',
+    })).toBe('Ray White');
+    expect(organizationNameFromJson([
+      { type: 'RealEstateAgent', rawJson: JSON.stringify({ name: 'Ray White' }) },
+    ])).toBe('Ray White');
+    expect(brandNameFor('raywhite.com.au')).toBeNull();
+    expect(brandNameFor('www.mcgrath.com.au', 'McGrath')).toBe('McGrath');
   });
 
-  it('prefers a scraped title over the host label', () => {
+  it('prefers a scraped title over a remembered name for another host', () => {
     expect(brandNameFor('www.movida.com.au', 'Movida Car Rental | Hire')).toBe('Movida Car Rental');
     rememberScrapedBrand('https://www.movida.com.au', 'Movida');
     expect(brandNameFor('movida.com.au')).toBe('Movida');
-    expect(brandNameFor('other.example.com')).toBe('Example');
+    expect(brandNameFor('other.example.com')).toBeNull();
   });
 
-  it('rejects a raw host and Www as a name', () => {
-    expect(brandNameFor('www.movida.com.au', 'Www')).toBe('Movida');
-    expect(brandNameFor('www.movida.com.au', 'Home | Movida')).toBe('Movida');
-    expect(brandNameFor('www.movida.com.au', 'https://www.movida.com.au')).toBe('Movida');
+  it('rejects a raw host, Www, and a generic title prefix', () => {
+    expect(brandNameFor('www.movida.com.au', 'Www')).toBeNull();
+    expect(brandNameFor('www.movida.com.au', 'Home | Movida')).toBeNull();
+    expect(brandNameFor('www.movida.com.au', 'https://www.movida.com.au')).toBeNull();
   });
 });
 
@@ -33,11 +43,16 @@ describe('fix pack copy', () => {
   it('uses the derived name and no invented verification', () => {
     const llms = llmsTxtDraft('www.movida.com.au');
     const schema = organizationJsonLd('www.movida.com.au');
-    expect(llms.startsWith('# Movida')).toBe(true);
-    expect(schema).toContain('"name": "Movida"');
+    expect(llms.startsWith('# movida.com.au')).toBe(true);
+    expect(schema).not.toContain('"name"');
     expect(`${llms}\n${schema}`).not.toMatch(/Verified|leading solution|verified answer|verified services/i);
-    expect(llms).toContain('Fill this in');
-    expect(schema).toContain('Fill this in');
+    expect(`${llms}\n${schema}`).not.toContain('Fill this in');
+    expect(llms).toContain('Template:');
+    const named = llmsTxtDraft('raywhite.com', { siteName: 'Ray White', description: 'Sells homes in Melbourne.', contactUrl: 'https://raywhite.com/contact' });
+    expect(named).toContain('# Ray White');
+    expect(named).toContain('Sells homes in Melbourne.');
+    expect(named).toContain('https://raywhite.com/contact');
+    expect(organizationJsonLd('raywhite.com', { siteName: 'Ray White' })).toContain('"name": "Ray White"');
   });
 });
 

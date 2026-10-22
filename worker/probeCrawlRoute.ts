@@ -6,7 +6,7 @@ import type { Env } from './env';
 import { json } from './workerUtils';
 import { safePublicHostname } from './security';
 import { loadCrawlerSnapshot } from './llmCrawlerRoute';
-import type { LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
+import { BLOCKED_CHECK, responseBlocked, type LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 
 export type ProbeCrawlStatus = 'measured' | 'not_measured';
 
@@ -28,9 +28,15 @@ function present(body: string | null | undefined, status: number | null | undefi
 }
 
 function fileNote(label: string, body: string | null | undefined, status: number | null | undefined): string {
+  if (responseBlocked(status, body)) return `${label}: ${BLOCKED_CHECK}`;
   if (present(body, status)) return `${label} found`;
   if (status == null || status === 404) return `${label} missing`;
-  return `${label} couldn't be checked (blocked)`;
+  return `${label}: Not measured`;
+}
+
+function fileSettled(body: string | null | undefined, status: number | null | undefined): boolean {
+  if (responseBlocked(status, body)) return false;
+  return present(body, status) || status == null || status === 404;
 }
 
 export function summarizeProbeCrawl(
@@ -47,8 +53,11 @@ export function summarizeProbeCrawl(
   if (aiTxtPresent || (aiStatus != null && aiStatus !== 404)) {
     parts.push(fileNote('ai.txt', snapshot.aiTxt, aiStatus));
   }
+  const settled = fileSettled(snapshot.robotsTxt, snapshot.robotsHttpStatus)
+    && fileSettled(snapshot.llmsTxt, snapshot.llmsHttpStatus)
+    && (aiStatus == null || aiStatus === 404 || aiTxtPresent || fileSettled(snapshot.aiTxt, aiStatus));
   return {
-    status: 'measured',
+    status: settled ? 'measured' : 'not_measured',
     note: `Live crawl · ${parts.join('; ')}. Engines still need Instant Audit.`,
     robotsPresent,
     llmsPresent,

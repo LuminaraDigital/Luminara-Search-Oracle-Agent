@@ -98,10 +98,12 @@ describe('probeCrawl summarize', () => {
       aiHttpStatus: 403,
     };
     const crawl = summarizeProbeCrawl('movida.com.au', snapshot);
-    expect(crawl.note).toContain("robots.txt couldn't be checked (blocked)");
-    expect(crawl.note).toContain("llms.txt couldn't be checked (blocked)");
-    expect(crawl.note).toContain("ai.txt couldn't be checked (blocked)");
+    expect(crawl.status).toBe('not_measured');
+    expect(crawl.note).toContain('robots.txt: Not measured (site blocked our check)');
+    expect(crawl.note).toContain('llms.txt: Not measured (site blocked our check)');
+    expect(crawl.note).toContain('ai.txt: Not measured (site blocked our check)');
     expect(crawl.note).not.toContain('missing');
+    expect(crawl.note).not.toContain('Measured');
     expect(crawl.robotsPresent).toBe(false);
   });
 });

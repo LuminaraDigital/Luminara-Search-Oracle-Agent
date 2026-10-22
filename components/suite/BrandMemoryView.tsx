@@ -48,9 +48,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
 
   const planId = quota?.plan || 'free';
   const entitlements = entitlementsFor(planId);
-  const primaryDomain =
-    audits[0]?.domain ||
-    (dna?.name ? dna.name.toLowerCase().replace(/\s+/g, '') + '.com' : '');
+  const primaryDomain = audits[0]?.domain || '';
 
   const refresh = () => {
     setEvents(brandMemoryVaultService.listEvents(40));
@@ -92,7 +90,15 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   }, []);
 
   const domainOptions = useMemo(() => {
-    const set = new Set(audits.map((a) => a.domain));
+    const set = new Set<string>();
+    for (const audit of audits) {
+      const domain = audit.domain
+        .replace(/^https?:\/\//i, '')
+        .replace(/^www\./i, '')
+        .split('/')[0]
+        .toLowerCase();
+      if (domain) set.add(domain);
+    }
     return [...set];
   }, [audits]);
 
@@ -123,7 +129,11 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   };
 
   const handleAddWatch = () => {
-    const domain = domainOptions[0] || primaryDomain || 'example.com';
+    const domain = domainOptions[0] || primaryDomain;
+    if (!domain) {
+      setSentinelMsg('Run an audit first so we know which domain to watch.');
+      return;
+    }
     const res = competitorWatchlistService.add(watchName, domain, { planId });
     if ('error' in res) {
       setSentinelMsg(res.error);
@@ -153,7 +163,8 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
           reauditCadence: entitlements.scheduledReaudit === 'none' ? 'weekly' : entitlements.scheduledReaudit,
         });
         const status = await fetchSentinelStatus();
-        setSentinelMsg(`Sentinel watching ${status.targets?.length || 1} domain(s). Cron scans daily; re-audit nudges follow your plan.`);
+        const watched = Array.isArray(status.targets) ? status.targets.length : 0;
+        setSentinelMsg(`Sentinel watching ${watched} domain${watched === 1 ? '' : 's'}. Cron scans daily; re-audit nudges follow your plan.`);
         refresh();
       } catch (e: any) {
         setSentinelMsg(e?.message || 'Could not register Sentinel. Sign in and use a paid plan.');
@@ -279,7 +290,12 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
 
       {tab === 'diff' && (
         <div className="space-y-4">
-          <h3 className="text-sm font-bold text-white">What changed since last month?</h3>
+          <h3 className="text-sm font-bold text-white">
+            What changed{diff?.domain ? ` for ${diff.domain}` : ''}
+          </h3>
+          <p className="text-[11px] text-gray-400">
+            {domainOptions.length} {domainOptions.length === 1 ? 'domain' : 'domains'} in memory. Each comparison stays on one domain.
+          </p>
           {!diff?.after ? (
             <div className="p-8 text-center border border-white/10 rounded-2xl bg-white/[0.02] space-y-3">
               <span className="text-3xl block">📊</span>

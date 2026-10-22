@@ -115,9 +115,9 @@ export function createClient(
   const client: AgencyClient = {
     id: `client-${now}-${Math.random().toString(36).slice(2, 7)}`,
     name: name.trim().slice(0, 120) || 'Untitled client',
-    domains: (opts?.domains || []).map((d) =>
+    domains: [...new Set((opts?.domains || []).map((d) =>
       d.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase()
-    ),
+    ).filter(Boolean))],
     dna: opts?.dna ?? null,
     notes: '',
     createdAt: now,

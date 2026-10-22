@@ -57,13 +57,11 @@ describe('mindshareService', () => {
     expect(ms.brandCitations).toBe(2);
     expect(ms.competitorCitations).toBe(3);
     expect(ms.overallMindsharePercent).toBe(40); // 2 / 5 = 40%
+    expect(ms.source).toContain('2 brand mentions');
+    expect(ms.source).toContain('3 competitor mentions');
     expect(ms.velocityPercentWoW).toBe(33); // (40 - 30) / 30 = +33%
-    expect(ms.narratives.length).toBeGreaterThan(0);
-
-    const privacyCluster = ms.narratives.find((n) => n.id === 'privacy_security');
-    expect(privacyCluster).toBeDefined();
-    expect(privacyCluster?.brandCitations).toBe(2);
-    expect(privacyCluster?.velocityStatus).toBe('surging');
+    expect(ms.narratives.map((item) => item.name)).toEqual(sampleEvidence().map((item) => item.query));
+    expect(ms.narratives.some((item) => item.name === 'Developer Experience & APIs')).toBe(false);
   });
 
   it('handles empty evidence gracefully', () => {
@@ -72,7 +70,9 @@ describe('mindshareService', () => {
       evidence: [],
     });
 
-    expect(ms.overallMindsharePercent).toBe(0);
+    expect(ms.overallMindsharePercent).toBeNull();
+    expect(ms.source).toBeNull();
+    expect(ms.narratives).toEqual([]);
     expect(ms.velocityPercentWoW).toBe(0);
     expect(ms.brandCitations).toBe(0);
   });

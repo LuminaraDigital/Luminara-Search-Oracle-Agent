@@ -72,20 +72,32 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
           </span>
         </div>
         <div className="flex items-center gap-4 text-xs font-mono">
-          <div>
-            <span className="text-gray-500 mr-1.5">Brand Mindshare:</span>
-            <span className="font-bold text-gold-light text-sm">
-              {mindshare.overallMindsharePercent}%
-            </span>
-          </div>
-          <div>
-            <span className="text-gray-500 mr-1.5">Velocity:</span>
-            <span className={`font-bold ${mindshare.velocityPercentWoW >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {velocityLabel}
-            </span>
-          </div>
+          {mindshare.overallMindsharePercent == null ? (
+            <span className="text-gray-400">Mindshare not measured</span>
+          ) : (
+            <>
+              <div>
+                <span className="text-gray-500 mr-1.5">Brand Mindshare:</span>
+                <span className="font-bold text-gold-light text-sm">
+                  {mindshare.overallMindsharePercent}%
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500 mr-1.5">Velocity:</span>
+                <span className={`font-bold ${mindshare.velocityPercentWoW >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {velocityLabel}
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
+      {mindshare.source && (
+        <p className="text-xs text-gray-400 mb-4">Source: {mindshare.source}</p>
+      )}
+      {mindshare.overallMindsharePercent == null && (
+        <p className="text-xs text-gray-400 mb-4">This search sample did not name a competitor, so a mindshare percent is not shown.</p>
+      )}
 
       {/* Primary Citation Driver Banner */}
       <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 mb-5 flex flex-wrap items-start justify-between gap-3">
@@ -113,6 +125,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
       </div>
 
       {/* Narrative Clusters Grid */}
+      {mindshare.narratives.length > 0 && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
         {mindshare.narratives.map((cluster) => (
           <div
@@ -132,15 +145,17 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
                   {cluster.velocityStatus}
                 </span>
               </div>
+              {cluster.brandMindsharePercent != null && (
               <div className="w-full bg-white/5 rounded-full h-1.5 mb-2 overflow-hidden">
                 <div
                   className="bg-gold h-1.5 rounded-full transition-all duration-500"
                   style={{ width: `${Math.min(100, cluster.brandMindsharePercent)}%` }}
                 />
               </div>
+              )}
             </div>
             <div className="flex items-center justify-between text-[11px] text-gray-400 font-mono">
-              <span>Mindshare: {cluster.brandMindsharePercent}%</span>
+              <span>{cluster.brandMindsharePercent == null ? 'Not measured' : `Mindshare: ${cluster.brandMindsharePercent}%`}</span>
               {cluster.topCompetitor && (
                 <span className="text-gray-500 text-[10px]">
                   Rival: {cluster.topCompetitor.name} ({cluster.topCompetitor.citations} cites)
@@ -150,6 +165,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
           </div>
         ))}
       </div>
+      )}
 
       {/* Untapped Authority Citation Hubs */}
       {authorityScout.topUntappedHub && (
