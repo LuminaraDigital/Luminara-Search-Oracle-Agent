@@ -5,7 +5,7 @@
 import type { AuditFinding, ScrapedPageEvidence } from '../agentCore/types';
 import { healthScoreFromFindings } from '../agentCore/auditEvidenceGate';
 import type { LlmCrawlerCheck } from './llmCrawlerReadiness';
-import { brandFromEvidence } from './brandName';
+import { brandCandidates, brandFromEvidence } from './brandName';
 import { llmsTxtDraft, organizationJsonLd } from './fixPackCopy';
 
 export const JEV_MODEL = 'jev-latest';
@@ -41,6 +41,7 @@ export interface JevVerdict {
   downgradedIds: string[];
   siteType: string | null;
   brandSupported: boolean | null;
+  brandChoice: string | null;
 }
 
 export interface JevLogLine {
@@ -94,7 +95,11 @@ export function jevState(pages: readonly JevPage[], files: readonly JevFile[]): 
   };
 }
 
-function questionsFor(findings: readonly JevClaim[], brandName: string | null): Record<string, unknown> {
+function questionsFor(
+  findings: readonly JevClaim[],
+  brandName: string | null,
+  candidates: readonly string[],
+): Record<string, unknown> {
   const questions: Record<string, unknown> = {};
   findings.forEach((finding, index) => {
     questions[`finding_${index}`] = {
@@ -111,6 +116,15 @@ function questionsFor(findings: readonly JevClaim[], brandName: string | null): 
     questions.brand_name = {
       type: 'noul',
       instructions: `Is the brand name "${clip(brandName, 80)}" correct for this site?`,
+    };
+  }
+  if (candidates.length > 0) {
+    const criteria: Record<string, string> = {};
+    for (const name of candidates) criteria[name] = name;
+    questions.brand_pick = {
+      type: 'choice',
+      instructions: 'Which of these is the brand name for this site?',
+      criteria,
     };
   }
   return questions;
@@ -131,8 +145,14 @@ function siteChoice(answer: unknown): string | null {
   return answer.choice in SITE_CRITERIA ? answer.choice : null;
 }
 
+function pickedBrand(answer: unknown, candidates: readonly string[]): string | null {
+  if (!isRecord(answer) || answer.type !== 'choice' || typeof answer.choice !== 'string') return null;
+  if (typeof answer.confidence !== 'number' || answer.confidence < JEV_NOUL_MIN) return null;
+  return candidates.find((name) => name === answer.choice) || null;
+}
+
 function failOpen(calls: number, latencyMs: number): JevVerdict {
-  return { ok: false, calls, latencyMs, downgradedIds: [], siteType: null, brandSupported: null };
+  return { ok: false, calls, latencyMs, downgradedIds: [], siteType: null, brandSupported: null, brandChoice: null };
 }
 
 function logLine(line: JevLogLine, log?: (line: JevLogLine) => void): void {
@@ -154,6 +174,7 @@ export async function verifyAuditWithJev(input: {
   files: readonly JevFile[];
   findings: readonly JevClaim[];
   brandName: string | null;
+  brandCandidates?: readonly string[];
   fetchImpl?: FetchImpl;
   now?: () => number;
   log?: (line: JevLogLine) => void;
@@ -176,7 +197,7 @@ export async function verifyAuditWithJev(input: {
       body: JSON.stringify({
         model: JEV_MODEL,
         state: jevState(input.pages, input.files),
-        questions: questionsFor(input.findings, input.brandName),
+        questions: questionsFor(input.findings, input.brandName, input.brandCandidates || []),
       }),
       signal: controller.signal,
     });
@@ -220,6 +241,7 @@ export async function verifyAuditWithJev(input: {
     downgradedIds,
     siteType: siteChoice(answers.site_type),
     brandSupported: brandNoul == null ? null : brandNoul >= JEV_NOUL_MIN,
+    brandChoice: pickedBrand(answers.brand_pick, input.brandCandidates || []),
   };
   logLine({
     event: 'jev_verify',
@@ -271,11 +293,22 @@ export function wantsAgencyMentions(siteType: string | null | undefined): boolea
   return siteType === 'real_estate_agency' || siteType === 'individual_agent';
 }
 
-/** Name and description come off the copy when the brand check did not support them. */
-export function gateFixSnippet(targetType: string, snippet: string, host: string): string {
-  if (targetType === 'json_ld') return organizationJsonLd(host);
-  if (targetType === 'llms_txt') return llmsTxtDraft(host);
+/** Name and description come off the copy when the brand check did not support them. A Jev pick stays. */
+export function gateFixSnippet(targetType: string, snippet: string, host: string, confirmedName?: string | null): string {
+  const name = (confirmedName || '').trim() || null;
+  if (targetType === 'json_ld') return organizationJsonLd(host, name);
+  if (targetType === 'llms_txt') return llmsTxtDraft(host, name);
   return snippet;
+}
+
+export function displayNameFromVerdict(
+  brandName: string | null,
+  verdict: Pick<JevVerdict, 'ok' | 'brandSupported' | 'brandChoice'>,
+): string | null {
+  if (verdict.brandSupported === true && brandName) return brandName;
+  if (verdict.brandChoice) return verdict.brandChoice;
+  if (!verdict.ok || verdict.brandSupported == null) return brandName;
+  return null;
 }
 
 export async function reviewFindingsWithJev(input: {
@@ -283,13 +316,24 @@ export async function reviewFindingsWithJev(input: {
   checks?: readonly LlmCrawlerCheck[];
   findings: AuditFinding[];
   healthScore: number | null;
-}): Promise<{ findings: AuditFinding[]; healthScore: number | null; siteType: string | null; brandSupported: boolean | null }> {
+  searchTitles?: readonly string[];
+}): Promise<{ findings: AuditFinding[]; healthScore: number | null; siteType: string | null; brandSupported: boolean | null; displayName: string | null }> {
   const first = input.pages[0];
+  const titles = [first?.title, ...(first?.h1s || []), ...(input.searchTitles || [])];
+  const candidates = brandCandidates({
+    siteName: first?.siteName,
+    organizationName: first?.organizationName,
+    title: titles.filter((title): title is string => Boolean(title)).join(' | '),
+    searchTitles: input.searchTitles,
+  });
   const brandName = brandFromEvidence({
     siteName: first?.siteName,
     organizationName: first?.organizationName,
     title: first?.title,
   });
+  const pool = brandName && !candidates.some((name) => name.toLowerCase() === brandName.toLowerCase())
+    ? [brandName, ...candidates].slice(0, 6)
+    : candidates;
   let verdict: JevVerdict;
   try {
     verdict = await verifyAuditWithJev({
@@ -308,6 +352,7 @@ export async function reviewFindingsWithJev(input: {
         claim: `${finding.title}. ${finding.howWeKnowItFailed}`,
       })),
       brandName,
+      brandCandidates: pool,
     });
   } catch {
     verdict = failOpen(0, 0);
@@ -318,5 +363,6 @@ export async function reviewFindingsWithJev(input: {
     healthScore: reviewedHealth(input.healthScore, findings, verdict.ok),
     siteType: verdict.siteType,
     brandSupported: verdict.brandSupported,
+    displayName: displayNameFromVerdict(brandName, verdict),
   };
 }

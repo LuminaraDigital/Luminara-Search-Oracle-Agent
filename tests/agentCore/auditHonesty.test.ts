@@ -223,7 +223,7 @@ describe('Instant Audit honesty on empty evidence', () => {
 
     vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
     const withNothing = await startLine();
-    expect(withNothing).toContain('Checking web search results for "example"');
+    expect(withNothing).toContain('Checking web search results for "Example"');
     expect(withNothing).not.toContain('through');
 
     for (const line of [withTavily, withSidecar, withNothing]) {

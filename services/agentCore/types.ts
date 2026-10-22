@@ -203,6 +203,8 @@ export interface AuditStateGraphContext {
   siteType?: string | null;
   /** False when the brand-name check was below the support line. Unset leaves the name as scraped. */
   brandSupported?: boolean | null;
+  /** Name Jev picked, or a name from the page. Null means the screen uses the domain stem. */
+  displayName?: string | null;
 }
 
 // ============================================================================

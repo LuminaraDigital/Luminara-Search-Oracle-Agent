@@ -42,6 +42,37 @@ export function brandFromEvidence(sources: BrandSources): string | null {
   return named(sources.siteName) || named(sources.organizationName) || named(sources.title);
 }
 
+/** Title-cased domain stem. raywhite.com.au becomes Raywhite. ray-white.com becomes Ray White. */
+export function readableStem(host: string): string {
+  const stem = hostOnly(host).split('.')[0] || 'site';
+  const words = stem.split(/[-_]+/).filter(Boolean);
+  if (words.length === 0) return 'Site';
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
+}
+
+function nameParts(value: string | null | undefined): string[] {
+  const raw = (value || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return [];
+  return raw
+    .split(/\s+[|:]\s+|\s+-\s+|\s+\u2013\s+|\s+\u2014\s+/)
+    .map((part) => cleanScrapedName(part))
+    .filter((part) => part.length > 0);
+}
+
+/** Names already on the page or in search titles. A host is not a name. At most six. */
+export function brandCandidates(sources: BrandSources & { searchTitles?: readonly string[] | null }): string[] {
+  const values = [sources.siteName, sources.organizationName, sources.title, ...(sources.searchTitles || [])];
+  const found: string[] = [];
+  for (const value of values) {
+    for (const part of nameParts(value)) {
+      if (found.some((item) => item.toLowerCase() === part.toLowerCase())) continue;
+      found.push(part);
+      if (found.length >= 6) return found;
+    }
+  }
+  return found;
+}
+
 const ENTITY_TYPE = /organization|corporation|localbusiness|realestateagent/;
 
 /** Name on an Organization, Corporation, LocalBusiness, or RealEstateAgent block. */

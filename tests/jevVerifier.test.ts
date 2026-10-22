@@ -4,6 +4,7 @@ import { organizationJsonLd } from '../services/audit/fixPackCopy';
 import {
   JEV_MODEL,
   JEV_URL,
+  displayNameFromVerdict,
   downgradeUnsupported,
   gateFixSnippet,
   includeRealEstateChecks,
@@ -111,7 +112,8 @@ describe('verifyAuditWithJev', () => {
     expect(jsonLd).not.toContain('Ray White');
     expect(jsonLd).not.toContain('"name"');
     expect(llms).not.toContain('Ray White');
-    expect(llms).toContain('Template:');
+    expect(llms).toContain('<Your agency name>');
+    expect(llms).not.toContain('Template:');
   });
 
   it('fail-opens on timeout, 429, and 529 without throwing', async () => {
@@ -158,7 +160,7 @@ describe('verifyAuditWithJev', () => {
       findings: [],
       brandName: null,
     });
-    expect(verdict).toEqual({ ok: false, calls: 0, latencyMs: 0, downgradedIds: [], siteType: null, brandSupported: null });
+    expect(verdict).toEqual({ ok: false, calls: 0, latencyMs: 0, downgradedIds: [], siteType: null, brandSupported: null, brandChoice: null });
   });
 
   it('leaves a crew finding list unchanged when the relay is closed', async () => {
@@ -172,6 +174,93 @@ describe('verifyAuditWithJev', () => {
     expect(reviewed.healthScore).toBe(73);
     expect(reviewed.siteType).toBeNull();
     expect(reviewed.brandSupported).toBeNull();
+    expect(reviewed.displayName).toBeNull();
+  });
+
+  it('asks Jev to pick a brand and uses that choice when the page gave no name', async () => {
+    const bodies: unknown[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({
+        model: JEV_MODEL,
+        answers: {
+          finding_0: { type: 'noul', noul: 0.9 },
+          site_type: { type: 'choice', choice: 'real_estate_agency', confidence: 0.9 },
+          brand_pick: { type: 'choice', choice: 'Ray White', confidence: 0.9 },
+        },
+      }), { status: 200 });
+    });
+    const verdict = await verifyAuditWithJev({
+      pages: [{ url: 'https://raywhite.com.au', status: 403, excerpt: 'blocked' }],
+      files: [],
+      findings: [{ id: 'finding-schema-org', claim: 'Organization schema is missing.' }],
+      brandName: null,
+      brandCandidates: ['Ray White', 'Ray White Real Estate'],
+      fetchImpl,
+      now: clock(0, 20),
+    });
+    const body = bodies[0] as { questions: { brand_pick?: { type: string; criteria: Record<string, string> } } };
+    expect(body.questions.brand_pick).toEqual({
+      type: 'choice',
+      instructions: 'Which of these is the brand name for this site?',
+      criteria: { 'Ray White': 'Ray White', 'Ray White Real Estate': 'Ray White Real Estate' },
+    });
+    expect(verdict.brandSupported).toBeNull();
+    expect(verdict.brandChoice).toBe('Ray White');
+    expect(displayNameFromVerdict(null, verdict)).toBe('Ray White');
+    const named = gateFixSnippet('llms_txt', '# raywhite', 'raywhite.com.au', verdict.brandChoice);
+    expect(named).toContain('# Ray White');
+    expect(named).not.toContain('<Your agency name>');
+    expect(named).not.toContain('Template:');
+  });
+
+  it('ignores a low-confidence or unknown brand pick and keeps a supported scraped name', async () => {
+    const low = await verifyAuditWithJev({
+      pages: [],
+      files: [],
+      findings: [],
+      brandName: null,
+      brandCandidates: ['Ray White'],
+      fetchImpl: vi.fn(async () => new Response(JSON.stringify({
+        answers: { brand_pick: { type: 'choice', choice: 'Ray White', confidence: 0.59 } },
+      }), { status: 200 })),
+      now: clock(0, 5),
+    });
+    expect(low.brandChoice).toBeNull();
+    expect(displayNameFromVerdict(null, low)).toBeNull();
+
+    const unknown = await verifyAuditWithJev({
+      pages: [],
+      files: [],
+      findings: [],
+      brandName: null,
+      brandCandidates: ['Ray White'],
+      fetchImpl: vi.fn(async () => new Response(JSON.stringify({
+        answers: { brand_pick: { type: 'choice', choice: 'Not a candidate', confidence: 0.99 } },
+      }), { status: 200 })),
+      now: clock(0, 5),
+    });
+    expect(unknown.brandChoice).toBeNull();
+
+    const supported = await verifyAuditWithJev({
+      pages: [],
+      files: [],
+      findings: [],
+      brandName: 'Ray White',
+      brandCandidates: ['Ray White', 'Ray White Real Estate'],
+      fetchImpl: vi.fn(async () => new Response(JSON.stringify({
+        answers: {
+          brand_name: { type: 'noul', noul: 0.91 },
+          brand_pick: { type: 'choice', choice: 'Ray White Real Estate', confidence: 0.95 },
+        },
+      }), { status: 200 })),
+      now: clock(0, 5),
+    });
+    expect(supported.brandSupported).toBe(true);
+    expect(supported.brandChoice).toBe('Ray White Real Estate');
+    expect(displayNameFromVerdict('Ray White', supported)).toBe('Ray White');
+    expect(displayNameFromVerdict('Ray White', { ok: false, brandSupported: null, brandChoice: null })).toBe('Ray White');
+    expect(displayNameFromVerdict('Ray White', { ok: true, brandSupported: false, brandChoice: null })).toBeNull();
   });
 });
 

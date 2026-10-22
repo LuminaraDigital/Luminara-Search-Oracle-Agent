@@ -383,6 +383,7 @@ export class CrewOrchestrator {
         checks: ctx.llmCrawlerReadiness?.checks,
         findings: verifiedFindings,
         healthScore: ctx.healthScore,
+        searchTitles: ctx.serpEvidence.map((row) => row.title),
       });
 
       return {
@@ -390,6 +391,7 @@ export class CrewOrchestrator {
         healthScore: reviewed.healthScore,
         siteType: reviewed.siteType,
         brandSupported: reviewed.brandSupported,
+        displayName: reviewed.displayName,
         criticRejections: (ctx.criticRejections || 0) + rejectedCount,
         criticPass: liveEvidence,
       };
@@ -410,11 +412,11 @@ export class CrewOrchestrator {
         });
         return { patches: [] };
       }
-      const drafted = await remediationArchitectAgent.execute(ctx.targetUrl, ctx.findings, ctx.dna, emit);
+      const drafted = await remediationArchitectAgent.execute(ctx.targetUrl, ctx.findings, ctx.dna, emit, ctx.displayName);
       const patches = ctx.brandSupported === false
         ? drafted.map((patch) => ({
           ...patch,
-          proposedSnippet: gateFixSnippet(patch.targetType, patch.proposedSnippet, ctx.targetUrl),
+          proposedSnippet: gateFixSnippet(patch.targetType, patch.proposedSnippet, ctx.targetUrl, ctx.displayName),
         }))
         : drafted;
       const { verifiedPatches } = criticReflectionEngine.verify([], patches, ctx.scrapedPages, ctx.serpEvidence);
@@ -437,7 +439,8 @@ export class CrewOrchestrator {
         ctx.findings,
         ctx.patches,
         ctx.dna,
-        emit
+        emit,
+        ctx.displayName,
       );
       return { plainEnglishBrief };
     });
