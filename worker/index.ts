@@ -62,6 +62,7 @@ import {
   MAX_SMALL_BODY_BYTES,
   RateLimiter,
   clientIp,
+  immutableAssetCache,
   readBody,
   withSecurityHeaders,
 } from './security';
@@ -2278,6 +2279,10 @@ export default {
           },
         }),
       );
+    }
+    const hashedAsset = immutableAssetCache(url.pathname);
+    if (hashedAsset && assetResponse.ok && !contentType.includes('text/html')) {
+      assetResponse.headers.set('Cache-Control', hashedAsset);
     }
     return guard(assetResponse);
   },

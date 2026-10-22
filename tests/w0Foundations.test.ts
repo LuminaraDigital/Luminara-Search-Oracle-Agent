@@ -145,6 +145,7 @@ describe('W0 foundations: apiAccess gate', () => {
     expect(isApiAccessRoute('/oracle/chat')).toBe(true);
     expect(isApiAccessRoute('/audit/run')).toBe(true);
     expect(isApiAccessRoute('/audit/scout-run')).toBe(false);
+    expect(isApiAccessRoute('/audit/free-answer')).toBe(false);
     expect(isApiAccessRoute('/tools/list')).toBe(true);
     expect(isApiAccessRoute('/mcp')).toBe(false);
     expect(isApiAccessRoute('/workspace')).toBe(false);

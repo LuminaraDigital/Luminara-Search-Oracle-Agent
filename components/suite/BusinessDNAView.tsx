@@ -17,19 +17,44 @@ interface BusinessDNAViewProps {
   onRouteToOracleMind?: () => void;
 }
 
+/** Shown before a scan, so suburb, state, agency type and portal can be saved on their own. */
+const BLANK_PROFILE: BusinessDNA = {
+  name: '',
+  mission: '',
+  usp: '',
+  targetAudience: '',
+  competitors: [],
+  perceivedGaps: [],
+  rawContext: '',
+};
+
+function profileOrBlank(dna: BusinessDNA | null): BusinessDNA {
+  return dna ?? { ...BLANK_PROFILE, competitors: [], perceivedGaps: [] };
+}
+
+/** Suburb, state, agency type and portal are enough. A scan is not required. */
+export function savedProfile(form: BusinessDNA): { ok: true; dna: BusinessDNA } | { ok: false; error: string } {
+  const realestateProfileUrl = optionalPortalUrl(form.realestateProfileUrl || '', 'realestate.com.au');
+  const domainProfileUrl = optionalPortalUrl(form.domainProfileUrl || '', 'domain.com.au');
+  if (realestateProfileUrl === null || domainProfileUrl === null) {
+    return { ok: false, error: 'Portal links must be https pages on realestate.com.au or domain.com.au.' };
+  }
+  return { ok: true, dna: { ...form, realestateProfileUrl, domainProfileUrl } };
+}
+
 export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, onDNAGenerated, onNavigateToTool, onRouteToOracleMind: _onRouteToOracleMind }) => {
   const [input, setInput] = useState(() => draftPersistenceService.getDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inlineValidationError, setInlineValidationError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [formData, setFormData] = useState<BusinessDNA | null>(currentDNA);
+  const [editing, setEditing] = useState(!currentDNA);
+  const [formData, setFormData] = useState<BusinessDNA>(() => profileOrBlank(currentDNA));
   const [vfsSyncSuccess, setVfsSyncSuccess] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
 
   // If the DNA is changed elsewhere (dashboard clear, another tab), reflect it here.
   useEffect(() => {
-    if (!editing) setFormData(currentDNA);
+    if (!editing) setFormData(profileOrBlank(currentDNA));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentDNA]);
 
@@ -92,13 +117,12 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
 
   const handleSave = () => {
     if (formData) {
-      const realestateProfileUrl = optionalPortalUrl(formData.realestateProfileUrl || '', 'realestate.com.au');
-      const domainProfileUrl = optionalPortalUrl(formData.domainProfileUrl || '', 'domain.com.au');
-      if (realestateProfileUrl === null || domainProfileUrl === null) {
-        setProfileError('Portal links must be https pages on realestate.com.au or domain.com.au.');
+      const saved = savedProfile(formData);
+      if (!saved.ok) {
+        setProfileError(saved.error);
         return;
       }
-      const next = { ...formData, realestateProfileUrl, domainProfileUrl };
+      const next = saved.dna;
       setProfileError(null);
       setFormData(next);
       onDNAGenerated(next);
@@ -121,7 +145,8 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       },
       () => {
         onDNAGenerated(null);
-        setFormData(null);
+        setFormData(profileOrBlank(null));
+        setEditing(true);
         setInput('');
         draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
       },
@@ -193,7 +218,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       </div>
 
       {/* Loading Skeleton during extraction */}
-      {loading && !formData && <BusinessDnaSkeleton />}
+      {loading && !currentDNA && <BusinessDnaSkeleton />}
 
       {/* Active DNA Profile Display */}
       {formData && (
@@ -202,8 +227,8 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 rounded-full bg-success-400 shadow-sm shadow-success-500/30 animate-pulse"></div>
               <div>
-                <span className="text-[10px] font-mono text-success-400 uppercase tracking-widest">Profile active</span>
-                <h2 className="text-2xl font-bold text-white tracking-tight">{formData.name}</h2>
+                <span className="text-[10px] font-mono text-success-400 uppercase tracking-widest">{currentDNA ? 'Profile active' : 'No profile yet'}</span>
+                <h2 className="text-2xl font-bold text-white tracking-tight">{formData.name || 'Your agency'}</h2>
                 {vfsSyncSuccess && (
                   <span className="text-[10px] font-mono text-success-400 block mt-0.5">
                     ✓ {vfsSyncSuccess}
