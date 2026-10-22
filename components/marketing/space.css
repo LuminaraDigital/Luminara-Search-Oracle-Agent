@@ -101,6 +101,14 @@
   color: transparent;
 }
 
+/* background-clip:text paints only the padding box, so an italic g is cut on a 0.98 line. */
+.lx-enter-line.lx-gold-text,
+.block.italic.lx-gold-text,
+.lx-fp-line.lx-gold-text {
+  padding-bottom: 0.22em;
+  margin-bottom: -0.22em;
+}
+
 .lx-lede {
   font-size: clamp(1.05rem, 1.4vw, 1.25rem);
   line-height: 1.6;
