@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from '../worker/quotaMiddleware';
+import { checkHostedQuota, QUOTA_CAPACITY_ERROR, readFreeUsed, refundMeteredQuota } from '../worker/quotaMiddleware';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import type { Env } from '../worker/env';
 
 function memoryKv() {
@@ -22,6 +23,7 @@ function envFor(limit: string) {
   const kv = memoryKv();
   const env = {
     LUMINARA_KV: kv,
+    DAILY_QUOTA: memoryDailyQuotaNamespace(),
     FREE_DAILY_LIMIT: limit,
     REQUIRE_TG_AUTH: 'true',
   } as Env;
@@ -32,13 +34,13 @@ const user = { id: 'acct_free', source: 'firebase' as const, accountId: 'acct_fr
 
 describe('failed hosted checks', () => {
   it('refunds a failed check and stops refunding at the daily cap', async () => {
-    const { env, kv } = envFor('1');
+    const { env } = envFor('1');
     const failed = await checkHostedQuota(env, user);
     expect(failed.ok).toBe(true);
     expect(failed.used).toBe(1);
     const back = await refundMeteredQuota(env, failed);
     expect(back).toEqual({ refunded: true, capped: false });
-    expect(kv.store.get(`quota:acct_free:${new Date().toISOString().slice(0, 10)}`)).toBe('0');
+    expect(await readFreeUsed(env, 'acct_free', 1)).toBe(0);
 
     const counted = await checkHostedQuota(env, user);
     expect(counted.ok).toBe(true);
@@ -67,11 +69,9 @@ describe('failed hosted checks', () => {
     expect(extra.ok).toBe(false);
   });
 
-  it('refuses the call when the quota write throws', async () => {
+  it('refuses the call when the meter object is unavailable', async () => {
     const { env } = envFor('3');
-    env.LUMINARA_KV!.put = async () => {
-      throw new Error('kv put');
-    };
+    env.DAILY_QUOTA = undefined;
     const refused = await checkHostedQuota(env, user);
     expect(refused.ok).toBe(false);
     expect(refused.error).toBe(QUOTA_CAPACITY_ERROR);

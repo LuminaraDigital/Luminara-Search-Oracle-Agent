@@ -20,7 +20,7 @@ import { linkTelegramAndFirebase } from '../worker/userStore';
 import { createPrivacyJob } from '../worker/privacyService';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
-
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 /**
  * Track SW, SW0a-16: payment support reaches a person.
  * /paysupport used to send one canned message, and the buyer's reply went to the model chat.
@@ -129,7 +129,7 @@ function makeEnv(overrides: Partial<Record<keyof Env, unknown>> = {}) {
     ADMIN_SECRET: 'admin-secret-for-tests',
     // With a key present the chat really calls a model, so the spy can see it.
     GROQ_API_KEY: 'test-model-key',
-    LUMINARA_KV: kv as any,
+    LUMINARA_KV: kv as any, DAILY_QUOTA: memoryDailyQuotaNamespace(),
     DB: db as D1Database,
     ...overrides,
   } as unknown as Env;

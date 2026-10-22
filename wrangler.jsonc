@@ -156,12 +156,14 @@
 
   "durable_objects": {
     "bindings": [
-      { "name": "ORACLE_SESSION", "class_name": "OracleSession" }
+      { "name": "ORACLE_SESSION", "class_name": "OracleSession" },
+      { "name": "DAILY_QUOTA", "class_name": "DailyQuota" }
     ]
   },
 
   "migrations": [
-    { "tag": "v1-oracle-session", "new_sqlite_classes": ["OracleSession"] }
+    { "tag": "v1-oracle-session", "new_sqlite_classes": ["OracleSession"] },
+    { "tag": "v2-daily-quota", "new_sqlite_classes": ["DailyQuota"] }
   ],
 
   "queues": {
@@ -215,7 +217,8 @@
       ],
       "durable_objects": {
         "bindings": [
-          { "name": "ORACLE_SESSION", "class_name": "OracleSession" }
+          { "name": "ORACLE_SESSION", "class_name": "OracleSession" },
+      { "name": "DAILY_QUOTA", "class_name": "DailyQuota" }
         ]
       },
       "queues": {
@@ -319,7 +322,8 @@
       ],
       "durable_objects": {
         "bindings": [
-          { "name": "ORACLE_SESSION", "class_name": "OracleSession" }
+          { "name": "ORACLE_SESSION", "class_name": "OracleSession" },
+      { "name": "DAILY_QUOTA", "class_name": "DailyQuota" }
         ]
       },
       "queues": {

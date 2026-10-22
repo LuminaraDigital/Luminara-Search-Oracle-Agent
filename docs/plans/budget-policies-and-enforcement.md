@@ -16,9 +16,9 @@ seams instead of inventing parallel ones.
 
 - `checkHostedQuota(env, user, opts)` returns a `QuotaStatus` and is the gate
   used by `worker/providerRelay.ts` and `worker/pagespeedRoute.ts`.
-- `meterDailyQuota` counters live in KV as `quota:<quotaKeyId>:<YYYY-MM-DD>`
-  with a 2-day TTL; the window is a UTC calendar day (midnight-UTC reset
-  computed in `checkHostedQuota`).
+- `meterDailyQuota` spends on `DAILY_QUOTA`, one SQLite object per account per UTC day.
+  The window is a UTC calendar day (midnight-UTC reset computed in `checkHostedQuota`).
+  If that object is unavailable the call fails closed.
 - `FREE_DAILY_LIMIT` is the only limit knob; anonymous users are metered by IP
   (`anon:<ip>`) when `REQUIRE_TG_AUTH` is off.
 - `getActiveSubscription` / `isUserSubscribed` read `sub:<accountId>` (plus

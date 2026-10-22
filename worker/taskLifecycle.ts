@@ -10,6 +10,8 @@
  * instructive recovery payload.
  */
 import type { Env } from './env';
+import { meterName } from './dailyQuota';
+import { refundMeteredQuota } from './quotaMiddleware';
 
 export type TaskState = 'initiated' | 'observing' | 'executing' | 'settled' | 'reverted';
 
@@ -53,25 +55,23 @@ export function createTaskContext(options: TaskLifecycleOptions): TaskLifecycleC
 }
 
 /**
- * Restores 1 metered daily quota request in KV for the account when a task reverts.
- * Safe no-op if KV is missing or counter is already zero.
+ * Restores 1 metered daily check on the account's UTC-day object when a task reverts.
+ * Safe no-op if the meter is missing or the counter is already zero.
  */
 export async function refundHostedQuota(env: Env, accountId: string): Promise<boolean> {
-  if (!env.LUMINARA_KV || !accountId) return false;
-  try {
-    const day = new Date().toISOString().slice(0, 10);
-    const key = `quota:${accountId}:${day}`;
-    const raw = await env.LUMINARA_KV.get(key);
-    if (!raw) return false;
-    const current = Number(raw);
-    if (Number.isNaN(current) || current <= 0) return false;
-    const refunded = Math.max(0, current - 1);
-    await env.LUMINARA_KV.put(key, String(refunded), { expirationTtl: 2 * 86400 });
-    return true;
-  } catch (err) {
-    console.warn('[TaskLifecycle] Quota refund failed best-effort', err);
-    return false;
-  }
+  if (!accountId) return false;
+  const limit = Number(env.FREE_DAILY_LIMIT || 3);
+  if (!(limit > 0)) return false;
+  const released = await refundMeteredQuota(env, {
+    ok: true,
+    limit,
+    used: 0,
+    remaining: 0,
+    resetSec: 0,
+    isUnlimited: false,
+    meterKey: meterName(accountId),
+  });
+  return released.refunded;
 }
 
 /**

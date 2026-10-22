@@ -24,7 +24,7 @@ leaked internals).
 | `POST /auth/link` | worker/index.ts | Telegram initData + Firebase Bearer | Explicit account link. Body must be `{ confirm: true }` or the route returns 400 and writes nothing. Two distinct accounts that each have an active paid plan return 409 with no merge. `identify()` never links. Success and dual-paid refusal write an audit event |
 | `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag) |
 | `GET /enterprise/audit-logs` | worker/enterpriseStore.ts + auditLog | session + role | Admin/Auditor role required |
-| `GET /auth/quota` | worker/index.ts | session | Daily quota |
+| `GET /auth/quota` | worker/index.ts | session | Free daily meter on `DAILY_QUOTA` (one SQLite object per account per UTC day). Spend and refund are single statements on that object. 503 `HOSTED_CAPACITY` when it is unavailable. Not a KV key |
 | `POST /telegram/webhook` | worker/index.ts | webhook secret | Telegram updates |
 | `GET /telegram/auth`, `/telegram/invoice`, `/telegram/refund` | worker/index.ts | none/secret | Telegram auth + Stars |
 | `GET /admin/users` | worker/index.ts | admin | Requires `ADMIN_SECRET` |

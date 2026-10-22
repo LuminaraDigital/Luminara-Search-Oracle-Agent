@@ -6,7 +6,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, identify, json } from './workerUtils';
-import { checkHostedQuota, isUserSubscribed } from './quotaMiddleware';
+import { checkHostedQuota, isUserSubscribed, QUOTA_CAPACITY_ERROR } from './quotaMiddleware';
 import {
   MAX_SMALL_BODY_BYTES,
   clientIp,
@@ -416,7 +416,10 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
     }
     // Burn the hosted meter before fetch or model. A later idea-slot miss does not refund it.
     const quota = await checkHostedQuota(env, user);
-    if (!quota.ok) return json({ ok: false, error: quota.error || 'Hosted limit reached.', code: 'HOSTED_QUOTA' }, 429);
+    if (!quota.ok) {
+      const capacity = quota.error === QUOTA_CAPACITY_ERROR;
+      return json({ ok: false, error: quota.error || 'Hosted limit reached.', code: capacity ? 'HOSTED_CAPACITY' : 'HOSTED_QUOTA' }, capacity ? 503 : 429);
+    }
   }
 
   const fetcher = deps.fetcher || fetch;

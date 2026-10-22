@@ -4,6 +4,7 @@
  */
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
+import { QUOTA_CAPACITY_ERROR, spendDailyQuota } from './quotaMiddleware';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
 import { guardPasteReadyCopy } from '../services/audit/healthClaimGuard';
@@ -792,20 +793,17 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
 
       const limit = Number(env.FREE_DAILY_LIMIT || 3);
-      if (limit > 0 && env.LUMINARA_KV) {
-        const day = new Date().toISOString().slice(0, 10);
-        const quotaKey = `quota:${accountId}:${day}`;
-        const used = Number((await env.LUMINARA_KV.get(quotaKey)) || 0);
-
-        if (used >= limit) {
+      if (limit > 0) {
+        const spent = await spendDailyQuota(env, accountId, limit);
+        if (!spent.ok) {
+          const atCapacity = spent.code === 'HOSTED_CAPACITY';
           await api(env, 'sendMessage', {
             chat_id: chatId,
-            text:
-              `⚠️ *Daily Free Limit Reached*\n\n` +
-              `You have used your daily allocation of ${limit} free queries. Upgrade with Telegram Stars for unlimited queries, or check back tomorrow.\n\n` +
-              `Use /plan to view subscription options.`,
-            parse_mode: 'Markdown',
-            reply_markup: {
+            text: atCapacity
+              ? QUOTA_CAPACITY_ERROR
+              : `⚠️ *Daily Free Limit Reached*\n\nYou have used your daily allocation of ${limit} free queries. Upgrade with Telegram Stars for unlimited queries, or check back tomorrow.\n\nUse /plan to view subscription options.`,
+            parse_mode: atCapacity ? undefined : 'Markdown',
+            reply_markup: atCapacity ? undefined : {
               inline_keyboard: [[
                 { text: '⭐ Open Paywall in App', web_app: { url: `${env.WEBAPP_URL}?startapp=stars` } },
                 { text: '🔍 Open Luminara Suite', web_app: { url: env.WEBAPP_URL } },
@@ -814,8 +812,6 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           });
           return;
         }
-
-        await env.LUMINARA_KV.put(quotaKey, String(used + 1), { expirationTtl: 2 * 86400 });
       }
     }
 
