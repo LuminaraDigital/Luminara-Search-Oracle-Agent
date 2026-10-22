@@ -653,7 +653,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       const lines = users.slice(0, 10).map((u, i) => {
         const sourceBadge = u.source === 'telegram' ? '📱 Telegram' : '🌐 Web/Google';
         const label = u.email || (u.name ? `${u.name} (id: ${u.id})` : `User ${u.id}`);
-        const joined = new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const joined = new Date(u.created_at).toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
         const minutesAgo = Math.max(0, Math.round((Date.now() - u.last_seen_at) / 60000));
         const activeStr = minutesAgo < 60 ? `${minutesAgo}m ago` : `${Math.round(minutesAgo / 60)}h ago`;
         return `${i + 1}. ${label}\n   ${sourceBadge} · Joined: ${joined} · Active: ${activeStr}`;

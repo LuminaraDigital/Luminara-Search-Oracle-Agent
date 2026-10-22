@@ -33,7 +33,7 @@ describe('ApiKeysTab pure logic', () => {
       lastUsedAt: null,
     });
     expect(row.label).toBe('Cursor MCP');
-    expect(row.created).toBe(new Date('2026-01-05T00:00:00Z').toLocaleDateString());
+    expect(row.created).toBe('5 Jan 2026');
     expect(row.created.length).toBeGreaterThan(0);
     expect(row.lastUsed).toBe('Never used');
   });

@@ -26,6 +26,7 @@ import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClai
 import { fallbackAnswerLine } from '../llm/fallbackAnswer';
 import { brandFromEvidence, rememberScrapedBrand } from './brandName';
 import { recordAudit } from './auditHistoryService';
+import { evaluateRealEstateChecks, formatRealEstateChecks } from './realEstateChecks';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
   if (crewRunning) return 'Scanning...';
@@ -118,7 +119,9 @@ export async function generateAuditReportUnlessDegraded(input: {
   const modelLine = fallbackAnswerLine(
     report.answeredBy ? { model: report.answeredBy, provider: report.answeredByProvider } : undefined,
   );
-  const text = modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded;
+  const body = modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded;
+  const estate = formatRealEstateChecks(evaluateRealEstateChecks(pages));
+  const text = body.includes('## Real estate checks') ? body : `${body.trimEnd()}\n\n${estate}`;
   try {
     recordAudit({
       domain: input.formattedUrl,

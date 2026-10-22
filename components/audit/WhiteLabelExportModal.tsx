@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ICONS } from '../../constants';
+import { formatAuDate } from '../../utils/formatAuDate';
 
 interface WhiteLabelExportModalProps {
   isOpen: boolean;
@@ -226,7 +227,7 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
     </div>
     <div class="meta-box">
       <div><strong>Target:</strong> ${safeClient}</div>
-      <div><strong>Date:</strong> ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+      <div><strong>Date:</strong> ${formatAuDate(new Date())}</div>
       <div><strong>Confidentiality:</strong> STRICT PRIVILEGE</div>
     </div>
   </div>

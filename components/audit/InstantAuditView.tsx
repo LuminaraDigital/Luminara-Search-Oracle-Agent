@@ -9,7 +9,9 @@ import { WeeklyDecisionCard } from './WeeklyDecisionCard';
 import { PageSpeedPanel } from './PageSpeedPanel';
 import { GscPanel } from './GscPanel';
 import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/findingBoardService';
-import { useConfirm } from '../ui/ConfirmModal';
+import { PastReports } from './PastReports';
+import { ReportPdfButton } from './ReportPdfButton';
+import type { AuditHistoryEntry } from '../../services/audit/auditHistoryService';
 import { AgentMissionControl } from './AgentMissionControl';
 import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
 import { PROOF_BADGE_ENABLED } from '../../services/agentCore/tonAttestationService';
@@ -435,8 +437,6 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     }
   };
 
-  const { requestConfirm, confirmModal } = useConfirm();
-
   const shareTeaser = async (mode: 'share' | 'copy') => {
     if (!scoutSummary || sharing || scoutSummary.degraded || scoutSummary.evidenceEmpty) return;
     setSharing(true);
@@ -487,36 +487,30 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   };
 
   const handleReset = () => {
-    const reset = () => {
-      setReport(null);
-      setError(null);
-      setPersistHint(null);
-      setStrategySaved(false);
-      setMcpKey(null);
-      setMcpError(null);
-      setUrl('');
-      draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
-      setCrewEvents([]);
-      setBoardFindings([]);
-      setCrewMeasurement(null);
-      setScoutSummary(null);
-      setShareNote(null);
-      setAttestation(null);
-    };
-    // Only ask when there is a report to lose.
-    if (!report) {
-      reset();
-      return;
-    }
-    requestConfirm(
-      {
-        title: 'Start a new audit?',
-        description: 'The current report will be discarded. Export or copy anything you need first.',
-        confirmLabel: 'Discard and start new',
-        variant: 'danger',
-      },
-      reset,
-    );
+    setReport(null);
+    setError(null);
+    setPersistHint(null);
+    setStrategySaved(false);
+    setMcpKey(null);
+    setMcpError(null);
+    setUrl('');
+    draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
+    setCrewEvents([]);
+    setBoardFindings([]);
+    setCrewMeasurement(null);
+    setScoutSummary(null);
+    setShareNote(null);
+    setAttestation(null);
+  };
+
+  const openSavedAudit = (entry: AuditHistoryEntry) => {
+    const nextFocus: ReportFocus = entry.focus === 'SEO' || entry.focus === 'GEO' ? entry.focus : 'AEO';
+    const saved: GuardedAuditReport = { text: entry.reportExcerpt, sources: [], healthSite: false };
+    setFocus(nextFocus);
+    setUrl(entry.domain);
+    setReport(saved);
+    setError(null);
+    setScoutSummary(null);
   };
 
   const mintMcpKey = async () => {
@@ -577,7 +571,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
-      {confirmModal}
+      <PastReports onOpen={openSavedAudit} />
       <div className="text-center mb-6 sm:mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Radar className="w-4 h-4 text-gold-light" />
@@ -952,6 +946,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             >
               {briefing ? 'Speaking…' : 'Brief aloud'}
             </button>
+            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} />
             <button
               type="button"
               onClick={handleReset}

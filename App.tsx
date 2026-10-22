@@ -591,7 +591,7 @@ const App: React.FC = () => {
         return;
       }
       if (e.key === 'Escape') {
-        setIsOmnibarOpen(false);
+        setIsOmnibarOpen(false); setShowSuiteMenu(false);
       }
     };
 

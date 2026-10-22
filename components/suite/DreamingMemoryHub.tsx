@@ -4,6 +4,7 @@ import { dreamingClient, type DreamStatusResult } from '../../services/dreaming/
 import { ICONS } from '../../constants';
 import { BrandMemorySkeleton } from '../ui/Skeleton';
 import { useConfirm } from '../ui/ConfirmModal';
+import { formatAuDate } from '../../utils/formatAuDate';
 
 interface DreamingMemoryHubProps {
   domain: string;
@@ -421,7 +422,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
                         {mem.memoryType.replace('_', ' ')}
                       </span>
                       <span className="text-[10px] text-gray-400 font-mono">
-                        Verified {new Date(mem.lastVerifiedAt).toLocaleDateString()}
+                        Verified {formatAuDate(mem.lastVerifiedAt)}
                       </span>
                     </div>
                     <h4 className="text-xs sm:text-sm font-semibold text-gray-100 mb-1">
@@ -483,12 +484,12 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
                 Latest Dream Run Audit Trail
               </h3>
               <p className="text-[11px] text-gray-400">
-                Executed on {new Date(status.lastRun.createdAt).toLocaleString()} via {status.lastRun.triggerReason}
+                Executed on {formatAuDate(status.lastRun.createdAt)} via {status.lastRun.triggerReason}
               </p>
             </div>
             {status.lastRun.rolledBackAt ? (
               <span className="text-xs font-mono px-2 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-500/30">
-                Rolled back on {new Date(status.lastRun.rolledBackAt).toLocaleDateString()}
+                Rolled back on {formatAuDate(status.lastRun.rolledBackAt)}
               </span>
             ) : (
               <button

@@ -6,6 +6,7 @@ import {
   type ReferralProfile,
 } from '../../services/referrals/referralClient';
 import { OPERATOR_STREAK_WEEKS, type MissionKey } from '../../services/referrals/rules';
+import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
 
 interface VisibilityRetentionCardProps {
   signedIn: boolean;
@@ -43,6 +44,9 @@ export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = (
 
   useEffect(() => {
     void load();
+    const onActivity = () => { void load(); };
+    window.addEventListener(AUDIT_ACTIVITY_EVENT, onActivity);
+    return () => window.removeEventListener(AUDIT_ACTIVITY_EVENT, onActivity);
   }, [load]);
 
   const copyInvite = async () => {

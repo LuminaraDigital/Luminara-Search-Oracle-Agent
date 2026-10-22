@@ -1,3 +1,5 @@
+import { formatAuDate } from '../../../utils/formatAuDate';
+
 /**
  * Pure display logic for the Settings "MCP API keys" tab.
  * Kept component-free so the reveal-once and redaction rules are unit-testable.
@@ -28,8 +30,8 @@ export function redactKey(prefixOrKey: string): string {
 export function formatKeyRow(row: ApiKeyRow): { label: string; created: string; lastUsed: string } {
   return {
     label: row.name || 'MCP key',
-    created: row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '',
-    lastUsed: row.lastUsedAt ? new Date(row.lastUsedAt).toLocaleDateString() : 'Never used',
+    created: row.createdAt ? formatAuDate(row.createdAt) : '',
+    lastUsed: row.lastUsedAt ? formatAuDate(row.lastUsedAt) : 'Never used',
   };
 }
 
