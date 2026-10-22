@@ -30,7 +30,7 @@ import { evaluateRealEstateChecks, formatRealEstateChecks } from './realEstateCh
 import { includeRealEstateChecks, wantsAgencyMentions } from './jevVerifier';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
-  if (crewRunning) return 'Scanning...';
+  if (crewRunning) return 'Running the audit…';
   return 'Run Instant Audit';
 }
 

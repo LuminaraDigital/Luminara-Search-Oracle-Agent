@@ -22,7 +22,7 @@ import { AgentActivityEvent, AuditAttestation, AuditStateGraphContext } from '..
 import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
-import { AuditReportSkeleton } from '../ui/Skeleton';
+import { AuditProgress } from '../ui/PlaceLoader';
 import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
@@ -783,23 +783,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         />
       )}
 
-      {/* Loading Skeleton */}
-      {loading && !report && (
-        <div className="space-y-4">
-          {crewEvents.length === 0 && (
-            <div className="glass-morphism rounded-xl px-4 py-3 border border-gold/30 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse" />
-                <span className="text-xs text-white font-medium">
-                  Instant Audit in progress…
-                </span>
-              </div>
-              <span className="text-[11px] font-mono text-gold-light truncate max-w-xs">{progressStage || 'Initializing agents…'}</span>
-            </div>
-          )}
-          <AuditReportSkeleton message={progressStage || 'Loading…'} />
-        </div>
-      )}
+      {loading && !report && <AuditProgress stage={progressStage} />}
 
       {/* Error State */}
       {error && (
