@@ -3,6 +3,7 @@ import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
 import { brandMemoryVaultService, type BrandMemoryEvent } from '../../services/memory/brandMemoryVaultService';
 import { auditHistoryService, type AuditHistoryEntry } from '../../services/audit/auditHistoryService';
+import { formatAuDate } from '../../utils/formatAuDate';
 import { auditDiffService, type AuditPeriodDiff } from '../../services/audit/auditDiffService';
 import { auditQueryService } from '../../services/audit/auditQueryService';
 import {
@@ -263,7 +264,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
               <div key={a.id} className="p-4 rounded-2xl border border-white/10 bg-white/[0.02]">
                 <div className="flex justify-between gap-3 text-xs">
                   <span className="text-gold-light font-bold">{a.title}</span>
-                  <span className="text-gray-400 font-mono">{new Date(a.measuredAt).toLocaleString()}</span>
+                  <span className="text-gray-400 font-mono">{formatAuDate(a.measuredAt)}</span>
                 </div>
                 <p className="text-[11px] text-gray-400 mt-2 line-clamp-2">{a.summary}</p>
                 <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-gray-400">
@@ -375,7 +376,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
           <p className="text-[10px] text-gray-400">{queryHits.length} match(es)</p>
           {queryHits.map((a) => (
             <div key={a.id} className="p-3 rounded-xl border border-white/10 text-xs text-gray-300">
-              {a.domain} · {a.focus} · score {a.healthScore ?? 'n/a'} · {new Date(a.measuredAt).toLocaleDateString()}
+              {a.domain} · {a.focus} · score {a.healthScore ?? 'n/a'} · {formatAuDate(a.measuredAt)}
             </div>
           ))}
         </div>

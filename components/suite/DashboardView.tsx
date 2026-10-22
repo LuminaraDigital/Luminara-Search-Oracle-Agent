@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { HONEST_VISIBILITY_PROMISE } from '../../services/marketing/engineCoverage';
 import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
@@ -14,6 +14,7 @@ import {
   type BoardFinding,
 } from '../../services/audit/findingBoardService';
 import { auditHistoryService } from '../../services/audit/auditHistoryService';
+import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
 import { labsVisible } from '../../services/ui/labsAccess';
 
 interface DashboardViewProps {
@@ -22,6 +23,18 @@ interface DashboardViewProps {
   onClearDNA?: () => void;
   advancedUi?: boolean;
   signedIn?: boolean;
+}
+
+function latestAuditSeed(): { domain: string; findings: BoardFinding[] } | null {
+  try {
+    for (const entry of auditHistoryService.list()) {
+      const findings = listLocalFindings(entry.domain);
+      if (findings.length) return { domain: entry.domain, findings };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 type Door = {
@@ -39,25 +52,24 @@ type Door = {
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, advancedUi = false, signedIn = false }) => {
   const telemetrySummary = productTelemetry.getSummary();
   const completedSteps = telemetrySummary.completedOnboardingSteps || [];
-  const auditCount = auditCountFromStorage();
+  const [auditCount, setAuditCount] = useState(() => auditCountFromStorage());
+  const [homeSeed, setHomeSeed] = useState(latestAuditSeed);
+  useEffect(() => {
+    const bump = () => {
+      setAuditCount(auditCountFromStorage());
+      setHomeSeed(latestAuditSeed());
+    };
+    window.addEventListener(AUDIT_ACTIVITY_EVENT, bump);
+    return () => window.removeEventListener(AUDIT_ACTIVITY_EVENT, bump);
+  }, []);
   const hasRunAudit = auditCount > 0;
   const hasProfile = Boolean(dna) || completedSteps.includes('business_dna');
   const hasSavedProject = completedSteps.includes('strategy_saved') || completedSteps.includes('brand_memory') || (signedIn && hasRunAudit);
 
-  const homeSeed = useMemo(() => {
-    try {
-      for (const entry of auditHistoryService.list()) {
-        const findings = listLocalFindings(entry.domain);
-        if (findings.length) {
-          return { domain: entry.domain, findings };
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-    return null;
-  }, []);
   const [boardFindings, setBoardFindings] = useState<BoardFinding[]>(() => homeSeed?.findings || []);
+  useEffect(() => {
+    setBoardFindings(homeSeed?.findings || []);
+  }, [homeSeed]);
   const homeDomain = homeSeed?.domain || '';
   const primaryFinding = useMemo(() => pickPrimaryFinding(boardFindings), [boardFindings]);
 
