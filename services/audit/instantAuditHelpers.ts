@@ -120,8 +120,8 @@ export async function generateAuditReportUnlessDegraded(input: {
     report.answeredBy ? { model: report.answeredBy, provider: report.answeredByProvider } : undefined,
   );
   const body = modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded;
-  const estate = formatRealEstateChecks(evaluateRealEstateChecks(pages));
-  const text = body.includes('## Real estate checks') ? body : `${body.trimEnd()}\n\n${estate}`;
+  const estate = pages.length > 0 ? formatRealEstateChecks(evaluateRealEstateChecks(pages)).trimEnd() : '';
+  const text = estate && !body.includes('## Real estate checks') ? `${body}\n\n${estate}` : body;
   try {
     recordAudit({
       domain: input.formattedUrl,
