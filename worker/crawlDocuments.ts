@@ -214,13 +214,13 @@ Answer Engine Optimization (AEO) is the discipline of structuring web content, t
 ${CHECKOUT_TERM_LINE} ${listPriceSummary()}
 
 ${llmsPaidPlanBlock()}
-- Free: ${PLAN_ENTITLEMENTS.free.domainLimit} domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Pro / Agency only.
+- Free: ${PLAN_ENTITLEMENTS.free.domainLimit} domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
 
 ## MCP
 
 - Docs: https://www.luminarasuite.com/docs/mcp.html
 - Endpoint: https://luminarasuite.com/api/mcp
-- MCP access is included on Growth and Pro / Agency.
+- MCP access is included on Growth and Agency.
 
 ## Telegram Mini App
 

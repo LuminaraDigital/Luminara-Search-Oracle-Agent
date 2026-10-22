@@ -143,7 +143,7 @@ type PlanNames = {
   phrases: RegExp[];
   /** A plan id of several words, as a user types it: "single audit" for single_audit. */
   idPhrases: RegExp[];
-  /** A title of one word: "Starter", and "Pro" and "Agency" from "Luminara Pro / Agency". */
+  /** A title of one word: "Starter", or "Agency" from "Luminara Agency". */
   words: Array<{ word: string; re: RegExp }>;
 };
 

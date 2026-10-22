@@ -106,7 +106,7 @@ export function createClient(
   const limit = entitlementsFor(opts?.planId).agencyClientLimit;
   const state = load();
   if (limit <= 0) {
-    return { error: 'Agency clients require the Pro / Agency plan.' };
+    return { error: 'Agency clients require the Agency plan.' };
   }
   if (state.clients.length >= limit) {
     return { error: `Plan allows up to ${limit} client workspaces.` };

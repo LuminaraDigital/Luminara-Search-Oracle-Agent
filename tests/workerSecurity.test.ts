@@ -735,6 +735,23 @@ describe('crawl surfaces', () => {
     }
   });
 
+  it('redirects help, upgrade, settings, and account', async () => {
+    for (const [path, location] of [
+      ['/help', '/faq?ref=nav'],
+      ['/help/', '/faq?ref=nav'],
+      ['/upgrade', '/pricing?ref=nav'],
+      ['/upgrade/', '/pricing?ref=nav'],
+      ['/settings', '/?ref=nav#settings'],
+      ['/settings/', '/?ref=nav#settings'],
+      ['/account', '/?ref=nav#settings'],
+      ['/account/', '/?ref=nav#settings'],
+    ] as const) {
+      const res = await worker.fetch(req(`${path}?ref=nav`), makeEnv(), ctx);
+      expect(res.status, path).toBe(301);
+      expect(res.headers.get('Location'), path).toBe(location);
+    }
+  });
+
   it('serves static terms HTML', async () => {
     const res = await worker.fetch(req('/terms'), makeEnv(), ctx);
     expect(res.status).toBe(200);

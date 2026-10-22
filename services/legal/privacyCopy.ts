@@ -1,10 +1,10 @@
 /**
  * Privacy policy text shared by the public page and the in-app page.
- * Plain English. Same disclosures as the previous in-app policy.
+ * The Australian Privacy Act is the main section. Other regions are one short note.
  */
 import { OPERATOR_LINE, PUBLIC_CONTACT_LINE } from './consumerTerms';
 
-export const PRIVACY_UPDATED = '22 October 2026';
+export const PRIVACY_UPDATED = '23 October 2026';
 
 export const PRIVACY_INTRO =
   'This policy says what personal information Luminara Suite handles on the website, the Telegram Mini App, the Telegram bot, and the related Cloudflare APIs. It matches the product as shipped. It is not legal advice. For a counsel-approved data processing agreement, email privacy@luminarasuite.com.';
@@ -23,9 +23,21 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    title: 'Australian Privacy Act 1988',
+    paragraphs: [
+      'Luminara Digital is an Australian business. The Privacy Act 1988 (Cth) and the Australian Privacy Principles (APPs) are the main rules for personal information we handle.',
+      'Collection notice. We collect the account, usage, and billing details listed under "Information we handle" when you create an account, run a check, pay, or email us. If you do not give an email address or a Telegram id, we cannot sign you in or deliver a paid plan. The live crawl check on the website does not need an account.',
+      'Use and disclosure. We use personal information to run audits, chat, and saved work, to sign you in, to deliver the plan you buy, to limit abuse, and to answer support. We disclose it to the providers named in this section when that step needs them. We do not sell personal information. We do not use it for cross-context behavioural advertising.',
+      'Access and correction. Email info@luminara.digital from the address on the account, or include your Telegram id. Ask us to correct information that is wrong, incomplete, or out of date. We will correct it, or tell you why we will not. If you are signed in, open Settings, then Account. Download your data as JSON first. To delete the account, type DELETE and sign in again. That removes the live rows for the account, including workspaces, audits, public win pages, and saved fix state, and it deletes a Firebase sign-in when there is one. Cloudflare D1 Time Travel can restore a database backup for 30 days. We do not restore a deleted account from that backup unless the law requires it. Records a payment partner must keep, and a public blockchain payment, stay.',
+      'Overseas disclosure (APP 8). Some of these providers are outside Australia. We disclose personal information to them only so they can do the step we asked for, and we take reasonable steps so they handle it consistently with the APPs. We use Cloudflare for hosting, D1, KV, and request logs. We use Google Firebase for sign-in. We use Telegram for Mini App identity, Stars payments, and the bot. We use Stripe to process card payments. When a check or a chat runs, the prompt and page text go to the providers that check uses: Groq, NVIDIA, Google Gemini, OpenRouter, Ollama, Tavily, Exa, and Firecrawl. The Open Network and Toncenter receive a payment check only when you pay on that network.',
+      'Security. The site uses HTTPS. Sign-in checks protect hosted keys. Synced API keys are handled as described under "Information we handle". No method of sending or storing data is perfectly secure. Report a vulnerability to security@luminarasuite.com.',
+      'Complaints. Email info@luminara.digital and describe what happened. We will respond. If you are not satisfied, you can complain to the Office of the Australian Information Commissioner (OAIC) at https://www.oaic.gov.au/.',
+    ],
+  },
+  {
     title: 'Who this covers',
     paragraphs: [
-      'It covers visitors, people who sign in with Firebase email or Google, people who sign in with Telegram, people who pay with Telegram Stars or TON, and anyone who points their own client at our hosted Worker. If you run a self-hosted copy, that copy is your responsibility.',
+      'It covers visitors, people who sign in with Firebase email or Google, people who sign in with Telegram, people who pay by card through Stripe, with Telegram Stars, or with TON, and anyone who points their own client at our hosted Worker. If you run a self-hosted copy, that copy is your responsibility.',
     ],
   },
   {
@@ -34,8 +46,8 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     bullets: [
       'Account: a Firebase user id, email, and display name, or a Telegram user id, name, username, language, and an optional photo URL from Telegram\'s signed launch data (initData). We may link a Telegram login and a Firebase login to one account.',
       'What you type: business profile, domains, competitor names, chat messages, audit reports, brand memory, client workspaces, watchlists, and CMS settings you save.',
-      'API keys you paste (Groq, NVIDIA, Gemini, Tavily, Firecrawl, Exa, OpenRouter, Ollama, and similar) stay in your browser. If you sign in and turn on workspace sync, those keys can also be stored in your workspace on Cloudflare (D1 or KV). Synced keys are sensitive. Prefer local-only keys if you do not want them on our systems. Stronger encryption for synced keys is not finished yet.',
-      'Plan and billing: plan id, expiry, Telegram Stars charge ids, TON order amount, memo, status, and transaction hash, daily free-quota counters, and Sentinel watch targets (owner id, domain, brand, Telegram chat id, keywords, and scores).',
+      'API keys you paste (Groq, NVIDIA, Gemini, Tavily, Firecrawl, Exa, OpenRouter, Ollama, and similar) stay in this browser. If you are signed in and turn on workspace sync, those keys are encrypted in this browser with AES-256-GCM before upload. The key is derived with PBKDF2-SHA-256 (100,000 iterations) from a secret stored in this browser. Another browser does not have that secret, so it cannot decrypt those keys. If encryption fails, the keys are uploaded without that encryption. Audits, chat, and other workspace content are stored as you saved them, without that encryption.',
+      'Plan and billing: plan id, expiry, a Stripe checkout session id when you pay by card, Telegram Stars charge ids, TON order amount, memo, status, and transaction hash, daily free-quota counters, and Sentinel watch targets (owner id, domain, brand, Telegram chat id, keywords, and scores). Stripe is the card payment processor. We do not store card numbers.',
       'Logs: Cloudflare request logs, and the IP address used in memory for abuse limits. We do not set first-party marketing cookies.',
     ],
   },
@@ -45,19 +57,17 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'On your device: localStorage and sessionStorage hold the business profile, chat, audits, memory, themes, and keys when you are not relying on sync.',
       'On Cloudflare: a D1 database (users and workspace JSON) and KV (subscriptions, quota, workspace fallback, Sentinel targets, short-lived TON orders, and an enrichment cache). Hosting and logs are on Cloudflare.',
       'Firebase Authentication holds email, password, and Google sign-in credentials for the luminara-suite project.',
+      'Stripe holds the card payment. We keep the plan id, expiry, and checkout session id.',
     ],
   },
   {
     title: 'Why we use it',
     bullets: [
       'To run audits, chat, brand memory, Sentinel, and client workspaces.',
-      'To sign you in, count the free daily allowance, and deliver Stars or TON plans.',
+      'To sign you in, count the free daily allowance, and deliver a card pass, Stars, or TON plan.',
       'To relay blocked browser AI calls (for example NVIDIA NIM) without storing the key on that relay.',
       'To keep the service secure, limit abuse, and fix outages.',
       'To answer privacy, support, and security requests.',
-    ],
-    paragraphs: [
-      'Where the GDPR or UK GDPR applies, the legal bases are: performing the contract for the service you ask for; legitimate interests in security and keeping the product working; consent when you connect optional third-party keys or a wallet; and a legal obligation when we must keep payment dispute records.',
     ],
   },
   {
@@ -71,14 +81,15 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'LanguageTool and Umami, only if you turn those features on.',
       'Cloudflare for hosting, KV, D1, and logs.',
       'Firebase and Google for sign-in.',
+      'Stripe for card payments. We do not store card numbers.',
       'Telegram for Mini App identity, Stars payments, and bot alerts.',
       'The Open Network and Toncenter for checking an on-chain payment.',
     ],
   },
   {
-    title: 'Telegram and wallets',
+    title: 'Telegram, wallets, and cards',
     paragraphs: [
-      'Inside Telegram we receive the signed launch data Telegram sends. We check it with HMAC-SHA256. We use it to identify you, meter usage, send Sentinel alerts to your chat id, and record Stars purchases. We do not receive your phone number, card number, or bank account. Telegram handles Stars payments. You can clear the bot\'s chat memory with /reset or /clear. Connecting a TON wallet shares the public address with the app in your browser. We do not hold funds, and we do not store private keys or seed phrases.',
+      'Inside Telegram we receive the signed launch data Telegram sends. We check it with HMAC-SHA256. We use it to identify you, meter usage, send Sentinel alerts to your chat id, and record Stars purchases. We do not receive your phone number or bank account. Telegram handles Stars payments. The Mini App takes Stars only. You can clear the bot\'s chat memory with /reset or /clear. Connecting a TON wallet shares the public address with the app in your browser. We do not hold funds, and we do not store private keys or seed phrases. Card checkout on the website is through Stripe. We store the plan id, expiry, and checkout session id. We do not store the card number.',
     ],
   },
   {
@@ -101,18 +112,10 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
-    title: 'International transfers',
+    title: "If you're outside Australia",
     paragraphs: [
-      'We use Cloudflare\'s global network and vendors in the United States and other countries, for example Firebase and AI APIs. Where the GDPR applies, transfers rely on those vendors\' published transfer tools, such as Standard Contractual Clauses, and on your contract with us for the service.',
-    ],
-  },
-  {
-    title: 'Your rights',
-    paragraphs: [
-      'Depending on where you live, including the GDPR, UK GDPR, and the CCPA/CPRA, you may access, correct, delete, export, restrict, or object to some processing, and you may opt out of a "sale" or "sharing" of personal information.',
-      'We do not sell personal information for money. We do not use cross-context behavioural advertising.',
-      'To use these rights, email privacy@luminarasuite.com from the address on your account, or include your Telegram id. In Telegram, /status shows the plan metadata we hold. To wipe this browser, clear site storage. Settings can remove API keys from the device.',
-      'If you are signed in, open Settings, then Account. Download your data as JSON first. To delete the account, type DELETE and sign in again. That removes the live rows for the account, including workspaces, audits, public win pages, and saved fix state, and it deletes a Firebase sign-in when there is one. Cloudflare D1 Time Travel can restore a database backup for 30 days. We do not restore a deleted account from that backup unless the law requires it. Records a payment partner must keep, and a public blockchain payment, stay. You can still email privacy@luminarasuite.com.',
+      'If the GDPR, UK GDPR, or the CCPA/CPRA applies to you, you may ask to access, correct, delete, export, or restrict personal information, and you may object to some processing. You may opt out of a sale or sharing of personal information. We do not sell personal information. To ask, email privacy@luminarasuite.com from the address on your account, or include your Telegram id. An authorised agent must show proof of authority.',
+      'Where the GDPR applies, we rely on the contract for the service you ask for, legitimate interests in security and keeping the product working, consent when you connect optional keys or a wallet, and a legal obligation when we must keep payment dispute records. Overseas transfers use the providers named above and their published transfer tools, such as Standard Contractual Clauses.',
     ],
   },
   {
@@ -128,21 +131,9 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
-    title: 'Security',
-    paragraphs: [
-      'We use HTTPS, Cloudflare protections, sign-in checks on hosted keys, and limited Worker permissions. No method of sending or storing data is perfectly secure. Report a vulnerability to security@luminarasuite.com.',
-    ],
-  },
-  {
     title: 'If something goes wrong',
     paragraphs: [
       'If we learn of a personal-data breach that the law says we must report, we will tell affected users and regulators as the law requires, by account email or Telegram when we have that contact.',
-    ],
-  },
-  {
-    title: 'California (CCPA / CPRA)',
-    paragraphs: [
-      'Categories: identifiers, commercial plan data, internet activity (logs), and content you upload. The purposes are in "Why we use it". We do not sell personal information. To ask us to know, delete, or correct information, email privacy@luminarasuite.com. We will not treat you worse for using these rights. An authorised agent must show proof of authority.',
     ],
   },
   {
@@ -154,7 +145,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
   {
     title: 'Contact',
     paragraphs: [
-      'Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com.',
+      'Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com. Privacy complaints: info@luminara.digital, then the OAIC if we do not resolve them.',
     ],
   },
 ];

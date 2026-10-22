@@ -310,7 +310,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   const guard = await guardApiRoute(request, env, path);
   if (guard) return withCors(guard);
 
-  // Agency API surfaces require apiAccess (Pro / Agency) after authentication
+  // Agency API surfaces require apiAccess (Agency) after authentication
   const apiAccessGuard = await guardApiAccessRoute(request, env, path);
   if (apiAccessGuard) return withCors(apiAccessGuard);
 
@@ -2098,15 +2098,23 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 }
 
 /** Permanent redirect that keeps the query string. Location is a path, not an open redirect. */
-function permanentRedirect(url: URL, pathname: string): Response {
+function permanentRedirect(url: URL, pathname: string, hash = ''): Response {
   return new Response(null, {
     status: 301,
     headers: {
-      Location: `${pathname}${url.search}`,
+      Location: `${pathname}${url.search}${hash}`,
       'Cache-Control': 'public, max-age=3600',
     },
   });
 }
+
+const SHORT_PATH_REDIRECTS: Record<string, { path: string; hash?: string }> = {
+  '/how': { path: '/how-it-works' },
+  '/help': { path: '/faq' },
+  '/upgrade': { path: '/pricing' },
+  '/settings': { path: '/', hash: '#settings' },
+  '/account': { path: '/', hash: '#settings' },
+};
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -2216,9 +2224,11 @@ export default {
       return guard(docRes);
     }
 
-    // Short marketing alias. Canonical page is /how-it-works.
-    if (url.pathname === '/how' || url.pathname === '/how/') {
-      return guard(permanentRedirect(url, '/how-it-works'));
+    // Short aliases. /settings and /account open the account panel at /#settings.
+    const shortPath = url.pathname.replace(/\/$/, '') || '/';
+    const shortTarget = SHORT_PATH_REDIRECTS[shortPath];
+    if (shortTarget) {
+      return guard(permanentRedirect(url, shortTarget.path, shortTarget.hash ?? ''));
     }
 
     // Unlisted share OG HTML (before static marketing shells).

@@ -291,7 +291,7 @@ describe('Telegram Stars', () => {
     const link = await createInvoiceLink(env, USER, 'single_audit');
     expect(link.ok).toBe(false);
     if (!link.ok) {
-      expect(link.error).toContain('You already have Luminara Pro / Agency until');
+      expect(link.error).toContain('You already have Luminara Agency until');
       expect(link.error).toContain('24-hour pass is a lower plan');
       expect(link.error).toContain('nothing was charged');
     }
@@ -300,7 +300,7 @@ describe('Telegram Stars', () => {
     await handleTelegramPaymentUpdate(preCheckout('single_audit'), env);
     const answer = telegram.of('answerPreCheckoutQuery')[0].body;
     expect(answer.ok).toBe(false);
-    expect(answer.error_message).toContain('You already have Luminara Pro / Agency');
+    expect(answer.error_message).toContain('You already have Luminara Agency');
     expect(answer.error_message.length).toBeLessThanOrEqual(255);
 
     expect(kv.json(`sub:${USER}`)).toEqual(before);
@@ -364,7 +364,7 @@ describe('TON', () => {
     const inv = await createTonInvoice(env, String(USER), 'starter');
     expect(inv.ok).toBe(false);
     if (!inv.ok) {
-      expect(inv.error).toContain('You already have Luminara Pro / Agency until');
+      expect(inv.error).toContain('You already have Luminara Agency until');
       expect(inv.error).toContain('no invoice was issued');
     }
     expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM ton_pending_orders').get().n).toBe(0);
@@ -638,7 +638,7 @@ describe('licence keys', () => {
     const refused = await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY');
     env.DB = real;
     expect(refused.ok).toBe(false);
-    expect(refused.error).toContain('You already have the Pro / Agency plan until');
+    expect(refused.error).toContain('You already have the Agency plan until');
     expect(refused.error).toContain('the key was not used and is still valid');
     expect(kv.json(`sub:${USER}`)).toEqual(before);
     // Refused before the claim, not claimed and given back: for a single-use key, a claim held
@@ -673,7 +673,7 @@ describe('licence keys', () => {
     const refused = await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY');
     expect(looks).toBeGreaterThanOrEqual(2);
     expect(refused.ok).toBe(false);
-    expect(refused.error).toContain('You already have the Pro / Agency plan until');
+    expect(refused.error).toContain('You already have the Agency plan until');
     expect(refused.error).toContain('the key was not used and is still valid');
     expect(kv.json(`sub:${USER}`)).toEqual(agency);
     // The claim made before the write was released: the key, this account's redemption and its one trial.

@@ -45,7 +45,8 @@ describe('plain language pricing', () => {
     expect(cardTermLabel('growth')).toBe('A$229 · 30 days');
     expect(cardTermLabel('agency')).toBe('A$549 · 30 days');
     expect(cardPayLabel('starter')).toBe('Pay A$79 by card');
-    expect(listPriceSummary()).toContain('Starter A$79, Growth A$229, Pro / Agency A$549');
+    expect(listPriceSummary()).toContain('Starter A$79, Growth A$229, Agency A$549');
+    expect(listPriceSummary()).toContain('Pay by card');
     expect(listPriceSummary()).not.toMatch(/Approximate|About A\$|US\$/i);
     expect(listPriceSummary()).toContain('Telegram Stars');
     expect(freePlanLines().join(' ')).toContain('3 hosted Instant Audit checks a day');
@@ -60,7 +61,9 @@ describe('plain language pricing', () => {
     expect(html).not.toMatch(/US\$|GST|0402|0422/i);
     expect(html).toContain('Start free');
     expect(html).toContain('24-hour pass');
-    expect(html).toContain('75 Stars');
+    expect(html).toContain('25 Stars');
+    expect(html).not.toContain('75 Stars');
+    expect(planBullets('starter').map((line) => line.text)).toContain('White-label PDF exports');
     expect(html.split('24-hour pass').length - 1).toBe(1);
     expect(html).not.toContain('saved in this browser');
   });
@@ -71,6 +74,13 @@ describe('plain language privacy page', () => {
     expect(readFileSync('public/privacy.html', 'utf8')).toBe(PRIVACY_HTML);
     expect(PRIVACY_HTML).toContain('We do not sell personal information');
     expect(PRIVACY_HTML).toContain('personal-data breach');
+    expect(PRIVACY_HTML).toContain('Australian Privacy Act 1988');
+    expect(PRIVACY_HTML).toContain('Stripe');
+    expect(PRIVACY_HTML).toContain('We do not store card numbers');
+    expect(PRIVACY_HTML).toContain('info@luminara.digital');
+    expect(PRIVACY_HTML).toContain('Office of the Australian Information Commissioner');
+    expect(PRIVACY_HTML).not.toContain('not finished yet');
+    expect(PRIVACY_HTML).not.toContain('California (CCPA');
     expect(PRIVACY_HTML).toContain('class="site-nav"');
   });
 });

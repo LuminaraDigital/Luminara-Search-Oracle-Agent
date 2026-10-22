@@ -164,7 +164,8 @@ describe('marketing crawl documents', () => {
   it('serves the shared USD list prices and Stars checkout in llms.txt', () => {
     const usdCheckoutPrice = /\/mo\b|per month/i;
     expect(LLMS_TXT).toContain(listPriceSummary());
-    expect(LLMS_TXT).toContain('Pro / Agency: list price A$549, pay 18,000 Stars');
+    expect(LLMS_TXT).toContain('Agency: list price A$549, pay 18,000 Stars');
+    expect(LLMS_TXT).toContain('Pay by card');
     expect(LLMS_TXT).toContain('10 client workspaces');
     expect(LLMS_TXT).not.toContain('saved in this browser');
     expect(LLMS_TXT).not.toMatch(/team seats/i);
@@ -179,7 +180,7 @@ describe('marketing crawl documents', () => {
     }
     const profound = MARKETING_SHELL_BY_PATH['/compare/profound'].crawlerBody;
     expect(profound).toContain('2,500 / 7,500 / 18,000');
-    expect(profound).toContain('30-day Telegram Stars plans');
+    expect(profound).toContain('Pay by card or Telegram Stars');
   });
 
   it('robots.txt names AI crawlers, allows teaser cards, and keeps share URLs fetchable for unfurls', () => {
@@ -226,6 +227,9 @@ describe('marketing shell injection', () => {
 
   it('resolves shell keys for aliases and comparisons', () => {
     expect(marketingShellKey('/how')).toBe('/how-it-works');
+    expect(marketingShellKey('/help')).toBe('/faq');
+    expect(marketingShellKey('/help/')).toBe('/faq');
+    expect(marketingShellKey('/upgrade')).toBe('/pricing');
     expect(marketingShellKey('/how/')).toBe('/how-it-works');
     expect(marketingShellKey('/infrastructure')).toBe('/how-it-works');
     expect(marketingShellKey('/pricing/')).toBe('/pricing');
