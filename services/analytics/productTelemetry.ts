@@ -28,7 +28,10 @@ export type TelemetryEventType =
   | 'share_link_opened'
   | 'mcp_key_created'
   | 'mcp_snippet_copied'
-  | 'mcp_first_used';
+  | 'mcp_first_used'
+  | 'upgrade_prompt_shown'
+  | 'upgrade_prompt_clicked'
+  | 'upgrade_prompt_dismissed';
 
 export interface TelemetryEvent {
   id: string;

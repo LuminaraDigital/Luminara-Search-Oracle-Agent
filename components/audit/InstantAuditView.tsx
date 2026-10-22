@@ -23,7 +23,8 @@ import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditProgress } from '../ui/PlaceLoader';
-import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
+import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, type QuotaInfo } from '../../services/apiClient';
+import { UpgradePrompt } from '../upgrade/UpgradeSurfaces';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
 import { Button } from '../ui/Button';
@@ -228,8 +229,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     }
 
     if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
-      openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited audits.`);
-      setError(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan for unlimited audits or add your own API key in Settings.`);
+      setError(`Daily query limit reached (${quota.limit}/${quota.limit} used today).`);
       return;
     }
 
@@ -643,21 +643,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </div>
       )}
 
-      {/* Daily Quota Limit Banner */}
       {quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0) && (
-        <div className="mb-6 p-4 rounded-2xl bg-danger-500/10 border border-danger-500/30 text-xs text-danger-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-danger-300">Daily query limit reached:</span>
-            <span>You have used all {quota.limit} free queries for today ({quota.limit}/{quota.limit} used). Upgrade for unlimited audits or add your own API key in Settings.</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited audits.`)}
-            className="px-3.5 py-1.5 rounded-lg bg-gold text-black font-semibold text-xs whitespace-nowrap hover:bg-gold-light transition-colors self-start sm:self-auto cursor-pointer"
-          >
-            Upgrade plan
-          </button>
-        </div>
+        <UpgradePrompt kind="quota" />
       )}
 
       {/* Controls Card */}
