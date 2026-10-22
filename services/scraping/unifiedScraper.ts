@@ -18,12 +18,13 @@ import { hostedAuthBlocked, noteHostedAuthFailure } from '../resilience/hostedAu
 import { hostedAuthRecoveryHint } from '../audit/hostedScoutRail';
 import { contentDistiller, DistilledContentResult } from './contentDistiller';
 import { githubCitabilityService } from './githubCitabilityService';
+import { exaService } from '../search/exaService';
 
 export type ScraperProviderType = 'auto' | 'patchright' | 'firecrawl' | 'jina' | 'direct';
 
 export interface ScrapedPageEvidence {
   success: boolean;
-  providerUsed: 'patchright' | 'firecrawl' | 'jina' | 'direct';
+  providerUsed: 'patchright' | 'firecrawl' | 'jina' | 'direct' | 'exa';
   url: string;
   statusCode?: number;
   title: string;
@@ -256,6 +257,10 @@ export class UnifiedScraperService {
               ...(firecrawlSkipNote ? { fallbackNote: firecrawlSkipNote } : {}),
             };
           }
+        } else if (directRes.status === 403 || directRes.status === 429) {
+          const fromExa = await this.pageFromExa(directUrl, directRes.status, options.maxChars, startTime, firecrawlSkipNote);
+          if (fromExa) return fromExa;
+          lastError = `Direct fetch HTTP ${directRes.status}`;
         }
       } catch (err: any) {
         lastError = `Direct fetch error: ${err.message}`;
@@ -263,6 +268,32 @@ export class UnifiedScraperService {
     }
 
     return this.buildFailureResult(url, 'auto', lastError || 'All scraping strategies exhausted', startTime, firecrawlSkipNote);
+  }
+
+  private async pageFromExa(
+    url: string,
+    statusCode: number,
+    maxChars: number | undefined,
+    startTime: number,
+    firecrawlSkipNote?: string,
+  ): Promise<ScrapedPageEvidence | null> {
+    const rows = await exaService.contents([url]);
+    const text = (rows[0]?.text || rows[0]?.summary || '').trim();
+    if (text.length < 50) return null;
+    const distilled = contentDistiller.distill('', text, { maxChars });
+    return {
+      success: true,
+      providerUsed: 'exa',
+      url,
+      statusCode,
+      title: rows[0]?.title || distilled.title || url,
+      description: distilled.description,
+      markdown: text,
+      distilled,
+      formattedEvidence: this.buildEvidenceBlock('Exa contents', url, distilled),
+      latencyMs: Math.round(performance.now() - startTime),
+      ...(firecrawlSkipNote ? { fallbackNote: firecrawlSkipNote } : {}),
+    };
   }
 
   private buildEvidenceBlock(providerName: string, url: string, distilled: DistilledContentResult): string {

@@ -94,7 +94,7 @@ export class SerpRadarAgent {
 
           serpEvidence.push({
             query: res.query,
-            engine: 'tavily',
+            engine: item.source === 'exa' ? 'exa' : 'tavily',
             title: item.title,
             url: item.url,
             snippet: item.content,

@@ -1,5 +1,5 @@
 import type { Env } from './env';
-import { billingId, identify, json } from './workerUtils';
+import { billingId, fetchWithTimeout, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
 import { isUserSubscribed, checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
@@ -28,6 +28,7 @@ import {
   stripUpstreamHeaders,
 } from './security';
 import { dataForSeoBasicAuthHeader, envHasDataForSeo } from '../services/config/runtimeKeys';
+import { allowDailyCap, EXA_FREE_DAILY_CAP, JEV_FREE_DAILY_CAP, readDailyCap } from './isolateDailyCap';
 
 export const MAX_PROVIDER_KEY_LEN = 512;
 
@@ -210,6 +211,19 @@ export const PROVIDERS: Record<string, ProviderSpec> = {
       return {};
     },
   },
+  typesafe: {
+    base: 'https://api.typesafe.ai',
+    allow: ['/v1/systemone'],
+    auth: (env, h) => {
+      if (!env.TYPESAFE_API_KEY) return { ok: false };
+      h.set('Authorization', `Bearer ${env.TYPESAFE_API_KEY}`);
+      return { ok: true };
+    },
+    byok: (key, h) => {
+      h.set('Authorization', `Bearer ${key}`);
+      return {};
+    },
+  },
   dataforseo: {
     base: 'https://api.dataforseo.com',
     allow: [
@@ -376,6 +390,7 @@ export async function proxyProvider(
   subPath: string
 ): Promise<Response> {
   const spec = PROVIDERS[providerId];
+  const jevCall = providerId === 'typesafe';
   if (!spec) return json({ error: `Unknown provider "${providerId}"` }, 404);
   if (request.method !== 'GET' && request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   if (!isPathAllowed(spec, subPath)) {
@@ -470,7 +485,7 @@ export async function proxyProvider(
       );
     }
 
-    if (who.user) {
+    if (who.user && !jevCall) {
       const claim = await takeAuditRunCall(env, who.user, request);
       if (claim.kind === 'reject' || claim.kind === 'wrong-site') {
         const status = claim.kind === 'wrong-site' ? 403 : 401;
@@ -481,7 +496,7 @@ export async function proxyProvider(
         auditDomain = claim.domain;
       }
     }
-    if (!auditCoveredToken) {
+    if (!auditCoveredToken && !jevCall) {
       quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
     }
     if (quotaGate && !quotaGate.ok) {
@@ -619,9 +634,26 @@ export async function proxyProvider(
     }
   }
 
+  if (!userKey && !paidSubscriber && (providerId === 'exa' || providerId === 'typesafe')) {
+    const limit = providerId === 'exa'
+      ? readDailyCap(env.EXA_FREE_DAILY_CAP, EXA_FREE_DAILY_CAP)
+      : readDailyCap(env.TYPESAFE_FREE_DAILY_CAP, JEV_FREE_DAILY_CAP);
+    if (!allowDailyCap(providerId === 'exa' ? 'exa' : 'jev', fallbackAccountId, limit)) {
+      const exa = providerId === 'exa';
+      return releaseUnmeasured(json({
+        ok: false,
+        error: exa ? 'Free Exa searches for today are used up.' : 'The evidence check is unavailable right now.',
+        code: exa ? 'EXA_DAILY_CAP' : 'JEV_DAILY_CAP',
+      }, 429));
+    }
+  }
+
   const upstreamBody = request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
-  const callUpstream = (hdrs: Headers) =>
-    fetch(upstream.toString(), { method: request.method, headers: hdrs, body: upstreamBody });
+  const callUpstream = (hdrs: Headers) => {
+    const init: RequestInit = { method: request.method, headers: hdrs, body: upstreamBody };
+    if (!jevCall) return fetch(upstream.toString(), init);
+    return fetchWithTimeout(upstream.toString(), init, 3_000);
+  };
 
   const networkFailure = async (err: unknown): Promise<Response> => {
     const fallback = await tryChatFallbacks(
@@ -696,7 +728,7 @@ export async function proxyProvider(
       }
     }
   }
-  if (res.ok && scoutAccountId) {
+  if (res.ok && scoutAccountId && !jevCall) {
     try {
       const domain = scoutEvidenceDomain({ providerId, subPath, body, hostname: safePublicHostname });
       if (domain) {

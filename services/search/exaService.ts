@@ -29,13 +29,16 @@ export class ExaService {
     return ExaService.instance;
   }
 
-  public async search(query: string, options: { numResults?: number; contents?: boolean; summary?: boolean } = {}): Promise<ExaSearchResponse> {
+  public async search(query: string, options: { numResults?: number; contents?: boolean; summary?: boolean; timeoutMs?: number } = {}): Promise<ExaSearchResponse> {
     const apiKey = configService.getExaKey();
     if (!apiKey) {
       console.warn('[Exa] No Exa.ai API Key configured');
       return { results: [] };
     }
 
+    const timeoutMs = options.timeoutMs && options.timeoutMs > 0 ? options.timeoutMs : 0;
+    const controller = timeoutMs ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
       const body: any = {
         query,
@@ -57,6 +60,7 @@ export class ExaService {
           'x-api-key': apiKey,
         },
         body: JSON.stringify(body),
+        signal: controller?.signal,
       });
 
       if (!response.ok) {
@@ -80,6 +84,44 @@ export class ExaService {
     } catch (err) {
       console.error('[Exa] Search failed:', err);
       return { results: [] };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /** Page text when a direct fetch was blocked. Empty when Exa has nothing. */
+  public async contents(urls: string[], timeoutMs = 8000): Promise<ExaSearchResult[]> {
+    const apiKey = configService.getExaKey();
+    const list = urls.map((url) => url.trim()).filter(Boolean).slice(0, 3);
+    if (!apiKey || list.length === 0) return [];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await providerFetch('exa', '/contents', 'https://api.exa.ai/contents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          urls: list,
+          text: { maxCharacters: 1500 },
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.results || []).map((r: any) => ({
+        id: r.id || r.url,
+        url: r.url,
+        title: r.title || r.url,
+        text: r.text,
+        summary: r.summary,
+      }));
+    } catch {
+      return [];
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

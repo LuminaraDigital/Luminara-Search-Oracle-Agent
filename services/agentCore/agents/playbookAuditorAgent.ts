@@ -17,9 +17,8 @@ import {
   type LlmCrawlerSnapshot,
 } from '../../audit/llmCrawlerReadiness';
 import {
-  HEALTH_CHECKS,
-  HEALTH_SCORE_START,
   healthChecklist,
+  healthScoreFromFindings,
   healthScoreBlockReason,
   liveSearchRows,
   pageFetchBlocked,
@@ -173,11 +172,7 @@ export class PlaybookAuditorAgent {
 
     // A checklist number: it starts at 85 and loses a fixed amount for each failed check.
     // It is kept for the code that reads it. What a founder is told is the count of checks.
-    const baseScore = HEALTH_CHECKS.reduce(
-      (score, check) => (findings.some((f) => f.id === check.findingId) ? score - check.penalty : score),
-      HEALTH_SCORE_START,
-    );
-    const healthScore = Math.max(20, Math.min(100, baseScore));
+    const healthScore = healthScoreFromFindings(findings);
     const checklist = healthChecklist(findings);
 
     emit({

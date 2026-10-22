@@ -361,6 +361,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         lenses,
         scrapedPages: crewResult.scrapedPages,
         serpEvidence: crewResult.serpEvidence,
+        siteType: crewResult.siteType,
+        brandSupported: crewResult.brandSupported,
       });
       if (seq !== runSeq.current) return;
       if (!result) {

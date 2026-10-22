@@ -82,7 +82,7 @@
 
   // Non-secret config. Secrets are set with `npx wrangler secret put NAME`:
   //   BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET (required for the bot webhook), GROQ_API_KEY, GEMINI_API_KEY,
-  //   OPENROUTER_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY, EXA_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY,
+  //   OPENROUTER_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY, EXA_API_KEY, TYPESAFE_API_KEY, NVIDIA_API_KEY, NVIDIA_ORG_ID, OLLAMA_API_KEY,
   //   DATAFORSEO_LOGIN, DATAFORSEO_PASSWORD, TON_API_KEY (Toncenter), UMAMI_API_KEY (or UMAMI_USERNAME + UMAMI_PASSWORD).
   //   ADMIN_SECRET (required for admin routes: /api/admin/users, /api/admin/license/generate,
   //   /api/admin/license/seed, /api/telegram/refund; sent as x-admin-secret header; separate from the webhook secret).
