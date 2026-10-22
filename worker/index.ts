@@ -1401,7 +1401,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleIdeaScoutRoute(request, env, path));
   }
 
-  if (path === '/share/reports' || path.startsWith('/share/reports/')) {
+  if (path === '/share/reports' || path.startsWith('/share/reports/') || path === '/wins' || path.startsWith('/wins/')) {
     if (request.method === 'GET' && /^\/share\/reports\/[a-f0-9]{64}$/i.test(path)) {
       const dual = await enforceDualRateLimit(env, {
         action: 'share_public_get',

@@ -31,7 +31,9 @@ export type TelemetryEventType =
   | 'mcp_first_used'
   | 'upgrade_prompt_shown'
   | 'upgrade_prompt_clicked'
-  | 'upgrade_prompt_dismissed';
+  | 'upgrade_prompt_dismissed'
+  | 'share_clicked'
+  | 'share_page_view';
 
 export interface TelemetryEvent {
   id: string;

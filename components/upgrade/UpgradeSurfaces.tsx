@@ -5,6 +5,8 @@ import { listAudits } from '../../services/audit/auditHistoryService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { getCurrentQuotaSync, openPaywallModal, subscribeQuota } from '../../services/apiClient';
 import { requestRecheck } from '../../services/upgrade/recheckFixClient';
+import { winEligibility } from '../../services/share/winShare';
+import { WinSharePanel } from '../share/WinSharePanel';
 import {
   UPGRADE_DISMISS_KEY,
   competitorRankLine,
@@ -105,15 +107,22 @@ export function UpgradeSurfaces({
   findings,
   whiteLabelAsk,
   onCloseWhiteLabel,
+  measured = false,
+  reportText = '',
+  showWin = true,
 }: {
   domain?: string;
   findings: BoardFinding[];
   whiteLabelAsk?: boolean;
   onCloseWhiteLabel?: () => void;
+  measured?: boolean;
+  reportText?: string;
+  showWin?: boolean;
 }) {
   const [planId, setPlanId] = useState<string | null>(() => getCurrentQuotaSync()?.plan ?? null);
   const [asked, setAsked] = useState<UpgradePromptKind | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [recheckPassed, setRecheckPassed] = useState(false);
   useEffect(() => subscribeQuota((quota) => setPlanId(quota?.plan ?? null)), []);
   const [busy, setBusy] = useState(false);
   const progress = fixProgress(findings);
@@ -134,8 +143,12 @@ export function UpgradeSurfaces({
     const result = await requestRecheck({ domain, checkId: target.checkId, expect: target.expect });
     setBusy(false);
     if (result.code === 'PAYWALL_EXCEEDED') setAsked('quota');
+    setRecheckPassed(result.measured && result.passed === true);
     setNote(recheckCelebration(result));
   };
+  const claim = showWin
+    ? winEligibility({ measured, reportText, recheckPassed, fixesDone: progress.done })
+    : null;
 
   return (
     <div className="mb-8 max-w-[70ch] space-y-4">
@@ -152,6 +165,7 @@ export function UpgradeSurfaces({
           {note && <p className="mt-3 text-base leading-relaxed text-gray-100" role="status">{note}</p>}
         </section>
       )}
+      {claim && <WinSharePanel domain={domain} claim={claim} />}
       {showTracking && <PromptCard kind="tracking" onDismiss={() => setAsked('tracking')} />}
       {active && (
         <PromptCard kind={active} onDismiss={() => { setAsked(null); onCloseWhiteLabel?.(); }} />

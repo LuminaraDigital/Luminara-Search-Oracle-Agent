@@ -41,6 +41,7 @@ const MEMORY_KEYS = [
   'luminara_first_run_tour',
   'luminara_findings_board_v1',
   'luminara_upgrade_dismissed_v1',
+  'luminara_win_shares_v1',
 ] as const;
 
 const KEY_BAG_KEYS = [
