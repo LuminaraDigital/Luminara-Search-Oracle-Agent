@@ -55,7 +55,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           signalWeight: 2.5,
         })
         .catch(() => {});
-      setVfsSyncSuccess('Synced to Brand Memory Vault + Luminara Dreaming.');
+      setVfsSyncSuccess('Synced to brand memory.');
       setTimeout(() => setVfsSyncSuccess(null), 3500);
     } catch (e) {
       console.error('VFS sync error', e);

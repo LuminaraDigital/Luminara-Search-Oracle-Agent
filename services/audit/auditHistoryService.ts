@@ -4,6 +4,7 @@
  */
 
 import { entitlementsFor, type PlanId } from '../plans/planEntitlements';
+import { notifyAuditActivity } from './auditActivity';
 
 const STORAGE_KEY = 'luminara_audit_history_v1';
 const MAX_HARD_CAP = 500;
@@ -137,7 +138,7 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
     competitorsMentioned: extractCompetitors(text, input.dnaCompetitors),
     title: input.title || `${input.focus} audit · ${domain}`,
     summary: summary.slice(0, 400),
-    reportExcerpt: text.slice(0, 4000),
+    reportExcerpt: text.slice(0, 80_000),
     clientId: input.clientId ?? null,
     tags: [input.focus.toLowerCase(), domain],
   };
@@ -165,6 +166,7 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
   }
   trimmed.sort((a, b) => a.measuredAt - b.measuredAt);
   saveAll(trimmed);
+  notifyAuditActivity();
   return entry;
 }
 

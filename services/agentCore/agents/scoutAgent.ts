@@ -13,6 +13,7 @@ import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
 import { pageSupportsHealthScore } from '../auditEvidenceGate';
 import { extractScrapedLinks } from '../../audit/scrapedSameAs';
+import { organizationNameFromJson } from '../../audit/brandName';
 import { AgentActivityEvent, ScrapedPageEvidence } from '../types';
 
 function withFallbackNote(message: string, note: string): string {
@@ -22,16 +23,20 @@ function withFallbackNote(message: string, note: string): string {
 
 function toCrewPage(p: ProviderPage, fallbackUrl: string): ScrapedPageEvidence {
   const markdown = p.markdown || '';
+  const schemasFound = (p.distilled?.schemas || []).map((s) => ({
+    type: s.type || 'UnknownSchema',
+    rawJson: JSON.stringify(s.raw || s),
+    isValid: true,
+  }));
   return {
     url: p.url,
     title: p.title || fallbackUrl,
     description: p.description,
+    siteName: p.distilled?.openGraph?.site_name || undefined,
+    organizationName: organizationNameFromJson(schemasFound) || undefined,
+    httpStatus: p.statusCode,
     h1s: (p.distilled?.headings || []).filter((h) => h.level === 1).map((h) => h.text),
-    schemasFound: (p.distilled?.schemas || []).map((s) => ({
-      type: s.type || 'UnknownSchema',
-      rawJson: JSON.stringify(s.raw || s),
-      isValid: true,
-    })),
+    schemasFound,
     wordCount: markdown.trim() ? markdown.trim().split(/\s+/).filter(Boolean).length : 0,
     loadTimeMs: p.latencyMs,
     rawTextSnippet: markdown ? markdown.slice(0, 1500) : '',

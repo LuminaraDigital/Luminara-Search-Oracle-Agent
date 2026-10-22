@@ -5,6 +5,19 @@
 
 export type LlmCrawlerStatus = 'pass' | 'fail' | 'not_measured';
 
+/** Shown when a file or page fetch was blocked. Not a pass, and not "missing". */
+export const BLOCKED_CHECK = 'Not measured (site blocked our check)';
+
+export function responseBlocked(status: number | null | undefined, body?: string | null): boolean {
+  if (status === 403 || status === 429) return true;
+  const sample = (body || '').slice(0, 2500).toLowerCase();
+  if (!sample) return false;
+  return sample.includes('cf-challenge')
+    || sample.includes('cf-browser-verification')
+    || sample.includes('just a moment')
+    || sample.includes('checking your browser');
+}
+
 export type LlmCrawlerCheckId =
   | 'llms_txt'
   | 'llms_structure'
@@ -185,6 +198,9 @@ function llmsStructureFlags(text: string): { title: boolean; summary: boolean } 
 }
 
 function evaluateLlmsPresence(snapshot: LlmCrawlerSnapshot): LlmCrawlerCheck {
+  if (responseBlocked(snapshot.llmsHttpStatus, snapshot.llmsTxt)) {
+    return check('llms_txt', 'not_measured', BLOCKED_CHECK);
+  }
   if (snapshot.llmsHttpStatus === 404 || (snapshot.llmsTxt !== null && snapshot.llmsTxt.trim() === '')) {
     return check('llms_txt', 'fail', 'llms.txt was not found at the site root.');
   }
@@ -214,6 +230,9 @@ function evaluateLlmsStructure(snapshot: LlmCrawlerSnapshot, presence: LlmCrawle
 }
 
 function evaluateBotDirectives(snapshot: LlmCrawlerSnapshot): { check: LlmCrawlerCheck; groups: Map<string, RobotGroup> | null } {
+  if (responseBlocked(snapshot.robotsHttpStatus, snapshot.robotsTxt)) {
+    return { check: check('ai_bot_directives', 'not_measured', BLOCKED_CHECK), groups: null };
+  }
   if (snapshot.robotsHttpStatus === 404 || (snapshot.robotsTxt !== null && snapshot.robotsTxt.trim() === '')) {
     return {
       check: check('ai_bot_directives', 'pass', 'No robots.txt was found. Common AI crawlers are not blocked by a robots rule.'),
@@ -270,6 +289,9 @@ function evaluateCitePaths(bots: LlmCrawlerCheck, groups: Map<string, RobotGroup
 }
 
 function evaluateAiTxt(snapshot: LlmCrawlerSnapshot): LlmCrawlerCheck {
+  if (responseBlocked(snapshot.aiHttpStatus, snapshot.aiTxt)) {
+    return check('ai_txt', 'not_measured', BLOCKED_CHECK);
+  }
   if (snapshot.aiTxt === undefined && snapshot.aiHttpStatus === undefined) {
     return check('ai_txt', 'not_measured', 'ai.txt was not fetched.');
   }

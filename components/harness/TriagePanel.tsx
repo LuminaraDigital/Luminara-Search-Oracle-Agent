@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { triageService, SAMPLE_CRASH_SCENARIOS } from '../../services/harness/triageService';
 import { TriageReport } from '../../types';
+import { formatAuDate } from '../../utils/formatAuDate';
 
 export const TriagePanel: React.FC = () => {
   const [reports, setReports] = useState<TriageReport[]>([]);
@@ -185,7 +186,7 @@ export const TriagePanel: React.FC = () => {
                     </span>
                   </div>
                   <div className="text-xs font-mono text-gray-400 mt-0.5">
-                    Source: <span className="text-gold-light">{activeReport.source}</span> | Timestamp: {new Date(activeReport.timestamp).toLocaleString()}
+                    Source: <span className="text-gold-light">{activeReport.source}</span> | Timestamp: {formatAuDate(activeReport.timestamp)}
                   </div>
                 </div>
 

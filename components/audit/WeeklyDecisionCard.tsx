@@ -11,6 +11,7 @@ import { llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCo
 import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
 import { probeLlmCrawlerReadiness } from '../../services/audit/llmCrawlerProbe';
 import { MindshareRadarCard } from '../visibility/MindshareRadarCard';
+import { formatAuDate } from '../../utils/formatAuDate';
 import { PerceptionMatrix } from '../visibility/PerceptionMatrix';
 
 interface WeeklyDecisionCardProps {
@@ -43,7 +44,7 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
   const aiSaid = useMemo(() => sampleAiSaidFixtures(domain), [domain]);
   const verifyBy = useMemo(() => {
     const base = commitment?.committedAt || Date.now();
-    return new Date(base + 14 * 24 * 60 * 60 * 1000).toLocaleDateString();
+    return formatAuDate(base + 14 * 24 * 60 * 60 * 1000);
   }, [commitment?.committedAt]);
 
   const mappedEvidence: EmpiricalEvidence[] = useMemo(() => {
@@ -209,7 +210,7 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
             )}
           </div>
           <p className="text-gray-300 text-xs leading-relaxed">{primary.title}</p>
-          <div className="flex flex-wrap items-center gap-2 mt-3">
+          <div id="tour-mark-done" className="flex flex-wrap items-center gap-2 mt-3">
             <button
               type="button"
               disabled={busy || primary.status === 'in_progress' || primary.status === 'done'}

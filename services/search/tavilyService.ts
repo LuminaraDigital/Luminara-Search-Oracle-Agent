@@ -1,6 +1,7 @@
 import { configService } from '../configService';
 import { providerFetch } from '../apiClient';
 import { hostedAuthBlocked, isAuditSiteMismatch, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
+import { exaService } from './exaService';
 
 export interface TavilySearchResult {
   title: string;
@@ -8,6 +9,7 @@ export interface TavilySearchResult {
   content: string;
   score?: number;
   sample?: boolean;
+  source?: 'tavily' | 'exa';
 }
 
 export interface TavilySearchResponse {
@@ -68,6 +70,10 @@ export class TavilyService {
       }, { userKey: apiKey });
 
       if (!response.ok) {
+        if (await tavilyBlocked(response)) {
+          const exa = await exaSearchFallback(query, options.maxResults || 5);
+          if (exa) return exa;
+        }
         if (
           (response.status === 401 || response.status === 403 || response.status === 429)
           && !(await isAuditSiteMismatch(response))
@@ -132,3 +138,30 @@ export class TavilyService {
 }
 
 export const tavilyService = TavilyService.getInstance();
+
+/** 403 or 429 from Tavily, including the relay's rewritten 403. */
+export async function tavilyBlocked(response: Response): Promise<boolean> {
+  if (response.status === 403 || response.status === 429) return true;
+  if (response.status !== 503) return false;
+  try {
+    const body = await response.clone().json() as { upstreamStatus?: unknown; code?: unknown };
+    return body.upstreamStatus === 403 || body.code === 'HOSTED_PROVIDER_REQUEST_REFUSED';
+  } catch {
+    return false;
+  }
+}
+
+async function exaSearchFallback(query: string, maxResults: number): Promise<TavilySearchResponse | null> {
+  const exa = await exaService.search(query, { numResults: maxResults, contents: true, summary: false, timeoutMs: 8000 });
+  if (!exa.results.length) return null;
+  return {
+    query,
+    results: exa.results.map((row) => ({
+      title: row.title,
+      url: row.url,
+      content: row.text || row.summary || '',
+      score: row.score,
+      source: 'exa' as const,
+    })),
+  };
+}

@@ -39,7 +39,8 @@ describe('executiveBriefingService', () => {
 
     expect(briefing.domain).toBe(domain);
     expect(briefing.verdict).toContain(domain);
-    expect(briefing.verdict).toContain('% category mindshare');
+    expect(briefing.verdict).toContain('50%');
+    expect(briefing.verdict).toContain('1 brand mention and 1 competitor mention');
     expect(briefing.keyDriver).toBeDefined();
     expect(briefing.oneAction.title).toBeDefined();
     expect(briefing.reportLink).toContain(encodeURIComponent(domain));

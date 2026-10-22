@@ -105,7 +105,8 @@ describe('security headers', () => {
     expect(described).not.toMatch(/\bre-audits\b/);
     expect(described).toContain('re-audit reminders in Telegram');
     expect(described).toContain('daily drift check');
-    expect(described).toContain('saved in this browser');
+    expect(described).toContain('client workspaces');
+    expect(described).not.toContain('saved in this browser');
     expect(data.plans.starter.stars).toBe(2500);
     expect(data.plans.growth.stars).toBe(7500);
     expect(data.plans.agency.stars).toBe(18000);

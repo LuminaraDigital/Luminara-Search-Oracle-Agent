@@ -9,7 +9,10 @@ import { WeeklyDecisionCard } from './WeeklyDecisionCard';
 import { PageSpeedPanel } from './PageSpeedPanel';
 import { GscPanel } from './GscPanel';
 import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/findingBoardService';
-import { useConfirm } from '../ui/ConfirmModal';
+import { PastReports } from './PastReports';
+import { FirstRunTour } from '../onboarding/FirstRunTour';
+import { ReportPdfButton } from './ReportPdfButton';
+import type { AuditHistoryEntry } from '../../services/audit/auditHistoryService';
 import { AgentMissionControl } from './AgentMissionControl';
 import { ProofOfAuditBadgeModal } from './ProofOfAuditBadgeModal';
 import { PROOF_BADGE_ENABLED } from '../../services/agentCore/tonAttestationService';
@@ -19,7 +22,7 @@ import { AgentActivityEvent, AuditAttestation, AuditStateGraphContext } from '..
 import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
-import { AuditReportSkeleton } from '../ui/Skeleton';
+import { AuditProgress } from '../ui/PlaceLoader';
 import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
@@ -358,6 +361,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         lenses,
         scrapedPages: crewResult.scrapedPages,
         serpEvidence: crewResult.serpEvidence,
+        siteType: crewResult.siteType,
+        brandSupported: crewResult.brandSupported,
       });
       if (seq !== runSeq.current) return;
       if (!result) {
@@ -435,8 +440,6 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     }
   };
 
-  const { requestConfirm, confirmModal } = useConfirm();
-
   const shareTeaser = async (mode: 'share' | 'copy') => {
     if (!scoutSummary || sharing || scoutSummary.degraded || scoutSummary.evidenceEmpty) return;
     setSharing(true);
@@ -487,36 +490,30 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   };
 
   const handleReset = () => {
-    const reset = () => {
-      setReport(null);
-      setError(null);
-      setPersistHint(null);
-      setStrategySaved(false);
-      setMcpKey(null);
-      setMcpError(null);
-      setUrl('');
-      draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
-      setCrewEvents([]);
-      setBoardFindings([]);
-      setCrewMeasurement(null);
-      setScoutSummary(null);
-      setShareNote(null);
-      setAttestation(null);
-    };
-    // Only ask when there is a report to lose.
-    if (!report) {
-      reset();
-      return;
-    }
-    requestConfirm(
-      {
-        title: 'Start a new audit?',
-        description: 'The current report will be discarded. Export or copy anything you need first.',
-        confirmLabel: 'Discard and start new',
-        variant: 'danger',
-      },
-      reset,
-    );
+    setReport(null);
+    setError(null);
+    setPersistHint(null);
+    setStrategySaved(false);
+    setMcpKey(null);
+    setMcpError(null);
+    setUrl('');
+    draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
+    setCrewEvents([]);
+    setBoardFindings([]);
+    setCrewMeasurement(null);
+    setScoutSummary(null);
+    setShareNote(null);
+    setAttestation(null);
+  };
+
+  const openSavedAudit = (entry: AuditHistoryEntry) => {
+    const nextFocus: ReportFocus = entry.focus === 'SEO' || entry.focus === 'GEO' ? entry.focus : 'AEO';
+    const saved: GuardedAuditReport = { text: entry.reportExcerpt, sources: [], healthSite: false };
+    setFocus(nextFocus);
+    setUrl(entry.domain);
+    setReport(saved);
+    setError(null);
+    setScoutSummary(null);
   };
 
   const mintMcpKey = async () => {
@@ -577,7 +574,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
-      {confirmModal}
+      <PastReports onOpen={openSavedAudit} />
+      <FirstRunTour signedInWeb={!isGuest} />
       <div className="text-center mb-6 sm:mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Radar className="w-4 h-4 text-gold-light" />
@@ -785,23 +783,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         />
       )}
 
-      {/* Loading Skeleton */}
-      {loading && !report && (
-        <div className="space-y-4">
-          {crewEvents.length === 0 && (
-            <div className="glass-morphism rounded-xl px-4 py-3 border border-gold/30 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse" />
-                <span className="text-xs text-white font-medium">
-                  Instant Audit in progress…
-                </span>
-              </div>
-              <span className="text-[11px] font-mono text-gold-light truncate max-w-xs">{progressStage || 'Initializing agents…'}</span>
-            </div>
-          )}
-          <AuditReportSkeleton message={progressStage || 'Scanning website & answer engines…'} />
-        </div>
-      )}
+      {loading && !report && <AuditProgress stage={progressStage} />}
 
       {/* Error State */}
       {error && (
@@ -952,6 +934,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             >
               {briefing ? 'Speaking…' : 'Brief aloud'}
             </button>
+            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} />
             <button
               type="button"
               onClick={handleReset}

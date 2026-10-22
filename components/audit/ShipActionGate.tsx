@@ -64,7 +64,7 @@ export const ShipActionGate: React.FC<Props> = ({
       <div className="flex items-center gap-2 mb-3">
         <span className="w-2 h-2 rounded-full bg-gold animate-pulse" />
         <span className="text-[10px] font-black uppercase tracking-[0.35em] text-gold-light">
-          Fog clearing: pick one move
+          Next fix
         </span>
       </div>
       <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2">
@@ -86,12 +86,12 @@ export const ShipActionGate: React.FC<Props> = ({
         <div>
           {hasEvidence ? (
             <span>
-              Cite-or-silence: {sourceCount} live source{sourceCount === 1 ? '' : 's'} attached.
-              Treat any score without a source chip as <strong>not verified</strong>.
+              {sourceCount} live source{sourceCount === 1 ? '' : 's'} attached.
+              Treat any score without a source as <strong>not verified</strong>.
             </span>
           ) : (
             <span>
-              Cite-or-silence: no live sources on this run. Treat ranks and percentages as{' '}
+              No live sources on this run. Treat ranks and percentages as{' '}
               <strong>not verified</strong> until you re-run with search grounding.
             </span>
           )}

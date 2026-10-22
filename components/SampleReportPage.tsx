@@ -1,10 +1,8 @@
 import React, { useEffect } from 'react';
 import { EvidenceGlyph, MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
-import { LIVE_SAMPLE_SNAPSHOT, type LiveSampleRow } from '../services/marketing/liveSampleSnapshot';
+import { LIVE_SAMPLE_SNAPSHOT, SAMPLE_PAGE_LEDE, type LiveSampleRow } from '../services/marketing/liveSampleSnapshot';
 import type { EvidenceState } from './marketing/earth/globeStory';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
-import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
-
 interface SampleReportPageProps {
   onOpenAudit: (handoff?: AuditHandoff) => void;
   onNavigatePricing: () => void;
@@ -52,7 +50,7 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
             See what AI says <span className="italic lx-gold-text pr-[0.08em]">about you.</span>
           </>
         ),
-        body: `Run Instant Audit on your own site. It checks your site and live web search. ${LIVE_ANSWER_CHECKS}`,
+        body: 'Run Instant Audit on your own site. It checks your site and live web search.',
         cta: { label: isAuthenticated ? 'Open Instant Audit' : 'Create free account', onClick: primary },
         links: [
           { label: 'Methodology', onClick: onNavigateMethodology },
@@ -61,19 +59,19 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
       }}
     >
       <MarketingPageHeader
-        eyebrow="Sample report"
+        eyebrow="Illustrative example"
         title={
           <>
             What an example report <span className="italic lx-gold-text pr-[0.08em]">looks like.</span>
           </>
         }
-        lede={`Example report for luminarasuite.com, a snapshot from 2 Oct 2026. Crawl readiness is Measured. ${LIVE_ANSWER_CHECKS} No invented KPI scores.`}
+        lede={SAMPLE_PAGE_LEDE}
       />
 
       <figure className="lx-glass mx-auto mb-0 mt-20 max-w-4xl rounded-3xl p-6 sm:mt-24 sm:p-10" data-reveal>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.22em] text-[var(--color-ink-2)]">Focus {LIVE_SAMPLE_SNAPSHOT.focus}</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-[var(--color-ink-2)]">Example fields</p>
             <p className="mt-2 truncate font-serif text-2xl text-[var(--color-ink)] sm:text-3xl">{LIVE_SAMPLE_SNAPSHOT.domain}</p>
           </div>
           <span className="shrink-0 rounded-full border border-[var(--color-rule)] px-3 py-1 text-xs text-[var(--gold-light)]">
@@ -113,7 +111,7 @@ const SampleReportPage: React.FC<SampleReportPageProps> = ({
         </div>
 
         <figcaption className="mt-6 text-xs leading-relaxed text-[var(--color-ink-2)]">
-          Static dated snapshot at /sample-report. Answer-engine Live runs happen in Instant Audit.
+          Illustrative example, not a real agency. Answer-engine checks happen in Instant Audit.
         </figcaption>
       </figure>
     </MarketingPageShell>

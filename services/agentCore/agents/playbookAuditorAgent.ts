@@ -10,17 +10,18 @@
 import { AgentActivityEvent, AuditFinding, ScrapedPageEvidence, SerpEvidenceItem } from '../types';
 import { ReportFocus, BusinessDNA } from '../../../types';
 import {
+  BLOCKED_CHECK,
   evaluateLlmCrawlerReadiness,
   unevaluatedLlmCrawlerReport,
   type LlmCrawlerReport,
   type LlmCrawlerSnapshot,
 } from '../../audit/llmCrawlerReadiness';
 import {
-  HEALTH_CHECKS,
-  HEALTH_SCORE_START,
   healthChecklist,
+  healthScoreFromFindings,
   healthScoreBlockReason,
   liveSearchRows,
+  pageFetchBlocked,
   pageSupportsHealthScore,
   unmeasuredHealthMessage,
 } from '../auditEvidenceGate';
@@ -77,14 +78,16 @@ export class PlaybookAuditorAgent {
 
     const brandMentions = liveSerp.filter((s) => s.brandMentioned).length;
     if (liveSerp.length > 0 && brandMentions === 0) {
+      const queries = [...new Set(liveSerp.map((row) => row.query).filter(Boolean))].slice(0, 3);
+      const queryList = queries.length ? queries.map((query) => `"${query}"`).join(', ') : 'the queries this run sent';
       findings.push({
         id: 'finding-zero-citations',
         category: 'citations',
         severity: 'critical',
         title: 'Weak Generative Search Footprint in Live SERP',
-        description: `None of the ${liveSerp.length} web search results this run collected mention the brand.`,
+        description: `None of the ${liveSerp.length} results for ${queryList} name the brand.`,
         evidenceSource: 'SERP Radar live search probe',
-        howWeKnowItFailed: `0 out of ${liveSerp.length} search snippets mentioned the brand.`,
+        howWeKnowItFailed: `0 of ${liveSerp.length} snippets for ${queryList} named the brand.`,
         leadingIndicator: 'Publishing entity-grounded comparison pages increases AI Overview citation rate.',
         criticVerified: false,
         criticConfidence: 0.85,
@@ -98,14 +101,17 @@ export class PlaybookAuditorAgent {
       const schemaTypes = new Set(allSchemas.map((s) => s.type.toLowerCase()));
 
       if (!schemaTypes.has('organization') && !schemaTypes.has('corporation') && !schemaTypes.has('localbusiness')) {
+        const urls = livePages.map((page) => page.url).slice(0, 3).join(', ');
+        const seen = [...schemaTypes];
+        const seenLabel = seen.length ? seen.join(', ') : 'none';
         findings.push({
           id: 'finding-schema-org',
           category: 'schema',
           severity: 'critical',
-          title: 'Missing Organization / Brand Entity Schema',
-          description: 'No Schema.org Organization markup was detected on primary pages. AI answer engines (ChatGPT, Perplexity) rely on this entity root for brand authority verification.',
+          title: `Missing Organization markup on ${urls}`,
+          description: `Parsed HTML at ${urls} has schema types: ${seenLabel}. Organization, Corporation, and LocalBusiness are not among them.`,
           evidenceSource: 'DOM Scrape JSON-LD inspection',
-          howWeKnowItFailed: 'Zero schema blocks with @type "Organization" or "Corporation" in page HTML.',
+          howWeKnowItFailed: `Parsed ${livePages.length} page(s) at ${urls}. Schema types found: ${seenLabel}.`,
           leadingIndicator: 'Direct knowledge graph attribution and entity disambiguation in AI Overviews.',
           criticVerified: false,
           criticConfidence: 0.9,
@@ -113,14 +119,19 @@ export class PlaybookAuditorAgent {
       }
 
       if (schemaTypes.has('howto')) {
+        const howtoUrls = livePages
+          .filter((page) => page.schemasFound.some((schema) => schema.type.toLowerCase() === 'howto'))
+          .map((page) => page.url)
+          .slice(0, 3)
+          .join(', ');
         findings.push({
           id: 'finding-deprecated-howto',
           category: 'schema',
           severity: 'medium',
           title: 'Deprecated HowTo Schema Detected',
-          description: 'Google officially deprecated HowTo rich results for desktop and mobile. Continuing to rely on HowTo schema yields zero SERP visibility boost.',
+          description: `HowTo schema is on ${howtoUrls || 'a parsed page'}. Google has deprecated HowTo rich results.`,
           evidenceSource: 'Schema.org Playbook Rule',
-          howWeKnowItFailed: 'Presence of @type "HowTo" in structured data.',
+          howWeKnowItFailed: `HowTo schema was parsed on ${howtoUrls || 'the fetched page'}.`,
           leadingIndicator: 'Deprecation cleanup prevents crawler budget waste.',
           criticVerified: false,
           criticConfidence: 0.95,
@@ -129,14 +140,15 @@ export class PlaybookAuditorAgent {
 
       const lowWordCountPages = livePages.filter((p) => p.wordCount > 0 && p.wordCount < 250);
       if (lowWordCountPages.length > 0) {
+        const thin = lowWordCountPages.map((page) => `${page.url} (${page.wordCount} words)`).join('; ');
         findings.push({
           id: 'finding-thin-content',
           category: 'content_quality',
           severity: 'high',
           title: 'Thin Content Detected on Critical Landing Page(s)',
-          description: `${lowWordCountPages.length} scanned page(s) contain fewer than 250 words, presenting insufficient semantic depth for LLM retrieval.`,
+          description: `${thin} ${lowWordCountPages.length === 1 ? 'has' : 'have'} fewer than 250 words.`,
           evidenceSource: 'Scout DOM word count counter',
-          howWeKnowItFailed: `Pages: ${lowWordCountPages.map((p) => p.url).join(', ')} have < 250 words.`,
+          howWeKnowItFailed: thin,
           leadingIndicator: 'Increasing informational density expands chunk indexing in RAG pipelines.',
           criticVerified: false,
           criticConfidence: 0.88,
@@ -145,13 +157,14 @@ export class PlaybookAuditorAgent {
     }
 
     if (blockReason) {
+      const pageBlocked = livePages.length === 0 && scrapedPages.some(pageFetchBlocked);
       emit({
         id: `auditor-unmeasured-${Date.now()}`,
         timestamp: Date.now(),
         agentRole: 'playbook_auditor',
         agentName: this.name,
         phase: 'audit_complete',
-        message: unmeasuredHealthMessage(blockReason),
+        message: pageBlocked ? BLOCKED_CHECK : unmeasuredHealthMessage(blockReason),
         status: 'completed',
       });
       return { findings, healthScore: null, llmCrawler };
@@ -159,11 +172,7 @@ export class PlaybookAuditorAgent {
 
     // A checklist number: it starts at 85 and loses a fixed amount for each failed check.
     // It is kept for the code that reads it. What a founder is told is the count of checks.
-    const baseScore = HEALTH_CHECKS.reduce(
-      (score, check) => (findings.some((f) => f.id === check.findingId) ? score - check.penalty : score),
-      HEALTH_SCORE_START,
-    );
-    const healthScore = Math.max(20, Math.min(100, baseScore));
+    const healthScore = healthScoreFromFindings(findings);
     const checklist = healthChecklist(findings);
 
     emit({

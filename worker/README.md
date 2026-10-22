@@ -18,6 +18,7 @@ leaked internals).
 | `POST /auth/logout` | worker/index.ts | none | Session clear |
 | `POST /auth/reset-password` | worker/index.ts | none | Email reset |
 | `POST /auth/sign-up`, `/auth/sign-in` | worker/index.ts | none | Password auth |
+| `GET,POST /email/unsubscribe` | worker/welcomeEmail.ts | none | One-click opt-out for welcome mail. `RESEND_API_KEY` is a Worker secret. A new account is mailed once from `hello@luminarasuite.com`; migration 0036 stamps older rows so they are not mailed. The send runs in `waitUntil` and a Resend error does not fail sign-in |
 | `POST /auth/request-otp`, `/auth/verify-otp` | worker/authOtpSms.ts | none | SMS OTP |
 | `POST /auth/send-verification` | worker/index.ts | none | Email verification |
 | `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook |

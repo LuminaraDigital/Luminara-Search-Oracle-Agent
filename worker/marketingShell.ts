@@ -11,7 +11,7 @@ import { sha256Hex } from './workerUtils';
  * Unknown paths are served as this shell with HTTP 404. The old inline skip
  * script never ran: CSP script-src is 'self' only. The class is in the first
  * tag, so #boot-splash stays display:none before first paint. The shell CSS
- * paints a static mark on the empty root so that hide is not a blank flash.
+ * paints the empty root black so that hide is not a white flash.
  */
 function addHtmlClass(html: string, className: string): string {
   const present = new RegExp(`(?:^|\\s)class="[^"]*\\b${className}\\b`);

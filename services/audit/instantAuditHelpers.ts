@@ -24,11 +24,13 @@ import type { HostedScoutRail } from './hostedScoutRail';
 import { guardPasteReadyCopy, siteLooksHealthRelated } from './healthClaimGuard';
 import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
 import { fallbackAnswerLine } from '../llm/fallbackAnswer';
-import { rememberScrapedBrand } from './brandName';
+import { brandFromEvidence, rememberScrapedBrand } from './brandName';
 import { recordAudit } from './auditHistoryService';
+import { evaluateRealEstateChecks, formatRealEstateChecks } from './realEstateChecks';
+import { includeRealEstateChecks, wantsAgencyMentions } from './jevVerifier';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
-  if (crewRunning) return 'Scanning...';
+  if (crewRunning) return 'Running the audit…';
   return 'Run Instant Audit';
 }
 
@@ -79,6 +81,8 @@ export async function generateAuditReportUnlessDegraded(input: {
   lenses: AuditLens[];
   scrapedPages?: AuditStateGraphContext['scrapedPages'];
   serpEvidence?: AuditStateGraphContext['serpEvidence'];
+  siteType?: string | null;
+  brandSupported?: boolean | null;
 }): Promise<GuardedAuditReport | null> {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
@@ -96,7 +100,12 @@ export async function generateAuditReportUnlessDegraded(input: {
   );
   const pages = input.scrapedPages ?? [];
   const firstPage = pages[0];
-  rememberScrapedBrand(input.formattedUrl, firstPage?.title || firstPage?.h1s?.[0]);
+  const scrapedBrand = brandFromEvidence({
+    siteName: firstPage?.siteName,
+    organizationName: firstPage?.organizationName,
+    title: firstPage?.title || firstPage?.h1s?.[0],
+  });
+  rememberScrapedBrand(input.formattedUrl, input.brandSupported === false ? null : scrapedBrand);
   const serp = input.serpEvidence ?? [];
   const facts: MeasuredClaimFacts = {
     ...input.summary.measured,
@@ -114,7 +123,15 @@ export async function generateAuditReportUnlessDegraded(input: {
   const modelLine = fallbackAnswerLine(
     report.answeredBy ? { model: report.answeredBy, provider: report.answeredByProvider } : undefined,
   );
-  const text = modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded;
+  const body = modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded;
+  const estate = includeRealEstateChecks(input.siteType, pages.length)
+    ? formatRealEstateChecks(evaluateRealEstateChecks(pages)).trimEnd()
+    : '';
+  const mention = await agencyMentionLine(input.siteType, scrapedBrand || '', input.formattedUrl);
+  const parts = [body];
+  if (estate && !body.includes('## Real estate checks')) parts.push(estate);
+  if (mention) parts.push(mention);
+  const text = parts.join('\n\n');
   try {
     recordAudit({
       domain: input.formattedUrl,
@@ -139,6 +156,25 @@ export async function generateAuditReportUnlessDegraded(input: {
       content: [input.dna?.mission, input.dna?.usp, ...pages.map((page) => page.rawTextSnippet)].filter(Boolean).join('\n'),
     }),
   };
+}
+
+async function agencyMentionLine(siteType: string | null | undefined, brand: string, domain: string): Promise<string> {
+  if (!wantsAgencyMentions(siteType)) return '';
+  const name = brand.replace(/"/g, '').trim() || domain;
+  try {
+    const { exaService } = await import('../search/exaService');
+    const found = await exaService.search(`"${name}" ${domain} reviews`, {
+      numResults: 3,
+      contents: true,
+      summary: false,
+      timeoutMs: 8000,
+    });
+    if (!found.results.length) return '';
+    const rows = found.results.slice(0, 3).map((row) => `${row.title} (${row.url})`).join('; ');
+    return `Web mentions: ${rows}.`;
+  } catch {
+    return '';
+  }
 }
 
 export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {

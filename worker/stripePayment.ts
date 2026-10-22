@@ -80,7 +80,7 @@ export const STRIPE_PLAN_CONFIG: Record<
   agency: {
     name: 'Luminara Suite - Agency Plan',
     amountCents: 34900,
-    description: '30-day access: research API, daily re-audit reminders in Telegram, white-label exports, and client workspaces saved in this browser.',
+    description: '30-day access: research API, daily re-audit reminders in Telegram, white-label exports, and client workspaces.',
     days: 30,
   },
 };

@@ -41,6 +41,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
         {summary.domain}
       </h2>
       <div
+        id="tour-audit-result"
         className="markdown-content scout-brief mt-4 max-w-2xl text-[15px] leading-relaxed text-gray-200"
         dangerouslySetInnerHTML={{ __html: renderMarkdown(summary.verdictMarkdown || summary.verdict) }}
       />
@@ -72,7 +73,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       </p>
 
       <div className="mt-8 grid gap-8 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <div>
+        <div id="tour-top-fix">
           <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Your next move</h3>
           <p className="mt-2 text-sm leading-relaxed text-white">{summary.topFix}</p>
           <p className="mt-3 text-sm leading-relaxed text-gray-400">{summary.nextStep}</p>
