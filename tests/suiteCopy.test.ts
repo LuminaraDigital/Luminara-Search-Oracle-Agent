@@ -12,6 +12,8 @@ const COPY_FILES = [
   'components/paywall/PaywallModal.tsx',
   'components/paywall/planCopy.ts',
   'components/audit/InstantAuditView.tsx',
+  'components/audit/FreeAiAnswerCard.tsx',
+  'services/audit/freeAiAnswer.ts',
   'components/onboarding/FirstRunTour.tsx',
   'services/onboarding/firstRunTour.ts',
   'services/marketing/marketingHeroCopy.ts',

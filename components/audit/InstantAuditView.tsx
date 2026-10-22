@@ -10,6 +10,7 @@ import { PageSpeedPanel } from './PageSpeedPanel';
 import { GscPanel } from './GscPanel';
 import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/findingBoardService';
 import { PastReports } from './PastReports';
+import { FreeAiAnswerCard } from './FreeAiAnswerCard';
 import { FirstRunTour } from '../onboarding/FirstRunTour';
 import { ReportPdfButton } from './ReportPdfButton';
 import type { AuditHistoryEntry } from '../../services/audit/auditHistoryService';
@@ -883,6 +884,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       {/* Audit Report Result */}
       {report && (
         <div className="space-y-6">
+          {dna?.suburb && dna.state ? (
+            <FreeAiAnswerCard suburb={dna.suburb} state={dna.state} brandName={dna.name} />
+          ) : null}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 glass-morphism rounded-xl border border-gold/30">
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-400 font-mono">Regenerate Focus:</span>

@@ -8,6 +8,7 @@ import type { HostedIdentity } from './userTypes';
 import { billingId, identify, json } from './workerUtils';
 import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
 import { recheckOneFix } from './recheckFix';
+import { handleFreeAiAnswer } from './freeAiAnswer';
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { safePublicHostname } from './security';
 
@@ -227,6 +228,9 @@ export async function noteAuditRunSuccess(env: Env, token: string): Promise<void
 
 export async function handleAuditScoutRun(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
+  if (new URL(request.url).pathname.replace(/^\/api/, '') === '/audit/free-answer') {
+    return handleFreeAiAnswer(request, env);
+  }
   const who = await identify(request, env);
   if (who.error || !who.user) return json({ ok: false, error: who.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401);
   let body: { domain?: unknown; token?: unknown; refund?: unknown; healthScore?: unknown; citationRate?: unknown; recheck?: unknown; checkId?: unknown; expect?: unknown };
