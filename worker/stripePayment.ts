@@ -19,10 +19,10 @@ import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { normalizePlanId } from '../services/plans/planEntitlements';
 
 /**
- * Flip to true only after staging Checkout + webhook credit is proven (commercial CC2).
- * Secrets alone must not light the Card rail in the client.
+ * Card checkout opens only when env.STRIPE_CHECKOUT_LIVE === 'true'.
+ * Secrets alone must not light the Card rail. Staging sets "true" once test
+ * keys are in place. Production and the default vars stay "false".
  */
-export const STRIPE_CHECKOUT_LIVE = false;
 
 /** True when both Stripe secrets are present (Worker can create sessions / verify webhooks). */
 export function isStripeSecretsConfigured(env: Env): boolean {
@@ -58,7 +58,7 @@ export function diagnoseStripeConfig(env: Env): StripeConfig {
 
 /** Public health / Paywall: Card rail only when live flag + secrets in the right mode for the environment. */
 export function isStripeCheckoutLive(env: Env): boolean {
-  return STRIPE_CHECKOUT_LIVE && diagnoseStripeConfig(env).ok;
+  return env.STRIPE_CHECKOUT_LIVE === 'true' && diagnoseStripeConfig(env).ok;
 }
 
 export const STRIPE_PLAN_CONFIG: Record<
@@ -67,25 +67,25 @@ export const STRIPE_PLAN_CONFIG: Record<
 > = {
   starter: {
     name: 'Luminara Suite - Starter Plan',
-    amountCents: 4900,
+    amountCents: 7900,
     description: '30-day web audit access for up to 2 domains.',
     days: 30,
   },
   growth: {
     name: 'Luminara Suite - Growth Plan',
-    amountCents: 14900,
+    amountCents: 22900,
     description: '30-day access: IDE connectors, share links, and weekly re-audit reminders in Telegram.',
     days: 30,
   },
   agency: {
     name: 'Luminara Suite - Agency Plan',
-    amountCents: 34900,
+    amountCents: 54900,
     description: '30-day access: research API, daily re-audit reminders in Telegram, white-label exports, and client workspaces.',
     days: 30,
   },
 };
 
-const STRIPE_CURRENCY = 'usd';
+export const STRIPE_CURRENCY = 'aud';
 const DAY_MS = 86400_000;
 /**
  * A checkout session can be paid for one hour (Stripe allows 30 minutes to 24 hours). A short
@@ -221,7 +221,7 @@ export async function verifyStripeSignature(
  * POST /api/stripe/create-checkout-session
  */
 export async function handleCreateStripeCheckoutSession(request: Request, env: Env): Promise<Response> {
-  if (!STRIPE_CHECKOUT_LIVE) {
+  if (env.STRIPE_CHECKOUT_LIVE !== 'true') {
     return json(
       {
         ok: false,
@@ -235,7 +235,7 @@ export async function handleCreateStripeCheckoutSession(request: Request, env: E
 }
 
 /**
- * Everything behind the STRIPE_CHECKOUT_LIVE switch. Exported so tests can prove each refusal
+ * Everything behind the STRIPE_CHECKOUT_LIVE env switch. Exported so tests can prove each refusal
  * while the switch is off. Only handleCreateStripeCheckoutSession is routed.
  */
 export async function createStripeCheckoutSession(
@@ -353,7 +353,7 @@ export async function createStripeCheckoutSession(
  * Handle incoming Stripe webhook events.
  * POST /api/stripe/webhook
  *
- * Not gated by STRIPE_CHECKOUT_LIVE: a session paid just before the switch is turned off must
+ * Not gated by STRIPE_CHECKOUT_LIVE: a session paid just before the var is turned off must
  * still be credited, and a refund must still be honoured.
  */
 export async function handleStripeWebhook(request: Request, env: Env, deps: StripeDeps = {}): Promise<Response> {

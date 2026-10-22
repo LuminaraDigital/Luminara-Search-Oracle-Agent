@@ -51,10 +51,9 @@ import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
-import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
 import { LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
-import { maybeServeHelpHtml, maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
+import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -64,6 +63,7 @@ import {
   RateLimiter,
   clientIp,
   readBody,
+  withAssetCache,
   withSecurityHeaders,
 } from './security';
 import {
@@ -213,13 +213,6 @@ const STATIC_PUBLIC_HTML_PATHS = new Set([
   '/docs/what-is-aeo/',
   '/docs/what-is-aeo.html',
   '/googlea4923385090ac2c5.html',
-  '/privacy',
-  '/privacy/',
-  '/privacy.html',
-  '/faq',
-  '/faq/',
-  '/contact',
-  '/contact/',
 ]);
 
 /**
@@ -2145,25 +2138,6 @@ export default {
       }
     }
 
-    // Direct resolution for BotFather, crawlers, and web visitors requesting the Privacy Policy
-    if (
-      url.pathname === '/privacy' ||
-      url.pathname === '/privacy/' ||
-      url.pathname === '/privacy.html' ||
-      url.pathname === '/privacy-policy' ||
-      url.pathname === '/privacy-policy/'
-    ) {
-      return guard(
-        new Response(PRIVACY_HTML, {
-          status: 200,
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'public, max-age=3600',
-          },
-        }),
-      );
-    }
-
     if (
       url.pathname === '/terms' ||
       url.pathname === '/terms/' ||
@@ -2260,9 +2234,6 @@ export default {
     }
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
-    const helpHtml = maybeServeHelpHtml(url);
-    if (helpHtml) return guard(helpHtml);
-
     const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
     if (marketingHtml) {
       return guard(marketingHtml);
@@ -2309,7 +2280,7 @@ export default {
         }),
       );
     }
-    return guard(assetResponse);
+    return guard(withAssetCache(assetResponse, url.pathname));
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).

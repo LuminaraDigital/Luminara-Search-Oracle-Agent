@@ -16,7 +16,8 @@ import {
   TON_IN_TELEGRAM_ERROR,
   TON_UNAVAILABLE_ERROR,
 } from '../worker/tonPayment';
-import { STRIPE_CHECKOUT_LIVE } from '../worker/stripePayment';
+import { isStripeCheckoutLive } from '../worker/stripePayment';
+import type { Env } from '../worker/env';
 import { railsOffered, resolvePaymentOptions } from '../components/paywall/paymentOptions';
 import { PLANS } from '../worker/telegramBot';
 import { Q402_SETTLEMENT_LIVE } from '../worker/q402';
@@ -262,11 +263,25 @@ describe('Stars is the only way to pay inside Telegram', () => {
   });
 });
 
-describe('the card rail stays off until its own review', () => {
-  it('Stripe checkout is off', () => {
-    // An audit on 2026-10-10 found it unsafe to switch on: a buyer who is not signed in is charged
-    // and credited to a made-up guest id, and a test key in production grants real plans.
-    expect(STRIPE_CHECKOUT_LIVE).toBe(false);
+describe('the card rail is on for staging and off for production', () => {
+  it('Stripe checkout is true only in the staging wrangler env', () => {
+    const wrangler = parseJsonc(readFileSync(join(ROOT, 'wrangler.jsonc'), 'utf8')) as {
+      vars: { STRIPE_CHECKOUT_LIVE?: string };
+      env: {
+        staging: { vars: { STRIPE_CHECKOUT_LIVE?: string } };
+        production: { vars: { STRIPE_CHECKOUT_LIVE?: string } };
+      };
+    };
+    expect(wrangler.vars.STRIPE_CHECKOUT_LIVE).toBe('false');
+    expect(wrangler.env.staging.vars.STRIPE_CHECKOUT_LIVE).toBe('true');
+    expect(wrangler.env.production.vars.STRIPE_CHECKOUT_LIVE).toBe('false');
+    expect(isStripeCheckoutLive({ ENVIRONMENT: 'staging' } as Env)).toBe(false);
+    expect(isStripeCheckoutLive({
+      ENVIRONMENT: 'staging',
+      STRIPE_CHECKOUT_LIVE: 'true',
+      STRIPE_SECRET_KEY: 'sk_test_x',
+      STRIPE_WEBHOOK_SECRET: 'whsec_x',
+    } as Env)).toBe(true);
   });
 });
 

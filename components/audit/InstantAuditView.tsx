@@ -648,7 +648,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </div>
       )}
 
-      {quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0) && (
+      {!report && quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0) && (
         <UpgradePrompt kind="quota" />
       )}
 
@@ -761,7 +761,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </div>
       )}
 
-      <SuiteCitabilityChecklist />
+      {!report && <SuiteCitabilityChecklist />}
 
       {!guestResultFirst && scoutPanel}
 

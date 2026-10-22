@@ -13,7 +13,7 @@
 import { readableStem } from '../../audit/brandName';
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
-import { HEALTH_CHECKS } from '../auditEvidenceGate';
+import { HEALTH_CHECKS, measuredCheckLine } from '../auditEvidenceGate';
 
 /**
  * Counts of the live web search rows this run collected.
@@ -24,10 +24,11 @@ export interface WebMentionCounts {
   total: number;
 }
 
-/** How many of the site checks this run made passed. */
+/** How many of the site checks this run made passed. `unmeasured` defaults to 0. */
 export interface SiteCheckCounts {
   passed: number;
   total: number;
+  unmeasured?: number;
 }
 
 /**
@@ -80,9 +81,11 @@ export class ExecutiveTranslatorAgent {
     // Counts that cannot be a count are treated as not measured.
     const checks = healthChecks != null && validCount(healthChecks.passed, healthChecks.total) ? healthChecks : null;
     const healthKnown = checks != null;
+    const rawUnchecked = checks?.unmeasured;
+    const unchecked = typeof rawUnchecked === 'number' && Number.isInteger(rawUnchecked) && rawUnchecked > 0 ? rawUnchecked : 0;
     const mentions = webMentions != null && validCount(webMentions.mentioned, webMentions.total) ? webMentions : null;
     const citationKnown = mentions != null;
-    const checksPhrase = checks ? `**passed ${checks.passed} of ${checks.total} checks**` : '';
+    const checksPhrase = checks ? `**${measuredCheckLine({ ...checks, unmeasured: unchecked })}**` : '';
     const mentionPhrase = mentions
       ? `**mentioned in ${mentions.mentioned} of ${mentions.total} web results**`
       : '';
@@ -95,9 +98,11 @@ export class ExecutiveTranslatorAgent {
           : 'Right now, the site checks and citation rate were not measured. Search or page providers did not return evidence for this run.';
     const takeaway = criticalCount > 0
       ? `⚠️ **The Big Takeaway:** This run found ${criticalCount} critical ${criticalCount === 1 ? 'gap' : 'gaps'}: ${critical.map((f) => f.title).join('; ')}.`
-      : healthKnown
+      : healthKnown && unchecked === 0
         ? `✅ **The Big Takeaway:** None of the checks this run made found a critical gap.`
-        : '**The takeaway:** This run did not measure enough page or search evidence to judge the site.';
+        : healthKnown
+          ? `**The takeaway:** ${unchecked} ${unchecked === 1 ? 'check was' : 'checks were'} not measured.`
+          : '**The takeaway:** This run did not measure enough page or search evidence to judge the site.';
 
     // Only the checks that failed get a step. A check that passed has nothing to fix.
     const steps = HEALTH_CHECKS
@@ -118,7 +123,7 @@ export class ExecutiveTranslatorAgent {
       : [
           !checks
             ? 'The site checks were not measured, so there are no steps to list.'
-            : checks.passed === checks.total
+            : checks.passed === checks.total && unchecked === 0
               ? `All ${checks.total} checks this run made passed, so there are no steps to list.`
               : 'There are no steps to list for this run.',
         ];

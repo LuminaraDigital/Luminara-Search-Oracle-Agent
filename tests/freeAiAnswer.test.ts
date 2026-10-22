@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import worker from '../worker/index';
 import { handleAuditScoutRun } from '../worker/auditScoutRun';
 import { handleFreeAiAnswer } from '../worker/freeAiAnswer';
 import { invokeDailyQuota, meterName } from '../worker/dailyQuota';
@@ -263,5 +264,33 @@ describe('free AI answer', () => {
     }), envFor());
     const body = await routed.json() as { label: string };
     expect(body.label).toBe(FREE_AI_ANSWER_LABEL);
+  });
+
+  it('lets a free signed-in caller through handleApi and still gates Oracle chat', async () => {
+    const env = envFor();
+    installFetch();
+    const ctx = { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext;
+    const headers = {
+      'content-type': 'application/json',
+      'x-telegram-init-data': signInitData(71),
+      'cf-connecting-ip': '203.0.113.71',
+    };
+    const answer = await worker.fetch(new Request('https://luminarasuite.com/api/audit/free-answer', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(profile),
+    }), env, ctx);
+    expect(answer.status).toBe(200);
+    const body = await answer.json() as { hidden?: boolean; label?: string };
+    expect(body.hidden).not.toBe(true);
+    expect(body.label).toBe(FREE_AI_ANSWER_LABEL);
+
+    const oracle = await worker.fetch(new Request('https://luminarasuite.com/api/oracle/chat', {
+      method: 'POST',
+      headers: { ...headers, 'cf-connecting-ip': '203.0.113.72' },
+      body: '{}',
+    }), env, ctx);
+    expect(oracle.status).toBe(403);
+    expect(((await oracle.json()) as { code?: string }).code).toBe('API_ACCESS_REQUIRED');
   });
 });

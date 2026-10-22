@@ -38,6 +38,7 @@ import { canCreateShareLinks, createShareReport } from '../../services/share/sha
 import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { UpgradeSurfaces } from '../upgrade/UpgradeSurfaces';
+import { measuredChecks } from '../../services/share/winShare';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
 import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
@@ -119,6 +120,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   // No table in the report text is measured: the model writes its rows. Measured
   // traffic is drawn by ResultsTrackingCard from the analytics data, not from this text.
   const markdownText = useMemo(() => gateReportText(rawMarkdownText || ''), [rawMarkdownText]);
+  const pageHealthMeasured = !suppressLiveMetrics && measuredChecks(markdownText, true) != null;
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
@@ -285,7 +287,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         findings={boardFindings}
         whiteLabelAsk={whiteLabelAsk}
         onCloseWhiteLabel={() => setWhiteLabelAsk(false)}
-        measured={!hideLiveNumbers}
+        measured={pageHealthMeasured}
         reportText={markdownText}
         showWin={!hideAgencyActions}
       />

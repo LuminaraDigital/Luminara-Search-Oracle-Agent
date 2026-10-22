@@ -164,7 +164,7 @@ describe('marketing crawl documents', () => {
   it('serves the shared USD list prices and Stars checkout in llms.txt', () => {
     const usdCheckoutPrice = /\/mo\b|per month/i;
     expect(LLMS_TXT).toContain(listPriceSummary());
-    expect(LLMS_TXT).toContain('Pro / Agency: list price A$541 (US$349)');
+    expect(LLMS_TXT).toContain('Pro / Agency: list price A$549, pay 18,000 Stars');
     expect(LLMS_TXT).toContain('10 client workspaces');
     expect(LLMS_TXT).not.toContain('saved in this browser');
     expect(LLMS_TXT).not.toMatch(/team seats/i);
@@ -233,6 +233,10 @@ describe('marketing shell injection', () => {
     expect(marketingShellKey('/lab')).toBe('/labs');
     expect(marketingShellKey('/compare/profound')).toBe('/compare/profound');
     expect(marketingShellKey('/compare/ahrefs/')).toBe('/compare/ahrefs');
+    expect(marketingShellKey('/faq/')).toBe('/faq');
+    expect(marketingShellKey('/contact')).toBe('/contact');
+    expect(marketingShellKey('/privacy.html')).toBe('/privacy');
+    expect(marketingShellKey('/privacy-policy/')).toBe('/privacy');
   });
 
   it('de-duplicates existing JSON-LD script blocks', () => {

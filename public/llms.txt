@@ -41,11 +41,11 @@ Answer Engine Optimization (AEO) is the discipline of structuring web content, t
 
 ## Pricing (30 days)
 
-Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does not renew on its own. Approximate list prices: Starter A$76 (US$49), Growth A$231 (US$149), Pro / Agency A$541 (US$349). About A$1.55 per US$1. You pay in Telegram Stars.
+Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does not renew on its own. Starter A$79, Growth A$229, Pro / Agency A$549. You can also pay in Telegram Stars.
 
-- Starter: list price A$76 (US$49), pay 2,500 Stars. 2 monitored domains. No IDE access. No public share links. Monthly re-audit reminders in Telegram.
-- Growth: list price A$231 (US$149), pay 7,500 Stars. 10 monitored domains. IDE access. Public share links. Weekly re-audit reminders in Telegram.
-- Pro / Agency: list price A$541 (US$349), pay 18,000 Stars. 25 monitored domains. IDE access. Public share links. Daily re-audit reminders in Telegram. API access. 10 client workspaces. Daily drift check. White-label PDF. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured.
+- Starter: list price A$79, pay 2,500 Stars. 2 monitored domains. No IDE access. No public share links. Monthly re-audit reminders in Telegram.
+- Growth: list price A$229, pay 7,500 Stars. 10 monitored domains. IDE access. Public share links. Weekly re-audit reminders in Telegram.
+- Pro / Agency: list price A$549, pay 18,000 Stars. 25 monitored domains. IDE access. Public share links. Daily re-audit reminders in Telegram. API access. 10 client workspaces. Daily drift check. White-label PDF. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured.
 - Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Pro / Agency only.
 
 ## MCP

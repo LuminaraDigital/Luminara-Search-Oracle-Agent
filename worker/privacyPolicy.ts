@@ -1,27 +1,10 @@
 /**
- * Static Privacy Policy HTML served directly by the Worker.
- * Same words as the in-app page (services/legal/privacyCopy.ts).
+ * Static privacy document kept byte-equal with public/privacy.html.
+ * Visitors to /privacy get the marketing shell, not this file.
  */
 import { OPERATOR_LINE } from '../services/legal/consumerTerms';
-import { PRIVACY_INTRO, PRIVACY_SECTIONS, PRIVACY_UPDATED } from '../services/legal/privacyCopy';
-
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function sectionsHtml(): string {
-  return PRIVACY_SECTIONS.map((section) => {
-    const paragraphs = (section.paragraphs || []).map((p) => `<p>${esc(p)}</p>`).join('\n');
-    const bullets = section.bullets?.length
-      ? `<ul>\n${section.bullets.map((item) => `<li>${esc(item)}</li>`).join('\n')}\n</ul>`
-      : '';
-    return `<section>\n<h2>${esc(section.title)}</h2>\n${paragraphs}\n${bullets}\n</section>`;
-  }).join('\n');
-}
+import { PRIVACY_INTRO, PRIVACY_UPDATED } from '../services/legal/privacyCopy';
+import { escapePolicyText, privacySectionsHtml } from '../services/legal/privacyCrawler';
 
 export const PRIVACY_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -56,8 +39,8 @@ export const PRIVACY_HTML = `<!DOCTYPE html>
     <p class="eyebrow">Privacy</p>
     <h1>Privacy policy</h1>
     <p class="meta">Luminara Suite · Operated by ${OPERATOR_LINE} · Last updated ${PRIVACY_UPDATED}</p>
-    <p>${esc(PRIVACY_INTRO)}</p>
-    ${sectionsHtml()}
+    <p>${escapePolicyText(PRIVACY_INTRO)}</p>
+    ${privacySectionsHtml()}
     <p class="meta"><a href="/terms">Terms of Service</a> · <a href="/">Home</a></p>
   </main>
 </body>

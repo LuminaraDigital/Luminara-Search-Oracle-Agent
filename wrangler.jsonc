@@ -149,6 +149,8 @@
     "ORACLE_AUTO_TOOLS": "false",
     "AUDIT_QUEUE_ENABLED": "true",
     // Budget hard stops: off | soft | hard. Production defaults to hard; staging stays soft for dogfood.
+    // Card checkout stays closed until test keys are set and this is flipped to "true".
+    "STRIPE_CHECKOUT_LIVE": "false",
     "BUDGET_ENFORCEMENT": "hard"
     // Optional secrets (wrangler secret put): SENTRY_DSN, AZURE_AI_SEARCH_KEY, GCP_VERTEX_ACCESS_TOKEN
     // Optional Vectorize: add vectorize binding MEMORY_VECTORS after `wrangler vectorize create luminara-memory`
@@ -281,6 +283,8 @@
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
         "AUDIT_QUEUE_ENABLED": "true",
+        // Test keys and the staging webhook are set. Production stays "false".
+        "STRIPE_CHECKOUT_LIVE": "true",
         "BUDGET_ENFORCEMENT": "soft"
       }
     },
@@ -385,6 +389,8 @@
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
         "AUDIT_QUEUE_ENABLED": "true",
+        // Card checkout stays closed until test keys are set and this is flipped to "true".
+        "STRIPE_CHECKOUT_LIVE": "false",
         "BUDGET_ENFORCEMENT": "hard"
       }
     }

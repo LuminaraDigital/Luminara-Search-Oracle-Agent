@@ -1,9 +1,9 @@
 /**
  * Upgrade copy and progress from the plans and the findings board.
- * Prices are the published AUD equivalents. No tax is added. A missing measurement stays "Not measured".
+ * Prices are the published AUD card prices. No tax is added. A missing measurement stays "Not measured".
  */
 import type { BoardFinding } from '../audit/findingBoardService';
-import { approximateAudLabel, PAID_PLAN_PRICES, type PaidPlanId } from '../../components/paywall/planPrices';
+import { PAID_PLAN_PRICES, type PaidPlanId } from '../../components/paywall/planPrices';
 import { entitlementsFor, PLAN_ENTITLEMENTS } from '../plans/planEntitlements';
 import { formatAuDay } from '../../utils/formatAuDate';
 import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
@@ -18,7 +18,7 @@ export type LockedFeature = 'competitor' | 'suburb' | 'tracking' | 'seats' | 'wh
 const SEVERITY_EASE = { low: 0, medium: 1, high: 2, critical: 3 } as const;
 
 export function audPrice(id: PaidPlanId): string {
-  return approximateAudLabel(PAID_PLAN_PRICES[id].usdLabel);
+  return PAID_PLAN_PRICES[id].audLabel;
 }
 
 export function upgradePrompt(kind: UpgradePromptKind): { title: string; body: string } {
@@ -59,7 +59,7 @@ export function lockedSample(feature: LockedFeature): { title: string; rows: str
     case 'competitor':
       return { title: 'Competitor comparison', rows: [label, 'Sample agency A', 'Sample agency B', 'Rank: Not measured'] };
     case 'suburb':
-      return { title: 'Suburb report', rows: [label, 'Example suburb page', 'Not measured', 'Not included on these plans yet. Email support@luminarasuite.com to join the waitlist.'] };
+      return { title: 'Suburb report', rows: [label, 'Example suburb page', 'Not measured', 'Not included on these plans yet. Email info@luminara.digital to join the waitlist.'] };
     case 'tracking':
       return { title: 'Monthly tracking', rows: [label, 'Last month: Not measured', 'This month: Not measured'] };
     case 'seats':

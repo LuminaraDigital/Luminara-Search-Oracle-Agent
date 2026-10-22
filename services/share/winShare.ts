@@ -5,6 +5,10 @@
 import { cleanScrapedName } from '../audit/brandName';
 import { formatAuDate } from '../../utils/formatAuDate';
 
+/** A fully measured line. A positive "not measured" count is not a share. */
+const MEASURED_LINE = /\bpassed (\d+) of (\d+); (\d+) not measured\b/i;
+const LEGACY_MEASURED_LINE = /\bpassed (\d+) of (\d+) checks\b/i;
+
 /** At least 3 of 4 checks. Same ratio for a longer checklist. */
 const WIN_MIN_PASSED = 3;
 const WIN_MIN_TOTAL = 4;
@@ -28,8 +32,6 @@ export interface PublicWin {
   footer: string;
 }
 
-const CHECKS = /\bpassed (\d+) of (\d+) checks\b/i;
-
 export function checksQualify(passed: number, total: number): boolean {
   return Number.isInteger(passed)
     && Number.isInteger(total)
@@ -41,10 +43,19 @@ export function checksQualify(passed: number, total: number): boolean {
 
 export function measuredChecks(reportText: string, measured: boolean): { passed: number; total: number } | null {
   if (!measured) return null;
-  const match = reportText.match(CHECKS);
-  if (!match) return null;
-  const passed = Number(match[1]);
-  const total = Number(match[2]);
+  const honest = reportText.match(MEASURED_LINE);
+  if (honest) {
+    if (Number(honest[3]) !== 0) return null;
+    return pair(honest[1], honest[2]);
+  }
+  const legacy = reportText.match(LEGACY_MEASURED_LINE);
+  if (!legacy) return null;
+  return pair(legacy[1], legacy[2]);
+}
+
+function pair(passedText: string, totalText: string): { passed: number; total: number } | null {
+  const passed = Number(passedText);
+  const total = Number(totalText);
   if (!Number.isInteger(passed) || !Number.isInteger(total) || total < 1 || passed < 0 || passed > total) return null;
   return { passed, total };
 }

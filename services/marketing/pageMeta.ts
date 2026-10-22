@@ -14,6 +14,8 @@ import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage';
 import { buildFaqPageJsonLd } from './marketingFaqContent';
 import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
+import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
+import { privacyCrawlerBody } from '../legal/privacyCrawler';
 
 const HOME_META = `${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE} No invented scores.`;
 
@@ -357,6 +359,27 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p><a href="/">Run Instant Audit</a> · <a href="/docs/what-is-aeo.html">What is AEO</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
+  '/faq': {
+    path: '/faq',
+    title: 'FAQ | Luminara Suite',
+    description: 'FAQ, how a check works, and how to ask for a refund. Email info@luminara.digital.',
+    jsonLd: graph('/faq', 'FAQ', 'FAQ, how a check works, and how to ask for a refund.'),
+    crawlerBody: FAQ_CRAWLER,
+  },
+  '/contact': {
+    path: '/contact',
+    title: 'Contact | Luminara Suite',
+    description: 'Email info@luminara.digital. There is no phone line.',
+    jsonLd: graph('/contact', 'Contact', 'Email info@luminara.digital. There is no phone line.'),
+    crawlerBody: CONTACT_CRAWLER,
+  },
+  '/privacy': {
+    path: '/privacy',
+    title: 'Privacy | Luminara Suite',
+    description: 'Privacy policy for Luminara Suite, the Telegram Mini App, and the Telegram bot.',
+    jsonLd: graph('/privacy', 'Privacy', 'Privacy policy for Luminara Suite.'),
+    crawlerBody: privacyCrawlerBody(),
+  },
 };
 
 export const DASHBOARD_TAB_TITLE = 'Dashboard | Luminara Suite';
@@ -385,6 +408,9 @@ export function marketingShellKey(pathname: string): string | null {
   if (clean === '/intelligence') return '/ai';
   if (clean === '/why-us') return '/why';
   if (clean === '/lab') return '/labs';
+  if (clean === '/privacy.html' || clean === '/privacy-policy') return '/privacy';
+  if (clean === '/faq.html') return '/faq';
+  if (clean === '/contact.html') return '/contact';
   if (MARKETING_SHELL_BY_PATH[clean]) return clean;
   return null;
 }

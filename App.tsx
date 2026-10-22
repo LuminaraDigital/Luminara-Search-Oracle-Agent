@@ -21,7 +21,7 @@ import { agentMatrixService } from './services/harness/agentMatrixService';
 import { reminderService } from './services/harness/reminderService';
 import { NativeEngineHUD } from './components/llm/NativeEngineHUD';
 import { ICONS } from './constants';
-import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
+import { marketingNavSignedIn, useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { PaywallSlot } from './components/paywall/PaywallSlot';
@@ -34,7 +34,9 @@ import { lazyWithReload } from './utils/lazyWithReload';
 import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
-import { apiBase, setAccountSignedIn, streamOracleChat } from './services/apiClient';
+import { apiBase, getCurrentQuotaSync, setAccountSignedIn, streamOracleChat } from './services/apiClient';
+import { entitlementsFor } from './services/plans/planEntitlements';
+import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
 import { MarketingChromeContext, type MarketingChrome } from './components/marketing/marketingChrome';
 import { normalizeHandoffUrl } from './services/activation/auditHandoff';
@@ -44,6 +46,7 @@ import { labsVisible } from './services/ui/labsAccess';
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
 const LegalPage = lazyWithReload(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
+const HelpPage = lazyWithReload(() => import('./components/help/HelpPage').then(m => ({ default: m.HelpPage })));
 const NotFoundPage = lazyWithReload(() => import('./components/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
 const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
 const TeaserShareView = lazyWithReload(() => import('./components/audit/TeaserShareView').then(m => ({ default: m.TeaserShareView })));
@@ -493,6 +496,7 @@ const App: React.FC = () => {
   ) : null;
 
   /** One nav for every marketing page (same links, same CTAs, current page marked). */
+  const navSignedIn = marketingNavSignedIn(appAuth.loading, appAuth.authenticated, hasPersistedAuthSession());
   const marketingChrome: MarketingChrome = {
     links: [
       { label: 'Why', onClick: () => setView(AppView.WHY_US), current: view === AppView.WHY_US },
@@ -500,10 +504,10 @@ const App: React.FC = () => {
       { label: 'AI', onClick: () => setView(AppView.INTELLIGENCE), current: view === AppView.INTELLIGENCE },
       { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
     ],
-    primaryCta: appAuth.authenticated
+    primaryCta: navSignedIn
       ? { label: 'New audit', onClick: () => enterInstantAudit() }
       : { label: 'Start free', onClick: () => openLoginWall('signup') },
-    secondaryCta: appAuth.authenticated
+    secondaryCta: navSignedIn
       ? { label: 'Dashboard', onClick: () => enterApp(AppView.DASHBOARD) }
       : { label: 'Sign in', onClick: () => openLoginWall('signin') },
     onHome: () => setView(AppView.LANDING),
@@ -718,8 +722,12 @@ const App: React.FC = () => {
       let usedServerOracle = false;
 
       // Agency hosted Oracle (validators + provenance). Fall back to BYOK client path on soft failure.
+      // Free plans get 403 from /oracle/chat. The server path is Agency apiAccess only.
       const preferServer =
-        appAuth.authenticated && Boolean(apiBase()) && !opts.skipSearch;
+        appAuth.authenticated &&
+        Boolean(apiBase()) &&
+        !opts.skipSearch &&
+        entitlementsFor(getCurrentQuotaSync()?.plan).apiAccess;
 
       if (preferServer) {
         let softFail = false;
@@ -901,6 +909,15 @@ const App: React.FC = () => {
       <Suspense fallback={<ViewLoader label="Loading document" />}>
         {introOverlay}
         <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(skipMarketing ? AppView.DASHBOARD : AppView.LANDING)} />
+      </Suspense>
+    );
+  }
+
+  if (view === AppView.FAQ || view === AppView.CONTACT) {
+    return (
+      <Suspense fallback={<ViewLoader label="Loading help" />}>
+        {introOverlay}
+        <HelpPage kind={view === AppView.FAQ ? 'faq' : 'contact'} onBack={() => setView(skipMarketing ? AppView.DASHBOARD : AppView.LANDING)} />
       </Suspense>
     );
   }

@@ -75,6 +75,21 @@ describe('win eligibility', () => {
     expect(winEligibility({ measured: false, reportText: '', recheckPassed: false, fixesDone: 3 })).toBeNull();
   });
 
+  it('stays closed when the page-health line still has an unmeasured check', () => {
+    expect(winEligibility({
+      measured: true,
+      reportText: 'Right now, your site passed 3 of 4; 1 not measured this run made.',
+      recheckPassed: false,
+      fixesDone: 1,
+    })).toBeNull();
+    expect(winEligibility({
+      measured: true,
+      reportText: 'Right now, your site passed 4 of 4; 0 not measured this run made.',
+      recheckPassed: false,
+      fixesDone: 0,
+    })).toEqual({ kind: 'score', passed: 4, total: 4, fixesDone: 0 });
+  });
+
   it('opens for a measured pass at 3 of 4, or a measured recheck pass', () => {
     expect(winEligibility({ measured: true, reportText: 'passed 3 of 4 checks', recheckPassed: false, fixesDone: 2 })).toEqual({
       kind: 'score',

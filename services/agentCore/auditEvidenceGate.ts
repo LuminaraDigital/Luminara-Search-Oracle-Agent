@@ -84,16 +84,51 @@ export const HEALTH_CHECKS = [
 export interface HealthChecklist {
   passed: number;
   failed: number;
+  unmeasured: number;
   total: number;
 }
 
-/** Counts the checks a run failed, from the findings it kept. Valid only for a run where all four checks ran. */
-export function healthChecklist(findings: readonly { id: string }[]): HealthChecklist {
-  const failed = HEALTH_CHECKS.filter((check) => findings.some((finding) => finding.id === check.findingId)).length;
-  return { total: HEALTH_CHECKS.length, failed, passed: HEALTH_CHECKS.length - failed };
+function wholeCount(value: number | undefined): number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
 }
 
-/** Same checklist number the auditor stores. A downgraded finding id is not one of the four checks. */
+/** The sentence a report and a share check both read. A positive unmeasured count is not a pass. */
+export function measuredCheckLine(counts: { passed: number; total: number; unmeasured?: number }): string {
+  return `passed ${counts.passed} of ${counts.total}; ${wholeCount(counts.unmeasured)} not measured`;
+}
+
+/**
+ * Counts failed and downgraded checks. A renamed `<id>-unmeasured` finding is not a pass.
+ * An unknown citation rate makes the citation check unmeasured. Omit the option when the rate was not in play.
+ */
+export function healthChecklist(
+  findings: readonly { id: string }[],
+  options?: { citationRateKnown?: boolean },
+): HealthChecklist {
+  let failed = 0;
+  let unmeasured = 0;
+  for (const check of HEALTH_CHECKS) {
+    const downgraded = findings.some((finding) => finding.id === `${check.findingId}-unmeasured`);
+    const citationUnknown = check.findingId === 'finding-zero-citations' && options?.citationRateKnown === false;
+    if (downgraded || citationUnknown) {
+      unmeasured += 1;
+      continue;
+    }
+    if (findings.some((finding) => finding.id === check.findingId)) failed += 1;
+  }
+  const total = HEALTH_CHECKS.length;
+  return { total, failed, unmeasured, passed: total - failed - unmeasured };
+}
+
+/** True when the four checks ran, including a run whose number was dropped after a downgrade. */
+export function siteChecksRan(healthScore: number | null, findings: readonly { id: string }[]): boolean {
+  if (typeof healthScore === 'number') return true;
+  return findings.some((finding) => HEALTH_CHECKS.some((check) => (
+    finding.id === check.findingId || finding.id === `${check.findingId}-unmeasured`
+  )));
+}
+
+/** Same checklist number the auditor stores before any finding is downgraded. */
 export function healthScoreFromFindings(findings: readonly { id: string }[]): number {
   const base = HEALTH_CHECKS.reduce(
     (score, check) => (findings.some((finding) => finding.id === check.findingId) ? score - check.penalty : score),

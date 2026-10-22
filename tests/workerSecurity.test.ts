@@ -20,6 +20,8 @@ import {
   safePublicHostname,
   safePublicUrl,
   stripUpstreamHeaders,
+  immutableAssetCache,
+  withAssetCache,
   withSecurityHeaders,
 } from '../worker/security';
 
@@ -117,6 +119,27 @@ describe('security headers', () => {
     const js = withSecurityHeaders(new Response('x', { headers: { 'content-type': 'text/javascript' } }));
     expect(html.headers.get('content-security-policy')).toBeTruthy();
     expect(js.headers.get('content-security-policy')).toBeNull();
+  });
+
+  it('caches a hashed asset for a year and leaves other files alone', async () => {
+    expect(immutableAssetCache('/assets/index-Ab12cd34.js')).toBe('public, max-age=31536000, immutable');
+    expect(immutableAssetCache('/favicon.ico')).toBeNull();
+    expect(immutableAssetCache('/assets/index.js')).toBeNull();
+    const locked = new Response('console.log(1)', { headers: { 'content-type': 'text/javascript' } });
+    locked.headers.set = () => { throw new TypeError('immutable'); };
+    const copied = withAssetCache(locked, '/assets/index-Ab12cd34.js');
+    expect(copied.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(await copied.text()).toBe('console.log(1)');
+    const env = makeEnv({
+      ASSETS: {
+        fetch: async () => new Response('console.log(1)', { headers: { 'content-type': 'text/javascript' } }),
+      } as unknown as Fetcher,
+    });
+    const hashed = await worker.fetch(req('/assets/index-Ab12cd34.js'), env, ctx);
+    expect(hashed.status).toBe(200);
+    expect(hashed.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    const plain = await worker.fetch(req('/favicon.ico'), env, ctx);
+    expect(plain.headers.get('cache-control') || '').not.toContain('immutable');
   });
 
   it('returns 404 for missing static asset requests that fall through to index.html', async () => {

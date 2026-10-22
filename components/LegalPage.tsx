@@ -3,7 +3,7 @@ import { bindTelegramBackButton, isInTelegram } from '../services/telegram/tma';
 import { ACL_RIGHTS_CLAUSE, LEGAL_ENTITY, LIABILITY_CLAUSE, OPERATOR_LINE, PUBLIC_CONTACT_LINE, STARS_REFUND_CLAUSE } from '../services/legal/consumerTerms';
 import { PRIVACY_INTRO, PRIVACY_SECTIONS, PRIVACY_UPDATED, type PrivacySection } from '../services/legal/privacyCopy';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
-import { MarketingChromeContext, type MarketingChrome } from './marketing/marketingChrome';
+import { DOCUMENT_CHROME, MarketingChromeContext } from './marketing/marketingChrome';
 
 interface Props {
   kind: 'privacy' | 'terms';
@@ -12,18 +12,6 @@ interface Props {
 
 const TERMS_UPDATED = '19 October 2026';
 const SUPPORT_EMAIL = 'support@luminarasuite.com';
-
-const WEB_CHROME: MarketingChrome = {
-  links: [
-    { label: 'Why', onClick: () => { window.location.assign('/why'); } },
-    { label: 'How it works', onClick: () => { window.location.assign('/how-it-works'); } },
-    { label: 'AI', onClick: () => { window.location.assign('/ai'); } },
-    { label: 'Pricing', onClick: () => { window.location.assign('/pricing'); } },
-  ],
-  primaryCta: { label: 'Start free', onClick: () => { window.location.assign('/'); } },
-  secondaryCta: { label: 'Sign in', onClick: () => { window.location.assign('/'); } },
-  onHome: () => { window.location.assign('/'); },
-};
 
 function SectionList({ sections }: { sections: PrivacySection[] }) {
   return (
@@ -144,7 +132,7 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
   }
 
   return (
-    <MarketingChromeContext.Provider value={WEB_CHROME}>
+    <MarketingChromeContext.Provider value={DOCUMENT_CHROME}>
       <MarketingPageShell>
         <MarketingPageHeader
           eyebrow={isPrivacy ? 'Privacy' : 'Terms'}

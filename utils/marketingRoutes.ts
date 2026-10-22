@@ -12,6 +12,8 @@ export const MARKETING_PATH_BY_VIEW: Partial<Record<AppView, string>> = {
   [AppView.SAMPLE_REPORT]: '/sample-report',
   [AppView.PRIVACY]: '/privacy',
   [AppView.TERMS]: '/terms',
+  [AppView.FAQ]: '/faq',
+  [AppView.CONTACT]: '/contact',
 };
 
 /** Path aliases accepted on entry (redirected to the canonical path via replaceState). */
@@ -32,6 +34,11 @@ const PATH_ALIASES: Record<string, AppView> = {
   sample: AppView.SAMPLE_REPORT,
   privacy: AppView.PRIVACY,
   'privacy-policy': AppView.PRIVACY,
+  'privacy.html': AppView.PRIVACY,
+  faq: AppView.FAQ,
+  'faq.html': AppView.FAQ,
+  contact: AppView.CONTACT,
+  'contact.html': AppView.CONTACT,
   terms: AppView.TERMS,
   'terms-of-service': AppView.TERMS,
   tos: AppView.TERMS,

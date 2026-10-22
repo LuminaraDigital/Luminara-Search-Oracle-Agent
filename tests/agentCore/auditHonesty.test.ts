@@ -470,9 +470,9 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(HEALTH_CHECKS.map((check) => check.findingId)).toEqual([
       'finding-zero-citations', 'finding-schema-org', 'finding-deprecated-howto', 'finding-thin-content',
     ]);
-    expect(healthChecklist([])).toEqual({ total: 4, failed: 0, passed: 4 });
+    expect(healthChecklist([])).toEqual({ total: 4, failed: 0, unmeasured: 0, passed: 4 });
     expect(healthChecklist([{ id: 'finding-schema-org' }, { id: 'finding-thin-content' }, { id: 'something-else' }]))
-      .toEqual({ total: 4, failed: 2, passed: 2 });
+      .toEqual({ total: 4, failed: 2, unmeasured: 0, passed: 2 });
   });
 
   it('says nothing about AI overviews in the zero mention finding, only what the search rows show', async () => {
@@ -554,7 +554,7 @@ describe('Instant Audit honesty on empty evidence', () => {
       null,
       noop,
     );
-    expect(measured).toContain('passed 3 of 4 checks');
+    expect(measured).toContain('passed 3 of 4; 0 not measured');
     expect(measured).toContain('mentioned in 2 of 9 web results');
     expect(measured).not.toMatch(/\d+\s*\/\s*100/);
     expect(measured).not.toMatch(/health score/i);
@@ -639,7 +639,7 @@ describe('Instant Audit honesty on empty evidence', () => {
 
   it('says so and lists no step when every check passed, or when the checks did not run', async () => {
     const allPassed = await executiveTranslatorAgent.execute('https://example.com', { passed: 4, total: 4 }, { mentioned: 2, total: 9 }, [], [], null, noop);
-    expect(allPassed).toContain('passed 4 of 4 checks');
+    expect(allPassed).toContain('passed 4 of 4; 0 not measured');
     expect(allPassed).toContain('All 4 checks this run made passed, so there are no steps to list.');
     const notRun = await executiveTranslatorAgent.execute('https://example.com', null, null, [], [], null, noop);
     expect(notRun).toContain('The site checks were not measured, so there are no steps to list.');
@@ -698,9 +698,9 @@ describe('Instant Audit honesty on empty evidence', () => {
 
     const result = await crewOrchestrator.runAuditCrew('https://example.com', 'AEO', null, noop);
 
-    expect(translate.mock.calls[0]?.[1]).toEqual({ total: 4, failed: 0, passed: 4 });
+    expect(translate.mock.calls[0]?.[1]).toEqual({ total: 4, failed: 0, unmeasured: 0, passed: 4 });
     expect(translate.mock.calls[0]?.[2]).toEqual({ mentioned: 2, total: 5 });
-    expect(result.plainEnglishBrief).toContain('passed 4 of 4 checks');
+    expect(result.plainEnglishBrief).toContain('passed 4 of 4; 0 not measured');
     expect(result.plainEnglishBrief).toContain('mentioned in 2 of 5 web results');
     expect(result.plainEnglishBrief).not.toContain('81');
     expect(result.plainEnglishBrief).not.toMatch(/\d+(?:\.\d+)?\s*%/);
@@ -813,11 +813,11 @@ describe('Mission Control copy', () => {
 });
 
 describe('Pricing display labels', () => {
-  it('shows locked USD amounts and keeps Stars sublines', () => {
+  it('shows the AUD card prices and keeps Stars sublines', () => {
     expect(pricingTiers.map((tier) => [tier.id, tier.priceLabel, tier.stars, tier.ton])).toEqual([
-      ['starter', 'US$49', '2,500 Stars', '15 TON'],
-      ['growth', 'US$149', '7,500 Stars', '45 TON'],
-      ['agency', 'US$349', '18,000 Stars', '120 TON'],
+      ['starter', 'A$79', '2,500 Stars', '15 TON'],
+      ['growth', 'A$229', '7,500 Stars', '45 TON'],
+      ['agency', 'A$549', '18,000 Stars', '120 TON'],
     ]);
   });
 });

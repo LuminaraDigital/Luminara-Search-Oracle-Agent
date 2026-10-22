@@ -12,7 +12,7 @@ import {
   TELEGRAM_MINI_APP_URL,
   type PaymentRail,
 } from './paymentOptions';
-import { approximateAudLabel, PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
+import { cardPayLabel, cardTermLabel, PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
 import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, planAudience, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './planCopy';
 import { COMPANY_SERVICES_URL } from '../../services/legal/consumerTerms';
 import { ICONS } from '../../constants';
@@ -303,7 +303,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
   const planPriceLabel = (plan: PaidPlanId) => {
     const price = PAID_PLAN_PRICES[plan];
-    if (tab === 'card') return `${price.usdLabel} / 30 days`;
+    if (tab === 'card') return cardTermLabel(plan);
     if (tab === 'stars') return price.starsLabel.replace(' Stars', ' ⭐');
     if (tonAsset === 'TON') return price.tonLabel;
     if (tonAsset === 'USDT') {
@@ -319,7 +319,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   const planButtonLabel = (plan: PaidPlanId) => {
     const price = PAID_PLAN_PRICES[plan];
     if (busyPlan === plan) return 'Processing…';
-    if (tab === 'card') return `Checkout with Card · ${price.usdLabel}`;
+    if (tab === 'card') return cardPayLabel(plan);
     if (tab === 'stars') return starsPayLabel(price.starsLabel, inTg);
     if (tonAsset === 'TON') return `Pay ${price.tonLabel} · 30 days`;
     if (tonAsset === 'USDT') {
@@ -559,7 +559,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className={`text-sm font-bold ${tier.highlight ? 'text-white' : 'text-gold-light'}`}>{planTitle(tier.id)}</span>
-                  <span className="text-sm font-semibold text-gold-light">{approximateAudLabel(PAID_PLAN_PRICES[tier.id].usdLabel)} · {planPriceLabel(tier.id)}</span>
+                  <span className="text-sm font-semibold text-gold-light">{tab === 'card' ? planPriceLabel(tier.id) : `${PAID_PLAN_PRICES[tier.id].audLabel} · ${planPriceLabel(tier.id)}`}</span>
                 </div>
                 <p className="text-[11px] text-gray-400">{planAudience(tier.id)} · {planSeatLine(tier.id)}</p>
                 <p className="text-[11px] text-gray-400 leading-relaxed">{tier.blurb}</p>

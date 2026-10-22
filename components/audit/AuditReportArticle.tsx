@@ -7,10 +7,12 @@ import {
   findingFix,
   findingWhy,
   fixProgress,
+  isDowngradedFinding,
   parseAuditReport,
   progressSince,
   recheckLabel,
   scoreLine,
+  unmeasuredNote,
   type Inline,
   type ReportBlock,
   type ReportSection,
@@ -162,8 +164,10 @@ export function AuditReportArticle({
 }) {
   const doc = parseAuditReport(markdown);
   const score = scoreLine(`${markdown}\n${doc.verdict}`, measured);
-  const progress = fixProgress(findings);
-  const next = pickPrimaryFinding(findings);
+  const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
+  const note = unmeasuredNote(findings);
+  const progress = fixProgress(fixes);
+  const next = pickPrimaryFinding(fixes);
   const since = progressSince(domain ? diffSince(domain) : { before: null, metrics: [] });
   const validSources = visibleGroundingSources(sources) || [];
   const verdict = doc.verdict || 'Not measured.';
@@ -229,8 +233,8 @@ export function AuditReportArticle({
 
         <section id="audit-fixes" aria-label="Fixes" className="mt-6 space-y-3">
           <h2 className="text-xl font-semibold text-white">Fixes</h2>
-          {findings.length === 0 && <p className="text-base leading-relaxed text-gray-200">No fixes were recorded for this audit.</p>}
-          {findings.map((finding) => {
+          {fixes.length === 0 && <p className="text-base leading-relaxed text-gray-200">No fixes were recorded for this audit.</p>}
+          {fixes.map((finding) => {
             const why = findingWhy(finding);
             const fix = findingFix(finding, why);
             const chip = SEVERITY[finding.severity] || SEVERITY.low;
@@ -261,6 +265,7 @@ export function AuditReportArticle({
               </article>
             );
           })}
+          {note && <p className="text-base leading-relaxed text-gray-200">{note}</p>}
         </section>
 
         {sections.map((section) => (
