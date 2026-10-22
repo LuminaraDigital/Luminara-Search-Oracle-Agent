@@ -4,6 +4,7 @@
  * column, so a second send does not start. Resend's Idempotency-Key covers a lost response.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { BUSINESS_LOCATION, CONTACT_EMAIL, LEGAL_ABN, LEGAL_ENTITY, PUBLIC_BRAND } from '../services/legal/consumerTerms';
 
 export type WelcomeEnv = {
   DB?: D1Database;
@@ -13,14 +14,12 @@ export type WelcomeEnv = {
 };
 
 export const WELCOME_FROM = 'Luminara Suite <hello@luminarasuite.com>';
-export const WELCOME_REPLY_TO = 'info@luminara.digital';
+export const WELCOME_REPLY_TO = CONTACT_EMAIL;
 export const WELCOME_AUDIT_URL = 'https://www.luminarasuite.com/#instant_audit';
 export const WELCOME_PRIVACY_URL = 'https://www.luminarasuite.com/privacy';
 export const WELCOME_TERMS_URL = 'https://www.luminarasuite.com/terms';
 const WORDMARK_ICON = 'https://www.luminarasuite.com/icon-512.png';
-const LEGAL_NAME = 'Luminara Digital Pty Ltd';
-const LEGAL_ABN = 'ABN 90 693 125 281';
-const LEGAL_PLACE = 'Melbourne';
+const LEGAL_FOOTER = `${LEGAL_ENTITY}, trading as ${PUBLIC_BRAND}, ABN ${LEGAL_ABN}, ${BUSINESS_LOCATION}`;
 
 const waitScope = new AsyncLocalStorage<{ waitUntil(task: Promise<unknown>): void }>();
 
@@ -104,9 +103,7 @@ export function renderWelcomeEmail(copy: WelcomeCopy): { html: string; text: str
     '',
     'The Luminara Suite team',
     '',
-    LEGAL_NAME,
-    LEGAL_ABN,
-    LEGAL_PLACE,
+    LEGAL_FOOTER,
     '',
     `Unsubscribe: ${copy.unsubscribeHref}`,
     `Privacy: ${WELCOME_PRIVACY_URL}`,
@@ -197,9 +194,7 @@ The Luminara Suite team
 <tr>
 <td style="padding-top:28px;padding-left:36px;padding-right:36px;padding-bottom:28px;">
 <p class="muted" style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#c8c2b4;">
-${LEGAL_NAME}<br>
-${LEGAL_ABN}<br>
-${LEGAL_PLACE}
+${LEGAL_FOOTER}
 </p>
 <p class="muted" style="margin:12px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#c8c2b4;">
 <a href="${unsub}" style="color:#f0d78c;text-decoration:underline;">Unsubscribe</a>

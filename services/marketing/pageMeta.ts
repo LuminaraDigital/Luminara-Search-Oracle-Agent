@@ -2,7 +2,14 @@
 
 import { listPriceSummary } from '../../components/paywall/planCopy';
 import { PAID_PLAN_PRICES } from '../../components/paywall/planPrices';
-import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../legal/consumerTerms';
+import {
+  COMPANY_SERVICES_URL,
+  COMPANY_SITE_URL,
+  CONTACT_EMAIL,
+  LEGAL_ABN,
+  LEGAL_ENTITY,
+  PUBLIC_BRAND,
+} from '../legal/consumerTerms';
 import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage';
 import { buildFaqPageJsonLd } from './marketingFaqContent';
@@ -27,9 +34,24 @@ export interface MarketingShellMeta {
 const ORG_NODE = {
   '@type': 'Organization',
   '@id': `${MARKETING_ORIGIN}/#organization`,
-  name: 'Luminara Digital',
-  url: COMPANY_SITE_URL,
+  name: 'Luminara Suite',
+  legalName: LEGAL_ENTITY,
+  taxID: LEGAL_ABN,
+  brand: { '@type': 'Brand', name: PUBLIC_BRAND, url: COMPANY_SITE_URL },
+  url: MARKETING_ORIGIN,
   logo: `${MARKETING_ORIGIN}/icon-512.png`,
+  email: CONTACT_EMAIL,
+  address: {
+    '@type': 'PostalAddress',
+    addressRegion: 'VIC',
+    postalCode: '3128',
+    addressCountry: 'AU',
+  },
+  contactPoint: {
+    '@type': 'ContactPoint',
+    email: CONTACT_EMAIL,
+    contactType: 'sales',
+  },
   sameAs: [
     'https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent',
     'https://t.me/LuminaraSuiteBot',

@@ -2,7 +2,7 @@
  * Privacy policy text shared by the public page and the in-app page.
  * Plain English. Same disclosures as the previous in-app policy.
  */
-import { LEGAL_ENTITY_LINE } from './consumerTerms';
+import { OPERATOR_LINE, PUBLIC_CONTACT_LINE } from './consumerTerms';
 
 export const PRIVACY_UPDATED = '22 October 2026';
 
@@ -19,7 +19,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
   {
     title: 'Who we are',
     paragraphs: [
-      `The controller is ${LEGAL_ENTITY_LINE}, Melbourne ("Luminara Digital", "we", "us"). The product is Luminara Suite: the website, the Telegram Mini App, and the Telegram bot @LuminaraSuiteBot. Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com.`,
+      `The controller is ${OPERATOR_LINE} ("we", "us"). The product is Luminara Suite: the website, the Telegram Mini App, and the Telegram bot @LuminaraSuiteBot. ${PUBLIC_CONTACT_LINE} Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com.`,
     ],
   },
   {

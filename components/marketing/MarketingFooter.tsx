@@ -1,6 +1,6 @@
 import React from 'react';
 import { ICONS } from '../../constants';
-import { COMPANY_SERVICES_URL, LEGAL_ENTITY_LINE } from '../../services/legal/consumerTerms';
+import { COMPANY_SERVICES_URL, OPERATOR_LINE } from '../../services/legal/consumerTerms';
 
 interface MarketingFooterProps {
   statement?: string;
@@ -59,8 +59,7 @@ export const MarketingFooter: React.FC<MarketingFooterProps> = ({
         >
           Luminara Digital
         </a>
-        {` · ${LEGAL_ENTITY_LINE}`}
-        {' · Melbourne'}
+        {` · ${OPERATOR_LINE}`}
       </p>
     </div>
   </footer>

@@ -470,7 +470,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         text:
           '*Luminara Suite - Privacy Policy & Data Rights*\n\n' +
           'We value your privacy and transparency. Here is how personal data is handled:\n\n' +
-          '• *Controller:* Luminara Digital Pty Ltd (ABN 90 693 125 281). Contact: `privacy@luminarasuite.com`\n' +
+          '• *Controller:* LUMINARA DIGITAL PTY LTD (ABN 90 693 125 281), trading as Luminara Digital, Victoria 3128, Australia. Contact: `privacy@luminarasuite.com`\n' +
           '• *Telegram Data:* We receive your signed Telegram user ID, username, and language to identify your session and meter usage. We never receive or store payment cards or phone numbers.\n' +
           '• *Payments:* Plans bought here are paid in Telegram Stars and processed by Telegram. No credit card information is collected.\n' +
           '• *Audits & Prompts:* Audit domains and queries are processed via configured AI models (Groq, NVIDIA NIM, Gemini, OpenRouter) to deliver search intelligence.\n' +
