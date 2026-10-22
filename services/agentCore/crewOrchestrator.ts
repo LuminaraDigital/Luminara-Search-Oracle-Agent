@@ -37,7 +37,7 @@ import {
   PROVIDER_DECISIONS_RECORD_PREFIX,
   providerDecisionsErrorRecord,
 } from '../apiClient';
-import { healthChecklist, liveSearchRows, pageSupportsHealthScore } from './auditEvidenceGate';
+import { healthChecklist, liveSearchRows, pageSupportsHealthScore, siteChecksRan } from './auditEvidenceGate';
 import { gateFixSnippet, reviewFindingsWithJev } from '../audit/jevVerifier';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
@@ -431,7 +431,9 @@ export class CrewOrchestrator {
         ? { mentioned: liveRows.filter((row) => row.brandMentioned).length, total: liveRows.length }
         : null;
       // The brief says how many of the site checks passed. It does not print the checklist number.
-      const healthChecks = typeof ctx.healthScore === 'number' ? healthChecklist(ctx.findings) : null;
+      const healthChecks = siteChecksRan(ctx.healthScore, ctx.findings)
+        ? healthChecklist(ctx.findings, { citationRateKnown: typeof ctx.citationRatePercent === 'number' })
+        : null;
       const plainEnglishBrief = await executiveTranslatorAgent.execute(
         ctx.targetUrl,
         healthChecks,

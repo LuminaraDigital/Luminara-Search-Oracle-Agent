@@ -30,12 +30,8 @@ describe('citationIntegrityService', () => {
     ).toBe(false);
   });
 
-  it('computes integrityScore with live/dead citations', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: any) => {
-      const url = String(input);
-      if (url.includes('dead.example')) {
-        return { ok: false, status: 404 } as Response;
-      }
+  it('leaves cited links unchecked instead of fetching them from the browser', async () => {
+    const fetchImpl = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       return { ok: true, status: 200 } as Response;
     });
 
@@ -78,10 +74,12 @@ describe('citationIntegrityService', () => {
       domain: 'acme.com',
     });
 
-    expect(result.deadCitationCount).toBe(1);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.deadCitationCount).toBe(0);
+    expect(result.details.map((detail) => detail.alive)).toEqual([null, null]);
+    expect(result.details.map((detail) => detail.notes)).toEqual(['Link not checked', 'Link not checked']);
     expect(result.integrityScore).toBeGreaterThanOrEqual(0);
     expect(result.integrityScore).toBeLessThanOrEqual(100);
-    expect(result.details).toHaveLength(2);
     expect(['low', 'medium', 'high']).toContain(result.spoofRisk);
   });
 
@@ -130,8 +128,9 @@ describe('citationIntegrityService', () => {
       brandName: 'MoVida',
       domain: 'movida.com.au',
     });
-    expect(urls.some((url) => url.includes('trustpilot.com'))).toBe(false);
+    expect(urls).toEqual([]);
     expect(result.details.map((detail) => detail.url)).toEqual(['https://www.movida.com.au/']);
+    expect(result.details[0]?.notes).toBe('Link not checked');
     expect(result.deadCitationCount).toBe(0);
   });
 });

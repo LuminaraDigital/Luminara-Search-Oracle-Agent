@@ -61,7 +61,7 @@ export interface GuestScoutSummaryInput {
    */
   healthScore: number | null;
   /** How many of the site checks passed, of how many ran. Shown on the card as that count. */
-  healthChecks?: { passed: number; total: number } | null;
+  healthChecks?: { passed: number; total: number; unmeasured?: number } | null;
   scrapedPageCount: number;
   serpCount: number;
   /** The engines the search rows came from, as recorded on the rows. */
@@ -151,11 +151,16 @@ function mentionCountBadge(label: string, count: number | null, total: number): 
 function checksBadge(
   label: string,
   healthScore: number | null,
-  checks: { passed: number; total: number } | null | undefined,
+  checks: { passed: number; total: number; unmeasured?: number } | null | undefined,
 ): ScoutBadge {
-  if (typeof healthScore !== 'number' || !checks) return { label, status: 'not_measured' };
+  if (!checks) return { label, status: 'not_measured' };
   const passed = mentionCountOf(checks.passed, checks.total);
-  if (passed == null) return { label, status: 'not_measured' };
+  const raw = checks.unmeasured;
+  const unmeasured = typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : 0;
+  if (unmeasured > 0 && passed != null) {
+    return { label, status: 'not_measured', value: `passed ${passed} of ${checks.total}; ${unmeasured} not measured` };
+  }
+  if (typeof healthScore !== 'number' || passed == null) return { label, status: 'not_measured' };
   return { label, status: 'measured', value: `${passed} of ${checks.total} checks passed` };
 }
 

@@ -17,7 +17,7 @@ import {
   shouldGenerateAuditReport,
   type GuestScoutSummary,
 } from './guestScoutSummary';
-import { healthChecklist } from '../agentCore/auditEvidenceGate';
+import { healthChecklist, siteChecksRan } from '../agentCore/auditEvidenceGate';
 import { entitlementsFor } from '../plans/planEntitlements';
 import { getAnswerDepth } from './answerDepth';
 import type { HostedScoutRail } from './hostedScoutRail';
@@ -192,7 +192,9 @@ export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: Hosted
     citationRatePercent: crew.citationRatePercent,
     shareOfVoiceScore: crew.shareOfVoiceScore,
     healthScore: crew.healthScore,
-    healthChecks: typeof crew.healthScore === 'number' ? healthChecklist(crew.findings) : null,
+    healthChecks: siteChecksRan(crew.healthScore, crew.findings)
+      ? healthChecklist(crew.findings, { citationRateKnown: typeof crew.citationRatePercent === 'number' })
+      : null,
     scrapedPageCount: crew.scrapedPages.length,
     serpCount: crew.serpEvidence.length,
     searchEngines: [...new Set(crew.serpEvidence.map((row) => row.engine))],

@@ -6,6 +6,9 @@ import { marked, type Token, type Tokens } from 'marked';
 import type { BoardFinding } from './findingBoardService';
 import { formatAuDate } from '../../utils/formatAuDate';
 
+const MEASURED_LINE = /\bpassed (\d+) of (\d+); (\d+) not measured\b/i;
+const LEGACY_MEASURED_LINE = /\bpassed (\d+) of (\d+) checks\b/i;
+
 export type Inline =
   | { kind: 'text'; text: string }
   | { kind: 'strong'; text: string }
@@ -173,17 +176,29 @@ export function parseAuditReport(markdown: string): AuditReportDoc {
   return { title, verdict, sections, links };
 }
 
-/** The only score the page may print. Unmeasured runs stay "Not measured" even if the prose contains a count. */
+function countPair(passedText: string, totalText: string): { passed: number; total: number } | null {
+  const passed = Number(passedText);
+  const total = Number(totalText);
+  if (!Number.isInteger(passed) || !Number.isInteger(total) || total < 1 || passed < 0 || passed > total) return null;
+  return { passed, total };
+}
+
+/** The only score the page may print. A partial checklist stays visible. A clean pass needs measured=true. */
 export function scoreLine(markdown: string, measured: boolean): string {
-  if (!measured) return 'Not measured';
-  const match = markdown.match(/\bpassed (\d+) of (\d+) checks\b/i);
-  if (!match) return 'Not measured';
-  const passed = Number(match[1]);
-  const total = Number(match[2]);
-  if (!Number.isInteger(passed) || !Number.isInteger(total) || total < 1 || passed < 0 || passed > total) {
+  const honest = markdown.match(MEASURED_LINE);
+  if (honest) {
+    const counts = countPair(honest[1], honest[2]);
+    const unmeasured = Number(honest[3]);
+    if (!counts || !Number.isInteger(unmeasured) || unmeasured < 0) return 'Not measured';
+    if (unmeasured > 0 || measured) return `Passed ${counts.passed} of ${counts.total}; ${unmeasured} not measured`;
     return 'Not measured';
   }
-  return `Passed ${passed} of ${total} checks`;
+  if (!measured) return 'Not measured';
+  const match = markdown.match(LEGACY_MEASURED_LINE);
+  if (!match) return 'Not measured';
+  const counts = countPair(match[1], match[2]);
+  if (!counts) return 'Not measured';
+  return `Passed ${counts.passed} of ${counts.total} checks`;
 }
 
 export function recheckLabel(from = Date.now()): string {
@@ -191,10 +206,25 @@ export function recheckLabel(from = Date.now()): string {
   return when ? `Recheck on ${when}.` : 'Recheck in 14 days.';
 }
 
-export function fixProgress(findings: ReadonlyArray<{ status: string }>): { done: number; total: number; label: string } {
-  const total = findings.length;
-  const done = findings.filter((finding) => finding.status === 'done').length;
+export function isDowngradedFinding(finding: { id?: string }): boolean {
+  return typeof finding.id === 'string' && finding.id.endsWith('-unmeasured');
+}
+
+export function fixProgress(findings: ReadonlyArray<{ id?: string; status: string }>): { done: number; total: number; label: string } {
+  const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
+  const total = fixes.length;
+  const done = fixes.filter((finding) => finding.status === 'done').length;
   return { done, total, label: total === 0 ? 'No fixes on this audit' : `${done} of ${total} fixes done` };
+}
+
+/** Titles of checks the evidence review could not support. Null when every finding stays a fix. */
+export function unmeasuredNote(findings: ReadonlyArray<{ id?: string; title?: string }>): string | null {
+  const titles = findings
+    .filter((finding) => isDowngradedFinding(finding))
+    .map((finding) => (finding.title || '').trim())
+    .filter(Boolean);
+  if (!titles.length) return null;
+  return `Not measured: ${titles.join('; ')}.`;
 }
 
 export function findingWhy(finding: Pick<BoardFinding, 'description' | 'evidence'>): string {
@@ -226,20 +256,23 @@ export function progressSince(input: {
   return `Health is ${word} ${Math.abs(health.delta)} since the last audit (${health.before} to ${health.after}).`;
 }
 
-function findingsMarkdown(findings: ReadonlyArray<Pick<BoardFinding, 'title' | 'severity' | 'description' | 'evidence'>>): string {
-  if (!findings.length) return '';
-  const blocks = findings.map((finding) => {
+function findingsMarkdown(findings: ReadonlyArray<Pick<BoardFinding, 'title' | 'severity' | 'description' | 'evidence'> & { id?: string }>): string {
+  const note = unmeasuredNote(findings);
+  const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
+  const blocks = fixes.map((finding) => {
     const why = findingWhy(finding);
     return `### ${finding.title}\n\nSeverity: ${finding.severity}\n\nWhy it matters for buyers and vendors: ${why}\n\nHow to fix: ${findingFix(finding, why)}`;
   });
-  return `## Fixes\n\n${blocks.join('\n\n')}\n`;
+  const fixSection = blocks.length ? `## Fixes\n\n${blocks.join('\n\n')}\n` : '';
+  const noteSection = note ? `${note}\n` : '';
+  return `${fixSection}${noteSection}`;
 }
 
 /** Same words the page shows, in the order the PDF already knows how to print. */
 export function withReportLead(
   markdown: string,
   measured: boolean,
-  findings: ReadonlyArray<Pick<BoardFinding, 'title' | 'severity' | 'description' | 'evidence'>> = [],
+  findings: ReadonlyArray<Pick<BoardFinding, 'title' | 'severity' | 'description' | 'evidence'> & { id?: string }> = [],
 ): string {
   const doc = parseAuditReport(markdown);
   const score = scoreLine(`${markdown}\n${doc.verdict}`, measured);

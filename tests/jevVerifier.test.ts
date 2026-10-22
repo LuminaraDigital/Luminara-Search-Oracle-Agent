@@ -104,7 +104,7 @@ describe('verifyAuditWithJev', () => {
     expect(kept[0].id).toBe('finding-schema-org-unmeasured');
     expect(kept[0].description).toBe('Not measured. The evidence check did not support this finding.');
     expect(kept[0].severity).toBe('low');
-    expect(reviewedHealth(73, kept, true)).toBe(85);
+    expect(reviewedHealth(73, kept, true)).toBeNull();
     expect(includeRealEstateChecks(verdict.siteType, 1)).toBe(false);
     const jsonLd = gateFixSnippet('json_ld', '{"name":"Ray White"}', 'raywhite.com.au');
     const llms = gateFixSnippet('llms_txt', '# Ray White\n> Sells homes.', 'raywhite.com.au');

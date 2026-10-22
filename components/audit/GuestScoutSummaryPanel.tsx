@@ -94,7 +94,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
             key={badge.label}
             className={`rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide ${badgeClass[badge.status] || badgeClass.not_measured}`}
           >
-            {badge.label}: {badge.status === 'not_measured' ? 'not measured' : badge.value || badge.status}
+            {badge.label}: {badge.status === 'not_measured' ? badge.value || 'not measured' : badge.value || badge.status}
           </li>
         ))}
       </ul>
