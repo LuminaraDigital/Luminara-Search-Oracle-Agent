@@ -8,6 +8,7 @@ import type { Ai, Env } from '../worker/env';
 import { proxyProvider } from '../worker/providerRelay';
 import { NVIDIA_FALLBACK_MODEL } from '../worker/nvidiaChatFallback';
 import { fallbackAnswerLine, readFallbackAnswer } from '../services/llm/fallbackAnswer';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 
 const BOT_TOKEN = '123456:TEST_BOT_TOKEN_NVIDIA_FALLBACK';
 
@@ -80,6 +81,7 @@ describe('hosted Groq chat falls through NVIDIA', () => {
       ASSETS: { fetch: vi.fn() } as unknown as Env['ASSETS'],
       WEBAPP_URL: 'https://luminarasuite.com',
       LUMINARA_KV: kv as unknown as Env['LUMINARA_KV'],
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
       BOT_TOKEN,
       REQUIRE_TG_AUTH: 'true',
       FREE_DAILY_LIMIT: '10',

@@ -83,7 +83,7 @@ import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, 
 import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
-import { getActiveSubscription, checkHostedQuota, type SubRow } from './quotaMiddleware';
+import { getActiveSubscription, checkHostedQuota, readFreeUsed, QUOTA_CAPACITY_ERROR, type SubRow } from './quotaMiddleware';
 import { handleReferralRoute, referralBonusRemaining } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
@@ -123,7 +123,7 @@ import {
   handleOracleSessionControlRoute,
   isOracleServerEnabled,
 } from './oracleChat';
-import { OracleSession } from './oracleSession';
+export { OracleSession } from './oracleSession';
 import { handlePagespeedRoute } from './pagespeedRoute';
 import { handleDeployReadbackRoute } from './deployReadback';
 import {
@@ -167,7 +167,7 @@ import { handlePasswordResetRequest, handleSendVerification } from './authTollFr
 import { handleRequestOtp, handleVerifyOtp } from './authOtpSms';
 import { handleSignIn, handleSignUp } from './authCredentialGateway';
 
-export { OracleSession };
+export { DailyQuota } from './dailyQuota';
 import { createProject, listProjects, getProject } from './projectService';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
@@ -863,8 +863,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }));
     }
 
-    const day = now.toISOString().slice(0, 10);
-    const used = env.LUMINARA_KV ? Number((await env.LUMINARA_KV.get(`quota:${accountId}:${day}`)) || 0) : 0;
+    const used = await readFreeUsed(env, accountId, limit);
+    if (used === null) return withCors(json({ ok: false, error: QUOTA_CAPACITY_ERROR, code: 'HOSTED_CAPACITY' }, 503));
     const bonusRemaining = await referralBonusRemaining(env, accountId);
 
     return withCors(json({

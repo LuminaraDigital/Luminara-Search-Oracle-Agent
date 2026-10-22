@@ -25,7 +25,7 @@ import {
   upstreamErrorExcerpt,
 } from '../worker/providerRelay';
 import { corsHeaders } from '../worker/workerUtils';
-
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 const BOT_TOKEN = '123456:TEST_BOT_TOKEN_AI_FALLBACK';
 const PROMPT = 'Zebra-crossing question that must never reach a log line';
 
@@ -780,7 +780,7 @@ describe('Workers AI fallback (SW0a-11)', () => {
     const createTestEnv = (overrides: Partial<Env> = {}): Env => ({
       ASSETS: { fetch: vi.fn() } as any,
       WEBAPP_URL: 'https://luminarasuite.com',
-      LUMINARA_KV: kv,
+      LUMINARA_KV: kv, DAILY_QUOTA: memoryDailyQuotaNamespace(),
       BOT_TOKEN,
       REQUIRE_TG_AUTH: 'true',
       FREE_DAILY_LIMIT: '10',

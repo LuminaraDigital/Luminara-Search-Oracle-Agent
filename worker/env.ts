@@ -248,6 +248,8 @@ export interface Env {
   AUTH_MESSAGING_LIMITER?: { limit: (opts: { key: string }) => Promise<{ success: boolean }> };
   /** Durable Object namespace for Oracle chat sessions. */
   ORACLE_SESSION?: DurableObjectNamespace;
+  /** Free daily meter. One SQLite object per account per UTC day. */
+  DAILY_QUOTA?: DurableObjectNamespace;
   /** Queue producer for long-running audits. */
   AUDIT_JOBS?: Queue;
   /** Optional Sentry DSN (Worker exceptions). */

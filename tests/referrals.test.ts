@@ -15,6 +15,7 @@ import {
   tryConsumeReferralCredit,
 } from '../worker/referrals';
 import { handleTelegramUpdate } from '../worker/telegramBot';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import type { Env } from '../worker/env';
 import {
   assessHonestScout,
@@ -54,6 +55,7 @@ function envWithDb(): Env {
     ASSETS: {} as Env['ASSETS'],
     DB: createSqliteD1(),
     LUMINARA_KV: memoryKv() as unknown as KVNamespace,
+    DAILY_QUOTA: memoryDailyQuotaNamespace(),
     FREE_DAILY_LIMIT: '1',
     REQUIRE_TG_AUTH: 'true',
     WEBAPP_URL: 'https://luminarasuite.com',
