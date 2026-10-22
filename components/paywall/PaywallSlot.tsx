@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import { lazyWithReload } from '../../utils/lazyWithReload';
 import { toUserFacingText } from '../../utils/userFacingText';
+import { PaymentReturnNotice } from './PaymentReturnNotice';
 
 const PaywallWithTon = lazyWithReload(() =>
   import('./PaywallWithTon').then((m) => ({ default: m.PaywallWithTon })),
@@ -21,14 +22,18 @@ export function PaywallSlot({ onOpenSettings }: { onOpenSettings?: () => void })
     return () => window.removeEventListener('luminara-open-paywall', onPaywall);
   }, []);
 
-  if (!open) return null;
   return (
-    <Suspense fallback={null}>
-      <PaywallWithTon
-        bootReason={bootReason ?? undefined}
-        onOpenSettings={onOpenSettings}
-        onClose={() => setOpen(false)}
-      />
-    </Suspense>
+    <>
+      <PaymentReturnNotice />
+      {open ? (
+        <Suspense fallback={null}>
+          <PaywallWithTon
+            bootReason={bootReason ?? undefined}
+            onOpenSettings={onOpenSettings}
+            onClose={() => setOpen(false)}
+          />
+        </Suspense>
+      ) : null}
+    </>
   );
 }
