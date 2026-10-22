@@ -26,6 +26,7 @@ import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { PaywallSlot } from './components/paywall/PaywallSlot';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
+import { ReplayTourButton } from './components/onboarding/FirstRunTour';
 import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
@@ -1210,7 +1211,6 @@ const App: React.FC = () => {
             Studio
           </Button>
 
-          {/* Command Suite Dropdown */}
           <div className="relative shrink-0" ref={moreBtnContainerRef}>
             <Button
               variant="ghost"
@@ -1384,6 +1384,7 @@ const App: React.FC = () => {
                     <span className="truncate">Jump to any tool (Omnibar)</span>
                     <kbd className="ml-auto hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
                   </button>
+                  {!inTelegram && appAuth.authenticated && <ReplayTourButton onDone={() => setShowSuiteMenu(false)} goToAudit={() => setView(AppView.INSTANT_AUDIT)} />}
                   {!inTelegram && appAuth.authenticated && (
                     <button
                       type="button"
@@ -1546,7 +1547,6 @@ const App: React.FC = () => {
         )}
         <ErrorBoundary scope={view}>
         <Suspense fallback={<ViewLoader label="Loading workspace" />}>
-        {/* VIEW: Instant Audit Scanner */}
         {view === AppView.INSTANT_AUDIT && (
           <InstantAuditView
             dna={dna}

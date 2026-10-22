@@ -10,6 +10,7 @@ import { PageSpeedPanel } from './PageSpeedPanel';
 import { GscPanel } from './GscPanel';
 import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/findingBoardService';
 import { PastReports } from './PastReports';
+import { FirstRunTour } from '../onboarding/FirstRunTour';
 import { ReportPdfButton } from './ReportPdfButton';
 import type { AuditHistoryEntry } from '../../services/audit/auditHistoryService';
 import { AgentMissionControl } from './AgentMissionControl';
@@ -572,6 +573,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
       <PastReports onOpen={openSavedAudit} />
+      <FirstRunTour signedInWeb={!isGuest} />
       <div className="text-center mb-6 sm:mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Radar className="w-4 h-4 text-gold-light" />
