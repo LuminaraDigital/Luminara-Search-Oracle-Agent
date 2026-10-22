@@ -169,7 +169,7 @@ and the SPA asset fallback:
 
 ## Stripe card rail invariants (`worker/stripePayment.ts`, pinned in `tests/stripePayment.test.ts`)
 
-Staging sets `STRIPE_CHECKOUT_LIVE` to `"true"`. Production and the default vars stay `"false"`. These hold wherever the rail is on.
+Staging and production set `STRIPE_CHECKOUT_LIVE` to `"true"`. The default vars stay `"false"`. These hold wherever the rail is on.
 
 - **Only a signed-in web buyer can start a checkout.** `POST /stripe/create-checkout-session` is a
   protected route and the handler calls `identify()` again: no user means 401 and no call to
@@ -230,8 +230,8 @@ Known limits, still open:
 - **The run of card purchases is remembered on the KV record.** A purchase on another rail writes
   a fresh record, so a card retry or reversal after it is judged without that memory.
 
-Staging is on. Production stays `"false"` until its own change in `tests/moneyInvariants.test.ts`.
-Before that production change: prove one staging test-mode purchase (also once with a
+Staging and production are on (production uses the live key and the live webhook secret).
+The staging checks set for the production switch: prove one staging test-mode purchase (also once with a
 `+location_FR` email, to see `currency` stay `aud` under Adaptive Pricing), one refund, one
 dispute and one refused lower plan; add the two migrations and `stripe_credited_sessions` to
 `scripts/smoke-check.mjs`. A signed-in buyer who lands on `/?payment=success` is sent to
@@ -250,7 +250,7 @@ no payment was taken. The staging webhook is subscribed to
   must equal `TON_RECEIVING_ADDRESS`. Until it does, no invoice is issued and public
   `/health` reports `ton: false`. Orders that already exist can still be verified.
 - **Q402 is off, and while it is off every `/q402/*` path is a 404**, including discovery.
-- **The Stripe card rail is on for staging and off for production.** `env.STRIPE_CHECKOUT_LIVE === 'true'` plus a matching key mode is the only open state. `env.staging.vars` is `"true"`. The default vars and `env.production.vars` are `"false"`.
+- **The Stripe card rail is on for staging and production.** `env.STRIPE_CHECKOUT_LIVE === 'true'` plus a matching key mode is the only open state. `env.staging.vars` and `env.production.vars` are `"true"`. The default vars are `"false"`.
 - Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
   catalogue: title, description, price in Stars, days). Nothing else.
 
