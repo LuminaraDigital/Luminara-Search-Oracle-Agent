@@ -54,6 +54,8 @@ export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/auth\/reset-password$/ },
   { method: 'POST', pattern: /^\/auth\/sign-up$/ },
   { method: 'POST', pattern: /^\/auth\/sign-in$/ },
+  { method: 'GET', pattern: /^\/email\/unsubscribe$/ },
+  { method: 'POST', pattern: /^\/email\/unsubscribe$/ },
   // Public OTP: IP-throttled; Twilio only when OTP_SMS_ENABLED + secrets are set.
   { method: 'POST', pattern: /^\/auth\/request-otp$/ },
   { method: 'POST', pattern: /^\/auth\/verify-otp$/ },

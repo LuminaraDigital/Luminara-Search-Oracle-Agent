@@ -20,6 +20,7 @@ const COPY_FILES = [
   'worker/termsPolicy.ts',
   'worker/privacyPolicy.ts',
   'worker/telegramBot.ts',
+  'worker/welcomeEmail.ts',
   'public/llms.txt',
   'public/privacy.html',
   'public/docs/what-is-aeo.html',

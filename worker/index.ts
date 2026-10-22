@@ -22,10 +22,7 @@
  *   POST /api/findings/bulk               upsert crew findings by stable_key (never Oracle validators)
  *   PATCH /api/findings/:id               status / owner / due_at
  *   POST /api/privacy/export|delete       self-serve GDPR export / soft-delete
- *   POST /api/analytics/events            server product analytics ingest
- *   GET/POST /api/weekly-decisions        durable Weekly Decision Card (0014)
- *   POST /api/memory/search|extract       Vectorize / Azure / GCP RAG + chat→facts
- *   POST /api/budgets/self/reconcile      invoice reconcile; hard-stop enable gate
+ *   GET/POST /api/email/unsubscribe       one-click welcome-mail opt-out (D1)
  *
  * Provider keys and the bot token live only here (wrangler secrets), never in the client bundle.
  * Firebase ID tokens are verified with Google JWKS (FIREBASE_PROJECT_ID); no Admin private key needed.
@@ -166,6 +163,7 @@ import {
 import { handlePasswordResetRequest, handleSendVerification } from './authTollFraud';
 import { handleRequestOtp, handleVerifyOtp } from './authOtpSms';
 import { handleSignIn, handleSignUp } from './authCredentialGateway';
+import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 
 export { DailyQuota } from './dailyQuota';
 import { createProject, listProjects, getProject } from './projectService';
@@ -2132,7 +2130,9 @@ export default {
 
     if (url.pathname.startsWith('/api/')) {
       try {
-        return guard(await handleApi(request, env, ctx));
+        const unsub = await handleEmailUnsubscribe(request, env);
+        if (unsub) return guard(unsub);
+        return guard(await runWithWaitUntil(ctx, () => handleApi(request, env, ctx)));
       } catch (e) {
         // Never echo internal error details (stack traces, upstream messages, env hints) to callers.
         console.error('[api] unhandled error', request.method, url.pathname, e);
