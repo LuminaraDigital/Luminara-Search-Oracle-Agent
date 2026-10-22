@@ -32,6 +32,8 @@ const COPY_FILES = [
   'components/suite/IdeaScoutView.tsx',
   'components/upgrade/UpgradeSurfaces.tsx',
   'components/share/WinSharePanel.tsx',
+  'components/settings/AccountPanel.tsx',
+  'services/account/accountSummary.ts',
   'services/share/winShare.ts',
   'worker/winShare.ts',
 ] as const;
