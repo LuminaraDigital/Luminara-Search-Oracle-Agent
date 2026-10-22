@@ -7,7 +7,6 @@ import {
 } from '../services/marketing/pageMeta';
 import { sha256Hex } from './workerUtils';
 import { maybeServeWinHtml } from './winShare';
-import { CONTACT_HTML, FAQ_HTML } from '../services/help/helpPages';
 
 /**
  * Unknown paths are served as this shell with HTTP 404. The old inline skip
@@ -68,19 +67,6 @@ export function applyMarketingDocument(html: string, page: MarketingShellMeta): 
   out = injectFirstPaint(out, hero);
   out = deferRenderBlockingCss(out);
   return out.replace(/<img\b[^>]*\bsrc="\/boot-mark\.webp"[^>]*>/i, '');
-}
-
-export function maybeServeHelpHtml(url: URL): Response | null {
-  const path = url.pathname.replace(/\/+$/, '') || '/';
-  const html = path === '/faq' ? FAQ_HTML : path === '/contact' ? CONTACT_HTML : '';
-  if (!html) return null;
-  return new Response(html, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=3600',
-    },
-  });
 }
 
 export function escapeHtml(value: string): string {

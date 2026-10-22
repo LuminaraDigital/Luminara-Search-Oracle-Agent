@@ -233,6 +233,10 @@ describe('marketing shell injection', () => {
     expect(marketingShellKey('/lab')).toBe('/labs');
     expect(marketingShellKey('/compare/profound')).toBe('/compare/profound');
     expect(marketingShellKey('/compare/ahrefs/')).toBe('/compare/ahrefs');
+    expect(marketingShellKey('/faq/')).toBe('/faq');
+    expect(marketingShellKey('/contact')).toBe('/contact');
+    expect(marketingShellKey('/privacy.html')).toBe('/privacy');
+    expect(marketingShellKey('/privacy-policy/')).toBe('/privacy');
   });
 
   it('de-duplicates existing JSON-LD script blocks', () => {
