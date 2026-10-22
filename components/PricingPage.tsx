@@ -10,7 +10,7 @@ import { accountCallsAllowed, getServerHealthSync, openPaywallModal } from '../s
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
-import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
+import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel, type PlanBullet } from './paywall/planCopy';
 import { redirectToCardCheckout } from './paywall/cardCheckout';
 import { cardPayLabel, cardTermLabel, type PaidPlanId } from './paywall/planPrices';
 import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
@@ -34,6 +34,24 @@ const DAY_PASS = {
   price: '25 Stars',
   body: 'Premium hosted AI engines and hosted calls past the free daily cap, for one site, for 24 hours. ChatGPT, Perplexity and AI Overviews stay Not measured unless you are on Agency or use your own DataForSEO login.',
 } as const;
+
+function PlanFeature({ line }: { line: PlanBullet }) {
+  return (
+    <li
+      className={`flex gap-3 text-[15px] leading-snug ${
+        line.included ? 'text-[var(--color-ink)]' : 'text-[var(--color-ink-2)]'
+      }`}
+    >
+      <span
+        aria-hidden
+        className={`mt-[0.4em] h-2 w-2 shrink-0 rounded-full ${
+          line.included ? 'bg-[var(--color-accent)]' : 'border border-dashed border-[var(--color-ink-2)]'
+        }`}
+      />
+      {line.included ? line.text : <><span className="sr-only">Not included: </span>{line.text}</>}
+    </li>
+  );
+}
 
 const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
   const [busyPlan, setBusyPlan] = useState<PaidPlanId | null>(null);
@@ -120,11 +138,8 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
               One domain, on-demand audits, and a daily hosted allowance after you create an account.
             </p>
             <ul className="m-0 mt-7 flex-1 list-none space-y-3 border-t p-0 pt-6 lx-hairline">
-              {freePlanLines().map((text) => (
-                <li key={text} className="flex gap-3 text-[15px] leading-snug text-[var(--color-ink)]">
-                  <span aria-hidden className="mt-[0.4em] h-2 w-2 shrink-0 rounded-full bg-[var(--color-accent)]" />
-                  {text}
-                </li>
+              {freePlanLines().map((line) => (
+                <PlanFeature key={line.text} line={line} />
               ))}
             </ul>
             <button type="button" onClick={onTerminal} className="lx-btn lx-btn-ghost mt-9 w-full">
@@ -147,10 +162,15 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                     className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[var(--gold-light)] to-transparent"
                   />
                 )}
-                <div className="flex items-baseline justify-between gap-3">
+                <div>
+                  {/* Same height on every card so the price lines up. */}
+                  <div className="mb-3 h-4">
+                    {tier.highlight ? (
+                      <p className="lx-eyebrow whitespace-nowrap !text-[11px] !leading-none">{PLAN_CARD_BADGE}</p>
+                    ) : null}
+                  </div>
                   <h3 className="font-serif text-3xl leading-tight text-[var(--color-ink)]">{title}</h3>
-                <p className="mt-2 text-[13px] text-[var(--color-ink-2)]">{planSeatLine(tier.id)}</p>
-                  {tier.highlight && <p className="lx-eyebrow shrink-0 !text-[11px]">{PLAN_CARD_BADGE}</p>}
+                  <p className="mt-1 whitespace-nowrap text-[13px] text-[var(--color-ink-2)]">{planSeatLine(tier.id)}</p>
                 </div>
                 <p
                   className={`mt-7 font-serif text-6xl leading-none ${
@@ -168,20 +188,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">{tier.blurb}</p>
                 <ul className="m-0 mt-7 flex-1 list-none space-y-3 border-t p-0 pt-6 lx-hairline">
                   {lines.map((line) => (
-                    <li
-                      key={line.text}
-                      className={`flex gap-3 text-[15px] leading-snug ${
-                        line.included ? 'text-[var(--color-ink)]' : 'text-[var(--color-ink-2)]'
-                      }`}
-                    >
-                      <span
-                        aria-hidden
-                        className={`mt-[0.4em] h-2 w-2 shrink-0 rounded-full ${
-                          line.included ? 'bg-[var(--color-accent)]' : 'border border-dashed border-[var(--color-ink-2)]'
-                        }`}
-                      />
-                      {line.included ? line.text : <><span className="sr-only">Not included: </span>{line.text}</>}
-                    </li>
+                    <PlanFeature key={line.text} line={line} />
                   ))}
                 </ul>
                 <button

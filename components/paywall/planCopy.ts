@@ -39,14 +39,14 @@ export function listPriceSummary(): string {
 }
 
 /** Free card lines. The daily allowance matches the Worker default of 3. */
-export function freePlanLines(): string[] {
+export function freePlanLines(): PlanBullet[] {
   const free = PLAN_ENTITLEMENTS.free;
   return [
-    `${free.domainLimit} monitored domain`,
-    'On-demand audits',
-    '3 hosted Instant Audit checks a day',
-    'No IDE access (web app only)',
-    'No public share links',
+    { included: true, text: `${free.domainLimit} monitored domain` },
+    { included: true, text: 'On-demand audits' },
+    { included: true, text: '3 hosted Instant Audit checks a day' },
+    { included: false, text: 'No IDE access (web app only)' },
+    { included: false, text: 'No public share links' },
   ];
 }
 
@@ -115,8 +115,9 @@ export const CHECKOUT_TERM_LINE =
 /** Plan modal subline. Same term as checkout: these are not monthly subscriptions. */
 export const PAYWALL_SUBLINE = CHECKOUT_TERM_LINE;
 
-/** Shown before a control that leaves this page for Telegram Stars. */
-export const TELEGRAM_STARS_HANDOFF = 'Payment happens in Telegram with Stars.';
+/** Cards on the website and desktop app. Stars only inside the Mini App. */
+export const TELEGRAM_STARS_HANDOFF =
+  'Pay by card on the website and the desktop app. Pay with Telegram Stars in the Mini App.';
 
 /** Same Stars button on /pricing and in the checkout modal. */
 export function starsPayLabel(starsLabel: string, inTelegram: boolean): string {
