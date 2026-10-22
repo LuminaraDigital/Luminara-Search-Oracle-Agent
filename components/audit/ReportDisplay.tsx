@@ -1,8 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { ICONS } from '../../constants';
 import { ROICalculator } from './ROICalculator';
-import { VisibilityRadar } from './VisibilityRadar';
-import { CompetitorMap } from './CompetitorMap';
 import { DiffViewerModal } from './DiffViewerModal';
 import { CmsDeploymentModal } from './CmsDeploymentModal';
 import { EmpiricalEvidenceDrawer } from './EmpiricalEvidenceDrawer';
@@ -35,12 +33,13 @@ import { HighlightedText, parseInlineFormatting } from './HighlightedText';
 import { MetricModal } from './MetricModal';
 import { InteractiveTable } from './InteractiveTable';
 import { CollapsibleSection } from './CollapsibleSection';
+import { AuditReportArticle } from './AuditReportArticle';
 import { canCreateShareLinks, createShareReport } from '../../services/share/shareReportClient';
 import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
 import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
-import { gateReportText, readTableAt } from '../../services/audit/reportColumnGate';
+import { gateReportText } from '../../services/audit/reportColumnGate';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import type { RLMTrajectoryMetadata } from '../../services/rlm/types';
 import { RlmTrajectoryViewer } from '../rlm/RlmTrajectoryViewer';
@@ -209,107 +208,6 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const parsedStructure = useMemo(() => {
-    const lines = markdownText.split('\n');
-    const sections: { title: React.ReactNode; elements: React.ReactNode[]; id: string; titleText: string }[] = [];
-    let currentSection = { title: 'Executive Overview' as React.ReactNode, titleText: 'Executive Overview', elements: [] as React.ReactNode[], id: 'intro' };
-
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i];
-
-      if (line.startsWith('# ')) {
-        currentSection.elements.push(
-          <h1 key={`h1-${i}`} className="text-3xl sm:text-4xl font-bold mb-4 pb-3 border-b border-gold/30 gold-text tracking-tight">
-            {parseInlineFormatting(line.substring(2))}
-          </h1>
-        );
-        i++;
-      } else if (line.startsWith('## ')) {
-        if (currentSection.elements.length > 0) {
-          sections.push(currentSection);
-        }
-        const rawTitle = line.substring(3);
-        currentSection = {
-          title: parseInlineFormatting(rawTitle),
-          titleText: rawTitle,
-          elements: [],
-          id: `sec-${i}`
-        };
-        i++;
-      } else if (line.startsWith('```')) {
-        const codeLines: string[] = [];
-        i++;
-        while (i < lines.length && !lines[i].startsWith('```')) {
-          codeLines.push(lines[i]);
-          i++;
-        }
-        currentSection.elements.push(
-          <div key={`code-${i}`} className="my-4 rounded-xl overflow-hidden border border-white/10 shadow-inner">
-            <div className="bg-black/80 px-4 py-2 border-b border-white/10 flex items-center justify-between">
-              <span className="text-[10px] font-mono text-gold-light uppercase tracking-widest">Recommended Schema Implementation</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowDeployModal(true)}
-                  className="px-2.5 py-1 rounded bg-gold/20 hover:bg-gold/30 text-gold-light text-[10px] font-mono uppercase tracking-wider transition-colors flex items-center gap-1"
-                >
-                  <ICONS.Zap className="w-3 h-3" /> Deploy
-                </button>
-              </div>
-            </div>
-            <pre className="bg-black/90 p-4 overflow-x-auto text-xs font-mono text-cyan-300">
-              <code>{codeLines.join('\n')}</code>
-            </pre>
-          </div>
-        );
-        i++;
-      } else if (line.startsWith('* ') || line.startsWith('- ')) {
-        const listItems: React.ReactElement[] = [];
-        while (i < lines.length && (lines[i].startsWith('* ') || lines[i].startsWith('- '))) {
-          listItems.push(<li key={`li-${i}`} className="mb-2">{parseInlineFormatting(lines[i].substring(2))}</li>);
-          i++;
-        }
-        currentSection.elements.push(<ul key={`ul-${i}`} className="list-disc list-outside space-y-1 my-3 pl-6 marker:text-gold">{listItems}</ul>);
-      } else if (line.match(/^\d+\. /)) {
-        const listItems: React.ReactElement[] = [];
-        while (i < lines.length && lines[i].match(/^\d+\. /)) {
-          listItems.push(<li key={`li-${i}`} className="mb-2">{parseInlineFormatting(lines[i].replace(/^\d+\. /, ''))}</li>);
-          i++;
-        }
-        currentSection.elements.push(<ol key={`ol-${i}`} className="list-decimal list-outside space-y-1 my-3 pl-6 marker:text-gold">{listItems}</ol>);
-      } else if (line.startsWith('|') || readTableAt(lines, i)) {
-        // The gate's own table reader, so a cell with a pipe in it stays under its header.
-        const table = readTableAt(lines, i);
-        if (table && !table.unaligned) {
-          const { headers, rows } = table;
-          i = table.end;
-
-          const sTitle = currentSection.titleText.toLowerCase();
-          if (sTitle.includes('visibility radar')) {
-            currentSection.elements.push(<VisibilityRadar key={`vr-${i}`} headers={headers} rows={rows} />);
-          } else if (sTitle.includes('competitor reality map')) {
-            currentSection.elements.push(<CompetitorMap key={`cm-${i}`} headers={headers} rows={rows} />);
-          } else {
-            currentSection.elements.push(<InteractiveTable key={`it-${i}`} headers={headers} rows={rows} />);
-          }
-        } else {
-          currentSection.elements.push(<p key={`p-${i}`} className="my-2 leading-relaxed text-gray-300">{parseInlineFormatting(line)}</p>);
-          i++;
-        }
-      } else if (line.trim() !== '') {
-        currentSection.elements.push(<p key={`p-${i}`} className="my-3 leading-7 text-gray-300">{parseInlineFormatting(line)}</p>);
-        i++;
-      } else {
-        i++;
-      }
-    }
-    if (currentSection.elements.length > 0) {
-      sections.push(currentSection);
-    }
-    return sections;
-  }, [markdownText]);
-
   const validSources = visibleGroundingSources(sources);
   const sourceCount = validSources?.length || 0;
   const hasEvidence = Boolean(
@@ -366,6 +264,18 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           {HEALTH_SITE_NOTE}
         </p>
       )}
+
+      <AuditReportArticle
+        markdown={markdownText}
+        measured={!hideLiveNumbers}
+        findings={boardFindings}
+        domain={targetDomain}
+        clientName={dnaName}
+        sources={sources}
+        showActions={!hideAgencyActions}
+        onShare={hideAgencyActions ? undefined : () => void handleCopyShareLink()}
+        onFindings={setBoardFindings}
+      />
 
       {!reportUnlocked && !hideAgencyActions && (
         <ShipActionGate
@@ -549,12 +459,6 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         </div>
       </div>
 
-      {parsedStructure.map((sec, idx) => (
-        <CollapsibleSection key={sec.id} title={sec.title} defaultOpen={idx < 4} isMainTitle={idx === 0}>
-          {sec.elements}
-        </CollapsibleSection>
-      ))}
-
       {/* Embedded ROI Projector */}
       <ROICalculator />
 
@@ -610,6 +514,8 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         markdownText={markdownText}
         targetDomain={targetDomain || remediationPayload?.domain}
         dnaName={dnaName}
+        measured={!hideLiveNumbers}
+        findings={boardFindings}
       />
 
       {showRlmModal && rlmTrajectory && (

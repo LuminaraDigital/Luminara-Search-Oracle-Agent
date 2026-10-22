@@ -39,6 +39,7 @@ const MEMORY_KEYS = [
   'luminara_mem0_relations_v1',
   'luminara_memory_facts_v1',
   'luminara_first_run_tour',
+  'luminara_findings_board_v1',
 ] as const;
 
 const KEY_BAG_KEYS = [
