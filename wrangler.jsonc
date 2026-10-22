@@ -389,8 +389,8 @@
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
         "AUDIT_QUEUE_ENABLED": "true",
-        // Card checkout stays closed until test keys are set and this is flipped to "true".
-        "STRIPE_CHECKOUT_LIVE": "false",
+        // Live card checkout. Opens only with the sk_live_ key and live webhook secret set as Worker secrets.
+        "STRIPE_CHECKOUT_LIVE": "true",
         "BUDGET_ENFORCEMENT": "hard"
       }
     }
