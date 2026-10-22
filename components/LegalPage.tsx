@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { bindTelegramBackButton, isInTelegram } from '../services/telegram/tma';
-import { ACL_RIGHTS_CLAUSE, LEGAL_ENTITY, LEGAL_ENTITY_LINE, LIABILITY_CLAUSE, STARS_REFUND_CLAUSE } from '../services/legal/consumerTerms';
+import { ACL_RIGHTS_CLAUSE, LEGAL_ENTITY, LIABILITY_CLAUSE, OPERATOR_LINE, PUBLIC_CONTACT_LINE, STARS_REFUND_CLAUSE } from '../services/legal/consumerTerms';
 import { PRIVACY_INTRO, PRIVACY_SECTIONS, PRIVACY_UPDATED, type PrivacySection } from '../services/legal/privacyCopy';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { MarketingChromeContext, type MarketingChrome } from './marketing/marketingChrome';
@@ -103,6 +103,10 @@ function TermsBody() {
       paragraphs: [LIABILITY_CLAUSE],
     },
     {
+      title: 'Contact',
+      paragraphs: [`${OPERATOR_LINE}. ${PUBLIC_CONTACT_LINE}`],
+    },
+    {
       title: 'Privacy',
       paragraphs: ['Personal data is handled as described in the Privacy Policy at /privacy.'],
     },
@@ -122,7 +126,7 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
   }, [onBack]);
 
   const body = isPrivacy ? <PrivacyBody /> : <TermsBody />;
-  const meta = `Luminara Suite · Operated by ${LEGAL_ENTITY_LINE} · Last updated ${updated}`;
+  const meta = `Luminara Suite · Operated by ${OPERATOR_LINE} · Last updated ${updated}`;
 
   if (isInTelegram()) {
     return (

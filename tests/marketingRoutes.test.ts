@@ -249,6 +249,30 @@ describe('marketing shell injection', () => {
 });
 
 describe('pricing schema and route canonicals', () => {
+  it('publishes the homepage organization without a telephone', () => {
+    const graph = MARKETING_SHELL_BY_PATH['/'].jsonLd['@graph'] as Array<Record<string, unknown>>;
+    const org = graph.find((node) => node['@type'] === 'Organization');
+    const address = org?.address as Record<string, unknown>;
+    const contact = org?.contactPoint as Record<string, unknown>;
+    const brand = org?.brand as Record<string, unknown>;
+    expect(org?.name).toBe('Luminara Suite');
+    expect(org?.legalName).toBe('LUMINARA DIGITAL PTY LTD');
+    expect(org?.taxID).toBe('90 693 125 281');
+    expect(brand?.name).toBe('Luminara Digital');
+    expect(address).toEqual({ '@type': 'PostalAddress', addressRegion: 'VIC', postalCode: '3128', addressCountry: 'AU' });
+    expect(address).not.toHaveProperty('streetAddress');
+    expect(org?.email).toBe('info@luminara.digital');
+    expect(contact).toEqual({ '@type': 'ContactPoint', email: 'info@luminara.digital', contactType: 'sales' });
+    expect(contact).not.toHaveProperty('telephone');
+    const shell = readFileSync('index.html', 'utf8');
+    const block = shell.match(/<script type="application\/ld\+json" id="luminara-marketing-jsonld">([\s\S]*?)<\/script>/);
+    const staticOrg = (JSON.parse(block?.[1] || '{}') as { '@graph'?: Array<Record<string, unknown>> })['@graph']
+      ?.find((node) => node['@type'] === 'Organization');
+    expect(staticOrg).toEqual(org);
+    expect(shell).not.toMatch(/telephone|0402|0422/);
+    expect(JSON.stringify(org)).not.toMatch(/telephone|0402|0422/);
+  });
+
   it('does not publish a USD offer that the page does not sell', () => {
     for (const path of ['/', '/pricing', '/labs'] as const) {
       const graph = MARKETING_SHELL_BY_PATH[path].jsonLd['@graph'] as Array<Record<string, unknown>>;

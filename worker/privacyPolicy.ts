@@ -2,7 +2,7 @@
  * Static Privacy Policy HTML served directly by the Worker.
  * Same words as the in-app page (services/legal/privacyCopy.ts).
  */
-import { LEGAL_ENTITY_LINE } from '../services/legal/consumerTerms';
+import { OPERATOR_LINE } from '../services/legal/consumerTerms';
 import { PRIVACY_INTRO, PRIVACY_SECTIONS, PRIVACY_UPDATED } from '../services/legal/privacyCopy';
 
 function esc(value: string): string {
@@ -55,7 +55,7 @@ export const PRIVACY_HTML = `<!DOCTYPE html>
   <main class="static-main">
     <p class="eyebrow">Privacy</p>
     <h1>Privacy policy</h1>
-    <p class="meta">Luminara Suite · Operated by ${LEGAL_ENTITY_LINE} · Last updated ${PRIVACY_UPDATED}</p>
+    <p class="meta">Luminara Suite · Operated by ${OPERATOR_LINE} · Last updated ${PRIVACY_UPDATED}</p>
     <p>${esc(PRIVACY_INTRO)}</p>
     ${sectionsHtml()}
     <p class="meta"><a href="/terms">Terms of Service</a> · <a href="/">Home</a></p>
