@@ -6,6 +6,7 @@ import type { AuditFinding, FindingWorkStatus } from '../agentCore/types';
 import { findingStableKey } from './findingStableKey';
 import { workerFetchWithAuthRetry, apiBase } from '../apiClient';
 import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
+import { formatAuDay } from '../../utils/formatAuDate';
 
 const LOCAL_PREFIX = 'luminara_findings_v1_';
 /** One bag for every domain. The workspace save already pushes this key. A tick does not call the findings API. */
@@ -21,6 +22,8 @@ export type BoardFinding = {
   title: string;
   description: string;
   status: FindingWorkStatus;
+  /** Sydney calendar day (YYYY-MM-DD) the fix was marked done. Absent until then. */
+  doneOn?: string;
   evidence?: unknown;
   auditRunId?: string;
   synced?: boolean;
@@ -244,9 +247,16 @@ export function setFindingStatusLocal(
   findingId: string,
   status: FindingWorkStatus,
 ): BoardFinding[] {
-  const next = findings.map((finding) => (
-    finding.id === findingId || finding.stableKey === findingId ? { ...finding, status } : finding
-  ));
+  const today = formatAuDay(new Date());
+  const next = findings.map((finding) => {
+    if (finding.id !== findingId && finding.stableKey !== findingId) return finding;
+    if (status !== 'done') {
+      const cleared: BoardFinding = { ...finding, status };
+      delete cleared.doneOn;
+      return cleared;
+    }
+    return { ...finding, status, doneOn: finding.doneOn || today };
+  });
   writeLocal(domain, next);
   writeBag(domain, next);
   try {

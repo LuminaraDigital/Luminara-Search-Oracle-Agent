@@ -30,6 +30,7 @@ const COPY_FILES = [
   'index.html',
   'components/suite/BusinessDNAView.tsx',
   'components/suite/IdeaScoutView.tsx',
+  'components/upgrade/UpgradeSurfaces.tsx',
 ] as const;
 
 describe('suite copy', () => {

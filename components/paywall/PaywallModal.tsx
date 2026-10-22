@@ -12,8 +12,8 @@ import {
   TELEGRAM_MINI_APP_URL,
   type PaymentRail,
 } from './paymentOptions';
-import { PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
-import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle, pricingTiers, starsPayLabel } from './planCopy';
+import { approximateAudLabel, PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
+import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, planAudience, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './planCopy';
 import { COMPANY_SERVICES_URL } from '../../services/legal/consumerTerms';
 import { ICONS } from '../../constants';
 import '../marketing/space.css';
@@ -363,7 +363,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <h3 id="paywall-modal-title" className="lx-display mt-1 text-3xl md:text-4xl">
                 {PAYWALL_HEADLINE}
               </h3>
-              <p className="mt-2 max-w-md text-sm leading-snug text-gray-400">{PAYWALL_SUBLINE}</p>
+              <p className="mt-2 max-w-md text-sm leading-snug text-gray-400">{PAYWALL_SUBLINE} {NOTHING_TO_CANCEL} {NO_TAX_LINE}</p>
             </div>
           </div>
           <button
@@ -535,6 +535,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         {tab === 'stars' && !inTg && (
           <p className="mb-4 text-sm leading-relaxed text-gray-300">{TELEGRAM_STARS_HANDOFF} Choosing a plan opens Telegram so you can pay there.</p>
         )}
+        {!paymentOptions.cardAvailable && !paymentOptions.tonAvailable && (
+          <p className="mb-4 text-sm leading-relaxed text-gray-300">{WAITLIST_LINE}</p>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           {pricingTiers.map((tier) => (
@@ -556,8 +559,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className={`text-sm font-bold ${tier.highlight ? 'text-white' : 'text-gold-light'}`}>{planTitle(tier.id)}</span>
-                  <span className="text-sm font-semibold text-gold-light">{planPriceLabel(tier.id)}</span>
+                  <span className="text-sm font-semibold text-gold-light">{approximateAudLabel(PAID_PLAN_PRICES[tier.id].usdLabel)} · {planPriceLabel(tier.id)}</span>
                 </div>
+                <p className="text-[11px] text-gray-400">{planAudience(tier.id)} · {planSeatLine(tier.id)}</p>
                 <p className="text-[11px] text-gray-400 leading-relaxed">{tier.blurb}</p>
                 <ul className={`mt-3 gap-1.5 text-[11px] text-gray-300 ${tier.id === 'agency' ? 'grid grid-cols-1 sm:grid-cols-2' : 'space-y-1.5'}`}>
                   {planBullets(tier.id).map((line) => (

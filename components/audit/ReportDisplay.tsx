@@ -36,6 +36,8 @@ import { CollapsibleSection } from './CollapsibleSection';
 import { AuditReportArticle } from './AuditReportArticle';
 import { canCreateShareLinks, createShareReport } from '../../services/share/shareReportClient';
 import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
+import { entitlementsFor } from '../../services/plans/planEntitlements';
+import { UpgradeSurfaces } from '../upgrade/UpgradeSurfaces';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
 import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
@@ -121,6 +123,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
   const [showWhiteLabelModal, setShowWhiteLabelModal] = useState(false);
+  const [whiteLabelAsk, setWhiteLabelAsk] = useState(false);
   const [showRlmModal, setShowRlmModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
@@ -277,6 +280,13 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         onFindings={setBoardFindings}
       />
 
+      <UpgradeSurfaces
+        domain={targetDomain}
+        findings={boardFindings}
+        whiteLabelAsk={whiteLabelAsk}
+        onCloseWhiteLabel={() => setWhiteLabelAsk(false)}
+      />
+
       {!reportUnlocked && !hideAgencyActions && (
         <ShipActionGate
           domain={targetDomain}
@@ -378,7 +388,10 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
 
             <button
               type="button"
-              onClick={() => setShowWhiteLabelModal(true)}
+              onClick={() => {
+                if (entitlementsFor(getCurrentQuotaSync()?.plan).whiteLabelPdf) setShowWhiteLabelModal(true);
+                else setWhiteLabelAsk(true);
+              }}
               className="px-3.5 py-2 rounded-xl glass-morphism border border-white/10 hover:border-info-500/50 text-xs font-mono text-gray-200 hover:text-white flex items-center gap-1.5 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
             >
               <ICONS.Download className="w-4 h-4 text-info-400" />
