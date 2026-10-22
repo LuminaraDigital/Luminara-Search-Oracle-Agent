@@ -947,7 +947,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             >
               {briefing ? 'Speaking…' : 'Brief aloud'}
             </button>
-            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} />
+            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} measured={crewMeasurement !== 'not_measured'} findings={boardFindings} />
             <button
               type="button"
               onClick={handleReset}

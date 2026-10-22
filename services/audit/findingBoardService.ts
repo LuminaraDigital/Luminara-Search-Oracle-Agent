@@ -5,8 +5,11 @@
 import type { AuditFinding, FindingWorkStatus } from '../agentCore/types';
 import { findingStableKey } from './findingStableKey';
 import { workerFetchWithAuthRetry, apiBase } from '../apiClient';
+import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
 
 const LOCAL_PREFIX = 'luminara_findings_v1_';
+/** One bag for every domain. The workspace save already pushes this key. A tick does not call the findings API. */
+export const FINDINGS_BOARD_KEY = 'luminara_findings_board_v1';
 const LAST_DOMAIN_KEY = 'luminara_findings_last_domain_v1';
 
 export type BoardFinding = {
@@ -50,6 +53,29 @@ function readLocal(domain: string): BoardFinding[] {
 function writeLocal(domain: string, findings: BoardFinding[]): void {
   try {
     sessionStorage.setItem(storageKey(domain), JSON.stringify(findings.slice(0, 100)));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function readBag(): Record<string, BoardFinding[]> {
+  try {
+    const raw = localStorage.getItem(FINDINGS_BOARD_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, BoardFinding[]>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeBag(domain: string, findings: BoardFinding[]): void {
+  const host = normalizeDomain(domain);
+  if (!host) return;
+  try {
+    const bag = readBag();
+    bag[host] = findings.slice(0, 100);
+    localStorage.setItem(FINDINGS_BOARD_KEY, JSON.stringify(bag));
   } catch {
     /* ignore quota */
   }
@@ -162,6 +188,7 @@ export async function ingestCrewFindings(opts: {
   }
   const merged = Array.from(byKey.values());
   writeLocal(domain, merged);
+  writeBag(domain, merged);
   rememberBoardDomain(domain);
 
   if (opts.syncRemote === false) return merged;
@@ -191,6 +218,7 @@ export async function ingestCrewFindings(opts: {
       if (Array.isArray(data.findings) && data.findings.length) {
         const next = mergeBoardWithRemote(merged, data.findings as any, domain);
         writeLocal(domain, next);
+        writeBag(domain, next);
         return next;
       }
     }
@@ -201,7 +229,32 @@ export async function ingestCrewFindings(opts: {
 }
 
 export function listLocalFindings(domain: string): BoardFinding[] {
-  return readLocal(domain);
+  const local = readLocal(domain);
+  if (local.length) return local;
+  const saved = readBag()[normalizeDomain(domain)];
+  if (!saved?.length) return [];
+  writeLocal(domain, saved);
+  return saved;
+}
+
+/** Updates the board in place and marks the workspace dirty. It does not PATCH the findings API. */
+export function setFindingStatusLocal(
+  domain: string,
+  findings: readonly BoardFinding[],
+  findingId: string,
+  status: FindingWorkStatus,
+): BoardFinding[] {
+  const next = findings.map((finding) => (
+    finding.id === findingId || finding.stableKey === findingId ? { ...finding, status } : finding
+  ));
+  writeLocal(domain, next);
+  writeBag(domain, next);
+  try {
+    noteWorkspaceDirty();
+  } catch {
+    /* the bag already holds the status */
+  }
+  return next;
 }
 
 export async function patchFindingStatus(

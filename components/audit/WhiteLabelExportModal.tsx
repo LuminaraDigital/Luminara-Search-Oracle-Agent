@@ -8,6 +8,8 @@ interface WhiteLabelExportModalProps {
   markdownText: string;
   targetDomain?: string;
   dnaName?: string;
+  measured?: boolean;
+  findings?: Array<{ title: string; severity: 'critical' | 'high' | 'medium' | 'low'; description: string; evidence?: unknown }>;
 }
 
 import { escapeHtml } from '../../utils/html';
@@ -21,6 +23,8 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
   markdownText,
   targetDomain,
   dnaName,
+  measured = false,
+  findings = [],
 }) => {
   const [agencyName, setAgencyName] = useState('Apex Growth Partners');
   const [agencyLogoUrl, setAgencyLogoUrl] = useState('');
@@ -75,6 +79,7 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
     setExportError(null);
     try {
       const { downloadExecutiveReportPdf } = await import('../pdf/pdfService');
+      const { withReportLead } = await import('../../services/audit/reportBlocks');
       await downloadExecutiveReportPdf({
         agencyName,
         agencyLogoUrl: agencyLogoUrl || undefined,
@@ -83,7 +88,7 @@ export const WhiteLabelExportModal: React.FC<WhiteLabelExportModalProps> = ({
         preparedBy,
         executiveNotes,
         primaryColor,
-        markdownText,
+        markdownText: withReportLead(markdownText, measured, findings),
       });
     } catch (err: any) {
       console.error('Failed to generate PDF:', err);
