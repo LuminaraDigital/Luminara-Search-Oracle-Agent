@@ -12,7 +12,9 @@ import {
   TELEGRAM_MINI_APP_URL,
   type PaymentRail,
 } from './paymentOptions';
+import { PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
 import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle, pricingTiers, starsPayLabel } from './planCopy';
+import { COMPANY_SERVICES_URL } from '../../services/legal/consumerTerms';
 import { ICONS } from '../../constants';
 import '../marketing/space.css';
 import { toUserFacingText } from '../../utils/userFacingText';
@@ -299,22 +301,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     return handleJettonCheckout(planId, tonAsset);
   };
 
-  const planPriceLabel = (plan: 'starter' | 'growth' | 'agency') => {
-    if (tab === 'card') {
-      if (plan === 'starter') return '$49 / 30 days';
-      if (plan === 'growth') return '$149 / 30 days';
-      return '$349 / 30 days';
-    }
-    if (tab === 'stars') {
-      if (plan === 'starter') return '2,500 ⭐';
-      if (plan === 'growth') return '7,500 ⭐';
-      return '18,000 ⭐';
-    }
-    if (tonAsset === 'TON') {
-      if (plan === 'starter') return '15 TON';
-      if (plan === 'growth') return '45 TON';
-      return '120 TON';
-    }
+  const planPriceLabel = (plan: PaidPlanId) => {
+    const price = PAID_PLAN_PRICES[plan];
+    if (tab === 'card') return `${price.usdLabel} / 30 days`;
+    if (tab === 'stars') return price.starsLabel.replace(' Stars', ' ⭐');
+    if (tonAsset === 'TON') return price.tonLabel;
     if (tonAsset === 'USDT') {
       if (plan === 'starter') return '29 USDT';
       if (plan === 'growth') return '79 USDT';
@@ -325,22 +316,12 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     return '199 LORA';
   };
 
-  const planButtonLabel = (plan: 'starter' | 'growth' | 'agency') => {
+  const planButtonLabel = (plan: PaidPlanId) => {
+    const price = PAID_PLAN_PRICES[plan];
     if (busyPlan === plan) return 'Processing…';
-    if (tab === 'card') {
-      if (plan === 'starter') return 'Checkout with Card · $49';
-      if (plan === 'growth') return 'Checkout with Card · $149';
-      return 'Checkout with Card · $349';
-    }
-    if (tab === 'stars') {
-      const stars = plan === 'starter' ? '2,500 Stars' : plan === 'growth' ? '7,500 Stars' : '18,000 Stars';
-      return starsPayLabel(stars, inTg);
-    }
-    if (tonAsset === 'TON') {
-      if (plan === 'starter') return 'Pay 15 TON · 30 days';
-      if (plan === 'growth') return 'Pay 45 TON · 30 days';
-      return 'Pay 120 TON · 30 days';
-    }
+    if (tab === 'card') return `Checkout with Card · ${price.usdLabel}`;
+    if (tab === 'stars') return starsPayLabel(price.starsLabel, inTg);
+    if (tonAsset === 'TON') return `Pay ${price.tonLabel} · 30 days`;
     if (tonAsset === 'USDT') {
       if (plan === 'starter') return 'Pay 29 USDT · 30 days';
       if (plan === 'growth') return 'Pay 79 USDT · 30 days';
@@ -720,7 +701,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         <p className="mt-3 text-center text-[11px] text-gray-400">
           Produced by{' '}
           <a
-            href="https://luminaradigital.io"
+            href={COMPANY_SERVICES_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="text-gold/80 hover:text-gold underline-offset-2 hover:underline"

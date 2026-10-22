@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { bindTelegramBackButton } from '../services/telegram/tma';
-import { ACL_RIGHTS_CLAUSE, LIABILITY_CLAUSE, STARS_REFUND_CLAUSE, legalAbnLine } from '../services/legal/consumerTerms';
+import { ACL_RIGHTS_CLAUSE, LEGAL_ENTITY, LEGAL_ENTITY_LINE, LIABILITY_CLAUSE, STARS_REFUND_CLAUSE } from '../services/legal/consumerTerms';
 
 interface Props {
   kind: 'privacy' | 'terms';
@@ -9,7 +9,6 @@ interface Props {
 
 const PRIVACY_UPDATED = '29 September 2026';
 const TERMS_UPDATED = '19 October 2026';
-const CONTROLLER = 'Luminara Digital Agency';
 const PRIVACY_EMAIL = 'privacy@luminarasuite.com';
 const SUPPORT_EMAIL = 'support@luminarasuite.com';
 const SECURITY_EMAIL = 'security@luminarasuite.com';
@@ -39,7 +38,7 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
           {isPrivacy ? 'Privacy Policy' : 'Terms of Service'}
         </h1>
         <p className="text-xs text-gray-500 mb-4">
-          {`Luminara Suite · Operated by ${CONTROLLER}${legalAbnLine() ? ` · ${legalAbnLine()}` : ''} · Last updated ${isPrivacy ? PRIVACY_UPDATED : TERMS_UPDATED}`}
+          {`Luminara Suite · Operated by ${LEGAL_ENTITY_LINE} · Last updated ${isPrivacy ? PRIVACY_UPDATED : TERMS_UPDATED}`}
         </p>
         {isPrivacy && (
           <p className="text-xs text-gray-500 mb-10 leading-relaxed border border-white/10 rounded-xl p-4 bg-white/[0.02]">
@@ -55,7 +54,7 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
             <section>
               <h2 className="text-gold-light font-bold uppercase tracking-widest text-xs mb-2">1. Who we are</h2>
               <p>
-                Controller: {CONTROLLER} (&quot;Luminara&quot;, &quot;we&quot;, &quot;us&quot;). Product: Luminara Suite
+                Controller: {LEGAL_ENTITY_LINE} (&quot;Luminara Digital&quot;, &quot;we&quot;, &quot;us&quot;). Product: Luminara Suite
                 (web app and Telegram Mini App) for search and answer-engine visibility audits.
                 Contact: {PRIVACY_EMAIL}. Security: {SECURITY_EMAIL}. Support: {SUPPORT_EMAIL}.
               </p>
@@ -347,7 +346,7 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
               <h2 className="text-gold-light font-bold uppercase tracking-widest text-xs mb-2">Open source and trademarks</h2>
               <p>
                 The Luminara Suite source code is licensed under the GNU AGPL-3.0. &quot;Luminara&quot;,
-                &quot;Luminara Suite&quot; and the Luminara logo are trademarks of {CONTROLLER} and are
+                &quot;Luminara Suite&quot; and the Luminara logo are trademarks of {LEGAL_ENTITY} and are
                 not covered by the code license.
               </p>
             </section>

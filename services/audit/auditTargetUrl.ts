@@ -12,7 +12,7 @@ export function validateAuditTargetUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return EMPTY_SITE_INPUT_MESSAGE;
   if (!safePublicHostname(trimmed)) {
-    return 'Enter a public website such as luminaradigital.io. Local hosts, IP addresses, and private suffixes are not audited.';
+    return 'Enter a public website such as luminara.digital. Local hosts, IP addresses, and private suffixes are not audited.';
   }
   return null;
 }

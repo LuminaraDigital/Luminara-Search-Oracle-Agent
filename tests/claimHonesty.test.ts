@@ -141,7 +141,15 @@ describe('claim honesty', () => {
     expect(terms).not.toContain('Where TON checkout is offered');
     const footer = renderToStaticMarkup(createElement(MarketingFooter));
     expect(footer).toContain('Luminara Digital');
+    expect(footer).toContain('Luminara Digital Pty Ltd (ABN 90 693 125 281)');
+    expect(footer).toContain('https://luminara.digital/services/');
     expect(footer).toContain('ABN 90 693 125 281');
     expect(footer).toContain('Melbourne');
+    expect(footer).not.toMatch(/GST/i);
+    expect(TERMS_HTML).toContain('Luminara Digital Pty Ltd (ABN 90 693 125 281)');
+    expect(TERMS_HTML).not.toContain('Luminara Digital Agency');
+    expect(PRIVACY_HTML).toContain('Luminara Digital Pty Ltd (ABN 90 693 125 281)');
+    expect(PRIVACY_HTML).not.toContain('Luminara Digital Agency');
+    expect(terms).not.toMatch(/GST/i);
   });
 });

@@ -669,7 +669,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                   autoComplete="url"
                   value={url}
                   onChange={(e) => handleUrlChange(e.target.value)}
-                  placeholder="e.g., luminaradigital.io or yourbrand.com"
+                  placeholder="e.g., luminara.digital or youragency.com.au"
                   onKeyDown={(e) => e.key === 'Enter' && handleExecuteAudit(url, focus)}
                   className={`w-full bg-black/60 border rounded-xl py-3.5 px-4 sm:pr-40 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner min-h-12 ${
                     inlineValidationError ? 'border-danger-500/70 focus:border-danger-400' : 'border-white/15 focus:border-gold'

@@ -4,6 +4,7 @@ import { AppView } from '../types';
 import {
   marketingViewFromHash,
   marketingViewFromPathname,
+  auditReceiptIdFromLocation,
   pathForMarketingView,
   receiptIdFromLocation,
   resolveAppView,
@@ -12,7 +13,7 @@ import {
 import { DASHBOARD_TAB_TITLE, MARKETING_SHELL_BY_PATH, instantAuditTabTitle, marketingShellKey } from '../services/marketing/pageMeta';
 import { resolveCanonicalHref, resolveDocumentTitle, resolveRobotsDirective } from '../services/marketing/documentMeta';
 import { injectMarketingMeta } from '../worker/marketingShell';
-import { CHECKOUT_TERM_LINE } from '../components/paywall/planCopy';
+import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/planCopy';
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML } from '../worker/crawlDocuments';
 
@@ -76,6 +77,10 @@ describe('marketingRoutes', () => {
     expect(resolveAppView(`/verify/r/${id}`, '')).toBe(AppView.VERIFY_RECEIPT);
     expect(resolveAppView(`/verify/r/${id}/`, '')).toBe(AppView.VERIFY_RECEIPT);
     expect(resolveAppView('/', `#verify/r/${id}`)).toBe(AppView.VERIFY_RECEIPT);
+    expect(resolveAppView('/verify/audit', '')).toBe(AppView.VERIFY_AUDIT_RECEIPT);
+    expect(resolveAppView('/verify/audit/sar_abc', '')).toBe(AppView.VERIFY_AUDIT_RECEIPT);
+    expect(auditReceiptIdFromLocation('/verify/audit/sar_abc', '')).toBe('sar_abc');
+    expect(auditReceiptIdFromLocation('/verify/audit', '')).toBe('');
     expect(resolveAppView(`/verify/${digest}`, '')).toBe(AppView.VERIFY_ATTESTATION);
     expect(resolveAppView('/', `#verify/${digest}`)).toBe(AppView.VERIFY_ATTESTATION);
     expect(receiptIdFromLocation(`/verify/r/${id}`, '')).toBe(id);
@@ -156,13 +161,20 @@ describe('marketing crawl documents', () => {
     expect(LLMS_TXT).not.toContain('\u2014');
   });
 
-  it('serves Stars plan prices and no USD plan price in llms.txt or compare crawl docs', () => {
-    const usdPlanPrice = /US\$\s?\d|\$\s?\d|\/mo\b|per month/i;
-    expect(LLMS_TXT).not.toMatch(usdPlanPrice);
+  it('serves the shared USD list prices and Stars checkout in llms.txt', () => {
+    const usdCheckoutPrice = /\/mo\b|per month/i;
+    expect(LLMS_TXT).toContain(listPriceSummary());
+    expect(LLMS_TXT).toContain('Pro / Agency: list price US$349');
+    expect(LLMS_TXT).toContain('10 client workspaces saved in this browser');
+    expect(LLMS_TXT).not.toMatch(/team seats/i);
+    expect(LLMS_TXT).not.toMatch(usdCheckoutPrice);
+    expect(LLMS_TXT).not.toContain('luminaradigital.io');
+    expect(LLMS_TXT).toContain('https://luminara.digital/');
+    expect(LLMS_TXT).toContain('https://luminara.digital/services/');
     expect(readFileSync('public/llms.txt', 'utf8')).toBe(LLMS_TXT);
     for (const path of ['/compare/profound', '/compare/ahrefs', '/compare/otterly', '/compare/peec']) {
       const body = MARKETING_SHELL_BY_PATH[path].crawlerBody;
-      expect(body, path).not.toMatch(usdPlanPrice);
+      expect(body, path).not.toMatch(/US\$\s?\d|\$\s?\d|\/mo\b|per month/i);
     }
     const profound = MARKETING_SHELL_BY_PATH['/compare/profound'].crawlerBody;
     expect(profound).toContain('2,500 / 7,500 / 18,000');

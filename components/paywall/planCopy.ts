@@ -19,6 +19,13 @@ export function planTitle(id: PaidPlanId): string {
   return PLAN_ENTITLEMENTS[id].title;
 }
 
+/** One sentence for /pricing, llms.txt, and the pricing meta description. */
+export function listPriceSummary(): string {
+  const ids = ['starter', 'growth', 'agency'] as const;
+  const parts = ids.map((id) => `${PLAN_ENTITLEMENTS[id].title} ${PAID_PLAN_PRICES[id].usdLabel}`);
+  return `List prices: ${parts.join(', ')}. You pay in Telegram Stars.`;
+}
+
 function withLeadCapital(text: string): string {
   return /^[a-z]/.test(text) ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
