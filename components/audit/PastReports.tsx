@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
 import { auditHistoryService, type AuditHistoryEntry } from '../../services/audit/auditHistoryService';
 import { forgetWinShare, revokeWinPage, winShareFor } from '../../services/share/winShareClient';
-import { formatAuDate } from '../../utils/formatAuDate';
+import { auditFromHash, auditReportHash } from '../../services/audit/auditReportUrl';
+import { formatAuClock, formatAuDate } from '../../utils/formatAuDate';
 
 interface PastReportsProps {
   onOpen: (entry: AuditHistoryEntry) => void;
@@ -33,6 +34,8 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
       setWins(ids);
     };
     refresh();
+    const saved = auditFromHash(window.location.hash);
+    if (saved) onOpen(saved);
     window.addEventListener(AUDIT_ACTIVITY_EVENT, refresh);
     return () => window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
   }, []);
@@ -45,14 +48,17 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
       <ul className="space-y-1.5 list-none m-0 p-0">
         {items.map((item) => (
           <li key={item.id} className="flex items-stretch gap-2">
-            <button
-              type="button"
-              onClick={() => onOpen(item)}
+            <a
+              href={`/${auditReportHash(item.id)}`}
+              onClick={(event) => {
+                event.preventDefault();
+                onOpen(item);
+              }}
               className="min-h-11 flex-1 rounded-lg border border-white/10 px-3 py-2 text-left text-sm text-gray-200 hover:border-gold/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
             >
               <span className="font-medium">{item.domain}</span>
-              <span className="text-gray-400"> · {formatAuDate(item.measuredAt)} · {item.focus}</span>
-            </button>
+              <span className="text-gray-400"> · {formatAuDate(item.measuredAt)} {formatAuClock(item.measuredAt)} · {item.focus}</span>
+            </a>
             {wins[item.id] && (
               <button
                 type="button"

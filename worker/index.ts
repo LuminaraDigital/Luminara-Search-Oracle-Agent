@@ -54,7 +54,7 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
 import { LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
+import { maybeServeHelpHtml, maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -216,6 +216,10 @@ const STATIC_PUBLIC_HTML_PATHS = new Set([
   '/privacy',
   '/privacy/',
   '/privacy.html',
+  '/faq',
+  '/faq/',
+  '/contact',
+  '/contact/',
 ]);
 
 /**
@@ -2256,6 +2260,9 @@ export default {
     }
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
+    const helpHtml = maybeServeHelpHtml(url);
+    if (helpHtml) return guard(helpHtml);
+
     const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
     if (marketingHtml) {
       return guard(marketingHtml);

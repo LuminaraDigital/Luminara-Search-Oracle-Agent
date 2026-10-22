@@ -15,6 +15,7 @@ const LINKS = [
   { label: 'What is AEO', href: '/docs/what-is-aeo.html' },
   { label: 'MCP', href: '/docs/mcp.html' },
   { label: 'Windows app', href: '/desktop' },
+  { label: 'Support', href: '/contact' },
   { label: 'Privacy', href: '/privacy' },
   { label: 'Terms', href: '/terms' },
 ] as const;

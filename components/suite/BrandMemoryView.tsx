@@ -167,10 +167,10 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
         });
         const status = await fetchSentinelStatus();
         const watched = Array.isArray(status.targets) ? status.targets.length : 0;
-        setSentinelMsg(`Sentinel watching ${watched} domain${watched === 1 ? '' : 's'}. Cron scans daily; re-audit nudges follow your plan.`);
+        setSentinelMsg(`Watching ${watched} domain${watched === 1 ? '' : 's'}. The daily check follows your plan.`);
         refresh();
       } catch (e: any) {
-        setSentinelMsg(e?.message || 'Could not register Sentinel. Sign in and use a paid plan.');
+        setSentinelMsg(e?.message || 'Could not start the watch. Sign in and use a paid plan.');
         if (String(e?.message || '').includes('402') || String(e?.message || '').toLowerCase().includes('plan')) {
           onOpenPaywall?.();
         }
@@ -198,7 +198,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
             Every audit, chat insight, and competitor mention is saved to your vault and context graph.
             Plan: <span className="text-gold-light font-semibold">{entitlements.title}</span>
             {' · '}
-            {entitlements.domainLimit} domains · {entitlements.sentinelLimit} Sentinel slots
+            {entitlements.domainLimit} domains · <span title="Sentinel">{entitlements.sentinelLimit} watch slots</span>
           </p>
         </div>
         <div className="flex gap-2">
@@ -215,7 +215,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
             disabled={sentinelBusy}
             className="px-4 py-2 rounded-xl border border-gold/40 text-gold text-xs font-bold uppercase tracking-wider hover:bg-gold/10 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none"
           >
-            {sentinelBusy ? 'Enabling...' : 'Enable Sentinel'}
+            <span title="Sentinel">{sentinelBusy ? 'Enabling...' : 'Watch this site'}</span>
           </button>
         </div>
       </div>

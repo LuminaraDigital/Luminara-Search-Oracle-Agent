@@ -241,7 +241,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
                 Share this audit with a teammate or client
               </p>
               <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-                Growth and Agency include public share links. Free insight stays free; share is a paid unlock.
+                A measured win can be shared on the free plan. A full branded report link is on Growth and Agency.
               </p>
             </div>
             <button

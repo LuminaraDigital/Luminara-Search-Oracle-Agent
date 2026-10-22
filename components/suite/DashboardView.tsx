@@ -330,7 +330,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
           <div className={`w-2.5 h-2.5 rounded-full ${dna ? 'bg-success-400 shadow-sm shadow-success-500/30' : 'bg-[var(--color-accent)] animate-pulse'}`} />
           <div>
             <div className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--color-accent)]">Business profile</div>
-            <div className="text-sm font-medium text-[var(--color-ink)] mt-0.5">{dna ? dna.name : 'Not set - full audits stay locked to scout mode'}</div>
+            <div className="text-sm font-medium text-[var(--color-ink)] mt-0.5">{dna ? dna.name : 'Not set. A full audit waits until you add a business profile.'}</div>
           </div>
         </div>
         <button

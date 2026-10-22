@@ -80,7 +80,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         {listPriceSummary()}
       </p>
       <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
-        {NO_TAX_LINE} {NOTHING_TO_CANCEL}
+        {NO_TAX_LINE} {NOTHING_TO_CANCEL} For a refund, email info@luminara.digital.
       </p>
       {!cardOpen && !tonOpen && (
         <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">

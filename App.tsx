@@ -1255,6 +1255,9 @@ const App: React.FC = () => {
                       ✕
                     </button>
                   </div>
+                  <a href="/faq" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: FAQ</a>
+                  <a href="/contact" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: Contact</a>
+                  <a href="/how-it-works" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">How Luminara works</a>
                   <button
                     type="button"
                     onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}

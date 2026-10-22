@@ -19,7 +19,7 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
   {
     question: 'Do I need a credit card to try it?',
     answer:
-      'No. The live crawl check needs no card and no account. Create a free account to run Instant Audit with a daily hosted allowance. Share links and IDE access are part of the Growth and Agency plans.',
+      'No. The live crawl check needs no card and no account. Create a free account to run Instant Audit with a daily hosted allowance. A measured win can be shared on the free plan. Full branded share links and IDE access are part of the Growth and Agency plans.',
   },
   {
     question: 'How is this different from Semrush or Ahrefs?',
@@ -29,7 +29,7 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
   {
     question: 'Can agencies share reports and connect Cursor?',
     answer:
-      'Yes. Growth includes public share links and MCP access for Cursor and Claude. Agency adds API access and client workspaces. Free and Starter do not include share links or MCP.',
+      'A measured win can be shared on the free plan. Growth includes full branded share links and MCP access for Cursor and Claude. Agency adds API access and client workspaces.',
   },
 ];
 

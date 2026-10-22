@@ -46,7 +46,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
         <div className="flex items-center justify-between text-xs font-mono text-gray-400">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-gray-500" />
-            <span className="font-black uppercase tracking-[0.2em] text-white">AEO Mindshare Radar</span>
+            <span className="font-black uppercase tracking-[0.2em] text-white" title="Mindshare radar">Who gets named</span>
           </div>
           <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-gray-400 border border-white/10">Not measured</span>
         </div>
@@ -65,7 +65,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
           <h3 className="text-xs font-black uppercase tracking-[0.25em] text-white">
-            AEO Mindshare & Attention Radar
+            <span title="Mindshare radar">Who gets named</span>
           </h3>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-gray-400 border border-white/10">
             {mindshare.hasCompetitorEvidence ? 'Observed' : 'Baseline'}
