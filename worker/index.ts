@@ -62,8 +62,8 @@ import {
   MAX_SMALL_BODY_BYTES,
   RateLimiter,
   clientIp,
-  immutableAssetCache,
   readBody,
+  withAssetCache,
   withSecurityHeaders,
 } from './security';
 import {
@@ -2280,11 +2280,7 @@ export default {
         }),
       );
     }
-    const hashedAsset = immutableAssetCache(url.pathname);
-    if (hashedAsset && assetResponse.ok && !contentType.includes('text/html')) {
-      assetResponse.headers.set('Cache-Control', hashedAsset);
-    }
-    return guard(assetResponse);
+    return guard(withAssetCache(assetResponse, url.pathname));
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).
