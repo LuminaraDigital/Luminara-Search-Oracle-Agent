@@ -351,7 +351,7 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
           title="Toggle weekly decision summary notifications"
         >
           <span className={`w-1.5 h-1.5 rounded-full ${telegramDigestOptIn ? 'bg-gold' : 'bg-gray-600'}`} />
-          Weekly Telegram Briefing: {telegramDigestOptIn ? 'Enabled' : 'Disabled'}
+          Weekly Telegram Briefing: {telegramDigestOptIn ? 'Enabled. Press to turn it off.' : 'Disabled. Press this to turn it on in this browser.'}
         </button>
       </div>
     </section>

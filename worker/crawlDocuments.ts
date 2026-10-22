@@ -35,6 +35,8 @@ Allow: /methodology
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
+Allow: /faq
+Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /docs/
@@ -58,6 +60,8 @@ Allow: /methodology
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
+Allow: /faq
+Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /docs/
@@ -119,6 +123,8 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/sample-report</loc></url>
   <url><loc>${base}/privacy</loc></url>
   <url><loc>${base}/terms</loc></url>
+  <url><loc>${base}/faq</loc></url>
+  <url><loc>${base}/contact</loc></url>
   <url><loc>${base}/docs/mcp.html</loc></url>
   <url><loc>${base}/docs/what-is-aeo.html</loc></url>
   <url><loc>${base}/desktop</loc></url>

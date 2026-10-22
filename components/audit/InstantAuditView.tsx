@@ -10,6 +10,8 @@ import { PageSpeedPanel } from './PageSpeedPanel';
 import { GscPanel } from './GscPanel';
 import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/findingBoardService';
 import { PastReports } from './PastReports';
+import { focusLabel, focusTip } from '../../services/audit/focusLabel';
+import { auditReportHash, publishReportHash } from '../../services/audit/auditReportUrl';
 import { FreeAiAnswerCard } from './FreeAiAnswerCard';
 import { FirstRunTour } from '../onboarding/FirstRunTour';
 import { ReportPdfButton } from './ReportPdfButton';
@@ -388,6 +390,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         result.plainEnglishBrief = crewResult.plainEnglishBrief;
       }
       setReport(result);
+      publishReportHash(formattedUrl);
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
       if (crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty) {
         productTelemetry.recordOnboardingStep('quick_scout');
@@ -522,6 +525,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setFocus(nextFocus);
     setUrl(entry.domain);
     setReport(saved);
+    window.history.replaceState(null, '', `/${auditReportHash(entry.id)}`);
     setError(null);
     setScoutSummary(null);
   };
@@ -714,7 +718,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                   <button
                     key={f}
                     type="button"
-                    title={f === 'SEO' ? 'Search' : f === 'AEO' ? 'Answer engines' : 'AI answers'}
+                    title={focusTip(f)}
                     aria-pressed={focus === f}
                     onClick={() => setFocus(f)}
                     className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
@@ -723,7 +727,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                         : 'glass-morphism border border-white/10 text-gray-400 hover:text-white'
                     }`}
                   >
-                    {f}
+                    {focusLabel(f)}
                   </button>
                 ))}
               </div>
@@ -894,6 +898,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                 <button
                   key={f}
                   type="button"
+                  title={focusTip(f)}
                   aria-pressed={focus === f}
                   onClick={() => {
                     setFocus(f);
@@ -906,7 +911,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                       : 'border border-white/10 text-gray-400 hover:text-white'
                   }`}
                 >
-                  {f}
+                  {focusLabel(f)}
                 </button>
               ))}
             </div>

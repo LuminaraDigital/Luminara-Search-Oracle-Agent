@@ -24,6 +24,8 @@ Allow: /methodology
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
+Allow: /faq
+Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /docs/
@@ -47,6 +49,8 @@ Allow: /methodology
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
+Allow: /faq
+Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /docs/

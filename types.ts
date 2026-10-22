@@ -132,6 +132,10 @@ export interface BusinessDNA {
   suburb?: string;
   /** State or territory that goes with suburb. */
   state?: string;
+  /** agency, agent, or property_manager. */
+  agencyType?: 'agency' | 'agent' | 'property_manager';
+  realestateProfileUrl?: string;
+  domainProfileUrl?: string;
   negativeConstraints?: string[]; // Topics to never bring up, blacklisted competitors, or banned claims
 }
 

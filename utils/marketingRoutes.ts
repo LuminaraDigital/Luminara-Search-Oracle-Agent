@@ -149,6 +149,7 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
       if (h.startsWith('ORACLE_AGENT')) return AppView.ORACLE_AGENT;
       if (h.startsWith('NOTEBOOK') || h.startsWith('STUDIO')) return AppView.NOTEBOOK;
       if (OFFLINE_HASHES.has(h)) return AppView.NOT_FOUND;
+      if (h === 'INSTANT_AUDIT' || h.startsWith('INSTANT_AUDIT/')) return AppView.INSTANT_AUDIT;
       const fromMarketingHash = marketingViewFromHash(hash);
       if (fromMarketingHash) return fromMarketingHash;
       return (Object.values(AppView) as string[]).includes(h) ? (h as AppView) : null;
