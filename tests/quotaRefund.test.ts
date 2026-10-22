@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkHostedQuota, refundMeteredQuota } from '../worker/quotaMiddleware';
+import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from '../worker/quotaMiddleware';
 import type { Env } from '../worker/env';
 
 function memoryKv() {
@@ -65,5 +65,17 @@ describe('failed hosted checks', () => {
     expect(held).toBe(2);
     const extra = await checkHostedQuota(env, user);
     expect(extra.ok).toBe(false);
+  });
+
+  it('refuses the call when the quota write throws', async () => {
+    const { env } = envFor('3');
+    env.LUMINARA_KV!.put = async () => {
+      throw new Error('kv put');
+    };
+    const refused = await checkHostedQuota(env, user);
+    expect(refused.ok).toBe(false);
+    expect(refused.error).toBe(QUOTA_CAPACITY_ERROR);
+    expect(refused.meterKey).toBeUndefined();
+    expect(refused.remaining).toBe(0);
   });
 });

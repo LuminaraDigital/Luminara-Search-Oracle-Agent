@@ -128,6 +128,30 @@ describe('securityHardening', () => {
     }
   });
 
+  it('does not write KV while the window is under the limit', async () => {
+    let puts = 0;
+    const env = {
+      LUMINARA_KV: {
+        get: async () => null,
+        put: async () => {
+          puts += 1;
+        },
+      },
+      REQUIRE_TG_AUTH: 'true',
+    } as unknown as Env;
+    for (let i = 0; i < 5; i++) {
+      const result = await enforceDualRateLimit(env, {
+        action: 'audit_rl_quiet',
+        accountId: 'acct-quiet',
+        ip: '198.51.100.8',
+        limitPerKey: 60,
+        windowSec: 60,
+      });
+      expect(result.ok).toBe(true);
+    }
+    expect(puts).toBe(0);
+  });
+
   it('keeps serving when the KV rate-limit put throws', async () => {
     const env = {
       LUMINARA_KV: {

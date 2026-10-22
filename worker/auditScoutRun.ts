@@ -6,7 +6,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, identify, json } from './workerUtils';
-import { checkHostedQuota, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
+import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { safePublicHostname } from './security';
 
@@ -70,9 +70,15 @@ async function readRun(env: Env, token: string): Promise<AuditRunRecord | null> 
   }
 }
 
-async function writeRun(env: Env, token: string, record: AuditRunRecord): Promise<void> {
-  const ttl = Math.max(60, Math.ceil((record.exp - Date.now()) / 1000));
-  await env.LUMINARA_KV!.put(recordKey(token), JSON.stringify(record), { expirationTtl: ttl });
+async function writeRun(env: Env, token: string, record: AuditRunRecord): Promise<boolean> {
+  const ttl = Math.max(120, Math.ceil((record.exp - Date.now()) / 1000));
+  try {
+    await env.LUMINARA_KV!.put(recordKey(token), JSON.stringify(record), { expirationTtl: ttl });
+    return true;
+  } catch {
+    console.warn(JSON.stringify({ event: 'audit_run_store_error' }));
+    return false;
+  }
 }
 
 export async function mintAuditRun(
@@ -89,16 +95,17 @@ export async function mintAuditRun(
   }
   const quota = await checkHostedQuota(env, user);
   if (!quota.ok) {
+    const capacity = quota.error === QUOTA_CAPACITY_ERROR;
     return json(
       {
         ok: false,
         error: quota.error,
-        code: 'PAYWALL_EXCEEDED',
+        code: capacity ? 'HOSTED_CAPACITY' : 'PAYWALL_EXCEEDED',
         limit: quota.limit,
         used: quota.used,
         remaining: quota.remaining,
       },
-      402,
+      capacity ? 503 : 402,
     );
   }
   const token = crypto.randomUUID();
@@ -112,7 +119,11 @@ export async function mintAuditRun(
     sawSuccess: false,
     refunded: false,
   };
-  await writeRun(env, token, record);
+  if (!(await writeRun(env, token, record))) {
+    // shortcut: no stored token. The check is given back when the refund write lands.
+    if (quota.meterKey) await refundMeteredQuota(env, quota);
+    return json({ ok: true, domain }, 200);
+  }
   return json(
     { ok: true, token, domain, calls: AUDIT_RUN_CALL_CAP, ttlSec: AUDIT_RUN_TTL_SEC },
     200,
@@ -165,10 +176,13 @@ export async function refundAuditRun(
   return json({ ok: true, refunded: released.refunded });
 }
 
+const callsLeft = new Map<string, { left: number; exp: number }>();
+
 /**
  * A missing token meters normally (chat and other tools).
  * A bad token is rejected. A run that is over its call cap meters that call normally.
- * shortcut: the cap decrement is get-then-put, so two calls at once can both pass.
+ * shortcut: the cap lives in this isolate. KV is written only when the cap is spent,
+ * so another isolate can admit another full cap. Write each call again when KV writes are cheap.
  */
 export async function takeAuditRunCall(env: Env, user: HostedIdentity, request: Request): Promise<AuditRunClaim> {
   const token = request.headers.get(AUDIT_RUN_TOKEN_HEADER)?.trim() || '';
@@ -176,6 +190,7 @@ export async function takeAuditRunCall(env: Env, user: HostedIdentity, request: 
   const domain = auditHostname(request.headers.get(AUDIT_RUN_DOMAIN_HEADER) || '');
   const record = await readRun(env, token);
   if (!record || record.exp <= Date.now()) {
+    callsLeft.delete(token);
     return { kind: 'reject', error: 'This audit run expired.' };
   }
   if (record.userId !== billingId(user)) {
@@ -184,9 +199,21 @@ export async function takeAuditRunCall(env: Env, user: HostedIdentity, request: 
   if (!domain || !sameSiteHost(domain, record.domain)) {
     return { kind: 'wrong-site', error: 'This audit run is for a different site.' };
   }
-  if (record.left <= 0) return { kind: 'meter' };
-  record.left -= 1;
-  await writeRun(env, token, record);
+  const known = callsLeft.get(token);
+  let left = known && known.exp === record.exp ? known.left : record.left;
+  if (left <= 0) return { kind: 'meter' };
+  left -= 1;
+  callsLeft.set(token, { left, exp: record.exp });
+  if (callsLeft.size > 200) {
+    const now = Date.now();
+    for (const [k, v] of callsLeft) {
+      if (v.exp <= now) callsLeft.delete(k);
+    }
+  }
+  if (left === 0) {
+    record.left = 0;
+    await writeRun(env, token, record);
+  }
   return { kind: 'covered', token, domain };
 }
 

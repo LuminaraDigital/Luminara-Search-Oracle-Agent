@@ -28,6 +28,9 @@ export type StoredUser = {
   last_seen_at: number;
 };
 
+/** shortcut: last_seen is stored at most once an hour. A name or email change still writes. */
+const PROFILE_TOUCH_MS = 60 * 60 * 1000;
+
 export type WorkspacePayload = {
   /** Opaque product state keyed by localStorage-style names. */
   storage?: Record<string, string>;
@@ -70,11 +73,38 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Pr
   const firebaseUid = user.source === 'firebase' ? firebaseUidFromId(user.id) : undefined;
 
   if (env.DB) {
-    const existing = await env.DB.prepare(`SELECT id, account_id, created_at FROM users WHERE id = ?`)
+    const existing = await env.DB.prepare(
+      `SELECT id, account_id, created_at, last_seen_at, email, display_name FROM users WHERE id = ?`,
+    )
       .bind(user.id)
-      .first<{ id: string; account_id: string | null; created_at: number }>();
+      .first<{
+        id: string;
+        account_id: string | null;
+        created_at: number;
+        last_seen_at: number;
+        email: string | null;
+        display_name: string | null;
+      }>();
     const accountId = existing?.account_id || user.accountId || user.id;
     const createdAt = existing?.created_at ?? now;
+    if (
+      existing?.account_id
+      && now - existing.last_seen_at < PROFILE_TOUCH_MS
+      && (existing.email ?? null) === (user.email ?? null)
+      && (existing.display_name ?? null) === (user.name ?? null)
+    ) {
+      return {
+        id: user.id,
+        source: user.source,
+        account_id: existing.account_id,
+        email: user.email,
+        name: user.name,
+        telegram_id: telegramId,
+        firebase_uid: firebaseUid,
+        created_at: createdAt,
+        last_seen_at: existing.last_seen_at,
+      };
+    }
 
     await env.DB.prepare(
       `INSERT INTO users (id, source, email, display_name, telegram_id, firebase_uid, created_at, last_seen_at, account_id)
@@ -112,6 +142,15 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Pr
   }
 
   const prev = await readKvUser(env, user.id);
+  if (
+    prev?.account_id
+    && now - prev.last_seen_at < PROFILE_TOUCH_MS
+    && (prev.email ?? null) === (user.email ?? null)
+    && (prev.name ?? null) === (user.name ?? null)
+    && prev.source === user.source
+  ) {
+    return prev;
+  }
   const row: StoredUser = {
     id: user.id,
     source: user.source,
@@ -177,10 +216,14 @@ export async function listAllUsers(env: UserStoreEnv, limit = 100): Promise<Stor
 /** Resolves the billing/workspace account id for a login identity. */
 export async function resolveAccountId(env: UserStoreEnv, userId: string): Promise<string> {
   if (env.DB) {
-    const row = await env.DB.prepare(`SELECT account_id FROM users WHERE id = ?`)
-      .bind(userId)
-      .first<{ account_id: string | null }>();
-    if (row?.account_id) return row.account_id;
+    try {
+      const row = await env.DB.prepare(`SELECT account_id FROM users WHERE id = ?`)
+        .bind(userId)
+        .first<{ account_id: string | null }>();
+      if (row?.account_id) return row.account_id;
+    } catch {
+      console.warn(JSON.stringify({ event: 'account_store_error' }));
+    }
   }
   const kvUser = await readKvUser(env, userId);
   return kvUser?.account_id || userId;
@@ -190,8 +233,13 @@ export async function resolveAccountId(env: UserStoreEnv, userId: string): Promi
  * Attaches accountId onto a HostedIdentity after upsert.
  */
 export async function withAccountId(env: UserStoreEnv, user: HostedIdentity): Promise<HostedIdentity> {
-  const stored = await upsertAppUser(env, user);
-  return { ...user, accountId: stored.account_id };
+  try {
+    const stored = await upsertAppUser(env, user);
+    return { ...user, accountId: stored.account_id };
+  } catch {
+    console.warn(JSON.stringify({ event: 'account_store_error' }));
+    return { ...user, accountId: user.accountId || user.id };
+  }
 }
 
 async function hasActiveSub(env: UserStoreEnv, accountOrUserId: string): Promise<boolean> {

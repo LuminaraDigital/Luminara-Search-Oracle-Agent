@@ -490,10 +490,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         email: verified.user.email,
         name: verified.user.name,
       });
-      if (!opaqueId) {
-        return withCors(json({ ok: false, error: 'Session store unavailable' }, 503));
-      }
-      const cookieHeader = buildSessionCookie(opaqueId);
       const res = json({
         ok: true,
         user: stored,
@@ -505,7 +501,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
           tier: org.tier,
           role: membership.role,
         },
-      }, 200, { 'Set-Cookie': cookieHeader });
+      }, 200, opaqueId ? { 'Set-Cookie': buildSessionCookie(opaqueId) } : {});
       return withCors(res);
     }
 

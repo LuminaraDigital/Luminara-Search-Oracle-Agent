@@ -2,7 +2,7 @@ import type { Env } from './env';
 import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
-import { isUserSubscribed, checkHostedQuota, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
+import { isUserSubscribed, checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { noteAuditRunSuccess, requestTargetHost, takeAuditRunCall } from './auditScoutRun';
 import { requireApiAccess } from './apiAccess';
@@ -485,17 +485,18 @@ export async function proxyProvider(
       quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
     }
     if (quotaGate && !quotaGate.ok) {
+      const capacity = quotaGate.error === QUOTA_CAPACITY_ERROR;
       return json(
         {
           error: quotaGate.error,
-          code: 'PAYWALL_EXCEEDED',
+          code: capacity ? 'HOSTED_CAPACITY' : 'PAYWALL_EXCEEDED',
           limit: quotaGate.limit,
           used: quotaGate.used,
           remaining: quotaGate.remaining,
           resetSec: quotaGate.resetSec,
-          upgrade: true,
+          upgrade: !capacity,
         },
-        402,
+        capacity ? 503 : 402,
         {
           'X-Quota-Limit': String(quotaGate.limit),
           'X-Quota-Remaining': '0',
