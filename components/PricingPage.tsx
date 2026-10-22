@@ -5,13 +5,14 @@
  */
 import { isInTelegram } from '../services/telegram/tma';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
-import React, { useEffect } from 'react';
-import { getServerHealthSync, openPaywallModal } from '../services/apiClient';
+import React, { useEffect, useState } from 'react';
+import { accountCallsAllowed, getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
 import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planAudience, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
-import { cardPayLabel, cardTermLabel } from './paywall/planPrices';
+import { redirectToCardCheckout } from './paywall/cardCheckout';
+import { cardPayLabel, cardTermLabel, type PaidPlanId } from './paywall/planPrices';
 import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
 
 export { pricingTiers };
@@ -35,9 +36,28 @@ const DAY_PASS = {
 } as const;
 
 const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
+  const [busyPlan, setBusyPlan] = useState<PaidPlanId | null>(null);
+  const [cardNote, setCardNote] = useState<string | null>(null);
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  const startPricedCard = async (planId: PaidPlanId) => {
+    if (!accountCallsAllowed()) {
+      window.dispatchEvent(new CustomEvent('luminara-open-login', { detail: { mode: 'signin' } }));
+      return;
+    }
+    setBusyPlan(planId);
+    setCardNote(null);
+    const result = await redirectToCardCheckout(planId);
+    if (result.ok) return;
+    if (/sign in/i.test(result.error)) {
+      window.dispatchEvent(new CustomEvent('luminara-open-login', { detail: { mode: 'signin' } }));
+    }
+    setCardNote(result.error);
+    setBusyPlan(null);
+  };
 
   const inTelegram = isInTelegram();
   // TON is paid on the web with a connected wallet, never inside Telegram, and only while the
@@ -169,17 +189,27 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 </ul>
                 <button
                   type="button"
-                  onClick={() =>
-                    openPaywallModal(planChoiceLine(title, tier, tonOpen))
-                  }
-                  className={`lx-btn mt-9 w-full ${tier.highlight ? 'lx-btn-gold' : 'lx-btn-ghost'}`}
+                  disabled={busyPlan === tier.id}
+                  onClick={() => {
+                    if (cardOpen) {
+                      void startPricedCard(tier.id);
+                      return;
+                    }
+                    openPaywallModal(planChoiceLine(title, tier, tonOpen));
+                  }}
+                  className={`lx-btn mt-9 w-full disabled:opacity-60 ${tier.highlight ? 'lx-btn-gold' : 'lx-btn-ghost'}`}
                 >
-                  {cardOpen ? cardPayLabel(tier.id) : starsPayLabel(tier.stars, inTelegram)}
+                  {busyPlan === tier.id ? 'Opening checkout…' : cardOpen ? cardPayLabel(tier.id) : starsPayLabel(tier.stars, inTelegram)}
                 </button>
               </article>
             );
           })}
         </div>
+        {cardNote ? (
+          <p role="alert" className="mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink)]">
+            {cardNote}
+          </p>
+        ) : null}
       </section>
 
       <section aria-labelledby="day-pass-heading" className="mt-20 max-w-2xl sm:mt-24">

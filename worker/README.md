@@ -234,8 +234,10 @@ Staging is on. Production stays `"false"` until its own change in `tests/moneyIn
 Before that production change: prove one staging test-mode purchase (also once with a
 `+location_FR` email, to see `currency` stay `aud` under Adaptive Pricing), one refund, one
 dispute and one refused lower plan; add the two migrations and `stripe_credited_sessions` to
-`scripts/smoke-check.mjs`; and give the buyer a confirmation when they land on
-`/?payment=success` (nothing reads it today). The staging webhook is subscribed to
+`scripts/smoke-check.mjs`. A signed-in buyer who lands on `/?payment=success` is sent to
+the dashboard. The page confirms the plan once the webhook credits it, then drops
+`payment`, `plan` and `session_id` from the address. `/pricing?payment=cancelled` says
+no payment was taken. The staging webhook is subscribed to
 `checkout.session.completed`, `charge.refunded`, `charge.dispute.created` and
 `charge.dispute.funds_withdrawn`.
 

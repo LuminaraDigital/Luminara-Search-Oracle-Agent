@@ -170,6 +170,8 @@ describe('copy outside the paywall while TON and card checkout are closed', () =
     // The page builds that line through the helper, with the same switch as the rest of its copy.
     const source = readFileSync(resolve(__dirname, '..', 'components', 'PricingPage.tsx'), 'utf8');
     expect(source).toContain('openPaywallModal(planChoiceLine(title, tier, tonOpen))');
+    expect(source).toContain('void startPricedCard(tier.id)');
+    expect(source).toContain('redirectToCardCheckout(planId)');
     expect(source).not.toMatch(/\$\{tier\.ton\} inside the Mini App/);
   });
 
