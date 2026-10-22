@@ -28,6 +28,11 @@ export function parsePaymentReturn(search: string): PaymentReturn | null {
   return { kind: 'success', planId: isPaidPlanId(plan) ? plan : null };
 }
 
+/** A dashboard remount happens after the checkout query is stripped. Keep the return already read. */
+export function nextPaymentReturn(search: string, held: PaymentReturn | null): PaymentReturn | null {
+  return parsePaymentReturn(search) ?? held;
+}
+
 export function stripPaymentSearch(search: string): string {
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   params.delete('payment');
