@@ -15,6 +15,7 @@ import {
   ApiKeyExtraTab,
   ApiKeysTab,
 } from './settings/tabs';
+import { AccountPanel } from './settings/AccountPanel';
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -22,10 +23,10 @@ interface ApiKeyModalProps {
   onKeySaved: () => void;
 }
 
-type TabType = 'overview' | 'llm' | 'search' | 'scraping' | 'extra' | 'apikeys';
+type TabType = 'account' | 'overview' | 'llm' | 'search' | 'scraping' | 'extra' | 'apikeys';
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKeySaved }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>('account');
   const { requestConfirm, confirmModal } = useConfirm();
   const [statuses, setStatuses] = useState<ProviderStatus[]>([]);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -292,6 +293,15 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
           <button
             type="button"
             role="tab"
+            aria-selected={activeTab === 'account'}
+            onClick={() => setActiveTab('account')}
+            className={`pb-2.5 px-2 border-b-2 font-bold transition-all outline-none focus-visible:ring-2 focus-visible:ring-gold rounded-t ${activeTab === 'account' ? 'border-gold text-gold-light' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
+          >
+            Account
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'overview'}
             onClick={() => setActiveTab('overview')}
             className={`pb-2.5 px-2 border-b-2 font-bold transition-all outline-none focus-visible:ring-2 focus-visible:ring-gold rounded-t ${activeTab === 'overview' ? 'border-gold text-gold-light' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
@@ -347,6 +357,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
 
         {/* Body Content */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
+          {activeTab === 'account' && <AccountPanel />}
           {activeTab === 'overview' && (
             <ApiKeyOverviewTab
               statuses={statuses}
