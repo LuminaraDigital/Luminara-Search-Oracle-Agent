@@ -150,7 +150,7 @@ describe('audit prompt evidence labels', () => {
       measuredAt: 1,
     });
     expect(text).toContain('[ESTIMATED: AEO CITATION INTEGRITY]');
-    expect(text).toContain('A blocked request reads as dead.');
+    expect(text).toContain('Cited links are not checked from the browser.');
   });
 
   it('tells the model how to treat each label in one line', () => {

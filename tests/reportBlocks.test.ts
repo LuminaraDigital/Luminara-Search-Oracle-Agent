@@ -87,6 +87,9 @@ describe('audit report markdown', () => {
 
     expect(scoreLine('passed 3 of 4 checks', false)).toBe('Not measured');
     expect(scoreLine('passed 3 of 4 checks', true)).toBe('Passed 3 of 4 checks');
+    expect(scoreLine('passed 2 of 4; 1 not measured', false)).toBe('Passed 2 of 4; 1 not measured');
+    expect(scoreLine('passed 4 of 4; 0 not measured', true)).toBe('Passed 4 of 4; 0 not measured');
+    expect(scoreLine('passed 4 of 4; 0 not measured', false)).toBe('Not measured');
     expect(scoreLine('Health Score: 90', true)).toBe('Not measured');
     expect(scoreLine('passed 9 of 4 checks', true)).toBe('Not measured');
   });
@@ -118,6 +121,33 @@ describe('audit report markdown', () => {
     expect(pdf).toContain('Why it matters for buyers and vendors: The fetched title did not include the agency name.');
     expect(pdf).toContain('How to fix: The homepage title does not name the agency.');
     expect(pdf).not.toContain('Health Score:');
+  });
+
+  it('lists a downgraded finding under Not measured and keeps it out of the fix cards', () => {
+    const findings = [
+      finding({ id: 'org', title: 'Add the agency name' }),
+      finding({
+        id: 'finding-schema-org-unmeasured',
+        title: 'Organization markup',
+        description: 'Not measured. The evidence check did not support this finding.',
+      }),
+    ];
+    const pdf = withReportLead('passed 2 of 4; 1 not measured', true, findings);
+    expect(pdf).toContain('Score: Passed 2 of 4; 1 not measured');
+    expect(pdf).toContain('How to fix: The homepage title does not name the agency.');
+    expect(pdf).toContain('Not measured: Organization markup.');
+    expect(pdf).not.toContain('### Organization markup');
+    const html = renderToStaticMarkup(createElement(AuditReportArticle, {
+      markdown: 'passed 2 of 4; 1 not measured',
+      measured: true,
+      findings,
+      domain: 'raywhite.com.au',
+      showActions: false,
+    }));
+    expect(html).toContain('Passed 2 of 4; 1 not measured');
+    expect(html).toContain('Not measured: Organization markup.');
+    expect(html.match(/Mark done/g)).toHaveLength(1);
+    expect(html).not.toContain('evidence check did not support');
   });
 });
 

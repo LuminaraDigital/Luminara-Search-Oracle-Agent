@@ -277,6 +277,7 @@ export function reviewedHealth(
   ok: boolean,
 ): number | null {
   if (!ok || previous == null) return previous;
+  if (findings.some((finding) => finding.id.endsWith('-unmeasured'))) return null;
   return healthScoreFromFindings(findings);
 }
 

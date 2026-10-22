@@ -87,12 +87,12 @@ export function buildEnrichmentPromptSection(entity: EnrichedEntityIntelligence 
   return parts.join('\n') + '\n';
 }
 
-/** Citation integrity is a browser heuristic: a blocked liveness request reads as dead. */
+/** Citation integrity is token overlap. The browser does not fetch cited links. */
 export function buildIntegrityPromptSection(integrity: CitationIntegrityResult | undefined): string {
   if (!integrity) return '';
   return (
     `\n[${ESTIMATED}: AEO CITATION INTEGRITY]\n` +
-    `Method: browser liveness check and token overlap. A blocked request reads as dead.\n` +
+    `Method: token overlap. Cited links are not checked from the browser.\n` +
     `IntegrityScore: ${integrity.integrityScore}/100\n` +
     `DeadCitations: ${integrity.deadCitationCount}\nSpoofRisk: ${integrity.spoofRisk}\n` +
     `sameAsConflict: ${integrity.sameAsConflict}\n`

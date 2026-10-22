@@ -82,7 +82,7 @@ export const TeaserShareView: React.FC<{ onOpenApp?: () => void }> = ({ onOpenAp
             <ul className="mt-6 flex flex-wrap gap-2">
               {teaser.badges.map((badge) => (
                 <li key={`${badge.label}-${badge.status}`} className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-gray-300">
-                  {badge.label}: {badge.status === 'not_measured' ? 'not measured' : badge.value || badge.status}
+                  {badge.label}: {badge.status === 'not_measured' ? badge.value || 'not measured' : badge.value || badge.status}
                 </li>
               ))}
             </ul>

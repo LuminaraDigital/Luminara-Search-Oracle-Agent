@@ -173,7 +173,7 @@ export class PlaybookAuditorAgent {
     // A checklist number: it starts at 85 and loses a fixed amount for each failed check.
     // It is kept for the code that reads it. What a founder is told is the count of checks.
     const healthScore = healthScoreFromFindings(findings);
-    const checklist = healthChecklist(findings);
+    const checklist = healthChecklist(findings, { citationRateKnown: liveSerp.length > 0 });
 
     emit({
       id: `auditor-done-${Date.now()}`,
