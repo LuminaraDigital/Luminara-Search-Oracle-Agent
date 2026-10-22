@@ -2,7 +2,7 @@
  * Privacy policy text shared by the public page and the in-app page.
  * Plain English. Same disclosures as the previous in-app policy.
  */
-import { LEGAL_ENTITY_LINE } from './consumerTerms';
+import { OPERATOR_LINE, PUBLIC_CONTACT_LINE } from './consumerTerms';
 
 export const PRIVACY_UPDATED = '22 October 2026';
 
@@ -19,7 +19,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
   {
     title: 'Who we are',
     paragraphs: [
-      `The controller is ${LEGAL_ENTITY_LINE}, Melbourne ("Luminara Digital", "we", "us"). The product is Luminara Suite: the website, the Telegram Mini App, and the Telegram bot @LuminaraSuiteBot. Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com.`,
+      `The controller is ${OPERATOR_LINE} ("we", "us"). The product is Luminara Suite: the website, the Telegram Mini App, and the Telegram bot @LuminaraSuiteBot. ${PUBLIC_CONTACT_LINE} Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com.`,
     ],
   },
   {
@@ -96,6 +96,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'Unfinished TON orders: about 2 hours.',
       'Bot chat context: kept in KV so the conversation can continue, and deleted when you send /reset.',
       'Subscriptions, user rows, workspace data, and Sentinel targets: while the account is active, or until deletion finishes.',
+      'Database backups: Cloudflare D1 Time Travel can restore the database for 30 days. A deleted account is removed from the live database. We do not restore it from that backup unless the law requires it.',
       'Payment identifiers we need for a dispute: as long as the payment partner requires. A public blockchain record cannot be erased.',
     ],
   },
@@ -111,7 +112,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'Depending on where you live, including the GDPR, UK GDPR, and the CCPA/CPRA, you may access, correct, delete, export, restrict, or object to some processing, and you may opt out of a "sale" or "sharing" of personal information.',
       'We do not sell personal information for money. We do not use cross-context behavioural advertising.',
       'To use these rights, email privacy@luminarasuite.com from the address on your account, or include your Telegram id. In Telegram, /status shows the plan metadata we hold. To wipe this browser, clear site storage. Settings can remove API keys from the device.',
-      'If you are signed in, you can download your data with POST /api/privacy/export (a JSON file, and the token lasts 48 hours) and ask for deletion with POST /api/privacy/delete (a soft delete with a 24 hour cancel window). You can still email us. We aim to finish a verified deletion within 30 days, except records we must keep for security, fraud, or the law, and except a public blockchain payment record.',
+      'If you are signed in, open Settings, then Account. Download your data as JSON first. To delete the account, type DELETE and sign in again. That removes the live rows for the account, including workspaces, audits, public win pages, and saved fix state, and it deletes a Firebase sign-in when there is one. Cloudflare D1 Time Travel can restore a database backup for 30 days. We do not restore a deleted account from that backup unless the law requires it. Records a payment partner must keep, and a public blockchain payment, stay. You can still email privacy@luminarasuite.com.',
     ],
   },
   {

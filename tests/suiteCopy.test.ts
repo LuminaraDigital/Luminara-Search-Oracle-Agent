@@ -12,6 +12,13 @@ const COPY_FILES = [
   'components/paywall/PaywallModal.tsx',
   'components/paywall/planCopy.ts',
   'components/audit/InstantAuditView.tsx',
+  'components/audit/FreeAiAnswerCard.tsx',
+  'components/settings/NotificationsPanel.tsx',
+  'components/audit/PastReports.tsx',
+  'services/help/helpPages.ts',
+  'public/faq.html',
+  'public/contact.html',
+  'services/audit/freeAiAnswer.ts',
   'components/onboarding/FirstRunTour.tsx',
   'services/onboarding/firstRunTour.ts',
   'services/marketing/marketingHeroCopy.ts',
@@ -30,6 +37,12 @@ const COPY_FILES = [
   'index.html',
   'components/suite/BusinessDNAView.tsx',
   'components/suite/IdeaScoutView.tsx',
+  'components/upgrade/UpgradeSurfaces.tsx',
+  'components/share/WinSharePanel.tsx',
+  'components/settings/AccountPanel.tsx',
+  'services/account/accountSummary.ts',
+  'services/share/winShare.ts',
+  'worker/winShare.ts',
 ] as const;
 
 describe('suite copy', () => {
@@ -60,9 +73,9 @@ describe('suite copy', () => {
   });
 
   it('uses one legal line and does not name the company Agency', () => {
-    expect(LEGAL_ENTITY_LINE).toBe('Luminara Digital Pty Ltd (ABN 90 693 125 281)');
+    expect(LEGAL_ENTITY_LINE).toBe('LUMINARA DIGITAL PTY LTD (ABN 90 693 125 281)');
     const terms = readFileSync('worker/termsPolicy.ts', 'utf8');
-    expect(terms).toContain('LEGAL_ENTITY_LINE');
+    expect(terms).toContain('OPERATOR_LINE');
     expect(terms).not.toContain('Luminara Digital Agency');
     expect(terms).not.toMatch(/GST/i);
   });

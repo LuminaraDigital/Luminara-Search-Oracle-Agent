@@ -6,6 +6,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
+import { deleteHostedAccount } from './accountDeletion';
 
 const EXPORT_TTL_MS = 48 * 60 * 60 * 1000;
 const DELETE_CANCEL_MS = 24 * 60 * 60 * 1000;
@@ -320,6 +321,21 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   await run('signed_audit_receipts', `DELETE FROM signed_audit_receipts WHERE account_id = ?`, accountId).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
+  const drop = async (label: string, sql: string) => {
+    await run(label, sql, accountId).catch((err) => {
+      if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    });
+  };
+  await drop('audit_findings', `DELETE FROM audit_findings WHERE account_id = ?`);
+  await drop('audit_runs', `DELETE FROM audit_runs WHERE account_id = ?`);
+  await drop('project_context_sections', `DELETE FROM project_context_sections WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
+  await drop('project_competitors', `DELETE FROM project_competitors WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
+  await drop('project_key_pages', `DELETE FROM project_key_pages WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
+  await drop('project_research_log', `DELETE FROM project_research_log WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
+  await drop('agent_reports', `DELETE FROM agent_reports WHERE account_id = ?`);
+  await drop('projects', `DELETE FROM projects WHERE account_id = ?`);
+  await drop('win_shares', `DELETE FROM win_shares WHERE owner_id = ?`);
+  await drop('shared_reports', `DELETE FROM shared_reports WHERE owner_account_id = ?`);
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
   await run(
     'users_anon',
@@ -327,6 +343,11 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
     accountId,
   );
   return counts;
+}
+
+/** Same row wipe as a privacy delete. Settings calls this, then removes the login rows. */
+export async function eraseAccountRows(env: Env, accountId: string): Promise<Record<string, number>> {
+  return softDeleteAccount(env, accountId);
 }
 
 export async function createPrivacyJob(
@@ -571,6 +592,9 @@ export async function handlePrivacyRoute(
   }
   if (path === '/privacy/delete' && request.method === 'POST') {
     return createPrivacyJob(env, user, 'delete');
+  }
+  if (path === '/privacy/account' && request.method === 'POST') {
+    return deleteHostedAccount(request, env, user);
   }
   const jobMatch = path.match(/^\/privacy\/jobs\/([^/]+)$/);
   if (jobMatch && request.method === 'GET') {

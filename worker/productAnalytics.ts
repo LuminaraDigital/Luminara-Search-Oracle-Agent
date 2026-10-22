@@ -33,6 +33,11 @@ const ALLOWED_TYPES = new Set([
   'privacy_export_started',
   'privacy_delete_started',
   'weekly_decision_committed',
+  'upgrade_prompt_shown',
+  'upgrade_prompt_clicked',
+  'upgrade_prompt_dismissed',
+  'share_clicked',
+  'share_page_view',
 ]);
 
 const MAX_BATCH = 40;

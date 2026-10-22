@@ -7,10 +7,19 @@ export const LEGAL_ABN = '90 693 125 281';
 
 export const PUBLIC_BRAND = 'Luminara Digital';
 
-export const LEGAL_ENTITY = 'Luminara Digital Pty Ltd';
+export const LEGAL_ENTITY = 'LUMINARA DIGITAL PTY LTD';
 
 /** Terms, privacy, and footer. Do not add a tax line to this string. */
 export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY} (ABN ${LEGAL_ABN})`;
+
+/** Suburb and state only. No street address. */
+export const BUSINESS_LOCATION = 'Victoria 3128, Australia';
+
+export const OPERATOR_LINE = `${LEGAL_ENTITY_LINE}, trading as ${PUBLIC_BRAND}, ${BUSINESS_LOCATION}`;
+
+export const CONTACT_EMAIL = 'info@luminara.digital';
+
+export const PUBLIC_CONTACT_LINE = `Email ${CONTACT_EMAIL}.`;
 
 export const COMPANY_SITE_URL = 'https://luminara.digital/';
 
@@ -23,7 +32,7 @@ export const STARS_REFUND_CLAUSE =
   'For a Stars refund, contact support@luminarasuite.com first. Telegram\'s process is how a Stars refund is paid. Refunds are subject to the Australian Consumer Law.';
 
 export const LIABILITY_CLAUSE =
-  'Subject to the Australian Consumer Law, the service is provided as is. To the extent the Australian Consumer Law allows, Luminara Digital Pty Ltd is not liable for indirect or consequential losses arising from use of the service.';
+  `Subject to the Australian Consumer Law, the service is provided as is. To the extent the Australian Consumer Law allows, ${LEGAL_ENTITY} is not liable for indirect or consequential losses arising from use of the service.`;
 
 /** Empty when the ABN is blank, so the line is omitted rather than shown as "ABN ". */
 export function legalAbnLine(abn: string = LEGAL_ABN): string {

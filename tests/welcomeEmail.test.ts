@@ -64,9 +64,11 @@ describe('welcome email template', () => {
       expect(body).toContain('Anything we did not measure is marked not measured.');
       expect(body).toContain('Run your first audit');
       expect(body).toContain(WELCOME_AUDIT_URL);
-      expect(body).toContain('Luminara Digital Pty Ltd');
+      expect(body).toContain('LUMINARA DIGITAL PTY LTD');
+      expect(body).toContain('trading as Luminara Digital');
       expect(body).toContain('ABN 90 693 125 281');
-      expect(body).toContain('Melbourne');
+      expect(body).toContain('Victoria 3128, Australia');
+      expect(body).not.toContain('Melbourne');
       expect(body).toContain(href);
       expect(body).toContain(WELCOME_PRIVACY_URL);
       expect(body).toContain(WELCOME_TERMS_URL);

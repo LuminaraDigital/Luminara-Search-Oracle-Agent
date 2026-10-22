@@ -6,6 +6,8 @@ import {
   type MarketingShellMeta,
 } from '../services/marketing/pageMeta';
 import { sha256Hex } from './workerUtils';
+import { maybeServeWinHtml } from './winShare';
+import { CONTACT_HTML, FAQ_HTML } from '../services/help/helpPages';
 
 /**
  * Unknown paths are served as this shell with HTTP 404. The old inline skip
@@ -66,6 +68,19 @@ export function applyMarketingDocument(html: string, page: MarketingShellMeta): 
   out = injectFirstPaint(out, hero);
   out = deferRenderBlockingCss(out);
   return out.replace(/<img\b[^>]*\bsrc="\/boot-mark\.webp"[^>]*>/i, '');
+}
+
+export function maybeServeHelpHtml(url: URL): Response | null {
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  const html = path === '/faq' ? FAQ_HTML : path === '/contact' ? CONTACT_HTML : '';
+  if (!html) return null;
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
 }
 
 export function escapeHtml(value: string): string {
@@ -229,6 +244,7 @@ const SHARE_TOKEN_PATH = /^\/share\/([a-f0-9]{64})$/i;
 type ShareOgEnv = {
   ASSETS: Fetcher;
   DB?: D1Database;
+  WEBAPP_URL?: string;
 };
 
 /**
@@ -239,6 +255,8 @@ export async function maybeServeShareHtml(
   request: Request,
   env: ShareOgEnv,
 ): Promise<Response | null> {
+  const win = await maybeServeWinHtml(request, env);
+  if (win) return win;
   const url = new URL(request.url);
   const match = url.pathname.replace(/\/+$/, '').match(SHARE_TOKEN_PATH);
   if (!match) return null;

@@ -199,7 +199,18 @@ describe('health-claim guardrail', () => {
   it('strips a health claim from a paste-ready llms.txt patch', async () => {
     const patches = await remediationArchitectAgent.execute(
       'https://clinic.example',
-      [],
+      [{
+        id: 'finding-schema-org',
+        category: 'schema',
+        severity: 'high',
+        title: 'Missing Organization markup',
+        description: 'Parsed HTML has no Organization schema.',
+        evidenceSource: 'DOM',
+        howWeKnowItFailed: 'Schema types found: none.',
+        leadingIndicator: 'Entity disambiguation.',
+        criticVerified: false,
+        criticConfidence: 0.9,
+      }],
       {
         name: 'Clinic',
         mission: 'Our gel boosts immunity.',

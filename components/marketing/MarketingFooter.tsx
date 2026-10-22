@@ -1,6 +1,6 @@
 import React from 'react';
 import { ICONS } from '../../constants';
-import { COMPANY_SERVICES_URL, LEGAL_ENTITY_LINE } from '../../services/legal/consumerTerms';
+import { COMPANY_SERVICES_URL, OPERATOR_LINE } from '../../services/legal/consumerTerms';
 
 interface MarketingFooterProps {
   statement?: string;
@@ -15,6 +15,7 @@ const LINKS = [
   { label: 'What is AEO', href: '/docs/what-is-aeo.html' },
   { label: 'MCP', href: '/docs/mcp.html' },
   { label: 'Windows app', href: '/desktop' },
+  { label: 'Support', href: '/contact' },
   { label: 'Privacy', href: '/privacy' },
   { label: 'Terms', href: '/terms' },
 ] as const;
@@ -59,8 +60,7 @@ export const MarketingFooter: React.FC<MarketingFooterProps> = ({
         >
           Luminara Digital
         </a>
-        {` · ${LEGAL_ENTITY_LINE}`}
-        {' · Melbourne'}
+        {` · ${OPERATOR_LINE}`}
       </p>
     </div>
   </footer>

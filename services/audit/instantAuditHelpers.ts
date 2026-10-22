@@ -24,7 +24,7 @@ import type { HostedScoutRail } from './hostedScoutRail';
 import { guardPasteReadyCopy, siteLooksHealthRelated } from './healthClaimGuard';
 import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
 import { fallbackAnswerLine } from '../llm/fallbackAnswer';
-import { brandFromEvidence, rememberScrapedBrand } from './brandName';
+import { brandFromEvidence, readableStem, rememberScrapedBrand } from './brandName';
 import { recordAudit } from './auditHistoryService';
 import { evaluateRealEstateChecks, formatRealEstateChecks } from './realEstateChecks';
 import { includeRealEstateChecks, wantsAgencyMentions } from './jevVerifier';
@@ -83,6 +83,8 @@ export async function generateAuditReportUnlessDegraded(input: {
   serpEvidence?: AuditStateGraphContext['serpEvidence'];
   siteType?: string | null;
   brandSupported?: boolean | null;
+  /** Name Jev picked, or a supported scraped name. A title-cased domain is not stored. */
+  displayName?: string | null;
 }): Promise<GuardedAuditReport | null> {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
@@ -105,7 +107,8 @@ export async function generateAuditReportUnlessDegraded(input: {
     organizationName: firstPage?.organizationName,
     title: firstPage?.title || firstPage?.h1s?.[0],
   });
-  rememberScrapedBrand(input.formattedUrl, input.brandSupported === false ? null : scrapedBrand);
+  const keptName = input.displayName || (input.brandSupported === false ? null : scrapedBrand);
+  rememberScrapedBrand(input.formattedUrl, keptName);
   const serp = input.serpEvidence ?? [];
   const facts: MeasuredClaimFacts = {
     ...input.summary.measured,
@@ -134,6 +137,7 @@ export async function generateAuditReportUnlessDegraded(input: {
   const text = parts.join('\n\n');
   try {
     recordAudit({
+      id: report.auditHistoryId,
       domain: input.formattedUrl,
       focus: input.targetFocus,
       reportText: text,
@@ -178,7 +182,10 @@ async function agencyMentionLine(siteType: string | null | undefined, brand: str
 }
 
 export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
+  if (crew.displayName) rememberScrapedBrand(crew.targetUrl, crew.displayName);
+  const brand = crew.displayName || readableStem(crew.targetUrl);
   return buildGuestScoutSummary({
+    brand,
     targetUrl: crew.targetUrl,
     measurementStatus: crew.measurementStatus,
     measurementReason: crew.measurementReason,

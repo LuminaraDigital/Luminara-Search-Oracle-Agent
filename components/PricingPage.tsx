@@ -11,7 +11,7 @@ import { getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
-import { CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, freePlanLines, listPriceSummary, planBullets, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
+import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planAudience, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
 import { approximateAudLabel } from './paywall/planPrices';
 import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
 
@@ -79,11 +79,22 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
       <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
         {listPriceSummary()}
       </p>
+      <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
+        {NO_TAX_LINE} {NOTHING_TO_CANCEL} For a refund, email info@luminara.digital.
+      </p>
+      {!cardOpen && !tonOpen && (
+        <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
+          {WAITLIST_LINE}
+        </p>
+      )}
 
       <section aria-labelledby="plans-heading" className="lx-enter-rise lx-d5 mt-16 sm:mt-20">
         <h2 id="plans-heading" className="sr-only">
           Plans
         </h2>
+        <p className="mx-auto mb-8 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
+          Solo Agent is {planTitle('starter')} ({planSeatLine('starter')}) and {planTitle('growth')} ({planSeatLine('growth')}). Agency is {planTitle('agency')} ({planSeatLine('agency')}) and includes white-label PDF.
+        </p>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <article className="lx-glass relative flex min-w-0 flex-col rounded-3xl p-6 sm:p-8">
             <h3 className="font-serif text-3xl leading-tight text-[var(--color-ink)]">{PLAN_ENTITLEMENTS.free.title}</h3>
@@ -122,6 +133,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 )}
                 <div className="flex items-baseline justify-between gap-3">
                   <h3 className="font-serif text-3xl leading-tight text-[var(--color-ink)]">{title}</h3>
+                <p className="mt-2 text-[13px] text-[var(--color-ink-2)]">{planAudience(tier.id)} · {planSeatLine(tier.id)}</p>
                   {tier.highlight && <p className="lx-eyebrow shrink-0 !text-[11px]">{PLAN_CARD_BADGE}</p>}
                 </div>
                 <p

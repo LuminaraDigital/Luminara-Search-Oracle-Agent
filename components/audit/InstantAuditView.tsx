@@ -10,6 +10,9 @@ import { PageSpeedPanel } from './PageSpeedPanel';
 import { GscPanel } from './GscPanel';
 import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/findingBoardService';
 import { PastReports } from './PastReports';
+import { focusLabel, focusTip } from '../../services/audit/focusLabel';
+import { auditReportHash, publishReportHash } from '../../services/audit/auditReportUrl';
+import { FreeAiAnswerCard } from './FreeAiAnswerCard';
 import { FirstRunTour } from '../onboarding/FirstRunTour';
 import { ReportPdfButton } from './ReportPdfButton';
 import type { AuditHistoryEntry } from '../../services/audit/auditHistoryService';
@@ -23,7 +26,8 @@ import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditProgress } from '../ui/PlaceLoader';
-import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
+import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, type QuotaInfo } from '../../services/apiClient';
+import { UpgradePrompt } from '../upgrade/UpgradeSurfaces';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
 import { Button } from '../ui/Button';
@@ -169,7 +173,15 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
   const runSeq = useRef(0);
   const continuumRef = useRef<string | undefined>(ideaScoutId);
+  const progressRef = useRef<HTMLDivElement>(null);
   useEffect(() => { continuumRef.current = ideaScoutId; }, [ideaScoutId]);
+  useEffect(() => {
+    if (!loading || report) return;
+    const node = progressRef.current;
+    if (!node) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, [loading, report]);
 
   // Hydrate Decision Card from session board when revisiting a domain (always swap domain).
   useEffect(() => {
@@ -220,8 +232,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     }
 
     if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
-      openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited audits.`);
-      setError(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan for unlimited audits or add your own API key in Settings.`);
+      setError(`Daily query limit reached (${quota.limit}/${quota.limit} used today).`);
       return;
     }
 
@@ -363,6 +374,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         serpEvidence: crewResult.serpEvidence,
         siteType: crewResult.siteType,
         brandSupported: crewResult.brandSupported,
+        displayName: crewResult.displayName,
       });
       if (seq !== runSeq.current) return;
       if (!result) {
@@ -378,6 +390,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         result.plainEnglishBrief = crewResult.plainEnglishBrief;
       }
       setReport(result);
+      publishReportHash(formattedUrl);
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
       if (crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty) {
         productTelemetry.recordOnboardingStep('quick_scout');
@@ -512,6 +525,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setFocus(nextFocus);
     setUrl(entry.domain);
     setReport(saved);
+    window.history.replaceState(null, '', `/${auditReportHash(entry.id)}`);
     setError(null);
     setScoutSummary(null);
   };
@@ -634,21 +648,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </div>
       )}
 
-      {/* Daily Quota Limit Banner */}
       {quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0) && (
-        <div className="mb-6 p-4 rounded-2xl bg-danger-500/10 border border-danger-500/30 text-xs text-danger-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-danger-300">Daily query limit reached:</span>
-            <span>You have used all {quota.limit} free queries for today ({quota.limit}/{quota.limit} used). Upgrade for unlimited audits or add your own API key in Settings.</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited audits.`)}
-            className="px-3.5 py-1.5 rounded-lg bg-gold text-black font-semibold text-xs whitespace-nowrap hover:bg-gold-light transition-colors self-start sm:self-auto cursor-pointer"
-          >
-            Upgrade plan
-          </button>
-        </div>
+        <UpgradePrompt kind="quota" />
       )}
 
       {/* Controls Card */}
@@ -717,7 +718,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                   <button
                     key={f}
                     type="button"
-                    title={f === 'SEO' ? 'Search' : f === 'AEO' ? 'Answer engines' : 'AI answers'}
+                    title={focusTip(f)}
                     aria-pressed={focus === f}
                     onClick={() => setFocus(f)}
                     className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
@@ -726,7 +727,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                         : 'glass-morphism border border-white/10 text-gray-400 hover:text-white'
                     }`}
                   >
-                    {f}
+                    {focusLabel(f)}
                   </button>
                 ))}
               </div>
@@ -764,6 +765,12 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       {!guestResultFirst && scoutPanel}
 
+      {loading && !report && (
+        <div ref={progressRef}>
+          <AuditProgress stage={progressStage} />
+        </div>
+      )}
+
       {/* Agent Mission Control: Real-time Multi-Agent Activity Stream */}
       {crewEvents.length > 0 && !guestNeedsFullAuditSignIn(hostedRail) && (
         <AgentMissionControl
@@ -782,8 +789,6 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           onClose={() => setShowAttestationModal(false)}
         />
       )}
-
-      {loading && !report && <AuditProgress stage={progressStage} />}
 
       {/* Error State */}
       {error && (
@@ -883,6 +888,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       {/* Audit Report Result */}
       {report && (
         <div className="space-y-6">
+          {dna?.suburb && dna.state ? (
+            <FreeAiAnswerCard suburb={dna.suburb} state={dna.state} brandName={dna.name} />
+          ) : null}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 glass-morphism rounded-xl border border-gold/30">
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-400 font-mono">Regenerate Focus:</span>
@@ -890,6 +898,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                 <button
                   key={f}
                   type="button"
+                  title={focusTip(f)}
                   aria-pressed={focus === f}
                   onClick={() => {
                     setFocus(f);
@@ -902,7 +911,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                       : 'border border-white/10 text-gray-400 hover:text-white'
                   }`}
                 >
-                  {f}
+                  {focusLabel(f)}
                 </button>
               ))}
             </div>
@@ -934,7 +943,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             >
               {briefing ? 'Speaking…' : 'Brief aloud'}
             </button>
-            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} />
+            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} measured={crewMeasurement !== 'not_measured'} findings={boardFindings} />
             <button
               type="button"
               onClick={handleReset}

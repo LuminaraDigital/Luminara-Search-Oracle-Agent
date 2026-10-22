@@ -13,6 +13,11 @@ import {
   onIdTokenChanged,
   GoogleAuthProvider,
   signInWithPopup,
+  verifyBeforeUpdateEmail,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
+  deleteUser,
   type Auth,
   type User,
 } from 'firebase/auth';
@@ -524,6 +529,36 @@ export async function resetPasswordWithEmail(email: string): Promise<{ success: 
       body.message ||
       'If an account exists with this email address, a password reset link has been dispatched.',
   };
+}
+
+export async function changeEmailAddress(nextEmail: string): Promise<void> {
+  const user = ensureAuth().currentUser;
+  const email = nextEmail.trim();
+  if (!user || !email) throw new Error('Sign in again, then enter the new email.');
+  await verifyBeforeUpdateEmail(user, email);
+}
+
+/** Fresh ID token after the user proves they still hold the sign-in. */
+export async function reauthenticateForDelete(password?: string): Promise<string> {
+  const auth = ensureAuth();
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in again, then delete the account.');
+  const google = user.providerData.some((row) => row.providerId === 'google.com')
+    && !user.providerData.some((row) => row.providerId === 'password');
+  if (google) {
+    await reauthenticateWithPopup(user, new GoogleAuthProvider());
+  } else if (user.email && password) {
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+  } else {
+    throw new Error('Sign in again, then delete the account.');
+  }
+  return user.getIdToken(true);
+}
+
+export async function deleteCurrentFirebaseUser(): Promise<void> {
+  const user = ensureAuth().currentUser;
+  if (!user) return;
+  await deleteUser(user);
 }
 
 export async function signOutFirebase(): Promise<void> {

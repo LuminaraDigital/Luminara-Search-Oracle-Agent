@@ -54,7 +54,7 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
 import { LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
+import { maybeServeHelpHtml, maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -216,6 +216,10 @@ const STATIC_PUBLIC_HTML_PATHS = new Set([
   '/privacy',
   '/privacy/',
   '/privacy.html',
+  '/faq',
+  '/faq/',
+  '/contact',
+  '/contact/',
 ]);
 
 /**
@@ -1401,7 +1405,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleIdeaScoutRoute(request, env, path));
   }
 
-  if (path === '/share/reports' || path.startsWith('/share/reports/')) {
+  if (path === '/share/reports' || path.startsWith('/share/reports/') || path === '/wins' || path.startsWith('/wins/')) {
     if (request.method === 'GET' && /^\/share\/reports\/[a-f0-9]{64}$/i.test(path)) {
       const dual = await enforceDualRateLimit(env, {
         action: 'share_public_get',
@@ -2082,7 +2086,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(await executeOracleGatewayTask(env, who.user, reqData, request.headers));
   }
 
-  if (path === '/audit/scout-run' && request.method === 'POST') {
+  if ((path === '/audit/scout-run' || path === '/audit/free-answer') && request.method === 'POST') {
     return withCors(await handleAuditScoutRun(request, env));
   }
 
@@ -2256,6 +2260,9 @@ export default {
     }
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
+    const helpHtml = maybeServeHelpHtml(url);
+    if (helpHtml) return guard(helpHtml);
+
     const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
     if (marketingHtml) {
       return guard(marketingHtml);

@@ -43,11 +43,12 @@ describe('fix pack copy', () => {
   it('uses the derived name and no invented verification', () => {
     const llms = llmsTxtDraft('www.movida.com.au');
     const schema = organizationJsonLd('www.movida.com.au');
-    expect(llms.startsWith('# movida.com.au')).toBe(true);
+    expect(llms.startsWith('# <Your agency name>')).toBe(true);
     expect(schema).not.toContain('"name"');
     expect(`${llms}\n${schema}`).not.toMatch(/Verified|leading solution|verified answer|verified services/i);
     expect(`${llms}\n${schema}`).not.toContain('Fill this in');
-    expect(llms).toContain('Template:');
+    expect(llms).not.toContain('Template:');
+    expect(llms).toContain('<Your agency name>');
     const named = llmsTxtDraft('raywhite.com', { siteName: 'Ray White', description: 'Sells homes in Melbourne.', contactUrl: 'https://raywhite.com/contact' });
     expect(named).toContain('# Ray White');
     expect(named).toContain('Sells homes in Melbourne.');

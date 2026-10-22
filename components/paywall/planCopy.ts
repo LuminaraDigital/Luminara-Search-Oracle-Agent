@@ -19,6 +19,23 @@ export function planTitle(id: PaidPlanId): string {
   return PLAN_ENTITLEMENTS[id].title;
 }
 
+/** Starter and Growth are for one practice. Pro / Agency is the team plan. */
+export function planAudience(id: PaidPlanId): 'Solo Agent' | 'Agency' {
+  return id === 'agency' ? 'Agency' : 'Solo Agent';
+}
+
+export function planSeatLine(id: PaidPlanId): string {
+  const seats = PLAN_ENTITLEMENTS[id].teamSeats;
+  return seats === 1 ? '1 seat' : `${seats} seats`;
+}
+
+export const NO_TAX_LINE = 'Prices are in Australian dollars. No tax is added.';
+
+export const NOTHING_TO_CANCEL = 'There is nothing to cancel, because a plan does not renew.';
+
+/** Web card and wallet checkout are closed. Stars in Telegram stays the open path. */
+export const WAITLIST_LINE = 'Payment on the web is not open yet. Email support@luminarasuite.com to join the waitlist.';
+
 /** One sentence for /pricing, llms.txt, and the pricing meta description. */
 export function listPriceSummary(): string {
   const ids = ['starter', 'growth', 'agency'] as const;

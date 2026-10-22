@@ -109,6 +109,8 @@ export interface AuditReportResult {
   sourceGraph?: SourceCitationGraph;
   enterpriseTrust?: EnterpriseTrustPack;
   rlmTrajectory?: RLMTrajectoryMetadata;
+  /** History row this report already saved. A later save updates that row. */
+  auditHistoryId?: string;
 }
 
 import { shouldSearch, toSearchQuery } from './search/searchIntent';
@@ -975,6 +977,7 @@ Strict Formatting Guidelines:
       }
 
       let reportText = text;
+      let auditHistoryId: string | undefined;
       try {
         const vault = brandMemoryVaultService.ingestAudit({
           domain: displayUrl,
@@ -987,6 +990,7 @@ Strict Formatting Guidelines:
           dna,
         });
         reportText = vault.linkedReport;
+        auditHistoryId = vault.entry.id;
         if (dna?.competitors?.length) {
           competitorWatchlistService.seedFromDna(dna.competitors, displayUrl);
         }
@@ -1091,6 +1095,7 @@ Strict Formatting Guidelines:
         enterpriseTrust,
         rlmTrajectory,
         answeredBy, answeredByProvider,
+        auditHistoryId,
       };
     };
 

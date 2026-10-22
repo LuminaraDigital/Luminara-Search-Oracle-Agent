@@ -15,6 +15,7 @@ import {
   progressLabel,
   readTourFlag,
   replayTour,
+  tourIsWaiting,
   tourStepToShow,
   type TourAnchors,
   type TourPersistDeps,
@@ -66,6 +67,8 @@ describe('first run tour', () => {
   it('waits for a real result before step 2 and for the recheck before step 4', () => {
     expect(flagAfterNext({ step: 1, anchors: urlOnly })).toBe('2');
     expect(tourStepToShow({ signedInWeb: true, flag: '2', anchors: urlOnly })).toBeNull();
+    expect(tourIsWaiting({ signedInWeb: true, flag: '2', anchors: urlOnly })).toBe(true);
+    expect(tourIsWaiting({ signedInWeb: true, flag: '2', anchors: result })).toBe(false);
     expect(tourStepToShow({ signedInWeb: true, flag: '2', anchors: result })).toBe(2);
     expect(flagAfterNext({ step: 2, anchors: result })).toBe('3');
     expect(flagAfterNext({ step: 3, anchors: result })).toBe('stay');

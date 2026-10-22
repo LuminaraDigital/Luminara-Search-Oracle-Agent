@@ -24,6 +24,8 @@ export interface ScoutBadge {
 
 export interface GuestScoutSummary {
   domain: string;
+  /** Display name when the page or Jev supplied one. The domain stays in `domain`. */
+  brand?: string;
   /** Plain text for teaser, share, and clipboard. No heading or emphasis markers. */
   verdict: string;
   /** Full brief for the Instant Scout card. Newlines stay. Never sliced mid-string. */
@@ -73,6 +75,7 @@ export interface GuestScoutSummaryInput {
   focus?: ReportFocus;
   /** Header Thorough. Omitted means Quick. */
   depth?: AnswerDepth;
+  brand?: string | null;
 }
 
 const EMPTY_COLLECTED = 'This run collected no page text and no search rows, so there is no citation rate, share of voice, or health score.';
@@ -293,8 +296,10 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
   verdict = guardUnmeasuredClaims(verdict, measured);
   verdictMarkdown = guardUnmeasuredClaims(verdictMarkdown, measured);
 
+  const brand = (input.brand || '').trim();
   return {
     domain,
+    ...(brand ? { brand } : {}),
     verdict,
     verdictMarkdown,
     evidenceUsed,
