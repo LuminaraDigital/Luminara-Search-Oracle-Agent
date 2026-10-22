@@ -1,7 +1,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { validateInitData, verifyTelegramSessionToken } from './telegramAuth';
-import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
+import { bearerFromAuthorization, firebaseAuthTiming, verifyFirebaseIdToken, type FirebaseAuthTiming } from './firebaseAuth';
 import { withAccountId } from './userStore';
 import {
   isOpaqueSessionId,
@@ -111,7 +111,13 @@ export function billingId(user: HostedIdentity): string {
  * Upserts a durable user row when identity succeeds.
  * Returns null when auth is optional and absent.
  */
-export async function identify(request: Request, env: Env): Promise<{ user: HostedIdentity | null; error?: string }> {
+export async function identify(request: Request, env: Env): Promise<{
+  user: HostedIdentity | null;
+  error?: string;
+  authTiming?: FirebaseAuthTiming;
+}> {
+  let authTiming: FirebaseAuthTiming | undefined;
+  const pack = (body: { user: HostedIdentity | null; error?: string }) => ({ ...body, authTiming });
   const initData = request.headers.get('x-telegram-init-data');
   const cookieToken = getSessionCookieToken(request);
 
@@ -120,16 +126,16 @@ export async function identify(request: Request, env: Env): Promise<{ user: Host
   if (cookieToken && !initData && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
     const secFetchSite = request.headers.get('sec-fetch-site');
     if (secFetchSite && secFetchSite === 'cross-site') {
-      return { user: null, error: 'CSRF validation failed: Cross-site request rejected' };
+      return pack({ user: null, error: 'CSRF validation failed: Cross-site request rejected' });
     }
     const origin = request.headers.get('Origin');
     if (!origin) {
-      return { user: null, error: 'CSRF validation failed: Origin header required' };
+      return pack({ user: null, error: 'CSRF validation failed: Origin header required' });
     }
     const allowed = (env.ALLOWED_ORIGINS || env.WEBAPP_URL || '').split(',').map(s => s.trim()).filter(Boolean);
     const isAllowed = allowed.some(a => origin === a || origin === a.replace(/\/$/, ''));
     if (!isAllowed) {
-      return { user: null, error: 'CSRF validation failed: Origin header rejected' };
+      return pack({ user: null, error: 'CSRF validation failed: Origin header rejected' });
     }
   }
 
@@ -137,9 +143,9 @@ export async function identify(request: Request, env: Env): Promise<{ user: Host
   let firebaseUser: HostedIdentity | null = null;
 
   if (initData) {
-    if (!env.BOT_TOKEN) return { user: null, error: 'Server has no BOT_TOKEN configured' };
+    if (!env.BOT_TOKEN) return pack({ user: null, error: 'Server has no BOT_TOKEN configured' });
     const result = await validateInitData(initData, env.BOT_TOKEN);
-    if (!result.ok) return { user: null, error: result.reason };
+    if (!result.ok) return pack({ user: null, error: result.reason });
     const tg = result.user;
     telegramUser = {
       id: String(tg.id),
@@ -167,7 +173,7 @@ export async function identify(request: Request, env: Env): Promise<{ user: Host
         };
       }
     } else if (!initData && !bearerFromAuthorization(request.headers.get('authorization'))) {
-      return { user: null, error: 'Session expired or revoked' };
+      return pack({ user: null, error: 'Session expired or revoked' });
     }
   }
 
@@ -196,9 +202,10 @@ export async function identify(request: Request, env: Env): Promise<{ user: Host
 
   if (jwtCandidate && env.FIREBASE_PROJECT_ID && !firebaseUser) {
     const result = await verifyFirebaseIdToken(jwtCandidate, env.FIREBASE_PROJECT_ID);
+    authTiming = firebaseAuthTiming(result);
     if (!result.ok) {
       // Telegram-only callers still succeed when Firebase token is bad/expired.
-      if (!telegramUser) return { user: null, error: result.reason };
+      if (!telegramUser) return pack({ user: null, error: result.reason });
     } else {
       firebaseUser = {
         id: `fb:${result.user.uid}`,
@@ -223,15 +230,15 @@ export async function identify(request: Request, env: Env): Promise<{ user: Host
     } catch {
       /* Firebase row stays as it was; still do not merge */
     }
-    return { user: resolvedTelegram };
+    return pack({ user: resolvedTelegram });
   }
 
   const primary = telegramUser || firebaseUser;
   if (primary) {
     try {
-      return { user: await withAccountId(env, primary) };
+      return pack({ user: await withAccountId(env, primary) });
     } catch {
-      return { user: primary };
+      return pack({ user: primary });
     }
   }
 
@@ -239,9 +246,9 @@ export async function identify(request: Request, env: Env): Promise<{ user: Host
     const hint = env.FIREBASE_PROJECT_ID
       ? 'Sign in with Firebase or open the app inside Telegram.'
       : 'Telegram sign-in required';
-    return { user: null, error: hint };
+    return pack({ user: null, error: hint });
   }
-  return { user: null };
+  return pack({ user: null });
 }
 
 export async function fetchWithTimeout(input: string, init: RequestInit, ms: number): Promise<Response> {

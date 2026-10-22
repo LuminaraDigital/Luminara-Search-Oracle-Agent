@@ -29,6 +29,7 @@ import {
   writeCachedFirebaseIdToken,
 } from './firebaseIdToken';
 import { ensureAppCheck, getAppCheckTokenForBackend, isAppCheckConfigured } from './firebaseAppCheck';
+import { startAccountBoot } from './accountBoot';
 
 export type { User };
 export { isAppCheckConfigured };
@@ -73,41 +74,9 @@ function ensureAuth(): Auth {
   return auth;
 }
 
-let lastSyncedToken: string | null = null;
-let inFlightSync: Promise<void> | null = null;
-
-async function syncSessionCookie(token: string): Promise<void> {
-  if (typeof window === 'undefined' || !window.location) return;
-  const base = window.location.origin || '';
-  if (!base) return;
-  if (lastSyncedToken === token && inFlightSync) {
-    await inFlightSync;
-    return;
-  }
-  if (lastSyncedToken === token) return;
-  lastSyncedToken = token;
-  const p = (async () => {
-    try {
-      await fetch(`${base}/api/auth/session`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ idToken: token }),
-      });
-    } catch {
-      lastSyncedToken = null;
-      /* ignore session cookie sync failures in offline/dev */
-    }
-  })();
-  inFlightSync = p;
-  await p;
-  if (inFlightSync === p) inFlightSync = null;
-}
-
 let inFlightClear: Promise<void> | null = null;
 
 async function clearSessionCookie(): Promise<void> {
-  lastSyncedToken = null;
   if (typeof window === 'undefined' || !window.location) return;
   const base = window.location.origin || '';
   if (!base) return;
@@ -135,7 +104,7 @@ async function refreshCachedToken(user: User | null): Promise<void> {
   cachedUser = user;
   if (!user) {
     if (previous) clearPersistedAuthSession();
-    const hadSession = readCachedFirebaseIdToken() !== null || lastSyncedToken !== null;
+    const hadSession = readCachedFirebaseIdToken() !== null;
     writeCachedFirebaseIdToken(null);
     notifyUserListeners(null);
     if (hadSession) {
@@ -147,11 +116,17 @@ async function refreshCachedToken(user: User | null): Promise<void> {
   try {
     const nextToken = await user.getIdToken();
     writeCachedFirebaseIdToken(nextToken);
-    if (nextToken) await syncSessionCookie(nextToken);
+    if (nextToken) startAccountBoot(nextToken);
   } catch {
     writeCachedFirebaseIdToken(null);
   }
   notifyUserListeners(user);
+}
+
+/** Fills the token cache and starts the boot request before listeners render. */
+export async function primeSignedInBoot(): Promise<void> {
+  const user = await whenFirebaseAuthReady();
+  if (user) await refreshCachedToken(user);
 }
 
 /**

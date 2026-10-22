@@ -19,11 +19,6 @@ export function planTitle(id: PaidPlanId): string {
   return PLAN_ENTITLEMENTS[id].title;
 }
 
-/** Starter and Growth are for one practice. Pro / Agency is the team plan. */
-export function planAudience(id: PaidPlanId): 'Solo Agent' | 'Agency' {
-  return id === 'agency' ? 'Agency' : 'Solo Agent';
-}
-
 export function planSeatLine(id: PaidPlanId): string {
   const seats = PLAN_ENTITLEMENTS[id].teamSeats;
   return seats === 1 ? '1 seat' : `${seats} seats`;
@@ -40,18 +35,18 @@ export const WAITLIST_LINE = 'Payment on the web is not open yet. Email info@lum
 export function listPriceSummary(): string {
   const ids = ['starter', 'growth', 'agency'] as const;
   const parts = ids.map((id) => `${PLAN_ENTITLEMENTS[id].title} ${PAID_PLAN_PRICES[id].audLabel}`);
-  return `${parts.join(', ')}. You can also pay in Telegram Stars.`;
+  return `${parts.join(', ')}. Pay by card for a 30-day pass that does not renew, or pay in Telegram Stars in the Mini App.`;
 }
 
 /** Free card lines. The daily allowance matches the Worker default of 3. */
-export function freePlanLines(): string[] {
+export function freePlanLines(): PlanBullet[] {
   const free = PLAN_ENTITLEMENTS.free;
   return [
-    `${free.domainLimit} monitored domain`,
-    'On-demand audits',
-    '3 hosted Instant Audit checks a day',
-    'No IDE access (web app only)',
-    'No public share links',
+    { included: true, text: `${free.domainLimit} monitored domain` },
+    { included: true, text: 'On-demand audits' },
+    { included: true, text: '3 hosted Instant Audit checks a day' },
+    { included: false, text: 'No IDE access (web app only)' },
+    { included: false, text: 'No public share links' },
   ];
 }
 
@@ -64,7 +59,7 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
   const lines: PlanBullet[] = [
     { included: true, text: `${e.domainLimit} monitored domains` },
     { included: true, text: e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audit reminders in Telegram` },
-    { included: true, text: id === 'agency' ? 'White-label PDF exports' : id === 'growth' ? 'Branded PDF exports' : 'Standard PDF exports' },
+    { included: e.whiteLabelPdf, text: e.whiteLabelPdf ? 'White-label PDF exports' : 'No white-label PDF' },
     {
       included: e.mcpAccess,
       text: e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',
@@ -120,8 +115,9 @@ export const CHECKOUT_TERM_LINE =
 /** Plan modal subline. Same term as checkout: these are not monthly subscriptions. */
 export const PAYWALL_SUBLINE = CHECKOUT_TERM_LINE;
 
-/** Shown before a control that leaves this page for Telegram Stars. */
-export const TELEGRAM_STARS_HANDOFF = 'Payment happens in Telegram with Stars.';
+/** Cards on the website and desktop app. Stars only inside the Mini App. */
+export const TELEGRAM_STARS_HANDOFF =
+  'Pay by card on the website and the desktop app. Pay with Telegram Stars in the Mini App.';
 
 /** Same Stars button on /pricing and in the checkout modal. */
 export function starsPayLabel(starsLabel: string, inTelegram: boolean): string {

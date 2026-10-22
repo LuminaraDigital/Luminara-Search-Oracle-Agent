@@ -58,6 +58,6 @@ describe('payment return', () => {
       quota: { plan: 'agency', expiresAt: until },
       now: until - 1,
       signedIn: false,
-    })).toBe('Payment received. Sign in to see Pro / Agency on your dashboard.');
+    })).toBe('Payment received. Sign in to see Agency on your dashboard.');
   });
 });

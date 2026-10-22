@@ -4,6 +4,7 @@
  * Serves the built Vite app as static assets and exposes a small API:
  *   GET  /api/health                      which providers are configured server-side
  *   GET  /api/auth/session                current Telegram or Firebase identity (if signed in)
+ *   GET  /api/boot                        signed-in workspace, quota, and session cookie
  *   POST /api/auth/reset-password         IP-throttled password reset (anti-enumeration)
  *   POST /api/auth/sign-up                IP-throttled Identity Toolkit sign-up
  *   POST /api/auth/sign-in                IP-throttled Identity Toolkit sign-in
@@ -32,6 +33,9 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { validateInitData, createTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
+import { handleAccountBoot } from './accountBoot';
+import { withStageTiming } from './serverTiming';
+import { canonicalPublicFile, decoratePublicHtml, LONG_PUBLIC_CACHE } from './staticPublicCache';
 import {
   handleTelegramUpdate,
   handleTelegramPaymentUpdate,
@@ -80,8 +84,8 @@ import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, 
 import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
-import { getActiveSubscription, checkHostedQuota, readFreeUsed, QUOTA_CAPACITY_ERROR, type SubRow } from './quotaMiddleware';
-import { handleReferralRoute, referralBonusRemaining } from './referrals';
+import { getActiveSubscription, readQuotaSnapshot } from './quotaMiddleware';
+import { handleReferralRoute } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
 import { proxyProvider, PROVIDERS } from './providerRelay';
@@ -310,7 +314,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   const guard = await guardApiRoute(request, env, path);
   if (guard) return withCors(guard);
 
-  // Agency API surfaces require apiAccess (Pro / Agency) after authentication
+  // Agency API surfaces require apiAccess (Agency) after authentication
   const apiAccessGuard = await guardApiAccessRoute(request, env, path);
   if (apiAccessGuard) return withCors(apiAccessGuard);
 
@@ -691,20 +695,33 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
   }
 
+  if (path === '/boot') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    return withCors(handleAccountBoot(request, env));
+  }
+
   // Per-account workspace (DNA, VFS, audits, chat, optional BYOK keys).
   if (path === '/workspace') {
-    const who = await identify(request, env);
-    if (who.error || !who.user) return withCors(json({ ok: false, error: who.error || 'Sign in required' }, 401));
+    const started = performance.now();
+    const who = identifiedForRequest(request) ?? await identify(request, env);
+    if (who.error || !who.user) {
+      return withStageTiming(
+        await withCors(json({ ok: false, error: who.error || 'Sign in required' }, 401)),
+        env.ENVIRONMENT,
+        started,
+        who.authTiming,
+      );
+    }
     const accountId = billingId(who.user);
 
     if (request.method === 'GET') {
       const record = await getWorkspace(env, accountId);
-      return withCors(json({
+      return withStageTiming(await withCors(json({
         ok: true,
         accountId,
         updatedAt: record?.updatedAt ?? 0,
         payload: record?.payload ?? {},
-      }));
+      })), env.ENVIRONMENT, started, who.authTiming);
     }
 
     if (request.method === 'PUT') {
@@ -814,14 +831,16 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/auth/quota') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
-    const who = await identify(request, env);
+    const started = performance.now();
+    const who = identifiedForRequest(request) ?? await identify(request, env);
+    const stamp = (res: Response) => withStageTiming(res, env.ENVIRONMENT, started, who.authTiming);
     const limit = Number(env.FREE_DAILY_LIMIT || 3);
     const now = new Date();
     const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
     const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
 
     if (!who.user) {
-      return withCors(json({
+      return stamp(await withCors(json({
         ok: true,
         authenticated: false,
         limit,
@@ -829,51 +848,14 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         remaining: limit,
         resetSec,
         isUnlimited: false,
-      }));
+      })));
     }
 
-    const accountId = billingId(who.user);
-    let sub: SubRow | null = null;
-    if (env.LUMINARA_KV) {
-      sub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as SubRow | null;
-      if (!sub?.expiresAt || sub.expiresAt <= Date.now()) {
-        const legacy = (await env.LUMINARA_KV.get(`sub:${who.user.id}`, 'json')) as SubRow | null;
-        if (legacy?.expiresAt && legacy.expiresAt > Date.now()) sub = legacy;
-      }
+    const snapshot = await readQuotaSnapshot(env, who.user);
+    if (!snapshot.ok) {
+      return stamp(await withCors(json({ ok: false, error: snapshot.error, code: snapshot.code }, 503)));
     }
-    const isSubActive = Boolean(sub?.expiresAt && sub.expiresAt > Date.now());
-
-    if (isSubActive) {
-      return withCors(json({
-        ok: true,
-        authenticated: true,
-        accountId,
-        plan: sub!.plan,
-        expiresAt: sub!.expiresAt,
-        limit: -1,
-        used: 0,
-        remaining: -1,
-        resetSec,
-        isUnlimited: true,
-      }));
-    }
-
-    const used = await readFreeUsed(env, accountId, limit);
-    if (used === null) return withCors(json({ ok: false, error: QUOTA_CAPACITY_ERROR, code: 'HOSTED_CAPACITY' }, 503));
-    const bonusRemaining = await referralBonusRemaining(env, accountId);
-
-    return withCors(json({
-      ok: true,
-      authenticated: true,
-      accountId,
-      plan: 'free',
-      limit,
-      used,
-      remaining: Math.max(0, limit - used),
-      bonusRemaining,
-      resetSec,
-      isUnlimited: limit <= 0,
-    }));
+    return stamp(await withCors(json(snapshot)));
   }
 
   const m = path.match(/^\/providers\/([a-z]+)(\/.*)$/);
@@ -2098,20 +2080,32 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 }
 
 /** Permanent redirect that keeps the query string. Location is a path, not an open redirect. */
-function permanentRedirect(url: URL, pathname: string): Response {
+function permanentRedirect(url: URL, pathname: string, hash = ''): Response {
   return new Response(null, {
     status: 301,
     headers: {
-      Location: `${pathname}${url.search}`,
+      Location: `${pathname}${url.search}${hash}`,
       'Cache-Control': 'public, max-age=3600',
     },
   });
 }
 
+const SHORT_PATH_REDIRECTS: Record<string, { path: string; hash?: string }> = {
+  '/how': { path: '/how-it-works' },
+  '/help': { path: '/faq' },
+  '/upgrade': { path: '/pricing' },
+  '/settings': { path: '/', hash: '#settings' },
+  '/account': { path: '/', hash: '#settings' },
+};
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const guard = (res: Response) => applyHostRobots(url, env.ENVIRONMENT, withSecurityHeaders(res));
+    const guard = async (res: Response) => {
+      const secured = withSecurityHeaders(res);
+      const html = await decoratePublicHtml(secured, env.ASSETS);
+      return applyHostRobots(url, env.ENVIRONMENT, html);
+    };
 
     // Canonical redirect: redirect naked domain to www.luminarasuite.com for web/marketing traffic in production
     if (env.ENVIRONMENT === 'production' && url.hostname === 'luminarasuite.com' && !url.pathname.startsWith('/api/')) {
@@ -2216,9 +2210,11 @@ export default {
       return guard(docRes);
     }
 
-    // Short marketing alias. Canonical page is /how-it-works.
-    if (url.pathname === '/how' || url.pathname === '/how/') {
-      return guard(permanentRedirect(url, '/how-it-works'));
+    // Short aliases. /settings and /account open the account panel at /#settings.
+    const shortPath = url.pathname.replace(/\/$/, '') || '/';
+    const shortTarget = SHORT_PATH_REDIRECTS[shortPath];
+    if (shortTarget) {
+      return guard(permanentRedirect(url, shortTarget.path, shortTarget.hash ?? ''));
     }
 
     // Unlisted share OG HTML (before static marketing shells).
@@ -2237,6 +2233,16 @@ export default {
     const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
     if (marketingHtml) {
       return guard(marketingHtml);
+    }
+
+    const canonical = await canonicalPublicFile(env.ASSETS, url.pathname);
+    if (canonical) {
+      const assetUrl = new URL(request.url);
+      assetUrl.pathname = canonical;
+      const assetRes = await env.ASSETS.fetch(new Request(assetUrl.toString(), request));
+      const headers = new Headers(assetRes.headers);
+      if (assetRes.ok) headers.set('Cache-Control', LONG_PUBLIC_CACHE);
+      return guard(new Response(assetRes.body, { status: assetRes.status, statusText: assetRes.statusText, headers }));
     }
 
     // Static assets with SPA fallback (configured in wrangler.jsonc); security headers + CSP on the HTML shell.

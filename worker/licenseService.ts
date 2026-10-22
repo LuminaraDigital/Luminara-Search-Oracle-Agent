@@ -104,7 +104,7 @@ export function formatGeneratedLicenseKey(plan: string, durationDays: number): s
  * Activates a license key for the given authenticated user.
  * Elevates account plan in KV/D1 and records anti-abuse metrics.
  */
-const PLAN_NAMES: Record<string, string> = { starter: 'Starter', growth: 'Growth', agency: 'Pro / Agency', pro: 'Pro / Agency' };
+const PLAN_NAMES: Record<string, string> = { starter: 'Starter', growth: 'Growth', agency: 'Agency', pro: 'Agency' };
 
 function licenseDowngradeText(currentPlan: string, currentExpiresAt: number, keyPlan: string): string {
   const name = (plan: string) => PLAN_NAMES[String(plan).toLowerCase()] || plan;

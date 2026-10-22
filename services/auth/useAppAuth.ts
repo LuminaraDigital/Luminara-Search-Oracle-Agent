@@ -121,8 +121,14 @@ export function useAppAuth(): AppAuthState {
         if (cancelled) return;
         void mod.whenFirebaseAuthReady().then((u) => {
           if (cancelled) return;
-          if (u) setFirebaseUser(u);
-          setFirebaseReady(true);
+          if (!u) {
+            setFirebaseReady(true);
+            return;
+          }
+          // Boot starts before the shell is allowed to fetch workspace or quota.
+          void mod.primeSignedInBoot().finally(() => {
+            if (!cancelled) setFirebaseReady(true);
+          });
         });
         mod.startFirebaseAuthListener();
         unsub = mod.subscribeFirebaseUser((u) => {

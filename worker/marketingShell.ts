@@ -213,7 +213,7 @@ export async function maybeServeMarketingHtml(
 
   const headers: Record<string, string> = {
     'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'public, max-age=300',
+    'Cache-Control': 'no-cache',
   };
   if (page.robots) headers['X-Robots-Tag'] = page.robots;
 
@@ -329,7 +329,7 @@ export async function maybeServeShareHtml(
       status: 200,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'public, max-age=120',
+        'Cache-Control': 'no-cache',
         'X-Robots-Tag': 'noindex, nofollow',
       },
     });
@@ -343,7 +343,7 @@ export async function maybeServeShareHtml(
     status: 200,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=120',
+      'Cache-Control': 'no-cache',
       'X-Robots-Tag': 'noindex, nofollow',
     },
   });
@@ -448,7 +448,7 @@ export async function maybeServeReceiptHtml(
       status: 200,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'public, max-age=120',
+        'Cache-Control': 'no-cache',
         'X-Robots-Tag': 'noindex, nofollow',
       },
     });
@@ -462,7 +462,7 @@ export async function maybeServeReceiptHtml(
     status: 200,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=120',
+      'Cache-Control': 'no-cache',
       'X-Robots-Tag': 'noindex, nofollow',
     },
   });

@@ -62,6 +62,7 @@ describe('security headers', () => {
   it('adds CSP and hardening headers to the HTML shell', async () => {
     const res = await worker.fetch(req('/'), makeEnv(), ctx);
     expect(res.headers.get('content-security-policy')).toBe(HTML_CSP);
+    expect(res.headers.get('cache-control')).toBe('no-cache');
     expect(HTML_CSP).toContain('https://telegram.org');
     expect(HTML_CSP).toContain('https://fonts.googleapis.com');
     expect(HTML_CSP).toContain('https://fonts.gstatic.com');
@@ -732,6 +733,23 @@ describe('crawl surfaces', () => {
       const res = await worker.fetch(req(`${path}?ref=nav`), makeEnv(), ctx);
       expect(res.status, path).toBe(301);
       expect(res.headers.get('Location')).toBe('/how-it-works?ref=nav');
+    }
+  });
+
+  it('redirects help, upgrade, settings, and account', async () => {
+    for (const [path, location] of [
+      ['/help', '/faq?ref=nav'],
+      ['/help/', '/faq?ref=nav'],
+      ['/upgrade', '/pricing?ref=nav'],
+      ['/upgrade/', '/pricing?ref=nav'],
+      ['/settings', '/?ref=nav#settings'],
+      ['/settings/', '/?ref=nav#settings'],
+      ['/account', '/?ref=nav#settings'],
+      ['/account/', '/?ref=nav#settings'],
+    ] as const) {
+      const res = await worker.fetch(req(`${path}?ref=nav`), makeEnv(), ctx);
+      expect(res.status, path).toBe(301);
+      expect(res.headers.get('Location'), path).toBe(location);
     }
   });
 

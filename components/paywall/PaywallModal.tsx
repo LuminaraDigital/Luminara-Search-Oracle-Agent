@@ -14,7 +14,7 @@ import {
   type PaymentRail,
 } from './paymentOptions';
 import { cardPayLabel, cardTermLabel, PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
-import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, planAudience, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './planCopy';
+import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './planCopy';
 import { COMPANY_SERVICES_URL } from '../../services/legal/consumerTerms';
 import { ICONS } from '../../constants';
 import '../marketing/space.css';
@@ -552,7 +552,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
                   <span className={`text-sm font-bold ${tier.highlight ? 'text-white' : 'text-gold-light'}`}>{planTitle(tier.id)}</span>
                   <span className="text-sm font-semibold text-gold-light">{tab === 'card' ? planPriceLabel(tier.id) : `${PAID_PLAN_PRICES[tier.id].audLabel} · ${planPriceLabel(tier.id)}`}</span>
                 </div>
-                <p className="text-[11px] text-gray-400">{planAudience(tier.id)} · {planSeatLine(tier.id)}</p>
+                <p className="text-[11px] text-gray-400">{planSeatLine(tier.id)}</p>
                 <p className="text-[11px] text-gray-400 leading-relaxed">{tier.blurb}</p>
                 <ul className={`mt-3 gap-1.5 text-[11px] text-gray-300 ${tier.id === 'agency' ? 'grid grid-cols-1 sm:grid-cols-2' : 'space-y-1.5'}`}>
                   {planBullets(tier.id).map((line) => (

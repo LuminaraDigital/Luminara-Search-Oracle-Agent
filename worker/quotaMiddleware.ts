@@ -232,3 +232,58 @@ export async function checkHostedQuota(
   }
   return { ...daily, bonusRemaining: 0 };
 }
+
+export type QuotaView =
+  | {
+      ok: true;
+      authenticated: true;
+      accountId: string;
+      plan?: string;
+      expiresAt?: number;
+      limit: number;
+      used: number;
+      remaining: number;
+      resetSec: number;
+      isUnlimited: boolean;
+      bonusRemaining?: number;
+    }
+  | { ok: false; error: string; code: 'HOSTED_CAPACITY' };
+
+/** The signed-in body of GET /auth/quota, shared with the boot snapshot. */
+export async function readQuotaSnapshot(env: Env, user: HostedIdentity): Promise<QuotaView> {
+  const limit = Number(env.FREE_DAILY_LIMIT || 3);
+  const now = new Date();
+  const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
+  const accountId = user.accountId || user.id;
+  const sub = await getActiveSubscription(env, user);
+  if (sub?.expiresAt && sub.expiresAt > Date.now()) {
+    return {
+      ok: true,
+      authenticated: true,
+      accountId,
+      plan: sub.plan,
+      expiresAt: sub.expiresAt,
+      limit: -1,
+      used: 0,
+      remaining: -1,
+      resetSec,
+      isUnlimited: true,
+    };
+  }
+  const used = await readFreeUsed(env, accountId, limit);
+  if (used === null) return { ok: false, error: QUOTA_CAPACITY_ERROR, code: 'HOSTED_CAPACITY' };
+  const bonusRemaining = await referralBonusRemaining(env, accountId);
+  return {
+    ok: true,
+    authenticated: true,
+    accountId,
+    plan: 'free',
+    limit,
+    used,
+    remaining: Math.max(0, limit - used),
+    bonusRemaining,
+    resetSec,
+    isUnlimited: limit <= 0,
+  };
+}
