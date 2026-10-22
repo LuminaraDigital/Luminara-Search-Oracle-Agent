@@ -38,6 +38,7 @@ import {
   providerDecisionsErrorRecord,
 } from '../apiClient';
 import { healthChecklist, liveSearchRows, pageSupportsHealthScore } from './auditEvidenceGate';
+import { gateFixSnippet, reviewFindingsWithJev } from '../audit/jevVerifier';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
 
@@ -377,8 +378,18 @@ export class CrewOrchestrator {
         confidenceScore: liveEvidence ? criticConfidence : undefined,
       });
 
-      return {
+      const reviewed = await reviewFindingsWithJev({
+        pages: ctx.scrapedPages,
+        checks: ctx.llmCrawlerReadiness?.checks,
         findings: verifiedFindings,
+        healthScore: ctx.healthScore,
+      });
+
+      return {
+        findings: reviewed.findings,
+        healthScore: reviewed.healthScore,
+        siteType: reviewed.siteType,
+        brandSupported: reviewed.brandSupported,
         criticRejections: (ctx.criticRejections || 0) + rejectedCount,
         criticPass: liveEvidence,
       };
@@ -399,8 +410,13 @@ export class CrewOrchestrator {
         });
         return { patches: [] };
       }
-      const patches = await remediationArchitectAgent.execute(ctx.targetUrl, ctx.findings, ctx.dna, emit);
-      // Run critic syntax validation on generated patches
+      const drafted = await remediationArchitectAgent.execute(ctx.targetUrl, ctx.findings, ctx.dna, emit);
+      const patches = ctx.brandSupported === false
+        ? drafted.map((patch) => ({
+          ...patch,
+          proposedSnippet: gateFixSnippet(patch.targetType, patch.proposedSnippet, ctx.targetUrl),
+        }))
+        : drafted;
       const { verifiedPatches } = criticReflectionEngine.verify([], patches, ctx.scrapedPages, ctx.serpEvidence);
       return { patches: verifiedPatches };
     });

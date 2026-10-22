@@ -1463,6 +1463,11 @@ describe('Workers AI fallback (SW0a-11)', () => {
         tavily: { path: '/search', keys: { TAVILY_API_KEY: 'tv_test_key' }, body: { query: 'ping' } },
         firecrawl: { path: '/map', keys: { FIRECRAWL_API_KEY: 'fc_test_key' }, body: {} },
         exa: { path: '/search', keys: { EXA_API_KEY: 'exa_test_key' }, body: { query: 'ping' } },
+        typesafe: {
+          path: '/v1/systemone',
+          keys: { TYPESAFE_API_KEY: 'ts_test_key' },
+          body: { model: 'jev-latest', state: { pages: [] }, questions: { ping: { type: 'noul', instructions: 'ping' } } },
+        },
         dataforseo: {
           path: '/v3/serp/google/organic/live/advanced',
           keys: { DATAFORSEO_LOGIN: 'login@example.com', DATAFORSEO_PASSWORD: 'test_password' },

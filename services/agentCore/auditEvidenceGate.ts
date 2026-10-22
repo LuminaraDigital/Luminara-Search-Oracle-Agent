@@ -93,6 +93,15 @@ export function healthChecklist(findings: readonly { id: string }[]): HealthChec
   return { total: HEALTH_CHECKS.length, failed, passed: HEALTH_CHECKS.length - failed };
 }
 
+/** Same checklist number the auditor stores. A downgraded finding id is not one of the four checks. */
+export function healthScoreFromFindings(findings: readonly { id: string }[]): number {
+  const base = HEALTH_CHECKS.reduce(
+    (score, check) => (findings.some((finding) => finding.id === check.findingId) ? score - check.penalty : score),
+    HEALTH_SCORE_START,
+  );
+  return Math.max(20, Math.min(100, base));
+}
+
 const UNMEASURED_HEALTH_WHY: Record<HealthScoreBlockReason, string> = {
   auth: 'live data unavailable after a provider authentication failure',
   jina: 'page text is a fallback read and cannot support a health score',

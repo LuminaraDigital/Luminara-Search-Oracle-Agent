@@ -94,6 +94,12 @@ export interface Env {
   TAVILY_API_KEY?: string;
   FIRECRAWL_API_KEY?: string;
   EXA_API_KEY?: string;
+  /** Free hosted Exa calls per account per UTC day. Default 15. Paid plans are not counted. */
+  EXA_FREE_DAILY_CAP?: string;
+  /** TypeSafe Jev (System One). Worker secret. The browser never receives it. */
+  TYPESAFE_API_KEY?: string;
+  /** Free hosted Jev calls per account per UTC day. Default 6. Paid plans are not counted. */
+  TYPESAFE_FREE_DAILY_CAP?: string;
   /** Self-hosted LanguageTool server, e.g. https://writing.example.com (no trailing path). */
   LANGUAGETOOL_URL?: string;
   /** Self-hosted Umami (https://stats.example.com) or Umami Cloud (https://api.umami.is). */
