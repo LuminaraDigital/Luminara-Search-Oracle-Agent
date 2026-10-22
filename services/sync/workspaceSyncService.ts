@@ -9,6 +9,7 @@ import {
   putWorkspaceRemote,
   type WorkspacePayload,
 } from '../apiClient';
+import { takeAccountBoot } from '../auth/accountBoot';
 import {
   encryptKeyBag,
   decryptKeyBag,
@@ -194,7 +195,15 @@ export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?:
   if (syncing) return { ok: false, error: 'busy' };
   syncing = true;
   try {
-    const remote = await fetchWorkspace();
+    const booted = await takeAccountBoot();
+    const remote: Awaited<ReturnType<typeof fetchWorkspace>> = booted
+      ? {
+          ok: true,
+          accountId: booted.accountId,
+          updatedAt: booted.workspace.updatedAt,
+          payload: booted.workspace.payload,
+        }
+      : await fetchWorkspace();
     if (!remote.ok) return { ok: false, error: remote.error || 'pull failed' };
 
     const local = readMeta();
