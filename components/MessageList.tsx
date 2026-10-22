@@ -300,7 +300,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
             {activeTool.name === 'execute_python' && activeTool.output && (
               <div className="bg-black/80 border border-gold/20 rounded-2xl p-6 font-mono text-[11px] text-gray-500 shadow-3xl animate-in zoom-in-95 border-l-4 border-l-gold">
                 <div className="flex items-center gap-3 mb-4 text-gold/40 uppercase tracking-[0.3em] font-black text-[9px]">
-                  Oracle Agent Kernel Matrix Stream
+                  Tool output
                 </div>
                 <div className="whitespace-pre overflow-hidden leading-relaxed opacity-70 border-l border-white/5 pl-4">
                   {activeTool.output}

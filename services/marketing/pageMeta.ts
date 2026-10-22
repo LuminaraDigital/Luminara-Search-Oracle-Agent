@@ -154,7 +154,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     crawlerBody: `
 <section>
   <h1>Sample report</h1>
-  <p>Illustrative Sample for luminarasuite.com. Engines show Measured, Estimated, or Not measured. Verdict and ship action match Instant Audit shape.</p>
+  <p>Illustrative example of an independent real estate agency. The rows show the report shape. They are not a measurement.</p>
   <p><a href="/">Check your site</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
@@ -221,7 +221,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account.</p>
   <p>Starter: web audits for a small site set. No MCP. No share links.</p>
   <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>
-  <p>Pro / Agency: Growth capabilities plus API access and client workspaces saved in this browser. ${LIVE_ANSWER_CHECKS}</p>
+  <p>Pro / Agency: Growth capabilities plus API access and client workspaces. ${LIVE_ANSWER_CHECKS}</p>
   <p>Telegram Stars billing is available in the Mini App. No invented SEO scores on any plan.</p>
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
 </section>`,

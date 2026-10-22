@@ -94,7 +94,8 @@ describe('claim honesty', () => {
     for (const pattern of BANNED_PLAN_CLAIM) expect(copy).not.toMatch(pattern);
     expect(copy).toContain('re-audit reminders in Telegram');
     expect(copy).toContain('daily drift check');
-    expect(copy).toContain('saved in this browser');
+    expect(copy).toContain('client workspaces');
+    expect(copy).not.toContain('saved in this browser');
     expect(planBullets('growth').map((line) => line.text).join('\n')).not.toMatch(/seat/i);
     expect(planBullets('agency').map((line) => line.text).join('\n')).not.toMatch(/seat/i);
   });

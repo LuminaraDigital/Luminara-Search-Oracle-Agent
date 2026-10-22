@@ -70,7 +70,7 @@ export const ApiKeySearchTab: React.FC<ApiKeySearchTabProps> = ({
             {visibleKeys['tavily'] ? 'Hide' : 'Show'}
           </Button>
         </div>
-        <p className="text-[10px] text-gray-400 mt-1">Grounds Oracle Agent and Instant Audit with real Google SERP rankings.</p>
+        <p className="text-[10px] text-gray-400 mt-1">Grounds Ask and Instant Audit with real Google search results.</p>
       </div>
 
       <div>

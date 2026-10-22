@@ -72,7 +72,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
           });
         } else {
           setMsg({
-            text: `Wake Gate held: ${res.reason || 'Not enough new signal'}. Use force to override.`,
+            text: `Not enough new signal to update memory${res.reason ? `: ${res.reason}` : ''}.`,
             type: 'success',
           });
         }
@@ -147,7 +147,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold/10 border border-gold/30 text-gold-light text-xs font-mono uppercase tracking-wider mb-2">
               <ICONS.DNA className="w-3.5 h-3.5" />
-              <span>Hermes Dreaming Layer</span>
+              <span>Saved notes</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-bold gold-text">
               Business Memory & Reflection
@@ -164,7 +164,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
               className="px-4 py-2.5 rounded-xl bg-gold/20 hover:bg-gold/30 border border-gold/40 text-gold-light font-medium text-xs sm:text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-50"
             >
               <ICONS.Refresh className={`w-4 h-4 ${isDreaming ? 'animate-spin' : ''}`} />
-              <span>{isDreaming ? 'Dreaming...' : 'Dream Now'}</span>
+              <span>{isDreaming ? 'Updating...' : 'Update memory'}</span>
             </button>
             {onNavigateToAudit && (
               <button
@@ -180,7 +180,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
         {/* Wake Gate Diagnostic Bar */}
         <div className="mt-6 pt-4 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
-            <span className="text-[11px] uppercase tracking-wider text-gray-400 block">Wake Gate</span>
+            <span className="text-[11px] uppercase tracking-wider text-gray-400 block">Update check</span>
             <span
               className={`text-sm font-semibold mt-1 inline-block ${
                 status?.wake?.shouldWake ? 'text-emerald-400' : 'text-gray-400'

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { EvidenceGlyph, MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { MarketingFaq } from './marketing/MarketingFaq';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 
 interface MethodologyPageProps {
   onTerminal: () => void;
@@ -62,7 +63,7 @@ const MethodologyPage: React.FC<MethodologyPageProps> = ({
             How we measure <span className="italic lx-gold-text pr-[0.08em]">AI visibility.</span>
           </>
         }
-        lede="AI answers change by prompt, location, model, and time. Every engine result is labeled so Sample never masquerades as Live evidence."
+        lede={`AI answers change by prompt, location, model, and time. Every engine result is labeled so an example never looks like a live measurement. ${LIVE_ANSWER_CHECKS}`}
       />
 
       <section aria-labelledby="labels-heading" className="mt-28 border-t pt-24 lx-hairline sm:mt-36 sm:pt-28">

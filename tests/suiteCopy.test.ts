@@ -19,6 +19,7 @@ const COPY_FILES = [
   'worker/crawlDocuments.ts',
   'worker/termsPolicy.ts',
   'worker/privacyPolicy.ts',
+  'services/legal/privacyCopy.ts',
   'worker/telegramBot.ts',
   'worker/welcomeEmail.ts',
   'public/llms.txt',

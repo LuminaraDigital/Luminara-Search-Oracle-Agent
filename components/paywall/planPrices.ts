@@ -6,6 +6,15 @@
  * tests/pricingDiscoverability.test.ts fails if Stars or TON drift from the worker.
  */
 
+/** Display-only. Stars stay the amount the Worker charges. About A$1.55 per US$1, rounded. */
+export const AUD_PER_USD = 1.55;
+
+export function approximateAudLabel(usdLabel: string): string {
+  const usd = Number(usdLabel.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(usd)) return usdLabel;
+  return `A$${Math.round(usd * AUD_PER_USD)}`;
+}
+
 export type PaidPlanId = 'starter' | 'growth' | 'agency';
 
 export interface PaidPlanPrice {

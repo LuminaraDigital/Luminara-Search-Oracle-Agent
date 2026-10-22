@@ -12,104 +12,32 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="stylesheet" href="/static-chrome.css" />
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0a0a0c;
-        --gold: #c4a574;
-        --text: #e8dcc8;
-        --muted: #9a8f7e;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
-        background: radial-gradient(100% 70% at 50% -10%, #1c1610 0%, var(--bg) 50%);
-        color: var(--text);
-        display: block;
-        padding: 0;
-      }
-      main {
-        max-width: 36rem;
-        margin: 2rem auto;
-        text-align: center;
-        padding: 0 1.25rem 3rem;
-      }
-      h1 {
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        color: var(--gold);
-        font-size: 1.5rem;
-      }
-      p {
-        color: var(--muted);
-        line-height: 1.6;
-      }
-      .meta {
-        display: inline-flex;
-        flex-wrap: wrap;
-        gap: 0.5rem 0.75rem;
-        justify-content: center;
-        margin-top: 1rem;
-        font-size: 0.8rem;
-        color: var(--muted);
-      }
-      .pill {
-        border: 1px solid rgba(196, 165, 116, 0.35);
-        padding: 0.25rem 0.65rem;
-        letter-spacing: 0.04em;
-      }
-      a.btn {
-        display: inline-block;
-        margin-top: 1.5rem;
-        padding: 0.85rem 1.4rem;
-        background: var(--gold);
-        color: #1a120a;
-        text-decoration: none;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-      }
-      a.btn:hover {
-        filter: brightness(1.05);
-      }
-      a.secondary {
-        display: inline-block;
-        margin-top: 1rem;
-        color: var(--gold);
-        text-decoration: none;
-        font-size: 0.9rem;
-      }
-      .note {
-        margin-top: 2rem;
-        font-size: 0.8rem;
-        color: var(--muted);
-      }
-    </style>
   </head>
   <body>
     <nav class="site-nav" aria-label="Site">
       <a class="brand" href="/">Luminara Suite</a>
-      <a href="/how-it-works">How it works</a>
-      <a href="/pricing">Pricing</a>
-      <a href="/why">Why Luminara</a>
-      <a href="/ai">Our AI</a>
+      <div class="links">
+        <a href="/why">Why</a>
+        <a href="/how-it-works">How it works</a>
+        <a href="/ai">AI</a>
+        <a href="/pricing">Pricing</a>
+        <a class="start" href="/">Start free</a>
+      </div>
     </nav>
-    <main>
+    <main class="static-main">
+      <p class="eyebrow">Desktop</p>
       <h1>Luminara Suite for Windows</h1>
-      <p>
+      <p class="lede">
         Installer for your PC. The desktop app opens the same product as the website,
         so features and fixes ship with the site.
       </p>
       <div class="meta" id="status" aria-live="polite">
-        <span class="pill" id="versionPill">Version …</span>
-        <span class="pill" id="sourcePill">Checking download…</span>
+        <span id="versionPill">Version …</span>
+        <span id="sourcePill">Checking download…</span>
       </div>
-      <a class="btn" id="downloadBtn" href="/desktop/windows">Download for Windows</a>
-      <br />
-      <a class="secondary" href="/">Back to luminarasuite.com</a>
+      <p>
+        <a class="btn" id="downloadBtn" href="/desktop/windows">Download for Windows</a>
+      </p>
       <p class="note" id="signingNote">
         This Windows app is unsigned for now. Your computer may ask you to confirm before it opens.
       </p>

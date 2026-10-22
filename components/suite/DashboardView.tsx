@@ -223,11 +223,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
           <div className="flex items-center gap-2">
             <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--color-accent)] shadow-[0_0_8px_var(--gold)]" />
             <span className="text-[var(--color-accent)] uppercase tracking-[0.14em]">
-              OBSERVATORY COMMAND DECK · LUMINARA SUITE
+              {advancedUi ? 'OBSERVATORY COMMAND DECK · LUMINARA SUITE' : 'Your AI visibility'}
             </span>
           </div>
           <span className="text-[var(--color-ink-2)]">
-            {homeDomain ? `ACTIVE TARGET // ${homeDomain}` : 'SITE AND WEB SEARCH · WEEKLY DECISION LOOP'}
+            {advancedUi
+              ? (homeDomain ? `ACTIVE TARGET // ${homeDomain}` : 'SITE AND WEB SEARCH · WEEKLY DECISION LOOP')
+              : (homeDomain || 'Site and web search')}
           </span>
         </div>
         <h1 className="font-display font-normal text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.08]">
@@ -238,8 +240,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
         </p>
       </div>
 
-      <VisibilityRetentionCard signedIn={signedIn} onNavigate={onNavigate} />
-      <DreamingDashboardCard domain={homeDomain} dna={dna} onNavigate={onNavigate} />
+      <VisibilityRetentionCard signedIn={signedIn} onNavigate={onNavigate} plainLanguage={!advancedUi} />
+      {advancedUi && <DreamingDashboardCard domain={homeDomain} onNavigate={onNavigate} />}
 
       {/* Zero-audit home primary CTA strip */}
       {shouldShowHomeCta(auditCount) && <HomeCtaStrip onNavigate={onNavigate} />}

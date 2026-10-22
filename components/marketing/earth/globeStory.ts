@@ -1,4 +1,4 @@
-import { LIVE_ANSWER_CHECKS, SITE_AND_SEARCH_CHECK } from '../../../services/marketing/engineCoverage';
+import { SITE_AND_SEARCH_CHECK } from '../../../services/marketing/engineCoverage';
 
 /**
  * Landing story copy and illustrative globe data.
@@ -39,7 +39,7 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
     step: '02',
     stage: 'Buyer questions',
     title: 'Ask the questions your buyers ask.',
-    body: `${SITE_AND_SEARCH_CHECK} ${LIVE_ANSWER_CHECKS}`,
+    body: SITE_AND_SEARCH_CHECK,
     focus: { lat: -14, lon: 126 },
   },
   {

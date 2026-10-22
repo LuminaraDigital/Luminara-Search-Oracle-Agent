@@ -4,6 +4,7 @@ import { ICONS } from '../../constants';
 import { brandMemoryVaultService, type BrandMemoryEvent } from '../../services/memory/brandMemoryVaultService';
 import { auditHistoryService, type AuditHistoryEntry } from '../../services/audit/auditHistoryService';
 import { formatAuDate } from '../../utils/formatAuDate';
+import { labsVisible } from '../../services/ui/labsAccess';
 import { auditDiffService, type AuditPeriodDiff } from '../../services/audit/auditDiffService';
 import { auditQueryService } from '../../services/audit/auditQueryService';
 import {
@@ -44,7 +45,8 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   const { pending: sentinelBusy, run: runSentinel } = useAsyncLock();
   const [sentinelMsg, setSentinelMsg] = useState<string | null>(null);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
-  const [tab, setTab] = useState<'dreaming' | 'timeline' | 'diff' | 'query' | 'watch' | 'agency' | 'mem0'>('dreaming');
+  const showDreaming = labsVisible();
+  const [tab, setTab] = useState<'dreaming' | 'timeline' | 'diff' | 'query' | 'watch' | 'agency' | 'mem0'>(showDreaming ? 'dreaming' : 'diff');
   const [mem0Facts, setMem0Facts] = useState<MemoryFact[]>([]);
 
   const planId = quota?.plan || 'free';
@@ -177,14 +179,14 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   };
 
   const tabs: Array<{ id: typeof tab; label: string }> = [
-    { id: 'dreaming', label: 'Luminara Dreaming' },
+    { id: 'dreaming', label: 'Saved notes' },
     { id: 'diff', label: 'What changed' },
     { id: 'mem0', label: '4-Tier Memory' },
     { id: 'timeline', label: 'Memory timeline' },
     { id: 'query', label: 'Audit query' },
     { id: 'watch', label: 'Competitor watch' },
     { id: 'agency', label: 'Agency clients' },
-  ];
+  ].filter((item): item is { id: typeof tab; label: string } => item.id !== 'dreaming' || showDreaming);
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 animate-fade-in font-['Outfit'] pb-20">
@@ -237,7 +239,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
         ))}
       </div>
 
-      {tab === 'dreaming' && (
+      {tab === 'dreaming' && showDreaming && (
         <DreamingMemoryHub
           domain={primaryDomain}
           dna={dna}
@@ -427,7 +429,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-white">Client workspaces</h3>
           <p className="text-[11px] text-gray-400">
-            Agency unlocks up to {entitlements.agencyClientLimit || 10} client workspaces saved in this browser (DNA + history).
+            Agency unlocks up to {entitlements.agencyClientLimit || 10} client workspaces (DNA + history).
             Current plan allows {entitlements.agencyClientLimit}.
           </p>
           <div className="flex gap-2">
@@ -530,7 +532,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
               <span className="text-3xl block mb-2">🌱</span>
               <p className="text-sm font-semibold text-white">No Autonomous Facts Extracted Yet</p>
               <p className="text-xs text-gray-400 mt-1 max-w-md mx-auto">
-                Run an instant audit or converse with the Oracle Agent. The Mem0 engine will automatically extract brand identity, competitors, and technical health facts.
+                Run an instant audit or ask a question. Saved facts are added to brand memory.
               </p>
             </div>
           ) : (
