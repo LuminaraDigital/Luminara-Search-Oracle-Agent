@@ -101,7 +101,12 @@ export class ExecutiveTranslatorAgent {
     // Only the checks that failed get a step. A check that passed has nothing to fix.
     const steps = HEALTH_CHECKS
       .filter((check) => findings.some((f) => f.id === check.findingId))
-      .map((check) => STEP_FOR_FAILED_CHECK[check.findingId]);
+      .map((check) => {
+        const finding = findings.find((item) => item.id === check.findingId);
+        const evidence = finding?.howWeKnowItFailed?.trim();
+        const step = STEP_FOR_FAILED_CHECK[check.findingId];
+        return evidence ? `${step} ${evidence}` : step;
+      });
     const stepLines = steps.length > 0
       ? [
           steps.length === 1 ? '#### 1 step for the check that failed:' : `#### ${steps.length} steps for the checks that failed:`,

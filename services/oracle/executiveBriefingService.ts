@@ -21,7 +21,7 @@ export interface ExecutiveBriefing {
     expectedImpact: string;
   };
   metrics: {
-    mindsharePercent: number;
+    mindsharePercent: number | null;
     velocityPercentWoW: number;
     brandCitations: number;
   };
@@ -47,16 +47,9 @@ export function generateExecutiveBriefing(opts: {
 }): ExecutiveBriefing {
   const ms = opts.mindshare;
   const da = opts.driverAnalysis;
-  const velocityStr = ms.velocityPercentWoW >= 0 ? `+${ms.velocityPercentWoW}%` : `${ms.velocityPercentWoW}%`;
-
-  let verdict = '';
-  if (ms.overallMindsharePercent >= 50) {
-    verdict = `${opts.domain} commands a dominant ${ms.overallMindsharePercent}% category mindshare (${velocityStr} WoW) across Answer Engines.`;
-  } else if (ms.overallMindsharePercent >= 20) {
-    verdict = `${opts.domain} holds ${ms.overallMindsharePercent}% category mindshare (${velocityStr} WoW), actively contesting AI search citations with competitors.`;
-  } else {
-    verdict = `${opts.domain} currently holds ${ms.overallMindsharePercent}% mindshare across Answer Engines, with competitors capturing the majority of category citations.`;
-  }
+  const verdict = ms.overallMindsharePercent == null || !ms.source
+    ? `${opts.domain}: mindshare was not measured. This search sample did not name a competitor.`
+    : `${opts.domain} holds ${ms.overallMindsharePercent}% of the mentions in this search sample. Source: ${ms.source}`;
 
   const keyDriver = da.primaryDriver.label + ': ' + da.primaryDriver.evidenceSnippet;
 
