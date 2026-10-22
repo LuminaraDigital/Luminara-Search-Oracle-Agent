@@ -39,7 +39,7 @@ export interface ServerHealth {
   tonPricing?: Record<string, unknown>;
   /** USDT / $LORA checkout can settle (server-verified). Absent or false = hide Jetton rails. */
   jettonCheckout?: boolean;
-  /** Stripe card Checkout is live (secrets + STRIPE_CHECKOUT_LIVE). Absent or false = hide Card rail. */
+  /** Stripe card Checkout is live when health.stripeCheckout is true (env.STRIPE_CHECKOUT_LIVE === 'true' and the key mode matches). Absent or false hides the Card rail. */
   stripeCheckout?: boolean;
   lumens?: boolean;
   /** Q402 pay-per-call settlement is live. */

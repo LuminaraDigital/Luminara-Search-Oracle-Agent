@@ -1,8 +1,7 @@
 /**
  * Pricing page: entitlement-true tiers. Hero sells Growth (IDE access + share).
- * Prices are the Stars / TON amounts the Worker charges (worker/telegramBot.ts,
- * worker/tonPayment.ts), mirrored in ./paywall/planPrices. The USD label is a list price only:
- * card checkout is unavailable.
+ * Prices are the AUD card prices and the Stars / TON amounts the Worker charges
+ * (worker/telegramBot.ts, worker/tonPayment.ts, worker/stripePayment.ts), mirrored in ./paywall/planPrices.
  */
 import { isInTelegram } from '../services/telegram/tma';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
@@ -12,7 +11,7 @@ import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPa
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
 import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planAudience, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
-import { approximateAudLabel } from './paywall/planPrices';
+import { cardPayLabel, cardTermLabel } from './paywall/planPrices';
 import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
 
 export { pricingTiers };
@@ -141,14 +140,13 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                     tier.highlight ? 'lx-gold-text' : 'text-[var(--color-ink)]'
                   }`}
                 >
-                  {cardOpen ? tier.priceLabel : approximateAudLabel(tier.priceLabel)}
+                  {tier.priceLabel}
                 </p>
                 <p className="mt-3 text-[13px] text-[var(--color-ink-2)]">
-                  {cardOpen
-                    ? `or ${tier.stars} in Telegram · 30 days`
-                    : tonOpen
-                      ? `${tier.stars} · 30 days · or ${tier.ton} on the web`
-                      : `${tier.stars} · 30 days`}
+                  {cardTermLabel(tier.id)}
+                </p>
+                <p className="mt-1 text-[13px] text-[var(--color-ink-2)]">
+                  {tonOpen ? `${tier.stars} · or ${tier.ton} on the web` : `${tier.stars} in Telegram`}
                 </p>
                 <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">{tier.blurb}</p>
                 <ul className="m-0 mt-7 flex-1 list-none space-y-3 border-t p-0 pt-6 lx-hairline">
@@ -176,7 +174,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                   }
                   className={`lx-btn mt-9 w-full ${tier.highlight ? 'lx-btn-gold' : 'lx-btn-ghost'}`}
                 >
-                  {cardOpen ? `Pay ${tier.priceLabel} by card` : starsPayLabel(tier.stars, inTelegram)}
+                  {cardOpen ? cardPayLabel(tier.id) : starsPayLabel(tier.stars, inTelegram)}
                 </button>
               </article>
             );

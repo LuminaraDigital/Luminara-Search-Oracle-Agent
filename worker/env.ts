@@ -117,6 +117,11 @@ export interface Env {
   STRIPE_SECRET_KEY?: string;
   /** Stripe webhook endpoint secret (whsec_...). */
   STRIPE_WEBHOOK_SECRET?: string;
+  /**
+   * "true" opens card checkout after diagnoseStripeConfig accepts the key mode.
+   * Anything else keeps the rail closed. Wrangler sets "false" until test keys are in place.
+   */
+  STRIPE_CHECKOUT_LIVE?: string;
   TON_RECEIVING_ADDRESS?: string;
   /**
    * The TON address the owner has confirmed, in their own wallet app, to be theirs. TON checkout

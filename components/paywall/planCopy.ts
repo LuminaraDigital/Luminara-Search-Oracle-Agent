@@ -3,7 +3,7 @@
  * Titles and limits come from PLAN_ENTITLEMENTS. Prices stay in planPrices.
  */
 import { PLAN_ENTITLEMENTS } from '../../services/plans/planEntitlements';
-import { PAID_PLAN_PRICES, approximateAudLabel, type PaidPlanId } from './planPrices';
+import { PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
 
 export const PLAN_CARD_BADGE = 'Recommended';
 
@@ -33,17 +33,14 @@ export const NO_TAX_LINE = 'Prices are in Australian dollars. No tax is added.';
 
 export const NOTHING_TO_CANCEL = 'There is nothing to cancel, because a plan does not renew.';
 
-/** Web card and wallet checkout are closed. Stars in Telegram stays the open path. */
-export const WAITLIST_LINE = 'Payment on the web is not open yet. Email support@luminarasuite.com to join the waitlist.';
+/** Web card checkout is closed until STRIPE_CHECKOUT_LIVE is true. Stars in Telegram stays open. */
+export const WAITLIST_LINE = 'Payment on the web is not open yet. Email info@luminara.digital to join the waitlist.';
 
 /** One sentence for /pricing, llms.txt, and the pricing meta description. */
 export function listPriceSummary(): string {
   const ids = ['starter', 'growth', 'agency'] as const;
-  const parts = ids.map((id) => {
-    const usd = PAID_PLAN_PRICES[id].usdLabel;
-    return `${PLAN_ENTITLEMENTS[id].title} ${approximateAudLabel(usd)} (${usd})`;
-  });
-  return `Approximate list prices: ${parts.join(', ')}. About A$1.55 per US$1. You pay in Telegram Stars.`;
+  const parts = ids.map((id) => `${PLAN_ENTITLEMENTS[id].title} ${PAID_PLAN_PRICES[id].audLabel}`);
+  return `${parts.join(', ')}. You can also pay in Telegram Stars.`;
 }
 
 /** Free card lines. The daily allowance matches the Worker default of 3. */
@@ -92,7 +89,7 @@ export const pricingTiers: Array<{
 }> = [
   {
     id: 'starter',
-    priceLabel: PAID_PLAN_PRICES.starter.usdLabel,
+    priceLabel: PAID_PLAN_PRICES.starter.audLabel,
     stars: PAID_PLAN_PRICES.starter.starsLabel,
     ton: PAID_PLAN_PRICES.starter.tonLabel,
     blurb: 'Web audits for up to 2 sites. No IDE connectors or public share links.',
@@ -100,7 +97,7 @@ export const pricingTiers: Array<{
   },
   {
     id: 'growth',
-    priceLabel: PAID_PLAN_PRICES.growth.usdLabel,
+    priceLabel: PAID_PLAN_PRICES.growth.audLabel,
     stars: PAID_PLAN_PRICES.growth.starsLabel,
     ton: PAID_PLAN_PRICES.growth.tonLabel,
     blurb: 'IDE access, shareable reports, and weekly re-audit reminders in Telegram.',
@@ -108,7 +105,7 @@ export const pricingTiers: Array<{
   },
   {
     id: 'agency',
-    priceLabel: PAID_PLAN_PRICES.agency.usdLabel,
+    priceLabel: PAID_PLAN_PRICES.agency.audLabel,
     stars: PAID_PLAN_PRICES.agency.starsLabel,
     ton: PAID_PLAN_PRICES.agency.tonLabel,
     blurb: 'API access for paid research, 10 client workspaces, daily re-audit reminders in Telegram, white-label PDF.',

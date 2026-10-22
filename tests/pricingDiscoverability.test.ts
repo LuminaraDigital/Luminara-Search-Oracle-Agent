@@ -73,9 +73,9 @@ describe('pricing page discoverability', () => {
     expect(html).not.toContain('Pay with Telegram Stars inside the Mini App.');
     expect(html).toContain('Pay 2,500 Stars in Telegram');
     expect(html).not.toContain('Connect Wallet');
-    expect(html).toContain(PAID_PLAN_PRICES.starter.usdLabel);
-    expect(html).toContain(PAID_PLAN_PRICES.growth.usdLabel);
-    expect(html).toContain(PAID_PLAN_PRICES.agency.usdLabel);
+    expect(html).toContain(PAID_PLAN_PRICES.starter.audLabel);
+    expect(html).toContain(PAID_PLAN_PRICES.growth.audLabel);
+    expect(html).toContain(PAID_PLAN_PRICES.agency.audLabel);
     expect(html).not.toContain('Subscribe');
     expect(html).not.toMatch(/card checkout/i);
     expect(html).toContain('2,500 Stars');

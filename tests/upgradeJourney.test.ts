@@ -11,7 +11,7 @@ import { setFindingStatusLocal } from '../services/audit/findingBoardService';
 import { UpgradePrompt, UpgradeSurfaces } from '../components/upgrade/UpgradeSurfaces';
 import { audPrice, competitorRankLine, dismissPrompt, easyFix, fixProgress, isPromptDismissed, lockedFeatures, lockedSample, recheckCelebration, recheckTarget, upgradePrompt, UPGRADE_DISMISS_KEY } from '../services/upgrade/upgradeJourney';
 import { readRecheck } from '../services/upgrade/recheckReading';
-import { approximateAudLabel, PAID_PLAN_PRICES } from '../components/paywall/planPrices';
+import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { NO_TAX_LINE, NOTHING_TO_CANCEL, WAITLIST_LINE } from '../components/paywall/planCopy';
 
 const BOT_TOKEN = '123456:MOCK_TOKEN';
@@ -62,8 +62,8 @@ describe('upgrade journey', () => {
   });
 
   it('prices the prompts in AUD with no tax and no urgency', () => {
-    expect(audPrice('starter')).toBe(approximateAudLabel(PAID_PLAN_PRICES.starter.usdLabel));
-    expect(audPrice('starter')).toBe('A$76');
+    expect(audPrice('starter')).toBe(PAID_PLAN_PRICES.starter.audLabel);
+    expect(audPrice('starter')).toBe('A$79');
     const kinds = ['quota', 'competitor', 'white_label', 'tracking'] as const;
     for (const kind of kinds) {
       const copy = `${upgradePrompt(kind).title} ${upgradePrompt(kind).body}`;
@@ -75,7 +75,7 @@ describe('upgrade journey', () => {
     expect(upgradePrompt('white_label').body).toContain(audPrice('agency'));
     expect(NO_TAX_LINE).not.toMatch(/GST/i);
     expect(NOTHING_TO_CANCEL).toContain('nothing to cancel');
-    expect(WAITLIST_LINE).toContain('support@luminarasuite.com');
+    expect(WAITLIST_LINE).toContain('info@luminara.digital');
     expect(WAITLIST_LINE).not.toMatch(/card checkout/i);
   });
 
@@ -121,7 +121,7 @@ describe('upgrade journey', () => {
     expect(html).toContain('Competitor rank: Not measured.');
     expect(html).not.toContain('**');
     const quota = renderToStaticMarkup(createElement(UpgradePrompt, { kind: 'quota' }));
-    expect(quota).toContain('A$76');
+    expect(quota).toContain('A$79');
     expect(quota).toContain('Not now');
     expect(quota).toContain('See plans');
   });

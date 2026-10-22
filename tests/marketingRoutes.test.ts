@@ -164,7 +164,7 @@ describe('marketing crawl documents', () => {
   it('serves the shared USD list prices and Stars checkout in llms.txt', () => {
     const usdCheckoutPrice = /\/mo\b|per month/i;
     expect(LLMS_TXT).toContain(listPriceSummary());
-    expect(LLMS_TXT).toContain('Pro / Agency: list price A$541 (US$349)');
+    expect(LLMS_TXT).toContain('Pro / Agency: list price A$549, pay 18,000 Stars');
     expect(LLMS_TXT).toContain('10 client workspaces');
     expect(LLMS_TXT).not.toContain('saved in this browser');
     expect(LLMS_TXT).not.toMatch(/team seats/i);
