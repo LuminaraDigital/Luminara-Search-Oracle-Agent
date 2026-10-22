@@ -2,9 +2,12 @@
  * Crawl surfaces served by the Worker (and mirrored under public/ for Vite).
  * Keep copy factual; no invented metrics.
  */
-import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
-import { CHECKOUT_TERM_LINE } from '../components/paywall/planCopy';
+import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/planCopy';
+import { PAID_PLAN_PRICES, type PaidPlanId } from '../components/paywall/planPrices';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
+import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
+import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
+import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
 # Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
@@ -32,6 +35,8 @@ Allow: /methodology
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
+Allow: /faq
+Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /docs/
@@ -55,6 +60,8 @@ Allow: /methodology
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
+Allow: /faq
+Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /docs/
@@ -116,6 +123,8 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/sample-report</loc></url>
   <url><loc>${base}/privacy</loc></url>
   <url><loc>${base}/terms</loc></url>
+  <url><loc>${base}/faq</loc></url>
+  <url><loc>${base}/contact</loc></url>
   <url><loc>${base}/docs/mcp.html</loc></url>
   <url><loc>${base}/docs/what-is-aeo.html</loc></url>
   <url><loc>${base}/desktop</loc></url>
@@ -129,6 +138,35 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
 }
 
 export const SITEMAP_XML = buildSitemapXml('https://www.luminarasuite.com');
+
+function llmsPaidPlanBlock(): string {
+  const ids: PaidPlanId[] = ['starter', 'growth', 'agency'];
+  return ids.map((id) => {
+    const price = PAID_PLAN_PRICES[id];
+    const ent = PLAN_ENTITLEMENTS[id];
+    const parts = [
+      `${ent.title}: list price ${price.audLabel}, pay ${price.starsLabel}`,
+      `${ent.domainLimit} monitored domains`,
+      ent.mcpAccess ? 'IDE access' : 'No IDE access',
+      ent.shareLinks ? 'Public share links' : 'No public share links',
+    ];
+    if (ent.scheduledReaudit !== 'none') {
+      const cadence = ent.scheduledReaudit.charAt(0).toUpperCase() + ent.scheduledReaudit.slice(1);
+      parts.push(`${cadence} re-audit reminders in Telegram`);
+    }
+    if (ent.apiAccess) parts.push('API access');
+    if (ent.agencyClientLimit > 0) {
+      parts.push(`${ent.agencyClientLimit} client workspaces`);
+    }
+    if (id === 'agency') {
+      parts.push('Daily drift check');
+      if (ent.whiteLabelPdf) parts.push('White-label PDF');
+      parts.push(LIVE_ANSWER_CHECKS);
+    }
+    const line = parts.join('. ');
+    return `- ${line.endsWith('.') ? line : `${line}.`}`;
+  }).join('\n');
+}
 
 export const LLMS_TXT = `# Luminara Suite
 
@@ -159,7 +197,7 @@ LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt pres
 ## Answer engine targets
 
 ### What is Luminara Suite?
-Luminara Suite checks a site and live web search, then ranks one fix. ${LIVE_ANSWER_CHECKS} Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week.
+Luminara Suite checks whether Google and AI answers name a real estate agency, then ranks one fix to ship next. ${LIVE_ANSWER_CHECKS} Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week. ${REAL_ESTATE_AUDIENCE}
 
 ### How does Luminara compare to traditional SEO suites?
 Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness and knowledge-graph grounding. ${LIVE_ANSWER_CHECKS} Every metric is labeled measured, estimated, or not_measured.
@@ -173,12 +211,10 @@ Answer Engine Optimization (AEO) is the discipline of structuring web content, t
 
 ## Pricing (30 days)
 
-${CHECKOUT_TERM_LINE} Payment is Telegram Stars.
+${CHECKOUT_TERM_LINE} ${listPriceSummary()}
 
-- Starter: ${PAID_PLAN_PRICES.starter.starsLabel}. Up to 2 sites. No MCP. No full public share links.
-- Growth: ${PAID_PLAN_PRICES.growth.starsLabel}. MCP, full share links, weekly re-audit reminders in Telegram.
-- Agency: ${PAID_PLAN_PRICES.agency.starsLabel}. API access, 10 client workspaces saved in this browser, daily drift check, white-label PDF. ${LIVE_ANSWER_CHECKS}
-- Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
+${llmsPaidPlanBlock()}
+- Free: ${PLAN_ENTITLEMENTS.free.domainLimit} domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
 
 ## MCP
 
@@ -208,7 +244,8 @@ ${CHECKOUT_TERM_LINE} Payment is Telegram Stars.
 
 ## Studio
 
-- Luminara Digital: https://luminaradigital.io
+- Luminara Digital: ${COMPANY_SITE_URL}
+- Services: ${COMPANY_SERVICES_URL}
 - Source: https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent
 
 ## Legal

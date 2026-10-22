@@ -6,6 +6,7 @@ import { apiBase, getServerHealthSync, loadServerHealth, workerFetchWithAuthRetr
 import type { HonestMeasurementStatus, MissionKey, VisibilityLevel } from './rules';
 import { clearPendingReferral, readPendingReferral } from './pendingReferral';
 import { takeScoutReceipt } from './scoutReceiptCapture';
+import { notifyAuditActivity } from '../audit/auditActivity';
 
 export interface ReferralMission {
   key: string;
@@ -102,6 +103,7 @@ export async function qualifyHonestScout(input: {
       }),
     });
     const data = (await res.json().catch(() => ({}))) as { rewardsGranted?: boolean };
+    if (res.ok) notifyAuditActivity();
     return { rewardsGranted: Boolean(data.rewardsGranted) };
   } catch {
     return { rewardsGranted: false };
@@ -119,6 +121,7 @@ export async function completeWeeklyMission(missionKey: MissionKey): Promise<{ o
     });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
     if (!res.ok || !data.ok) return { ok: false, error: data.error || `HTTP ${res.status}` };
+    notifyAuditActivity();
     return { ok: true };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : 'Network error' };

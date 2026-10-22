@@ -6,12 +6,13 @@ import {
   type MarketingShellMeta,
 } from '../services/marketing/pageMeta';
 import { sha256Hex } from './workerUtils';
+import { maybeServeWinHtml } from './winShare';
 
 /**
  * Unknown paths are served as this shell with HTTP 404. The old inline skip
  * script never ran: CSP script-src is 'self' only. The class is in the first
  * tag, so #boot-splash stays display:none before first paint. The shell CSS
- * paints a static mark on the empty root so that hide is not a blank flash.
+ * paints the empty root black so that hide is not a white flash.
  */
 function addHtmlClass(html: string, className: string): string {
   const present = new RegExp(`(?:^|\\s)class="[^"]*\\b${className}\\b`);
@@ -212,7 +213,7 @@ export async function maybeServeMarketingHtml(
 
   const headers: Record<string, string> = {
     'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'public, max-age=300',
+    'Cache-Control': 'no-cache',
   };
   if (page.robots) headers['X-Robots-Tag'] = page.robots;
 
@@ -229,6 +230,7 @@ const SHARE_TOKEN_PATH = /^\/share\/([a-f0-9]{64})$/i;
 type ShareOgEnv = {
   ASSETS: Fetcher;
   DB?: D1Database;
+  WEBAPP_URL?: string;
 };
 
 /**
@@ -239,6 +241,8 @@ export async function maybeServeShareHtml(
   request: Request,
   env: ShareOgEnv,
 ): Promise<Response | null> {
+  const win = await maybeServeWinHtml(request, env);
+  if (win) return win;
   const url = new URL(request.url);
   const match = url.pathname.replace(/\/+$/, '').match(SHARE_TOKEN_PATH);
   if (!match) return null;
@@ -325,7 +329,7 @@ export async function maybeServeShareHtml(
       status: 200,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'public, max-age=120',
+        'Cache-Control': 'no-cache',
         'X-Robots-Tag': 'noindex, nofollow',
       },
     });
@@ -339,7 +343,7 @@ export async function maybeServeShareHtml(
     status: 200,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=120',
+      'Cache-Control': 'no-cache',
       'X-Robots-Tag': 'noindex, nofollow',
     },
   });
@@ -444,7 +448,7 @@ export async function maybeServeReceiptHtml(
       status: 200,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'public, max-age=120',
+        'Cache-Control': 'no-cache',
         'X-Robots-Tag': 'noindex, nofollow',
       },
     });
@@ -458,7 +462,7 @@ export async function maybeServeReceiptHtml(
     status: 200,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=120',
+      'Cache-Control': 'no-cache',
       'X-Robots-Tag': 'noindex, nofollow',
     },
   });

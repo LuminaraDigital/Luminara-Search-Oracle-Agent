@@ -1,17 +1,18 @@
 /**
  * Pricing page: entitlement-true tiers. Hero sells Growth (IDE access + share).
- * Prices are the Stars / TON amounts the Worker charges (worker/telegramBot.ts,
- * worker/tonPayment.ts), mirrored in ./paywall/planPrices. The USD label is a list price only:
- * card checkout is unavailable.
+ * Prices are the AUD card prices and the Stars / TON amounts the Worker charges
+ * (worker/telegramBot.ts, worker/tonPayment.ts, worker/stripePayment.ts), mirrored in ./paywall/planPrices.
  */
 import { isInTelegram } from '../services/telegram/tma';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
-import React, { useEffect } from 'react';
-import { getServerHealthSync, openPaywallModal } from '../services/apiClient';
+import React, { useEffect, useState } from 'react';
+import { accountCallsAllowed, getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
-import { CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
+import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './paywall/planCopy';
+import { redirectToCardCheckout } from './paywall/cardCheckout';
+import { cardPayLabel, cardTermLabel, type PaidPlanId } from './paywall/planPrices';
 import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
 
 export { pricingTiers };
@@ -27,24 +28,36 @@ export function planChoiceLine(title: string, tier: { stars: string; ton: string
     : `Choose ${title}: ${tier.stars} inside the Mini App.`;
 }
 
-/** One-off Stars purchases. Each writes a 1-day plan with the same paid-engine access. */
-const ONE_OFFS = [
-  {
-    title: '24-hour pass',
-    price: '25 Stars',
-    body: 'Premium hosted AI engines and hosted calls past the free daily cap, for one site, for 24 hours. ChatGPT, Perplexity and AI Overviews stay Not measured unless you are on Agency or use your own DataForSEO login.',
-  },
-  {
-    title: '24-hour pass',
-    price: '75 Stars',
-    body: 'The same 24-hour access as the 25 Star pass: premium hosted AI engines and hosted calls past the free daily cap, for one site. Live answer-engine checks stay Not measured.',
-  },
-] as const;
+/** One public pass, at 25 Stars. A legacy 75-Star invoice can still be credited. It is not offered here. */
+const DAY_PASS = {
+  title: '24-hour pass',
+  price: '25 Stars',
+  body: 'Premium hosted AI engines and hosted calls past the free daily cap, for one site, for 24 hours. ChatGPT, Perplexity and AI Overviews stay Not measured unless you are on Agency or use your own DataForSEO login.',
+} as const;
 
 const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
+  const [busyPlan, setBusyPlan] = useState<PaidPlanId | null>(null);
+  const [cardNote, setCardNote] = useState<string | null>(null);
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  const startPricedCard = async (planId: PaidPlanId) => {
+    if (!accountCallsAllowed()) {
+      window.dispatchEvent(new CustomEvent('luminara-open-login', { detail: { mode: 'signin' } }));
+      return;
+    }
+    setBusyPlan(planId);
+    setCardNote(null);
+    const result = await redirectToCardCheckout(planId);
+    if (result.ok) return;
+    if (/sign in/i.test(result.error)) {
+      window.dispatchEvent(new CustomEvent('luminara-open-login', { detail: { mode: 'signin' } }));
+    }
+    setCardNote(result.error);
+    setBusyPlan(null);
+  };
 
   const inTelegram = isInTelegram();
   // TON is paid on the web with a connected wallet, never inside Telegram, and only while the
@@ -52,7 +65,6 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
   const tonOpen = !inTelegram && isTonAvailable(getServerHealthSync());
   const cardOpen = !inTelegram && isStripeCheckoutAvailable(getServerHealthSync(), false);
   const tonClause = tonOpen ? ' Or with TON on the web.' : '';
-  const free = PLAN_ENTITLEMENTS.free;
   const miniAppLinkProps = inTelegram
     ? { rel: 'noopener noreferrer' as const }
     : { target: '_blank' as const, rel: 'noopener noreferrer' as const };
@@ -83,19 +95,49 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
       <p className="lx-enter-rise lx-d4 mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
         {CHECKOUT_TERM_LINE}{tonClause}
       </p>
+      <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
+        {listPriceSummary()}
+      </p>
+      <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
+        {NO_TAX_LINE} {NOTHING_TO_CANCEL} For a refund, email info@luminara.digital.
+      </p>
+      {!cardOpen && !tonOpen && (
+        <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
+          {WAITLIST_LINE}
+        </p>
+      )}
 
       <section aria-labelledby="plans-heading" className="lx-enter-rise lx-d5 mt-16 sm:mt-20">
         <h2 id="plans-heading" className="sr-only">
-          Paid plans
+          Plans
         </h2>
-        <div className="lx-glass grid overflow-hidden rounded-3xl lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <article className="lx-glass relative flex min-w-0 flex-col rounded-3xl p-6 sm:p-8">
+            <h3 className="font-serif text-3xl leading-tight text-[var(--color-ink)]">{PLAN_ENTITLEMENTS.free.title}</h3>
+            <p className="mt-7 font-serif text-5xl leading-none text-[var(--color-ink)]">A$0</p>
+            <p className="mt-3 text-[13px] text-[var(--color-ink-2)]">No card</p>
+            <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">
+              One domain, on-demand audits, and a daily hosted allowance after you create an account.
+            </p>
+            <ul className="m-0 mt-7 flex-1 list-none space-y-3 border-t p-0 pt-6 lx-hairline">
+              {freePlanLines().map((text) => (
+                <li key={text} className="flex gap-3 text-[15px] leading-snug text-[var(--color-ink)]">
+                  <span aria-hidden className="mt-[0.4em] h-2 w-2 shrink-0 rounded-full bg-[var(--color-accent)]" />
+                  {text}
+                </li>
+              ))}
+            </ul>
+            <button type="button" onClick={onTerminal} className="lx-btn lx-btn-ghost mt-9 w-full">
+              Start free
+            </button>
+          </article>
           {pricingTiers.map((tier) => {
             const lines = planBullets(tier.id);
             const title = planTitle(tier.id);
             return (
               <article
                 key={tier.id}
-                className={`relative flex min-w-0 flex-col border-t p-7 lx-hairline first:border-t-0 sm:p-9 lg:border-l lg:border-t-0 lg:first:border-l-0 ${
+                className={`lx-glass relative flex min-w-0 flex-col rounded-3xl p-6 sm:p-8 ${
                   tier.highlight ? 'bg-[radial-gradient(ellipse_at_top,color-mix(in_srgb,var(--gold)_18%,transparent),transparent_70%)]' : ''
                 }`}
               >
@@ -107,6 +149,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 )}
                 <div className="flex items-baseline justify-between gap-3">
                   <h3 className="font-serif text-3xl leading-tight text-[var(--color-ink)]">{title}</h3>
+                <p className="mt-2 text-[13px] text-[var(--color-ink-2)]">{planSeatLine(tier.id)}</p>
                   {tier.highlight && <p className="lx-eyebrow shrink-0 !text-[11px]">{PLAN_CARD_BADGE}</p>}
                 </div>
                 <p
@@ -114,14 +157,13 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                     tier.highlight ? 'lx-gold-text' : 'text-[var(--color-ink)]'
                   }`}
                 >
-                  {cardOpen ? tier.priceLabel : tier.stars}
+                  {tier.priceLabel}
                 </p>
                 <p className="mt-3 text-[13px] text-[var(--color-ink-2)]">
-                  {cardOpen
-                    ? `or ${tier.stars} in Telegram`
-                    : tonOpen
-                      ? `30 days · or ${tier.ton} on the web`
-                      : '30 days'}
+                  {cardTermLabel(tier.id)}
+                </p>
+                <p className="mt-1 text-[13px] text-[var(--color-ink-2)]">
+                  {tonOpen ? `${tier.stars} · or ${tier.ton} on the web` : `${tier.stars} in Telegram`}
                 </p>
                 <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">{tier.blurb}</p>
                 <ul className="m-0 mt-7 flex-1 list-none space-y-3 border-t p-0 pt-6 lx-hairline">
@@ -144,46 +186,39 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                 </ul>
                 <button
                   type="button"
-                  onClick={() =>
-                    openPaywallModal(planChoiceLine(title, tier, tonOpen))
-                  }
-                  className={`lx-btn mt-9 w-full ${tier.highlight ? 'lx-btn-gold' : 'lx-btn-ghost'}`}
+                  disabled={busyPlan === tier.id}
+                  onClick={() => {
+                    if (cardOpen) {
+                      void startPricedCard(tier.id);
+                      return;
+                    }
+                    openPaywallModal(planChoiceLine(title, tier, tonOpen));
+                  }}
+                  className={`lx-btn mt-9 w-full disabled:opacity-60 ${tier.highlight ? 'lx-btn-gold' : 'lx-btn-ghost'}`}
                 >
-                  {cardOpen ? `Pay ${tier.priceLabel} by card` : starsPayLabel(tier.stars, inTelegram)}
+                  {busyPlan === tier.id ? 'Opening checkout…' : cardOpen ? cardPayLabel(tier.id) : starsPayLabel(tier.stars, inTelegram)}
                 </button>
               </article>
             );
           })}
         </div>
+        {cardNote ? (
+          <p role="alert" className="mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink)]">
+            {cardNote}
+          </p>
+        ) : null}
       </section>
 
-      <section aria-labelledby="free-heading" className="mt-20 sm:mt-24">
-        <h2 id="free-heading" className="lx-eyebrow" data-reveal>
-          Free and one-off runs
+      <section aria-labelledby="day-pass-heading" className="mt-20 max-w-2xl sm:mt-24">
+        <h2 id="day-pass-heading" className="lx-eyebrow" data-reveal>
+          One day, one site
         </h2>
-        <div className="mt-8 grid gap-10 lg:grid-cols-3">
-          <div className="min-w-0 border-t pt-6 lx-hairline" data-reveal>
-            <h3 className="font-serif text-2xl text-[var(--color-ink)]">{free.title}</h3>
-            <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">
-              {free.domainLimit} domain, on-demand audits, Sample scouts with no card. Free accounts get a
-              daily hosted Instant Audit allowance. No IDE access, no public share links. Guests may still
-              bring their own AI keys.
-            </p>
+        <div className="mt-8 border-t pt-6 lx-hairline" data-reveal>
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="font-serif text-2xl text-[var(--color-ink)]">{DAY_PASS.title}</h3>
+            <p className="shrink-0 text-sm text-[var(--gold-light)]">{DAY_PASS.price}</p>
           </div>
-          {ONE_OFFS.map((item, i) => (
-            <div
-              key={`${item.title}-${item.price}`}
-              className="min-w-0 border-t pt-6 lx-hairline"
-              data-reveal
-              style={{ transitionDelay: `${(i + 1) * 90}ms` }}
-            >
-              <div className="flex items-baseline justify-between gap-3">
-                <h3 className="font-serif text-2xl text-[var(--color-ink)]">{item.title}</h3>
-                <p className="shrink-0 text-sm text-[var(--gold-light)]">{item.price}</p>
-              </div>
-              <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">{item.body} One-off, paid in Telegram.</p>
-            </div>
-          ))}
+          <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">{DAY_PASS.body} Paid in Telegram.</p>
         </div>
       </section>
 

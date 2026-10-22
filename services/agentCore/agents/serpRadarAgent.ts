@@ -15,6 +15,7 @@ import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
 import { isSampleSearchRow } from '../auditEvidenceGate';
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
+import { readableStem } from '../../audit/brandName';
 import { BusinessDNA } from '../../../types';
 
 export class SerpRadarAgent {
@@ -33,6 +34,7 @@ export class SerpRadarAgent {
   }> {
     const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
     const brandName = dna?.name || cleanDomain.split('.')[0];
+    const shownName = dna?.name || readableStem(cleanDomain);
 
     // Formulate targeted queries
     const queries = [
@@ -54,8 +56,8 @@ export class SerpRadarAgent {
       agentName: this.name,
       phase: 'probing_engines',
       message: searchSource
-        ? `Checking web search results for "${brandName}" through ${searchSource}…`
-        : `Checking web search results for "${brandName}"…`,
+        ? `Checking web search results for "${shownName}" through ${searchSource}…`
+        : `Checking web search results for "${shownName}"…`,
       status: 'running',
     });
 
@@ -94,7 +96,7 @@ export class SerpRadarAgent {
 
           serpEvidence.push({
             query: res.query,
-            engine: 'tavily',
+            engine: item.source === 'exa' ? 'exa' : 'tavily',
             title: item.title,
             url: item.url,
             snippet: item.content,

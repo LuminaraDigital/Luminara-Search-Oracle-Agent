@@ -38,9 +38,13 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
     >
       <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gold-light">Instant Audit</p>
       <h2 className="mt-3 text-[clamp(1.6rem,4vw,2.4rem)] font-semibold tracking-tight text-white [overflow-wrap:anywhere]">
-        {summary.domain}
+        {summary.brand || summary.domain}
       </h2>
+      {summary.brand && summary.brand.toLowerCase() !== summary.domain.toLowerCase() && (
+        <p className="mt-1 text-sm text-gray-400 [overflow-wrap:anywhere]">{summary.domain}</p>
+      )}
       <div
+        id="tour-audit-result"
         className="markdown-content scout-brief mt-4 max-w-2xl text-[15px] leading-relaxed text-gray-200"
         dangerouslySetInnerHTML={{ __html: renderMarkdown(summary.verdictMarkdown || summary.verdict) }}
       />
@@ -72,7 +76,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       </p>
 
       <div className="mt-8 grid gap-8 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <div>
+        <div id="tour-top-fix">
           <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Your next move</h3>
           <p className="mt-2 text-sm leading-relaxed text-white">{summary.topFix}</p>
           <p className="mt-3 text-sm leading-relaxed text-gray-400">{summary.nextStep}</p>
@@ -90,7 +94,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
             key={badge.label}
             className={`rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide ${badgeClass[badge.status] || badgeClass.not_measured}`}
           >
-            {badge.label}: {badge.status === 'not_measured' ? 'not measured' : badge.value || badge.status}
+            {badge.label}: {badge.status === 'not_measured' ? badge.value || 'not measured' : badge.value || badge.status}
           </li>
         ))}
       </ul>

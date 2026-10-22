@@ -6,12 +6,11 @@
  * No Admin SDK / service-account private key is required for verification.
  */
 
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { createLocalJWKSet, jwtVerify, type JSONWebKeySet, type JWTPayload, type JWTVerifyGetKey } from 'jose';
 
 const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
-
-/** Cached remote JWKS (jose refreshes on its own when keys rotate). */
-const JWKS = createRemoteJWKSet(new URL(FIREBASE_JWKS_URL));
+const JWKS_FALLBACK_MS = 600_000;
+const TOKEN_CACHE_MAX = 64;
 
 export interface FirebaseUser {
   /** Stable Firebase Auth uid. */
@@ -24,6 +23,122 @@ export interface FirebaseUser {
 export type FirebaseValidationResult =
   | { ok: true; user: FirebaseUser; payload: JWTPayload }
   | { ok: false; reason: string };
+
+export type FirebaseAuthTiming = {
+  jwksMs: number;
+  verifyMs: number;
+  cache: 'hit' | 'miss';
+};
+
+const resultTiming = new WeakMap<object, FirebaseAuthTiming>();
+
+export function firebaseAuthTiming(result: object): FirebaseAuthTiming | undefined {
+  return resultTiming.get(result);
+}
+
+type JwksEntry = { keys: JWTVerifyGetKey; expiresAt: number };
+let jwksEntry: JwksEntry | null = null;
+let jwksInflight: Promise<JWTVerifyGetKey> | null = null;
+
+type TokenHit = { expMs: number; result: Extract<FirebaseValidationResult, { ok: true }> };
+const tokenCache = new Map<string, TokenHit>();
+const tokenInflight = new Map<string, Promise<FirebaseValidationResult>>();
+
+/** Test hook. Production callers never clear this except by isolate recycle. */
+export function resetFirebaseAuthCache(): void {
+  jwksEntry = null;
+  jwksInflight = null;
+  tokenCache.clear();
+  tokenInflight.clear();
+}
+
+function note(result: FirebaseValidationResult, timing: FirebaseAuthTiming): FirebaseValidationResult {
+  resultTiming.set(result, timing);
+  return result;
+}
+
+/** max-age from Cache-Control. Missing header keeps keys for ten minutes. */
+export function jwksFreshForMs(cacheControl: string | null): number {
+  const match = /(?:^|,)\s*max-age=(\d+)/i.exec(cacheControl || '');
+  if (!match) return JWKS_FALLBACK_MS;
+  return Number(match[1]) * 1000;
+}
+
+function isJwkSet(value: unknown): value is JSONWebKeySet {
+  if (!value || typeof value !== 'object' || !Array.isArray((value as { keys?: unknown }).keys)) return false;
+  return (value as { keys: unknown[] }).keys.every((key) => {
+    if (!key || typeof key !== 'object') return false;
+    return typeof (key as { kty?: unknown }).kty === 'string';
+  });
+}
+
+async function fetchJwks(): Promise<JWTVerifyGetKey> {
+  const started = Date.now();
+  const res = await fetch(FIREBASE_JWKS_URL, { headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error('jwks');
+  const json: unknown = await res.json();
+  if (!isJwkSet(json)) throw new Error('jwks');
+  const keys = createLocalJWKSet(json);
+  jwksEntry = { keys, expiresAt: started + jwksFreshForMs(res.headers.get('cache-control')) };
+  return keys;
+}
+
+async function firebaseJwks(): Promise<{ keys: JWTVerifyGetKey; jwksMs: number }> {
+  if (jwksEntry && jwksEntry.expiresAt > Date.now()) return { keys: jwksEntry.keys, jwksMs: 0 };
+  const started = Date.now();
+  if (!jwksInflight) {
+    jwksInflight = fetchJwks().finally(() => {
+      jwksInflight = null;
+    });
+  }
+  try {
+    const keys = await jwksInflight;
+    return { keys, jwksMs: Date.now() - started };
+  } catch {
+    // shortcut: a shared fetch can fail when another request's isolate context cancels it. One local retry.
+    const keys = await fetchJwks();
+    return { keys, jwksMs: Date.now() - started };
+  }
+}
+
+function rememberToken(key: string, result: Extract<FirebaseValidationResult, { ok: true }>): void {
+  const exp = result.payload.exp;
+  if (typeof exp !== 'number') return;
+  const expMs = exp * 1000;
+  if (expMs <= Date.now()) return;
+  if (tokenCache.size >= TOKEN_CACHE_MAX) {
+    const oldest = tokenCache.keys().next().value;
+    if (oldest) tokenCache.delete(oldest);
+  }
+  tokenCache.set(key, { expMs, result });
+}
+
+async function verifyFresh(idToken: string, projectId: string, key: string): Promise<FirebaseValidationResult> {
+  const started = Date.now();
+  let jwksMs = 0;
+  try {
+    const jwks = await firebaseJwks();
+    jwksMs = jwks.jwksMs;
+    const verifyStarted = Date.now();
+    const { payload, protectedHeader } = await jwtVerify(idToken, jwks.keys, {
+      algorithms: ['RS256'],
+      issuer: `https://securetoken.google.com/${projectId}`,
+      audience: projectId,
+    });
+    const verifyMs = Date.now() - verifyStarted;
+    if (protectedHeader.alg !== 'RS256') {
+      return note({ ok: false, reason: 'Firebase token algorithm must be RS256' }, { jwksMs, verifyMs, cache: 'miss' });
+    }
+    const claims = assertFirebaseClaims(payload, projectId);
+    if (!claims.ok) return note(claims, { jwksMs, verifyMs, cache: 'miss' });
+    const result: Extract<FirebaseValidationResult, { ok: true }> = { ok: true, user: claims.user, payload };
+    rememberToken(key, result);
+    // shortcut: a disabled Firebase account stays accepted until exp. This path does not call accounts:lookup.
+    return note(result, { jwksMs, verifyMs, cache: 'miss' });
+  } catch {
+    return note({ ok: false, reason: 'Firebase token invalid' }, { jwksMs, verifyMs: Date.now() - started, cache: 'miss' });
+  }
+}
 
 /**
  * Pure claim checks used by verifyFirebaseIdToken and unit tests.
@@ -65,6 +180,7 @@ export function assertFirebaseClaims(
 
 /**
  * Verifies a Firebase ID token (RS256 + Google JWKS) for the given project.
+ * Successful results stay in this isolate until the token's exp.
  */
 export async function verifyFirebaseIdToken(
   idToken: string,
@@ -78,21 +194,20 @@ export async function verifyFirebaseIdToken(
     return { ok: false, reason: 'FIREBASE_PROJECT_ID not configured' };
   }
 
-  try {
-    const { payload, protectedHeader } = await jwtVerify(trimmed, JWKS, {
-      algorithms: ['RS256'],
-      issuer: `https://securetoken.google.com/${projectId}`,
-      audience: projectId,
-    });
-    if (protectedHeader.alg !== 'RS256') {
-      return { ok: false, reason: 'Firebase token algorithm must be RS256' };
-    }
-    const claims = assertFirebaseClaims(payload, projectId);
-    if (!claims.ok) return claims;
-    return { ok: true, user: claims.user, payload };
-  } catch {
-    return { ok: false, reason: 'Firebase token invalid' };
+  const key = `${projectId}:${trimmed}`;
+  const hit = tokenCache.get(key);
+  if (hit && hit.expMs > Date.now()) {
+    return note(hit.result, { jwksMs: 0, verifyMs: 0, cache: 'hit' });
   }
+  if (hit) tokenCache.delete(key);
+
+  const running = tokenInflight.get(key);
+  if (running) return running;
+  const run = verifyFresh(trimmed, projectId, key).finally(() => {
+    tokenInflight.delete(key);
+  });
+  tokenInflight.set(key, run);
+  return run;
 }
 
 /** Extracts a Bearer token from an Authorization header value. */

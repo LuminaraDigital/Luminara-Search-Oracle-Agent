@@ -18,13 +18,14 @@ leaked internals).
 | `POST /auth/logout` | worker/index.ts | none | Session clear |
 | `POST /auth/reset-password` | worker/index.ts | none | Email reset |
 | `POST /auth/sign-up`, `/auth/sign-in` | worker/index.ts | none | Password auth |
+| `GET,POST /email/unsubscribe` | worker/welcomeEmail.ts | none | One-click opt-out for welcome mail. `RESEND_API_KEY` is a Worker secret. A new account is mailed once from `hello@luminarasuite.com`; migration 0036 stamps older rows so they are not mailed. The send runs in `waitUntil` and a Resend error does not fail sign-in |
 | `POST /auth/request-otp`, `/auth/verify-otp` | worker/authOtpSms.ts | none | SMS OTP |
 | `POST /auth/send-verification` | worker/index.ts | none | Email verification |
 | `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook |
 | `POST /auth/link` | worker/index.ts | Telegram initData + Firebase Bearer | Explicit account link. Body must be `{ confirm: true }` or the route returns 400 and writes nothing. Two distinct accounts that each have an active paid plan return 409 with no merge. `identify()` never links. Success and dual-paid refusal write an audit event |
 | `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag) |
 | `GET /enterprise/audit-logs` | worker/enterpriseStore.ts + auditLog | session + role | Admin/Auditor role required |
-| `GET /auth/quota` | worker/index.ts | session | Daily quota |
+| `GET /auth/quota` | worker/index.ts | session | Free daily meter on `DAILY_QUOTA` (one SQLite object per account per UTC day). Spend and refund are single statements on that object. 503 `HOSTED_CAPACITY` when it is unavailable. Not a KV key |
 | `POST /telegram/webhook` | worker/index.ts | webhook secret | Telegram updates |
 | `GET /telegram/auth`, `/telegram/invoice`, `/telegram/refund` | worker/index.ts | none/secret | Telegram auth + Stars |
 | `GET /admin/users` | worker/index.ts | admin | Requires `ADMIN_SECRET` |
@@ -46,6 +47,8 @@ leaked internals).
 | `POST /enrichment/entity` | worker/enrichmentService | session | Entity enrichment |
 | `GET /trust/audit-chain/verify` | worker/index.ts + auditLog | session + role | Walks the org's hash chain from genesis by `prev_hash` links. Reports `hash_mismatch`, `fork`, or `orphan` with `brokenAtId`. Legacy raw-accountId rows are a separate chain, verified separately. Over 5000 rows returns `truncated: true` and `ok: false` |
 | `GET /trust/keys` | worker/trustReceipts.ts | none | Ed25519 public key set for offline receipt verification. 404 unless `TRUST_RECEIPTS_ENABLED` |
+| `GET,POST /citation-watches`, `GET /citation-watches/:id`, `POST /citation-watches/:id/run`, `DELETE /citation-watches/:id` | worker/citationWatch.ts | session | Fixed prompt set per client, domain, and engine. Verdicts: consistent, drift, insufficient, not_measured. Counts stay null when not measured. Daily cron job `citation_watch` writes only when `CITATION_WATCH_LIVE=true`. Needs D1 `0034_citation_watch_audit_receipts.sql` |
+| `POST /audit-receipts`, `POST /audit-receipts/:id/revoke`, `GET /audit-receipts/keys`, `GET /audit-receipts/:id`, `POST /audit-receipts/verify` | worker/auditReceipts.ts | session for create and revoke, public for the rest | Signed Audit Receipt. Mint and revoke need `AUDIT_RECEIPTS_ENABLED=true`, a paid plan, a fresh verified domain, and `AUDIT_RECEIPT_ACCOUNT_HMAC_KEY` (Wrangler secret, not a var). Public verify stays up when the flag is off. Ed25519 with a domain-separation prefix. Reuses `RECEIPT_SIGNING_KEY`. Public page `/verify/audit`. Needs D1 `0034` and `0035` |
 | `GET /trust/receipts`, `GET /trust/receipts/:id`, `POST /trust/receipts/:id/visibility`, `POST /trust/receipts/:id/revoke` | worker/trustReceipts.ts | session (list, mutate) / public GET when `visibility='public'` | Trust Network TN1. No mint route: only Worker verifiers call `issueTrustReceipt`. Private receipts 404 to non-owners (no existence leak). Revoked receipts that were once public stay readable as revoked. Needs D1 `0020_trust_receipts_domain_verify.sql` |
 | `GET,POST /trust/domains`, `POST /trust/domains/:domain/check`, `DELETE /trust/domains/:domain` | worker/domainVerification.ts | session | Trust Network TN2. 404 unless `DOMAIN_VERIFY_ENABLED`. Token stored hashed; proof by DNS TXT (`_luminara-verify.<domain>` or apex), `/.well-known/luminara-verify.txt`, or home page meta tag. HTTP proof must come from the domain or its www twin after SSRF-guarded redirects. Resolver or network failure is `unreachable` (`not_measured`), never a failed check. Success issues a `domain_control` receipt when signing is configured, else reports `receiptIssued:false`. Daily cron re-checks each verified domain every 7 days; 2 consecutive misses lapse it and revoke the receipt. 30/min per IP |
 | `* /oauth/mcp/*` | worker/mcpOAuth.ts | oauth/token | OAuth 2.1 + PKCE for MCP |
@@ -68,7 +71,7 @@ leaked internals).
 | `GET /oracle/session/:id/(events?after=N\|state\|history)`, `POST /oracle/session/:id/(approval\|callback\|state/patch)` | worker/oracleChat.ts -> worker/oracleSession.ts | session + apiAccess | Owner-level control plane for one session. Allowlist only: other actions 404, POST bodies over 64 KB get 413. Admit, settle, truncate and event publishing are server-internal and never reachable from a client, so a caller cannot forge `tool_end` or approval events. DO key is `accountId:sessionId` (no cross-account access). `approval` with `remember:true` allow-lists the tool for that session only; it never bypasses `isBudgetHalted` or the context-before-paid gate. Control-plane names (`tool_approval`, `provide_callback_result`, ...) are rejected as `invokeTool` on `/oracle/chat` |
 | `POST /audit/run`, `GET /audit/runs/:id` | worker/auditQueue.ts | session + apiAccess | Audit queue |
 | `POST /audit/scout-run` | worker/auditScoutRun.ts | session | One Instant Audit check. `www` and a subdomain of the minted site match that site on a dot boundary. A lookalike such as `evilmovida.com.au` does not. A foreign host is 403 `AUDIT_RUN_REJECTED`. A refund with health score and citation rate both null returns the check even after a covered 200, still under the daily refund cap |
-| `* /providers/:id/*` | worker/providerRelay.ts | byok/session | LLM/search/scrape proxy. Hosted `dataforseo` also needs Agency apiAccess (APS invariant 2); BYOK skips the plan gate. Hosted Groq chat (`POST /providers/groq/chat/completions`, not BYOK) falls through Groq, `GROQ_API_KEY_FALLBACK` when it differs, NVIDIA (`NVIDIA_API_KEY`, model `nvidia/llama-3.1-nemotron-70b-instruct`, worker/nvidiaChatFallback.ts), then Workers AI. That chain runs when no Groq key is set, the connection fails, or Groq returns 400, 404, 408, 429, or 5xx. Groq 401 and 402 stay hosted-key errors. Direct `nim` stays paid-tier. Free accounts share a KV daily cap (`NVIDIA_FALLBACK_DAILY_CAP`, default 200) and a per-account cap (`NVIDIA_FALLBACK_USER_DAILY_CAP`, default 5). A hit, a missing key, or no KV skips NVIDIA. The KV cap is approximate: KV has no atomic add, so overlapping calls can pass together, and a failed NVIDIA call gives its slot back. Paid plans are not counted on those caps. The `x-accept-fallback` header is unused. Workers AI (worker/workersAiFallback.ts) still refuses typed, tool, or over-long prompts. It refuses `response_format`, `tools`, `tool_choice`, non-string content, a bare `prompt`, any field it would have to ignore (`stop`, `logprobs`, the penalties and anything it does not know), an invalid value (it never substitutes a default for one), and a prompt over its budget, counted in UTF-8 bytes; the caller then gets the upstream's own error. When Workers AI is attempted and returns nothing or throws, the response is 503 "The backup model did not answer." and the check is refunded. The failure log includes a short error. An empty or broken fallback is not sent as an answer. A fallback reply carries `X-Provider-Fallback`, `X-Provider-Fallback-Model`, `X-Provider-Fallback-Reason` and a body `x_fallback` field, and only the chat accepts one and shows the model (`allowFallback` on the client). `finish_reason` is `length` only when the binding's reported completion tokens reached the cap; with no usage reported it is `stop` and the answer line says `usage: none`. Usage is the binding's or absent, never zeros. One log line per outcome, with no prompt text: `workers_ai_fallback_answer`, `workers_ai_fallback_refused`, `workers_ai_fallback_failed`. Hosted-key upstream errors the relay renames, each a 503: 402 is `HOSTED_PROVIDER_DEPLETED`, 401 is `HOSTED_PROVIDER_KEY_REFUSED` (the provider refused the server's key), 403 is `HOSTED_PROVIDER_REQUEST_REFUSED` (it refused this request; the cause is not known), so the client does not read either as the caller's sign-in failing. For 401 and 403 the upstream's status and its own error code or type, never its message, go to a `hosted_provider_refused` log line. A BYOK 401 or 403 is the caller's key and passes through; a BYOK 402 stays a 402 (`BYOK_PAYMENT_REQUIRED`) |
+| `* /providers/:id/*` | worker/providerRelay.ts | byok/session | LLM/search/scrape proxy. Hosted `dataforseo` also needs Agency apiAccess (APS invariant 2); BYOK skips the plan gate. Hosted Groq chat (`POST /providers/groq/chat/completions`, not BYOK) falls through Groq, `GROQ_API_KEY_FALLBACK` when it differs, NVIDIA (`NVIDIA_API_KEY`, model `nvidia/llama-3.1-nemotron-70b-instruct`, worker/nvidiaChatFallback.ts), then Workers AI. That chain runs when no Groq key is set, the connection fails, or Groq returns 400, 404, 408, 429, 5xx, or a 413 whose body is a token cap. Workers AI cuts a longer prompt to its 8000-byte budget and still answers. Groq 401 and 402 stay hosted-key errors. Direct `nim` stays paid-tier. Free accounts share a KV daily cap (`NVIDIA_FALLBACK_DAILY_CAP`, default 200) and a per-account cap (`NVIDIA_FALLBACK_USER_DAILY_CAP`, default 5). A hit, a missing key, or no KV skips NVIDIA. The KV cap is approximate: KV has no atomic add, so overlapping calls can pass together, and a failed NVIDIA call gives its slot back. Paid plans are not counted on those caps. The `x-accept-fallback` header is unused. Workers AI (worker/workersAiFallback.ts) still refuses typed, tool, or over-long prompts. It refuses `response_format`, `tools`, `tool_choice`, non-string content, a bare `prompt`, any field it would have to ignore (`stop`, `logprobs`, the penalties and anything it does not know), an invalid value (it never substitutes a default for one), and a prompt over its budget, counted in UTF-8 bytes; the caller then gets the upstream's own error. When Workers AI is attempted and returns nothing or throws, the response is 503 "The backup model did not answer." and the check is refunded. The failure log includes a short error. An empty or broken fallback is not sent as an answer. A fallback reply carries `X-Provider-Fallback`, `X-Provider-Fallback-Model`, `X-Provider-Fallback-Reason` and a body `x_fallback` field, and only the chat accepts one and shows the model (`allowFallback` on the client). `finish_reason` is `length` only when the binding's reported completion tokens reached the cap; with no usage reported it is `stop` and the answer line says `usage: none`. Usage is the binding's or absent, never zeros. One log line per outcome, with no prompt text: `workers_ai_fallback_answer`, `workers_ai_fallback_refused`, `workers_ai_fallback_failed`. Hosted-key upstream errors the relay renames, each a 503: 402 is `HOSTED_PROVIDER_DEPLETED`, 401 is `HOSTED_PROVIDER_KEY_REFUSED` (the provider refused the server's key), 403 is `HOSTED_PROVIDER_REQUEST_REFUSED` (it refused this request; the cause is not known), so the client does not read either as the caller's sign-in failing. For 401 and 403 the upstream's status and its own error code or type, never its message, go to a `hosted_provider_refused` log line. A BYOK 401 or 403 is the caller's key and passes through; a BYOK 402 stays a 402 (`BYOK_PAYMENT_REQUIRED`) |
 
 Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 `apikey` = `lm_live_*` MCP key; `oauth` = `mcp_*` OAuth token;
@@ -136,6 +139,14 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
 - **A missing signing key never fakes a receipt.** Verifiers report
   `receiptIssued: false` with the reason.
 
+## Citation Watch and Signed Audit Receipts (0034)
+
+- Verdicts are `consistent`, `drift`, `insufficient`, or `not_measured`. A `not_measured` run stores null counts and a null share. Thresholds are `services/citationWatch/thresholds.ts`, overridable with `CITATION_WATCH_THRESHOLDS`.
+- The daily cron records a run only when `CITATION_WATCH_LIVE=true`. The built-in probe does not call an engine, so those runs stay `not_measured`.
+- A Signed Audit Receipt is Ed25519 over `luminara:audit-receipt:v1\n` plus canonical JSON, using `RECEIPT_SIGNING_KEY`. The payload source is `caller_submitted`. `accountHash` is HMAC-SHA256 under `AUDIT_RECEIPT_ACCOUNT_HMAC_KEY` (`wrangler secret put`, never a var). Minting and revoke require `AUDIT_RECEIPTS_ENABLED=true` (default `false`), a paid plan, `DOMAIN_VERIFY_ENABLED`, and a verified domain re-checked within `AUDIT_RECEIPT_DOMAIN_FRESH_DAYS` (default 7). The daily quota is atomic and the day is 00:00 UTC (11:00 Sydney during AEDT). Omitted inputs are `not_measured` hashes (null). Revocation marks the row. The Worker does not write the receipt to a chain.
+- Citation Watch `next_run_at` is anchored on the cron scheduled time. Migration 0035 replaces the full unique index from 0034 with a partial index on `active = 1`.
+- Account deletion removes citation watches, their runs, and signed audit receipts.
+
 Public document redirects run in `worker/index.ts` before the marketing shell
 and the SPA asset fallback:
 
@@ -159,7 +170,7 @@ and the SPA asset fallback:
 
 ## Stripe card rail invariants (`worker/stripePayment.ts`, pinned in `tests/stripePayment.test.ts`)
 
-The rail is off. These hold for the day it is switched on.
+Staging and production set `STRIPE_CHECKOUT_LIVE` to `"true"`. The default vars stay `"false"`. These hold wherever the rail is on.
 
 - **Only a signed-in web buyer can start a checkout.** `POST /stripe/create-checkout-session` is a
   protected route and the handler calls `identify()` again: no user means 401 and no call to
@@ -172,7 +183,7 @@ The rail is off. These hold for the day it is switched on.
 - **Nobody pays while the payment could not be credited.** No session is created unless
   `isStripeLedgerReady` passes (migrations 0021 and 0024 applied) and KV is bound.
 - **The grant is decided by the server's own numbers.** Only `checkout.session.completed` with
-  `mode=payment`, `payment_status=paid`, `currency=usd`, a `payment_intent`, and `amount_total`
+  `mode=payment`, `payment_status=paid`, `currency=aud`, a `payment_intent`, and `amount_total`
   equal to `STRIPE_PLAN_CONFIG[plan].amountCents` is credited, to `metadata.userId` only.
   `invoice.payment_succeeded` and `client_reference_id` are not honoured. Turning on Stripe Tax
   or coupons changes `amount_total` and must change this check in the same PR. A session that
@@ -205,7 +216,7 @@ The rail is off. These hold for the day it is switched on.
   the request fails, so Stripe redelivers. A retried session finds itself in `stripeSessions`
   on the record and is neither added again nor refused.
 
-Known limits, each to be settled before the rail is switched on:
+Known limits, still open:
 
 - **Days bought cheaply become days of the higher plan on upgrade (decision 31).** Twelve Starter
   months and then one Agency month is thirteen months of Agency. The card rail makes this easy
@@ -220,13 +231,16 @@ Known limits, each to be settled before the rail is switched on:
 - **The run of card purchases is remembered on the KV record.** A purchase on another rail writes
   a fresh record, so a card retry or reversal after it is judged without that memory.
 
-Before `STRIPE_CHECKOUT_LIVE` is set to true (its own PR, with `tests/moneyInvariants.test.ts`):
-subscribe the Stripe endpoint to exactly `checkout.session.completed`, `charge.refunded`,
-`charge.dispute.created` and `charge.dispute.funds_withdrawn`; on staging, prove one test-mode
-purchase (also once with a `+location_FR` email, to see `currency` stay `usd` under Adaptive
-Pricing), one refund, one dispute and one refused lower plan; add the two migrations and
-`stripe_credited_sessions` to `scripts/smoke-check.mjs`; and give the buyer a confirmation when
-they land on `/?payment=success` (nothing reads it today).
+Staging and production are on (production uses the live key and the live webhook secret).
+The staging checks set for the production switch: prove one staging test-mode purchase (also once with a
+`+location_FR` email, to see `currency` stay `aud` under Adaptive Pricing), one refund, one
+dispute and one refused lower plan; add the two migrations and `stripe_credited_sessions` to
+`scripts/smoke-check.mjs`. A signed-in buyer who lands on `/?payment=success` is sent to
+the dashboard. The page confirms the plan once the webhook credits it, then drops
+`payment`, `plan` and `session_id` from the address. `/pricing?payment=cancelled` says
+no payment was taken. The staging webhook is subscribed to
+`checkout.session.completed`, `charge.refunded`, `charge.dispute.created` and
+`charge.dispute.funds_withdrawn`.
 
 ## Payment rail invariants (pinned in `tests/moneyInvariants.test.ts`)
 
@@ -237,7 +251,7 @@ they land on `/?payment=success` (nothing reads it today).
   must equal `TON_RECEIVING_ADDRESS`. Until it does, no invoice is issued and public
   `/health` reports `ton: false`. Orders that already exist can still be verified.
 - **Q402 is off, and while it is off every `/q402/*` path is a 404**, including discovery.
-- **The Stripe card rail is off** (`STRIPE_CHECKOUT_LIVE`) until its own review.
+- **The Stripe card rail is on for staging and production.** `env.STRIPE_CHECKOUT_LIVE === 'true'` plus a matching key mode is the only open state. `env.staging.vars` and `env.production.vars` are `"true"`. The default vars are `"false"`.
 - Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
   catalogue: title, description, price in Stars, days). Nothing else.
 

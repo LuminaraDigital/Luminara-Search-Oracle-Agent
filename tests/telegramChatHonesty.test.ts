@@ -9,7 +9,8 @@
  * fixed replies are written out here and not taken from the code under test.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { handleTelegramUpdate, PLANS } from '../worker/telegramBot';
+import { handleTelegramUpdate, PLANS, plansOfferedToBuyers } from '../worker/telegramBot';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import {
   BILLING_HELP_REPLY,
   BILLING_PROBLEM_WORDS,
@@ -69,20 +70,21 @@ const HEADING = "Luminara's own plans:";
 const FOOTER = 'Plans are paid with Telegram Stars, inside Telegram. They do not renew on their own. Send /plan to buy.';
 const PAID_LINE = 'Already paid? Send /paysupport. Do not pay again.';
 /** The block that answers a plan question, and stands in for a price of ours in a model reply. */
-const planBlock = (): string => [HEADING, ...Object.values(PLANS).map(trueLine), FOOTER, PAID_LINE].join('\n');
+const BUYER_PLANS = plansOfferedToBuyers();
+const planBlock = (): string => [HEADING, ...Object.values(BUYER_PLANS).map(trueLine), FOOTER, PAID_LINE].join('\n');
 /** The whole reply to a payment problem. */
 const BILLING_REPLY =
   'Billing problems are handled by a person. Send /paysupport and then your message. Your receipt ID is in /status. Please do not pay again.';
 /** The one line added at the end of a model reply that talks about money. */
 const NOTE = "For Luminara's own plans and prices send /plan. For billing help send /paysupport. I cannot quote prices or take payments here.";
 const withNote = (reply: string): string => `${reply}\n\n${NOTE}`;
-/** The title and the short names a reply can use: "Luminara Pro / Agency" gives "Pro" and "Agency". */
+/** The title and the short name a reply can use: "Luminara Agency" gives "Agency". */
 const namesOf = (plan: Plan): string[] => [
   plan.title,
   ...plan.title.replace(/^Luminara\s+/, '').split('/').map((name) => name.trim()),
 ];
 const filter = (reply: string, userText?: string) =>
-  filterChatReply(reply, { plans: PLANS, userTexts: userText ? [userText] : [] });
+  filterChatReply(reply, { plans: BUYER_PLANS, userTexts: userText ? [userText] : [] });
 
 const FIXTURE_METRIC_REPLY = 'Your AI visibility is 37% and you rank #3.';
 // The acceptance pair: a made-up Starter price, and the true one. Neither is trusted.
@@ -94,7 +96,7 @@ describe('the fixed texts', () => {
     expect(BILLING_HELP_REPLY).toBe(BILLING_REPLY);
     expect(MONEY_NOTE).toBe(NOTE);
     expect(chatRouteReply('billing', PLANS)).toBe(BILLING_REPLY);
-    expect(chatRouteReply('plans', PLANS)).toBe(planBlock());
+    expect(chatRouteReply('plans', BUYER_PLANS)).toBe(planBlock());
   });
 });
 
@@ -330,6 +332,8 @@ describe('chatRoute: which messages never reach the model', () => {
       'What do I get if I go bigger?', 'whats the damage', 'what will this set me back', 'hw much', 'how mch is it', 'prcie?',
       'pricng', 'black friday?', 'how do I stop it', 'which one should I get', 'is the big one worth it', 'the 25 one',
       'one audit', 'deep crawl', 'license key', 'I have a license key', 'gift a plan?', 'can my team share one', 'VAT?', 'tax?',
+      // Display name is Agency. The internal id pro is not a name the bot offers.
+      'pro',
       // Inside a longer message about a site.
       'My site acme.io sells invoices and I want to be cited by ChatGPT, what would it cost me to have you track it weekly?',
       'I run 3 shops and need audits for all of them. What would that run me here?',
@@ -364,7 +368,7 @@ describe('chatRoute: which messages never reach the model', () => {
 
     it('routes every direct question, and counts what the other sets miss', () => {
       const missed = (set: readonly string[]): number => set.filter((question) => route(question) === null).length;
-      expect(missed(DIRECT_PLAN_QUESTIONS)).toBe(0);
+      expect(missed(DIRECT_PLAN_QUESTIONS)).toBe(1);
       expect(missed(INDIRECT_PLAN_QUESTIONS)).toBe(20);
       expect(missed(LONG_PLAN_QUESTIONS)).toBe(6);
       expect(missed(NON_ENGLISH_PLAN_QUESTIONS)).toBe(20);
@@ -731,6 +735,7 @@ describe('filterChatReply: the fourth review\'s plan facts and data', () => {
       'Your Starter tier at $29 is a good anchor for the pricing page.', 'Starter renews automatically.', 'It renews automatically.',
       'The first week is free.', 'Yes, cards work too.', 'Yes, TON and USDT both work in the app.', 'Roughly $50 a month.',
       "It's 1,000 for a month.",
+      'Your Pro plan includes API access and 50 sites.',
     ]);
     const KEPT = new Set(['Your Growth plan should be the highlighted tier on your pricing page, at about 2x Starter.']);
     const TO_PAYSUPPORT = new Set(['You will be refunded within 14 days.']);
@@ -763,7 +768,10 @@ describe('filterChatReply: the fourth review\'s plan facts and data', () => {
 describe('planPricePromptBlock', () => {
   it('lists every plan under its heading, how to pay, and the rules not to state prices or ask for a second payment', () => {
     const block = planPricePromptBlock(PLANS);
-    expect(block).toContain(planBlock());
+    const fullTable = [HEADING, ...Object.values(PLANS).map(trueLine), FOOTER, PAID_LINE].join('\n');
+    expect(block).toContain(fullTable);
+    expect(planPricePromptBlock(BUYER_PLANS)).toContain(planBlock());
+    expect(planPricePromptBlock(BUYER_PLANS)).not.toContain('75 Stars');
     expect(block).toContain('Do not state prices, plan limits or offers yourself.');
     expect(block).toContain('say: send /plan.');
     expect(block).toContain('Never tell the user to pay again or to retry a payment. For a payment problem say: send /paysupport.');
@@ -1343,10 +1351,9 @@ function makeChat() {
     WEBAPP_URL: 'https://luminarasuite.com',
     TELEGRAM_WEBHOOK_SECRET: 'test-secret',
     TELEGRAM_ADMIN_ID: '999999',
-    LUMINARA_KV: kv as any,
+    LUMINARA_KV: kv as any, DAILY_QUOTA: memoryDailyQuotaNamespace(), FREE_DAILY_LIMIT: '50',
     GROQ_API_KEY: 'gsk_mock_key',
   };
-
   /** Sends one update. Returns what reached the model and every Telegram call, by method. */
   async function send(text: string, modelReply = 'Add FAQ schema.', fromId = 100, telegramOk = true) {
     let systemPrompt = '';
@@ -1671,6 +1678,8 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
 
     // Every command on the list is one the handler can read, and no plan is missing from the list.
     expect([...new Set(shown)].sort()).toEqual([...sellable].sort());
+    expect(planText).toContain('25 ⭐');
+    expect(planText).not.toContain('75 ⭐');
     for (const plan of Object.values(PLANS)) expect(planText).toContain(plan.title);
     expect(planText).toContain('Buy this one in the app.');
 

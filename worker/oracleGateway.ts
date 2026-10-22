@@ -13,7 +13,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
-import { checkHostedQuota } from './quotaMiddleware';
+import { checkHostedQuota, QUOTA_CAPACITY_ERROR } from './quotaMiddleware';
 import {
   createTaskContext,
   executeWithLifecycle,
@@ -89,7 +89,8 @@ export async function executeOracleGatewayTask(
   // 1. Quota check and reserve
   const quota = await checkHostedQuota(env, user);
   if (!quota.ok) {
-    return json({ ok: false, error: quota.error, code: 'QUOTA_EXHAUSTED' }, 429);
+    const capacity = quota.error === QUOTA_CAPACITY_ERROR;
+    return json({ ok: false, error: quota.error, code: capacity ? 'HOSTED_CAPACITY' : 'QUOTA_EXHAUSTED' }, capacity ? 503 : 429);
   }
   const quotaCharged = !quota.isUnlimited && quota.used > 0;
 

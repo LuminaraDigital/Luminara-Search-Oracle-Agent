@@ -12,6 +12,13 @@
 import type { Env } from './env';
 import { identify, json, secretEquals } from './workerUtils';
 
+const identifiedOnRequest = new WeakMap<Request, Awaited<ReturnType<typeof identify>>>();
+
+/** Identity guardApiRoute already resolved for this request, so the route does not look it up again. */
+export function identifiedForRequest(request: Request): Awaited<ReturnType<typeof identify>> | null {
+  return identifiedOnRequest.get(request) ?? null;
+}
+
 export const SESSION_COOKIE_NAME = '__session';
 export const SESSION_COOKIE_MAX_AGE = 14 * 24 * 3600; // 14 days
 
@@ -47,6 +54,8 @@ export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/auth\/reset-password$/ },
   { method: 'POST', pattern: /^\/auth\/sign-up$/ },
   { method: 'POST', pattern: /^\/auth\/sign-in$/ },
+  { method: 'GET', pattern: /^\/email\/unsubscribe$/ },
+  { method: 'POST', pattern: /^\/email\/unsubscribe$/ },
   // Public OTP: IP-throttled; Twilio only when OTP_SMS_ENABLED + secrets are set.
   { method: 'POST', pattern: /^\/auth\/request-otp$/ },
   { method: 'POST', pattern: /^\/auth\/verify-otp$/ },
@@ -158,7 +167,11 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/trust\/receipts$/, methods: ['GET'] },
   { pattern: /^\/trust\/receipts\/[^/]+\/(visibility|revoke)$/, methods: ['POST'] },
   { pattern: /^\/trust\/domains(\/|$)/ },
+  { pattern: /^\/citation-watches(\/|$)/ },
+  { pattern: /^\/audit-receipts$/, methods: ['POST'] },
+  { pattern: /^\/audit-receipts\/[^/]+\/revoke$/, methods: ['POST'] },
   { pattern: /^\/auth\/quota$/, methods: ['GET'] },
+  { pattern: /^\/boot$/, methods: ['GET'] },
   // /auth/link is not guarded here. guardApiRoute calls identify(), which upserts
   // each login. The link handler must reject a missing { confirm: true } before any
   // user-store write, then validate both credentials itself.
@@ -171,6 +184,8 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/sentinel\/(register|status)$/ },
   { pattern: /^\/share\/reports$/, methods: ['POST'] },
   { pattern: /^\/share\/reports\/[^/]+$/, methods: ['DELETE'] },
+  { pattern: /^\/wins$/, methods: ['POST'] },
+  { pattern: /^\/wins\/[a-f0-9]{32}$/i, methods: ['DELETE'] },
   { pattern: /^\/findings$/, methods: ['GET'] },
   { pattern: /^\/findings\/bulk$/, methods: ['POST'] },
   { pattern: /^\/findings\/[^/]+$/, methods: ['PATCH'] },
@@ -218,6 +233,7 @@ export async function guardApiRoute(request: Request, env: Env, path: string): P
 
   // Check identity (via __session cookie, Authorization Bearer, or Telegram initData)
   const who = await identify(request, env);
+  identifiedOnRequest.set(request, who);
   if (who.error || !who.user) {
     return json(
       {

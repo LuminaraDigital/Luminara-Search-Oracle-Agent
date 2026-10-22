@@ -27,6 +27,7 @@ describe('jobsForCron', () => {
       'weekly_decision_digest',
       'rsi_skill_curator',
       'rsi_posting_reflection',
+      'citation_watch',
     ]);
   });
 
@@ -41,6 +42,7 @@ describe('jobsForCron', () => {
       'weekly_decision_digest',
       'rsi_skill_curator',
       'rsi_posting_reflection',
+      'citation_watch',
     ]);
   });
 
@@ -71,6 +73,7 @@ describe('jobsForCron', () => {
       'weekly_decision_digest',
       'rsi_skill_curator',
       'rsi_posting_reflection',
+      'citation_watch',
     ]);
   });
 

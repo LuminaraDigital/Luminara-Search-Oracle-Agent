@@ -4,6 +4,8 @@ import {
   executeWithLifecycle,
   refundHostedQuota,
 } from '../worker/taskLifecycle';
+import { readFreeUsed, spendDailyQuota } from '../worker/quotaMiddleware';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import type { Env } from '../worker/env';
 
 describe('worker/taskLifecycle', () => {
@@ -36,20 +38,12 @@ describe('worker/taskLifecycle', () => {
   });
 
   it('triggers onRevert and refunds quota when an unhandled error occurs', async () => {
-    const day = new Date().toISOString().slice(0, 10);
-    const quotaKey = `quota:acc_revert:${day}`;
-
-    let storedValue = '5';
-    const mockKv = {
-      get: vi.fn(async (key: string) => (key === quotaKey ? storedValue : null)),
-      put: vi.fn(async (key: string, val: string) => {
-        if (key === quotaKey) storedValue = val;
-      }),
-    };
-
     const mockEnv = {
-      LUMINARA_KV: mockKv as unknown as KVNamespace,
+      LUMINARA_KV: { get: vi.fn(), put: vi.fn() } as unknown as KVNamespace,
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
+      FREE_DAILY_LIMIT: '5',
     } as Env;
+    for (let i = 0; i < 5; i++) expect((await spendDailyQuota(mockEnv, 'acc_revert', 5)).ok).toBe(true);
 
     const ctx = createTaskContext({
       accountId: 'acc_revert',
@@ -68,7 +62,7 @@ describe('worker/taskLifecycle', () => {
     expect(result.error).toContain('Upstream provider timeout');
     expect(result.code).toBe('TASK_REVERTED');
     expect(result.refunded).toBe(true);
-    expect(storedValue).toBe('4'); // 5 decremented to 4!
+    expect(await readFreeUsed(mockEnv, 'acc_revert', 5)).toBe(4);
   });
 
   it('does not refund quota if quotaCharged is false', async () => {
@@ -100,13 +94,12 @@ describe('worker/taskLifecycle', () => {
     const res1 = await refundHostedQuota(emptyEnv, 'acc_1');
     expect(res1).toBe(false);
 
-    const mockKv = {
-      get: vi.fn(async () => '0'),
-      put: vi.fn(),
-    };
-    const zeroEnv = { LUMINARA_KV: mockKv as unknown as KVNamespace } as Env;
+    const zeroEnv = {
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
+      FREE_DAILY_LIMIT: '3',
+    } as Env;
     const res2 = await refundHostedQuota(zeroEnv, 'acc_zero');
     expect(res2).toBe(false);
-    expect(mockKv.put).not.toHaveBeenCalled();
+    expect(await readFreeUsed(zeroEnv, 'acc_zero', 3)).toBe(0);
   });
 });

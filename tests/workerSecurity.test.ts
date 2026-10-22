@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
+import { listPriceSummary } from '../components/paywall/planCopy';
 import { STAGING_ROBOTS_TXT } from '../worker/crawlDocuments';
 import { publicPlanCatalogue } from '../worker/telegramBot';
 import {
@@ -19,6 +20,8 @@ import {
   safePublicHostname,
   safePublicUrl,
   stripUpstreamHeaders,
+  immutableAssetCache,
+  withAssetCache,
   withSecurityHeaders,
 } from '../worker/security';
 
@@ -59,6 +62,7 @@ describe('security headers', () => {
   it('adds CSP and hardening headers to the HTML shell', async () => {
     const res = await worker.fetch(req('/'), makeEnv(), ctx);
     expect(res.headers.get('content-security-policy')).toBe(HTML_CSP);
+    expect(res.headers.get('cache-control')).toBe('no-cache');
     expect(HTML_CSP).toContain('https://telegram.org');
     expect(HTML_CSP).toContain('https://fonts.googleapis.com');
     expect(HTML_CSP).toContain('https://fonts.gstatic.com');
@@ -104,7 +108,8 @@ describe('security headers', () => {
     expect(described).not.toMatch(/\bre-audits\b/);
     expect(described).toContain('re-audit reminders in Telegram');
     expect(described).toContain('daily drift check');
-    expect(described).toContain('saved in this browser');
+    expect(described).toContain('client workspaces');
+    expect(described).not.toContain('saved in this browser');
     expect(data.plans.starter.stars).toBe(2500);
     expect(data.plans.growth.stars).toBe(7500);
     expect(data.plans.agency.stars).toBe(18000);
@@ -115,6 +120,27 @@ describe('security headers', () => {
     const js = withSecurityHeaders(new Response('x', { headers: { 'content-type': 'text/javascript' } }));
     expect(html.headers.get('content-security-policy')).toBeTruthy();
     expect(js.headers.get('content-security-policy')).toBeNull();
+  });
+
+  it('caches a hashed asset for a year and leaves other files alone', async () => {
+    expect(immutableAssetCache('/assets/index-Ab12cd34.js')).toBe('public, max-age=31536000, immutable');
+    expect(immutableAssetCache('/favicon.ico')).toBeNull();
+    expect(immutableAssetCache('/assets/index.js')).toBeNull();
+    const locked = new Response('console.log(1)', { headers: { 'content-type': 'text/javascript' } });
+    locked.headers.set = () => { throw new TypeError('immutable'); };
+    const copied = withAssetCache(locked, '/assets/index-Ab12cd34.js');
+    expect(copied.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(await copied.text()).toBe('console.log(1)');
+    const env = makeEnv({
+      ASSETS: {
+        fetch: async () => new Response('console.log(1)', { headers: { 'content-type': 'text/javascript' } }),
+      } as unknown as Fetcher,
+    });
+    const hashed = await worker.fetch(req('/assets/index-Ab12cd34.js'), env, ctx);
+    expect(hashed.status).toBe(200);
+    expect(hashed.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    const plain = await worker.fetch(req('/favicon.ico'), env, ctx);
+    expect(plain.headers.get('cache-control') || '').not.toContain('immutable');
   });
 
   it('returns 404 for missing static asset requests that fall through to index.html', async () => {
@@ -336,6 +362,22 @@ describe('error handling', () => {
     expect(body.error).not.toContain('/var/kv');
   });
 
+  it('still answers probe-crawl when the KV rate-limit put throws', async () => {
+    const env = makeEnv({
+      LUMINARA_KV: {
+        get: async () => null,
+        put: async () => {
+          throw new Error('KV put failed');
+        },
+      } as unknown as KVNamespace,
+    });
+    const res = await worker.fetch(req('/api/visibility/probe-crawl'), env, ctx);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string; code?: string };
+    expect(body.code).toBe('MISSING_URL');
+    expect(body.error).not.toContain('KV put');
+  });
+
   it('unknown API routes 404 with security headers', async () => {
     const res = await worker.fetch(req('/api/nope'), makeEnv(), ctx);
     expect(res.status).toBe(404);
@@ -504,7 +546,8 @@ describe('crawl surfaces', () => {
     expect(text).toContain('/docs/mcp.html');
     expect(text).toContain('/docs/what-is-aeo.html');
     expect(text).toContain('2,500 Stars');
-    expect(text).not.toMatch(/US\$\s?\d|\$\s?\d|\/mo\b|per month/i);
+    expect(text).toContain(listPriceSummary());
+    expect(text).not.toMatch(/\/mo\b|per month/i);
   });
 
   it('injects pricing meta into the marketing shell HTML', async () => {
@@ -690,6 +733,23 @@ describe('crawl surfaces', () => {
       const res = await worker.fetch(req(`${path}?ref=nav`), makeEnv(), ctx);
       expect(res.status, path).toBe(301);
       expect(res.headers.get('Location')).toBe('/how-it-works?ref=nav');
+    }
+  });
+
+  it('redirects help, upgrade, settings, and account', async () => {
+    for (const [path, location] of [
+      ['/help', '/faq?ref=nav'],
+      ['/help/', '/faq?ref=nav'],
+      ['/upgrade', '/pricing?ref=nav'],
+      ['/upgrade/', '/pricing?ref=nav'],
+      ['/settings', '/?ref=nav#settings'],
+      ['/settings/', '/?ref=nav#settings'],
+      ['/account', '/?ref=nav#settings'],
+      ['/account/', '/?ref=nav#settings'],
+    ] as const) {
+      const res = await worker.fetch(req(`${path}?ref=nav`), makeEnv(), ctx);
+      expect(res.status, path).toBe(301);
+      expect(res.headers.get('Location'), path).toBe(location);
     }
   });
 

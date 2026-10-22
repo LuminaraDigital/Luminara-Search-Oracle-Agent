@@ -7,6 +7,7 @@
  */
 
 import type { ScrapedPageEvidence, SerpEvidenceItem } from './types';
+import { responseBlocked } from '../audit/llmCrawlerReadiness';
 
 export type LivePageSource = NonNullable<ScrapedPageEvidence['source']>;
 
@@ -18,11 +19,19 @@ export function pageHasObservableBody(page: Pick<ScrapedPageEvidence, 'wordCount
   return page.wordCount > 0 || page.schemasFound.length > 0 || (page.rawTextSnippet || '').trim().length > 0;
 }
 
+/** 403, 429, or a challenge page. That HTML was not a parse of the site. */
+export function pageFetchBlocked(
+  page: Pick<ScrapedPageEvidence, 'httpStatus' | 'title' | 'rawTextSnippet'>,
+): boolean {
+  return responseBlocked(page.httpStatus, `${page.title || ''}\n${page.rawTextSnippet || ''}`);
+}
+
 /**
  * Jina Reader markdown is not a DOM scrape: missing JSON-LD on that text is not a measured gap.
  * Omitted source stays eligible so callers that already built a live page are unchanged.
  */
 export function pageSupportsHealthScore(page: ScrapedPageEvidence): boolean {
+  if (pageFetchBlocked(page)) return false;
   if (!pageHasObservableBody(page)) return false;
   if (!page.source) return true;
   return LIVE_PAGE_SOURCES.has(page.source);
@@ -75,13 +84,57 @@ export const HEALTH_CHECKS = [
 export interface HealthChecklist {
   passed: number;
   failed: number;
+  unmeasured: number;
   total: number;
 }
 
-/** Counts the checks a run failed, from the findings it kept. Valid only for a run where all four checks ran. */
-export function healthChecklist(findings: readonly { id: string }[]): HealthChecklist {
-  const failed = HEALTH_CHECKS.filter((check) => findings.some((finding) => finding.id === check.findingId)).length;
-  return { total: HEALTH_CHECKS.length, failed, passed: HEALTH_CHECKS.length - failed };
+function wholeCount(value: number | undefined): number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+/** The sentence a report and a share check both read. A positive unmeasured count is not a pass. */
+export function measuredCheckLine(counts: { passed: number; total: number; unmeasured?: number }): string {
+  return `passed ${counts.passed} of ${counts.total}; ${wholeCount(counts.unmeasured)} not measured`;
+}
+
+/**
+ * Counts failed and downgraded checks. A renamed `<id>-unmeasured` finding is not a pass.
+ * An unknown citation rate makes the citation check unmeasured. Omit the option when the rate was not in play.
+ */
+export function healthChecklist(
+  findings: readonly { id: string }[],
+  options?: { citationRateKnown?: boolean },
+): HealthChecklist {
+  let failed = 0;
+  let unmeasured = 0;
+  for (const check of HEALTH_CHECKS) {
+    const downgraded = findings.some((finding) => finding.id === `${check.findingId}-unmeasured`);
+    const citationUnknown = check.findingId === 'finding-zero-citations' && options?.citationRateKnown === false;
+    if (downgraded || citationUnknown) {
+      unmeasured += 1;
+      continue;
+    }
+    if (findings.some((finding) => finding.id === check.findingId)) failed += 1;
+  }
+  const total = HEALTH_CHECKS.length;
+  return { total, failed, unmeasured, passed: total - failed - unmeasured };
+}
+
+/** True when the four checks ran, including a run whose number was dropped after a downgrade. */
+export function siteChecksRan(healthScore: number | null, findings: readonly { id: string }[]): boolean {
+  if (typeof healthScore === 'number') return true;
+  return findings.some((finding) => HEALTH_CHECKS.some((check) => (
+    finding.id === check.findingId || finding.id === `${check.findingId}-unmeasured`
+  )));
+}
+
+/** Same checklist number the auditor stores before any finding is downgraded. */
+export function healthScoreFromFindings(findings: readonly { id: string }[]): number {
+  const base = HEALTH_CHECKS.reduce(
+    (score, check) => (findings.some((finding) => finding.id === check.findingId) ? score - check.penalty : score),
+    HEALTH_SCORE_START,
+  );
+  return Math.max(20, Math.min(100, base));
 }
 
 const UNMEASURED_HEALTH_WHY: Record<HealthScoreBlockReason, string> = {

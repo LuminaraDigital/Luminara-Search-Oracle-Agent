@@ -8,7 +8,7 @@ import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { TelegramAccountPanel } from '../components/telegram/TelegramAccountPanel';
 import { TelegramAccountTon } from '../components/telegram/TelegramAccountTon';
 import PricingPage, { planChoiceLine } from '../components/PricingPage';
-import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle } from '../components/paywall/planCopy';
+import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, listPriceSummary, planBullets, planTitle } from '../components/paywall/planCopy';
 import { PLANS } from '../worker/telegramBot';
 import { TON_PRICING } from '../worker/tonPayment';
 
@@ -64,15 +64,18 @@ describe('pricing page discoverability', () => {
     state.health = { ok: true, ton: false, jettonCheckout: false, stripeCheckout: false, plans: {} };
   });
 
-  it('names Stars alone, with no TON price, while TON checkout is closed', () => {
+  it('names Stars checkout and the shared USD list prices while TON checkout is closed', () => {
     const html = renderPricing();
     expect(html.split(CHECKOUT_TERM_LINE).length - 1).toBe(1);
+    expect(html.split(listPriceSummary()).length - 1).toBe(1);
     expect(html).toContain(TELEGRAM_STARS_HANDOFF);
     expect(html.split(TELEGRAM_STARS_HANDOFF).length - 1).toBe(1);
     expect(html).not.toContain('Pay with Telegram Stars inside the Mini App.');
     expect(html).toContain('Pay 2,500 Stars in Telegram');
     expect(html).not.toContain('Connect Wallet');
-    expect(html).not.toContain('US$');
+    expect(html).toContain(PAID_PLAN_PRICES.starter.audLabel);
+    expect(html).toContain(PAID_PLAN_PRICES.growth.audLabel);
+    expect(html).toContain(PAID_PLAN_PRICES.agency.audLabel);
     expect(html).not.toContain('Subscribe');
     expect(html).not.toMatch(/card checkout/i);
     expect(html).toContain('2,500 Stars');
@@ -167,6 +170,8 @@ describe('copy outside the paywall while TON and card checkout are closed', () =
     // The page builds that line through the helper, with the same switch as the rest of its copy.
     const source = readFileSync(resolve(__dirname, '..', 'components', 'PricingPage.tsx'), 'utf8');
     expect(source).toContain('openPaywallModal(planChoiceLine(title, tier, tonOpen))');
+    expect(source).toContain('void startPricedCard(tier.id)');
+    expect(source).toContain('redirectToCardCheckout(planId)');
     expect(source).not.toMatch(/\$\{tier\.ton\} inside the Mini App/);
   });
 
@@ -174,7 +179,7 @@ describe('copy outside the paywall while TON and card checkout are closed', () =
     expect(PLAN_CARD_BADGE).toBe('Recommended');
     expect(planTitle('starter')).toBe('Starter');
     expect(planTitle('growth')).toBe('Growth');
-    expect(planTitle('agency')).toBe('Pro / Agency');
+    expect(planTitle('agency')).toBe('Agency');
     expect(planBullets('agency').map((line) => line.text)).toContain('Paid research API (Agency plan or your own DataForSEO login)');
     expect(planBullets('growth').map((line) => line.text).join('\n')).not.toMatch(/Sentinel|Unlimited AI|Hosted API/);
     const settings = readFileSync(resolve(__dirname, '..', 'components/settings/tabs/ApiKeyOverviewTab.tsx'), 'utf8');

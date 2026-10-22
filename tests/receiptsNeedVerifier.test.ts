@@ -12,6 +12,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import type { Env } from '../worker/env';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import worker from '../worker/index';
 import { GATEWAY_NO_RECEIPT_NOTE } from '../worker/oracleGateway';
 import { resetReceiptKeyCacheForTests } from '../worker/receiptSigning';
@@ -78,6 +79,7 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
     ASSETS: { fetch: async () => new Response('ok') } as unknown as Fetcher,
     LUMINARA_KV: mockKv(),
+    DAILY_QUOTA: memoryDailyQuotaNamespace(),
     DB: createSqliteD1(),
     WEBAPP_URL: 'https://luminarasuite.com/',
     ALLOWED_ORIGINS: 'https://luminarasuite.com',

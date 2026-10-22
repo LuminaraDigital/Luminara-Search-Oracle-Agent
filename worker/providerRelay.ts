@@ -1,8 +1,8 @@
 import type { Env } from './env';
-import { billingId, identify, json } from './workerUtils';
+import { billingId, fetchWithTimeout, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
-import { isUserSubscribed, checkHostedQuota, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
+import { isUserSubscribed, checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { noteAuditRunSuccess, requestTargetHost, takeAuditRunCall } from './auditScoutRun';
 import { requireApiAccess } from './apiAccess';
@@ -28,6 +28,7 @@ import {
   stripUpstreamHeaders,
 } from './security';
 import { dataForSeoBasicAuthHeader, envHasDataForSeo } from '../services/config/runtimeKeys';
+import { allowDailyCap, EXA_FREE_DAILY_CAP, JEV_FREE_DAILY_CAP, readDailyCap } from './isolateDailyCap';
 
 export const MAX_PROVIDER_KEY_LEN = 512;
 
@@ -210,6 +211,19 @@ export const PROVIDERS: Record<string, ProviderSpec> = {
       return {};
     },
   },
+  typesafe: {
+    base: 'https://api.typesafe.ai',
+    allow: ['/v1/systemone'],
+    auth: (env, h) => {
+      if (!env.TYPESAFE_API_KEY) return { ok: false };
+      h.set('Authorization', `Bearer ${env.TYPESAFE_API_KEY}`);
+      return { ok: true };
+    },
+    byok: (key, h) => {
+      h.set('Authorization', `Bearer ${key}`);
+      return {};
+    },
+  },
   dataforseo: {
     base: 'https://api.dataforseo.com',
     allow: [
@@ -293,9 +307,22 @@ function workersAiStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
 }
 
-/** Groq chat also falls through when the model rejects the request. 413 and 422 stay as themselves. */
+/** Groq chat also falls through when the model rejects the request. A plain 413 or 422 stays itself. */
 function chatFallbackStatus(status: number): boolean {
   return status === 400 || status === 404 || status === 408 || workersAiStatus(status);
+}
+
+const TOKEN_CAP_BODY = /rate_limit_exceeded|tokens per minute|rate limit reached/i;
+
+/** A 413 is a token cap when Groq says so. Any other 413 is the caller's own body limit. */
+async function chatShouldFallBack(res: Response): Promise<boolean> {
+  if (chatFallbackStatus(res.status)) return true;
+  if (res.status !== 413) return false;
+  try {
+    return TOKEN_CAP_BODY.test((await res.clone().text()).slice(0, 4_000));
+  } catch {
+    return false;
+  }
 }
 
 function workersAiReason(status: number): WorkersAiFallbackReason {
@@ -363,6 +390,7 @@ export async function proxyProvider(
   subPath: string
 ): Promise<Response> {
   const spec = PROVIDERS[providerId];
+  const jevCall = providerId === 'typesafe';
   if (!spec) return json({ error: `Unknown provider "${providerId}"` }, 404);
   if (request.method !== 'GET' && request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   if (!isPathAllowed(spec, subPath)) {
@@ -457,7 +485,7 @@ export async function proxyProvider(
       );
     }
 
-    if (who.user) {
+    if (who.user && !jevCall) {
       const claim = await takeAuditRunCall(env, who.user, request);
       if (claim.kind === 'reject' || claim.kind === 'wrong-site') {
         const status = claim.kind === 'wrong-site' ? 403 : 401;
@@ -468,21 +496,22 @@ export async function proxyProvider(
         auditDomain = claim.domain;
       }
     }
-    if (!auditCoveredToken) {
+    if (!auditCoveredToken && !jevCall) {
       quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
     }
     if (quotaGate && !quotaGate.ok) {
+      const capacity = quotaGate.error === QUOTA_CAPACITY_ERROR;
       return json(
         {
           error: quotaGate.error,
-          code: 'PAYWALL_EXCEEDED',
+          code: capacity ? 'HOSTED_CAPACITY' : 'PAYWALL_EXCEEDED',
           limit: quotaGate.limit,
           used: quotaGate.used,
           remaining: quotaGate.remaining,
           resetSec: quotaGate.resetSec,
-          upgrade: true,
+          upgrade: !capacity,
         },
-        402,
+        capacity ? 503 : 402,
         {
           'X-Quota-Limit': String(quotaGate.limit),
           'X-Quota-Remaining': '0',
@@ -605,9 +634,26 @@ export async function proxyProvider(
     }
   }
 
+  if (!userKey && !paidSubscriber && (providerId === 'exa' || providerId === 'typesafe')) {
+    const limit = providerId === 'exa'
+      ? readDailyCap(env.EXA_FREE_DAILY_CAP, EXA_FREE_DAILY_CAP)
+      : readDailyCap(env.TYPESAFE_FREE_DAILY_CAP, JEV_FREE_DAILY_CAP);
+    if (!allowDailyCap(providerId === 'exa' ? 'exa' : 'jev', fallbackAccountId, limit)) {
+      const exa = providerId === 'exa';
+      return releaseUnmeasured(json({
+        ok: false,
+        error: exa ? 'Free Exa searches for today are used up.' : 'The evidence check is unavailable right now.',
+        code: exa ? 'EXA_DAILY_CAP' : 'JEV_DAILY_CAP',
+      }, 429));
+    }
+  }
+
   const upstreamBody = request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
-  const callUpstream = (hdrs: Headers) =>
-    fetch(upstream.toString(), { method: request.method, headers: hdrs, body: upstreamBody });
+  const callUpstream = (hdrs: Headers) => {
+    const init: RequestInit = { method: request.method, headers: hdrs, body: upstreamBody };
+    if (!jevCall) return fetch(upstream.toString(), init);
+    return fetchWithTimeout(upstream.toString(), init, 3_000);
+  };
 
   const networkFailure = async (err: unknown): Promise<Response> => {
     const fallback = await tryChatFallbacks(
@@ -641,7 +687,7 @@ export async function proxyProvider(
     !triedFallbackKey &&
     !userKey &&
     providerId === 'groq' &&
-    (res.status === 401 || res.status === 402 || chatFallbackStatus(res.status))
+    (res.status === 401 || res.status === 402 || await chatShouldFallBack(res))
   ) {
     const altKey = groqFallbackKey(env, headers);
     if (altKey) {
@@ -655,8 +701,8 @@ export async function proxyProvider(
     }
   }
 
-  // After the second key: 400, 404, 408, 429, and 5xx try NVIDIA, then Workers AI. 401 and 402 are not replaced.
-  if (chatFallbackStatus(res.status)) {
+  // After the second key: 400, 404, 408, 429, 5xx, and a token-cap 413 try NVIDIA, then Workers AI.
+  if (await chatShouldFallBack(res)) {
     const fallback = await tryChatFallbacks(
       env, request, providerId, subPath, userKey, body,
       { reason: workersAiReason(res.status), upstreamStatus: res.status },
@@ -682,7 +728,7 @@ export async function proxyProvider(
       }
     }
   }
-  if (res.ok && scoutAccountId) {
+  if (res.ok && scoutAccountId && !jevCall) {
     try {
       const domain = scoutEvidenceDomain({ providerId, subPath, body, hostname: safePublicHostname });
       if (domain) {

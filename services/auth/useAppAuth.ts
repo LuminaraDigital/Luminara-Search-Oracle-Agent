@@ -48,6 +48,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'SHARED_REPORT',
   'VERIFY_ATTESTATION',
   'VERIFY_RECEIPT',
+  'VERIFY_AUDIT_RECEIPT',
   'INSTANT_AUDIT',
   'IDEA_SCOUT',
   'ECOSYSTEM_HUB',
@@ -55,6 +56,14 @@ export const PUBLIC_APP_VIEWS = new Set([
   'LAUNCHPAD',
   'VISION',
 ]);
+
+/**
+ * Marketing nav while Firebase is still loading.
+ * A persisted session keeps Dashboard, so Sign in does not flash and then vanish.
+ */
+export function marketingNavSignedIn(loading: boolean, authenticated: boolean, persistedSession: boolean): boolean {
+  return authenticated || (loading && persistedSession);
+}
 
 /** Pure decision helper (tested). Soft-open only when signature was not rejected. */
 export function decideTelegramGate(input: {
@@ -112,8 +121,14 @@ export function useAppAuth(): AppAuthState {
         if (cancelled) return;
         void mod.whenFirebaseAuthReady().then((u) => {
           if (cancelled) return;
-          if (u) setFirebaseUser(u);
-          setFirebaseReady(true);
+          if (!u) {
+            setFirebaseReady(true);
+            return;
+          }
+          // Boot starts before the shell is allowed to fetch workspace or quota.
+          void mod.primeSignedInBoot().finally(() => {
+            if (!cancelled) setFirebaseReady(true);
+          });
         });
         mod.startFirebaseAuthListener();
         unsub = mod.subscribeFirebaseUser((u) => {

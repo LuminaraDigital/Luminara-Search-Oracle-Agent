@@ -4,6 +4,7 @@ import { AppView } from '../types';
 import {
   marketingViewFromHash,
   marketingViewFromPathname,
+  auditReceiptIdFromLocation,
   pathForMarketingView,
   receiptIdFromLocation,
   resolveAppView,
@@ -12,7 +13,7 @@ import {
 import { DASHBOARD_TAB_TITLE, MARKETING_SHELL_BY_PATH, instantAuditTabTitle, marketingShellKey } from '../services/marketing/pageMeta';
 import { resolveCanonicalHref, resolveDocumentTitle, resolveRobotsDirective } from '../services/marketing/documentMeta';
 import { injectMarketingMeta } from '../worker/marketingShell';
-import { CHECKOUT_TERM_LINE } from '../components/paywall/planCopy';
+import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/planCopy';
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
 import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML } from '../worker/crawlDocuments';
 
@@ -76,6 +77,10 @@ describe('marketingRoutes', () => {
     expect(resolveAppView(`/verify/r/${id}`, '')).toBe(AppView.VERIFY_RECEIPT);
     expect(resolveAppView(`/verify/r/${id}/`, '')).toBe(AppView.VERIFY_RECEIPT);
     expect(resolveAppView('/', `#verify/r/${id}`)).toBe(AppView.VERIFY_RECEIPT);
+    expect(resolveAppView('/verify/audit', '')).toBe(AppView.VERIFY_AUDIT_RECEIPT);
+    expect(resolveAppView('/verify/audit/sar_abc', '')).toBe(AppView.VERIFY_AUDIT_RECEIPT);
+    expect(auditReceiptIdFromLocation('/verify/audit/sar_abc', '')).toBe('sar_abc');
+    expect(auditReceiptIdFromLocation('/verify/audit', '')).toBe('');
     expect(resolveAppView(`/verify/${digest}`, '')).toBe(AppView.VERIFY_ATTESTATION);
     expect(resolveAppView('/', `#verify/${digest}`)).toBe(AppView.VERIFY_ATTESTATION);
     expect(receiptIdFromLocation(`/verify/r/${id}`, '')).toBe(id);
@@ -156,17 +161,26 @@ describe('marketing crawl documents', () => {
     expect(LLMS_TXT).not.toContain('\u2014');
   });
 
-  it('serves Stars plan prices and no USD plan price in llms.txt or compare crawl docs', () => {
-    const usdPlanPrice = /US\$\s?\d|\$\s?\d|\/mo\b|per month/i;
-    expect(LLMS_TXT).not.toMatch(usdPlanPrice);
+  it('serves the shared USD list prices and Stars checkout in llms.txt', () => {
+    const usdCheckoutPrice = /\/mo\b|per month/i;
+    expect(LLMS_TXT).toContain(listPriceSummary());
+    expect(LLMS_TXT).toContain('Agency: list price A$549, pay 18,000 Stars');
+    expect(LLMS_TXT).toContain('Pay by card');
+    expect(LLMS_TXT).toContain('10 client workspaces');
+    expect(LLMS_TXT).not.toContain('saved in this browser');
+    expect(LLMS_TXT).not.toMatch(/team seats/i);
+    expect(LLMS_TXT).not.toMatch(usdCheckoutPrice);
+    expect(LLMS_TXT).not.toContain('luminaradigital.io');
+    expect(LLMS_TXT).toContain('https://luminara.digital/');
+    expect(LLMS_TXT).toContain('https://luminara.digital/services/');
     expect(readFileSync('public/llms.txt', 'utf8')).toBe(LLMS_TXT);
     for (const path of ['/compare/profound', '/compare/ahrefs', '/compare/otterly', '/compare/peec']) {
       const body = MARKETING_SHELL_BY_PATH[path].crawlerBody;
-      expect(body, path).not.toMatch(usdPlanPrice);
+      expect(body, path).not.toMatch(/US\$\s?\d|\$\s?\d|\/mo\b|per month/i);
     }
     const profound = MARKETING_SHELL_BY_PATH['/compare/profound'].crawlerBody;
     expect(profound).toContain('2,500 / 7,500 / 18,000');
-    expect(profound).toContain('30-day Telegram Stars plans');
+    expect(profound).toContain('Pay by card or Telegram Stars');
   });
 
   it('robots.txt names AI crawlers, allows teaser cards, and keeps share URLs fetchable for unfurls', () => {
@@ -213,6 +227,9 @@ describe('marketing shell injection', () => {
 
   it('resolves shell keys for aliases and comparisons', () => {
     expect(marketingShellKey('/how')).toBe('/how-it-works');
+    expect(marketingShellKey('/help')).toBe('/faq');
+    expect(marketingShellKey('/help/')).toBe('/faq');
+    expect(marketingShellKey('/upgrade')).toBe('/pricing');
     expect(marketingShellKey('/how/')).toBe('/how-it-works');
     expect(marketingShellKey('/infrastructure')).toBe('/how-it-works');
     expect(marketingShellKey('/pricing/')).toBe('/pricing');
@@ -220,6 +237,10 @@ describe('marketing shell injection', () => {
     expect(marketingShellKey('/lab')).toBe('/labs');
     expect(marketingShellKey('/compare/profound')).toBe('/compare/profound');
     expect(marketingShellKey('/compare/ahrefs/')).toBe('/compare/ahrefs');
+    expect(marketingShellKey('/faq/')).toBe('/faq');
+    expect(marketingShellKey('/contact')).toBe('/contact');
+    expect(marketingShellKey('/privacy.html')).toBe('/privacy');
+    expect(marketingShellKey('/privacy-policy/')).toBe('/privacy');
   });
 
   it('de-duplicates existing JSON-LD script blocks', () => {
@@ -236,6 +257,30 @@ describe('marketing shell injection', () => {
 });
 
 describe('pricing schema and route canonicals', () => {
+  it('publishes the homepage organization without a telephone', () => {
+    const graph = MARKETING_SHELL_BY_PATH['/'].jsonLd['@graph'] as Array<Record<string, unknown>>;
+    const org = graph.find((node) => node['@type'] === 'Organization');
+    const address = org?.address as Record<string, unknown>;
+    const contact = org?.contactPoint as Record<string, unknown>;
+    const brand = org?.brand as Record<string, unknown>;
+    expect(org?.name).toBe('Luminara Suite');
+    expect(org?.legalName).toBe('LUMINARA DIGITAL PTY LTD');
+    expect(org?.taxID).toBe('90 693 125 281');
+    expect(brand?.name).toBe('Luminara Digital');
+    expect(address).toEqual({ '@type': 'PostalAddress', addressRegion: 'VIC', postalCode: '3128', addressCountry: 'AU' });
+    expect(address).not.toHaveProperty('streetAddress');
+    expect(org?.email).toBe('info@luminara.digital');
+    expect(contact).toEqual({ '@type': 'ContactPoint', email: 'info@luminara.digital', contactType: 'sales' });
+    expect(contact).not.toHaveProperty('telephone');
+    const shell = readFileSync('index.html', 'utf8');
+    const block = shell.match(/<script type="application\/ld\+json" id="luminara-marketing-jsonld">([\s\S]*?)<\/script>/);
+    const staticOrg = (JSON.parse(block?.[1] || '{}') as { '@graph'?: Array<Record<string, unknown>> })['@graph']
+      ?.find((node) => node['@type'] === 'Organization');
+    expect(staticOrg).toEqual(org);
+    expect(shell).not.toMatch(/telephone|0402|0422/);
+    expect(JSON.stringify(org)).not.toMatch(/telephone|0402|0422/);
+  });
+
   it('does not publish a USD offer that the page does not sell', () => {
     for (const path of ['/', '/pricing', '/labs'] as const) {
       const graph = MARKETING_SHELL_BY_PATH[path].jsonLd['@graph'] as Array<Record<string, unknown>>;

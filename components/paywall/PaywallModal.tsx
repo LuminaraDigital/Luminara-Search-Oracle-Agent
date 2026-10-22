@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useTonConnectUI, useTonWallet, TonConnectButton } from '@tonconnect/ui-react';
 import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma';
-import { createStarsInvoice, createStripeCheckout, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
+import { createStarsInvoice, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
+import { redirectToCardCheckout } from './cardCheckout';
 import { checkPendingTonPayment, executeTonPayment, readPendingTonOrder } from '../../services/ton/tonService';
 import { executeJettonPayment } from '../../services/ton/jettonService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
@@ -12,7 +13,9 @@ import {
   TELEGRAM_MINI_APP_URL,
   type PaymentRail,
 } from './paymentOptions';
-import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, planBullets, planTitle, pricingTiers, starsPayLabel } from './planCopy';
+import { cardPayLabel, cardTermLabel, PAID_PLAN_PRICES, type PaidPlanId } from './planPrices';
+import { BYOK_CHECKOUT_LINE, CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PAYWALL_HEADLINE, PAYWALL_SUBLINE, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel } from './planCopy';
+import { COMPANY_SERVICES_URL } from '../../services/legal/consumerTerms';
 import { ICONS } from '../../constants';
 import '../marketing/space.css';
 import { toUserFacingText } from '../../utils/userFacingText';
@@ -271,19 +274,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   const handleCardCheckout = async (planId: string) => {
     setBusyPlan(planId);
     setStatusMessage('Connecting to secure Stripe card checkout…');
-    try {
-      const res = await createStripeCheckout({ planId });
-      if (res.ok && res.checkoutUrl) {
-        productTelemetry.track('checkout_started', { planId, method: 'stripe', status: 'initiated' });
-        window.location.href = res.checkoutUrl;
-      } else {
-        setStatusMessage(toUserFacingText(res.error, 'Could not initiate Stripe checkout. Please try again.'));
-      }
-    } catch (err: any) {
-      setStatusMessage(toUserFacingText(err, 'Failed to start card checkout.'));
-    } finally {
-      setBusyPlan(null);
-    }
+    const res = await redirectToCardCheckout(planId);
+    if (!res.ok) setStatusMessage(res.error);
+    setBusyPlan(null);
   };
 
   const handlePlanCheckout = (planId: 'starter' | 'growth' | 'agency') => {
@@ -299,22 +292,11 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     return handleJettonCheckout(planId, tonAsset);
   };
 
-  const planPriceLabel = (plan: 'starter' | 'growth' | 'agency') => {
-    if (tab === 'card') {
-      if (plan === 'starter') return '$49 / 30 days';
-      if (plan === 'growth') return '$149 / 30 days';
-      return '$349 / 30 days';
-    }
-    if (tab === 'stars') {
-      if (plan === 'starter') return '2,500 ⭐';
-      if (plan === 'growth') return '7,500 ⭐';
-      return '18,000 ⭐';
-    }
-    if (tonAsset === 'TON') {
-      if (plan === 'starter') return '15 TON';
-      if (plan === 'growth') return '45 TON';
-      return '120 TON';
-    }
+  const planPriceLabel = (plan: PaidPlanId) => {
+    const price = PAID_PLAN_PRICES[plan];
+    if (tab === 'card') return cardTermLabel(plan);
+    if (tab === 'stars') return price.starsLabel.replace(' Stars', ' ⭐');
+    if (tonAsset === 'TON') return price.tonLabel;
     if (tonAsset === 'USDT') {
       if (plan === 'starter') return '29 USDT';
       if (plan === 'growth') return '79 USDT';
@@ -325,22 +307,12 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
     return '199 LORA';
   };
 
-  const planButtonLabel = (plan: 'starter' | 'growth' | 'agency') => {
+  const planButtonLabel = (plan: PaidPlanId) => {
+    const price = PAID_PLAN_PRICES[plan];
     if (busyPlan === plan) return 'Processing…';
-    if (tab === 'card') {
-      if (plan === 'starter') return 'Checkout with Card · $49';
-      if (plan === 'growth') return 'Checkout with Card · $149';
-      return 'Checkout with Card · $349';
-    }
-    if (tab === 'stars') {
-      const stars = plan === 'starter' ? '2,500 Stars' : plan === 'growth' ? '7,500 Stars' : '18,000 Stars';
-      return starsPayLabel(stars, inTg);
-    }
-    if (tonAsset === 'TON') {
-      if (plan === 'starter') return 'Pay 15 TON · 30 days';
-      if (plan === 'growth') return 'Pay 45 TON · 30 days';
-      return 'Pay 120 TON · 30 days';
-    }
+    if (tab === 'card') return cardPayLabel(plan);
+    if (tab === 'stars') return starsPayLabel(price.starsLabel, inTg);
+    if (tonAsset === 'TON') return `Pay ${price.tonLabel} · 30 days`;
     if (tonAsset === 'USDT') {
       if (plan === 'starter') return 'Pay 29 USDT · 30 days';
       if (plan === 'growth') return 'Pay 79 USDT · 30 days';
@@ -382,7 +354,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <h3 id="paywall-modal-title" className="lx-display mt-1 text-3xl md:text-4xl">
                 {PAYWALL_HEADLINE}
               </h3>
-              <p className="mt-2 max-w-md text-sm leading-snug text-gray-400">{PAYWALL_SUBLINE}</p>
+              <p className="mt-2 max-w-md text-sm leading-snug text-gray-400">{PAYWALL_SUBLINE} {NOTHING_TO_CANCEL} {NO_TAX_LINE}</p>
             </div>
           </div>
           <button
@@ -554,6 +526,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         {tab === 'stars' && !inTg && (
           <p className="mb-4 text-sm leading-relaxed text-gray-300">{TELEGRAM_STARS_HANDOFF} Choosing a plan opens Telegram so you can pay there.</p>
         )}
+        {!inTg && !paymentOptions.cardAvailable && !paymentOptions.tonAvailable && (
+          <p className="mb-4 text-sm leading-relaxed text-gray-300">{WAITLIST_LINE}</p>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           {pricingTiers.map((tier) => (
@@ -575,8 +550,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className={`text-sm font-bold ${tier.highlight ? 'text-white' : 'text-gold-light'}`}>{planTitle(tier.id)}</span>
-                  <span className="text-sm font-semibold text-gold-light">{planPriceLabel(tier.id)}</span>
+                  <span className="text-sm font-semibold text-gold-light">{tab === 'card' ? planPriceLabel(tier.id) : `${PAID_PLAN_PRICES[tier.id].audLabel} · ${planPriceLabel(tier.id)}`}</span>
                 </div>
+                <p className="text-[11px] text-gray-400">{planSeatLine(tier.id)}</p>
                 <p className="text-[11px] text-gray-400 leading-relaxed">{tier.blurb}</p>
                 <ul className={`mt-3 gap-1.5 text-[11px] text-gray-300 ${tier.id === 'agency' ? 'grid grid-cols-1 sm:grid-cols-2' : 'space-y-1.5'}`}>
                   {planBullets(tier.id).map((line) => (
@@ -720,7 +696,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
         <p className="mt-3 text-center text-[11px] text-gray-400">
           Produced by{' '}
           <a
-            href="https://luminaradigital.io"
+            href={COMPANY_SERVICES_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="text-gold/80 hover:text-gold underline-offset-2 hover:underline"

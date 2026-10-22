@@ -8,7 +8,8 @@ import type { EmpiricalCitationSummary, EmpiricalEvidence } from './empiricalCit
 
 export interface CitationIntegrityDetail {
   url: string;
-  alive: boolean;
+  /** Null means this browser did not check the link. A false value is a confirmed miss. */
+  alive: boolean | null;
   brandOverlap: number;
   notes: string;
 }
@@ -60,32 +61,12 @@ export function isUnmeasuredReviewUrl(url: string): boolean {
   }
 }
 
-async function urlAlive(url: string): Promise<boolean> {
-  // Browser-side probe only: scheme/host allowlist (no DoH). Worker SSRF uses fetchPublicUrl.
-  try {
-    const u = new URL(url);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-    if (u.username || u.password) return false;
-    const host = u.hostname.toLowerCase();
-    if (host === 'localhost' || host.endsWith('.localhost')) return false;
-    if (host === '127.0.0.1' || host === '0.0.0.0' || host === '::1' || host === '[::1]') return false;
-    if (/^(10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) return false;
-    if (/\.(local|internal|intranet|lan|corp|arpa)$/i.test(host)) return false;
-  } catch {
-    return false;
-  }
-  try {
-    const head = await fetch(url, { method: 'HEAD' }).catch(() => null);
-    if (head) {
-      if (head.ok) return true;
-      // Some hosts reject HEAD; treat as inconclusive and fall through to GET
-      if (head.status !== 405 && head.status !== 403 && head.status >= 400) return false;
-    }
-    const get = await fetch(url, { method: 'GET' }).catch(() => null);
-    return Boolean(get && get.ok);
-  } catch {
-    return false;
-  }
+const REVIEW_LABEL = new RegExp(`\\b(?:${REVIEW_HOSTS.map((host) => host.split('.')[0]).join('|')})\\b`, 'i');
+const REVIEW_SCORE = /\b(?:rated|rating|stars?)\b|\d+(?:\.\d+)?\s*\/\s*(?:5|10)\b/i;
+
+/** A review-site score in text we did not measure. A snippet that quotes it is still not a measurement. */
+export function isUnmeasuredReviewRating(text: string): boolean {
+  return REVIEW_LABEL.test(text) && REVIEW_SCORE.test(text);
 }
 
 /**
@@ -133,11 +114,12 @@ function computeSpoofRisk(evidenceList: EmpiricalEvidence[]): 'low' | 'medium' |
 
 /**
  * integrityScore =
- *   0.40 * aliveRate
+ *   0.40 * citation rate
  * + 0.30 * avgBrandOverlap
  * + 0.20 * (100 if low spoof, 55 medium, 20 high)
  * + 0.10 * (0 if sameAsConflict else 100)
- * Missing cited URLs do not count as dead; they reduce measured sample.
+ * Cited links are not fetched. The browser used to fetch them, and a CORS failure counted as dead.
+ * Missing cited URLs do not count as dead.
  */
 export class CitationIntegrityService {
   private static instance: CitationIntegrityService;
@@ -158,26 +140,19 @@ export class CitationIntegrityService {
     const brand = opts?.brandName || summary.brandName;
     const domain = opts?.domain || summary.targetDomain;
     const details: CitationIntegrityDetail[] = [];
-    let deadCitationCount = 0;
     let overlapSum = 0;
-    let measuredUrls = 0;
+    let overlapCount = 0;
 
     for (const ev of summary.evidenceList) {
       if (!ev.citedUrl || isUnmeasuredReviewUrl(ev.citedUrl)) continue;
-      measuredUrls += 1;
-      const alive = await urlAlive(ev.citedUrl);
-      if (!alive) deadCitationCount += 1;
+      overlapCount += 1;
       const overlap = brandOverlapScore(brand, `${ev.snippet} ${ev.citedUrl}`);
       overlapSum += overlap;
       details.push({
         url: ev.citedUrl,
-        alive,
+        alive: null,
         brandOverlap: overlap,
-        notes: alive
-          ? overlap >= 50
-            ? 'Live citation with brand token overlap'
-            : 'Live citation; weak brand token overlap'
-          : 'Cited URL unreachable at audit time',
+        notes: 'Link not checked',
       });
     }
 
@@ -186,19 +161,17 @@ export class CitationIntegrityService {
 
     const citedRate = typeof summary.citationRatePercent === 'number' ? summary.citationRatePercent : 0;
     const clarity = typeof summary.entityClarityScore === 'number' ? summary.entityClarityScore : 0;
-    const aliveRate =
-      measuredUrls === 0 ? citedRate : Math.round(((measuredUrls - deadCitationCount) / measuredUrls) * 100);
-    const avgOverlap = measuredUrls === 0 ? Math.max(20, clarity) : Math.round(overlapSum / measuredUrls);
+    const avgOverlap = overlapCount === 0 ? Math.max(20, clarity) : Math.round(overlapSum / overlapCount);
     const spoofScore = spoofRisk === 'low' ? 100 : spoofRisk === 'medium' ? 55 : 20;
     const sameAsScore = sameAsConflict ? 0 : 100;
 
     const integrityScore = Math.round(
-      0.4 * aliveRate + 0.3 * avgOverlap + 0.2 * spoofScore + 0.1 * sameAsScore
+      0.4 * citedRate + 0.3 * avgOverlap + 0.2 * spoofScore + 0.1 * sameAsScore
     );
 
     return {
       integrityScore: Math.max(0, Math.min(100, integrityScore)),
-      deadCitationCount,
+      deadCitationCount: 0,
       spoofRisk,
       sameAsConflict,
       details,

@@ -14,7 +14,7 @@ const pillars = [
   },
   {
     title: 'AI visibility',
-    desc: `On every plan, checks whether your pages and live web search cover the questions buyers ask. ${LIVE_ANSWER_CHECKS}`,
+    desc: 'On every plan, checks whether your pages and live web search cover the questions buyers ask.',
   },
   {
     title: 'Citation gaps',

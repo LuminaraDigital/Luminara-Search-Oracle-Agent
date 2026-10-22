@@ -4,6 +4,7 @@
  */
 import { PlanDowngradeRefusedError, wouldDowngrade } from './planRank';
 import type { HostedIdentity, EncryptedKeyBag } from './userTypes';
+import { scheduleWelcomeEmail, type WelcomeEnv } from './welcomeEmail';
 
 export type UserStoreEnv = {
   DB?: D1Database;
@@ -27,6 +28,9 @@ export type StoredUser = {
   created_at: number;
   last_seen_at: number;
 };
+
+/** shortcut: last_seen is stored at most once an hour. A name or email change still writes. */
+const PROFILE_TOUCH_MS = 60 * 60 * 1000;
 
 export type WorkspacePayload = {
   /** Opaque product state keyed by localStorage-style names. */
@@ -64,17 +68,50 @@ async function writeKvUser(env: UserStoreEnv, row: StoredUser): Promise<void> {
   await env.LUMINARA_KV.put(`user:${row.id}`, JSON.stringify(row));
 }
 
-export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Promise<StoredUser> {
+export type UpsertedUser = StoredUser & { created: boolean; welcomePending: boolean };
+
+export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Promise<UpsertedUser> {
   const now = Date.now();
   const telegramId = user.source === 'telegram' ? user.id : undefined;
   const firebaseUid = user.source === 'firebase' ? firebaseUidFromId(user.id) : undefined;
 
   if (env.DB) {
-    const existing = await env.DB.prepare(`SELECT id, account_id, created_at FROM users WHERE id = ?`)
+    const existing = await env.DB.prepare(
+      `SELECT id, account_id, created_at, last_seen_at, email, display_name, welcome_sent_at, email_opt_out_at FROM users WHERE id = ?`,
+    )
       .bind(user.id)
-      .first<{ id: string; account_id: string | null; created_at: number }>();
+      .first<{
+        id: string;
+        account_id: string | null;
+        created_at: number;
+        last_seen_at: number;
+        email: string | null;
+        display_name: string | null;
+        welcome_sent_at: number | null;
+        email_opt_out_at: number | null;
+      }>();
     const accountId = existing?.account_id || user.accountId || user.id;
     const createdAt = existing?.created_at ?? now;
+    if (
+      existing?.account_id
+      && now - existing.last_seen_at < PROFILE_TOUCH_MS
+      && (existing.email ?? null) === (user.email ?? null)
+      && (existing.display_name ?? null) === (user.name ?? null)
+    ) {
+      return {
+        id: user.id,
+        source: user.source,
+        account_id: existing.account_id,
+        email: user.email,
+        name: user.name,
+        telegram_id: telegramId,
+        firebase_uid: firebaseUid,
+        created_at: createdAt,
+        last_seen_at: existing.last_seen_at,
+        created: false,
+        welcomePending: welcomeStillOwed(existing, user.email),
+      };
+    }
 
     await env.DB.prepare(
       `INSERT INTO users (id, source, email, display_name, telegram_id, firebase_uid, created_at, last_seen_at, account_id)
@@ -108,10 +145,21 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Pr
       firebase_uid: firebaseUid,
       created_at: createdAt,
       last_seen_at: now,
+      created: !existing,
+      welcomePending: !existing || welcomeStillOwed(existing, user.email),
     };
   }
 
   const prev = await readKvUser(env, user.id);
+  if (
+    prev?.account_id
+    && now - prev.last_seen_at < PROFILE_TOUCH_MS
+    && (prev.email ?? null) === (user.email ?? null)
+    && (prev.name ?? null) === (user.name ?? null)
+    && prev.source === user.source
+  ) {
+    return { ...prev, created: false, welcomePending: false };
+  }
   const row: StoredUser = {
     id: user.id,
     source: user.source,
@@ -138,7 +186,15 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Pr
     }
   }
 
-  return row;
+  return { ...row, created: !prev, welcomePending: !prev && Boolean(user.email?.trim()) };
+}
+
+function welcomeStillOwed(
+  row: { welcome_sent_at: number | null; email_opt_out_at: number | null },
+  email?: string,
+): boolean {
+  if (!email?.trim() || row.email_opt_out_at != null) return false;
+  return row.welcome_sent_at == null;
 }
 
 /** Lists all users ordered by most recent activity (sign-in) for admin auditability. */
@@ -177,10 +233,14 @@ export async function listAllUsers(env: UserStoreEnv, limit = 100): Promise<Stor
 /** Resolves the billing/workspace account id for a login identity. */
 export async function resolveAccountId(env: UserStoreEnv, userId: string): Promise<string> {
   if (env.DB) {
-    const row = await env.DB.prepare(`SELECT account_id FROM users WHERE id = ?`)
-      .bind(userId)
-      .first<{ account_id: string | null }>();
-    if (row?.account_id) return row.account_id;
+    try {
+      const row = await env.DB.prepare(`SELECT account_id FROM users WHERE id = ?`)
+        .bind(userId)
+        .first<{ account_id: string | null }>();
+      if (row?.account_id) return row.account_id;
+    } catch {
+      console.warn(JSON.stringify({ event: 'account_store_error' }));
+    }
   }
   const kvUser = await readKvUser(env, userId);
   return kvUser?.account_id || userId;
@@ -189,9 +249,15 @@ export async function resolveAccountId(env: UserStoreEnv, userId: string): Promi
 /**
  * Attaches accountId onto a HostedIdentity after upsert.
  */
-export async function withAccountId(env: UserStoreEnv, user: HostedIdentity): Promise<HostedIdentity> {
-  const stored = await upsertAppUser(env, user);
-  return { ...user, accountId: stored.account_id };
+export async function withAccountId(env: UserStoreEnv & WelcomeEnv, user: HostedIdentity): Promise<HostedIdentity> {
+  try {
+    const stored = await upsertAppUser(env, user);
+    scheduleWelcomeEmail(env, stored);
+    return { ...user, accountId: stored.account_id };
+  } catch {
+    console.warn(JSON.stringify({ event: 'account_store_error' }));
+    return { ...user, accountId: user.accountId || user.id };
+  }
 }
 
 async function hasActiveSub(env: UserStoreEnv, accountOrUserId: string): Promise<boolean> {

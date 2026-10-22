@@ -9,6 +9,7 @@ import {
   putWorkspaceRemote,
   type WorkspacePayload,
 } from '../apiClient';
+import { takeAccountBoot } from '../auth/accountBoot';
 import {
   encryptKeyBag,
   decryptKeyBag,
@@ -38,6 +39,10 @@ const MEMORY_KEYS = [
   'luminara_mem0_facts_v1',
   'luminara_mem0_relations_v1',
   'luminara_memory_facts_v1',
+  'luminara_first_run_tour',
+  'luminara_findings_board_v1',
+  'luminara_upgrade_dismissed_v1',
+  'luminara_win_shares_v1',
 ] as const;
 
 const KEY_BAG_KEYS = [
@@ -190,7 +195,15 @@ export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?:
   if (syncing) return { ok: false, error: 'busy' };
   syncing = true;
   try {
-    const remote = await fetchWorkspace();
+    const booted = await takeAccountBoot();
+    const remote: Awaited<ReturnType<typeof fetchWorkspace>> = booted
+      ? {
+          ok: true,
+          accountId: booted.accountId,
+          updatedAt: booted.workspace.updatedAt,
+          payload: booted.workspace.payload,
+        }
+      : await fetchWorkspace();
     if (!remote.ok) return { ok: false, error: remote.error || 'pull failed' };
 
     const local = readMeta();

@@ -182,10 +182,15 @@ describe('guest scout summary honesty', () => {
       findings: [],
       hostedRail: 'signed_in_hosted' as const,
     };
-    const badge = (healthScore: number | null, healthChecks?: { passed: number; total: number } | null) =>
+    const badge = (healthScore: number | null, healthChecks?: { passed: number; total: number; unmeasured?: number } | null) =>
       buildGuestScoutSummary({ ...base, healthScore, healthChecks }).badges.find((item) => item.label === 'Page health');
 
     expect(badge(73, { passed: 3, total: 4 })).toEqual({ label: 'Page health', status: 'measured', value: '3 of 4 checks passed' });
+    expect(badge(null, { passed: 2, total: 4, unmeasured: 1 })).toEqual({
+      label: 'Page health',
+      status: 'not_measured',
+      value: 'passed 2 of 4; 1 not measured',
+    });
     // The checklist number on its own is never printed.
     expect(badge(73)).toEqual({ label: 'Page health', status: 'not_measured' });
     expect(badge(null, { passed: 3, total: 4 })).toEqual({ label: 'Page health', status: 'not_measured' });
@@ -195,6 +200,10 @@ describe('guest scout summary honesty', () => {
       summary: buildGuestScoutSummary({ ...base, healthScore: 73, healthChecks: { passed: 3, total: 4 } }),
     }));
     expect(html).toContain('Page health: 3 of 4 checks passed');
+    const partial = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, {
+      summary: buildGuestScoutSummary({ ...base, healthScore: null, healthChecks: { passed: 2, total: 4, unmeasured: 1 } }),
+    }));
+    expect(partial).toContain('Page health: passed 2 of 4; 1 not measured');
     expect(html).not.toMatch(/\d+\s*\/\s*100/);
     expect(html).not.toContain('73');
   });

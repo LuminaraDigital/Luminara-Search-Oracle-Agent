@@ -1,6 +1,7 @@
 import React from 'react';
 import { VfsMemoryCategory } from '../../../types';
 import { vfsMemoryService } from '../../../services/vfs/vfsMemoryService';
+import { formatAuDate } from '../../../utils/formatAuDate';
 
 interface VfsMemoryTabProps {
   memoryFilter: VfsMemoryCategory | 'all';
@@ -68,7 +69,7 @@ export const VfsMemoryTab: React.FC<VfsMemoryTabProps> = ({
                 {item.category}
               </span>
               <span className="text-[10px] font-mono text-gray-400">
-                {new Date(item.updatedAt).toLocaleDateString()}
+                {formatAuDate(item.updatedAt)}
               </span>
             </div>
 

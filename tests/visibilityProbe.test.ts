@@ -60,12 +60,14 @@ describe('landing Visibility Probe fixtures', () => {
     expect(idleEngines().every((e) => e.status === 'idle')).toBe(true);
   });
 
-  it('live sample snapshot measures crawl only', () => {
+  it('live sample snapshot is an illustrative example', () => {
+    expect(LIVE_SAMPLE_SNAPSHOT.label).toBe('Illustrative example');
+    expect(LIVE_SAMPLE_SNAPSHOT.domain).toContain('example');
     const crawl = LIVE_SAMPLE_SNAPSHOT.rows.find((r) => r.id === 'crawl_readiness');
     expect(crawl?.status).toBe('measured');
+    expect(LIVE_SAMPLE_SNAPSHOT.rows.some((row) => row.status === 'not_measured')).toBe(true);
     for (const row of LIVE_SAMPLE_SNAPSHOT.rows) {
-      if (row.id === 'crawl_readiness') continue;
-      expect(row.status).toBe('not_measured');
+      expect(row.note.toLowerCase()).toContain('example');
     }
     expect(LIVE_SAMPLE_SNAPSHOT.measuredAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
@@ -98,10 +100,12 @@ describe('probeCrawl summarize', () => {
       aiHttpStatus: 403,
     };
     const crawl = summarizeProbeCrawl('movida.com.au', snapshot);
-    expect(crawl.note).toContain("robots.txt couldn't be checked (blocked)");
-    expect(crawl.note).toContain("llms.txt couldn't be checked (blocked)");
-    expect(crawl.note).toContain("ai.txt couldn't be checked (blocked)");
+    expect(crawl.status).toBe('not_measured');
+    expect(crawl.note).toContain('robots.txt: Not measured (site blocked our check)');
+    expect(crawl.note).toContain('llms.txt: Not measured (site blocked our check)');
+    expect(crawl.note).toContain('ai.txt: Not measured (site blocked our check)');
     expect(crawl.note).not.toContain('missing');
+    expect(crawl.note).not.toContain('Measured');
     expect(crawl.robotsPresent).toBe(false);
   });
 });

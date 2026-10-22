@@ -23,8 +23,8 @@ export const API_ACCESS_PATH_PATTERNS: RegExp[] = [
 export const MCP_ACCESS_PATH_PATTERNS: RegExp[] = [/^\/mcp(\/|$)/];
 
 export function isApiAccessRoute(path: string): boolean {
-  // Instant Audit mints one check here for every signed-in plan. The Agency audit queue stays gated.
-  if (path === '/audit/scout-run') return false;
+  // Instant Audit and the one free AI answer are for every signed-in plan. The Agency audit queue stays gated.
+  if (path === '/audit/scout-run' || path === '/audit/free-answer') return false;
   return API_ACCESS_PATH_PATTERNS.some((re) => re.test(path));
 }
 
@@ -43,7 +43,7 @@ export async function requireApiAccess(env: Env, user: HostedIdentity): Promise<
     return json(
       {
         ok: false,
-        error: 'Agency API access requires an active Pro / Agency plan. Upgrade or use the web app.',
+        error: 'Agency API access requires an active Agency plan. Upgrade or use the web app.',
         code: 'API_ACCESS_REQUIRED',
         requiredPlan: 'agency',
       },

@@ -12,6 +12,8 @@ export const MARKETING_PATH_BY_VIEW: Partial<Record<AppView, string>> = {
   [AppView.SAMPLE_REPORT]: '/sample-report',
   [AppView.PRIVACY]: '/privacy',
   [AppView.TERMS]: '/terms',
+  [AppView.FAQ]: '/faq',
+  [AppView.CONTACT]: '/contact',
 };
 
 /** Path aliases accepted on entry (redirected to the canonical path via replaceState). */
@@ -26,12 +28,19 @@ const PATH_ALIASES: Record<string, AppView> = {
   why: AppView.WHY_US,
   'why-us': AppView.WHY_US,
   pricing: AppView.PRICING,
+  upgrade: AppView.PRICING,
   methodology: AppView.METHODOLOGY,
   'sample-report': AppView.SAMPLE_REPORT,
   dashboard: AppView.DASHBOARD,
   sample: AppView.SAMPLE_REPORT,
   privacy: AppView.PRIVACY,
   'privacy-policy': AppView.PRIVACY,
+  'privacy.html': AppView.PRIVACY,
+  faq: AppView.FAQ,
+  help: AppView.FAQ,
+  'faq.html': AppView.FAQ,
+  contact: AppView.CONTACT,
+  'contact.html': AppView.CONTACT,
   terms: AppView.TERMS,
   'terms-of-service': AppView.TERMS,
   tos: AppView.TERMS,
@@ -96,6 +105,7 @@ function isRootPathname(pathname: string): boolean {
 
 /** Matches `verify/r/<id>` (path or hash body). Must be checked before the generic `verify/` attestation route. */
 const VERIFY_RECEIPT_RE = /^verify\/r\/([^/?#]+)$/i;
+const VERIFY_AUDIT_RE = /^verify\/audit(?:\/([^/?#]+))?$/i;
 
 function safeDecode(value: string): string {
   try {
@@ -103,6 +113,14 @@ function safeDecode(value: string): string {
   } catch {
     return '';
   }
+}
+
+/** Receipt id from a /verify/audit/<id> path or hash, or '' when the page has no id. */
+export function auditReceiptIdFromLocation(pathname: string, hash: string): string {
+  const fromPath = pathname.replace(/^\/+|\/+$/g, '').match(VERIFY_AUDIT_RE);
+  if (fromPath?.[1]) return safeDecode(fromPath[1]);
+  const fromHash = hash.replace(/^#\/?/, '').replace(/\/+$/, '').match(VERIFY_AUDIT_RE);
+  return fromHash?.[1] ? safeDecode(fromHash[1]) : '';
 }
 
 /** Receipt id from a /verify/r/<id> path or #verify/r/<id> hash, or '' when absent. */
@@ -119,6 +137,7 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
   const path = rawPath.toLowerCase();
 
   if (path.startsWith('share/')) return AppView.SHARED_REPORT;
+  if (path === 'verify/audit' || path.startsWith('verify/audit/')) return AppView.VERIFY_AUDIT_RECEIPT;
   if (path.startsWith('verify/r/')) return AppView.VERIFY_RECEIPT;
   if (path.startsWith('verify/')) return AppView.VERIFY_ATTESTATION;
   if (path.startsWith('reports/')) return AppView.AGENT_REPORT;
@@ -132,12 +151,14 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
     if (h) {
       if (h === 'SETTINGS' || h === 'INTEGRATIONS' || h === 'KEYS') return null;
       if (h.startsWith('SHARE/')) return AppView.SHARED_REPORT;
+      if (h === 'VERIFY/AUDIT' || h.startsWith('VERIFY/AUDIT/')) return AppView.VERIFY_AUDIT_RECEIPT;
       if (h.startsWith('VERIFY/R/')) return AppView.VERIFY_RECEIPT;
       if (h.startsWith('VERIFY/')) return AppView.VERIFY_ATTESTATION;
       if (h.startsWith('HARNESS')) return AppView.HARNESS;
       if (h.startsWith('ORACLE_AGENT')) return AppView.ORACLE_AGENT;
       if (h.startsWith('NOTEBOOK') || h.startsWith('STUDIO')) return AppView.NOTEBOOK;
       if (OFFLINE_HASHES.has(h)) return AppView.NOT_FOUND;
+      if (h === 'INSTANT_AUDIT' || h.startsWith('INSTANT_AUDIT/')) return AppView.INSTANT_AUDIT;
       const fromMarketingHash = marketingViewFromHash(hash);
       if (fromMarketingHash) return fromMarketingHash;
       return (Object.values(AppView) as string[]).includes(h) ? (h as AppView) : null;

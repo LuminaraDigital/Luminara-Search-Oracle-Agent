@@ -21,11 +21,12 @@ import { agentMatrixService } from './services/harness/agentMatrixService';
 import { reminderService } from './services/harness/reminderService';
 import { NativeEngineHUD } from './components/llm/NativeEngineHUD';
 import { ICONS } from './constants';
-import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
+import { marketingNavSignedIn, useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { PaywallSlot } from './components/paywall/PaywallSlot';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
+import { ReplayTourButton } from './components/onboarding/FirstRunTour';
 import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
@@ -33,7 +34,9 @@ import { lazyWithReload } from './utils/lazyWithReload';
 import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
-import { apiBase, setAccountSignedIn, streamOracleChat } from './services/apiClient';
+import { apiBase, getCurrentQuotaSync, setAccountSignedIn, streamOracleChat } from './services/apiClient';
+import { entitlementsFor } from './services/plans/planEntitlements';
+import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
 import { MarketingChromeContext, type MarketingChrome } from './components/marketing/marketingChrome';
 import { normalizeHandoffUrl } from './services/activation/auditHandoff';
@@ -43,10 +46,12 @@ import { labsVisible } from './services/ui/labsAccess';
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
 const LegalPage = lazyWithReload(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
+const HelpPage = lazyWithReload(() => import('./components/help/HelpPage').then(m => ({ default: m.HelpPage })));
 const NotFoundPage = lazyWithReload(() => import('./components/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
 const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
 const TeaserShareView = lazyWithReload(() => import('./components/audit/TeaserShareView').then(m => ({ default: m.TeaserShareView })));
 const VerifyAttestationView = lazyWithReload(() => import('./components/audit/VerifyAttestationView').then(m => ({ default: m.VerifyAttestationView })));
+const VerifyAuditReceiptView = lazyWithReload(() => import('./components/audit/VerifyAuditReceiptView').then(m => ({ default: m.VerifyAuditReceiptView })));
 const AgentReportView = lazyWithReload(() => import('./components/audit/AgentReportView').then(m => ({ default: m.AgentReportView })));
 const InfrastructurePage = lazyWithReload(() => import('./components/InfrastructurePage'));
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
@@ -313,12 +318,15 @@ const App: React.FC = () => {
 
   // Conversation survives reloads within the tab (sessionStorage), not across devices.
   useEffect(() => {
+    const next = JSON.stringify(messages.slice(-60));
+    let unchanged = false;
     try {
-      sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-60)));
+      unchanged = sessionStorage.getItem(CHAT_STORAGE_KEY) === next;
+      if (!unchanged) sessionStorage.setItem(CHAT_STORAGE_KEY, next);
     } catch {
       /* quota exceeded or storage disabled: chat just becomes ephemeral */
     }
-    if (messages.length) noteWorkspaceDirty();
+    if (!unchanged && messages.length) noteWorkspaceDirty();
   }, [messages]);
 
   // Telegram + Windows desktop: marketing views redirect into the functional app
@@ -491,6 +499,7 @@ const App: React.FC = () => {
   ) : null;
 
   /** One nav for every marketing page (same links, same CTAs, current page marked). */
+  const navSignedIn = marketingNavSignedIn(appAuth.loading, appAuth.authenticated, hasPersistedAuthSession());
   const marketingChrome: MarketingChrome = {
     links: [
       { label: 'Why', onClick: () => setView(AppView.WHY_US), current: view === AppView.WHY_US },
@@ -498,10 +507,10 @@ const App: React.FC = () => {
       { label: 'AI', onClick: () => setView(AppView.INTELLIGENCE), current: view === AppView.INTELLIGENCE },
       { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
     ],
-    primaryCta: appAuth.authenticated
+    primaryCta: navSignedIn
       ? { label: 'New audit', onClick: () => enterInstantAudit() }
       : { label: 'Start free', onClick: () => openLoginWall('signup') },
-    secondaryCta: appAuth.authenticated
+    secondaryCta: navSignedIn
       ? { label: 'Dashboard', onClick: () => enterApp(AppView.DASHBOARD) }
       : { label: 'Sign in', onClick: () => openLoginWall('signin') },
     onHome: () => setView(AppView.LANDING),
@@ -590,7 +599,7 @@ const App: React.FC = () => {
         return;
       }
       if (e.key === 'Escape') {
-        setIsOmnibarOpen(false);
+        setIsOmnibarOpen(false); setShowSuiteMenu(false);
       }
     };
 
@@ -716,8 +725,12 @@ const App: React.FC = () => {
       let usedServerOracle = false;
 
       // Agency hosted Oracle (validators + provenance). Fall back to BYOK client path on soft failure.
+      // Free plans get 403 from /oracle/chat. The server path is Agency apiAccess only.
       const preferServer =
-        appAuth.authenticated && Boolean(apiBase()) && !opts.skipSearch;
+        appAuth.authenticated &&
+        Boolean(apiBase()) &&
+        !opts.skipSearch &&
+        entitlementsFor(getCurrentQuotaSync()?.plan).apiAccess;
 
       if (preferServer) {
         let softFail = false;
@@ -903,6 +916,15 @@ const App: React.FC = () => {
     );
   }
 
+  if (view === AppView.FAQ || view === AppView.CONTACT) {
+    return (
+      <Suspense fallback={<ViewLoader label="Loading help" />}>
+        {introOverlay}
+        <HelpPage kind={view === AppView.FAQ ? 'faq' : 'contact'} onBack={() => setView(skipMarketing ? AppView.DASHBOARD : AppView.LANDING)} />
+      </Suspense>
+    );
+  }
+
   if (view === AppView.SHARED_REPORT) {
     if (isTeaserSharePath()) {
       return (
@@ -941,6 +963,14 @@ const App: React.FC = () => {
     return (
       <Suspense fallback={<ViewLoader label="Loading report" />}>
         <AgentReportView />
+      </Suspense>
+    );
+  }
+
+  if (view === AppView.VERIFY_AUDIT_RECEIPT) {
+    return (
+      <Suspense fallback={<ViewLoader label="Checking receipt" />}>
+        <VerifyAuditReceiptView onBack={() => setView(AppView.LANDING)} />
       </Suspense>
     );
   }
@@ -1201,7 +1231,6 @@ const App: React.FC = () => {
             Studio
           </Button>
 
-          {/* Command Suite Dropdown */}
           <div className="relative shrink-0" ref={moreBtnContainerRef}>
             <Button
               variant="ghost"
@@ -1246,6 +1275,9 @@ const App: React.FC = () => {
                       ✕
                     </button>
                   </div>
+                  <a href="/faq" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: FAQ</a>
+                  <a href="/contact" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: Contact</a>
+                  <a href="/how-it-works" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">How Luminara works</a>
                   <button
                     type="button"
                     onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}
@@ -1375,6 +1407,7 @@ const App: React.FC = () => {
                     <span className="truncate">Jump to any tool (Omnibar)</span>
                     <kbd className="ml-auto hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
                   </button>
+                  {!inTelegram && appAuth.authenticated && <ReplayTourButton onDone={() => setShowSuiteMenu(false)} goToAudit={() => setView(AppView.INSTANT_AUDIT)} />}
                   {!inTelegram && appAuth.authenticated && (
                     <button
                       type="button"
@@ -1537,7 +1570,6 @@ const App: React.FC = () => {
         )}
         <ErrorBoundary scope={view}>
         <Suspense fallback={<ViewLoader label="Loading workspace" />}>
-        {/* VIEW: Instant Audit Scanner */}
         {view === AppView.INSTANT_AUDIT && (
           <InstantAuditView
             dna={dna}
@@ -1620,7 +1652,7 @@ const App: React.FC = () => {
           <BrandMemoryView
             dna={dna}
             onNavigate={(v) => setView(v)}
-            onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Unlock Pro / Agency for client workspaces saved in this browser, and deeper memory' } }))}
+            onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Unlock Agency for client workspaces and deeper memory' } }))}
           />
         )}
 

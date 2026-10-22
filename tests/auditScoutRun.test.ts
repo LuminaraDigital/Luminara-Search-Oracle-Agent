@@ -2,6 +2,8 @@ import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { proxyProvider } from '../worker/providerRelay';
 import { handleAuditScoutRun } from '../worker/auditScoutRun';
+import { readFreeUsed } from '../worker/quotaMiddleware';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import type { Env } from '../worker/env';
 
 const BOT_TOKEN = '123456:MOCK_TOKEN';
@@ -42,6 +44,7 @@ function envFor(limit = '25') {
   const kv = memoryKv();
   const env = {
     LUMINARA_KV: kv,
+    DAILY_QUOTA: memoryDailyQuotaNamespace(),
     BOT_TOKEN,
     REQUIRE_TG_AUTH: 'true',
     FREE_DAILY_LIMIT: limit,
@@ -51,9 +54,8 @@ function envFor(limit = '25') {
   return { env, kv };
 }
 
-function quotaUsed(kv: ReturnType<typeof memoryKv>): string | undefined {
-  const day = new Date().toISOString().slice(0, 10);
-  return kv.store.get(`quota:11:${day}`);
+function quotaUsed(env: Env): Promise<number | null> {
+  return readFreeUsed(env, '11', Number(env.FREE_DAILY_LIMIT || 25));
 }
 
 async function mint(env: Env, id = 11, domain = 'https://movida.com.au') {
@@ -98,7 +100,7 @@ describe('one Instant Audit run', () => {
     const opened = await mint(env);
     expect(opened.status).toBe(200);
     expect(opened.body.domain).toBe('movida.com.au');
-    expect(quotaUsed(kv)).toBe('1');
+    expect(await quotaUsed(env)).toBe(1);
     expect(opened.headers.get('x-quota-limit')).toBe('25');
     expect(opened.headers.get('x-quota-remaining')).toBe('24');
 
@@ -112,14 +114,14 @@ describe('one Instant Audit run', () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toMatchObject({ choices: [{ message: { content: 'Groq hosted answer' } }] });
     }
-    expect(quotaUsed(kv)).toBe('1');
+    expect(await quotaUsed(env)).toBe(1);
     const refund = await handleAuditScoutRun(new Request('https://luminarasuite.com/api/audit/scout-run', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-telegram-init-data': initDataFor(11) },
       body: JSON.stringify({ refund: true, token: opened.body.token }),
     }), env);
     expect(await refund.json()).toEqual({ ok: true, refunded: false });
-    expect(quotaUsed(kv)).toBe('1');
+    expect(await quotaUsed(env)).toBe(1);
   });
 
   it('refunds that check when the run produced no measured result', async () => {
@@ -133,7 +135,7 @@ describe('one Instant Audit run', () => {
       '/chat/completions',
     );
     expect(failed.status).toBeGreaterThanOrEqual(500);
-    expect(quotaUsed(kv)).toBe('1');
+    expect(await quotaUsed(env)).toBe(1);
 
     const refund = await handleAuditScoutRun(new Request('https://luminarasuite.com/api/audit/scout-run', {
       method: 'POST',
@@ -141,7 +143,7 @@ describe('one Instant Audit run', () => {
       body: JSON.stringify({ refund: true, token: opened.body.token }),
     }), env);
     expect(await refund.json()).toEqual({ ok: true, refunded: true });
-    expect(quotaUsed(kv)).toBe('0');
+    expect(await quotaUsed(env)).toBe(0);
   });
 
   it('meters the call that goes past the per-run cap', async () => {
@@ -154,10 +156,10 @@ describe('one Instant Audit run', () => {
       const res = await proxyProvider(providerCall(opened.body.token!, 'movida.com.au'), env, 'groq', '/chat/completions');
       expect(res.status).toBe(200);
     }
-    expect(quotaUsed(kv)).toBe('1');
+    expect(await quotaUsed(env)).toBe(1);
     const extra = await proxyProvider(providerCall(opened.body.token!, 'movida.com.au'), env, 'groq', '/chat/completions');
     expect(extra.status).toBe(200);
-    expect(quotaUsed(kv)).toBe('2');
+    expect(await quotaUsed(env)).toBe(2);
   });
 
   it('rejects an expired token, another account, and another site', async () => {
@@ -182,7 +184,7 @@ describe('one Instant Audit run', () => {
     expect(otherSite.status).toBe(403);
     expect(await otherSite.json()).toMatchObject({ code: 'AUDIT_RUN_REJECTED' });
     expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(quotaUsed(kv)).toBe('1');
+    expect(await quotaUsed(env)).toBe(1);
   });
 
   it('treats www and a subdomain as the minted site', async () => {
@@ -230,9 +232,9 @@ describe('one Instant Audit run', () => {
       '/chat/completions',
     );
     expect(page.status).toBe(200);
-    expect(quotaUsed(kv)).toBe('1');
+    expect(await quotaUsed(env)).toBe(1);
     expect(await (await refundUnmeasured(opened.body.token!)).json()).toEqual({ ok: true, refunded: true });
-    expect(quotaUsed(kv)).toBe('0');
+    expect(await quotaUsed(env)).toBe(0);
 
     const again = await mint(env);
     const secondPage = await proxyProvider(
@@ -243,7 +245,7 @@ describe('one Instant Audit run', () => {
     );
     expect(secondPage.status).toBe(200);
     expect(await (await refundUnmeasured(again.body.token!)).json()).toEqual({ ok: true, refunded: false });
-    expect(quotaUsed(kv)).toBe('1');
+    expect(await quotaUsed(env)).toBe(1);
   });
 
   it('still meters a hosted call that is not part of a run', async () => {
@@ -258,6 +260,66 @@ describe('one Instant Audit run', () => {
     });
     expect((await proxyProvider(chat(), env, 'groq', '/chat/completions')).status).toBe(200);
     expect((await proxyProvider(chat(), env, 'groq', '/chat/completions')).status).toBe(200);
-    expect(quotaUsed(kv)).toBe('2');
+    expect(await quotaUsed(env)).toBe(2);
+  });
+
+  it('covers later calls without rewriting the run', async () => {
+    const { env, kv } = envFor();
+    let runPuts = 0;
+    const realPut = kv.put.bind(kv);
+    kv.put = async (key: string, value: string) => {
+      if (key.startsWith('audit-run:')) runPuts += 1;
+      return realPut(key, value);
+    };
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const opened = await mint(env);
+    const afterMint = runPuts;
+    for (let i = 0; i < 3; i++) {
+      const res = await proxyProvider(
+        providerCall(opened.body.token!, 'movida.com.au'),
+        env,
+        'groq',
+        '/chat/completions',
+      );
+      expect(res.status).toBe(200);
+    }
+    expect(runPuts - afterMint).toBe(1);
+    expect(await quotaUsed(env)).toBe(1);
+  });
+
+  it('refuses a free audit when the meter is unavailable, and does not invent a token', async () => {
+    const { env } = envFor();
+    env.DAILY_QUOTA = undefined;
+    globalThis.fetch = vi.fn(async () => new Response('should not run', { status: 200 }));
+    const opened = await mint(env);
+    expect(opened.status).toBe(503);
+    expect(opened.body.token).toBeUndefined();
+    expect(opened.body).toMatchObject({ ok: false, code: 'HOSTED_CAPACITY' });
+
+    const chat = new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-telegram-init-data': initDataFor(11) },
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: 'Hi' }] }),
+    });
+    const res = await proxyProvider(chat, env, 'groq', '/chat/completions');
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: 'HOSTED_CAPACITY' });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not hand out a token when the audit run cannot be stored', async () => {
+    const { env, kv } = envFor();
+    const realPut = kv.put.bind(kv);
+    kv.put = async (key: string, value: string) => {
+      if (key.startsWith('audit-run:')) throw new Error('kv put');
+      return realPut(key, value);
+    };
+    const opened = await mint(env);
+    expect(opened.status).toBe(200);
+    expect(opened.body.ok).toBe(true);
+    expect(opened.body.token).toBeUndefined();
+    expect(await quotaUsed(env)).toBe(0);
   });
 });

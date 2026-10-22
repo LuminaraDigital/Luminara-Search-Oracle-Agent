@@ -66,6 +66,8 @@ export interface Env {
   FIREBASE_WEB_API_KEY?: string;
   /** Soft daily cap on outbound password-reset / OTP emails (default 200). */
   OUTBOUND_EMAIL_DAILY_LIMIT?: string;
+  /** Resend API key (Worker secret). Welcome mail is skipped when it is unset. */
+  RESEND_API_KEY?: string;
   /**
    * When "true" and Twilio secrets are set, POST /api/auth/request-otp sends SMS.
    * Default off: route stays a rate-limited stub (501 OTP_NOT_ENABLED).
@@ -92,6 +94,12 @@ export interface Env {
   TAVILY_API_KEY?: string;
   FIRECRAWL_API_KEY?: string;
   EXA_API_KEY?: string;
+  /** Free hosted Exa calls per account per UTC day. Default 15. Paid plans are not counted. */
+  EXA_FREE_DAILY_CAP?: string;
+  /** TypeSafe Jev (System One). Worker secret. The browser never receives it. */
+  TYPESAFE_API_KEY?: string;
+  /** Free hosted Jev calls per account per UTC day. Default 6. Paid plans are not counted. */
+  TYPESAFE_FREE_DAILY_CAP?: string;
   /** Self-hosted LanguageTool server, e.g. https://writing.example.com (no trailing path). */
   LANGUAGETOOL_URL?: string;
   /** Self-hosted Umami (https://stats.example.com) or Umami Cloud (https://api.umami.is). */
@@ -109,6 +117,11 @@ export interface Env {
   STRIPE_SECRET_KEY?: string;
   /** Stripe webhook endpoint secret (whsec_...). */
   STRIPE_WEBHOOK_SECRET?: string;
+  /**
+   * "true" opens card checkout after diagnoseStripeConfig accepts the key mode.
+   * Anything else keeps the rail closed. Staging sets "true". Production stays "false".
+   */
+  STRIPE_CHECKOUT_LIVE?: string;
   TON_RECEIVING_ADDRESS?: string;
   /**
    * The TON address the owner has confirmed, in their own wallet app, to be theirs. TON checkout
@@ -182,10 +195,32 @@ export interface Env {
    */
   TRUST_RECEIPTS_ENABLED?: string;
   DOMAIN_VERIFY_ENABLED?: string;
-  /** Secret. Ed25519 private JWK (JSON) that signs Trust Receipts. Generate with `npm run keys:receipt`. */
+  /** Secret. Ed25519 private JWK (JSON) that signs Trust Receipts and Signed Audit Receipts. Generate with `npm run keys:receipt`. */
   RECEIPT_SIGNING_KEY?: string;
   /** JSON array of retired Ed25519 public JWKs still published so old receipts verify. */
   RECEIPT_RETIRED_PUBLIC_KEYS?: string;
+  /**
+   * "true" lets the daily Citation Watch cron record runs.
+   * The built-in probe records not_measured until a product per-prompt adapter is connected.
+   */
+  CITATION_WATCH_LIVE?: string;
+  /** Optional JSON override of per-engine Citation Watch thresholds. A bad field keeps the default. */
+  CITATION_WATCH_THRESHOLDS?: string;
+  /** Daily Signed Audit Receipt cap per account. Unset uses 10. Integer 1 to 1000. The day starts at 00:00 UTC (11:00 in Sydney during AEDT). */
+  AUDIT_RECEIPT_DAILY_QUOTA?: string;
+  /**
+   * "true" allows minting and revoking Signed Audit Receipts. Unset and any other value refuse those writes.
+   * Public verify (GET keys, GET by id, POST verify) stays available. Default "false" in wrangler vars.
+   */
+  AUDIT_RECEIPTS_ENABLED?: string;
+  /**
+   * Secret. HMAC-SHA256 key for the account hash on a Signed Audit Receipt.
+   * Set with `wrangler secret put AUDIT_RECEIPT_ACCOUNT_HMAC_KEY` only. Not a wrangler var.
+   * Minting returns 503 and signs nothing when this is unset. Separate from RECEIPT_SIGNING_KEY.
+   */
+  AUDIT_RECEIPT_ACCOUNT_HMAC_KEY?: string;
+  /** Days since last_checked_at that a verified domain may still be signed. Unset uses 7. Integer 1 to 365. */
+  AUDIT_RECEIPT_DOMAIN_FRESH_DAYS?: string;
   /** DNS-over-HTTPS JSON endpoint for domain verification. Default https://cloudflare-dns.com/dns-query. */
   DOMAIN_VERIFY_DOH_URL?: string;
   /** DataForSEO API login (hosted LLM Mentions / SERP). Pair with DATAFORSEO_PASSWORD. */
@@ -232,6 +267,8 @@ export interface Env {
   AUTH_MESSAGING_LIMITER?: { limit: (opts: { key: string }) => Promise<{ success: boolean }> };
   /** Durable Object namespace for Oracle chat sessions. */
   ORACLE_SESSION?: DurableObjectNamespace;
+  /** Free daily meter. One SQLite object per account per UTC day. */
+  DAILY_QUOTA?: DurableObjectNamespace;
   /** Queue producer for long-running audits. */
   AUDIT_JOBS?: Queue;
   /** Optional Sentry DSN (Worker exceptions). */

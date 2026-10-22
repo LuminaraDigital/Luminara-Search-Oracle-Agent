@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button } from '../ui/Button';
+import { formatAuDate } from '../../utils/formatAuDate';
 import { Skeleton } from '../ui/Skeleton';
 import { ICONS } from '../ui/icons';
 import { useConfirm } from '../ui/ConfirmModal';
@@ -53,7 +54,7 @@ function normaliseDomain(input: string): string {
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return 'not yet';
   const t = Date.parse(iso);
-  return Number.isFinite(t) ? new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'unknown';
+  return Number.isFinite(t) ? formatAuDate(t) : 'unknown';
 }
 
 async function copyText(text: string): Promise<boolean> {

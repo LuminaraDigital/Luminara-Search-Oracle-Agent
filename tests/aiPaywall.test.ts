@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkHostedQuota } from '../worker/index';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import { updateQuotaFromHeaders, getCurrentQuotaSync } from '../services/apiClient';
 
 function createMockKv() {
@@ -25,6 +26,7 @@ describe('AI Paywall & Quota Engine', () => {
     const kv = createMockKv();
     const env: any = {
       LUMINARA_KV: kv,
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
       FREE_DAILY_LIMIT: '3',
       REQUIRE_TG_AUTH: 'true',
     };
@@ -127,6 +129,7 @@ describe('AI Paywall & Quota Engine', () => {
 
     const createEnv = (kv: any) => ({
       LUMINARA_KV: kv,
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
       BOT_TOKEN,
       REQUIRE_TG_AUTH: 'true',
       FREE_DAILY_LIMIT: '10',
@@ -289,6 +292,7 @@ describe('AI Paywall & Quota Engine', () => {
       const kv = createMockKv();
       const env: any = {
         LUMINARA_KV: kv,
+        DAILY_QUOTA: memoryDailyQuotaNamespace(),
         FREE_DAILY_LIMIT: '2',
         REQUIRE_TG_AUTH: 'false',
       };

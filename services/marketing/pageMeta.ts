@@ -1,11 +1,23 @@
 /** Shared marketing page meta (browser + Worker). No DOM APIs. */
 
+import { listPriceSummary } from '../../components/paywall/planCopy';
 import { PAID_PLAN_PRICES } from '../../components/paywall/planPrices';
+import {
+  COMPANY_SERVICES_URL,
+  COMPANY_SITE_URL,
+  CONTACT_EMAIL,
+  LEGAL_ABN,
+  LEGAL_ENTITY,
+  PUBLIC_BRAND,
+} from '../legal/consumerTerms';
 import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage';
 import { buildFaqPageJsonLd } from './marketingFaqContent';
+import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
+import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
+import { privacyCrawlerBody } from '../legal/privacyCrawler';
 
-const HOME_META = `${HONEST_VISIBILITY_PROMISE} No invented scores.`;
+const HOME_META = `${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE} No invented scores.`;
 
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
 export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/og-image.png`;
@@ -24,9 +36,24 @@ export interface MarketingShellMeta {
 const ORG_NODE = {
   '@type': 'Organization',
   '@id': `${MARKETING_ORIGIN}/#organization`,
-  name: 'Luminara Digital',
-  url: 'https://luminaradigital.io',
+  name: 'Luminara Suite',
+  legalName: LEGAL_ENTITY,
+  taxID: LEGAL_ABN,
+  brand: { '@type': 'Brand', name: PUBLIC_BRAND, url: COMPANY_SITE_URL },
+  url: MARKETING_ORIGIN,
   logo: `${MARKETING_ORIGIN}/icon-512.png`,
+  email: CONTACT_EMAIL,
+  address: {
+    '@type': 'PostalAddress',
+    addressRegion: 'VIC',
+    postalCode: '3128',
+    addressCountry: 'AU',
+  },
+  contactPoint: {
+    '@type': 'ContactPoint',
+    email: CONTACT_EMAIL,
+    contactType: 'sales',
+  },
   sameAs: [
     'https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent',
     'https://t.me/LuminaraSuiteBot',
@@ -44,7 +71,7 @@ const SOFTWARE_NODE = {
   description: HOME_META,
   publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
 };
-// No Offer price here. The page sells Telegram Stars, which are not an ISO 4217 currency, and card checkout is off.
+// No Offer price here. Card prices are Australian dollars for a 30-day pass. Telegram Stars are not an ISO 4217 currency.
 
 const WEBSITE_NODE = {
   '@type': 'WebSite',
@@ -100,7 +127,8 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     crawlerBody: `
 <section>
   <h1>Be the answer AI gives.</h1>
-  <p>${HONEST_VISIBILITY_PROMISE}</p>
+  <p>${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE}</p>
+  <p>Illustrative example, not a real agency and not a measurement: an independent agency, checked for a suburb question.</p>
   <p>Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
@@ -114,7 +142,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     <li><a href="/privacy">Privacy</a></li>
     <li><a href="/terms">Terms</a></li>
   </ul>
-  <p>Produced by <a href="https://luminaradigital.io">Luminara Digital</a>.</p>
+  <p>Produced by <a href="${COMPANY_SERVICES_URL}">Luminara Digital</a>.</p>
 </section>`,
   },
   '/methodology': {
@@ -150,7 +178,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     crawlerBody: `
 <section>
   <h1>Sample report</h1>
-  <p>Illustrative Sample for luminarasuite.com. Engines show Measured, Estimated, or Not measured. Verdict and ship action match Instant Audit shape.</p>
+  <p>Illustrative example of an independent real estate agency. The rows show the report shape. They are not a measurement.</p>
   <p><a href="/">Check your site</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
@@ -191,12 +219,12 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/why',
     title: 'Why Luminara | Luminara Suite',
     description:
-      'Owner-first search and AI visibility audits: plain-English priorities, BYOK or hosted keys, without agency report theater.',
-    jsonLd: graph('/why', 'Why Luminara', 'Why owners choose Luminara Suite.'),
+      'For real estate agencies that need a clear plan for Google and AI answers, without a full consultancy engagement or a new website.',
+    jsonLd: graph('/why', 'Why Luminara', 'Why real estate agencies choose Luminara Suite.'),
     crawlerBody: `
 <section>
   <h1>Why Luminara</h1>
-  <p>Built for owners who need a clear plan for Google and AI answers without buying a full agency engagement.</p>
+  <p>Luminara Suite is for real estate agencies that need a clear plan for Google and AI answers, without buying a full consultancy engagement or rebuilding their website.</p>
   <ul>
     <li>Instant audits with ranked fixes</li>
     <li>Honest AEO signals (not invented scores)</li>
@@ -208,17 +236,17 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/pricing': {
     path: '/pricing',
     title: 'Pricing | Luminara Suite',
-    description:
-      'Free check of robots.txt and llms.txt. A full audit needs an account or your own keys. Starter, Growth, and Agency plans each have a published cap.',
-    jsonLd: graph('/pricing', 'Pricing', 'Plans: Free insight, Starter audits, Growth MCP and share, Agency API.'),
+    description: `${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}`,
+    jsonLd: graph('/pricing', 'Pricing', `${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}`),
     crawlerBody: `
 <section>
   <h1>Pricing</h1>
+  <p>${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}</p>
   <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account.</p>
   <p>Starter: web audits for a small site set. No MCP. No share links.</p>
   <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>
-  <p>Pro / Agency: Growth capabilities plus API access and client workspaces saved in this browser. ${LIVE_ANSWER_CHECKS}</p>
-  <p>Telegram Stars billing is available in the Mini App. No invented SEO scores on any plan.</p>
+  <p>Agency: Growth capabilities plus API access and client workspaces. ${LIVE_ANSWER_CHECKS}</p>
+  <p>Pay by card for a 30-day pass, or with Telegram Stars in the Mini App. The Mini App takes Stars only. No invented SEO scores on any plan.</p>
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
 </section>`,
   },
@@ -253,7 +281,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
       <tr><td>Metric Validity</td><td>Proprietary 0-100 composite scores</td><td>Strictly Measured, Estimated, or Not measured labels</td></tr>
       <tr><td>Search Grounding</td><td>Simulated engine scrapes</td><td>Search-grounded live probes with tamper-evident receipts</td></tr>
       <tr><td>Remediation</td><td>Data dashboards and telemetry</td><td>Exportable llms.txt and JSON-LD schema fix packs</td></tr>
-      <tr><td>Pricing Model</td><td>Enterprise retainers</td><td>30-day Telegram Stars plans (${soldStarsAmounts}), or bring your own keys</td></tr>
+      <tr><td>Pricing Model</td><td>Enterprise retainers</td><td>30-day passes. Pay by card or Telegram Stars (${soldStarsAmounts}), or bring your own keys</td></tr>
     </tbody>
   </table>
   <p><a href="/">Run Instant Audit</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
@@ -331,6 +359,27 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p><a href="/">Run Instant Audit</a> · <a href="/docs/what-is-aeo.html">What is AEO</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
+  '/faq': {
+    path: '/faq',
+    title: 'FAQ | Luminara Suite',
+    description: 'FAQ, how a check works, and how to ask for a refund. Email info@luminara.digital.',
+    jsonLd: graph('/faq', 'FAQ', 'FAQ, how a check works, and how to ask for a refund.'),
+    crawlerBody: FAQ_CRAWLER,
+  },
+  '/contact': {
+    path: '/contact',
+    title: 'Contact | Luminara Suite',
+    description: 'Email info@luminara.digital. There is no phone line.',
+    jsonLd: graph('/contact', 'Contact', 'Email info@luminara.digital. There is no phone line.'),
+    crawlerBody: CONTACT_CRAWLER,
+  },
+  '/privacy': {
+    path: '/privacy',
+    title: 'Privacy | Luminara Suite',
+    description: 'Privacy policy for Luminara Suite, the Telegram Mini App, and the Telegram bot.',
+    jsonLd: graph('/privacy', 'Privacy', 'Privacy policy for Luminara Suite.'),
+    crawlerBody: privacyCrawlerBody(),
+  },
 };
 
 export const DASHBOARD_TAB_TITLE = 'Dashboard | Luminara Suite';
@@ -356,9 +405,14 @@ export function instantAuditTabTitle(target: string | undefined): string {
 export function marketingShellKey(pathname: string): string | null {
   const clean = pathname.replace(/\/+$/, '') || '/';
   if (clean === '/how' || clean === '/infrastructure' || clean === '/modules') return '/how-it-works';
+  if (clean === '/help') return '/faq';
+  if (clean === '/upgrade') return '/pricing';
   if (clean === '/intelligence') return '/ai';
   if (clean === '/why-us') return '/why';
   if (clean === '/lab') return '/labs';
+  if (clean === '/privacy.html' || clean === '/privacy-policy') return '/privacy';
+  if (clean === '/faq.html') return '/faq';
+  if (clean === '/contact.html') return '/contact';
   if (MARKETING_SHELL_BY_PATH[clean]) return clean;
   return null;
 }

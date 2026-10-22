@@ -3,6 +3,8 @@ import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
 import { brandMemoryVaultService, type BrandMemoryEvent } from '../../services/memory/brandMemoryVaultService';
 import { auditHistoryService, type AuditHistoryEntry } from '../../services/audit/auditHistoryService';
+import { formatAuDate } from '../../utils/formatAuDate';
+import { labsVisible } from '../../services/ui/labsAccess';
 import { auditDiffService, type AuditPeriodDiff } from '../../services/audit/auditDiffService';
 import { auditQueryService } from '../../services/audit/auditQueryService';
 import {
@@ -43,14 +45,13 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   const { pending: sentinelBusy, run: runSentinel } = useAsyncLock();
   const [sentinelMsg, setSentinelMsg] = useState<string | null>(null);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
-  const [tab, setTab] = useState<'dreaming' | 'timeline' | 'diff' | 'query' | 'watch' | 'agency' | 'mem0'>('dreaming');
+  const showDreaming = labsVisible();
+  const [tab, setTab] = useState<'dreaming' | 'timeline' | 'diff' | 'query' | 'watch' | 'agency' | 'mem0'>(showDreaming ? 'dreaming' : 'diff');
   const [mem0Facts, setMem0Facts] = useState<MemoryFact[]>([]);
 
   const planId = quota?.plan || 'free';
   const entitlements = entitlementsFor(planId);
-  const primaryDomain =
-    audits[0]?.domain ||
-    (dna?.name ? dna.name.toLowerCase().replace(/\s+/g, '') + '.com' : '');
+  const primaryDomain = audits[0]?.domain || '';
 
   const refresh = () => {
     setEvents(brandMemoryVaultService.listEvents(40));
@@ -92,7 +93,15 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   }, []);
 
   const domainOptions = useMemo(() => {
-    const set = new Set(audits.map((a) => a.domain));
+    const set = new Set<string>();
+    for (const audit of audits) {
+      const domain = audit.domain
+        .replace(/^https?:\/\//i, '')
+        .replace(/^www\./i, '')
+        .split('/')[0]
+        .toLowerCase();
+      if (domain) set.add(domain);
+    }
     return [...set];
   }, [audits]);
 
@@ -123,7 +132,11 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   };
 
   const handleAddWatch = () => {
-    const domain = domainOptions[0] || primaryDomain || 'example.com';
+    const domain = domainOptions[0] || primaryDomain;
+    if (!domain) {
+      setSentinelMsg('Run an audit first so we know which domain to watch.');
+      return;
+    }
     const res = competitorWatchlistService.add(watchName, domain, { planId });
     if ('error' in res) {
       setSentinelMsg(res.error);
@@ -153,10 +166,11 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
           reauditCadence: entitlements.scheduledReaudit === 'none' ? 'weekly' : entitlements.scheduledReaudit,
         });
         const status = await fetchSentinelStatus();
-        setSentinelMsg(`Sentinel watching ${status.targets?.length || 1} domain(s). Cron scans daily; re-audit nudges follow your plan.`);
+        const watched = Array.isArray(status.targets) ? status.targets.length : 0;
+        setSentinelMsg(`Watching ${watched} domain${watched === 1 ? '' : 's'}. The daily check follows your plan.`);
         refresh();
       } catch (e: any) {
-        setSentinelMsg(e?.message || 'Could not register Sentinel. Sign in and use a paid plan.');
+        setSentinelMsg(e?.message || 'Could not start the watch. Sign in and use a paid plan.');
         if (String(e?.message || '').includes('402') || String(e?.message || '').toLowerCase().includes('plan')) {
           onOpenPaywall?.();
         }
@@ -165,14 +179,14 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   };
 
   const tabs: Array<{ id: typeof tab; label: string }> = [
-    { id: 'dreaming', label: 'Luminara Dreaming' },
+    { id: 'dreaming', label: 'Saved notes' },
     { id: 'diff', label: 'What changed' },
     { id: 'mem0', label: '4-Tier Memory' },
     { id: 'timeline', label: 'Memory timeline' },
     { id: 'query', label: 'Audit query' },
     { id: 'watch', label: 'Competitor watch' },
     { id: 'agency', label: 'Agency clients' },
-  ];
+  ].filter((item): item is { id: typeof tab; label: string } => item.id !== 'dreaming' || showDreaming);
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 animate-fade-in font-['Outfit'] pb-20">
@@ -184,7 +198,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
             Every audit, chat insight, and competitor mention is saved to your vault and context graph.
             Plan: <span className="text-gold-light font-semibold">{entitlements.title}</span>
             {' · '}
-            {entitlements.domainLimit} domains · {entitlements.sentinelLimit} Sentinel slots
+            {entitlements.domainLimit} domains · <span title="Sentinel">{entitlements.sentinelLimit} watch slots</span>
           </p>
         </div>
         <div className="flex gap-2">
@@ -201,7 +215,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
             disabled={sentinelBusy}
             className="px-4 py-2 rounded-xl border border-gold/40 text-gold text-xs font-bold uppercase tracking-wider hover:bg-gold/10 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none"
           >
-            {sentinelBusy ? 'Enabling...' : 'Enable Sentinel'}
+            <span title="Sentinel">{sentinelBusy ? 'Enabling...' : 'Watch this site'}</span>
           </button>
         </div>
       </div>
@@ -225,7 +239,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
         ))}
       </div>
 
-      {tab === 'dreaming' && (
+      {tab === 'dreaming' && showDreaming && (
         <DreamingMemoryHub
           domain={primaryDomain}
           dna={dna}
@@ -252,7 +266,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
               <div key={a.id} className="p-4 rounded-2xl border border-white/10 bg-white/[0.02]">
                 <div className="flex justify-between gap-3 text-xs">
                   <span className="text-gold-light font-bold">{a.title}</span>
-                  <span className="text-gray-400 font-mono">{new Date(a.measuredAt).toLocaleString()}</span>
+                  <span className="text-gray-400 font-mono">{formatAuDate(a.measuredAt)}</span>
                 </div>
                 <p className="text-[11px] text-gray-400 mt-2 line-clamp-2">{a.summary}</p>
                 <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-gray-400">
@@ -279,7 +293,12 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
 
       {tab === 'diff' && (
         <div className="space-y-4">
-          <h3 className="text-sm font-bold text-white">What changed since last month?</h3>
+          <h3 className="text-sm font-bold text-white">
+            What changed{diff?.domain ? ` for ${diff.domain}` : ''}
+          </h3>
+          <p className="text-[11px] text-gray-400">
+            {domainOptions.length} {domainOptions.length === 1 ? 'domain' : 'domains'} in memory. Each comparison stays on one domain.
+          </p>
           {!diff?.after ? (
             <div className="p-8 text-center border border-white/10 rounded-2xl bg-white/[0.02] space-y-3">
               <span className="text-3xl block">📊</span>
@@ -359,7 +378,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
           <p className="text-[10px] text-gray-400">{queryHits.length} match(es)</p>
           {queryHits.map((a) => (
             <div key={a.id} className="p-3 rounded-xl border border-white/10 text-xs text-gray-300">
-              {a.domain} · {a.focus} · score {a.healthScore ?? 'n/a'} · {new Date(a.measuredAt).toLocaleDateString()}
+              {a.domain} · {a.focus} · score {a.healthScore ?? 'n/a'} · {formatAuDate(a.measuredAt)}
             </div>
           ))}
         </div>
@@ -410,7 +429,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-white">Client workspaces</h3>
           <p className="text-[11px] text-gray-400">
-            Agency unlocks up to {entitlements.agencyClientLimit || 10} client workspaces saved in this browser (DNA + history).
+            Agency unlocks up to {entitlements.agencyClientLimit || 10} client workspaces (DNA + history).
             Current plan allows {entitlements.agencyClientLimit}.
           </p>
           <div className="flex gap-2">
@@ -513,7 +532,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
               <span className="text-3xl block mb-2">🌱</span>
               <p className="text-sm font-semibold text-white">No Autonomous Facts Extracted Yet</p>
               <p className="text-xs text-gray-400 mt-1 max-w-md mx-auto">
-                Run an instant audit or converse with the Oracle Agent. The Mem0 engine will automatically extract brand identity, competitors, and technical health facts.
+                Run an instant audit or ask a question. Saved facts are added to brand memory.
               </p>
             </div>
           ) : (

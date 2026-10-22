@@ -6,6 +6,7 @@
  */
 import { getInitDataRaw } from './telegram/tma';
 import { loadFirebaseAuth, readCachedFirebaseIdToken } from './auth/firebaseIdToken';
+import { takeAccountBoot } from './auth/accountBoot';
 import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, isAuditSiteMismatch, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
@@ -39,7 +40,7 @@ export interface ServerHealth {
   tonPricing?: Record<string, unknown>;
   /** USDT / $LORA checkout can settle (server-verified). Absent or false = hide Jetton rails. */
   jettonCheckout?: boolean;
-  /** Stripe card Checkout is live (secrets + STRIPE_CHECKOUT_LIVE). Absent or false = hide Card rail. */
+  /** Stripe card Checkout is live when health.stripeCheckout is true (env.STRIPE_CHECKOUT_LIVE === 'true' and the key mode matches). Absent or false hides the Card rail. */
   stripeCheckout?: boolean;
   lumens?: boolean;
   /** Q402 pay-per-call settlement is live. */
@@ -736,6 +737,21 @@ export function accountKnownSignedIn(): boolean {
 
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
   if (accountSignedIn !== true) return null;
+  const booted = await takeAccountBoot();
+  if (booted) {
+    currentQuota = {
+      limit: booted.quota.limit,
+      used: booted.quota.used,
+      remaining: booted.quota.remaining,
+      resetSec: booted.quota.resetSec,
+      isUnlimited: booted.quota.isUnlimited,
+      plan: booted.quota.plan,
+      expiresAt: booted.quota.expiresAt,
+      bonusRemaining: booted.quota.bonusRemaining,
+    };
+    quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
+    return currentQuota;
+  }
   const base = apiBase();
   if (!base) return null;
   try {

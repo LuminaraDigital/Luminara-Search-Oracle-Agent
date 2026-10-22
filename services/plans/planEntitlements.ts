@@ -71,7 +71,7 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
   },
   agency: {
     id: 'agency',
-    title: 'Pro / Agency',
+    title: 'Agency',
     domainLimit: 25,
     sentinelLimit: 25,
     auditHistoryDepth: 0,

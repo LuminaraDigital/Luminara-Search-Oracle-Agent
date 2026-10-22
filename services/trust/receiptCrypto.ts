@@ -67,6 +67,7 @@ export async function verifyReceiptSignature(
   publicJwk: ReceiptPublicJwk,
   payload: unknown,
   signatureB64Url: string,
+  prefix = '',
 ): Promise<boolean> {
   try {
     if (publicJwk.kty !== 'OKP' || publicJwk.crv !== 'Ed25519' || !publicJwk.x) return false;
@@ -77,7 +78,7 @@ export async function verifyReceiptSignature(
       false,
       ['verify'],
     );
-    const data = new TextEncoder().encode(canonicalJson(payload));
+    const data = new TextEncoder().encode(prefix + canonicalJson(payload));
     return await crypto.subtle.verify({ name: 'Ed25519' }, key, base64UrlToBytes(signatureB64Url), data);
   } catch {
     return false;

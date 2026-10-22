@@ -4,6 +4,7 @@
  */
 
 import { entitlementsFor, type PlanId } from '../plans/planEntitlements';
+import { notifyAuditActivity } from './auditActivity';
 
 const STORAGE_KEY = 'luminara_audit_history_v1';
 const MAX_HARD_CAP = 500;
@@ -47,15 +48,21 @@ function canUseLocalStorage(): boolean {
   }
 }
 
+function uniqueById(entries: AuditHistoryEntry[]): AuditHistoryEntry[] {
+  const map = new Map<string, AuditHistoryEntry>();
+  for (const entry of entries) map.set(entry.id, entry);
+  return [...map.values()];
+}
+
 function loadAll(): AuditHistoryEntry[] {
-  if (!canUseLocalStorage()) return [...memoryStore];
+  if (!canUseLocalStorage()) return uniqueById(memoryStore);
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...memoryStore];
+    if (!raw) return uniqueById(memoryStore);
     const parsed = JSON.parse(raw) as AuditHistoryEntry[];
-    return Array.isArray(parsed) ? parsed : [...memoryStore];
+    return uniqueById(Array.isArray(parsed) ? parsed : memoryStore);
   } catch {
-    return [...memoryStore];
+    return uniqueById(memoryStore);
   }
 }
 
@@ -110,6 +117,8 @@ export interface RecordAuditInput {
   clientId?: string | null;
   planId?: PlanId | string | null;
   measuredAt?: number;
+  /** When this id is already saved, the row is updated instead of listed twice. */
+  id?: string;
 }
 
 let auditSeq = 0;
@@ -125,7 +134,7 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
     text.slice(0, 240);
 
   const entry: AuditHistoryEntry = {
-    id: `audit-${Date.now()}-${(++auditSeq).toString(36)}`,
+    id: input.id || `audit-${Date.now()}-${(++auditSeq).toString(36)}`,
     domain,
     focus: input.focus,
     measuredAt: input.measuredAt ?? Date.now(),
@@ -137,14 +146,16 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
     competitorsMentioned: extractCompetitors(text, input.dnaCompetitors),
     title: input.title || `${input.focus} audit · ${domain}`,
     summary: summary.slice(0, 400),
-    reportExcerpt: text.slice(0, 4000),
+    reportExcerpt: text.slice(0, 80_000),
     clientId: input.clientId ?? null,
     tags: [input.focus.toLowerCase(), domain],
   };
 
   const depth = entitlementsFor(input.planId).auditHistoryDepth;
   const all = loadAll();
-  all.push(entry);
+  const existing = all.findIndex((row) => row.id === entry.id);
+  if (existing >= 0) all[existing] = { ...entry, measuredAt: all[existing].measuredAt };
+  else all.push(entry);
   all.sort((a, b) => a.measuredAt - b.measuredAt);
 
   let trimmed = all;
@@ -165,6 +176,7 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
   }
   trimmed.sort((a, b) => a.measuredAt - b.measuredAt);
   saveAll(trimmed);
+  notifyAuditActivity();
   return entry;
 }
 

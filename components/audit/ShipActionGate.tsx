@@ -64,7 +64,7 @@ export const ShipActionGate: React.FC<Props> = ({
       <div className="flex items-center gap-2 mb-3">
         <span className="w-2 h-2 rounded-full bg-gold animate-pulse" />
         <span className="text-[10px] font-black uppercase tracking-[0.35em] text-gold-light">
-          Fog clearing: pick one move
+          Next fix
         </span>
       </div>
       <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2">
@@ -72,7 +72,7 @@ export const ShipActionGate: React.FC<Props> = ({
       </h2>
       <p className="text-sm text-gray-400 max-w-2xl leading-relaxed mb-6">
         Reading the full report without a next step is the snooze button. Choose one
-        action to unlock the rest of the audit. Evidence chips stay visible either way.
+        action to unlock the rest of the audit. <span title="Evidence chips">The source notes</span> stay visible either way.
       </p>
 
       <div
@@ -86,12 +86,12 @@ export const ShipActionGate: React.FC<Props> = ({
         <div>
           {hasEvidence ? (
             <span>
-              Cite-or-silence: {sourceCount} live source{sourceCount === 1 ? '' : 's'} attached.
-              Treat any score without a source chip as <strong>not verified</strong>.
+              {sourceCount} live source{sourceCount === 1 ? '' : 's'} attached.
+              Treat any score without a source as <strong>not verified</strong>.
             </span>
           ) : (
             <span>
-              Cite-or-silence: no live sources on this run. Treat ranks and percentages as{' '}
+              No live sources on this run. Treat ranks and percentages as{' '}
               <strong>not verified</strong> until you re-run with search grounding.
             </span>
           )}
@@ -135,12 +135,12 @@ export const ShipActionGate: React.FC<Props> = ({
             className="px-6 py-3 rounded-xl glass-morphism border border-gold/40 text-gold-light font-black uppercase text-[10px] tracking-[0.25em] hover:bg-gold/10 transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
           >
             <ICONS.Zap className="w-4 h-4" />
-            Open 1-click deploy
+            <span title="1-click deploy">Open one-step publish</span>
           </button>
         )}
       </div>
       <p className="mt-4 text-[10px] text-gray-400 font-mono tracking-wide">
-        Domain: {domain || 'unknown'} · Gate key {fp}
+        Domain: {domain || 'unknown'} · <span title="Gate key">Check id</span> {fp}
       </p>
     </div>
   );

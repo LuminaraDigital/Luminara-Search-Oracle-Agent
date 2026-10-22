@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { HONEST_VISIBILITY_PROMISE } from '../../services/marketing/engineCoverage';
 import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
@@ -14,6 +14,7 @@ import {
   type BoardFinding,
 } from '../../services/audit/findingBoardService';
 import { auditHistoryService } from '../../services/audit/auditHistoryService';
+import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
 import { labsVisible } from '../../services/ui/labsAccess';
 
 interface DashboardViewProps {
@@ -22,6 +23,18 @@ interface DashboardViewProps {
   onClearDNA?: () => void;
   advancedUi?: boolean;
   signedIn?: boolean;
+}
+
+function latestAuditSeed(): { domain: string; findings: BoardFinding[] } | null {
+  try {
+    for (const entry of auditHistoryService.list()) {
+      const findings = listLocalFindings(entry.domain);
+      if (findings.length) return { domain: entry.domain, findings };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 type Door = {
@@ -39,25 +52,24 @@ type Door = {
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, advancedUi = false, signedIn = false }) => {
   const telemetrySummary = productTelemetry.getSummary();
   const completedSteps = telemetrySummary.completedOnboardingSteps || [];
-  const auditCount = auditCountFromStorage();
+  const [auditCount, setAuditCount] = useState(() => auditCountFromStorage());
+  const [homeSeed, setHomeSeed] = useState(latestAuditSeed);
+  useEffect(() => {
+    const bump = () => {
+      setAuditCount(auditCountFromStorage());
+      setHomeSeed(latestAuditSeed());
+    };
+    window.addEventListener(AUDIT_ACTIVITY_EVENT, bump);
+    return () => window.removeEventListener(AUDIT_ACTIVITY_EVENT, bump);
+  }, []);
   const hasRunAudit = auditCount > 0;
   const hasProfile = Boolean(dna) || completedSteps.includes('business_dna');
   const hasSavedProject = completedSteps.includes('strategy_saved') || completedSteps.includes('brand_memory') || (signedIn && hasRunAudit);
 
-  const homeSeed = useMemo(() => {
-    try {
-      for (const entry of auditHistoryService.list()) {
-        const findings = listLocalFindings(entry.domain);
-        if (findings.length) {
-          return { domain: entry.domain, findings };
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-    return null;
-  }, []);
   const [boardFindings, setBoardFindings] = useState<BoardFinding[]>(() => homeSeed?.findings || []);
+  useEffect(() => {
+    setBoardFindings(homeSeed?.findings || []);
+  }, [homeSeed]);
   const homeDomain = homeSeed?.domain || '';
   const primaryFinding = useMemo(() => pickPrimaryFinding(boardFindings), [boardFindings]);
 
@@ -211,11 +223,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
           <div className="flex items-center gap-2">
             <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--color-accent)] shadow-[0_0_8px_var(--gold)]" />
             <span className="text-[var(--color-accent)] uppercase tracking-[0.14em]">
-              OBSERVATORY COMMAND DECK · LUMINARA SUITE
+              {advancedUi ? 'OBSERVATORY COMMAND DECK · LUMINARA SUITE' : 'Your AI visibility'}
             </span>
           </div>
           <span className="text-[var(--color-ink-2)]">
-            {homeDomain ? `ACTIVE TARGET // ${homeDomain}` : 'SITE AND WEB SEARCH · WEEKLY DECISION LOOP'}
+            {advancedUi
+              ? (homeDomain ? `ACTIVE TARGET // ${homeDomain}` : 'SITE AND WEB SEARCH · WEEKLY DECISION LOOP')
+              : (homeDomain || 'Site and web search')}
           </span>
         </div>
         <h1 className="font-display font-normal text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.08]">
@@ -226,8 +240,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
         </p>
       </div>
 
-      <VisibilityRetentionCard signedIn={signedIn} onNavigate={onNavigate} />
-      <DreamingDashboardCard domain={homeDomain} dna={dna} onNavigate={onNavigate} />
+      <VisibilityRetentionCard signedIn={signedIn} onNavigate={onNavigate} plainLanguage={!advancedUi} />
+      {advancedUi && <DreamingDashboardCard domain={homeDomain} onNavigate={onNavigate} />}
 
       {/* Zero-audit home primary CTA strip */}
       {shouldShowHomeCta(auditCount) && <HomeCtaStrip onNavigate={onNavigate} />}
@@ -316,7 +330,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
           <div className={`w-2.5 h-2.5 rounded-full ${dna ? 'bg-success-400 shadow-sm shadow-success-500/30' : 'bg-[var(--color-accent)] animate-pulse'}`} />
           <div>
             <div className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--color-accent)]">Business profile</div>
-            <div className="text-sm font-medium text-[var(--color-ink)] mt-0.5">{dna ? dna.name : 'Not set - full audits stay locked to scout mode'}</div>
+            <div className="text-sm font-medium text-[var(--color-ink)] mt-0.5">{dna ? dna.name : 'Not set. A full audit waits until you add a business profile.'}</div>
           </div>
         </div>
         <button

@@ -15,6 +15,8 @@ import {
   ApiKeyExtraTab,
   ApiKeysTab,
 } from './settings/tabs';
+import { AccountPanel } from './settings/AccountPanel';
+import { NotificationsPanel } from './settings/NotificationsPanel';
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -22,10 +24,10 @@ interface ApiKeyModalProps {
   onKeySaved: () => void;
 }
 
-type TabType = 'overview' | 'llm' | 'search' | 'scraping' | 'extra' | 'apikeys';
+type TabType = 'account' | 'overview' | 'llm' | 'search' | 'scraping' | 'extra' | 'apikeys';
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKeySaved }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>('account');
   const { requestConfirm, confirmModal } = useConfirm();
   const [statuses, setStatuses] = useState<ProviderStatus[]>([]);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -287,8 +289,20 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
           </Button>
         </div>
 
-        {/* Tab Navigation */}
         <div role="tablist" aria-label="Settings sections" className="flex items-center gap-2 px-6 pt-3 border-b border-white/5 bg-black/40 shrink-0 overflow-x-auto text-[10px] font-mono uppercase tracking-wider">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'account'}
+            onClick={() => setActiveTab('account')}
+            className={`pb-2.5 px-2 border-b-2 font-bold transition-all outline-none focus-visible:ring-2 focus-visible:ring-gold rounded-t ${activeTab === 'account' ? 'border-gold text-gold-light' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
+          >
+            Account
+          </button>
+        </div>
+        <details className="px-6 py-2 border-b border-white/5 bg-black/30">
+          <summary className="cursor-pointer text-xs text-gray-300 py-1">Advanced (for developers)</summary>
+          <div role="tablist" aria-label="Advanced settings" className="flex items-center gap-2 pt-2 overflow-x-auto text-[10px] font-mono uppercase tracking-wider">
           <button
             type="button"
             role="tab"
@@ -343,10 +357,24 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
           >
             MCP keys
           </button>
-        </div>
+          <button
+            type="button"
+            className="pb-2.5 px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200"
+            onClick={() => window.dispatchEvent(new Event('luminara-open-vault'))}
+          >
+            Vault
+          </button>
+          </div>
+        </details>
 
         {/* Body Content */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
+          {activeTab === 'account' && (
+            <>
+              <AccountPanel />
+              <NotificationsPanel />
+            </>
+          )}
           {activeTab === 'overview' && (
             <ApiKeyOverviewTab
               statuses={statuses}

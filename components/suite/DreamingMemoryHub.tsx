@@ -4,6 +4,7 @@ import { dreamingClient, type DreamStatusResult } from '../../services/dreaming/
 import { ICONS } from '../../constants';
 import { BrandMemorySkeleton } from '../ui/Skeleton';
 import { useConfirm } from '../ui/ConfirmModal';
+import { formatAuDate } from '../../utils/formatAuDate';
 
 interface DreamingMemoryHubProps {
   domain: string;
@@ -71,7 +72,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
           });
         } else {
           setMsg({
-            text: `Wake Gate held: ${res.reason || 'Not enough new signal'}. Use force to override.`,
+            text: `Not enough new signal to update memory${res.reason ? `: ${res.reason}` : ''}.`,
             type: 'success',
           });
         }
@@ -146,7 +147,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold/10 border border-gold/30 text-gold-light text-xs font-mono uppercase tracking-wider mb-2">
               <ICONS.DNA className="w-3.5 h-3.5" />
-              <span>Hermes Dreaming Layer</span>
+              <span>Saved notes</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-bold gold-text">
               Business Memory & Reflection
@@ -163,7 +164,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
               className="px-4 py-2.5 rounded-xl bg-gold/20 hover:bg-gold/30 border border-gold/40 text-gold-light font-medium text-xs sm:text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-50"
             >
               <ICONS.Refresh className={`w-4 h-4 ${isDreaming ? 'animate-spin' : ''}`} />
-              <span>{isDreaming ? 'Dreaming...' : 'Dream Now'}</span>
+              <span>{isDreaming ? 'Updating...' : 'Update memory'}</span>
             </button>
             {onNavigateToAudit && (
               <button
@@ -179,7 +180,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
         {/* Wake Gate Diagnostic Bar */}
         <div className="mt-6 pt-4 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
-            <span className="text-[11px] uppercase tracking-wider text-gray-400 block">Wake Gate</span>
+            <span className="text-[11px] uppercase tracking-wider text-gray-400 block">Update check</span>
             <span
               className={`text-sm font-semibold mt-1 inline-block ${
                 status?.wake?.shouldWake ? 'text-emerald-400' : 'text-gray-400'
@@ -421,7 +422,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
                         {mem.memoryType.replace('_', ' ')}
                       </span>
                       <span className="text-[10px] text-gray-400 font-mono">
-                        Verified {new Date(mem.lastVerifiedAt).toLocaleDateString()}
+                        Verified {formatAuDate(mem.lastVerifiedAt)}
                       </span>
                     </div>
                     <h4 className="text-xs sm:text-sm font-semibold text-gray-100 mb-1">
@@ -483,12 +484,12 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
                 Latest Dream Run Audit Trail
               </h3>
               <p className="text-[11px] text-gray-400">
-                Executed on {new Date(status.lastRun.createdAt).toLocaleString()} via {status.lastRun.triggerReason}
+                Executed on {formatAuDate(status.lastRun.createdAt)} via {status.lastRun.triggerReason}
               </p>
             </div>
             {status.lastRun.rolledBackAt ? (
               <span className="text-xs font-mono px-2 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-500/30">
-                Rolled back on {new Date(status.lastRun.rolledBackAt).toLocaleDateString()}
+                Rolled back on {formatAuDate(status.lastRun.rolledBackAt)}
               </span>
             ) : (
               <button

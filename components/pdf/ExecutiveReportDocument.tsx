@@ -10,6 +10,7 @@ import {
 } from './primitives';
 import { createExecutiveTheme } from './theme';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { formatAuDate } from '../../utils/formatAuDate';
 
 export interface ExecutiveReportData {
   agencyName: string;
@@ -36,12 +37,7 @@ export const ExecutiveReportDocument: React.FC<ExecutiveReportData> = ({
 }) => {
   const theme = createExecutiveTheme(primaryColor);
   const formattedDate =
-    auditDate ||
-    new Date().toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    auditDate || formatAuDate(new Date());
 
   return (
     <Document

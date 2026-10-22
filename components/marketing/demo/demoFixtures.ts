@@ -3,8 +3,6 @@
  * Fixtures only. Never invent live SEO metrics. Never mark engines Measured.
  */
 import { EMPTY_SITE_INPUT_MESSAGE } from '../../../services/audit/auditTargetUrl';
-import { LIVE_ANSWER_CHECKS } from '../../../services/marketing/engineCoverage';
-
 export type DemoPhase =
   | 'empty'
   | 'typing'
@@ -40,7 +38,7 @@ export const SAMPLE_FIXTURE: DemoFixture = {
   domain: 'luminarasuite.com',
   focus: 'AEO',
   verdict:
-    `Sample scout only: this is the shape of a report, not Live evidence for the domain you typed. ${LIVE_ANSWER_CHECKS}`,
+    'Sample scout only: this is the shape of a report, not Live evidence for the domain you typed.',
   shipAction: 'Create a free account and run Instant Audit for a site and web-search check. Live answer-engine rows stay Not measured unless you are on Agency or bring your own DataForSEO login.',
   engines: [
     {

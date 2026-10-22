@@ -3,7 +3,6 @@
  */
 
 import { listAudits, type AuditHistoryEntry } from './auditHistoryService';
-import { getVisibilityTrend } from '../visibility/visibilityHistoryService';
 
 export interface MetricDelta {
   key: string;
@@ -29,6 +28,8 @@ export interface AuditPeriodDiff {
   metrics: MetricDelta[];
   competitors: CompetitorCitationDelta[];
   schemaGapDelta: number | null;
+  /** Milliseconds between the two audits of this domain. Null when there is no earlier audit. */
+  gapMs: number | null;
   narrative: string;
 }
 
@@ -73,34 +74,32 @@ function competitorDeltas(
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function gapLabel(ms: number): string {
+  const hours = Math.max(1, Math.round(ms / 3_600_000));
+  if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'} earlier`;
+  const days = Math.max(1, Math.round(ms / 86_400_000));
+  return `${days} day${days === 1 ? '' : 's'} earlier`;
+}
+
 /**
- * Compare latest audit to the closest audit at or before `sinceMs` ago (default 30 days).
+ * Compare the latest audit of this domain with the previous audit of the same domain.
+ * `sinceMs` is ignored: the narrative uses the real gap between those two audits.
  */
 export function diffSince(
   domain: string,
-  sinceMs: number = 30 * 24 * 3600 * 1000
+  _sinceMs: number = 30 * 24 * 3600 * 1000
 ): AuditPeriodDiff {
-  const audits = listAudits({ domain }).sort((a, b) => a.measuredAt - b.measuredAt);
+  const label = domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
+  const audits = listAudits({ domain: label })
+    .filter((entry) => entry.domain === label)
+    .sort((a, b) => a.measuredAt - b.measuredAt);
   const after = audits.length ? audits[audits.length - 1] : null;
-  const cutoff = (after?.measuredAt ?? Date.now()) - sinceMs;
-  let before: AuditHistoryEntry | null = null;
-  for (let i = audits.length - 2; i >= 0; i--) {
-    if (audits[i].measuredAt <= cutoff) {
-      before = audits[i];
-      break;
-    }
-  }
-  if (!before && audits.length >= 2) before = audits[0];
+  const before = audits.length >= 2 ? audits[audits.length - 2] : null;
+  const gapMs = before && after ? Math.max(0, after.measuredAt - before.measuredAt) : null;
 
-  const trend = getVisibilityTrend(domain);
   const metrics: MetricDelta[] = [
     metric('healthScore', 'Health Score', before?.healthScore, after?.healthScore),
-    metric(
-      'citationRate',
-      'Citation rate %',
-      before?.citationRatePercent ?? trend.points[0]?.citationRatePercent,
-      after?.citationRatePercent ?? trend.points[trend.points.length - 1]?.citationRatePercent
-    ),
+    metric('citationRate', 'Citation rate %', before?.citationRatePercent, after?.citationRatePercent),
     metric('schemaGaps', 'Schema gaps', before?.schemaGapCount, after?.schemaGapCount),
     // Share of voice is two counts from one audit's search sample. Two audits sample
     // different queries, so no change between them is worked out or shown.
@@ -114,12 +113,11 @@ export function diffSince(
 
   const parts: string[] = [];
   if (!after) {
-    parts.push('No audits saved yet for this domain. Run an audit to start the memory timeline.');
-  } else if (!before) {
-    parts.push(
-      `Latest ${after.focus} audit scored ${after.healthScore ?? 'n/a'}/100. Need a prior audit to compute period change.`
-    );
+    parts.push(`No audits saved yet for ${label}. Run an audit to start the memory timeline.`);
+  } else if (!before || gapMs == null) {
+    parts.push(`One audit is saved for ${label}. A later audit of the same domain will show what changed.`);
   } else {
+    parts.push(`Compared ${label} with the audit ${gapLabel(gapMs)} on this domain.`);
     const hs = metrics.find((m) => m.key === 'healthScore');
     if (hs?.delta != null) {
       parts.push(
@@ -138,13 +136,14 @@ export function diffSince(
   }
 
   return {
-    domain: domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase(),
-    sinceMs,
+    domain: label,
+    sinceMs: gapMs ?? 0,
     before,
     after,
     metrics,
     competitors,
     schemaGapDelta,
+    gapMs,
     narrative: parts.join(' '),
   };
 }

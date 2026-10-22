@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>AI visibility audit | Luminara Suite</title>
-  <meta name="description" content="See if AI recommends your business, and fix it. Every plan checks your site and live web search for the questions your buyers ask. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. No invented scores.">
+  <meta name="description" content="For independent real estate agencies in Australia, Oceania and South-East Asia. See if AI recommends your business, and fix it. Every plan checks your site and live web search for the questions your buyers ask. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. No invented scores.">
   <meta name="theme-color" content="#0a0a0a">
   <meta property="og:title" content="AI visibility audit | Luminara Suite">
-  <meta property="og:description" content="See if AI recommends your business, and fix it. Every plan checks your site and live web search for the questions your buyers ask. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. No invented scores.">
+  <meta property="og:description" content="For independent real estate agencies in Australia, Oceania and South-East Asia. See if AI recommends your business, and fix it. Every plan checks your site and live web search for the questions your buyers ask. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. No invented scores.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.luminarasuite.com/">
   <meta property="og:image" content="https://www.luminarasuite.com/og-image.png">
@@ -15,7 +15,7 @@
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="AI visibility audit | Luminara Suite">
-  <meta name="twitter:description" content="See if AI recommends your business, and fix it. Every plan checks your site and live web search for the questions your buyers ask. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. No invented scores.">
+  <meta name="twitter:description" content="For independent real estate agencies in Australia, Oceania and South-East Asia. See if AI recommends your business, and fix it. Every plan checks your site and live web search for the questions your buyers ask. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. No invented scores.">
   <meta name="twitter:image" content="https://www.luminarasuite.com/og-image.png">
   <link rel="canonical" href="https://www.luminarasuite.com/">
   <script type="application/ld+json" id="luminara-marketing-jsonld">
@@ -25,9 +25,20 @@
       {
         "@type": "Organization",
         "@id": "https://www.luminarasuite.com/#organization",
-        "name": "Luminara Digital",
-        "url": "https://luminaradigital.io",
-        "logo": "https://www.luminarasuite.com/icon-512.png"
+        "name": "Luminara Suite",
+        "legalName": "LUMINARA DIGITAL PTY LTD",
+        "taxID": "90 693 125 281",
+        "brand": { "@type": "Brand", "name": "Luminara Digital", "url": "https://luminara.digital/" },
+        "url": "https://www.luminarasuite.com",
+        "logo": "https://www.luminarasuite.com/icon-512.png",
+        "email": "info@luminara.digital",
+        "address": { "@type": "PostalAddress", "addressRegion": "VIC", "postalCode": "3128", "addressCountry": "AU" },
+        "contactPoint": { "@type": "ContactPoint", "email": "info@luminara.digital", "contactType": "sales" },
+        "sameAs": [
+          "https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent",
+          "https://t.me/LuminaraSuiteBot",
+          "https://www.linkedin.com/company/luminara-digital"
+        ]
       },
       {
         "@type": "SoftwareApplication",
@@ -36,7 +47,7 @@
         "applicationCategory": "BusinessApplication",
         "operatingSystem": "Web, Windows",
         "url": "https://www.luminarasuite.com/",
-        "description": "See if AI recommends your business, and fix it. Every plan checks your site and live web search for the questions your buyers ask. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. No invented scores.",
+        "description": "For independent real estate agencies in Australia, Oceania and South-East Asia. See if AI recommends your business, and fix it. Every plan checks your site and live web search for the questions your buyers ask. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. No invented scores.",
         "publisher": { "@id": "https://www.luminarasuite.com/#organization" }
       }
     ]
@@ -523,110 +534,63 @@
       animation: pulse-custom 0.8s ease-in-out infinite;
     }
 
-    /* Instant boot splash (before React). Same visual language as the cinematic intro. */
-    #boot-splash {
-      position: fixed;
-      inset: 0;
-      z-index: 2147483000;
+    /* Inline boot scene. Stays invisible until boot-splash.js adds --hold after 300ms. */
+    .lx-load {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 1.25rem;
-      background: #000;
+      gap: 14px;
+      min-height: 240px;
+      padding: 24px 16px;
       color: #f1f1f1;
-      transition: opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.65s;
     }
-    #boot-splash.boot-splash--exit {
-      opacity: 0;
+    #boot-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483000;
+      min-height: 100%;
+      background: #000;
       visibility: hidden;
+      opacity: 0;
       pointer-events: none;
+      transition: opacity 0.4s ease, visibility 0.4s;
     }
-    #boot-splash .boot-glow {
-      position: absolute;
-      width: min(70vw, 420px);
-      height: min(70vw, 420px);
-      border-radius: 9999px;
-      background: radial-gradient(circle, rgba(191,149,63,0.22) 0%, transparent 68%);
-      filter: blur(8px);
-      animation: boot-pulse 2.4s ease-in-out infinite;
-      pointer-events: none;
-    }
-    #boot-splash .boot-mark {
-      position: relative;
-      width: 88px;
-      height: 88px;
-      border-radius: 9999px;
-      overflow: hidden;
-      box-shadow: 0 0 48px rgba(191,149,63,0.28);
-      animation: boot-breathe 2.8s ease-in-out infinite;
-    }
-    #boot-splash .boot-mark img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-    #boot-splash .boot-wordmark {
-      position: relative;
-      margin: 0;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.55em;
-      text-transform: uppercase;
-      color: #FCF6BA;
-      opacity: 0.92;
-    }
-    #boot-splash .boot-caption {
-      position: relative;
-      margin: 0;
-      font-size: 11px;
-      letter-spacing: 0.28em;
-      text-transform: uppercase;
-      color: rgba(241,241,241,0.45);
-    }
-    #boot-splash .boot-track {
-      position: relative;
-      width: min(220px, 46vw);
-      height: 2px;
-      margin-top: 0.35rem;
-      overflow: hidden;
-      border-radius: 9999px;
-      background: rgba(255,255,255,0.08);
-    }
-    #boot-splash .boot-fill {
-      height: 100%;
-      width: 42%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, var(--gold-dark), var(--gold-light), var(--gold));
-      background-size: 200% auto;
-      animation: boot-bar 1.4s ease-in-out infinite;
-    }
-    @keyframes boot-pulse {
-      0%, 100% { opacity: 0.55; transform: scale(0.92); }
-      50% { opacity: 1; transform: scale(1.06); }
-    }
-    @keyframes boot-breathe {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.04); }
-    }
-    @keyframes boot-bar {
-      0% { transform: translateX(-120%); }
-      100% { transform: translateX(280%); }
-    }
+    #boot-splash.boot-splash--hold { visibility: visible; opacity: 1; pointer-events: auto; }
+    #boot-splash.boot-splash--exit { visibility: hidden; opacity: 0; pointer-events: none; }
+    .lx-word { margin: 0; height: 28px; font: 400 26px/28px "Instrument Serif", Georgia, serif; color: #FCF6BA; }
+    .lx-load--compact .lx-word { height: 24px; font-size: 22px; line-height: 24px; }
+    .lx-scene { width: min(320px, 78vw); height: auto; }
+    .lx-load--compact .lx-scene { width: min(220px, 70vw); }
+    .lx-load--fill { min-height: min(72vh, 640px); }
+    .lx-grid { fill: none; stroke: #BF953F; stroke-width: 0.6; opacity: 0.35; transform: translate3d(var(--shift-x, 0px), var(--shift-y, 0px), 0); }
+    .lx-line { fill: none; stroke: #FCF6BA; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: lx-draw 1.6s ease forwards 0.12s; }
+    .lx-pin { cursor: pointer; animation: lx-drop 0.55s cubic-bezier(0.22, 1, 0.36, 1) 1.05s both; }
+    .lx-pin path { fill: #BF953F; }
+    .lx-pin-hole { fill: #0a0a0a; }
+    .lx-pulse { fill: rgba(191,149,63,0.2); transform-box: fill-box; transform-origin: center; animation: lx-pulse 2.6s ease-in-out infinite 1.5s; }
+    .lx-pin:hover .lx-pulse { fill: rgba(252,246,186,0.55); }
+    .lx-caption { margin: 0; font: 500 14px/1.45 Outfit, system-ui, sans-serif; color: #e6e6e6; text-align: center; }
+    .lx-steps { list-style: none; margin: 0; padding: 0; width: min(320px, 86vw); }
+    .lx-steps li { font: 14px/1.45 Outfit, system-ui, sans-serif; color: #c8c8c8; padding: 2px 0; }
+    .lx-steps li.is-now { color: #FCF6BA; }
+    .lx-steps li.is-done { color: #dedede; }
+    .lx-tip { margin: 0; max-width: 28rem; font: 13px/1.45 Outfit, system-ui, sans-serif; color: #d2d2d2; text-align: center; }
+    .lx-track { width: min(220px, 60vw); height: 2px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,0.14); }
+    .lx-fill { height: 100%; width: 38%; border-radius: inherit; background: linear-gradient(90deg, var(--gold-dark), var(--gold-light)); animation: lx-bar 1.4s ease-in-out infinite; }
+    .lx-fill--set { animation: none; transform: none; }
+    @keyframes lx-draw { to { stroke-dashoffset: 0; } }
+    @keyframes lx-drop { from { transform: translateY(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes lx-pulse { 0%, 100% { transform: scale(0.72); opacity: 0.45; } 50% { transform: scale(1.2); opacity: 1; } }
+    @keyframes lx-bar { 0% { transform: translateX(-120%); } 100% { transform: translateX(280%); } }
     @media (prefers-reduced-motion: reduce) {
-      #boot-splash {
-        transition: none;
-      }
-      #boot-splash .boot-glow,
-      #boot-splash .boot-mark,
-      #boot-splash .boot-fill {
-        animation: none;
-      }
-      #boot-splash .boot-fill {
-        width: 70%;
-        transform: none;
-      }
+      #boot-splash { transition: none; }
+      .lx-line { animation: none; stroke-dashoffset: 0; }
+      .lx-pin, .lx-pulse, .lx-fill { animation: none; }
+      .lx-pin { opacity: 1; transform: none; }
+      .lx-pulse { opacity: 0.85; transform: none; }
+      .lx-fill:not(.lx-fill--set) { width: 70%; transform: none; }
+      .lx-grid { transform: none; }
     }
     html.lx-skip-splash #boot-splash { display: none; }
     html.lx-fp-live .lx-fp-text { visibility: hidden; }
@@ -680,6 +644,10 @@
       background-clip: text;
       color: transparent;
     }
+    .lx-fp-line.lx-gold-text {
+      padding-bottom: 0.22em;
+      margin-bottom: -0.22em;
+    }
     .lx-lede {
       font-size: clamp(1.05rem, 1.4vw, 1.25rem);
       line-height: 1.6;
@@ -706,7 +674,7 @@
     html.lx-skip-splash body { background: #000; }
     html.lx-skip-splash #root:empty {
       min-height: 100vh;
-      background: #000 url("/boot-mark.webp") center / 88px 88px no-repeat;
+      background: #000;
     }
     .skip-link {
       position: fixed;
@@ -731,14 +699,15 @@
 </head>
 <body class="overflow-x-clip">
   <a class="skip-link" href="#main">Skip to content</a>
-  <div id="boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Loading Luminara Suite" title="Click to skip">
-    <div class="boot-glow" aria-hidden="true"></div>
-    <div class="boot-mark">
-      <img src="/boot-mark.webp" alt="" width="88" height="88" decoding="async" fetchpriority="high" />
-    </div>
-    <p class="boot-wordmark">Luminara Suite</p>
-    <p class="boot-caption">Preparing your workspace</p>
-    <div class="boot-track" aria-hidden="true"><div class="boot-fill"></div></div>
+  <div id="boot-splash" class="lx-load" role="status" aria-live="polite" aria-busy="true" aria-label="Loading" title="Click to skip">
+    <p class="lx-word">Luminara</p>
+    <svg class="lx-scene" viewBox="0 0 320 100" aria-hidden="true">
+      <g class="lx-grid"><path d="M0 28H320M0 52H320M0 76H320M48 12V88M112 12V88M176 12V88M240 12V88" /></g>
+      <path class="lx-line" pathLength="1" d="M6 76H22L32 56H46L56 76H72L84 44H108L120 76H136L144 62H168L176 76H194L206 40H230L242 76H268" />
+      <g class="lx-pin"><title>Map pin</title><circle class="lx-pulse" cx="268" cy="52" r="14" /><path d="M268 30c-8 0-14 7-14 15 0 10 14 28 14 28s14-18 14-28c0-8-6-15-14-15z" /><circle class="lx-pin-hole" cx="268" cy="44" r="3.5" /></g>
+    </svg>
+    <p class="lx-caption">Loading…</p>
+    <div class="lx-track" aria-hidden="true"><div class="lx-fill"></div></div>
   </div>
   <div id="root"></div>
   <script defer src="/boot-splash.js"></script>

@@ -24,6 +24,8 @@ export interface ScoutBadge {
 
 export interface GuestScoutSummary {
   domain: string;
+  /** Display name when the page or Jev supplied one. The domain stays in `domain`. */
+  brand?: string;
   /** Plain text for teaser, share, and clipboard. No heading or emphasis markers. */
   verdict: string;
   /** Full brief for the Instant Scout card. Newlines stay. Never sliced mid-string. */
@@ -59,7 +61,7 @@ export interface GuestScoutSummaryInput {
    */
   healthScore: number | null;
   /** How many of the site checks passed, of how many ran. Shown on the card as that count. */
-  healthChecks?: { passed: number; total: number } | null;
+  healthChecks?: { passed: number; total: number; unmeasured?: number } | null;
   scrapedPageCount: number;
   serpCount: number;
   /** The engines the search rows came from, as recorded on the rows. */
@@ -73,6 +75,7 @@ export interface GuestScoutSummaryInput {
   focus?: ReportFocus;
   /** Header Thorough. Omitted means Quick. */
   depth?: AnswerDepth;
+  brand?: string | null;
 }
 
 const EMPTY_COLLECTED = 'This run collected no page text and no search rows, so there is no citation rate, share of voice, or health score.';
@@ -148,11 +151,16 @@ function mentionCountBadge(label: string, count: number | null, total: number): 
 function checksBadge(
   label: string,
   healthScore: number | null,
-  checks: { passed: number; total: number } | null | undefined,
+  checks: { passed: number; total: number; unmeasured?: number } | null | undefined,
 ): ScoutBadge {
-  if (typeof healthScore !== 'number' || !checks) return { label, status: 'not_measured' };
+  if (!checks) return { label, status: 'not_measured' };
   const passed = mentionCountOf(checks.passed, checks.total);
-  if (passed == null) return { label, status: 'not_measured' };
+  const raw = checks.unmeasured;
+  const unmeasured = typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : 0;
+  if (unmeasured > 0 && passed != null) {
+    return { label, status: 'not_measured', value: `passed ${passed} of ${checks.total}; ${unmeasured} not measured` };
+  }
+  if (typeof healthScore !== 'number' || passed == null) return { label, status: 'not_measured' };
   return { label, status: 'measured', value: `${passed} of ${checks.total} checks passed` };
 }
 
@@ -293,8 +301,10 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
   verdict = guardUnmeasuredClaims(verdict, measured);
   verdictMarkdown = guardUnmeasuredClaims(verdictMarkdown, measured);
 
+  const brand = (input.brand || '').trim();
   return {
     domain,
+    ...(brand ? { brand } : {}),
     verdict,
     verdictMarkdown,
     evidenceUsed,

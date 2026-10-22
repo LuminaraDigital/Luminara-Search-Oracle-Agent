@@ -128,6 +128,63 @@ describe('securityHardening', () => {
     }
   });
 
+  it('does not write KV while the window is under the limit', async () => {
+    let puts = 0;
+    const env = {
+      LUMINARA_KV: {
+        get: async () => null,
+        put: async () => {
+          puts += 1;
+        },
+      },
+      REQUIRE_TG_AUTH: 'true',
+    } as unknown as Env;
+    for (let i = 0; i < 5; i++) {
+      const result = await enforceDualRateLimit(env, {
+        action: 'audit_rl_quiet',
+        accountId: 'acct-quiet',
+        ip: '198.51.100.8',
+        limitPerKey: 60,
+        windowSec: 60,
+      });
+      expect(result.ok).toBe(true);
+    }
+    expect(puts).toBe(0);
+  });
+
+  it('keeps serving when the KV rate-limit put throws', async () => {
+    const env = {
+      LUMINARA_KV: {
+        get: async () => null,
+        put: async () => {
+          throw new Error('KV put failed');
+        },
+      },
+      REQUIRE_TG_AUTH: 'true',
+    } as unknown as Env;
+    const result = await enforceDualRateLimit(env, {
+      action: 'probe_crawl',
+      ip: '203.0.113.9',
+      limitPerKey: 10,
+      windowSec: 60,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('keeps serving when the edge limiter binding throws', async () => {
+    const limiter = {
+      limit: async () => {
+        throw new Error('binding down');
+      },
+    };
+    const result = await enforceEdgeBindingLimit(limiter, 'signup:203.0.113.9', {
+      action: 'signup_edge',
+      limit: 3,
+      windowSec: 60,
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it('edge binding returns EDGE_RATE_LIMITED when limit() fails', async () => {
     const limiter = { limit: vi.fn(async () => ({ success: false })) };
     const result = await enforceEdgeBindingLimit(limiter, 'api:9.9.9.9', {

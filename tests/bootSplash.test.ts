@@ -56,6 +56,13 @@ describe('dismissBootSplash', () => {
     expect(motion).toMatch(/#boot-splash\s*\{[^}]*transition:\s*none/);
     expect(html).toContain('html.lx-skip-splash #boot-splash { display: none; }');
     expect(html).toContain('html.lx-skip-splash #root:empty');
-    expect(html).toContain('url("/boot-mark.webp")');
+    expect(html).not.toContain('boot-mark.webp');
+    expect(html).not.toContain('Preparing your workspace');
+    expect(html).toContain('boot-splash--hold');
+    expect(html).toContain('Loading…');
+    expect(early).toContain('}, 300);');
+    const scene = html.slice(html.indexOf('class="lx-line"'), html.indexOf('class="lx-pin"'));
+    expect(scene.length).toBeGreaterThan(20);
+    expect(scene.length).toBeLessThan(800);
   });
 });

@@ -89,6 +89,12 @@ export interface ScrapedPageEvidence {
   url: string;
   title: string;
   description?: string;
+  /** og:site_name when the page published one. */
+  siteName?: string;
+  /** Name on Organization or LocalBusiness JSON-LD. */
+  organizationName?: string;
+  /** HTTP status of the page fetch, when the scraper recorded one. */
+  httpStatus?: number;
   h1s: string[];
   schemasFound: Array<{ type: string; rawJson: string; isValid: boolean }>;
   wordCount: number;
@@ -100,12 +106,12 @@ export interface ScrapedPageEvidence {
    * Scrape provider. `jina` is a markdown fallback and cannot support a health score.
    * Omitted means the caller already built a live page.
    */
-  source?: 'patchright' | 'firecrawl' | 'jina' | 'direct';
+  source?: 'patchright' | 'firecrawl' | 'jina' | 'direct' | 'exa';
 }
 
 export interface SerpEvidenceItem {
   query: string;
-  engine: 'google' | 'perplexity' | 'tavily' | 'local_serp';
+  engine: 'google' | 'perplexity' | 'tavily' | 'exa' | 'local_serp';
   title: string;
   url: string;
   snippet: string;
@@ -190,6 +196,15 @@ export interface AuditStateGraphContext {
   attestation?: AuditAttestation;
   /** Errors encountered */
   errors: string[];
+  /**
+   * Jev site choice. Unset when the check did not answer.
+   * real_estate_agency, individual_agent, developer, property_management, or other.
+   */
+  siteType?: string | null;
+  /** False when the brand-name check was below the support line. Unset leaves the name as scraped. */
+  brandSupported?: boolean | null;
+  /** Name Jev picked, or a name from the page. Null means the screen uses the domain stem. */
+  displayName?: string | null;
 }
 
 // ============================================================================

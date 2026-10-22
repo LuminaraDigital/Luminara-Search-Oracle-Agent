@@ -19,6 +19,37 @@ export function planTitle(id: PaidPlanId): string {
   return PLAN_ENTITLEMENTS[id].title;
 }
 
+export function planSeatLine(id: PaidPlanId): string {
+  const seats = PLAN_ENTITLEMENTS[id].teamSeats;
+  return seats === 1 ? '1 seat' : `${seats} seats`;
+}
+
+export const NO_TAX_LINE = 'Prices are in Australian dollars. No tax is added.';
+
+export const NOTHING_TO_CANCEL = 'There is nothing to cancel, because a plan does not renew.';
+
+/** Web card checkout is closed until STRIPE_CHECKOUT_LIVE is true. Stars in Telegram stays open. */
+export const WAITLIST_LINE = 'Payment on the web is not open yet. Email info@luminara.digital to join the waitlist.';
+
+/** One sentence for /pricing, llms.txt, and the pricing meta description. */
+export function listPriceSummary(): string {
+  const ids = ['starter', 'growth', 'agency'] as const;
+  const parts = ids.map((id) => `${PLAN_ENTITLEMENTS[id].title} ${PAID_PLAN_PRICES[id].audLabel}`);
+  return `${parts.join(', ')}. Pay by card for a 30-day pass that does not renew, or pay in Telegram Stars in the Mini App.`;
+}
+
+/** Free card lines. The daily allowance matches the Worker default of 3. */
+export function freePlanLines(): string[] {
+  const free = PLAN_ENTITLEMENTS.free;
+  return [
+    `${free.domainLimit} monitored domain`,
+    'On-demand audits',
+    '3 hosted Instant Audit checks a day',
+    'No IDE access (web app only)',
+    'No public share links',
+  ];
+}
+
 function withLeadCapital(text: string): string {
   return /^[a-z]/.test(text) ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
@@ -28,7 +59,7 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
   const lines: PlanBullet[] = [
     { included: true, text: `${e.domainLimit} monitored domains` },
     { included: true, text: e.scheduledReaudit === 'none' ? 'On-demand audits' : `${e.scheduledReaudit} re-audit reminders in Telegram` },
-    { included: true, text: id === 'agency' ? 'White-label PDF exports' : id === 'growth' ? 'Branded PDF exports' : 'Standard PDF exports' },
+    { included: e.whiteLabelPdf, text: e.whiteLabelPdf ? 'White-label PDF exports' : 'No white-label PDF' },
     {
       included: e.mcpAccess,
       text: e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',
@@ -39,7 +70,7 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
     },
   ];
   if (e.apiAccess) lines.push({ included: true, text: 'Paid research API (Agency plan or your own DataForSEO login)' });
-  if (e.agencyClientLimit > 0) lines.push({ included: true, text: `${e.agencyClientLimit} client workspaces (saved in this browser)` });
+  if (e.agencyClientLimit > 0) lines.push({ included: true, text: `${e.agencyClientLimit} client workspaces` });
   return lines.map((line) => ({ ...line, text: withLeadCapital(line.text) }));
 }
 
@@ -53,7 +84,7 @@ export const pricingTiers: Array<{
 }> = [
   {
     id: 'starter',
-    priceLabel: PAID_PLAN_PRICES.starter.usdLabel,
+    priceLabel: PAID_PLAN_PRICES.starter.audLabel,
     stars: PAID_PLAN_PRICES.starter.starsLabel,
     ton: PAID_PLAN_PRICES.starter.tonLabel,
     blurb: 'Web audits for up to 2 sites. No IDE connectors or public share links.',
@@ -61,7 +92,7 @@ export const pricingTiers: Array<{
   },
   {
     id: 'growth',
-    priceLabel: PAID_PLAN_PRICES.growth.usdLabel,
+    priceLabel: PAID_PLAN_PRICES.growth.audLabel,
     stars: PAID_PLAN_PRICES.growth.starsLabel,
     ton: PAID_PLAN_PRICES.growth.tonLabel,
     blurb: 'IDE access, shareable reports, and weekly re-audit reminders in Telegram.',
@@ -69,10 +100,10 @@ export const pricingTiers: Array<{
   },
   {
     id: 'agency',
-    priceLabel: PAID_PLAN_PRICES.agency.usdLabel,
+    priceLabel: PAID_PLAN_PRICES.agency.audLabel,
     stars: PAID_PLAN_PRICES.agency.starsLabel,
     ton: PAID_PLAN_PRICES.agency.tonLabel,
-    blurb: 'API access for paid research, 10 client workspaces saved in this browser, daily re-audit reminders in Telegram, white-label PDF.',
+    blurb: 'API access for paid research, 10 client workspaces, daily re-audit reminders in Telegram, white-label PDF.',
     highlight: false,
   },
 ];

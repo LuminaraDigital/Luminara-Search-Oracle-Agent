@@ -6,11 +6,13 @@ import { sampleAiSaidFixtures } from '../../services/audit/sampleAiSaidFixtures'
 import type { ShipCommitment } from '../../services/audit/shipCommitmentService';
 import { upsertWeeklyDecision } from '../../services/privacy/privacyClient';
 import { honestyChipLabel, normalizeMeasurementStatus } from '../../services/wdl/liveHonesty';
-import { llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
+import { LLMS_NAME_NOTE, llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
+import { brandNameFor } from '../../services/audit/brandName';
 
 import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
 import { probeLlmCrawlerReadiness } from '../../services/audit/llmCrawlerProbe';
 import { MindshareRadarCard } from '../visibility/MindshareRadarCard';
+import { formatAuDate } from '../../utils/formatAuDate';
 import { PerceptionMatrix } from '../visibility/PerceptionMatrix';
 
 interface WeeklyDecisionCardProps {
@@ -40,10 +42,12 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
 }) => {
   const [busy, setBusy] = useState(false);
   const [persistNote, setPersistNote] = useState<string | null>(null);
-  const aiSaid = useMemo(() => sampleAiSaidFixtures(domain), [domain]);
+  const rememberedBrand = brandNameFor(domain);
+  const aiSaid = useMemo(() => sampleAiSaidFixtures(domain, rememberedBrand), [domain, rememberedBrand]);
+  const llmsPreview = useMemo(() => llmsTxtDraft(domain, rememberedBrand), [domain, rememberedBrand]);
   const verifyBy = useMemo(() => {
     const base = commitment?.committedAt || Date.now();
-    return new Date(base + 14 * 24 * 60 * 60 * 1000).toLocaleDateString();
+    return formatAuDate(base + 14 * 24 * 60 * 60 * 1000);
   }, [commitment?.committedAt]);
 
   const mappedEvidence: EmpiricalEvidence[] = useMemo(() => {
@@ -101,7 +105,7 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     const raw = domain || 'domain';
     const cleanDomain = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
 
-    const llmsContent = llmsTxtDraft(cleanDomain);
+    const llmsContent = llmsTxtDraft(cleanDomain, brandNameFor(cleanDomain));
     const schemaContent = organizationJsonLd(cleanDomain);
 
     const triggerDownload = (filename: string, content: string, mime: string) => {
@@ -209,7 +213,7 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
             )}
           </div>
           <p className="text-gray-300 text-xs leading-relaxed">{primary.title}</p>
-          <div className="flex flex-wrap items-center gap-2 mt-3">
+          <div id="tour-mark-done" className="flex flex-wrap items-center gap-2 mt-3">
             <button
               type="button"
               disabled={busy || primary.status === 'in_progress' || primary.status === 'done'}
@@ -218,6 +222,12 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
             >
               Mark in progress
             </button>
+            {llmsPreview.includes('<Your agency name>') && (
+              <div className="w-full basis-full">
+                <p className="mb-2 text-sm text-gray-300">{LLMS_NAME_NOTE}</p>
+                <pre className="max-h-40 overflow-auto rounded-lg border border-white/10 bg-black p-3 text-xs leading-relaxed text-gray-200">{llmsPreview}</pre>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleExportFixPack}
@@ -341,7 +351,7 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
           title="Toggle weekly decision summary notifications"
         >
           <span className={`w-1.5 h-1.5 rounded-full ${telegramDigestOptIn ? 'bg-gold' : 'bg-gray-600'}`} />
-          Weekly Telegram Briefing: {telegramDigestOptIn ? 'Enabled' : 'Disabled'}
+          Weekly Telegram Briefing: {telegramDigestOptIn ? 'Enabled. Press to turn it off.' : 'Disabled. Press this to turn it on in this browser.'}
         </button>
       </div>
     </section>

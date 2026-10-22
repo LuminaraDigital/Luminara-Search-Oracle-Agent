@@ -4,6 +4,7 @@ import { telegramAuth, createStarsInvoice, activateLicenseKey, fetchQuotaStatus,
 import { TELEGRAM_MINI_APP_URL, isTonAvailable } from '../paywall/paymentOptions';
 import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../paywall/planCopy';
 import { lazyWithReload } from '../../utils/lazyWithReload';
+import { formatAuDate } from '../../utils/formatAuDate';
 
 const TelegramAccountTon = lazyWithReload(() =>
   import('./TelegramAccountTon').then((m) => ({ default: m.TelegramAccountTon })),
@@ -160,7 +161,7 @@ export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
       </div>
 
       {active && (
-        <p className="text-[11px] text-gray-400">Active until {new Date(sub!.expiresAt).toLocaleDateString()}.</p>
+        <p className="text-[11px] text-gray-400">Active until {formatAuDate(sub!.expiresAt)}.</p>
       )}
 
       <p className="text-xs text-gray-400 leading-relaxed">

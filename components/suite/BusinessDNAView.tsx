@@ -8,6 +8,7 @@ import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftP
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { dreamingClient } from '../../services/dreaming/dreamingClient';
 import { BusinessDnaSkeleton } from '../ui/Skeleton';
+import { optionalPortalUrl } from '../../services/audit/agencyProfile';
 
 interface BusinessDNAViewProps {
   currentDNA: BusinessDNA | null;
@@ -16,18 +17,44 @@ interface BusinessDNAViewProps {
   onRouteToOracleMind?: () => void;
 }
 
+/** Shown before a scan, so suburb, state, agency type and portal can be saved on their own. */
+const BLANK_PROFILE: BusinessDNA = {
+  name: '',
+  mission: '',
+  usp: '',
+  targetAudience: '',
+  competitors: [],
+  perceivedGaps: [],
+  rawContext: '',
+};
+
+function profileOrBlank(dna: BusinessDNA | null): BusinessDNA {
+  return dna ?? { ...BLANK_PROFILE, competitors: [], perceivedGaps: [] };
+}
+
+/** Suburb, state, agency type and portal are enough. A scan is not required. */
+export function savedProfile(form: BusinessDNA): { ok: true; dna: BusinessDNA } | { ok: false; error: string } {
+  const realestateProfileUrl = optionalPortalUrl(form.realestateProfileUrl || '', 'realestate.com.au');
+  const domainProfileUrl = optionalPortalUrl(form.domainProfileUrl || '', 'domain.com.au');
+  if (realestateProfileUrl === null || domainProfileUrl === null) {
+    return { ok: false, error: 'Portal links must be https pages on realestate.com.au or domain.com.au.' };
+  }
+  return { ok: true, dna: { ...form, realestateProfileUrl, domainProfileUrl } };
+}
+
 export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, onDNAGenerated, onNavigateToTool, onRouteToOracleMind: _onRouteToOracleMind }) => {
   const [input, setInput] = useState(() => draftPersistenceService.getDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inlineValidationError, setInlineValidationError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [formData, setFormData] = useState<BusinessDNA | null>(currentDNA);
+  const [editing, setEditing] = useState(!currentDNA);
+  const [formData, setFormData] = useState<BusinessDNA>(() => profileOrBlank(currentDNA));
   const [vfsSyncSuccess, setVfsSyncSuccess] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // If the DNA is changed elsewhere (dashboard clear, another tab), reflect it here.
   useEffect(() => {
-    if (!editing) setFormData(currentDNA);
+    if (!editing) setFormData(profileOrBlank(currentDNA));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentDNA]);
 
@@ -55,7 +82,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           signalWeight: 2.5,
         })
         .catch(() => {});
-      setVfsSyncSuccess('Synced to Brand Memory Vault + Luminara Dreaming.');
+      setVfsSyncSuccess('Synced to brand memory.');
       setTimeout(() => setVfsSyncSuccess(null), 3500);
     } catch (e) {
       console.error('VFS sync error', e);
@@ -90,8 +117,16 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
 
   const handleSave = () => {
     if (formData) {
-      onDNAGenerated(formData);
-      syncToVfs(formData);
+      const saved = savedProfile(formData);
+      if (!saved.ok) {
+        setProfileError(saved.error);
+        return;
+      }
+      const next = saved.dna;
+      setProfileError(null);
+      setFormData(next);
+      onDNAGenerated(next);
+      syncToVfs(next);
       draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
       productTelemetry.recordOnboardingStep('business_dna');
       setEditing(false);
@@ -110,7 +145,8 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       },
       () => {
         onDNAGenerated(null);
-        setFormData(null);
+        setFormData(profileOrBlank(null));
+        setEditing(true);
         setInput('');
         draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
       },
@@ -145,7 +181,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               type="text"
               value={input}
               onChange={(e) => handleInputChange(e.target.value)}
-              placeholder="Your website, or a sentence about your business (e.g. 'family dental clinic in Austin')"
+              placeholder="Your website, or a sentence about your business (e.g. 'independent real estate agency in [suburb]')"
               onKeyDown={(e) => e.key === 'Enter' && handleExtractDNA()}
               className={`flex-1 bg-black/60 border rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner ${
                 inlineValidationError ? 'border-danger-500/70 focus:border-danger-400' : 'border-white/15 focus:border-gold'
@@ -182,7 +218,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       </div>
 
       {/* Loading Skeleton during extraction */}
-      {loading && !formData && <BusinessDnaSkeleton />}
+      {loading && !currentDNA && <BusinessDnaSkeleton />}
 
       {/* Active DNA Profile Display */}
       {formData && (
@@ -191,8 +227,8 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 rounded-full bg-success-400 shadow-sm shadow-success-500/30 animate-pulse"></div>
               <div>
-                <span className="text-[10px] font-mono text-success-400 uppercase tracking-widest">Profile active</span>
-                <h2 className="text-2xl font-bold text-white tracking-tight">{formData.name}</h2>
+                <span className="text-[10px] font-mono text-success-400 uppercase tracking-widest">{currentDNA ? 'Profile active' : 'No profile yet'}</span>
+                <h2 className="text-2xl font-bold text-white tracking-tight">{formData.name || 'Your agency'}</h2>
                 {vfsSyncSuccess && (
                   <span className="text-[10px] font-mono text-success-400 block mt-0.5">
                     ✓ {vfsSyncSuccess}
@@ -230,28 +266,84 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1">Brand Mission</label>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1" htmlFor="dna-different">What makes your agency different?</label>
                 {editing ? (
                   <textarea
-                    value={formData.mission}
-                    onChange={(e) => setFormData({ ...formData, mission: e.target.value })}
-                    className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
-                  />
-                ) : (
-                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">{formData.mission || 'Not set'}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1">Unique Selling Proposition (USP)</label>
-                {editing ? (
-                  <textarea
-                    value={formData.usp}
+                    id="dna-different"
+                    value={formData.usp || formData.mission}
                     onChange={(e) => setFormData({ ...formData, usp: e.target.value })}
                     className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
                   />
                 ) : (
-                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 font-medium">{formData.usp || 'Not set'}</p>
+                  <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">{formData.usp || formData.mission || 'Not set'}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1" htmlFor="dna-agency-type">Agency type</label>
+                {editing ? (
+                  <select
+                    id="dna-agency-type"
+                    value={formData.agencyType || ''}
+                    onChange={(e) => setFormData({ ...formData, agencyType: e.target.value === 'agency' || e.target.value === 'agent' || e.target.value === 'property_manager' ? e.target.value : undefined })}
+                    className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
+                  >
+                    <option value="">Not set</option>
+                    <option value="agency">Agency</option>
+                    <option value="agent">Individual agent</option>
+                    <option value="property_manager">Property manager</option>
+                  </select>
+                ) : (
+                  <p className="text-xs text-gray-300 bg-black/40 p-3 rounded-xl border border-white/5">{formData.agencyType === 'agent' ? 'Individual agent' : formData.agencyType === 'property_manager' ? 'Property manager' : formData.agencyType === 'agency' ? 'Agency' : 'Not set'}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1" htmlFor="dna-suburb">Suburbs</label>
+                {editing ? (
+                  <input
+                    id="dna-suburb"
+                    type="text"
+                    value={formData.suburb ?? ''}
+                    onChange={(e) => setFormData({ ...formData, suburb: e.target.value })}
+                    className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
+                    placeholder="Richmond"
+                  />
+                ) : (
+                  <p className="text-xs text-gray-300 bg-black/40 p-3 rounded-xl border border-white/5">{formData.suburb || 'Not set'}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1" htmlFor="dna-state">State</label>
+                {editing ? (
+                  <input
+                    id="dna-state"
+                    type="text"
+                    value={formData.state ?? ''}
+                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                    className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
+                    placeholder="VIC"
+                  />
+                ) : (
+                  <p className="text-xs text-gray-300 bg-black/40 p-3 rounded-xl border border-white/5">{formData.state || 'Not set'}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1" htmlFor="dna-rea">realestate.com.au profile</label>
+                {editing ? (
+                  <input id="dna-rea" type="url" value={formData.realestateProfileUrl ?? ''} onChange={(e) => setFormData({ ...formData, realestateProfileUrl: e.target.value })} placeholder="https://www.realestate.com.au/agency/..." className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white" />
+                ) : (
+                  <p className="text-xs text-gray-300 bg-black/40 p-3 rounded-xl border border-white/5 break-all">{formData.realestateProfileUrl || 'Not set'}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1" htmlFor="dna-domain">domain.com.au profile</label>
+                {editing ? (
+                  <input id="dna-domain" type="url" value={formData.domainProfileUrl ?? ''} onChange={(e) => setFormData({ ...formData, domainProfileUrl: e.target.value })} placeholder="https://www.domain.com.au/real-estate-agency/..." className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white" />
+                ) : (
+                  <p className="text-xs text-gray-300 bg-black/40 p-3 rounded-xl border border-white/5 break-all">{formData.domainProfileUrl || 'Not set'}</p>
                 )}
               </div>
 
@@ -301,6 +393,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
             </div>
           </div>
 
+          {profileError && <p className="text-xs text-red-300" role="alert">{profileError}</p>}
           {editing && (
             <div className="pt-4 border-t border-white/10 flex justify-end">
               <button

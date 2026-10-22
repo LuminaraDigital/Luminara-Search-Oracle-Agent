@@ -37,7 +37,8 @@ import {
   PROVIDER_DECISIONS_RECORD_PREFIX,
   providerDecisionsErrorRecord,
 } from '../apiClient';
-import { healthChecklist, liveSearchRows, pageSupportsHealthScore } from './auditEvidenceGate';
+import { healthChecklist, liveSearchRows, pageSupportsHealthScore, siteChecksRan } from './auditEvidenceGate';
+import { gateFixSnippet, reviewFindingsWithJev } from '../audit/jevVerifier';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
 
@@ -377,8 +378,20 @@ export class CrewOrchestrator {
         confidenceScore: liveEvidence ? criticConfidence : undefined,
       });
 
-      return {
+      const reviewed = await reviewFindingsWithJev({
+        pages: ctx.scrapedPages,
+        checks: ctx.llmCrawlerReadiness?.checks,
         findings: verifiedFindings,
+        healthScore: ctx.healthScore,
+        searchTitles: ctx.serpEvidence.map((row) => row.title),
+      });
+
+      return {
+        findings: reviewed.findings,
+        healthScore: reviewed.healthScore,
+        siteType: reviewed.siteType,
+        brandSupported: reviewed.brandSupported,
+        displayName: reviewed.displayName,
         criticRejections: (ctx.criticRejections || 0) + rejectedCount,
         criticPass: liveEvidence,
       };
@@ -399,8 +412,13 @@ export class CrewOrchestrator {
         });
         return { patches: [] };
       }
-      const patches = await remediationArchitectAgent.execute(ctx.targetUrl, ctx.findings, ctx.dna, emit);
-      // Run critic syntax validation on generated patches
+      const drafted = await remediationArchitectAgent.execute(ctx.targetUrl, ctx.findings, ctx.dna, emit, ctx.displayName);
+      const patches = ctx.brandSupported === false
+        ? drafted.map((patch) => ({
+          ...patch,
+          proposedSnippet: gateFixSnippet(patch.targetType, patch.proposedSnippet, ctx.targetUrl, ctx.displayName),
+        }))
+        : drafted;
       const { verifiedPatches } = criticReflectionEngine.verify([], patches, ctx.scrapedPages, ctx.serpEvidence);
       return { patches: verifiedPatches };
     });
@@ -413,7 +431,9 @@ export class CrewOrchestrator {
         ? { mentioned: liveRows.filter((row) => row.brandMentioned).length, total: liveRows.length }
         : null;
       // The brief says how many of the site checks passed. It does not print the checklist number.
-      const healthChecks = typeof ctx.healthScore === 'number' ? healthChecklist(ctx.findings) : null;
+      const healthChecks = siteChecksRan(ctx.healthScore, ctx.findings)
+        ? healthChecklist(ctx.findings, { citationRateKnown: typeof ctx.citationRatePercent === 'number' })
+        : null;
       const plainEnglishBrief = await executiveTranslatorAgent.execute(
         ctx.targetUrl,
         healthChecks,
@@ -421,7 +441,8 @@ export class CrewOrchestrator {
         ctx.findings,
         ctx.patches,
         ctx.dna,
-        emit
+        emit,
+        ctx.displayName,
       );
       return { plainEnglishBrief };
     });

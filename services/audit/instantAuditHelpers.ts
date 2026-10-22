@@ -17,18 +17,20 @@ import {
   shouldGenerateAuditReport,
   type GuestScoutSummary,
 } from './guestScoutSummary';
-import { healthChecklist } from '../agentCore/auditEvidenceGate';
+import { healthChecklist, siteChecksRan } from '../agentCore/auditEvidenceGate';
 import { entitlementsFor } from '../plans/planEntitlements';
 import { getAnswerDepth } from './answerDepth';
 import type { HostedScoutRail } from './hostedScoutRail';
 import { guardPasteReadyCopy, siteLooksHealthRelated } from './healthClaimGuard';
 import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
 import { fallbackAnswerLine } from '../llm/fallbackAnswer';
-import { rememberScrapedBrand } from './brandName';
+import { brandFromEvidence, readableStem, rememberScrapedBrand } from './brandName';
 import { recordAudit } from './auditHistoryService';
+import { evaluateRealEstateChecks, formatRealEstateChecks } from './realEstateChecks';
+import { includeRealEstateChecks, wantsAgencyMentions } from './jevVerifier';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
-  if (crewRunning) return 'Scanning...';
+  if (crewRunning) return 'Running the audit…';
   return 'Run Instant Audit';
 }
 
@@ -48,9 +50,9 @@ export function instantAuditPersistHint(
   }
   if (!signedIn) {
     if (outcome === 'unmeasured') {
-      return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Pro / Agency.';
+      return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.';
     }
-    return 'Instant Audit finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Pro / Agency.';
+    return 'Instant Audit finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.';
   }
   if (outcome === 'unmeasured') {
     return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Strategy was not saved. Retry, or check Settings → provider status.';
@@ -79,6 +81,10 @@ export async function generateAuditReportUnlessDegraded(input: {
   lenses: AuditLens[];
   scrapedPages?: AuditStateGraphContext['scrapedPages'];
   serpEvidence?: AuditStateGraphContext['serpEvidence'];
+  siteType?: string | null;
+  brandSupported?: boolean | null;
+  /** Name Jev picked, or a supported scraped name. A title-cased domain is not stored. */
+  displayName?: string | null;
 }): Promise<GuardedAuditReport | null> {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
@@ -96,7 +102,13 @@ export async function generateAuditReportUnlessDegraded(input: {
   );
   const pages = input.scrapedPages ?? [];
   const firstPage = pages[0];
-  rememberScrapedBrand(input.formattedUrl, firstPage?.title || firstPage?.h1s?.[0]);
+  const scrapedBrand = brandFromEvidence({
+    siteName: firstPage?.siteName,
+    organizationName: firstPage?.organizationName,
+    title: firstPage?.title || firstPage?.h1s?.[0],
+  });
+  const keptName = input.displayName || (input.brandSupported === false ? null : scrapedBrand);
+  rememberScrapedBrand(input.formattedUrl, keptName);
   const serp = input.serpEvidence ?? [];
   const facts: MeasuredClaimFacts = {
     ...input.summary.measured,
@@ -114,9 +126,18 @@ export async function generateAuditReportUnlessDegraded(input: {
   const modelLine = fallbackAnswerLine(
     report.answeredBy ? { model: report.answeredBy, provider: report.answeredByProvider } : undefined,
   );
-  const text = modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded;
+  const body = modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded;
+  const estate = includeRealEstateChecks(input.siteType, pages.length)
+    ? formatRealEstateChecks(evaluateRealEstateChecks(pages)).trimEnd()
+    : '';
+  const mention = await agencyMentionLine(input.siteType, scrapedBrand || '', input.formattedUrl);
+  const parts = [body];
+  if (estate && !body.includes('## Real estate checks')) parts.push(estate);
+  if (mention) parts.push(mention);
+  const text = parts.join('\n\n');
   try {
     recordAudit({
+      id: report.auditHistoryId,
       domain: input.formattedUrl,
       focus: input.targetFocus,
       reportText: text,
@@ -141,15 +162,39 @@ export async function generateAuditReportUnlessDegraded(input: {
   };
 }
 
+async function agencyMentionLine(siteType: string | null | undefined, brand: string, domain: string): Promise<string> {
+  if (!wantsAgencyMentions(siteType)) return '';
+  const name = brand.replace(/"/g, '').trim() || domain;
+  try {
+    const { exaService } = await import('../search/exaService');
+    const found = await exaService.search(`"${name}" ${domain} reviews`, {
+      numResults: 3,
+      contents: true,
+      summary: false,
+      timeoutMs: 8000,
+    });
+    if (!found.results.length) return '';
+    const rows = found.results.slice(0, 3).map((row) => `${row.title} (${row.url})`).join('; ');
+    return `Web mentions: ${rows}.`;
+  } catch {
+    return '';
+  }
+}
+
 export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: HostedScoutRail): GuestScoutSummary {
+  if (crew.displayName) rememberScrapedBrand(crew.targetUrl, crew.displayName);
+  const brand = crew.displayName || readableStem(crew.targetUrl);
   return buildGuestScoutSummary({
+    brand,
     targetUrl: crew.targetUrl,
     measurementStatus: crew.measurementStatus,
     measurementReason: crew.measurementReason,
     citationRatePercent: crew.citationRatePercent,
     shareOfVoiceScore: crew.shareOfVoiceScore,
     healthScore: crew.healthScore,
-    healthChecks: typeof crew.healthScore === 'number' ? healthChecklist(crew.findings) : null,
+    healthChecks: siteChecksRan(crew.healthScore, crew.findings)
+      ? healthChecklist(crew.findings, { citationRateKnown: typeof crew.citationRatePercent === 'number' })
+      : null,
     scrapedPageCount: crew.scrapedPages.length,
     serpCount: crew.serpEvidence.length,
     searchEngines: [...new Set(crew.serpEvidence.map((row) => row.engine))],

@@ -47,9 +47,14 @@ export async function mintOpaqueSession(
     createdAt: now,
     exp: now + SESSION_TTL_SECONDS * 1000,
   };
-  await env.LUMINARA_KV.put(opaqueSessionKvKey(id), JSON.stringify(record), {
-    expirationTtl: SESSION_TTL_SECONDS,
-  });
+  try {
+    await env.LUMINARA_KV.put(opaqueSessionKvKey(id), JSON.stringify(record), {
+      expirationTtl: SESSION_TTL_SECONDS,
+    });
+  } catch {
+    console.warn(JSON.stringify({ event: 'session_store_error' }));
+    return null;
+  }
   return id;
 }
 

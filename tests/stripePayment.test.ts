@@ -3,7 +3,7 @@ import worker from '../worker/index';
 import {
   verifyStripeSignature,
   STRIPE_PLAN_CONFIG,
-  STRIPE_CHECKOUT_LIVE,
+  STRIPE_CURRENCY,
   CARD_IN_TELEGRAM_ERROR,
   isStripeSecretsConfigured,
   isStripeCheckoutLive,
@@ -153,7 +153,7 @@ function paidSession(o: {
       mode: 'payment',
       payment_status: 'paid',
       amount_total: STRIPE_PLAN_CONFIG[o.planId]?.amountCents,
-      currency: 'usd',
+      currency: STRIPE_CURRENCY,
       payment_intent: o.paymentIntent ?? `pi_${o.sessionId}`,
       customer: null,
       metadata: { userId: o.userId, accountId: o.userId, planId: o.planId },
@@ -205,12 +205,10 @@ afterEach(() => {
 describe('Stripe Payments & Webhook Verification', () => {
   describe('STRIPE_PLAN_CONFIG', () => {
     it('defines prices matching the self-serve pricing ladder', () => {
-      expect(STRIPE_PLAN_CONFIG.starter.amountCents).toBe(4900);
-      expect(STRIPE_PLAN_CONFIG.growth.amountCents).toBe(14900);
-      expect(STRIPE_PLAN_CONFIG.agency.amountCents).toBe(34900);
-      expect(STRIPE_PLAN_CONFIG.starter.days).toBe(30);
-      expect(STRIPE_PLAN_CONFIG.growth.days).toBe(30);
-      expect(STRIPE_PLAN_CONFIG.agency.days).toBe(30);
+      expect(STRIPE_PLAN_CONFIG.starter).toMatchObject({ amountCents: 7900, days: 30 });
+      expect(STRIPE_PLAN_CONFIG.growth).toMatchObject({ amountCents: 22900, days: 30 });
+      expect(STRIPE_PLAN_CONFIG.agency).toMatchObject({ amountCents: 54900, days: 30 });
+      expect(STRIPE_CURRENCY).toBe('aud');
     });
   });
 
@@ -278,13 +276,14 @@ describe('Stripe Payments & Webhook Verification', () => {
       ).toBe(true);
     });
 
-    it('isStripeCheckoutLive enforces STRIPE_CHECKOUT_LIVE constant safety gate', () => {
-      const liveEnv = {
-        STRIPE_SECRET_KEY: 'sk_test_123',
-        STRIPE_WEBHOOK_SECRET: 'whsec_123',
-      } as Env;
-      // Until STRIPE_CHECKOUT_LIVE is toggled to true, isStripeCheckoutLive must remain false
-      expect(isStripeCheckoutLive(liveEnv)).toBe(STRIPE_CHECKOUT_LIVE);
+    it('isStripeCheckoutLive opens only for the string true and a matching key mode', () => {
+      const testKey = { STRIPE_SECRET_KEY: 'sk_test_123', STRIPE_WEBHOOK_SECRET: 'whsec_123' } as Env;
+      expect(isStripeCheckoutLive({ ...testKey, ENVIRONMENT: 'staging' })).toBe(false);
+      expect(isStripeCheckoutLive({ ...testKey, ENVIRONMENT: 'staging', STRIPE_CHECKOUT_LIVE: 'false' })).toBe(false);
+      expect(isStripeCheckoutLive({ ...testKey, ENVIRONMENT: 'staging', STRIPE_CHECKOUT_LIVE: 'true' })).toBe(true);
+      expect(isStripeCheckoutLive({ ...testKey, ENVIRONMENT: 'production', STRIPE_CHECKOUT_LIVE: 'true' })).toBe(false);
+      const liveKey = { ...testKey, ENVIRONMENT: 'production', STRIPE_CHECKOUT_LIVE: 'true', STRIPE_SECRET_KEY: 'sk_live_123' };
+      expect(isStripeCheckoutLive(liveKey)).toBe(true);
     });
 
     it('handleCreateStripeCheckoutSession returns 503 STRIPE_NOT_LIVE when checkout is not live', async () => {
@@ -331,8 +330,8 @@ describe('F1: only a signed-in buyer can start a card checkout', () => {
     expect(params.get('metadata[userId]')).toBe(userId);
     expect(params.get('metadata[planId]')).toBe('growth');
     expect(params.get('mode')).toBe('payment');
-    expect(params.get('line_items[0][price_data][unit_amount]')).toBe('14900');
-    expect(params.get('line_items[0][price_data][currency]')).toBe('usd');
+    expect(params.get('line_items[0][price_data][unit_amount]')).toBe('22900');
+    expect(params.get('line_items[0][price_data][currency]')).toBe('aud');
     expect(params.get('customer_email')).toBe('buyer@example.com');
   });
 
@@ -510,11 +509,11 @@ describe('F4: a plan is granted only for a paid checkout session of the right am
     expect(((await res1.json()) as any).received).toBe(true);
 
     const first = sub('fb:buyer1');
-    expect(first).toMatchObject({ plan: 'growth', amountTotal: 14900, paymentMethod: 'stripe', sessionId: 'cs_test_session_abc123' });
+    expect(first).toMatchObject({ plan: 'growth', amountTotal: 22900, paymentMethod: 'stripe', sessionId: 'cs_test_session_abc123' });
     expect(first!.expiresAt).toBeGreaterThanOrEqual(before + 30 * DAY_MS);
     expect(first!.expiresAt).toBeLessThanOrEqual(after + 30 * DAY_MS);
 
-    expect(await ledger('cs_test_session_abc123')).toMatchObject({ amount_total: 14900, plan_id: 'growth', currency: 'usd' });
+    expect(await ledger('cs_test_session_abc123')).toMatchObject({ amount_total: 22900, plan_id: 'growth', currency: 'aud' });
 
     // Duplicate delivery: must succeed idempotently without re-granting
     const res2 = await deliver(env, event);
@@ -529,7 +528,7 @@ describe('F4: a plan is granted only for a paid checkout session of the right am
     ['the amount is lower than the plan price', { amount_total: 100 }],
     ['the amount is higher than the plan price', { amount_total: 34900 }],
     ['the amount is missing', { amount_total: undefined }],
-    ['the currency is not usd', { currency: 'eur' }],
+    ['the currency is not aud', { currency: 'eur' }],
     ['the mode is subscription', { mode: 'subscription' }],
     ['the mode is setup', { mode: 'setup' }],
     ['the buyer is named only by client_reference_id', { metadata: { planId: 'growth' }, client_reference_id: 'fb:buyer1' }],

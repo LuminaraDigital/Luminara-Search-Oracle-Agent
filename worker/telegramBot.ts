@@ -4,6 +4,7 @@
  */
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
+import { QUOTA_CAPACITY_ERROR, spendDailyQuota } from './quotaMiddleware';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
 import { guardPasteReadyCopy } from '../services/audit/healthClaimGuard';
@@ -103,8 +104,8 @@ export const PLANS: Record<string, PlanMeta> = {
     mcpAccess: true,
   },
   agency: {
-    title: 'Luminara Pro / Agency',
-    description: '25 sites, audit memory, competitor citation deltas, 10 client workspaces saved in this browser, white-label PDF, API access, and a daily drift check. 30 days.',
+    title: 'Luminara Agency',
+    description: '25 sites, audit memory, competitor citation deltas, 10 client workspaces, white-label PDF, API access, and a daily drift check. 30 days.',
     stars: 18000,
     days: 30,
     domainLimit: 25,
@@ -153,6 +154,18 @@ export const FREE_PLAN_CAPS = {
   shareLinks: false,
   mcpAccess: false,
 };
+
+/** Already-issued 75-Star invoices still credit. New invoices and the bot list do not offer it. */
+export const LEGACY_STAR_PLAN_ID = 'multi_agent_crawl';
+
+/** Plans a buyer can start from the bot, the Mini App invoice route, or /plan. */
+export function plansOfferedToBuyers(): Record<string, PlanMeta> {
+  const offered: Record<string, PlanMeta> = {};
+  for (const [id, plan] of Object.entries(PLANS)) {
+    if (id !== LEGACY_STAR_PLAN_ID) offered[id] = plan;
+  }
+  return offered;
+}
 
 /**
  * What a buyer may see before signing in: the 30-day plans, with their title, description, Stars
@@ -369,7 +382,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     if (text.startsWith('/plan') || text.startsWith('/subscribe')) {
       // A /buy command is shown only for a plan the command sells. The one-day plans are bought
       // in the app.
-      const lines = Object.entries(PLANS).map(
+      const lines = Object.entries(plansOfferedToBuyers()).map(
         ([id, p]) =>
           `• ${p.title} - ${p.stars.toLocaleString()} ⭐ / ${p.days} days\n  ${p.description}\n  ` +
           (BUY_COMMAND_ID.test(id) ? `/buy_${id}` : 'Buy this one in the app.'),
@@ -469,7 +482,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         text:
           '*Luminara Suite - Privacy Policy & Data Rights*\n\n' +
           'We value your privacy and transparency. Here is how personal data is handled:\n\n' +
-          '• *Controller:* Luminara Digital Agency (Contact: `privacy@luminarasuite.com`)\n' +
+          '• *Controller:* LUMINARA DIGITAL PTY LTD (ABN 90 693 125 281), trading as Luminara Digital, Victoria 3128, Australia. Contact: `privacy@luminarasuite.com`\n' +
           '• *Telegram Data:* We receive your signed Telegram user ID, username, and language to identify your session and meter usage. We never receive or store payment cards or phone numbers.\n' +
           '• *Payments:* Plans bought here are paid in Telegram Stars and processed by Telegram. No credit card information is collected.\n' +
           '• *Audits & Prompts:* Audit domains and queries are processed via configured AI models (Groq, NVIDIA NIM, Gemini, OpenRouter) to deliver search intelligence.\n' +
@@ -652,7 +665,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       const lines = users.slice(0, 10).map((u, i) => {
         const sourceBadge = u.source === 'telegram' ? '📱 Telegram' : '🌐 Web/Google';
         const label = u.email || (u.name ? `${u.name} (id: ${u.id})` : `User ${u.id}`);
-        const joined = new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const joined = new Date(u.created_at).toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
         const minutesAgo = Math.max(0, Math.round((Date.now() - u.last_seen_at) / 60000));
         const activeStr = minutesAgo < 60 ? `${minutesAgo}m ago` : `${Math.round(minutesAgo / 60)}h ago`;
         return `${i + 1}. ${label}\n   ${sourceBadge} · Joined: ${joined} · Active: ${activeStr}`;
@@ -756,9 +769,10 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // 3. A payment problem, and a question about our own plans, prices or how to pay, never
     // reach the model (worker/chatHonesty.ts). Each gets a fixed reply that uses no quota and
     // needs no plan. Only this message is read: what was said before does not route it.
-    const route = chatRoute(text, PLANS);
+    const buyerPlans = plansOfferedToBuyers();
+    const route = chatRoute(text, buyerPlans);
     if (route) {
-      await deliverChatReply(chatRouteReply(route, PLANS), openAppKeyboard(env));
+      await deliverChatReply(chatRouteReply(route, buyerPlans), openAppKeyboard(env));
       return;
     }
 
@@ -792,20 +806,17 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
 
       const limit = Number(env.FREE_DAILY_LIMIT || 3);
-      if (limit > 0 && env.LUMINARA_KV) {
-        const day = new Date().toISOString().slice(0, 10);
-        const quotaKey = `quota:${accountId}:${day}`;
-        const used = Number((await env.LUMINARA_KV.get(quotaKey)) || 0);
-
-        if (used >= limit) {
+      if (limit > 0) {
+        const spent = await spendDailyQuota(env, accountId, limit);
+        if (!spent.ok) {
+          const atCapacity = spent.code === 'HOSTED_CAPACITY';
           await api(env, 'sendMessage', {
             chat_id: chatId,
-            text:
-              `⚠️ *Daily Free Limit Reached*\n\n` +
-              `You have used your daily allocation of ${limit} free queries. Upgrade with Telegram Stars for unlimited queries, or check back tomorrow.\n\n` +
-              `Use /plan to view subscription options.`,
-            parse_mode: 'Markdown',
-            reply_markup: {
+            text: atCapacity
+              ? QUOTA_CAPACITY_ERROR
+              : `⚠️ *Daily Free Limit Reached*\n\nYou have used your daily allocation of ${limit} free queries. Upgrade with Telegram Stars for unlimited queries, or check back tomorrow.\n\nUse /plan to view subscription options.`,
+            parse_mode: atCapacity ? undefined : 'Markdown',
+            reply_markup: atCapacity ? undefined : {
               inline_keyboard: [[
                 { text: '⭐ Open Paywall in App', web_app: { url: `${env.WEBAPP_URL}?startapp=stars` } },
                 { text: '🔍 Open Luminara Suite', web_app: { url: env.WEBAPP_URL } },
@@ -814,8 +825,6 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           });
           return;
         }
-
-        await env.LUMINARA_KV.put(quotaKey, String(used + 1), { expirationTtl: 2 * 86400 });
       }
     }
 
@@ -847,7 +856,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       // Plan facts in the prompt are built from PLANS on every turn, never typed by hand.
-      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(PLANS) + dnaPromptAddition + domainPromptAddition },
+      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(plansOfferedToBuyers()) + dnaPromptAddition + domainPromptAddition },
       ...history.slice(-6),
       { role: 'user', content: text },
     ];
@@ -860,7 +869,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // a sentence that asks for a code, password or key is removed.
     const honest = modelReply
       ? filterChatReply(modelReply, {
-          plans: PLANS,
+          plans: plansOfferedToBuyers(),
           userTexts: [...history.filter((turn) => turn?.role === 'user').map((turn) => String(turn.content ?? '')), text],
           allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
         })
@@ -909,6 +918,9 @@ export async function createInvoiceLink(
   const normId = normalizePlanId(planId);
   const plan = PLANS[normId];
   if (!plan) return { ok: false, error: `Unknown plan "${planId}"` };
+  if (normId === LEGACY_STAR_PLAN_ID) {
+    return { ok: false, error: 'The 24-hour pass is 25 Stars. Buy that pass in the app.' };
+  }
   if (!userId || typeof userId !== 'number') return { ok: false, error: 'Valid userId required' };
 
   // Refused here so the buyer reads why before an invoice opens. Pre-checkout checks again.

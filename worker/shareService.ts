@@ -9,6 +9,7 @@ import { isTeaserFailureCode, teaserFailureLine } from '../services/audit/teaser
 import { getActiveSubscription } from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
 import { PRODUCTION_MINI_APP_URL, resolveMiniAppUrl } from '../services/referrals/rules';
+import { handleWinRoute } from './winShare';
 
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_MARKDOWN_CHARS = 400_000;
@@ -396,6 +397,7 @@ function parseCreateBody(raw: unknown): {
 }
 
 export async function handleShareRoute(request: Request, env: Env, path: string): Promise<Response> {
+  if (path === '/wins' || path.startsWith('/wins/')) return handleWinRoute(request, env, path);
   if (!env.DB) {
     return json({ ok: false, error: 'Database not configured', code: 'DB_UNAVAILABLE' }, 503);
   }
