@@ -418,14 +418,14 @@ export class AIProviderService {
     const freellmBase = configService.getFreeLlmBaseUrl();
     results.push({
       id: 'freellm',
-      name: 'FreeLLMAPI Gateway',
+      name: 'Your model gateway',
       provider: 'FreeLLMAPI',
       model: 'auto',
       isAvailable: Boolean(hasFreeLlm) && !this.isCoolingDown('freellm'),
       isLocal: /localhost|127\.0\.0\.1/i.test(freellmBase),
       endpoint: freellmBase.replace(/^https?:\/\//, ''),
       latencyMs: freellmLatency,
-      tokenSpeed: 'auto:fast / auto:smart',
+      tokenSpeed: 'fast or careful',
       lastChecked: Date.now(),
     });
 

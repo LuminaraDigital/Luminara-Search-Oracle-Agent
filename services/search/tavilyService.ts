@@ -1,6 +1,6 @@
 import { configService } from '../configService';
 import { providerFetch } from '../apiClient';
-import { hostedAuthBlocked, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
+import { hostedAuthBlocked, isAuditSiteMismatch, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
 
 export interface TavilySearchResult {
   title: string;
@@ -68,7 +68,10 @@ export class TavilyService {
       }, { userKey: apiKey });
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403 || response.status === 429) {
+        if (
+          (response.status === 401 || response.status === 403 || response.status === 429)
+          && !(await isAuditSiteMismatch(response))
+        ) {
           noteHostedAuthFailure(response.status, 'tavily', `HTTP ${response.status} ${response.statusText}`);
         }
         throw new Error(`Tavily API error: ${response.status} ${response.statusText}`);

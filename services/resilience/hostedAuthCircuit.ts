@@ -37,6 +37,17 @@ export function hostedAuthSkipCount(): number {
   return skipCount;
 }
 
+/** A 403 from the audit run host check is a site mismatch, not a sign-in failure. */
+export async function isAuditSiteMismatch(res: Response): Promise<boolean> {
+  if (res.status !== 403) return false;
+  try {
+    const body = await res.clone().json() as { code?: unknown };
+    return body?.code === 'AUDIT_RUN_REJECTED';
+  } catch {
+    return false;
+  }
+}
+
 /** Record a non-retryable 401/403 or quota_exhausted / credit 429. The first one opens the circuit for this run. */
 export function noteHostedAuthFailure(statusCode: number, providerId: string, message?: string): void {
   const failure = classifyProviderFailure({

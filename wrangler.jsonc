@@ -87,7 +87,7 @@
   //   ADMIN_SECRET (required for admin routes: /api/admin/users, /api/admin/license/generate,
   //   /api/admin/license/seed, /api/telegram/refund; sent as x-admin-secret header; separate from the webhook secret).
   //   MCP_OAUTH_SECRET (required in production: MCP OAuth fails closed without it), STRIPE_SECRET_KEY +
-  //   STRIPE_WEBHOOK_SECRET (card rail stays off without both), RECEIPT_SIGNING_KEY, AUTH_WEBHOOK_SECRET, TELEGRAM_ADMIN_ID.
+  //   STRIPE_WEBHOOK_SECRET (card rail stays off without both), RECEIPT_SIGNING_KEY (Trust Receipts and Signed Audit Receipts), AUTH_WEBHOOK_SECRET, TELEGRAM_ADMIN_ID.
   // Non-secret TON merchant wallet (safe in vars): TON_RECEIVING_ADDRESS
   // Chain network gate (Phase 0): CHAIN_NETWORK, CHAIN_TON_API_BASE, CHAIN_TON_API_FALLBACK_BASE, CHAIN_XDC_RPC_URL
   // TON_API_KEY must be network-specific: `wrangler secret put TON_API_KEY --env staging|production`
@@ -100,7 +100,7 @@
     // Users can always bring their own API keys in Settings (BYOK never paywalled).
     "REQUIRE_TG_AUTH": "true",
     "REQUIRE_SUBSCRIPTION": "false",
-    "FREE_DAILY_LIMIT": "25",
+    "FREE_DAILY_LIMIT": "3",
     // Sovereign Ollama Base URL (optional, defaults to https://ollama.com if unset)
     "OLLAMA_BASE_URL": "",
     // Firebase Auth project id (same as VITE_FIREBASE_PROJECT_ID). Empty disables Firebase token checks.
@@ -121,7 +121,11 @@
     "PROOF_XDC_ENABLED": "false",
     // Trust Network (migration 0020). Off until staging soak; RECEIPT_SIGNING_KEY is a secret.
     "TRUST_RECEIPTS_ENABLED": "false",
+    // Citation Watch. The daily cron writes runs only when this is "true".
+    "CITATION_WATCH_LIVE": "false",
     "DOMAIN_VERIFY_ENABLED": "false",
+    // Signed Audit Receipt mint and revoke. Public verify stays on. HMAC key is a secret, not a var.
+    "AUDIT_RECEIPTS_ENABLED": "false",
     "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
     // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
     // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.
@@ -152,12 +156,14 @@
 
   "durable_objects": {
     "bindings": [
-      { "name": "ORACLE_SESSION", "class_name": "OracleSession" }
+      { "name": "ORACLE_SESSION", "class_name": "OracleSession" },
+      { "name": "DAILY_QUOTA", "class_name": "DailyQuota" }
     ]
   },
 
   "migrations": [
-    { "tag": "v1-oracle-session", "new_sqlite_classes": ["OracleSession"] }
+    { "tag": "v1-oracle-session", "new_sqlite_classes": ["OracleSession"] },
+    { "tag": "v2-daily-quota", "new_sqlite_classes": ["DailyQuota"] }
   ],
 
   "queues": {
@@ -211,7 +217,8 @@
       ],
       "durable_objects": {
         "bindings": [
-          { "name": "ORACLE_SESSION", "class_name": "OracleSession" }
+          { "name": "ORACLE_SESSION", "class_name": "OracleSession" },
+      { "name": "DAILY_QUOTA", "class_name": "DailyQuota" }
         ]
       },
       "queues": {
@@ -234,7 +241,7 @@
         "ALLOWED_ORIGINS": "https://staging.luminarasuite.com",
         "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",
-        "FREE_DAILY_LIMIT": "100",
+        "FREE_DAILY_LIMIT": "3",
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",
         "FIREBASE_PROJECT_NUMBER": "449283385852",
         "REQUIRE_APP_CHECK": "false",
@@ -248,7 +255,10 @@
         "PROOF_XDC_ENABLED": "false",
         // Trust Network (migration 0020). Off until staging soak; RECEIPT_SIGNING_KEY is a secret.
         "TRUST_RECEIPTS_ENABLED": "false",
+        // Citation Watch. The daily cron writes runs only when this is "true".
+        "CITATION_WATCH_LIVE": "false",
         "DOMAIN_VERIFY_ENABLED": "false",
+        "AUDIT_RECEIPTS_ENABLED": "false",
         // REPLACE with your funded TON testnet merchant (kQ/0Q) before staging soak.
         // Synthetic CRC-valid placeholder for CI/validate-env; not a funded wallet.
         "TON_RECEIVING_ADDRESS": "kQClpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpWTU",
@@ -312,7 +322,8 @@
       ],
       "durable_objects": {
         "bindings": [
-          { "name": "ORACLE_SESSION", "class_name": "OracleSession" }
+          { "name": "ORACLE_SESSION", "class_name": "OracleSession" },
+      { "name": "DAILY_QUOTA", "class_name": "DailyQuota" }
         ]
       },
       "queues": {
@@ -335,7 +346,7 @@
         "ALLOWED_ORIGINS": "https://luminarasuite.com,https://www.luminarasuite.com",
         "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",
-        "FREE_DAILY_LIMIT": "25",
+        "FREE_DAILY_LIMIT": "3",
         "FIREBASE_PROJECT_ID": "luminara-suite",
         "FIREBASE_PROJECT_NUMBER": "274315225068",
         // Keep false until the prod build step passes VITE_FIREBASE_APPCHECK_SITE_KEY (validate-env enforces this).
@@ -350,7 +361,10 @@
         "PROOF_XDC_ENABLED": "false",
         // Trust Network (migration 0020). Off until staging soak; RECEIPT_SIGNING_KEY is a secret.
         "TRUST_RECEIPTS_ENABLED": "false",
+        // Citation Watch. The daily cron writes runs only when this is "true".
+        "CITATION_WATCH_LIVE": "false",
         "DOMAIN_VERIFY_ENABLED": "false",
+        "AUDIT_RECEIPTS_ENABLED": "false",
         "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
         // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
         // Empty or different keeps TON checkout closed: no invoice is issued and public health reports ton: false.

@@ -560,7 +560,7 @@ export class ConfigService {
     const providers = [
       {
         id: 'freellm',
-        name: 'FreeLLMAPI Gateway (One Key)',
+        name: 'Your model gateway',
         cat: 'llm' as const,
         key: freellmKey,
         source: (freellmConfigured ? 'localStorage' : 'none') as 'env' | 'localStorage' | 'server' | 'none',
@@ -588,7 +588,7 @@ export class ConfigService {
       { id: 'firecrawl', name: 'Firecrawl Scraper', cat: 'scraping' as const, ...this.getKey('luminara_firecrawl_key', 'FIRECRAWL_API_KEY', 'VITE_FIRECRAWL_API_KEY', 'firecrawl') },
       { id: 'patchright', name: 'Browser Automation Scraper', cat: 'scraping' as const, ...this.getKey('luminara_patchright_url', 'PATCHRIGHT_URL', 'VITE_PATCHRIGHT_URL') },
       { id: 'local_serp', name: 'Local Google SERP Scraper', cat: 'search' as const, ...this.getKey('luminara_local_serp_url', 'LOCAL_SERP_URL', 'VITE_LOCAL_SERP_URL') },
-      { id: 'tinker', name: 'Tinker Runtime', cat: 'runtime' as const, ...this.getKey('luminara_tinker_key', 'TINKER_API_KEY', 'VITE_TINKER_API_KEY') },
+      { id: 'tinker', name: 'Tool runtime', cat: 'runtime' as const, ...this.getKey('luminara_tinker_key', 'TINKER_API_KEY', 'VITE_TINKER_API_KEY') },
     ];
 
     const statuses: ProviderStatus[] = providers.map(p => ({
@@ -751,7 +751,7 @@ export class ConfigService {
       const latencyMs = Date.now() - start;
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        return { success: true, message: `Patchright active (${data.version || 'v1.50.0'})`, latencyMs };
+        return { success: true, message: `Local crawler active (${data.version || 'v1.50.0'})`, latencyMs };
       }
       return { success: false, message: `Crawler HTTP ${res.status}`, latencyMs };
     } catch (err: any) {
@@ -1099,12 +1099,12 @@ export class ConfigService {
   /** Direct ping to FreeLLMAPI `/models` (client-side; never Worker-hosted). */
   public async testFreeLlm(): Promise<{ success: boolean; message: string; latencyMs: number }> {
     const key = this.getFreeLlmKey();
-    if (!key) return { success: false, message: 'No FreeLLMAPI unified key found', latencyMs: 0 };
+    if (!key) return { success: false, message: 'No gateway key found', latencyMs: 0 };
     const base = this.getFreeLlmBaseUrl();
     if (!base) {
       return {
         success: false,
-        message: 'No FreeLLMAPI base URL. Hosted web does not call localhost:3001 until you save a non-default URL. Desktop and local dev use http://localhost:3001/v1.',
+        message: 'No gateway base URL. Hosted web does not call localhost:3001 until you save a non-default URL. Desktop and local dev use http://localhost:3001/v1.',
         latencyMs: 0,
       };
     }
@@ -1119,14 +1119,14 @@ export class ConfigService {
       clearTimeout(timer);
       const latencyMs = Date.now() - start;
       if (res.ok) {
-        return { success: true, message: `Connected to FreeLLMAPI at ${base}`, latencyMs };
+        return { success: true, message: `Connected to your gateway at ${base}`, latencyMs };
       }
-      return { success: false, message: `FreeLLMAPI error HTTP ${res.status}`, latencyMs };
+      return { success: false, message: `Gateway error HTTP ${res.status}`, latencyMs };
     } catch (e: any) {
       const latencyMs = Date.now() - start;
       const msg = e?.name === 'AbortError'
-        ? 'Timed out. Is FreeLLMAPI running (default http://localhost:3001)?'
-        : toUserFacingText(e, 'Network error. Start FreeLLMAPI locally, then retry.');
+        ? 'Timed out. Is the gateway running (default http://localhost:3001)?'
+        : toUserFacingText(e, 'Network error. Start the gateway locally, then retry.');
       return { success: false, message: msg, latencyMs };
     }
   }

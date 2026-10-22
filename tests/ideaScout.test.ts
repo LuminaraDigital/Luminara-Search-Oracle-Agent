@@ -23,6 +23,8 @@ import {
 import { resolveContinuumIdeaId, takeContinuumLink, continuumEventForViewChange } from '../services/ideaScout/continuum';
 import { claimIdeaCardSlot, completeIdeaSketch, fetchCompetitorSnapshots, handleIdeaScoutRoute, nichePulseReply } from '../worker/ideaScout';
 import { handleTelegramUpdate } from '../worker/telegramBot';
+import { readFreeUsed, spendDailyQuota } from '../worker/quotaMiddleware';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import type { Env } from '../worker/env';
 
 function memoryKv() {
@@ -52,6 +54,7 @@ function envWithDb(store?: Map<string, string>, skipMigrations?: string[]): Env 
     ASSETS: {} as Env['ASSETS'],
     DB: createSqliteD1(skipMigrations ? { skipMigrations } : {}),
     LUMINARA_KV: mem.kv as unknown as KVNamespace,
+    DAILY_QUOTA: memoryDailyQuotaNamespace(),
     FREE_DAILY_LIMIT: '10',
     REQUIRE_TG_AUTH: 'true',
     WEBAPP_URL: 'https://luminarasuite.com',
@@ -134,6 +137,18 @@ describe('idea scout card schema', () => {
     expect(JSON.stringify(card)).not.toMatch(/\d+(?:\.\d+)?\s*%/);
   });
 
+  it('clips a long idea on a word boundary', () => {
+    const idea = `${'Buyers ask an assistant about sourcing '.repeat(8)}tail`;
+    const card = buildIdeaScoutCard({ idea, niche: null, snapshots: [] });
+    const clipped = card.contentBets[0].hypothesis.match(/problem \("([^"]*)"\)/)?.[1] || '';
+    const clean = idea.replace(/\s+/g, ' ').trim();
+    const body = clipped.slice(0, -1);
+    expect(clipped.endsWith('…')).toBe(true);
+    expect(clean.startsWith(body)).toBe(true);
+    expect(clean[body.length]).toBe(' ');
+    expect(body.endsWith('sourc')).toBe(false);
+  });
+
   it('rejects SERP percentages, score keys, and measured badges', () => {
     const card = baseCard() as unknown as Record<string, unknown>;
     expect(validateIdeaScoutCard({ ...card, serpShare: '42%' }).code).toBe('PERCENT_NOT_ACCEPTED');
@@ -213,13 +228,16 @@ describe('idea scout hostname guards', () => {
     expect(parseIdeaScoutRequest({ idea: 'short', competitorUrls: ['http://localhost'] }).code).toBe('BAD_IDEA');
     const empty = gateIdeaScoutSubmit({ idea: '', competitorUrls: [], pulseOptIn: false }, { loading: false, authenticated: false });
     expect(empty.ok).toBe(false);
-    if (!empty.ok) expect(empty.error).toContain('Describe the idea');
+    if (!empty.ok) expect(empty.error).toBe('The idea field is empty. Write what you want to offer before you build a card.');
+    const blank = gateIdeaScoutSubmit({ idea: '   ', competitorUrls: [], pulseOptIn: false }, { loading: false, authenticated: true });
+    expect(blank.ok).toBe(false);
+    if (!blank.ok) expect(blank.code).toBe('BAD_IDEA');
     const guest = gateIdeaScoutSubmit(
       { idea: 'A clinic booking tool for after-hours questions.', competitorUrls: [], pulseOptIn: false },
       { loading: false, authenticated: false },
     );
     expect(guest.ok).toBe(false);
-    if (!guest.ok) expect(guest.error).toContain('Sign in with Telegram');
+    if (!guest.ok) expect(guest.error).toBe('Sign in to build an idea card. A free account saves the card and includes 2 hosted cards a day.');
     const ready = gateIdeaScoutSubmit(
       { idea: 'A clinic booking tool for after-hours questions.', competitorUrls: [], pulseOptIn: false },
       { loading: false, authenticated: true },
@@ -469,6 +487,7 @@ describe('idea scout routes', () => {
     expect(unmigratedBody.code).toBe('MIGRATION_REQUIRED');
     expect(sketched).toBe(false);
     expect([...store.keys()].some((key) => key.startsWith('quota:'))).toBe(false);
+    expect(await readFreeUsed(missing, '4242', 10)).toBe(0);
 
     const env = envWithDb(store);
     const prepare = env.DB!.prepare.bind(env.DB);
@@ -501,9 +520,8 @@ describe('idea scout routes', () => {
     const failedBody = await failed.json() as { code?: string };
     expect(failedBody.code).toBe('STORE_FAILED');
     expect(modelCalls).toBe(1);
-    const quotaKey = [...store.keys()].find((key) => key.startsWith('quota:'));
-    expect(quotaKey).toBeTruthy();
-    expect(store.get(quotaKey!)).toBe('1');
+    expect([...store.keys()].some((key) => key.startsWith('quota:'))).toBe(false);
+    expect(await readFreeUsed(env, '4242', 10)).toBe(1);
     const used = await env.DB!.prepare('SELECT used FROM idea_scout_daily').first<{ used: number }>();
     expect(used).toBeNull();
 
@@ -513,15 +531,14 @@ describe('idea scout routes', () => {
     expect(recovered.status).toBe(200);
     const card = await recovered.json() as { ideaCardsRemaining: number };
     expect(card.ideaCardsRemaining).toBe(1);
-    expect(store.get(quotaKey!)).toBe('2');
+    expect(await readFreeUsed(env, '4242', 10)).toBe(2);
   });
 
   it('rejects a hosted create at the daily meter before fetch or model', async () => {
     const store = new Map<string, string>();
     const env = envWithDb(store);
     env.FREE_DAILY_LIMIT = '1';
-    const day = new Date().toISOString().slice(0, 10);
-    store.set(`quota:4242:${day}`, '1');
+    expect((await spendDailyQuota(env, '4242', 1)).ok).toBe(true);
     const fetchMock = vi.fn(async () => {
       throw new Error('should not fetch');
     });
@@ -543,7 +560,7 @@ describe('idea scout routes', () => {
     expect(body.code).toBe('HOSTED_QUOTA');
     expect(sketched).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(store.get(`quota:4242:${day}`)).toBe('1');
+    expect(await readFreeUsed(env, '4242', 1)).toBe(1);
   });
 
   it('does not refund the hosted meter when the idea slot claim loses', async () => {
@@ -590,8 +607,7 @@ describe('idea scout routes', () => {
     expect(body.code).toBe('IDEA_DAILY_CAP');
     expect(sketched).toBe(true);
     // The hosted meter keys on the wall clock, not the injected idea-slot clock.
-    const meterDay = new Date().toISOString().slice(0, 10);
-    expect(store.get(`quota:4242:${meterDay}`)).toBe('1');
+    expect(await readFreeUsed(env, '4242', 5)).toBe(1);
     const rows = await env.DB!.prepare('SELECT COUNT(*) AS n FROM idea_scouts').first<{ n: number }>();
     expect(Number(rows?.n)).toBe(0);
   });

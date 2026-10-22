@@ -1,6 +1,14 @@
 /** Shared marketing page meta (browser + Worker). No DOM APIs. */
 
+import { listPriceSummary } from '../../components/paywall/planCopy';
+import { PAID_PLAN_PRICES } from '../../components/paywall/planPrices';
+import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../legal/consumerTerms';
+import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
+import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage';
 import { buildFaqPageJsonLd } from './marketingFaqContent';
+import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
+
+const HOME_META = `${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE} No invented scores.`;
 
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
 export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/og-image.png`;
@@ -12,13 +20,15 @@ export interface MarketingShellMeta {
   jsonLd: Record<string, unknown>;
   /** Plain HTML fragment for noscript / non-JS crawlers (already trusted static copy). */
   crawlerBody: string;
+  /** Set on unbounded per-domain pages so they are not indexed and not folded into another URL. */
+  robots?: 'noindex, nofollow';
 }
 
 const ORG_NODE = {
   '@type': 'Organization',
   '@id': `${MARKETING_ORIGIN}/#organization`,
   name: 'Luminara Digital',
-  url: 'https://luminaradigital.io',
+  url: COMPANY_SITE_URL,
   logo: `${MARKETING_ORIGIN}/icon-512.png`,
   sameAs: [
     'https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent',
@@ -34,18 +44,10 @@ const SOFTWARE_NODE = {
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web, Windows',
   url: MARKETING_ORIGIN,
-  description:
-    'Audits whether AI search recommends your brand across Google, AI Overviews, ChatGPT and Perplexity, then ranks what to fix first.',
+  description: HOME_META,
   publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
-  offers: {
-    '@type': 'AggregateOffer',
-    lowPrice: '49',
-    highPrice: '149',
-    priceCurrency: 'USD',
-    offerCount: 3,
-    url: `${MARKETING_ORIGIN}/pricing`,
-  },
 };
+// No Offer price here. The page sells Telegram Stars, which are not an ISO 4217 currency, and card checkout is off.
 
 const WEBSITE_NODE = {
   '@type': 'WebSite',
@@ -81,24 +83,29 @@ function graph(
   return { '@context': 'https://schema.org', '@graph': nodes };
 }
 
+/** Slash list of the Stars amounts checkout charges. Not a monthly USD price. */
+const soldStarsAmounts = [PAID_PLAN_PRICES.starter, PAID_PLAN_PRICES.growth, PAID_PLAN_PRICES.agency]
+  .map((plan) => plan.starsLabel.replace(/ Stars$/, ''))
+  .join(' / ');
+
 export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/': {
     path: '/',
-    title: 'Luminara Suite | AI visibility audit and action plan',
-    description:
-      'Find out whether AI search recommends your business. Audit Google, AI Overviews, ChatGPT and Perplexity, then get a prioritised action plan. No invented scores.',
+    title: 'AI visibility audit | Luminara Suite',
+    description: HOME_META,
     jsonLd: graph(
       '/',
       'Luminara Suite',
-      'AI visibility audits across Google, AI Overviews, ChatGPT and Perplexity with a prioritised action plan.',
+      HOME_META,
       true,
       [buildFaqPageJsonLd()],
     ),
     crawlerBody: `
 <section>
   <h1>Be the answer AI gives.</h1>
-  <p>Customers now ask ChatGPT, Perplexity, Google and AI Overviews who to trust. Luminara Suite checks whether those answers name your business, then gives you the one fix to ship next.</p>
-  <p>Start with a free live crawl check of your site: no card, no signup. Create a free account to run the full audit. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
+  <p>${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE}</p>
+  <p>Illustrative example, not a real agency and not a measurement: an independent agency, checked for a suburb question.</p>
+  <p>Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
     <li><a href="/methodology">Methodology</a></li>
@@ -111,14 +118,14 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     <li><a href="/privacy">Privacy</a></li>
     <li><a href="/terms">Terms</a></li>
   </ul>
-  <p>Produced by <a href="https://luminaradigital.io">Luminara Digital</a>.</p>
+  <p>Produced by <a href="${COMPANY_SERVICES_URL}">Luminara Digital</a>.</p>
 </section>`,
   },
   '/methodology': {
     path: '/methodology',
     title: 'Methodology | Luminara Suite',
     description:
-      'How Luminara labels Measured, Estimated, and Not measured across Google, AI Overviews, ChatGPT and Perplexity. Sample versus Live explained.',
+      `How Luminara labels Measured, Estimated, and Not measured. ${LIVE_ANSWER_CHECKS} Sample versus Live explained.`,
     jsonLd: graph(
       '/methodology',
       'Methodology',
@@ -130,7 +137,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Methodology</h1>
   <p>Measured means live evidence. Estimated is directional only. Not measured means missing data is labeled, never invented.</p>
-  <p>The live crawl check on the landing page reads robots.txt, llms.txt and ai.txt and keeps the four engines Not measured. Instant Audit checks the engines and labels each row Measured, Estimated or Not measured.</p>
+  <p>The live crawl check on the landing page reads robots.txt, llms.txt and ai.txt. ${LIVE_ANSWER_CHECKS}</p>
   <p><a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
 </section>`,
   },
@@ -155,7 +162,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/how-it-works',
     title: 'How it works | Luminara Suite',
     description:
-      'How Luminara Suite audits SEO, AI answers, schema gaps and competitors, then ranks the highest-impact fixes.',
+      'How an audit checks a site. Competitor scan, impact ranking, and saved progress need sign-in.',
     jsonLd: graph('/how-it-works', 'How it works', 'Audit modules and workflow.'),
     crawlerBody: `
 <section>
@@ -163,9 +170,9 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p>Luminara Suite runs checks across search and AI answers, then returns a ranked list of fixes in plain English.</p>
   <ul>
     <li>Site crawl for titles, meta and technical blockers</li>
-    <li>AI visibility across ChatGPT, Perplexity and AI Overviews</li>
-    <li>Schema mapping and competitor comparison</li>
-    <li>Impact-ranked action list</li>
+    <li>${LIVE_ANSWER_CHECKS}</li>
+    <li>Schema mapping. Competitor comparison needs a signed-in business profile</li>
+    <li>Impact ranking and saved progress need sign-in. Guests see Not measured</li>
   </ul>
   <p><a href="/docs/what-is-aeo.html">What is AEO</a> · <a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
@@ -174,13 +181,13 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/ai',
     title: 'Our AI | Luminara Suite',
     description:
-      'Luminara Suite combines live search grounding with your chosen AI providers (Groq, NIM, Ollama, OpenRouter) for factual audits.',
+      'Live search grounding plus the models you connect in Settings. Findings stay tied to evidence you actually collected.',
     jsonLd: graph('/ai', 'Our AI', 'Search grounding and AI providers.'),
     crawlerBody: `
 <section>
   <h1>Our AI</h1>
   <p>Live search grounding plus the models you choose. Findings stay tied to evidence when data is available; otherwise the product marks them as not measured.</p>
-  <p>Supported providers include Groq, NVIDIA NIM, Ollama, OpenRouter, Firecrawl and Tavily.</p>
+  <p>Connect your own model and search providers in Settings, or use the hosted allowance on a plan.</p>
   <p><a href="/">Home</a> · <a href="/how-it-works">How it works</a></p>
 </section>`,
   },
@@ -188,12 +195,12 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/why',
     title: 'Why Luminara | Luminara Suite',
     description:
-      'Owner-first search and AI visibility audits: plain-English priorities, BYOK or hosted keys, without agency report theater.',
-    jsonLd: graph('/why', 'Why Luminara', 'Why owners choose Luminara Suite.'),
+      'For real estate agencies that need a clear plan for Google and AI answers, without a full consultancy engagement or a new website.',
+    jsonLd: graph('/why', 'Why Luminara', 'Why real estate agencies choose Luminara Suite.'),
     crawlerBody: `
 <section>
   <h1>Why Luminara</h1>
-  <p>Built for owners who need a clear plan for Google and AI answers without buying a full agency engagement.</p>
+  <p>Luminara Suite is for real estate agencies that need a clear plan for Google and AI answers, without buying a full consultancy engagement or rebuilding their website.</p>
   <ul>
     <li>Instant audits with ranked fixes</li>
     <li>Honest AEO signals (not invented scores)</li>
@@ -205,23 +212,36 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/pricing': {
     path: '/pricing',
     title: 'Pricing | Luminara Suite',
-    description:
-      'Free live crawl check and a daily hosted audit allowance. Starter for web audits. Growth adds share links and MCP for Cursor and Claude. Agency adds API access.',
-    jsonLd: graph('/pricing', 'Pricing', 'Plans: Free insight, Starter audits, Growth MCP and share, Agency API.'),
+    description: `${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}`,
+    jsonLd: graph('/pricing', 'Pricing', `${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}`),
     crawlerBody: `
 <section>
   <h1>Pricing</h1>
+  <p>${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}</p>
   <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account.</p>
   <p>Starter: web audits for a small site set. No MCP. No share links.</p>
   <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>
-  <p>Agency: Growth capabilities plus API access and client workspaces.</p>
+  <p>Pro / Agency: Growth capabilities plus API access and client workspaces saved in this browser. ${LIVE_ANSWER_CHECKS}</p>
   <p>Telegram Stars billing is available in the Mini App. No invented SEO scores on any plan.</p>
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>
 </section>`,
   },
+  '/labs': {
+    path: '/labs',
+    title: 'Labs | Luminara Suite',
+    description:
+      'Directory of Luminara tools. A tool whose feature flag is off is marked not available yet.',
+    jsonLd: graph('/labs', 'Labs', 'Luminara Suite tool directory.'),
+    crawlerBody: `
+<section>
+  <h1>Labs</h1>
+  <p>Directory of Luminara tools. A tool whose feature flag is off is marked not available yet.</p>
+  <p><a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
+</section>`,
+  },
   '/compare/profound': {
     path: '/compare/profound',
-    title: 'Luminara vs Profound | AI Search Visibility Comparison',
+    title: 'Luminara vs Profound | Luminara Suite',
     description:
       'Compare Luminara Suite and Profound. Evidence-bound citation tracking versus synthetic visibility scores. Prioritized weekly fixes without opaque indexes.',
     jsonLd: graph('/compare/profound', 'Luminara vs Profound', 'Empirical comparison of AI visibility tracking methodology.'),
@@ -237,7 +257,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
       <tr><td>Metric Validity</td><td>Proprietary 0-100 composite scores</td><td>Strictly Measured, Estimated, or Not measured labels</td></tr>
       <tr><td>Search Grounding</td><td>Simulated engine scrapes</td><td>Search-grounded live probes with tamper-evident receipts</td></tr>
       <tr><td>Remediation</td><td>Data dashboards and telemetry</td><td>Exportable llms.txt and JSON-LD schema fix packs</td></tr>
-      <tr><td>Pricing Model</td><td>Enterprise retainers</td><td>Self-serve plans from $49/mo, BYOK, or Telegram Stars</td></tr>
+      <tr><td>Pricing Model</td><td>Enterprise retainers</td><td>30-day Telegram Stars plans (${soldStarsAmounts}), or bring your own keys</td></tr>
     </tbody>
   </table>
   <p><a href="/">Run Instant Audit</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
@@ -245,7 +265,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   },
   '/compare/ahrefs': {
     path: '/compare/ahrefs',
-    title: 'Luminara vs Ahrefs Brand Monitoring | Traditional SEO vs AEO',
+    title: 'Luminara vs Ahrefs | Luminara Suite',
     description:
       'Compare traditional keyword rank tracking with LLM Answer Engine Optimization. Why blue link ranks differ from conversational AI search citations.',
     jsonLd: graph('/compare/ahrefs', 'Luminara vs Ahrefs', 'Comparing traditional SEO search monitoring with LLM citability and answer targets.'),
@@ -258,7 +278,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
       <tr><th>Dimension</th><th>Ahrefs</th><th>Luminara Suite</th></tr>
     </thead>
     <tbody>
-      <tr><td>Search Surface</td><td>Traditional 10 blue links on Google</td><td>AI Overviews, ChatGPT Search, Claude, and Perplexity</td></tr>
+      <tr><td>Search Surface</td><td>Traditional 10 blue links on Google</td><td>Site crawl and live web search on every plan. ${LIVE_ANSWER_CHECKS}</td></tr>
       <tr><td>Measurement Target</td><td>Keyword rankings and backlink graphs</td><td>Entity citability, LLM answer targets, and crawler governance</td></tr>
       <tr><td>Action Guidance</td><td>Backlink acquisition and keyword stuffing</td><td>Structured knowledge graph and machine-readable llms.txt</td></tr>
       <tr><td>Verification</td><td>Third-party crawl estimates</td><td>Cryptographic verification receipts and crawler directives</td></tr>
@@ -269,7 +289,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   },
   '/compare/otterly': {
     path: '/compare/otterly',
-    title: 'Luminara vs Otterly AI | Honest AEO & GEO Audits',
+    title: 'Luminara vs Otterly | Luminara Suite',
     description:
       'Compare Luminara Suite and Otterly AI. Evidence-bound Measured vs Estimated labels, reproducible receipts, and single-action weekly decisions.',
     jsonLd: graph('/compare/otterly', 'Luminara vs Otterly AI', 'Comparative audit of LLM search tracking and generative engine optimization.'),
@@ -293,7 +313,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   },
   '/compare/peec': {
     path: '/compare/peec',
-    title: 'Luminara vs Peec AI | Empirical AI Search Monitoring',
+    title: 'Luminara vs Peec | Luminara Suite',
     description:
       'Luminara Suite versus Peec AI. Contrast synthetic composite scores with strict evidence-bound labeling and verifiable remediation fix packs.',
     jsonLd: graph('/compare/peec', 'Luminara vs Peec AI', 'Comparing synthetic AI visibility scores with verifiable search receipts.'),
@@ -317,12 +337,64 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   },
 };
 
+export const DASHBOARD_TAB_TITLE = 'Dashboard | Luminara Suite';
+
+const TAB_TITLE_MAX = 60;
+const TAB_TITLE_SUFFIX = ' | Luminara Suite';
+
+/** `Topic | Luminara Suite`, with the topic cut so the whole title stays within 60 characters. */
+function brandedTabTitle(topic: string): string {
+  const full = `${topic}${TAB_TITLE_SUFFIX}`;
+  if (full.length <= TAB_TITLE_MAX) return full;
+  const room = TAB_TITLE_MAX - TAB_TITLE_SUFFIX.length - 3;
+  return `${topic.slice(0, Math.max(0, room)).trimEnd()}...${TAB_TITLE_SUFFIX}`;
+}
+
+/** Tab title for Instant Audit. A long host is shortened so the title stays within 60 characters. */
+export function instantAuditTabTitle(target: string | undefined): string {
+  const domain = (target || '').replace(/^https?:\/\//i, '').split(/[/?#]/)[0] || '';
+  return brandedTabTitle(domain ? `Instant Audit: ${domain}` : 'Instant Audit');
+}
+
 /** Normalize pathname to a marketing shell key, or null. */
 export function marketingShellKey(pathname: string): string | null {
   const clean = pathname.replace(/\/+$/, '') || '/';
   if (clean === '/how' || clean === '/infrastructure' || clean === '/modules') return '/how-it-works';
   if (clean === '/intelligence') return '/ai';
   if (clean === '/why-us') return '/why';
+  if (clean === '/lab') return '/labs';
   if (MARKETING_SHELL_BY_PATH[clean]) return clean;
   return null;
+}
+
+/**
+ * Per-domain audit, geo, aeo, and seo URLs. They are not in the sitemap.
+ * noindex, with a self canonical, so a crawler does not treat them as the homepage.
+ */
+export function perDomainShell(pathname: string): MarketingShellMeta | null {
+  const clean = pathname.replace(/\/+$/, '') || '/';
+  const swap = parseUrlSwapRoute(clean);
+  if (!swap?.targetUrl) return null;
+  const title = instantAuditTabTitle(swap.targetUrl);
+  const description = 'Per-domain Instant Audit. This page is not indexed.';
+  return {
+    path: clean,
+    title,
+    description,
+    robots: 'noindex, nofollow',
+    jsonLd: graph(clean, title, description),
+    crawlerBody: `
+<section>
+  <h1>Instant Audit</h1>
+  <p>This per-domain audit page is not indexed.</p>
+  <p><a href="/">Home</a></p>
+</section>`,
+  };
+}
+
+/** Marketing shell, or a per-domain audit shell. Null for app paths the SPA shell serves as-is. */
+export function marketingPageForPath(pathname: string): MarketingShellMeta | null {
+  const key = marketingShellKey(pathname);
+  if (key) return MARKETING_SHELL_BY_PATH[key] ?? null;
+  return perDomainShell(pathname);
 }

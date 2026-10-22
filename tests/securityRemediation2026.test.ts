@@ -107,6 +107,16 @@ describe('fetchPublicUrl', () => {
   });
 });
 
+describe('opaque session store', () => {
+  it('returns null when the session write throws', async () => {
+    const env = makeEnv();
+    env.LUMINARA_KV!.put = async () => {
+      throw new Error('kv put');
+    };
+    expect(await mintOpaqueSession(env, { uid: 'u1', email: 'a@b.co' })).toBeNull();
+  });
+});
+
 describe('CSRF identify (cookie mutations)', () => {
   it('rejects cookie POST without Origin', async () => {
     const store = new Map<string, string>();

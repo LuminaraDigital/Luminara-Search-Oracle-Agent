@@ -4,13 +4,15 @@
  */
 import { safePublicHostname } from '../security/publicHostname';
 
+/** Same empty-field sentence on the homepage probe and Instant Audit. */
+export const EMPTY_SITE_INPUT_MESSAGE =
+  'Enter a website address or domain (for example, yourbrand.com).';
+
 export function validateAuditTargetUrl(raw: string): string | null {
   const trimmed = raw.trim();
-  if (!trimmed) {
-    return 'Please enter a website address or domain (for example, yourbrand.com).';
-  }
+  if (!trimmed) return EMPTY_SITE_INPUT_MESSAGE;
   if (!safePublicHostname(trimmed)) {
-    return 'Enter a public website such as luminaradigital.io. Local hosts, IP addresses, and private suffixes are not audited.';
+    return 'Enter a public website such as luminara.digital. Local hosts, IP addresses, and private suffixes are not audited.';
   }
   return null;
 }

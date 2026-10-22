@@ -80,6 +80,10 @@ export interface Env {
   GROQ_API_KEY_FALLBACK?: string;
   NVIDIA_API_KEY?: string;
   NVIDIA_ORG_ID?: string;
+  /** Free-tier NVIDIA fallback calls per UTC day, all free accounts. Default 200. 0 skips NVIDIA. */
+  NVIDIA_FALLBACK_DAILY_CAP?: string;
+  /** Free-tier NVIDIA fallback calls per UTC day for one account. Default 5. 0 skips NVIDIA. */
+  NVIDIA_FALLBACK_USER_DAILY_CAP?: string;
   OPENROUTER_API_KEY?: string;
   GEMINI_API_KEY?: string;
   OLLAMA_API_KEY?: string;
@@ -121,8 +125,9 @@ export interface Env {
    * "true" turns the community idea feed on (GET /idea-scout/feed, POST /idea-scout/vote,
    * POST /idea-scout/share). Anything else: those three routes serve nothing. The sign-in guard
    * (worker/authMiddleware.ts) runs before the handler on every /idea-scout route, so a guest gets
-   * 401 from the guard and a signed-in caller gets 404 from the handler. Off until the feed
-   * stops returning account ids and has its own tables, limits and moderation (Track SW, SW0a-9).
+   * 401 from the guard and a signed-in caller gets 404 from the handler. The feed lives in D1
+   * (migrations/0033_community_feed.sql). Off until the chat rules and a named moderator exist
+   * (Track SW, SW0a-9 and plan section 14.6).
    */
   COMMUNITY_FEED_ENABLED?: string;
   /**
@@ -177,10 +182,32 @@ export interface Env {
    */
   TRUST_RECEIPTS_ENABLED?: string;
   DOMAIN_VERIFY_ENABLED?: string;
-  /** Secret. Ed25519 private JWK (JSON) that signs Trust Receipts. Generate with `npm run keys:receipt`. */
+  /** Secret. Ed25519 private JWK (JSON) that signs Trust Receipts and Signed Audit Receipts. Generate with `npm run keys:receipt`. */
   RECEIPT_SIGNING_KEY?: string;
   /** JSON array of retired Ed25519 public JWKs still published so old receipts verify. */
   RECEIPT_RETIRED_PUBLIC_KEYS?: string;
+  /**
+   * "true" lets the daily Citation Watch cron record runs.
+   * The built-in probe records not_measured until a product per-prompt adapter is connected.
+   */
+  CITATION_WATCH_LIVE?: string;
+  /** Optional JSON override of per-engine Citation Watch thresholds. A bad field keeps the default. */
+  CITATION_WATCH_THRESHOLDS?: string;
+  /** Daily Signed Audit Receipt cap per account. Unset uses 10. Integer 1 to 1000. The day starts at 00:00 UTC (11:00 in Sydney during AEDT). */
+  AUDIT_RECEIPT_DAILY_QUOTA?: string;
+  /**
+   * "true" allows minting and revoking Signed Audit Receipts. Unset and any other value refuse those writes.
+   * Public verify (GET keys, GET by id, POST verify) stays available. Default "false" in wrangler vars.
+   */
+  AUDIT_RECEIPTS_ENABLED?: string;
+  /**
+   * Secret. HMAC-SHA256 key for the account hash on a Signed Audit Receipt.
+   * Set with `wrangler secret put AUDIT_RECEIPT_ACCOUNT_HMAC_KEY` only. Not a wrangler var.
+   * Minting returns 503 and signs nothing when this is unset. Separate from RECEIPT_SIGNING_KEY.
+   */
+  AUDIT_RECEIPT_ACCOUNT_HMAC_KEY?: string;
+  /** Days since last_checked_at that a verified domain may still be signed. Unset uses 7. Integer 1 to 365. */
+  AUDIT_RECEIPT_DOMAIN_FRESH_DAYS?: string;
   /** DNS-over-HTTPS JSON endpoint for domain verification. Default https://cloudflare-dns.com/dns-query. */
   DOMAIN_VERIFY_DOH_URL?: string;
   /** DataForSEO API login (hosted LLM Mentions / SERP). Pair with DATAFORSEO_PASSWORD. */
@@ -221,6 +248,8 @@ export interface Env {
   AUTH_MESSAGING_LIMITER?: { limit: (opts: { key: string }) => Promise<{ success: boolean }> };
   /** Durable Object namespace for Oracle chat sessions. */
   ORACLE_SESSION?: DurableObjectNamespace;
+  /** Free daily meter. One SQLite object per account per UTC day. */
+  DAILY_QUOTA?: DurableObjectNamespace;
   /** Queue producer for long-running audits. */
   AUDIT_JOBS?: Queue;
   /** Optional Sentry DSN (Worker exceptions). */

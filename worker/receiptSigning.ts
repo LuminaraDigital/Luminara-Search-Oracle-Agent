@@ -57,13 +57,22 @@ export function isReceiptSigningConfigured(env: Pick<Env, 'RECEIPT_SIGNING_KEY'>
   return Boolean(String(env.RECEIPT_SIGNING_KEY || '').trim());
 }
 
-/** Signs canonicalJson(payload). Throws ReceiptSigningUnavailable when no key is configured. */
+/**
+ * Signs prefix + canonicalJson(payload). Trust Receipts pass no prefix.
+ * Signed Audit Receipts pass their domain-separation prefix so the shared key
+ * cannot treat one payload as the other. Throws ReceiptSigningUnavailable when no key is configured.
+ */
 export async function signReceiptPayload(
   env: Pick<Env, 'RECEIPT_SIGNING_KEY'>,
   payload: unknown,
+  prefix = '',
 ): Promise<{ signature: string; kid: string }> {
   const { key, publicJwk } = await loadSigningKey(env);
-  const sig = await crypto.subtle.sign({ name: 'Ed25519' }, key, new TextEncoder().encode(canonicalJson(payload)));
+  const sig = await crypto.subtle.sign(
+    { name: 'Ed25519' },
+    key,
+    new TextEncoder().encode(prefix + canonicalJson(payload)),
+  );
   return { signature: bytesToBase64Url(new Uint8Array(sig)), kid: publicJwk.kid };
 }
 

@@ -28,7 +28,8 @@ const { measured: MEASURED, estimated: ESTIMATED, not_measured: NOT_MEASURED } =
 export const EVIDENCE_LABEL_INSTRUCTION =
   `Evidence labels: ${MEASURED} = fetched from a first-party source in this run, may be stated as fact. ` +
   `${ESTIMATED} = search-sample or heuristic signal, never present it as a verified fact and say "estimated" when citing it. ` +
-  `${NOT_MEASURED} = not collected, never invent a value and write "not measured".`;
+  `${NOT_MEASURED} = not collected, never invent a value and write "not measured". ` +
+  'Never state a rating, review count, or statistic that is not in the evidence above.';
 
 /** Search-derived citation probe: always ESTIMATED when present, NOT_MEASURED otherwise. */
 export function buildEmpiricalPromptSection(summary: EmpiricalCitationSummary | undefined): string {

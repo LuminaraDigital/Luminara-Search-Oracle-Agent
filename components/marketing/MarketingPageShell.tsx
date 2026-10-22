@@ -22,7 +22,6 @@ export interface MarketingClosing {
 }
 
 interface MarketingPageShellProps {
-  brandSub?: string;
   footerStatement?: string;
   children: React.ReactNode;
   /** Wider main for tables / grids */
@@ -55,10 +54,10 @@ export const MarketingPageHeader: React.FC<{
   children?: React.ReactNode;
 }> = ({ eyebrow, title, lede, children }) => (
   <header className="relative mx-auto max-w-4xl text-center">
-    <p className="lx-eyebrow lx-enter-rise lx-d1">{eyebrow}</p>
-    <h1 className="lx-display lx-h2 lx-enter-rise lx-d2 mt-6 [overflow-wrap:anywhere]">{title}</h1>
-    <span aria-hidden className="lx-rule lx-enter-draw lx-d3 mx-auto mt-8" />
-    {lede && <p className="lx-lede lx-enter-rise lx-d3 mx-auto mt-7 max-w-2xl">{lede}</p>}
+    <p className="lx-eyebrow lx-enter-rise lx-d1 lx-fp-text">{eyebrow}</p>
+    <h1 className="lx-display lx-h2 lx-enter-rise lx-d2 mt-6 [overflow-wrap:anywhere] lx-fp-text">{title}</h1>
+    <span aria-hidden className="lx-rule lx-enter-draw lx-d3 mx-auto mt-8 lx-fp-text" />
+    {lede && <p className="lx-lede lx-enter-rise lx-d3 mx-auto mt-7 max-w-2xl lx-fp-text">{lede}</p>}
     {children && (
       <div className="lx-enter-rise lx-d4 mt-9 flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
         {children}
@@ -69,7 +68,6 @@ export const MarketingPageHeader: React.FC<{
 
 /** Shared marketing chrome: starfield backdrop, the one nav, a closing horizon and the one footer. */
 export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
-  brandSub,
   footerStatement,
   children,
   wide = false,
@@ -113,14 +111,15 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
       <MarketingAtmosphere intensity="page" />
       <MarketingNav
         brandLabel="Luminara Suite"
-        brandSub={brandSub}
         onBrandClick={chrome.onHome}
         links={chrome.links}
         primaryCta={chrome.primaryCta}
         secondaryCta={chrome.secondaryCta}
       />
       <main
-        className={`relative z-10 mx-auto px-5 pb-24 pt-32 sm:px-8 sm:pb-32 sm:pt-44 ${wide ? 'max-w-6xl' : 'max-w-5xl'}`}
+        id="main"
+        tabIndex={-1}
+        className={`relative z-10 mx-auto px-5 pb-24 pt-32 sm:px-8 sm:pb-32 sm:pt-44 outline-none ${wide ? 'max-w-6xl' : 'max-w-5xl'}`}
       >
         {children}
       </main>

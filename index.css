@@ -32,6 +32,10 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  /* gray-500 (#6b7280) is 4.34:1 on black. Captions need 4.5:1. */
+  .text-gray-500 { color: #a8a39a; }
+  .text-gray-600 { color: #9a958c; }
 }
 
 @media (pointer: coarse) {
@@ -39,5 +43,30 @@
   a,
   [role='button'] {
     -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* WCAG 2.2 2.5.8. Utilities can still set a larger size. Inline anchors need a box so min-height applies. */
+@layer base {
+  a {
+    display: inline-block;
+    min-width: 24px;
+    min-height: 24px;
+  }
+  button,
+  summary,
+  [role='button'] {
+    min-width: 24px;
+    min-height: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }

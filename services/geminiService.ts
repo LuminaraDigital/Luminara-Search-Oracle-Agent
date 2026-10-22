@@ -6,6 +6,8 @@ import { SYSTEM_INSTRUCTIONS } from "../constants";
 import { vfsRetrievalService } from "./vfs/vfsRetrievalService";
 import { configService } from "./configService";
 import { aiProviderService, safeJsonParse } from "./aiProviderService";
+import { AUDIT_WRITE_UNAVAILABLE, writeHostedAuditReport } from "./audit/hostedAuditWrite";
+import { collectScrapedLinks, restrictReportJsonLdSameAs } from "./audit/scrapedSameAs";
 import { tavilyService } from "./search/tavilyService";
 import { localSerpService } from "./search/localSerpService";
 import { unifiedScraperService } from "./scraping/unifiedScraper";
@@ -88,14 +90,15 @@ import { synthesizeRlmAuditEvidence, type RLMTrajectoryMetadata } from './rlm';
 
 export interface AuditReportResult {
   text: string;
+  answeredBy?: string;
+  answeredByProvider?: 'nvidia';
   sources: Array<{ uri: string; title: string }>;
   empiricalSummary?: EmpiricalCitationSummary;
   remediationPayload?: RemediationPayload;
   unifiedDiff?: string;
   plainEnglishBrief?: string;
   enrichedEntity?: EnrichedEntityIntelligence;
-  /** "Writing check" of the scraped page (grammar/style + readability). Absent when the page had too little text. */
-  writingQuality?: WritingQualityReport;
+  writingQuality?: WritingQualityReport; // Grammar and readability of the scraped page. Absent when the page had too little text.
   /** "Results tracking": measured traffic and AI/search referrals; check `status` before rendering numbers. */
   trafficImpact?: TrafficImpact;
   citationIntegrity?: CitationIntegrityResult;
@@ -855,10 +858,10 @@ Respect these consolidated business memories and historical recommendation outco
       searchGrounding = searchGrounding.slice(0, 3500) + '\n[...search evidence truncated for token budget]';
     }
 
-    const auditMode = dna?.name ? 'Full audit' : 'Quick scout';
+    const auditMode = dna?.name ? 'Full audit' : 'Instant Audit';
     const pastExperienceText = postAuditReflectionService.formatExperienceForPrompt(displayUrl);
     const prompt = `
-${dnaContext || '[MODE: Quick scout - no Business DNA. Keep recommendations general. Label the report Mode: Quick scout.]'}
+${dnaContext || '[MODE: Instant Audit - no Business DNA. Keep recommendations general. Label the report Mode: Instant Audit.]'}
 ${methodology}
 ${pastExperienceText ? `${pastExperienceText}\n` : ''}${wrapUntrustedContent('SCRAPED_PAGE', scrapedContent)}
 ${wrapUntrustedContent('SEARCH_GROUNDING', searchGrounding)}
@@ -901,7 +904,7 @@ Strict Formatting Guidelines:
    ${reportTableHeader('competitorMap')}
    Include the target brand and 3-4 actual competitors found via search. Competitors must be direct commercial rivals in the same region/niche. Exclude review aggregators (Trustpilot, Yelp), medical/reference encyclopedias (WebMD, Wikipedia), and directory platforms.
    Keep the header names in rules 5 to 7 exactly as written, in English. Add no other column and no other table. A column needs an evidence block above that supplies its values.
-8. Under "## 1. One move this week" or "## 3. Fix list", include one practical JSON-LD or schema code block when useful.
+8. Under "## 1. One move this week" or "## 3. Fix list", include one practical JSON-LD or schema code block when useful. Put a URL in sameAs only when that URL is a link in the scraped page. Otherwise omit sameAs. Include a phone, logo, or address only when that exact value is in the scraped page.
 9. Tone: direct, calm, no hype, no "neural core" or fake document IDs. Do not add figures of your own. A number appears only when an evidence block above supplies it.
 10. ${trafficText
   ? 'Measured traffic / AI-referral data is present above. Cite it in "## 2. Plain verdict" as measured, in a sentence. Do not put it in a table: the app shows those figures itself, next to the report.'
@@ -909,30 +912,18 @@ Strict Formatting Guidelines:
 11. ${WIKI_LINK_PROMPT_HINT}
 `;
 
-    const buildReportResult = (modelText: string): AuditReportResult => {
+    const buildReportResult = (modelText: string, answeredBy?: string, answeredByProvider?: 'nvidia'): AuditReportResult => {
       // Only the report's own table columns pass. No evidence block fills any other.
       // The copy each provider path writes to memory goes through the same gate.
-      const text = gateReportText(modelText);
+      const scrapedLinks = collectScrapedLinks(crewEvidence?.scrapedPages, scrapedContent);
+      const text = restrictReportJsonLdSameAs(gateReportText(modelText), scrapedLinks, scrapedContent);
       const schemaMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"@type"[\s\S]*?\})\s*```/);
-      let schemaJsonLd = schemaMatch ? schemaMatch[1].trim() : JSON.stringify({
+      const schemaJsonLd = schemaMatch ? schemaMatch[1].trim() : JSON.stringify({
         "@context": "https://schema.org",
         "@type": "Organization",
         "name": dna?.name || displayUrl,
         "url": websiteUrl
       }, null, 2);
-
-      // Augment schema with sameAs URIs fetched from Wikidata / Wikipedia
-      if (enrichedEntity?.sameAsUrls && enrichedEntity.sameAsUrls.length > 0) {
-        try {
-          const parsed = JSON.parse(schemaJsonLd);
-          if (!parsed.sameAs) {
-            parsed.sameAs = enrichedEntity.sameAsUrls;
-            schemaJsonLd = JSON.stringify(parsed, null, 2);
-          }
-        } catch {
-          // keep original
-        }
-      }
 
       const schemaGate = schemaSafetyGate.validate(schemaJsonLd);
       const trustPack = aeoTrustPackService.build({
@@ -1099,79 +1090,17 @@ Strict Formatting Guidelines:
         sourceGraph,
         enterpriseTrust,
         rlmTrajectory,
+        answeredBy, answeredByProvider,
       };
     };
 
-    let lastError: unknown = null;
-    let attemptedNativeFailover = false;
-
-    // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama with auto-failover
     try {
-      const best = await aiProviderService.getBestAvailableProvider();
-      if (best) {
-        attemptedNativeFailover = true;
-        const result = await aiProviderService.generateWithFailover(prompt, {
-          systemPrompt: ORACLE_SYSTEM_PROMPT,
-          temperature: 0.3,
-        });
-        return buildReportResult(result.text);
-      }
-    } catch (e) {
-      lastError = e;
-      console.warn('Native Trinity generateAuditReport failed, falling back to secondary...', e);
+      const written = await writeHostedAuditReport(prompt, ORACLE_SYSTEM_PROMPT);
+      return buildReportResult(written.text, written.answeredBy, written.answeredByProvider);
+    } catch (error) {
+      console.warn('Hosted audit write failed', error);
+      throw new ProviderUnavailableError(AUDIT_WRITE_UNAVAILABLE);
     }
-
-    // 2. Secondary Gemini fallback
-    const geminiKey = getApiKey();
-    if (geminiKey) {
-      try {
-        const ai = this.getAI();
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-pro-preview',
-          contents: prompt,
-          config: {
-            tools: [{ googleSearch: {} }]
-          }
-        });
-
-        const text = response.text || "No report generated.";
-        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-        if (groundingChunks) {
-          groundingChunks.forEach((chunk: any) => {
-            if (chunk.web) {
-              sources.push({ uri: chunk.web.uri, title: chunk.web.title || chunk.web.uri });
-            }
-          });
-        }
-
-        return buildReportResult(text);
-      } catch (error) {
-        if (!lastError) lastError = error;
-        console.warn("Audit Generation Gemini error:", error);
-      }
-    }
-
-    // 3. Resilient Multi-Provider Fallback (only if step 1 did not already run generateWithFailover)
-    if (!attemptedNativeFailover) {
-      try {
-        const fallbackResult = await aiProviderService.generateWithFailover(prompt, {
-          maxTokens: 4000,
-          temperature: 0.2,
-        });
-        if (fallbackResult && fallbackResult.text && fallbackResult.text.trim()) {
-          return buildReportResult(fallbackResult.text);
-        }
-      } catch (fallbackError) {
-        console.warn('Audit generation aiProviderService fallback error:', fallbackError);
-      }
-    }
-
-    const detail = toUserFacingText(lastError, '');
-    throw new ProviderUnavailableError(
-      detail
-        ? `No native LLM responded. ${detail}`
-        : undefined,
-    );
   }
 
   /**

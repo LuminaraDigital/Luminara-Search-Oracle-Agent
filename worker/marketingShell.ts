@@ -1,11 +1,72 @@
+import { marketingHeroForPath, type MarketingHeroCopy } from '../services/marketing/marketingHeroCopy';
 import {
   DEFAULT_OG_IMAGE,
   MARKETING_ORIGIN,
-  MARKETING_SHELL_BY_PATH,
-  marketingShellKey,
+  marketingPageForPath,
   type MarketingShellMeta,
 } from '../services/marketing/pageMeta';
 import { sha256Hex } from './workerUtils';
+
+/**
+ * Unknown paths are served as this shell with HTTP 404. The old inline skip
+ * script never ran: CSP script-src is 'self' only. The class is in the first
+ * tag, so #boot-splash stays display:none before first paint. The shell CSS
+ * paints a static mark on the empty root so that hide is not a blank flash.
+ */
+function addHtmlClass(html: string, className: string): string {
+  const present = new RegExp(`(?:^|\\s)class="[^"]*\\b${className}\\b`);
+  return html.replace(/<html\b([^>]*)>/i, (full, attrs: string) => {
+    const rest = attrs ?? '';
+    if (present.test(rest)) return full;
+    if (/class="/.test(rest)) return `<html${rest.replace('class="', `class="${className} `)}>`;
+    return `<html class="${className}"${rest}>`;
+  });
+}
+
+export function withSkippedBootSplash(html: string): string {
+  return addHtmlClass(html, 'lx-skip-splash');
+}
+
+function firstPaintBlock(hero: MarketingHeroCopy): string {
+  const layout = hero.layout === 'home' ? 'lx-fp-home' : 'lx-fp-pricing';
+  const titleClass = hero.layout === 'home' ? 'lx-display lx-h1' : 'lx-display lx-h2';
+  const title = hero.layout === 'home'
+    ? `<span class="lx-fp-line">${escapeHtml(hero.titleLead)}</span><span class="lx-fp-line lx-fp-em lx-gold-text">${escapeHtml(hero.titleEm)}</span>`
+    : `${escapeHtml(hero.titleLead)} <span class="lx-fp-em lx-gold-text">${escapeHtml(hero.titleEm)}</span>`;
+  return `<div id="lx-first-paint" class="${layout}" data-path="${hero.path}"><p class="lx-eyebrow">${escapeHtml(hero.eyebrow)}</p><h1 class="${titleClass}">${title}</h1><span class="lx-rule" aria-hidden="true"></span><p class="lx-lede">${escapeHtml(hero.lede)}</p></div>`;
+}
+
+function injectFirstPaint(html: string, hero: MarketingHeroCopy): string {
+  if (html.includes('id="lx-first-paint"')) return html;
+  const block = firstPaintBlock(hero);
+  if (html.includes('<div id="root">')) return html.replace('<div id="root">', `${block}\n  <div id="root">`);
+  return html.replace(/<\/body>/i, `${block}\n</body>`);
+}
+
+/** Stylesheet links block first paint. Preload them; public/promote-css.js applies them. */
+export function deferRenderBlockingCss(html: string): string {
+  return html.replace(/<link\b[^>]*>/gi, (tag) => {
+    if (!/\brel="stylesheet"/i.test(tag)) return tag;
+    const href = tag.match(/\bhref="([^"]+\.css)"/i);
+    if (!href || /fonts\.googleapis\.com/i.test(href[1])) return tag;
+    const cross = /\bcrossorigin\b/i.test(tag) ? ' crossorigin' : '';
+    return `<link rel="preload" as="style" href="${href[1]}" data-defer-css${cross}><noscript><link rel="stylesheet" href="${href[1]}"${cross}></noscript>`;
+  });
+}
+
+/**
+ * Meta plus, on /, /pricing, and /methodology, a visible hero so the lede paints before JS.
+ * shortcut: /real-estate-ready is not a route, so it gets no hero.
+ */
+export function applyMarketingDocument(html: string, page: MarketingShellMeta): string {
+  let out = injectMarketingMeta(html, page);
+  const hero = marketingHeroForPath(page.path);
+  if (!hero) return out;
+  out = addHtmlClass(withSkippedBootSplash(out), 'lx-fp-live');
+  out = injectFirstPaint(out, hero);
+  out = deferRenderBlockingCss(out);
+  return out.replace(/<img\b[^>]*\bsrc="\/boot-mark\.webp"[^>]*>/i, '');
+}
 
 export function escapeHtml(value: string): string {
   return value
@@ -106,6 +167,18 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
     );
   }
 
+  if (page.robots) {
+    const robots = escapeHtml(page.robots);
+    if (/<meta\s+name="robots"/i.test(out)) {
+      out = out.replace(
+        /<meta\s+name="robots"\s+content="[^"]*"\s*>/i,
+        `<meta name="robots" content="${robots}">`,
+      );
+    } else {
+      out = out.replace(/<\/head>/i, `  <meta name="robots" content="${robots}">\n</head>`);
+    }
+  }
+
   const crawlerBlock = `<noscript id="luminara-crawler-body">${page.crawlerBody.trim()}</noscript>`;
   if (/id="luminara-crawler-body"/i.test(out)) {
     out = out.replace(/<noscript id="luminara-crawler-body">[\s\S]*?<\/noscript>/i, crawlerBlock);
@@ -121,15 +194,12 @@ export async function maybeServeMarketingHtml(
   assets: Fetcher,
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  const key = marketingShellKey(url.pathname);
-  if (!key) return null;
+  const page = marketingPageForPath(url.pathname);
+  if (!page) return null;
   // Only rewrite document navigations; leave asset requests alone.
   const accept = request.headers.get('accept') || '';
   if (request.method !== 'GET' && request.method !== 'HEAD') return null;
   if (accept && !accept.includes('text/html') && !accept.includes('*/*')) return null;
-
-  const page = MARKETING_SHELL_BY_PATH[key];
-  if (!page) return null;
 
   const shellReq = new Request(new URL('/', url).toString(), {
     method: 'GET',
@@ -140,24 +210,18 @@ export async function maybeServeMarketingHtml(
   const contentType = assetRes.headers.get('content-type') || '';
   if (!contentType.includes('text/html')) return null;
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'public, max-age=300',
+  };
+  if (page.robots) headers['X-Robots-Tag'] = page.robots;
+
   if (request.method === 'HEAD') {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'public, max-age=300',
-      },
-    });
+    return new Response(null, { status: 200, headers });
   }
 
-  const html = injectMarketingMeta(await assetRes.text(), page);
-  return new Response(html, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=300',
-    },
-  });
+  const html = applyMarketingDocument(await assetRes.text(), page);
+  return new Response(html, { status: 200, headers });
 }
 
 const SHARE_TOKEN_PATH = /^\/share\/([a-f0-9]{64})$/i;

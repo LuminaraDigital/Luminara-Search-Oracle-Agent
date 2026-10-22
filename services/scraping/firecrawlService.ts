@@ -6,14 +6,16 @@
 
 import { configService } from '../configService';
 import { clientHasHostedIdentity, providerFetch } from '../apiClient';
-import { hostedAuthBlocked, hostedAuthSkipError, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
+import { hostedAuthBlocked, hostedAuthSkipError, isAuditSiteMismatch, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
 
 function hostedAuthSkipErrorForSession(): string {
   return hostedAuthSkipError(clientHasHostedIdentity());
 }
 
-function noteFirecrawlAuth(status: number | undefined): void {
-  if (status === 401 || status === 403) noteHostedAuthFailure(status, 'firecrawl');
+async function noteFirecrawlAuth(res: Response): Promise<void> {
+  if (res.status !== 401 && res.status !== 403) return;
+  if (await isAuditSiteMismatch(res)) return;
+  noteHostedAuthFailure(res.status, 'firecrawl');
 }
 
 const FIRECRAWL_V1 = 'https://api.firecrawl.dev/v1';
@@ -142,7 +144,7 @@ export class FirecrawlService {
       );
 
       if (!response.ok) {
-        noteFirecrawlAuth(response.status);
+        await noteFirecrawlAuth(response);
         const err = await parseErrorBody(response);
         return { success: false, ...err, httpStatus: response.status };
       }
@@ -204,7 +206,7 @@ export class FirecrawlService {
       );
 
       if (!response.ok) {
-        noteFirecrawlAuth(response.status);
+        await noteFirecrawlAuth(response);
         const err = await parseErrorBody(response);
         return { success: false, links: [], ...err, httpStatus: response.status };
       }
@@ -285,7 +287,7 @@ export class FirecrawlService {
       );
 
       if (!response.ok) {
-        noteFirecrawlAuth(response.status);
+        await noteFirecrawlAuth(response);
         const err = await parseErrorBody(response);
         return { success: false, pages: [], ...err, httpStatus: response.status };
       }
@@ -335,7 +337,7 @@ export class FirecrawlService {
       );
 
       if (!response.ok) {
-        noteFirecrawlAuth(response.status);
+        await noteFirecrawlAuth(response);
         const err = await parseErrorBody(response);
         return { success: false, pages: [], ...err, httpStatus: response.status };
       }

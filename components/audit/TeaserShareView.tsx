@@ -63,7 +63,7 @@ export const TeaserShareView: React.FC<{ onOpenApp?: () => void }> = ({ onOpenAp
           Open Mini App
         </a>
       </header>
-      <main className="max-w-2xl mx-auto px-5 py-10">
+      <main id="main" tabIndex={-1} className="max-w-2xl mx-auto px-5 py-10 outline-none">
         {loading && <VerificationCardSkeleton title="Loading teaser..." />}
         {!loading && error && (
           <p className="text-sm text-gray-300" role="alert">

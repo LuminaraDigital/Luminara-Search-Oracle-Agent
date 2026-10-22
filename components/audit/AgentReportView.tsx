@@ -62,25 +62,25 @@ export const AgentReportView: React.FC = () => {
 
   if (error) {
     return (
-      <div role="alert" className="max-w-xl mx-auto px-4 py-16 text-center text-gray-300">
+      <main id="main" tabIndex={-1} role="alert" className="max-w-xl mx-auto px-4 py-16 text-center text-gray-300 outline-none">
         <h1 className="text-xl font-semibold text-white mb-2">
           {needsSignIn ? 'Sign in required' : 'Report unavailable'}
         </h1>
         <p className="text-sm">{error}</p>
-      </div>
+      </main>
     );
   }
 
   if (!html) {
     return (
-      <div className="max-w-5xl mx-auto px-4 py-8">
+      <main id="main" tabIndex={-1} className="max-w-5xl mx-auto px-4 py-8 outline-none">
         <AuditReportSkeleton message="Loading report…" />
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white animate-in fade-in duration-200">
+    <main id="main" tabIndex={-1} className="min-h-screen bg-white animate-in fade-in duration-200 outline-none">
       <div className="border-b border-gray-200 px-4 py-2 text-xs text-gray-500 flex justify-between">
         <span>{title}</span>
         <span>Luminara</span>
@@ -91,7 +91,7 @@ export const AgentReportView: React.FC = () => {
         srcDoc={html}
         className="w-full min-h-[calc(100vh-40px)] border-0 bg-white"
       />
-    </div>
+    </main>
   );
 };
 

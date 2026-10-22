@@ -29,6 +29,7 @@ import {
   shouldInvokeResearchKeywords,
   type SessionTurn,
 } from './oracleInteractionGuard';
+import { guardPasteReadyCopy, HEALTH_CLAIM_WARNING, withHealthClaimRule } from '../services/audit/healthClaimGuard';
 import {
   ClaimLedger,
   buildRouterState,
@@ -662,7 +663,7 @@ export async function handleOracleChatSse(
       const oracleSkill = await loadAgentSkill(env, ORACLE_CHAT_SKILL_SLUG, {
         fallbackPrompt: bundledOraclePrompt,
       });
-      let systemPrompt = oracleSkill?.promptBody || bundledOraclePrompt;
+      let systemPrompt = withHealthClaimRule(oracleSkill?.promptBody || bundledOraclePrompt);
       try {
         const { ragContextForOracle } = await import('./memoryRag');
         const memoryBlock = await ragContextForOracle(env, billingId(user), message);
@@ -737,6 +738,12 @@ export async function handleOracleChatSse(
       }
 
       const monitor = monitorOracleOutput(fullText, hadToolEvidence);
+      const guarded = guardPasteReadyCopy(fullText);
+      if (guarded.changed) {
+        // Tokens already sent keep the original phrases. The warning follows them, and history stores the stripped copy.
+        await write('token', { text: `\n\n${HEALTH_CLAIM_WARNING}` });
+        fullText = guarded.text;
+      }
       if (!monitor.ok) {
         await write('monitor', {
           ok: false,

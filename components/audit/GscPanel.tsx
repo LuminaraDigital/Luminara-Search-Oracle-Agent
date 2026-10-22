@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { gscAnalyticsService, type GscSummary } from '../../services/mcp/gscAnalyticsService';
+import { labsVisible } from '../../services/ui/labsAccess';
 import { GscEmptyState } from './psiGscEmptyStates';
 
 type Props = {
@@ -9,10 +10,7 @@ type Props = {
 function labsSimulateEnabled(): boolean {
   if (typeof localStorage === 'undefined') return false;
   // Labs quarantine: developer Tools flag AND GSC simulate opt-in.
-  return (
-    localStorage.getItem('luminara_advanced_ui') === '1' &&
-    localStorage.getItem('luminara_labs_gsc_simulate') === '1'
-  );
+  return labsVisible() && localStorage.getItem('luminara_labs_gsc_simulate') === '1';
 }
 
 export const GscPanel: React.FC<Props> = ({ domain }) => {

@@ -57,8 +57,8 @@ export async function desktopLatestJson(env: DesktopDownloadEnv): Promise<Respon
       fileName: manifest?.fileName || 'Luminara-Suite-Setup.exe',
       githubLatest: githubLatestReleaseUrl(env),
       note: hasR2
-        ? 'Served from Cloudflare R2 via /desktop/windows'
-        : 'R2 mirror empty or unbound; /desktop/windows redirects to GitHub Releases',
+        ? 'Official download is ready at /desktop/windows'
+        : 'The download link opens when you use /desktop/windows',
     },
     {
       headers: {

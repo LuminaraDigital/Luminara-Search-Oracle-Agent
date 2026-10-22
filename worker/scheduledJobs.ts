@@ -16,7 +16,8 @@ export type ScheduledJobName =
   | 'payment_support_sweep'
   | 'weekly_decision_digest'
   | 'rsi_skill_curator'
-  | 'rsi_posting_reflection';
+  | 'rsi_posting_reflection'
+  | 'citation_watch';
 
 export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'sentinel',
@@ -28,6 +29,7 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'weekly_decision_digest',
   'rsi_skill_curator',
   'rsi_posting_reflection',
+  'citation_watch',
 ];
 
 /**
@@ -35,7 +37,8 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
  * Trust Network domain re-check (each verified domain is re-checked every 7 days), and the
  * Stars charge sweep (settles charges a webhook left undecided and retries refunds), and the TON
  * pending-order sweep (re-checks unpaid orders inside their 48 hours), the payment support
- * sweep, the weekly decision digest, and the RSI jobs.
+ * sweep, the weekly decision digest, the RSI jobs, and Citation Watch.
+ * Citation Watch writes runs only when CITATION_WATCH_LIVE is "true".
  * The RSI jobs are owned by this expression so the account does not gain a cron trigger.
  * scheduled() starts them only when the fire falls on Monday UTC.
  */
@@ -54,6 +57,7 @@ const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
     'weekly_decision_digest',
     'rsi_skill_curator',
     'rsi_posting_reflection',
+    'citation_watch',
   ],
 };
 

@@ -8,6 +8,7 @@
 
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
+import { guardPasteReadyCopy } from '../../audit/healthClaimGuard';
 
 export class RemediationArchitectAgent {
   public readonly name = 'Remediation Architect';
@@ -85,7 +86,10 @@ export class RemediationArchitectAgent {
       confidenceScore: 0.95,
     });
 
-    return patches;
+    return patches.map((patch) => ({
+      ...patch,
+      proposedSnippet: guardPasteReadyCopy(patch.proposedSnippet).text,
+    }));
   }
 }
 

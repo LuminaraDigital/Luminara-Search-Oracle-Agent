@@ -1,10 +1,10 @@
 /**
  * SW0a-11, client side: a reply the Worker's fallback model wrote is labelled in the chat, and
- * no other screen receives one.
+ * Instant Audit keeps the same reply.
  *
  * The marker travels: response headers -> GroqProvider -> StreamChunk -> streamQuery ->
  * the reply reducer (services/chat/streamedReply.ts) -> Message.fallback -> the MessageList line.
- * Only a caller that passes `allowFallback` gets a fallback reply at all; the chat is that caller.
+ * Hosted Groq calls keep a Workers AI reply and its marker. The chat shows the line.
  */
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -13,13 +13,12 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GroqProvider, aiProviderService } from '../services/aiProviderService';
 import { configService } from '../services/configService';
-import { geminiService, ProviderUnavailableError } from '../services/geminiService';
+import { geminiService } from '../services/geminiService';
 import { tavilyService } from '../services/search/tavilyService';
 import { agentMatrixService } from '../services/harness/agentMatrixService';
 import {
   FALLBACK_ANSWER_CUT_OFF_NOTE,
   FALLBACK_ANSWER_LABEL,
-  FallbackAnswerNotAcceptedError,
   fallbackAnswerLine,
   readFallbackAnswer,
 } from '../services/llm/fallbackAnswer';
@@ -38,7 +37,7 @@ import {
 import MessageList from '../components/MessageList';
 import { OracleMode, type Message, type StreamChunk } from '../types';
 
-const MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 const FALLBACK_TEXT = 'Text only the fallback model wrote';
 const FALLBACK_HEADERS = {
   'x-provider-fallback': 'workers-ai',
@@ -347,17 +346,13 @@ describe('with a hosted Groq call the fallback answered', () => {
   });
 
   describe('GroqProvider', () => {
-    it('generateText: throws a typed error unless the caller asked for fallback replies', async () => {
+    it('generateText: keeps the text and the marker when the caller did not opt in', async () => {
       globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply());
 
-      const error = await provider.generateText('Ping').catch(e => e);
+      const result = await provider.generateText('Ping');
 
-      expect(error).toBeInstanceOf(FallbackAnswerNotAcceptedError);
-      expect(error.code).toBe('FALLBACK_ANSWER_NOT_ACCEPTED');
-      expect(error.fallback).toEqual(MARKER);
-      // The error says which model replied. It does not hand over what that model wrote.
-      expect(error.message).toContain(MODEL);
-      expect(error.message).not.toContain(FALLBACK_TEXT);
+      expect(result.text).toBe(FALLBACK_TEXT);
+      expect(result.fallback).toEqual(MARKER);
     });
 
     it('generateText: with allowFallback, returns the text and the marker together', async () => {
@@ -393,16 +388,12 @@ describe('with a hosted Groq call the fallback answered', () => {
       expect('fallback' in result).toBe(false);
     });
 
-    it('streamText: throws before any text unless the caller asked for fallback replies', async () => {
+    it('streamText: keeps the marker when the caller did not opt in', async () => {
       globalThis.fetch = fetchWhereGroqAnswers(() => sseReply(FALLBACK_HEADERS, ['Fallback ', 'stream']));
 
-      const seen: StreamChunk[] = [];
-      const error = await (async () => {
-        for await (const chunk of provider.streamText('Ping')) seen.push(chunk);
-      })().catch(e => e);
+      const chunks = await collect(provider.streamText('Ping'));
 
-      expect(error).toBeInstanceOf(FallbackAnswerNotAcceptedError);
-      expect(seen).toEqual([]);
+      expect(chunks).toEqual([{ text: 'Fallback ', fallback: MARKER }, { text: 'stream' }]);
     });
 
     it('streamText: with allowFallback, the marker rides on the first chunk, read from the headers', async () => {
@@ -482,40 +473,38 @@ describe('with a hosted Groq call the fallback answered', () => {
     });
   });
 
-  describe('callers that do not opt in treat it as Groq being down', () => {
-    it('a failover caller (geminiService.generateText) gets no fallback text: no engine answered', async () => {
-      globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply());
+describe('hosted callers keep the Workers AI reply', () => {
+  it('geminiService.generateText returns the fallback text', async () => {
+    globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply());
 
-      await expect(geminiService.generateText('Ping')).rejects.toBeInstanceOf(ProviderUnavailableError);
-    });
-
-    it('a failover caller moves on to the next engine, as it does when Groq is down', async () => {
-      configService.setKey('luminara_openrouter_key', 'sk-or-v1-testkey123');
-      globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply(), {
-        'openrouter.ai': () =>
-          jsonReply({}, {
-            choices: [{ index: 0, message: { role: 'assistant', content: 'OpenRouter text' }, finish_reason: 'stop' }],
-            usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
-          }),
-      });
-
-      const text = await geminiService.generateText('Ping');
-
-      expect(text).toBe('OpenRouter text');
-      expect(text).not.toContain(FALLBACK_TEXT);
-    });
-
-    it('a direct caller (the crew "groq" agent) records a failed task, not the fallback text', async () => {
-      globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply());
-
-      const task = await agentMatrixService.dispatchPrompt('Ping', 'groq');
-
-      expect(task.status).toBe('error');
-      expect(task.result).toContain('did not answer');
-      expect(task.result).not.toContain(FALLBACK_TEXT);
-      expect((task.thoughtLog || []).join('\n')).not.toContain('Response received');
-    });
+    await expect(geminiService.generateText('Ping')).resolves.toBe(FALLBACK_TEXT);
   });
+
+  it('a failover caller does not skip a Workers AI answer for the next engine', async () => {
+    configService.setKey('luminara_openrouter_key', 'sk-or-v1-testkey123');
+    globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply(), {
+      'openrouter.ai': () =>
+        jsonReply({}, {
+          choices: [{ index: 0, message: { role: 'assistant', content: 'OpenRouter text' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        }),
+    });
+
+    const text = await geminiService.generateText('Ping');
+
+    expect(text).toBe(FALLBACK_TEXT);
+    expect(text).not.toContain('OpenRouter text');
+  });
+
+  it('a direct caller (the crew "groq" agent) records the fallback text', async () => {
+    globalThis.fetch = fetchWhereGroqAnswers(() => fallbackJsonReply());
+
+    const task = await agentMatrixService.dispatchPrompt('Ping', 'groq');
+
+    expect(task.status).toBe('completed');
+    expect(task.result).toContain(FALLBACK_TEXT);
+  });
+});
 });
 
 describe('the chat view shows who answered', () => {

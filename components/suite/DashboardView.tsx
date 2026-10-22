@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { HONEST_VISIBILITY_PROMISE } from '../../services/marketing/engineCoverage';
 import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
@@ -10,10 +11,10 @@ import { DreamingDashboardCard } from './DreamingDashboardCard';
 import {
   listLocalFindings,
   pickPrimaryFinding,
-  readLastBoardDomain,
   type BoardFinding,
 } from '../../services/audit/findingBoardService';
 import { auditHistoryService } from '../../services/audit/auditHistoryService';
+import { labsVisible } from '../../services/ui/labsAccess';
 
 interface DashboardViewProps {
   onNavigate: (view: AppView) => void;
@@ -39,7 +40,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
   const telemetrySummary = productTelemetry.getSummary();
   const completedSteps = telemetrySummary.completedOnboardingSteps || [];
   const auditCount = auditCountFromStorage();
-  const hasRunAudit = auditCount > 0 || completedSteps.includes('quick_scout') || Boolean(readLastBoardDomain());
+  const hasRunAudit = auditCount > 0;
   const hasProfile = Boolean(dna) || completedSteps.includes('business_dna');
   const hasSavedProject = completedSteps.includes('strategy_saved') || completedSteps.includes('brand_memory') || (signedIn && hasRunAudit);
 
@@ -77,14 +78,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
       view: AppView.BUSINESS_DNA,
       cta: 'Set profile',
     },
-    {
-      id: 'step_save_project',
-      title: '3. Save to a project',
-      desc: 'Sign in to keep strategy and reports on the hosted project, not only in this browser.',
-      done: hasSavedProject,
-      view: AppView.INSTANT_AUDIT,
-      cta: 'Continue in audit',
-    },
+    ...(signedIn
+      ? []
+      : [
+          {
+            id: 'step_save_project',
+            title: '3. Save to a project',
+            desc: 'Sign in to keep strategy and reports on the hosted project, not only in this browser.',
+            done: hasSavedProject,
+            view: AppView.INSTANT_AUDIT,
+            cta: 'Continue in audit',
+          },
+        ]),
   ];
 
   const completedStepsCount = onboardingSteps.filter((s) => s.done).length;
@@ -129,9 +134,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
     },
     {
       id: AppView.BUSINESS_DNA,
-      title: 'My business profile',
+      title: 'Business profile',
       desc: dna
-        ? `Linked to ${dna.name}. Required for a full (not scout) audit.`
+        ? `Linked to ${dna.name}. Required for a full audit.`
         : 'Set this once so every audit reinforces what you sell and who you beat.',
       icon: ICONS.DNA,
       badge: dna ? 'Linked' : 'Set up',
@@ -139,7 +144,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
     {
       id: AppView.IDEA_SCOUT,
       title: 'Idea Scout',
-      desc: 'No domain yet. Turn an idea into a hypothesis card, then hand off to Instant Audit.',
+      desc: 'Turn an idea into a hypothesis card, then hand off to Instant Audit.',
       icon: ICONS.Zap,
       badge: 'Idea',
     },
@@ -210,14 +215,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
             </span>
           </div>
           <span className="text-[var(--color-ink-2)]">
-            {homeDomain ? `ACTIVE TARGET // ${homeDomain}` : '4 ENGINES + CRAWL · WEEKLY DECISION LOOP'}
+            {homeDomain ? `ACTIVE TARGET // ${homeDomain}` : 'SITE AND WEB SEARCH · WEEKLY DECISION LOOP'}
           </span>
         </div>
         <h1 className="font-display font-normal text-[length:var(--text-display-s)] text-[var(--color-ink)] tracking-tight leading-[1.08]">
           Will AI mention your brand?
         </h1>
         <p className="text-base text-[var(--color-ink-2)] mt-3 max-w-2xl leading-relaxed">
-          Audit citation health across Google, AI Overviews, ChatGPT, and Perplexity, then ship your prioritized weekly fix.
+          {HONEST_VISIBILITY_PROMISE}
         </p>
       </div>
 
@@ -255,17 +260,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
                   Guided Onboarding
                 </span>
                 <span className="text-[11px] font-mono px-2 py-0.5 bg-black/60 text-[var(--gold-light)] border border-[var(--color-rule-strong)]">
-                  {completedStepsCount} of 3 completed
+                  {completedStepsCount} of {onboardingSteps.length} completed
                 </span>
               </div>
               <p className="text-xs text-[var(--color-ink-2)] mt-1">
-                Three steps: audit, profile, then save to a project.
+                {signedIn ? 'Two steps: audit, then a business profile.' : 'Three steps: audit, profile, then save to a project.'}
               </p>
             </div>
             <div className="w-full sm:w-36 h-2 bg-black/60 border border-[var(--color-rule)] overflow-hidden shrink-0">
               <div
                 className="h-full bg-[var(--color-accent)] transition-all duration-500"
-                style={{ width: `${(completedStepsCount / 3) * 100}%` }}
+                style={{ width: `${(completedStepsCount / onboardingSteps.length) * 100}%` }}
               />
             </div>
           </div>
@@ -375,7 +380,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
         </div>
       </div>
 
-      {advancedUi && (
+      {advancedUi && labsVisible() && (
         <div className="space-y-4 pt-6 mt-6 border-t border-[var(--color-rule)]">
           <div className="flex items-center gap-3">
             <span className="text-[11px] font-mono uppercase tracking-[0.14em] text-warning-400">Labs & Advanced Intelligence</span>

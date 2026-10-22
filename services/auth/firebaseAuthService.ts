@@ -16,9 +16,22 @@ import {
   type Auth,
   type User,
 } from 'firebase/auth';
-export type { User };
 import { resolveFirebaseWebConfig } from './firebasePublicConfig';
+import {
+  clearPersistedAuthSession,
+  markPersistedAuthSession,
+  readCachedFirebaseIdToken,
+  writeCachedFirebaseIdToken,
+} from './firebaseIdToken';
 import { ensureAppCheck, getAppCheckTokenForBackend, isAppCheckConfigured } from './firebaseAppCheck';
+
+export type { User };
+export { isAppCheckConfigured };
+
+/** True when VITE_FIREBASE_* is present (signup/signin UI can show). */
+export function isFirebaseConfigured(): boolean {
+  return readConfig() !== null;
+}
 
 export interface FirebasePublicConfig {
   apiKey: string;
@@ -31,7 +44,6 @@ export interface FirebasePublicConfig {
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
-let cachedIdToken: string | null = null;
 let cachedUser: User | null = null;
 let initAttempted = false;
 const userListeners = new Set<(user: User | null) => void>();
@@ -45,13 +57,6 @@ function notifyUserListeners(user: User | null): void {
 function readConfig(): FirebasePublicConfig | null {
   return resolveFirebaseWebConfig((import.meta as any).env || {});
 }
-
-/** True when VITE_FIREBASE_* is present (signup/signin UI can show). */
-export function isFirebaseConfigured(): boolean {
-  return readConfig() !== null;
-}
-
-export { isAppCheckConfigured };
 
 function ensureAuth(): Auth {
   if (auth) return auth;
@@ -121,23 +126,25 @@ async function clearSessionCookie(): Promise<void> {
 }
 
 async function refreshCachedToken(user: User | null): Promise<void> {
+  const previous = cachedUser;
   cachedUser = user;
   if (!user) {
-    const hadSession = cachedIdToken !== null || lastSyncedToken !== null;
-    cachedIdToken = null;
+    if (previous) clearPersistedAuthSession();
+    const hadSession = readCachedFirebaseIdToken() !== null || lastSyncedToken !== null;
+    writeCachedFirebaseIdToken(null);
     notifyUserListeners(null);
     if (hadSession) {
       await clearSessionCookie();
     }
     return;
   }
+  markPersistedAuthSession();
   try {
-    cachedIdToken = await user.getIdToken();
-    if (cachedIdToken) {
-      await syncSessionCookie(cachedIdToken);
-    }
+    const nextToken = await user.getIdToken();
+    writeCachedFirebaseIdToken(nextToken);
+    if (nextToken) await syncSessionCookie(nextToken);
   } catch {
-    cachedIdToken = null;
+    writeCachedFirebaseIdToken(null);
   }
   notifyUserListeners(user);
 }
@@ -167,7 +174,7 @@ export function subscribeFirebaseUser(fn: (user: User | null) => void): () => vo
 
 /** Sync snapshot used by Worker proxy headers (refreshed by the auth listener). */
 export function getFirebaseIdTokenSync(): string | null {
-  return cachedIdToken;
+  return readCachedFirebaseIdToken();
 }
 
 export function getFirebaseUserSync(): User | null {
@@ -180,12 +187,12 @@ export async function getFirebaseIdToken(forceRefresh = false): Promise<string |
   const a = ensureAuth();
   const user = a.currentUser;
   if (!user) {
-    cachedIdToken = null;
+    writeCachedFirebaseIdToken(null);
     cachedUser = null;
     return null;
   }
   const token = await user.getIdToken(forceRefresh);
-  cachedIdToken = token;
+  writeCachedFirebaseIdToken(token);
   cachedUser = user;
   return token;
 }
@@ -325,7 +332,9 @@ async function workerCredential(
   };
 }
 
-async function applyAuthPersistence(keepSignedIn = true): Promise<void> {
+export const MIN_PASSWORD_LENGTH = 8;
+
+async function applyAuthPersistence(keepSignedIn = false): Promise<void> {
   try {
     const a = ensureAuth();
     const setPersistenceFn = (firebaseAuthSdk as { setPersistence?: (auth: Auth, p: unknown) => Promise<void> })
@@ -393,7 +402,7 @@ export async function signUpWithEmail(
   password: string,
   opts?: { keepSignedIn?: boolean },
 ): Promise<User> {
-  await applyAuthPersistence(opts?.keepSignedIn ?? true);
+  await applyAuthPersistence(opts?.keepSignedIn ?? false);
   const gated = await workerCredential('/api/auth/sign-up', email, password);
   if (!gated.ok) {
     if (!shouldFallbackToBrowserSdk(gated)) {
@@ -427,7 +436,7 @@ export async function signInWithEmail(
   password: string,
   opts?: { keepSignedIn?: boolean },
 ): Promise<User> {
-  await applyAuthPersistence(opts?.keepSignedIn ?? true);
+  await applyAuthPersistence(opts?.keepSignedIn ?? false);
   const gated = await workerCredential('/api/auth/sign-in', email, password);
   if (!gated.ok) {
     if (!shouldFallbackToBrowserSdk(gated)) {
@@ -439,7 +448,7 @@ export async function signInWithEmail(
 }
 
 export async function signInWithGoogle(opts?: { keepSignedIn?: boolean }): Promise<User> {
-  await applyAuthPersistence(opts?.keepSignedIn ?? true);
+  await applyAuthPersistence(opts?.keepSignedIn ?? false);
   ensureAuth();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -518,6 +527,7 @@ export async function resetPasswordWithEmail(email: string): Promise<{ success: 
 }
 
 export async function signOutFirebase(): Promise<void> {
+  clearPersistedAuthSession();
   if (!isFirebaseConfigured()) return;
   await signOut(ensureAuth());
   await refreshCachedToken(null);
@@ -534,7 +544,7 @@ export function friendlyFirebaseError(err: unknown): string {
     case 'auth/invalid-email':
       return 'Enter a valid email address.';
     case 'auth/weak-password':
-      return 'Use a password with at least 6 characters.';
+      return `Use a password with at least ${MIN_PASSWORD_LENGTH} characters.`;
     case 'auth/user-not-found':
     case 'auth/wrong-password':
     case 'auth/invalid-credential':

@@ -6,6 +6,7 @@ import { ReportDisplay } from './audit/ReportDisplay';
 import { HybridMessageBody } from './genui/HybridMessageBody';
 import { fallbackAnswerLine } from '../services/llm/fallbackAnswer';
 import { gateReportTables, looksLikeAuditReport } from '../services/audit/reportColumnGate';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 
 interface MessageListProps {
   messages: Message[];
@@ -55,7 +56,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
               Ask Luminara
             </h1>
             <p className="text-gray-400 text-lg max-w-2xl mx-auto leading-relaxed px-4">
-              Ask anything about how your business shows up in Google and AI answers. Paste your website address to start with an audit.
+              Ask about your site and live web search. Paste your website address to start. {LIVE_ANSWER_CHECKS}
             </p>
           </div>
           
@@ -75,7 +76,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
             <div className="p-6 rounded-[24px] text-center border border-gold/20 bg-black/50 hover:border-gold/40 transition-all group">
               <div className="text-3xl font-semibold text-gold-light mb-2">DNA</div>
               <div className="text-[10px] text-gold font-semibold tracking-wide mb-3">Business profile</div>
-              <div className="text-[10px] text-gray-400 leading-relaxed">Link your Business DNA once and every audit is personalised to your USP and competitors.</div>
+              <div className="text-[10px] text-gray-400 leading-relaxed">Link your business profile once and every audit is personalised to your offer and competitors.</div>
             </div>
 
             <div className="p-6 rounded-[24px] text-center border border-gold/20 bg-black/50 hover:border-gold/40 transition-all group">

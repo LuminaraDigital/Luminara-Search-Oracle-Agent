@@ -126,7 +126,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
           <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold-light">Your business</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-bold gold-text tracking-tight mb-3">
-          My business profile
+          Business profile
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
           Define your brand mission, USP, and market competitors to personalize all audits and simulations.
@@ -145,7 +145,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               type="text"
               value={input}
               onChange={(e) => handleInputChange(e.target.value)}
-              placeholder="Your website, or a sentence about your business (e.g. 'family dental clinic in Austin')"
+              placeholder="Your website, or a sentence about your business (e.g. 'independent real estate agency in [suburb]')"
               onKeyDown={(e) => e.key === 'Enter' && handleExtractDNA()}
               className={`flex-1 bg-black/60 border rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner ${
                 inlineValidationError ? 'border-danger-500/70 focus:border-danger-400' : 'border-white/15 focus:border-gold'

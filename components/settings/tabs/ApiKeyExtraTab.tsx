@@ -1,5 +1,6 @@
 import React from 'react';
 import { DesktopUpdatesPanel } from '../../desktop/DesktopUpdatesPanel';
+import { labsToggleVisible } from '../../../services/ui/labsAccess';
 
 export interface ApiKeyExtraTabProps {
   tinkerKey: string;
@@ -14,11 +15,11 @@ export const ApiKeyExtraTab: React.FC<ApiKeyExtraTabProps> = ({
     <div className="space-y-4 text-xs">
       <DesktopUpdatesPanel />
 
-      <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
+      {labsToggleVisible() && <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
         <div>
           <span className="text-xs font-semibold text-gray-200 block">Developer Tools & Labs Previews</span>
           <span className="text-[10px] text-gray-400 block mt-0.5">
-            Unlocks Archy Developer Harness, OracleMind SLM Studio, TimesFM Forecaster, Native LLM HUD, and Theme Cycler.
+            Shows extra lab tools in this browser.
           </span>
         </div>
         <input
@@ -30,11 +31,11 @@ export const ApiKeyExtraTab: React.FC<ApiKeyExtraTabProps> = ({
           }}
           className="accent-gold w-4 h-4 shrink-0"
         />
-      </label>
+      </label>}
 
       <div>
         <label htmlFor="tinker-api-key" className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-          Tinker API Key (Agent Tool Runtime & Sandboxes)
+          Tool runtime API key
         </label>
         <input
           id="tinker-api-key"

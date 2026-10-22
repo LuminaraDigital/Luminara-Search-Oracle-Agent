@@ -84,19 +84,15 @@ export function healthChecklist(findings: readonly { id: string }[]): HealthChec
   return { total: HEALTH_CHECKS.length, failed, passed: HEALTH_CHECKS.length - failed };
 }
 
+const UNMEASURED_HEALTH_WHY: Record<HealthScoreBlockReason, string> = {
+  auth: 'live data unavailable after a provider authentication failure',
+  jina: 'page text is a fallback read and cannot support a health score',
+  jina_search: 'page evidence is a fallback read and search evidence is empty or a sample',
+  search: 'search evidence is empty or a sample',
+  no_page: 'no page evidence',
+  none: 'no page or search evidence',
+};
+
 export function unmeasuredHealthMessage(reason: HealthScoreBlockReason): string {
-  switch (reason) {
-    case 'auth':
-      return 'Compliance audit finished. Health score not measured: live data unavailable after a provider authentication failure.';
-    case 'jina':
-      return 'Compliance audit finished. Health score not measured: page text is Jina-only and cannot support a health score.';
-    case 'jina_search':
-      return 'Compliance audit finished. Health score not measured: page evidence is Jina-only and search evidence is empty or a sample.';
-    case 'search':
-      return 'Compliance audit finished. Health score not measured: search evidence is empty or a sample.';
-    case 'no_page':
-      return 'Compliance audit finished. Health score not measured: no page evidence.';
-    default:
-      return 'Compliance audit finished. Health score not measured: no page or search evidence.';
-  }
+  return `Compliance checks not measured: ${UNMEASURED_HEALTH_WHY[reason]}.`;
 }

@@ -5,11 +5,12 @@
  * Proxy mode is on when the Worker serves the app, or when VITE_API_BASE points at it.
  */
 import { getInitDataRaw } from './telegram/tma';
-import { ensureFirebaseIdTokenCached, getFirebaseIdToken, getFirebaseIdTokenSync } from './auth/firebaseAuthService';
+import { loadFirebaseAuth, readCachedFirebaseIdToken } from './auth/firebaseIdToken';
 import { toUserFacingText } from '../utils/userFacingText';
-import { hostedAuthBlocked, hostedAuthCircuitResponse, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
+import { hostedAuthBlocked, hostedAuthCircuitResponse, isAuditSiteMismatch, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
 import { entitlementsFor } from './plans/planEntitlements';
+import { auditRunHeaders } from './audit/auditRunSlot';
 
 export interface ServerHealth {
   ok: boolean;
@@ -28,6 +29,8 @@ export interface ServerHealth {
   requireSubscription?: boolean;
   freeDailyLimit?: number;
   plans: Record<string, { title: string; description: string; stars: number; days: number }>;
+  /** Public health says whether the Worker has a Gemini key. Absent means it does not. */
+  hostedGemini?: boolean;
   /**
    * True only when TON checkout is open: the Worker has a valid receiving address AND the owner
    * has confirmed it is theirs. Absent or false means no TON rail is drawn.
@@ -102,10 +105,7 @@ export function canRelayWithOwnKey(providerId: string): boolean {
 function commitServerHealth(seq: number, h: ServerHealth | null): ServerHealth {
   if (seq !== healthSeq) return healthCache || EMPTY_HEALTH;
   if (h?.ok) {
-    // Public health is deliberately small, so `plans` may be absent; the Mini App account panel
-    // threw at render when it was. Fill in `plans` only. `providers` must stay absent when the
-    // server did not send it: isProviderConfiguredOnServer reads "absent" as "trust health.ok"
-    // and reads an empty object as "nothing is configured", which would switch every hosted key off.
+    // Public health omits `providers`. Absent means hosted engines stay on. An empty object means none.
     healthCache = { ...h, ok: true, plans: h.plans ?? {} };
     healthFailedAt = 0;
     return healthCache;
@@ -160,6 +160,8 @@ export async function loadServerHealth(opts: { force?: boolean } = {}): Promise<
 export function getServerHealthSync(): ServerHealth { return healthCache || EMPTY_HEALTH; }
 
 export function isProviderConfiguredOnServer(id: string): boolean {
+  // Gemini is not a hosted default. Only an explicit flag or the public hostedGemini bit turns it on.
+  if (id === 'gemini') return healthCache?.providers?.gemini === true || healthCache?.hostedGemini === true;
   if (healthCache?.providers && typeof healthCache.providers === 'object') {
     return Boolean(healthCache.providers[id]);
   }
@@ -212,7 +214,7 @@ function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
-  const idToken = getFirebaseIdTokenSync();
+  const idToken = readCachedFirebaseIdToken();
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   return headers;
 }
@@ -222,9 +224,8 @@ async function authHeadersAsync(forceRefresh = false): Promise<Record<string, st
   const headers: Record<string, string> = {};
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
-  const idToken = forceRefresh
-    ? await getFirebaseIdToken(true)
-    : (getFirebaseIdTokenSync() ?? await getFirebaseIdToken(false));
+  const auth = await loadFirebaseAuth();
+  const idToken = forceRefresh ? await auth.getFirebaseIdToken(true) : (readCachedFirebaseIdToken() ?? await auth.getFirebaseIdToken(false));
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   return headers;
 }
@@ -343,18 +344,12 @@ export async function destroySessionCookie(): Promise<boolean> {
   }
 }
 
-/**
- * Sends a provider request either directly (browser holds the key) or through the Worker proxy.
- * `directUrl` is the vendor URL; `path` is the vendor path relative to the provider base.
- */
 export interface ProviderFetchOptions {
   /** The user's own key. When set and a Worker is reachable, the request is relayed with this key. */
   userKey?: string;
   /**
-   * Ask the Worker for a fallback answer if the hosted provider cannot answer. The Worker runs
-   * its fallback model only for a request that says so. Set it only where the reply's fallback
-   * marker is shown with the text. It is sent on a hosted-key relay call and nowhere else: a
-   * direct vendor call or a call with the user's own key never gets a fallback answer.
+   * The chat still sends this. Hosted Groq chat falls back without it. A direct vendor call
+   * or a call with the user's own key never gets a fallback answer.
    */
   acceptFallback?: boolean;
 }
@@ -370,8 +365,6 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     return fetch(directUrl, init);
   }
 
-  // Run-scoped: after the first hosted 401/403, skip later /api/providers calls.
-  // workerFetchWithAuthRetry still refreshes a Firebase token once on the first 401.
   if (hostedAuthBlocked()) {
     return hostedAuthCircuitResponse(clientHasHostedIdentity());
   }
@@ -381,6 +374,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   headers.delete('x-api-key');
   headers.delete('nv-organization-id');
   headers.delete(ACCEPT_FALLBACK_HEADER);
+  for (const [name, value] of Object.entries(auditRunHeaders())) headers.set(name, value);
   let res: Response;
   if (relayOwnKey) {
     headers.set('x-provider-key', opts.userKey as string);
@@ -391,7 +385,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   }
   updateQuotaFromHeaders(res.headers);
   noteScoutReceipt(res.headers.get('x-scout-receipt'));
-  if (res.status === 401 || res.status === 403) {
+  if ((res.status === 401 || res.status === 403) && !(await isAuditSiteMismatch(res))) {
     noteHostedAuthFailure(res.status, providerId);
   }
   if (res.status === 402) {
@@ -484,7 +478,7 @@ export function clientHasHostedIdentity(): boolean {
     /* Telegram bridge absent */
   }
   try {
-    if (getFirebaseIdTokenSync()) return true;
+    if (readCachedFirebaseIdToken()) return true;
   } catch {
     /* Firebase absent */
   }
@@ -694,7 +688,7 @@ export async function ensureHostedProviderReady(): Promise<HostedProviderReady> 
     getServerHealthSync().ok === true;
   await Promise.all([
     healthFresh ? Promise.resolve(getServerHealthSync()) : loadServerHealth({ force: true }),
-    ensureFirebaseIdTokenCached(),
+    loadFirebaseAuth().then((auth) => auth.ensureFirebaseIdTokenCached()),
   ]);
   if (getServerHealthSync().ok === true) hostedReadyAt = Date.now();
   return readHostedProviderReady();
@@ -725,10 +719,6 @@ export function updateQuotaFromHeaders(headers: Headers): void {
   }
 }
 
-/**
- * App-level sign-in state for account-only endpoints. `null` means auth has not resolved yet,
- * so calls still go out (a returning user's first request must not be dropped).
- */
 let accountSignedIn: boolean | null = null;
 
 export function setAccountSignedIn(value: boolean | null): void {
@@ -740,11 +730,14 @@ export function accountCallsAllowed(): boolean {
   return accountSignedIn !== false;
 }
 
+export function accountKnownSignedIn(): boolean {
+  return accountSignedIn === true;
+}
+
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
+  if (accountSignedIn !== true) return null;
   const base = apiBase();
   if (!base) return null;
-  // The Worker answers 401 to guests; skip the request instead of logging a failure.
-  if (!accountCallsAllowed()) return null;
   try {
     const r = await workerFetchWithAuthRetry(`${base}/api/auth/quota`);
     if (!r.ok) return null;

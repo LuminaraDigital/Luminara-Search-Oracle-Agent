@@ -11,6 +11,7 @@ import type { AnswerDepth } from './answerDepth';
 import type { LlmCrawlerCheck, LlmCrawlerReport } from './llmCrawlerReadiness';
 import { hostedAuthRecoveryHint, type HostedScoutRail } from './hostedScoutRail';
 import { teaserFailureCodes, teaserFailureLine, type TeaserFailureCode } from './teaserFailureCodes';
+import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
 
 export type EvidenceBadgeStatus = 'measured' | 'estimated' | 'not_measured';
 
@@ -41,6 +42,8 @@ export interface GuestScoutSummary {
   degraded: boolean;
   /** Set when the run cannot show live scores. Wording follows hostedRail. */
   banner?: string;
+  /** Numbers this run measured. The claim guard reads them. The card does not. */
+  measured?: MeasuredClaimFacts;
 }
 
 export interface GuestScoutSummaryInput {
@@ -92,7 +95,7 @@ function hostLabel(targetUrl: string): string {
 /** Degraded Instant Audit banner. Signed-in and Telegram rails never ask the user to sign in. */
 export function liveDataUnavailableCopy(hostedRail: HostedScoutRail): string {
   if (hostedRail === 'byok_or_signin') {
-    return 'Live data unavailable. Sample / not measured. Add your own keys in Settings, or sign in.';
+    return 'Live data unavailable. Sample / not measured.';
   }
   return `Live search or page fetch did not run. ${hostedAuthRecoveryHint({ rail: hostedRail })}`;
 }
@@ -239,7 +242,9 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     : 'No web results were collected.';
   const evidenceUsed = evidenceEmpty
     ? 'No page text and no search rows were collected in this run.'
-    : `Pages with text or schema: ${input.scrapedPageCount}. ${searchUsed}`;
+    : input.measurementStatus === 'not_measured' && input.serpCount === 0
+      ? 'No web results were collected. This run did not measure the site.'
+      : `Pages with text or schema: ${input.scrapedPageCount}. ${searchUsed}`;
 
   const crawlerChecks = input.llmCrawler?.checks || [];
   const failureCodes = teaserFailureCodes({
@@ -279,6 +284,15 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     verdictMarkdown = verdict;
   }
 
+  const measured: MeasuredClaimFacts = {
+    healthScore: input.healthScore,
+    citationRatePercent: input.citationRatePercent,
+    shareOfVoice: input.shareOfVoiceScore,
+    tavilyResultCount: input.serpCount,
+  };
+  verdict = guardUnmeasuredClaims(verdict, measured);
+  verdictMarkdown = guardUnmeasuredClaims(verdictMarkdown, measured);
+
   return {
     domain,
     verdict,
@@ -293,5 +307,6 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     evidenceEmpty,
     degraded,
     banner: degraded ? liveDataUnavailableCopy(input.hostedRail) : undefined,
+    measured,
   };
 }

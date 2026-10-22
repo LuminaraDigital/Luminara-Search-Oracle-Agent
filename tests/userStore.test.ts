@@ -36,6 +36,9 @@ describe('upsertAppUser', () => {
     const created = first.created_at;
 
     await new Promise((r) => setTimeout(r, 5));
+    await upsertAppUser({ LUMINARA_KV: kv }, { id: 'fb:abc', source: 'firebase', email: 'a@b.co', name: 'A' });
+    expect(JSON.parse(store.get('user:fb:abc')!).last_seen_at).toBe(created);
+
     await upsertAppUser({ LUMINARA_KV: kv }, { id: 'fb:abc', source: 'firebase', email: 'c@d.co', name: 'C' });
     const second = JSON.parse(store.get('user:fb:abc')!) as StoredUser;
     expect(second.email).toBe('c@d.co');
@@ -53,6 +56,42 @@ describe('upsertAppUser', () => {
     expect(all).toHaveLength(2);
     expect(all[0].id).toBe('tg:2');
     expect(all[1].id).toBe('fb:1');
+  });
+
+  it('skips the D1 write when the profile was touched this hour', async () => {
+    let runs = 0;
+    const row = {
+      id: 'fb:abc',
+      account_id: 'acct',
+      created_at: 10,
+      last_seen_at: Date.now(),
+      email: 'a@b.co',
+      display_name: 'A',
+    };
+    const db = {
+      prepare() {
+        return {
+          bind() {
+            return {
+              first: async () => row,
+              run: async () => {
+                runs += 1;
+                return { meta: {} };
+              },
+            };
+          },
+        };
+      },
+    };
+    const stored = await upsertAppUser({ DB: db } as Parameters<typeof upsertAppUser>[0], {
+      id: 'fb:abc',
+      source: 'firebase',
+      email: 'a@b.co',
+      name: 'A',
+    });
+    expect(runs).toBe(0);
+    expect(stored.account_id).toBe('acct');
+    expect(stored.last_seen_at).toBe(row.last_seen_at);
   });
 });
 

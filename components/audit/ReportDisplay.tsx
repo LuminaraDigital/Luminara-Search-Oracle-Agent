@@ -26,6 +26,7 @@ import { EnrichedEntityIntelligence } from '../../services/enrichment/publicApis
 import type { WritingQualityReport } from '../../services/audit/writingQualityService';
 import type { TrafficImpact } from '../../services/analytics/trafficInsightsService';
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
+import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
 import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
@@ -43,6 +44,7 @@ import { gateReportText, readTableAt } from '../../services/audit/reportColumnGa
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import type { RLMTrajectoryMetadata } from '../../services/rlm/types';
 import { RlmTrajectoryViewer } from '../rlm/RlmTrajectoryViewer';
+import { HEALTH_SITE_NOTE, siteLooksHealthRelated } from '../../services/audit/healthClaimGuard';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
 
@@ -72,6 +74,8 @@ interface ReportDisplayProps {
   suppressLiveMetrics?: boolean;
   /** Instant Audit rail. When omitted, a live session still avoids a sign-in CTA. */
   hostedRail?: HostedScoutRail;
+  /** True when the fetched page, domain, or saved DNA already looks health-related. */
+  healthSite?: boolean;
 }
 
 /** "mentioned in N of M sampled queries", or null when the summary holds no such count. */
@@ -105,7 +109,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   hideAgencyActions = false,
   suppressLiveMetrics = false,
   hostedRail,
+  healthSite = false,
 }) => {
+  const showHealthNote = healthSite || siteLooksHealthRelated({ domain: targetDomain, title: dnaName });
   const hideLiveNumbers = suppressLiveMetrics || empiricalSummary?.measurementStatus === 'not_measured';
   // Every reader of this screen gets the gated text: the cards, the share link, the PDF and the dossier.
   // A stored or shared report was gated when it was made only if it was made after the gate existed.
@@ -304,7 +310,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     return sections;
   }, [markdownText]);
 
-  const validSources = sources?.filter(s => s && /^https?:\/\//i.test(s.uri ?? ''));
+  const validSources = visibleGroundingSources(sources);
   const sourceCount = validSources?.length || 0;
   const hasEvidence = Boolean(
     (!hideLiveNumbers && empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,
@@ -353,6 +359,12 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
             </p>
           )}
         </div>
+      )}
+
+      {showHealthNote && (
+        <p className="mb-6 text-sm leading-relaxed text-gray-300 max-w-2xl" role="note">
+          {HEALTH_SITE_NOTE}
+        </p>
       )}
 
       {!reportUnlocked && !hideAgencyActions && (

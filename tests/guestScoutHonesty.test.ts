@@ -10,7 +10,8 @@ import type { AuditFinding } from '../services/agentCore/types';
 import { renderMarkdown } from '../utils/markdown';
 import * as markdownUtils from '../utils/markdown';
 import { hostedProviderKeyDecision } from '../services/apiClient';
-import { hostedAuthRecoveryHint, hostedScoutPreRunCopy, resolveHostedScoutRail } from '../services/audit/hostedScoutRail';
+import { guestNeedsFullAuditSignIn, hostedAuthRecoveryHint, hostedScoutPreRunCopy, requestGuestFullAuditSignIn, resolveHostedScoutRail } from '../services/audit/hostedScoutRail';
+import { draftPersistenceService, DRAFT_KEYS } from '../services/state/draftPersistenceService';
 import { hostedAuthSkipError } from '../services/resilience/hostedAuthCircuit';
 import { instantAuditPersistHint } from '../components/audit/InstantAuditView';
 import { ReportDisplay } from '../components/audit/ReportDisplay';
@@ -214,8 +215,8 @@ describe('guest scout summary honesty', () => {
     expect(summary.evidenceEmpty).toBe(true);
     expect(summary.degraded).toBe(true);
     expect(summary.failureCodes).toEqual(['page_fetch_empty', 'search_empty', 'provider_failed']);
-    expect(summary.banner).toMatch(/Live data unavailable/);
-    expect(summary.banner).toMatch(/sign in/i);
+    expect(summary.banner).toBe('Live data unavailable. Sample / not measured.');
+    expect(summary.banner?.toLowerCase()).not.toContain('sign in');
     expect(summary.badges.every((badge) => badge.status === 'not_measured' && !badge.value)).toBe(true);
     const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
     expect(html).toContain('Live data unavailable');
@@ -250,8 +251,9 @@ describe('guest scout summary honesty', () => {
     }
   });
 
-  it('keeps a sign-in step on the guest degraded banner', () => {
-    expect(liveDataUnavailableCopy('byok_or_signin')).toMatch(/sign in/i);
+  it('states the measurement fact on the guest degraded banner', () => {
+    expect(liveDataUnavailableCopy('byok_or_signin')).toBe('Live data unavailable. Sample / not measured.');
+    expect(liveDataUnavailableCopy('byok_or_signin').toLowerCase()).not.toContain('sign in');
     expect(hostedAuthRecoveryHint({ rail: 'byok_or_signin' })).toMatch(/sign in/i);
     expect(hostedAuthRecoveryHint({ signedIn: false })).toMatch(/sign in/i);
   });
@@ -398,8 +400,9 @@ describe('hosted scout rail', () => {
     expect(resolveHostedScoutRail({ inTelegram: true, hasInitData: true, signedIn: false })).toBe('tma_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: true })).toBe('signed_in_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: false })).toBe('byok_or_signin');
-    expect(hostedScoutPreRunCopy('byok_or_signin').toLowerCase()).toContain('anonymous');
-    expect(hostedScoutPreRunCopy('byok_or_signin')).toMatch(/sign in/i);
+    expect(hostedScoutPreRunCopy('byok_or_signin')).toBe(
+      'Sign in for a full audit, or add your own AI keys in Settings.',
+    );
     expect(hostedScoutPreRunCopy('tma_hosted').toLowerCase()).toContain('no api key');
     expect(hostedScoutPreRunCopy('signed_in_hosted').toLowerCase()).not.toContain('sign in');
     expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: false })).toMatch(/off for this session/i);
@@ -433,6 +436,9 @@ describe('signed-in degraded copy', () => {
   it('does not tell a signed-in user to sign in when strategy was not saved', () => {
     expect(instantAuditPersistHint(true, 'unsaved').toLowerCase()).not.toContain('sign in');
     expect(instantAuditPersistHint(true, 'unmeasured').toLowerCase()).not.toContain('sign in');
+    expect(instantAuditPersistHint(true, 'unmeasured', true)).toBe(
+      "This check couldn't finish, it didn't count against your free checks. Retry, or check Settings → provider status.",
+    );
     expect(instantAuditPersistHint(false, 'unsaved')).toMatch(/Sign in to save a project/);
     expect(instantAuditPersistHint(false, 'unmeasured')).toMatch(/Sign in to save a project/);
   });
@@ -636,5 +642,32 @@ describe('LLM crawler readiness', () => {
     expect(getAnswerDepth()).toBe('thorough');
     setAnswerDepth('quick');
     expect(getAnswerDepth()).toBe('quick');
+  });
+});
+
+describe('guest full audit sign-in', () => {
+  it('keeps the domain and opens sign-in when the guest has no own keys', () => {
+    const storage: Record<string, string> = {};
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage[key] ?? null,
+      setItem: (key: string, value: string) => { storage[key] = value; },
+      removeItem: (key: string) => { delete storage[key]; },
+    });
+    const seen: CustomEvent[] = [];
+    vi.stubGlobal('window', {
+      dispatchEvent: (event: Event) => {
+        seen.push(event as CustomEvent);
+        return true;
+      },
+      localStorage: { getItem: (key: string) => storage[key] ?? null },
+    });
+    expect(guestNeedsFullAuditSignIn('byok_or_signin')).toBe(true);
+    expect(guestNeedsFullAuditSignIn('signed_in_hosted')).toBe(false);
+    requestGuestFullAuditSignIn('clinic.example');
+    expect(seen[0]?.detail).toEqual({ mode: 'signin' });
+    expect(draftPersistenceService.getDraft(DRAFT_KEYS.AUDIT_URL)).toBe('clinic.example');
+    storage.luminara_groq_key = 'gsk_test';
+    expect(guestNeedsFullAuditSignIn('byok_or_signin')).toBe(false);
+    vi.unstubAllGlobals();
   });
 });

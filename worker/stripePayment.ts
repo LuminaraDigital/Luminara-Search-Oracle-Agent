@@ -74,13 +74,13 @@ export const STRIPE_PLAN_CONFIG: Record<
   growth: {
     name: 'Luminara Suite - Growth Plan',
     amountCents: 14900,
-    description: '30-day access: IDE connectors, branded share links, 3 seats, weekly re-audits.',
+    description: '30-day access: IDE connectors, share links, and weekly re-audit reminders in Telegram.',
     days: 30,
   },
   agency: {
     name: 'Luminara Suite - Agency Plan',
     amountCents: 34900,
-    description: '30-day access: Research API access, 10 seats, daily re-audits, white-label exports.',
+    description: '30-day access: research API, daily re-audit reminders in Telegram, white-label exports, and client workspaces saved in this browser.',
     days: 30,
   },
 };

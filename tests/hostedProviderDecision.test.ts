@@ -152,6 +152,9 @@ describe('hostedProviderDecisionReason', () => {
       expect(api.isProviderConfiguredOnServer(id)).toBe(true);
       expect(api.canUseHostedProviderKey(id)).toBe(true);
     }
+    expect(api.isProviderConfiguredOnServer('gemini')).toBe(false);
+    expect(api.canUseHostedProviderKey('gemini')).toBe(false);
+    expect(api.hostedProviderDecisionReason('gemini')).toBe('not_configured');
     expect(api.hostedProviderDecisionReason('groq')).toBe('hosted');
   });
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ICONS } from '../constants';
 import { OracleMode } from '../types';
-import { OracleLiveService } from '../services/liveService';
+import { liveVoiceAvailable } from '../services/live/voiceAvailable';
 import { ComposerModelPicker } from './llm/ComposerModelPicker';
 import { draftPersistenceService, DRAFT_KEYS } from '../services/state/draftPersistenceService';
 import { productTelemetry } from '../services/analytics/productTelemetry';
@@ -66,8 +66,8 @@ const InputBar: React.FC<InputBarProps> = ({ onSendMessage, onVoiceToggle, isVoi
         <button
           type="button"
           onClick={onVoiceToggle}
-          disabled={isThinking || !OracleLiveService.isAvailable()}
-          title={OracleLiveService.isAvailable() ? 'Oracle Agent Live Voice' : 'Live Voice needs a Gemini API key in Settings'}
+          disabled={isThinking || !liveVoiceAvailable()}
+          title={liveVoiceAvailable() ? 'Oracle Agent Live Voice' : 'Live Voice needs a Gemini API key in Settings'}
           aria-label={isVoiceActive ? 'Stop voice input' : 'Start live voice'}
           aria-pressed={isVoiceActive}
           className={`p-3.5 rounded-xl transition-all relative z-10 outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent ${

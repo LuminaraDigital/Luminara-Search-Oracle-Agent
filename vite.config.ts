@@ -16,6 +16,21 @@ import wasm from 'vite-plugin-wasm';
 // key are read from non-VITE_ variables in .env (server side only, never bundled).
 
 const SECRET_NAME_RE = /(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|ORG_ID)/i;
+
+// The Forme browser build awaits its WASM at module evaluation. If Vite's shared
+// preload helper lands in that chunk, the entry static-imports it and the app
+// cannot render until the WASM download finishes.
+function vendorChunk(id: string): string | undefined {
+  if (id.includes('vite/preload-helper')) return 'preload-helper';
+  if (id.includes('@formepdf/')) return 'pdf';
+  if (id.includes('/node_modules/react-dom/') || id.includes('/node_modules/react/')) return 'react';
+  if (id.includes('/node_modules/@google/genai/')) return 'genai';
+  if (id.includes('/node_modules/marked/') || id.includes('/node_modules/dompurify/')) return 'markdown';
+  if (id.includes('/node_modules/@tonconnect/')) return 'tonconnect';
+  if (id.includes('/node_modules/firebase/')) return 'firebase';
+  if (id.includes('/node_modules/@telegram-apps/')) return 'telegram';
+  return undefined;
+}
 // Firebase web config (VITE_FIREBASE_API_KEY etc.) is public by design and must reach the browser.
 const PUBLIC_NAME_RE = /^VITE_FIREBASE_/;
 // Gemini keys are blanked by name above; an AIza-shaped value left in the bundle is Firebase's public key.
@@ -131,15 +146,7 @@ export default defineConfig(({ mode }) => {
       },
       rollupOptions: {
         output: {
-          manualChunks: {
-            react: ['react', 'react-dom'],
-            genai: ['@google/genai'],
-            markdown: ['marked', 'dompurify'],
-            pdf: ['@formepdf/core', '@formepdf/react'],
-            tonconnect: ['@tonconnect/ui-react'],
-            firebase: ['firebase/app', 'firebase/auth'],
-            telegram: ['@telegram-apps/sdk-react'],
-          },
+          manualChunks: vendorChunk,
         },
       },
     },

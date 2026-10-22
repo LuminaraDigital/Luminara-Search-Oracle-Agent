@@ -25,7 +25,7 @@ function sanitizeErrorMessage(msg: string, fallback: string): string {
     return 'AI services are currently busy or unavailable. Please try again shortly or configure an API key in Settings.';
   }
   if (/Groq inference error/i.test(msg)) {
-    return 'The hosted Groq service is temporarily unavailable. Please try again in a moment or add your own key in Settings.';
+    return 'The hosted model service is temporarily unavailable. Please try again in a moment or add your own key in Settings.';
   }
   return msg;
 }

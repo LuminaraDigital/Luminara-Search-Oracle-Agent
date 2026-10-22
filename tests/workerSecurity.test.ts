@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
+import { listPriceSummary } from '../components/paywall/planCopy';
+import { STAGING_ROBOTS_TXT } from '../worker/crawlDocuments';
+import { publicPlanCatalogue } from '../worker/telegramBot';
 import {
   HTML_CSP,
   HOSTED_MAX_TOKENS,
@@ -94,6 +97,18 @@ describe('security headers', () => {
     expect(data.providers).toBeUndefined();
     expect(data.tonPricing).toBeUndefined();
     expect(data.jettonPricing).toBeUndefined();
+    expect(data.plans).toEqual(publicPlanCatalogue());
+    const described = Object.values(publicPlanCatalogue()).map((plan) => plan.description).join('\n');
+    expect(described).not.toMatch(/unlimited/i);
+    expect(described).not.toMatch(/team seats/i);
+    expect(described).not.toMatch(/24\/7/);
+    expect(described).not.toMatch(/\bre-audits\b/);
+    expect(described).toContain('re-audit reminders in Telegram');
+    expect(described).toContain('daily drift check');
+    expect(described).toContain('saved in this browser');
+    expect(data.plans.starter.stars).toBe(2500);
+    expect(data.plans.growth.stars).toBe(7500);
+    expect(data.plans.agency.stars).toBe(18000);
   });
 
   it('withSecurityHeaders only applies CSP to text/html', () => {
@@ -322,6 +337,22 @@ describe('error handling', () => {
     expect(body.error).not.toContain('/var/kv');
   });
 
+  it('still answers probe-crawl when the KV rate-limit put throws', async () => {
+    const env = makeEnv({
+      LUMINARA_KV: {
+        get: async () => null,
+        put: async () => {
+          throw new Error('KV put failed');
+        },
+      } as unknown as KVNamespace,
+    });
+    const res = await worker.fetch(req('/api/visibility/probe-crawl'), env, ctx);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string; code?: string };
+    expect(body.code).toBe('MISSING_URL');
+    expect(body.error).not.toContain('KV put');
+  });
+
   it('unknown API routes 404 with security headers', async () => {
     const res = await worker.fetch(req('/api/nope'), makeEnv(), ctx);
     expect(res.status).toBe(404);
@@ -489,6 +520,9 @@ describe('crawl surfaces', () => {
     expect(text).toContain('Luminara Suite');
     expect(text).toContain('/docs/mcp.html');
     expect(text).toContain('/docs/what-is-aeo.html');
+    expect(text).toContain('2,500 Stars');
+    expect(text).toContain(listPriceSummary());
+    expect(text).not.toMatch(/\/mo\b|per month/i);
   });
 
   it('injects pricing meta into the marketing shell HTML', async () => {
@@ -521,6 +555,92 @@ describe('crawl surfaces', () => {
     expect(text).toContain('luminara-crawler-body');
     expect(text).toContain('Growth');
     expect(text).toContain('MCP');
+    expect(text).not.toMatch(/"price"|"lowPrice"|"highPrice"|"priceCurrency"/);
+    expect(res.headers.get('x-robots-tag')).toBeNull();
+  });
+
+  it('gives /labs its own title and canonical on production', async () => {
+    const env = makeEnv({
+      ENVIRONMENT: 'production',
+      ASSETS: {
+        fetch: async () =>
+          new Response(
+            `<!DOCTYPE html><html><head><title>Old</title><link rel="canonical" href="https://www.luminarasuite.com/"></head><body>app</body></html>`,
+            { headers: { 'content-type': 'text/html; charset=utf-8' } },
+          ),
+      } as unknown as Fetcher,
+    });
+    const res = await worker.fetch(
+      new Request('https://www.luminarasuite.com/labs', { headers: { accept: 'text/html', 'cf-connecting-ip': '10.8.1.1' } }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-robots-tag')).toBeNull();
+    const text = await res.text();
+    expect(text).toContain('<title>Labs | Luminara Suite</title>');
+    expect(text).toContain('rel="canonical" href="https://www.luminarasuite.com/labs"');
+    expect(text).not.toContain('rel="canonical" href="https://www.luminarasuite.com/"');
+  });
+
+  it('noindexes per-domain /audit pages and points canonical at that page', async () => {
+    const env = makeEnv({
+      ENVIRONMENT: 'production',
+      ASSETS: {
+        fetch: async () =>
+          new Response(
+            `<!DOCTYPE html><html><head><title>Old</title><link rel="canonical" href="https://www.luminarasuite.com/"></head><body>app</body></html>`,
+            { headers: { 'content-type': 'text/html; charset=utf-8' } },
+          ),
+      } as unknown as Fetcher,
+    });
+    const res = await worker.fetch(
+      new Request('https://www.luminarasuite.com/audit/example.com', { headers: { accept: 'text/html', 'cf-connecting-ip': '10.8.1.2' } }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    const text = await res.text();
+    expect(text).toContain('rel="canonical" href="https://www.luminarasuite.com/audit/example.com"');
+    expect(text).toContain('name="robots" content="noindex, nofollow"');
+    expect(text).not.toContain('rel="canonical" href="https://www.luminarasuite.com/"');
+  });
+
+  it('noindexes staging and leaves production crawlable', async () => {
+    const prodRobots = await worker.fetch(
+      new Request('https://www.luminarasuite.com/robots.txt', { headers: { 'cf-connecting-ip': '10.8.1.3' } }),
+      makeEnv({ ENVIRONMENT: 'production' }),
+      ctx,
+    );
+    expect(prodRobots.headers.get('x-robots-tag')).toBeNull();
+    const prodBody = await prodRobots.text();
+    expect(prodBody).toContain('Allow: /pricing');
+    expect(prodBody).not.toBe(STAGING_ROBOTS_TXT);
+
+    const prodPage = await worker.fetch(
+      new Request('https://www.luminarasuite.com/', { headers: { accept: 'text/html', 'cf-connecting-ip': '10.8.1.4' } }),
+      makeEnv({ ENVIRONMENT: 'staging' }),
+      ctx,
+    );
+    expect(prodPage.headers.get('x-robots-tag')).toBeNull();
+
+    const stagingRobots = await worker.fetch(
+      new Request('https://staging.luminarasuite.com/robots.txt', { headers: { 'cf-connecting-ip': '10.8.0.2' } }),
+      makeEnv({ ENVIRONMENT: 'production' }),
+      ctx,
+    );
+    expect(stagingRobots.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect(await stagingRobots.text()).toBe(STAGING_ROBOTS_TXT);
+
+    const stagingPage = await worker.fetch(
+      new Request('https://staging.luminarasuite.com/pricing', {
+        headers: { accept: 'text/html', 'cf-connecting-ip': '10.8.0.3' },
+      }),
+      makeEnv({ ENVIRONMENT: 'staging' }),
+      ctx,
+    );
+    expect(stagingPage.headers.get('x-robots-tag')).toBe('noindex, nofollow');
   });
 
   it('serves extensionless What is AEO from static doc directly without redirect loop', async () => {
@@ -561,6 +681,26 @@ describe('crawl surfaces', () => {
     const text = await res.text();
     expect(text).toContain('id="honesty"');
     expect(text).not.toContain('Luminara Suite | AI search and AEO visibility');
+  });
+
+  it('hides the boot splash on an unknown path and keeps it for real routes', async () => {
+    const shell = `<!DOCTYPE html><html lang="en"><head><style>html.lx-skip-splash #boot-splash { display: none; }</style></head><body><div id="boot-splash">Preparing your workspace</div></body></html>`;
+    const env = makeEnv({
+      ASSETS: {
+        fetch: async () => new Response(shell, { headers: { 'content-type': 'text/html; charset=utf-8' } }),
+      } as unknown as Fetcher,
+    });
+    const unknown = await worker.fetch(req('/some-unknown-page', { headers: { accept: 'text/html' } }), env, ctx);
+    expect(unknown.status).toBe(404);
+    const unknownHtml = await unknown.text();
+    expect(unknownHtml).toContain('<html class="lx-skip-splash" lang="en">');
+    expect(unknownHtml).toContain('html.lx-skip-splash #boot-splash { display: none; }');
+
+    for (const path of ['/dashboard', '/labs', '/audit/example.com', '/']) {
+      const res = await worker.fetch(req(path, { headers: { accept: 'text/html' } }), env, ctx);
+      expect(res.status, path).toBe(200);
+      expect(await res.text(), path).not.toContain('class="lx-skip-splash"');
+    }
   });
 
   it('redirects /how to /how-it-works', async () => {

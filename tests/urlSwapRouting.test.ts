@@ -31,10 +31,10 @@ describe('URL-Swap Route Parser (parseUrlSwapRoute)', () => {
   });
 
   it('parses /aeo/:target with full protocol encoding', () => {
-    const route = parseUrlSwapRoute('/aeo/https%3A%2F%2Fluminaradigital.io');
+    const route = parseUrlSwapRoute('/aeo/https%3A%2F%2Fluminara.digital');
     expect(route).toEqual({
       view: AppView.INSTANT_AUDIT,
-      targetUrl: 'https://luminaradigital.io',
+      targetUrl: 'https://luminara.digital',
       focus: 'AEO',
     });
   });

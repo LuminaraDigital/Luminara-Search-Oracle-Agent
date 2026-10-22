@@ -247,6 +247,53 @@ describe('WDL findings API', () => {
     expect(body.findings).toHaveLength(1);
     expect(body.skipped).toBe(1);
   });
+
+  it('bulk upsert survives when another account already used the same client id', async () => {
+    const env = makeEnv();
+    const post = (userId: number) =>
+      handleFindingsRoute(
+        new Request('https://luminarasuite.com/api/findings/bulk', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-telegram-init-data': signInitData({
+              auth_date: String(Math.floor(Date.now() / 1000)),
+              user: JSON.stringify({ id: userId, first_name: 'Owner' }),
+            }),
+          },
+          body: JSON.stringify({
+            domain: 'movida.com.au',
+            findings: [
+              {
+                id: 'finding-schema-org',
+                category: 'schema',
+                severity: 'critical',
+                title: 'Missing Organization / Brand Entity Schema',
+                description: 'No Organization markup',
+                stableKey: findingStableKey(
+                  'movida.com.au',
+                  'schema',
+                  'Missing Organization / Brand Entity Schema',
+                ),
+              },
+            ],
+          }),
+        }),
+        env,
+        '/findings/bulk',
+      );
+
+    const first = await post(42);
+    const second = await post(99);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const a = (await first.json()) as { findings: Array<{ id: string }> };
+    const b = (await second.json()) as { findings: Array<{ id: string }> };
+    expect(a.findings).toHaveLength(1);
+    expect(b.findings).toHaveLength(1);
+    expect(a.findings[0].id).not.toBe('finding-schema-org');
+    expect(a.findings[0].id).not.toBe(b.findings[0].id);
+  });
 });
 
 describe('finding board merge', () => {

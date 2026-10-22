@@ -1,5 +1,4 @@
 import { AgentId, AgentRunnerConfig, AgentDispatchTask } from '../../types';
-import { geminiService } from '../geminiService';
 import { contextGraphService } from '../contextGraph/contextGraphService';
 import { aiProviderService } from '../aiProviderService';
 
@@ -437,7 +436,7 @@ class AgentMatrixService {
       if (agent.id === 'oracle' || !agent.id) {
         // Run against live Gemini
         task.thoughtLog?.push('[Oracle Agent] Grounding request with live search & neural weights...');
-        resultText = await geminiService.generateText(
+        resultText = await (await import('../geminiService')).geminiService.generateText(
           `[Agent Harness Execution: ${mode} mode]\nUser Prompt:\n${prompt}${graphSnippet}`
         );
       } else if (agent.id === 'groq' || agent.id === 'nim' || agent.id === 'ollama') {
@@ -451,7 +450,7 @@ class AgentMatrixService {
           resultText = genRes.text;
           task.thoughtLog?.push(`[${agent.name}] Response received in ${genRes.latencyMs}ms. Burned ${genRes.tokenUsage.total} tokens.`);
         } else {
-          resultText = await geminiService.generateText(prompt);
+          resultText = await (await import('../geminiService')).geminiService.generateText(prompt);
         }
       } else if (agent.id === 'claude' || agent.id === 'openrouter' || agent.id === 'codex') {
         const demo =

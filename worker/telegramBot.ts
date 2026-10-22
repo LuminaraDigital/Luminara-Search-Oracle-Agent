@@ -4,8 +4,10 @@
  */
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
+import { QUOTA_CAPACITY_ERROR, spendDailyQuota } from './quotaMiddleware';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
+import { guardPasteReadyCopy } from '../services/audit/healthClaimGuard';
 import { businessDnaPromptBlock, chatRoute, chatRouteReply, filterChatReply, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
 import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
@@ -46,7 +48,6 @@ import {
   type StarsRefundOutcome,
   type StarsSweepSummary,
 } from './starsCharges';
-
 const PREMIUM_ENGINE_LABELS: Record<string, string> = {
   nim: 'NVIDIA NIM',
   ollama: 'Sovereign Ollama',
@@ -78,7 +79,7 @@ export type PlanMeta = {
 export const PLANS: Record<string, PlanMeta> = {
   starter: {
     title: 'Luminara Starter',
-    description: 'Unlock premium hosted AI engines. Unlimited AI audits for up to 2 sites, monthly re-check, Brand Memory. 30 days.',
+    description: 'Premium hosted AI engines for up to 2 sites, monthly re-audit reminders in Telegram, and Brand Memory. 30 days.',
     stars: 2500,
     days: 30,
     domainLimit: 2,
@@ -91,7 +92,7 @@ export const PLANS: Record<string, PlanMeta> = {
   },
   growth: {
     title: 'Luminara Growth',
-    description: '10 sites, weekly re-audits, competitor watchlist, citation deltas, 24/7 Drift Sentinel. 30 days.',
+    description: '10 sites, weekly re-audit reminders in Telegram, competitor watchlist, citation deltas, and a daily drift check. 30 days.',
     stars: 7500,
     days: 30,
     domainLimit: 10,
@@ -104,7 +105,7 @@ export const PLANS: Record<string, PlanMeta> = {
   },
   agency: {
     title: 'Luminara Pro / Agency',
-    description: '25+ domains, audit memory timeline, competitor citation deltas, 10 client workspaces, white-label PDF, API access, daily Sentinel. 30 days.',
+    description: '25 sites, audit memory, competitor citation deltas, 10 client workspaces saved in this browser, white-label PDF, API access, and a daily drift check. 30 days.',
     stars: 18000,
     days: 30,
     domainLimit: 25,
@@ -116,8 +117,8 @@ export const PLANS: Record<string, PlanMeta> = {
     mcpAccess: true,
   },
   single_audit: {
-    title: 'Single Autonomous Audit Run',
-    description: 'On-demand 7-agent autonomous search audit. Self-reported audit, not independently checked.',
+    title: '24-hour pass',
+    description: '24-hour pass: premium hosted engines and hosted calls past the free daily cap, for one site. ChatGPT, Perplexity and AI Overviews stay Not measured (Agency or your DataForSEO login). Self-reported audit, not independently checked.',
     stars: 25,
     days: 1,
     domainLimit: 1,
@@ -129,8 +130,8 @@ export const PLANS: Record<string, PlanMeta> = {
     mcpAccess: false,
   },
   multi_agent_crawl: {
-    title: 'Deep Multi-Agent Crawl',
-    description: 'On-demand deep crawl and competitor gap intelligence. Self-reported audit, not independently checked.',
+    title: '24-hour pass',
+    description: 'Same 24-hour pass as the 25 Star option: premium hosted engines and calls past the free daily cap, for one site. ChatGPT, Perplexity and AI Overviews stay Not measured (Agency or your DataForSEO login). Self-reported audit, not independently checked.',
     stars: 75,
     days: 1,
     domainLimit: 1,
@@ -469,7 +470,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         text:
           '*Luminara Suite - Privacy Policy & Data Rights*\n\n' +
           'We value your privacy and transparency. Here is how personal data is handled:\n\n' +
-          '• *Controller:* Luminara Digital Agency (Contact: `privacy@luminarasuite.com`)\n' +
+          '• *Controller:* Luminara Digital Pty Ltd (ABN 90 693 125 281). Contact: `privacy@luminarasuite.com`\n' +
           '• *Telegram Data:* We receive your signed Telegram user ID, username, and language to identify your session and meter usage. We never receive or store payment cards or phone numbers.\n' +
           '• *Payments:* Plans bought here are paid in Telegram Stars and processed by Telegram. No credit card information is collected.\n' +
           '• *Audits & Prompts:* Audit domains and queries are processed via configured AI models (Groq, NVIDIA NIM, Gemini, OpenRouter) to deliver search intelligence.\n' +
@@ -791,21 +792,18 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         return;
       }
 
-      const limit = Number(env.FREE_DAILY_LIMIT || 0);
-      if (limit > 0 && env.LUMINARA_KV) {
-        const day = new Date().toISOString().slice(0, 10);
-        const quotaKey = `quota:${accountId}:${day}`;
-        const used = Number((await env.LUMINARA_KV.get(quotaKey)) || 0);
-
-        if (used >= limit) {
+      const limit = Number(env.FREE_DAILY_LIMIT || 3);
+      if (limit > 0) {
+        const spent = await spendDailyQuota(env, accountId, limit);
+        if (!spent.ok) {
+          const atCapacity = spent.code === 'HOSTED_CAPACITY';
           await api(env, 'sendMessage', {
             chat_id: chatId,
-            text:
-              `⚠️ *Daily Free Limit Reached*\n\n` +
-              `You have used your daily allocation of ${limit} free queries. Upgrade with Telegram Stars for unlimited queries, or check back tomorrow.\n\n` +
-              `Use /plan to view subscription options.`,
-            parse_mode: 'Markdown',
-            reply_markup: {
+            text: atCapacity
+              ? QUOTA_CAPACITY_ERROR
+              : `⚠️ *Daily Free Limit Reached*\n\nYou have used your daily allocation of ${limit} free queries. Upgrade with Telegram Stars for unlimited queries, or check back tomorrow.\n\nUse /plan to view subscription options.`,
+            parse_mode: atCapacity ? undefined : 'Markdown',
+            reply_markup: atCapacity ? undefined : {
               inline_keyboard: [[
                 { text: '⭐ Open Paywall in App', web_app: { url: `${env.WEBAPP_URL}?startapp=stars` } },
                 { text: '🔍 Open Luminara Suite', web_app: { url: env.WEBAPP_URL } },
@@ -814,8 +812,6 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           });
           return;
         }
-
-        await env.LUMINARA_KV.put(quotaKey, String(used + 1), { expirationTtl: 2 * 86400 });
       }
     }
 
@@ -868,7 +864,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     if (honest && (honest.claims.length > 0 || honest.planSentences > 0 || honest.billingSentences > 0 || honest.linksRemoved > 0 || honest.secretRequests > 0)) {
       console.warn(`[Telegram Bot] chat reply filtered: ${honest.claims.length} unmeasured claim(s), ${honest.planSentences} plan price sentence(s), ${honest.billingSentences} pay-again or account sentence(s), money note ${honest.moneyNote ? 'added' : 'not added'}, ${honest.linksRemoved} link(s), ${honest.secretRequests} request(s) for a secret`);
     }
-    const aiResponse = honest ? honest.text : null;
+    const aiResponse = honest ? guardPasteReadyCopy(honest.text).text : null;
 
     // Dynamic action keyboard (Hermes-like deep actions)
     const replyKeyboard = targetDomain

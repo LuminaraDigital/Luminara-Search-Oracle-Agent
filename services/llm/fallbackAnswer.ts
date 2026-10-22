@@ -1,14 +1,12 @@
 /**
- * The Worker answers a hosted Groq chat call with its fallback model when Groq itself cannot
- * (see worker/workersAiFallback.ts). It marks such a reply with response headers and, on a JSON
+ * The Worker answers a hosted Groq chat call with NVIDIA or Workers AI when Groq cannot
+ * (see worker/nvidiaChatFallback.ts). It marks such a reply with response headers and, on a JSON
  * reply, an `x_fallback` field. This module reads that marker and words the line the chat shows,
  * so a founder always sees which model wrote what they are reading.
  *
- * A fallback reply is accepted only by a caller that asks for it (`allowFallback`) and carries
- * the marker with the text. Only such a call asks the Worker for a fallback at all (the
- * `x-accept-fallback` request header), so for other callers the Worker does not run its fallback
- * model. `FallbackAnswerNotAcceptedError` is the second guard: if a marked reply reaches a caller
- * that did not ask for one, it is an error and its text is not handed over.
+ * Hosted Groq chat falls back on the server. The client keeps the text and this marker, including
+ * Instant Audit, which does not send `x-accept-fallback`. `FallbackAnswerNotAcceptedError` remains
+ * for a caller that rejects a fallback reply itself.
  */
 import type { FallbackAnswerInfo } from '../../types';
 
@@ -40,6 +38,10 @@ export function readFallbackAnswer(
     clean(fromBody?.model) ||
     (fromBody ? clean((body as { model?: unknown }).model) : '');
   const reason = clean(headers?.get('x-provider-fallback-reason')) || clean(fromBody?.reason);
+  const providerName = clean(headers?.get('x-provider-fallback')) || clean(fromBody?.provider);
+  if (providerName === 'nvidia') {
+    return reason ? { model, provider: 'nvidia', reason } : { model, provider: 'nvidia' };
+  }
   return reason ? { model, reason } : { model };
 }
 
@@ -70,6 +72,7 @@ export class FallbackAnswerNotAcceptedError extends Error {
 export function fallbackAnswerLine(info: FallbackAnswerInfo | null | undefined): string | null {
   if (!info || typeof info !== 'object') return null;
   const model = clean(info.model);
-  const line = model ? `${FALLBACK_ANSWER_LABEL}: ${model}` : FALLBACK_ANSWER_LABEL;
+  const named = info.provider === 'nvidia' ? (model ? `NVIDIA (${model})` : 'NVIDIA') : model;
+  const line = named ? `${FALLBACK_ANSWER_LABEL}: ${named}` : FALLBACK_ANSWER_LABEL;
   return info.truncated === true ? `${line}. ${FALLBACK_ANSWER_CUT_OFF_NOTE}` : line;
 }

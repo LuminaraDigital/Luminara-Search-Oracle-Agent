@@ -1,5 +1,6 @@
 import { GoogleGenAI, Modality, Blob, LiveServerMessage } from '@google/genai';
 import { configService } from './configService';
+import { liveVoiceAvailable } from './live/voiceAvailable';
 const getApiKey = () => configService.getGeminiKey() === 'proxy' ? '' : configService.getGeminiKey();
 
 function decode(base64: string) {
@@ -73,7 +74,7 @@ export class OracleLiveService {
 
   /** Voice mode is Gemini-only. Callers should gate the mic button on this. */
   static isAvailable(): boolean {
-    return Boolean(getApiKey());
+    return liveVoiceAvailable();
   }
 
   /**

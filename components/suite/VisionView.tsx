@@ -1,5 +1,6 @@
 import React from 'react';
 import { ICONS } from '../../constants';
+import { LIVE_ANSWER_CHECKS } from '../../services/marketing/engineCoverage';
 
 export const VisionView: React.FC = () => {
   const steps = [
@@ -9,7 +10,7 @@ export const VisionView: React.FC = () => {
     },
     {
       title: 'Site and answer checks',
-      desc: 'Crawl the site and probe Google, AI Overviews, ChatGPT and Perplexity for how you show up.',
+      desc: `Crawl the site and check live web search. ${LIVE_ANSWER_CHECKS}`,
     },
     {
       title: 'Evidence first',

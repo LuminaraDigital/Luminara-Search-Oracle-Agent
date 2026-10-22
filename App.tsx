@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { OracleMode, Message, AppView, BusinessDNA, LAB_VIEWS } from './types';
 import { setAnswerDepth } from './services/audit/answerDepth';
-import { geminiService, toChatHistory } from './services/geminiService';
+import { toChatHistory } from './services/chat/messages';
 import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
-import { OracleLiveService, LiveVoiceError } from './services/liveService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
@@ -14,20 +13,18 @@ import { holdPendingReferral } from './services/referrals/pendingReferral';
 import { claimStoredReferral } from './services/referrals/referralClient';
 import { resolveHostedScoutRail } from './services/audit/hostedScoutRail';
 import { resolveContinuumIdeaId, continuumEventForViewChange } from './services/ideaScout/continuum';
-import MessageList from './components/MessageList';
-import InputBar from './components/InputBar';
+import { ChatComposer, ChatTranscript } from './components/chat/DeferredChat';
 import Waveform from './components/Waveform';
 import LandingPage from './components/LandingPage';
 import { themingService } from './services/harness/themingService';
 import { agentMatrixService } from './services/harness/agentMatrixService';
 import { reminderService } from './services/harness/reminderService';
 import { NativeEngineHUD } from './components/llm/NativeEngineHUD';
-import { NativeFailoverPopup } from './components/llm/NativeFailoverPopup';
 import { ICONS } from './constants';
-import { startFirebaseAuthListener, isFirebaseConfigured, signOutFirebase } from './services/auth/firebaseAuthService';
 import { useAppAuth, PUBLIC_APP_VIEWS } from './services/auth/useAppAuth';
 import { AuthRequiredScreen } from './components/auth/AuthRequiredScreen';
 import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
+import { PaywallSlot } from './components/paywall/PaywallSlot';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
 import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
@@ -41,6 +38,7 @@ import type { AuditHandoff } from './services/activation/auditHandoff';
 import { MarketingChromeContext, type MarketingChrome } from './components/marketing/marketingChrome';
 import { normalizeHandoffUrl } from './services/activation/auditHandoff';
 import { viewAfterSignIn } from './services/activation/postSignInView';
+import { labsVisible } from './services/ui/labsAccess';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
@@ -49,6 +47,7 @@ const NotFoundPage = lazyWithReload(() => import('./components/NotFoundPage').th
 const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
 const TeaserShareView = lazyWithReload(() => import('./components/audit/TeaserShareView').then(m => ({ default: m.TeaserShareView })));
 const VerifyAttestationView = lazyWithReload(() => import('./components/audit/VerifyAttestationView').then(m => ({ default: m.VerifyAttestationView })));
+const VerifyAuditReceiptView = lazyWithReload(() => import('./components/audit/VerifyAuditReceiptView').then(m => ({ default: m.VerifyAuditReceiptView })));
 const AgentReportView = lazyWithReload(() => import('./components/audit/AgentReportView').then(m => ({ default: m.AgentReportView })));
 const InfrastructurePage = lazyWithReload(() => import('./components/InfrastructurePage'));
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
@@ -73,7 +72,6 @@ const OracleMindView = lazyWithReload(() => import('./components/suite/OracleMin
 const ArchyHarnessView = lazyWithReload(() => import('./components/harness/ArchyHarnessView').then(m => ({ default: m.ArchyHarnessView })));
 const OmnibarModal = lazyWithReload(() => import('./components/harness/OmnibarModal').then(m => ({ default: m.OmnibarModal })));
 const ApiKeyModal = lazyWithReload(() => import('./components/ApiKeyModal').then(m => ({ default: m.ApiKeyModal })));
-const PaywallModal = lazyWithReload(() => import('./components/paywall/PaywallModal').then(m => ({ default: m.PaywallModal })));
 import { ViewSkeleton } from './components/ui/Skeleton';
 
 const AppIntroOverlay = lazyWithReload(() => import('./components/intro/AppIntroOverlay').then(m => ({ default: m.AppIntroOverlay })));
@@ -289,6 +287,7 @@ const App: React.FC = () => {
    */
   const logoutToLanding = useCallback(async () => {
     try {
+      const { signOutFirebase } = await import('./services/auth/firebaseAuthService');
       await signOutFirebase();
     } catch {
       /* still leave the shell even if sign-out fails */
@@ -368,11 +367,9 @@ const App: React.FC = () => {
     }
   }, [showSuiteMenu]);
 
-  const [advancedUi, setAdvancedUi] = useState<boolean>(() => {
-    try { return localStorage.getItem('luminara_advanced_ui') === '1'; } catch { return false; }
-  });
+  const [advancedUi, setAdvancedUi] = useState(labsVisible);
   useEffect(() => {
-    const onChange = () => { try { setAdvancedUi(localStorage.getItem('luminara_advanced_ui') === '1'); } catch { /* noop */ } };
+    const onChange = () => setAdvancedUi(labsVisible());
     window.addEventListener('luminara-advanced-ui', onChange);
     return () => window.removeEventListener('luminara-advanced-ui', onChange);
   }, []);
@@ -394,18 +391,10 @@ const App: React.FC = () => {
     }
   }, [advancedUi, view]);
 
-  // Keep Firebase ID token cache warm for Worker hosted-key calls.
-  useEffect(() => {
-    if (!isFirebaseConfigured()) return;
-    return startFirebaseAuthListener();
-  }, []);
-
   const appAuth = useAppAuth();
 
-  // Account-only calls (quota, workspace sync) are skipped for confirmed guests.
-  useEffect(() => {
-    setAccountSignedIn(appAuth.loading ? null : appAuth.authenticated);
-  }, [appAuth.loading, appAuth.authenticated]);
+  // Before child effects, so a signed-out Instant Audit does not call /api/auth/quota.
+  setAccountSignedIn(appAuth.loading ? null : appAuth.authenticated);
 
   // Hold ref_* until Telegram or Firebase auth exists, then claim once.
   useEffect(() => {
@@ -447,38 +436,38 @@ const App: React.FC = () => {
     return () => { cancelled = true; };
   }, [appAuth.authenticated, appAuth.loading]);
 
-  // Any card can ask for the Settings dialog (e.g. "Set up results tracking") without prop drilling.
   useEffect(() => {
-    const open = () => setIsKeyModalOpen(true);
+    const openSettings = () => setIsKeyModalOpen(true);
+    const openLogin = (event: Event) => {
+      const mode = (event as CustomEvent<{ mode?: 'signin' | 'signup' }>).detail?.mode;
+      setLoginWallMode(mode === 'signup' ? 'signup' : 'signin');
+    };
     const checkHash = () => {
       const h = window.location.hash.toUpperCase();
-      if (h.includes('SETTINGS') || h.includes('KEYS')) {
-        setIsKeyModalOpen(true);
-      }
+      if (h.includes('SETTINGS') || h.includes('KEYS')) openSettings();
     };
     checkHash();
     window.addEventListener('hashchange', checkHash);
-    window.addEventListener('luminara-open-settings', open);
+    window.addEventListener('luminara-open-settings', openSettings);
+    window.addEventListener('luminara-open-login', openLogin);
     return () => {
       window.removeEventListener('hashchange', checkHash);
-      window.removeEventListener('luminara-open-settings', open);
+      window.removeEventListener('luminara-open-settings', openSettings);
+      window.removeEventListener('luminara-open-login', openLogin);
     };
   }, []);
 
-  // Wiki competitor chips and alerts deep-link into Brand Memory Vault.
   useEffect(() => {
     const openMemory = () => setView(AppView.BRAND_MEMORY);
     window.addEventListener('luminara-open-brand-memory', openMemory);
     return () => window.removeEventListener('luminara-open-brand-memory', openMemory);
   }, []);
 
-  // Harness & Theming states
   const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
   const [currentTheme, setCurrentTheme] = useState(themingService.getTheme());
   const [activeRemindersCount, setActiveRemindersCount] = useState(reminderService.getActiveReminders().length);
   const [defaultAgentName, setDefaultAgentName] = useState(agentMatrixService.getDefaultAgent().name);
 
-  /** Open the sign-in modal, keeping a Probe domain so the visitor lands back on their audit. */
   const openLoginWall = (mode: 'signin' | 'signup', handoff?: AuditHandoff) => {
     if (handoff?.url) {
       setAuditHandoff({
@@ -525,7 +514,7 @@ const App: React.FC = () => {
     <>
       {loginWallModal}
       <Suspense fallback={null}>
-        <PaywallModal onOpenSettings={() => setIsKeyModalOpen(true)} />
+        <PaywallSlot onOpenSettings={() => setIsKeyModalOpen(true)} />
         {isKeyModalOpen && (
           <ApiKeyModal
             isOpen={isKeyModalOpen}
@@ -541,7 +530,6 @@ const App: React.FC = () => {
           />
         )}
       </Suspense>
-      <NativeFailoverPopup />
     </>
   );
 
@@ -635,10 +623,13 @@ const App: React.FC = () => {
     };
   }, [applyContinuumForView]);
 
-  const liveServiceRef = useRef<OracleLiveService | null>(null);
+  const liveServiceRef = useRef<{ start: () => Promise<void>; stop: () => Promise<void> } | null>(null);
 
   useEffect(() => {
-    if (view === AppView.ORACLE_AGENT) {
+    if (view !== AppView.ORACLE_AGENT) return;
+    let cancelled = false;
+    void import('./services/liveService').then(({ OracleLiveService }) => {
+      if (cancelled) return;
       liveServiceRef.current = new OracleLiveService(
         (text, isUser) => {
           // Surface transcripts in the chat so voice turns are not lost.
@@ -655,9 +646,10 @@ const App: React.FC = () => {
         (active) => setIsVoiceActive(active),
         (err) => setVoiceError(err.message)
       );
-    }
+    });
 
     return () => {
+      cancelled = true;
       liveServiceRef.current?.stop();
       liveServiceRef.current = null;
     };
@@ -784,6 +776,7 @@ const App: React.FC = () => {
       }
 
       if (!usedServerOracle && !controller.signal.aborted) {
+        const { geminiService } = await import('./services/geminiService');
         for await (const chunk of geminiService.streamQuery(content, mode, dna, {
           history,
           skipSearch: opts.skipSearch,
@@ -872,7 +865,7 @@ const App: React.FC = () => {
       await liveServiceRef.current.start();
       // onopen flips isVoiceActive via onStateChange once the socket is live.
     } catch (e: any) {
-      const msg = e instanceof LiveVoiceError ? e.message : (e?.message || 'Could not start Live Voice.');
+      const msg = e instanceof Error && e.name === 'LiveVoiceError' ? e.message : (e?.message || 'Could not start Live Voice.');
       setVoiceError(msg);
       setIsVoiceActive(false);
     }
@@ -888,7 +881,7 @@ const App: React.FC = () => {
   const quickActions = [
     { label: "Audit my website", query: "Run a full SEO, AEO and GEO audit of my website and give me a prioritised action plan in plain English." },
     { label: "Compare me with competitors", query: "Compare how my brand shows up in AI answers and search against my main competitors, and tell me where I lose." },
-    { label: "Where do I show up in AI answers?", query: "Check whether my brand is cited in AI Overviews, ChatGPT and Perplexity for the questions my customers ask, and what to change." },
+    { label: "Where do I show up in AI answers?", query: "Check my site and live web search for the questions my customers ask, and what to change. Live ChatGPT, Perplexity and AI Overviews answers need Agency or my own DataForSEO login." },
     { label: "What's missing on my site?", query: "Check my site for missing schema markup, unclear entity information and content gaps that stop AI engines from quoting it." }
   ];
 
@@ -896,7 +889,7 @@ const App: React.FC = () => {
 
   if (view === AppView.NOT_FOUND) {
     return (
-      <Suspense fallback={<ViewLoader label="Loading page" />}>
+      <Suspense fallback={null}>
         <NotFoundPage onHome={() => setView(AppView.LANDING)} />
       </Suspense>
     );
@@ -949,6 +942,14 @@ const App: React.FC = () => {
     return (
       <Suspense fallback={<ViewLoader label="Loading report" />}>
         <AgentReportView />
+      </Suspense>
+    );
+  }
+
+  if (view === AppView.VERIFY_AUDIT_RECEIPT) {
+    return (
+      <Suspense fallback={<ViewLoader label="Checking receipt" />}>
+        <VerifyAuditReceiptView onBack={() => setView(AppView.LANDING)} />
       </Suspense>
     );
   }
@@ -1120,7 +1121,7 @@ const App: React.FC = () => {
     >
       <PremiumAtmosphere intensity="subtle" />
       {/* Universal Top Header - Responsive, guaranteed no overflow */}
-      <header className="flex items-center justify-between gap-2 px-2.5 sm:px-6 py-2 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
+      <header className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-6 py-1 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
         {/* Left: Brand Identity */}
         <button
           type="button"
@@ -1147,13 +1148,13 @@ const App: React.FC = () => {
         </button>
 
         {/* Center: Suite Switcher & Quick Navigation */}
-        <nav className="flex items-center gap-0.5 sm:gap-2 shrink min-w-0 px-0.5 sm:px-1 overflow-x-auto no-scrollbar overscroll-x-contain" aria-label="Primary tools">
+        <nav className="order-last flex basis-full flex-nowrap items-center gap-1 overflow-x-auto no-scrollbar overscroll-x-contain [mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)] sm:order-none sm:basis-auto sm:[mask-image:none] shrink min-w-0 px-0.5" aria-label="Primary tools">
           <Button
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.ORACLE_AGENT)}
             aria-pressed={view === AppView.ORACLE_AGENT}
-            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.ORACLE_AGENT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1165,7 +1166,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.IDEA_SCOUT)}
             aria-pressed={view === AppView.IDEA_SCOUT}
-            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-2 min-h-11 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
               view === AppView.IDEA_SCOUT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1177,7 +1178,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.INSTANT_AUDIT)}
             aria-pressed={view === AppView.INSTANT_AUDIT}
-            className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1189,7 +1190,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.BRAND_MEMORY)}
             aria-pressed={view === AppView.BRAND_MEMORY}
-            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.BRAND_MEMORY ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1201,7 +1202,7 @@ const App: React.FC = () => {
             size="none"
             onClick={() => setView(AppView.NOTEBOOK)}
             aria-pressed={view === AppView.NOTEBOOK}
-            className={`hidden sm:inline-flex px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.NOTEBOOK ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
             title="Luminara Studio - Grounded Research Dossiers & Audio Overviews"
@@ -1218,7 +1219,7 @@ const App: React.FC = () => {
               aria-haspopup="menu"
               aria-expanded={showSuiteMenu}
               aria-pressed={[AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
-              className={`px-2.5 sm:px-3 py-2 min-h-10 rounded text-[11px] shrink-0 whitespace-nowrap ${
+              className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
                 [AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)
                   ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
                   : ''
@@ -1276,7 +1277,7 @@ const App: React.FC = () => {
                     className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Home</span>
+                    <span>Dashboard</span>
                   </button>
                   <button
                     type="button"
@@ -1303,7 +1304,7 @@ const App: React.FC = () => {
                     className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
-                    <span>My business profile</span>
+                    <span>Business profile</span>
                   </button>
                   {advancedUi && (<>
                   <button
@@ -1403,18 +1404,18 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsOmnibarOpen(true)}
-            className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-2 min-h-10 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
+            className="inline-flex items-center gap-1.5 px-1.5 py-2 min-h-11 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
             title="Open Omnibar (Cmd+K)"
             aria-label="Jump to a tool"
           >
             <ICONS.Search className="w-3.5 h-3.5 text-gold" />
-            <span className="hidden xl:inline truncate">Jump to a tool</span>
+            <span className="hidden 2xl:inline truncate">Jump to a tool</span>
             <kbd className="hidden lg:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
           </Button>
         </nav>
 
         {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Settings, Log out */}
-        <div className="flex items-center justify-end gap-1 sm:gap-2.5 shrink-0">
+        <div className="flex flex-nowrap items-center justify-end gap-1 overflow-x-auto no-scrollbar sm:gap-2.5 shrink min-w-0">
           {/* Native Trinity (Groq, NVIDIA NIM, Ollama) Engine Status & Priority */}
           {advancedUi && <NativeEngineHUD />}
 
@@ -1466,7 +1467,7 @@ const App: React.FC = () => {
                 ? 'bg-success-500/10 border-success-500/30 text-success-400 hover:text-success-300 hover:bg-success-500/20'
                 : 'bg-white/5 border-white/10 hover:text-gold-light hover:bg-white/5'
             }`}
-            title="Strategic Business DNA Context"
+            title="Business profile"
           >
             <span className={`w-1.5 h-1.5 rounded-full ${dna ? 'bg-success-400 shadow-[0_0_8px_theme(colors.success.500)]' : 'bg-gold'}`}></span>
             <span className="truncate max-w-[90px]">{dna ? dna.name : 'Add my business'}</span>
@@ -1482,20 +1483,20 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsKeyModalOpen(true)}
-            className="p-2.5 min-h-10 min-w-10 rounded border border-[var(--color-rule)] text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-colors"
+            className="p-2.5 min-h-11 min-w-10 rounded border border-[var(--color-rule)] text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-colors"
             title="Settings (AI Keys & Config)"
             aria-label="Settings and AI keys"
           >
             <ICONS.Settings className="w-4 h-4" />
           </Button>
 
-          <div className="hidden sm:flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
+          <div className="flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
             <Button
               variant="ghost"
               size="none"
               onClick={() => { setMode(OracleMode.FLASH); setAnswerDepth('quick'); }}
               aria-pressed={mode === OracleMode.FLASH}
-              className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
+              className={`min-h-11 px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.FLASH ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
@@ -1506,7 +1507,7 @@ const App: React.FC = () => {
               size="none"
               onClick={() => { setMode(OracleMode.DEEP_THINK); setAnswerDepth('thorough'); }}
               aria-pressed={mode === OracleMode.DEEP_THINK}
-              className={`px-2.5 sm:px-3 py-1 rounded-sm text-[11px] ${
+              className={`min-h-11 px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.DEEP_THINK ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
@@ -1519,7 +1520,7 @@ const App: React.FC = () => {
               variant="ghost"
               size="none"
               onClick={() => void logoutToLanding()}
-              className="hidden sm:inline-flex px-2.5 sm:px-3 py-1.5 min-h-10 border border-[var(--color-rule)] rounded text-[11px] text-[var(--color-ink-2)] hover:text-[var(--color-ink)] hover:bg-transparent shrink-0 whitespace-nowrap"
+              className="hidden sm:inline-flex px-2.5 sm:px-3 py-1.5 min-h-11 border border-[var(--color-rule)] rounded text-[11px] text-[var(--color-ink-2)] hover:text-[var(--color-ink)] hover:bg-transparent shrink-0 whitespace-nowrap"
             >
               Log out
             </Button>
@@ -1528,7 +1529,7 @@ const App: React.FC = () => {
             <button
               type="button"
               onClick={() => openLoginWall('signin')}
-              className="mkt-cta-primary !min-h-10 !py-2 !px-4 shrink-0 whitespace-nowrap"
+              className="mkt-cta-primary !min-h-11 !py-2 !px-4 shrink-0 whitespace-nowrap"
             >
               Sign in
             </button>
@@ -1537,7 +1538,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main App Container - min-h-0 ensures flex child heights and scrollbars calculate cleanly */}
-      <main className="flex-1 min-h-0 relative z-10 flex flex-col overflow-y-auto">
+      <main id="main" tabIndex={-1} className="flex-1 min-h-0 relative z-10 flex flex-col overflow-y-auto outline-none">
         {LAB_VIEWS.has(view) && (
           <div className="shrink-0 px-4 py-2 text-center text-[10px] uppercase tracking-[0.25em] font-bold bg-warning-500/10 border-b border-warning-500/20 text-warning-300">
             Labs preview · figures on this screen are simulated for demonstration, not measured
@@ -1628,7 +1629,7 @@ const App: React.FC = () => {
           <BrandMemoryView
             dna={dna}
             onNavigate={(v) => setView(v)}
-            onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Unlock Pro / Agency for client workspaces and deeper memory' } }))}
+            onOpenPaywall={() => window.dispatchEvent(new CustomEvent('luminara-open-paywall', { detail: { reason: 'Unlock Pro / Agency for client workspaces saved in this browser, and deeper memory' } }))}
           />
         )}
 
@@ -1738,7 +1739,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
-              <MessageList messages={messages} isThinking={isThinking} activeTool={activeTool} onSimplify={handleSimplify} />
+              <ChatTranscript messages={messages} isThinking={isThinking} activeTool={activeTool} onSimplify={handleSimplify} />
               
               {agentStep && (
                 <div
@@ -1809,7 +1810,7 @@ const App: React.FC = () => {
             ))}
           </div>
 
-          <InputBar
+          <ChatComposer
             onSendMessage={handleSendMessage}
             onVoiceToggle={toggleVoice}
             isVoiceActive={isVoiceActive}
@@ -1848,7 +1849,7 @@ const App: React.FC = () => {
         )}
 
         {/* Global Dual-Rail Paywall Modal (Stars + TON) */}
-        <PaywallModal onOpenSettings={() => setIsKeyModalOpen(true)} />
+        <PaywallSlot onOpenSettings={() => setIsKeyModalOpen(true)} />
 
         {/* Encrypted Brand Vault Modal */}
         {isVaultModalOpen && (
@@ -1859,8 +1860,6 @@ const App: React.FC = () => {
         )}
       </Suspense>
 
-      {/* Real-time Native LLM Failover Floating Pop-up */}
-      <NativeFailoverPopup />
       <LockScreenOverlay />
       {confirmModal}
     </div>

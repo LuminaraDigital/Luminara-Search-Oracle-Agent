@@ -279,8 +279,25 @@ describe('public health carries the Stars catalogue and nothing private', () => 
       expect(body.plans![id]).toEqual({ title: PLANS[id].title, description: PLANS[id].description, stars: PLANS[id].stars, days: PLANS[id].days });
       expect(body.plans![id].stars).toBeGreaterThan(0);
     }
-    expect(Object.keys(body).sort()).toEqual(['jettonCheckout', 'lumens', 'ok', 'plans', 'stripeCheckout', 'ton']);
+    expect(Object.keys(body).sort()).toEqual(['hostedGemini', 'jettonCheckout', 'lumens', 'ok', 'plans', 'stripeCheckout', 'ton', 'trust']);
+    expect(body.hostedGemini).toBe(false);
     expect(body.lumens).toBe(false);
+    expect(body.trust).toEqual({ receiptsEnabled: false, domainVerifyEnabled: false });
+  });
+
+  it('echoes trust flags and leaves them off unless the env says true', async () => {
+    const off = await worker.fetch(
+      new Request('https://luminarasuite.com/api/health'),
+      makeEnv({ TRUST_RECEIPTS_ENABLED: 'false', DOMAIN_VERIFY_ENABLED: 'false' }).env,
+      ctx,
+    );
+    expect((await off.json()).trust).toEqual({ receiptsEnabled: false, domainVerifyEnabled: false });
+    const on = await worker.fetch(
+      new Request('https://luminarasuite.com/api/health'),
+      makeEnv({ TRUST_RECEIPTS_ENABLED: 'true', DOMAIN_VERIFY_ENABLED: 'true' }).env,
+      ctx,
+    );
+    expect((await on.json()).trust).toEqual({ receiptsEnabled: true, domainVerifyEnabled: true });
   });
 });
 

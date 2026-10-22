@@ -2,14 +2,18 @@ import type { Env } from './env';
 import { billingId, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
-import { isUserSubscribed, checkHostedQuota, type QuotaStatus } from './quotaMiddleware';
+import { isUserSubscribed, checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
+import { sameSiteHost } from '../services/audit/sameSiteHost';
+import { noteAuditRunSuccess, requestTargetHost, takeAuditRunCall } from './auditScoutRun';
 import { requireApiAccess } from './apiAccess';
 import {
   WORKERS_AI_FALLBACK_PROVIDER,
   runWorkersAiChatFallback,
   type WorkersAiFallbackContext,
   type WorkersAiFallbackOutcome,
+  type WorkersAiFallbackReason,
 } from './workersAiFallback';
+import { tryNvidiaChatFallback } from './nvidiaChatFallback';
 import {
   MAX_BODY_BYTES,
   clampHostedChatCompletionsBody,
@@ -52,7 +56,7 @@ export function isChatCompletionsPath(providerId: string, subPath: string): bool
 }
 
 /**
- * The one path the Workers AI fallback may answer: hosted Groq chat completions.
+ * Hosted Groq chat is the only path that may fall through to NVIDIA and then Workers AI.
  * Every other provider, and every other Groq path, returns its own result or its own error.
  */
 export function isWorkersAiFallbackPath(providerId: string, subPath: string): boolean {
@@ -60,15 +64,10 @@ export function isWorkersAiFallbackPath(providerId: string, subPath: string): bo
 }
 
 /**
- * A caller gets a fallback answer only when it asks for one with this request header set to "1".
- * The app's chat sends it, because the chat shows who answered. Nothing else does, so for every
- * other caller the fallback model is not run at all: they get the upstream's own error.
+ * Old clients send this header. Hosted Groq chat falls back without it. The header stays
+ * allowed so those clients are not rejected at CORS.
  */
 export const ACCEPT_FALLBACK_HEADER = 'x-accept-fallback';
-
-export function acceptsFallback(request: Request): boolean {
-  return request.headers.get(ACCEPT_FALLBACK_HEADER) === '1';
-}
 
 /** A short machine-readable value (an error code or type, at most 64 characters), or null. Free text never passes. */
 function upstreamErrorField(value: unknown): string | null {
@@ -275,15 +274,53 @@ function makeFallbackResponse(
   return json(outcome.completion, 200, fallbackHeaders);
 }
 
+/** The other hosted Groq key, when it is set and is not the key already on this request. */
+function groqFallbackKey(env: Env, headers: Headers): string | null {
+  const fallbackKey = env.GROQ_API_KEY_FALLBACK?.trim() || '';
+  if (!fallbackKey) return null;
+  const current = (headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  return fallbackKey === current ? null : fallbackKey;
+}
+
+function headersWithBearer(headers: Headers, key: string): Headers {
+  const next = new Headers(headers);
+  next.set('Authorization', `Bearer ${key}`);
+  return next;
+}
+
+/** 401 and 402 stay the hosted-key errors. 429 and 5xx may be answered by Workers AI. */
+function workersAiStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+/** Groq chat also falls through when the model rejects the request. A plain 413 or 422 stays itself. */
+function chatFallbackStatus(status: number): boolean {
+  return status === 400 || status === 404 || status === 408 || workersAiStatus(status);
+}
+
+const TOKEN_CAP_BODY = /rate_limit_exceeded|tokens per minute|rate limit reached/i;
+
+/** A 413 is a token cap when Groq says so. Any other 413 is the caller's own body limit. */
+async function chatShouldFallBack(res: Response): Promise<boolean> {
+  if (chatFallbackStatus(res.status)) return true;
+  if (res.status !== 413) return false;
+  try {
+    return TOKEN_CAP_BODY.test((await res.clone().text()).slice(0, 4_000));
+  } catch {
+    return false;
+  }
+}
+
+function workersAiReason(status: number): WorkersAiFallbackReason {
+  if (status === 429) return 'upstream_429';
+  if (status >= 500 && status <= 599) return 'upstream_5xx';
+  return 'upstream_4xx';
+}
+
 /**
- * Asks the Workers AI fallback to answer, or returns null so the caller sends its own error.
- *
- * It answers only a hosted-key POST to the groq chat-completions path with the binding present,
- * and only for a caller that asked for a fallback answer (ACCEPT_FALLBACK_HEADER). For any other
- * caller the fallback model is not run and nothing is logged.
- * The three callers decide when: no hosted key, a network failure, or an upstream 5xx. A 4xx
- * never gets here. The fallback itself refuses a typed, tool-using, non-text or over-long request,
- * and a refusal or a binding error also comes back as null.
+ * Asks Workers AI to answer a hosted Groq chat call, or returns null so the caller sends its own error.
+ * Bring-your-own-key calls, other providers, and a missing binding are null. A refusal or a binding
+ * error is also null. No second quota check: the caller metered this request once.
  */
 async function tryWorkersAiFallback(
   env: Env,
@@ -297,15 +334,39 @@ async function tryWorkersAiFallback(
 ): Promise<Response | null> {
   if (userKey || !env.AI || request.method !== 'POST') return null;
   if (!isWorkersAiFallbackPath(providerId, subPath)) return null;
-  if (!acceptsFallback(request)) return null;
   try {
     const outcome = await runWorkersAiChatFallback(env.AI, body, context);
     if (!outcome.answered) return null;
     return makeFallbackResponse(outcome, quotaGate);
-  } catch (aiErr) {
-    console.warn(`[Workers AI fallback error: ${context.reason}]`, aiErr);
-    return null;
+  } catch {
+    return json({ error: 'The backup model did not answer.', code: 'BACKUP_MODEL_FAILED' }, 503);
   }
+}
+
+/** NVIDIA, then Workers AI. Null means both declined, so the caller sends its own error. */
+async function tryChatFallbacks(
+  env: Env,
+  request: Request,
+  providerId: string,
+  subPath: string,
+  userKey: string,
+  body: unknown,
+  context: WorkersAiFallbackContext,
+  quotaGate: QuotaStatus | null,
+  accountId: string,
+  paid: boolean,
+): Promise<Response | null> {
+  if (userKey || request.method !== 'POST' || !isWorkersAiFallbackPath(providerId, subPath)) return null;
+  const nvidia = await tryNvidiaChatFallback({
+    env,
+    body,
+    reason: context.reason,
+    accountId,
+    paid,
+    quotaGate,
+  });
+  if (nvidia) return nvidia;
+  return tryWorkersAiFallback(env, request, providerId, subPath, userKey, body, context, quotaGate);
 }
 
 export async function proxyProvider(
@@ -336,6 +397,10 @@ export async function proxyProvider(
 
   let quotaGate: QuotaStatus | null = null;
   let scoutAccountId: string | null = null;
+  let auditCoveredToken = '';
+  let auditDomain = '';
+  let paidSubscriber = false;
+  let fallbackAccountId = 'anon';
 
   if (!userKey) {
     const who = await identify(request, env);
@@ -365,6 +430,8 @@ export async function proxyProvider(
     // - Groq Cloud LPU is free (subject to daily free quota).
     // - NVIDIA NIM Enterprise, Sovereign Ollama, and OpenRouter are behind our Paid Tier!
     const isPaidSubscriber = await isUserSubscribed(env, who.user);
+    paidSubscriber = isPaidSubscriber;
+    fallbackAccountId = who.user ? (scoutAccountId || billingId(who.user)) : `anon:${(clientIp(request) || '').trim() || 'unknown'}`;
     const PAID_TIER_PROVIDERS = new Set(['nim', 'ollama', 'openrouter', 'dataforseo']);
     if (!isPaidSubscriber && PAID_TIER_PROVIDERS.has(providerId)) {
       return json(
@@ -403,19 +470,33 @@ export async function proxyProvider(
       );
     }
 
-    quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
-    if (!quotaGate.ok) {
+    if (who.user) {
+      const claim = await takeAuditRunCall(env, who.user, request);
+      if (claim.kind === 'reject' || claim.kind === 'wrong-site') {
+        const status = claim.kind === 'wrong-site' ? 403 : 401;
+        return json({ error: claim.error, code: 'AUDIT_RUN_REJECTED' }, status);
+      }
+      if (claim.kind === 'covered') {
+        auditCoveredToken = claim.token;
+        auditDomain = claim.domain;
+      }
+    }
+    if (!auditCoveredToken) {
+      quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
+    }
+    if (quotaGate && !quotaGate.ok) {
+      const capacity = quotaGate.error === QUOTA_CAPACITY_ERROR;
       return json(
         {
           error: quotaGate.error,
-          code: 'PAYWALL_EXCEEDED',
+          code: capacity ? 'HOSTED_CAPACITY' : 'PAYWALL_EXCEEDED',
           limit: quotaGate.limit,
           used: quotaGate.used,
           remaining: quotaGate.remaining,
           resetSec: quotaGate.resetSec,
-          upgrade: true,
+          upgrade: !capacity,
         },
-        402,
+        capacity ? 503 : 402,
         {
           'X-Quota-Limit': String(quotaGate.limit),
           'X-Quota-Remaining': '0',
@@ -424,6 +505,20 @@ export async function proxyProvider(
       );
     }
   }
+
+  const deliver = async (response: Response): Promise<Response> => {
+    if (auditCoveredToken && response.ok) await noteAuditRunSuccess(env, auditCoveredToken);
+    return response;
+  };
+
+  const releaseUnmeasured = async (response: Response): Promise<Response> => {
+    if (quotaGate?.meterKey) {
+      const released = await refundMeteredQuota(env, quotaGate);
+      quotaGate = { ...quotaGate, meterKey: undefined };
+      if (released.refunded) response.headers.set('X-Quota-Refunded', '1');
+    }
+    return response;
+  };
 
   const url = new URL(request.url);
   const baseUrl = typeof spec.base === 'function' ? spec.base(env) : spec.base;
@@ -436,12 +531,16 @@ export async function proxyProvider(
   let body: unknown = undefined;
   if (request.method !== 'GET') {
     const read = await readBody(request, MAX_BODY_BYTES, false);
-    if (!read.ok) return json({ error: read.error }, read.status);
+    if (!read.ok) return releaseUnmeasured(json({ error: read.error }, read.status));
     const text = read.text;
     try {
       body = text ? JSON.parse(text) : {};
     } catch {
       body = text;
+    }
+    const targetHost = requestTargetHost(body);
+    if (auditCoveredToken && targetHost && !sameSiteHost(targetHost, auditDomain)) {
+      return json({ error: 'This audit run is for a different site.', code: 'AUDIT_RUN_REJECTED' }, 403);
     }
   }
   if (userKey) {
@@ -459,17 +558,18 @@ export async function proxyProvider(
   } else {
     const auth = spec.auth(env, headers, body);
     if (!auth.ok) {
-      // No hosted key at all. On the groq chat path the fallback may answer, and the reply says so.
-      if (isWorkersAiFallbackPath(providerId, subPath) && env.AI && request.method === 'POST' && acceptsFallback(request)) {
+      // No hosted Groq key. Chat completions try NVIDIA, then Workers AI. Other providers keep their own error.
+      if (isWorkersAiFallbackPath(providerId, subPath) && request.method === 'POST') {
         const clamped = clampHostedChatCompletionsBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
-        const fallback = await tryWorkersAiFallback(
-          env, request, providerId, subPath, userKey, body, { reason: 'provider_not_configured' }, quotaGate,
+        const fallback = await tryChatFallbacks(
+          env, request, providerId, subPath, userKey, body,
+          { reason: 'provider_not_configured' }, quotaGate, fallbackAccountId, paidSubscriber,
         );
-        if (fallback) return fallback;
+        if (fallback) return fallback.ok ? deliver(fallback) : releaseUnmeasured(fallback);
       }
-      return json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503);
+      return releaseUnmeasured(json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503));
     }
     if (auth.body !== undefined) body = auth.body;
 
@@ -477,15 +577,15 @@ export async function proxyProvider(
     if (request.method !== 'GET') {
       if (isChatCompletionsPath(providerId, subPath)) {
         const clamped = clampHostedChatCompletionsBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
       } else if (providerId === 'gemini') {
         const clamped = clampHostedGeminiBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
       } else if (providerId === 'firecrawl' && subPath === '/crawl') {
         const clamped = clampHostedFirecrawlCrawlBody(body);
-        if (!clamped.ok) return json({ error: clamped.error }, 400);
+        if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
       }
     }
@@ -504,68 +604,79 @@ export async function proxyProvider(
     for (const target of targets) {
       const parsed = safePublicUrl(target);
       if (!parsed) {
-        return json(
+        return releaseUnmeasured(json(
           { error: 'Target URL is invalid or targets a private/local host (SSRF blocked)', code: 'SSRF_BLOCKED' },
           400,
-        );
+        ));
       }
       const isPublic = await resolvesToPublicAddress(parsed.hostname);
       if (!isPublic) {
-        return json(
+        return releaseUnmeasured(json(
           { error: 'Target hostname does not resolve to a public address (SSRF blocked)', code: 'SSRF_BLOCKED' },
           400,
-        );
+        ));
       }
     }
   }
 
-  let res: Response;
-  try {
-    res = await fetch(upstream.toString(), {
-      method: request.method,
-      headers,
-      body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-    });
-  } catch (networkErr) {
-    const fallback = await tryWorkersAiFallback(
-      env, request, providerId, subPath, userKey, body, { reason: 'network_error' }, quotaGate,
+  const upstreamBody = request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
+  const callUpstream = (hdrs: Headers) =>
+    fetch(upstream.toString(), { method: request.method, headers: hdrs, body: upstreamBody });
+
+  const networkFailure = async (err: unknown): Promise<Response> => {
+    const fallback = await tryChatFallbacks(
+      env, request, providerId, subPath, userKey, body,
+      { reason: 'network_error' }, quotaGate, fallbackAccountId, paidSubscriber,
     );
-    if (fallback) return fallback;
-    return json({ error: `Upstream connection failed: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}` }, 502);
+    if (fallback) return fallback.ok ? deliver(fallback) : releaseUnmeasured(fallback);
+    const message = err instanceof Error ? err.message : String(err);
+    return releaseUnmeasured(json({ error: `Upstream connection failed: ${message}` }, 502));
+  };
+
+  let res: Response;
+  let triedFallbackKey = false;
+  try {
+    res = await callUpstream(headers);
+  } catch (networkErr) {
+    // Timeout and other connection failures try the other Groq key before Workers AI.
+    const altKey = !userKey && providerId === 'groq' ? groqFallbackKey(env, headers) : null;
+    if (!altKey) return networkFailure(networkErr);
+    triedFallbackKey = true;
+    try {
+      res = await callUpstream(headersWithBearer(headers, altKey));
+    } catch (err) {
+      console.warn('[Groq failover error]', err);
+      return networkFailure(networkErr);
+    }
   }
 
-  // Seamless Groq failover if hosted primary key hits billing (402), auth (401), or rate limit (429)
-  if (!userKey && providerId === 'groq' && (res.status === 401 || res.status === 402 || res.status === 429) && env.GROQ_API_KEY_FALLBACK) {
-    const fallbackKey = env.GROQ_API_KEY_FALLBACK.trim();
-    const currentKey = (headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    if (fallbackKey && fallbackKey !== currentKey) {
-      const fallbackHeaders = new Headers(headers);
-      fallbackHeaders.set('Authorization', `Bearer ${fallbackKey}`);
+  // Primary key failed. One try with GROQ_API_KEY_FALLBACK when it is a different key.
+  if (
+    !triedFallbackKey &&
+    !userKey &&
+    providerId === 'groq' &&
+    (res.status === 401 || res.status === 402 || await chatShouldFallBack(res))
+  ) {
+    const altKey = groqFallbackKey(env, headers);
+    if (altKey) {
+      triedFallbackKey = true;
       try {
-        const retryRes = await fetch(upstream.toString(), {
-          method: request.method,
-          headers: fallbackHeaders,
-          body: request.method === 'GET' ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-        });
-        if (retryRes.ok || retryRes.status < 400) {
-          res = retryRes;
-        }
+        const retryRes = await callUpstream(headersWithBearer(headers, altKey));
+        if (retryRes.ok || retryRes.status < 400 || chatFallbackStatus(retryRes.status)) res = retryRes;
       } catch (err) {
         console.warn('[Groq failover error]', err);
       }
     }
   }
 
-  // Workers AI fallback, after the second-key retry above: only when the upstream itself failed
-  // (5xx). A 4xx is the upstream's answer about this request or this key (429, 400, 413 and the
-  // rest). It is never replaced by another model's reply: it goes through the code below, where
-  // a hosted 402 is reported as HOSTED_PROVIDER_DEPLETED, a hosted 401 as
-  // HOSTED_PROVIDER_KEY_REFUSED and a hosted 403 as HOSTED_PROVIDER_REQUEST_REFUSED.
-  if (res.status >= 500 && res.status <= 599) {
-    const fallback = await tryWorkersAiFallback(
-      env, request, providerId, subPath, userKey, body, { reason: 'upstream_5xx', upstreamStatus: res.status }, quotaGate,
+  // After the second key: 400, 404, 408, 429, 5xx, and a token-cap 413 try NVIDIA, then Workers AI.
+  if (await chatShouldFallBack(res)) {
+    const fallback = await tryChatFallbacks(
+      env, request, providerId, subPath, userKey, body,
+      { reason: workersAiReason(res.status), upstreamStatus: res.status },
+      quotaGate, fallbackAccountId, paidSubscriber,
     );
-    if (fallback) return fallback;
+    if (fallback) return fallback.ok ? deliver(fallback) : releaseUnmeasured(fallback);
   }
 
   // Stream the upstream body straight through (SSE for chat completions works unchanged).
@@ -600,12 +711,12 @@ export async function proxyProvider(
   // If the upstream provider returned 402 Payment Required (e.g. out of credits on Groq/Firecrawl/Tavily),
   // distinguish server hosted key depletion (503) from caller BYOK key depletion (402) so the user's paywall isn't triggered.
   if (!userKey && res.status === 402) {
-    return json({
+    return releaseUnmeasured(json({
       ok: false,
       error: `The hosted ${providerId} service is temporarily unavailable due to upstream provider credit limits. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`,
       code: 'HOSTED_PROVIDER_DEPLETED',
       provider: providerId,
-    }, 503, Object.fromEntries(out.entries()));
+    }, 503, Object.fromEntries(out.entries())));
   }
 
   if (userKey && res.status === 402) {
@@ -647,7 +758,7 @@ export async function proxyProvider(
     delete passed['content-type'];
 
     const keyRefused = res.status === 401;
-    return json({
+    return releaseUnmeasured(json({
       ok: false,
       error: keyRefused
         ? `The hosted ${providerId} service is temporarily unavailable: the provider refused the hosted key. This is not a problem with your sign-in. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`
@@ -655,8 +766,16 @@ export async function proxyProvider(
       code: keyRefused ? 'HOSTED_PROVIDER_KEY_REFUSED' : 'HOSTED_PROVIDER_REQUEST_REFUSED',
       provider: providerId,
       upstreamStatus: res.status,
-    }, 503, passed);
+    }, 503, passed));
   }
 
-  return new Response(res.body, { status: res.status, headers: out });
+  if (!res.ok) {
+    // Groq 429/5xx that Workers AI also could not answer is one failed call: 503, quota refunded.
+    const status =
+      !userKey && request.method === 'POST' && isWorkersAiFallbackPath(providerId, subPath) && workersAiStatus(res.status)
+        ? 503
+        : res.status;
+    return releaseUnmeasured(new Response(res.body, { status, headers: out }));
+  }
+  return deliver(new Response(res.body, { status: res.status, headers: out }));
 }

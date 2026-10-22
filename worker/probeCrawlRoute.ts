@@ -27,6 +27,12 @@ function present(body: string | null | undefined, status: number | null | undefi
   return status === 200 && typeof body === 'string' && body.trim().length > 0;
 }
 
+function fileNote(label: string, body: string | null | undefined, status: number | null | undefined): string {
+  if (present(body, status)) return `${label} found`;
+  if (status == null || status === 404) return `${label} missing`;
+  return `${label} couldn't be checked (blocked)`;
+}
+
 export function summarizeProbeCrawl(
   host: string,
   snapshot: LlmCrawlerSnapshot,
@@ -35,9 +41,12 @@ export function summarizeProbeCrawl(
   const llmsPresent = present(snapshot.llmsTxt, snapshot.llmsHttpStatus);
   const aiTxtPresent = present(snapshot.aiTxt, snapshot.aiHttpStatus);
   const parts: string[] = [];
-  parts.push(robotsPresent ? 'robots.txt found' : 'robots.txt missing');
-  parts.push(llmsPresent ? 'llms.txt found' : 'llms.txt missing');
-  if (aiTxtPresent) parts.push('ai.txt found');
+  parts.push(fileNote('robots.txt', snapshot.robotsTxt, snapshot.robotsHttpStatus));
+  parts.push(fileNote('llms.txt', snapshot.llmsTxt, snapshot.llmsHttpStatus));
+  const aiStatus = snapshot.aiHttpStatus;
+  if (aiTxtPresent || (aiStatus != null && aiStatus !== 404)) {
+    parts.push(fileNote('ai.txt', snapshot.aiTxt, aiStatus));
+  }
   return {
     status: 'measured',
     note: `Live crawl · ${parts.join('; ')}. Engines still need Instant Audit.`,

@@ -7,7 +7,7 @@ import type { HostedIdentity } from './userTypes';
 import { json } from './workerUtils';
 import { clientIp, safePublicUrl } from './security';
 import { fetchPagespeedInsights } from '../services/technical/pageSpeedService';
-import { checkHostedQuota } from './quotaMiddleware';
+import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
 
 export async function handlePagespeedRoute(
   request: Request,
@@ -52,20 +52,23 @@ export async function handlePagespeedRoute(
     );
   }
 
+  let hostedQuota: QuotaStatus | null = null;
   if (usingHosted) {
     const quota = await checkHostedQuota(env, user, { clientIp: clientIp(request) });
     if (!quota.ok) {
+      const capacity = quota.error === QUOTA_CAPACITY_ERROR;
       return json(
         {
           ok: false,
           error: quota.error || 'Hosted PageSpeed quota exceeded',
-          code: 'QUOTA_EXCEEDED',
+          code: capacity ? 'HOSTED_CAPACITY' : 'QUOTA_EXCEEDED',
           limit: quota.limit,
           remaining: quota.remaining,
         },
-        429,
+        capacity ? 503 : 429,
       );
     }
+    hostedQuota = quota;
   }
 
   const metrics = await fetchPagespeedInsights({
@@ -73,6 +76,9 @@ export async function handlePagespeedRoute(
     apiKey,
     strategy: body.strategy === 'desktop' ? 'desktop' : 'mobile',
   });
+  if (hostedQuota && metrics.measurementStatus !== 'measured') {
+    await refundMeteredQuota(env, hostedQuota);
+  }
 
   return json({
     ok: metrics.measurementStatus === 'measured',

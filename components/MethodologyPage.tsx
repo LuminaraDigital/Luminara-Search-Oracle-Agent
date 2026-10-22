@@ -42,7 +42,6 @@ const MethodologyPage: React.FC<MethodologyPageProps> = ({
 
   return (
     <MarketingPageShell
-      brandSub="Methodology"
       footerStatement="Measured when we can. Labeled when we cannot."
       closing={{
         eyebrow: 'Start free',

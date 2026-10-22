@@ -27,7 +27,6 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
 
   return (
     <MarketingPageShell
-      brandSub="Why"
       footerStatement="Measure when we can. Label when we cannot."
       wide
       closing={{
@@ -48,7 +47,7 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
             Replace tool sprawl with <span className="italic lx-gold-text pr-[0.08em]">one clear plan.</span>
           </>
         }
-        lede="Luminara Suite is for founders and small teams who need a clear plan for Google and AI answers without buying a full agency engagement or rebuilding their stack. Audit, labeled evidence, one next action, and optional IDE access when you grow into Growth."
+        lede="Luminara Suite is for real estate agencies that need a clear plan for Google and AI answers, without buying a full consultancy engagement or rebuilding their website."
       >
         <button type="button" onClick={onTerminal} className="lx-btn lx-btn-gold">
           Create free account
@@ -58,9 +57,9 @@ const WhyLuminaraPage: React.FC<WhyLuminaraPageProps> = ({
         </button>
       </MarketingPageHeader>
 
-      <MarketingSellPoints className="mt-28 border-t pt-24 lx-hairline sm:mt-36 sm:pt-28" />
+      <MarketingSellPoints className="mt-16 border-t pt-16 lx-hairline" />
 
-      <section aria-labelledby="compare-heading" className="mt-28 border-t pt-24 lx-hairline sm:mt-36 sm:pt-28">
+      <section aria-labelledby="compare-heading" className="mt-16 border-t pt-16 lx-hairline">
         <div className="max-w-3xl" data-reveal>
           <p className="lx-eyebrow">The difference</p>
           <h2 id="compare-heading" className="lx-display lx-h3 mt-5 [overflow-wrap:anywhere]">

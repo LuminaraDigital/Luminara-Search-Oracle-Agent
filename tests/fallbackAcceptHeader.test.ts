@@ -1,9 +1,8 @@
 /**
- * SW0a-11: only the chat asks the Worker for a fallback answer.
+ * SW0a-11: the chat still asks for a fallback answer. Hosted Groq falls back without the header.
  *
- * The Worker runs its fallback model only for a request that carries `x-accept-fallback: 1`.
- * `providerFetch` adds that header when it is called with `acceptFallback`, so this file checks
- * who passes it: the chat does, and no other caller of the Groq engine does.
+ * `providerFetch` adds `x-accept-fallback: 1` when it is called with `acceptFallback`, so this
+ * file checks who passes it: the chat does, and no other caller of the Groq engine does.
  * (That `providerFetch` then sends the header only on a hosted relay call is in apiClientRelay.test.ts.)
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

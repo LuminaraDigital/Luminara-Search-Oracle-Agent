@@ -6,11 +6,7 @@
   <title>What is AEO? | Luminara Suite</title>
   <meta name="description" content="Answer Engine Optimization is making a page easy for answer engines to quote. Luminara Suite reports pass, fail, or not measured. It does not invent a citation score." />
   <link rel="canonical" href="https://www.luminarasuite.com/docs/what-is-aeo.html" />
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.55; color: #111; }
-    a { color: #0a0a0a; }
-    code { background: #f4f4f4; padding: 0.1em 0.35em; border-radius: 4px; }
-  </style>
+  <link rel="stylesheet" href="/static-chrome.css" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -29,7 +25,7 @@
         "name": "How does Luminara Suite measure AEO?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Instant Audit reports citation rate, share of voice, and page health only when that run collected live page or search evidence. LLM crawler checks are pass, fail, or not_measured. They are not a 0-100 score."
+          "text": "Instant Audit reports citation rate, share of voice, and page health only when that run collected live page or search evidence. LLM crawler checks are pass, fail, or Not measured. They are not a 0-100 score."
         }
       },
       {
@@ -53,10 +49,17 @@
   </script>
 </head>
 <body>
-  <p><a href="/">Luminara Suite</a> · <a href="/llms.txt">llms.txt</a> · <a href="/sitemap.xml">Sitemap</a></p>
+  <nav class="site-nav" aria-label="Site">
+    <a class="brand" href="/">Luminara Suite</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/why">Why Luminara</a>
+    <a href="/ai">Our AI</a>
+  </nav>
+  <main class="static-main">
   <h1>What is AEO?</h1>
   <p>Answer Engine Optimization (AEO) is the work of making a page easy for an answer engine to quote. That includes Google AI Overviews, ChatGPT, and Perplexity. AEO is not a score.</p>
-  <p>Luminara Suite audits how a website shows up in those answers, then ranks one next fix. The product is a web app, a Windows desktop app, and a Telegram Mini App from <a href="https://luminaradigital.io">Luminara Digital</a>.</p>
+  <p>Luminara Suite checks your site and live web search, then ranks one next fix. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. The product is a web app, a Windows desktop app, and a Telegram Mini App from <a href="https://luminara.digital/">Luminara Digital</a>.</p>
 
   <h2 id="methodology">How Suite measures it</h2>
   <p>Instant Audit fetches a public page and a search sample when the hosted rail or the caller's keys allow it. Citation rate, share of voice, and page health appear only when that run collected live evidence.</p>
@@ -73,9 +76,9 @@
 
   <h2 id="honesty">Honesty glossary</h2>
   <ul>
-    <li><strong>measured</strong>: the figure comes from evidence collected in that run.</li>
-    <li><strong>estimated</strong>: a labelled estimate, never presented as a measured score.</li>
-    <li><strong>not_measured</strong>: the provider failed, the sample was empty, or the signal was not collected.</li>
+    <li><strong>Measured</strong>: the figure comes from evidence collected in that run.</li>
+    <li><strong>Estimated</strong>: a labelled estimate, never presented as a measured score.</li>
+    <li><strong>Not measured</strong>: the provider failed, the sample was empty, or the signal was not collected.</li>
   </ul>
   <p>Suite does not invent citation percentages, health scores, or share of voice when evidence is missing.</p>
 
@@ -83,12 +86,13 @@
   <h3>What is AEO?</h3>
   <p>Answer Engine Optimization (AEO) is the work of making a page easy for an answer engine to quote. That includes Google AI Overviews, ChatGPT, and Perplexity. AEO is not a score.</p>
   <h3>How does Luminara Suite measure AEO?</h3>
-  <p>Instant Audit reports citation rate, share of voice, and page health only when that run collected live page or search evidence. LLM crawler checks are pass, fail, or not_measured. They are not a 0-100 score.</p>
+  <p>Instant Audit reports citation rate, share of voice, and page health only when that run collected live page or search evidence. LLM crawler checks are pass, fail, or Not measured. They are not a 0-100 score.</p>
   <h3>What may an agent cite?</h3>
   <p>Agents may cite public marketing pages, <code>/llms.txt</code>, this page, and redacted cards under <code>/share/teaser/</code>. Full branded reports under <code>/share/</code> are unlisted and served noindex. <code>/api/</code>, <code>/verify/</code>, <code>/reports/</code>, and <code>/oauth/</code> are disallowed. A teaser is a redacted summary, not a verified measurement.</p>
   <h3>Does llms.txt guarantee a citation?</h3>
   <p>No. Google Search may ignore <code>llms.txt</code>. Other agents can still quote it. Suite does not invent a citation percentage when evidence is missing.</p>
 
   <p><a href="/how-it-works">How it works</a> · <a href="/pricing">Pricing</a> · <a href="/docs/mcp.html">MCP</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+  </main>
 </body>
 </html>

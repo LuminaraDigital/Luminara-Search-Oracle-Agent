@@ -93,7 +93,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
       if (res.ok) {
         setEditingProposalId(null);
         setMsg({
-          text: `Proposal ${action === 'approve' ? 'approved and added to Business DNA' : 'rejected'}.`,
+          text: `Proposal ${action === 'approve' ? 'approved and added to your business profile' : 'rejected'}.`,
           type: 'success',
         });
         await loadData();
@@ -152,7 +152,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
               Business Memory & Reflection
             </h2>
             <p className="text-xs sm:text-sm text-gray-400 mt-1 max-w-xl">
-              Consolidates audit results, recommendation outcomes, and brand positioning into durable Business DNA for {targetDomain}.
+              Consolidates audit results, recommendation outcomes, and brand positioning into your business profile for {targetDomain}.
             </p>
           </div>
 
@@ -243,7 +243,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
             </span>
           </div>
           <p className="text-xs text-gray-300 mb-4">
-            High-impact mutations (positioning shifts, new competitors, deprecations) require your approval before updating live Business DNA.
+            High-impact mutations (positioning shifts, new competitors, deprecations) require your approval before updating your live business profile.
           </p>
 
           <div className="space-y-4">
@@ -376,7 +376,7 @@ export const DreamingMemoryHub: React.FC<DreamingMemoryHubProps> = ({
           <div className="flex flex-wrap gap-1.5 p-1 bg-black/40 rounded-xl border border-white/10">
             {[
               { id: 'all', label: 'All' },
-              { id: 'business_dna', label: 'Business DNA' },
+              { id: 'business_dna', label: 'Business profile' },
               { id: 'visibility_profile', label: 'Visibility' },
               { id: 'action_memory', label: 'Actions' },
               { id: 'preference_memory', label: 'Preferences' },

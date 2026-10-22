@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { entryPdfImportsFromDist, entryTonconnectImportsFromDist } from './entrySkipsPdf.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -34,6 +35,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0023_stars_charges.sql',
   'migrations/0025_ton_pending_orders.sql',
   'migrations/0026_payment_support.sql',
+  'migrations/0033_community_feed.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
@@ -61,6 +63,8 @@ const REQUIRED_D1_TABLES = [
   'stars_charges',
   'ton_pending_orders',
   'payment_support_requests',
+  'community_feed_cards',
+  'community_feed_votes',
 ];
 
 // 1. Verify build bundle integrity
@@ -79,6 +83,20 @@ if (!existsSync(distPath)) {
     process.exit(1);
   }
   console.log('[SmokeCheck] [PASS] dist/ bundle integrity verified.');
+  const pdfBlockers = entryPdfImportsFromDist(distPath);
+  if (pdfBlockers.length) {
+    console.error('[SmokeCheck] FAILED: entry static graph reaches the PDF engine or WASM:');
+    for (const hit of pdfBlockers) console.error(`  ${hit}`);
+    process.exit(1);
+  }
+  console.log('[SmokeCheck] [PASS] entry chunk does not import the PDF engine or WASM.');
+  const tonBlockers = entryTonconnectImportsFromDist(distPath);
+  if (tonBlockers.length) {
+    console.error('[SmokeCheck] FAILED: entry static graph reaches TonConnect:');
+    for (const hit of tonBlockers) console.error(`  ${hit}`);
+    process.exit(1);
+  }
+  console.log('[SmokeCheck] [PASS] entry chunk does not import TonConnect.');
 }
 
 // 2. Verify worker configuration

@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ReportFocus, BusinessDNA } from '../../types';
-import { geminiService } from '../../services/geminiService';
 import { AUDIT_LENSES, inferLenses, type AuditLens } from '../../services/skills/seoPlaybooks';
 import { contextGraphService } from '../../services/contextGraph/contextGraphService';
 import { freeLlmModalitiesService } from '../../services/freellm/modalitiesService';
@@ -21,7 +20,7 @@ import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditReportSkeleton } from '../ui/Skeleton';
-import { apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
+import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
 import { Button } from '../ui/Button';
@@ -29,18 +28,21 @@ import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
 import { SuiteCitabilityChecklist } from './SuiteCitabilityChecklist';
 import { buildGuestScoutSummary, isDegradedScout, plainScoutVerdict, shouldGenerateAuditReport, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
-import { hostedScoutPreRunCopy, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
+import { guestNeedsFullAuditSignIn, hostedScoutPreRunCopy, requestGuestFullAuditSignIn, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
+import { probeLlmCrawlerReadiness } from '../../services/audit/llmCrawlerProbe';
 import { canMintTeaserShare, createShareTeaser } from '../../services/share/shareReportClient';
 import { shareExternalLink } from '../../services/telegram/tma';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 import { qualifyHonestScout } from '../../services/referrals/referralClient';
 import { clearScoutReceipt, takeScoutReceipt } from '../../services/referrals/scoutReceiptCapture';
+import { beginHostedAuditRun, finishHostedAuditRun } from '../../services/audit/hostedAuditRun';
 import { linkIdeaScout } from '../../services/ideaScout/ideaScoutClient';
 import { takeContinuumLink } from '../../services/ideaScout/continuum';
 import {
   instantAuditPrimaryLabel,
   instantAuditPersistHint,
   type InstantAuditPersistOutcome,
+  type GuardedAuditReport,
   signedInHostedGateOpen,
   generateAuditReportUnlessDegraded,
   summaryFromCrew,
@@ -100,13 +102,28 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   }, [initialUrl]);
 
   useEffect(() => {
+    if (!initialUrl || hostedRail !== 'byok_or_signin') return;
+    const tryOpen = () => {
+      if (accountCallsAllowed()) return false;
+      if (!guestNeedsFullAuditSignIn(hostedRail)) return true;
+      requestGuestFullAuditSignIn(initialUrl);
+      return true;
+    };
+    if (tryOpen()) return;
+    const timer = window.setInterval(() => {
+      if (tryOpen()) window.clearInterval(timer);
+    }, 300);
+    return () => window.clearInterval(timer);
+  }, [initialUrl, hostedRail]);
+
+  useEffect(() => {
     if (initialFocus) {
       setFocus(initialFocus);
     }
   }, [initialFocus]);
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState('');
-  const [report, setReport] = useState<Awaited<ReturnType<typeof geminiService.generateAuditReport>> | null>(null);
+  const [report, setReport] = useState<GuardedAuditReport | null>(null);
   const [boardFindings, setBoardFindings] = useState<
     import('../../services/audit/findingBoardService').BoardFinding[]
   >([]);
@@ -192,6 +209,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       return;
     }
 
+    if (guestNeedsFullAuditSignIn(hostedRail)) {
+      const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
+      requestGuestFullAuditSignIn(formattedUrl);
+      void probeLlmCrawlerReadiness(formattedUrl);
+      return;
+    }
+
     if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
       openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited audits.`);
       setError(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan for unlimited audits or add your own API key in Settings.`);
@@ -210,6 +234,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     const restoreContinuum = () => {
       if (linkId && !linkedOk && continuumRef.current == null) continuumRef.current = linkId;
     };
+    let measuredRun = false;
+    const auditScores = { healthScore: null as number | null, citationRate: null as number | null };
     setLoading(true);
     setCrewEvents([]);
     setCrewMeasurement(null);
@@ -219,13 +245,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setShareNote(null);
     setAttestation(null);
     setProgressStage('Starting audit…');
-    productTelemetry.recordOnboardingStep('quick_scout');
 
     try {
       const formattedUrl = targetUrl.includes('://') ? targetUrl : `https://${targetUrl}`;
 
       // Health and the ID token must be current before the crew or the report reads hosted keys.
       await ensureHostedProviderReady();
+      if (!isGuest) await beginHostedAuditRun(formattedUrl);
 
       // 1. Run the Autonomous Multi-Agent Search Crew with real-time streaming
       const crewResult = await crewOrchestrator.runAuditCrew(
@@ -240,6 +266,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (seq !== runSeq.current) return;
 
       const summary = summaryFromCrew(crewResult, hostedRail);
+      measuredRun = !isGuest && crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty;
+      auditScores.healthScore = crewResult.healthScore;
+      auditScores.citationRate = crewResult.citationRatePercent;
       const degraded = isDegradedScout({
         measurementStatus: crewResult.measurementStatus,
         evidenceEmpty: summary.evidenceEmpty,
@@ -279,7 +308,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (seq !== runSeq.current) return;
 
       let inviteNote = '';
-      if (!isGuest && !summary.evidenceEmpty && (crewResult.measurementStatus === 'measured' || crewResult.measurementStatus === 'not_measured')) {
+      if (!isGuest && crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty) {
         const qualified = await qualifyHonestScout({
           domain: summary.domain,
           measurementStatus: crewResult.measurementStatus,
@@ -333,7 +362,11 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       if (seq !== runSeq.current) return;
       if (!result) {
         setStrategySaved(false);
-        setPersistHint(withInvite(instantAuditPersistHint(sessionSignedIn, 'unmeasured')));
+        setPersistHint(withInvite(instantAuditPersistHint(
+          sessionSignedIn,
+          'unmeasured',
+          Boolean(quota && !quota.isUnlimited),
+        )));
         return;
       }
       if (crewResult.plainEnglishBrief && !result.plainEnglishBrief) {
@@ -341,6 +374,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       }
       setReport(result);
       draftPersistenceService.clearDraft(DRAFT_KEYS.AUDIT_URL);
+      if (crewResult.measurementStatus === 'measured' && !summary.evidenceEmpty) {
+        productTelemetry.recordOnboardingStep('quick_scout');
+      }
       productTelemetry.recordFirstValue('audit');
       productTelemetry.track('instant_audit_completed', {
         focus: targetFocus,
@@ -387,10 +423,11 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       }
     } catch (err: any) {
       restoreContinuum();
-      const userErr = toUserFacingText(err, 'Failed to complete the audit. Check your AI keys in Settings and try again.');
+      const userErr = toUserFacingText(err, "The AI write-up couldn't be generated this time. Your measured results above are still accurate. Try again.");
       setError(userErr);
       productTelemetry.recordError('InstantAuditView', userErr);
     } finally {
+      void finishHostedAuditRun(measuredRun, auditScores);
       if (seq === runSeq.current) {
         setLoading(false);
         setProgressStage('');
@@ -524,6 +561,20 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     }
   };
 
+  const guestResultFirst = Boolean(
+    isGuest && hostedRail === 'byok_or_signin' && scoutSummary && !loading && scoutSummary.banner,
+  );
+  const scoutPanel = scoutSummary && !loading ? (
+    <GuestScoutSummaryPanel
+      summary={scoutSummary}
+      shareNote={shareNote}
+      sharing={sharing}
+      onShare={() => { void shareTeaser('share'); }}
+      onCopy={() => { void shareTeaser('copy'); }}
+      onSignIn={isGuest && hostedRail === 'byok_or_signin' ? requestGuestFullAuditSignIn : undefined}
+    />
+  ) : null;
+
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
       {confirmModal}
@@ -531,7 +582,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Radar className="w-4 h-4 text-gold-light" />
           <span className="text-[10px] font-semibold tracking-wide text-gold-light">
-            {isFullAudit ? 'Full audit' : 'Quick scout'}
+            Instant Audit
             {sampleSource && !report ? ' · from Sample' : ''}
             {sampleSource && report ? ' · was Sample handoff' : ''}
           </span>
@@ -545,16 +596,18 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           Will AI mention your brand?
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed px-1">
-          Paste your site. Get a plain verdict, evidence chips, and one move to ship this week.
+          {isGuest && hostedRail === 'byok_or_signin'
+            ? 'Paste your site. A full audit needs sign-in or your own keys. Without them, the run says what was not measured.'
+            : 'Paste your site. Get a plain verdict, evidence chips, and one move to ship this week.'}
         </p>
       </div>
+
+      {guestResultFirst && scoutPanel}
 
       <div className="mb-4 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-gray-300 leading-relaxed">
         {hostedScoutPreRunCopy(hostedRail, { hostedGateOpen: preRunGate })}
         {isGuest && hostedRail === 'byok_or_signin' && (
-          <span className="block mt-1 text-gray-400">
-            Saving a project strategy and full branded share links still need sign-in. Growth and Agency include those share links.
-          </span>
+          <p className="mt-2 text-gray-400">Saving a project strategy and full branded share links still need sign-in. Growth and Agency include those share links.</p>
         )}
       </div>
 
@@ -571,8 +624,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-gold"></span>
             <span className="text-gray-300">
-              No business profile yet. You can still run a <strong className="text-white">Quick scout</strong>.
-              Set your profile to unlock a full, USP-aware audit.
+              No business profile yet. You can still run <strong className="text-white">Instant Audit</strong>.
+              Set your profile to unlock a USP-aware audit.
             </span>
           </div>
           {onNavigateDNA && (
@@ -616,7 +669,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                   autoComplete="url"
                   value={url}
                   onChange={(e) => handleUrlChange(e.target.value)}
-                  placeholder="e.g., luminaradigital.io or yourbrand.com"
+                  placeholder="e.g., luminara.digital or youragency.com.au"
                   onKeyDown={(e) => e.key === 'Enter' && handleExecuteAudit(url, focus)}
                   className={`w-full bg-black/60 border rounded-xl py-3.5 px-4 sm:pr-40 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner min-h-12 ${
                     inlineValidationError ? 'border-danger-500/70 focus:border-danger-400' : 'border-white/15 focus:border-gold'
@@ -661,11 +714,12 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-white/5">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Report type:</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus:</span>
                 {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                   <button
                     key={f}
                     type="button"
+                    title={f === 'SEO' ? 'Search' : f === 'AEO' ? 'Answer engines' : 'AI answers'}
                     aria-pressed={focus === f}
                     onClick={() => setFocus(f)}
                     className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none ${
@@ -710,18 +764,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       <SuiteCitabilityChecklist />
 
-      {scoutSummary && !loading && (
-        <GuestScoutSummaryPanel
-          summary={scoutSummary}
-          shareNote={shareNote}
-          sharing={sharing}
-          onShare={() => { void shareTeaser('share'); }}
-          onCopy={() => { void shareTeaser('copy'); }}
-        />
-      )}
+      {!guestResultFirst && scoutPanel}
 
       {/* Agent Mission Control: Real-time Multi-Agent Activity Stream */}
-      {crewEvents.length > 0 && (
+      {crewEvents.length > 0 && !guestNeedsFullAuditSignIn(hostedRail) && (
         <AgentMissionControl
           events={crewEvents}
           isComplete={!loading && crewMeasurement != null}
@@ -747,7 +793,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
               <div className="flex items-center gap-3">
                 <div className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse" />
                 <span className="text-xs text-white font-medium">
-                  {isFullAudit ? 'Conducting full brand audit…' : 'Quick scout in progress…'}
+                  Instant Audit in progress…
                 </span>
               </div>
               <span className="text-[11px] font-mono text-gold-light truncate max-w-xs">{progressStage || 'Initializing agents…'}</span>
@@ -884,7 +930,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
               onClick={async () => {
                 if (!report?.text || briefing) return;
                 if (!freeLlmModalitiesService.isAvailable()) {
-                  setError('Configure FreeLLMAPI in Settings → LLM to enable audit voice briefings.');
+                  setError('Add a model gateway key in Settings to enable audit voice briefings.');
                   return;
                 }
                 setBriefing(true);
@@ -895,14 +941,14 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                     `Audit briefing for ${url}. Focus ${focus}. ${summary}`,
                   );
                 } catch (e: any) {
-                  setError(toUserFacingText(e, 'Voice briefing failed. Check FreeLLMAPI speech models.'));
+                  setError(toUserFacingText(e, 'Voice briefing failed. Check the speech models on your gateway.'));
                 } finally {
                   setBriefing(false);
                 }
               }}
               disabled={briefing || loading}
               className="px-4 py-1.5 rounded-lg glass-morphism border border-gold/30 text-xs text-gold-light hover:text-white uppercase tracking-wider font-bold transition-all disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-              title="Speak a short audit briefing via FreeLLMAPI TTS"
+              title="Speak a short audit briefing"
             >
               {briefing ? 'Speaking…' : 'Brief aloud'}
             </button>
@@ -939,6 +985,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             sourceGraph={report.sourceGraph}
             enterpriseTrust={report.enterpriseTrust}
             rlmTrajectory={report.rlmTrajectory}
+            healthSite={report.healthSite}
             boardFindings={boardFindings}
           />
         </div>

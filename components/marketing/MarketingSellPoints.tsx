@@ -1,10 +1,11 @@
 import React from 'react';
+import { LIVE_ANSWER_CHECKS } from '../../services/marketing/engineCoverage';
 import './space.css';
 
 export const MARKETING_SELL_POINTS = [
   {
     title: 'Search and AI answers together',
-    body: 'One scout across Google, AI Overviews, ChatGPT, and Perplexity, so classic ranking gaps and answer-engine gaps show up in the same pass.',
+    body: `Your site and live web search, in one pass. ${LIVE_ANSWER_CHECKS}`,
   },
   {
     title: 'Labeled evidence',

@@ -206,9 +206,37 @@ export type DualRateLimitResult =
   | { ok: true; headers: Record<string, string> }
   | { ok: false; response: Response };
 
+const rlByStore = new WeakMap<object, Map<string, { count: number; resetAt: number }>>();
+
+function nextRlCount(store: object, key: string, windowSec: number, seeded: number): number {
+  const now = Date.now();
+  let slots = rlByStore.get(store);
+  if (!slots) {
+    slots = new Map();
+    rlByStore.set(store, slots);
+  }
+  let slot = slots.get(key);
+  if (!slot || slot.resetAt <= now) {
+    slot = { count: seeded, resetAt: now + windowSec * 1000 };
+    slots.set(key, slot);
+    if (slots.size > 400) {
+      for (const [k, v] of slots) {
+        if (v.resetAt <= now) slots.delete(k);
+      }
+    }
+  }
+  slot.count += 1;
+  return slot.count;
+}
+
 /**
- * Dual-key fixed window via KV (account + IP). Fail closed when KV missing
- * and auth is required. Returns standard X-RateLimit-* headers on allow or 429.
+ * Dual-key fixed window (account + IP). The count lives in this isolate.
+ * KV is read once per window to seed a new isolate, and written only when a key
+ * crosses the limit so the next isolate stays blocked.
+ * shortcut: calls under the limit do not write KV, so another isolate can admit
+ * its own window. The edge limiter still caps each IP. Write every call again
+ * when KV writes are cheap.
+ * Fail closed when KV is missing and auth is required.
  */
 export async function enforceDualRateLimit(
   env: Env,
@@ -247,9 +275,26 @@ export async function enforceDualRateLimit(
 
   let worstRemaining = limit;
   for (const key of keys) {
-    const raw = await env.LUMINARA_KV.get(key);
-    const count = Number(raw || 0) + 1;
+    const now = Date.now();
+    const slots = rlByStore.get(env.LUMINARA_KV);
+    const cached = slots?.get(key);
+    let seeded = 0;
+    if (!cached || cached.resetAt <= now) {
+      try {
+        const n = Number((await env.LUMINARA_KV.get(key)) || 0);
+        seeded = Number.isFinite(n) ? n : 0;
+      } catch {
+        seeded = 0;
+      }
+    }
+    const count = nextRlCount(env.LUMINARA_KV, key, windowSec, seeded);
     if (count > limit) {
+      try {
+        // shortcut: 120s minimum, a 60s expiration has been failing the live KV put.
+        await env.LUMINARA_KV.put(key, String(count), { expirationTtl: Math.max(120, windowSec) });
+      } catch {
+        console.warn(JSON.stringify({ event: 'rate_limit_store_error', action: opts.action }));
+      }
       console.warn(
         JSON.stringify({
           event: 'rate_limit_exceeded',
@@ -267,7 +312,6 @@ export async function enforceDualRateLimit(
         response: rateLimitedResponse({ limit, windowSec, remaining: 0 }),
       };
     }
-    await env.LUMINARA_KV.put(key, String(count), { expirationTtl: windowSec });
     worstRemaining = Math.min(worstRemaining, Math.max(0, limit - count));
   }
 
@@ -296,7 +340,21 @@ export async function enforceEdgeBindingLimit(
       }),
     };
   }
-  const { success } = await limiter.limit({ key });
+  let success = false;
+  try {
+    success = (await limiter.limit({ key })).success;
+  } catch {
+    // A broken binding must not 500 sign-up or the audit. The KV window still applies.
+    console.warn(JSON.stringify({ event: 'edge_rate_limit_unavailable', action: meta.action }));
+    return {
+      ok: true,
+      headers: rateLimitHeaders({
+        limit: meta.limit,
+        remaining: meta.limit,
+        windowSec: meta.windowSec,
+      }),
+    };
+  }
   if (!success) {
     console.warn(
       JSON.stringify({
@@ -387,44 +445,53 @@ export async function enforceKvSlidingWindow(
   const now = Date.now();
   const windowMs = windowSec * 1000;
   const cutoff = now - windowMs;
-  const prior = (await readSlidingBucket(env.LUMINARA_KV, opts.key)).filter((t) => t > cutoff);
-  if (prior.length >= limit) {
-    const oldest = Math.min(...prior);
-    const retryAfterSec = Math.max(1, Math.ceil((oldest + windowMs - now) / 1000));
-    console.warn(
-      JSON.stringify({
-        event: 'rate_limit_exceeded',
-        kind: 'sliding_window',
-        key: opts.key,
-        count: prior.length,
-        limit,
-        windowSec,
-      }),
-    );
+  try {
+    const prior = (await readSlidingBucket(env.LUMINARA_KV, opts.key)).filter((t) => t > cutoff);
+    if (prior.length >= limit) {
+      const oldest = Math.min(...prior);
+      const retryAfterSec = Math.max(1, Math.ceil((oldest + windowMs - now) / 1000));
+      console.warn(
+        JSON.stringify({
+          event: 'rate_limit_exceeded',
+          kind: 'sliding_window',
+          key: opts.key,
+          count: prior.length,
+          limit,
+          windowSec,
+        }),
+      );
+      return {
+        ok: false,
+        response: rateLimitedResponse({
+          limit,
+          windowSec,
+          remaining: 0,
+          retryAfterSec,
+          code: 'RATE_LIMITED',
+        }),
+      };
+    }
+
+    const next = [...prior, now];
+    // shortcut: 120s minimum, KV has been rejecting a 60s expiration on the live account.
+    await env.LUMINARA_KV.put(opts.key, JSON.stringify({ timestamps: next } satisfies SlidingBucket), {
+      expirationTtl: Math.max(120, windowSec + 60),
+    });
     return {
-      ok: false,
-      response: rateLimitedResponse({
+      ok: true,
+      headers: rateLimitHeaders({
         limit,
+        remaining: Math.max(0, limit - next.length),
         windowSec,
-        remaining: 0,
-        retryAfterSec,
-        code: 'RATE_LIMITED',
       }),
     };
+  } catch {
+    console.warn(JSON.stringify({ event: 'rate_limit_store_error' }));
+    return {
+      ok: true,
+      headers: rateLimitHeaders({ limit, remaining: limit, windowSec }),
+    };
   }
-
-  const next = [...prior, now];
-  await env.LUMINARA_KV.put(opts.key, JSON.stringify({ timestamps: next } satisfies SlidingBucket), {
-    expirationTtl: Math.max(60, windowSec + 60),
-  });
-  return {
-    ok: true,
-    headers: rateLimitHeaders({
-      limit,
-      remaining: Math.max(0, limit - next.length),
-      windowSec,
-    }),
-  };
 }
 
 /**

@@ -2,6 +2,12 @@
  * Crawl surfaces served by the Worker (and mirrored under public/ for Vite).
  * Keep copy factual; no invented metrics.
  */
+import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/planCopy';
+import { PAID_PLAN_PRICES, type PaidPlanId } from '../components/paywall/planPrices';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
+import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
+import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
+import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
 # Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
@@ -69,6 +75,37 @@ Sitemap: https://www.luminarasuite.com/sitemap.xml
 Sitemap: https://luminarasuite.com/sitemap.xml
 `;
 
+const PRODUCTION_CRAWL_HOSTS = new Set(['luminarasuite.com', 'www.luminarasuite.com']);
+const STAGING_CRAWL_HOST = 'staging.luminarasuite.com';
+
+/**
+ * Staging is not for indexing. Production hostnames stay indexable even when ENVIRONMENT is wrong.
+ * Any other host is treated as staging only when ENVIRONMENT is staging.
+ */
+export function isStagingCrawlHost(hostname: string, environment: string | undefined): boolean {
+  const host = hostname.toLowerCase().split(':')[0];
+  if (PRODUCTION_CRAWL_HOSTS.has(host)) return false;
+  if (host === STAGING_CRAWL_HOST) return true;
+  return String(environment || '').trim().toLowerCase() === 'staging';
+}
+
+export const STAGING_ROBOTS_TXT = `# Staging is not for search indexing.
+User-agent: *
+Disallow: /
+`;
+
+export function robotsTxtForHost(hostname: string, environment: string | undefined): string {
+  return isStagingCrawlHost(hostname, environment) ? STAGING_ROBOTS_TXT : ROBOTS_TXT;
+}
+
+/** Adds X-Robots-Tag on staging responses. Production responses are returned unchanged. */
+export function applyHostRobots(url: URL, environment: string | undefined, res: Response): Response {
+  if (!isStagingCrawlHost(url.hostname, environment)) return res;
+  const headers = new Headers(res.headers);
+  headers.set('X-Robots-Tag', 'noindex, nofollow');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
 export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'): string {
   const base = origin.replace(/\/+$/, '');
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -96,9 +133,38 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
 
 export const SITEMAP_XML = buildSitemapXml('https://www.luminarasuite.com');
 
+function llmsPaidPlanBlock(): string {
+  const ids: PaidPlanId[] = ['starter', 'growth', 'agency'];
+  return ids.map((id) => {
+    const price = PAID_PLAN_PRICES[id];
+    const ent = PLAN_ENTITLEMENTS[id];
+    const parts = [
+      `${ent.title}: list price ${price.usdLabel}, pay ${price.starsLabel}`,
+      `${ent.domainLimit} monitored domains`,
+      ent.mcpAccess ? 'IDE access' : 'No IDE access',
+      ent.shareLinks ? 'Public share links' : 'No public share links',
+    ];
+    if (ent.scheduledReaudit !== 'none') {
+      const cadence = ent.scheduledReaudit.charAt(0).toUpperCase() + ent.scheduledReaudit.slice(1);
+      parts.push(`${cadence} re-audit reminders in Telegram`);
+    }
+    if (ent.apiAccess) parts.push('API access');
+    if (ent.agencyClientLimit > 0) {
+      parts.push(`${ent.agencyClientLimit} client workspaces saved in this browser`);
+    }
+    if (id === 'agency') {
+      parts.push('Daily drift check');
+      if (ent.whiteLabelPdf) parts.push('White-label PDF');
+      parts.push(LIVE_ANSWER_CHECKS);
+    }
+    const line = parts.join('. ');
+    return `- ${line.endsWith('.') ? line : `${line}.`}`;
+  }).join('\n');
+}
+
 export const LLMS_TXT = `# Luminara Suite
 
-> Luminara Suite audits how a website shows up in Google, AI Overviews, ChatGPT, and Perplexity, then ranks one next fix. Web app, Windows desktop, and a Telegram Mini App.
+> Luminara Suite checks a website and live web search, then ranks one next fix. ${LIVE_ANSWER_CHECKS} Web app, Windows desktop, and a Telegram Mini App.
 
 ## Methodology
 
@@ -125,10 +191,10 @@ LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt pres
 ## Answer engine targets
 
 ### What is Luminara Suite?
-Luminara Suite is an Answer Engine Optimization (AEO) and AI visibility platform that audits brand citations across Google Search, AI Overviews, ChatGPT, and Perplexity. Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week.
+Luminara Suite checks whether Google and AI answers name a real estate agency, then ranks one fix to ship next. ${LIVE_ANSWER_CHECKS} Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week. ${REAL_ESTATE_AUDIENCE}
 
 ### How does Luminara compare to traditional SEO suites?
-Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness, brand citation share in conversational models, and knowledge-graph grounding. Every metric is strictly labeled measured, estimated, or not_measured, refusing to fabricate visibility percentages when underlying evidence is unavailable.
+Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness and knowledge-graph grounding. ${LIVE_ANSWER_CHECKS} Every metric is labeled measured, estimated, or not_measured.
 
 ### What is Answer Engine Optimization (AEO)?
 Answer Engine Optimization (AEO) is the discipline of structuring web content, technical crawl assets, and entity schema so generative AI engines (Google AI Overviews, ChatGPT, Perplexity, Claude) extract, synthesize, and cite the brand as an authoritative source in direct conversational responses.
@@ -139,18 +205,16 @@ Answer Engine Optimization (AEO) is the discipline of structuring web content, t
 
 ## Pricing (30 days)
 
-Published USD labels. Plans are paid with Telegram Stars inside the Telegram Mini App. Card checkout is not available yet.
+${CHECKOUT_TERM_LINE} ${listPriceSummary()}
 
-- Starter: US$49. Up to 2 sites. No MCP. No full public share links.
-- Growth: US$149. MCP, full share links, 3 seats, weekly re-audits.
-- Agency: US$349. API access, 10 client seats, daily Sentinel, white-label PDF.
-- Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
+${llmsPaidPlanBlock()}
+- Free: ${PLAN_ENTITLEMENTS.free.domainLimit} domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Pro / Agency only.
 
 ## MCP
 
 - Docs: https://www.luminarasuite.com/docs/mcp.html
 - Endpoint: https://luminarasuite.com/api/mcp
-- MCP access is included on Growth and Agency.
+- MCP access is included on Growth and Pro / Agency.
 
 ## Telegram Mini App
 
@@ -174,7 +238,8 @@ Published USD labels. Plans are paid with Telegram Stars inside the Telegram Min
 
 ## Studio
 
-- Luminara Digital: https://luminaradigital.io
+- Luminara Digital: ${COMPANY_SITE_URL}
+- Services: ${COMPANY_SERVICES_URL}
 - Source: https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent
 
 ## Legal

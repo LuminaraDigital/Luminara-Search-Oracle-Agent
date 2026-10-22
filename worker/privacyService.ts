@@ -136,6 +136,45 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  // Community feed (0033): the cards this account shared, each with its vote count, and the votes it
+  // cast. Who voted on its cards is not exported. Deleted with the account.
+  const communityFeedCards = await q<Record<string, unknown>>(
+    `SELECT c.id, c.idea_id, c.idea_text, c.niche, c.card_json, c.status, c.utc_day, c.shared_at,
+            (SELECT COUNT(*) FROM community_feed_votes v WHERE v.card_id = c.id) AS upvotes
+       FROM community_feed_cards c WHERE c.account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const communityFeedVotes = await q<Record<string, unknown>>(
+    `SELECT card_id, created_at FROM community_feed_votes WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const citationWatches = await q<Record<string, unknown>>(
+    `SELECT id, client_id, domain, engine, prompts_json, cadence, active, created_at FROM citation_watches WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const citationWatchRuns = await q<Record<string, unknown>>(
+    `SELECT id, watch_id, engine, ran_at, measurement_status, verdict, cited_count, prompt_count, share, reason FROM citation_watch_runs WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const signedAuditReceipts = await q<Record<string, unknown>>(
+    `SELECT id, domain, payload_json, signature, kid, created_at, revoked_at, revoked_reason FROM signed_audit_receipts WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -160,6 +199,11 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'stars_charges',
       'ton_pending_orders',
       'payment_support_requests',
+      'community_feed_cards',
+      'community_feed_votes',
+      'citation_watches',
+      'citation_watch_runs',
+      'signed_audit_receipts',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -191,6 +235,11 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     starsCharges,
     tonPendingOrders,
     paymentSupportRequests,
+    communityFeedCards,
+    communityFeedVotes,
+    citationWatches,
+    citationWatchRuns,
+    signedAuditReceipts,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -219,6 +268,19 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   await run('idea_scouts', `DELETE FROM idea_scouts WHERE account_id = ?`, accountId);
   await run('idea_scout_daily', `DELETE FROM idea_scout_daily WHERE account_id = ?`, accountId);
   await run('niche_pulse_subs', `DELETE FROM niche_pulse_subs WHERE account_id = ?`, accountId);
+  // Community feed (0033), one batch in this order: every vote on this account's cards, then its own
+  // votes, then its cards. Cards first would leave the votes on them with nothing to find them by.
+  try {
+    const [votesOnCards, ownVotes, cards] = await db.batch([
+      db.prepare(`DELETE FROM community_feed_votes WHERE card_id IN (SELECT id FROM community_feed_cards WHERE account_id = ?)`).bind(accountId),
+      db.prepare(`DELETE FROM community_feed_votes WHERE account_id = ?`).bind(accountId),
+      db.prepare(`DELETE FROM community_feed_cards WHERE account_id = ?`).bind(accountId),
+    ]);
+    counts.community_feed_votes = Number(votesOnCards.meta?.changes ?? 0) + Number(ownVotes.meta?.changes ?? 0);
+    counts.community_feed_cards = Number(cards.meta?.changes ?? 0);
+  } catch (err) {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  }
   await run('user_missions', `DELETE FROM user_missions WHERE account_id = ?`, accountId);
   await run('user_progression', `DELETE FROM user_progression WHERE account_id = ?`, accountId);
   await run('scout_receipts', `DELETE FROM scout_receipts WHERE account_id = ?`, accountId);
@@ -247,6 +309,15 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   });
   // Free text the buyer wrote, with their Telegram id: nothing here is a financial record, so the rows go.
   await run('payment_support_requests', `DELETE FROM payment_support_requests WHERE account_id = ?`, accountId).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  await run('citation_watch_runs', `DELETE FROM citation_watch_runs WHERE account_id = ?`, accountId).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  await run('citation_watches', `DELETE FROM citation_watches WHERE account_id = ?`, accountId).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  await run('signed_audit_receipts', `DELETE FROM signed_audit_receipts WHERE account_id = ?`, accountId).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).

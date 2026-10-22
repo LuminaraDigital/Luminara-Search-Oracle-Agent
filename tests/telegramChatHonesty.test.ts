@@ -10,6 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleTelegramUpdate, PLANS } from '../worker/telegramBot';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import {
   BILLING_HELP_REPLY,
   BILLING_PROBLEM_WORDS,
@@ -422,7 +423,7 @@ describe('filterChatReply: a price of ours gives way to the plan block', () => {
     ['Our Growth plan covers 10 sites.'],
     ['Pro is 18k Stars.'],
     ['You get 14 days free on Growth.'],
-    ['Single Autonomous Audit Run is 30 Stars.'],
+    ['24-hour pass is 30 Stars.'],
     ['Starter | 1,000 | 30 days'],
     ['STARTER IS 1,000 STARS'],
     ['It costs 25 XTR.'],
@@ -1343,10 +1344,9 @@ function makeChat() {
     WEBAPP_URL: 'https://luminarasuite.com',
     TELEGRAM_WEBHOOK_SECRET: 'test-secret',
     TELEGRAM_ADMIN_ID: '999999',
-    LUMINARA_KV: kv as any,
+    LUMINARA_KV: kv as any, DAILY_QUOTA: memoryDailyQuotaNamespace(), FREE_DAILY_LIMIT: '50',
     GROQ_API_KEY: 'gsk_mock_key',
   };
-
   /** Sends one update. Returns what reached the model and every Telegram call, by method. */
   async function send(text: string, modelReply = 'Add FAQ schema.', fromId = 100, telegramOk = true) {
     let systemPrompt = '';

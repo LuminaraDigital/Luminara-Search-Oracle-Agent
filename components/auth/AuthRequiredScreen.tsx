@@ -1,14 +1,18 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
-import { AuthPanel, type AuthMode } from './AuthPanel';
+import React, { Suspense, useEffect, useId, useRef, useState } from 'react';
+import type { AuthMode } from './AuthPanel';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 import { isInTelegram, getTelegramUserUnsafe } from '../../services/telegram/tma';
 import type { AppAuthState } from '../../services/auth/useAppAuth';
 import { MINI_APP_URL, botUsernameFromMiniAppUrl } from '../../services/referrals/rules';
 import { BrandLoader } from '../intro/BrandLoader';
 import { ICONS } from '../../constants';
+import { LIVE_ANSWER_CHECKS } from '../../services/marketing/engineCoverage';
 import '../marketing/space.css';
 
+const AuthPanel = lazyWithReload(() => import('./AuthPanel').then((m) => ({ default: m.AuthPanel })));
+
 const FREE_ACCOUNT_POINTS = [
-  'Checks across Google Search, AI Overviews, ChatGPT and Perplexity.',
+  `Checks your site and live web search. ${LIVE_ANSWER_CHECKS}`,
   'Every result labeled Measured, Estimated or Not measured.',
   'One fix to ship first, with copy and schema ready to paste.',
   'A daily hosted allowance. No card needed.',
@@ -25,17 +29,17 @@ const FREE_ACCOUNT_POINTS = [
 function featureExplanation(view?: string): string | null {
   switch (view) {
     case 'ORACLE_AGENT':
-      return 'Ask requires an account to ground conversations in your verified Business DNA and preserve message memory.';
+      return 'Ask needs a free account so your questions and answers stay on this login.';
     case 'BRAND_MEMORY':
-      return 'Brand Memory requires an account to securely save and synchronize your company facts across devices.';
+      return 'Memory needs a free account so company facts stay on this login.';
     case 'NOTEBOOK':
-      return 'Studio requires an account to save interactive audit notebooks and research history.';
+      return 'Studio needs a free account so research notebooks stay on this login.';
     case 'BUSINESS_DNA':
-      return 'Business DNA requires an account to establish verified entity ownership and private tenant storage.';
+      return 'Business profile needs a free account so what you sell and who you compete with stay on this login.';
     case 'DASHBOARD':
-      return 'Workspace requires an account to load your saved audits, readiness metrics, and tracked domains.';
+      return 'Dashboard needs a free account so saved audits stay on this login.';
     case 'AGENT_REPORT':
-      return 'Agent Reports require an account to view and manage saved diagnostic reports.';
+      return 'Reports need a free account so saved audits stay on this login.';
     default:
       return null;
   }
@@ -82,7 +86,7 @@ export const AuthRequiredScreen: React.FC<{
 
   if (auth.loading) {
     return (
-      <div className={`${isModal ? 'fixed inset-0 z-[80] bg-black/95' : 'min-h-[100dvh] bg-black'} text-ink flex items-center justify-center px-4 relative overflow-hidden`}>
+      <div id={isModal ? undefined : 'main'} tabIndex={isModal ? undefined : -1} className={`${isModal ? 'fixed inset-0 z-[80] bg-black/95' : 'min-h-[100dvh] bg-black outline-none'} text-ink flex items-center justify-center px-4 relative overflow-hidden`}>
         <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
         <BrandLoader caption={inTelegram ? 'Opening your Mini App session' : 'Verifying your account session'} />
       </div>
@@ -131,7 +135,7 @@ export const AuthRequiredScreen: React.FC<{
           <p className="text-sm text-[var(--color-ink-2)] leading-relaxed max-w-sm mx-auto">
             {tgUser?.first_name
               ? `${tgUser.first_name}, we could not verify this open. Reopen from the bot menu or retry below.`
-              : 'Your Telegram account is your identity. Audits, Stars, and Business DNA stay tied to this session.'}
+              : 'Your Telegram account is your identity. Audits, Stars, and your business profile stay tied to this session.'}
           </p>
         </div>
 
@@ -160,7 +164,6 @@ export const AuthRequiredScreen: React.FC<{
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
-        aria-label="Account access"
         className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/95 overflow-y-auto overflow-x-hidden"
       >
         <div aria-hidden className="lx-stars pointer-events-none fixed inset-0 opacity-70" />
@@ -168,11 +171,11 @@ export const AuthRequiredScreen: React.FC<{
         {tgContent}
       </div>
     ) : (
-      <div className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-10 relative overflow-hidden">
+      <main id="main" tabIndex={-1} className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-10 relative overflow-hidden outline-none">
         <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
         <div aria-hidden className="lx-horizon pointer-events-none top-[82%]" />
         {tgContent}
-      </div>
+      </main>
     );
   }
 
@@ -220,7 +223,7 @@ export const AuthRequiredScreen: React.FC<{
             </h1>
             <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
               {mode === 'signup'
-                ? 'Start your Luminara Suite account to save audits, build your Business DNA, and run hosted AI visibility diagnostics.'
+                ? 'Start your Luminara Suite account to save audits, build your business profile, and run hosted checks.'
                 : 'Access your account and continue your journey with us across web, Telegram, and desktop.'}
             </p>
           </div>
@@ -232,12 +235,14 @@ export const AuthRequiredScreen: React.FC<{
             </div>
           )}
 
-          <AuthPanel
-            initialMode={initialMode}
-            mode={mode}
-            onModeChange={setMode}
-            chromeless
-          />
+          <Suspense fallback={<BrandLoader />}>
+            <AuthPanel
+              initialMode={initialMode}
+              mode={mode}
+              onModeChange={setMode}
+              chromeless
+            />
+          </Suspense>
         </div>
       </div>
 
@@ -274,7 +279,6 @@ export const AuthRequiredScreen: React.FC<{
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
-        aria-label="Account access"
         className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/90 overflow-y-auto overflow-x-hidden"
       >
         <div aria-hidden className="lx-stars pointer-events-none fixed inset-0 opacity-70" />
@@ -285,10 +289,10 @@ export const AuthRequiredScreen: React.FC<{
   }
 
   return (
-    <div className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-8 sm:py-10 relative overflow-hidden">
+    <main id="main" tabIndex={-1} className="min-h-[100dvh] bg-black text-ink flex items-center justify-center px-4 py-8 sm:py-10 relative overflow-hidden outline-none">
       <div aria-hidden className="lx-stars pointer-events-none absolute inset-0 opacity-70" />
       <div aria-hidden className="lx-horizon pointer-events-none top-[84%]" />
       {webSplitCard}
-    </div>
+    </main>
   );
 };

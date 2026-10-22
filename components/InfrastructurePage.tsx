@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 
 interface InfrastructurePageProps {
@@ -13,7 +14,7 @@ const pillars = [
   },
   {
     title: 'AI visibility',
-    desc: 'Tests whether answer engines can find and use your brand context when people ask for services like yours.',
+    desc: `On every plan, checks whether your pages and live web search cover the questions buyers ask. ${LIVE_ANSWER_CHECKS}`,
   },
   {
     title: 'Citation gaps',
@@ -29,15 +30,15 @@ const pillars = [
   },
   {
     title: 'Impact ranking',
-    desc: 'Orders fixes by likely leverage so you start with the work that changes visibility soonest.',
+    desc: 'A signed-in audit can order fixes by likely leverage. A guest run leaves this Not measured.',
   },
   {
     title: 'Competitor scan',
-    desc: 'Compares rivals on the same checks so you can see where they win and where you can take ground.',
+    desc: 'A signed-in audit can compare rivals you name in your business profile. A guest run leaves this Not measured.',
   },
   {
     title: 'Progress tracking',
-    desc: 'Keeps audits and priorities in your workspace so the next run is not starting from zero.',
+    desc: 'A signed-in account keeps earlier audits so the next run is not starting from zero. Guests do not get a saved history.',
   },
 ] as const;
 
@@ -51,7 +52,6 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
 
   return (
     <MarketingPageShell
-      brandSub="How"
       footerStatement="From crawl to a prioritized plan."
       wide
       closing={{
@@ -73,7 +73,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
             What runs when <span className="italic lx-gold-text pr-[0.08em]">you audit a site.</span>
           </>
         }
-        lede="A fixed set of checks across search and AI answers, then a ranked list of fixes in plain English. Every run covers the same surfaces, labels its evidence, and ends in one ship action."
+        lede={`A site crawl and a live web search, then a short list of fixes in plain English. ${LIVE_ANSWER_CHECKS} Guest runs leave competitor scan, impact ranking, and saved progress as Not measured until you sign in.`}
       />
 
       <section
@@ -84,7 +84,7 @@ const InfrastructurePage: React.FC<InfrastructurePageProps> = ({
           <div className="lg:sticky lg:top-32">
             <p className="lx-eyebrow">What it checks</p>
             <h2 id="checks-heading" className="lx-display lx-h3 mt-5">
-              Same surfaces, <span className="italic lx-gold-text pr-[0.08em]">every run.</span>
+              What a run <span className="italic lx-gold-text pr-[0.08em]">includes.</span>
             </h2>
           </div>
         </div>

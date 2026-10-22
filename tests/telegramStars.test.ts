@@ -11,6 +11,8 @@ import {
 } from '../worker/telegramBot';
 import type { Env } from '../worker/index';
 import { createSqliteD1 } from './helpers/sqliteD1';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
+import { spendDailyQuota } from '../worker/quotaMiddleware';
 
 // Mock in-memory KV
 class MockKV {
@@ -55,6 +57,7 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       TELEGRAM_WEBHOOK_SECRET: 'test-secret',
       TELEGRAM_ADMIN_ID: '999999',
       LUMINARA_KV: mockKv as any,
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
     };
   });
 
@@ -641,8 +644,7 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
 
     it('enforces daily free quota on interactive messages', async () => {
       env.FREE_DAILY_LIMIT = '1';
-      const today = new Date().toISOString().slice(0, 10);
-      await mockKv.put('quota:100:' + today, '1');
+      expect((await spendDailyQuota(env, '100', 1)).ok).toBe(true);
 
       mockFetch.mockResolvedValue({
         json: async () => ({ ok: true }),

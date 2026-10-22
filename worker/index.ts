@@ -56,8 +56,8 @@ import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { PRIVACY_HTML } from './privacyPolicy';
 import { TERMS_HTML } from './termsPolicy';
-import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML, buildSitemapXml } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml } from './marketingShell';
+import { LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
+import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -83,7 +83,7 @@ import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, 
 import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
-import { getActiveSubscription, checkHostedQuota, type SubRow } from './quotaMiddleware';
+import { getActiveSubscription, checkHostedQuota, readFreeUsed, QUOTA_CAPACITY_ERROR, type SubRow } from './quotaMiddleware';
 import { handleReferralRoute, referralBonusRemaining } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
@@ -95,6 +95,7 @@ import { recordAuditProof, verifyAuditProof, generateBadgeResponse } from './pro
 import { checkTelegramUpdateThrottle } from './webhookThrottle';
 import {
   guardApiRoute,
+  identifiedForRequest,
   buildSessionCookie,
   buildLogoutCookie,
   verifyWebhookSignature,
@@ -122,7 +123,7 @@ import {
   handleOracleSessionControlRoute,
   isOracleServerEnabled,
 } from './oracleChat';
-import { OracleSession } from './oracleSession';
+export { OracleSession } from './oracleSession';
 import { handlePagespeedRoute } from './pagespeedRoute';
 import { handleDeployReadbackRoute } from './deployReadback';
 import {
@@ -130,6 +131,7 @@ import {
   getAuditRun,
   isAuditQueueEnabled,
 } from './auditQueue';
+import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
 import { handleMcpOAuthRoute } from './mcpOAuth';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
@@ -144,6 +146,8 @@ import { runRsiSkillCurator } from './rsiCurator';
 import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
+import { handleCitationWatchRoute, runCitationWatchTick } from './citationWatch';
+import { handleAuditReceiptRoute } from './auditReceipts';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -163,7 +167,7 @@ import { handlePasswordResetRequest, handleSendVerification } from './authTollFr
 import { handleRequestOtp, handleVerifyOtp } from './authOtpSms';
 import { handleSignIn, handleSignUp } from './authCredentialGateway';
 
-export { OracleSession };
+export { DailyQuota } from './dailyQuota';
 import { createProject, listProjects, getProject } from './projectService';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
@@ -317,11 +321,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
-    // Public health: ok + payment-rail booleans only (no provider inventory / pricing internals).
     const adminCheck = isAdminAuthorized(env, request);
     if (!adminCheck.ok) {
       return withCors(json({
         ok: true,
+        hostedGemini: Boolean(String(env.GEMINI_API_KEY || '').trim()),
         // ton is true only when the config is valid AND the owner has confirmed the merchant address.
         ton: isTonCheckoutOpen(env),
         jettonCheckout: JETTON_CHECKOUT_LIVE && isTonCheckoutOpen(env),
@@ -329,6 +333,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         // from this; without it the panel has nothing to list.
         plans: publicPlanCatalogue(),
         stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
+        trust: { receiptsEnabled: isTrustReceiptsEnabled(env), domainVerifyEnabled: isDomainVerifyEnabled(env) },
       }));
     }
 
@@ -379,7 +384,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       },
       requireAuth: env.REQUIRE_TG_AUTH === 'true',
       requireSubscription: env.REQUIRE_SUBSCRIPTION === 'true',
-      freeDailyLimit: Number(env.FREE_DAILY_LIMIT || 0),
+      freeDailyLimit: Number(env.FREE_DAILY_LIMIT || 3),
       plans: PLANS,
     }));
   }
@@ -485,10 +490,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         email: verified.user.email,
         name: verified.user.name,
       });
-      if (!opaqueId) {
-        return withCors(json({ ok: false, error: 'Session store unavailable' }, 503));
-      }
-      const cookieHeader = buildSessionCookie(opaqueId);
       const res = json({
         ok: true,
         user: stored,
@@ -500,7 +501,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
           tier: org.tier,
           role: membership.role,
         },
-      }, 200, { 'Set-Cookie': cookieHeader });
+      }, 200, opaqueId ? { 'Set-Cookie': buildSessionCookie(opaqueId) } : {});
       return withCors(res);
     }
 
@@ -819,7 +820,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (path === '/auth/quota') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
     const who = await identify(request, env);
-    const limit = Number(env.FREE_DAILY_LIMIT || 0);
+    const limit = Number(env.FREE_DAILY_LIMIT || 3);
     const now = new Date();
     const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
     const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
@@ -862,8 +863,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }));
     }
 
-    const day = now.toISOString().slice(0, 10);
-    const used = env.LUMINARA_KV ? Number((await env.LUMINARA_KV.get(`quota:${accountId}:${day}`)) || 0) : 0;
+    const used = await readFreeUsed(env, accountId, limit);
+    if (used === null) return withCors(json({ ok: false, error: QUOTA_CAPACITY_ERROR, code: 'HOSTED_CAPACITY' }, 503));
     const bonusRemaining = await referralBonusRemaining(env, accountId);
 
     return withCors(json({
@@ -1620,6 +1621,18 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (res) return withCors(res);
   }
 
+  if (path === '/citation-watches' || path.startsWith('/citation-watches/')) {
+    const who = identifiedForRequest(request);
+    if (!who?.user) {
+      return withCors(json({ ok: false, error: who?.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401));
+    }
+    return withCors(handleCitationWatchRoute(request, env, who.user, path));
+  }
+  if (path === '/audit-receipts' || path.startsWith('/audit-receipts/')) {
+    const receipt = await handleAuditReceiptRoute(request, env, path, identifiedForRequest(request)?.user ?? null);
+    if (receipt) return withCors(receipt);
+  }
+
   // PageSpeed Insights (BYOK header or hosted PAGESPEED_API_KEY)
   if (path === '/pagespeed') {
     const who = await identify(request, env);
@@ -2071,6 +2084,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(await executeOracleGatewayTask(env, who.user, reqData, request.headers));
   }
 
+  if (path === '/audit/scout-run' && request.method === 'POST') {
+    return withCors(await handleAuditScoutRun(request, env));
+  }
+
   if (
     path === '/oracle/chat' ||
     path.startsWith('/oracle/') ||
@@ -2079,16 +2096,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     path === '/tools' ||
     path.startsWith('/tools/')
   ) {
-    return withCors(
-      json(
-        {
-          ok: false,
-          error: 'Not implemented yet. Agency Oracle/audit APIs ship behind feature flags.',
-          code: 'NOT_IMPLEMENTED',
-        },
-        501,
-      ),
-    );
+    return withCors(json({ ok: false, error: 'Not implemented yet. Agency Oracle/audit APIs ship behind feature flags.', code: 'NOT_IMPLEMENTED' }, 501));
   }
 
   return withCors(json({ error: 'Not found' }, 404));
@@ -2108,6 +2116,7 @@ function permanentRedirect(url: URL, pathname: string): Response {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const guard = (res: Response) => applyHostRobots(url, env.ENVIRONMENT, withSecurityHeaders(res));
 
     // Canonical redirect: redirect naked domain to www.luminarasuite.com for web/marketing traffic in production
     if (env.ENVIRONMENT === 'production' && url.hostname === 'luminarasuite.com' && !url.pathname.startsWith('/api/')) {
@@ -2123,12 +2132,12 @@ export default {
 
     if (url.pathname.startsWith('/api/')) {
       try {
-        return withSecurityHeaders(await handleApi(request, env, ctx));
+        return guard(await handleApi(request, env, ctx));
       } catch (e) {
         // Never echo internal error details (stack traces, upstream messages, env hints) to callers.
         console.error('[api] unhandled error', request.method, url.pathname, e);
         reportWorkerException(env, e, { path: url.pathname, method: request.method });
-        return withSecurityHeaders(json({ error: 'Internal error' }, 500));
+        return guard(json({ error: 'Internal error' }, 500));
       }
     }
 
@@ -2140,7 +2149,7 @@ export default {
       url.pathname === '/privacy-policy' ||
       url.pathname === '/privacy-policy/'
     ) {
-      return withSecurityHeaders(
+      return guard(
         new Response(PRIVACY_HTML, {
           status: 200,
           headers: {
@@ -2160,7 +2169,7 @@ export default {
       url.pathname === '/tos' ||
       url.pathname === '/tos/'
     ) {
-      return withSecurityHeaders(
+      return guard(
         new Response(TERMS_HTML, {
           status: 200,
           headers: {
@@ -2171,10 +2180,9 @@ export default {
       );
     }
 
-    // Crawl surfaces must never fall through to the SPA HTML shell.
     if (url.pathname === '/robots.txt') {
-      return withSecurityHeaders(
-        new Response(ROBOTS_TXT, {
+      return guard(
+        new Response(robotsTxtForHost(url.hostname, env.ENVIRONMENT), {
           status: 200,
           headers: {
             'Content-Type': 'text/plain; charset=utf-8',
@@ -2184,7 +2192,7 @@ export default {
       );
     }
     if (url.pathname === '/sitemap.xml') {
-      return withSecurityHeaders(
+      return guard(
         new Response(SITEMAP_XML, {
           status: 200,
           headers: {
@@ -2195,7 +2203,7 @@ export default {
       );
     }
     if (url.pathname === '/llms.txt') {
-      return withSecurityHeaders(
+      return guard(
         new Response(LLMS_TXT, {
           status: 200,
           headers: {
@@ -2208,7 +2216,7 @@ export default {
 
     // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
     if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
-      return withSecurityHeaders(await desktopWindowsDownload(env, request));
+      return guard(await desktopWindowsDownload(env, request));
     }
 
     // Windows desktop landing page: fetch static doc directly without SPA fallback loop.
@@ -2217,7 +2225,7 @@ export default {
       docUrl.search = url.search;
       const docRequest = new Request(docUrl.toString(), request);
       const docRes = await env.ASSETS.fetch(docRequest);
-      return withSecurityHeaders(docRes);
+      return guard(docRes);
     }
 
     // Extensionless citability URL: fetch static doc directly without redirect loop.
@@ -2227,30 +2235,30 @@ export default {
       docUrl.search = url.search;
       const docRequest = new Request(docUrl.toString(), request);
       const docRes = await env.ASSETS.fetch(docRequest);
-      return withSecurityHeaders(docRes);
+      return guard(docRes);
     }
 
     // Short marketing alias. Canonical page is /how-it-works.
     if (url.pathname === '/how' || url.pathname === '/how/') {
-      return withSecurityHeaders(permanentRedirect(url, '/how-it-works'));
+      return guard(permanentRedirect(url, '/how-it-works'));
     }
 
     // Unlisted share OG HTML (before static marketing shells).
     const shareHtml = await maybeServeShareHtml(request, env);
     if (shareHtml) {
-      return withSecurityHeaders(shareHtml);
+      return guard(shareHtml);
     }
 
     // Unlisted receipt verification OG HTML (before static marketing shells).
     const receiptHtml = await maybeServeReceiptHtml(request, env);
     if (receiptHtml) {
-      return withSecurityHeaders(receiptHtml);
+      return guard(receiptHtml);
     }
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
     const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
     if (marketingHtml) {
-      return withSecurityHeaders(marketingHtml);
+      return guard(marketingHtml);
     }
 
     // Static assets with SPA fallback (configured in wrangler.jsonc); security headers + CSP on the HTML shell.
@@ -2265,7 +2273,7 @@ export default {
         url.pathname,
       );
     if (isStaticFile && assetResponse.ok && contentType.includes('text/html')) {
-      return withSecurityHeaders(
+      return guard(
         new Response('Not found', {
           status: 404,
           headers: {
@@ -2282,8 +2290,8 @@ export default {
       contentType.includes('text/html') &&
       resolveAppView(url.pathname, '') === AppView.NOT_FOUND
     ) {
-      const html = request.method === 'HEAD' ? null : (assetResponse.ok ? await assetResponse.text() : 'Not Found');
-      return withSecurityHeaders(
+      const html = request.method === 'HEAD' ? null : (assetResponse.ok ? withSkippedBootSplash(await assetResponse.text()) : 'Not Found');
+      return guard(
         new Response(html, {
           status: 404,
           statusText: 'Not Found',
@@ -2294,7 +2302,7 @@ export default {
         }),
       );
     }
-    return withSecurityHeaders(assetResponse);
+    return guard(assetResponse);
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // Each cron expression runs only the jobs it owns (worker/scheduledJobs.ts).
@@ -2311,6 +2319,10 @@ export default {
     if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
     if (jobs.includes('rsi_skill_curator')) ctx.waitUntil(runRsiSkillCurator(env).then(() => undefined));
     if (jobs.includes('rsi_posting_reflection')) ctx.waitUntil(runPostingReflection(env).then(() => undefined));
+    if (jobs.includes('citation_watch')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(runCitationWatchTick(env, { scheduledAt }).then(() => undefined));
+    }
     if (jobs.includes('ton_pending_sweep')) {
       ctx.waitUntil(
         sweepTonPendingOrders(env)

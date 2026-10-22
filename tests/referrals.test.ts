@@ -15,6 +15,7 @@ import {
   tryConsumeReferralCredit,
 } from '../worker/referrals';
 import { handleTelegramUpdate } from '../worker/telegramBot';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import type { Env } from '../worker/env';
 import {
   assessHonestScout,
@@ -54,6 +55,7 @@ function envWithDb(): Env {
     ASSETS: {} as Env['ASSETS'],
     DB: createSqliteD1(),
     LUMINARA_KV: memoryKv() as unknown as KVNamespace,
+    DAILY_QUOTA: memoryDailyQuotaNamespace(),
     FREE_DAILY_LIMIT: '1',
     REQUIRE_TG_AUTH: 'true',
     WEBAPP_URL: 'https://luminarasuite.com',
@@ -363,6 +365,23 @@ describe('referral ledger', () => {
     expect(second.ok).toBe(true);
     const done = await readRetentionSnapshot(env, 'acct_b');
     expect(done.missions.find((mission) => mission.key === 'rescout')?.status).toBe('completed');
+  });
+
+  it('does not mark re-scout complete when the run measured nothing', async () => {
+    const env = envWithDb();
+    const first = await qualifyReferral(env, {
+      accountId: 'acct_b',
+      body: await honestFor(env, 'acct_b', { measurementStatus: 'not_measured' }),
+    });
+    const second = await qualifyReferral(env, {
+      accountId: 'acct_b',
+      body: await honestFor(env, 'acct_b', { measurementStatus: 'not_measured' }),
+    });
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    const snap = await readRetentionSnapshot(env, 'acct_b');
+    expect(snap.missions.find((mission) => mission.key === 'rescout')?.status).toBe('open');
+    expect(snap.progression.honestScoutCount).toBe(0);
   });
 
   it('rejects a replayed receipt and a receipt for another account', async () => {

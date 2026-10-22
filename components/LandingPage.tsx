@@ -25,6 +25,9 @@ import {
   type EvidenceState,
 } from './marketing/earth/globeStory';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
+import { GUEST_HERO_NOTE, GUEST_REPORT_NOTE } from '../services/audit/hostedScoutRail';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
+import { HOME_HERO } from '../services/marketing/marketingHeroCopy';
 
 interface LandingPageProps {
   onNavigateAudit: (handoff?: AuditHandoff) => void;
@@ -49,16 +52,16 @@ const VALUE_PROPS = [
   },
   {
     title: 'Works where you work',
-    body: 'Use it on the web, on Windows or in Telegram. On Growth and Agency, your developer can pull the fix into Cursor or Claude.',
+    body: 'Use it on the web, on Windows or in Telegram. On Growth and Pro / Agency, your developer can pull the fix into Cursor or Claude.',
   },
 ] as const;
 
-/** Illustrative report rows. Not a customer; labeled on the page. */
+/** Illustrative report rows. Not a customer and not a measurement. Labeled on the page. */
 const EXAMPLE_REPORT_ROWS: ReadonlyArray<{ label: string; state: EvidenceState; note: string }> = [
   { label: 'Crawl access', state: 'Measured', note: 'Bots can read robots.txt and llms.txt.' },
-  { label: 'Google Search', state: 'Measured', note: 'Named for the brand, not for the category.' },
-  { label: 'AI Overviews', state: 'Estimated', note: 'A competitor page is quoted instead.' },
-  { label: 'ChatGPT', state: 'Measured', note: 'Not named for "best dentist in Sydney".' },
+  { label: 'Google Search', state: 'Measured', note: "Named for the agency name, not for 'real estate agent [suburb]'." },
+  { label: 'AI Overviews', state: 'Estimated', note: "A portal page is quoted instead of the agency's suburb page." },
+  { label: 'ChatGPT', state: 'Measured', note: "Not named for 'best real estate agent in [suburb]'." },
   { label: 'Perplexity', state: 'Not measured', note: 'No data yet. Missing, not a poor result.' },
 ];
 
@@ -148,7 +151,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         primaryCta={chrome.primaryCta}
       />
 
-      <main id="main">
+      <main id="main" tabIndex={-1} className="outline-none">
       {/* Story sequence: the sticky globe stage sits behind hero, statement and chapters. */}
       <div className="relative">
         <SpaceStage anchors={anchorsRef} onChapterChange={setChapter} />
@@ -156,31 +159,30 @@ const LandingPage: React.FC<LandingPageProps> = ({
         <section
           ref={anchorRefs[0]}
           aria-labelledby="hero-heading"
-          className="relative z-10 flex min-h-[100svh] flex-col items-center px-5 pb-[30svh] pt-[max(6.5rem,13svh)] text-center sm:px-8"
+          className="relative z-10 flex min-h-[100svh] flex-col items-center px-5 pb-16 pt-[max(6.5rem,13svh)] text-center sm:px-8"
         >
           <div
             aria-hidden
             className="pointer-events-none absolute left-1/2 top-[8svh] -z-10 h-[78svh] w-[min(1100px,130vw)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_center,rgb(0_0_0/0.62)_0%,rgb(0_0_0/0.35)_45%,transparent_70%)]"
           />
-          <p className="lx-eyebrow lx-enter-rise lx-d1">AI visibility, measured</p>
-          <h1 id="hero-heading" className="lx-display lx-h1 mt-6 max-w-5xl">
+          <p className="lx-eyebrow lx-enter-rise lx-d1 lx-fp-text">{HOME_HERO.eyebrow}</p>
+          <h1 id="hero-heading" className="lx-display lx-h1 mt-6 max-w-5xl lx-fp-text">
             <span className="lx-enter-mask">
-              <span className="lx-enter-line lx-d2">Be the answer</span>
+              <span className="lx-enter-line lx-d2">{HOME_HERO.titleLead}</span>
             </span>{' '}
             <span className="lx-enter-mask">
-              <span className="lx-enter-line lx-d3 italic lx-gold-text pr-[0.08em]">AI gives.</span>
+              <span className="lx-enter-line lx-d3 italic lx-gold-text pr-[0.08em]">{HOME_HERO.titleEm}</span>
             </span>
           </h1>
-          <span aria-hidden className="lx-rule lx-enter-draw lx-d4 mt-8" />
-          <p className="lx-lede lx-enter-rise lx-d4 mt-7 max-w-2xl">
-            Customers now ask ChatGPT, Perplexity, Google and AI Overviews who to trust. Luminara checks
-            whether those answers name your business, then gives you the one fix to ship next.
+          <span aria-hidden className="lx-rule lx-enter-draw lx-d4 mt-8 lx-fp-text" />
+          <p className="lx-lede lx-enter-rise lx-d4 mt-7 max-w-2xl lx-fp-text">
+            {HOME_HERO.lede}
           </p>
           <div className="lx-enter-rise lx-d5 mt-9 w-full">
             <DomainCheck inputId="hero-domain" isAuthenticated={isAuthenticated} onFullAudit={fullAudit} />
           </div>
           <p className="lx-enter-rise lx-d6 mt-5 text-sm text-[var(--color-ink-2)]">
-            Free live crawl check. No card, no signup.{' '}
+            {GUEST_HERO_NOTE}{' '}
             <button type="button" onClick={onNavigateSampleReport} className="lx-link">
               See a sample report
             </button>
@@ -202,7 +204,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         <section
           ref={anchorRefs[1]}
           aria-labelledby="shift-heading"
-          className="relative z-10 flex min-h-[100svh] items-center justify-center px-5 py-24 text-center sm:px-8"
+          className="relative z-10 flex items-center justify-center px-5 py-16 text-center sm:px-8 sm:py-20"
         >
           <div className="relative max-w-4xl" data-reveal>
             <div
@@ -215,8 +217,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <span className="block italic lx-gold-text">AI gives them one answer.</span>
             </h2>
             <p className="lx-lede mx-auto mt-8 max-w-2xl">
-              When a buyer asks ChatGPT or Perplexity who to hire, there is no second page. The answer names
-              you, or it names someone else. Luminara shows you which, and what to change.
+              When a vendor asks an AI assistant who to list with in their suburb, there is no second page. The answer names your agency, or it names someone else. Luminara checks your site and live web search, then one fix. {LIVE_ANSWER_CHECKS}
             </p>
           </div>
         </section>
@@ -226,7 +227,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <div
               key={c.id}
               ref={anchorRefs[2 + i]}
-              className="flex min-h-[80svh] items-end px-5 pb-[5svh] sm:px-8 lg:min-h-[92svh] lg:items-center lg:px-0 lg:pb-0"
+              className="flex items-center px-5 py-12 sm:px-8 lg:px-0 lg:py-16"
             >
               <article
                 className="lx-chapter w-full max-w-xl rounded-3xl bg-black/75 p-6 lg:ml-[6vw] lg:max-w-[min(34rem,40vw)] lg:bg-transparent lg:p-0 xl:ml-[8vw]"
@@ -288,7 +289,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
       <section
         id="report"
         aria-labelledby="report-heading"
-        className="relative z-10 overflow-hidden border-t lx-hairline px-5 py-28 sm:px-8 sm:py-36"
+        className="relative z-10 overflow-hidden border-t lx-hairline px-5 py-16 sm:px-8 sm:py-20"
       >
         <div
           aria-hidden
@@ -303,8 +304,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               <span className="block italic lx-gold-text">Ready to ship.</span>
             </h2>
             <p className="lx-lede mt-7">
-              No 40-page PDF and no made-up score. A report you can read in a minute, with the exact change to
-              make and the evidence behind it.
+              {GUEST_REPORT_NOTE}
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-6">
               <button type="button" onClick={focusHeroInput} className="lx-btn lx-btn-gold">
@@ -319,12 +319,9 @@ const LandingPage: React.FC<LandingPageProps> = ({
           <figure className="lx-glass m-0 rounded-3xl p-6 sm:p-8 lg:col-span-7" data-reveal>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-[var(--color-ink-2)]">Example report</p>
-                <p className="mt-2 font-serif text-2xl text-[var(--color-ink)] sm:text-3xl">A dental clinic in Sydney</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-[var(--color-ink-2)]">Illustrative example, not a real agency</p>
+                <p className="mt-2 font-serif text-2xl text-[var(--color-ink)] sm:text-3xl">An independent agency</p>
               </div>
-              <span className="shrink-0 rounded-full border border-[var(--color-rule)] px-3 py-1 text-xs text-[var(--gold-light)]">
-                Illustrative
-              </span>
             </div>
 
             <ul className="m-0 mt-6 list-none divide-y divide-[var(--color-rule)] border-y border-[var(--color-rule)] p-0">
@@ -342,20 +339,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
 
             <p className="mt-6 text-[15px] leading-relaxed text-[var(--color-ink-2)]">
               <span className="text-[var(--color-ink)]">Verdict. </span>
-              The site is readable, but the services page opens with a slogan. AI engines quote competitors who
-              answer the question directly.
+              The site is readable, but the suburb page opens with a slogan. AI engines quote pages that answer the question directly.
             </p>
 
             <div className="mt-6 rounded-2xl border border-gold/45 bg-gold/10 p-5">
               <p className="text-[11px] uppercase tracking-[0.26em] text-[var(--gold-light)]">Your next fix</p>
               <p className="mt-2 font-serif text-xl leading-snug text-[var(--color-ink)] sm:text-2xl">
-                Add a 50-word direct answer under the heading on /services, with FAQ schema for your top three
-                questions.
+                {"Add a 50-word direct answer to 'Who sells homes in [suburb]?' on your suburb page, with FAQ schema for your top three vendor questions."}
               </p>
               <p className="mt-3 text-xs text-[var(--color-ink-2)]">Copy and schema included, ready to paste.</p>
             </div>
             <figcaption className="mt-5 text-xs text-[var(--color-ink-2)]">
-              Illustrative example, not a real customer. Your report uses live evidence from your own audit.
+              Illustrative example, not a real agency. These rows show the report shape. They are not a measurement. {LIVE_ANSWER_CHECKS}
             </figcaption>
           </figure>
         </div>
@@ -364,7 +359,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
       <section
         id="why"
         aria-labelledby="why-heading"
-        className="relative z-10 border-t lx-hairline px-5 py-28 sm:px-8 sm:py-36"
+        className="relative z-10 border-t lx-hairline px-5 py-16 sm:px-8 sm:py-20"
       >
         <div className="mx-auto max-w-6xl">
           <div className="max-w-3xl" data-reveal>
@@ -392,14 +387,14 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <div className="max-w-md">
               <p className="text-[15px] font-medium text-[var(--color-ink)]">For developers and agencies</p>
               <p className="mt-1 text-sm leading-relaxed text-[var(--color-ink-2)]">
-                Pull your latest verdict and fix into Cursor or Claude Code over MCP. Included on Growth and Agency.{' '}
+                Pull your latest verdict and fix into Cursor or Claude Code over MCP. Included on Growth and Pro / Agency.{' '}
                 <a href="/docs/mcp.html" className="lx-link">
                   Setup guide
                 </a>
               </p>
             </div>
-            <div className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--color-rule)] bg-black/50 py-1.5 pl-4 pr-1.5">
-              <code className="min-w-0 truncate font-mono text-xs text-[var(--color-ink)]">{MCP_COMMAND}</code>
+            <div className="flex min-w-0 w-full max-w-xl items-center gap-2 rounded-2xl border border-[var(--color-rule)] bg-black/50 py-1.5 pl-4 pr-1.5">
+              <code tabIndex={0} className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded font-mono text-xs text-[var(--color-ink)] outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold-light)]">{MCP_COMMAND}</code>
               <button type="button" onClick={copyMcp} className="lx-btn lx-btn-ghost !min-h-8 shrink-0 !px-3.5 !py-1.5 text-xs">
                 {copied ? 'Copied' : 'Copy'}
               </button>

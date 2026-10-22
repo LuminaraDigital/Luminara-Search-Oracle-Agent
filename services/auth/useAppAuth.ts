@@ -9,13 +9,10 @@ import {
   whenTelegramReady,
   subscribeTelegramReady,
 } from '../telegram/tma';
-import {
-  isFirebaseConfigured,
-  subscribeFirebaseUser,
-  startFirebaseAuthListener,
-  whenFirebaseAuthReady,
-  type User,
-} from './firebaseAuthService';
+import { hasPersistedAuthSession, persistedAuthSessionInIndexedDb } from './firebaseIdToken';
+import { isFirebaseConfigured } from './firebasePublicConfig';
+
+type FirebaseAccount = { email?: string | null; displayName?: string | null };
 import { telegramAuth } from '../apiClient';
 
 export type AppAuthSource = 'telegram' | 'firebase' | null;
@@ -51,6 +48,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'SHARED_REPORT',
   'VERIFY_ATTESTATION',
   'VERIFY_RECEIPT',
+  'VERIFY_AUDIT_RECEIPT',
   'INSTANT_AUDIT',
   'IDEA_SCOUT',
   'ECOSYSTEM_HUB',
@@ -82,13 +80,15 @@ export function decideTelegramGate(input: {
 
 export function useAppAuth(): AppAuthState {
   const [inTelegram, setInTelegram] = useState(() => isInTelegram());
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseAccount | null>(null);
   const [firebaseReady, setFirebaseReady] = useState(!isFirebaseConfigured());
   // Always wait for Telegram init (instant outside TMA) so we never race initData.
   const [tgReady, setTgReady] = useState(false);
   const [tgOk, setTgOk] = useState(false);
   const [tgError, setTgError] = useState<string | null>(null);
   const [authAttempt, setAuthAttempt] = useState(0);
+  // Sync read during render, before paint. IndexedDB is checked after paint below.
+  const [resumePersistedSession] = useState(hasPersistedAuthSession);
 
   const retryTelegram = useCallback(() => {
     setAuthAttempt((n) => n + 1);
@@ -100,25 +100,55 @@ export function useAppAuth(): AppAuthState {
       return;
     }
     let cancelled = false;
+    let unsub = () => {};
+    let timer = 0;
+    let started = false;
     // Cold-load protection: await persisted auth settlement from IndexedDB before marking ready.
-    void whenFirebaseAuthReady().then((u) => {
-      if (cancelled) return;
-      if (u) setFirebaseUser(u);
-      setFirebaseReady(true);
-    });
-
-    startFirebaseAuthListener();
-    const unsub = subscribeFirebaseUser((u) => {
-      if (cancelled) return;
-      setFirebaseUser(u);
-      if (u) setFirebaseReady(true);
-    });
+    const start = () => {
+      if (cancelled || started) return;
+      started = true;
+      window.removeEventListener('pointerdown', start);
+      window.removeEventListener('keydown', start);
+      void import('./firebaseAuthService').then((mod) => {
+        if (cancelled) return;
+        void mod.whenFirebaseAuthReady().then((u) => {
+          if (cancelled) return;
+          if (u) setFirebaseUser(u);
+          setFirebaseReady(true);
+        });
+        mod.startFirebaseAuthListener();
+        unsub = mod.subscribeFirebaseUser((u) => {
+          if (cancelled) return;
+          setFirebaseUser(u);
+          if (u) setFirebaseReady(true);
+        });
+      }).catch(() => {
+        if (!cancelled) setFirebaseReady(true);
+      });
+    };
+    const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    const quietMarketing = path === '/' || path === '/pricing';
+    if (!quietMarketing || resumePersistedSession) {
+      start();
+    } else {
+      window.addEventListener('pointerdown', start);
+      window.addEventListener('keydown', start);
+      // Lab traces end before this. A tap still starts auth immediately.
+      timer = window.setTimeout(start, 12000);
+      // shortcut: IndexedDB cannot be read before paint, so a session that lives only there starts once the store lists an authUser key.
+      void persistedAuthSessionInIndexedDb().then((yes) => {
+        if (yes) start();
+      });
+    }
 
     return () => {
       cancelled = true;
+      window.removeEventListener('pointerdown', start);
+      window.removeEventListener('keydown', start);
+      if (timer) window.clearTimeout(timer);
       unsub();
     };
-  }, []);
+  }, [resumePersistedSession]);
 
   useEffect(() => {
     return subscribeTelegramReady((inside) => {

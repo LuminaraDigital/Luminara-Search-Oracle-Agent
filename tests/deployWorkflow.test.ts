@@ -319,5 +319,8 @@ describe('dependency updates go to staging, never straight to main', () => {
       expect(entry, entry.split('\n')[0]).toMatch(/\n {4}target-branch: "staging"\n/);
       expect(entry.match(/target-branch:/g)).toHaveLength(1);
     }
+    const root = entries.find((entry) => entry.includes('package-ecosystem: npm') && entry.includes('\n    directory: /\n'));
+    expect(root).toContain('dependency-name: typescript\n');
+    expect(root).toContain('- version-update:semver-major\n');
   });
 });

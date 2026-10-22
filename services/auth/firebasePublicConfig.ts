@@ -137,3 +137,9 @@ export function resolveFirebaseWebConfig(
     storageBucket: pick('VITE_FIREBASE_STORAGE_BUCKET', FIREBASE_PUBLIC_CONFIG.storageBucket) || undefined,
   };
 }
+
+/** True when this build has a Firebase web config. Does not load the Auth SDK. */
+export function isFirebaseConfigured(env?: Record<string, unknown>): boolean {
+  const source = env ?? ((import.meta as { env?: Record<string, unknown> }).env || {});
+  return resolveFirebaseWebConfig(source) !== null;
+}

@@ -25,7 +25,7 @@ export const BrandLoader: React.FC<BrandLoaderProps> = ({
         aria-hidden="true"
       />
       <img
-        src="/favicon.png"
+        src="/boot-mark.webp"
         alt=""
         width={compact ? 56 : 72}
         height={compact ? 56 : 72}
