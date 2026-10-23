@@ -5,6 +5,7 @@
 
 import { entitlementsFor, type PlanId } from '../plans/planEntitlements';
 import { notifyAuditActivity } from './auditActivity';
+import { flushWorkspacePush, noteWorkspaceDirty } from '../sync/workspaceSyncService';
 
 const STORAGE_KEY = 'luminara_audit_history_v1';
 const MAX_HARD_CAP = 500;
@@ -177,6 +178,12 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
   trimmed.sort((a, b) => a.measuredAt - b.measuredAt);
   saveAll(trimmed);
   notifyAuditActivity();
+  try {
+    noteWorkspaceDirty();
+    void flushWorkspacePush(false);
+  } catch {
+    /* sync is optional when storage is unavailable */
+  }
   return entry;
 }
 

@@ -259,6 +259,13 @@ export function stripUnsupportedFixClaims(
   return kept.join('\n');
 }
 
+/** The 4-check score is the only pass count. A second "N of M" tally reads as a different result. */
+export function showFixTally(score: string): boolean {
+  return !/^Passed \d+ of \d+/.test(score);
+}
+
+export const SAVED_AUDIT_CHECK_COPY = 'Checking saved audits for this account.';
+
 export function fixProgress(findings: ReadonlyArray<{ id?: string; status: string }>): { done: number; total: number; label: string } {
   const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
   const total = fixes.length;
