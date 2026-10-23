@@ -189,6 +189,11 @@ function settleWorkspacePull(accountId?: string): void {
   window.dispatchEvent(new CustomEvent('luminara-workspace-restored', { detail: { accountId } }));
 }
 
+/** The account this browser's workspace copy last synced with. Unset for a guest's copy. */
+export function workspaceAccountId(): string | undefined {
+  return readMeta().accountId;
+}
+
 /** Clears all local workspace memory, keys, and chat session from the browser (e.g. on sign-out). */
 export function clearLocalWorkspace(): void {
   pullSettled = false;

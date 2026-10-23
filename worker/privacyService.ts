@@ -72,6 +72,15 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     `SELECT id, domain, created_at FROM audit_runs WHERE account_id = ? LIMIT 500`,
     accountId,
   );
+  const auditHistory = await q<Record<string, unknown>>(
+    // The report text is left out to keep the export small; the summary, scores and dates stay.
+    `SELECT id, domain, measured_at, json_remove(entry_json, '$.reportExcerpt') AS entry_json, updated_at
+       FROM audit_history WHERE account_id = ? ORDER BY measured_at DESC LIMIT 500`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   const shareTeasers = await q<Record<string, unknown>>(
     `SELECT id, expires_at, revoked_at, created_at FROM share_teasers WHERE owner_account_id = ?`,
     accountId,
@@ -223,6 +232,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     memoryFacts: facts,
     weeklyDecisions: decisions,
     auditRuns: audits,
+    auditHistory,
     shareTeasers,
     ideaScouts,
     nichePulse,
@@ -328,6 +338,7 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
   };
   await drop('audit_findings', `DELETE FROM audit_findings WHERE account_id = ?`);
   await drop('audit_runs', `DELETE FROM audit_runs WHERE account_id = ?`);
+  await drop('audit_history', `DELETE FROM audit_history WHERE account_id = ?`);
   await drop('project_context_sections', `DELETE FROM project_context_sections WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_competitors', `DELETE FROM project_competitors WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_key_pages', `DELETE FROM project_key_pages WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);

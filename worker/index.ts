@@ -22,6 +22,7 @@
  *   GET  /api/findings?domain=            signed-in Instant Audit findings board (D1)
  *   POST /api/findings/bulk               upsert crew findings by stable_key (never Oracle validators)
  *   PATCH /api/findings/:id               status / owner / due_at
+ *   GET/PUT /api/audits/history           signed-in Instant Audit history (D1); the browser list is a cache
  *   POST /api/privacy/export|delete       self-serve GDPR export / soft-delete
  *   GET/POST /api/email/unsubscribe       one-click welcome-mail opt-out (D1)
  *
@@ -109,6 +110,7 @@ import {
 import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
 import { handleFindingsRoute } from './findingsService';
+import { handleAuditHistoryRoute } from './auditHistoryRoute';
 import { handleLlmCrawlerRoute } from './llmCrawlerRoute';
 import { handleProbeCrawlRoute } from './probeCrawlRoute';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
@@ -1405,6 +1407,19 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
     if (!dualFind.ok) return withCors(dualFind.response);
     return withCors(await handleFindingsRoute(request, env, path));
+  }
+
+  if (path === '/audits/history') {
+    const whoHistory = await identify(request, env);
+    const dualHistory = await enforceDualRateLimit(env, {
+      action: 'audit_history',
+      accountId: whoHistory.user ? billingId(whoHistory.user) : null,
+      ip,
+      limitPerKey: 60,
+      windowSec: 60,
+    });
+    if (!dualHistory.ok) return withCors(dualHistory.response);
+    return withCors(await handleAuditHistoryRoute(request, env));
   }
 
   if (path === '/share/teasers' || path.startsWith('/share/teasers/')) {
