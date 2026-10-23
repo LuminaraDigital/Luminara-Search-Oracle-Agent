@@ -6,6 +6,10 @@ import { OPERATOR_LINE, PUBLIC_CONTACT_LINE } from './consumerTerms';
 
 export const PRIVACY_UPDATED = '23 October 2026';
 
+export const PUBLIC_PRIVACY_URL = 'https://www.luminarasuite.com/privacy';
+
+export const PUBLIC_TERMS_URL = 'https://www.luminarasuite.com/terms';
+
 export const PRIVACY_INTRO =
   'This policy says what personal information Luminara Suite handles on the website, the Telegram Mini App, the Telegram bot, and the related Cloudflare APIs. It matches the product as shipped. It is not legal advice. For a counsel-approved data processing agreement, email privacy@luminarasuite.com.';
 

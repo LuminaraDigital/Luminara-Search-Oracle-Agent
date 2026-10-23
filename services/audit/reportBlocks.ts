@@ -5,6 +5,7 @@
 import { marked, type Token, type Tokens } from 'marked';
 import type { BoardFinding } from './findingBoardService';
 import { formatAuDate } from '../../utils/formatAuDate';
+import { stripUntrustedFences } from '../../utils/untrustedContent';
 
 const MEASURED_LINE = /\bpassed (\d+) of (\d+); (\d+) not measured\b/i;
 const LEGACY_MEASURED_LINE = /\bpassed (\d+) of (\d+) checks\b/i;
@@ -322,10 +323,11 @@ export function withReportLead(
   measured: boolean,
   findings: ReadonlyArray<Pick<BoardFinding, 'title' | 'severity' | 'description' | 'evidence'> & { id?: string }> = [],
 ): string {
-  const doc = parseAuditReport(markdown);
-  const score = scoreLine(`${markdown}\n${doc.verdict}`, measured);
+  const source = stripUntrustedFences(markdown);
+  const doc = parseAuditReport(source);
+  const score = scoreLine(`${source}\n${doc.verdict}`, measured);
   const verdict = doc.verdict || 'Not measured.';
   const lead = [`# ${doc.title}`, '', `Score: ${score}`, '', verdict, ''].join('\n');
   const fixes = findingsMarkdown(findings);
-  return `${lead}\n${fixes}${markdown.trim()}\n`;
+  return `${lead}\n${fixes}${source.trim()}\n`;
 }

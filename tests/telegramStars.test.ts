@@ -520,6 +520,10 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       let body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.text).toContain('Terms and Conditions');
       expect(body.text).toContain('/paysupport');
+      expect(body.text).toContain('https://www.luminarasuite.com/terms');
+      expect(body.text).toContain('https://www.luminarasuite.com/privacy');
+      expect(body.text).not.toContain('#terms');
+      expect(body.text).not.toContain('#privacy');
 
       // /paysupport. This environment has no table for support requests, so no window can be
       // opened: the buyer is given the address to write to instead of a promise nobody keeps.
@@ -707,8 +711,10 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       expect(body.text).toContain('privacy@luminarasuite.com');
       expect(body.reply_markup.inline_keyboard).toBeTruthy();
       const flatButtons = body.reply_markup.inline_keyboard.flat();
-      expect(flatButtons.some((b: any) => b.text.includes('Mini App') && b.web_app?.url.includes('privacy'))).toBe(true);
-      expect(flatButtons.some((b: any) => b.text.includes('Web') && b.url.includes('/privacy'))).toBe(true);
+      expect(flatButtons.some((b: { url?: string }) => b.url === 'https://www.luminarasuite.com/privacy')).toBe(true);
+      expect(flatButtons.some((b: { url?: string }) => b.url === 'https://www.luminarasuite.com/terms')).toBe(true);
+      expect(JSON.stringify(body.reply_markup)).not.toContain('#privacy');
+      expect(JSON.stringify(body.reply_markup)).not.toContain('#terms');
     });
 
     it('falls back gracefully to app prompt when no AI provider is configured', async () => {

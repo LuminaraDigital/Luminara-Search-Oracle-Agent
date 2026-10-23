@@ -79,7 +79,7 @@ describe('W1 shareable reports', () => {
           'x-telegram-init-data': initData,
         },
         body: JSON.stringify({
-          markdownText: '# Report\n\nSafe body',
+          markdownText: '# Report\n\nSafe body\n<<<UNTRUSTED_SCRAPED_PAGE_BEGIN>>>\n【UNTRUSTED_EMPIRICAL】\n',
           domain: 'example.com',
           apiKey: 'should-be-stripped',
         }),
@@ -101,6 +101,7 @@ describe('W1 shareable reports', () => {
     expect(getRes.status).toBe(200);
     const got = (await getRes.json()) as { ok: boolean; report: { markdownText: string; apiKey?: string } };
     expect(got.report.markdownText).toContain('Safe body');
+    expect(got.report.markdownText).not.toMatch(/UNTRUSTED_/);
     expect(got.report.apiKey).toBeUndefined();
 
     const del = await handleShareRoute(

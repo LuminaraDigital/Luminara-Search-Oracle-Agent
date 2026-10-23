@@ -42,6 +42,20 @@ function randomNonce(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+const UNTRUSTED_FENCE =
+  /<<<\s*UNTRUSTED_[\w:-]*\s*>>>|【\s*UNTRUSTED_[\w:-]*\s*】|\[\s*UNTRUSTED_[\w:-]*\s*\]/gi;
+const UNTRUSTED_TOKEN = /\bUNTRUSTED_[\w:-]+\b/g;
+
+/** Removes fence markers a model copied into a report. The fenced evidence text stays. */
+export function stripUntrustedFences(text: string): string {
+  if (!text || !/UNTRUSTED_/i.test(text)) return text;
+  return text
+    .replace(UNTRUSTED_FENCE, '')
+    .replace(UNTRUSTED_TOKEN, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 export function wrapUntrustedContent(label: string, content: string, options: UntrustedWrapOptions = {}): string {
   let text = String(content || '');
   // Bound the work before normalising; the cap proper is applied after it.
