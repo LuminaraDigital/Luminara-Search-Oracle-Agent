@@ -29,6 +29,74 @@ function serp(): SerpEvidenceItem {
   };
 }
 
+describe('organization markup already on the page', () => {
+  it('does not recommend a critical Organization fix for Organization or ProfessionalService', async () => {
+    for (const type of ['Organization', 'ProfessionalService', 'https://schema.org/LocalBusiness']) {
+      const result = await playbookAuditorAgent.execute(
+        'AEO',
+        [page({ schemasFound: [{ type, rawJson: '{"name":"Luminara"}', isValid: true }] })],
+        [serp()],
+        null,
+        () => {},
+      );
+      expect(result.findings.some((finding) => finding.id === 'finding-schema-org'), type).toBe(false);
+    }
+  });
+
+  it('does not emit a critical Organization gap when the homepage has ProfessionalService and about has Organization', async () => {
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [
+        page({
+          url: 'https://luminara.digital',
+          schemasFound: [
+            { type: 'ProfessionalService', rawJson: '{"name":"Luminara Digital"}', isValid: true },
+            { type: 'Person', rawJson: '{}', isValid: true },
+            { type: 'FAQPage', rawJson: '{}', isValid: true },
+          ],
+        }),
+        page({
+          url: 'https://luminara.digital/about',
+          schemasFound: [
+            { type: 'Organization', rawJson: '{"name":"Luminara Digital"}', isValid: true },
+            { type: 'Person', rawJson: '{}', isValid: true },
+          ],
+        }),
+        page({
+          url: 'https://luminara.digital/services',
+          schemasFound: [{ type: 'FAQPage', rawJson: '{}', isValid: true }],
+        }),
+      ],
+      [serp()],
+      null,
+      () => {},
+    );
+    const text = result.findings.map((finding) => `${finding.id} ${finding.title} ${finding.description} ${finding.howWeKnowItFailed}`).join('\n');
+    expect(result.findings.some((finding) => finding.id === 'finding-schema-org')).toBe(false);
+    expect(result.findings.some((finding) => finding.severity === 'critical' && /organization/i.test(finding.title))).toBe(false);
+    expect(text).not.toMatch(/schema types: none/i);
+    expect(text).not.toMatch(/types found: none/i);
+    const partial = result.findings.find((finding) => finding.id === 'finding-schema-org-partial');
+    expect(partial?.severity).toBe('low');
+    expect(partial?.description).toContain('https://luminara.digital/services: faqpage');
+    expect(partial?.title).not.toContain('https://luminara.digital/about');
+    expect(partial?.description).not.toContain('https://luminara.digital:');
+  });
+
+  it('still flags a page whose only schema is FAQPage', async () => {
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [page({ schemasFound: [{ type: 'FAQPage', rawJson: '{}', isValid: true }] })],
+      [serp()],
+      null,
+      () => {},
+    );
+    const finding = result.findings.find((item) => item.id === 'finding-schema-org');
+    expect(finding?.description).toContain('schema types: faqpage');
+    expect(finding?.description).not.toContain('schema types: none');
+  });
+});
+
 describe('blocked checks stay not measured', () => {
   it('does not call a challenge page a missing Organization', async () => {
     const result = await playbookAuditorAgent.execute(

@@ -762,7 +762,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </div>
       )}
 
-      {!report && <SuiteCitabilityChecklist />}
+      {!report && !(scoutSummary && scoutSummary.crawlerChecks.length > 0) && <SuiteCitabilityChecklist />}
 
       {!guestResultFirst && scoutPanel}
 

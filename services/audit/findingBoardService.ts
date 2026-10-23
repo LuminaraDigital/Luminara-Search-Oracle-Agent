@@ -152,6 +152,20 @@ export function mergeBoardWithRemote(
   return Array.from(byKey.values());
 }
 
+function isOrgMissingRow(row: { id?: string; title?: string }): boolean {
+  if (row.id === 'finding-schema-org') return true;
+  return /^Missing Organization\b/i.test(row.title || '');
+}
+
+/**
+ * A new run replaces Organization-missing rows it does not repeat.
+ * An older "schema types: none" card must not stay beside a crawl that found the type.
+ */
+export function retireStaleOrgFindings(previous: BoardFinding[], incoming: BoardFinding[]): BoardFinding[] {
+  const keptKeys = new Set(incoming.filter(isOrgMissingRow).map((row) => row.stableKey));
+  return previous.filter((row) => !isOrgMissingRow(row) || keptKeys.has(row.stableKey));
+}
+
 /** Map crew AuditFinding[] into board rows (local + optional remote upsert). */
 export async function ingestCrewFindings(opts: {
   domain: string;
@@ -184,7 +198,7 @@ export async function ingestCrewFindings(opts: {
     };
   });
 
-  const prev = readLocal(domain);
+  const prev = retireStaleOrgFindings(readLocal(domain), mapped);
   const byKey = new Map(prev.map((p) => [p.stableKey, p]));
   for (const m of mapped) {
     const existing = byKey.get(m.stableKey);

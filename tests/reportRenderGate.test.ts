@@ -399,6 +399,21 @@ describe('the competitor card fills no gap with made-up wording', () => {
     }
     expect(html).not.toMatch(/>\s*(medium|high)\s*</i);
   });
+
+  it('omits invented [[Competitor 1]] rows and keeps a named rival', () => {
+    const html = renderToStaticMarkup(createElement(CompetitorMap, {
+      headers: [...REPORT_TABLES.competitorMap],
+      rows: [
+        ['Luminara Digital', 'Agency', 'Homepage', 'Own site'],
+        ['[[Competitor 1]]', 'Invented tone', 'Blog', 'Fake advantage'],
+        ['Competitor 2', 'Also invented', 'Docs', 'None'],
+      ],
+    }));
+    expect(html).toContain('Luminara Digital');
+    expect(html).not.toContain('Competitor 1');
+    expect(html).not.toContain('Competitor 2');
+    expect(html).not.toContain('Invented tone');
+  });
 });
 
 describe('the chat cards take the same columns as the report', () => {

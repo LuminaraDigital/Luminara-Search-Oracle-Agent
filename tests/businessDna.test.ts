@@ -39,6 +39,6 @@ describe('finished audit chrome', () => {
   it('keeps the quota banner and the checklist off the finished report', () => {
     const src = readFileSync('components/audit/InstantAuditView.tsx', 'utf8');
     expect(src).toContain('{!report && quota && !quota.isUnlimited');
-    expect(src).toContain('{!report && <SuiteCitabilityChecklist />}');
+    expect(src).toContain('{!report && !(scoutSummary && scoutSummary.crawlerChecks.length > 0) && <SuiteCitabilityChecklist />}');
   });
 });

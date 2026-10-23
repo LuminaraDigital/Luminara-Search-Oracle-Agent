@@ -10,6 +10,7 @@ import {
   progressSince,
   recheckLabel,
   scoreLine,
+  showFixTally,
   stripUnsupportedFixClaims,
   withReportLead,
 } from '../services/audit/reportBlocks';
@@ -201,6 +202,24 @@ describe('audit report page', () => {
     expect(html).not.toContain('**');
     expect(html).not.toContain('```');
     expect(html).toContain('No earlier audit of this site is saved.');
+  });
+
+  it('does not print a second pass count beside the 4 site checks', () => {
+    expect(showFixTally('Passed 2 of 4; 1 not measured')).toBe(false);
+    expect(showFixTally('Not measured')).toBe(true);
+    const html = renderToStaticMarkup(createElement(AuditReportArticle, {
+      markdown: 'passed 2 of 4; 1 not measured',
+      measured: true,
+      findings: [
+        finding({ id: 'finding-schema-org', title: 'Add Organization markup' }),
+        finding({ id: 'other', title: 'Rewrite the title' }),
+      ],
+      domain: 'raywhite.com.au',
+      showActions: false,
+    }));
+    expect(html).toContain('Passed 2 of 4; 1 not measured');
+    expect(html).toContain('The score above is the only pass count for the site checks.');
+    expect(html).not.toContain('fixes done');
   });
 
   it('stores a done tick on the findings board without calling the network', () => {

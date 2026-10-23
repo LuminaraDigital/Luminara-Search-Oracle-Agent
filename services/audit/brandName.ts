@@ -73,12 +73,32 @@ export function brandCandidates(sources: BrandSources & { searchTitles?: readonl
   return found;
 }
 
-const ENTITY_TYPE = /organization|corporation|localbusiness|realestateagent/;
+function schemaLeaf(type: string): string {
+  const trimmed = type.trim().toLowerCase();
+  const slash = trimmed.lastIndexOf('/');
+  const base = slash >= 0 ? trimmed.slice(slash + 1) : trimmed;
+  const colon = base.lastIndexOf(':');
+  const leaf = colon >= 0 ? base.slice(colon + 1) : base;
+  const hash = leaf.indexOf('#');
+  return (hash >= 0 ? leaf.slice(0, hash) : leaf).trim();
+}
 
-/** Name on an Organization, Corporation, LocalBusiness, or RealEstateAgent block. */
+/**
+ * Organization, a name ending in Organization, Corporation, LocalBusiness,
+ * ProfessionalService, or RealEstateAgent.
+ * shortcut: other LocalBusiness leaves (Dentist, Store, Hotel) still look missing. Add one when a live page uses it.
+ */
+export function isOrganizationEntityType(type: string): boolean {
+  const leaf = schemaLeaf(type);
+  if (!leaf) return false;
+  if (leaf.endsWith('organization')) return true;
+  return leaf === 'corporation' || leaf === 'localbusiness' || leaf === 'professionalservice' || leaf === 'realestateagent';
+}
+
+/** Name on an Organization block or a clear org-equivalent type such as ProfessionalService. */
 export function organizationNameFromJson(schemas: Array<{ type: string; rawJson: string }>): string | null {
   for (const schema of schemas) {
-    if (!ENTITY_TYPE.test(schema.type.toLowerCase())) continue;
+    if (!isOrganizationEntityType(schema.type)) continue;
     try {
       const raw = JSON.parse(schema.rawJson) as { name?: unknown };
       const name = cleanScrapedName(typeof raw.name === 'string' ? raw.name : '');

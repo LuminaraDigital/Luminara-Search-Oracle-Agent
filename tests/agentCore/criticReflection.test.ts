@@ -40,6 +40,38 @@ describe('CriticReflectionEngine (AutoGen-inspired Adversarial Gate)', () => {
     expect(result.reflectionFeedback[0]).toContain('Organization schema was actually present in raw DOM');
   });
 
+  it('suppresses a missing-Organization claim when the page has ProfessionalService', () => {
+    const candidateFindings: AuditFinding[] = [
+      {
+        id: 'finding-schema-org',
+        category: 'schema',
+        severity: 'critical',
+        title: 'Missing Organization markup on https://luminara.digital',
+        description: 'Schema types found: none.',
+        evidenceSource: 'DOM',
+        howWeKnowItFailed: 'Schema types found: none.',
+        leadingIndicator: 'Add it',
+        criticVerified: false,
+        criticConfidence: 0.5,
+      },
+    ];
+    const scrapedPages: ScrapedPageEvidence[] = [
+      {
+        url: 'https://luminara.digital',
+        title: 'Luminara Digital',
+        h1s: ['Luminara'],
+        schemasFound: [
+          { type: 'ProfessionalService', rawJson: '{"name":"Luminara Digital"}', isValid: true },
+        ],
+        wordCount: 500,
+        rawTextSnippet: 'Agency home',
+      },
+    ];
+    const result = criticReflectionEngine.verify(candidateFindings, [], scrapedPages, []);
+    expect(result.verifiedFindings.some((finding) => finding.id === 'finding-schema-org')).toBe(false);
+    expect(result.rejectedCount).toBe(1);
+  });
+
   it('should pass through legitimately verified findings', () => {
     const candidateFindings: AuditFinding[] = [
       {

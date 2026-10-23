@@ -14,7 +14,7 @@ import { configService } from '../configService';
 import { clientHasHostedIdentity } from '../apiClient';
 import { hostedAuthRecoveryHint } from '../audit/hostedScoutRail';
 import { hostedAuthBlocked } from '../resilience/hostedAuthCircuit';
-import { contentDistiller } from './contentDistiller';
+import { contentDistiller, keepDiscoveredSchemas } from './contentDistiller';
 import { firecrawlService } from './firecrawlService';
 import {
   ClassifiedUrl,
@@ -292,7 +292,7 @@ export class SiteEvidencePackService {
   }
 
   private pagesFromCrawl(
-    crawlPages: Array<{ markdown?: string; html?: string; metadata?: Record<string, unknown> }>,
+    crawlPages: Array<{ markdown?: string; html?: string; rawHtml?: string; metadata?: Record<string, unknown> }>,
     rootUrl: string,
   ): ScrapedPageEvidence[] {
     const out: ScrapedPageEvidence[] = [];
@@ -304,6 +304,7 @@ export class SiteEvidencePackService {
       const pageType = classifyPageType(url);
       const distilled = contentDistiller.distill(p.html || '', p.markdown || '', {
         maxChars: PER_PAGE_BUDGET[pageType] ?? 1400,
+        schemaHtml: p.rawHtml,
       });
       out.push({
         success: Boolean(p.markdown || p.html),
@@ -364,9 +365,10 @@ export class SiteEvidencePackService {
     for (const { page, pageType } of typed) {
       const want = Math.min(PER_PAGE_BUDGET[pageType] ?? 1400, remaining);
       if (want < 400) break;
-      const distilled = contentDistiller.distill(page.rawHtml || '', page.markdown || page.distilled.distilledText || '', {
+      const redistilled = contentDistiller.distill(page.rawHtml || '', page.markdown || page.distilled.distilledText || '', {
         maxChars: want,
       });
+      const distilled = keepDiscoveredSchemas(redistilled, page.distilled);
       remaining -= distilled.formattedEvidence.length;
 
       blocks.push(`--- PAGE (${pageType.toUpperCase()}) ${page.url} via ${page.providerUsed} ---`);

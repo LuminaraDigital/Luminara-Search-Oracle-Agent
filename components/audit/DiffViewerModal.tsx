@@ -110,6 +110,8 @@ export const DiffViewerModal: React.FC<DiffViewerModalProps> = ({
           </div>
         </div>
 
+        <p className="px-6 py-2 text-xs text-gray-300">Draft from this audit. Verify before pasting.</p>
+
         {/* View Tabs & Metadata Bar */}
         <div className="flex items-center justify-between px-6 py-2.5 bg-black/40 border-b border-white/5 text-xs">
           <div className="flex items-center gap-2">

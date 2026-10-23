@@ -6,29 +6,17 @@ import React, { isValidElement, type ReactNode } from 'react';
  */
 
 export const PSI_EMPTY_COPY =
-  'PageSpeed not measured for this URL yet. Run a fresh audit with a public URL to fetch it.';
+  'PageSpeed is not measured yet. Click Measure to fetch it for this URL.';
 
 export const GSC_EMPTY_COPY =
   'Search Console is not connected. Connect it in Settings to see real query and click data.';
 
-const tagClass = 'text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/10 text-gray-500';
-
-export const PsiNotMeasuredTag: React.FC = () => <span className={tagClass}>not_measured</span>;
-
-export const GscNotConfiguredTag: React.FC = () => <span className={tagClass}>not_configured</span>;
-
 export const PsiEmptyState: React.FC = () => (
-  <div className="flex items-start justify-between gap-2">
-    <p className="text-[11px] text-gray-500">{PSI_EMPTY_COPY}</p>
-    <PsiNotMeasuredTag />
-  </div>
+  <p className="text-[11px] text-gray-500">{PSI_EMPTY_COPY}</p>
 );
 
 export const GscEmptyState: React.FC = () => (
-  <div className="flex items-start justify-between gap-2">
-    <p className="text-[11px] text-gray-500">{GSC_EMPTY_COPY}</p>
-    <GscNotConfiguredTag />
-  </div>
+  <p className="text-[11px] text-gray-500">{GSC_EMPTY_COPY}</p>
 );
 
 /** Branch-selection predicates used by the audit panels (null data => empty state). */

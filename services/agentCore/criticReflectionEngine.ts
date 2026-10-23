@@ -8,6 +8,7 @@
  */
 
 import { AuditFinding, CodeRemediationPatch, ScrapedPageEvidence, SerpEvidenceItem } from './types';
+import { isOrganizationEntityType } from '../audit/brandName';
 
 export interface CriticVerificationResult {
   verifiedFindings: AuditFinding[];
@@ -37,6 +38,7 @@ export class CriticReflectionEngine {
         if (s.type) rawSchemaTypes.add(s.type.toLowerCase().trim());
       });
     });
+    const orgTypePresent = [...rawSchemaTypes].some((type) => isOrganizationEntityType(type));
 
     // Collect all raw text lowercase for keyword checking
     const fullScrapedText = scrapedPages.map((p) => p.rawTextSnippet.toLowerCase()).join(' ');
@@ -51,7 +53,7 @@ export class CriticReflectionEngine {
         const titleLower = finding.title.toLowerCase();
         
         // E.g., claim: "Missing Organization Schema"
-        if (titleLower.includes('organization') && rawSchemaTypes.has('organization')) {
+        if (finding.id !== 'finding-schema-org-partial' && titleLower.includes('organization') && orgTypePresent) {
           isHallucination = true;
           correctionMessage = 'Ground truth check: Organization schema was actually present in raw DOM. Finding suppressed.';
         } else if (titleLower.includes('website') && rawSchemaTypes.has('website')) {

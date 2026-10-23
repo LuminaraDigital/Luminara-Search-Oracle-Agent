@@ -420,7 +420,14 @@ export class CrewOrchestrator {
         });
         return { patches: [] };
       }
-      const drafted = await remediationArchitectAgent.execute(ctx.targetUrl, ctx.findings, ctx.dna, emit, ctx.displayName);
+      const drafted = await remediationArchitectAgent.execute(
+        ctx.targetUrl,
+        ctx.findings,
+        ctx.dna,
+        emit,
+        ctx.displayName,
+        ctx.llmCrawlerReadiness?.checks,
+      );
       const patches = ctx.brandSupported === false
         ? drafted.map((patch) => ({
           ...patch,

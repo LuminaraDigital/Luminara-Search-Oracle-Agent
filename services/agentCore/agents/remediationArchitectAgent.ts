@@ -9,6 +9,7 @@
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
 import { llmsTxtDraft } from '../../audit/fixPackCopy';
+import { crawlerFixWanted } from '../../audit/teaserFailureCodes';
 import { readableStem } from '../../audit/brandName';
 import { guardPasteReadyCopy } from '../../audit/healthClaimGuard';
 
@@ -22,6 +23,7 @@ export class RemediationArchitectAgent {
     dna: BusinessDNA | null | undefined,
     emit: (event: AgentActivityEvent) => void,
     displayName?: string | null,
+    crawlerChecks?: readonly { id: string; status: string }[] | null,
   ): Promise<CodeRemediationPatch[]> {
     emit({
       id: `coder-start-${Date.now()}`,
@@ -39,8 +41,8 @@ export class RemediationArchitectAgent {
     const patches: CodeRemediationPatch[] = [];
 
     // 1. Organization Schema Patch
-    const orgFinding = findings.find((f) => f.title.toLowerCase().includes('organization'));
-    if (orgFinding || findings.length > 0) {
+    const orgFinding = findings.find((f) => f.id === 'finding-schema-org' || f.id === 'finding-schema-org-partial');
+    if (orgFinding) {
       const orgSchema = {
         '@context': 'https://schema.org',
         '@type': 'Organization',
@@ -55,20 +57,21 @@ export class RemediationArchitectAgent {
         targetType: 'json_ld',
         filename: 'schema-organization.jsonld',
         proposedSnippet: JSON.stringify(orgSchema, null, 2),
-        explanation: 'Injects verified Organization schema into <head> to anchor Knowledge Graph entity disambiguation in AI Overviews and Perplexity.',
+        explanation: 'Draft Organization JSON-LD for the page header. Verify the name and URL before pasting.',
         criticSyntaxValid: true,
       });
     }
 
-    // 2. LLMs.txt / Semantic Guidance Patch
-    patches.push({
-      id: 'patch-llms-txt',
-      targetType: 'llms_txt',
-      filename: 'llms.txt',
-      proposedSnippet: llmsTxtDraft(cleanDomain, knownName || null),
-      explanation: 'Provides an llms.txt index file in site root to guide AI crawlers directly to high-authority entity context.',
-      criticSyntaxValid: true,
-    });
+    if (crawlerFixWanted('llms', crawlerChecks)) {
+      patches.push({
+        id: 'patch-llms-txt',
+        targetType: 'llms_txt',
+        filename: 'llms.txt',
+        proposedSnippet: llmsTxtDraft(cleanDomain, knownName || null),
+        explanation: 'Draft llms.txt for the site root. The llms.txt check failed. Verify the text before pasting.',
+        criticSyntaxValid: true,
+      });
+    }
 
     emit({
       id: `coder-done-${Date.now()}`,
@@ -76,7 +79,9 @@ export class RemediationArchitectAgent {
       agentRole: 'remediation_architect',
       agentName: this.name,
       phase: 'code_generation_complete',
-      message: `Constructed ${patches.length} production-grade remediation patches ready for 1-click deployment.`,
+      message: patches.length
+        ? `Drafted ${patches.length} remediation ${patches.length === 1 ? 'patch' : 'patches'}. Verify before pasting.`
+        : 'No remediation patches. Measured checks did not call for an llms.txt or robots.txt change.',
       status: 'completed',
       evidenceSnippet: `Generated files: ${patches.map((p) => p.filename).join(', ')}`,
       confidenceScore: 0.95,

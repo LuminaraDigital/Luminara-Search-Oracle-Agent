@@ -143,13 +143,14 @@ export class UnifiedScraperService {
       lastError = `Firecrawl skipped after an authentication failure. ${hostedAuthRecoveryHint({ signedIn: clientHasHostedIdentity() })}`;
     } else if (providerPref === 'firecrawl' || (providerPref === 'auto' && configService.getFirecrawlKey())) {
       try {
-        const fcRes = await firecrawlService.scrapeUrl(url, ['markdown', 'html']);
+        const fcRes = await firecrawlService.scrapeUrl(url, ['markdown', 'html', 'rawHtml']);
         if (fcRes.httpStatus === 401 || fcRes.httpStatus === 403) {
           noteHostedAuthFailure(fcRes.httpStatus, 'firecrawl');
         }
-        if (fcRes.success && (fcRes.markdown || fcRes.html)) {
+        if (fcRes.success && (fcRes.markdown || fcRes.html || fcRes.rawHtml)) {
           const distilled = contentDistiller.distill(fcRes.html || '', fcRes.markdown || '', {
             maxChars: options.maxChars,
+            schemaHtml: fcRes.rawHtml,
           });
 
           return {
