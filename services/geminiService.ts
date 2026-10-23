@@ -77,6 +77,7 @@ import {
   buildPreliminaryTrustPromptSection,
 } from './audit/evidencePromptLabels';
 import { gateReportText, reportTableHeader } from './audit/reportColumnGate';
+import { stripUnsupportedFixClaims, unsupportedClaimNeedles } from './audit/reportBlocks';
 import { aeoTrustPackService, type TrustPackSummary } from './audit/aeoTrustPackService';
 import { schemaSafetyGate } from './deployment/schemaSafetyGate';
 import { shareOfVoiceService, type ShareOfVoiceSummary } from './visibility/shareOfVoiceService';
@@ -873,6 +874,7 @@ Respect these consolidated business memories and historical recommendation outco
 
     const auditMode = dna?.name ? 'Full audit' : 'Instant Audit';
     const pastExperienceText = postAuditReflectionService.formatExperienceForPrompt(displayUrl);
+    const unsupportedNeedles = unsupportedClaimNeedles(crewEvidence?.unsupportedClaims || []);
     const prompt = `
 ${dnaContext || '[MODE: Instant Audit - no Business DNA. Keep recommendations general. Label the report Mode: Instant Audit.]'}
 ${methodology}
@@ -910,6 +912,7 @@ Strict Formatting Guidelines:
 4. ## 1. One move this week: one concrete action, why it helps citation odds, how to tell it worked.
 5. ## 3. Fix list: Markdown table with strictly these columns:
    ${reportTableHeader('fixList')}
+   ${unsupportedNeedles.length ? `Do not recommend these checks in the fix list or the one-move section. The evidence check did not support them: ${unsupportedNeedles.join('; ')}.` : ''}
 6. AI & Search Visibility Radar: Markdown table with strictly these columns:
    ${reportTableHeader('visibilityRadar')}
    Include 3 high-intent queries (informational, commercial, comparative). Use "not verified" when evidence is missing.
@@ -929,7 +932,11 @@ Strict Formatting Guidelines:
       // Only the report's own table columns pass. No evidence block fills any other.
       // The copy each provider path writes to memory goes through the same gate.
       const scrapedLinks = collectScrapedLinks(crewEvidence?.scrapedPages, scrapedContent);
-      const text = restrictReportJsonLdSameAs(gateReportText(modelText), scrapedLinks, scrapedContent);
+      const text = restrictReportJsonLdSameAs(
+        stripUnsupportedFixClaims(gateReportText(modelText), crewEvidence?.unsupportedClaims || []),
+        scrapedLinks,
+        scrapedContent,
+      );
       const schemaMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"@type"[\s\S]*?\})\s*```/);
       const schemaJsonLd = schemaMatch ? schemaMatch[1].trim() : JSON.stringify({
         "@context": "https://schema.org",

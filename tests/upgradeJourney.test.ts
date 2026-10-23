@@ -85,6 +85,14 @@ describe('upgrade journey', () => {
       finding({ id: 'easy', title: 'Add the agency name to the homepage title', severity: 'low' }),
     ];
     expect(easyFix(rows)?.id).toBe('easy');
+    const unsupported = finding({
+      id: 'finding-thin-content-unmeasured',
+      title: 'Thin Content Detected on Critical Landing Page(s)',
+      severity: 'low',
+      description: 'Not measured. The evidence check did not support this finding.',
+    });
+    expect(easyFix([unsupported, ...rows])?.id).toBe('easy');
+    expect(easyFix([unsupported])).toBeNull();
     expect(recheckTarget(rows[1], 'Ray White')).toEqual({ checkId: 'title', expect: 'Ray White' });
     expect(recheckTarget(rows[1], null)).toBeNull();
     expect(recheckCelebration({ measured: false, passed: null })).toContain('Not measured');
@@ -115,6 +123,17 @@ describe('upgrade journey', () => {
       findings: [finding({ id: 'easy', title: 'Add the agency name to the homepage title', severity: 'low' })],
     }));
     expect(html).toContain('One easy fix');
+    const hidden = renderToStaticMarkup(createElement(UpgradeSurfaces, {
+      domain: 'luminara.digital',
+      findings: [finding({
+        id: 'finding-thin-content-unmeasured',
+        title: 'Thin Content Detected on Critical Landing Page(s)',
+        severity: 'low',
+        description: 'Not measured. The evidence check did not support this finding.',
+      })],
+    }));
+    expect(hidden).not.toContain('One easy fix');
+    expect(hidden).not.toContain('Thin Content Detected');
     expect(html).toContain('Recheck this fix');
     expect(html).toContain('SAMPLE');
     expect(html).toContain('This is not your data.');

@@ -3,6 +3,7 @@
  * Prices are the published AUD card prices. No tax is added. A missing measurement stays "Not measured".
  */
 import type { BoardFinding } from '../audit/findingBoardService';
+import { isDowngradedFinding } from '../audit/reportBlocks';
 import { PAID_PLAN_PRICES, type PaidPlanId } from '../../components/paywall/planPrices';
 import { entitlementsFor, PLAN_ENTITLEMENTS } from '../plans/planEntitlements';
 import { formatAuDay } from '../../utils/formatAuDate';
@@ -89,7 +90,9 @@ export function competitorRankLine(): string {
 }
 
 export function easyFix(findings: readonly BoardFinding[]): BoardFinding | null {
-  const open = findings.filter((finding) => finding.status === 'open' || finding.status === 'in_progress');
+  const open = findings.filter((finding) =>
+    (finding.status === 'open' || finding.status === 'in_progress') && !isDowngradedFinding(finding),
+  );
   if (!open.length) return null;
   return [...open].sort((a, b) => (SEVERITY_EASE[a.severity] ?? 9) - (SEVERITY_EASE[b.severity] ?? 9))[0];
 }

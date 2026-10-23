@@ -13,7 +13,7 @@ export const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
 export const JEV_TIMEOUT_MS = 3000;
 export const JEV_NOUL_MIN = 0.6;
 
-const NOT_MEASURED = 'Not measured. The evidence check did not support this finding.';
+export const NOT_MEASURED = 'Not measured. The evidence check did not support this finding.';
 const EXCERPT_CHARS = 400;
 
 export interface JevPage {
@@ -254,16 +254,25 @@ export async function verifyAuditWithJev(input: {
   return verdict;
 }
 
-export function downgradeUnsupported<T extends Pick<AuditFinding, 'id' | 'description' | 'howWeKnowItFailed' | 'severity'>>(
+function softenedTitle(id: string, title: string | undefined): string | undefined {
+  if (!title || !/\b(detected|critical|urgent|warning|failed|failure|severe)\b/i.test(title)) return title;
+  const slug = id.replace(/^finding-/, '').replace(/-/g, ' ').trim();
+  if (!slug) return 'Not measured';
+  return slug.charAt(0).toUpperCase() + slug.slice(1);
+}
+
+export function downgradeUnsupported<T extends Pick<AuditFinding, 'id' | 'description' | 'howWeKnowItFailed' | 'severity'> & { title?: string }>(
   findings: readonly T[],
   downgradedIds: readonly string[],
 ): T[] {
   const drop = new Set(downgradedIds);
   return findings.map((finding) => {
     if (!drop.has(finding.id)) return finding;
+    const id = `${finding.id}-unmeasured`;
     return {
       ...finding,
-      id: `${finding.id}-unmeasured`,
+      id,
+      title: softenedTitle(finding.id, finding.title),
       severity: 'low',
       description: NOT_MEASURED,
       howWeKnowItFailed: NOT_MEASURED,

@@ -206,8 +206,56 @@ export function recheckLabel(from = Date.now()): string {
   return when ? `Recheck on ${when}.` : 'Recheck in 14 days.';
 }
 
-export function isDowngradedFinding(finding: { id?: string }): boolean {
-  return typeof finding.id === 'string' && finding.id.endsWith('-unmeasured');
+const UNSUPPORTED_FINDING = 'Not measured. The evidence check did not support this finding.';
+
+export function isDowngradedFinding(finding: { id?: string; description?: string }): boolean {
+  if (typeof finding.id === 'string' && finding.id.endsWith('-unmeasured')) return true;
+  return finding.description?.trim() === UNSUPPORTED_FINDING;
+}
+
+/** Phrases from unsupported finding ids, used to keep them out of the model fix list. */
+export function unsupportedClaimNeedles(findings: readonly { id?: string; description?: string }[]): string[] {
+  const needles = new Set<string>();
+  for (const finding of findings) {
+    if (!isDowngradedFinding(finding)) continue;
+    const phrase = (finding.id || '')
+      .replace(/-unmeasured$/, '')
+      .replace(/^finding-/, '')
+      .replace(/-/g, ' ')
+      .trim()
+      .toLowerCase();
+    if (phrase.length >= 4) needles.add(phrase);
+  }
+  return [...needles];
+}
+
+/** Drops fix-list and one-move lines that restate a finding the evidence check did not support. */
+export function stripUnsupportedFixClaims(
+  markdown: string,
+  findings: readonly { id?: string; description?: string }[],
+): string {
+  const needles = unsupportedClaimNeedles(findings);
+  if (!needles.length || !markdown) return markdown;
+  let guarded = false;
+  let fence = false;
+  const kept: string[] = [];
+  for (const line of markdown.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      fence = !fence;
+      kept.push(line);
+      continue;
+    }
+    if (!fence && /^#{1,3}\s+/.test(trimmed)) {
+      const heading = trimmed.replace(/^#+\s*/, '').toLowerCase();
+      guarded = heading.includes('fix list') || heading.includes('one move');
+      kept.push(line);
+      continue;
+    }
+    if (guarded && !fence && needles.some((needle) => line.toLowerCase().includes(needle))) continue;
+    kept.push(line);
+  }
+  return kept.join('\n');
 }
 
 export function fixProgress(findings: ReadonlyArray<{ id?: string; status: string }>): { done: number; total: number; label: string } {

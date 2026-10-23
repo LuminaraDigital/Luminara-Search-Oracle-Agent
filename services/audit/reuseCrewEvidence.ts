@@ -13,6 +13,8 @@ export interface AuditReportCrewEvidence {
   scrapedPages?: readonly ScrapedPageEvidence[] | null;
   serpEvidence?: readonly SerpEvidenceItem[] | null;
   rlmCorpus?: Record<string, string> | null;
+  /** Finding ids the evidence check did not support, including the `-unmeasured` suffix. */
+  unsupportedClaims?: readonly { id?: string; description?: string }[] | null;
 }
 
 export interface ReusedPageEvidence {

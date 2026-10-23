@@ -85,6 +85,7 @@ export async function generateAuditReportUnlessDegraded(input: {
   brandSupported?: boolean | null;
   /** Name Jev picked, or a supported scraped name. A title-cased domain is not stored. */
   displayName?: string | null;
+  findings?: ReadonlyArray<{ id?: string; description?: string }>;
 }): Promise<GuardedAuditReport | null> {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
@@ -98,6 +99,7 @@ export async function generateAuditReportUnlessDegraded(input: {
     {
       scrapedPages: input.scrapedPages,
       serpEvidence: input.serpEvidence,
+      unsupportedClaims: input.findings,
     },
   );
   const pages = input.scrapedPages ?? [];
