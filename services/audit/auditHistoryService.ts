@@ -6,7 +6,7 @@
 
 import { entitlementsFor, type PlanId } from '../plans/planEntitlements';
 import { notifyAuditActivity } from './auditActivity';
-import { flushWorkspacePush, noteWorkspaceDirty, workspaceHistoryReady } from '../sync/workspaceSyncService';
+import { flushWorkspacePush, noteWorkspaceDirty, workspaceAccountId, workspaceHistoryReady } from '../sync/workspaceSyncService';
 import { accountKnownSignedIn, apiBase, workerFetchWithAuthRetry } from '../apiClient';
 
 const STORAGE_KEY = 'luminara_audit_history_v1';
@@ -202,6 +202,7 @@ export async function pushAuditToServer(entry: AuditHistoryEntry): Promise<boole
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ entry }),
     });
+    if (res.ok) uploadedIds.add(entry.id);
     return res.ok;
   } catch {
     return false;
@@ -210,29 +211,48 @@ export async function pushAuditToServer(entry: AuditHistoryEntry): Promise<boole
 
 export type ServerHistoryResult = { ok: true; entries: AuditHistoryEntry[] } | { ok: false; error: string };
 
+const HISTORY_TIMEOUT_MS = 8_000;
+/** Ids this page already sent, so a reload of the list does not send them again. */
+const uploadedIds = new Set<string>();
+
 /**
  * Reads the account's newest saved audits from the API and caches them in this browser.
- * Browser-only entries in that window (saved before this API, or while it was down) are uploaded.
- * Runs only after the sign-in workspace pull, which clears another account's browser history first.
+ * Browser-only entries in that window (saved before this API, or while it was down) are uploaded,
+ * but only when this browser's copy is known to be this account's: a failed sign-in pull can
+ * leave another account's history here, and a guest's copy is not adopted by whoever signs in.
+ * A copy that names another account is replaced by the server list.
  */
 export async function syncAuditHistoryFromServer(limit = 8): Promise<ServerHistoryResult> {
   if (!apiBase() || !accountKnownSignedIn()) return { ok: false, error: 'Not signed in' };
   if (!workspaceHistoryReady()) return { ok: false, error: 'Account history is still loading' };
   let entries: AuditHistoryEntry[];
+  let accountId: string | undefined;
   try {
-    const res = await workerFetchWithAuthRetry(`${apiBase()}${HISTORY_API}?limit=${limit}`);
-    const body = (await res.json().catch(() => null)) as { ok?: boolean; entries?: unknown; error?: string } | null;
+    const res = await workerFetchWithAuthRetry(`${apiBase()}${HISTORY_API}?limit=${limit}`, {
+      signal: AbortSignal.timeout(HISTORY_TIMEOUT_MS),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok?: boolean; accountId?: string; entries?: unknown; error?: string }
+      | null;
     if (!res.ok || !body?.ok || !Array.isArray(body.entries)) {
       return { ok: false, error: body?.error || `Saved reports could not be loaded (HTTP ${res.status})` };
     }
     entries = body.entries as AuditHistoryEntry[];
+    accountId = body.accountId;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Saved reports could not be loaded' };
   }
 
-  const serverIds = new Set(entries.map((e) => e.id));
-  const missing = listAudits({ limit }).filter((e) => !serverIds.has(e.id));
-  const merged = uniqueById([...loadAll(), ...entries]).sort((a, b) => a.measuredAt - b.measuredAt);
+  const owner = workspaceAccountId();
+  const ours = Boolean(owner && accountId && owner === accountId);
+  const foreign = Boolean(owner && accountId && owner !== accountId);
+  for (const entry of entries) uploadedIds.add(entry.id);
+  // A full page hides older server rows, so only local entries newer than its oldest row can be missing.
+  const oldestShown = entries.length >= limit ? Math.min(...entries.map((e) => e.measuredAt)) : 0;
+  const missing = ours
+    ? listAudits({ limit }).filter((e) => !uploadedIds.has(e.id) && e.measuredAt > oldestShown)
+    : [];
+  const merged = uniqueById([...(foreign ? [] : loadAll()), ...entries]).sort((a, b) => a.measuredAt - b.measuredAt);
   saveAll(merged.slice(-MAX_HARD_CAP));
   notifyAuditActivity();
   void (async () => {

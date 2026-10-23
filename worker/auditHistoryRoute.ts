@@ -1,6 +1,6 @@
 /**
  * Instant Audit history (D1). The browser keeps a cache; this table is the durable copy.
- *   GET /audits/history?limit=&domain=   newest first, whole entries
+ *   GET /audits/history?limit=&domain=   newest first, whole entries, with the caller's accountId
  *   PUT /audits/history { entry }        upsert by (account, entry id); first measuredAt is kept
  */
 import type { Env } from './env';
@@ -117,7 +117,7 @@ export async function handleAuditHistoryRoute(request: Request, env: Env): Promi
           `SELECT entry_json, measured_at FROM audit_history WHERE account_id = ? ORDER BY measured_at DESC LIMIT ?`,
         ).bind(accountId, limit).all<{ entry_json: string; measured_at: number }>();
     const entries = (res.results || []).map(parseRow).filter((e): e is StoredAuditEntry => e !== null);
-    return json({ ok: true, entries });
+    return json({ ok: true, accountId, entries });
   }
 
   if (request.method === 'PUT') {
@@ -136,11 +136,16 @@ export async function handleAuditHistoryRoute(request: Request, env: Env): Promi
          entry_json = excluded.entry_json,
          updated_at = excluded.updated_at`,
     ).bind(accountId, entry.id, entry.domain, entry.measuredAt, JSON.stringify(entry), now).run();
-    await env.DB.prepare(
-      `DELETE FROM audit_history WHERE account_id = ? AND id NOT IN (
-         SELECT id FROM audit_history WHERE account_id = ? ORDER BY measured_at DESC LIMIT ?
-       )`,
-    ).bind(accountId, accountId, MAX_ROWS_PER_ACCOUNT).run();
+    const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_history WHERE account_id = ?`)
+      .bind(accountId)
+      .first<{ n: number }>();
+    if (Number(count?.n ?? 0) > MAX_ROWS_PER_ACCOUNT) {
+      await env.DB.prepare(
+        `DELETE FROM audit_history WHERE account_id = ? AND id NOT IN (
+           SELECT id FROM audit_history WHERE account_id = ? ORDER BY measured_at DESC LIMIT ?
+         )`,
+      ).bind(accountId, accountId, MAX_ROWS_PER_ACCOUNT).run();
+    }
     const row = await env.DB.prepare(`SELECT entry_json, measured_at FROM audit_history WHERE account_id = ? AND id = ?`)
       .bind(accountId, entry.id)
       .first<{ entry_json: string; measured_at: number }>();

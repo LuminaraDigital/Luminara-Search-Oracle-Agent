@@ -73,7 +73,9 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     accountId,
   );
   const auditHistory = await q<Record<string, unknown>>(
-    `SELECT id, domain, measured_at, entry_json, updated_at FROM audit_history WHERE account_id = ?`,
+    // The report text is left out to keep the export small; the summary, scores and dates stay.
+    `SELECT id, domain, measured_at, json_remove(entry_json, '$.reportExcerpt') AS entry_json, updated_at
+       FROM audit_history WHERE account_id = ? ORDER BY measured_at DESC LIMIT 500`,
     accountId,
   ).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;

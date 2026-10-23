@@ -119,6 +119,24 @@ describe('audit history API (D1)', () => {
     expect(saved.body.entry).not.toHaveProperty('injected');
   });
 
+  it('keeps the newest 500 rows per account', async () => {
+    const env = makeEnv();
+    await call(env, 42, 'PUT', '', { entry: entry('audit-seed') });
+    const accountId = (await env.DB!.prepare(`SELECT account_id FROM audit_history`).first<{ account_id: string }>())!.account_id;
+    for (let i = 0; i < 500; i += 1) {
+      await env.DB!.prepare(
+        `INSERT INTO audit_history (account_id, id, domain, measured_at, entry_json, updated_at) VALUES (?, ?, 'acme.example', ?, '{}', 0)`,
+      ).bind(accountId, `bulk-${i}`, 1_800_000_000_000 + i).run();
+    }
+    await call(env, 42, 'PUT', '', { entry: entry('audit-new', { measuredAt: 1_900_000_000_000 }) });
+    const rows = await env.DB!.prepare(`SELECT id FROM audit_history WHERE account_id = ?`).bind(accountId).all<{ id: string }>();
+    const ids = (rows.results || []).map((r) => r.id);
+    expect(ids).toHaveLength(500);
+    expect(ids).toContain('audit-new');
+    expect(ids).not.toContain('audit-seed');
+    expect(ids).not.toContain('bulk-0');
+  });
+
   it('is deleted with the account', async () => {
     const env = makeEnv();
     await call(env, 42, 'PUT', '', { entry: entry('audit-1') });
@@ -134,6 +152,7 @@ describe('audit history API (D1)', () => {
 // Client: the browser list loads from the API first and uploads browser-only entries.
 const routeEnv = { current: makeEnv() };
 const signedIn = { current: true };
+const workspaceOwner: { current: string | undefined } = { current: undefined };
 
 vi.mock('../services/apiClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/apiClient')>();
@@ -154,6 +173,7 @@ vi.mock('../services/sync/workspaceSyncService', async (importOriginal) => {
   return {
     ...actual,
     workspaceHistoryReady: () => true,
+    workspaceAccountId: () => workspaceOwner.current,
     flushWorkspacePush: async () => {},
     noteWorkspaceDirty: () => {},
   };
@@ -162,10 +182,12 @@ vi.mock('../services/sync/workspaceSyncService', async (importOriginal) => {
 const { auditHistoryService, pushAuditToServer } = await import('../services/audit/auditHistoryService');
 
 describe('audit history client (API first)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     routeEnv.current = makeEnv();
     signedIn.current = true;
     auditHistoryService.clear();
+    // The account id the API reports for Telegram user 42, so the browser copy can be marked as its own.
+    workspaceOwner.current = (await call(routeEnv.current, 42, 'GET')).body.accountId;
   });
   afterEach(() => auditHistoryService.clear());
 
@@ -196,6 +218,43 @@ describe('audit history client (API first)', () => {
       const list = await call(routeEnv.current, 42, 'GET');
       expect(list.body.entries.map((e: { id: string }) => e.id)).toContain(local.id);
     });
+  });
+
+  it('does not upload a browser copy that belongs to another account, and replaces it', async () => {
+    signedIn.current = false;
+    const other = auditHistoryService.record({ domain: 'previous.example', focus: 'SEO', reportText: 'Health Score: 40/100' });
+    signedIn.current = true;
+    workspaceOwner.current = 'acct_someone_else';
+    await call(routeEnv.current, 42, 'PUT', '', { entry: entry('audit-remote') });
+    const result = await auditHistoryService.syncFromServer(8);
+    expect(result.ok).toBe(true);
+    expect(auditHistoryService.list().map((e) => e.id)).toEqual(['audit-remote']);
+    await new Promise((done) => setTimeout(done, 20));
+    const list = await call(routeEnv.current, 42, 'GET');
+    expect(list.body.entries.map((e: { id: string }) => e.id)).not.toContain(other.id);
+  });
+
+  it('does not adopt a guest copy into the account', async () => {
+    signedIn.current = false;
+    const guest = auditHistoryService.record({ domain: 'guest.example', focus: 'SEO', reportText: 'Health Score: 40/100' });
+    signedIn.current = true;
+    workspaceOwner.current = undefined;
+    await auditHistoryService.syncFromServer(8);
+    await new Promise((done) => setTimeout(done, 20));
+    const list = await call(routeEnv.current, 42, 'GET');
+    expect(list.body.entries.map((e: { id: string }) => e.id)).not.toContain(guest.id);
+    expect(auditHistoryService.get(guest.id)).not.toBeNull();
+  });
+
+  it('does not resend browser reports older than a full server page', async () => {
+    signedIn.current = false;
+    const old = auditHistoryService.record({ domain: 'acme.example', focus: 'SEO', reportText: 'x', measuredAt: 1_000 });
+    signedIn.current = true;
+    await call(routeEnv.current, 42, 'PUT', '', { entry: entry('audit-newer') });
+    await auditHistoryService.syncFromServer(1);
+    await new Promise((done) => setTimeout(done, 20));
+    const list = await call(routeEnv.current, 42, 'GET');
+    expect(list.body.entries.map((e: { id: string }) => e.id)).not.toContain(old.id);
   });
 
   it('reports a failed load and keeps the browser copy', async () => {

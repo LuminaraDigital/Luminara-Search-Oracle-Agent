@@ -59,7 +59,7 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
       if (!workspaceHistoryReady()) return;
       void auditHistoryService.syncFromServer(8).then((result) => {
         if (!live) return;
-        if (!result.ok) setNote('Saved reports could not be loaded from your account. Only reports saved in this browser are shown.');
+        setNote(result.ok ? null : 'Saved reports could not be loaded from your account. Only reports saved in this browser are shown.');
         setServer('done');
         refresh();
         openFromHash();
@@ -81,7 +81,8 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
     };
   }, []);
 
-  if (!historyReady || server === 'waiting') {
+  // While the account list loads, reports already in this browser stay on screen.
+  if (!historyReady || (server === 'waiting' && items.length === 0)) {
     return (
       <section aria-label="Past reports" className="mb-6 text-left">
         <h2 className="text-xs font-semibold tracking-wide text-gray-400 mb-2">Past reports</h2>
@@ -147,6 +148,7 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
           </li>
         ))}
       </ul>
+      {server === 'waiting' && <p className="mt-2 text-sm text-gray-400" role="status">Checking your account for saved reports.</p>}
       {note && <p className="mt-2 text-sm text-gray-300" role="status">{note}</p>}
     </section>
   );
