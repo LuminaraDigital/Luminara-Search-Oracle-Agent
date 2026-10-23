@@ -52,4 +52,41 @@ describe('unmeasured claim guard', () => {
     expect(EVIDENCE_LABEL_INSTRUCTION).toContain('Never state a rating, review count, or statistic that is not in the evidence above.');
     expect(EVIDENCE_LABEL_INSTRUCTION).not.toContain('\n');
   });
+
+  it('drops an AI-engine appearance claim when those engines were not measured and keeps the web search line', () => {
+    const text = guardUnmeasuredClaims(
+      [
+        '# Luminara: Will AI mention Luminara Digital?',
+        '',
+        'Your site is being mentioned in AI\u2011driven results, but only because the brand name appears in plain text.No structured data exists, so AI has little confidence in the entity.Readability is low; long sentences may reduce quote-ability for AI citations.',
+        'Your brand is mentioned in 6 of 9 web results this run collected.',
+        'Found 9 web results through Tavily web search.',
+        'ChatGPT: Not measured. Perplexity cites your homepage. Google AI Overviews include the brand.',
+        'GPTBot and PerplexityBot are not blocked.',
+        '```',
+        'Your site is being mentioned in AI-driven results.',
+        '```',
+      ].join('\n'),
+      { aiEnginesMeasured: false },
+    );
+    const body = text.split('```')[0] || '';
+    expect(body).toContain('# Luminara: Web search check for Luminara Digital');
+    expect(body).not.toMatch(/will ai mention/i);
+    expect(body).not.toMatch(/ai[\s\u2010\u2011\u2012\u2013\u2014-]*driven/i);
+    expect(body).not.toMatch(/Perplexity cites/i);
+    expect(body).not.toMatch(/AI Overviews include/i);
+    expect(text).toContain('No structured data exists, so AI has little confidence in the entity.');
+    expect(text).toContain('Readability is low; long sentences may reduce quote-ability for AI citations.');
+    expect(text).toContain('mentioned in 6 of 9 web results this run collected.');
+    expect(text).toContain('Found 9 web results through Tavily web search.');
+    expect(text).toContain('ChatGPT: Not measured.');
+    expect(text).toContain('GPTBot and PerplexityBot are not blocked.');
+    expect(text).toContain('```\nYour site is being mentioned in AI-driven results.\n```');
+  });
+
+  it('leaves an AI-driven sentence in place when the caller does not say the engines were unmeasured', () => {
+    const sentence = 'Your site is being mentioned in AI-driven results.';
+    expect(guardUnmeasuredClaims(sentence, {})).toBe(sentence);
+    expect(guardUnmeasuredClaims(sentence, { aiEnginesMeasured: true })).toBe(sentence);
+  });
 });
