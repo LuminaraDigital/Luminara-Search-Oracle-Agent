@@ -98,11 +98,15 @@ export class PlaybookAuditorAgent {
     // Schema and thin-content findings come from live scrapes only.
     // Jina markdown cannot prove a missing entity, so it never starts the 85-minus-penalty formula.
     if (livePages.length > 0) {
-      const allSchemas = livePages.flatMap((p) => p.schemasFound);
-      const schemaTypes = new Set(allSchemas.map((s) => s.type.toLowerCase()));
+      const typesOn = (page: ScrapedPageEvidence): string[] =>
+        [...new Set(page.schemasFound.map((schema) => schema.type.trim().toLowerCase()).filter(Boolean))];
+      const measured = livePages.map((page) => ({ url: page.url, types: typesOn(page) }));
+      const schemaTypes = new Set(measured.flatMap((page) => page.types));
+      const hasOrgType = (types: readonly string[]) => types.some((type) => isOrganizationEntityType(type));
+      const covered = measured.some((page) => hasOrgType(page.types));
 
-      if (![...schemaTypes].some((type) => isOrganizationEntityType(type))) {
-        const urls = livePages.map((page) => page.url).slice(0, 3).join(', ');
+      if (!covered) {
+        const urls = measured.map((page) => page.url).slice(0, 3).join(', ');
         const seen = [...schemaTypes];
         const seenLabel = seen.length ? seen.join(', ') : 'none';
         findings.push({
@@ -112,11 +116,33 @@ export class PlaybookAuditorAgent {
           title: `Missing Organization markup on ${urls}`,
           description: `Parsed HTML at ${urls} has schema types: ${seenLabel}. Organization, Corporation, LocalBusiness, and ProfessionalService are not among them.`,
           evidenceSource: 'DOM Scrape JSON-LD inspection',
-          howWeKnowItFailed: `Parsed ${livePages.length} page(s) at ${urls}. Schema types found: ${seenLabel}.`,
+          howWeKnowItFailed: `Parsed ${measured.length} page(s) at ${urls}. Schema types found: ${seenLabel}.`,
           leadingIndicator: 'Direct knowledge graph attribution and entity disambiguation in AI Overviews.',
           criticVerified: false,
           criticConfidence: 0.9,
         });
+      } else {
+        const missing = measured.filter((page) => !hasOrgType(page.types));
+        if (missing.length > 0) {
+          const quoted = missing.slice(0, 3).map((page) => {
+            const seen = page.types.length ? page.types.join(', ') : 'no schema types';
+            return `${page.url}: ${seen}`;
+          }).join('; ');
+          findings.push({
+            id: 'finding-schema-org-partial',
+            category: 'schema',
+            severity: 'low',
+            title: missing.length === 1
+              ? `Organization markup is not on ${missing[0].url}`
+              : `Organization markup is not on ${missing.length} measured pages`,
+            description: `Other measured pages already include an organization type. These do not: ${quoted}.`,
+            evidenceSource: 'DOM Scrape JSON-LD inspection',
+            howWeKnowItFailed: quoted,
+            leadingIndicator: 'Direct knowledge graph attribution and entity disambiguation in AI Overviews.',
+            criticVerified: false,
+            criticConfidence: 0.7,
+          });
+        }
       }
 
       if (schemaTypes.has('howto')) {
