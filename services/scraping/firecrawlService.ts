@@ -24,6 +24,8 @@ export interface FirecrawlScrapeResult {
   success: boolean;
   markdown?: string;
   html?: string;
+  /** Full page HTML. `html` is main content and often omits `<head>` JSON-LD. */
+  rawHtml?: string;
   metadata?: {
     title?: string;
     description?: string;
@@ -56,6 +58,7 @@ export interface FirecrawlMapResult {
 export interface FirecrawlCrawlPage {
   markdown?: string;
   html?: string;
+  rawHtml?: string;
   metadata?: FirecrawlScrapeResult['metadata'];
 }
 
@@ -112,7 +115,7 @@ export class FirecrawlService {
 
   public async scrapeUrl(
     url: string,
-    formats: ('markdown' | 'html')[] = ['markdown'],
+    formats: ('markdown' | 'html' | 'rawHtml')[] = ['markdown'],
   ): Promise<FirecrawlScrapeResult> {
     const apiKey = this.apiKey();
     if (!apiKey) {
@@ -156,6 +159,7 @@ export class FirecrawlService {
         success: true,
         markdown: data.markdown,
         html: data.html,
+        rawHtml: typeof data.rawHtml === 'string' ? data.rawHtml : typeof data.raw_html === 'string' ? data.raw_html : undefined,
         metadata: data.metadata,
         httpStatus: response.status,
       };
@@ -278,7 +282,7 @@ export class FirecrawlService {
               'checkout/.*',
             ],
             scrapeOptions: {
-              formats: ['markdown', 'html'],
+              formats: ['markdown', 'html', 'rawHtml'],
               onlyMainContent: true,
             },
           }),
@@ -410,6 +414,7 @@ export class FirecrawlService {
       .map((p: any) => ({
         markdown: typeof p.markdown === 'string' ? p.markdown : undefined,
         html: typeof p.html === 'string' ? p.html : undefined,
+        rawHtml: typeof p.rawHtml === 'string' ? p.rawHtml : typeof p.raw_html === 'string' ? p.raw_html : undefined,
         metadata: p.metadata && typeof p.metadata === 'object' ? p.metadata : undefined,
       }));
   }

@@ -13,15 +13,10 @@ export const GSC_EMPTY_COPY =
 
 const tagClass = 'text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/10 text-gray-500';
 
-export const PsiNotMeasuredTag: React.FC = () => <span className={tagClass}>not_measured</span>;
-
 export const GscNotConfiguredTag: React.FC = () => <span className={tagClass}>not_configured</span>;
 
 export const PsiEmptyState: React.FC = () => (
-  <div className="flex items-start justify-between gap-2">
-    <p className="text-[11px] text-gray-500">{PSI_EMPTY_COPY}</p>
-    <PsiNotMeasuredTag />
-  </div>
+  <p className="text-[11px] text-gray-500">{PSI_EMPTY_COPY}</p>
 );
 
 export const GscEmptyState: React.FC = () => (

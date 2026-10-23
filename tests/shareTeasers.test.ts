@@ -4,6 +4,7 @@ import worker from '../worker/index';
 import type { Env } from '../worker/env';
 import { handleShareRoute, parseTeaserCreateBody, TEASER_DAILY_LIMIT } from '../worker/shareService';
 import { loadCrawlerSnapshot } from '../worker/llmCrawlerRoute';
+import { evaluateLlmCrawlerReadiness } from '../services/audit/llmCrawlerReadiness';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 const botToken = '123456:TEASER_TEST';
@@ -311,6 +312,80 @@ describe('crawler file fetch', () => {
     const fetched = fetcher.mock.calls.map((call) => String(call[0]));
     expect(fetched.some((url) => url.endsWith('/ai.txt'))).toBe(true);
     expect(fetched.some((url) => url.includes('/wp-admin'))).toBe(false);
+  });
+
+  it('follows a same-site 301 and counts llms.txt as present', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        if (url.includes('type=AAAA')) return new Response(JSON.stringify({ Status: 0, Answer: [] }), { status: 200 });
+        return new Response(JSON.stringify({ Status: 0, Answer: [{ type: 1, data: '1.1.1.1' }] }), { status: 200 });
+      }
+      if (url === 'https://luminarasuite.com/llms.txt') {
+        return new Response(null, { status: 301, headers: { Location: 'https://www.luminarasuite.com/llms.txt' } });
+      }
+      if (url === 'https://www.luminarasuite.com/llms.txt') return new Response('# Suite\nA short summary of the product.\n', { status: 200 });
+      if (url === 'https://luminarasuite.com/robots.txt') {
+        return new Response(null, { status: 302, headers: { Location: 'https://www.luminarasuite.com/robots.txt' } });
+      }
+      if (url === 'https://www.luminarasuite.com/robots.txt') return new Response('User-agent: *\nAllow: /\n', { status: 200 });
+      return new Response('no', { status: 404 });
+    });
+    const loaded = await loadCrawlerSnapshot('https://luminarasuite.com/', fetcher as unknown as typeof fetch);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.snapshot.llmsHttpStatus).toBe(200);
+    expect(loaded.snapshot.llmsTxt).toContain('# Suite');
+    expect(loaded.snapshot.robotsHttpStatus).toBe(200);
+    expect(loaded.snapshot.robotsTxt).toContain('Allow: /');
+    const checks = evaluateLlmCrawlerReadiness(loaded.snapshot).checks;
+    expect(checks.find((check) => check.id === 'llms_txt')?.status).toBe('pass');
+    expect(checks.find((check) => check.id === 'ai_bot_directives')?.status).toBe('pass');
+  });
+
+  it('does not follow an llms.txt redirect to another host', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        if (url.includes('type=AAAA')) return new Response(JSON.stringify({ Status: 0, Answer: [] }), { status: 200 });
+        return new Response(JSON.stringify({ Status: 0, Answer: [{ type: 1, data: '1.1.1.1' }] }), { status: 200 });
+      }
+      if (url === 'https://luminarasuite.com/llms.txt') {
+        return new Response(null, { status: 301, headers: { Location: 'https://evil.example/llms.txt' } });
+      }
+      if (url.includes('evil.example')) return new Response('# stolen\n', { status: 200 });
+      return new Response('no', { status: 404 });
+    });
+    const loaded = await loadCrawlerSnapshot('https://luminarasuite.com/', fetcher as unknown as typeof fetch);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.snapshot.llmsHttpStatus).toBe(301);
+    expect(loaded.snapshot.llmsTxt).toBeNull();
+    expect(fetcher.mock.calls.some((call) => String(call[0]).includes('evil.example'))).toBe(false);
+    const presence = evaluateLlmCrawlerReadiness(loaded.snapshot).checks.find((check) => check.id === 'llms_txt');
+    expect(presence?.status).toBe('not_measured');
+  });
+
+  it('does not follow a same-site llms.txt redirect that resolves to a private address', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        if (url.includes('type=AAAA')) return new Response(JSON.stringify({ Status: 0, Answer: [] }), { status: 200 });
+        const data = url.includes('name=www.luminarasuite.com') ? '127.0.0.1' : '1.1.1.1';
+        return new Response(JSON.stringify({ Status: 0, Answer: [{ type: 1, data }] }), { status: 200 });
+      }
+      if (url === 'https://luminarasuite.com/llms.txt') {
+        return new Response(null, { status: 301, headers: { Location: 'https://www.luminarasuite.com/llms.txt' } });
+      }
+      if (url.startsWith('https://www.luminarasuite.com/')) return new Response('# Suite\n', { status: 200 });
+      return new Response('no', { status: 404 });
+    });
+    const loaded = await loadCrawlerSnapshot('https://luminarasuite.com/', fetcher as unknown as typeof fetch);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.snapshot.llmsHttpStatus).toBe(301);
+    expect(loaded.snapshot.llmsTxt).toBeNull();
+    expect(fetcher.mock.calls.some((call) => String(call[0]).startsWith('https://www.luminarasuite.com/'))).toBe(false);
   });
 
   it('rejects private hosts', async () => {

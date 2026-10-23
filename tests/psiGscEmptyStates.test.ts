@@ -12,10 +12,10 @@ import {
 import type { GscSummary } from '../services/mcp/gscAnalyticsService';
 
 describe('PSI/GSC honest empty states', () => {
-  it('PSI empty branch renders the honest not_measured copy', () => {
+  it('PSI empty branch renders the honest not measured copy without the raw status token', () => {
     const text = collectText(React.createElement(PsiEmptyState));
     expect(text).toContain(PSI_EMPTY_COPY);
-    expect(text).toContain('not_measured');
+    expect(text).not.toContain('not_measured');
   });
 
   it('PSI empty branch contains zero digit characters (no numeric placeholders)', () => {
