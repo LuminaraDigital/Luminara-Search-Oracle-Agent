@@ -2,6 +2,7 @@
  * Bounded fetch of /robots.txt, /llms.txt, and optional /ai.txt for an Instant Audit target.
  * Identity required. Private hosts are refused. A same-site 301/302/303/307/308 is followed
  * after the next host is checked again. A redirect to another site is not followed.
+ * Crawl files on this Worker's own Custom Domains are read in-process (same-zone fetch returns 522).
  */
 import type { Env } from './env';
 import { billingId, identify, json } from './workerUtils';
@@ -9,6 +10,7 @@ import { resolvesToPublicAddress, safePublicHostname, safePublicUrl, type DohFet
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { mintScoutReceipt } from './referrals';
 import { readCapped } from './domainVerification';
+import { readServedCrawlFile } from './crawlDocuments';
 import type { LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 
 const MAX_BYTES = 64_000;
@@ -16,7 +18,11 @@ const FETCH_MS = 5_000;
 const MAX_REDIRECTS = 3;
 const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
 
-async function fetchOne(url: string, fetcher: typeof fetch): Promise<{ status: number | null; body: string | null }> {
+async function fetchOne(
+  url: string,
+  fetcher: typeof fetch,
+  serveHost?: string,
+): Promise<{ status: number | null; body: string | null }> {
   let current = url;
   let originHost = '';
   try {
@@ -29,6 +35,10 @@ async function fetchOne(url: string, fetcher: typeof fetch): Promise<{ status: n
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (seen.has(current)) return { status: null, body: null };
     seen.add(current);
+    if (serveHost) {
+      const local = readServedCrawlFile(serveHost, current);
+      if (local) return local;
+    }
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), FETCH_MS);
     try {
@@ -73,6 +83,7 @@ async function fetchOne(url: string, fetcher: typeof fetch): Promise<{ status: n
 export async function loadCrawlerSnapshot(
   pageUrl: string,
   fetcher: typeof fetch = fetch,
+  serveHost?: string,
 ): Promise<{ ok: true; snapshot: LlmCrawlerSnapshot } | { ok: false; error: string; code: string }> {
   const raw = String(pageUrl || '').trim();
   const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
@@ -84,9 +95,9 @@ export async function loadCrawlerSnapshot(
   }
   const origin = `${page.protocol}//${page.host}`;
   const [llms, robots, aiTxt] = await Promise.all([
-    fetchOne(`${origin}/llms.txt`, fetcher),
-    fetchOne(`${origin}/robots.txt`, fetcher),
-    fetchOne(`${origin}/ai.txt`, fetcher),
+    fetchOne(`${origin}/llms.txt`, fetcher, serveHost),
+    fetchOne(`${origin}/robots.txt`, fetcher, serveHost),
+    fetchOne(`${origin}/ai.txt`, fetcher, serveHost),
   ]);
   const snapshot: LlmCrawlerSnapshot = {
     llmsTxt: llms.body,
@@ -104,7 +115,7 @@ export async function handleLlmCrawlerRoute(request: Request, env: Env): Promise
   const who = await identify(request, env);
   const url = new URL(request.url);
   const target = url.searchParams.get('url') || '';
-  const loaded = await loadCrawlerSnapshot(target);
+  const loaded = await loadCrawlerSnapshot(target, fetch, url.hostname);
   if (!loaded.ok) {
     return json({ ok: false, error: loaded.error, code: loaded.code, snapshot: null }, 400);
   }
