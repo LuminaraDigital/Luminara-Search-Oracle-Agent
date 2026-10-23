@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useTonConnectUI, useTonWallet, TonConnectButton } from '@tonconnect/ui-react';
 import { isInTelegram, payWithStars, haptic } from '../../services/telegram/tma';
-import { createStarsInvoice, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
-import { redirectToCardCheckout } from './cardCheckout';
+import { accountCallsAllowed, createStarsInvoice, activateLicenseKey, getServerHealthSync, loadServerHealth, subscribeQuota, fetchQuotaStatus, type QuotaInfo } from '../../services/apiClient';
+import { beginCardCheckout, CARD_CHECKOUT_ERROR_EVENT, readCardCheckoutError } from './pendingCardCheckout';
 import { checkPendingTonPayment, executeTonPayment, readPendingTonOrder } from '../../services/ton/tonService';
 import { executeJettonPayment } from '../../services/ton/jettonService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
@@ -76,6 +76,17 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   useEffect(() => {
     return subscribeQuota(q => setQuota(q));
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onError = (event: Event) => {
+      const error = readCardCheckoutError(event);
+      if (error) setStatusMessage(error);
+      setBusyPlan(null);
+    };
+    window.addEventListener(CARD_CHECKOUT_ERROR_EVENT, onError);
+    return () => window.removeEventListener(CARD_CHECKOUT_ERROR_EVENT, onError);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -273,9 +284,9 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
 
   const handleCardCheckout = async (planId: string) => {
     setBusyPlan(planId);
-    setStatusMessage('Connecting to secure Stripe card checkout…');
-    const res = await redirectToCardCheckout(planId);
-    if (!res.ok) setStatusMessage(res.error);
+    if (accountCallsAllowed()) setStatusMessage('Connecting to secure Stripe card checkout…');
+    const res = await beginCardCheckout(planId);
+    if (!res.ok) setStatusMessage('needsAccount' in res ? null : res.error);
     setBusyPlan(null);
   };
 

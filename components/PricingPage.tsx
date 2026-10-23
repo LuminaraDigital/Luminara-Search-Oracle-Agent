@@ -7,11 +7,11 @@ import { isInTelegram } from '../services/telegram/tma';
 import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
 import React, { useEffect, useState } from 'react';
 import { accountCallsAllowed, getServerHealthSync, openPaywallModal } from '../services/apiClient';
+import { beginCardCheckout, CARD_CHECKOUT_ERROR_EVENT, readCardCheckoutError } from './paywall/pendingCardCheckout';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
 import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel, type PlanBullet } from './paywall/planCopy';
-import { redirectToCardCheckout } from './paywall/cardCheckout';
 import { cardPayLabel, cardTermLabel, type PaidPlanId } from './paywall/planPrices';
 import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
 
@@ -61,19 +61,22 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
     window.scrollTo(0, 0);
   }, []);
 
+  useEffect(() => {
+    const onError = (event: Event) => {
+      const error = readCardCheckoutError(event);
+      if (error) setCardNote(error);
+      setBusyPlan(null);
+    };
+    window.addEventListener(CARD_CHECKOUT_ERROR_EVENT, onError);
+    return () => window.removeEventListener(CARD_CHECKOUT_ERROR_EVENT, onError);
+  }, []);
+
   const startPricedCard = async (planId: PaidPlanId) => {
-    if (!accountCallsAllowed()) {
-      window.dispatchEvent(new CustomEvent('luminara-open-login', { detail: { mode: 'signin' } }));
-      return;
-    }
-    setBusyPlan(planId);
     setCardNote(null);
-    const result = await redirectToCardCheckout(planId);
+    if (accountCallsAllowed()) setBusyPlan(planId);
+    const result = await beginCardCheckout(planId);
     if (result.ok) return;
-    if (/sign in/i.test(result.error)) {
-      window.dispatchEvent(new CustomEvent('luminara-open-login', { detail: { mode: 'signin' } }));
-    }
-    setCardNote(result.error);
+    if (!('needsAccount' in result)) setCardNote(result.error);
     setBusyPlan(null);
   };
 
