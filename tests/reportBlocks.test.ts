@@ -10,6 +10,7 @@ import {
   progressSince,
   recheckLabel,
   scoreLine,
+  stripUnsupportedFixClaims,
   withReportLead,
 } from '../services/audit/reportBlocks';
 import { formatAuDate } from '../utils/formatAuDate';
@@ -147,6 +148,29 @@ describe('audit report markdown', () => {
     expect(html).toContain('Passed 2 of 4; 1 not measured');
     expect(html).toContain('Not measured: Organization markup.');
     expect(html.match(/Mark done/g)).toHaveLength(1);
+    const stripped = stripUnsupportedFixClaims(
+      [
+        '## 1. One move this week',
+        '',
+        'Add Organization markup.',
+        '',
+        '## 3. Fix list',
+        '',
+        '| Task | Plain issue |',
+        '| --- | --- |',
+        '| Add Organization JSON-LD | No schema |',
+        '| Thin Content Detected on Critical Landing Page(s) | Short pages |',
+        '',
+        '## 6. Budget notes',
+        '',
+        'Budget impact: Not measured.',
+      ].join('\n'),
+      [{ id: 'finding-thin-content-unmeasured' }],
+    );
+    expect(stripped).toContain('Add Organization JSON-LD');
+    expect(stripped).toContain('Add Organization markup.');
+    expect(stripped).toContain('Budget impact: Not measured.');
+    expect(stripped).not.toContain('Thin Content');
     expect(html).not.toContain('evidence check did not support');
   });
 });
