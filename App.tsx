@@ -41,6 +41,14 @@ import type { AuditHandoff } from './services/activation/auditHandoff';
 import { MarketingChromeContext, type MarketingChrome } from './components/marketing/marketingChrome';
 import { normalizeHandoffUrl } from './services/activation/auditHandoff';
 import { viewAfterSignIn } from './services/activation/postSignInView';
+import {
+  applyLoginDetail,
+  cardCheckoutInFlight,
+  CARD_CHECKOUT_ERROR_EVENT,
+  clearPendingCardCheckout,
+  readPendingCardCheckout,
+  resumePendingCardCheckout,
+} from './components/paywall/pendingCardCheckout';
 import { labsVisible } from './services/ui/labsAccess';
 
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
@@ -415,6 +423,14 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!appAuth.authenticated || appAuth.loading || !loginWallMode) return;
     setLoginWallMode(null);
+    if (readPendingCardCheckout() || cardCheckoutInFlight()) {
+      void resumePendingCardCheckout().then((result) => {
+        if (result.ran && !result.ok) {
+          window.dispatchEvent(new CustomEvent(CARD_CHECKOUT_ERROR_EVENT, { detail: { error: result.error } }));
+        }
+      });
+      return;
+    }
     // Signing in from the Probe or from inside Instant Audit returns to the audit, not Home.
     setView(viewAfterSignIn(auditHandoff?.url, view));
   }, [appAuth.authenticated, appAuth.loading, loginWallMode, auditHandoff?.url, view]);
@@ -446,8 +462,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const openSettings = () => setIsKeyModalOpen(true);
     const openLogin = (event: Event) => {
-      const mode = (event as CustomEvent<{ mode?: 'signin' | 'signup' }>).detail?.mode;
-      setLoginWallMode(mode === 'signup' ? 'signup' : 'signin');
+      setLoginWallMode(applyLoginDetail(event instanceof CustomEvent ? event.detail : undefined));
     };
     const checkHash = () => {
       const h = window.location.hash.toUpperCase();
@@ -476,6 +491,7 @@ const App: React.FC = () => {
   const [defaultAgentName, setDefaultAgentName] = useState(agentMatrixService.getDefaultAgent().name);
 
   const openLoginWall = (mode: 'signin' | 'signup', handoff?: AuditHandoff) => {
+    clearPendingCardCheckout();
     if (handoff?.url) {
       setAuditHandoff({
         url: normalizeHandoffUrl(handoff.url) || handoff.url,
@@ -493,8 +509,12 @@ const App: React.FC = () => {
     <AuthRequiredScreen
       auth={appAuth}
       initialMode={loginWallMode}
+      forCardCheckout={readPendingCardCheckout() !== null}
       isModal
-      onClose={() => setLoginWallMode(null)}
+      onClose={() => {
+        clearPendingCardCheckout();
+        setLoginWallMode(null);
+      }}
     />
   ) : null;
 
