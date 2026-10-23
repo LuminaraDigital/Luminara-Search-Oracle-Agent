@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
+import { SAVED_AUDIT_CHECK_COPY } from '../../services/audit/reportBlocks';
 import { auditHistoryService, type AuditHistoryEntry } from '../../services/audit/auditHistoryService';
+import { workspaceHistoryReady } from '../../services/sync/workspaceSyncService';
 import { forgetWinShare, revokeWinPage, winShareFor } from '../../services/share/winShareClient';
 import { auditFromHash, auditReportHash } from '../../services/audit/auditReportUrl';
 import { formatAuClock, formatAuDate } from '../../utils/formatAuDate';
@@ -12,6 +14,7 @@ interface PastReportsProps {
 /** Saved audits. New audit clears the screen and leaves these in place. */
 export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
   const [items, setItems] = useState<AuditHistoryEntry[]>(() => auditHistoryService.list({ limit: 8 }));
+  const [historyReady, setHistoryReady] = useState(() => workspaceHistoryReady());
   const [wins, setWins] = useState<Record<string, string>>(() => {
     const ids: Record<string, string> = {};
     for (const item of auditHistoryService.list({ limit: 8 })) {
@@ -24,6 +27,7 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
 
   useEffect(() => {
     const refresh = () => {
+      setHistoryReady(workspaceHistoryReady());
       const next = auditHistoryService.list({ limit: 8 });
       setItems(next);
       const ids: Record<string, string> = {};
@@ -37,10 +41,30 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
     const saved = auditFromHash(window.location.hash);
     if (saved) onOpen(saved);
     window.addEventListener(AUDIT_ACTIVITY_EVENT, refresh);
-    return () => window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
+    window.addEventListener('luminara-workspace-restored', refresh);
+    return () => {
+      window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
+      window.removeEventListener('luminara-workspace-restored', refresh);
+    };
   }, []);
 
-  if (items.length === 0) return null;
+  if (!historyReady) {
+    return (
+      <section aria-label="Past reports" className="mb-6 text-left">
+        <h2 className="text-xs font-semibold tracking-wide text-gray-400 mb-2">Past reports</h2>
+        <p className="text-sm text-gray-300">{SAVED_AUDIT_CHECK_COPY}</p>
+      </section>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <section aria-label="Past reports" className="mb-6 text-left">
+        <h2 className="text-xs font-semibold tracking-wide text-gray-400 mb-2">Past reports</h2>
+        <p className="text-sm text-gray-300">No saved reports yet. A completed audit is listed here. A run that did not measure the site is not saved as a full report.</p>
+      </section>
+    );
+  }
 
   return (
     <section aria-label="Past reports" className="mb-6 text-left">

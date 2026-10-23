@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { BoardFinding } from '../../services/audit/findingBoardService';
 import { pickPrimaryFinding, setFindingStatusLocal } from '../../services/audit/findingBoardService';
+import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
 import { diffSince } from '../../services/audit/auditDiffService';
+import { workspaceHistoryReady } from '../../services/sync/workspaceSyncService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
 import {
   findingFix,
@@ -11,7 +13,9 @@ import {
   parseAuditReport,
   progressSince,
   recheckLabel,
+  SAVED_AUDIT_CHECK_COPY,
   scoreLine,
+  showFixTally,
   unmeasuredNote,
   type Inline,
   type ReportBlock,
@@ -162,13 +166,27 @@ export function AuditReportArticle({
   onShare?: () => void;
   onFindings?: (findings: BoardFinding[]) => void;
 }) {
+  const [historyRevision, setHistoryRevision] = useState(0);
+  useEffect(() => {
+    const refresh = () => setHistoryRevision((n) => n + 1);
+    window.addEventListener('luminara-workspace-restored', refresh);
+    window.addEventListener(AUDIT_ACTIVITY_EVENT, refresh);
+    return () => {
+      window.removeEventListener('luminara-workspace-restored', refresh);
+      window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
+    };
+  }, []);
   const doc = parseAuditReport(markdown);
   const score = scoreLine(`${markdown}\n${doc.verdict}`, measured);
   const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
   const note = unmeasuredNote(findings);
   const progress = fixProgress(fixes);
   const next = pickPrimaryFinding(fixes);
-  const since = progressSince(domain ? diffSince(domain) : { before: null, metrics: [] });
+  const diff = domain ? diffSince(domain) : { before: null, metrics: [] };
+  // Re-read after a workspace pull. The number itself is only a refresh signal.
+  void historyRevision;
+  const since = !workspaceHistoryReady() && !diff.before ? SAVED_AUDIT_CHECK_COPY : progressSince(diff);
+  const tally = showFixTally(score);
   const validSources = visibleGroundingSources(sources) || [];
   const verdict = doc.verdict || 'Not measured.';
   const sections = visibleSections(doc.sections, verdict);
@@ -200,17 +218,19 @@ export function AuditReportArticle({
           <p className="text-xs font-semibold tracking-wide text-gold-light">Score</p>
           <h2 className="mt-2 font-serif-editorial text-4xl leading-tight text-white">{score}</h2>
           <p className="mt-3 max-w-[70ch] text-base leading-relaxed text-gray-100">{verdict}</p>
-          <p className="mt-4 text-sm text-gray-200">{progress.label}</p>
-          <div
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={Math.max(progress.total, 1)}
-            aria-valuenow={progress.done}
-            aria-valuetext={progress.label}
-            className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"
-          >
-            <div className="h-full bg-gold motion-reduce:transition-none" style={{ width: progress.total ? `${Math.round((progress.done / progress.total) * 100)}%` : '0%' }} />
-          </div>
+          <p className="mt-4 text-sm text-gray-200">{tally ? progress.label : 'The score above is the only pass count for the site checks.'}</p>
+          {tally && (
+            <div
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={Math.max(progress.total, 1)}
+              aria-valuenow={progress.done}
+              aria-valuetext={progress.label}
+              className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"
+            >
+              <div className="h-full bg-gold motion-reduce:transition-none" style={{ width: progress.total ? `${Math.round((progress.done / progress.total) * 100)}%` : '0%' }} />
+            </div>
+          )}
           <p className="mt-4 text-sm text-gray-200">{recheckLabel()}</p>
           <p className="mt-2 text-sm text-gray-200">{since}</p>
           {showActions && (
