@@ -16,6 +16,7 @@ import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
 import { isSampleSearchRow } from '../auditEvidenceGate';
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { readableStem } from '../../audit/brandName';
+import { classifyMention } from '../../audit/entityMatch';
 import { BusinessDNA } from '../../../types';
 
 export class SerpRadarAgent {
@@ -25,7 +26,8 @@ export class SerpRadarAgent {
   public async execute(
     domain: string,
     dna: BusinessDNA | null | undefined,
-    emit: (event: AgentActivityEvent) => void
+    emit: (event: AgentActivityEvent) => void,
+    legalName?: string | null,
   ): Promise<{
     serpEvidence: SerpEvidenceItem[];
     citationRatePercent: number | null;
@@ -33,8 +35,14 @@ export class SerpRadarAgent {
     shareOfVoiceScore: number | null;
   }> {
     const cleanDomain = domain.replace(/^https?:\/\//i, '').split('/')[0];
-    const brandName = dna?.name || cleanDomain.split('.')[0];
-    const shownName = dna?.name || readableStem(cleanDomain);
+    const brandForMatch = (legalName || dna?.name || '').trim();
+    const brandName = brandForMatch || cleanDomain.split('.')[0];
+    const shownName = brandForMatch || readableStem(cleanDomain);
+    const mentionsAudited = (row: { url: string; title: string; content: string }) =>
+      classifyMention(
+        { domain: cleanDomain, brandName: brandForMatch },
+        { url: row.url, title: row.title, text: row.content },
+      ) === 'same';
 
     // Formulate targeted queries
     const queries = [
@@ -89,10 +97,7 @@ export class SerpRadarAgent {
       for (const res of responses) {
         const isDegraded = Boolean((res as any).degraded || (res as any).searchDegraded);
         for (const item of res.results) {
-          const mentioned =
-            item.title.toLowerCase().includes(brandName.toLowerCase()) ||
-            item.content.toLowerCase().includes(cleanDomain.toLowerCase()) ||
-            item.url.toLowerCase().includes(cleanDomain.toLowerCase());
+          const mentioned = mentionsAudited({ url: item.url, title: item.title, content: item.content });
 
           serpEvidence.push({
             query: res.query,
@@ -116,10 +121,7 @@ export class SerpRadarAgent {
         const sr = responses[i];
         if (!sr || !sr.results) continue;
         for (const item of sr.results) {
-          const mentioned =
-            item.title.toLowerCase().includes(brandName.toLowerCase()) ||
-            item.snippet.toLowerCase().includes(cleanDomain.toLowerCase()) ||
-            item.url.toLowerCase().includes(cleanDomain.toLowerCase());
+          const mentioned = mentionsAudited({ url: item.url, title: item.title, content: item.snippet });
 
           serpEvidence.push({
             query: queries[i],

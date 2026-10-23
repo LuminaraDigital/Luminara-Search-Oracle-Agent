@@ -88,7 +88,7 @@ const liveSerp: SerpEvidenceItem[] = [
     query: 'what is example.com',
     title: 'What is Example',
     url: 'https://news.example/what',
-    snippet: 'Example is a widget company.',
+    snippet: 'Example is a widget company. See example.com.',
     brandMentioned: true,
   }),
 ];

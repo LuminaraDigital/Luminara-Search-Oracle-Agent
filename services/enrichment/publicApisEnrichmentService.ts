@@ -5,6 +5,7 @@
  */
 
 import { getApiAuthHeaders } from '../apiClient';
+import { auditedHost, pickWikidataHit, readWikidataSearch } from '../audit/entityMatch';
 
 export interface WikidataEntityMatch {
   id: string; // e.g. "Q312" (Apple Inc.)
@@ -78,9 +79,13 @@ export class PublicApisEnrichmentService {
     const cleanBrand = brandName.trim();
     if (!cleanBrand || cleanBrand.length < 2) return null;
 
+    const host = domain ? auditedHost(domain) : '';
+    if (!host) return null;
+
     try {
+      const query = `${cleanBrand} ${host}`;
       const endpoint = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
-        cleanBrand
+        query
       )}&language=en&format=json&origin=*&limit=5`;
 
       const res = await fetch(endpoint, {
@@ -89,34 +94,10 @@ export class PublicApisEnrichmentService {
 
       if (!res || !res.ok) return null;
 
-      const data = (await res.json()) as {
-        search?: Array<{
-          id: string;
-          label: string;
-          description?: string;
-          concepturi?: string;
-        }>;
-      };
-
-      if (!data.search || data.search.length === 0) return null;
-
-      // Find the most relevant business, technology, organization, or website entity
-      const lowerDomain = (domain || '').toLowerCase().replace(/^https?:\/\//, '').split('.')[0];
-      const match = data.search.find((item) => {
-        const desc = (item.description || '').toLowerCase();
-        const lbl = (item.label || '').toLowerCase();
-        return (
-          desc.includes('company') ||
-          desc.includes('business') ||
-          desc.includes('software') ||
-          desc.includes('corporation') ||
-          desc.includes('organization') ||
-          desc.includes('website') ||
-          desc.includes('service') ||
-          lbl === cleanBrand.toLowerCase() ||
-          (lowerDomain && (desc.includes(lowerDomain) || lbl.includes(lowerDomain)))
-        );
-      }) || data.search[0];
+      const match = pickWikidataHit(readWikidataSearch(await res.json()), {
+        domain: host,
+        brandName: cleanBrand,
+      });
 
       if (!match) return null;
 

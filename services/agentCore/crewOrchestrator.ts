@@ -39,6 +39,7 @@ import {
 } from '../apiClient';
 import { healthChecklist, liveSearchRows, pageSupportsHealthScore, siteChecksRan } from './auditEvidenceGate';
 import { gateFixSnippet, reviewFindingsWithJev } from '../audit/jevVerifier';
+import { brandFromEvidence } from '../audit/brandName';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
 
@@ -293,10 +294,17 @@ export class CrewOrchestrator {
     // Node 2: SERP Radar Probe
     graph.addNode('serp_node', 'SERP Radar Search', async (ctx, emit) => {
       const cleanDomain = ctx.targetUrl.replace(/^https?:\/\//i, '').split('/')[0];
+      const page = ctx.scrapedPages[0];
+      const legalName = ctx.dna?.name || brandFromEvidence({
+        siteName: page?.siteName,
+        organizationName: page?.organizationName,
+        title: page?.title,
+      });
       const { serpEvidence, citationRatePercent, shareOfVoiceScore } = await serpRadarAgent.execute(
         cleanDomain,
         ctx.dna,
-        emit
+        emit,
+        legalName,
       );
       const errors = hostedAuthBlocked()
         ? [...ctx.errors, 'provider_auth_failed']

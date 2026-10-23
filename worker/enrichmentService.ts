@@ -2,6 +2,7 @@ import type { Env } from './env';
 import { resolvesToPublicAddress, safePublicHostname } from './security';
 import { identify, json } from './workerUtils';
 import { auditSecurityOnEdge } from './sentinel';
+import { pickWikidataHit, readWikidataSearch } from '../services/audit/entityMatch';
 
 /**
  * Handles GET /api/enrichment/entity
@@ -40,11 +41,10 @@ export async function handleEntityEnrichment(request: Request, env: Env): Promis
 
   const [wikidataRes, waybackRes, securityRes, microlinkRes] = await Promise.allSettled([
     (async () => {
-      const qUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(brand)}&language=en&format=json&origin=*&limit=1`;
+      const qUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(`${brand} ${cleanDomain}`)}&language=en&format=json&origin=*&limit=5`;
       const res = await fetch(qUrl, { headers: { 'User-Agent': 'LuminaraOracle/1.0 (https://luminarasuite.com)' } });
       if (!res.ok) return null;
-      const data: any = await res.json();
-      const first = data?.search?.[0];
+      const first = pickWikidataHit(readWikidataSearch(await res.json()), { domain: cleanDomain, brandName: brand });
       if (!first) return null;
       const wikipediaUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(String(first.label || brand).replace(/\s+/g, '_'))}`;
       return {

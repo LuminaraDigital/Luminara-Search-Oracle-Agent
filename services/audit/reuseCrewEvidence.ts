@@ -7,6 +7,7 @@
 import type { ScrapedPageEvidence, SerpEvidenceItem } from '../agentCore/types';
 import { liveSearchRows, pageHasObservableBody } from '../agentCore/auditEvidenceGate';
 import type { PrefetchedCitationGroup, QueryIntent } from './empiricalCitationService';
+import { NAMESAKE_OMISSION_NOTE, withoutNamesakes, type AuditedEntity } from './entityMatch';
 
 export interface AuditReportCrewEvidence {
   scrapedPages?: readonly ScrapedPageEvidence[] | null;
@@ -102,11 +103,12 @@ export function formatCrewPagesForReport(
 
 export function formatCrewSerpForReport(
   rows: readonly SerpEvidenceItem[] | null | undefined,
+  entity?: AuditedEntity | null,
 ): ReusedSerpEvidence | null {
   const live = usableCrewSerpRows(rows);
   if (live.length === 0) return null;
-
-  const top = live.slice(0, 8);
+  const filtered = entity ? withoutNamesakes(live, entity) : { kept: live, omitted: 0 };
+  const top = filtered.kept.slice(0, 8);
   const queries = [...new Set(top.map((row) => row.query).filter(Boolean))];
   const lines: string[] = [
     '[LIVE EVIDENCE GATHERED VIA CREW SERP RADAR]',
@@ -115,6 +117,7 @@ export function formatCrewSerpForReport(
     '--------------------------------------------------',
     ...top.map((row, index) => `[Source ${index + 1}] ${row.title}\nURL: ${row.url}\nExcerpt: ${row.snippet}\n`),
     '--------------------------------------------------',
+    filtered.omitted > 0 ? NAMESAKE_OMISSION_NOTE : '',
     'GROUNDING RULES:',
     '- Quote or cite these sources when directly answering questions of current fact.',
     '- If the search results contradict previous assumptions, prioritize the live evidence.',
