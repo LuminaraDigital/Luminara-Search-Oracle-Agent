@@ -707,13 +707,14 @@ export function updateQuotaFromHeaders(headers: Headers): void {
     const used = isUnlimited ? 0 : Math.max(0, limitNum - remNum);
     const bonusHeader = headers.get('x-quota-bonus');
     const bonusRemaining = bonusHeader == null || bonusHeader === '' ? undefined : Number(bonusHeader);
+    const namedPlan = headers.get('x-quota-plan')?.trim().toLowerCase();
     currentQuota = {
       limit: limitNum,
       used,
       remaining: remNum,
       resetSec,
       isUnlimited,
-      plan: isUnlimited ? 'active' : 'free',
+      plan: namedPlan || (isUnlimited ? 'active' : 'free'),
       bonusRemaining: Number.isFinite(bonusRemaining) ? bonusRemaining : undefined,
     };
     quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
