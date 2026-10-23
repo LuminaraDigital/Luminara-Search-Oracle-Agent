@@ -213,6 +213,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const canShare = canCreateShareLinks();
   const validSources = visibleGroundingSources(sources);
   const sourceCount = validSources?.length || 0;
   const hasEvidence = Boolean(
@@ -246,6 +247,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
                 A measured win can be shared on the free plan. A full branded report link is on Growth and Agency.
               </p>
             </div>
+            {canShare && (
             <button
               type="button"
               onClick={() => void handleCopyShareLink()}
@@ -255,6 +257,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
               <ICONS.Share className="w-4 h-4 text-black" />
               <span>{shareBusy ? 'Sharing...' : 'Copy share link'}</span>
             </button>
+            )}
           </div>
           {shareMessage && (
             <p className="text-[10px] font-mono text-gold-light mt-3 break-all" role="status">
@@ -278,7 +281,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         clientName={dnaName}
         sources={sources}
         showActions={!hideAgencyActions}
-        onShare={hideAgencyActions ? undefined : () => void handleCopyShareLink()}
+        onShare={hideAgencyActions || !canShare ? undefined : () => void handleCopyShareLink()}
         onFindings={setBoardFindings}
       />
 
@@ -341,6 +344,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            {canShare && (
             <button
               type="button"
               onClick={() => void handleCopyShareLink()}
@@ -350,6 +354,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
               <ICONS.Share className="w-4 h-4 text-black" />
               <span>{shareBusy ? 'Sharing...' : 'Copy share link'}</span>
             </button>
+            )}
 
             <button
               type="button"

@@ -5,6 +5,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { BUSINESS_LOCATION, CONTACT_EMAIL, LEGAL_ABN, LEGAL_ENTITY, PUBLIC_BRAND } from '../services/legal/consumerTerms';
+import { PUBLIC_PRIVACY_URL, PUBLIC_TERMS_URL } from '../services/legal/privacyCopy';
 
 export type WelcomeEnv = {
   DB?: D1Database;
@@ -16,8 +17,8 @@ export type WelcomeEnv = {
 export const WELCOME_FROM = 'Luminara Suite <hello@luminarasuite.com>';
 export const WELCOME_REPLY_TO = CONTACT_EMAIL;
 export const WELCOME_AUDIT_URL = 'https://www.luminarasuite.com/#instant_audit';
-export const WELCOME_PRIVACY_URL = 'https://www.luminarasuite.com/privacy';
-export const WELCOME_TERMS_URL = 'https://www.luminarasuite.com/terms';
+export const WELCOME_PRIVACY_URL = PUBLIC_PRIVACY_URL;
+export const WELCOME_TERMS_URL = PUBLIC_TERMS_URL;
 const WORDMARK_ICON = 'https://www.luminarasuite.com/icon-512.png';
 const LEGAL_FOOTER = `${LEGAL_ENTITY}, trading as ${PUBLIC_BRAND}, ABN ${LEGAL_ABN}, ${BUSINESS_LOCATION}`;
 
