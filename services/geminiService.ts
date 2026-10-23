@@ -77,6 +77,7 @@ import {
   buildPreliminaryTrustPromptSection,
 } from './audit/evidencePromptLabels';
 import { gateReportText, reportTableHeader } from './audit/reportColumnGate';
+import { stripUnmeasuredAiClaims } from './audit/unmeasuredClaimGuard';
 import { stripUnsupportedFixClaims, unsupportedClaimNeedles } from './audit/reportBlocks';
 import { aeoTrustPackService, type TrustPackSummary } from './audit/aeoTrustPackService';
 import { schemaSafetyGate } from './deployment/schemaSafetyGate';
@@ -666,12 +667,12 @@ Respect these consolidated business memories and historical recommendation outco
       case 'AEO':
         mainTopic = 'Answer Engine Optimization (AEO)';
         reportTitle = `AEO Performance Brief - ${displayUrl}`;
-        focusIntro = `Specialized analysis of the brand's visibility in AI Overviews, rich snippets, and conversational assistants (ChatGPT, Gemini, Perplexity).`;
+        focusIntro = `Answer-engine recommendations from page and web search evidence. ChatGPT, Perplexity, and AI Overviews were not measured. Do not say the brand appears there.`;
         break;
       case 'GEO':
         mainTopic = 'Generative Engine Optimization (GEO)';
         reportTitle = `GEO Performance Brief - ${displayUrl}`;
-        focusIntro = `Specialized analysis of the brand's content suitability for generative engine citations and LLM synthesis.`;
+        focusIntro = `How ready the page copy is for a generative engine. ChatGPT, Perplexity, and AI Overviews were not measured. Do not say the brand appears there.`;
         break;
       case 'SEO':
       default:
@@ -684,7 +685,7 @@ Respect these consolidated business memories and historical recommendation outco
     const isGitHubRepo = /github\.com\/[^\/]+\/[^\/]+/i.test(websiteUrl);
     if (isGitHubRepo) {
       reportTitle = `Open-Source GEO & AEO Citability Brief - ${displayUrl}`;
-      focusIntro = `Specialized analysis of the repository's visibility across Answer Engines (Perplexity, ChatGPT, Claude), llms.txt readiness, and README answer extractability.`;
+      focusIntro = `Repository pages, llms.txt, and README extractability. Perplexity, ChatGPT, and Claude were not measured. Do not say the repository appears in those products.`;
     }
 
     // 1. Live sitewide evidence pack (homepage + smart map/links or deep Firecrawl crawl).
@@ -899,7 +900,8 @@ evidence support. Anything unobserved is "not measured". Never invent composite 
 When Trust Pack findings are present, reflect Critical/High items in the fix list.
 
 Strict Formatting Guidelines:
-1. Title: Must begin with: "# Luminara: Will AI mention ${dna?.name || displayUrl}?"
+1. Title: Must begin with: "# Luminara: Web search check for ${dna?.name || displayUrl}"
+   ChatGPT, Perplexity, and Google AI Overviews were not measured in this run. Do not write that the brand appears in those products or in AI-driven results. A search-sample mention is a web search mention: say web search or web results.
 2. Subhead line: **Date:** [today] · **Mode:** ${auditMode}
 3. Structure: Organize using these exact H2 headers:
    ## 1. One move this week
@@ -933,7 +935,10 @@ Strict Formatting Guidelines:
       // The copy each provider path writes to memory goes through the same gate.
       const scrapedLinks = collectScrapedLinks(crewEvidence?.scrapedPages, scrapedContent);
       const text = restrictReportJsonLdSameAs(
-        stripUnsupportedFixClaims(gateReportText(modelText), crewEvidence?.unsupportedClaims || []),
+        stripUnsupportedFixClaims(
+          stripUnmeasuredAiClaims(gateReportText(modelText)),
+          crewEvidence?.unsupportedClaims || [],
+        ),
         scrapedLinks,
         scrapedContent,
       );

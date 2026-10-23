@@ -114,6 +114,7 @@ export async function generateAuditReportUnlessDegraded(input: {
   const serp = input.serpEvidence ?? [];
   const facts: MeasuredClaimFacts = {
     ...input.summary.measured,
+    aiEnginesMeasured: false,
     wordCounts: pages.map((page) => page.wordCount),
     schemaTypes: pages.flatMap((page) => page.schemasFound.map((schema) => schema.type)),
     tavilyResultCount: input.serpEvidence
