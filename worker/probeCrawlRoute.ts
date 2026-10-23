@@ -73,7 +73,7 @@ export async function handleProbeCrawlRoute(request: Request, _env: Env): Promis
   if (!hostHint && !String(target || '').trim()) {
     return json({ ok: false, error: 'Enter a domain or URL.', code: 'MISSING_URL' }, 400);
   }
-  const loaded = await loadCrawlerSnapshot(target);
+  const loaded = await loadCrawlerSnapshot(target, fetch, url.hostname);
   if (!loaded.ok) {
     return json({ ok: false, error: loaded.error, code: loaded.code }, 400);
   }
