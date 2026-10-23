@@ -1,0 +1,93 @@
+- name: escalate-stops-when-first-passes
+  kind: high_accuracy_schema
+  siteHost: acme.example
+  expectedType: Organization
+  strategy: escalate
+  candidate0: |
+    {"@context":"https://schema.org","@type":"Organization","name":"Acme","url":"https://acme.example/"}
+  candidate1: |
+    {"@context":"https://schema.org","@type":"Organization","name":"Unused","url":"https://acme.example/"}
+  expect:
+    winnerIndex: 0
+    calls: 1
+    mustContain:
+      - Acme
+
+- name: escalate-selects-second-after-missing-name
+  kind: high_accuracy_schema
+  siteHost: acme.example
+  expectedType: Organization
+  strategy: escalate
+  candidate0: |
+    {"@context":"https://schema.org","@type":"Organization","url":"https://acme.example/"}
+  candidate1: |
+    {"@context":"https://schema.org","@type":"Organization","name":"Acme Fountains","url":"https://acme.example/about"}
+  expect:
+    winnerIndex: 1
+    calls: 2
+    reason: MISSING_Organization_name
+    mustContain:
+      - Acme Fountains
+
+- name: parallel-lowest-index-wins
+  kind: high_accuracy_schema
+  siteHost: acme.example
+  expectedType: Organization
+  strategy: parallel
+  candidate0: |
+    {"@context":"https://schema.org","@type":"Organization","name":"First","url":"https://acme.example/"}
+  candidate1: |
+    {"@context":"https://schema.org","@type":"Organization","name":"Second","url":"https://acme.example/"}
+  expect:
+    winnerIndex: 0
+    calls: 2
+
+- name: off-site-url-rejected
+  kind: high_accuracy_schema
+  siteHost: acme.example
+  expectedType: Organization
+  strategy: escalate
+  candidate0: |
+    {"@context":"https://schema.org","@type":"Organization","name":"Acme","url":"https://evil.test/"}
+  expect:
+    winnerIndex: none
+    calls: 1
+    reason: OFF_SITE_URL
+
+- name: placeholder-rejected
+  kind: high_accuracy_schema
+  siteHost: acme.example
+  expectedType: Organization
+  strategy: escalate
+  candidate0: |
+    {"@context":"https://schema.org","@type":"Organization","name":"TODO","url":"https://acme.example/"}
+  expect:
+    winnerIndex: none
+    calls: 1
+    reason: PLACEHOLDER
+
+- name: product-needs-offer-review-or-rating
+  kind: high_accuracy_schema
+  siteHost: acme.example
+  expectedType: Product
+  strategy: escalate
+  candidate0: |
+    {"@context":"https://schema.org","@type":"Product","name":"Widget","url":"https://acme.example/widget"}
+  candidate1: |
+    {"@context":"https://schema.org","@type":"Product","name":"Widget","url":"https://acme.example/widget","offers":{"@type":"Offer","price":"12","priceCurrency":"USD"}}
+  expect:
+    winnerIndex: 1
+    calls: 2
+    reason: MISSING_Product_offers|review|aggregateRating
+
+- name: script-breakout-rejected
+  kind: high_accuracy_schema
+  siteHost: acme.example
+  expectedType: Organization
+  strategy: escalate
+  candidate0: |
+    {"@context":"https://schema.org","@type":"Organization","name":"Acme </script>","url":"https://acme.example/"}
+  expect:
+    winnerIndex: none
+    calls: 1
+    reason: SCRIPT_BREAKOUT

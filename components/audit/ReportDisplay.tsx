@@ -46,6 +46,7 @@ import { gateReportText } from '../../services/audit/reportColumnGate';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import type { RLMTrajectoryMetadata } from '../../services/rlm/types';
 import { RlmTrajectoryViewer } from '../rlm/RlmTrajectoryViewer';
+import { HighAccuracySchemaControl } from './HighAccuracySchemaControl';
 import { HEALTH_SITE_NOTE, siteLooksHealthRelated } from '../../services/audit/healthClaimGuard';
 
 export { HighlightedText, parseInlineFormatting, MetricModal, InteractiveTable, CollapsibleSection };
@@ -122,6 +123,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const markdownText = useMemo(() => gateReportText(rawMarkdownText || ''), [rawMarkdownText]);
   const pageHealthMeasured = !suppressLiveMetrics && measuredChecks(markdownText, true) != null;
   const [showDiffModal, setShowDiffModal] = useState(false);
+  const [schemaOverride, setSchemaOverride] = useState<string | null>(null);
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showEvidenceDrawer, setShowEvidenceDrawer] = useState(false);
   const [showWhiteLabelModal, setShowWhiteLabelModal] = useState(false);
@@ -137,6 +139,10 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   React.useEffect(() => {
     if (boardFindingsProp) setBoardFindings(boardFindingsProp);
   }, [boardFindingsProp]);
+
+  React.useEffect(() => {
+    setSchemaOverride(null);
+  }, [markdownText]);
 
   const primaryFinding = useMemo(() => pickPrimaryFinding(boardFindings), [boardFindings]);
 
@@ -224,6 +230,9 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     (!hideLiveNumbers && empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,
   );
   const reportUnlocked = hideAgencyActions || Boolean(shipCommitment);
+  const deployPayload = schemaOverride && remediationPayload
+    ? { ...remediationPayload, schemaJsonLd: schemaOverride }
+    : remediationPayload;
   // The two counts the search sample gave, not a percentage of them.
   const evidenceLabel = (hideLiveNumbers ? null : sampledMentionsLabel(empiricalSummary)) || 'not measured';
   const unavailableCopy = liveDataUnavailableCopy(
@@ -486,6 +495,16 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         </div>
       </div>
 
+      {remediationPayload && !hideAgencyActions && (
+        <HighAccuracySchemaControl
+          pageUrl={remediationPayload.pageUrl || (remediationPayload.domain ? `https://${remediationPayload.domain}` : '')}
+          pageTitle={remediationPayload.title}
+          evidence={markdownText}
+          existingSchema={remediationPayload.schemaJsonLd}
+          onApplied={setSchemaOverride}
+        />
+      )}
+
       {/* Embedded ROI Projector */}
       <ROICalculator />
 
@@ -517,15 +536,15 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
       <DiffViewerModal
         isOpen={showDiffModal}
         onClose={() => setShowDiffModal(false)}
-        unifiedDiff={unifiedDiff}
-        remediationPayload={remediationPayload}
+        unifiedDiff={schemaOverride ? undefined : unifiedDiff}
+        remediationPayload={deployPayload}
         onDeployClick={() => setShowDeployModal(true)}
       />
 
       <CmsDeploymentModal
         isOpen={showDeployModal}
         onClose={() => setShowDeployModal(false)}
-        remediationPayload={remediationPayload}
+        remediationPayload={deployPayload}
       />
 
       <EmpiricalEvidenceDrawer
