@@ -4,15 +4,12 @@
  */
 import type { EngineVisibilityResult, VisibilityEngineId } from './engineVisibilityTypes';
 import { notMeasuredEngine } from './engineVisibilityTypes';
+import { classifyMention } from '../audit/entityMatch';
 
 export type LlmGenerateFn = (prompt: string, model?: string) => Promise<string>;
 
 function domainCited(text: string, domain: string, brand?: string): boolean {
-  const lower = text.toLowerCase();
-  const host = domain.replace(/^www\./, '').toLowerCase();
-  if (lower.includes(host)) return true;
-  if (brand && lower.includes(brand.toLowerCase())) return true;
-  return false;
+  return classifyMention({ domain, brandName: brand }, { text }) === 'same';
 }
 
 /** Probe labels map to product engine slots for UI, but status stays estimated. */

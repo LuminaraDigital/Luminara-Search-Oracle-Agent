@@ -2,6 +2,7 @@ import { configService } from '../configService';
 import { tavilyService } from '../search/tavilyService';
 import { localSerpService } from '../search/localSerpService';
 import { extractDomain } from '../search/searchPlanner';
+import { classifyMention } from './entityMatch';
 
 export type QueryIntent = 'informational' | 'commercial' | 'comparative';
 
@@ -103,14 +104,11 @@ export class EmpiricalCitationService {
       const competitorsFound: string[] = [];
 
       results.forEach((res, idx) => {
-        const resDomain = extractDomain(res.url);
         const contentLower = (res.content + ' ' + res.title).toLowerCase();
-        const brandLower = brand.toLowerCase();
-        const targetDomainLower = targetDomain.toLowerCase();
-
-        const isMatch = (resDomain && resDomain.includes(targetDomainLower)) ||
-                        contentLower.includes(targetDomainLower) ||
-                        contentLower.includes(brandLower);
+        const isMatch = classifyMention(
+          { domain: targetDomain, brandName: brandName },
+          { url: res.url, title: res.title, text: res.content },
+        ) === 'same';
 
         if (isMatch && !brandCited) {
           brandCited = true;

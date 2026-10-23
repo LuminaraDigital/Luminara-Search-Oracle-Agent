@@ -5,6 +5,7 @@
  */
 
 import type { EmpiricalEvidence } from '../audit/empiricalCitationService';
+import { isNamesakeHost } from '../audit/entityMatch';
 
 export type AuthorityCategory = 'community' | 'directory' | 'documentation' | 'reviews' | 'publication' | 'other';
 
@@ -73,7 +74,7 @@ export function scoutAuthoritySources(opts: {
   for (const src of opts.rawSources || []) {
     if (!src.uri) continue;
     const host = extractHostname(src.uri);
-    if (!host || host === targetHost) continue;
+    if (!host || host === targetHost || isNamesakeHost(host, targetHost)) continue;
 
     if (!hubQueryCounts.has(host)) {
       hubQueryCounts.set(host, new Set());
@@ -85,7 +86,7 @@ export function scoutAuthoritySources(opts: {
   for (const ev of opts.evidence) {
     if (ev.citedUrl) {
       const host = extractHostname(ev.citedUrl);
-      if (host && host !== targetHost) {
+      if (host && host !== targetHost && !isNamesakeHost(host, targetHost)) {
         if (!hubQueryCounts.has(host)) {
           hubQueryCounts.set(host, new Set());
         }
@@ -102,6 +103,7 @@ export function scoutAuthoritySources(opts: {
   const sources: AuthoritySource[] = [];
 
   for (const [hub, querySet] of hubQueryCounts.entries()) {
+    if (isNamesakeHost(hub, targetHost)) continue;
     const qCount = querySet.size;
     const frequency = Math.round((qCount / totalQueries) * 100);
     const category = categorizeDomain(hub);

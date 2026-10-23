@@ -54,6 +54,8 @@ export interface StreamQueryOptions {
 }
 
 import { empiricalCitationService, type EmpiricalCitationSummary } from './audit/empiricalCitationService';
+import { brandFromEvidence } from './audit/brandName';
+import { NAMESAKE_OMISSION_NOTE, withoutNamesakes, type AuditedEntity } from './audit/entityMatch';
 import {
   formatCrewPagesForReport,
   formatCrewSerpForReport,
@@ -155,7 +157,7 @@ const toGeminiContents = (prompt: string, history?: ChatTurn[]) => {
  * Runs the planned searches in parallel, keeps only well-scored, de-duplicated results and
  * formats them as evidence the model is told to use *only when relevant*.
  */
-async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | undefined, maxResults = 6): Promise<{
+async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | undefined, maxResults = 6, entity?: AuditedEntity | null): Promise<{
   contextText: string;
   sources: Array<{ uri: string; title: string }>;
   queries: string[];
@@ -222,7 +224,8 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
 
   if (merged.length === 0) return { contextText: '', sources: [], queries: [], rationale: '' };
 
-  const top = merged.slice(0, maxResults);
+  const filtered = entity ? withoutNamesakes(merged, entity) : { kept: merged, omitted: 0 };
+  const top = filtered.kept.slice(0, maxResults);
   const lines: string[] = [
     `[LIVE EVIDENCE GATHERED VIA ${sourceLabel.toUpperCase()}]`,
     `Search Intent Rationale: ${plan.rationale}`,
@@ -230,6 +233,7 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
     answers.length > 0 ? `Featured Engine Summary: ${answers[0]}` : '',
     '--------------------------------------------------',
     ...top.map((r, i) => `[Source ${i + 1}] ${r.title}\nURL: ${r.url}\nExcerpt: ${r.content}\n`),
+    filtered.omitted > 0 ? NAMESAKE_OMISSION_NOTE : '',
     '--------------------------------------------------',
     'GROUNDING RULES:',
     '- Quote or cite these sources when directly answering questions of current fact.',
@@ -646,6 +650,13 @@ Respect these consolidated business memories and historical recommendation outco
     const allLenses = [...new Set([...lenses, ...inferLenses(dna)])];
     const methodology = playbookContext(selectAuditPlaybooks(focus, allLenses), 4500);
     const displayUrl = websiteUrl.replace(/^https?:\/\//i, '');
+    const firstCrewPage = crewEvidence?.scrapedPages?.[0];
+    const legalName = (dna?.name || '').trim() || brandFromEvidence({
+      siteName: firstCrewPage?.siteName,
+      organizationName: firstCrewPage?.organizationName,
+      title: firstCrewPage?.title,
+    }) || undefined;
+    const auditedEntity: AuditedEntity = { domain: displayUrl, brandName: legalName ?? null };
     let mainTopic = '';
     let reportTitle = '';
     let focusIntro = '';
@@ -738,14 +749,14 @@ Respect these consolidated business memories and historical recommendation outco
     // Live crew SERP rows skip this second search.
     let searchGrounding = '';
     const sources: Array<{ uri: string; title: string }> = [{ uri: websiteUrl, title: `${displayUrl} (Target Domain)` }];
-    const reusedSerp = formatCrewSerpForReport(crewEvidence?.serpEvidence);
+    const reusedSerp = formatCrewSerpForReport(crewEvidence?.serpEvidence, auditedEntity);
     if (reusedSerp) {
       searchGrounding = `\n${reusedSerp.contextText}\n`;
       sources.push(...reusedSerp.sources);
     } else if (configService.getTavilyKey() || configService.isLocalSerpEnabled()) {
       try {
         const brand = dna?.name || displayUrl.split('.')[0];
-        const evidence = await auditReportEvidenceFetch.gatherSearchEvidence(`${brand} ${displayUrl} reviews competitors alternatives ${focus === 'SEO' ? 'ranking' : 'AI Overviews citation'}`, dna, 8);
+        const evidence = await auditReportEvidenceFetch.gatherSearchEvidence(`${legalName || brand} ${displayUrl} reviews competitors alternatives ${focus === 'SEO' ? 'ranking' : 'AI Overviews citation'}`, dna, 8, auditedEntity);
         if (evidence.contextText) {
           searchGrounding = `\n${evidence.contextText}\n`;
           sources.push(...evidence.sources);
@@ -763,7 +774,7 @@ Respect these consolidated business memories and historical recommendation outco
       if (citationGroups.length > 0) {
         const reused = empiricalCitationService.summarizePrefetchedCitations(
           websiteUrl,
-          dna?.name,
+          legalName,
           dna?.competitors || [],
           citationGroups,
         );
@@ -776,7 +787,7 @@ Respect these consolidated business memories and historical recommendation outco
       try {
         empiricalSummary = await empiricalCitationService.probeDomainCitations(
           websiteUrl,
-          dna?.name,
+          legalName,
           dna?.competitors || []
         );
       } catch (e) {
@@ -788,7 +799,7 @@ Respect these consolidated business memories and historical recommendation outco
     // 4. Open Public APIs Enrichment (Wikidata, Internet Archive Wayback, Microlink, Security). MEASURED when fetched.
     let enrichedEntity: EnrichedEntityIntelligence | undefined;
     try {
-      enrichedEntity = await publicApisEnrichmentService.enrichAudit(websiteUrl, dna?.name);
+      enrichedEntity = await publicApisEnrichmentService.enrichAudit(websiteUrl, legalName);
     } catch (e) {
       console.warn('[Audit] Public APIs enrichment fallback', e);
     }
