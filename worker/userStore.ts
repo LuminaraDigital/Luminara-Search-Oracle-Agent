@@ -479,6 +479,15 @@ export async function linkTelegramAndFirebase(
       } catch (err) {
         console.error('[UserStore] Community feed rows were not moved to the linked account', err);
       }
+      // Audit history. An id the surviving account already has is the same saved audit, so the copy goes.
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`UPDATE OR IGNORE audit_history SET account_id = ? WHERE account_id = ?`).bind(accountId, from),
+          env.DB.prepare(`DELETE FROM audit_history WHERE account_id = ?`).bind(from),
+        ]);
+      } catch (err) {
+        console.error('[UserStore] Audit history rows were not moved to the linked account', err);
+      }
     }
   }
 

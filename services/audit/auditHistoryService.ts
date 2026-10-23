@@ -1,11 +1,13 @@
 /**
  * Append-only audit memory timeline (Brand Memory foundation).
- * Browser-local with workspace sync; depth gated by plan entitlements.
+ * Signed in, the account's D1 history (`/api/audits/history`) is the durable copy and this
+ * browser list is its cache. Guests keep the browser list only. Depth gated by plan entitlements.
  */
 
 import { entitlementsFor, type PlanId } from '../plans/planEntitlements';
 import { notifyAuditActivity } from './auditActivity';
-import { flushWorkspacePush, noteWorkspaceDirty } from '../sync/workspaceSyncService';
+import { flushWorkspacePush, noteWorkspaceDirty, workspaceHistoryReady } from '../sync/workspaceSyncService';
+import { accountKnownSignedIn, apiBase, workerFetchWithAuthRetry } from '../apiClient';
 
 const STORAGE_KEY = 'luminara_audit_history_v1';
 const MAX_HARD_CAP = 500;
@@ -155,8 +157,9 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
   const depth = entitlementsFor(input.planId).auditHistoryDepth;
   const all = loadAll();
   const existing = all.findIndex((row) => row.id === entry.id);
-  if (existing >= 0) all[existing] = { ...entry, measuredAt: all[existing].measuredAt };
-  else all.push(entry);
+  const saved = existing >= 0 ? { ...entry, measuredAt: all[existing].measuredAt } : entry;
+  if (existing >= 0) all[existing] = saved;
+  else all.push(saved);
   all.sort((a, b) => a.measuredAt - b.measuredAt);
 
   let trimmed = all;
@@ -184,7 +187,58 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
   } catch {
     /* sync is optional when storage is unavailable */
   }
+  void pushAuditToServer(saved);
   return entry;
+}
+
+const HISTORY_API = '/api/audits/history';
+
+/** Saves one entry to the account's D1 history. Guests and failed calls keep the browser copy only. */
+export async function pushAuditToServer(entry: AuditHistoryEntry): Promise<boolean> {
+  if (!apiBase() || !accountKnownSignedIn()) return false;
+  try {
+    const res = await workerFetchWithAuthRetry(`${apiBase()}${HISTORY_API}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ entry }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export type ServerHistoryResult = { ok: true; entries: AuditHistoryEntry[] } | { ok: false; error: string };
+
+/**
+ * Reads the account's newest saved audits from the API and caches them in this browser.
+ * Browser-only entries in that window (saved before this API, or while it was down) are uploaded.
+ * Runs only after the sign-in workspace pull, which clears another account's browser history first.
+ */
+export async function syncAuditHistoryFromServer(limit = 8): Promise<ServerHistoryResult> {
+  if (!apiBase() || !accountKnownSignedIn()) return { ok: false, error: 'Not signed in' };
+  if (!workspaceHistoryReady()) return { ok: false, error: 'Account history is still loading' };
+  let entries: AuditHistoryEntry[];
+  try {
+    const res = await workerFetchWithAuthRetry(`${apiBase()}${HISTORY_API}?limit=${limit}`);
+    const body = (await res.json().catch(() => null)) as { ok?: boolean; entries?: unknown; error?: string } | null;
+    if (!res.ok || !body?.ok || !Array.isArray(body.entries)) {
+      return { ok: false, error: body?.error || `Saved reports could not be loaded (HTTP ${res.status})` };
+    }
+    entries = body.entries as AuditHistoryEntry[];
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Saved reports could not be loaded' };
+  }
+
+  const serverIds = new Set(entries.map((e) => e.id));
+  const missing = listAudits({ limit }).filter((e) => !serverIds.has(e.id));
+  const merged = uniqueById([...loadAll(), ...entries]).sort((a, b) => a.measuredAt - b.measuredAt);
+  saveAll(merged.slice(-MAX_HARD_CAP));
+  notifyAuditActivity();
+  void (async () => {
+    for (const entry of missing) await pushAuditToServer(entry);
+  })();
+  return { ok: true, entries: listAudits({ limit }) };
 }
 
 export function listAudits(opts?: {
@@ -223,5 +277,6 @@ export const auditHistoryService = {
   list: listAudits,
   get: getAudit,
   clear: clearAuditHistory,
+  syncFromServer: syncAuditHistoryFromServer,
   STORAGE_KEY,
 };

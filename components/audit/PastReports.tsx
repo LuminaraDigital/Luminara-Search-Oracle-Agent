@@ -3,6 +3,7 @@ import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
 import { SAVED_AUDIT_CHECK_COPY } from '../../services/audit/reportBlocks';
 import { auditHistoryService, type AuditHistoryEntry } from '../../services/audit/auditHistoryService';
 import { workspaceHistoryReady } from '../../services/sync/workspaceSyncService';
+import { accountKnownSignedIn } from '../../services/apiClient';
 import { forgetWinShare, revokeWinPage, winShareFor } from '../../services/share/winShareClient';
 import { auditFromHash, auditReportHash } from '../../services/audit/auditReportUrl';
 import { formatAuClock, formatAuDate } from '../../utils/formatAuDate';
@@ -11,7 +12,10 @@ interface PastReportsProps {
   onOpen: (entry: AuditHistoryEntry) => void;
 }
 
-/** Saved audits. New audit clears the screen and leaves these in place. */
+/**
+ * Saved audits. New audit clears the screen and leaves these in place.
+ * Signed in, the list waits for the account history API; the browser copy is the fallback.
+ */
 export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
   const [items, setItems] = useState<AuditHistoryEntry[]>(() => auditHistoryService.list({ limit: 8 }));
   const [historyReady, setHistoryReady] = useState(() => workspaceHistoryReady());
@@ -24,8 +28,18 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
     return ids;
   });
   const [note, setNote] = useState<string | null>(null);
+  const [server, setServer] = useState<'waiting' | 'done'>(() => (accountKnownSignedIn() ? 'waiting' : 'done'));
 
   useEffect(() => {
+    let live = true;
+    let hashOpened = false;
+    const openFromHash = () => {
+      if (hashOpened) return;
+      const saved = auditFromHash(window.location.hash);
+      if (!saved) return;
+      hashOpened = true;
+      onOpen(saved);
+    };
     const refresh = () => {
       setHistoryReady(workspaceHistoryReady());
       const next = auditHistoryService.list({ limit: 8 });
@@ -37,18 +51,37 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
       }
       setWins(ids);
     };
+    const loadFromServer = () => {
+      if (!accountKnownSignedIn()) {
+        setServer('done');
+        return;
+      }
+      if (!workspaceHistoryReady()) return;
+      void auditHistoryService.syncFromServer(8).then((result) => {
+        if (!live) return;
+        if (!result.ok) setNote('Saved reports could not be loaded from your account. Only reports saved in this browser are shown.');
+        setServer('done');
+        refresh();
+        openFromHash();
+      });
+    };
+    const restored = () => {
+      refresh();
+      loadFromServer();
+    };
     refresh();
-    const saved = auditFromHash(window.location.hash);
-    if (saved) onOpen(saved);
+    openFromHash();
+    loadFromServer();
     window.addEventListener(AUDIT_ACTIVITY_EVENT, refresh);
-    window.addEventListener('luminara-workspace-restored', refresh);
+    window.addEventListener('luminara-workspace-restored', restored);
     return () => {
+      live = false;
       window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
-      window.removeEventListener('luminara-workspace-restored', refresh);
+      window.removeEventListener('luminara-workspace-restored', restored);
     };
   }, []);
 
-  if (!historyReady) {
+  if (!historyReady || server === 'waiting') {
     return (
       <section aria-label="Past reports" className="mb-6 text-left">
         <h2 className="text-xs font-semibold tracking-wide text-gray-400 mb-2">Past reports</h2>
@@ -61,7 +94,11 @@ export const PastReports: React.FC<PastReportsProps> = ({ onOpen }) => {
     return (
       <section aria-label="Past reports" className="mb-6 text-left">
         <h2 className="text-xs font-semibold tracking-wide text-gray-400 mb-2">Past reports</h2>
-        <p className="text-sm text-gray-300">No saved reports yet. A completed audit is listed here. A run that did not measure the site is not saved as a full report.</p>
+        {note ? (
+          <p className="text-sm text-gray-300" role="status">{note}</p>
+        ) : (
+          <p className="text-sm text-gray-300">No saved reports yet. A completed audit is listed here. A run that did not measure the site is not saved as a full report.</p>
+        )}
       </section>
     );
   }
