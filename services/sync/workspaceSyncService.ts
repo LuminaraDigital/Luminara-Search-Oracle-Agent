@@ -175,9 +175,23 @@ async function applyPayload(payload: WorkspacePayload, accountId?: string): Prom
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let syncing = false;
+/** True after this page's sign-in pull finishes or cannot run. Guests are ready without it. */
+let pullSettled = false;
+
+/** Signed-in history is ready only after the workspace pull has settled. */
+export function workspaceHistoryReady(): boolean {
+  return !accountKnownSignedIn() || pullSettled;
+}
+
+function settleWorkspacePull(accountId?: string): void {
+  pullSettled = true;
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('luminara-workspace-restored', { detail: { accountId } }));
+}
 
 /** Clears all local workspace memory, keys, and chat session from the browser (e.g. on sign-out). */
 export function clearLocalWorkspace(): void {
+  pullSettled = false;
   if (typeof window === 'undefined') return;
   for (const key of MEMORY_KEYS) {
     try { localStorage.removeItem(key); } catch {}
@@ -191,9 +205,13 @@ export function clearLocalWorkspace(): void {
 
 /** Pull server workspace after login; server wins when it is newer. */
 export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?: string; error?: string }> {
-  if (!apiBase() || typeof window === 'undefined') return { ok: false, error: 'No API' };
+  if (!apiBase() || typeof window === 'undefined') {
+    settleWorkspacePull();
+    return { ok: false, error: 'No API' };
+  }
   if (syncing) return { ok: false, error: 'busy' };
   syncing = true;
+  let accountId: string | undefined;
   try {
     const booted = await takeAccountBoot();
     const remote: Awaited<ReturnType<typeof fetchWorkspace>> = booted
@@ -213,10 +231,10 @@ export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?:
     }
 
     const remoteUpdated = remote.updatedAt || 0;
+    accountId = remote.accountId;
     if (remoteUpdated > 0 && remoteUpdated >= local.updatedAt) {
       await applyPayload(remote.payload || {}, remote.accountId);
       writeMeta({ updatedAt: remoteUpdated, accountId: remote.accountId });
-      window.dispatchEvent(new CustomEvent('luminara-workspace-restored', { detail: { accountId: remote.accountId } }));
     } else {
       const localPayload = await collectPayload(remote.accountId);
       const hasLocal =
@@ -230,6 +248,7 @@ export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?:
     return { ok: false, error: e instanceof Error ? e.message : 'pull failed' };
   } finally {
     syncing = false;
+    settleWorkspacePull(accountId);
   }
 }
 
