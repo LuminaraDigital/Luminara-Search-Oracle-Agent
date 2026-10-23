@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { playbookAuditorAgent } from '../services/agentCore/agents/playbookAuditorAgent';
+import { pageList, playbookAuditorAgent } from '../services/agentCore/agents/playbookAuditorAgent';
 import type { ScrapedPageEvidence, SerpEvidenceItem } from '../services/agentCore/types';
 import { BLOCKED_CHECK, evaluateLlmCrawlerReadiness } from '../services/audit/llmCrawlerReadiness';
 import { auditDiffService } from '../services/audit/auditDiffService';
@@ -81,6 +81,34 @@ describe('organization markup already on the page', () => {
     expect(partial?.description).toContain('https://luminara.digital/services: faqpage');
     expect(partial?.title).not.toContain('https://luminara.digital/about');
     expect(partial?.description).not.toContain('https://luminara.digital:');
+  });
+
+  it('names the pages in the soft Organization finding when several lack it', async () => {
+    const org = [{ type: 'Organization', rawJson: '{}', isValid: true }];
+    const faq = [{ type: 'FAQPage', rawJson: '{}', isValid: true }];
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [
+        page({ url: 'https://luminara.digital', schemasFound: org }),
+        page({ url: 'https://luminara.digital/services', schemasFound: faq }),
+        page({ url: 'https://luminara.digital/pricing', schemasFound: [] }),
+        page({ url: 'https://luminara.digital/faq', schemasFound: faq }),
+      ],
+      [serp()],
+      null,
+      () => {},
+    );
+    const partial = result.findings.find((finding) => finding.id === 'finding-schema-org-partial');
+    expect(partial?.title).toBe(
+      'Organization markup is not on https://luminara.digital/services, https://luminara.digital/pricing and 1 more page',
+    );
+    expect(partial?.title).not.toMatch(/measured pages/);
+  });
+
+  it('lists one, two, or more pages in a finding title', () => {
+    expect(pageList(['https://a.example/x'])).toBe('https://a.example/x');
+    expect(pageList(['https://a.example/x', 'https://a.example/y'])).toBe('https://a.example/x and https://a.example/y');
+    expect(pageList(['a', 'b', 'c', 'd'])).toBe('a, b and 2 more pages');
   });
 
   it('still flags a page whose only schema is FAQPage', async () => {

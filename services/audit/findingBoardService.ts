@@ -153,13 +153,14 @@ export function mergeBoardWithRemote(
 }
 
 function isOrgMissingRow(row: { id?: string; title?: string }): boolean {
-  if (row.id === 'finding-schema-org') return true;
-  return /^Missing Organization\b/i.test(row.title || '');
+  if (row.id === 'finding-schema-org' || row.id === 'finding-schema-org-partial') return true;
+  return /^(Missing Organization|Organization markup is not on)\b/i.test(row.title || '');
 }
 
 /**
  * A new run replaces Organization-missing rows it does not repeat.
  * An older "schema types: none" card must not stay beside a crawl that found the type.
+ * The partial card names its pages, so a run over other pages replaces it too.
  */
 export function retireStaleOrgFindings(previous: BoardFinding[], incoming: BoardFinding[]): BoardFinding[] {
   const keptKeys = new Set(incoming.filter(isOrgMissingRow).map((row) => row.stableKey));
