@@ -41,8 +41,8 @@ export class RemediationArchitectAgent {
     const patches: CodeRemediationPatch[] = [];
 
     // 1. Organization Schema Patch
-    const orgFinding = findings.find((f) => f.title.toLowerCase().includes('organization'));
-    if (orgFinding || findings.length > 0) {
+    const orgFinding = findings.find((f) => f.id === 'finding-schema-org' || f.id === 'finding-schema-org-partial');
+    if (orgFinding) {
       const orgSchema = {
         '@context': 'https://schema.org',
         '@type': 'Organization',

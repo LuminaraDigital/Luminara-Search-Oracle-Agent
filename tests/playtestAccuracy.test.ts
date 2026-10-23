@@ -43,6 +43,46 @@ describe('organization markup already on the page', () => {
     }
   });
 
+  it('does not emit a critical Organization gap when the homepage has ProfessionalService and about has Organization', async () => {
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [
+        page({
+          url: 'https://luminara.digital',
+          schemasFound: [
+            { type: 'ProfessionalService', rawJson: '{"name":"Luminara Digital"}', isValid: true },
+            { type: 'Person', rawJson: '{}', isValid: true },
+            { type: 'FAQPage', rawJson: '{}', isValid: true },
+          ],
+        }),
+        page({
+          url: 'https://luminara.digital/about',
+          schemasFound: [
+            { type: 'Organization', rawJson: '{"name":"Luminara Digital"}', isValid: true },
+            { type: 'Person', rawJson: '{}', isValid: true },
+          ],
+        }),
+        page({
+          url: 'https://luminara.digital/services',
+          schemasFound: [{ type: 'FAQPage', rawJson: '{}', isValid: true }],
+        }),
+      ],
+      [serp()],
+      null,
+      () => {},
+    );
+    const text = result.findings.map((finding) => `${finding.id} ${finding.title} ${finding.description} ${finding.howWeKnowItFailed}`).join('\n');
+    expect(result.findings.some((finding) => finding.id === 'finding-schema-org')).toBe(false);
+    expect(result.findings.some((finding) => finding.severity === 'critical' && /organization/i.test(finding.title))).toBe(false);
+    expect(text).not.toMatch(/schema types: none/i);
+    expect(text).not.toMatch(/types found: none/i);
+    const partial = result.findings.find((finding) => finding.id === 'finding-schema-org-partial');
+    expect(partial?.severity).toBe('low');
+    expect(partial?.description).toContain('https://luminara.digital/services: faqpage');
+    expect(partial?.title).not.toContain('https://luminara.digital/about');
+    expect(partial?.description).not.toContain('https://luminara.digital:');
+  });
+
   it('still flags a page whose only schema is FAQPage', async () => {
     const result = await playbookAuditorAgent.execute(
       'AEO',

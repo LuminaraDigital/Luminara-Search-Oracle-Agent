@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { handleFindingsRoute } from '../worker/findingsService';
 import { findingStableKey } from '../services/audit/findingStableKey';
+import { retireStaleOrgFindings, type BoardFinding } from '../services/audit/findingBoardService';
 import { sampleAiSaidFixtures } from '../services/audit/sampleAiSaidFixtures';
 import type { Env } from '../worker/env';
 import { createSqliteD1 } from './helpers/sqliteD1';
@@ -360,5 +361,43 @@ describe('finding board merge', () => {
         description: 'd',
       }),
     ).toBe(true);
+  });
+});
+
+describe('retireStaleOrgFindings', () => {
+  const row = (partial: Partial<BoardFinding> & Pick<BoardFinding, 'id' | 'stableKey' | 'title'>): BoardFinding => ({
+    domain: 'luminara.digital',
+    category: 'schema',
+    severity: 'critical',
+    description: 'Schema types found: none.',
+    status: 'open',
+    ...partial,
+  });
+
+  it('drops a stored Missing Organization card when the new run does not repeat it', () => {
+    const previous = [
+      row({
+        id: 'finding-schema-org',
+        stableKey: 'old-org',
+        title: 'Missing Organization markup on https://luminara.digital, https://luminara.digital/about',
+      }),
+      row({
+        id: 'finding-thin-content',
+        stableKey: 'thin',
+        title: 'Thin Content Detected on Critical Landing Page(s)',
+        category: 'content_quality',
+        severity: 'high',
+      }),
+    ];
+    const next = retireStaleOrgFindings(previous, [
+      row({
+        id: 'finding-thin-content',
+        stableKey: 'thin',
+        title: 'Thin Content Detected on Critical Landing Page(s)',
+        category: 'content_quality',
+        severity: 'high',
+      }),
+    ]);
+    expect(next.map((finding) => finding.id)).toEqual(['finding-thin-content']);
   });
 });

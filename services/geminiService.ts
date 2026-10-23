@@ -13,6 +13,7 @@ import { localSerpService } from "./search/localSerpService";
 import { unifiedScraperService } from "./scraping/unifiedScraper";
 import { siteEvidencePackService } from "./scraping/siteEvidencePack";
 import { geminiProxyHttpOptions } from "./apiClient";
+import { formatAuDate } from "../utils/formatAuDate";
 import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from "../utils/untrustedContent";
 import { toUserFacingText } from "../utils/userFacingText";
 import { generateGenUISystemPrompt } from "./genui/promptGenerator";
@@ -873,6 +874,7 @@ Respect these consolidated business memories and historical recommendation outco
       searchGrounding = searchGrounding.slice(0, 3500) + '\n[...search evidence truncated for token budget]';
     }
 
+    const reportDate = formatAuDate(new Date());
     const auditMode = dna?.name ? 'Full audit' : 'Instant Audit';
     const pastExperienceText = postAuditReflectionService.formatExperienceForPrompt(displayUrl);
     const unsupportedNeedles = unsupportedClaimNeedles(crewEvidence?.unsupportedClaims || []);
@@ -902,7 +904,7 @@ When Trust Pack findings are present, reflect Critical/High items in the fix lis
 Strict Formatting Guidelines:
 1. Title: Must begin with: "# Luminara: Web search check for ${dna?.name || displayUrl}"
    ChatGPT, Perplexity, and Google AI Overviews were not measured in this run. Do not write that the brand appears in those products or in AI-driven results. A search-sample mention is a web search mention: say web search or web results.
-2. Subhead line: **Date:** [today] · **Mode:** ${auditMode}
+2. Subhead line: **Date:** ${reportDate} · **Mode:** ${auditMode}
 3. Structure: Organize using these exact H2 headers:
    ## 1. One move this week
    ## 2. Plain verdict
@@ -922,7 +924,7 @@ Strict Formatting Guidelines:
    ${reportTableHeader('competitorMap')}
    Include the target brand and up to 3 rivals named in the search evidence. Competitors must be direct commercial rivals in the same region/niche. Exclude review aggregators (Trustpilot, Yelp), medical/reference encyclopedias (WebMD, Wikipedia), and directory platforms. If the evidence names no rival, include the target brand only and write Not measured in the other cells. Do not invent names such as Competitor 1.
    Keep the header names in rules 5 to 7 exactly as written, in English. Add no other column and no other table. A column needs an evidence block above that supplies its values.
-8. Under "## 1. One move this week" or "## 3. Fix list", include one Organization JSON-LD code block when useful. Do not emit SearchAction, potentialAction, or a site search box. Do not use a video poster, hero image, or og:image as logo. Put a URL in sameAs only when that URL is a link in the scraped page. Otherwise omit sameAs. Include a phone, logo, or address only when that exact value is in the scraped page, and only when the logo is the organization logo or a site icon. Label the block as a draft to verify before pasting.
+8. Under "## 1. One move this week" or "## 3. Fix list", include one Organization JSON-LD code block when useful. If a Schemas or Detected schemas line lists Organization, ProfessionalService, LocalBusiness, Corporation, or a type whose name ends in Organization, do not say Organization markup is missing and do not write schema types none. Do not emit SearchAction, potentialAction, or a site search box. Do not use a video poster, hero image, or og:image as logo. Put a URL in sameAs only when that URL is a link in the scraped page. Otherwise omit sameAs. Include a phone, logo, or address only when that exact value is in the scraped page, and only when the logo is the organization logo or a site icon. Label the block as a draft to verify before pasting.
 9. Tone: direct, calm, no hype, no "neural core" or fake document IDs. Do not add figures of your own. A number appears only when an evidence block above supplies it.
 10. ${trafficText
   ? 'Measured traffic / AI-referral data is present above. Cite it in "## 2. Plain verdict" as measured, in a sentence. Do not put it in a table: the app shows those figures itself, next to the report.'
@@ -1024,7 +1026,9 @@ Strict Formatting Guidelines:
             scrapedEvidence: {
               scrapedUrl: websiteUrl,
               hasContent: Boolean(scrapedContent),
-              schemasFound: [],
+              schemasFound: (crewEvidence?.scrapedPages || []).flatMap((page) =>
+                page.schemasFound.map((schema) => schema.type).filter(Boolean),
+              ),
               title: reportTitle,
               wordCount: (scrapedText.match(/[A-Za-z0-9À-ÿ'’-]+/g) || []).length,
               rawTextSnippet: scrapedContent,

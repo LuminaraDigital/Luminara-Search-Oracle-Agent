@@ -23,10 +23,10 @@ describe('PSI/GSC honest empty states', () => {
     expect(text).not.toMatch(/\d/);
   });
 
-  it('GSC empty branch renders the not_configured copy', () => {
+  it('GSC empty branch renders the honest not connected copy without the raw status token', () => {
     const text = collectText(React.createElement(GscEmptyState));
     expect(text).toContain(GSC_EMPTY_COPY);
-    expect(text).toContain('not_configured');
+    expect(text).not.toContain('not_configured');
   });
 
   it('GSC empty copy never claims data exists', () => {
