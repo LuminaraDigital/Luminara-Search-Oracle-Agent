@@ -40,3 +40,29 @@ export function teaserFailureCodes(input: {
 export function teaserFailureLine(code: TeaserFailureCode): string {
   return TEASER_FAILURE_COPY[code];
 }
+
+const LLMS_CHECK_IDS = new Set(['llms_txt', 'site_llms']);
+const ROBOTS_CHECK_IDS = new Set(['ai_bot_directives', 'cite_paths', 'site_robots']);
+
+/** True only when that file's measured check failed. A pass or a missing probe is not a fix. */
+export function crawlerFixWanted(
+  kind: 'llms' | 'robots',
+  checks: readonly { id: string; status: string }[] | null | undefined,
+): boolean {
+  const ids = kind === 'llms' ? LLMS_CHECK_IDS : ROBOTS_CHECK_IDS;
+  return (checks || []).some((check) => ids.has(check.id) && check.status === 'fail');
+}
+
+/** A starter row about llms.txt or robots.txt is dropped once that check was measured and did not fail. */
+export function starterFixContradictsPass(
+  label: string,
+  checks: readonly { id: string; status: string }[] | null | undefined,
+): boolean {
+  const rows = checks || [];
+  if (!rows.length) return false;
+  const blob = label.toLowerCase();
+  const measured = (ids: Set<string>) => rows.some((check) => ids.has(check.id) && check.status !== 'not_measured');
+  if (/llms/.test(blob) && measured(LLMS_CHECK_IDS) && !crawlerFixWanted('llms', rows)) return true;
+  if (/robots/.test(blob) && measured(ROBOTS_CHECK_IDS) && !crawlerFixWanted('robots', rows)) return true;
+  return false;
+}

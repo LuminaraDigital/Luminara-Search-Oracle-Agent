@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { completeWeeklyMission } from '../../services/referrals/referralClient';
 import { llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
+import { starterFixContradictsPass } from '../../services/audit/teaserFailureCodes';
 
 export interface ActionableFixInputFinding {
   id: string;
@@ -27,10 +28,11 @@ interface FixItem {
 interface ActionableFixListProps {
   domain: string;
   findings?: ActionableFixInputFinding[];
+  crawlerChecks?: readonly { id: string; status: string }[];
   onFixCompleted?: (fixId: string) => void;
 }
 
-export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, findings, onFixCompleted }) => {
+export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, findings, crawlerChecks, onFixCompleted }) => {
   const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '') || 'yourdomain.com';
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -98,12 +100,19 @@ Sitemap: https://${cleanDomain}/sitemap.xml
     timeEstimate: '5 min',
     difficulty: f.severity === 'critical' ? 'Medium' : 'Easy',
     description: f.description || 'Actionable finding identified in audit.',
-    filename: f.filename || (f.id.includes('schema') ? 'JSON-LD <head>' : f.id.includes('llms') ? '/llms.txt' : '/robots.txt'),
+    filename: f.filename || (
+      /schema/i.test(`${f.id} ${f.title}`) ? 'JSON-LD <head>'
+        : /llms/i.test(`${f.id} ${f.title}`) ? '/llms.txt'
+          : /robots/i.test(`${f.id} ${f.title}`) ? '/robots.txt'
+            : 'notes.txt'
+    ),
     snippet: f.remediationSnippet || `// Remediation for ${f.title}\n// Apply to ${cleanDomain}`,
   }));
 
-  const isAuditDerived = mappedFindings.length > 0;
-  const activeFixes: FixItem[] = isAuditDerived ? mappedFindings : defaultFixes;
+  const measuredRun = Array.isArray(findings);
+  const activeFixes: FixItem[] = (measuredRun ? mappedFindings : defaultFixes)
+    .filter((fix) => !starterFixContradictsPass(`${fix.id} ${fix.title}`, crawlerChecks));
+  const isAuditDerived = measuredRun;
 
   const handleCopy = async (id: string, text: string) => {
     try {
@@ -134,6 +143,14 @@ Sitemap: https://${cleanDomain}/sitemap.xml
   };
 
   const completedCount = Object.values(completedFixes).filter(Boolean).length;
+  if (activeFixes.length === 0 && (measuredRun || Boolean(crawlerChecks?.length))) {
+    return (
+      <div className="mt-8 border-t border-white/10 pt-6">
+        <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-gold-light">Starter checklist</h3>
+        <p className="mt-2 text-sm text-gray-300">No starter fixes. This run did not record a failed check to repair.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-8 border-t border-white/10 pt-6">

@@ -132,6 +132,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       {!summary.evidenceEmpty && !summary.degraded && (
         <ActionableFixList
           domain={summary.domain}
+          crawlerChecks={summary.crawlerChecks}
           findings={summary.failed.map((failText, idx) => ({
             id: `finding-scout-${idx}`,
             title: failText,

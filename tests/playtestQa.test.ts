@@ -98,7 +98,14 @@ describe('playtest llms.txt placeholder', () => {
     const draft = llmsTxtDraft('raywhite.com.au');
     expect(draft.startsWith('# <Your agency name>\n')).toBe(true);
     expect(draft).not.toContain('Template:');
-    const patches = await remediationArchitectAgent.execute('https://raywhite.com.au', [], null, () => {}, null);
+    const patches = await remediationArchitectAgent.execute(
+      'https://raywhite.com.au',
+      [],
+      null,
+      () => {},
+      null,
+      [{ id: 'llms_txt', status: 'fail' }],
+    );
     const snippet = patches.find((patch) => patch.filename === 'llms.txt')?.proposedSnippet || '';
     expect(snippet).toContain('# <Your agency name>');
     expect(snippet).not.toContain('Template:');
