@@ -6,7 +6,7 @@ import React, { isValidElement, type ReactNode } from 'react';
  */
 
 export const PSI_EMPTY_COPY =
-  'PageSpeed not measured for this URL yet. Run a fresh audit with a public URL to fetch it.';
+  'PageSpeed is not measured yet. Click Measure to fetch it for this URL.';
 
 export const GSC_EMPTY_COPY =
   'Search Console is not connected. Connect it in Settings to see real query and click data.';
