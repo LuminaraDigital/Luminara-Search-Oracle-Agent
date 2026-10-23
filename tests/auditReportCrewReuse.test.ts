@@ -88,7 +88,7 @@ const liveSerp: SerpEvidenceItem[] = [
     query: 'what is example.com',
     title: 'What is Example',
     url: 'https://news.example/what',
-    snippet: 'Example is a widget company.',
+    snippet: 'Example is a widget company. See example.com.',
     brandMentioned: true,
   }),
 ];
@@ -290,6 +290,9 @@ describe('generateAuditReport crew evidence', () => {
     await run({ scrapedPages: [livePage()], serpEvidence: liveSerp });
     const rules = prompt().slice(prompt().indexOf('Strict Formatting Guidelines:'));
     expect(rules).toContain('## AI & Search Visibility Radar');
+    expect(rules).toContain('# Luminara: Web search check for');
+    expect(rules).toContain('Do not write that the brand appears');
+    expect(rules).not.toContain('Will AI mention');
 
     for (const label of ['Expected Impact', 'Est. Organic Rank', 'Rich Results', 'AI Overview Status', 'Trust Signal Strength']) {
       expect(rules.toLowerCase(), label).not.toContain(label.toLowerCase());

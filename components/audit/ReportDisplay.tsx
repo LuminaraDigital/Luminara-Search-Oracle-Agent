@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { ICONS } from '../../constants';
 import { ROICalculator } from './ROICalculator';
 import { DiffViewerModal } from './DiffViewerModal';
@@ -35,7 +35,7 @@ import { InteractiveTable } from './InteractiveTable';
 import { CollapsibleSection } from './CollapsibleSection';
 import { AuditReportArticle } from './AuditReportArticle';
 import { canCreateShareLinks, createShareReport } from '../../services/share/shareReportClient';
-import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, openPaywallModal } from '../../services/apiClient';
+import { clientHasHostedIdentity, fetchQuotaStatus, getCurrentQuotaSync, loadServerHealth, subscribeQuota } from '../../services/apiClient';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { UpgradeSurfaces } from '../upgrade/UpgradeSurfaces';
 import { measuredChecks } from '../../services/share/winShare';
@@ -145,12 +145,11 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     await loadServerHealth().catch(() => undefined);
     await fetchQuotaStatus().catch(() => null);
     if (!canCreateShareLinks()) {
-      // Soft-gate: guests need sign-in first; signed-in free/starter see Growth paywall.
-      if (!getCurrentQuotaSync()) {
-        setShareMessage('Sign in to create share links. Growth and Agency include share and MCP.');
-        return;
-      }
-      openPaywallModal('Share links are included on Growth and Agency plans.');
+      setShareMessage(
+        getCurrentQuotaSync()
+          ? 'A full branded report link is on Growth and Agency.'
+          : 'Sign in to create share links. Growth and Agency include share and MCP.',
+      );
       return;
     }
     setShareBusy(true);
@@ -213,6 +212,12 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const [sharePlan, setSharePlan] = useState<string | null | undefined>(() => getCurrentQuotaSync()?.plan);
+  useEffect(() => {
+    void fetchQuotaStatus();
+    return subscribeQuota((quota) => setSharePlan(quota?.plan));
+  }, []);
+  const canShare = entitlementsFor(sharePlan).shareLinks;
   const validSources = visibleGroundingSources(sources);
   const sourceCount = validSources?.length || 0;
   const hasEvidence = Boolean(
@@ -246,6 +251,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
                 A measured win can be shared on the free plan. A full branded report link is on Growth and Agency.
               </p>
             </div>
+            {canShare && (
             <button
               type="button"
               onClick={() => void handleCopyShareLink()}
@@ -255,6 +261,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
               <ICONS.Share className="w-4 h-4 text-black" />
               <span>{shareBusy ? 'Sharing...' : 'Copy share link'}</span>
             </button>
+            )}
           </div>
           {shareMessage && (
             <p className="text-[10px] font-mono text-gold-light mt-3 break-all" role="status">
@@ -278,7 +285,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         clientName={dnaName}
         sources={sources}
         showActions={!hideAgencyActions}
-        onShare={hideAgencyActions ? undefined : () => void handleCopyShareLink()}
+        onShare={hideAgencyActions || !canShare ? undefined : () => void handleCopyShareLink()}
         onFindings={setBoardFindings}
       />
 
@@ -341,6 +348,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            {canShare && (
             <button
               type="button"
               onClick={() => void handleCopyShareLink()}
@@ -350,6 +358,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
               <ICONS.Share className="w-4 h-4 text-black" />
               <span>{shareBusy ? 'Sharing...' : 'Copy share link'}</span>
             </button>
+            )}
 
             <button
               type="button"

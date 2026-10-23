@@ -10,6 +10,7 @@ import { getActiveSubscription } from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
 import { PRODUCTION_MINI_APP_URL, resolveMiniAppUrl } from '../services/referrals/rules';
 import { handleWinRoute } from './winShare';
+import { stripUntrustedFences } from '../utils/untrustedContent';
 
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_MARKDOWN_CHARS = 400_000;
@@ -334,7 +335,7 @@ function parseCreateBody(raw: unknown): {
 } | { ok: false; error: string; status: number } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'JSON body required', status: 400 };
   const body = raw as Record<string, unknown>;
-  const markdownText = typeof body.markdownText === 'string' ? body.markdownText : '';
+  const markdownText = stripUntrustedFences(typeof body.markdownText === 'string' ? body.markdownText : '');
   if (!markdownText.trim()) return { ok: false, error: 'markdownText required', status: 400 };
   if (markdownText.length > MAX_MARKDOWN_CHARS) {
     return { ok: false, error: 'markdownText too large', status: 413 };

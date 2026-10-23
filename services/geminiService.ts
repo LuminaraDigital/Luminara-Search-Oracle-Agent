@@ -54,6 +54,8 @@ export interface StreamQueryOptions {
 }
 
 import { empiricalCitationService, type EmpiricalCitationSummary } from './audit/empiricalCitationService';
+import { brandFromEvidence } from './audit/brandName';
+import { NAMESAKE_OMISSION_NOTE, withoutNamesakes, type AuditedEntity } from './audit/entityMatch';
 import {
   formatCrewPagesForReport,
   formatCrewSerpForReport,
@@ -75,6 +77,8 @@ import {
   buildPreliminaryTrustPromptSection,
 } from './audit/evidencePromptLabels';
 import { gateReportText, reportTableHeader } from './audit/reportColumnGate';
+import { stripUnmeasuredAiClaims } from './audit/unmeasuredClaimGuard';
+import { stripUnsupportedFixClaims, unsupportedClaimNeedles } from './audit/reportBlocks';
 import { aeoTrustPackService, type TrustPackSummary } from './audit/aeoTrustPackService';
 import { schemaSafetyGate } from './deployment/schemaSafetyGate';
 import { shareOfVoiceService, type ShareOfVoiceSummary } from './visibility/shareOfVoiceService';
@@ -155,7 +159,7 @@ const toGeminiContents = (prompt: string, history?: ChatTurn[]) => {
  * Runs the planned searches in parallel, keeps only well-scored, de-duplicated results and
  * formats them as evidence the model is told to use *only when relevant*.
  */
-async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | undefined, maxResults = 6): Promise<{
+async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | undefined, maxResults = 6, entity?: AuditedEntity | null): Promise<{
   contextText: string;
   sources: Array<{ uri: string; title: string }>;
   queries: string[];
@@ -222,7 +226,8 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
 
   if (merged.length === 0) return { contextText: '', sources: [], queries: [], rationale: '' };
 
-  const top = merged.slice(0, maxResults);
+  const filtered = entity ? withoutNamesakes(merged, entity) : { kept: merged, omitted: 0 };
+  const top = filtered.kept.slice(0, maxResults);
   const lines: string[] = [
     `[LIVE EVIDENCE GATHERED VIA ${sourceLabel.toUpperCase()}]`,
     `Search Intent Rationale: ${plan.rationale}`,
@@ -230,6 +235,7 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
     answers.length > 0 ? `Featured Engine Summary: ${answers[0]}` : '',
     '--------------------------------------------------',
     ...top.map((r, i) => `[Source ${i + 1}] ${r.title}\nURL: ${r.url}\nExcerpt: ${r.content}\n`),
+    filtered.omitted > 0 ? NAMESAKE_OMISSION_NOTE : '',
     '--------------------------------------------------',
     'GROUNDING RULES:',
     '- Quote or cite these sources when directly answering questions of current fact.',
@@ -646,6 +652,13 @@ Respect these consolidated business memories and historical recommendation outco
     const allLenses = [...new Set([...lenses, ...inferLenses(dna)])];
     const methodology = playbookContext(selectAuditPlaybooks(focus, allLenses), 4500);
     const displayUrl = websiteUrl.replace(/^https?:\/\//i, '');
+    const firstCrewPage = crewEvidence?.scrapedPages?.[0];
+    const legalName = (dna?.name || '').trim() || brandFromEvidence({
+      siteName: firstCrewPage?.siteName,
+      organizationName: firstCrewPage?.organizationName,
+      title: firstCrewPage?.title,
+    }) || undefined;
+    const auditedEntity: AuditedEntity = { domain: displayUrl, brandName: legalName ?? null };
     let mainTopic = '';
     let reportTitle = '';
     let focusIntro = '';
@@ -654,12 +667,12 @@ Respect these consolidated business memories and historical recommendation outco
       case 'AEO':
         mainTopic = 'Answer Engine Optimization (AEO)';
         reportTitle = `AEO Performance Brief - ${displayUrl}`;
-        focusIntro = `Specialized analysis of the brand's visibility in AI Overviews, rich snippets, and conversational assistants (ChatGPT, Gemini, Perplexity).`;
+        focusIntro = `Answer-engine recommendations from page and web search evidence. ChatGPT, Perplexity, and AI Overviews were not measured. Do not say the brand appears there.`;
         break;
       case 'GEO':
         mainTopic = 'Generative Engine Optimization (GEO)';
         reportTitle = `GEO Performance Brief - ${displayUrl}`;
-        focusIntro = `Specialized analysis of the brand's content suitability for generative engine citations and LLM synthesis.`;
+        focusIntro = `How ready the page copy is for a generative engine. ChatGPT, Perplexity, and AI Overviews were not measured. Do not say the brand appears there.`;
         break;
       case 'SEO':
       default:
@@ -672,7 +685,7 @@ Respect these consolidated business memories and historical recommendation outco
     const isGitHubRepo = /github\.com\/[^\/]+\/[^\/]+/i.test(websiteUrl);
     if (isGitHubRepo) {
       reportTitle = `Open-Source GEO & AEO Citability Brief - ${displayUrl}`;
-      focusIntro = `Specialized analysis of the repository's visibility across Answer Engines (Perplexity, ChatGPT, Claude), llms.txt readiness, and README answer extractability.`;
+      focusIntro = `Repository pages, llms.txt, and README extractability. Perplexity, ChatGPT, and Claude were not measured. Do not say the repository appears in those products.`;
     }
 
     // 1. Live sitewide evidence pack (homepage + smart map/links or deep Firecrawl crawl).
@@ -738,14 +751,14 @@ Respect these consolidated business memories and historical recommendation outco
     // Live crew SERP rows skip this second search.
     let searchGrounding = '';
     const sources: Array<{ uri: string; title: string }> = [{ uri: websiteUrl, title: `${displayUrl} (Target Domain)` }];
-    const reusedSerp = formatCrewSerpForReport(crewEvidence?.serpEvidence);
+    const reusedSerp = formatCrewSerpForReport(crewEvidence?.serpEvidence, auditedEntity);
     if (reusedSerp) {
       searchGrounding = `\n${reusedSerp.contextText}\n`;
       sources.push(...reusedSerp.sources);
     } else if (configService.getTavilyKey() || configService.isLocalSerpEnabled()) {
       try {
         const brand = dna?.name || displayUrl.split('.')[0];
-        const evidence = await auditReportEvidenceFetch.gatherSearchEvidence(`${brand} ${displayUrl} reviews competitors alternatives ${focus === 'SEO' ? 'ranking' : 'AI Overviews citation'}`, dna, 8);
+        const evidence = await auditReportEvidenceFetch.gatherSearchEvidence(`${legalName || brand} ${displayUrl} reviews competitors alternatives ${focus === 'SEO' ? 'ranking' : 'AI Overviews citation'}`, dna, 8, auditedEntity);
         if (evidence.contextText) {
           searchGrounding = `\n${evidence.contextText}\n`;
           sources.push(...evidence.sources);
@@ -763,7 +776,7 @@ Respect these consolidated business memories and historical recommendation outco
       if (citationGroups.length > 0) {
         const reused = empiricalCitationService.summarizePrefetchedCitations(
           websiteUrl,
-          dna?.name,
+          legalName,
           dna?.competitors || [],
           citationGroups,
         );
@@ -776,7 +789,7 @@ Respect these consolidated business memories and historical recommendation outco
       try {
         empiricalSummary = await empiricalCitationService.probeDomainCitations(
           websiteUrl,
-          dna?.name,
+          legalName,
           dna?.competitors || []
         );
       } catch (e) {
@@ -788,7 +801,7 @@ Respect these consolidated business memories and historical recommendation outco
     // 4. Open Public APIs Enrichment (Wikidata, Internet Archive Wayback, Microlink, Security). MEASURED when fetched.
     let enrichedEntity: EnrichedEntityIntelligence | undefined;
     try {
-      enrichedEntity = await publicApisEnrichmentService.enrichAudit(websiteUrl, dna?.name);
+      enrichedEntity = await publicApisEnrichmentService.enrichAudit(websiteUrl, legalName);
     } catch (e) {
       console.warn('[Audit] Public APIs enrichment fallback', e);
     }
@@ -862,6 +875,7 @@ Respect these consolidated business memories and historical recommendation outco
 
     const auditMode = dna?.name ? 'Full audit' : 'Instant Audit';
     const pastExperienceText = postAuditReflectionService.formatExperienceForPrompt(displayUrl);
+    const unsupportedNeedles = unsupportedClaimNeedles(crewEvidence?.unsupportedClaims || []);
     const prompt = `
 ${dnaContext || '[MODE: Instant Audit - no Business DNA. Keep recommendations general. Label the report Mode: Instant Audit.]'}
 ${methodology}
@@ -886,7 +900,8 @@ evidence support. Anything unobserved is "not measured". Never invent composite 
 When Trust Pack findings are present, reflect Critical/High items in the fix list.
 
 Strict Formatting Guidelines:
-1. Title: Must begin with: "# Luminara: Will AI mention ${dna?.name || displayUrl}?"
+1. Title: Must begin with: "# Luminara: Web search check for ${dna?.name || displayUrl}"
+   ChatGPT, Perplexity, and Google AI Overviews were not measured in this run. Do not write that the brand appears in those products or in AI-driven results. A search-sample mention is a web search mention: say web search or web results.
 2. Subhead line: **Date:** [today] · **Mode:** ${auditMode}
 3. Structure: Organize using these exact H2 headers:
    ## 1. One move this week
@@ -899,6 +914,7 @@ Strict Formatting Guidelines:
 4. ## 1. One move this week: one concrete action, why it helps citation odds, how to tell it worked.
 5. ## 3. Fix list: Markdown table with strictly these columns:
    ${reportTableHeader('fixList')}
+   ${unsupportedNeedles.length ? `Do not recommend these checks in the fix list or the one-move section. The evidence check did not support them: ${unsupportedNeedles.join('; ')}.` : ''}
 6. AI & Search Visibility Radar: Markdown table with strictly these columns:
    ${reportTableHeader('visibilityRadar')}
    Include 3 high-intent queries (informational, commercial, comparative). Use "not verified" when evidence is missing.
@@ -918,7 +934,14 @@ Strict Formatting Guidelines:
       // Only the report's own table columns pass. No evidence block fills any other.
       // The copy each provider path writes to memory goes through the same gate.
       const scrapedLinks = collectScrapedLinks(crewEvidence?.scrapedPages, scrapedContent);
-      const text = restrictReportJsonLdSameAs(gateReportText(modelText), scrapedLinks, scrapedContent);
+      const text = restrictReportJsonLdSameAs(
+        stripUnsupportedFixClaims(
+          stripUnmeasuredAiClaims(gateReportText(modelText)),
+          crewEvidence?.unsupportedClaims || [],
+        ),
+        scrapedLinks,
+        scrapedContent,
+      );
       const schemaMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"@type"[\s\S]*?\})\s*```/);
       const schemaJsonLd = schemaMatch ? schemaMatch[1].trim() : JSON.stringify({
         "@context": "https://schema.org",

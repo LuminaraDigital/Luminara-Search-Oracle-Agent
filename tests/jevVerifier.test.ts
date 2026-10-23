@@ -102,6 +102,7 @@ describe('verifyAuditWithJev', () => {
     expect(verdict.siteType).toBe('other');
     expect(verdict.brandSupported).toBe(false);
     expect(kept[0].id).toBe('finding-schema-org-unmeasured');
+    expect(kept[0].title).toBe('Missing Organization markup');
     expect(kept[0].description).toBe('Not measured. The evidence check did not support this finding.');
     expect(kept[0].severity).toBe('low');
     expect(reviewedHealth(73, kept, true)).toBeNull();
@@ -114,6 +115,21 @@ describe('verifyAuditWithJev', () => {
     expect(llms).not.toContain('Ray White');
     expect(llms).toContain('<Your agency name>');
     expect(llms).not.toContain('Template:');
+  });
+
+  it('softens an alarmist title when the evidence check does not support the finding', () => {
+    const [kept] = downgradeUnsupported([
+      {
+        ...finding('finding-thin-content'),
+        title: 'Thin Content Detected on Critical Landing Page(s)',
+        severity: 'high',
+      },
+    ], ['finding-thin-content']);
+    expect(kept.id).toBe('finding-thin-content-unmeasured');
+    expect(kept.title).toBe('Thin content');
+    expect(kept.severity).toBe('low');
+    expect(kept.description).toBe('Not measured. The evidence check did not support this finding.');
+    expect(kept.howWeKnowItFailed).toBe(kept.description);
   });
 
   it('fail-opens on timeout, 429, and 529 without throwing', async () => {

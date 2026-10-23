@@ -27,6 +27,8 @@
  * Invariant: no em dashes (U+2014) in copy or comments. Use '-', ':', or '.'.
  */
 
+import { stripUntrustedFences } from '../../utils/untrustedContent';
+
 /** The report's own tables. Prompt templates and the gate both read this. */
 export const REPORT_TABLES = {
   fixList: ['Task', 'Plain issue', 'Priority'],
@@ -497,5 +499,5 @@ export function gateReportText(markdown: string): string {
   if (result.unparsedTables > 0) {
     console.warn(`[report gate] ${result.unparsedTables} table(s) left as written: the cells could not be lined up under the headers.`);
   }
-  return result.text;
+  return stripUntrustedFences(result.text);
 }

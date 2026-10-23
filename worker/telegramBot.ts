@@ -8,6 +8,7 @@ import { QUOTA_CAPACITY_ERROR, spendDailyQuota } from './quotaMiddleware';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
 import { guardPasteReadyCopy } from '../services/audit/healthClaimGuard';
+import { PUBLIC_PRIVACY_URL, PUBLIC_TERMS_URL } from '../services/legal/privacyCopy';
 import { businessDnaPromptBlock, chatRoute, chatRouteReply, filterChatReply, planPricePromptBlock, TELEGRAM_CHAT_HONESTY_RULES } from './chatHonesty';
 import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
@@ -452,21 +453,20 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/terms')) {
-      const baseUrl = env.WEBAPP_URL.replace(/\/$/, '');
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
           '*Luminara Suite Terms (purchases)*\n' +
           'By purchasing with Telegram Stars you agree to our Terms and Conditions and Privacy Policy.\n\n' +
-          `• Terms: ${baseUrl}/#terms\n` +
-          `• Privacy: ${baseUrl}/privacy\n\n` +
+          `• Terms: ${PUBLIC_TERMS_URL}\n` +
+          `• Privacy: ${PUBLIC_PRIVACY_URL}\n\n` +
           'Digital subscriptions activate immediately after a successful Stars payment. For billing help or disputes, use /paysupport.\n' +
           'Please note: Telegram Support cannot resolve merchant purchases made through this bot.',
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [
-              { text: '📜 Privacy Policy', web_app: { url: `${env.WEBAPP_URL}?startapp=privacy#privacy` } },
+              { text: '📜 Privacy Policy', url: PUBLIC_PRIVACY_URL },
               { text: '🔍 Open App', web_app: { url: env.WEBAPP_URL } },
             ],
           ],
@@ -476,7 +476,6 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
 
     if (text.startsWith('/privacy')) {
-      const baseUrl = env.WEBAPP_URL.replace(/\/$/, '');
       await api(env, 'sendMessage', {
         chat_id: chatId,
         text:
@@ -487,13 +486,13 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           '• *Payments:* Plans bought here are paid in Telegram Stars and processed by Telegram. No credit card information is collected.\n' +
           '• *Audits & Prompts:* Audit domains and queries are processed via configured AI models (Groq, NVIDIA NIM, Gemini, OpenRouter) to deliver search intelligence.\n' +
           '• *Data Retention & Control:* Reset your bot chat memory anytime with /reset. To request account data export or deletion, contact `privacy@luminarasuite.com`.\n\n' +
-          `Full policy document: ${baseUrl}/privacy`,
+          `Full policy document: ${PUBLIC_PRIVACY_URL}`,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [
-              { text: '📜 Read in Mini App', web_app: { url: `${env.WEBAPP_URL}?startapp=privacy#privacy` } },
-              { text: '🌐 View on Web', url: `${baseUrl}/privacy` },
+              { text: '📜 Privacy Policy', url: PUBLIC_PRIVACY_URL },
+              { text: '🌐 Terms', url: PUBLIC_TERMS_URL },
             ],
             [
               { text: '🔍 Open Luminara Suite', web_app: { url: env.WEBAPP_URL } },

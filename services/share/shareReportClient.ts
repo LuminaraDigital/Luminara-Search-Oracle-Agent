@@ -1,7 +1,7 @@
 /**
  * Client helpers for Growth+/Agency shareable audit report links.
  */
-import { apiBase, getCurrentQuotaSync, hasActivePaidPlanSync, workerFetchWithAuthRetry } from '../apiClient';
+import { apiBase, getCurrentQuotaSync, workerFetchWithAuthRetry } from '../apiClient';
 import { entitlementsFor } from '../plans/planEntitlements';
 import { getFirebaseIdTokenSync } from '../auth/firebaseAuthService';
 import { getInitDataRaw } from '../telegram/tma';
@@ -52,21 +52,9 @@ export interface SharedReportResponse {
   passwordRequired?: boolean;
 }
 
+/** Branded report URLs. Growth and Agency only. An unlimited daily cap is not a share link. */
 export function canCreateShareLinks(): boolean {
-  const quota = getCurrentQuotaSync();
-  if (!quota) return false;
-  const plan = quota.plan || 'free';
-  // Named plans from /api/auth/quota (starter/growth/agency).
-  if (plan !== 'free' && plan !== 'active') {
-    return entitlementsFor(plan).shareLinks;
-  }
-  // updateQuotaFromHeaders sets plan:'active' for unlimited subscribers; that must
-  // not normalize to free via entitlementsFor. Share links are Growth+; grant when
-  // the client already sees an active paid/unlimited plan.
-  if (hasActivePaidPlanSync()) {
-    return entitlementsFor('growth').shareLinks;
-  }
-  return false;
+  return entitlementsFor(getCurrentQuotaSync()?.plan).shareLinks;
 }
 
 export async function createShareReport(input: CreateShareReportInput): Promise<CreateShareReportResult> {

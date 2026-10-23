@@ -27,7 +27,7 @@ describe('PublicApisEnrichmentService', () => {
           {
             id: 'Q95',
             label: 'Google',
-            description: 'American multinational technology company',
+            description: 'American multinational technology company (google.com)',
             concepturi: 'http://www.wikidata.org/entity/Q95'
           }
         ]
@@ -42,7 +42,7 @@ describe('PublicApisEnrichmentService', () => {
       expect(entity).not.toBeNull();
       expect(entity?.id).toBe('Q95');
       expect(entity?.label).toBe('Google');
-      expect(entity?.description).toBe('American multinational technology company');
+      expect(entity?.description).toBe('American multinational technology company (google.com)');
       expect(entity?.url).toBe('https://www.wikidata.org/wiki/Q95');
       expect(entity?.wikipediaUrl).toBe('https://en.wikipedia.org/wiki/Google');
     });
@@ -60,8 +60,39 @@ describe('PublicApisEnrichmentService', () => {
     it('handles network failure without throwing', async () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Network error'));
 
-      const entity = await publicApisEnrichmentService.resolveWikidataEntity('Google');
+      const entity = await publicApisEnrichmentService.resolveWikidataEntity('Google', 'google.com');
       expect(entity).toBeNull();
+    });
+
+    it('drops a Wikidata list that only names other Luminara organizations', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          search: [
+            { id: 'Q1', label: 'Luminara', description: 'brand of flameless candles' },
+            { id: 'Q2', label: 'Luminara, Institute of Light', description: 'organization' },
+          ],
+        }),
+      } as Response);
+
+      const entity = await publicApisEnrichmentService.resolveWikidataEntity('Luminara', 'luminara.digital');
+      expect(entity).toBeNull();
+    });
+
+    it('picks the Wikidata hit that names the audited domain', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          search: [
+            { id: 'Q1', label: 'Luminara', description: 'brand of flameless candles' },
+            { id: 'Q9', label: 'Luminara Digital', description: 'agency at luminara.digital' },
+          ],
+        }),
+      } as Response);
+
+      const entity = await publicApisEnrichmentService.resolveWikidataEntity('Luminara Digital', 'luminara.digital');
+      expect(entity?.id).toBe('Q9');
+      expect(entity?.label).toBe('Luminara Digital');
     });
   });
 

@@ -8,6 +8,7 @@
 
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { BusinessDNA } from '../../../types';
+import { classifyMention, isNamesakeHost } from '../../audit/entityMatch';
 
 const EXCLUDED_COMPETITOR_DOMAINS = [
   // Encyclopedias & medical/general reference aggregators
@@ -126,7 +127,7 @@ export function isExcludedCompetitorHost(hostOrName: string, cleanDomain: string
   const h = hostOrName.toLowerCase().replace(/^https?:\/\//i, '').replace(/^www\./, '').trim();
   if (!h) return true;
   const targetClean = cleanDomain.toLowerCase().replace(/^https?:\/\//i, '').replace(/^www\./, '').split('/')[0];
-  if (targetClean && (h === targetClean || h.includes(targetClean))) return true;
+  if (targetClean && (h === targetClean || h.includes(targetClean) || isNamesakeHost(h, targetClean))) return true;
 
   // Government & Academic institutions
   if (/\.(gov|edu|ac|mil)(\.[a-z]{2})?$/i.test(h)) return true;
@@ -176,6 +177,10 @@ export class CompetitorStrategistAgent {
 
     // 2. Discover from SERP results (excluding target domain, review platforms, reference sites, social media, etc.)
     serpEvidence.forEach((item) => {
+      if (classifyMention(
+        { domain: cleanDomain, brandName: dna?.name },
+        { url: item.url, title: item.title, text: item.snippet },
+      ) === 'namesake') return;
       try {
         const u = new URL(item.url);
         const host = u.hostname.toLowerCase().replace(/^www\./, '');

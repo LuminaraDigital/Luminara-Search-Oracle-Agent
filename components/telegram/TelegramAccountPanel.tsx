@@ -5,6 +5,7 @@ import { TELEGRAM_MINI_APP_URL, isTonAvailable } from '../paywall/paymentOptions
 import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../paywall/planCopy';
 import { lazyWithReload } from '../../utils/lazyWithReload';
 import { formatAuDate } from '../../utils/formatAuDate';
+import { PUBLIC_PRIVACY_URL, PUBLIC_TERMS_URL } from '../../services/legal/privacyCopy';
 
 const TelegramAccountTon = lazyWithReload(() =>
   import('./TelegramAccountTon').then((m) => ({ default: m.TelegramAccountTon })),
@@ -250,11 +251,11 @@ export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
       )}
 
       <div className="flex items-center justify-between text-[10px] text-gray-500 pt-2 border-t border-white/5">
-        <a href="#privacy" className="hover:text-gold transition-colors">
+        <a href={PUBLIC_PRIVACY_URL} className="hover:text-gold transition-colors">
           Privacy Policy
         </a>
         <span className="text-gray-600">·</span>
-        <a href="#terms" className="hover:text-gold transition-colors">
+        <a href={PUBLIC_TERMS_URL} className="hover:text-gold transition-colors">
           Terms of Service
         </a>
         <span className="text-gray-600">·</span>

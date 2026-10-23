@@ -7,6 +7,7 @@ import { MINI_APP_URL, botUsernameFromMiniAppUrl } from '../../services/referral
 import { BrandLoader } from '../intro/BrandLoader';
 import { ICONS } from '../../constants';
 import { LIVE_ANSWER_CHECKS } from '../../services/marketing/engineCoverage';
+import { CARD_CHECKOUT_ACCOUNT_LINE } from '../paywall/pendingCardCheckout';
 import '../marketing/space.css';
 
 const AuthPanel = lazyWithReload(() => import('./AuthPanel').then((m) => ({ default: m.AuthPanel })));
@@ -52,7 +53,9 @@ export const AuthRequiredScreen: React.FC<{
   onBackToMarketing?: () => void;
   isModal?: boolean;
   onClose?: () => void;
-}> = ({ auth, featureView, initialMode = 'signin', onBackToMarketing, isModal, onClose }) => {
+  /** Pay by card opened this wall. Copy stays on creating an account, never "Welcome back". */
+  forCardCheckout?: boolean;
+}> = ({ auth, featureView, initialMode = 'signin', onBackToMarketing, isModal, onClose, forCardCheckout = false }) => {
   const headingId = useId();
   const contentRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<AuthMode>(initialMode);
@@ -180,6 +183,17 @@ export const AuthRequiredScreen: React.FC<{
   }
 
   const featureNote = featureExplanation(featureView);
+  const heading = forCardCheckout
+    ? (mode === 'signup' ? 'Create your free account' : 'Sign in to pay by card')
+    : (mode === 'signup' ? 'Create your free account' : 'Welcome back');
+  const subtitle = forCardCheckout
+    ? CARD_CHECKOUT_ACCOUNT_LINE
+    : (mode === 'signup'
+      ? 'Start your Luminara Suite account to save audits, build your business profile, and run hosted checks.'
+      : 'Access your account and continue your journey with us across web, Telegram, and desktop.');
+  const accountPoints = forCardCheckout
+    ? FREE_ACCOUNT_POINTS.filter((point) => !point.includes('No card needed'))
+    : FREE_ACCOUNT_POINTS;
 
   const webSplitCard = (
     <div ref={contentRef} className="lx-glass relative z-10 w-full max-w-[1040px] my-auto rounded-[28px] overflow-hidden grid grid-cols-1 lg:grid-cols-12">
@@ -219,12 +233,10 @@ export const AuthRequiredScreen: React.FC<{
 
           <div className="space-y-2">
             <h1 id={headingId} className="lx-display text-[2.4rem] sm:text-5xl">
-              {mode === 'signup' ? 'Create your free account' : 'Welcome back'}
+              {heading}
             </h1>
             <p className="text-sm text-[var(--color-ink-2)] leading-relaxed">
-              {mode === 'signup'
-                ? 'Start your Luminara Suite account to save audits, build your business profile, and run hosted checks.'
-                : 'Access your account and continue your journey with us across web, Telegram, and desktop.'}
+              {subtitle}
             </p>
           </div>
 
@@ -257,7 +269,7 @@ export const AuthRequiredScreen: React.FC<{
               See what AI says <span className="italic lx-gold-text">about you.</span>
             </p>
             <ul className="mt-8 space-y-4 list-none p-0 m-0">
-              {FREE_ACCOUNT_POINTS.map((point) => (
+              {accountPoints.map((point) => (
                 <li key={point} className="flex gap-3 text-sm leading-relaxed text-[var(--color-ink-2)]">
                   <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
                   {point}

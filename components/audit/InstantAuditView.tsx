@@ -375,6 +375,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         siteType: crewResult.siteType,
         brandSupported: crewResult.brandSupported,
         displayName: crewResult.displayName,
+        findings: crewResult.findings,
       });
       if (seq !== runSeq.current) return;
       if (!result) {
