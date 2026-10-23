@@ -20,11 +20,18 @@ function cellText(cell: unknown): string {
     return String(cell ?? '').replace(/[*_`]/g, '').trim() || 'Not measured';
 }
 
+/** A model placeholder such as [[Competitor 1]]. A real rival name is kept. */
+function placeholderCompetitor(entity: string): boolean {
+    const plain = entity.replace(/\[\[|\]\]/g, '').trim();
+    return /^competitor\s*#?\d+$/i.test(plain);
+}
+
 export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) => {
     const entityCol = columnIndex(headers, /entity|brand/i, 0);
     const perceptionCol = columnIndex(headers, /perception|how ai talks/i, 1);
     const pagesCol = columnIndex(headers, /page/i, 2);
     const advantageCol = columnIndex(headers, /advantage/i, 3);
+    const visibleRows = rows.filter((row) => !placeholderCompetitor(cellText(row[entityCol])));
 
     return (
         <div className="my-8 glass-morphism rounded-2xl border border-gold/30 overflow-hidden shadow-2xl animate-in fade-in duration-700">
@@ -44,7 +51,10 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
             </div>
 
             <div className="p-4 md:p-6 grid gap-4">
-                {rows.map((row, idx) => {
+                {visibleRows.length === 0 ? (
+                    <p className="text-xs text-gray-400">Not measured. No competitor was named in this run.</p>
+                ) : null}
+                {visibleRows.map((row, idx) => {
                     const entity = cellText(row[entityCol]);
                     const perception = cellText(row[perceptionCol]);
                     const topPages = cellText(row[pagesCol]);

@@ -21,6 +21,9 @@ describe('brand name from a host', () => {
     expect(organizationNameFromJson([
       { type: 'RealEstateAgent', rawJson: JSON.stringify({ name: 'Ray White' }) },
     ])).toBe('Ray White');
+    expect(organizationNameFromJson([
+      { type: 'ProfessionalService', rawJson: JSON.stringify({ name: 'Luminara Digital' }) },
+    ])).toBe('Luminara Digital');
     expect(brandNameFor('raywhite.com.au')).toBeNull();
     expect(brandNameFor('www.mcgrath.com.au', 'McGrath')).toBe('McGrath');
   });

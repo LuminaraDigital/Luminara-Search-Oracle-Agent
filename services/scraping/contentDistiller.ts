@@ -39,6 +39,68 @@ export interface DistillationOptions {
   maxChars?: number;
   includeHeadingsOutline?: boolean;
   includeSchemaSummary?: boolean;
+  /**
+   * Full document HTML when `rawHtml` is only the main content.
+   * Firecrawl `onlyMainContent` drops `<head>`, which is where JSON-LD lives.
+   */
+  schemaHtml?: string;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function scriptMime(attrs: string): string {
+  const match = attrs.match(/\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i);
+  const raw = match?.[1] ?? match?.[2] ?? match?.[3] ?? '';
+  return raw.split(';')[0].trim().toLowerCase();
+}
+
+function typeNames(value: unknown): string[] {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim());
+}
+
+function rememberNode(node: unknown, out: StructuredSchema[]): void {
+  if (Array.isArray(node)) {
+    for (const item of node) rememberNode(item, out);
+    return;
+  }
+  if (!isPlainRecord(node)) return;
+  for (const type of typeNames(node['@type'])) out.push({ type, raw: node });
+  if (node['@graph'] !== undefined) rememberNode(node['@graph'], out);
+}
+
+/**
+ * JSON-LD script bodies. Attribute order does not matter. A type parameter such as
+ * charset is ignored.
+ * shortcut: a ">" inside an attribute value ends the tag early. Use the deploy read-back scanner if a page does that.
+ */
+function collectJsonLd(html: string, out: StructuredSchema[]): void {
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) {
+    if (scriptMime(match[1] || '') !== 'application/ld+json') continue;
+    try {
+      const parsed: unknown = JSON.parse((match[2] || '').trim());
+      rememberNode(parsed, out);
+    } catch {
+      // Malformed JSON-LD is not a schema.
+    }
+  }
+}
+
+function dedupeSchemas(schemas: StructuredSchema[]): StructuredSchema[] {
+  const seen = new Set<string>();
+  const out: StructuredSchema[] = [];
+  for (const schema of schemas) {
+    const key = `${schema.type}\n${JSON.stringify(schema.raw)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(schema);
+  }
+  return out;
 }
 
 export class ContentDistiller {
@@ -92,31 +154,7 @@ export class ContentDistiller {
         if (flipped?.[1]) openGraph.site_name = flipped[1].trim();
       }
 
-      // 2. Extract JSON-LD Schemas
-      const jsonLdRegex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-      let jsonLdMatch;
-      while ((jsonLdMatch = jsonLdRegex.exec(rawHtml)) !== null) {
-        try {
-          const parsed = JSON.parse(jsonLdMatch[1].trim());
-          if (Array.isArray(parsed)) {
-            for (const item of parsed) {
-              if (item && item['@type']) {
-                schemas.push({ type: String(item['@type']), raw: item });
-              }
-            }
-          } else if (parsed && parsed['@graph'] && Array.isArray(parsed['@graph'])) {
-            for (const item of parsed['@graph']) {
-              if (item && item['@type']) {
-                schemas.push({ type: String(item['@type']), raw: item });
-              }
-            }
-          } else if (parsed && parsed['@type']) {
-            schemas.push({ type: String(parsed['@type']), raw: parsed });
-          }
-        } catch {
-          // Ignore malformed JSON-LD scripts
-        }
-      }
+      collectJsonLd(rawHtml, schemas);
 
       // 3. Extract Headings Hierarchy
       const headingRegex = /<(h[1-3])[^>]*>([\s\S]*?)<\/\1>/gi;
@@ -149,8 +187,11 @@ export class ContentDistiller {
     // 5. PII Redaction Gate
     cleanedBody = sanitizePii(cleanedBody).sanitized;
 
+    if (options.schemaHtml) collectJsonLd(options.schemaHtml, schemas);
+    const foundSchemas = dedupeSchemas(schemas);
+
     // Deduplicate and summarize schema types
-    const schemaTypes = Array.from(new Set(schemas.map(s => s.type)));
+    const schemaTypes = Array.from(new Set(foundSchemas.map(s => s.type)));
 
     // 6. Budget allocation with RTK compression
     const compressed = compressToolResult(cleanedBody, { maxChars }).compressed;
@@ -190,7 +231,7 @@ export class ContentDistiller {
       description: description || openGraph['description'] || '',
       canonicalUrl,
       openGraph,
-      schemas,
+      schemas: foundSchemas,
       schemaTypes,
       headings,
       distilledText: truncatedBody,
@@ -260,6 +301,22 @@ export class ContentDistiller {
     const match = regex.exec(str);
     return match && match[1] ? this.stripHtmlTags(match[1]).trim() : '';
   }
+}
+
+/** Keep JSON-LD found on the full document when a later distill only saw main content. */
+export function keepDiscoveredSchemas(
+  fresh: DistilledContentResult,
+  prior: DistilledContentResult | undefined,
+): DistilledContentResult {
+  if (!prior || prior.schemas.length === 0) return fresh;
+  const schemas = dedupeSchemas([...fresh.schemas, ...prior.schemas]);
+  if (schemas.length === fresh.schemas.length) return fresh;
+  const schemaTypes = Array.from(new Set(schemas.map((schema) => schema.type)));
+  const line = `[STRUCTURED DATA / JSON-LD]: Detected schemas: ${schemaTypes.join(', ')}`;
+  const formattedEvidence = fresh.formattedEvidence.includes('[STRUCTURED DATA / JSON-LD]:')
+    ? fresh.formattedEvidence.replace(/\[STRUCTURED DATA \/ JSON-LD\]:[^\n]*/, line)
+    : `${line}\n${fresh.formattedEvidence}`;
+  return { ...fresh, schemas, schemaTypes, formattedEvidence };
 }
 
 export const contentDistiller = ContentDistiller.getInstance();

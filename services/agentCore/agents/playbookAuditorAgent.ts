@@ -26,6 +26,7 @@ import {
   unmeasuredHealthMessage,
 } from '../auditEvidenceGate';
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
+import { isOrganizationEntityType } from '../../audit/brandName';
 
 export class PlaybookAuditorAgent {
   public readonly name = 'Playbook Auditor';
@@ -100,7 +101,7 @@ export class PlaybookAuditorAgent {
       const allSchemas = livePages.flatMap((p) => p.schemasFound);
       const schemaTypes = new Set(allSchemas.map((s) => s.type.toLowerCase()));
 
-      if (!schemaTypes.has('organization') && !schemaTypes.has('corporation') && !schemaTypes.has('localbusiness')) {
+      if (![...schemaTypes].some((type) => isOrganizationEntityType(type))) {
         const urls = livePages.map((page) => page.url).slice(0, 3).join(', ');
         const seen = [...schemaTypes];
         const seenLabel = seen.length ? seen.join(', ') : 'none';
@@ -109,7 +110,7 @@ export class PlaybookAuditorAgent {
           category: 'schema',
           severity: 'critical',
           title: `Missing Organization markup on ${urls}`,
-          description: `Parsed HTML at ${urls} has schema types: ${seenLabel}. Organization, Corporation, and LocalBusiness are not among them.`,
+          description: `Parsed HTML at ${urls} has schema types: ${seenLabel}. Organization, Corporation, LocalBusiness, and ProfessionalService are not among them.`,
           evidenceSource: 'DOM Scrape JSON-LD inspection',
           howWeKnowItFailed: `Parsed ${livePages.length} page(s) at ${urls}. Schema types found: ${seenLabel}.`,
           leadingIndicator: 'Direct knowledge graph attribution and entity disambiguation in AI Overviews.',

@@ -54,6 +54,55 @@ describe('UnifiedScraperService', () => {
     expect(result.formattedEvidence).toContain('[REAL SITE SCRAPE EVIDENCE - VIA PATCHRIGHT STEALTH RUNNER]');
   });
 
+  it('reads rawHtml from a Firecrawl scrape response', async () => {
+    vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || '{}')) as { formats?: string[] };
+      expect(body.formats).toContain('rawHtml');
+      return new Response(JSON.stringify({
+        success: true,
+        data: {
+          markdown: '# Hi',
+          html: '<main><p>Hi</p></main>',
+          rawHtml: '<script type="application/ld+json">{"@type":"ProfessionalService","name":"Luminara Digital"}</script>',
+        },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+
+    const result = await firecrawlService.scrapeUrl('https://luminara.digital', ['markdown', 'html', 'rawHtml']);
+    expect(result.success).toBe(true);
+    expect(result.rawHtml).toContain('ProfessionalService');
+  });
+
+  it('reads JSON-LD from Firecrawl rawHtml when main-content HTML has no script', async () => {
+    vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
+    vi.spyOn(configService, 'isLocalSidecarAllowed').mockReturnValue(false);
+    vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('fc-test-key');
+    const graph = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@graph': [
+        { '@type': 'Organization', name: 'Luminara Suite' },
+        { '@type': 'WebSite', name: 'Luminara Suite' },
+      ],
+    });
+    const scrape = vi.spyOn(firecrawlService, 'scrapeUrl').mockResolvedValueOnce({
+      success: true,
+      markdown: '# Luminara Suite\nMain content from Firecrawl.',
+      html: '<main><h1>Luminara Suite</h1><p>Main content from Firecrawl.</p></main>',
+      rawHtml: `<html><head><script id="ld" type="application/ld+json">${graph}</script></head><body></body></html>`,
+      metadata: { title: 'Luminara Suite', statusCode: 200 },
+    });
+
+    const result = await unifiedScraperService.scrapeAndDistill('https://www.luminarasuite.com');
+
+    expect(scrape).toHaveBeenCalledWith('https://www.luminarasuite.com', ['markdown', 'html', 'rawHtml']);
+    expect(result.providerUsed).toBe('firecrawl');
+    expect(result.distilled.schemaTypes).toEqual(expect.arrayContaining(['Organization', 'WebSite']));
+    expect(result.distilled.formattedEvidence).toContain('Detected schemas:');
+    expect(result.distilled.formattedEvidence).not.toContain('None detected');
+    expect(result.distilled.distilledText).toContain('Main content from Firecrawl');
+  });
+
   it('fails over to Firecrawl when Patchright encounters an error in auto mode', async () => {
     vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
     vi.spyOn(configService, 'isLocalSidecarAllowed').mockReturnValue(true);

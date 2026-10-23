@@ -1,38 +1,73 @@
 /**
  * Bounded fetch of /robots.txt, /llms.txt, and optional /ai.txt for an Instant Audit target.
- * Identity required. Private hosts and redirects are not followed.
+ * Identity required. Private hosts are refused. A same-site 301/302/303/307/308 is followed
+ * after the next host is checked again. A redirect to another site is not followed.
  */
 import type { Env } from './env';
 import { billingId, identify, json } from './workerUtils';
 import { resolvesToPublicAddress, safePublicHostname, safePublicUrl, type DohFetch } from './security';
+import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { mintScoutReceipt } from './referrals';
 import { readCapped } from './domainVerification';
 import type { LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 
 const MAX_BYTES = 64_000;
 const FETCH_MS = 5_000;
+const MAX_REDIRECTS = 3;
+const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
 
 async function fetchOne(url: string, fetcher: typeof fetch): Promise<{ status: number | null; body: string | null }> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), FETCH_MS);
+  let current = url;
+  let originHost = '';
   try {
-    const res = await fetcher(url, {
-      method: 'GET',
-      redirect: 'manual',
-      signal: ac.signal,
-      headers: { accept: 'text/plain, text/markdown, */*' },
-    });
-    if (res.status >= 300 && res.status < 400) {
-      return { status: res.status, body: null };
-    }
-    if (res.status === 404) return { status: 404, body: '' };
-    if (!res.ok) return { status: res.status, body: null };
-    return { status: res.status, body: await readCapped(res, MAX_BYTES) };
+    originHost = new URL(url).hostname;
   } catch {
     return { status: null, body: null };
-  } finally {
-    clearTimeout(timer);
   }
+  const seen = new Set<string>();
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (seen.has(current)) return { status: null, body: null };
+    seen.add(current);
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), FETCH_MS);
+    try {
+      const res = await fetcher(current, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: ac.signal,
+        headers: { accept: 'text/plain, text/markdown, */*' },
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get('Location') || res.headers.get('location');
+        if (!loc || hop === MAX_REDIRECTS || !FOLLOW_REDIRECT.has(res.status)) {
+          return { status: res.status, body: null };
+        }
+        let next: URL;
+        try {
+          next = new URL(loc, current);
+        } catch {
+          return { status: res.status, body: null };
+        }
+        if ((next.protocol !== 'http:' && next.protocol !== 'https:') || !sameSiteHost(originHost, next.hostname)) {
+          return { status: res.status, body: null };
+        }
+        if (!(await resolvesToPublicAddress(next.hostname, fetcher as DohFetch))) {
+          return { status: res.status, body: null };
+        }
+        current = next.toString();
+        continue;
+      }
+      if (res.status === 404) return { status: 404, body: '' };
+      if (!res.ok) return { status: res.status, body: null };
+      return { status: res.status, body: await readCapped(res, MAX_BYTES) };
+    } catch {
+      return { status: null, body: null };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return { status: null, body: null };
 }
 
 export async function loadCrawlerSnapshot(

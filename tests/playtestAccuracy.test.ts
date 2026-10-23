@@ -29,6 +29,34 @@ function serp(): SerpEvidenceItem {
   };
 }
 
+describe('organization markup already on the page', () => {
+  it('does not recommend a critical Organization fix for Organization or ProfessionalService', async () => {
+    for (const type of ['Organization', 'ProfessionalService', 'https://schema.org/LocalBusiness']) {
+      const result = await playbookAuditorAgent.execute(
+        'AEO',
+        [page({ schemasFound: [{ type, rawJson: '{"name":"Luminara"}', isValid: true }] })],
+        [serp()],
+        null,
+        () => {},
+      );
+      expect(result.findings.some((finding) => finding.id === 'finding-schema-org'), type).toBe(false);
+    }
+  });
+
+  it('still flags a page whose only schema is FAQPage', async () => {
+    const result = await playbookAuditorAgent.execute(
+      'AEO',
+      [page({ schemasFound: [{ type: 'FAQPage', rawJson: '{}', isValid: true }] })],
+      [serp()],
+      null,
+      () => {},
+    );
+    const finding = result.findings.find((item) => item.id === 'finding-schema-org');
+    expect(finding?.description).toContain('schema types: faqpage');
+    expect(finding?.description).not.toContain('schema types: none');
+  });
+});
+
 describe('blocked checks stay not measured', () => {
   it('does not call a challenge page a missing Organization', async () => {
     const result = await playbookAuditorAgent.execute(
