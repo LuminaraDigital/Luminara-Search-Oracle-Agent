@@ -79,7 +79,7 @@ import {
 } from './audit/evidencePromptLabels';
 import { gateReportText, reportTableHeader } from './audit/reportColumnGate';
 import { stripUnmeasuredAiClaims } from './audit/unmeasuredClaimGuard';
-import { stripUnsupportedFixClaims, unsupportedClaimNeedles } from './audit/reportBlocks';
+import { auditSubjectLead, stripUnsupportedFixClaims, unsupportedClaimNeedles } from './audit/reportBlocks';
 import { aeoTrustPackService, type TrustPackSummary } from './audit/aeoTrustPackService';
 import { schemaSafetyGate } from './deployment/schemaSafetyGate';
 import { shareOfVoiceService, type ShareOfVoiceSummary } from './visibility/shareOfVoiceService';
@@ -879,6 +879,7 @@ Respect these consolidated business memories and historical recommendation outco
     const pastExperienceText = postAuditReflectionService.formatExperienceForPrompt(displayUrl);
     const unsupportedNeedles = unsupportedClaimNeedles(crewEvidence?.unsupportedClaims || []);
     const prompt = `
+${auditSubjectLead(displayUrl, websiteUrl, legalName)}
 ${dnaContext || '[MODE: Instant Audit - no Business DNA. Keep recommendations general. Label the report Mode: Instant Audit.]'}
 ${methodology}
 ${pastExperienceText ? `${pastExperienceText}\n` : ''}${wrapUntrustedContent('SCRAPED_PAGE', scrapedContent)}

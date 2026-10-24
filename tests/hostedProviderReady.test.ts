@@ -337,7 +337,8 @@ describe('ensureHostedProviderReady', () => {
 
     releaseToken('firebase-test-token');
     const report = await pending;
-    expect(report?.text).toBe('brief');
+    expect(report?.text).toContain('brief');
+    expect(report?.text).toContain('Luminara: Web search check for example.com');
     expect(keyDuringReport).toBe('proxy');
     expect(configService.getGroqKey()).toBe('proxy');
   }, 120_000); // cold import of InstantAuditView after resetModules is slow under full-suite load

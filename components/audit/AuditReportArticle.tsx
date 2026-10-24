@@ -7,10 +7,10 @@ import { workspaceHistoryReady } from '../../services/sync/workspaceSyncService'
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
 import { parseMeasuredCheckLine } from '../../services/agentCore/auditEvidenceGate';
 import { customerSourceLine, sourceReadKind } from '../../services/audit/reportColumnGate';
+import { formatAuDate } from '../../utils/formatAuDate';
 import {
-  alignOneMove,
-  alignPlainVerdict,
   checkFixTitle,
+  groundCustomerReport,
   findingFix,
   findingWhy,
   fixProgress,
@@ -130,7 +130,7 @@ function BlockView({
   if (block.kind === 'table') {
     const title = sectionTitle.toLowerCase();
     if (title.includes('visibility radar')) return <VisibilityRadar headers={block.headers} rows={block.rows} evidence={evidence} />;
-    if (title.includes('competitor reality map')) return <CompetitorMap headers={block.headers} rows={block.rows} />;
+    if (title.includes('competitor')) return <CompetitorMap headers={block.headers} rows={block.rows} />;
     return (
       <div className="my-4 overflow-x-auto">
         <table className="w-full border-collapse text-left text-sm text-gray-100">
@@ -169,6 +169,9 @@ export function AuditReportArticle({
   citationRateKnown,
   checkLine,
   citationEvidence,
+  citationLine,
+  auditedAt,
+  mode = 'Instant Audit',
   onShare,
   onFindings,
 }: {
@@ -184,7 +187,11 @@ export function AuditReportArticle({
   /** Checklist sentence already shown on the page-health card. */
   checkLine?: string;
   /** Queries the search evidence actually measured. The radar prints these, not a model guess. */
-  citationEvidence?: ReadonlyArray<{ query: string; brandCited: boolean }>;
+  citationEvidence?: ReadonlyArray<{ query: string; brandCited: boolean; intent?: string; competitorsCited?: string[] }>;
+  /** Sentence already built from mentionCounts. Omitted when citation was not measured. */
+  citationLine?: string | null;
+  auditedAt?: number | Date;
+  mode?: string;
   onShare?: () => void;
   onFindings?: (findings: BoardFinding[]) => void;
 }) {
@@ -198,7 +205,18 @@ export function AuditReportArticle({
       window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
     };
   }, []);
-  const doc = parseAuditReport(alignPlainVerdict(alignOneMove(markdown, findings, domain), findings), { domain, brand: clientName });
+  const shown = domain
+    ? groundCustomerReport(markdown, {
+        domain,
+        brand: clientName,
+        findings,
+        evidence: citationEvidence,
+        citationLine,
+        auditedAt,
+        mode,
+      })
+    : markdown;
+  const doc = parseAuditReport(shown, { domain, brand: clientName });
   const score = reportScore(`${markdown}\n${doc.verdict}`, measured, findings, citationRateKnown, checkLine);
   const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
   const note = unmeasuredNote(findings);
@@ -212,8 +230,14 @@ export function AuditReportArticle({
     : progressSince({ ...diff, checks: parseMeasuredCheckLine(score) });
   const tally = showFixTally(score);
   const validSources = visibleGroundingSources(sources, { domain, brand: clientName }) || [];
-  const verdict = doc.verdict || 'Not measured.';
-  const sections = visibleSections(doc.sections, verdict);
+  const plain = doc.sections.find((section) => /plain verdict/i.test(section.title));
+  const plainBlock = plain?.blocks.find((block) => block.kind === 'paragraph');
+  const verdict = (plainBlock && plainBlock.kind === 'paragraph' ? plainBlock.text : '') || doc.verdict || 'Not measured.';
+  const dated = formatAuDate(auditedAt ?? Date.now());
+  const sections = visibleSections(doc.sections, verdict).flatMap((section) => {
+    const blocks = section.blocks.filter((block) => block.kind !== 'paragraph' || !/^\**\s*Date:/i.test(block.text.trim()));
+    return blocks.length ? [{ ...section, blocks }] : [];
+  });
 
   const mark = (finding: BoardFinding, done: boolean) => {
     const nextFindings = setFindingStatusLocal(domain || finding.domain, findings, finding.id, done ? 'done' : 'open');
@@ -242,6 +266,7 @@ export function AuditReportArticle({
           <p className="text-xs font-semibold tracking-wide text-gold-light">Score</p>
           <h2 className="mt-2 font-serif-editorial text-4xl leading-tight text-white">{score}</h2>
           <p className="mt-3 max-w-[70ch] text-base leading-relaxed text-gray-100">{verdict}</p>
+          {dated ? <p className="mt-4 text-sm text-gray-200">Date: {dated} · Mode: {mode}</p> : null}
           <p className="mt-4 text-sm text-gray-200">{tally ? progress.label : 'The score above is the only pass count for the site checks.'}</p>
           {tally && (
             <div

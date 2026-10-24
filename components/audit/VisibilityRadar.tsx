@@ -81,6 +81,28 @@ export function mentionLabel(tally: MentionTally, unit: 'queries' | 'web results
     return `mentioned in ${tally.mentioned} of ${tally.total} ${unit}`;
 }
 
+/** Header for the rows on screen, including rows that were not measured. */
+export function radarRowCaption(rows: ReadonlyArray<{ status: RadarStatus }>): string | null {
+    if (!rows.length) return null;
+    const cited = rows.filter((row) => row.status === 'cited').length;
+    const notMeasured = rows.filter((row) => row.status === 'not_measured').length;
+    const unit = rows.length === 1 ? 'query' : 'queries';
+    const line = `cited in ${cited} of ${rows.length} ${unit}`;
+    return notMeasured ? `${line}, ${notMeasured} not measured` : line;
+}
+
+/** One citation sentence for the verdict. Web results win. Otherwise the radar rows. */
+export function verdictCitationLine(input: {
+    radarRows: ReadonlyArray<{ status: RadarStatus }>;
+    webResultsMentioned?: number;
+    webResultsTotal?: number;
+}): string | null {
+    const counts = mentionCounts(input);
+    if (counts.webResults) return `The brand is ${mentionLabel(counts.webResults, 'web results')}.`;
+    const caption = radarRowCaption(input.radarRows);
+    return caption ? `The brand is ${caption}.` : null;
+}
+
 /**
  * The preview label and the radar share mentionCounts.
  * Web results label the search rows. Queries label the radar rows.
@@ -168,7 +190,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows,
         const hit = evidence?.find((item) => normQuery(item.query) === normQuery(query));
         return hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol]);
     });
-    const queries = mentionCounts({ radarRows: statuses.map((status) => ({ status })) }).queries;
+    const queries = radarRowCaption(statuses.map((status) => ({ status })));
 
     return (
         <div className="my-8 rounded-2xl border border-gold/25 bg-black/60 overflow-hidden shadow-xl relative animate-in fade-in duration-700">
@@ -180,7 +202,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows,
                     <div>
                         <h3 className="text-base font-semibold tracking-tight text-gold-light">AI and search visibility</h3>
                         <p className="text-[11px] font-mono text-gray-400">As written in the report table. Not a score.</p>
-                        {queries ? <p className="text-[11px] font-mono text-gray-400">{mentionLabel(queries, 'queries')}</p> : null}
+                        {queries ? <p className="text-[11px] font-mono text-gray-400">{queries}</p> : null}
                     </div>
                 </div>
             </div>

@@ -634,6 +634,7 @@ export function customerSentenceOk(sentence: string): boolean {
   if (/\b([A-Za-z]+)\s+\1\b/i.test(text)) return false;
   if (/[.!?]\s+[a-z]/.test(text)) return false;
   if (JARGON_TERM.test(text)) return false;
+  if (/\badding basic business identity tag\b/i.test(text)) return false;
   const acronyms = text.matchAll(/\b[A-Z]{2,}\b/g);
   for (const found of acronyms) {
     const word = found[0];
