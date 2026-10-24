@@ -2,12 +2,16 @@
  * Durable user profiles, Telegram↔Firebase account linking, and workspace blobs.
  * Prefers Cloudflare D1 when bound; falls back to KV so local tests still work.
  */
+import type { KVNamespace } from '@cloudflare/workers-types';
 import { PlanDowngradeRefusedError, wouldDowngrade } from './planRank';
 import type { HostedIdentity, EncryptedKeyBag } from './userTypes';
 import { scheduleWelcomeEmail, type WelcomeEnv } from './welcomeEmail';
+import type { DataPlaneEnv } from './dataPlaneDocs';
+import { readPlane, type DataPlaneDeps } from './dataPlane';
+import { openAuditHistoryStore } from './auditHistoryRepo';
+import { openUserLoginStore } from './userLoginRepo';
 
-export type UserStoreEnv = {
-  DB?: D1Database;
+export type UserStoreEnv = DataPlaneEnv & {
   LUMINARA_KV?: KVNamespace;
   /**
    * Budget enforcement kill-switch: `off` | `soft` | `hard`.
@@ -70,26 +74,15 @@ async function writeKvUser(env: UserStoreEnv, row: StoredUser): Promise<void> {
 
 export type UpsertedUser = StoredUser & { created: boolean; welcomePending: boolean };
 
-export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Promise<UpsertedUser> {
+export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity, deps?: DataPlaneDeps): Promise<UpsertedUser> {
   const now = Date.now();
   const telegramId = user.source === 'telegram' ? user.id : undefined;
   const firebaseUid = user.source === 'firebase' ? firebaseUidFromId(user.id) : undefined;
+  const plane = readPlane(env, deps?.log);
 
-  if (env.DB) {
-    const existing = await env.DB.prepare(
-      `SELECT id, account_id, created_at, last_seen_at, email, display_name, welcome_sent_at, email_opt_out_at FROM users WHERE id = ?`,
-    )
-      .bind(user.id)
-      .first<{
-        id: string;
-        account_id: string | null;
-        created_at: number;
-        last_seen_at: number;
-        email: string | null;
-        display_name: string | null;
-        welcome_sent_at: number | null;
-        email_opt_out_at: number | null;
-      }>();
+  if (plane === 'firestore' || env.DB) {
+    const users = openUserLoginStore(env, deps, plane);
+    const existing = await users.find(user.id);
     const accountId = existing?.account_id || user.accountId || user.id;
     const createdAt = existing?.created_at ?? now;
     if (
@@ -113,27 +106,17 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Pr
       };
     }
 
-    await env.DB.prepare(
-      `INSERT INTO users (id, source, email, display_name, telegram_id, firebase_uid, created_at, last_seen_at, account_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         email = excluded.email,
-         display_name = excluded.display_name,
-         last_seen_at = excluded.last_seen_at,
-         account_id = COALESCE(users.account_id, excluded.account_id)`,
-    )
-      .bind(
-        user.id,
-        user.source,
-        user.email ?? null,
-        user.name ?? null,
-        telegramId ?? null,
-        firebaseUid ?? null,
-        createdAt,
-        now,
-        accountId,
-      )
-      .run();
+    await users.save({
+      id: user.id,
+      source: user.source,
+      email: user.email ?? null,
+      displayName: user.name ?? null,
+      telegramId: telegramId ?? null,
+      firebaseUid: firebaseUid ?? null,
+      createdAt,
+      lastSeenAt: now,
+      accountId,
+    });
 
     return {
       id: user.id,
@@ -386,6 +369,7 @@ export async function linkTelegramAndFirebase(
   telegramId: string,
   firebaseUid: string,
   meta?: { email?: string; name?: string; tgName?: string },
+  deps?: DataPlaneDeps,
 ): Promise<{ accountId: string; telegramUserId: string; firebaseUserId: string }> {
   const firebaseUserId = `fb:${firebaseUid}`;
   const existingTg = await readStoredUser(env, telegramId);
@@ -410,8 +394,8 @@ export async function linkTelegramAndFirebase(
     name: meta?.name,
   };
 
-  const tgRow = await upsertAppUser(env, tgIdentity);
-  const fbRow = await upsertAppUser(env, fbIdentity);
+  const tgRow = await upsertAppUser(env, tgIdentity, deps);
+  const fbRow = await upsertAppUser(env, fbIdentity, deps);
 
   let accountId = tgRow.account_id;
   if (fbPaid && !tgPaid) accountId = fbRow.account_id;
@@ -419,15 +403,17 @@ export async function linkTelegramAndFirebase(
   else if (fbRow.created_at < tgRow.created_at) accountId = fbRow.account_id;
   else accountId = tgRow.account_id;
 
+  const plane = readPlane(env, deps?.log);
   if (env.DB) {
-    await env.DB.batch([
-      env.DB.prepare(
-        `UPDATE users SET account_id = ?, telegram_id = ?, last_seen_at = ? WHERE id = ?`,
-      ).bind(accountId, telegramId, Date.now(), telegramId),
-      env.DB.prepare(
-        `UPDATE users SET account_id = ?, firebase_uid = ?, email = COALESCE(?, email), display_name = COALESCE(?, display_name), last_seen_at = ? WHERE id = ?`,
-      ).bind(accountId, firebaseUid, meta?.email ?? null, meta?.name ?? null, Date.now(), `fb:${firebaseUid}`),
-    ]);
+    await openUserLoginStore(env, deps, plane).linkPair({
+      accountId,
+      lastSeenAt: Date.now(),
+      telegramId,
+      firebaseUserId,
+      firebaseUid,
+      email: meta?.email ?? null,
+      displayName: meta?.name ?? null,
+    });
   } else {
     const now = Date.now();
     await writeKvUser(env, {
@@ -449,6 +435,7 @@ export async function linkTelegramAndFirebase(
   // Stars charge rows follow the account that survives the link. Its own statement, so a
   // database without the table yet cannot fail the link.
   if (env.DB) {
+    const audits = openAuditHistoryStore(env, deps, plane);
     const losing = [tgRow.account_id, fbRow.account_id].filter((id) => id && id !== accountId);
     for (const from of losing) {
       try {
@@ -481,10 +468,7 @@ export async function linkTelegramAndFirebase(
       }
       // Audit history. An id the surviving account already has is the same saved audit, so the copy goes.
       try {
-        await env.DB.batch([
-          env.DB.prepare(`UPDATE OR IGNORE audit_history SET account_id = ? WHERE account_id = ?`).bind(accountId, from),
-          env.DB.prepare(`DELETE FROM audit_history WHERE account_id = ?`).bind(from),
-        ]);
+        await audits.move(from, accountId);
       } catch (err) {
         console.error('[UserStore] Audit history rows were not moved to the linked account', err);
       }

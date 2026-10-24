@@ -2,19 +2,17 @@
  * Cloudflare Worker environment bindings for Luminara Suite.
  */
 import type {
-  D1Database,
   DurableObjectNamespace,
   Fetcher,
   KVNamespace,
   Queue,
   R2Bucket,
 } from '@cloudflare/workers-types';
+import type { DataPlaneEnv } from './dataPlaneDocs';
 
-export interface Env {
+export interface Env extends DataPlaneEnv {
   ASSETS: Fetcher;
   LUMINARA_KV?: KVNamespace;
-  /** Optional D1 users DB. When unset, profiles fall back to KV `user:{id}`. */
-  DB?: D1Database;
   /**
    * Optional R2 bucket for Windows installer mirrors (`windows/latest.exe`, `windows/manifest.json`).
    * When unset or empty, `/desktop/windows` redirects to GitHub Releases.
@@ -34,6 +32,18 @@ export interface Env {
    */
   ADMIN_SECRET?: string;
   AUTH_WEBHOOK_SECRET?: string;
+  /**
+   * "true" makes POST /webhooks/auth require HMAC request signing
+   * (x-luminara-key-id, timestamp, nonce, signature). Unset and any other value
+   * keep the existing x-auth-signature check. Default "false" in wrangler vars.
+   */
+  REQUEST_SIGNING_REQUIRED?: string;
+  /**
+   * Secret. JSON object of key id to HMAC secret for request signing.
+   * Set with `wrangler secret put REQUEST_SIGNING_KEYS` only. Not a wrangler var.
+   * Add a new key id to rotate. Remove the old id after the replay window.
+   */
+  REQUEST_SIGNING_KEYS?: string;
   TELEGRAM_ADMIN_ID?: string;
   WEBAPP_URL: string;
   /** "production" | "staging" | unset (local dev). */
@@ -58,6 +68,13 @@ export interface Env {
    * client has VITE_FIREBASE_APPCHECK_SITE_KEY and console registration is live.
    */
   REQUIRE_APP_CHECK?: string;
+  /**
+   * API-wide App Check gate: "off" | "log" | "enforce". Unset is off.
+   * log records a bad or missing token and still serves the request.
+   * enforce returns 401. Health, robots.txt, llms.txt, and webhook routes are exempt.
+   * Production stays "off" until a log soak is clean.
+   */
+  APPCHECK_ENFORCE?: string;
   /**
    * Firebase web API key (same public value as VITE_FIREBASE_API_KEY).
    * Used by the Worker to call Identity Toolkit for password-reset OOB codes
@@ -209,17 +226,20 @@ export interface Env {
   /** Daily Signed Audit Receipt cap per account. Unset uses 10. Integer 1 to 1000. The day starts at 00:00 UTC (11:00 in Sydney during AEDT). */
   AUDIT_RECEIPT_DAILY_QUOTA?: string;
   /**
-   * "true" allows minting and revoking Signed Audit Receipts. Unset and any other value refuse those writes.
-   * Public verify (GET keys, GET by id, POST verify) stays available. Default "false" in wrangler vars.
+   * "true" allows minting Signed Audit Receipts. Unset and any other value refuse minting.
+   * Owner revoke and operator revoke stay available. Public verify stays available.
+   * Default "false" in wrangler vars.
    */
   AUDIT_RECEIPTS_ENABLED?: string;
   /**
    * Secret. HMAC-SHA256 key for the account hash on a Signed Audit Receipt.
    * Set with `wrangler secret put AUDIT_RECEIPT_ACCOUNT_HMAC_KEY` only. Not a wrangler var.
-   * Minting returns 503 and signs nothing when this is unset. Separate from RECEIPT_SIGNING_KEY.
+   * At least 32 bytes, and it must not equal RECEIPT_SIGNING_KEY. Minting returns 503
+   * and signs nothing when it is missing, too short, or the same as the signing key.
+   * Rotating it changes account hashes on receipts signed after the rotation.
    */
   AUDIT_RECEIPT_ACCOUNT_HMAC_KEY?: string;
-  /** Days since last_checked_at that a verified domain may still be signed. Unset uses 7. Integer 1 to 365. */
+  /** Days since last_proved_at that a verified domain with no failures may still be signed. Unset uses 10. Integer 1 to 365. */
   AUDIT_RECEIPT_DOMAIN_FRESH_DAYS?: string;
   /** DNS-over-HTTPS JSON endpoint for domain verification. Default https://cloudflare-dns.com/dns-query. */
   DOMAIN_VERIFY_DOH_URL?: string;
@@ -265,8 +285,10 @@ export interface Env {
   DAILY_QUOTA?: DurableObjectNamespace;
   /** Queue producer for long-running audits. */
   AUDIT_JOBS?: Queue;
-  /** Optional Sentry DSN (Worker exceptions). */
+  /** Optional Sentry DSN (wrangler secret). Unset disables the Worker SDK. */
   SENTRY_DSN?: string;
+  /** Optional Sentry release tag. Defaults to luminara-suite. */
+  SENTRY_RELEASE?: string;
   /**
    * Optional Cloudflare Vectorize index for account memory RAG.
    * Provision index then bind in wrangler; code falls back to D1 keyword search.

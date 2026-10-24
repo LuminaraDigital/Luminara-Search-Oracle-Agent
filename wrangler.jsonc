@@ -37,6 +37,12 @@
   ],
 
   // D1: users, Telegram↔Firebase account linking, and per-account workspace blobs.
+  // This top-level binding is production D1. Non-production Workers Builds on this
+  // Worker run `npx wrangler versions upload`, which uses this block and ignores
+  // env.staging. preview_database_id only affects `wrangler dev`. Do not point this
+  // block at luminara-users-staging: a deploy without --env production would then
+  // serve luminarasuite.com from the staging database. The operator switch is in
+  // docs/runbooks/d1-backup-dr.md under "What these checks do not cover".
   "d1_databases": [
     {
       "binding": "DB",
@@ -109,6 +115,8 @@
     "FIREBASE_PROJECT_NUMBER": "274315225068",
     // Keep false until VITE_FIREBASE_APPCHECK_SITE_KEY is set and console registration is live.
     "REQUIRE_APP_CHECK": "false",
+    // API-wide App Check: off | log | enforce. Production stays off until a log soak is clean.
+    "APPCHECK_ENFORCE": "off",
     // Public Firebase web API key (same as VITE_FIREBASE_API_KEY). Enables Worker-mediated password reset.
     "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
     // Soft killswitch for outbound Auth emails (password reset). Raise only with monitoring.
@@ -124,7 +132,8 @@
     // Citation Watch. The daily cron writes runs only when this is "true".
     "CITATION_WATCH_LIVE": "false",
     "DOMAIN_VERIFY_ENABLED": "false",
-    // Signed Audit Receipt mint and revoke. Public verify stays on. HMAC key is a secret, not a var.
+    // Signed Audit Receipt minting. Owner and operator revoke stay available. Public verify stays on.
+    // HMAC key is a secret (wrangler secret put AUDIT_RECEIPT_ACCOUNT_HMAC_KEY), not a var.
     "AUDIT_RECEIPTS_ENABLED": "false",
     "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
     // The address the owner has confirmed, in their own wallet app, to be theirs. It must equal the address above.
@@ -147,6 +156,12 @@
     "ORACLE_SERVER_ENABLED": "true",
     // Paid Oracle tools require invokeTool+confirmTool unless explicitly enabled.
     "ORACLE_AUTO_TOOLS": "false",
+    "LAUNCHPAD_ENABLED": "false",
+    "LAUNCHPAD_MAINNET_ENABLED": "false",
+    "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
+    "Q402_LIVE": "false",
+    "OTP_SMS_ENABLED": "false",
+    "REQUEST_SIGNING_REQUIRED": "false",
     "AUDIT_QUEUE_ENABLED": "true",
     // Budget hard stops: off | soft | hard. Production defaults to hard; staging stays soft for dogfood.
     // Card checkout stays closed until test keys are set and this is flipped to "true".
@@ -247,6 +262,8 @@
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",
         "FIREBASE_PROJECT_NUMBER": "449283385852",
         "REQUIRE_APP_CHECK": "false",
+        // log: bad or missing App Check tokens are recorded and requests still succeed.
+        "APPCHECK_ENFORCE": "log",
         "FIREBASE_WEB_API_KEY": "AIzaSyAyoAAOQWuoZRPR9Oc9FHXmQIf_0tIltEA",
         "OUTBOUND_EMAIL_DAILY_LIMIT": "100",
         "CHAIN_NETWORK": "testnet",
@@ -282,6 +299,12 @@
         "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
+        "LAUNCHPAD_ENABLED": "false",
+        "LAUNCHPAD_MAINNET_ENABLED": "false",
+        "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
+        "Q402_LIVE": "false",
+        "OTP_SMS_ENABLED": "false",
+        "REQUEST_SIGNING_REQUIRED": "false",
         "AUDIT_QUEUE_ENABLED": "true",
         // Test keys and the staging webhook are set. Production stays "false".
         "STRIPE_CHECKOUT_LIVE": "true",
@@ -355,6 +378,8 @@
         "FIREBASE_PROJECT_NUMBER": "274315225068",
         // Keep false until the prod build step passes VITE_FIREBASE_APPCHECK_SITE_KEY (validate-env enforces this).
         "REQUIRE_APP_CHECK": "false",
+        // Stay off. Flip to log only after the client sends tokens, then enforce after that soak.
+        "APPCHECK_ENFORCE": "off",
         "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
         "OUTBOUND_EMAIL_DAILY_LIMIT": "200",
         "CHAIN_NETWORK": "mainnet",
@@ -388,6 +413,12 @@
         "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
+        "LAUNCHPAD_ENABLED": "false",
+        "LAUNCHPAD_MAINNET_ENABLED": "false",
+        "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
+        "Q402_LIVE": "false",
+        "OTP_SMS_ENABLED": "false",
+        "REQUEST_SIGNING_REQUIRED": "false",
         "AUDIT_QUEUE_ENABLED": "true",
         // Live card checkout. Opens only with the sk_live_ key and live webhook secret set as Worker secrets.
         "STRIPE_CHECKOUT_LIVE": "true",

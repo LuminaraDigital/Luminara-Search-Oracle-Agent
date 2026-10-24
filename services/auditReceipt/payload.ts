@@ -16,8 +16,14 @@ export const AUDIT_RECEIPT_SIGNING_PREFIX = 'luminara:audit-receipt:v1\n';
 export const AUDIT_RECEIPT_SOURCE = 'caller_submitted';
 /** Paid accounts. Override with AUDIT_RECEIPT_DAILY_QUOTA (integer 1 to 1000). The day is UTC. */
 export const DEFAULT_AUDIT_RECEIPT_DAILY_QUOTA = 10;
-/** A verified domain must have been re-checked within this many days. Override with AUDIT_RECEIPT_DOMAIN_FRESH_DAYS. */
-export const DEFAULT_AUDIT_RECEIPT_DOMAIN_FRESH_DAYS = 7;
+/**
+ * A verified domain may be signed while last_proved_at is inside this many days
+ * and consecutive_failures is 0. The re-check interval stays 7 days (daily cron,
+ * 25 domains per run), so 7 days of freshness leaves a proved domain stale for
+ * up to about a day before the next run. 10 days covers that gap.
+ * Override with AUDIT_RECEIPT_DOMAIN_FRESH_DAYS.
+ */
+export const DEFAULT_AUDIT_RECEIPT_DOMAIN_FRESH_DAYS = 10;
 const ACCOUNT_HASH_LABEL = 'luminara:audit-receipt-account:';
 
 export type AuditFieldStatus = 'measured' | 'not_measured';

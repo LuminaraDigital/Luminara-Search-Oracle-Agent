@@ -40,6 +40,8 @@ export type { OpaqueSessionRecord } from './opaqueSession';
  */
 export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'GET', pattern: /^\/health$/ },
+  { method: 'GET', pattern: /^\/gcp-oidc\/\.well-known\/openid-configuration$/ },
+  { method: 'GET', pattern: /^\/gcp-oidc\/jwks$/ },
   { method: 'GET', pattern: /^\/desktop\/latest$/ },
   { method: 'HEAD', pattern: /^\/desktop\/latest$/ },
   { method: 'POST', pattern: /^\/telegram\/webhook$/ },

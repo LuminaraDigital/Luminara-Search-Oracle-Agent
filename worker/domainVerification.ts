@@ -13,7 +13,10 @@
  *
  * HTTP proof must come from the domain itself: redirects are followed through
  * the SSRF guard, but the final host must be the domain or its www twin.
- * A resolver or network failure is `unreachable`, never counted as a failed check.
+ * A resolver or network failure is `unreachable`. Neither a manual check nor
+ * the daily re-check counts it. Only `not_found` increments the failure count.
+ * A manual `not_found` does not move `last_checked_at`, so the row stays due.
+ * `last_proved_at` is written only when the proof is found.
  *
  * Routes (404 unless DOMAIN_VERIFY_ENABLED):
  *   GET    /trust/domains
@@ -250,6 +253,7 @@ type DomainRow = {
   token_expires_at: string;
   verified_at: string | null;
   last_checked_at: string | null;
+  last_proved_at: string | null;
   consecutive_failures: number;
   created_at: string;
   updated_at: string;
@@ -423,16 +427,13 @@ export async function handleDomainVerificationRoute(
   const now = new Date().toISOString();
 
   if (result.status === 'unreachable') {
-    await env.DB.prepare(`UPDATE domain_verifications SET last_checked_at = ?, updated_at = ? WHERE account_id = ? AND domain = ?`)
-      .bind(now, now, accountId, domain)
-      .run();
+    // A network miss is not a failed proof. Leave the failure count and both timestamps alone.
     return json({ ok: false, status: 'unreachable', error: result.error, measurementStatus: 'not_measured' }, 200);
   }
 
   if (result.status === 'not_found') {
-    await env.DB.prepare(`UPDATE domain_verifications SET last_checked_at = ?, updated_at = ? WHERE account_id = ? AND domain = ?`)
-      .bind(now, now, accountId, domain)
-      .run();
+    // Leave last_checked_at and last_proved_at alone so a miss cannot look fresh or skip the daily re-check.
+    await recordManualProofMiss(env, env.DB, row, now, who.user.id);
     return json({
       ok: false,
       status: 'not_found',
@@ -453,10 +454,10 @@ export async function handleDomainVerificationRoute(
   await env.DB.prepare(
     `UPDATE domain_verifications
        SET status = 'verified', method = ?, receipt_id = ?, verified_at = COALESCE(verified_at, ?),
-           last_checked_at = ?, consecutive_failures = 0, updated_at = ?
+           last_checked_at = ?, last_proved_at = ?, consecutive_failures = 0, updated_at = ?
      WHERE account_id = ? AND domain = ?`,
   )
-    .bind(result.method, receiptId, now, now, now, accountId, domain)
+    .bind(result.method, receiptId, now, now, now, now, accountId, domain)
     .run();
   if (row.status !== 'verified') {
     await recordAuditLogBestEffort(env, {
@@ -479,9 +480,39 @@ export async function handleDomainVerificationRoute(
 }
 
 /**
+ * A manual not_found counts toward lapse. It does not write last_checked_at, so
+ * the daily re-check still selects the row, and it does not write last_proved_at.
+ */
+async function recordManualProofMiss(env: Env, db: NonNullable<Env['DB']>, row: DomainRow, now: string, actorId: string): Promise<void> {
+  const failures = Number(row.consecutive_failures || 0) + 1;
+  if (row.status === 'verified' && failures >= DOMAIN_LAPSE_AFTER_FAILURES) {
+    await db.prepare(
+      `UPDATE domain_verifications SET status = 'lapsed', consecutive_failures = ?, updated_at = ? WHERE account_id = ? AND domain = ?`,
+    )
+      .bind(failures, now, row.account_id, row.domain)
+      .run();
+    if (row.receipt_id) await revokeTrustReceipt(env, row.account_id, row.receipt_id, 'domain proof no longer found');
+    await recordAuditLogBestEffort(env, {
+      org_id: auditOrgIdFor(row.account_id),
+      actor_id: actorId,
+      action: 'domain_verification_lapsed',
+      target_id: row.domain,
+    });
+    return;
+  }
+  await db.prepare(
+    `UPDATE domain_verifications SET consecutive_failures = ?, updated_at = ? WHERE account_id = ? AND domain = ?`,
+  )
+    .bind(failures, now, row.account_id, row.domain)
+    .run();
+}
+
+/**
  * Daily cron: re-check verified domains not checked for DOMAIN_RECHECK_INTERVAL_DAYS.
- * Two consecutive `not_found` results lapse the verification and revoke its
- * receipt. `unreachable` never counts against the owner.
+ * Selection uses last_checked_at. A failed manual check leaves that column alone,
+ * so those rows stay in this query. Two consecutive `not_found` results lapse the
+ * verification and revoke its receipt. `unreachable` on this path never counts
+ * against the owner. last_proved_at moves only when the proof is found.
  */
 export async function recheckVerifiedDomains(env: Env, deps: DomainCheckDeps = {}): Promise<{ checked: number; lapsed: number }> {
   if (!env.DB || !isDomainVerifyEnabled(env)) return { checked: 0, lapsed: 0 };
@@ -504,9 +535,9 @@ export async function recheckVerifiedDomains(env: Env, deps: DomainCheckDeps = {
       const result = await checkDomainProof(row.domain, row.token_hash, effectiveDeps);
       if (result.status === 'found') {
         await env.DB.prepare(
-          `UPDATE domain_verifications SET last_checked_at = ?, consecutive_failures = 0, updated_at = ? WHERE account_id = ? AND domain = ?`,
+          `UPDATE domain_verifications SET last_checked_at = ?, last_proved_at = ?, consecutive_failures = 0, updated_at = ? WHERE account_id = ? AND domain = ?`,
         )
-          .bind(now, now, row.account_id, row.domain)
+          .bind(now, now, now, row.account_id, row.domain)
           .run();
         continue;
       }

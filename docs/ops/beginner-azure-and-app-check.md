@@ -93,6 +93,10 @@ Code already supports this (off by default):
 3. Flip to `"REQUIRE_APP_CHECK": "true"` in `wrangler.jsonc` production vars (or set via dashboard), then `npm run deploy`.
 4. Sign-up / sign-in via `/api/auth/*` will then require a valid App Check JWT.
 
+`APPCHECK_ENFORCE` is a separate API-wide gate (`off`, `log`, `enforce`). Unset means `off`. `log` writes one JSON line (`event`, `mode`, `reason`, `method`, `path`) and still serves the request. `enforce` returns 401 `APP_CHECK_REQUIRED` (missing) or `APP_CHECK_INVALID` (bad, expired, or wrong audience). `/api/health`, `/robots.txt`, `/llms.txt`, and any path containing `/webhook` skip the gate. Staging wrangler config is `log`. Production wrangler config stays `off`.
+
+Rollout: ship the client with `VITE_FIREBASE_APPCHECK_SITE_KEY`, watch staging logs until `reason` is no longer `missing` for browser traffic, then set staging to `enforce`. Repeat `log` on production before `enforce`. `REQUIRE_APP_CHECK` still only covers sign-up and sign-in.
+
 ### A8. Smoke test checklist
 
 - [ ] Production sign-in works in a normal browser
@@ -191,3 +195,13 @@ Without `PAGESPEED_API_KEY`, hosted PSI needs BYOK in Settings.
 3. Put `MCP_OAUTH_SECRET` + optional `PAGESPEED_API_KEY`.
 4. After metrics look healthy, set `REQUIRE_APP_CHECK=true` and redeploy Worker.
 5. Only then start Azure Key Vault (B3) if you want an ops vault.
+
+## Sentry (optional)
+
+The Worker SDK and the browser SDK do nothing when the DSN is unset.
+
+1. Create a Sentry project for the Worker and one for the browser, or use one project for both.
+2. `npx wrangler secret put SENTRY_DSN --env staging` and the same for production when you want events. Do not put the DSN in `wrangler.jsonc`.
+3. Set `VITE_SENTRY_DSN` on the client build (GitHub environment variable). It is a public DSN. Still do not commit it.
+4. Optional: `SENTRY_RELEASE` and `VITE_SENTRY_RELEASE` (for example `luminara-suite@1.0.2`).
+5. Traces sample at 0.05. `beforeSend` redacts `Authorization`, `X-Firebase-AppCheck`, cookies, email, username, and IP.
