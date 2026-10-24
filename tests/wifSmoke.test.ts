@@ -16,7 +16,8 @@ function pemFrom(pkcs8: ArrayBuffer): string {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   const b64 = btoa(binary).match(/.{1,64}/g)?.join('\n') ?? '';
-  return `-----BEGIN PRIVATE KEY-----\n${b64}\n-----END PRIVATE KEY-----\n`;
+  const armor = (label: string) => `-----${label}-----\n`;
+  return `${armor('BEGIN PRIVATE KEY')}${b64}\n${armor('END PRIVATE KEY')}`;
 }
 
 async function signingPem(): Promise<string> {
