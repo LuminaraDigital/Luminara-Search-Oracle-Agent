@@ -58,10 +58,8 @@ const VALUE_PROPS = [
 /** Illustrative report rows. Not a customer and not a measurement. Labeled on the page. */
 const EXAMPLE_REPORT_ROWS: ReadonlyArray<{ label: string; state: EvidenceState; note: string }> = [
   { label: 'Crawl access', state: 'Measured', note: 'Example: robots.txt and llms.txt found.' },
-  { label: 'Google Search', state: 'Not measured', note: 'Example: not measured in this illustration.' },
-  { label: 'AI Overviews', state: 'Not measured', note: 'Example: not measured in this illustration.' },
-  { label: 'ChatGPT', state: 'Not measured', note: 'Example: not measured in this illustration.' },
-  { label: 'Perplexity', state: 'Not measured', note: 'Example: not measured in this illustration.' },
+  { label: 'Web search', state: 'Not measured', note: 'Example: not measured in this illustration.' },
+  { label: 'AI answers', state: 'Not measured', note: 'Example: not measured in this illustration.' },
 ];
 
 const LandingPage: React.FC<LandingPageProps> = ({

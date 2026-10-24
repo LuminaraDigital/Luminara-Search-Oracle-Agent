@@ -162,6 +162,7 @@ describe('audited entity matching', () => {
     expect(isExcludedCompetitorHost('luminara.institute', 'luminara.digital')).toBe(true);
     expect(isExcludedCompetitorHost('bonappetit.com', 'luminara.digital')).toBe(false);
 
+    const messages: string[] = [];
     const found = await competitorStrategistAgent.execute(
       'https://luminara.digital',
       null,
@@ -170,9 +171,13 @@ describe('audited entity matching', () => {
         row({ title: 'Agency rival', url: 'https://rival-agency.com/seo', snippet: 'Real estate marketing' }),
         row({ title: 'Institute', url: 'https://luminara.institute/', snippet: 'Institute of Light' }),
       ],
-      () => {},
+      (event) => { messages.push(event.message); },
     );
     expect(found.topCompetitors).toEqual(['rival-agency.com']);
+    expect(messages.join(' ')).toContain('1 key competitor');
+    expect(messages.join(' ')).toContain('2 keyword gaps');
+    expect(messages.join(' ')).not.toContain('competitor(s)');
+    expect(messages.join(' ')).not.toContain('SERP');
   });
 
   it('does not count a candle or institute answer as an engine citation', async () => {

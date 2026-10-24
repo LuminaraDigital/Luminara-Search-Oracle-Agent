@@ -147,6 +147,9 @@ describe('checkout login copy', () => {
     const markup = await html({ initialMode: 'signin' });
     expect(markup).toContain('Welcome back');
     expect(markup).not.toContain(CARD_CHECKOUT_ACCOUNT_LINE);
+    expect(markup).toContain('Live answers from specific AI products stay Not measured');
+    expect(markup).not.toMatch(/ChatGPT|Perplexity|DataForSEO/);
+    expect(markup).not.toMatch(/ \./);
   });
 });
 

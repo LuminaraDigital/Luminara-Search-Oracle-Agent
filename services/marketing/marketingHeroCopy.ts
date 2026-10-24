@@ -20,7 +20,7 @@ export const HOME_HERO: MarketingHeroCopy = {
   eyebrow: 'AI visibility, measured',
   titleLead: 'Be the answer',
   titleEm: 'AI gives.',
-  lede: `Buyers and sellers now ask ChatGPT, Perplexity and Google which agent to call. Luminara Suite checks whether those answers name your agency, then gives you the one fix to ship next. ${REAL_ESTATE_AUDIENCE} ${LIVE_ANSWER_CHECKS}`,
+  lede: `Buyers and sellers now ask AI which agent to call. Luminara Suite checks whether those answers name your agency, then gives you the one fix to ship next. ${REAL_ESTATE_AUDIENCE} ${LIVE_ANSWER_CHECKS}`,
 };
 
 export const PRICING_HERO: MarketingHeroCopy = {

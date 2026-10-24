@@ -32,7 +32,7 @@ export function planChoiceLine(title: string, tier: { stars: string; ton: string
 const DAY_PASS = {
   title: '24-hour pass',
   price: '25 Stars',
-  body: 'Premium hosted AI engines and hosted calls past the free daily cap, for one site, for 24 hours. ChatGPT, Perplexity and AI Overviews stay Not measured unless you are on Agency or use your own DataForSEO login.',
+  body: 'Premium hosted AI engines and hosted calls past the free daily cap, for one site, for 24 hours. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login.',
 } as const;
 
 function PlanFeature({ line }: { line: PlanBullet }) {

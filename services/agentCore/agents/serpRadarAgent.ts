@@ -18,9 +18,10 @@ import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { readableStem } from '../../audit/brandName';
 import { classifyMention } from '../../audit/entityMatch';
 import { BusinessDNA } from '../../../types';
+import { countPhrase } from '../../audit/reportSentence';
 
 export class SerpRadarAgent {
-  public readonly name = 'SERP Radar';
+  public readonly name = 'Search results';
   public readonly role = 'serp_radar';
 
   public async execute(
@@ -158,11 +159,11 @@ export class SerpRadarAgent {
       message:
         citationRatePercent == null
           ? sawSample
-            ? 'Analyzed 0 SERP results. Citation rate and share of voice were not measured. Search evidence was a sample.'
+            ? 'Analyzed 0 search results. Citation rate and share of voice were not measured. Search evidence was a sample.'
             : searchSkipReason
-              ? `Analyzed 0 SERP results. Citation rate and share of voice were not measured. ${searchSkipReason}`
-              : 'Analyzed 0 SERP results. Citation rate and share of voice were not measured.'
-          : `Analyzed ${totalItems} SERP results. Brand mentioned in ${mentionedItems} of ${totalItems}.`,
+              ? `Analyzed 0 search results. Citation rate and share of voice were not measured. ${searchSkipReason}`
+              : 'Analyzed 0 search results. Citation rate and share of voice were not measured.'
+          : `Analyzed ${countPhrase(totalItems, 'search result')}. Brand mentioned in ${mentionedItems} of ${totalItems}.`,
       status: 'completed',
       evidenceSnippet:
         citationRatePercent == null

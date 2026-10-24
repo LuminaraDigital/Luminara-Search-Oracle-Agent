@@ -90,7 +90,7 @@ export type WelcomeCopy = {
 function paragraphs(copy: WelcomeCopy): [string, string, string] {
   const hello = copy.greetingName ? `Hello ${copy.greetingName},` : 'Hello,';
   return [
-    `${hello} your Luminara Suite account is ready. When a buyer asks ChatGPT, Perplexity or Google which agent to call, you can check whether the answer names you.`,
+    `${hello} your Luminara Suite account is ready. When a buyer asks an AI which agent to call, you can check whether the answer names you.`,
     `${copy.checksLine} Anything we did not measure is marked not measured.`,
     'Run your first audit with the address of your site. You will see the one fix to ship next.',
   ];

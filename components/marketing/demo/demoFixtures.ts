@@ -39,31 +39,31 @@ export const SAMPLE_FIXTURE: DemoFixture = {
   focus: 'AEO',
   verdict:
     'Sample scout only: this is the shape of a report, not Live evidence for the domain you typed.',
-  shipAction: 'Create a free account and run Instant Audit for a site and web-search check. Live answer-engine rows stay Not measured unless you are on Agency or bring your own DataForSEO login.',
+  shipAction: 'Create a free account and run Instant Audit for a site and web-search check. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login.',
   engines: [
     {
       id: 'web_serp',
-      label: 'Google + SERP',
+      label: 'Search results',
       status: 'not_measured',
       note: 'Sample · Not measured. A signed-in audit can check live web search.',
     },
     {
       id: 'google_aio',
-      label: 'AI Overviews',
+      label: 'AI answers',
       status: 'not_measured',
-      note: 'Sample · Not measured. Agency or your own DataForSEO login measures this.',
+      note: 'Sample · Not measured. Agency measures this.',
     },
     {
       id: 'chatgpt',
-      label: 'ChatGPT',
+      label: 'AI answers',
       status: 'not_measured',
-      note: 'Sample · Not measured. Agency or your own DataForSEO login measures this.',
+      note: 'Sample · Not measured. Agency measures this.',
     },
     {
       id: 'perplexity',
-      label: 'Perplexity',
+      label: 'AI answers',
       status: 'not_measured',
-      note: 'Sample · Not measured. Agency or your own DataForSEO login measures this.',
+      note: 'Sample · Not measured. Agency measures this.',
     },
   ],
 };
@@ -102,10 +102,10 @@ export function idleEngines(): DemoEngineRow[] {
       status: 'idle',
       note: 'Not measured until run',
     },
-    { id: 'web_serp', label: 'Google + SERP', status: 'idle', note: 'Not measured until run' },
-    { id: 'google_aio', label: 'AI Overviews', status: 'idle', note: 'Not measured on Free, Starter and Growth. Agency or your DataForSEO login measures this.' },
-    { id: 'chatgpt', label: 'ChatGPT', status: 'idle', note: 'Not measured on Free, Starter and Growth. Agency or your DataForSEO login measures this.' },
-    { id: 'perplexity', label: 'Perplexity', status: 'idle', note: 'Not measured on Free, Starter and Growth. Agency or your DataForSEO login measures this.' },
+    { id: 'web_serp', label: 'Search results', status: 'idle', note: 'Not measured until run' },
+    { id: 'google_aio', label: 'AI answers', status: 'idle', note: 'Not measured on Free, Starter and Growth. Agency measures this.' },
+    { id: 'chatgpt', label: 'AI answers', status: 'idle', note: 'Not measured on Free, Starter and Growth. Agency measures this.' },
+    { id: 'perplexity', label: 'AI answers', status: 'idle', note: 'Not measured on Free, Starter and Growth. Agency measures this.' },
   ];
 }
 

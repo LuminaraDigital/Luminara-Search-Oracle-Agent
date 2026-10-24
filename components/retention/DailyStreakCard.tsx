@@ -93,7 +93,7 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({ domain, onRech
             Day {streakDays} of 7-Day Verification Loop
           </h3>
           <p className="text-xs text-gray-400 mt-1 max-w-lg leading-relaxed">
-            AI crawlers (GPTBot, PerplexityBot) typically update their retrieval indices over 3 to 14 days. Re-verify daily to catch your new citations as they appear.
+            AI crawlers often refresh what they have read over 3 to 14 days. Check again each day to catch new mentions as they appear.
           </p>
         </div>
 

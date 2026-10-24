@@ -749,7 +749,7 @@ describe('Mission Control copy', () => {
       phase: 'done',
       message:
         role === 'serp_radar'
-          ? 'Analyzed 0 SERP results. Citation rate and share of voice were not measured.'
+          ? 'Analyzed 0 search results. Citation rate and share of voice were not measured.'
           : 'Finished without a numeric score.',
       status: 'completed' as const,
     }));
@@ -847,13 +847,25 @@ describe('Instant Audit degraded provider failures', () => {
       skipped.push(event.message);
     });
     expect(extract).not.toHaveBeenCalled();
-    expect(skipped.join(' ')).not.toMatch(/Synced \d+ autonomous memory/);
+    expect(skipped.join(' ')).not.toMatch(/Synced \d+ autonomous memory|MUSE|knowledge graph/);
     expect(memorySyncPlan({
       deltaCount: 0,
       measurementStatus: 'not_measured',
       hasEvidence: false,
       authBlocked: false,
-    }).message).not.toMatch(/Synced \d+ autonomous memory/);
+    }).message).not.toMatch(/Synced \d+ autonomous memory|MUSE/);
+    expect(memorySyncPlan({
+      deltaCount: 1,
+      measurementStatus: 'measured',
+      hasEvidence: true,
+      authBlocked: false,
+    }).message).toBe('Saved 1 note about your brand.');
+    expect(memorySyncPlan({
+      deltaCount: 2,
+      measurementStatus: 'measured',
+      hasEvidence: true,
+      authBlocked: false,
+    }).message).toBe('Saved 2 notes about your brand.');
 
     extract.mockRestore();
     const measured = createInitialAuditContext('https://measured.example');
@@ -873,7 +885,7 @@ describe('Instant Audit degraded provider failures', () => {
     await applyMemorySync(measured, (event) => {
       synced.push(event.message);
     });
-    expect(synced.join(' ')).toMatch(/Synced \d+ autonomous memory/);
+    expect(synced.join(' ')).toMatch(/Saved \d+ notes? about your brand/);
     mem0MemoryEngine.clear();
   });
 

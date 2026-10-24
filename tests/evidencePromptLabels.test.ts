@@ -109,13 +109,15 @@ describe('audit prompt evidence labels', () => {
     const text = buildEnrichmentPromptSection(entity('full'));
     expect(text).toContain('[MEASURED: PUBLIC APIS & ENTITY INTELLIGENCE]');
     expect(text).toContain('Wikidata Entity (name match): Q1 (Acme) - no description');
-    expect(text).toContain('Security Posture (MEASURED):');
+    expect(text).toContain('Security posture (MEASURED):');
+    expect(text).toContain('forces secure HTTPS connections (HSTS):');
+    expect(text).toContain('controls which scripts the site can load (CSP):');
     expect(text).not.toMatch(/verified/i);
   });
 
   it('downgrades a browser-limited or failed security check inside the enrichment block', () => {
-    expect(buildEnrichmentPromptSection(entity('cors_limited'))).toContain('Security Posture (ESTIMATED):');
-    expect(buildEnrichmentPromptSection(entity('failed'))).toContain('Security Posture (NOT_MEASURED):');
+    expect(buildEnrichmentPromptSection(entity('cors_limited'))).toContain('Security posture (ESTIMATED):');
+    expect(buildEnrichmentPromptSection(entity('failed'))).toContain('Security posture (NOT_MEASURED):');
   });
 
   it('labels everything NOT_MEASURED when nothing was collected', () => {

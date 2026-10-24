@@ -172,12 +172,14 @@ export function buildEnterpriseTrustPack(input: {
     {
       id: 'ctrl-hsts',
       criterion: 'availability',
-      title: 'HSTS on audited origin',
+      title: 'Forces secure HTTPS connections (HSTS)',
       status: statusFromBool(hstsOk),
       evidenceRefs: ['enriched.security.hstsEnabled'],
       owner: 'Customer site',
       period: 'point_in_time',
-      detail: hstsOk ? 'HSTS header observed.' : 'HSTS not observed (partial readiness for enterprise buyers).',
+      detail: hstsOk
+        ? 'The header that forces secure HTTPS connections (HSTS) was observed.'
+        : 'That header was not observed, so readiness for enterprise buyers is partial.',
     },
     {
       id: 'ctrl-citation-integrity',

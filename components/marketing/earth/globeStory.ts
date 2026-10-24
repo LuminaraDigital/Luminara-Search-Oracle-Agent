@@ -67,7 +67,7 @@ export const EVIDENCE_LEGEND: ReadonlyArray<{ state: EvidenceState; meaning: str
   { state: 'Not measured', meaning: 'No data yet. Shown as missing, never as a poor result.' },
 ];
 
-export const ENGINES = ['Google Search', 'AI Overviews', 'ChatGPT', 'Perplexity'] as const;
+export const ENGINES = ['Web search', 'AI answers'] as const;
 
 export const GLOBE_NOTICE = 'Illustrative globe. Your results come from a live audit.';
 

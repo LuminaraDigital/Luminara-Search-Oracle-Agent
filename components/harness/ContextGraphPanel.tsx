@@ -65,7 +65,7 @@ export const ContextGraphPanel: React.FC = () => {
 
   const handleRunRules = () => {
     const findings = contextGraphService.runAeoRules();
-    flash(`AEO rules: ${findings.length} finding(s). See Conflicts tab for related issues.`);
+    flash(`AEO rules: ${findings.length === 1 ? '1 finding' : `${findings.length} findings`}. See Conflicts tab for related issues.`);
     setSubTab('conflicts');
     setVersion(v => v + 1);
   };

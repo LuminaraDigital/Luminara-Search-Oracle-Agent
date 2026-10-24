@@ -5,6 +5,7 @@
 import type { EngineVisibilityResult, VisibilityEngineId } from './engineVisibilityTypes';
 import { notMeasuredEngine } from './engineVisibilityTypes';
 import { classifyMention } from '../audit/entityMatch';
+import { countPhrase } from '../audit/reportSentence';
 
 export type LlmGenerateFn = (prompt: string, model?: string) => Promise<string>;
 
@@ -13,10 +14,10 @@ function domainCited(text: string, domain: string, brand?: string): boolean {
 }
 
 /** Probe labels map to product engine slots for UI, but status stays estimated. */
-const PROBES: Array<{ engine: VisibilityEngineId; model: string; label: string }> = [
-  { engine: 'chatgpt', model: 'openai/gpt-4o-mini', label: 'ChatGPT-class OpenRouter' },
-  { engine: 'perplexity', model: 'perplexity/sonar', label: 'Perplexity-class OpenRouter' },
-  { engine: 'google_aio', model: 'google/gemini-2.0-flash-001', label: 'Google AI-class OpenRouter' },
+const PROBES: Array<{ engine: VisibilityEngineId; model: string }> = [
+  { engine: 'chatgpt', model: 'openai/gpt-4o-mini' },
+  { engine: 'perplexity', model: 'perplexity/sonar' },
+  { engine: 'google_aio', model: 'google/gemini-2.0-flash-001' },
 ];
 
 export async function probeLlmAnswers(opts: {
@@ -51,7 +52,7 @@ export async function probeLlmAnswers(opts: {
       }
     }
     if (!evidence.length) {
-      out.push(notMeasuredEngine(probe.engine, `${probe.label} probe failed`, measuredAt));
+      out.push(notMeasuredEngine(probe.engine, 'This answer check failed', measuredAt));
       continue;
     }
     const citedCount = evidence.filter((e) => e.cited).length;
@@ -64,8 +65,8 @@ export async function probeLlmAnswers(opts: {
       citationRatePercent: Math.round((citedCount / evidence.length) * 100),
       evidence,
       errorReason: failed
-        ? `${failed} probe(s) failed`
-        : `${probe.label} estimate only; not a product citation rate`,
+        ? `${countPhrase(failed, 'check')} failed`
+        : 'Estimate only. This is not a measured citation rate.',
       measuredAt,
     });
   }
