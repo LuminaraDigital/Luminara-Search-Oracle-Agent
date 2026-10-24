@@ -44,7 +44,7 @@ Phase 2/3 writes two of those collections:
 - `users/{userId}`, where `userId` is the login id (`fb:{uid}` or the Telegram id). The document holds the profile columns. `email_unsub_token` stays on D1.
 - `audits/{docId}` for `audit_history`. `docId` is `{accountId length in base 36}.{accountId}.{entryId}` because an entry id is unique per account, not globally.
 
-The mirrored writes are the sign-in profile upsert, `PUT /audits/history`, account link, and privacy erase. A link updates the Firestore user docs to the surviving account id and rewrites that account's audit docs onto the new id. A privacy erase deletes the `users` docs and every `audits` doc for the account, one query page at a time, inside `waitUntil`. The D1 erase still returns success. A failed Firestore delete is stored in D1 `firestore_erase_ledger` (migration 0041) with code `ERASE_MIRROR_FAILED`. Reconcile retries it:
+The mirrored writes are the sign-in profile upsert, `PUT /audits/history`, account link, and privacy erase. A link updates the Firestore user docs to the surviving account id and rewrites that account's audit docs onto the new id. A privacy erase deletes the `users` docs and every `audits` doc for the account, one query page at a time, inside `waitUntil`. The D1 erase still returns success when only the Firestore mirror fails. A failed Firestore delete is stored in D1 `firestore_erase_ledger` (migration 0041) with code `ERASE_MIRROR_FAILED`. A failed Firebase Auth delete stores status `pending_firebase` and the privacy endpoint returns an error. The next sign-in retries that Auth delete and does not write the D1 user again. Reconcile retries the Firestore mirror:
 
 ```
 npm run db:backfill:firestore -- --reconcile-erases pending.json --project luminara-suite-staging

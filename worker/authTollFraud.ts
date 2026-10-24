@@ -12,6 +12,7 @@
 import type { Env } from './env';
 import { json } from './workerUtils';
 import { enforceAppCheckIfRequired, extractAppCheckToken } from './appCheck';
+import { identityToolkitHeaders } from './identityToolkit';
 import {
   checkOutboundDailyBudget,
   enforceBurstLimit,
@@ -39,16 +40,6 @@ export const PASSWORD_RESET_MIN_LATENCY_MS = 400;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const IDENTITY_TOOLKIT_OOB =
   'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode';
-
-function toolkitReferer(env: Env): string {
-  const raw = String(env.WEBAPP_URL || '').trim();
-  if (!raw) return 'https://luminarasuite.com/';
-  try {
-    return new URL(raw).href;
-  } catch {
-    return raw.endsWith('/') ? raw : `${raw}/`;
-  }
-}
 
 export function normalizeResetEmail(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
@@ -88,13 +79,7 @@ export async function sendPasswordResetOob(
   };
   if (opts?.continueUrl) body.continueUrl = opts.continueUrl;
 
-  const headers: Record<string, string> = {
-    'content-type': 'application/json',
-    Referer: toolkitReferer(env),
-  };
-  const appCheck = String(opts?.appCheckToken || '').trim();
-  if (appCheck) headers['X-Firebase-AppCheck'] = appCheck;
-
+  const headers = identityToolkitHeaders(env, opts?.appCheckToken);
   const fetchImpl = opts?.fetchImpl || fetch;
   let res: Response;
   try {
@@ -360,15 +345,11 @@ export async function handleSendVerification(
   }
 
   const fetchImpl = opts?.fetchImpl || fetch;
-  const referer = toolkitReferer(env);
   let dispatched = false;
   try {
     const res = await fetchImpl(`${IDENTITY_TOOLKIT_OOB}?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        Referer: referer,
-      },
+      headers: identityToolkitHeaders(env),
       body: JSON.stringify({
         requestType: 'VERIFY_EMAIL',
         idToken,

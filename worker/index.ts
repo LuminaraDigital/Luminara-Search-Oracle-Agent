@@ -174,6 +174,7 @@ import {
 import { handlePasswordResetRequest, handleSendVerification } from './authTollFraud';
 import { handleRequestOtp, handleVerifyOtp } from './authOtpSms';
 import { handleSignIn, handleSignUp } from './authCredentialGateway';
+import { settleFirebaseErase } from './accountDeletion';
 import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 
 export { DailyQuota } from './dailyQuota';
@@ -494,6 +495,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const verified = await verifyFirebaseIdToken(idToken, env.FIREBASE_PROJECT_ID);
       if (!verified.ok) {
         return withCors(json({ ok: false, error: verified.reason }, 401));
+      }
+      const erased = await settleFirebaseErase(env, verified.user.uid, idToken, {
+        appCheckToken: request.headers.get('X-Firebase-AppCheck')?.trim() || undefined,
+        healDone: true,
+      });
+      if (erased.kind === 'reject') {
+        return withCors(json({ ok: false, error: erased.error, code: erased.code }, erased.status));
       }
       const fbIdentity: HostedIdentity = {
         id: `fb:${verified.user.uid}`,

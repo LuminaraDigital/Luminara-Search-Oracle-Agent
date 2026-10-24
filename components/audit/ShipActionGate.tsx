@@ -5,6 +5,7 @@ import {
   writeShipCommitment,
   type ShipCommitment,
 } from '../../services/audit/shipCommitmentService';
+import { verifiedRivalsFromReport } from './CompetitorMap';
 
 export type { ShipCommitment };
 export { readShipCommitment, writeShipCommitment } from '../../services/audit/shipCommitmentService';
@@ -50,6 +51,9 @@ export const ShipActionGate: React.FC<Props> = ({
 }) => {
   const [selected, setSelected] = useState(ACTIONS[0].id);
   const fp = useMemo(() => fingerprintReport(markdownText), [markdownText]);
+  const actions = verifiedRivalsFromReport(markdownText)?.rivals === 0
+    ? ACTIONS.filter((action) => action.id !== 'citation-gap')
+    : ACTIONS;
 
   const commit = (actionId: string, label: string) => {
     const commitment: ShipCommitment = { actionId, label, committedAt: Date.now() };
@@ -57,7 +61,7 @@ export const ShipActionGate: React.FC<Props> = ({
     onCommitted(commitment);
   };
 
-  const selectedAction = ACTIONS.find((a) => a.id === selected) || ACTIONS[0];
+  const selectedAction = actions.find((action) => action.id === selected) || actions[0];
 
   return (
     <div className="mb-8 glass-morphism rounded-2xl border border-gold/50 p-6 sm:p-8 bg-black/70 shadow-2xl">
@@ -99,7 +103,7 @@ export const ShipActionGate: React.FC<Props> = ({
       </div>
 
       <div className="space-y-3 mb-6">
-        {ACTIONS.map((a) => (
+        {actions.map((a) => (
           <button
             key={a.id}
             type="button"
