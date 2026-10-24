@@ -8,7 +8,7 @@
 
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { BusinessDNA } from '../../../types';
-import { classifyMention, isNamesakeHost } from '../../audit/entityMatch';
+import { isNamesakeHost } from '../../audit/entityMatch';
 
 const EXCLUDED_COMPETITOR_DOMAINS = [
   // Encyclopedias & medical/general reference aggregators
@@ -148,8 +148,8 @@ export class CompetitorStrategistAgent {
   public readonly role = 'competitor_strategist';
 
   public async execute(
-    targetUrl: string,
-    dna: BusinessDNA | null | undefined,
+    _targetUrl: string,
+    _dna: BusinessDNA | null | undefined,
     serpEvidence: SerpEvidenceItem[],
     emit: (event: AgentActivityEvent) => void
   ): Promise<{ topCompetitors: string[]; competitorGaps: string[] }> {
@@ -163,48 +163,12 @@ export class CompetitorStrategistAgent {
       status: 'running',
     });
 
-    const cleanDomain = targetUrl.replace(/^https?:\/\//i, '').split('/')[0].toLowerCase();
-    const competitors = new Set<string>();
-
-    // 1. From Business DNA
-    if (dna?.competitors && Array.isArray(dna.competitors)) {
-      dna.competitors.forEach((c) => {
-        if (c && typeof c === 'string' && c.trim() && !isExcludedCompetitorHost(c.trim(), cleanDomain)) {
-          competitors.add(c.trim());
-        }
-      });
-    }
-
-    // 2. Discover from SERP results (excluding target domain, review platforms, reference sites, social media, etc.)
-    serpEvidence.forEach((item) => {
-      if (classifyMention(
-        { domain: cleanDomain, brandName: dna?.name },
-        { url: item.url, title: item.title, text: item.snippet },
-      ) === 'namesake') return;
-      try {
-        const u = new URL(item.url);
-        const host = u.hostname.toLowerCase().replace(/^www\./, '');
-        if (!isExcludedCompetitorHost(host, cleanDomain)) {
-          competitors.add(host);
-        }
-      } catch {
-        /* invalid url */
-      }
-    });
-
-    const topCompetitors = Array.from(competitors).slice(0, 5);
+    // A search host is not a rival. The map's rendered rows are the verified list, and they are not known yet.
+    const topCompetitors: string[] = [];
     const competitorGaps: string[] = [];
-
-    if (topCompetitors.length > 0) {
-      competitorGaps.push(`Other sites mention ${topCompetitors.slice(0, 2).join(' and ')}.`);
-      competitorGaps.push('No comparison page turned up for buyers choosing between brands.');
-    } else if (serpEvidence.length > 0) {
-      competitorGaps.push('Few direct competitors showed up in these search results.');
-    }
-
     const message = serpEvidence.length === 0
       ? 'No search results collected. Competitor signals not measured.'
-      : 'Compared other sites in this search sample.';
+      : 'No competitors found in this search sample.';
 
     emit({
       id: `strat-done-${Date.now()}`,
@@ -216,7 +180,7 @@ export class CompetitorStrategistAgent {
       status: 'completed',
       evidenceSnippet: serpEvidence.length === 0
         ? 'Search returned 0 results. Competitor gaps omitted.'
-        : `Competitors tracked: ${topCompetitors.join(', ') || 'None found in the first search results'}`,
+        : message,
       confidenceScore: serpEvidence.length === 0 ? 0 : 0.88,
     });
 

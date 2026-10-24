@@ -5,6 +5,7 @@ import { NOT_MEASURED } from '../../services/audit/reportBlocks';
 import { quotedQuery, type RadarCitationRow, type RadarStatus } from '../audit/VisibilityRadar';
 import { buildBrandMindshare, type MindshareHistoryPoint } from '../../services/visibility/mindshareService';
 import { extractCitationDrivers } from '../../services/visibility/citationDriverService';
+import { verifiedRivalsFromReport } from '../audit/CompetitorMap';
 import { scoutAuthoritySources } from '../../services/visibility/authorityScoutService';
 
 interface MindshareRadarCardProps {
@@ -15,6 +16,8 @@ interface MindshareRadarCardProps {
   radarRows?: readonly RadarCitationRow[];
   /** Earlier mindshare percents. With none, there is no trend to show. */
   history?: readonly MindshareHistoryPoint[];
+  /** Report markdown. Citation-driver copy follows the rival rows this report's map draws. */
+  reportMarkdown?: string;
   onSelectAction?: (actionId: string, label: string) => void;
 }
 
@@ -38,6 +41,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
   rawSources,
   radarRows,
   history,
+  reportMarkdown,
   onSelectAction,
 }) => {
   const mindshare = useMemo(() => {
@@ -111,6 +115,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
   const rivalList = [...new Set((radarRows || []).flatMap((row) => (
     row.competitors ? row.competitors.split(',').map((part) => part.trim()).filter(Boolean) : []
   )))];
+  const noVerifiedRivals = reportMarkdown ? verifiedRivalsFromReport(reportMarkdown)?.rivals === 0 : false;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-black/60 p-6 shadow-xl mb-6">
@@ -148,16 +153,19 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
       {mindshare.source && (
         <p className="text-xs text-gray-400 mb-4">Source: {mindshare.source}</p>
       )}
-      {mindshare.overallMindsharePercent == null && (
+          {mindshare.overallMindsharePercent == null && (
         <p className="text-xs text-gray-400 mb-4">
-          {rivalList.length > 0
+          {!noVerifiedRivals && rivalList.length > 0
             ? `Rivals named in the radar: ${joinNames(rivalList)}. A mindshare percent is not shown.`
             : 'This search sample did not name a competitor, so a mindshare percent is not shown.'}
         </p>
       )}
 
-      {/* Primary Citation Driver Banner */}
+      {/* Primary Citation Driver Banner. Hidden when the map drew no rivals. */}
       <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3.5 mb-5 flex flex-wrap items-start justify-between gap-3">
+        {noVerifiedRivals ? (
+          <p className="text-xs text-gray-300 leading-relaxed">No competitors found in this search sample.</p>
+        ) : (
         <div className="flex-1 min-w-[240px]">
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-amber-300 font-bold uppercase tracking-wider mb-1">
             <ICONS.Sparkle className="w-3.5 h-3.5 text-amber-400" />
@@ -167,7 +175,8 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
             {drivers.primaryDriver.label}. {drivers.primaryDriver.actionHint}
           </p>
         </div>
-        {drivers.primaryDriver.recommendedActionId && onSelectAction && (
+        )}
+        {!noVerifiedRivals && drivers.primaryDriver.recommendedActionId && onSelectAction && (
           <button
             type="button"
             onClick={() => onSelectAction(
@@ -212,7 +221,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
             </div>
             <div className="flex items-center justify-between text-[11px] text-gray-400 font-mono">
               <span>{cluster.status}</span>
-              {cluster.rivals && (
+              {cluster.rivals && !noVerifiedRivals && (
                 <span className="text-gray-500 text-[10px]">
                   Rival: {cluster.rivals}
                 </span>

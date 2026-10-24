@@ -67,20 +67,26 @@ export function renderedCompetitorCounts(headers: string[], rows: string[][]): {
     return { rivals: rivals.length, gaps: gaps.length };
 }
 
-/** Progress-card sentence for those counts. No rivals is not a zero count. */
+/** Progress-card sentence for those counts. An empty rival list is not a zero count. */
 export function competitorProgressMessage(rivals: number, gaps: number): string {
-    if (rivals === 0) return 'No rivals found.';
+    if (rivals === 0) return 'No competitors found in this search sample.';
     return `Identified ${countPhrase(rivals, 'key competitor')} and mapped ${countPhrase(gaps, 'keyword gap')}.`;
 }
 
-/** The sentence for the competitor table in a report, or null when that table is absent. */
-export function competitorProgressFromReport(markdown: string): string | null {
+/** Rival and gap counts for the competitor table, or null when that table is absent. */
+export function verifiedRivalsFromReport(markdown: string): { rivals: number; gaps: number } | null {
     const doc = parseAuditReport(gateReportText(markdown || ''));
     const section = doc.sections.find((item) => /competitor/i.test(item.title));
     const table = section?.blocks.find((block) => block.kind === 'table');
     if (!table || table.kind !== 'table') return null;
-    const { rivals, gaps } = renderedCompetitorCounts(table.headers, table.rows);
-    return competitorProgressMessage(rivals, gaps);
+    return renderedCompetitorCounts(table.headers, table.rows);
+}
+
+/** The sentence for the competitor table in a report, or null when that table is absent. */
+export function competitorProgressFromReport(markdown: string): string | null {
+    const counts = verifiedRivalsFromReport(markdown);
+    if (!counts) return null;
+    return competitorProgressMessage(counts.rivals, counts.gaps);
 }
 
 export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) => {

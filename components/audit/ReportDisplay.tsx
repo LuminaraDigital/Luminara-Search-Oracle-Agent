@@ -364,6 +364,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           evidence={empiricalSummary?.evidenceList}
           radarRows={namedRows}
           rawSources={sources}
+          reportMarkdown={rawMarkdownText}
           onFindingUpdated={(f) => {
             setBoardFindings((prev) => {
               const i = prev.findIndex((x) => x.id === f.id || x.stableKey === f.stableKey);

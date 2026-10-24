@@ -173,8 +173,10 @@ describe('audited entity matching', () => {
       ],
       (event) => { messages.push(event.message); },
     );
-    expect(found.topCompetitors).toEqual(['rival-agency.com']);
-    expect(messages.join(' ')).toContain('Compared other sites in this search sample.');
+    expect(found.topCompetitors).toEqual([]);
+    expect(found.competitorGaps).toEqual([]);
+    expect(messages.join(' ')).toContain('No competitors found in this search sample.');
+    expect(messages.join(' ')).not.toContain('rival-agency.com');
     expect(messages.join(' ')).not.toContain('keyword gap');
     expect(messages.join(' ')).not.toContain('competitor(s)');
     expect(messages.join(' ')).not.toContain('SERP');
