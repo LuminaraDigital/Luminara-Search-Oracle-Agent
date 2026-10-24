@@ -151,7 +151,9 @@ import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
 import { handleCitationWatchRoute, runCitationWatchTick } from './citationWatch';
-import { handleAuditReceiptRoute } from './auditReceipts';
+import { handleAuditReceiptRoute, revokeSignedAuditReceipt } from './auditReceipts';
+import { own } from '../services/own';
+import { enforceRequestSigning, isRequestSigningRequired } from './requestSigning';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -588,15 +590,20 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/webhooks/auth') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
-    if (!env.AUTH_WEBHOOK_SECRET) {
-      return withCors(json({ ok: false, error: 'AUTH_WEBHOOK_SECRET is not configured on the server' }, 503));
-    }
-    const signature = request.headers.get('x-auth-signature') || request.headers.get('svix-signature') || '';
     const read = await readBody(request, MAX_SMALL_BODY_BYTES, false);
     if (!read.ok) return withCors(json({ error: read.error }, read.status));
-    const isValid = await verifyWebhookSignature(read.text, signature, env.AUTH_WEBHOOK_SECRET);
-    if (!isValid) {
-      return withCors(json({ ok: false, error: 'Invalid webhook signature' }, 401));
+    if (isRequestSigningRequired(env)) {
+      const refused = await enforceRequestSigning(env, request, path, read.text);
+      if (refused) return withCors(refused);
+    } else {
+      if (!env.AUTH_WEBHOOK_SECRET) {
+        return withCors(json({ ok: false, error: 'AUTH_WEBHOOK_SECRET is not configured on the server' }, 503));
+      }
+      const signature = request.headers.get('x-auth-signature') || request.headers.get('svix-signature') || '';
+      const isValid = await verifyWebhookSignature(read.text, signature, env.AUTH_WEBHOOK_SECRET);
+      if (!isValid) {
+        return withCors(json({ ok: false, error: 'Invalid webhook signature' }, 401));
+      }
     }
     let payload: any = {};
     try {
@@ -1241,6 +1248,38 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       user_agent: request.headers.get('user-agent') || undefined,
     });
     return withCors(json({ ok: true, ...swept }));
+  }
+
+  // Admin: revoke one Signed Audit Receipt. Minting can be off. The owner route stays separate.
+  const auditReceiptRevoke = path.match(/^\/admin\/audit-receipts\/(sar_[a-f0-9]{32})\/revoke$/);
+  if (auditReceiptRevoke) {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hitAuditRevoke = limited('auth', RATE_AUTH_PER_MIN);
+    if (hitAuditRevoke) return hitAuditRevoke;
+    const auditRevokeAdmin = isAdminAuthorized(env, request);
+    if (!auditRevokeAdmin.ok) return withCors(auditRevokeAdmin.response);
+    const read = await readBody(request, MAX_BODY_BYTES);
+    if (!read.ok) return withCors(json({ error: read.error }, read.status));
+    const reasonRaw = read.value && typeof read.value === 'object' && !Array.isArray(read.value) ? own(read.value, 'reason') : undefined;
+    const reason = typeof reasonRaw === 'string' ? reasonRaw : '';
+    const revoked = await revokeSignedAuditReceipt(env, { id: auditReceiptRevoke[1], reason, accountId: null });
+    let code: string | undefined;
+    try {
+      const body: unknown = await revoked.clone().json();
+      if (body && typeof body === 'object' && 'code' in body && typeof body.code === 'string') code = body.code;
+    } catch {
+      code = undefined;
+    }
+    await recordAuditLogBestEffort(env, {
+      org_id: ADMIN_SYSTEM_ORG,
+      actor_id: 'admin',
+      action: 'admin.audit_receipt.revoke',
+      target_id: auditReceiptRevoke[1],
+      details: code ? { status: revoked.status, code } : { status: revoked.status },
+      ip_address: clientIp(request),
+      user_agent: request.headers.get('user-agent') || undefined,
+    });
+    return withCors(revoked);
   }
 
   // Admin: runtime agent skill catalog (versioned methodology prompts in D1)
