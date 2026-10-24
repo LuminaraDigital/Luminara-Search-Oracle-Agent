@@ -15,9 +15,19 @@ function columnIndex(headers: string[], pattern: RegExp, position: number): numb
     return headers.findIndex((header) => pattern.test(String(header)));
 }
 
+function rawCell(cell: unknown): string {
+    return String(cell ?? '').replace(/[*_`]/g, '').replace(/\[\[|\]\]/g, '').trim();
+}
+
 /** The cell as written, or "Not measured" when the report left it empty. No default wording. */
 function cellText(cell: unknown): string {
-    return String(cell ?? '').replace(/[*_`]/g, '').replace(/\[\[|\]\]/g, '').trim() || 'Not measured';
+    return rawCell(cell) || 'Not measured';
+}
+
+const BLANK_CELL = /^(?:-|—|–|n\/a|none|not measured|unknown)?$/i;
+
+function emptyRival(row: string[], columns: number[]): boolean {
+    return columns.every((col) => BLANK_CELL.test(rawCell(row[col])));
 }
 
 /** A model placeholder such as [[Competitor 1]]. A real rival name is kept. */
@@ -31,7 +41,8 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
     const perceptionCol = columnIndex(headers, /perception|how ai talks/i, 1);
     const pagesCol = columnIndex(headers, /page/i, 2);
     const advantageCol = columnIndex(headers, /advantage/i, 3);
-    const visibleRows = rows.filter((row) => !placeholderCompetitor(cellText(row[entityCol])));
+    const visibleRows = rows.filter((row) => !placeholderCompetitor(cellText(row[entityCol])) && !emptyRival(row, [entityCol, perceptionCol, pagesCol, advantageCol]));
+    const rivalCount = Math.max(visibleRows.length - 1, 0);
 
     return (
         <div className="my-8 glass-morphism rounded-2xl border border-gold/30 overflow-hidden shadow-2xl animate-in fade-in duration-700">
@@ -51,8 +62,8 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
             </div>
 
             <div className="p-4 md:p-6 grid gap-4">
-                {visibleRows.length === 0 ? (
-                    <p className="text-xs text-gray-400">Not measured. No competitor was named in this run.</p>
+                {rivalCount === 0 ? (
+                    <p className="text-xs text-gray-400">No rivals found in this search sample.</p>
                 ) : null}
                 {visibleRows.map((row, idx) => {
                     const entity = cellText(row[entityCol]);

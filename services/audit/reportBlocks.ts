@@ -8,7 +8,7 @@ import { formatAuDate } from '../../utils/formatAuDate';
 import { stripUntrustedFences } from '../../utils/untrustedContent';
 import { healthChecklist, measuredCheckLine, parseMeasuredCheckLine, siteChecksRan } from '../agentCore/auditEvidenceGate';
 import { organizationJsonLd } from './fixPackCopy';
-import { plainCustomerReport, type AuditTextScope } from './reportColumnGate';
+import { optionalCustomerSentence, plainCustomerReport, type AuditTextScope } from './reportColumnGate';
 
 export type Inline =
   | { kind: 'text'; text: string }
@@ -298,6 +298,50 @@ function howToKnow(sentence: string): string {
   return `How to know it worked: this item is no longer open. ${sentence}`;
 }
 
+/** Fix titles. The model title is only used when the check id is not in this table. */
+const CHECK_TITLE: Record<string, string> = {
+  'finding-schema-org': 'Add a business identity tag',
+  'finding-schema-org-partial': 'Add a business identity tag',
+  'finding-thin-content': 'Write fuller answers on thin pages',
+  'finding-zero-citations': 'Say plainly what you offer',
+  'finding-deprecated-howto': 'Remove the HowTo markup',
+};
+
+/** Plain phrases for the verdict, in the same order as the failed checks. */
+const CHECK_PHRASE: Record<string, string> = {
+  'finding-schema-org': 'A business identity tag is missing',
+  'finding-schema-org-partial': 'The business identity tag is incomplete',
+  'finding-thin-content': 'This page is too short',
+  'finding-zero-citations': 'None of the web results name the brand',
+  'finding-deprecated-howto': 'The page still uses HowTo markup',
+};
+
+export function checkFixTitle(id: string | undefined, title: string): string {
+  const mapped = id ? CHECK_TITLE[id] : undefined;
+  if (mapped) return mapped;
+  const scrubbed = plainCustomerReport(title).replace(/\s+/g, ' ').trim();
+  return scrubbed || 'Not measured.';
+}
+
+function howToKnowFor(finding: MoveFinding, sentence: string): string {
+  if (finding.id === 'finding-schema-org' || finding.id === 'finding-schema-org-partial') {
+    return 'How to know it worked: the page source includes a business identity tag that names the organization.';
+  }
+  if (finding.id === 'finding-thin-content') return 'How to know it worked: the short page is at least 250 words.';
+  if (finding.id === 'finding-zero-citations') return 'How to know it worked: a web result for the brand name states what you offer.';
+  if (finding.id === 'finding-deprecated-howto') return 'How to know it worked: the page source no longer includes a HowTo tag.';
+  return howToKnow(sentence);
+}
+
+const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function topFailed(findings: readonly MoveFinding[]): MoveFinding[] {
+  const eligible = findings.filter((finding) => finding.id && CHECK_PHRASE[finding.id] && !isDowngradedFinding(finding));
+  const open = eligible.filter((finding) => !finding.status || finding.status === 'open' || finding.status === 'in_progress');
+  const pool = open.length ? open : eligible;
+  return [...pool].sort((a, b) => (SEVERITY_RANK[a.severity || ''] ?? 9) - (SEVERITY_RANK[b.severity || ''] ?? 9)).slice(0, 3);
+}
+
 /** Drops a one-move code block that is about a different fix than the prose. */
 function dropMismatchedSnippet(markdown: string): string {
   const lines = markdown.split('\n');
@@ -338,14 +382,14 @@ function dropMismatchedSnippet(markdown: string): string {
 }
 
 function moveBody(finding: MoveFinding, domain?: string): string {
-  const title = plainCustomerReport(finding.title || '').trim() || 'Not measured.';
+  const title = checkFixTitle(finding.id, finding.title || '');
   const sentence = /[.!?]$/.test(title) ? title : `${title}.`;
-  const kind = proseKind(`${finding.id || ''} ${sentence}`);
+  const kind = finding.id === 'finding-schema-org' || finding.id === 'finding-schema-org-partial' ? 'identity' : proseKind(`${finding.id || ''} ${sentence}`);
   const host = (domain || finding.domain || '').trim();
   const snip = kind === 'identity'
     ? `\n\n\`\`\`json\n${organizationJsonLd(host || 'example.com')}\n\`\`\``
     : '';
-  return `${sentence}\n\n${howToKnow(sentence)}${snip}\n`;
+  return `${sentence}\n\n${howToKnowFor(finding, sentence)}${snip}\n`;
 }
 
 /**
@@ -359,6 +403,34 @@ export function alignOneMove(markdown: string, findings: readonly MoveFinding[] 
   const bounds = sectionBounds(lines, ONE_MOVE);
   if (!bounds) return markdown;
   const body = moveBody(primary, domain).trimEnd();
+  return [...lines.slice(0, bounds.start + 1), '', body, '', ...lines.slice(bounds.end)].join('\n');
+}
+
+const PLAIN_VERDICT = /plain verdict/i;
+
+/**
+ * Reachability, then the top failed checks, then one consequence.
+ * The model's own sentence is kept only when customerSentenceOk accepts it.
+ */
+export function plainVerdictText(findings: readonly MoveFinding[], modelText = ''): string {
+  const phrases = topFailed(findings).map((finding) => (finding.id ? CHECK_PHRASE[finding.id] : '')).filter(Boolean);
+  if (!phrases.length) return '';
+  const consequence = phrases.length === 1
+    ? 'This gap can lower trust and citation odds.'
+    : 'These gaps can lower trust and citation odds.';
+  const core = `The page is reachable. ${phrases.join('. ')}. ${consequence}`;
+  const extra = optionalCustomerSentence(modelText);
+  if (!extra || core.toLowerCase().includes(extra.replace(/[.!?]$/, '').toLowerCase())) return core;
+  return `${core} ${extra}`;
+}
+
+/** Replaces the plain-verdict section when the failed checks are known. Other sections stay. */
+export function alignPlainVerdict(markdown: string, findings: readonly MoveFinding[] = []): string {
+  const lines = markdown.split('\n');
+  const bounds = sectionBounds(lines, PLAIN_VERDICT);
+  if (!bounds) return markdown;
+  const body = plainVerdictText(findings, lines.slice(bounds.start + 1, bounds.end).join('\n'));
+  if (!body) return markdown;
   return [...lines.slice(0, bounds.start + 1), '', body, '', ...lines.slice(bounds.end)].join('\n');
 }
 
@@ -483,7 +555,7 @@ export function withReportLead(
   measured: boolean,
   findings: ReadonlyArray<Pick<BoardFinding, 'title' | 'severity' | 'description' | 'evidence'> & { id?: string }> = [],
 ): string {
-  const source = alignOneMove(plainCustomerReport(stripUntrustedFences(markdown)), findings);
+  const source = alignPlainVerdict(alignOneMove(plainCustomerReport(stripUntrustedFences(markdown)), findings), findings);
   const doc = parseAuditReport(source);
   const score = reportScore(`${source}\n${doc.verdict}`, measured, findings);
   const verdict = doc.verdict || 'Not measured.';

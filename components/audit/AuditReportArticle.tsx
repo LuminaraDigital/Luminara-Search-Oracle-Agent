@@ -6,9 +6,11 @@ import { diffSince } from '../../services/audit/auditDiffService';
 import { workspaceHistoryReady } from '../../services/sync/workspaceSyncService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
 import { parseMeasuredCheckLine } from '../../services/agentCore/auditEvidenceGate';
-import { customerSourceLine, plainCustomerReport, sourceReadKind } from '../../services/audit/reportColumnGate';
+import { customerSourceLine, sourceReadKind } from '../../services/audit/reportColumnGate';
 import {
   alignOneMove,
+  alignPlainVerdict,
+  checkFixTitle,
   findingFix,
   findingWhy,
   fixProgress,
@@ -196,7 +198,7 @@ export function AuditReportArticle({
       window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
     };
   }, []);
-  const doc = parseAuditReport(alignOneMove(markdown, findings, domain), { domain, brand: clientName });
+  const doc = parseAuditReport(alignPlainVerdict(alignOneMove(markdown, findings, domain), findings), { domain, brand: clientName });
   const score = reportScore(`${markdown}\n${doc.verdict}`, measured, findings, citationRateKnown, checkLine);
   const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
   const note = unmeasuredNote(findings);
@@ -285,7 +287,7 @@ export function AuditReportArticle({
               <article key={finding.id} className={`rounded-2xl border bg-black px-4 py-4 ${isNext ? 'border-gold' : 'border-white/15'}`}>
                 {isNext && <p className="text-xs font-semibold tracking-wide text-gold-light">Your next fix</p>}
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <h3 className="text-lg font-semibold text-white">{plainCustomerReport(finding.title)}</h3>
+                  <h3 className="text-lg font-semibold text-white">{checkFixTitle(finding.id, finding.title)}</h3>
                   <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${chip}`}>{finding.severity}</span>
                 </div>
                 <p className="mt-3 text-xs font-semibold tracking-wide text-gray-300">Why it matters for buyers and vendors</p>

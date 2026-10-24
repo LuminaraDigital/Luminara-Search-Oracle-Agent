@@ -52,42 +52,58 @@ export function radarCitationRows(
     });
 }
 
+export type MentionTally = { mentioned: number; total: number };
+
+function wholePair(mentioned: number | undefined, total: number | undefined): MentionTally | null {
+    if (typeof mentioned !== 'number' || typeof total !== 'number') return null;
+    if (!Number.isInteger(mentioned) || !Number.isInteger(total)) return null;
+    if (total <= 0 || mentioned < 0 || mentioned > total) return null;
+    return { mentioned, total };
+}
+
 /**
- * The preview label and the radar share this.
- * No mention line unless the radar table has a query this evidence actually measured.
+ * One count for the radar rows (queries) and one for the search rows (web results).
+ * A row that was not measured is not counted as a miss.
+ */
+export function mentionCounts(input: {
+    radarRows: ReadonlyArray<{ status: RadarStatus }>;
+    webResultsMentioned?: number;
+    webResultsTotal?: number;
+}): { queries: MentionTally | null; webResults: MentionTally | null } {
+    const measured = input.radarRows.filter((row) => row.status === 'cited' || row.status === 'not_cited');
+    const queries = measured.length
+        ? { mentioned: measured.filter((row) => row.status === 'cited').length, total: measured.length }
+        : null;
+    return { queries, webResults: wholePair(input.webResultsMentioned, input.webResultsTotal) };
+}
+
+export function mentionLabel(tally: MentionTally, unit: 'queries' | 'web results'): string {
+    return `mentioned in ${tally.mentioned} of ${tally.total} ${unit}`;
+}
+
+/**
+ * The preview label and the radar share mentionCounts.
+ * Web results label the search rows. Queries label the radar rows.
  */
 export function citationView(
     markdown: string,
     summary: EmpiricalCitationSummary | undefined,
 ): { label: string | null; evidence: Array<{ query: string; brandCited: boolean }> | null } {
     if (!summary || summary.measurementStatus === 'not_measured') return { label: null, evidence: null };
-    const rows = summary.evidenceList || [];
-    if (!rows.length) return { label: null, evidence: null };
-    const doc = parseAuditReport(markdown);
-    const section = doc.sections.find((item) => /visibility radar/i.test(item.title));
-    const table = section?.blocks.find((block) => block.kind === 'table');
-    if (!table || table.kind !== 'table') return { label: null, evidence: null };
-    const queryCol = table.headers.findIndex((header) => /query/i.test(header));
-    const col = queryCol >= 0 ? queryCol : 0;
-    const queries = new Set(table.rows.map((row) => normQuery(row[col] || '')).filter(Boolean));
-    const matched = rows.filter((row) => queries.has(normQuery(row.query)));
-    if (!matched.length) return { label: null, evidence: null };
-    const webMentioned = summary.webResultsMentioned;
-    const webTotal = summary.webResultsTotal;
-    if (
-        matched.length === rows.length
-        && typeof webMentioned === 'number'
-        && typeof webTotal === 'number'
-        && Number.isInteger(webMentioned)
-        && Number.isInteger(webTotal)
-        && webTotal > 0
-        && webMentioned >= 0
-        && webMentioned <= webTotal
-    ) {
-        return { label: `mentioned in ${webMentioned} of ${webTotal} web results`, evidence: matched };
-    }
-    const mentioned = matched.filter((row) => row.brandCited).length;
-    return { label: `mentioned in ${mentioned} of ${matched.length} sampled queries`, evidence: matched };
+    const evidence = summary.evidenceList || [];
+    const radar = radarCitationRows(markdown, evidence);
+    const counts = mentionCounts({
+        radarRows: radar,
+        webResultsMentioned: summary.webResultsMentioned,
+        webResultsTotal: summary.webResultsTotal,
+    });
+    const label = counts.webResults
+        ? mentionLabel(counts.webResults, 'web results')
+        : counts.queries
+            ? mentionLabel(counts.queries, 'queries')
+            : null;
+    if (!label) return { label: null, evidence: null };
+    return { label, evidence: evidence.length ? evidence : null };
 }
 
 /**
@@ -147,6 +163,12 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows,
     const citedCol = columnIndex(headers, /brand cited/i, 2);
     const competitorsCol = columnIndex(headers, /competitor/i, 3);
     const statusCol = columnIndex(headers, /status/i, 4);
+    const statuses = rows.map((row) => {
+        const query = plain(row[queryCol]) || 'Query';
+        const hit = evidence?.find((item) => normQuery(item.query) === normQuery(query));
+        return hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol]);
+    });
+    const queries = mentionCounts({ radarRows: statuses.map((status) => ({ status })) }).queries;
 
     return (
         <div className="my-8 rounded-2xl border border-gold/25 bg-black/60 overflow-hidden shadow-xl relative animate-in fade-in duration-700">
@@ -158,6 +180,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows,
                     <div>
                         <h3 className="text-base font-semibold tracking-tight text-gold-light">AI and search visibility</h3>
                         <p className="text-[11px] font-mono text-gray-400">As written in the report table. Not a score.</p>
+                        {queries ? <p className="text-[11px] font-mono text-gray-400">{mentionLabel(queries, 'queries')}</p> : null}
                     </div>
                 </div>
             </div>
