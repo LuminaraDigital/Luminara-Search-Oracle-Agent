@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { ICONS } from '../../constants';
 import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
-import type { RadarCitationRow, RadarStatus } from '../audit/VisibilityRadar';
+import { NOT_MEASURED } from '../../services/audit/reportBlocks';
+import { quotedQuery, type RadarCitationRow, type RadarStatus } from '../audit/VisibilityRadar';
 import { buildBrandMindshare, type MindshareHistoryPoint } from '../../services/visibility/mindshareService';
 import { extractCitationDrivers } from '../../services/visibility/citationDriverService';
 import { scoutAuthoritySources } from '../../services/visibility/authorityScoutService';
@@ -20,7 +21,7 @@ interface MindshareRadarCardProps {
 const CITATION_STATUS: Record<RadarStatus, string> = {
   cited: 'Cited',
   not_cited: 'Not cited',
-  not_measured: 'Not measured',
+  not_measured: NOT_MEASURED,
 };
 
 function joinNames(names: string[]): string {
@@ -66,7 +67,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
       const byName = new Map(mindshare.narratives.map((cluster) => [cluster.name.toLowerCase(), cluster]));
       return radarRows.map((row, index) => ({
         id: `${row.query}-${index}`,
-        name: row.query,
+        name: quotedQuery(row.query),
         status: CITATION_STATUS[row.status],
         rivals: row.competitors,
         percent: byName.get(row.query.toLowerCase())?.brandMindsharePercent ?? null,
@@ -74,8 +75,8 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
     }
     return mindshare.narratives.map((cluster) => ({
       id: cluster.id,
-      name: cluster.name,
-      status: cluster.brandMindsharePercent == null ? 'Not measured' : `Mindshare: ${cluster.brandMindsharePercent}%`,
+      name: quotedQuery(cluster.name),
+      status: cluster.brandMindsharePercent == null ? NOT_MEASURED : `Mindshare: ${cluster.brandMindsharePercent}%`,
       rivals: cluster.topCompetitor ? `${cluster.topCompetitor.name} (${cluster.topCompetitor.citations} cites)` : '',
       percent: cluster.brandMindsharePercent,
     }));
@@ -89,7 +90,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
             <span className="w-2 h-2 rounded-full bg-gray-500" />
             <span className="font-black uppercase tracking-[0.2em] text-white" title="Mindshare radar">Who gets named</span>
           </div>
-          <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-gray-400 border border-white/10">Not measured</span>
+          <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-gray-400 border border-white/10">{NOT_MEASURED}</span>
         </div>
         <p className="text-xs text-gray-400 mt-3">Live search citation evidence is required to calculate brand attention share. Sample scans do not invent mindshare scores.</p>
       </div>

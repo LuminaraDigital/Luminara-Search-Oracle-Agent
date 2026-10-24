@@ -8,7 +8,16 @@ import { formatAuDate } from '../../utils/formatAuDate';
 import { stripUntrustedFences } from '../../utils/untrustedContent';
 import { healthChecklist, measuredCheckLine, parseMeasuredCheckLine, siteChecksRan } from '../agentCore/auditEvidenceGate';
 import { organizationJsonLd } from './fixPackCopy';
-import { customerSentenceOk, optionalCustomerSentence, plainCustomerReport, type AuditTextScope } from './reportColumnGate';
+import { customerSentenceOk, mentionedCount, optionalCustomerSentence, plainCustomerReport, withoutContradictorySentences, type AuditTextScope } from './reportColumnGate';
+
+/** The only customer spelling of an unmeasured cell. */
+export const NOT_MEASURED = 'Not measured';
+
+export function displayMeasured(text: string): string {
+  const value = text.trim();
+  if (!value || /^not measured$/i.test(value)) return NOT_MEASURED;
+  return value;
+}
 
 export type Inline =
   | { kind: 'text'; text: string }
@@ -430,7 +439,8 @@ export function plainVerdictText(
   options: VerdictOptions = {},
 ): string {
   const phrases = topFailed(findings).map((finding) => (finding.id ? CHECK_PHRASE[finding.id] : '')).filter(Boolean);
-  const extra = optionalCustomerSentence(modelText);
+  const mentioned = mentionedCount(options.citationLine);
+  const extra = optionalCustomerSentence(modelText, mentioned);
   const keepExtra = extra && namesAudit(extra, options.scope) && customerSentenceOk(extra) ? extra : '';
   const citation = options.citationLine?.trim() || '';
   if (!phrases.length) return keepExtra;
@@ -596,6 +606,7 @@ export function groundCustomerReport(markdown: string, facts: GroundFacts): stri
     .filter((line) => !/fog clearing/i.test(line))
     .join('\n');
   if (fallback) text = text.replace(fallback[0], '');
+  text = withoutContradictorySentences(text, mentionedCount(facts.citationLine));
   if (!host) return fallback ? `${text.trim()}\n\n${fallback[0]}` : text;
   const scope: AuditTextScope = { domain: host, brand: facts.brand };
   const findings = facts.findings || [];

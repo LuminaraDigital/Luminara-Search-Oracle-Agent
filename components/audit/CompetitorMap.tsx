@@ -1,5 +1,6 @@
 ﻿import React from 'react';
 import { ICONS } from '../../constants';
+import { displayMeasured } from '../../services/audit/reportBlocks';
 
 interface CompetitorMapProps {
     headers: string[];
@@ -19,9 +20,9 @@ function rawCell(cell: unknown): string {
     return String(cell ?? '').replace(/[*_`]/g, '').replace(/\[\[|\]\]/g, '').trim();
 }
 
-/** The cell as written, or "Not measured" when the report left it empty. No default wording. */
+/** The cell as written, or the unmeasured constant when the report left it empty. */
 function cellText(cell: unknown): string {
-    return rawCell(cell) || 'Not measured';
+    return displayMeasured(rawCell(cell));
 }
 
 const BLANK_CELL = /^(?:-|—|–|n\/a|none|not measured|unknown)?$/i;
