@@ -44,7 +44,14 @@ Phase 2/3 writes two of those collections:
 - `users/{userId}`, where `userId` is the login id (`fb:{uid}` or the Telegram id). The document holds the profile columns. `email_unsub_token` stays on D1.
 - `audits/{docId}` for `audit_history`. `docId` is `{accountId length in base 36}.{accountId}.{entryId}` because an entry id is unique per account, not globally.
 
-The mirrored writes are the sign-in profile upsert and `PUT /audits/history`. Account link and privacy erase still write D1 only. Run the backfill after those writes, until those paths use the repository.
+The mirrored writes are the sign-in profile upsert, `PUT /audits/history`, account link, and privacy erase. A link updates the Firestore user docs to the surviving account id and rewrites that account's audit docs onto the new id. A privacy erase deletes the `users` docs and every `audits` doc for the account, one query page at a time, inside `waitUntil`. The D1 erase still returns success. A failed Firestore delete is stored in D1 `firestore_erase_ledger` (migration 0041) with code `ERASE_MIRROR_FAILED`. Reconcile retries it:
+
+```
+npm run db:backfill:firestore -- --reconcile-erases pending.json --project luminara-suite-staging
+npm run db:backfill:firestore -- --apply --reconcile-erases pending.json --project luminara-suite-staging
+```
+
+Backfill skips every login id and account id in that ledger, pending or done, so an old export cannot recreate an erased user. Pass the ledger export with `--erased`.
 
 ---
 
@@ -86,7 +93,7 @@ Run this list on `luminara-suite-staging` only. Do not create a service account 
 5. Grant `roles/iam.workloadIdentityUser` on that service account to the pool principal. Grant `roles/datastore.user` on project `luminara-suite-staging` to the service account.
 6. Create composite indexes on collection `audits`: `accountId` ASC + `measuredAt` DESC, and `accountId` ASC + `domain` ASC + `measuredAt` DESC.
 7. Dry-run the backfill below, read the counts, then apply it to staging.
-8. Record the section 4 cost estimate. After that, and after account-link and privacy erase are mirrored, set staging `DATA_PLANE=dual`. Leave production unset.
+8. Record the section 4 cost estimate. Account link and privacy erase are mirrored in the tree. After the cost estimate, set staging `DATA_PLANE=dual`. Leave production unset.
 
 The Worker serves one public JWK. A rotation that needs two keys at once is a later change.
 
@@ -105,7 +112,7 @@ npm run db:backfill:firestore -- --from-users users.json --from-audits audits.js
 npm run db:backfill:firestore -- --apply --from-users users.json --from-audits audits.json --project luminara-suite-staging
 ```
 
-The first `npm run` is the dry run (counts and sample field names, no Firestore calls). `--apply` requires `--project`. `--project luminara-suite` exits with an error unless `--i-understand-prod` is also passed. Document ids are deterministic, so running the apply twice upserts the same documents.
+The first `npm run` is the dry run (counts and sample field names, no Firestore calls). `--apply` requires `--project`. `--project luminara-suite` exits with an error unless `--i-understand-prod` is also passed. Document ids are deterministic, so running the apply twice upserts the same documents. Export `firestore_erase_ledger` and pass it as `--erased` so an erase is not written back. Pending rows are deleted with `--reconcile-erases`, shown above. That command has no D1 binding, so after it succeeds mark the exported rows `done` in D1. The Worker reconcile does that update when it runs against the database.
 
 ---
 
@@ -174,6 +181,14 @@ This ADR is filed at `docs/adr/0001-firebase-gcp-data-plane.md`.
 
 ---
 
+## Risks
+
+- A login id or account id in `firestore_erase_ledger` is never backfilled. Sign-in still writes the live mirror.
+- One erase attempt deletes at most 20 query pages. Reconcile continues the rest. The page size is 100 documents.
+- The link mirror is best-effort. A failed link mirror is repaired by the next backfill of the surviving account, except ids already in the erase ledger.
+- Audit queries still need the composite indexes in the checklist before they succeed.
+- `DATA_PLANE` stays unset until the section 4 cost estimate is recorded.
+
 ## Non-goals
 - Silent cutover or dual-write without Tunji yes + CEO ship on this ADR
 - Firebase Admin private key in client or git
@@ -185,7 +200,7 @@ This ADR is filed at `docs/adr/0001-firebase-gcp-data-plane.md`.
 1. **ADR approved.** Store choice and region are recorded. The cost ceiling still gates enablement.
 2. **Firestore exists** in `australia-southeast2` on `luminara-suite` and `luminara-suite-staging` (operator, before this phase): deny-all rules, PITR, delete protection, service account `suite-worker`.
 3. **Repository and flag.** The code is in the tree. `DATA_PLANE` defaults to `d1`. Wrangler does not set it.
-4. **Enable dual-write** on staging after the cost gate, the checklist in section 2, and a follow-up that mirrors account link and privacy erase. D1 stays the source of truth for reads. Signed audit receipts stay on D1.
+4. **Enable dual-write** on staging after the cost gate and the checklist in section 2. Account link and privacy erase are mirrored. D1 stays the source of truth for reads. Signed audit receipts stay on D1.
 5. **Read cutover** on staging, then production, with rollback to D1 reads.
 6. **Stop D1 writes** for the cut-over collections. Ledgers and receipts stay on D1 until a later ADR.
 

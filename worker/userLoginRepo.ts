@@ -2,7 +2,7 @@
  * Login-row repository for `users`.
  * d1 matches the existing upsert SQL. dual writes that SQL, then best-effort patches Firestore.
  * firestore is implemented and not enabled in wrangler.
- * Account link, privacy erase, and email_unsub_token stay on D1. Backfill repairs the mirror.
+ * email_unsub_token stays on D1. linkPair mirrors the shared account id in dual mode.
  */
 import type { D1Database } from '@cloudflare/workers-types';
 import type { DataPlane, DataPlaneEnv, UserLoginRow, UserLoginWrite } from './dataPlaneDocs';
@@ -17,9 +17,20 @@ import {
 } from './dataPlane';
 import { firestoreFromEnv, type FirestoreClient } from './firestoreRest';
 
+export type UserLinkPair = {
+  accountId: string;
+  lastSeenAt: number;
+  telegramId: string;
+  firebaseUserId: string;
+  firebaseUid: string;
+  email: string | null;
+  displayName: string | null;
+};
+
 export type UserLoginStore = {
   find(id: string): Promise<UserLoginRow | null>;
   save(row: UserLoginWrite): Promise<void>;
+  linkPair(pair: UserLinkPair): Promise<void>;
 };
 
 export function openUserLoginStore(env: DataPlaneEnv, deps: DataPlaneDeps | undefined, plane: DataPlane): UserLoginStore {
@@ -71,6 +82,17 @@ export class D1UserLoginStore implements UserLoginStore {
       row.accountId,
     ).run();
   }
+
+  async linkPair(pair: UserLinkPair): Promise<void> {
+    await this.db.batch([
+      this.db.prepare(
+        `UPDATE users SET account_id = ?, telegram_id = ?, last_seen_at = ? WHERE id = ?`,
+      ).bind(pair.accountId, pair.telegramId, pair.lastSeenAt, pair.telegramId),
+      this.db.prepare(
+        `UPDATE users SET account_id = ?, firebase_uid = ?, email = COALESCE(?, email), display_name = COALESCE(?, display_name), last_seen_at = ? WHERE id = ?`,
+      ).bind(pair.accountId, pair.firebaseUid, pair.email, pair.displayName, pair.lastSeenAt, pair.firebaseUserId),
+    ]);
+  }
 }
 
 class FirestoreUserLoginStore implements UserLoginStore {
@@ -87,6 +109,13 @@ class FirestoreUserLoginStore implements UserLoginStore {
       mask: USER_LIVE_FIELDS,
       signal,
     });
+  }
+
+  async linkPair(pair: UserLinkPair): Promise<void> {
+    const telegram = telegramLinkPatch(pair);
+    const firebase = firebaseLinkPatch(pair);
+    await this.client.patch(USER_COLLECTION, userDocId(pair.telegramId), telegram.fields, { mask: telegram.mask });
+    await this.client.patch(USER_COLLECTION, userDocId(pair.firebaseUserId), firebase.fields, { mask: firebase.mask });
   }
 }
 
@@ -120,4 +149,56 @@ class DualUserLoginStore implements UserLoginStore {
       firestore.patch(USER_COLLECTION, id, userWriteFields(row), { mask: USER_LIVE_FIELDS, signal }),
     );
   }
+
+  async linkPair(pair: UserLinkPair): Promise<void> {
+    await this.d1.linkPair(pair);
+    const telegram = telegramLinkPatch(pair);
+    const firebase = firebaseLinkPatch(pair);
+    this.mirrorLink(pair.telegramId, telegram.fields, telegram.mask);
+    this.mirrorLink(pair.firebaseUserId, firebase.fields, firebase.mask);
+  }
+
+  mirrorLink(userId: string, fields: Record<string, unknown>, mask: string[]): void {
+    const log = mirrorLog(this.deps);
+    let id = 'invalid';
+    try {
+      id = userDocId(userId);
+    } catch {
+      logMirror({ op: 'upsert', entity: 'user', id }, 'error', 0, log);
+      return;
+    }
+    if (!this.firestore) {
+      logMirror({ op: 'upsert', entity: 'user', id }, 'unconfigured', 0, log);
+      return;
+    }
+    const firestore = this.firestore;
+    scheduleMirror({ op: 'upsert', entity: 'user', id }, mirrorTimeout(this.deps), log, (signal) =>
+      firestore.patch(USER_COLLECTION, id, fields, { mask, signal }),
+    );
+  }
+}
+
+function telegramLinkPatch(pair: UserLinkPair): { fields: Record<string, unknown>; mask: string[] } {
+  return {
+    fields: { accountId: pair.accountId, lastSeenAt: pair.lastSeenAt, telegramId: pair.telegramId },
+    mask: ['accountId', 'lastSeenAt', 'telegramId'],
+  };
+}
+
+function firebaseLinkPatch(pair: UserLinkPair): { fields: Record<string, unknown>; mask: string[] } {
+  const fields: Record<string, unknown> = {
+    accountId: pair.accountId,
+    lastSeenAt: pair.lastSeenAt,
+    firebaseUid: pair.firebaseUid,
+  };
+  const mask = ['accountId', 'lastSeenAt', 'firebaseUid'];
+  if (pair.email) {
+    fields.email = pair.email;
+    mask.push('email');
+  }
+  if (pair.displayName) {
+    fields.displayName = pair.displayName;
+    mask.push('displayName');
+  }
+  return { fields, mask };
 }

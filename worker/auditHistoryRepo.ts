@@ -21,6 +21,7 @@ import {
   scheduleMirror,
   type DataPlaneDeps,
 } from './dataPlane';
+import { erasePageSize, moveMirroredAudits } from './accountMirror';
 import { firestoreFromEnv, type FirestoreClient, type FirestoreDoc } from './firestoreRest';
 
 export type AuditHistoryQuery = { accountId: string; domain: string; limit: number };
@@ -29,6 +30,7 @@ export type AuditHistoryWrite = { accountId: string; entry: StoredAuditEntry; no
 export type AuditHistoryRepository = {
   list(query: AuditHistoryQuery): Promise<StoredAuditEntry[]>;
   upsert(write: AuditHistoryWrite): Promise<StoredAuditEntry | null>;
+  move(fromAccountId: string, toAccountId: string): Promise<void>;
 };
 
 export function openAuditHistoryStore(
@@ -44,7 +46,7 @@ export function openAuditHistoryStore(
   const fs = firestoreFromEnv(env, deps);
   if (plane === 'firestore') {
     if (!fs) throw new DataPlaneConfigError('Firestore is not configured');
-    return new FirestoreAuditHistoryRepository(fs);
+    return new FirestoreAuditHistoryRepository(fs, AUDIT_HISTORY_CAP, erasePageSize(deps));
   }
   if (plane !== 'dual') {
     const _exhaustive: never = plane;
@@ -96,13 +98,26 @@ export class D1AuditHistoryRepository implements AuditHistoryRepository {
       .first<{ entry_json: string; measured_at: number }>();
     return row ? parseRow(row) : null;
   }
+
+  async move(fromAccountId: string, toAccountId: string): Promise<void> {
+    if (fromAccountId === toAccountId) return;
+    await this.db.batch([
+      this.db.prepare(`UPDATE OR IGNORE audit_history SET account_id = ? WHERE account_id = ?`).bind(toAccountId, fromAccountId),
+      this.db.prepare(`DELETE FROM audit_history WHERE account_id = ?`).bind(fromAccountId),
+    ]);
+  }
 }
 
 class FirestoreAuditHistoryRepository implements AuditHistoryRepository {
-  constructor(
-    private readonly client: FirestoreClient,
-    private readonly maxRows = AUDIT_HISTORY_CAP,
-  ) {}
+  private readonly client: FirestoreClient;
+  private readonly maxRows: number;
+  private readonly pageSize: number;
+
+  constructor(client: FirestoreClient, maxRows = AUDIT_HISTORY_CAP, pageSize = 100) {
+    this.client = client;
+    this.maxRows = maxRows;
+    this.pageSize = pageSize;
+  }
 
   async list(query: AuditHistoryQuery): Promise<StoredAuditEntry[]> {
     const docs = await this.client.query({
@@ -122,6 +137,10 @@ class FirestoreAuditHistoryRepository implements AuditHistoryRepository {
     await this.client.patch(AUDIT_COLLECTION, id, auditFields(write.accountId, entry, write.now), { signal });
     await trimMirrored(this.client, write.accountId, this.maxRows, signal);
     return entry;
+  }
+
+  move(fromAccountId: string, toAccountId: string, signal?: AbortSignal): Promise<void> {
+    return moveMirroredAudits(this.client, fromAccountId, toAccountId, this.pageSize, signal);
   }
 }
 
@@ -158,6 +177,21 @@ class DualAuditHistoryRepository implements AuditHistoryRepository {
       await trimMirrored(firestore, write.accountId, AUDIT_HISTORY_CAP, signal);
     });
     return stored;
+  }
+
+  async move(fromAccountId: string, toAccountId: string): Promise<void> {
+    await this.d1.move(fromAccountId, toAccountId);
+    if (fromAccountId === toAccountId) return;
+    const log = mirrorLog(this.deps);
+    if (!this.firestore) {
+      logMirror({ op: 'upsert', entity: 'audit', id: toAccountId }, 'unconfigured', 0, log);
+      return;
+    }
+    const firestore = this.firestore;
+    const pageSize = erasePageSize(this.deps);
+    scheduleMirror({ op: 'upsert', entity: 'audit', id: toAccountId }, mirrorTimeout(this.deps), log, (signal) =>
+      moveMirroredAudits(firestore, fromAccountId, toAccountId, pageSize, signal),
+    );
   }
 }
 

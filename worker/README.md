@@ -470,7 +470,7 @@ When D1 is unbound they fail best-effort and log to console.
 
 `dual` reads and writes D1. After a successful login upsert or `PUT /audits/history`, a Firestore write is scheduled with `waitUntil`. It times out after 4 seconds. The log line is `data_plane_mirror` with `op`, `entity`, `id`, `outcome`, and `latency_ms`. Firestore errors do not change the response. `firestore` is implemented and not enabled.
 
-Collections: `users/{loginId}` and `audits/{accountId length}.{accountId}.{entryId}`. `email_unsub_token` is not copied. Account link and privacy erase still write D1 only.
+Collections: `users/{loginId}` and `audits/{accountId length}.{accountId}.{entryId}`. `email_unsub_token` is not copied. Account link mirrors the shared account id. Privacy erase deletes the Firestore user and audit docs in `waitUntil` and records a failed delete in D1 `firestore_erase_ledger` (migration 0041) for `npm run db:backfill:firestore -- --reconcile-erases`. The flag stays unset.
 
 Backfill (dry-run by default, refuses project `luminara-suite` unless `--i-understand-prod`):
 
