@@ -72,8 +72,7 @@ export function formatCrewPagesForReport(
 
   for (let idx = 0; idx < usable.length; idx++) {
     const page = usable[idx];
-    const source = page.source || 'crew';
-    const headerLines: string[] = [`--- PAGE ${page.url} via ${source} ---`];
+    const headerLines: string[] = [`--- PAGE ${page.url} via page read ---`];
     if (page.title) headerLines.push(`Title: ${page.title}`);
     if (page.description) headerLines.push(`Description: ${page.description}`);
     if (page.h1s?.length) headerLines.push(`H1: ${page.h1s.join(' | ')}`);

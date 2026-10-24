@@ -512,3 +512,30 @@ describe('which chat replies count as an audit', () => {
     expect(looksLikeAuditReport('## AI & Search Visibility Radar\n')).toBe(true);
   });
 });
+
+describe('plain customer report lines', () => {
+  it('replaces vendor source labels and header jargon', () => {
+    const text = gateReportText([
+      'https://example.com (firecrawl scrape)',
+      'https://example.com (jina reader)',
+      'https://news.example (tavily search)',
+      'Trust pack & security data (untrusted enrichment block)',
+      'Implement HTTP Strict Transport Security (HSTS) header',
+      'Missing HSTS; lowers security trust score',
+      'Add a Content-Security-Policy header',
+      'Publish security.txt',
+      '```',
+      'Contact: https://example.com/.well-known/security.txt',
+      '```',
+    ].join('\n'));
+    expect(text).toContain('https://example.com (page read)');
+    expect(text).toContain('https://news.example (web search)');
+    expect(text).toContain('Trust pack & security data (security and public records)');
+    expect(text).toContain('Add a header that forces secure HTTPS connections (HSTS)');
+    expect(text).toContain('The site does not force secure HTTPS connections (HSTS).');
+    expect(text).toContain('Add a rule that controls which scripts the site can load (CSP)');
+    expect(text).toContain('Publish a public security contact file (security.txt)');
+    expect(text).toContain('https://example.com/.well-known/security.txt');
+    expect(text).not.toMatch(/firecrawl|jina|tavily|Strict Transport|untrusted enrichment/i);
+  });
+});

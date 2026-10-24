@@ -88,9 +88,10 @@ describe('audit report markdown', () => {
     expect(parseAuditReport('```\nnever closed').sections.some((section) => section.blocks.some((block) => block.kind === 'code' && block.text.includes('never closed')))).toBe(true);
 
     expect(scoreLine('passed 3 of 4 checks', false)).toBe('Not measured');
-    expect(scoreLine('passed 3 of 4 checks', true)).toBe('Passed 3 of 4 checks');
-    expect(scoreLine('passed 2 of 4; 1 not measured', false)).toBe('Passed 2 of 4; 1 not measured');
-    expect(scoreLine('passed 4 of 4; 0 not measured', true)).toBe('Passed 4 of 4; 0 not measured');
+    expect(scoreLine('passed 3 of 4 checks', true)).toBe('3 of 4 checks passed');
+    expect(scoreLine('passed 2 of 4; 1 not measured', false)).toBe('2 of 4 checks passed, 1 failed, 1 not measured');
+    expect(scoreLine('2 of 4 checks passed, 2 failed', true)).toBe('2 of 4 checks passed, 2 failed');
+    expect(scoreLine('passed 4 of 4; 0 not measured', true)).toBe('4 of 4 checks passed');
     expect(scoreLine('passed 4 of 4; 0 not measured', false)).toBe('Not measured');
     expect(scoreLine('Health Score: 90', true)).toBe('Not measured');
     expect(scoreLine('passed 9 of 4 checks', true)).toBe('Not measured');
@@ -135,7 +136,7 @@ describe('audit report markdown', () => {
       }),
     ];
     const pdf = withReportLead('passed 2 of 4; 1 not measured', true, findings);
-    expect(pdf).toContain('Score: Passed 2 of 4; 1 not measured');
+    expect(pdf).toContain('Score: 2 of 4 checks passed, 1 failed, 1 not measured');
     expect(pdf).toContain('How to fix: The homepage title does not name the agency.');
     expect(pdf).toContain('Not measured: Organization markup.');
     expect(pdf).not.toContain('### Organization markup');
@@ -146,7 +147,7 @@ describe('audit report markdown', () => {
       domain: 'raywhite.com.au',
       showActions: false,
     }));
-    expect(html).toContain('Passed 2 of 4; 1 not measured');
+    expect(html).toContain('2 of 4 checks passed, 1 failed, 1 not measured');
     expect(html).toContain('Not measured: Organization markup.');
     expect(html.match(/Mark done/g)).toHaveLength(1);
     const stripped = stripUnsupportedFixClaims(
@@ -205,7 +206,7 @@ describe('audit report page', () => {
   });
 
   it('does not print a second pass count beside the 4 site checks', () => {
-    expect(showFixTally('Passed 2 of 4; 1 not measured')).toBe(false);
+    expect(showFixTally('2 of 4 checks passed, 2 failed')).toBe(false);
     expect(showFixTally('Not measured')).toBe(true);
     const html = renderToStaticMarkup(createElement(AuditReportArticle, {
       markdown: 'passed 2 of 4; 1 not measured',
@@ -217,7 +218,7 @@ describe('audit report page', () => {
       domain: 'raywhite.com.au',
       showActions: false,
     }));
-    expect(html).toContain('Passed 2 of 4; 1 not measured');
+    expect(html).toContain('2 of 4 checks passed, 1 failed, 1 not measured');
     expect(html).toContain('The score above is the only pass count for the site checks.');
     expect(html).not.toContain('fixes done');
   });

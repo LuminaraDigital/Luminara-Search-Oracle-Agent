@@ -120,7 +120,7 @@ export class UnifiedScraperService {
             markdown: prRes.markdown || '',
             rawHtml: prRes.html,
             distilled,
-            formattedEvidence: this.buildEvidenceBlock('Patchright Stealth Runner', url, distilled),
+            formattedEvidence: this.buildEvidenceBlock(url, distilled),
             latencyMs: Math.round(performance.now() - startTime),
             antiBotBypassed: prRes.antiBotBypassed,
           };
@@ -163,7 +163,7 @@ export class UnifiedScraperService {
             markdown: fcRes.markdown || '',
             rawHtml: fcRes.html,
             distilled,
-            formattedEvidence: this.buildEvidenceBlock('Firecrawl API', url, distilled),
+            formattedEvidence: this.buildEvidenceBlock(url, distilled),
             latencyMs: Math.round(performance.now() - startTime),
           };
         }
@@ -212,7 +212,7 @@ export class UnifiedScraperService {
               description: distilled.description,
               markdown: mdText,
               distilled,
-              formattedEvidence: this.buildEvidenceBlock('Jina Reader (Zero-Key Fallback)', url, distilled),
+              formattedEvidence: this.buildEvidenceBlock(url, distilled),
               latencyMs: Math.round(performance.now() - startTime),
               ...(firecrawlSkipNote ? { fallbackNote: firecrawlSkipNote } : {}),
             };
@@ -253,7 +253,7 @@ export class UnifiedScraperService {
               markdown: distilled.distilledText,
               rawHtml: html,
               distilled,
-              formattedEvidence: this.buildEvidenceBlock('Direct Fetch (Zero-Key Fallback)', url, distilled),
+              formattedEvidence: this.buildEvidenceBlock(url, distilled),
               latencyMs: Math.round(performance.now() - startTime),
               ...(firecrawlSkipNote ? { fallbackNote: firecrawlSkipNote } : {}),
             };
@@ -291,15 +291,15 @@ export class UnifiedScraperService {
       description: distilled.description,
       markdown: text,
       distilled,
-      formattedEvidence: this.buildEvidenceBlock('Exa contents', url, distilled),
+      formattedEvidence: this.buildEvidenceBlock(url, distilled),
       latencyMs: Math.round(performance.now() - startTime),
       ...(firecrawlSkipNote ? { fallbackNote: firecrawlSkipNote } : {}),
     };
   }
 
-  private buildEvidenceBlock(providerName: string, url: string, distilled: DistilledContentResult): string {
+  private buildEvidenceBlock(url: string, distilled: DistilledContentResult): string {
     return `
-[REAL SITE SCRAPE EVIDENCE - VIA ${providerName.toUpperCase()}]
+[REAL SITE SCRAPE EVIDENCE - PAGE READ]
 Target URL: ${url}
 ${distilled.formattedEvidence}--------------------------------------------------
 `.trim();

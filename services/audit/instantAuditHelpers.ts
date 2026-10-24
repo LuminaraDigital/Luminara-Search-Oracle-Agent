@@ -201,7 +201,9 @@ export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: Hosted
     scrapedPageCount: crew.scrapedPages.length,
     serpCount: crew.serpEvidence.length,
     searchEngines: [...new Set(crew.serpEvidence.map((row) => row.engine))],
-    findings: crew.findings.map((finding) => ({ title: finding.title })),
+    findings: crew.findings
+      .filter((finding) => !finding.id.endsWith('-unmeasured'))
+      .map((finding) => ({ title: finding.title })),
     errors: crew.errors,
     plainEnglishBrief: crew.plainEnglishBrief,
     llmCrawler: crew.llmCrawlerReadiness,

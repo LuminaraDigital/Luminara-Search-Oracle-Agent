@@ -494,10 +494,37 @@ export function looksLikeAuditReport(text: string): boolean {
  * The gated report text. Logs once when a table was left as written, so a report
  * that slipped past the gate can be found.
  */
+const PAGE_READ_SOURCE = /\((?:firecrawl|jina|patchright|exa)(?:\s+[a-z][a-z ]{0,24})?\)/gi;
+const WEB_SEARCH_SOURCE = /\((?:tavily|groq)(?:\s+[a-z][a-z ]{0,24})?\)/gi;
+
+/** Customer report lines. Code blocks stay as written. Vendor names and header jargon do not. */
+export function plainCustomerReport(markdown: string): string {
+  let fence = false;
+  return markdown.split('\n').map((line) => {
+    if (line.trim().startsWith('```')) {
+      fence = !fence;
+      return line;
+    }
+    if (fence) return line;
+    return line
+      .replace(/Implement HTTP Strict Transport Security \(HSTS\) header/gi, 'Add a header that forces secure HTTPS connections (HSTS)')
+      .replace(/HTTP Strict Transport Security(?: \(HSTS\))?/gi, 'a header that forces secure HTTPS connections (HSTS)')
+      .replace(/Missing HSTS;?\s*lowers security trust score\.?/gi, 'The site does not force secure HTTPS connections (HSTS).')
+      .replace(/\bMissing HSTS\b/gi, 'Does not force secure HTTPS connections (HSTS)')
+      .replace(/Add a Content-Security-Policy header/gi, 'Add a rule that controls which scripts the site can load (CSP)')
+      .replace(/Content-Security-Policy(?: header)?|Content Security Policy(?: \(CSP\))?/gi, 'a rule that controls which scripts the site can load (CSP)')
+      .replace(/(?<![:\w./(-])security\.txt\b/gi, 'a public security contact file (security.txt)')
+      .replace(PAGE_READ_SOURCE, '(page read)')
+      .replace(WEB_SEARCH_SOURCE, '(web search)')
+      .replace(/\(untrusted enrichment block\)/gi, '(security and public records)')
+      .replace(/\buntrusted enrichment block\b/gi, 'security and public records');
+  }).join('\n');
+}
+
 export function gateReportText(markdown: string): string {
   const result = gateReportTables(markdown || '');
   if (result.unparsedTables > 0) {
     console.warn(`[report gate] ${result.unparsedTables} table(s) left as written: the cells could not be lined up under the headers.`);
   }
-  return stripUntrustedFences(result.text);
+  return plainCustomerReport(stripUntrustedFences(result.text));
 }

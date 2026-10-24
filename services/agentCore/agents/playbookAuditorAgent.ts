@@ -19,6 +19,7 @@ import {
 import {
   healthChecklist,
   healthScoreFromFindings,
+  measuredCheckLine,
   healthScoreBlockReason,
   liveSearchRows,
   pageFetchBlocked,
@@ -216,7 +217,7 @@ export class PlaybookAuditorAgent {
       agentRole: 'playbook_auditor',
       agentName: this.name,
       phase: 'audit_complete',
-      message: `Finished the check. ${findingSummary(findings.map((finding) => finding.title))} ${checklist.passed} of ${checklist.total} checks passed, ${checklist.failed} failed.`,
+      message: `Finished the check. ${findingSummary(findings.map((finding) => finding.title))} ${measuredCheckLine(checklist)}.`,
       status: 'completed',
       confidenceScore: 0.92,
     });

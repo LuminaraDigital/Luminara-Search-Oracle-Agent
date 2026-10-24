@@ -112,6 +112,8 @@ describe('audit prompt evidence labels', () => {
     expect(text).toContain('Security posture (MEASURED):');
     expect(text).toContain('forces secure HTTPS connections (HSTS):');
     expect(text).toContain('controls which scripts the site can load (CSP):');
+    expect(text).toContain('public security contact file (security.txt):');
+    expect(text).not.toContain('TrustScore');
     expect(text).not.toMatch(/verified/i);
   });
 

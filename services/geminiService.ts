@@ -176,7 +176,7 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
   const seen = new Set<string>();
   const merged: Array<{ title: string; url: string; content: string; score?: number }> = [];
   let answers: string[] = [];
-  let sourceLabel = 'Tavily Search';
+  let sourceLabel = 'web search';
 
   if (tavilyKey) {
     const responses = await Promise.all(
@@ -206,7 +206,7 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
     );
     for (const sr of serpResponses) {
       if (!sr || !sr.results || !sr.results.length) continue;
-      sourceLabel = `Google Search via Sidecar (${sr.tier || 'Fast'})`;
+      sourceLabel = 'web search';
       if (sr.featuredSnippet?.snippet) {
         answers.push(sr.featuredSnippet.snippet);
       } else if (sr.aiOverview?.text) {
@@ -900,6 +900,8 @@ Follow the methodology playbooks above. Respect deprecation rules (never recomme
 FAQPage earns no Google rich result; use INP, never FID). Grade only what scraped page and search
 evidence support. Anything unobserved is "not measured". Never invent composite scores (e.g. XX/100).
 When Trust Pack findings are present, reflect Critical/High items in the fix list.
+In the verdict and the fix list, say "a header that forces secure HTTPS connections (HSTS)", "a rule that controls which scripts the site can load (CSP)", and "a public security contact file (security.txt)". Do not write HTTP Strict Transport Security, Content-Security-Policy, or a security trust score.
+Label a fetched page as (page read) and a search result as (web search). Do not name Firecrawl, Jina, Tavily, Exa, or Patchright, and do not write "untrusted enrichment block".
 
 Strict Formatting Guidelines:
 1. Title: Must begin with: "# Luminara: Web search check for ${dna?.name || displayUrl}"
