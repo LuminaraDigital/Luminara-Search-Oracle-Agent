@@ -30,7 +30,7 @@ describe('evidence-gated starter fixes', () => {
       findings: [{ id: 'finding-schema-org', title: 'Add Organization markup' }],
       crawlerChecks: passed,
     }));
-    expect(html).toContain('Add Organization markup');
+    expect(html).toContain('Add a business identity tag');
     expect(html).not.toContain('Allow AI crawlers');
     expect(html).not.toContain('llms.txt');
   });

@@ -32,6 +32,9 @@ export interface EmpiricalCitationSummary {
   lastAudited: number;
   /** Omitted on older fixtures. not_measured means scores must stay null. */
   measurementStatus?: 'measured' | 'not_measured';
+  /** Search rows that name the brand, and the rows collected. Same count the scout prints. */
+  webResultsMentioned?: number;
+  webResultsTotal?: number;
 }
 
 /** Search rows already in hand. Scoring them does not call a search provider. */
@@ -92,6 +95,8 @@ export class EmpiricalCitationService {
     const brand = (brandName && brandName.trim()) || targetDomain.split('.')[0];
     const evidenceList: EmpiricalEvidence[] = [];
     const competitorCounts: Record<string, number> = {};
+    let webResultsMentioned = 0;
+    let webResultsTotal = 0;
 
     for (const item of groups) {
       const results = item.results || [];
@@ -109,6 +114,8 @@ export class EmpiricalCitationService {
           { domain: targetDomain, brandName: brandName },
           { url: res.url, title: res.title, text: res.content },
         ) === 'same';
+        webResultsTotal += 1;
+        if (isMatch) webResultsMentioned += 1;
 
         if (isMatch && !brandCited) {
           brandCited = true;
@@ -159,6 +166,8 @@ export class EmpiricalCitationService {
         entityClarityScore: null,
         lastAudited: Date.now(),
         measurementStatus: 'not_measured',
+        webResultsMentioned,
+        webResultsTotal,
       };
     }
     const citationRatePercent = Math.round((queriesCitedCount / evidenceList.length) * 100);
@@ -185,6 +194,8 @@ export class EmpiricalCitationService {
       entityClarityScore,
       lastAudited: Date.now(),
       measurementStatus: 'measured',
+      webResultsMentioned,
+      webResultsTotal,
     };
   }
 

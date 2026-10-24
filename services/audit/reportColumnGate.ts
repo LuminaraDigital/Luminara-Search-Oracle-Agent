@@ -543,6 +543,17 @@ function collapseRepeated(line: string): string {
   return next.replace(/file \(security\.txt\)(?:\s+file\b)+/gi, 'file (security.txt)');
 }
 
+/** A dot that belongs to a number, a version, or a host, not the end of a sentence. */
+function keepTightDot(full: string, dot: number): boolean {
+  const before = full.slice(0, dot);
+  const after = full.slice(dot + 1);
+  if (/\d$/.test(before) && /^\d/.test(after)) return true;
+  const tail = before.match(/\S*$/)?.[0] || '';
+  if (/^www$/i.test(tail)) return true;
+  if (/https?:\/\/\S*$/i.test(tail) && !/^[A-Z][a-z]/.test(after)) return true;
+  return false;
+}
+
 /** One pair of brackets per term. A second copy of the same pair is dropped. */
 function unwrapDoubleParens(line: string): string {
   return line
@@ -551,24 +562,60 @@ function unwrapDoubleParens(line: string): string {
 }
 
 function spaceAfterStop(line: string): string {
-  return line.replace(/([.!?])([A-Z])/g, '$1 $2');
+  return line.replace(/([.!?])(?=[A-Z])/g, (match, stop: string, offset: number, full: string) => {
+    if (stop === '.' && keepTightDot(full, offset)) return match;
+    return `${stop} `;
+  });
+}
+
+export type AuditTextScope = { domain?: string; brand?: string };
+
+/** True when a search result names the audited domain or brand. With no scope, the row stays. */
+export function sourceMentionsAudit(uri: string, title: string, scope?: AuditTextScope): boolean {
+  const domain = (scope?.domain || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0];
+  const brand = (scope?.brand || '').trim();
+  if (!domain && brand.length < 3) return true;
+  const hay = `${uri} ${title}`;
+  const host = hostOf(uri);
+  if (domain && (host === domain || host.endsWith(`.${domain}`) || hay.toLowerCase().includes(domain))) return true;
+  if (brand.length >= 3) {
+    const re = new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(hay)) return true;
+  }
+  return false;
 }
 
 function scrubCustomerLine(line: string): string {
-  const next = line
-    .replace(/Implement HTTP Strict Transport Security \(HSTS\) header/gi, HSTS_TITLE)
+  const normalized = line
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
+    .replace(/\[\[([^[\]]+)\]\]/g, '$1');
+  const next = normalized
+    .replace(/\b(?:Implement|Add(?: an)?)\s+(?:an?\s+)?HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?(?:\s+header)?\b/gi, HSTS_TITLE)
     .replace(/\bAdd(?: an?)? HSTS header\b/gi, HSTS_TITLE)
-    .replace(/HTTP Strict Transport Security(?: \(HSTS\))?/gi, HSTS_TITLE)
+    .replace(/HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?/gi, HSTS_TITLE)
     .replace(/Add a header that forces secure HTTPS connections \(HSTS\)/gi, HSTS_TITLE)
     .replace(/\ba header that forces secure HTTPS connections \(HSTS\)/gi, HSTS_TITLE)
     .replace(/Missing HSTS;?\s*lowers security trust score\.?/gi, 'The site does not force secure HTTPS connections (HSTS).')
     .replace(/\bMissing HSTS\b/gi, 'Does not force secure HTTPS connections (HSTS)')
+    .replace(/\b(?:Implement|Add|Publish)\s+(?:a\s+)?Content-Security-Policy(?:\s+header)?\b/gi, CSP_TITLE)
     .replace(/\bAdd(?: a)? CSP header\b/gi, CSP_TITLE)
-    .replace(/Add a Content-Security-Policy header/gi, CSP_TITLE)
     .replace(/Add a rule that controls which scripts the site can load \(CSP\)/gi, CSP_TITLE)
     .replace(/\ba rule that controls which scripts the site can load \(CSP\)/gi, CSP_TITLE)
     .replace(/Content-Security-Policy(?: header)?|Content Security Policy(?: \(CSP\))?/gi, CSP_TITLE)
-    .replace(/(?:Insert|Add(?: a basic)?) Organization JSON[-\u2010-\u2015]?LD(?: block)?/gi, ORG_TAG)
+    .replace(/(?:Insert|Add(?: a basic)?) Organization JSON-?LD(?: block)?/gi, ORG_TAG)
+    .replace(/\b(?:Organization|organisation)\s+(?:markup|schema)\b/gi, ORG_TAG)
+    .replace(/\bno\s+structured\s+data\b/gi, 'no business identity tag')
+    .replace(/\bstructured\s+data\b/gi, 'a business identity tag')
+    .replace(/\bShip\s+schema\s*\/\s*(?:a\s+)?business identity tag\b/gi, ORG_TAG)
+    .replace(/\bAdd or fix\s+(?:a\s+)?business identity tag\b[^.]*/gi, ORG_TAG)
+    .replace(/\bSchema\.org\b/gi, 'a business identity tag')
+    .replace(/\btag\s+markup\b/gi, 'tag')
+    .replace(/[ \t]+markup\s*$/gim, '')
     .replace(/(?:\ba public\s+)?(?<![:\w./(-])security\.txt\b(?:\s+file)?/gi, SECURITY_FILE)
     .replace(PAGE_READ_SOURCE, '(page read)')
     .replace(WEB_SEARCH_SOURCE, '(web search)')
@@ -600,8 +647,34 @@ function modelSourceLine(line: string): string {
   return `${lead ? lead[0] : ''}${customerSourceLine(uri, title, kind)}`;
 }
 
+function sourceList(line: string, scope?: AuditTextScope): string {
+  const urls = [...line.matchAll(/https?:\/\/[^\s<>)\]]+/gi)];
+  if (!urls.length) return scrubCustomerLine(line);
+  if (urls.length === 1) {
+    const uri = urls[0][0].replace(/[.,;]+$/, '');
+    const text = modelSourceLine(scrubCustomerLine(line)).replace(/^\s*[-*]\s+/, '').trim();
+    if (!sourceMentionsAudit(uri, text, scope)) return '';
+    return `- ${text}`;
+  }
+  const items: string[] = [];
+  let cursor = 0;
+  for (let i = 0; i < urls.length; i += 1) {
+    const uri = urls[i][0].replace(/[.,;]+$/, '');
+    const at = urls[i].index ?? 0;
+    const before = line.slice(cursor, at);
+    const afterStart = at + urls[i][0].length;
+    const afterEnd = i + 1 < urls.length ? (urls[i + 1].index ?? line.length) : line.length;
+    const chunk = `${uri} ${before} ${line.slice(afterStart, afterEnd)}`;
+    const text = modelSourceLine(scrubCustomerLine(chunk)).replace(/^\s*[-*]\s+/, '').trim();
+    cursor = afterEnd;
+    if (!sourceMentionsAudit(uri, text, scope)) continue;
+    items.push(`- ${text}`);
+  }
+  return items.join('\n');
+}
+
 /** Customer report lines. Code blocks stay as written. Vendor names and header jargon do not. */
-export function plainCustomerReport(markdown: string): string {
+export function plainCustomerReport(markdown: string, scope: AuditTextScope = {}): string {
   let fence = false;
   let sources = false;
   return markdown.split('\n').map((line) => {
@@ -615,16 +688,15 @@ export function plainCustomerReport(markdown: string): string {
       sources = /\bsources\b/i.test(trimmed);
       return scrubCustomerLine(line);
     }
-    const scrubbed = scrubCustomerLine(line);
-    if (sources && !trimmed.startsWith('|') && /https?:\/\//i.test(scrubbed)) return modelSourceLine(scrubbed);
-    return scrubbed;
+    if (sources && !trimmed.startsWith('|') && /https?:\/\//i.test(line)) return sourceList(line, scope);
+    return scrubCustomerLine(line);
   }).join('\n');
 }
 
-export function gateReportText(markdown: string): string {
+export function gateReportText(markdown: string, scope: AuditTextScope = {}): string {
   const result = gateReportTables(markdown || '');
   if (result.unparsedTables > 0) {
     console.warn(`[report gate] ${result.unparsedTables} table(s) left as written: the cells could not be lined up under the headers.`);
   }
-  return plainCustomerReport(stripUntrustedFences(result.text));
+  return plainCustomerReport(stripUntrustedFences(result.text), scope);
 }

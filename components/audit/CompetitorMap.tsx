@@ -17,7 +17,7 @@ function columnIndex(headers: string[], pattern: RegExp, position: number): numb
 
 /** The cell as written, or "Not measured" when the report left it empty. No default wording. */
 function cellText(cell: unknown): string {
-    return String(cell ?? '').replace(/[*_`]/g, '').trim() || 'Not measured';
+    return String(cell ?? '').replace(/[*_`]/g, '').replace(/\[\[|\]\]/g, '').trim() || 'Not measured';
 }
 
 /** A model placeholder such as [[Competitor 1]]. A real rival name is kept. */

@@ -12,8 +12,8 @@ export { readShipCommitment, writeShipCommitment } from '../../services/audit/sh
 const ACTIONS: Array<{ id: string; label: string; detail: string }> = [
   {
     id: 'deploy-schema',
-    label: 'Ship schema / structured data',
-    detail: 'Add or fix Schema.org so AI and Google understand your brand entity.',
+    label: 'Add a business identity tag',
+    detail: 'Add a business identity tag so search tools can tell who you are.',
   },
   {
     id: 'rewrite-answer',
@@ -129,7 +129,7 @@ export const ShipActionGate: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => {
-              commit('deploy-schema', 'Ship schema / structured data');
+              commit(ACTIONS[0].id, ACTIONS[0].label);
               onDeploy();
             }}
             className="px-6 py-3 rounded-xl glass-morphism border border-gold/40 text-gold-light font-black uppercase text-[10px] tracking-[0.25em] hover:bg-gold/10 transition-all flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"

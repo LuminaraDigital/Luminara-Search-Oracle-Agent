@@ -25,7 +25,8 @@ import type { WritingQualityReport } from '../../services/audit/writingQualitySe
 import type { TrafficImpact } from '../../services/analytics/trafficInsightsService';
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
-import { customerSourceLine, sourceReadKind } from '../../services/audit/reportColumnGate';
+import { customerSourceLine, gateReportText, sourceReadKind } from '../../services/audit/reportColumnGate';
+import { citationView } from './VisibilityRadar';
 import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
@@ -43,7 +44,6 @@ import { measuredChecks } from '../../services/share/winShare';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
 import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
-import { gateReportText } from '../../services/audit/reportColumnGate';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import type { RLMTrajectoryMetadata } from '../../services/rlm/types';
 import { RlmTrajectoryViewer } from '../rlm/RlmTrajectoryViewer';
@@ -83,13 +83,30 @@ interface ReportDisplayProps {
   checkLine?: string;
 }
 
-/** "mentioned in N of M sampled queries", or null when the summary holds no such count. */
+/**
+ * Mention line from search evidence.
+ * Empty evidence is not a count: the radar cannot show a query that was not measured.
+ */
 export function sampledMentionsLabel(summary: EmpiricalCitationSummary | undefined): string | null {
-  if (!summary || summary.measurementStatus === 'not_measured' || summary.citationRatePercent == null) return null;
-  const mentioned = summary.queriesCitedCount;
-  const total = summary.totalQueriesTested;
-  if (!Number.isInteger(mentioned) || !Number.isInteger(total) || total <= 0 || mentioned < 0 || mentioned > total) return null;
-  return `mentioned in ${mentioned} of ${total} sampled queries`;
+  if (!summary || summary.measurementStatus === 'not_measured') return null;
+  const rows = summary.evidenceList || [];
+  if (!rows.length) return null;
+  const webMentioned = summary.webResultsMentioned;
+  const webTotal = summary.webResultsTotal;
+  if (
+    typeof webMentioned === 'number'
+    && typeof webTotal === 'number'
+    && Number.isInteger(webMentioned)
+    && Number.isInteger(webTotal)
+    && webTotal > 0
+    && webMentioned >= 0
+    && webMentioned <= webTotal
+  ) {
+    return `mentioned in ${webMentioned} of ${webTotal} web results`;
+  }
+  const mentioned = rows.filter((row) => row.brandCited).length;
+  if (mentioned > rows.length) return null;
+  return `mentioned in ${mentioned} of ${rows.length} sampled queries`;
 }
 
 export const ReportDisplay: React.FC<ReportDisplayProps> = ({
@@ -123,7 +140,14 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   // A stored or shared report was gated when it was made only if it was made after the gate existed.
   // No table in the report text is measured: the model writes its rows. Measured
   // traffic is drawn by ResultsTrackingCard from the analytics data, not from this text.
-  const markdownText = useMemo(() => gateReportText(rawMarkdownText || ''), [rawMarkdownText]);
+  const markdownText = useMemo(
+    () => gateReportText(rawMarkdownText || '', { domain: targetDomain, brand: dnaName }),
+    [rawMarkdownText, targetDomain, dnaName],
+  );
+  const citation = useMemo(
+    () => citationView(markdownText, hideLiveNumbers ? undefined : empiricalSummary),
+    [markdownText, empiricalSummary, hideLiveNumbers],
+  );
   const pageHealthMeasured = !suppressLiveMetrics && measuredChecks(markdownText, true) != null;
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
@@ -222,14 +246,14 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     return subscribeQuota((quota) => setSharePlan(quota?.plan));
   }, []);
   const canShare = entitlementsFor(sharePlan).shareLinks;
-  const validSources = visibleGroundingSources(sources);
+  const validSources = visibleGroundingSources(sources, { domain: targetDomain, brand: dnaName });
   const sourceCount = validSources?.length || 0;
   const hasEvidence = Boolean(
     (!hideLiveNumbers && empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,
   );
   const reportUnlocked = hideAgencyActions || Boolean(shipCommitment);
   // The two counts the search sample gave, not a percentage of them.
-  const evidenceLabel = (hideLiveNumbers ? null : sampledMentionsLabel(empiricalSummary)) || 'not measured';
+  const evidenceLabel = citation.label || 'not measured';
   const unavailableCopy = liveDataUnavailableCopy(
     hostedRail ?? (clientHasHostedIdentity() ? 'signed_in_hosted' : 'byok_or_signin'),
   );
@@ -288,6 +312,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         domain={targetDomain}
         clientName={dnaName}
         sources={sources}
+        citationEvidence={citation.evidence || undefined}
         showActions={!hideAgencyActions}
         citationRateKnown={empiricalSummary ? typeof empiricalSummary.citationRatePercent === 'number' : undefined}
         checkLine={checkLine}
