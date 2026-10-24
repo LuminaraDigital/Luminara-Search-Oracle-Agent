@@ -2,6 +2,7 @@ import React from 'react';
 import { AgentActivityEvent, AgentRole, AgentStatus } from '../../services/agentCore/types';
 import { CREW_PROFILES } from '../../services/agentCore/crewOrchestrator';
 import { PROOF_BADGE_ENABLED } from '../../services/agentCore/tonAttestationService';
+import { competitorProgressFromReport } from './CompetitorMap';
 
 interface AgentMissionControlProps {
   events: AgentActivityEvent[];
@@ -12,6 +13,8 @@ interface AgentMissionControlProps {
   proofBadgeEnabled?: boolean;
   /** measured only when citation, share of voice, and health all came from evidence. */
   measurementStatus?: 'measured' | 'not_measured' | null;
+  /** Report markdown. The competitor card counts the rival rows this report's map draws. */
+  reportMarkdown?: string;
 }
 
 export function missionControlCardBadge(
@@ -56,6 +59,7 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
   hasAttestation,
   proofBadgeEnabled = PROOF_BADGE_ENABLED,
   measurementStatus = null,
+  reportMarkdown,
 }) => {
   // Find latest status for each role
   const roleStatuses = React.useMemo(() => {
@@ -79,8 +83,14 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
       }
     });
 
+    const fromReport = reportMarkdown ? competitorProgressFromReport(reportMarkdown) : null;
+    const strategist = map.competitor_strategist;
+    if (fromReport && strategist.status !== 'idle' && strategist.status !== 'running' && strategist.status !== 'reflecting') {
+      map.competitor_strategist = { ...strategist, message: fromReport };
+    }
+
     return map;
-  }, [events]);
+  }, [events, reportMarkdown]);
 
   const latestEvent = events.length > 0 ? events[events.length - 1] : null;
   const providerDecision = events.find((event) => event.phase === 'provider_decisions');

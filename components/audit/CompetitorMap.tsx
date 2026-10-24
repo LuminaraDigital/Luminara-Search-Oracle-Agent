@@ -1,6 +1,8 @@
 ﻿import React from 'react';
 import { ICONS } from '../../constants';
-import { displayMeasured } from '../../services/audit/reportBlocks';
+import { countPhrase } from '../../services/audit/reportSentence';
+import { gateReportText } from '../../services/audit/reportColumnGate';
+import { displayMeasured, parseAuditReport } from '../../services/audit/reportBlocks';
 
 interface CompetitorMapProps {
     headers: string[];
@@ -40,16 +42,56 @@ function measuredField(cell: unknown): boolean {
     return !BLANK_CELL.test(rawCell(cell));
 }
 
+type MapColumns = { entity: number; perception: number; pages: number; advantage: number };
+
+function mapColumns(headers: string[]): MapColumns {
+    return {
+        entity: columnIndex(headers, /entity|brand/i, 0),
+        perception: columnIndex(headers, /perception|how ai talks/i, 1),
+        pages: columnIndex(headers, /page/i, 2),
+        advantage: columnIndex(headers, /advantage/i, 3),
+    };
+}
+
+/** A rival row the map draws: a real name and at least one measured cell. The first row is the target. */
+function shownRival(row: string[], cols: MapColumns): boolean {
+    if (placeholderCompetitor(rawCell(row[cols.entity]))) return false;
+    return [cols.perception, cols.pages, cols.advantage].some((col) => measuredField(row[col]));
+}
+
+/** Rival rows and measured content-advantage gaps, the same ones the map draws. */
+export function renderedCompetitorCounts(headers: string[], rows: string[][]): { rivals: number; gaps: number } {
+    const cols = mapColumns(headers);
+    const rivals = rows.filter((row, index) => index > 0 && shownRival(row, cols));
+    const gaps = rivals.filter((row) => measuredField(row[cols.advantage]));
+    return { rivals: rivals.length, gaps: gaps.length };
+}
+
+/** Progress-card sentence for those counts. An empty rival list is not a zero count. */
+export function competitorProgressMessage(rivals: number, gaps: number): string {
+    if (rivals === 0) return 'No competitors found in this search sample.';
+    return `Identified ${countPhrase(rivals, 'key competitor')} and mapped ${countPhrase(gaps, 'keyword gap')}.`;
+}
+
+/** Rival and gap counts for the competitor table, or null when that table is absent. */
+export function verifiedRivalsFromReport(markdown: string): { rivals: number; gaps: number } | null {
+    const doc = parseAuditReport(gateReportText(markdown || ''));
+    const section = doc.sections.find((item) => /competitor/i.test(item.title));
+    const table = section?.blocks.find((block) => block.kind === 'table');
+    if (!table || table.kind !== 'table') return null;
+    return renderedCompetitorCounts(table.headers, table.rows);
+}
+
+/** The sentence for the competitor table in a report, or null when that table is absent. */
+export function competitorProgressFromReport(markdown: string): string | null {
+    const counts = verifiedRivalsFromReport(markdown);
+    if (!counts) return null;
+    return competitorProgressMessage(counts.rivals, counts.gaps);
+}
+
 export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) => {
-    const entityCol = columnIndex(headers, /entity|brand/i, 0);
-    const perceptionCol = columnIndex(headers, /perception|how ai talks/i, 1);
-    const pagesCol = columnIndex(headers, /page/i, 2);
-    const advantageCol = columnIndex(headers, /advantage/i, 3);
-    const visibleRows = rows.filter((row, index) => {
-        if (index === 0) return true;
-        if (placeholderCompetitor(rawCell(row[entityCol]))) return false;
-        return [perceptionCol, pagesCol, advantageCol].some((col) => measuredField(row[col]));
-    });
+    const cols = mapColumns(headers);
+    const visibleRows = rows.filter((row, index) => index === 0 || shownRival(row, cols));
     const rivalCount = Math.max(visibleRows.length - 1, 0);
 
     return (
@@ -74,10 +116,10 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
                     <p className="text-xs text-gray-400">No rivals found in this search sample.</p>
                 ) : null}
                 {visibleRows.map((row, idx) => {
-                    const entity = cellText(row[entityCol]);
-                    const perception = cellText(row[perceptionCol]);
-                    const topPages = cellText(row[pagesCol]);
-                    const contentAdvantage = cellText(row[advantageCol]);
+                    const entity = cellText(row[cols.entity]);
+                    const perception = cellText(row[cols.perception]);
+                    const topPages = cellText(row[cols.pages]);
+                    const contentAdvantage = cellText(row[cols.advantage]);
                     const isUser = idx === 0;
 
                     return (

@@ -27,6 +27,8 @@ interface WeeklyDecisionCardProps {
   rawSources?: Array<{ uri: string; title: string }>;
   radarRows?: readonly RadarCitationRow[];
   mindshareHistory?: readonly MindshareHistoryPoint[];
+  /** Report markdown. Who-gets-named follows the rival rows this report's map draws. */
+  reportMarkdown?: string;
   onSelectAction?: (actionId: string, label: string) => void;
 }
 
@@ -44,6 +46,7 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
   rawSources,
   radarRows,
   mindshareHistory,
+  reportMarkdown,
   onSelectAction,
 }) => {
   const [busy, setBusy] = useState(false);
@@ -290,6 +293,7 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
         rawSources={rawSources}
         radarRows={radarRows}
         history={mindshareHistory}
+        reportMarkdown={reportMarkdown}
         onSelectAction={onSelectAction}
       />
 

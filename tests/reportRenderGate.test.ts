@@ -5,7 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import MessageList, { chatMessageText } from '../components/MessageList';
 import * as markdownUtils from '../utils/markdown';
-import { CompetitorMap } from '../components/audit/CompetitorMap';
+import { AgentMissionControl } from '../components/audit/AgentMissionControl';
+import { CompetitorMap, competitorProgressFromReport, competitorProgressMessage, renderedCompetitorCounts } from '../components/audit/CompetitorMap';
+import { ShipActionGate } from '../components/audit/ShipActionGate';
+import { MindshareRadarCard } from '../components/visibility/MindshareRadarCard';
 import { EmpiricalEvidenceDrawer } from '../components/audit/EmpiricalEvidenceDrawer';
 import { ReportDisplay, sampledMentionsLabel } from '../components/audit/ReportDisplay';
 import { VisibilityRadar, readBrandCited, readCitationStatus } from '../components/audit/VisibilityRadar';
@@ -472,6 +475,111 @@ describe('the competitor card fills no gap with made-up wording', () => {
     expect(html).not.toContain('[[IANA]]');
     expect(html).not.toContain('[[Wikipedia]]');
     expect(html).not.toContain('[[');
+  });
+
+  it('gives the strategist card the same rival and gap counts the map draws', () => {
+    const headers = [...REPORT_TABLES.competitorMap];
+    const rows = [
+      ['example.com', 'Not measured', 'Not measured', 'Not measured'],
+      ['(no verified rivals in this niche)', 'Not measured', 'Not measured', 'Not measured'],
+      ['iana.org', 'Registry', 'Docs', 'Not measured'],
+      ['Wikipedia', 'Encyclopedia', 'Article', 'Coverage'],
+    ];
+    const map = renderToStaticMarkup(createElement(CompetitorMap, { headers, rows }));
+    expect(map).toContain('iana.org');
+    expect(map).toContain('Wikipedia');
+    expect(map).not.toContain('no verified rivals');
+    expect(renderedCompetitorCounts(headers, rows)).toEqual({ rivals: 2, gaps: 1 });
+
+    const table = (body: string[][]) => [
+      '## Competitor Reality Map',
+      '',
+      `| ${headers.join(' | ')} |`,
+      `| ${headers.map(() => '---').join(' | ')} |`,
+      ...body.map((row) => `| ${row.join(' | ')} |`),
+    ].join('\n');
+    const counted = table(rows);
+    expect(competitorProgressFromReport(counted)).toBe('Identified 2 key competitors and mapped 1 keyword gap.');
+    expect(renderedCompetitorCounts(headers, rows)).toEqual({ rivals: 2, gaps: 1 });
+    const noneRows = [
+      ['example.com', 'Not measured', 'Not measured', 'Not measured'],
+      ['(no verified rivals in this niche)', 'Not measured', 'Not measured', 'Not measured'],
+    ];
+    const none = table(noneRows);
+    const fallbackNone = none.replace('## Competitor Reality Map', '## 5. Competitor map');
+    expect(competitorProgressFromReport(none)).toBe('No competitors found in this search sample.');
+    expect(competitorProgressFromReport(fallbackNone)).toBe(competitorProgressMessage(0, 0));
+    expect(renderedCompetitorCounts(headers, noneRows)).toEqual({ rivals: 0, gaps: 0 });
+
+    const card = (markdown: string) => renderToStaticMarkup(createElement(AgentMissionControl, {
+      events: [{
+        id: 'c',
+        timestamp: 1,
+        agentRole: 'competitor_strategist',
+        agentName: 'Competitor Strategist',
+        phase: 'strategy_complete',
+        message: 'Identified 4 key competitors and mapped 2 keyword gaps.',
+        status: 'completed',
+      }],
+      isComplete: true,
+      measurementStatus: 'measured',
+      reportMarkdown: markdown,
+    }));
+    const withRivals = card(counted);
+    expect(withRivals).toContain('Identified 2 key competitors and mapped 1 keyword gap.');
+    expect(withRivals).not.toContain('4 key competitors');
+    expect(withRivals).not.toContain('2 keyword gaps');
+    const withNone = card(none);
+    expect(withNone).toContain('No competitors found in this search sample.');
+    expect(withNone).not.toContain('4 key competitors');
+    expect(withNone).not.toContain('keyword gap');
+    expect(card(fallbackNone)).toContain('No competitors found in this search sample.');
+    expect(withRivals).not.toContain('No competitors found');
+
+    const featureEvidence = {
+      id: 'f',
+      query: 'what is example.com',
+      intent: 'informational' as const,
+      targetDomain: 'example.com',
+      brandCited: true,
+      brandRank: 1,
+      citedUrl: 'https://example.com',
+      snippet: 'The page lists feature and API benchmarks.',
+      competitorsCited: [] as string[],
+      citationConfidence: 80,
+      timestamp: 1,
+    };
+    const named = (markdown: string) => renderToStaticMarkup(createElement(MindshareRadarCard, {
+      domain: 'example.com',
+      evidence: [featureEvidence],
+      radarRows: [{ query: 'what is example.com', competitors: 'packetpushers.net', status: 'cited' }],
+      reportMarkdown: markdown,
+    }));
+    const ship = (markdown: string) => renderToStaticMarkup(createElement(ShipActionGate, {
+      domain: 'example.com',
+      markdownText: markdown,
+      hasEvidence: true,
+      sourceCount: 4,
+      onCommitted: () => undefined,
+    }));
+    for (const markdown of [none, fallbackNone]) {
+      const who = named(markdown);
+      const next = ship(markdown);
+      expect(who).toContain('No competitors found in this search sample.');
+      expect(who).not.toContain('feature parity');
+      expect(who).not.toContain('Clear feature parity');
+      expect(who).not.toContain('Key Citation Driver');
+      expect(who).not.toContain('packetpushers.net');
+      expect(who).not.toContain('Rivals named');
+      expect(next).not.toContain('Close one citation gap');
+      expect(next).not.toContain('rivals already win');
+      expect(who).not.toContain('\u2014');
+      expect(next).not.toContain('\u2014');
+    }
+    expect(named(counted)).toContain('feature parity');
+    expect(named(counted)).toContain('packetpushers.net');
+    expect(ship(counted)).toContain('Close one citation gap');
+    expect(ship(counted)).toContain('rivals already win');
   });
 });
 
