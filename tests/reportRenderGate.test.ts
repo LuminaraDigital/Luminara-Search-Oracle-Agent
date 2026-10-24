@@ -313,7 +313,7 @@ describe('the evidence button gives the two counts, not a percentage (review 2, 
     expect(sampledMentionsLabel(counted)).toBe('mentioned in 5 of 9 web results');
     const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: radar, empiricalSummary: counted }));
     expect(html).toContain('Preview evidence (mentioned in 5 of 9 web results)');
-    expect(html).toContain('mentioned in 2 of 3 queries');
+    expect(html).toContain('cited in 2 of 3 queries');
     expect(html).not.toContain('mentioned in 3 of 3');
     expect(html).not.toContain('sampled queries');
   });

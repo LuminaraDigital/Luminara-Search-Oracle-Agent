@@ -1127,7 +1127,103 @@ describe('Instant Audit degraded provider failures', () => {
       dna: null,
       lenses: [],
     });
-    expect(report?.text).toBe('measured brief');
+    expect(report?.text).toContain('Luminara: Web search check for example.com');
+    expect(report?.text).toContain('measured brief');
     expect(reportSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces a fallback report about the methodology playbooks with example.com', async () => {
+    const wrong = [
+      '# Luminara: Web search check for SEO METHODOLOGY PLAYBOOKS',
+      '',
+      '*Luminara · fog clearing complete · ship the one move*',
+      '',
+      '**Date:** 24 Oct 2026 · **Mode:** Instant Audit',
+      '',
+      '## 2. Plain verdict',
+      '',
+      'SEO METHODOLOGY PLAYBOOKS appears to be a resource for SEO best practices.',
+      '',
+      '## 4. Visibility radar',
+      '',
+      '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status (Cited/Not Cited/Not Measured) |',
+      '| --- | --- | --- | --- | --- |',
+      '| SEO methodology | informational | Not measured | None | Not measured |',
+      '',
+      '## 7. Sources',
+      '',
+      'No live sources. All unmeasured signals labeled accordingly.',
+    ].join('\n');
+    vi.spyOn(geminiService, 'generateAuditReport').mockResolvedValue({
+      text: wrong,
+      sources: [
+        { uri: 'https://example.com', title: 'example.com' },
+        { uri: 'https://en.wikipedia.org/wiki/Example.com', title: 'example.com - Wikipedia' },
+        { uri: 'https://packetpushers.net/blog/example-com-valid-and-useful-site', title: 'Example.com - valid and useful site' },
+        { uri: 'https://www.plothost.com/kb/example-com-domain', title: 'What is the example.com domain?' },
+      ],
+      answeredBy: '@cf/meta/llama-3.1-8b-instruct-fast',
+      empiricalSummary: {
+        targetDomain: 'example.com',
+        brandName: 'Example Domain',
+        totalQueriesTested: 2,
+        queriesCitedCount: 2,
+        citationRatePercent: null,
+        topCitedCompetitor: null,
+        evidenceList: [
+          { id: 'a', query: 'what is example.com', intent: 'informational', targetDomain: 'example.com', brandCited: true, brandRank: 1, citedUrl: null, snippet: '', competitorsCited: [], citationConfidence: 1, timestamp: Date.parse('2026-10-24T13:24:00Z') },
+        ],
+        entityClarityScore: null,
+        lastAudited: Date.parse('2026-10-24T13:24:00Z'),
+        measurementStatus: 'measured',
+        webResultsMentioned: 8,
+        webResultsTotal: 9,
+      },
+    } as Awaited<ReturnType<typeof geminiService.generateAuditReport>>);
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 1,
+      serpCount: 9,
+      findings: [],
+      hostedRail: 'signed_in_hosted',
+    });
+    const report = await generateAuditReportUnlessDegraded({
+      isGuest: false,
+      summary,
+      measurementStatus: 'measured',
+      formattedUrl: 'https://example.com',
+      targetFocus: 'AEO',
+      dna: null,
+      lenses: [],
+      findings: [
+        { id: 'finding-schema-org', title: 'Add a business identity tag on https://example.com', description: 'Tags on the page: none.', severity: 'critical' },
+        { id: 'finding-thin-content', title: 'This page is too short', description: '133 words.', severity: 'high' },
+      ],
+    });
+    const text = report?.text || '';
+    expect(text).toContain('Luminara: Web search check for example.com');
+    expect(text).not.toContain('SEO METHODOLOGY PLAYBOOKS');
+    expect(text).not.toContain('fog clearing');
+    expect(text).not.toContain('No live sources');
+    expect(text).not.toContain('SEO methodology');
+    expect(text).toContain('what is example.com');
+    expect(text).toContain('25 Oct 2026');
+    expect(text).toContain('The brand is mentioned in 8 of 9 web results.');
+    expect(text).toContain('A business identity tag is missing');
+    const html = renderToStaticMarkup(createElement(ReportDisplay, {
+      markdownText: text,
+      sources: report?.sources,
+      empiricalSummary: report?.empiricalSummary,
+      targetDomain: 'example.com',
+      boardFindings: [],
+    }));
+    expect(html).toContain('4 live sources attached.');
+    expect(html).toContain('https://example.com');
+    expect(html).not.toContain('No live sources');
+    expect(html).not.toContain('SEO METHODOLOGY PLAYBOOKS');
   });
 });

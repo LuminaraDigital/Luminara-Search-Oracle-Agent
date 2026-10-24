@@ -55,9 +55,6 @@ In an audit, keep these table headers exactly as written, in English. Add no oth
 ## 7. Sources
 [Only real URLs from grounding. If none, write: No live sources. All unmeasured signals labeled accordingly.]
 
----
-*Luminara · fog clearing complete · ship the one move*
-
 ${AGENT_CONDUCT_RUNTIME}
 `;
 

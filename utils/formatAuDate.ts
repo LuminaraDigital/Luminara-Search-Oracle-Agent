@@ -1,4 +1,9 @@
-const AU_DATE: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+const AU_DATE: Intl.DateTimeFormatOptions = {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'Australia/Sydney',
+};
 
 /** Australian date, for example 5 Jan 2026. Empty when the value is not a date. */
 export function formatAuDate(value: number | Date | string | null | undefined): string {

@@ -8,7 +8,7 @@ import { formatAuDate } from '../../utils/formatAuDate';
 import { stripUntrustedFences } from '../../utils/untrustedContent';
 import { healthChecklist, measuredCheckLine, parseMeasuredCheckLine, siteChecksRan } from '../agentCore/auditEvidenceGate';
 import { organizationJsonLd } from './fixPackCopy';
-import { optionalCustomerSentence, plainCustomerReport, type AuditTextScope } from './reportColumnGate';
+import { customerSentenceOk, optionalCustomerSentence, plainCustomerReport, type AuditTextScope } from './reportColumnGate';
 
 export type Inline =
   | { kind: 'text'; text: string }
@@ -408,30 +408,213 @@ export function alignOneMove(markdown: string, findings: readonly MoveFinding[] 
 
 const PLAIN_VERDICT = /plain verdict/i;
 
+function namesAudit(sentence: string, scope?: AuditTextScope): boolean {
+  const text = sentence.toLowerCase();
+  const domain = (scope?.domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  const brand = (scope?.brand || '').trim().toLowerCase();
+  if (domain && text.includes(domain)) return true;
+  if (brand.length >= 3 && text.includes(brand)) return true;
+  return false;
+}
+
+type VerdictOptions = { scope?: AuditTextScope; citationLine?: string | null };
+
 /**
  * Reachability, then the top failed checks, then one consequence.
- * The model's own sentence is kept only when customerSentenceOk accepts it.
+ * A model sentence is kept only when it names this audit and passes the strict check.
+ * A citation sentence is appended only when the caller built it from mentionCounts.
  */
-export function plainVerdictText(findings: readonly MoveFinding[], modelText = ''): string {
+export function plainVerdictText(
+  findings: readonly MoveFinding[],
+  modelText = '',
+  options: VerdictOptions = {},
+): string {
   const phrases = topFailed(findings).map((finding) => (finding.id ? CHECK_PHRASE[finding.id] : '')).filter(Boolean);
-  if (!phrases.length) return '';
+  const extra = optionalCustomerSentence(modelText);
+  const keepExtra = extra && namesAudit(extra, options.scope) && customerSentenceOk(extra) ? extra : '';
+  const citation = options.citationLine?.trim() || '';
+  if (!phrases.length) return keepExtra;
   const consequence = phrases.length === 1
     ? 'This gap can lower trust and citation odds.'
     : 'These gaps can lower trust and citation odds.';
   const core = `The page is reachable. ${phrases.join('. ')}. ${consequence}`;
-  const extra = optionalCustomerSentence(modelText);
-  if (!extra || core.toLowerCase().includes(extra.replace(/[.!?]$/, '').toLowerCase())) return core;
-  return `${core} ${extra}`;
+  const tail = [keepExtra, citation].filter((part) => part && !core.toLowerCase().includes(part.replace(/[.!?]$/, '').toLowerCase()));
+  return tail.length ? `${core} ${tail.join(' ')}` : core;
 }
 
 /** Replaces the plain-verdict section when the failed checks are known. Other sections stay. */
-export function alignPlainVerdict(markdown: string, findings: readonly MoveFinding[] = []): string {
+export function alignPlainVerdict(
+  markdown: string,
+  findings: readonly MoveFinding[] = [],
+  options: VerdictOptions = {},
+): string {
   const lines = markdown.split('\n');
   const bounds = sectionBounds(lines, PLAIN_VERDICT);
   if (!bounds) return markdown;
-  const body = plainVerdictText(findings, lines.slice(bounds.start + 1, bounds.end).join('\n'));
+  const body = plainVerdictText(findings, lines.slice(bounds.start + 1, bounds.end).join('\n'), options);
   if (!body) return markdown;
   return [...lines.slice(0, bounds.start + 1), '', body, '', ...lines.slice(bounds.end)].join('\n');
+}
+
+function dropUnnamedLead(markdown: string, scope: AuditTextScope): string {
+  const lines = markdown.split('\n');
+  const start = lines.findIndex((line) => /^#\s+/.test(line.trim()) && !/^##/.test(line.trim()));
+  if (start < 0) return markdown;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^#{1,3}\s+/.test(lines[i].trim())) {
+      end = i;
+      break;
+    }
+  }
+  const kept = lines.slice(start, end).filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || /^\**\s*Date:/i.test(trimmed)) return true;
+    return namesAudit(trimmed, scope);
+  });
+  return [...lines.slice(0, start), ...kept, ...lines.slice(end)].join('\n');
+}
+
+function auditHost(domain: string): string {
+  return domain.trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
+}
+
+/** First line of the audit prompt. The fallback keeps this prefix and drops the tail. */
+export function auditSubjectLead(domain: string, url: string, brand?: string): string {
+  const host = auditHost(domain || url);
+  const name = brand && !/playbook|methodology/i.test(brand) ? `${brand} (${host})` : host;
+  return `The only business in this audit is ${name}. The page URL is ${url}. Rules below are not the business and are not the report title.`;
+}
+
+function replaceH1(markdown: string, title: string): string {
+  const lines = markdown.split('\n');
+  const heading = `# ${title}`;
+  const index = lines.findIndex((line) => /^#\s+/.test(line.trim()) && !/^##/.test(line.trim()));
+  if (index < 0) return [heading, '', ...lines].join('\n');
+  lines[index] = heading;
+  return lines.join('\n');
+}
+
+function upsertDate(markdown: string, when: number | Date, mode: string): string {
+  const stamp = formatAuDate(when);
+  if (!stamp) return markdown;
+  const row = `**Date:** ${stamp} · **Mode:** ${mode}`;
+  const lines = markdown.split('\n').filter((line) => !/^\**\s*Date:/i.test(line.trim()));
+  const index = lines.findIndex((line) => /^#\s+/.test(line.trim()) && !/^##/.test(line.trim()));
+  if (index < 0) return [row, '', ...lines].join('\n');
+  lines.splice(index + 1, 0, '', row);
+  return lines.join('\n');
+}
+
+function replaceSectionBody(markdown: string, test: RegExp, heading: string, body: string): string {
+  const lines = markdown.split('\n');
+  const bounds = sectionBounds(lines, test);
+  const block = ['', body.trimEnd(), ''];
+  if (!bounds) return [...lines, '', heading, ...block].join('\n');
+  return [...lines.slice(0, bounds.start), lines[bounds.start], ...block, ...lines.slice(bounds.end)].join('\n');
+}
+
+function dropSection(markdown: string, test: RegExp): string {
+  const lines = markdown.split('\n');
+  const bounds = sectionBounds(lines, test);
+  if (!bounds) return markdown;
+  return [...lines.slice(0, bounds.start), ...lines.slice(bounds.end)].join('\n');
+}
+
+function priorityWord(severity?: string): string {
+  if (severity === 'critical') return 'Critical';
+  if (severity === 'high') return 'High';
+  if (severity === 'medium') return 'Medium';
+  if (severity === 'low') return 'Low';
+  return 'Not measured';
+}
+
+function fixTable(findings: readonly MoveFinding[]): string {
+  const rows = findings
+    .filter((finding) => finding.id && CHECK_PHRASE[finding.id] && !isDowngradedFinding(finding))
+    .sort((a, b) => (SEVERITY_RANK[a.severity || ''] ?? 9) - (SEVERITY_RANK[b.severity || ''] ?? 9));
+  if (!rows.length) return 'Not measured.';
+  const lines = ['| Task | Plain issue | Priority |', '| --- | --- | --- |'];
+  for (const finding of rows) {
+    lines.push(`| ${checkFixTitle(finding.id, finding.title || '')} | ${CHECK_PHRASE[finding.id || '']} | ${priorityWord(finding.severity)} |`);
+  }
+  return lines.join('\n');
+}
+
+export type GroundEvidence = { query: string; intent?: string; brandCited?: boolean; competitorsCited?: string[] };
+
+function radarQueries(markdown: string): string[] {
+  const doc = parseAuditReport(markdown);
+  const section = doc.sections.find((item) => /visibility radar/i.test(item.title));
+  const table = section?.blocks.find((block) => block.kind === 'table');
+  if (!table || table.kind !== 'table') return [];
+  const queryCol = table.headers.findIndex((header) => /query/i.test(header));
+  const index = queryCol >= 0 ? queryCol : 0;
+  return table.rows.map((row) => row[index] || '').filter(Boolean);
+}
+
+function radarTable(evidence: readonly GroundEvidence[]): string {
+  const lines = [
+    '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status (Cited/Not Cited/Not Measured) |',
+    '| --- | --- | --- | --- | --- |',
+  ];
+  for (const row of evidence) {
+    const intent = row.intent ? `${row.intent.charAt(0).toUpperCase()}${row.intent.slice(1)}` : 'Not measured';
+    const rivals = (row.competitorsCited || []).map((name) => name.trim()).filter(Boolean).join(', ') || 'None';
+    lines.push(`| ${row.query.replace(/\|/g, ' ')} | ${intent} | ${row.brandCited ? 'Yes' : 'No'} | ${rivals} | ${row.brandCited ? 'Cited' : 'Not Cited'} |`);
+  }
+  return lines.join('\n');
+}
+
+function groundRadar(markdown: string, scope: AuditTextScope, evidence?: readonly GroundEvidence[]): string {
+  const queries = radarQueries(markdown);
+  if (queries.some((query) => namesAudit(query, scope))) return markdown;
+  if (!queries.length && !(evidence && evidence.length)) return markdown;
+  const body = evidence && evidence.length ? radarTable(evidence) : 'Not measured.';
+  return replaceSectionBody(markdown, /visibility radar/i, '## AI & Search Visibility Radar', body);
+}
+
+export type GroundFacts = {
+  domain?: string;
+  brand?: string;
+  findings?: readonly MoveFinding[];
+  evidence?: readonly GroundEvidence[];
+  citationLine?: string | null;
+  auditedAt?: number | Date;
+  mode?: string;
+};
+
+/**
+ * Title, date, verdict, fix list, radar and sources come from the audited URL and the measured rows.
+ * Model prose stays only inside the verdict, and only when it names this audit.
+ */
+export function groundCustomerReport(markdown: string, facts: GroundFacts): string {
+  const host = auditHost(facts.domain || '');
+  const fallback = markdown.match(/Answered by a fallback model:[^\n]*/);
+  let text = markdown
+    .split('\n')
+    .filter((line) => !/fog clearing/i.test(line))
+    .join('\n');
+  if (fallback) text = text.replace(fallback[0], '');
+  if (!host) return fallback ? `${text.trim()}\n\n${fallback[0]}` : text;
+  const scope: AuditTextScope = { domain: host, brand: facts.brand };
+  const findings = facts.findings || [];
+  const options: VerdictOptions = { scope, citationLine: facts.citationLine };
+  text = replaceH1(text, `Luminara: Web search check for ${host}`);
+  text = upsertDate(text, facts.auditedAt ?? Date.now(), facts.mode || 'Instant Audit');
+  text = alignOneMove(text, findings, host);
+  text = alignPlainVerdict(text, findings, options);
+  if (topFailed(findings).length && !sectionBounds(text.split('\n'), PLAIN_VERDICT)) {
+    text = replaceSectionBody(text, PLAIN_VERDICT, '## 2. Plain verdict', plainVerdictText(findings, '', options));
+  }
+  if (topFailed(findings).length) text = dropUnnamedLead(text, scope);
+  if (findings.some((finding) => finding.id && CHECK_PHRASE[finding.id])) {
+    text = replaceSectionBody(text, /fix list/i, '## 3. Fix list', fixTable(findings));
+  }
+  text = groundRadar(text, scope, facts.evidence);
+  text = dropSection(text, /\bsources\b/i);
+  const trimmed = text.replace(/\n{3,}/g, '\n\n').trim();
+  return fallback ? `${trimmed}\n\n${fallback[0]}` : trimmed;
 }
 
 /** Phrases from unsupported finding ids, used to keep them out of the model fix list. */

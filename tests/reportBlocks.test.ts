@@ -321,9 +321,8 @@ describe('audit report page', () => {
     expect(html).toContain('Your next fix');
     expect(html).toContain('Add a business identity tag');
     expect(html).toContain('How to know it worked: the page source includes a business identity tag');
-    expect(html).toContain('no business identity tag. The site');
-    expect(html).toContain('force the secure version of the site (HSTS)');
-    expect(html).toContain('missing. These gaps');
+    expect(html).toContain('The page is reachable. A business identity tag is missing.');
+    expect(html).toContain('This gap can lower trust and citation odds.');
     expect(html).not.toContain('Strict-Transport-Security');
     expect(html).not.toContain('Content-Security-Policy');
     expect(html).not.toContain('tag markup');

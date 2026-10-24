@@ -8,7 +8,10 @@ import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPan
 import { ReportDisplay } from '../components/audit/ReportDisplay';
 import type { BoardFinding } from '../services/audit/findingBoardService';
 import { buildGuestScoutSummary, unmeasuredScoutSummary } from '../services/audit/guestScoutSummary';
-import { alignPlainVerdict, parseAuditReport, plainVerdictText } from '../services/audit/reportBlocks';
+import { alignPlainVerdict, auditSubjectLead, groundCustomerReport, parseAuditReport, plainVerdictText } from '../services/audit/reportBlocks';
+import { radarRowCaption, verdictCitationLine } from '../components/audit/VisibilityRadar';
+import { playbookContext, selectAuditPlaybooks } from '../services/skills/seoPlaybooks';
+import { trimToBudget } from '../worker/workersAiFallback';
 import { gateReportText, proseIssues, REPORT_TABLES } from '../services/audit/reportColumnGate';
 import { citationView, mentionCounts, mentionLabel } from '../components/audit/VisibilityRadar';
 
@@ -83,7 +86,8 @@ describe('deterministic plain verdict', () => {
   it('builds the live #258 verdict from the failed checks and drops the model sentences that fail the check', () => {
     const before = LIVE_258;
     const after = plainVerdictText(findings, before);
-    expect(after).toBe(`${TEMPLATE} Brand appears in web-search snippets, giving a baseline citation chance.`);
+    expect(after).toBe(TEMPLATE);
+    expect(after).not.toContain('Brand appears');
     expect(after).not.toContain('lacks HSTS');
     expect(after).not.toContain('entity signals');
     expect(after).not.toMatch(/\.\s+no\b/);
@@ -120,7 +124,7 @@ describe('deterministic plain verdict', () => {
       expect(html, item.name).toContain('How to know it worked: the page source includes a business identity tag that names the organization.');
       expect(html, item.name).toContain('Write fuller answers on thin pages');
       expect(html, item.name).toContain('No rivals found in this search sample.');
-      expect(html, item.name).toContain('mentioned in 3 of 3 queries');
+      expect(html, item.name).toContain('cited in 3 of 3 queries');
       expect(html, item.name).not.toContain('Strict-Transport-Security');
       expect(html, item.name).not.toMatch(/\.\s+no\b/);
       const scrubbed = gateReportText(item.verdict);
@@ -172,7 +176,7 @@ describe('mention counts share one function', () => {
     expect(view.label).toBe('mentioned in 7 of 9 web results');
     const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: markdown, empiricalSummary: summary }));
     expect(html).toContain('Preview evidence (mentioned in 7 of 9 web results)');
-    expect(html).toContain('mentioned in 3 of 3 queries');
+    expect(html).toContain('cited in 3 of 3 queries');
     expect(html).not.toContain('2 of 2');
     expect(html).not.toContain('sampled queries');
   });
@@ -217,5 +221,126 @@ describe('summary card and empty rivals', () => {
     expect(html).toContain('No rivals found in this search sample.');
     expect(html).not.toContain('>"-"<');
     expect(html).not.toContain('>-<');
+  });
+});
+
+const LIVE_259A = 'The page is very thin and lacks any business identity tag. Security headers and a public security contact are missing. No AI-search citations are measured, so visibility is uncertain. Fixing security and adding basic business identity tag will reduce risk and improve AI citation odds.';
+const LIVE_259B = 'SEO METHODOLOGY PLAYBOOKS appears to be a resource for SEO best practices, but its visibility in search results is limited. The website is not well-represented in search engine results, and its content is not easily discoverable.';
+
+const RADAR_259A = [
+  '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status (Cited/Not Cited/Not Measured) |',
+  '| --- | --- | --- | --- | --- |',
+  '| Example Domain | informational | Not measured | None | Not measured |',
+  '| best Example Domain alternative reviews | commercial | Yes | None | Cited |',
+  '| what is example.com | informational | Yes | None | Cited |',
+].join('\n');
+
+describe('live runs 259 A and B', () => {
+  it('owns the #259 A verdict, the issue column, and the radar header', () => {
+    const citation = verdictCitationLine({
+      radarRows: [{ status: 'not_measured' }, { status: 'cited' }, { status: 'cited' }],
+      webResultsMentioned: 8,
+      webResultsTotal: 9,
+    });
+    expect(citation).toBe('The brand is mentioned in 8 of 9 web results.');
+    expect(radarRowCaption([{ status: 'not_measured' }, { status: 'cited' }, { status: 'cited' }])).toBe('cited in 2 of 3 queries, 1 not measured');
+    const shown = groundCustomerReport(
+      ['# Example', '', '## 2. Plain verdict', '', LIVE_259A, '', '## 3. Fix list', '', '| Task | Plain issue | Priority |', '| --- | --- | --- |', '| Add a business identity tag | No entity markup for disambiguation (AI citation aid) | Medium |', '', '## AI & Search Visibility Radar', '', RADAR_259A].join('\n'),
+      {
+        domain: 'example.com',
+        brand: 'Example Domain',
+        findings,
+        citationLine: citation,
+        auditedAt: Date.parse('2026-10-24T13:24:00Z'),
+      },
+    );
+    expect(shown).toContain('The page is reachable. A business identity tag is missing. This page is too short. These gaps can lower trust and citation odds.');
+    expect(shown).toContain('The brand is mentioned in 8 of 9 web results.');
+    expect(shown).not.toContain('No AI-search citations');
+    expect(shown).not.toContain('adding basic business identity tag');
+    expect(shown).toContain('| Add a business identity tag | A business identity tag is missing | Critical |');
+    expect(shown).toContain('| Write fuller answers on thin pages | This page is too short | High |');
+    expect(shown).not.toContain('disambiguation');
+    expect(shown).toContain('Date:');
+    expect(shown).toContain('25 Oct 2026');
+    const html = renderToStaticMarkup(createElement(AuditReportArticle, {
+      markdown: shown,
+      measured: true,
+      findings,
+      domain: 'example.com',
+      clientName: 'Example Domain',
+      auditedAt: Date.parse('2026-10-24T13:24:00Z'),
+      showActions: false,
+    }));
+    expect(html).toContain('cited in 2 of 3 queries, 1 not measured');
+    expect(html).not.toContain('mentioned in 2 of 2');
+    expect(proseIssues(shown.slice(shown.indexOf('The page is reachable')))).toEqual([]);
+  });
+
+  it('drops a fallback report about the methodology playbooks and keeps example.com', () => {
+    const wrong = [
+      '# Luminara: Web search check for SEO METHODOLOGY PLAYBOOKS',
+      '',
+      'Luminara · fog clearing complete · ship the one move',
+      '',
+      '**Date:** 24 Oct 2026 · **Mode:** Instant Audit',
+      '',
+      '## 1. One move this week',
+      '',
+      'Optimize the playbook.',
+      '',
+      '## 2. Plain verdict',
+      '',
+      LIVE_259B,
+      '',
+      '## 3. Fix list',
+      '',
+      '| Task | Plain issue | Priority |',
+      '| --- | --- | --- |',
+      '| Optimize meta title and description | Limited search engine visibility | High |',
+      '',
+      '## 4. Visibility radar',
+      '',
+      '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status (Cited/Not Cited/Not Measured) |',
+      '| --- | --- | --- | --- | --- |',
+      '| SEO methodology | informational | Not measured | None | Not measured |',
+      '| SEO best practices | informational | Not measured | None | Not measured |',
+      '',
+      '## 7. Sources',
+      '',
+      'No live sources. All unmeasured signals labeled accordingly.',
+      '',
+      'Answered by a fallback model: @cf/meta/llama-3.1-8b-instruct-fast',
+    ].join('\n');
+    const shown = groundCustomerReport(wrong, {
+      domain: 'example.com',
+      brand: 'Example Domain',
+      findings,
+      evidence: [
+        { query: 'best Example Domain alternative reviews', intent: 'commercial', brandCited: true },
+        { query: 'what is example.com', intent: 'informational', brandCited: true },
+      ],
+      citationLine: 'The brand is mentioned in 8 of 9 web results.',
+      auditedAt: Date.parse('2026-10-24T13:24:00Z'),
+    });
+    expect(shown).toContain('Luminara: Web search check for example.com');
+    expect(shown).not.toContain('SEO METHODOLOGY PLAYBOOKS');
+    expect(shown).not.toContain('fog clearing');
+    expect(shown).not.toContain('No live sources');
+    expect(shown).not.toContain('SEO methodology');
+    expect(shown).toContain('what is example.com');
+    expect(shown).toContain('25 Oct 2026');
+    expect(shown).toContain('The page is reachable.');
+    expect(shown).toContain('Answered by a fallback model: @cf/meta/llama-3.1-8b-instruct-fast');
+    expect(shown).not.toContain('24 Oct 2026');
+  });
+
+  it('keeps the audited URL when the fallback cuts the prompt to its budget', () => {
+    const lead = auditSubjectLead('example.com', 'https://example.com');
+    const prompt = `${lead}\n${playbookContext(selectAuditPlaybooks('AEO'), 4500)}\n${'Write the report for a different subject. '.repeat(300)}`;
+    const cut = trimToBudget(prompt, 8000);
+    expect(cut.startsWith(lead)).toBe(true);
+    expect(cut).toContain('https://example.com');
+    expect(cut).not.toContain('[SEO METHODOLOGY PLAYBOOKS]');
   });
 });
