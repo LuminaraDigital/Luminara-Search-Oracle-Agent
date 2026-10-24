@@ -117,6 +117,43 @@ describe('verifyAuditWithJev', () => {
     expect(llms).not.toContain('Template:');
   });
 
+  it('keeps a counted site check when the second opinion would call it not measured', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      model: JEV_MODEL,
+      answers: {
+        finding_0: { type: 'noul', noul: 0.2 },
+        finding_1: { type: 'noul', noul: 0.2 },
+        finding_2: { type: 'noul', noul: 0.2 },
+        site_type: { type: 'choice', choice: 'other', confidence: 0.9, probabilities: { other: 0.9 } },
+      },
+    }), { status: 200 }));
+    const reviewed = await reviewFindingsWithJev({
+      pages: [{
+        url: 'https://example.com',
+        title: 'Example Domain',
+        h1s: [],
+        schemasFound: [],
+        wordCount: 133,
+        rawTextSnippet: 'Example Domain',
+      }],
+      findings: [
+        finding('finding-schema-org'),
+        finding('finding-thin-content'),
+        finding('finding-made-up'),
+      ],
+      healthScore: 65,
+      fetchImpl,
+    });
+    expect(reviewed.findings.map((item) => item.id)).toEqual([
+      'finding-schema-org',
+      'finding-thin-content',
+      'finding-made-up-unmeasured',
+    ]);
+    expect(reviewed.findings[0].description).toContain('Organization');
+    expect(reviewed.findings[2].description).toBe('Not measured. The evidence check did not support this finding.');
+    expect(reviewed.healthScore).toBeNull();
+  });
+
   it('softens an alarmist title when the evidence check does not support the finding', () => {
     const [kept] = downgradeUnsupported([
       {

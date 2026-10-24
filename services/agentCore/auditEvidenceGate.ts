@@ -92,9 +92,75 @@ function wholeCount(value: number | undefined): number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
 }
 
-/** The sentence a report and a share check both read. A positive unmeasured count is not a pass. */
-export function measuredCheckLine(counts: { passed: number; total: number; unmeasured?: number }): string {
-  return `passed ${counts.passed} of ${counts.total}; ${wholeCount(counts.unmeasured)} not measured`;
+export interface ResolvedCheckCounts {
+  passed: number;
+  total: number;
+  failed: number;
+  unmeasured: number;
+}
+
+/** A missing `failed` is the gap left after passed and not-measured checks. An explicit 0 stays 0. */
+export function resolveCheckCounts(counts: {
+  passed: number;
+  total: number;
+  failed?: number;
+  unmeasured?: number;
+}): ResolvedCheckCounts {
+  const unmeasured = wholeCount(counts.unmeasured);
+  const failed = typeof counts.failed === 'number'
+    ? wholeCount(counts.failed)
+    : wholeCount(counts.total - counts.passed - unmeasured);
+  return { passed: counts.passed, total: counts.total, failed, unmeasured };
+}
+
+/**
+ * The sentence a report and a share check both read.
+ * Failed checks say failed. "Not measured" appears only when a check was not measured.
+ */
+export function measuredCheckLine(counts: {
+  passed: number;
+  total: number;
+  failed?: number;
+  unmeasured?: number;
+}): string {
+  const resolved = resolveCheckCounts(counts);
+  const head = `${resolved.passed} of ${resolved.total} checks passed`;
+  const tail: string[] = [];
+  if (resolved.failed > 0) tail.push(`${resolved.failed} failed`);
+  if (resolved.unmeasured > 0) tail.push(`${resolved.unmeasured} not measured`);
+  return tail.length ? `${head}, ${tail.join(', ')}` : head;
+}
+
+function pairOk(passed: number, total: number): boolean {
+  return Number.isInteger(passed) && Number.isInteger(total) && total >= 1 && passed >= 0 && passed <= total;
+}
+
+/** Reads the current sentence and the older "passed N of M; U not measured" sentence. */
+export function parseMeasuredCheckLine(text: string): ResolvedCheckCounts | null {
+  const modern = text.match(/\b(\d+) of (\d+) checks passed(?:, (\d+) failed)?(?:, (\d+) not measured)?\b/i);
+  if (modern) {
+    const passed = Number(modern[1]);
+    const total = Number(modern[2]);
+    const failed = modern[3] == null ? 0 : Number(modern[3]);
+    const unmeasured = modern[4] == null ? 0 : Number(modern[4]);
+    if (!pairOk(passed, total) || !Number.isInteger(failed) || failed < 0 || !Number.isInteger(unmeasured) || unmeasured < 0) return null;
+    if (passed + failed + unmeasured > total) return null;
+    return { passed, total, failed, unmeasured };
+  }
+  const legacy = text.match(/\bpassed (\d+) of (\d+); (\d+) not measured\b/i);
+  if (legacy) {
+    const passed = Number(legacy[1]);
+    const total = Number(legacy[2]);
+    const unmeasured = Number(legacy[3]);
+    if (!pairOk(passed, total) || !Number.isInteger(unmeasured) || unmeasured < 0 || passed + unmeasured > total) return null;
+    return { passed, total, failed: total - passed - unmeasured, unmeasured };
+  }
+  const older = text.match(/\bpassed (\d+) of (\d+) checks\b/i);
+  if (!older) return null;
+  const passed = Number(older[1]);
+  const total = Number(older[2]);
+  if (!pairOk(passed, total)) return null;
+  return { passed, total, failed: 0, unmeasured: 0 };
 }
 
 /**

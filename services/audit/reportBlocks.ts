@@ -6,9 +6,8 @@ import { marked, type Token, type Tokens } from 'marked';
 import type { BoardFinding } from './findingBoardService';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { stripUntrustedFences } from '../../utils/untrustedContent';
-
-const MEASURED_LINE = /\bpassed (\d+) of (\d+); (\d+) not measured\b/i;
-const LEGACY_MEASURED_LINE = /\bpassed (\d+) of (\d+) checks\b/i;
+import { measuredCheckLine, parseMeasuredCheckLine } from '../agentCore/auditEvidenceGate';
+import { plainCustomerReport } from './reportColumnGate';
 
 export type Inline =
   | { kind: 'text'; text: string }
@@ -98,6 +97,7 @@ function cellText(cell: { text: string; tokens?: Token[] }): string {
 
 /** Reads markdown the audit already wrote. Malformed input does not throw. */
 export function parseAuditReport(markdown: string): AuditReportDoc {
+  const cleaned = plainCustomerReport(markdown || '');
   const links: AuditReportDoc['links'] = [];
   const used = new Set<string>();
   let title = 'Audit report';
@@ -111,7 +111,7 @@ export function parseAuditReport(markdown: string): AuditReportDoc {
 
   let tokens: Token[] = [];
   try {
-    tokens = marked.lexer(markdown || '', { gfm: true });
+    tokens = marked.lexer(cleaned, { gfm: true });
   } catch {
     tokens = [];
   }
@@ -177,29 +177,14 @@ export function parseAuditReport(markdown: string): AuditReportDoc {
   return { title, verdict, sections, links };
 }
 
-function countPair(passedText: string, totalText: string): { passed: number; total: number } | null {
-  const passed = Number(passedText);
-  const total = Number(totalText);
-  if (!Number.isInteger(passed) || !Number.isInteger(total) || total < 1 || passed < 0 || passed > total) return null;
-  return { passed, total };
-}
-
 /** The only score the page may print. A partial checklist stays visible. A clean pass needs measured=true. */
 export function scoreLine(markdown: string, measured: boolean): string {
-  const honest = markdown.match(MEASURED_LINE);
-  if (honest) {
-    const counts = countPair(honest[1], honest[2]);
-    const unmeasured = Number(honest[3]);
-    if (!counts || !Number.isInteger(unmeasured) || unmeasured < 0) return 'Not measured';
-    if (unmeasured > 0 || measured) return `Passed ${counts.passed} of ${counts.total}; ${unmeasured} not measured`;
-    return 'Not measured';
-  }
-  if (!measured) return 'Not measured';
-  const match = markdown.match(LEGACY_MEASURED_LINE);
-  if (!match) return 'Not measured';
-  const counts = countPair(match[1], match[2]);
+  const counts = parseMeasuredCheckLine(markdown);
   if (!counts) return 'Not measured';
-  return `Passed ${counts.passed} of ${counts.total} checks`;
+  const olderOnly = !/\b\d+ of \d+ checks passed\b/i.test(markdown) && !/\bnot measured\b/i.test(markdown);
+  if (olderOnly && !measured) return 'Not measured';
+  if (counts.failed === 0 && counts.unmeasured === 0 && !measured) return 'Not measured';
+  return measuredCheckLine(counts);
 }
 
 export function recheckLabel(from = Date.now()): string {
@@ -261,7 +246,7 @@ export function stripUnsupportedFixClaims(
 
 /** The 4-check score is the only pass count. A second "N of M" tally reads as a different result. */
 export function showFixTally(score: string): boolean {
-  return !/^Passed \d+ of \d+/.test(score);
+  return !/^(?:Passed )?\d+ of \d+/.test(score);
 }
 
 export const SAVED_AUDIT_CHECK_COPY = 'Checking saved audits for this account.';
@@ -330,7 +315,7 @@ export function withReportLead(
   measured: boolean,
   findings: ReadonlyArray<Pick<BoardFinding, 'title' | 'severity' | 'description' | 'evidence'> & { id?: string }> = [],
 ): string {
-  const source = stripUntrustedFences(markdown);
+  const source = plainCustomerReport(stripUntrustedFences(markdown));
   const doc = parseAuditReport(source);
   const score = scoreLine(`${source}\n${doc.verdict}`, measured);
   const verdict = doc.verdict || 'Not measured.';

@@ -371,7 +371,7 @@ export class SiteEvidencePackService {
       const distilled = keepDiscoveredSchemas(redistilled, page.distilled);
       remaining -= distilled.formattedEvidence.length;
 
-      blocks.push(`--- PAGE (${pageType.toUpperCase()}) ${page.url} via ${page.providerUsed} ---`);
+      blocks.push(`--- PAGE (${pageType.toUpperCase()}) ${page.url} via page read ---`);
       blocks.push(distilled.formattedEvidence.trim());
       blocks.push('');
 

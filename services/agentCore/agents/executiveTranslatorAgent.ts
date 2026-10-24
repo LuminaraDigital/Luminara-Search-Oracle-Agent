@@ -13,7 +13,7 @@
 import { readableStem } from '../../audit/brandName';
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
-import { HEALTH_CHECKS, measuredCheckLine } from '../auditEvidenceGate';
+import { HEALTH_CHECKS, measuredCheckLine, resolveCheckCounts } from '../auditEvidenceGate';
 
 /**
  * Counts of the live web search rows this run collected.
@@ -24,10 +24,11 @@ export interface WebMentionCounts {
   total: number;
 }
 
-/** How many of the site checks this run made passed. `unmeasured` defaults to 0. */
+/** How many of the site checks passed, failed, or were not measured. */
 export interface SiteCheckCounts {
   passed: number;
   total: number;
+  failed?: number;
   unmeasured?: number;
 }
 
@@ -80,29 +81,33 @@ export class ExecutiveTranslatorAgent {
     const criticalCount = critical.length;
     // Counts that cannot be a count are treated as not measured.
     const checks = healthChecks != null && validCount(healthChecks.passed, healthChecks.total) ? healthChecks : null;
-    const healthKnown = checks != null;
-    const rawUnchecked = checks?.unmeasured;
-    const unchecked = typeof rawUnchecked === 'number' && Number.isInteger(rawUnchecked) && rawUnchecked > 0 ? rawUnchecked : 0;
+    const buckets = checks ? resolveCheckCounts(checks) : null;
+    const healthKnown = buckets != null;
+    const failed = buckets?.failed ?? 0;
+    const unchecked = buckets?.unmeasured ?? 0;
     const mentions = webMentions != null && validCount(webMentions.mentioned, webMentions.total) ? webMentions : null;
     const citationKnown = mentions != null;
-    const checksPhrase = checks ? `**${measuredCheckLine({ ...checks, unmeasured: unchecked })}**` : '';
+    const checksPhrase = buckets ? `**${measuredCheckLine(buckets)}**` : '';
     const mentionPhrase = mentions
       ? `**mentioned in ${mentions.mentioned} of ${mentions.total} web results**`
       : '';
     const scoreLine = healthKnown && citationKnown
-      ? `Right now, your site ${checksPhrase} this run made, and your brand is ${mentionPhrase} this run collected.`
+      ? `Right now, ${checksPhrase} this run, and your brand is ${mentionPhrase} this run collected.`
       : healthKnown
-        ? `Right now, your site ${checksPhrase} this run made. Citation rate was not measured.`
+        ? `Right now, ${checksPhrase} this run. Citation rate was not measured.`
         : citationKnown
           ? `Right now, your brand is ${mentionPhrase} this run collected. The site checks were not measured.`
           : 'Right now, the site checks and citation rate were not measured. Search or page providers did not return evidence for this run.';
+    const failedTakeaway = `${failed} ${failed === 1 ? 'check failed' : 'checks failed'}.${unchecked > 0 ? ` ${unchecked} ${unchecked === 1 ? 'check was' : 'checks were'} not measured.` : ''}`;
     const takeaway = criticalCount > 0
       ? `⚠️ **The Big Takeaway:** This run found ${criticalCount} critical ${criticalCount === 1 ? 'gap' : 'gaps'}: ${critical.map((f) => f.title).join('; ')}.`
-      : healthKnown && unchecked === 0
-        ? `✅ **The Big Takeaway:** None of the checks this run made found a critical gap.`
-        : healthKnown
-          ? `**The takeaway:** ${unchecked} ${unchecked === 1 ? 'check was' : 'checks were'} not measured.`
-          : '**The takeaway:** This run did not measure enough page or search evidence to judge the site.';
+      : healthKnown && failed > 0
+        ? `**The takeaway:** ${failedTakeaway}`
+        : healthKnown && unchecked === 0
+          ? `✅ **The Big Takeaway:** None of the checks this run made found a critical gap.`
+          : healthKnown
+            ? `**The takeaway:** ${unchecked} ${unchecked === 1 ? 'check was' : 'checks were'} not measured.`
+            : '**The takeaway:** This run did not measure enough page or search evidence to judge the site.';
 
     // Only the checks that failed get a step. A check that passed has nothing to fix.
     const steps = HEALTH_CHECKS
@@ -113,6 +118,7 @@ export class ExecutiveTranslatorAgent {
         const step = STEP_FOR_FAILED_CHECK[check.findingId];
         return evidence ? `${step} ${evidence}` : step;
       });
+    const listedFix = findings.some((finding) => !finding.id.endsWith('-unmeasured'));
     const stepLines = steps.length > 0
       ? [
           steps.length === 1 ? '#### 1 step for the check that failed:' : `#### ${steps.length} steps for the checks that failed:`,
@@ -121,12 +127,16 @@ export class ExecutiveTranslatorAgent {
           '*Bottom Line:* These are the steps the failed checks point to. This run did not measure what they will change.',
         ]
       : [
-          !checks
+          !buckets
             ? 'The site checks were not measured, so there are no steps to list.'
-            : checks.passed === checks.total && unchecked === 0
-              ? `All ${checks.total} checks this run made passed, so there are no steps to list.`
-              : 'There are no steps to list for this run.',
-        ];
+            : buckets.passed === buckets.total && failed === 0 && unchecked === 0
+              ? `All ${buckets.total} checks this run made passed, so there are no steps to list.`
+              : listedFix
+                ? ''
+                : unchecked > 0 && failed === 0
+                  ? 'The checks that were not measured have no steps to list.'
+                  : 'There are no steps to list for this run.',
+        ].filter((line) => line.length > 0);
 
     const sections = [
       `### What This Means For ${brandName}`,

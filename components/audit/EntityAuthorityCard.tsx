@@ -186,7 +186,7 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span>security.txt:</span>
+                <span>Security contact file (security.txt):</span>
                 <span className={`font-mono ${security.securityTxtPresent ? 'text-success-400' : 'text-gray-500'}`}>
                   {security.securityTxtPresent ? 'Present' : 'Missing'}
                 </span>

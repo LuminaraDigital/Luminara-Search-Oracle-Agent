@@ -51,7 +51,8 @@ describe('UnifiedScraperService', () => {
     expect(result.title).toBe('Example Domain');
     expect(result.distilled.schemaTypes).toContain('WebSite');
     expect(result.distilled.headings[0].text).toBe('Welcome to Example');
-    expect(result.formattedEvidence).toContain('[REAL SITE SCRAPE EVIDENCE - VIA PATCHRIGHT STEALTH RUNNER]');
+    expect(result.formattedEvidence).toContain('[REAL SITE SCRAPE EVIDENCE - PAGE READ]');
+    expect(result.formattedEvidence).not.toContain('Patchright');
   });
 
   it('reads rawHtml from a Firecrawl scrape response', async () => {
@@ -131,7 +132,7 @@ describe('UnifiedScraperService', () => {
     expect(result.success).toBe(true);
     expect(result.providerUsed).toBe('firecrawl');
     expect(result.title).toBe('Protected Site');
-    expect(result.formattedEvidence).toContain('[REAL SITE SCRAPE EVIDENCE - VIA FIRECRAWL API]');
+    expect(result.formattedEvidence.split('\n')[0]).toBe('[REAL SITE SCRAPE EVIDENCE - PAGE READ]');
   });
 
   it('stops further Firecrawl calls after the first 401', async () => {

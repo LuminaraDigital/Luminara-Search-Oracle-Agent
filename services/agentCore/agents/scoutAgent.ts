@@ -64,7 +64,7 @@ export class ScoutAgent {
       agentRole: 'scout',
       agentName: this.name,
       phase: 'crawling',
-      message: `Navigating to ${url} to map internal link structure and DOM assets…`,
+      message: `Reading ${url} and the links on the page…`,
       status: 'running',
     });
 

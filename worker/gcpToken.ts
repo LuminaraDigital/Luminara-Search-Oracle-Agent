@@ -34,6 +34,9 @@ export type WorkloadIdentityConfig = {
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const JWT_TTL_SEC = 10 * 60;
 const STS_URL = 'https://sts.googleapis.com/v1/token';
+/** STS federated token: only used to call IAM Credentials, which requires cloud-platform. */
+const FEDERATED_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
+/** Impersonated service-account token: Firestore only. */
 const DATASTORE_SCOPE = 'https://www.googleapis.com/auth/datastore';
 
 export function readWorkloadIdentityConfig(env: DataPlaneEnv): WorkloadIdentityConfig | null {
@@ -169,7 +172,7 @@ async function stsExchange(fetchImpl: typeof fetch, audience: string, subjectTok
       audience,
       grantType: 'urn:ietf:params:oauth:grant-type:token-exchange',
       requestedTokenType: 'urn:ietf:params:oauth:token-type:access_token',
-      scope: DATASTORE_SCOPE,
+      scope: FEDERATED_SCOPE,
       subjectTokenType: 'urn:ietf:params:oauth:token-type:jwt',
       subjectToken,
     }),
@@ -191,7 +194,10 @@ async function impersonate(fetchImpl: typeof fetch, serviceAccountEmail: string,
     },
     body: JSON.stringify({ scope: [DATASTORE_SCOPE], lifetime: '3600s' }),
   });
-  if (!response.ok) throw new Error(`iam ${response.status}`);
+  if (!response.ok) {
+    const reason = await iamReason(response);
+    throw new Error(reason ? `iam ${response.status} ${reason}` : `iam ${response.status}`);
+  }
   const body = await response.json();
   const token = tokenField(body, 'accessToken') ?? tokenField(body, 'access_token');
   if (!token) throw new Error('iam missing token');
@@ -199,6 +205,25 @@ async function impersonate(fetchImpl: typeof fetch, serviceAccountEmail: string,
   const expiresAtMs = typeof expireTime === 'string' ? Date.parse(expireTime) : Number.NaN;
   if (!Number.isFinite(expiresAtMs)) throw new Error('iam missing expiry');
   return { token, expiresAtMs };
+}
+
+/** A reason code such as ACCESS_TOKEN_SCOPE_INSUFFICIENT. Anything else stays off the step. */
+async function iamReason(response: Response): Promise<string | null> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return null;
+  }
+  if (!body || typeof body !== 'object' || !('error' in body)) return null;
+  const error = Reflect.get(body, 'error');
+  if (!error || typeof error !== 'object' || !('details' in error)) return null;
+  const details = Reflect.get(error, 'details');
+  if (!Array.isArray(details) || details.length === 0) return null;
+  const first = details[0];
+  if (!first || typeof first !== 'object' || !('reason' in first)) return null;
+  const reason = Reflect.get(first, 'reason');
+  return typeof reason === 'string' && /^[A-Z0-9_]+$/.test(reason) ? reason : null;
 }
 
 function tokenField(body: unknown, key: string): string | null {

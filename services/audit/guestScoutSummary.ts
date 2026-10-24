@@ -12,6 +12,7 @@ import type { LlmCrawlerCheck, LlmCrawlerReport } from './llmCrawlerReadiness';
 import { hostedAuthRecoveryHint, type HostedScoutRail } from './hostedScoutRail';
 import { teaserFailureCodes, teaserFailureLine, type TeaserFailureCode } from './teaserFailureCodes';
 import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
+import { measuredCheckLine, resolveCheckCounts } from '../agentCore/auditEvidenceGate';
 import { countPhrase, joinList, tidySentence } from './reportSentence';
 
 export type EvidenceBadgeStatus = 'measured' | 'estimated' | 'not_measured';
@@ -62,7 +63,7 @@ export interface GuestScoutSummaryInput {
    */
   healthScore: number | null;
   /** How many of the site checks passed, of how many ran. Shown on the card as that count. */
-  healthChecks?: { passed: number; total: number; unmeasured?: number } | null;
+  healthChecks?: { passed: number; total: number; failed?: number; unmeasured?: number } | null;
   scrapedPageCount: number;
   serpCount: number;
   /** The engines the search rows came from, as recorded on the rows. */
@@ -148,21 +149,18 @@ function mentionCountBadge(label: string, count: number | null, total: number): 
   return { label, status: 'measured', value: `mentioned in ${count} of ${total} web results` };
 }
 
-/** Page health is shown as passed checks of checks run, never as an out-of-100 number. */
+/** Page health is the same sentence as the brief: passed, failed, and not measured only when a check was not run. */
 function checksBadge(
   label: string,
-  healthScore: number | null,
-  checks: { passed: number; total: number; unmeasured?: number } | null | undefined,
+  checks: { passed: number; total: number; failed?: number; unmeasured?: number } | null | undefined,
 ): ScoutBadge {
   if (!checks) return { label, status: 'not_measured' };
   const passed = mentionCountOf(checks.passed, checks.total);
-  const raw = checks.unmeasured;
-  const unmeasured = typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : 0;
-  if (unmeasured > 0 && passed != null) {
-    return { label, status: 'not_measured', value: `passed ${passed} of ${checks.total}; ${unmeasured} not measured` };
-  }
-  if (typeof healthScore !== 'number' || passed == null) return { label, status: 'not_measured' };
-  return { label, status: 'measured', value: `${passed} of ${checks.total} checks passed` };
+  if (passed == null) return { label, status: 'not_measured' };
+  const counts = resolveCheckCounts({ ...checks, passed });
+  const value = measuredCheckLine(counts);
+  if (counts.passed === 0 && counts.failed === 0) return { label, status: 'not_measured', value };
+  return { label, status: 'measured', value };
 }
 
 /**
@@ -285,7 +283,7 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
   // brand, not of the brand's share against anyone else.
   let badges: ScoutBadge[] = [
     mentionCountBadge('Citation rate', typeof input.citationRatePercent === 'number' ? mentionCount : null, input.serpCount),
-    checksBadge('Page health', input.healthScore, input.healthChecks),
+    checksBadge('Page health', input.healthChecks),
   ];
   if (degraded) {
     badges = badges.map((badge) => ({ label: badge.label, status: 'not_measured' }));

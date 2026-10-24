@@ -556,7 +556,7 @@ describe('Instant Audit honesty on empty evidence', () => {
       null,
       noop,
     );
-    expect(measured).toContain('passed 3 of 4; 0 not measured');
+    expect(measured).toContain('3 of 4 checks passed, 1 failed');
     expect(measured).toContain('mentioned in 2 of 9 web results');
     expect(measured).not.toMatch(/\d+\s*\/\s*100/);
     expect(measured).not.toMatch(/health score/i);
@@ -641,7 +641,7 @@ describe('Instant Audit honesty on empty evidence', () => {
 
   it('says so and lists no step when every check passed, or when the checks did not run', async () => {
     const allPassed = await executiveTranslatorAgent.execute('https://example.com', { passed: 4, total: 4 }, { mentioned: 2, total: 9 }, [], [], null, noop);
-    expect(allPassed).toContain('passed 4 of 4; 0 not measured');
+    expect(allPassed).toContain('4 of 4 checks passed');
     expect(allPassed).toContain('All 4 checks this run made passed, so there are no steps to list.');
     const notRun = await executiveTranslatorAgent.execute('https://example.com', null, null, [], [], null, noop);
     expect(notRun).toContain('The site checks were not measured, so there are no steps to list.');
@@ -702,7 +702,7 @@ describe('Instant Audit honesty on empty evidence', () => {
 
     expect(translate.mock.calls[0]?.[1]).toEqual({ total: 4, failed: 0, unmeasured: 0, passed: 4 });
     expect(translate.mock.calls[0]?.[2]).toEqual({ mentioned: 2, total: 5 });
-    expect(result.plainEnglishBrief).toContain('passed 4 of 4; 0 not measured');
+    expect(result.plainEnglishBrief).toContain('4 of 4 checks passed');
     expect(result.plainEnglishBrief).toContain('mentioned in 2 of 5 web results');
     expect(result.plainEnglishBrief).not.toContain('81');
     expect(result.plainEnglishBrief).not.toMatch(/\d+(?:\.\d+)?\s*%/);

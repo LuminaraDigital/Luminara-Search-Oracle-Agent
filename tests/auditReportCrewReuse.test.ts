@@ -109,7 +109,8 @@ describe('crew evidence reuse helpers', () => {
   it('keeps observable pages and live rows', () => {
     const pages = formatCrewPagesForReport('https://example.com', [livePage({ source: 'jina' })]);
     expect(pages?.formattedEvidence).toContain('Mode: reused_crew');
-    expect(pages?.formattedEvidence).toContain('via jina');
+    expect(pages?.formattedEvidence).toContain('via page read');
+    expect(pages?.formattedEvidence).not.toContain('jina');
     expect(pages?.combinedText).toContain('Example builds widgets');
     const serp = formatCrewSerpForReport(liveSerp);
     expect(serp?.contextText).toContain('Example official site');
@@ -282,7 +283,8 @@ describe('generateAuditReport crew evidence', () => {
     expect(result.empiricalSummary?.measurementStatus).toBe('not_measured');
     expect(result.empiricalSummary?.citationRatePercent).toBeNull();
     expect(result.empiricalSummary?.entityClarityScore).toBeNull();
-    expect(prompt()).toContain('via jina');
+    expect(prompt()).toContain('via page read');
+    expect(prompt()).not.toContain('via jina');
   });
 
   // SW0a-7: the report prompt asks for no column an evidence block cannot fill.
