@@ -26,7 +26,7 @@ import type { TrafficImpact } from '../../services/analytics/trafficInsightsServ
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
 import { customerSourceLine, gateReportText, sourceReadKind } from '../../services/audit/reportColumnGate';
-import { citationView } from './VisibilityRadar';
+import { citationView, radarCitationRows } from './VisibilityRadar';
 import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
@@ -147,6 +147,10 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const citation = useMemo(
     () => citationView(markdownText, hideLiveNumbers ? undefined : empiricalSummary),
     [markdownText, empiricalSummary, hideLiveNumbers],
+  );
+  const namedRows = useMemo(
+    () => radarCitationRows(markdownText, citation.evidence || undefined),
+    [markdownText, citation.evidence],
   );
   const pageHealthMeasured = !suppressLiveMetrics && measuredChecks(markdownText, true) != null;
   const [showDiffModal, setShowDiffModal] = useState(false);
@@ -348,6 +352,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           findings={boardFindings}
           commitment={shipCommitment}
           evidence={empiricalSummary?.evidenceList}
+          radarRows={namedRows}
           rawSources={sources}
           onFindingUpdated={(f) => {
             setBoardFindings((prev) => {

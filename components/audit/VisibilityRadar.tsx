@@ -14,6 +14,44 @@ function normQuery(value: string): string {
     return value.toLowerCase().replace(/["“”']/g, '').replace(/\s+/g, ' ').trim();
 }
 
+export type RadarCitationRow = {
+    query: string;
+    competitors: string;
+    status: RadarStatus;
+};
+
+const NOT_A_RIVAL = /^(?:not measured|none|n\/a|unknown|-)$/i;
+
+/** Rival names from one radar cell. Empty, "Not measured", and "None" are not names. */
+export function rivalNames(cell: string): string[] {
+    const text = plain(cell);
+    if (!text || NOT_A_RIVAL.test(text)) return [];
+    return text.split(/,|\band\b/i).map((part) => part.trim()).filter((part) => part && !NOT_A_RIVAL.test(part));
+}
+
+/**
+ * The same query, rival, and citation rows the visibility radar draws.
+ * Evidence overrides a row only when that query was actually measured.
+ */
+export function radarCitationRows(
+    markdown: string,
+    evidence?: ReadonlyArray<{ query: string; brandCited: boolean }>,
+): RadarCitationRow[] {
+    const doc = parseAuditReport(markdown);
+    const section = doc.sections.find((item) => /visibility radar/i.test(item.title));
+    const table = section?.blocks.find((block) => block.kind === 'table');
+    if (!table || table.kind !== 'table') return [];
+    const queryCol = columnIndex(table.headers, /query/i, 0);
+    const competitorsCol = columnIndex(table.headers, /competitor/i, 3);
+    const statusCol = columnIndex(table.headers, /status/i, 4);
+    return table.rows.map((row) => {
+        const query = plain(row[queryCol]) || 'Query';
+        const hit = evidence?.find((item) => normQuery(item.query) === normQuery(query));
+        const status: RadarStatus = hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol]);
+        return { query, competitors: rivalNames(row[competitorsCol] || '').join(', '), status };
+    });
+}
+
 /**
  * The preview label and the radar share this.
  * No mention line unless the radar table has a query this evidence actually measured.

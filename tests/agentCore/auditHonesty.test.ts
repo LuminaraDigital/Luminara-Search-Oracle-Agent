@@ -634,7 +634,7 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(all).toContain('#### 4 steps for the checks that failed:');
     expect(steps(all).map((line) => line.slice(0, line.indexOf(':**')))).toEqual([
       '1. **Say plainly what you offer',
-      '2. **Add an Organization tag',
+      '2. **Add a business identity tag',
       '3. **Remove the HowTo markup',
       '4. **Write fuller answers on thin pages',
     ]);
@@ -769,6 +769,24 @@ describe('Mission Control copy', () => {
     expect(html).toContain('agent progress, not evidence quality');
     expect(html).not.toContain('ground-truth');
     expect(html).not.toContain('45%');
+  });
+
+  it('waits for a page read instead of scraped evidence', () => {
+    const html = renderToStaticMarkup(createElement(AgentMissionControl, {
+      events: [],
+      isComplete: false,
+    }));
+    expect(html).toContain('Waiting for the page read…');
+    expect(html).toContain('Standing by to read the page…');
+    expect(html).toContain('Standing by for live search results…');
+    expect(html).toContain('Waiting for the search results…');
+    expect(html).toContain('Waiting to check the findings…');
+    expect(html).toContain('Waiting for the findings…');
+    expect(html).not.toContain('scraped');
+    expect(html).not.toContain('crawl target');
+    expect(html).not.toContain('search intelligence');
+    expect(html).not.toContain('cross-examine');
+    expect(html).not.toContain('technical synthesis');
   });
 
   it('badges completed unmeasured scout and auditor cards as Not measured', () => {

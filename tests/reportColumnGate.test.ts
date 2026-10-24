@@ -610,4 +610,54 @@ describe('plain customer report lines', () => {
     expect(once).not.toContain('leadiq.com');
     expect(once).toContain('https://example.com. The version is v1.2. The rate is 35.3 today.');
   });
+
+  it('keeps a business identity tag a noun in a sentence and an action on a fix line', () => {
+    const expected = 'Security headers and a basic business identity tag are missing, which can lower trust and citation odds.';
+    for (const input of [
+      'Security headers and a basic Organization schema are missing, which can lower trust and citation odds.',
+      'Security headers and a basic JSON-LD are missing, which can lower trust and citation odds.',
+    ]) {
+      const once = gateReportText(input);
+      expect(once).toBe(expected);
+      expect(gateReportText(once)).toBe(once);
+      expect(once).not.toContain('Add a business identity tag are missing');
+    }
+    expect(gateReportText('| Insert Organization JSON-LD | None |')).toContain('| Add a business identity tag | None |');
+  });
+
+  it('repairs a security contact line that glued the article and the trailing file', () => {
+    const expected = 'Publish a public security contact file (security.txt)';
+    const once = gateReportText('Publish aa public security contact file (security.txt)file');
+    expect(once).toBe(expected);
+    expect(gateReportText(once)).toBe(once);
+    expect(gateReportText('| Publish a security.txt file | Missing |')).toContain(`| ${expected} | Missing |`);
+  });
+
+  it('scrubs jargon phrases without doubled articles, glued words, or a second change', () => {
+    const inputs = [
+      'a security.txt file',
+      'the security.txt',
+      'basic JSON-LD',
+      'an Organization schema markup',
+      'CSP header',
+      'HSTS header',
+      'Content\u2011Security\u2011Policy',
+      'Publish a security.txtfile',
+      'a a security.txt file',
+      'a an security.txt file',
+      'an HSTS header',
+      'the CSP header',
+      'Add a basic Organization JSON-LD block to the homepage.',
+    ];
+    for (const input of inputs) {
+      const once = gateReportText(input);
+      const twice = gateReportText(once);
+      expect(twice, input).toBe(once);
+      expect(once, input).not.toMatch(/aa /i);
+      expect(once, input).not.toMatch(/a a /i);
+      expect(once, input).not.toMatch(/\)[A-Za-z]/);
+      expect(once, input).not.toMatch(/\b([A-Za-z]+)\s+\1\b/i);
+      expect(once, input).not.toContain('\u2014');
+    }
+  });
 });

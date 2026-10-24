@@ -40,7 +40,7 @@ const STEP_FOR_FAILED_CHECK: Record<(typeof HEALTH_CHECKS)[number]['findingId'],
   'finding-zero-citations':
     '**Say plainly what you offer:** None of the web results this run collected mention your brand. Publish one page under your brand name that states what you offer and who it is for.',
   'finding-schema-org':
-    '**Add an Organization tag:** No Organization markup was found on the pages this run read. Add the generated Organization tag to your website header. It states who you are and what you do in a form machines read.',
+    '**Add a business identity tag:** No business identity tag was found on the pages this run read. Add the generated business identity tag to your website header. It states who you are and what you do in a form machines read.',
   'finding-deprecated-howto':
     '**Remove the HowTo markup:** Your pages carry HowTo schema, which the playbook marks as deprecated.',
   'finding-thin-content':

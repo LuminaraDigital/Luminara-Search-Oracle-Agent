@@ -25,7 +25,7 @@ export function auditStepIndex(message: string): AuditStepIndex {
   if (/crawler|robots\.txt|llms\.txt|ai\.txt|playbook|compliance audit|auditing \d/.test(text)) {
     return 2;
   }
-  if (/web search|search result|search provider|serp|citation rate|share of voice/.test(text)) {
+  if (/web search|search result|search provider|serp|citation rate|share of voice|other sites/.test(text)) {
     return 1;
   }
   return 0;

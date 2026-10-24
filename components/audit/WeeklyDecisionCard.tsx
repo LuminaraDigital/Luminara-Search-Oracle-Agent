@@ -10,6 +10,8 @@ import { LLMS_NAME_NOTE, llmsTxtDraft, organizationJsonLd } from '../../services
 import { brandNameFor } from '../../services/audit/brandName';
 
 import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
+import type { RadarCitationRow } from './VisibilityRadar';
+import type { MindshareHistoryPoint } from '../../services/visibility/mindshareService';
 import { probeLlmCrawlerReadiness } from '../../services/audit/llmCrawlerProbe';
 import { MindshareRadarCard } from '../visibility/MindshareRadarCard';
 import { formatAuDate } from '../../utils/formatAuDate';
@@ -23,6 +25,8 @@ interface WeeklyDecisionCardProps {
   onFindingUpdated?: (f: BoardFinding) => void;
   evidence?: EmpiricalEvidence[];
   rawSources?: Array<{ uri: string; title: string }>;
+  radarRows?: readonly RadarCitationRow[];
+  mindshareHistory?: readonly MindshareHistoryPoint[];
   onSelectAction?: (actionId: string, label: string) => void;
 }
 
@@ -38,6 +42,8 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
   onFindingUpdated,
   evidence,
   rawSources,
+  radarRows,
+  mindshareHistory,
   onSelectAction,
 }) => {
   const [busy, setBusy] = useState(false);
@@ -282,6 +288,8 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
         domain={domain}
         evidence={mappedEvidence}
         rawSources={rawSources}
+        radarRows={radarRows}
+        history={mindshareHistory}
         onSelectAction={onSelectAction}
       />
 

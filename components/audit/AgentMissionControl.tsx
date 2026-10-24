@@ -60,13 +60,13 @@ export const AgentMissionControl: React.FC<AgentMissionControlProps> = ({
   // Find latest status for each role
   const roleStatuses = React.useMemo(() => {
     const map: Record<AgentRole, { status: AgentStatus; message: string; timestamp: number }> = {
-      scout: { status: 'idle', message: 'Standing by to crawl target URL…', timestamp: 0 },
-      serp_radar: { status: 'idle', message: 'Standing by to probe live search engines…', timestamp: 0 },
-      playbook_auditor: { status: 'idle', message: 'Waiting for scraped evidence…', timestamp: 0 },
-      competitor_strategist: { status: 'idle', message: 'Waiting for search intelligence…', timestamp: 0 },
-      adversarial_critic: { status: 'idle', message: 'Waiting to cross-examine findings…', timestamp: 0 },
-      remediation_architect: { status: 'idle', message: 'Waiting for verified findings…', timestamp: 0 },
-      executive_translator: { status: 'idle', message: 'Waiting for technical synthesis…', timestamp: 0 },
+      scout: { status: 'idle', message: 'Standing by to read the page…', timestamp: 0 },
+      serp_radar: { status: 'idle', message: 'Standing by for live search results…', timestamp: 0 },
+      playbook_auditor: { status: 'idle', message: 'Waiting for the page read…', timestamp: 0 },
+      competitor_strategist: { status: 'idle', message: 'Waiting for the search results…', timestamp: 0 },
+      adversarial_critic: { status: 'idle', message: 'Waiting to check the findings…', timestamp: 0 },
+      remediation_architect: { status: 'idle', message: 'Waiting for the checked findings…', timestamp: 0 },
+      executive_translator: { status: 'idle', message: 'Waiting for the findings…', timestamp: 0 },
     };
 
     events.forEach((ev) => {
