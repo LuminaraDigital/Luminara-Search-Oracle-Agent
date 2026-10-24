@@ -3,6 +3,7 @@
  * The D1 claim is the idempotency guard. Retries and later sign-ins claim the same null
  * column, so a second send does not start. Resend's Idempotency-Key covers a lost response.
  */
+import type { D1Database } from '@cloudflare/workers-types';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { BUSINESS_LOCATION, CONTACT_EMAIL, LEGAL_ABN, LEGAL_ENTITY, PUBLIC_BRAND } from '../services/legal/consumerTerms';
 import { PUBLIC_PRIVACY_URL, PUBLIC_TERMS_URL } from '../services/legal/privacyCopy';
@@ -29,6 +30,15 @@ export function runWithWaitUntil<T>(
   fn: () => T,
 ): T {
   return waitScope.run(ctx, fn);
+}
+
+export function scheduleWaitUntil(task: Promise<unknown>): void {
+  const safe = task.catch(() => {
+    console.warn(JSON.stringify({ event: 'background_task_failed' }));
+  });
+  const scope = waitScope.getStore();
+  if (scope) scope.waitUntil(safe);
+  else void safe;
 }
 
 function defer(task: Promise<unknown>): void {
