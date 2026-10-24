@@ -4,6 +4,8 @@
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
+import type { DataPlaneDeps } from './dataPlane';
+import { trackAndScheduleErase } from './accountMirror';
 import { billingId, json } from './workerUtils';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { deleteHostedAccount } from './accountDeletion';
@@ -255,8 +257,10 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
   };
 }
 
-async function softDeleteAccount(env: Env, accountId: string): Promise<Record<string, number>> {
+async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDeps): Promise<Record<string, number>> {
   const db = env.DB!;
+  const listed = await db.prepare(`SELECT id FROM users WHERE account_id = ? OR id = ?`).bind(accountId, accountId).all<{ id: string }>();
+  const userIds = (listed.results ?? []).map((row) => row.id).filter((id) => id);
   const counts: Record<string, number> = {};
   const run = async (label: string, sql: string, ...binds: unknown[]) => {
     const r = await db.prepare(sql).bind(...binds).run();
@@ -353,12 +357,13 @@ async function softDeleteAccount(env: Env, accountId: string): Promise<Record<st
     `UPDATE users SET telegram_id = NULL, firebase_uid = NULL, email = NULL, display_name = NULL WHERE account_id = ?`,
     accountId,
   );
+  await trackAndScheduleErase(env, deps, { accountId, userIds });
   return counts;
 }
 
 /** Same row wipe as a privacy delete. Settings calls this, then removes the login rows. */
-export async function eraseAccountRows(env: Env, accountId: string): Promise<Record<string, number>> {
-  return softDeleteAccount(env, accountId);
+export async function eraseAccountRows(env: Env, accountId: string, deps?: DataPlaneDeps): Promise<Record<string, number>> {
+  return softDeleteAccount(env, accountId, deps);
 }
 
 export async function createPrivacyJob(

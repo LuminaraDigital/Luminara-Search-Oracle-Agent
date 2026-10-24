@@ -29,8 +29,12 @@ export type FirestoreClient = {
     fields: Record<string, unknown>,
     opts?: { mask?: readonly string[]; signal?: AbortSignal },
   ): Promise<void>;
-  query(input: { collection: string; accountId: string; domain?: string; limit: number }, signal?: AbortSignal): Promise<FirestoreDoc[]>;
+  query(
+    input: { collection: string; accountId: string; domain?: string; limit: number; orderBy?: 'measuredAt' | 'accountId' },
+    signal?: AbortSignal,
+  ): Promise<FirestoreDoc[]>;
   delete(collection: string, id: string, signal?: AbortSignal): Promise<void>;
+  batchDelete(collection: string, ids: readonly string[], signal?: AbortSignal): Promise<void>;
 };
 
 export function encodeValue(value: unknown): FsValue {
@@ -108,9 +112,13 @@ export function createFirestoreClient(input: {
     });
   }
 
-  function docUrl(collection: string, id: string): string {
+  function resourceName(collection: string, id: string): string {
     if (!COLLECTION.test(collection) || !id || id.includes('/')) throw new Error('invalid firestore path');
-    return `${base}/${collection}/${encodeURIComponent(id)}`;
+    return `projects/${input.project}/databases/(default)/documents/${collection}/${encodeURIComponent(id)}`;
+  }
+
+  function docUrl(collection: string, id: string): string {
+    return `https://firestore.googleapis.com/v1/${resourceName(collection, id)}`;
   }
 
   return {
@@ -132,13 +140,14 @@ export function createFirestoreClient(input: {
       if (!response.ok) throw new Error(`firestore ${response.status}`);
     },
     async query(query, signal) {
+      const orderField = query.orderBy === 'accountId' ? 'accountId' : 'measuredAt';
       const response = await authed(`${base}:runQuery`, {
         method: 'POST',
         body: JSON.stringify({
           structuredQuery: {
             from: [{ collectionId: query.collection }],
             where: where(query.accountId, query.domain),
-            orderBy: [{ field: { fieldPath: 'measuredAt' }, direction: 'DESCENDING' }],
+            orderBy: [{ field: { fieldPath: orderField }, direction: orderField === 'accountId' ? 'ASCENDING' : 'DESCENDING' }],
             limit: query.limit,
           },
         }),
@@ -160,6 +169,15 @@ export function createFirestoreClient(input: {
     async delete(collection, id, signal) {
       const response = await authed(docUrl(collection, id), { method: 'DELETE' }, signal);
       if (response.status === 404) return;
+      if (!response.ok) throw new Error(`firestore ${response.status}`);
+    },
+    async batchDelete(collection, ids, signal) {
+      if (ids.length === 0) return;
+      const writes = ids.map((id) => ({ delete: resourceName(collection, id) }));
+      const response = await authed(`${base}:batchWrite`, {
+        method: 'POST',
+        body: JSON.stringify({ writes }),
+      }, signal);
       if (!response.ok) throw new Error(`firestore ${response.status}`);
     },
   };

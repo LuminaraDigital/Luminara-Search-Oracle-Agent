@@ -23,6 +23,8 @@ export type DataPlaneDeps = {
   tokenProvider?: { getAccessToken(now?: number): Promise<string> };
   timeoutMs?: number;
   log?: DataPlaneLog;
+  /** Firestore query page size for an account erase or link move. Default 100. */
+  erasePageSize?: number;
 };
 
 const SAFE_VALUE = /^[A-Za-z0-9_.:-]{1,32}$/;
