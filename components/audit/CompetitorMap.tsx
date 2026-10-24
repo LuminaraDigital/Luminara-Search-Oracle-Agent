@@ -27,14 +27,17 @@ function cellText(cell: unknown): string {
 
 const BLANK_CELL = /^(?:-|—|–|n\/a|none|not measured|unknown)?$/i;
 
-function emptyRival(row: string[], columns: number[]): boolean {
-    return columns.every((col) => BLANK_CELL.test(rawCell(row[col])));
-}
-
-/** A model placeholder such as [[Competitor 1]]. A real rival name is kept. */
+/** A model placeholder, a blank name, or a disclaimer such as "(no verified rivals in this niche)". */
 function placeholderCompetitor(entity: string): boolean {
     const plain = entity.replace(/\[\[|\]\]/g, '').trim();
-    return /^competitor\s*#?\d+$/i.test(plain);
+    if (!plain || BLANK_CELL.test(plain)) return true;
+    if (/^competitor\s*#?\d+$/i.test(plain)) return true;
+    if (/no verified rivals/i.test(plain)) return true;
+    return /^\(.*\)$/.test(plain);
+}
+
+function measuredField(cell: unknown): boolean {
+    return !BLANK_CELL.test(rawCell(cell));
 }
 
 export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) => {
@@ -42,7 +45,11 @@ export const CompetitorMap: React.FC<CompetitorMapProps> = ({ headers, rows }) =
     const perceptionCol = columnIndex(headers, /perception|how ai talks/i, 1);
     const pagesCol = columnIndex(headers, /page/i, 2);
     const advantageCol = columnIndex(headers, /advantage/i, 3);
-    const visibleRows = rows.filter((row) => !placeholderCompetitor(cellText(row[entityCol])) && !emptyRival(row, [entityCol, perceptionCol, pagesCol, advantageCol]));
+    const visibleRows = rows.filter((row, index) => {
+        if (index === 0) return true;
+        if (placeholderCompetitor(rawCell(row[entityCol]))) return false;
+        return [perceptionCol, pagesCol, advantageCol].some((col) => measuredField(row[col]));
+    });
     const rivalCount = Math.max(visibleRows.length - 1, 0);
 
     return (

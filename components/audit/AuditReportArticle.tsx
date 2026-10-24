@@ -12,6 +12,7 @@ import {
   checkFixTitle,
   displayMeasured,
   groundCustomerReport,
+  NOT_MEASURED,
   findingFix,
   findingWhy,
   fixProgress,
@@ -94,11 +95,41 @@ function CodeBlock({ text }: { text: string }) {
   );
 }
 
-function visibleSections(sections: ReportSection[]): ReportSection[] {
-  return sections.flatMap((section) => {
-    const blocks = section.blocks.filter((block) => block.kind !== 'paragraph' || !/^\**\s*Date:/i.test(block.text.trim()));
+/** Numbers live here, not in the model headings. The same list is 1 to 7 on every path. */
+const REPORT_HEADINGS: ReadonlyArray<{ test: RegExp; title: string }> = [
+  { test: /one move/i, title: '1. One move this week' },
+  { test: /plain verdict/i, title: '2. Plain verdict' },
+  { test: /fix list/i, title: '3. Fix list' },
+  { test: /visibility radar/i, title: '4. Visibility radar' },
+  { test: /competitor/i, title: '5. Competitor map' },
+  { test: /budget/i, title: '6. Budget notes' },
+];
+
+const SOURCES_TITLE = '7. Sources';
+
+function sectionSlug(title: string): string {
+  const words = title.replace(/^\d+\.\s*/, '');
+  return words.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'section';
+}
+
+function withoutDate(blocks: ReportBlock[]): ReportBlock[] {
+  return blocks.filter((block) => block.kind !== 'paragraph' || !/^\**\s*Date:/i.test(block.text.trim()));
+}
+
+function customerSections(sections: ReportSection[]): ReportSection[] {
+  const used = new Set<number>();
+  const known = REPORT_HEADINGS.map((item) => {
+    const index = sections.findIndex((section, i) => !used.has(i) && item.test.test(section.title));
+    if (index >= 0) used.add(index);
+    const found = index >= 0 ? sections[index] : undefined;
+    return { id: sectionSlug(item.title), title: item.title, blocks: withoutDate(found?.blocks || []) };
+  });
+  const extra = sections.flatMap((section, index) => {
+    if (used.has(index) || /\bsources\b/i.test(section.title)) return [];
+    const blocks = withoutDate(section.blocks);
     return blocks.length ? [{ ...section, blocks }] : [];
   });
+  return [...known, ...extra];
 }
 
 function BlockView({
@@ -232,7 +263,7 @@ export function AuditReportArticle({
   const plainBlock = plain?.blocks.find((block) => block.kind === 'paragraph');
   const verdict = (plainBlock && plainBlock.kind === 'paragraph' ? plainBlock.text : '') || doc.verdict || 'Not measured.';
   const dated = formatAuDate(auditedAt ?? Date.now());
-  const sections = visibleSections(doc.sections);
+  const sections = customerSections(doc.sections);
 
   const mark = (finding: BoardFinding, done: boolean) => {
     const nextFindings = setFindingStatusLocal(domain || finding.domain, findings, finding.id, done ? 'done' : 'open');
@@ -254,7 +285,7 @@ export function AuditReportArticle({
             ))}
             {validSources.length > 0 && (
               <li>
-                <a href="#audit-sources" className="block min-h-11 rounded-lg px-2 py-2 text-sm text-gray-200 hover:bg-white/5 hover:text-white">7. Sources</a>
+                <a href="#audit-sources" className="block min-h-11 rounded-lg px-2 py-2 text-sm text-gray-200 hover:bg-white/5 hover:text-white">{SOURCES_TITLE}</a>
               </li>
             )}
           </ul>
@@ -344,9 +375,9 @@ export function AuditReportArticle({
                 {section.title}
               </summary>
               <div className="mt-2">
-                {section.blocks.map((block, index) => (
+                {section.blocks.length ? section.blocks.map((block, index) => (
                   <BlockView key={`${section.id}-${index}`} block={block} sectionTitle={section.title} evidence={citationEvidence || undefined} />
-                ))}
+                )) : <p className="my-3 text-base leading-relaxed text-gray-200">{NOT_MEASURED}.</p>}
               </div>
             </details>
           </section>
@@ -354,7 +385,7 @@ export function AuditReportArticle({
 
         {validSources.length > 0 && (
           <section id="audit-sources" className="mt-8 border-t border-white/10 pt-4">
-            <h2 className="text-xl font-semibold text-white">7. Sources</h2>
+            <h2 className="text-xl font-semibold text-white">{SOURCES_TITLE}</h2>
             <ul className="mt-3 space-y-2">
               {validSources.map((source) => (
                 <li key={source.uri}>

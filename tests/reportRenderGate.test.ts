@@ -411,9 +411,10 @@ describe('the visibility card shows what the table says and no score', () => {
     expect(html).toContain('what is example.com');
     expect((html.match(/Cited/g) || []).length).toBe(1);
     expect(html).not.toContain('General');
-    // Brand quoted and rivals have no column, so both read "Not measured"
-    // (the rivals cell prints it twice: as text and as its hover title).
-    expect((html.match(/Not measured/g) || []).length).toBe(3);
+    // Status is Cited, so the search ran. An empty rival cell is None.
+    // Brand quoted has no column, so that one stays Not measured.
+    expect(html).toContain('>None<');
+    expect((html.match(/Not measured/g) || []).length).toBe(1);
   });
 
   it('has no rank or AI Overview cell, whatever headers it is given', () => {

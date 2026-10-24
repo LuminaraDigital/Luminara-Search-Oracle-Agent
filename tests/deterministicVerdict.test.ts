@@ -545,3 +545,202 @@ describe('live runs 260 A and B', () => {
     expect(map).toContain('Not measured');
   });
 });
+
+const LIVE_261_META = 'The homepage of Example Domain is not optimized for search engines, and there is no clear meta description.';
+const LIVE_261_CITATION = 'The brand is mentioned in 8 of 9 web results.';
+const LIVE_261_QUERY = 'The query "what is example.com" named no rival.';
+const LIVE_261_NOTE = 'The niche has no clear search demand.';
+const LIVE_261_BUDGET = 'Budget impact: Not measured without client ad spend or conversion data.';
+const SECTION_TITLES = [
+  '1. One move this week',
+  '2. Plain verdict',
+  '3. Fix list',
+  '4. Visibility radar',
+  '5. Competitor map',
+  '6. Budget notes',
+  '7. Sources',
+];
+
+const RADAR_HEAD = [
+  '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status (Cited/Not Cited/Not Measured) |',
+  '| --- | --- | --- | --- | --- |',
+].join('\n');
+
+const RADAR_QUERIES = [
+  '| "Example Domain" example.com | informational | Yes | Not measured | Cited |',
+  '| "best Example Domain alternative reviews" | commercial | Yes | Not measured | Cited |',
+  '| "what is example.com" | informational | Yes |  | Cited |',
+].join('\n');
+
+function live261(headingRadar: string, headingMap: string, verdict: string, rivals: string): string {
+  return [
+    '# Example',
+    '',
+    '## 1. One move this week',
+    '',
+    'Add a business identity tag.',
+    '',
+    '## 2. Plain verdict',
+    '',
+    verdict,
+    '',
+    '## 3. Fix list',
+    '',
+    '| Task | Plain issue | Priority |',
+    '| --- | --- | --- |',
+    '| Add a business identity tag | A business identity tag is missing | Critical |',
+    '',
+    headingRadar,
+    '',
+    LIVE_261_NOTE,
+    '',
+    RADAR_HEAD,
+    RADAR_QUERIES,
+    '',
+    LIVE_261_QUERY,
+    '',
+    headingMap,
+    '',
+    'No rival in this niche publishes comparison pages.',
+    '',
+    '| Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) |',
+    '| --- | --- | --- | --- |',
+    '| example.com | Not measured | Not measured | Not measured |',
+    rivals,
+    '',
+    '## 6. Budget notes',
+    '',
+    LIVE_261_BUDGET,
+    '',
+    'A business identity tag is missing, so this is not a spend decision.',
+  ].join('\n');
+}
+
+describe('live runs 261 A and B', () => {
+  const dumpA = readFileSync('tests/fixtures/report261a.txt', 'utf8');
+  const dumpB = readFileSync('tests/fixtures/report261b.txt', 'utf8');
+  const citation = LIVE_261_CITATION;
+  const facts = {
+    domain: 'example.com',
+    brand: 'Example Domain',
+    findings,
+    evidence: QUOTED_QUERIES.map((query) => evidenceRow(query)),
+    citationLine: citation,
+    auditedAt: Date.parse('2026-10-24T14:44:00Z'),
+  };
+  const sources = [
+    { uri: 'https://example.com', title: 'example.com' },
+    { uri: 'https://en.wikipedia.org/wiki/Example.com', title: 'example.com - Wikipedia' },
+  ];
+
+  it('keeps the live before strings in the captures', () => {
+    expect(dumpA).toContain('AI & Search Visibility Radar');
+    expect(dumpA).toContain('Competitor Reality Map');
+    expect(dumpA).not.toContain('4. Visibility radar');
+    expect(dumpA).toContain('(no verified rivals in this niche)');
+    expect(dumpA).toContain('TOP RIVAL CITATIONS\nNot measured');
+    expect(dumpA).not.toContain(LIVE_261_META);
+    expect(dumpB).toContain('4. Visibility radar');
+    expect(dumpB).toContain('5. Competitor map');
+    expect(dumpB).toContain(LIVE_261_META);
+    expect(dumpB).toContain(citation);
+    expect(dumpB).toContain('No rivals found in this search sample.');
+    expect(dumpB).toContain('TOP RIVAL CITATIONS\nNone');
+    expect(dumpB).toContain('Answered by a fallback model: @cf/meta/llama-3.1-8b-instruct-fast');
+  });
+
+  it('renders both paths with the same 1 to 7 headings', () => {
+    const normal = live261(
+      '## AI & Search Visibility Radar',
+      '## Competitor Reality Map',
+      `${TEMPLATE} ${citation}`,
+      '| (no verified rivals in this niche) | Not measured | Not measured | Not measured |',
+    );
+    const fallback = `${live261(
+      '## 4. Visibility radar',
+      '## 5. Competitor map',
+      `${TEMPLATE} ${LIVE_261_META} ${citation}`,
+      '| Example Domain | Not measured | Not measured | Not measured |',
+    )}\n\nAnswered by a fallback model: @cf/meta/llama-3.1-8b-instruct-fast`;
+    const htmlA = renderToStaticMarkup(createElement(AuditReportArticle, {
+      markdown: normal,
+      measured: true,
+      findings,
+      domain: 'example.com',
+      clientName: 'Example Domain',
+      citationEvidence: facts.evidence,
+      citationLine: citation,
+      auditedAt: facts.auditedAt,
+      sources,
+      showActions: false,
+    }));
+    const htmlB = renderToStaticMarkup(createElement(AuditReportArticle, {
+      markdown: fallback,
+      measured: true,
+      findings,
+      domain: 'example.com',
+      clientName: 'Example Domain',
+      citationEvidence: facts.evidence,
+      citationLine: citation,
+      auditedAt: facts.auditedAt,
+      sources,
+      showActions: false,
+    }));
+    for (const html of [htmlA, htmlB]) {
+      let at = -1;
+      for (const title of SECTION_TITLES) {
+        const next = html.indexOf(title, at + 1);
+        expect(next, title).toBeGreaterThan(at);
+        at = next;
+      }
+      expect(html).toContain(`${TEMPLATE} ${citation}`);
+      expect(html).not.toContain(LIVE_261_META);
+      expect(html).not.toContain('meta description');
+      expect(html).not.toContain('AI & Search Visibility Radar');
+      expect(html).not.toContain('no verified rivals');
+      expect(html).not.toContain(LIVE_261_NOTE);
+      expect(html).not.toContain('publishes comparison pages');
+      expect(html).not.toContain(LIVE_261_BUDGET);
+      expect(html).toContain('named no rival');
+      expect(html).toContain('A business identity tag is missing, so this is not a spend decision.');
+      expect(html).toContain('No rivals found in this search sample.');
+      expect(html).toContain('>None<');
+      expect(proseIssues(html.includes(TEMPLATE) ? `${TEMPLATE} ${citation}` : '')).toEqual([]);
+    }
+    expect(htmlB).toContain('Answered by a fallback model: @cf/meta/llama-3.1-8b-instruct-fast');
+    const shown = groundCustomerReport(fallback, facts);
+    expect(shown).not.toContain(LIVE_261_META);
+    expect(shown).toContain(citation);
+    expect(plainVerdictText([], LIVE_261_META, { citationLine: citation, scope: { domain: 'example.com', brand: 'Example Domain' } })).toBe(`The page is reachable. ${citation}`);
+    expect(plainVerdictText(findings, LIVE_261_META, { citationLine: citation, scope: { domain: 'example.com', brand: 'Example Domain' } })).toBe(`${TEMPLATE} ${citation}`);
+  });
+
+  it('prints None only after the search ran, and hides a rival with nothing measured', () => {
+    const cited = renderToStaticMarkup(createElement(VisibilityRadar, {
+      headers: [...REPORT_TABLES.visibilityRadar],
+      rows: [['"what is example.com"', 'informational', 'Yes', 'Not measured', 'Cited']],
+    }));
+    expect(cited).toContain('>None<');
+    expect(cited).not.toContain('>Not measured<');
+    const missed = renderToStaticMarkup(createElement(VisibilityRadar, {
+      headers: [...REPORT_TABLES.visibilityRadar],
+      rows: [['"what is example.com"', 'informational', 'Not measured', 'Not measured', 'Not measured']],
+    }));
+    expect(missed).toContain('>Not measured<');
+    expect(missed).not.toContain('>None<');
+    const map = renderToStaticMarkup(createElement(CompetitorMap, {
+      headers: [...REPORT_TABLES.competitorMap],
+      rows: [
+        ['example.com', 'Not measured', 'Not measured', 'Not measured'],
+        ['(no verified rivals in this niche)', 'Not measured', 'Not measured', 'Not measured'],
+        ['iana.org', 'Not measured', 'Not measured', 'Not measured'],
+        ['Wikipedia', 'Encyclopedia', 'Article', 'Coverage'],
+      ],
+    }));
+    expect(map).toContain('example.com');
+    expect(map).toContain('Wikipedia');
+    expect(map).not.toContain('no verified rivals');
+    expect(map).not.toContain('iana.org');
+    expect(map).not.toContain('No rivals found in this search sample.');
+  });
+});
