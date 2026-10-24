@@ -28,6 +28,15 @@ import {
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 import { isOrganizationEntityType } from '../../audit/brandName';
 
+/** Names up to two pages in a finding title and counts the rest, so the reader knows where to look. */
+export function pageList(urls: readonly string[]): string {
+  const [first, second] = urls;
+  const rest = urls.length - 2;
+  if (urls.length <= 1) return first || 'a measured page';
+  if (urls.length === 2) return `${first} and ${second}`;
+  return `${first}, ${second} and ${rest} more ${rest === 1 ? 'page' : 'pages'}`;
+}
+
 export class PlaybookAuditorAgent {
   public readonly name = 'Playbook Auditor';
   public readonly role = 'playbook_auditor';
@@ -132,9 +141,7 @@ export class PlaybookAuditorAgent {
             id: 'finding-schema-org-partial',
             category: 'schema',
             severity: 'low',
-            title: missing.length === 1
-              ? `Organization markup is not on ${missing[0].url}`
-              : `Organization markup is not on ${missing.length} measured pages`,
+            title: `Organization markup is not on ${pageList(missing.map((page) => page.url))}`,
             description: `Other measured pages already include an organization type. These do not: ${quoted}.`,
             evidenceSource: 'DOM Scrape JSON-LD inspection',
             howWeKnowItFailed: quoted,

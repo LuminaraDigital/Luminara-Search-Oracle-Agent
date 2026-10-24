@@ -1,11 +1,13 @@
 /**
  * Append-only audit memory timeline (Brand Memory foundation).
- * Browser-local with workspace sync; depth gated by plan entitlements.
+ * Signed in, the account's D1 history (`/api/audits/history`) is the durable copy and this
+ * browser list is its cache. Guests keep the browser list only. Depth gated by plan entitlements.
  */
 
 import { entitlementsFor, type PlanId } from '../plans/planEntitlements';
 import { notifyAuditActivity } from './auditActivity';
-import { flushWorkspacePush, noteWorkspaceDirty } from '../sync/workspaceSyncService';
+import { flushWorkspacePush, noteWorkspaceDirty, workspaceAccountId, workspaceHistoryReady } from '../sync/workspaceSyncService';
+import { accountKnownSignedIn, apiBase, workerFetchWithAuthRetry } from '../apiClient';
 
 const STORAGE_KEY = 'luminara_audit_history_v1';
 const MAX_HARD_CAP = 500;
@@ -155,8 +157,9 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
   const depth = entitlementsFor(input.planId).auditHistoryDepth;
   const all = loadAll();
   const existing = all.findIndex((row) => row.id === entry.id);
-  if (existing >= 0) all[existing] = { ...entry, measuredAt: all[existing].measuredAt };
-  else all.push(entry);
+  const saved = existing >= 0 ? { ...entry, measuredAt: all[existing].measuredAt } : entry;
+  if (existing >= 0) all[existing] = saved;
+  else all.push(saved);
   all.sort((a, b) => a.measuredAt - b.measuredAt);
 
   let trimmed = all;
@@ -184,7 +187,78 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
   } catch {
     /* sync is optional when storage is unavailable */
   }
+  void pushAuditToServer(saved);
   return entry;
+}
+
+const HISTORY_API = '/api/audits/history';
+
+/** Saves one entry to the account's D1 history. Guests and failed calls keep the browser copy only. */
+export async function pushAuditToServer(entry: AuditHistoryEntry): Promise<boolean> {
+  if (!apiBase() || !accountKnownSignedIn()) return false;
+  try {
+    const res = await workerFetchWithAuthRetry(`${apiBase()}${HISTORY_API}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ entry }),
+    });
+    if (res.ok) uploadedIds.add(entry.id);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export type ServerHistoryResult = { ok: true; entries: AuditHistoryEntry[] } | { ok: false; error: string };
+
+const HISTORY_TIMEOUT_MS = 8_000;
+/** Ids this page already sent, so a reload of the list does not send them again. */
+const uploadedIds = new Set<string>();
+
+/**
+ * Reads the account's newest saved audits from the API and caches them in this browser.
+ * Browser-only entries in that window (saved before this API, or while it was down) are uploaded,
+ * but only when this browser's copy is known to be this account's: a failed sign-in pull can
+ * leave another account's history here, and a guest's copy is not adopted by whoever signs in.
+ * A copy that names another account is replaced by the server list.
+ */
+export async function syncAuditHistoryFromServer(limit = 8): Promise<ServerHistoryResult> {
+  if (!apiBase() || !accountKnownSignedIn()) return { ok: false, error: 'Not signed in' };
+  if (!workspaceHistoryReady()) return { ok: false, error: 'Account history is still loading' };
+  let entries: AuditHistoryEntry[];
+  let accountId: string | undefined;
+  try {
+    const res = await workerFetchWithAuthRetry(`${apiBase()}${HISTORY_API}?limit=${limit}`, {
+      signal: AbortSignal.timeout(HISTORY_TIMEOUT_MS),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok?: boolean; accountId?: string; entries?: unknown; error?: string }
+      | null;
+    if (!res.ok || !body?.ok || !Array.isArray(body.entries)) {
+      return { ok: false, error: body?.error || `Saved reports could not be loaded (HTTP ${res.status})` };
+    }
+    entries = body.entries as AuditHistoryEntry[];
+    accountId = body.accountId;
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Saved reports could not be loaded' };
+  }
+
+  const owner = workspaceAccountId();
+  const ours = Boolean(owner && accountId && owner === accountId);
+  const foreign = Boolean(owner && accountId && owner !== accountId);
+  for (const entry of entries) uploadedIds.add(entry.id);
+  // A full page hides older server rows, so only local entries newer than its oldest row can be missing.
+  const oldestShown = entries.length >= limit ? Math.min(...entries.map((e) => e.measuredAt)) : 0;
+  const missing = ours
+    ? listAudits({ limit }).filter((e) => !uploadedIds.has(e.id) && e.measuredAt > oldestShown)
+    : [];
+  const merged = uniqueById([...(foreign ? [] : loadAll()), ...entries]).sort((a, b) => a.measuredAt - b.measuredAt);
+  saveAll(merged.slice(-MAX_HARD_CAP));
+  notifyAuditActivity();
+  void (async () => {
+    for (const entry of missing) await pushAuditToServer(entry);
+  })();
+  return { ok: true, entries: listAudits({ limit }) };
 }
 
 export function listAudits(opts?: {
@@ -223,5 +297,6 @@ export const auditHistoryService = {
   list: listAudits,
   get: getAudit,
   clear: clearAuditHistory,
+  syncFromServer: syncAuditHistoryFromServer,
   STORAGE_KEY,
 };

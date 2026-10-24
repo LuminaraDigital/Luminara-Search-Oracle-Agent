@@ -400,4 +400,25 @@ describe('retireStaleOrgFindings', () => {
     ]);
     expect(next.map((finding) => finding.id)).toEqual(['finding-thin-content']);
   });
+
+  it('replaces a soft Organization card that named other pages', () => {
+    const previous = [
+      row({
+        id: 'finding-schema-org-partial',
+        stableKey: 'partial-old',
+        title: 'Organization markup is not on https://luminara.digital/about and https://luminara.digital/team',
+        severity: 'low',
+      }),
+    ];
+    const incoming = [
+      row({
+        id: 'finding-schema-org-partial',
+        stableKey: 'partial-new',
+        title: 'Organization markup is not on https://luminara.digital/pricing',
+        severity: 'low',
+      }),
+    ];
+    expect(retireStaleOrgFindings(previous, incoming)).toEqual([]);
+    expect(retireStaleOrgFindings(previous, [])).toEqual([]);
+  });
 });
