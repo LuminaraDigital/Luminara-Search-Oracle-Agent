@@ -1,0 +1,477 @@
+Skip to content
+Luminara
+ASK
+INSTANT AUDIT
+MORE
+ADD MY BUSINESS
+2 left of 3 Daily
+UPGRADE
+QUICK
+THOROUGH
+LOG OUT
+Past reports
+example.com · 25 Oct 2026 12:54 am · AEO
+Instant Audit
+Will AI mention your brand?
+
+Paste your site. Get a plain verdict, evidence chips, and one move to ship this week.
+
+Signed in: hosted engines use your daily free allowance, or your own keys in Settings. Premium engines still need an active plan.
+No business profile yet. You can still run Instant Audit. Set your profile to unlock a USP-aware audit.
+Set up profile →
+
+INSTANT AUDIT
+
+Example Domain
+
+example.com
+
+What This Means For Example Domain
+
+Right now, 2 of 4 checks passed, 2 failed this run, and your brand is mentioned in 7 of 9 web results this run collected.
+
+⚠️ The Big Takeaway: This run found 1 critical gap: Add a business identity tag on https://example.com.
+
+2 steps for the checks that failed:
+Add a business identity tag: No business identity tag was found on the pages this run read. Add the generated business identity tag to your website header. It states who you are and what you do in a form machines read. Read 1 page at https://example.com. Tags on the page: none.
+Write fuller answers on thin pages: At least one page this run read has fewer than 250 words. Add clear, 2-to-3 sentence answers to the questions your buyers ask before buying. https://example.com (133 words)
+
+Bottom Line: These are the steps the failed checks point to. This run did not measure what they will change.
+
+Signals are measured, estimated, or not measured. This scout does not invent scores.
+
+YOUR NEXT MOVE
+
+Add a business identity tag on https://example.com
+
+Save the strategy to a project if you want it kept. Full branded share links stay on Growth and Agency.
+
+EVIDENCE USED
+
+Pages with text or schema: 1. Found 9 web results.
+
+SIGNALS
+Citation rate: mentioned in 7 of 9 web results
+Page health: 2 of 4 checks passed, 2 failed
+WHAT AI TOOLS CAN READ
+
+Each row is pass, fail, or not measured. A file hint is not a score.
+
+FAILAI guide file. llms.txt was not found at the site root.
+NOT MEASUREDAI guide file shape. llms.txt was not available, so structure was not measured.
+PASSCrawler access. No robots.txt was found. Common AI crawlers are not blocked by a robots rule.
+PASSPages crawlers can open. No robots.txt was found. Homepage, /llms.txt and /sitemap.xml are not blocked by a robots rule.
+FAILOptional AI notes file. Optional ai.txt was not found at the site root. Absence is recorded. It is not a citation score.
+WHAT FAILED
+The AI guide file (llms.txt) was missing or could not be read.
+FIXES FROM THIS AUDIT (0 OF 2 FIXES DONE)
+
+Fixes from the latest audit of example.com.
+
+Add a business identity tag on https://example.com
+
+Tags on the page: none. A business identity tag was not among them.
+
+This website
+This page is too short
+
+https://example.com (133 words) has fewer than 250 words.
+
+This website
+SHARE TEASER
+COPY LINK
+
+The teaser is a redacted summary and a link back to the Mini App. It is not a full branded share report. Those stay on Growth and Agency.
+
+Autonomous Search Crew Mission Control
+
+Multi-agent audit complete. Measured signals come from live page and search evidence.
+
+Page fetch is ready · Search is ready
+
+AGENT PROGRESS
+100% COMPLETE
+🔍
+Scout Agent
+
+Reads your pages
+
+✓ Done
+
+Read 1 page. Found 0 content blocks.
+
+📡
+Search results
+
+Live web search
+
+✓ Done
+
+Analyzed 9 search results. Brand mentioned in 7 of 9.
+
+⚖️
+Playbook Auditor
+
+Checks your pages against the rules
+
+✓ Done
+
+Finished the check. Found 2 issues: Add a business identity tag on https://example.com and this page is too short. 2 of 4 checks passed, 2 failed.
+
+🎯
+Competitor Strategist
+
+Compares other sites in your market
+
+✓ Done
+
+Identified 5 key competitors and mapped 2 keyword gaps.
+
+🛡️
+Adversarial Critic
+
+Checks claims against the evidence
+
+✓ Done
+
+Computed SHA-256 audit digest: 841bce56767ee0ab… Self-reported audit, not independently checked.
+
+🛠️
+Remediation Architect
+
+Writes the fix you can paste
+
+✓ Done
+
+Drafted 2 remediation patches. Verify before pasting.
+
+✍️
+Executive Translator
+
+Turns findings into a plain next step
+
+✓ Done
+
+Saved 4 notes about your brand.
+
+Strategy saved to project proj_2bfccaf…
+
+Growth includes MCP for Cursor and Claude. Upgrade to mint a hosted key.
+
+SEE GROWTH PRICING
+Regenerate Focus:
+SEARCH
+ANSWER ENGINES
+AI ANSWERS
+BRIEF ALOUD
+DOWNLOAD PDF
+NEW AUDIT
+
+PageSpeed / CWV
+
+Measure
+
+PageSpeed is not measured yet. Click Measure to fetch it for this URL.
+
+Search Console
+
+Search Console is not connected. Connect it in Settings to see real query and click data.
+
+Upload CSV
+
+NEXT STEP
+
+Share this audit with a teammate or client
+
+A measured win can be shared on the free plan. A full branded report link is on Growth and Agency.
+
+On this page
+
+Score
+Fixes
+1. One move this week
+3. Fix list
+AI & Search Visibility Radar
+Competitor Reality Map
+6. Budget notes
+
+Score
+
+2 of 4 checks passed, 2 failed
+
+The page is reachable. A business identity tag is missing. This page is too short. These gaps can lower trust and citation odds. The brand is mentioned in 7 of 9 web results.
+
+Date: 25 Oct 2026 · Mode: Instant Audit
+
+The score above is the only pass count for the site checks.
+
+Recheck on 8 Nov 2026.
+
+No earlier audit of this site is saved.
+
+DOWNLOAD PDF
+Fixes
+
+Your next fix
+
+Add a business identity tag on https://example.com
+critical
+
+Why it matters for buyers and vendors
+
+Read 1 page at https://example.com. Tags on the page: none.
+
+How to fix
+
+Copy
+
+Tags on the page: none. A business identity tag was not among them.
+
+Mark done
+This page is too short
+high
+
+Why it matters for buyers and vendors
+
+https://example.com (133 words)
+
+How to fix
+
+Copy
+
+https://example.com (133 words) has fewer than 250 words.
+
+Mark done
+1. One move this week
+
+Add a business identity tag on https://example.com.
+
+How to know it worked: the page source includes a business identity tag that names the organization.
+
+Snippet
+
+Copy
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "url": "https://example.com",
+  "name": "Example Domain"
+}
+3. Fix list
+Task	Plain issue	Priority
+Add a business identity tag	A business identity tag is missing	Critical
+Write fuller answers on thin pages	This page is too short	High
+AI & Search Visibility Radar
+AI and search visibility
+
+As written in the report table. Not a score.
+
+cited in 3 of 3 queries
+
+Informational
+""Example Domain" example.com"
+Citation status:
+Cited
+BRAND QUOTED
+Cited (estimated)
+TOP RIVAL CITATIONS
+iana.org, Wikipedia
+Commercial
+""best Example Domain alternative reviews""
+Citation status:
+Cited
+BRAND QUOTED
+Cited (estimated)
+TOP RIVAL CITATIONS
+iana.org, Stack Overflow
+Informational
+""what is example.com""
+Citation status:
+Cited
+BRAND QUOTED
+Cited (estimated)
+TOP RIVAL CITATIONS
+Wikipedia, PacketPushers
+Competitor Reality Map
+COMPETITOR REALITY MAP
+
+ENTITY PROFILE & STRATEGIC CONTENT GAP ANALYSIS
+
+GROUNDING MATRIX
+TARGET BRAND
+example.com
+
+AI ENTITY PERCEPTION
+
+"Not measured"
+
+TOP CITED ASSET TYPES
+
+Not measured
+CONTENT CITATION ADVANTAGE
+Not measured
+iana.org
+
+AI ENTITY PERCEPTION
+
+"Not measured"
+
+TOP CITED ASSET TYPES
+
+Not measured
+CONTENT CITATION ADVANTAGE
+Not measured
+Wikipedia
+
+AI ENTITY PERCEPTION
+
+"Not measured"
+
+TOP CITED ASSET TYPES
+
+Not measured
+CONTENT CITATION ADVANTAGE
+Not measured
+6. Budget notes
+Budget impact: Not measured without client ad spend or conversion data.
+Sources
+https://example.com example.com (page read)
+https://en.wikipedia.org/wiki/Example.com example.com - Wikipedia (web search)
+https://packetpushers.net/blog/example-com-valid-and-useful-site Example.com - valid and useful site (web search)
+https://stackoverflow.com/questions/608293/example-com-alternative Example.com alternative (web search)
+https://www.wikidata.org/wiki/Q306656 example.com - Wikidata (web search)
+
+0 of 2 fixes done
+
+Competitor rank: Not measured.
+
+One easy fix
+
+This page is too short
+
+https://example.com (133 words) has fewer than 250 words.
+
+Recheck this fix
+Competitor comparison
+SAMPLE
+SAMPLE. This is not your data.
+Sample agency A
+Sample agency B
+Rank: Not measured
+Compare competitors
+Suburb report
+SAMPLE
+SAMPLE. This is not your data.
+Example suburb page
+Not measured
+Not included on these plans yet. Email info@luminara.digital to join the waitlist.
+Monthly tracking
+SAMPLE
+SAMPLE. This is not your data.
+Last month: Not measured
+This month: Not measured
+See what this unlocks
+Team seats
+SAMPLE
+SAMPLE. This is not your data.
+Sample seat
+Not a member of your account
+White-label PDF
+SAMPLE
+SAMPLE. This is not your data.
+Sample agency name on a cover
+Not your export
+Preview the export
+NEXT FIX
+What will you ship this week?
+
+Reading the full report without a next step is the snooze button. Choose one action to unlock the rest of the audit. The source notes stay visible either way.
+
+5 live sources attached. Treat any score without a source as not verified.
+Add a business identity tag
+Add a business identity tag so search tools can tell who you are.
+Ship one answer-ready page rewrite
+Rewrite the page most likely to be cited in AI answers this week.
+Close one citation gap
+Publish or strengthen the proof (FAQ, comparison, or source page) rivals already win on.
+I WILL SHIP THIS
+OPEN ONE-STEP PUBLISH
+
+Domain: example.com · Check id fp7uhiyv
+
+THIS WEEK
+Add a business identity tag on https://example.com
+
+Tags on the page: none. A business identity tag was not among them.
+
+CRITICAL
+SCHEMA
+OPEN
+
+Add a business identity tag on https://example.com
+
+MARK IN PROGRESS
+EXPORT FIX PACK
+RE-CHECK & PROVE
+WHO GETS NAMED
+Baseline
+Mindshare not measured
+
+Rivals named in the radar: iana.org, Wikipedia, Stack Overflow and PacketPushers. A mindshare percent is not shown.
+
+KEY CITATION DRIVER: UNKNOWN
+
+Cited as recognized domain authority. Maintain domain authority and brand consistency.
+
+"Example Domain" example.com
+First audit, no trend yet
+Cited
+Rival: iana.org, Wikipedia
+"best Example Domain alternative reviews"
+First audit, no trend yet
+Cited
+Rival: iana.org, Stack Overflow
+"what is example.com"
+First audit, no trend yet
+Cited
+Rival: Wikipedia, PacketPushers
+High-leverage citation hub in category:iana.org
+Seek reference citation or editorial mention on iana.org.
+WHY (SAMPLE AI SAID)
+SAMPLE
+CHATGPT
+NOT MEASURED
+ABSENT
+
+Prompt: Best providers like Example Domain
+
+Sample answer (not Live): competitors are named first. Example Domain is absent or only vaguely related.
+
+Labeled Sample. Live Instant Audit may measure this engine when keys are connected.
+
+SAMPLE
+PERPLEXITY
+NOT MEASURED
+MENTIONED
+
+Prompt: Who is recommended instead of Example Domain?
+
+Sample answer (not Live): a rival is recommended. This site is not cited as a source.
+
+Mention without recommendation. Sample row, not measured.
+
+SAMPLE
+GOOGLE AI OVERVIEWS
+NOT MEASURED
+ABSENT
+
+Prompt: Is Example Domain reputable?
+
+Sample answer (not Live): overview leans on third-party directories; owned pages are not the primary citation.
+
+Sample only. Do not report as measured citation rate.
+
+Verify by 8 Nov 2026
+2 findings on board
+Weekly Telegram Briefing: Disabled. Press this to turn it on in this browser.
+Preview evidence (mentioned in 7 of 9 web results)

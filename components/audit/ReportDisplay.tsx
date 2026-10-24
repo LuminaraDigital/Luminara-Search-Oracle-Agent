@@ -26,7 +26,7 @@ import type { TrafficImpact } from '../../services/analytics/trafficInsightsServ
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
 import { customerSourceLine, gateReportText, sourceReadKind } from '../../services/audit/reportColumnGate';
-import { citationView, mentionCounts, mentionLabel, radarCitationRows, verdictCitationLine } from './VisibilityRadar';
+import { citationView, mentionCounts, mentionLabel, renderedRadarRows, verdictCitationLine } from './VisibilityRadar';
 import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
@@ -138,9 +138,27 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     () => citationView(markdownText, hideLiveNumbers ? undefined : empiricalSummary),
     [markdownText, empiricalSummary, hideLiveNumbers],
   );
+  const citationLine = useMemo(() => (
+    hideLiveNumbers || !empiricalSummary
+      ? null
+      : verdictCitationLine({
+          radarRows: (empiricalSummary.evidenceList || []).map((row) => ({
+            status: row.brandCited ? 'cited' : 'not_cited',
+          })),
+          webResultsMentioned: empiricalSummary.webResultsMentioned,
+          webResultsTotal: empiricalSummary.webResultsTotal,
+        })
+  ), [hideLiveNumbers, empiricalSummary]);
   const namedRows = useMemo(
-    () => radarCitationRows(markdownText, citation.evidence || undefined),
-    [markdownText, citation.evidence],
+    () => renderedRadarRows(markdownText, {
+      domain: targetDomain,
+      brand: dnaName,
+      findings: boardFindingsProp,
+      evidence: hideLiveNumbers ? undefined : empiricalSummary?.evidenceList,
+      citationLine,
+      auditedAt: empiricalSummary?.lastAudited,
+    }),
+    [markdownText, targetDomain, dnaName, boardFindingsProp, empiricalSummary, hideLiveNumbers, citationLine],
   );
   const pageHealthMeasured = !suppressLiveMetrics && measuredChecks(markdownText, true) != null;
   const [showDiffModal, setShowDiffModal] = useState(false);
@@ -307,17 +325,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         clientName={dnaName}
         sources={sources}
         citationEvidence={hideLiveNumbers ? undefined : empiricalSummary?.evidenceList}
-        citationLine={
-          hideLiveNumbers || !empiricalSummary
-            ? null
-            : verdictCitationLine({
-                radarRows: (empiricalSummary.evidenceList || []).map((row) => ({
-                  status: row.brandCited ? 'cited' : 'not_cited',
-                })),
-                webResultsMentioned: empiricalSummary.webResultsMentioned,
-                webResultsTotal: empiricalSummary.webResultsTotal,
-              })
-        }
+        citationLine={citationLine}
         auditedAt={empiricalSummary?.lastAudited}
         showActions={!hideAgencyActions}
         citationRateKnown={empiricalSummary ? typeof empiricalSummary.citationRatePercent === 'number' : undefined}

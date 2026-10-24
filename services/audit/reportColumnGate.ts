@@ -665,11 +665,51 @@ function splitSentences(text: string): string[] {
   return out;
 }
 
-/** The first scrubbed model sentence that passes the strict check. The rest are dropped. */
-export function optionalCustomerSentence(modelText: string): string | null {
+const DENIES_MENTIONS = /\blimited visibility\b|\b(?:no|zero|without|not|limited)\b[^.]{0,60}\b(?:mention|mentions|citation|citations|cited)\b/i;
+const CLAIMS_MENTIONS = /\bmentioned\b|\bcited in\b|\b(?:is|are|was|were)\s+cited\b|\bappears in\b/i;
+
+/** The measured "mentioned in N of M" count, or null when this run did not count. */
+export function mentionedCount(citationLine: string | null | undefined): number | null {
+  const match = citationLine?.match(/\b(?:mentioned|cited) in (\d+) of \d+/i);
+  if (!match) return null;
+  const count = Number(match[1]);
+  return Number.isInteger(count) ? count : null;
+}
+
+/**
+ * A model sentence has to agree with the measured mention count.
+ * Above zero, a claim of no or limited mentions is dropped. At zero, a claim of mentions is dropped.
+ */
+export function mentionSentenceOk(sentence: string, mentioned: number | null): boolean {
+  if (mentioned == null) return true;
+  if (mentioned > 0) return !DENIES_MENTIONS.test(sentence);
+  return !CLAIMS_MENTIONS.test(sentence);
+}
+
+/** Drops every model sentence that contradicts the measured mention count. Headings, tables, and code stay. */
+export function withoutContradictorySentences(markdown: string, mentioned: number | null): string {
+  if (mentioned == null || !markdown) return markdown;
+  let fence = false;
+  return markdown.split('\n').map((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      fence = !fence;
+      return line;
+    }
+    if (fence || !trimmed || /^#{1,6}\s/.test(trimmed) || trimmed.startsWith('|')) return line;
+    const sentences = splitSentences(trimmed);
+    const kept = sentences.filter((sentence) => mentionSentenceOk(sentence, mentioned));
+    if (kept.length === sentences.length) return line;
+    if (!kept.length) return '';
+    return `${line.match(/^\s*/)?.[0] ?? ''}${kept.join(' ')}`;
+  }).join('\n');
+}
+
+/** The first scrubbed model sentence that passes the strict check. A sentence that contradicts the count is skipped. */
+export function optionalCustomerSentence(modelText: string, mentioned: number | null = null): string | null {
   const scrubbed = plainCustomerReport(modelText);
   for (const sentence of splitSentences(scrubbed)) {
-    if (customerSentenceOk(sentence)) return sentence;
+    if (customerSentenceOk(sentence) && mentionSentenceOk(sentence, mentioned)) return sentence;
   }
   return null;
 }

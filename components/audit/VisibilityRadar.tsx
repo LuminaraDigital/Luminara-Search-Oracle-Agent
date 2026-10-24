@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { ICONS } from '../../constants';
 import type { EmpiricalCitationSummary } from '../../services/audit/empiricalCitationService';
-import { parseAuditReport } from '../../services/audit/reportBlocks';
+import { displayMeasured, groundCustomerReport, NOT_MEASURED, parseAuditReport, type GroundFacts } from '../../services/audit/reportBlocks';
 
 interface VisibilityRadarProps {
     headers: string[];
@@ -12,6 +12,20 @@ interface VisibilityRadarProps {
 
 function normQuery(value: string): string {
     return value.toLowerCase().replace(/["“”']/g, '').replace(/\s+/g, ' ').trim();
+}
+
+const WRAP_QUOTE = /["“”']/;
+
+/** One quote pair around the query. A matched wrap is removed first. Quotes inside the query stay. */
+export function quotedQuery(query: string): string {
+    let text = query.trim();
+    while (text.length >= 2 && WRAP_QUOTE.test(text[0]) && WRAP_QUOTE.test(text[text.length - 1])) {
+        const next = text.slice(1, -1).trim();
+        if (!next) break;
+        text = next;
+    }
+    if (/["“”]/.test(text)) return text;
+    return `"${text}"`;
 }
 
 export type RadarCitationRow = {
@@ -50,6 +64,15 @@ export function radarCitationRows(
         const status: RadarStatus = hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol]);
         return { query, competitors: rivalNames(row[competitorsCol] || '').join(', '), status };
     });
+}
+
+/** The radar rows after the report is grounded. The radar cards and Who gets named both read this. */
+export function renderedRadarRows(markdown: string, facts: GroundFacts): RadarCitationRow[] {
+    const shown = facts.domain ? groundCustomerReport(markdown, facts) : markdown;
+    const evidence = (facts.evidence || []).flatMap((row) => (
+        typeof row.brandCited === 'boolean' ? [{ query: row.query, brandCited: row.brandCited }] : []
+    ));
+    return radarCitationRows(shown, evidence.length ? evidence : undefined);
 }
 
 export type MentionTally = { mentioned: number; total: number };
@@ -171,7 +194,7 @@ export function readCitationStatus(cell: unknown): RadarStatus {
 const STATUS_TEXT: Record<RadarStatus, string> = {
     cited: 'Cited',
     not_cited: 'Not cited',
-    not_measured: 'Not measured',
+    not_measured: NOT_MEASURED,
 };
 
 /**
@@ -213,7 +236,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows,
                     const intent = plain(row[intentCol]);
                     const hit = evidence?.find((item) => normQuery(item.query) === normQuery(query));
                     const cited = hit ? (hit.brandCited ? 'yes' : 'no') : readBrandCited(row[citedCol]);
-                    const competitors = plain(row[competitorsCol]) || 'Not measured';
+                    const competitors = displayMeasured(plain(row[competitorsCol]));
                     const status = STATUS_TEXT[hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol])];
 
                     return (
@@ -228,7 +251,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows,
                                             {intent}
                                         </span>
                                     )}
-                                    <span className="text-sm font-semibold text-white tracking-tight">"{query}"</span>
+                                    <span className="text-sm font-semibold text-white tracking-tight">{quotedQuery(query)}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-mono text-gray-500">Citation status:</span>
@@ -243,7 +266,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows,
                                     <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">Brand quoted</span>
                                     <span className={`inline-flex items-center gap-1 font-bold ${cited === 'yes' ? 'text-success-400' : cited === 'no' ? 'text-warning-400' : 'text-gray-400'}`}>
                                         <span className={`w-1.5 h-1.5 rounded-full ${cited === 'yes' ? 'bg-success-400' : cited === 'no' ? 'bg-warning-400' : 'bg-gray-500'}`}></span>
-                                        {cited === 'yes' ? 'Cited (estimated)' : cited === 'no' ? 'Opportunity gap' : 'Not measured'}
+                                        {cited === 'yes' ? 'Cited (estimated)' : cited === 'no' ? 'Opportunity gap' : NOT_MEASURED}
                                     </span>
                                 </div>
                                 <div>

@@ -10,6 +10,7 @@ import { customerSourceLine, sourceReadKind } from '../../services/audit/reportC
 import { formatAuDate } from '../../utils/formatAuDate';
 import {
   checkFixTitle,
+  displayMeasured,
   groundCustomerReport,
   findingFix,
   findingWhy,
@@ -93,12 +94,9 @@ function CodeBlock({ text }: { text: string }) {
   );
 }
 
-function visibleSections(sections: ReportSection[], verdict: string): ReportSection[] {
+function visibleSections(sections: ReportSection[]): ReportSection[] {
   return sections.flatMap((section) => {
-    const blocks = section.blocks.filter((block) => {
-      if (block.kind !== 'paragraph' && block.kind !== 'quote') return true;
-      return block.text !== verdict;
-    });
+    const blocks = section.blocks.filter((block) => block.kind !== 'paragraph' || !/^\**\s*Date:/i.test(block.text.trim()));
     return blocks.length ? [{ ...section, blocks }] : [];
   });
 }
@@ -145,7 +143,7 @@ function BlockView({
             {block.rows.map((row, index) => (
               <tr key={index}>
                 {row.map((cell, cellIndex) => (
-                  <td key={cellIndex} className="border border-white/15 px-3 py-2 align-top">{cell || 'Not measured'}</td>
+                  <td key={cellIndex} className="border border-white/15 px-3 py-2 align-top">{displayMeasured(cell)}</td>
                 ))}
               </tr>
             ))}
@@ -234,10 +232,7 @@ export function AuditReportArticle({
   const plainBlock = plain?.blocks.find((block) => block.kind === 'paragraph');
   const verdict = (plainBlock && plainBlock.kind === 'paragraph' ? plainBlock.text : '') || doc.verdict || 'Not measured.';
   const dated = formatAuDate(auditedAt ?? Date.now());
-  const sections = visibleSections(doc.sections, verdict).flatMap((section) => {
-    const blocks = section.blocks.filter((block) => block.kind !== 'paragraph' || !/^\**\s*Date:/i.test(block.text.trim()));
-    return blocks.length ? [{ ...section, blocks }] : [];
-  });
+  const sections = visibleSections(doc.sections);
 
   const mark = (finding: BoardFinding, done: boolean) => {
     const nextFindings = setFindingStatusLocal(domain || finding.domain, findings, finding.id, done ? 'done' : 'open');
@@ -257,6 +252,11 @@ export function AuditReportArticle({
                 <a href={`#${section.id}`} className="block min-h-11 rounded-lg px-2 py-2 text-sm text-gray-200 hover:bg-white/5 hover:text-white">{section.title}</a>
               </li>
             ))}
+            {validSources.length > 0 && (
+              <li>
+                <a href="#audit-sources" className="block min-h-11 rounded-lg px-2 py-2 text-sm text-gray-200 hover:bg-white/5 hover:text-white">7. Sources</a>
+              </li>
+            )}
           </ul>
         </div>
       </nav>
@@ -353,8 +353,8 @@ export function AuditReportArticle({
         ))}
 
         {validSources.length > 0 && (
-          <section className="mt-8 border-t border-white/10 pt-4">
-            <h2 className="text-xl font-semibold text-white">Sources</h2>
+          <section id="audit-sources" className="mt-8 border-t border-white/10 pt-4">
+            <h2 className="text-xl font-semibold text-white">7. Sources</h2>
             <ul className="mt-3 space-y-2">
               {validSources.map((source) => (
                 <li key={source.uri}>

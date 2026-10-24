@@ -6,14 +6,14 @@ import { AuditReportArticle } from '../components/audit/AuditReportArticle';
 import { CompetitorMap } from '../components/audit/CompetitorMap';
 import { GuestScoutSummaryPanel } from '../components/audit/GuestScoutSummaryPanel';
 import { ReportDisplay } from '../components/audit/ReportDisplay';
+import { citationView, mentionCounts, mentionLabel, quotedQuery, radarRowCaption, renderedRadarRows, verdictCitationLine, VisibilityRadar } from '../components/audit/VisibilityRadar';
 import type { BoardFinding } from '../services/audit/findingBoardService';
 import { buildGuestScoutSummary, unmeasuredScoutSummary } from '../services/audit/guestScoutSummary';
 import { alignPlainVerdict, auditSubjectLead, groundCustomerReport, parseAuditReport, plainVerdictText } from '../services/audit/reportBlocks';
-import { radarRowCaption, verdictCitationLine } from '../components/audit/VisibilityRadar';
+import { MindshareRadarCard } from '../components/visibility/MindshareRadarCard';
 import { playbookContext, selectAuditPlaybooks } from '../services/skills/seoPlaybooks';
 import { trimToBudget } from '../worker/workersAiFallback';
-import { gateReportText, proseIssues, REPORT_TABLES } from '../services/audit/reportColumnGate';
-import { citationView, mentionCounts, mentionLabel } from '../components/audit/VisibilityRadar';
+import { gateReportText, mentionSentenceOk, proseIssues, REPORT_TABLES } from '../services/audit/reportColumnGate';
 
 const LIVE_258 = 'The page is reachable over HTTPS but lacks HSTS and CSP, which lowers security trust. no business identity tag is present, so entity signals are weak. Brand appears in web-search snippets, giving a baseline citation chance.';
 const LIVE_257 = 'The page is very short and has no business identity tag, so search engines see little value. Security headers and a basic Add a business identity tag are missing, which can lower trust and citation odds. Fixing these gaps this week will reduce visibility risk.';
@@ -342,5 +342,206 @@ describe('live runs 259 A and B', () => {
     expect(cut.startsWith(lead)).toBe(true);
     expect(cut).toContain('https://example.com');
     expect(cut).not.toContain('[SEO METHODOLOGY PLAYBOOKS]');
+  });
+});
+
+const LIVE_260_CONTRADICTION = 'Example Domain has limited visibility in web searches, with no direct mentions of the brand.';
+const LIVE_260_CITATION = 'The brand is mentioned in 7 of 9 web results.';
+const QUOTED_QUERIES = [
+  '"Example Domain" example.com',
+  '"best Example Domain alternative reviews"',
+  '"what is example.com"',
+] as const;
+
+function evidenceRow(query: string, competitors: string[] = []): {
+  id: string;
+  query: string;
+  intent: 'informational' | 'commercial';
+  targetDomain: string;
+  brandCited: boolean;
+  brandRank: number;
+  citedUrl: null;
+  snippet: string;
+  competitorsCited: string[];
+  citationConfidence: number;
+  timestamp: number;
+} {
+  return {
+    id: query,
+    query,
+    intent: query.includes('best') ? 'commercial' : 'informational',
+    targetDomain: 'example.com',
+    brandCited: true,
+    brandRank: 1,
+    citedUrl: null,
+    snippet: 'Example Domain is named.',
+    competitorsCited: competitors,
+    citationConfidence: 1,
+    timestamp: 1,
+  };
+}
+
+describe('live runs 260 A and B', () => {
+  const dumpA = readFileSync('tests/fixtures/report260a.txt', 'utf8');
+  const dumpB = readFileSync('tests/fixtures/report260b.txt', 'utf8');
+
+  it('keeps the live before strings in the captures', () => {
+    expect(dumpA).toContain('""Example Domain" example.com"');
+    expect(dumpA).toContain('""best Example Domain alternative reviews""');
+    expect(dumpA).toContain('""what is example.com""');
+    expect(dumpA).not.toContain('2. Plain verdict');
+    expect(dumpA).not.toContain('7. Sources');
+    expect(dumpB).toContain(LIVE_260_CONTRADICTION);
+    expect(dumpB).toContain(LIVE_260_CITATION);
+    expect(dumpB).toContain('"example domain"');
+    expect(dumpB).toContain('Not Measured');
+    expect(dumpB).not.toContain('2. Plain verdict');
+    expect(dumpB).not.toContain('7. Sources');
+  });
+
+  it('strips a wrapping quote pair and keeps quotes that belong inside the query', () => {
+    expect(quotedQuery('"Example Domain" example.com')).toBe('"Example Domain" example.com');
+    expect(quotedQuery('""Example Domain" example.com"')).toBe('"Example Domain" example.com');
+    expect(quotedQuery('"best Example Domain alternative reviews"')).toBe('"best Example Domain alternative reviews"');
+    expect(quotedQuery('""best Example Domain alternative reviews""')).toBe('"best Example Domain alternative reviews"');
+    expect(quotedQuery('"what is example.com"')).toBe('"what is example.com"');
+    expect(quotedQuery('what is example.com')).toBe('"what is example.com"');
+    const radar = renderToStaticMarkup(createElement(VisibilityRadar, {
+      headers: [...REPORT_TABLES.visibilityRadar],
+      rows: QUOTED_QUERIES.map((query) => [query, 'informational', 'Yes', 'None', 'Cited']),
+    }));
+    expect(radar).toContain('&quot;Example Domain&quot; example.com');
+    expect(radar).not.toContain('&quot;&quot;');
+    expect(radar).toContain('&quot;best Example Domain alternative reviews&quot;');
+    expect(radar).toContain('&quot;what is example.com&quot;');
+  });
+
+  it('drops a model sentence that contradicts the mention count', () => {
+    expect(mentionSentenceOk(LIVE_260_CONTRADICTION, 7)).toBe(false);
+    expect(mentionSentenceOk('The brand is mentioned across the web.', 0)).toBe(false);
+    expect(mentionSentenceOk('These gaps can lower trust and citation odds.', 7)).toBe(true);
+    expect(mentionSentenceOk('These gaps can lower trust and citation odds.', 0)).toBe(true);
+    expect(mentionSentenceOk(LIVE_260_CONTRADICTION, null)).toBe(true);
+    const after = plainVerdictText(findings, LIVE_260_CONTRADICTION, {
+      scope: { domain: 'example.com', brand: 'Example Domain' },
+      citationLine: `${LIVE_260_CITATION}`,
+    });
+    expect(after).toBe(`${TEMPLATE} ${LIVE_260_CITATION}`);
+    expect(after).not.toContain('limited visibility');
+    expect(after).not.toContain('no direct mentions');
+    const none = plainVerdictText(findings, 'Example Domain is mentioned across the open web.', {
+      scope: { domain: 'example.com', brand: 'Example Domain' },
+      citationLine: 'The brand is mentioned in 0 of 9 web results.',
+    });
+    expect(none).not.toContain('mentioned across');
+    expect(none).toContain('mentioned in 0 of 9 web results');
+    expect(proseIssues(after)).toEqual([]);
+  });
+
+  it('builds Who gets named from the grounded radar rows and prints Not measured', () => {
+    const evidence = [
+      evidenceRow('"Example Domain" example.com', ['iana.org', 'Wikipedia']),
+      evidenceRow('"best Example Domain alternative reviews"', ['iana.org', 'Stack Overflow']),
+      evidenceRow('"what is example.com"', ['Wikipedia', 'PacketPushers']),
+    ];
+    const raw = [
+      '# Example',
+      '',
+      '## 1. One move this week',
+      '',
+      'Add a business identity tag.',
+      '',
+      '## 2. Plain verdict',
+      '',
+      LIVE_260_CONTRADICTION,
+      '',
+      '## 3. Fix list',
+      '',
+      '| Task | Plain issue | Priority |',
+      '| --- | --- | --- |',
+      '| Add a business identity tag | A business identity tag is missing | Critical |',
+      '',
+      '## 4. Visibility radar',
+      '',
+      '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status (Cited/Not Cited/Not Measured) |',
+      '| --- | --- | --- | --- | --- |',
+      '| SEO methodology | informational | Not measured | None | Not measured |',
+      '',
+      '## 5. Competitor map',
+      '',
+      '| Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) |',
+      '| --- | --- | --- | --- |',
+      '| Example Domain | Not Measured | Not Measured | Not Measured |',
+      '',
+      '## 6. Budget notes',
+      '',
+      'Budget impact: Not measured without client ad spend or conversion data.',
+      '',
+      'Answered by a fallback model: @cf/meta/llama-3.1-8b-instruct-fast',
+    ].join('\n');
+    const facts = {
+      domain: 'example.com',
+      brand: 'Example Domain',
+      findings,
+      evidence,
+      citationLine: LIVE_260_CITATION,
+      auditedAt: Date.parse('2026-10-24T13:24:00Z'),
+    };
+    const rows = renderedRadarRows(raw, facts);
+    expect(rows.map((row) => row.query)).toEqual([...QUOTED_QUERIES]);
+    expect(rows.every((row) => row.status === 'cited')).toBe(true);
+    const named = renderToStaticMarkup(createElement(MindshareRadarCard, {
+      domain: 'example.com',
+      evidence,
+      radarRows: rows,
+    }));
+    expect(named).toContain('Who gets named');
+    expect(named).toContain('&quot;Example Domain&quot; example.com');
+    expect(named).toContain('&quot;best Example Domain alternative reviews&quot;');
+    expect(named).toContain('&quot;what is example.com&quot;');
+    expect(named).not.toContain('example domain');
+    expect(named).not.toContain('&quot;&quot;');
+    expect(named).toContain('Cited');
+    const html = renderToStaticMarkup(createElement(AuditReportArticle, {
+      markdown: raw,
+      measured: true,
+      findings,
+      domain: 'example.com',
+      clientName: 'Example Domain',
+      citationEvidence: evidence,
+      citationLine: LIVE_260_CITATION,
+      auditedAt: Date.parse('2026-10-24T13:24:00Z'),
+      sources: [
+        { uri: 'https://example.com', title: 'example.com' },
+        { uri: 'https://en.wikipedia.org/wiki/Example.com', title: 'example.com - Wikipedia' },
+      ],
+      showActions: false,
+    }));
+    const nav = ['1. One move this week', '2. Plain verdict', '3. Fix list', '4. Visibility radar', '5. Competitor map', '6. Budget notes', '7. Sources'];
+    let at = -1;
+    for (const title of nav) {
+      const next = html.indexOf(title, at + 1);
+      expect(next, title).toBeGreaterThan(at);
+      at = next;
+    }
+    expect(html).toContain('2. Plain verdict');
+    expect(html).toContain('7. Sources');
+    expect(html).not.toContain('>Sources<');
+    expect(html).toContain(`${TEMPLATE} ${LIVE_260_CITATION}`);
+    expect(html).not.toContain('limited visibility');
+    expect(html).not.toContain('no direct mentions');
+    expect(html).not.toContain('&quot;&quot;');
+    expect(html).toContain('&quot;Example Domain&quot; example.com');
+    expect(html).toContain('&quot;what is example.com&quot;');
+    expect(html).not.toContain('Not Measured');
+    expect(html).toContain('Not measured');
+    expect(html).toContain('https://example.com example.com (page read)');
+    expect((html.match(/example\.com - Wikipedia/g) || []).length).toBe(1);
+    const map = renderToStaticMarkup(createElement(CompetitorMap, {
+      headers: [...REPORT_TABLES.competitorMap],
+      rows: [['Example Domain', 'Not Measured', 'Not Measured', 'Not Measured']],
+    }));
+    expect(map).not.toContain('Not Measured');
+    expect(map).toContain('Not measured');
   });
 });
