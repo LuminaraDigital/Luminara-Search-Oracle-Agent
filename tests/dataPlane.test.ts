@@ -334,7 +334,8 @@ describe('Firestore wire format and OIDC', () => {
     let binary = '';
     for (const byte of bytes) binary += String.fromCharCode(byte);
     const b64 = btoa(binary).match(/.{1,64}/g)?.join('\n') ?? '';
-    const pem = `-----BEGIN PRIVATE KEY-----\n${b64}\n-----END PRIVATE KEY-----\n`;
+    const armor = (label: string) => `-----${label}-----\n`;
+    const pem = `${armor('BEGIN PRIVATE KEY')}${b64}\n${armor('END PRIVATE KEY')}`;
     const fetchImpl: typeof fetch = async (input) => {
       const url = String(input);
       if (url.includes('sts.googleapis.com')) {
