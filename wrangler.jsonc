@@ -115,6 +115,8 @@
     "FIREBASE_PROJECT_NUMBER": "274315225068",
     // Keep false until VITE_FIREBASE_APPCHECK_SITE_KEY is set and console registration is live.
     "REQUIRE_APP_CHECK": "false",
+    // API-wide App Check: off | log | enforce. Production stays off until a log soak is clean.
+    "APPCHECK_ENFORCE": "off",
     // Public Firebase web API key (same as VITE_FIREBASE_API_KEY). Enables Worker-mediated password reset.
     "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
     // Soft killswitch for outbound Auth emails (password reset). Raise only with monitoring.
@@ -260,6 +262,8 @@
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",
         "FIREBASE_PROJECT_NUMBER": "449283385852",
         "REQUIRE_APP_CHECK": "false",
+        // log: bad or missing App Check tokens are recorded and requests still succeed.
+        "APPCHECK_ENFORCE": "log",
         "FIREBASE_WEB_API_KEY": "AIzaSyAyoAAOQWuoZRPR9Oc9FHXmQIf_0tIltEA",
         "OUTBOUND_EMAIL_DAILY_LIMIT": "100",
         "CHAIN_NETWORK": "testnet",
@@ -374,6 +378,8 @@
         "FIREBASE_PROJECT_NUMBER": "274315225068",
         // Keep false until the prod build step passes VITE_FIREBASE_APPCHECK_SITE_KEY (validate-env enforces this).
         "REQUIRE_APP_CHECK": "false",
+        // Stay off. Flip to log only after the client sends tokens, then enforce after that soak.
+        "APPCHECK_ENFORCE": "off",
         "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
         "OUTBOUND_EMAIL_DAILY_LIMIT": "200",
         "CHAIN_NETWORK": "mainnet",

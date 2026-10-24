@@ -96,21 +96,27 @@ if (targetMode === 'staging') {
 }
 
 /**
- * When REQUIRE_APP_CHECK is true for an env, FIREBASE_PROJECT_NUMBER must be a non-empty numeric string.
+ * APPCHECK_ENFORCE is off | log | enforce.
+ * When REQUIRE_APP_CHECK is true, or APPCHECK_ENFORCE is enforce, FIREBASE_PROJECT_NUMBER
+ * must be a non-empty numeric string and the client site key must be available.
  */
 function checkAppCheckConfig(config, envName) {
   const vars =
     envName === 'staging'
       ? config?.env?.staging?.vars || {}
       : { ...(config?.vars || {}), ...(config?.env?.production?.vars || {}) };
-  const required = String(vars.REQUIRE_APP_CHECK || '').trim().toLowerCase() === 'true';
+  const mode = String(vars.APPCHECK_ENFORCE || 'off').trim().toLowerCase();
+  if (mode !== 'off' && mode !== 'log' && mode !== 'enforce') {
+    return { ok: false, message: `${envName}: APPCHECK_ENFORCE must be off, log, or enforce.` };
+  }
+  const required = String(vars.REQUIRE_APP_CHECK || '').trim().toLowerCase() === 'true' || mode === 'enforce';
   if (!required) return { ok: true };
   const projectNumber = String(vars.FIREBASE_PROJECT_NUMBER || '').trim();
   if (!/^\d{6,}$/.test(projectNumber)) {
     return {
       ok: false,
       message:
-        `${envName}: REQUIRE_APP_CHECK=true but FIREBASE_PROJECT_NUMBER is missing or not numeric. ` +
+        `${envName}: App Check enforcement is on but FIREBASE_PROJECT_NUMBER is missing or not numeric. ` +
         'Worker would return 503 APP_CHECK_MISCONFIGURED.',
     };
   }
@@ -120,8 +126,8 @@ function checkAppCheckConfig(config, envName) {
     return {
       ok: false,
       message:
-        `${envName}: REQUIRE_APP_CHECK=true but VITE_FIREBASE_APPCHECK_SITE_KEY is in neither the job env nor ${envFile}. ` +
-        'The client would send no App Check token and every sign-in would be rejected.',
+        `${envName}: App Check enforcement is on but VITE_FIREBASE_APPCHECK_SITE_KEY is in neither the job env nor ${envFile}. ` +
+        'The client would send no App Check token and enforced requests would be rejected.',
     };
   }
   return { ok: true };

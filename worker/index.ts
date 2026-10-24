@@ -159,7 +159,8 @@ import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
 import { handleBudgetReconcileRoute } from './invoiceReconcile';
 import { handleCreateStripeCheckoutSession, handleStripeWebhook, isStripeCheckoutLive } from './stripePayment';
-import { reportWorkerException } from './sentry';
+import { enforceAppCheckRequest } from './appCheck';
+import { bindWorkerSentry, reportWorkerException } from './sentry';
 import {
   enforceDualRateLimit,
   enforceDualKeySlidingLimit,
@@ -270,6 +271,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const r = await p;
     return applyCorsHeaders(r, cors);
   };
+
+  const appCheckDenied = await enforceAppCheckRequest(request, env);
+  if (appCheckDenied) return withCors(appCheckDenied);
 
   // Best-effort per-IP throttling. Telegram's webhook skips it (shared Telegram IPs); it is secret-checked and soft-throttled per chat below.
   const ip = clientIp(request);
@@ -2156,7 +2160,7 @@ const SHORT_PATH_REDIRECTS: Record<string, { path: string; hash?: string }> = {
   '/account': { path: '/', hash: '#settings' },
 };
 
-export default {
+const handler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const guard = async (res: Response) => {
@@ -2378,3 +2382,5 @@ export default {
     await dispatchQueueBatch(batch, env);
   },
 } satisfies ExportedHandler<Env>;
+
+export default bindWorkerSentry(handler);

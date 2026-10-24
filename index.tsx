@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initTelegram } from './services/telegram/tma';
-import { loadServerHealth } from './services/apiClient';
+import { installAppCheckOnApiFetch, loadServerHealth } from './services/apiClient';
 import { dismissBootSplash } from './services/intro/bootSplash';
 import { bindFirstPaintDismissal, dismissFirstPaint } from './services/marketing/releaseFirstPaint';
 import { installDialogFocus } from './services/a11y/dialogFocus';
@@ -13,6 +13,7 @@ import './tokens.css';
 import './index.css';
 
 initBrowserSentry();
+installAppCheckOnApiFetch();
 installDialogFocus();
 bindFirstPaintDismissal();
 
