@@ -55,7 +55,7 @@ export class SerpRadarAgent {
     const localSerpEnabled = configService.isLocalSerpEnabled();
     const serpEvidence: SerpEvidenceItem[] = [];
     // Name the one search source this run can use, and nothing it does not query.
-    const searchSource = tavilyKey ? 'Tavily web search' : localSerpEnabled ? 'the local search sidecar' : '';
+    const searchSource = tavilyKey ? '' : localSerpEnabled ? 'a saved search sample' : '';
 
     emit({
       id: `serp-start-${Date.now()}`,
@@ -64,8 +64,8 @@ export class SerpRadarAgent {
       agentName: this.name,
       phase: 'probing_engines',
       message: searchSource
-        ? `Checking web search results for "${shownName}" through ${searchSource}…`
-        : `Checking web search results for "${shownName}"…`,
+        ? `Checking web search results for "${shownName}" through ${searchSource}.`
+        : `Checking web search results for "${shownName}".`,
       status: 'running',
     });
 

@@ -187,6 +187,12 @@ Staging and production set `STRIPE_CHECKOUT_LIVE` to `"true"`. The default vars 
 - **The grant is decided by the server's own numbers.** Only `checkout.session.completed` with
   `mode=payment`, `payment_status=paid`, `currency=aud`, a `payment_intent`, and `amount_total`
   equal to `STRIPE_PLAN_CONFIG[plan].amountCents` is credited, to `metadata.userId` only.
+  Checkout reads `request.cf.country` (not the spoofable `CF-IPCountry` header). Australia
+  (`AU`) sends `locale=en` and `adaptive_pricing[enabled]=false`, so the page stays on the
+  inline AUD amount. Stripe Checkout has no `en-AU` locale. A known other country keeps the
+  same AUD charge and sets `adaptive_pricing[enabled]=true` so Stripe may present a local
+  currency. Missing geo (`cf` absent, `XX`, `T1`) omits that flag and does not assume Australia
+  or the United States. The webhook still credits only `currency=aud`.
   `invoice.payment_succeeded` and `client_reference_id` are not honoured. Turning on Stripe Tax
   or coupons changes `amount_total` and must change this check in the same PR. A session that
   fails a check is logged with `NOT credited` and nothing is refunded automatically: refund it by

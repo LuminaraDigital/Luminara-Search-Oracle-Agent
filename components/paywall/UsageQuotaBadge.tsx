@@ -24,7 +24,8 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
     return (
       <button
         onClick={() => openPaywallModal('You have an active plan. The free daily cap is lifted.')}
-        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gradient-to-r from-gold/20 to-gold-dark/20 text-gold border border-gold/40 hover:bg-gold/30 transition-all ${className}`}
+        data-header-item="quota"
+        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap bg-gradient-to-r from-gold/20 to-gold-dark/20 text-gold border border-gold/40 hover:bg-gold/30 transition-all ${className}`}
         title="Active plan: the free daily cap is lifted."
       >
         {showIcon && <span>⭐</span>}
@@ -40,7 +41,8 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
   return (
     <button
       onClick={() => openPaywallModal(isOut ? 'Daily limit reached. Upgrade for unlimited queries.' : 'Upgrade to remove the daily limit.')}
-      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold tracking-wider transition-all border ${
+      data-header-item="quota"
+      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold tracking-wider whitespace-nowrap transition-all border ${
         isOut
           ? 'bg-danger-500/15 text-danger-400 border-danger-500/30 animate-pulse'
           : isLow

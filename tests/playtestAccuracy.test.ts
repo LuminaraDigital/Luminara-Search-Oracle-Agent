@@ -100,7 +100,7 @@ describe('organization markup already on the page', () => {
     );
     const partial = result.findings.find((finding) => finding.id === 'finding-schema-org-partial');
     expect(partial?.title).toBe(
-      'Organization markup is not on https://luminara.digital/services, https://luminara.digital/pricing and 1 more page',
+      'A business identity tag is not on https://luminara.digital/services, https://luminara.digital/pricing and 1 more page',
     );
     expect(partial?.title).not.toMatch(/measured pages/);
   });
@@ -120,7 +120,7 @@ describe('organization markup already on the page', () => {
       () => {},
     );
     const finding = result.findings.find((item) => item.id === 'finding-schema-org');
-    expect(finding?.description).toContain('schema types: faqpage');
+    expect(finding?.description).toContain('Tags on the page: faqpage');
     expect(finding?.description).not.toContain('schema types: none');
   });
 });

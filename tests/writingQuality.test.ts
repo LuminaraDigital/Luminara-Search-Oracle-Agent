@@ -161,7 +161,7 @@ describe('writingQualityService.checkText', () => {
     vi.mocked(sidecarFetch).mockRejectedValueOnce(new Error('boom'));
     const r2 = await writingQualityService.checkText(EASY);
     expect(r2.available).toBe(false);
-    expect(r2.aiAnswerNote).toBe('Clear, short sentences — easy for AI assistants to quote.');
+    expect(r2.aiAnswerNote).toBe('Clear, short sentences. Easy for AI assistants to quote.');
   });
 
   it('limits the text sent to the service to maxChars', async () => {

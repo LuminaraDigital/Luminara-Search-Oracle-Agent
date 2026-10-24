@@ -112,3 +112,7 @@ qronos-landing/
 
 # D1 backups and other local operator artifacts (never commit database dumps)
 artifacts/
+
+# Playwright local output
+/test-results/
+/playwright-report/

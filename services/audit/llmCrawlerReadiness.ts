@@ -2,6 +2,7 @@
  * LLM crawler readiness: pass / fail / not_measured only.
  * Structure hints are not a score. Missing fetches stay not_measured.
  */
+import { joinList } from './reportSentence';
 
 export type LlmCrawlerStatus = 'pass' | 'fail' | 'not_measured';
 
@@ -63,18 +64,18 @@ export const LLM_CRAWLER_BOTS = [
 export const LLM_CITE_PATHS = ['/', '/llms.txt', '/sitemap.xml'] as const;
 
 const CHECK_LABEL: Record<LlmCrawlerCheckId, string> = {
-  llms_txt: 'llms.txt',
-  llms_structure: 'llms.txt structure',
-  ai_bot_directives: 'AI crawler directives',
-  cite_paths: 'Cite paths',
-  ai_txt: 'Optional ai.txt',
+  llms_txt: 'AI guide file',
+  llms_structure: 'AI guide file shape',
+  ai_bot_directives: 'Crawler access',
+  cite_paths: 'Pages crawlers can open',
+  ai_txt: 'Optional AI notes file',
 };
 
 function check(id: LlmCrawlerCheckId, status: LlmCrawlerStatus, detail: string): LlmCrawlerCheck {
   return { id, label: CHECK_LABEL[id], status, detail };
 }
 
-export function unevaluatedLlmCrawlerReport(reason = 'LLM crawler files were not fetched.'): LlmCrawlerReport {
+export function unevaluatedLlmCrawlerReport(reason = 'Crawler files were not fetched. Not measured.'): LlmCrawlerReport {
   return {
     checks: (Object.keys(CHECK_LABEL) as LlmCrawlerCheckId[]).map((id) => check(id, 'not_measured', reason)),
   };
@@ -180,11 +181,6 @@ function pathBlocked(groups: Map<string, RobotGroup>, bot: string, path: string)
   return blocked;
 }
 
-function englishList(items: readonly string[]): string {
-  if (items.length <= 1) return items[0] || '';
-  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
-}
-
 const SUMMARY_MIN_CHARS = 40;
 
 function llmsStructureFlags(text: string): { title: boolean; summary: boolean } {
@@ -225,7 +221,7 @@ function evaluateLlmsStructure(snapshot: LlmCrawlerSnapshot, presence: LlmCrawle
   return check(
     'llms_structure',
     'fail',
-    `llms.txt is missing ${missing.join(' and ')}. This is a structure hint, not a score.`,
+    `llms.txt is missing ${joinList(missing)}. This is a structure hint, not a score.`,
   );
 }
 
@@ -244,12 +240,12 @@ function evaluateBotDirectives(snapshot: LlmCrawlerSnapshot): { check: LlmCrawle
     const blocked = LLM_CRAWLER_BOTS.filter((bot) => botBlocked(groups, bot));
     if (blocked.length === 0) {
       return {
-        check: check('ai_bot_directives', 'pass', `${englishList(LLM_CRAWLER_BOTS)} are not blocked at /.`),
+        check: check('ai_bot_directives', 'pass', `${joinList(LLM_CRAWLER_BOTS)} are not blocked at /.`),
         groups,
       };
     }
     return {
-      check: check('ai_bot_directives', 'fail', `robots.txt blocks ${blocked.join(', ')} at /.`),
+      check: check('ai_bot_directives', 'fail', `robots.txt blocks ${joinList(blocked)} at /.`),
       groups,
     };
   }
@@ -271,7 +267,7 @@ function evaluateCitePaths(bots: LlmCrawlerCheck, groups: Map<string, RobotGroup
     return check('cite_paths', 'not_measured', 'robots.txt was not available, so cite paths were not measured.');
   }
   if (!groups) {
-    return check('cite_paths', 'pass', 'No robots.txt was found. Homepage, /llms.txt, and /sitemap.xml are not blocked by a robots rule.');
+    return check('cite_paths', 'pass', 'No robots.txt was found. Homepage, /llms.txt and /sitemap.xml are not blocked by a robots rule.');
   }
   const hits: string[] = [];
   for (const bot of LLM_CRAWLER_BOTS) {
@@ -280,12 +276,12 @@ function evaluateCitePaths(bots: LlmCrawlerCheck, groups: Map<string, RobotGroup
     }
   }
   if (hits.length === 0) {
-    return check('cite_paths', 'pass', 'Homepage, /llms.txt, and /sitemap.xml are not blocked for the named AI crawlers.');
+    return check('cite_paths', 'pass', 'Homepage, /llms.txt and /sitemap.xml are not blocked for the named AI crawlers.');
   }
   const shown = hits.slice(0, 4);
   const extra = hits.length - shown.length;
   const more = extra > 0 ? ` (+${extra} more)` : '';
-  return check('cite_paths', 'fail', `robots.txt blocks ${shown.join(', ')}${more}.`);
+  return check('cite_paths', 'fail', `robots.txt blocks ${joinList(shown)}${more}.`);
 }
 
 function evaluateAiTxt(snapshot: LlmCrawlerSnapshot): LlmCrawlerCheck {

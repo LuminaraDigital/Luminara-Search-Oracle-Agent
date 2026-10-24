@@ -88,10 +88,10 @@ describe('guest scout summary honesty', () => {
     const summary = buildGuestScoutSummary(measured);
     expect(summary.degraded).toBe(false);
     expect('aiPlatforms' in summary).toBe(false);
-    expect(summary.evidenceUsed).toBe('Pages with text or schema: 1. Found 9 web results through Tavily web search.');
+    expect(summary.evidenceUsed).toBe('Pages with text or schema: 1. Found 9 web results.');
 
     const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
-    expect(html).toContain('Found 9 web results through Tavily web search.');
+    expect(html).toContain('Found 9 web results.');
     // The summary names no platform at all.
     for (const text of ['ChatGPT', 'Perplexity', 'Google', 'AI Overviews', 'Verified', 'Recommended']) {
       expect(JSON.stringify(summary), text).not.toContain(text);
@@ -108,11 +108,11 @@ describe('guest scout summary honesty', () => {
 
     // The sidecar is named when the rows came from it, and nothing is named when the source is unknown.
     expect(buildGuestScoutSummary({ ...measured, searchEngines: ['local_serp'] }).evidenceUsed)
-      .toBe('Pages with text or schema: 1. Found 9 web results through the local search sidecar.');
+      .toBe('Pages with text or schema: 1. Found 9 web results through a saved search sample.');
     expect(buildGuestScoutSummary({ ...measured, searchEngines: undefined }).evidenceUsed)
       .toBe('Pages with text or schema: 1. Found 9 web results.');
     expect(buildGuestScoutSummary({ ...measured, serpCount: 1, shareOfVoiceScore: 1 }).evidenceUsed)
-      .toBe('Pages with text or schema: 1. Found 1 web result through Tavily web search.');
+      .toBe('Pages with text or schema: 1. Found 1 web result.');
   });
 
   // Review 2, 7: citation rate is the same two counts as share of voice.

@@ -19,10 +19,10 @@ export async function probeLlmCrawlerReadiness(pageUrl: string): Promise<LlmCraw
       `${base}/api/visibility/crawler-files?url=${encodeURIComponent(pageUrl)}`,
     );
     noteScoutReceipt(res.headers.get('x-scout-receipt'));
-    if (!res.ok) return unevaluatedLlmCrawlerReport('LLM crawler files were not fetched.');
+    if (!res.ok) return unevaluatedLlmCrawlerReport('Crawler files were not fetched. Not measured.');
     const data = (await res.json()) as { snapshot?: LlmCrawlerSnapshot | null };
     return evaluateLlmCrawlerReadiness(data.snapshot ?? null);
   } catch {
-    return unevaluatedLlmCrawlerReport('LLM crawler files were not fetched.');
+    return unevaluatedLlmCrawlerReport('Crawler files were not fetched. Not measured.');
   }
 }

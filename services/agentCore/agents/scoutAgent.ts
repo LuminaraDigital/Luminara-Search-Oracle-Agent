@@ -14,6 +14,7 @@ import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
 import { pageSupportsHealthScore } from '../auditEvidenceGate';
 import { extractScrapedLinks } from '../../audit/scrapedSameAs';
 import { organizationNameFromJson } from '../../audit/brandName';
+import { countPhrase } from '../../audit/reportSentence';
 import { AgentActivityEvent, ScrapedPageEvidence } from '../types';
 
 function withFallbackNote(message: string, note: string): string {
@@ -128,7 +129,7 @@ export class ScoutAgent {
       agentName: this.name,
       phase: 'crawling_complete',
       message: withFallbackNote(
-        `Scouted ${pages.length} page(s). Discovered ${schemaCount} structured schema entity block(s).`,
+        `Read ${countPhrase(pages.length, 'page')}. Found ${countPhrase(schemaCount, 'content block')}.`,
         fallbackNote,
       ),
       status: 'completed',
