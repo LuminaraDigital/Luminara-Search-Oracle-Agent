@@ -623,28 +623,6 @@ function finishSentences(line: string): string {
   });
 }
 
-const JARGON_TERM = /\b(?:json-?ld|schema\.org|structured data|entity signals|security\.txt|schema|serp|dom)\b/i;
-
-/** One model sentence may follow the template. Anything with jargon, a bare acronym, or a broken sentence is dropped. */
-export function customerSentenceOk(sentence: string): boolean {
-  const text = sentence.trim();
-  if (!text || !/^[A-Z]/.test(text)) return false;
-  if (text.includes('\u2014') || text.includes('\u2013')) return false;
-  if (/\)[A-Za-z]/.test(text)) return false;
-  if (/\b([A-Za-z]+)\s+\1\b/i.test(text)) return false;
-  if (/[.!?]\s+[a-z]/.test(text)) return false;
-  if (JARGON_TERM.test(text)) return false;
-  if (/\badding basic business identity tag\b/i.test(text)) return false;
-  const acronyms = text.matchAll(/\b[A-Z]{2,}\b/g);
-  for (const found of acronyms) {
-    const word = found[0];
-    const at = found.index ?? 0;
-    const allowed = (word === 'HSTS' || word === 'CSP') && text[at - 1] === '(' && text[at + word.length] === ')';
-    if (!allowed) return false;
-  }
-  return true;
-}
-
 function splitSentences(text: string): string[] {
   const clean = text.replace(/\s+/g, ' ').trim();
   const out: string[] = [];
@@ -705,13 +683,14 @@ export function withoutContradictorySentences(markdown: string, mentioned: numbe
   }).join('\n');
 }
 
-/** The first scrubbed model sentence that passes the strict check. A sentence that contradicts the count is skipped. */
-export function optionalCustomerSentence(modelText: string, mentioned: number | null = null): string | null {
-  const scrubbed = plainCustomerReport(modelText);
-  for (const sentence of splitSentences(scrubbed)) {
-    if (customerSentenceOk(sentence) && mentionSentenceOk(sentence, mentioned)) return sentence;
-  }
-  return null;
+/** Sentences from one line that name a measured query or a check. The rest are dropped. */
+export function sentencesCiting(text: string, anchors: readonly string[]): string {
+  if (!anchors.length) return '';
+  const kept = splitSentences(text).filter((sentence) => {
+    const hay = sentence.toLowerCase();
+    return anchors.some((anchor) => hay.includes(anchor));
+  });
+  return kept.join(' ');
 }
 
 const BARE_JARGON = /\b(HSTS|CSP|JSON-?LD|SERP|DOM)\b/gi;

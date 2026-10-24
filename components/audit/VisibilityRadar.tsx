@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { ICONS } from '../../constants';
 import type { EmpiricalCitationSummary } from '../../services/audit/empiricalCitationService';
-import { displayMeasured, groundCustomerReport, NOT_MEASURED, parseAuditReport, type GroundFacts } from '../../services/audit/reportBlocks';
+import { groundCustomerReport, NOT_MEASURED, parseAuditReport, type GroundFacts } from '../../services/audit/reportBlocks';
 
 interface VisibilityRadarProps {
     headers: string[];
@@ -197,6 +197,13 @@ const STATUS_TEXT: Record<RadarStatus, string> = {
     not_measured: NOT_MEASURED,
 };
 
+/** A measured row with no rival name prints "None". "Not measured" is only for a row the search did not run. */
+function rivalCitationLabel(cell: unknown, status: RadarStatus): string {
+    const names = rivalNames(plain(cell));
+    if (names.length) return names.join(', ');
+    return status === 'not_measured' ? NOT_MEASURED : 'None';
+}
+
 /**
  * Draws the report's visibility table as cards.
  * It shows what the table says and nothing else: no score is worked out from the
@@ -236,8 +243,9 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows,
                     const intent = plain(row[intentCol]);
                     const hit = evidence?.find((item) => normQuery(item.query) === normQuery(query));
                     const cited = hit ? (hit.brandCited ? 'yes' : 'no') : readBrandCited(row[citedCol]);
-                    const competitors = displayMeasured(plain(row[competitorsCol]));
-                    const status = STATUS_TEXT[hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol])];
+                    const statusKey: RadarStatus = hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol]);
+                    const competitors = rivalCitationLabel(row[competitorsCol], statusKey);
+                    const status = STATUS_TEXT[statusKey];
 
                     return (
                         <div
