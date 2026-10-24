@@ -283,10 +283,11 @@ describe('the evidence button gives the two counts, not a percentage (review 2, 
     '| example vs other | comparative | Not measured |  | Not measured |',
   ].join('\n');
 
-  it('reads "mentioned in N of M sampled queries" only when the radar lists those queries', () => {
-    expect(sampledMentionsLabel(summary)).toBe('mentioned in 2 of 3 sampled queries');
+  it('reads "mentioned in N of M queries" from the radar rows', () => {
+    expect(sampledMentionsLabel(summary)).toBe('mentioned in 2 of 3 queries');
     const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: radar, empiricalSummary: summary }));
-    expect(html).toContain('Preview evidence (mentioned in 2 of 3 sampled queries)');
+    expect(html).toContain('Preview evidence (mentioned in 2 of 3 queries)');
+    expect(html).toContain('mentioned in 2 of 3 queries');
     expect(html).toContain('>Cited<');
     expect(html).toContain('>Not cited<');
     expect(html).not.toContain('67%');
@@ -312,8 +313,9 @@ describe('the evidence button gives the two counts, not a percentage (review 2, 
     expect(sampledMentionsLabel(counted)).toBe('mentioned in 5 of 9 web results');
     const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: radar, empiricalSummary: counted }));
     expect(html).toContain('Preview evidence (mentioned in 5 of 9 web results)');
-    expect(html).not.toContain('mentioned in 2 of 3');
+    expect(html).toContain('mentioned in 2 of 3 queries');
     expect(html).not.toContain('mentioned in 3 of 3');
+    expect(html).not.toContain('sampled queries');
   });
 
   it('says "not measured" when the summary holds no usable count', () => {

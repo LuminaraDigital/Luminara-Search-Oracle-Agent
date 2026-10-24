@@ -218,6 +218,27 @@ function nextStepFor(rail: HostedScoutRail, evidenceEmpty: boolean): string {
   return 'Save the strategy to a project if you want it kept. Full branded share links stay on Growth and Agency.';
 }
 
+/** The summary card when the run did not keep a scout summary. Every field says it was not measured. */
+export function unmeasuredScoutSummary(domain: string): GuestScoutSummary {
+  return {
+    domain: hostLabel(domain),
+    verdict: 'Not measured.',
+    verdictMarkdown: 'Not measured.',
+    evidenceUsed: 'Not measured.',
+    topFix: 'Not measured.',
+    nextStep: 'Not measured.',
+    badges: [
+      { label: 'Citation rate', status: 'not_measured', value: 'Not measured' },
+      { label: 'Page health', status: 'not_measured', value: 'Not measured' },
+    ],
+    crawlerChecks: [],
+    failed: [],
+    failureCodes: [],
+    evidenceEmpty: true,
+    degraded: false,
+  };
+}
+
 export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScoutSummary {
   const domain = hostLabel(input.targetUrl);
   const evidenceEmpty = input.scrapedPageCount === 0 && input.serpCount === 0;

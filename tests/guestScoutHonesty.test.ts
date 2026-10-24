@@ -390,7 +390,9 @@ describe('guest scout summary honesty', () => {
     expect(html).not.toContain('75/100');
     expect(html).not.toContain('56%');
     expect(html).not.toContain('**');
-    expect(html).not.toContain('What This Means');
+    expect(html).toContain('What This Means');
+    expect(html).toContain('What AI tools can read');
+    expect(html).toContain('Not measured');
     expect(html).not.toContain('third action');
   });
 

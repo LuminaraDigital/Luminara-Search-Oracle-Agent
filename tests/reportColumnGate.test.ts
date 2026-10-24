@@ -555,7 +555,7 @@ describe('plain customer report lines', () => {
     const once = gateReportText(garbled);
     const twice = gateReportText(once);
     expect(twice).toBe(once);
-    expect(once).toContain('schema. Security');
+    expect(once).toContain('schema. The site');
     expect(once).toContain('a public security contact file (security.txt)');
     expect(once).not.toContain('a public a public');
     expect(once).not.toContain('(security.txt) file');
@@ -592,7 +592,7 @@ describe('plain customer report lines', () => {
     const once = gateReportText(raw, { domain: 'example.com', brand: 'Example' });
     const twice = gateReportText(once, { domain: 'example.com', brand: 'Example' });
     expect(twice).toBe(once);
-    expect(once).toContain('no business identity tag. Security headers (HSTS, CSP)');
+    expect(once).toContain("no business identity tag. The site doesn't force the secure version of the site (HSTS) and doesn't control which scripts can load (CSP)");
     expect(once).toContain('are missing. These gaps');
     expect(once).toContain('Control which scripts your site can load (CSP)');
     expect(once).toContain('Publish a public security contact file (security.txt)');

@@ -582,6 +582,118 @@ function spaceAfterStop(line: string): string {
   });
 }
 
+const HSTS_GLOSS = "doesn't force the secure version of the site (HSTS)";
+const CSP_GLOSS = "doesn't control which scripts can load (CSP)";
+
+/** Bare HSTS and CSP become the one allowed parenthetical. A term already inside (HSTS) or (CSP) stays. */
+function glossSecurity(line: string): string {
+  return line
+    .replace(/\bSecurity headers\s*\(\s*HSTS\s*,\s*CSP\s*\)/gi, `The site ${HSTS_GLOSS} and ${CSP_GLOSS}`)
+    .replace(/\(\s*HSTS\s*,\s*CSP\s*\)/gi, `${HSTS_GLOSS} and ${CSP_GLOSS}`)
+    .replace(/\blacks\s+HSTS\s+and\s+CSP\b/gi, `${HSTS_GLOSS} and ${CSP_GLOSS}`)
+    .replace(/(?<!\()\bHSTS\b(?!\))/gi, HSTS_GLOSS)
+    .replace(/(?<!\()\bCSP\b(?!\))/gi, CSP_GLOSS);
+}
+
+/** A dot glued to a real word, not a host, a file suffix, or a decimal. */
+function gluedWord(full: string, dot: number): boolean {
+  if (keepTightDot(full, dot)) return false;
+  const word = full.slice(dot + 1).match(/^[a-z][a-z']*/)?.[0] || '';
+  if (!word) return false;
+  if (word.includes("'")) return true;
+  if (/^(?:no|the|a|an|this|these|it|and|but)$/.test(word)) return true;
+  return word.length >= 8;
+}
+
+/**
+ * Space after a stop, then a capital. A host, a URL, and a decimal keep their dot.
+ * This capitalises in place. It does not drop the word that was there.
+ */
+function finishSentences(line: string): string {
+  const opened = line.replace(/([.!?])(?=[a-z])/g, (match, stop: string, offset: number, full: string) => {
+    if (!gluedWord(full, offset)) return match;
+    return `${stop} `;
+  });
+  const spaced = spaceAfterStop(opened);
+  return spaced.replace(/(^|[.!?]\s+)([a-z])/g, (match, lead: string, letter: string, offset: number, full: string) => {
+    if (lead.startsWith('.') && keepTightDot(full, offset)) return match;
+    const rest = full.slice(offset + lead.length);
+    if (/^https?:\/\//i.test(rest) || /^www\./i.test(rest)) return match;
+    return `${lead}${letter.toUpperCase()}`;
+  });
+}
+
+const JARGON_TERM = /\b(?:json-?ld|schema\.org|structured data|entity signals|security\.txt|schema|serp|dom)\b/i;
+
+/** One model sentence may follow the template. Anything with jargon, a bare acronym, or a broken sentence is dropped. */
+export function customerSentenceOk(sentence: string): boolean {
+  const text = sentence.trim();
+  if (!text || !/^[A-Z]/.test(text)) return false;
+  if (text.includes('\u2014') || text.includes('\u2013')) return false;
+  if (/\)[A-Za-z]/.test(text)) return false;
+  if (/\b([A-Za-z]+)\s+\1\b/i.test(text)) return false;
+  if (/[.!?]\s+[a-z]/.test(text)) return false;
+  if (JARGON_TERM.test(text)) return false;
+  const acronyms = text.matchAll(/\b[A-Z]{2,}\b/g);
+  for (const found of acronyms) {
+    const word = found[0];
+    const at = found.index ?? 0;
+    const allowed = (word === 'HSTS' || word === 'CSP') && text[at - 1] === '(' && text[at + word.length] === ')';
+    if (!allowed) return false;
+  }
+  return true;
+}
+
+function splitSentences(text: string): string[] {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  const out: string[] = [];
+  let start = 0;
+  for (let i = 0; i < clean.length; i += 1) {
+    const stop = clean[i];
+    if (stop !== '.' && stop !== '!' && stop !== '?') continue;
+    if (clean[i + 1] && clean[i + 1] !== ' ') continue;
+    if (stop === '.' && keepTightDot(clean, i)) continue;
+    const sentence = clean.slice(start, i + 1).trim();
+    if (sentence) out.push(sentence);
+    start = i + 1;
+    while (clean[start] === ' ') start += 1;
+    i = start - 1;
+  }
+  const tail = clean.slice(start).trim();
+  if (tail) out.push(tail);
+  return out;
+}
+
+/** The first scrubbed model sentence that passes the strict check. The rest are dropped. */
+export function optionalCustomerSentence(modelText: string): string | null {
+  const scrubbed = plainCustomerReport(modelText);
+  for (const sentence of splitSentences(scrubbed)) {
+    if (customerSentenceOk(sentence)) return sentence;
+  }
+  return null;
+}
+
+const BARE_JARGON = /\b(HSTS|CSP|JSON-?LD|SERP|DOM)\b/gi;
+
+/** Issues a customer sentence must not have. An empty list means the text can be shown. */
+export function proseIssues(text: string): string[] {
+  const issues: string[] = [];
+  if (text.includes('\u2014')) issues.push('em dash');
+  if (/\)[A-Za-z]/.test(text)) issues.push('glued paren');
+  if (/\b([A-Za-z]+)\s+\1\b/i.test(text)) issues.push('doubled word');
+  if (/\b(a|an|the)\s+\1\b/i.test(text)) issues.push('doubled article');
+  const trimmed = text.trim();
+  if (trimmed && /^[a-z]/.test(trimmed)) issues.push('lowercase start');
+  if (/[.!?]\s+[a-z]/.test(trimmed)) issues.push('lowercase sentence');
+  for (const found of trimmed.matchAll(BARE_JARGON)) {
+    const word = found[1].toUpperCase();
+    const at = found.index ?? 0;
+    const allowed = (word === 'HSTS' || word === 'CSP') && trimmed[at - 1] === '(' && trimmed[at + found[1].length] === ')';
+    if (!allowed) issues.push(`bare ${word}`);
+  }
+  return issues;
+}
+
 export type AuditTextScope = { domain?: string; brand?: string };
 
 /** True when a search result names the audited domain or brand. With no scope, the row stays. */
@@ -637,7 +749,7 @@ function scrubCustomerLine(line: string): string {
     .replace(WEB_SEARCH_SOURCE, '(web search)')
     .replace(/\(untrusted enrichment block\)/gi, '(security and public records)')
     .replace(/\buntrusted enrichment block\b/gi, 'security and public records');
-  return spaceAfterStop(unwrapDoubleParens(collapseRepeated(next)));
+  return finishSentences(unwrapDoubleParens(collapseRepeated(glossSecurity(next))));
 }
 
 function modelSourceLine(line: string): string {

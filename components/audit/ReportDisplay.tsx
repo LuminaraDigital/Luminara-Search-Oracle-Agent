@@ -26,7 +26,7 @@ import type { TrafficImpact } from '../../services/analytics/trafficInsightsServ
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
 import { customerSourceLine, gateReportText, sourceReadKind } from '../../services/audit/reportColumnGate';
-import { citationView, radarCitationRows } from './VisibilityRadar';
+import { citationView, mentionCounts, mentionLabel, radarCitationRows } from './VisibilityRadar';
 import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
@@ -89,24 +89,14 @@ interface ReportDisplayProps {
  */
 export function sampledMentionsLabel(summary: EmpiricalCitationSummary | undefined): string | null {
   if (!summary || summary.measurementStatus === 'not_measured') return null;
-  const rows = summary.evidenceList || [];
-  if (!rows.length) return null;
-  const webMentioned = summary.webResultsMentioned;
-  const webTotal = summary.webResultsTotal;
-  if (
-    typeof webMentioned === 'number'
-    && typeof webTotal === 'number'
-    && Number.isInteger(webMentioned)
-    && Number.isInteger(webTotal)
-    && webTotal > 0
-    && webMentioned >= 0
-    && webMentioned <= webTotal
-  ) {
-    return `mentioned in ${webMentioned} of ${webTotal} web results`;
-  }
-  const mentioned = rows.filter((row) => row.brandCited).length;
-  if (mentioned > rows.length) return null;
-  return `mentioned in ${mentioned} of ${rows.length} sampled queries`;
+  const counts = mentionCounts({
+    radarRows: (summary.evidenceList || []).map((row) => ({ status: row.brandCited ? 'cited' : 'not_cited' })),
+    webResultsMentioned: summary.webResultsMentioned,
+    webResultsTotal: summary.webResultsTotal,
+  });
+  if (counts.webResults) return mentionLabel(counts.webResults, 'web results');
+  if (counts.queries) return mentionLabel(counts.queries, 'queries');
+  return null;
 }
 
 export const ReportDisplay: React.FC<ReportDisplayProps> = ({
