@@ -214,12 +214,14 @@ describe('Instant Audit honesty on empty evidence', () => {
 
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('test-key');
     const withTavily = await startLine();
-    expect(withTavily).toContain('through Tavily web search');
+    expect(withTavily).toContain('Checking web search results');
+    expect(withTavily).not.toContain('through');
+    expect(withTavily).not.toMatch(/Tavily/i);
 
     vi.spyOn(configService, 'getTavilyKey').mockReturnValue('');
     vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(true);
     const withSidecar = await startLine();
-    expect(withSidecar).toContain('through the local search sidecar');
+    expect(withSidecar).toContain('through a saved search sample');
 
     vi.spyOn(configService, 'isLocalSerpEnabled').mockReturnValue(false);
     const withNothing = await startLine();
@@ -458,7 +460,7 @@ describe('Instant Audit honesty on empty evidence', () => {
       },
     );
     expect(result.healthScore).toBe(73);
-    expect(result.findings.some((finding) => finding.title.includes('Missing Organization'))).toBe(true);
+    expect(result.findings.some((finding) => finding.title.includes('business identity tag'))).toBe(true);
     // The progress line gives the count of checks, not the checklist number.
     const said = events.map((event) => event.message).join(' ');
     expect(said).toContain('3 of 4 checks passed, 1 failed.');
@@ -478,7 +480,7 @@ describe('Instant Audit honesty on empty evidence', () => {
   it('says nothing about AI overviews in the zero mention finding, only what the search rows show', async () => {
     const result = await playbookAuditorAgent.execute('AEO', [livePage()], [liveSerp(false), liveSerp(false)], null, noop);
     const finding = result.findings.find((item) => item.id === 'finding-zero-citations');
-    expect(finding?.description).toBe('None of the 2 results for "example official" name the brand.');
+    expect(finding?.description).toBe('None of the 2 results for "example official" name your business.');
   });
 
   it('keeps a connection-refused Jina fallback from inventing a health score', async () => {

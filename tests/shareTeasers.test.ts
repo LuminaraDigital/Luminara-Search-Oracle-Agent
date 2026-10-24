@@ -115,8 +115,8 @@ describe('teaser share entitlement', () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.payload.failed).toEqual([
-      'Page fetch returned no usable text or schema.',
-      'A provider call failed. The public teaser omits the raw error.',
+      'The page check returned no text we could read.',
+      'A check did not finish. The public summary leaves out the raw error.',
       'Search sample was empty.',
     ]);
     expect(parsed.payload.badges[0]).toEqual({ label: 'Citation rate', status: 'not_measured' });

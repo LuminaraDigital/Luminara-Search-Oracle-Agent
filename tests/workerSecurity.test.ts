@@ -66,6 +66,10 @@ describe('security headers', () => {
     expect(HTML_CSP).toContain('https://telegram.org');
     expect(HTML_CSP).toContain('https://fonts.googleapis.com');
     expect(HTML_CSP).toContain('https://fonts.gstatic.com');
+    expect(HTML_CSP).toContain('https://www.google.com');
+    expect(HTML_CSP).toContain('https://www.gstatic.com');
+    expect(HTML_CSP).toContain('https://www.recaptcha.net');
+    expect(HTML_CSP).toContain('https://recaptcha.google.com');
     expect(HTML_CSP).toContain("'wasm-unsafe-eval'");
     expect(HTML_CSP).toContain("object-src 'none'");
     expect(HTML_CSP).not.toMatch(/script-src[^;]*'unsafe-inline'/);

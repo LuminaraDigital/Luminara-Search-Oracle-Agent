@@ -12,6 +12,8 @@ import {
   handleStripeWebhook,
   handleCreateStripeCheckoutSession,
   createStripeCheckoutSession,
+  checkoutCountry,
+  checkoutPresentation,
 } from '../worker/stripePayment';
 import { mintOpaqueSession } from '../worker/opaqueSession';
 import { createSqliteD1 } from './helpers/sqliteD1';
@@ -114,9 +116,9 @@ async function signIn(env: Env, uid = 'buyer1', email = 'buyer@example.com') {
   return { cookie: `__session=${sid}`, userId: `fb:${uid}` };
 }
 
-function checkoutRequest(opts: { cookie?: string; body?: unknown; origin?: string; headers?: Record<string, string>; host?: string } = {}) {
+function checkoutRequest(opts: { cookie?: string; body?: unknown; origin?: string; headers?: Record<string, string>; host?: string; country?: string } = {}) {
   const origin = opts.origin ?? STAGING_ORIGIN;
-  return new Request(`${opts.host ?? origin}/api/stripe/create-checkout-session`, {
+  const request = new Request(`${opts.host ?? origin}/api/stripe/create-checkout-session`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -126,6 +128,8 @@ function checkoutRequest(opts: { cookie?: string; body?: unknown; origin?: strin
     },
     body: typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body ?? { planId: 'growth' }),
   });
+  if (opts.country) Object.defineProperty(request, 'cf', { value: { country: opts.country } });
+  return request;
 }
 
 let eventSeq = 0;
@@ -333,6 +337,34 @@ describe('F1: only a signed-in buyer can start a card checkout', () => {
     expect(params.get('line_items[0][price_data][unit_amount]')).toBe('22900');
     expect(params.get('line_items[0][price_data][currency]')).toBe('aud');
     expect(params.get('customer_email')).toBe('buyer@example.com');
+    expect(params.get('locale')).toBe('auto');
+    expect(params.get('adaptive_pricing[enabled]')).toBeNull();
+    expect(params.get('metadata[country]')).toBeNull();
+  });
+
+  it('locks AUD for Australia and lets a known other country present locally', async () => {
+    expect(checkoutCountry({ cf: { country: 'au' } } as Request)).toBe('AU');
+    expect(checkoutCountry({ cf: { country: 'XX' } } as Request)).toBeNull();
+    expect(checkoutPresentation('AU')).toEqual({ currency: 'aud', locale: 'en', adaptivePricing: 'off' });
+    expect(checkoutPresentation('US')).toEqual({ currency: 'aud', locale: 'auto', adaptivePricing: 'on' });
+    expect(checkoutPresentation(null)).toEqual({ currency: 'aud', locale: 'auto', adaptivePricing: 'omit' });
+
+    const { env } = makeEnv();
+    const { cookie } = await signIn(env);
+    const stripe = stripeApi();
+    await createStripeCheckoutSession(checkoutRequest({ cookie, country: 'AU' }), env, stripe);
+    await createStripeCheckoutSession(checkoutRequest({ cookie, country: 'US' }), env, stripe);
+    const au = stripe.calls[0].params;
+    const us = stripe.calls[1].params;
+    expect(au.get('line_items[0][price_data][currency]')).toBe('aud');
+    expect(au.get('locale')).toBe('en');
+    expect(au.get('adaptive_pricing[enabled]')).toBe('false');
+    expect(au.get('metadata[country]')).toBe('AU');
+    expect(us.get('line_items[0][price_data][currency]')).toBe('aud');
+    expect(us.get('locale')).toBe('auto');
+    expect(us.get('adaptive_pricing[enabled]')).toBe('true');
+    expect(us.get('metadata[country]')).toBe('US');
+    expect(au.get('customer_email')).toBe('buyer@example.com');
   });
 
   it('answers 401 to a caller who is not signed in, and never calls Stripe', async () => {

@@ -12,6 +12,7 @@ import type { LlmCrawlerCheck, LlmCrawlerReport } from './llmCrawlerReadiness';
 import { hostedAuthRecoveryHint, type HostedScoutRail } from './hostedScoutRail';
 import { teaserFailureCodes, teaserFailureLine, type TeaserFailureCode } from './teaserFailureCodes';
 import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
+import { countPhrase, joinList, tidySentence } from './reportSentence';
 
 export type EvidenceBadgeStatus = 'measured' | 'estimated' | 'not_measured';
 
@@ -164,17 +165,21 @@ function checksBadge(
   return { label, status: 'measured', value: `${passed} of ${checks.total} checks passed` };
 }
 
-/** Names only a search source the rows really came from. */
+/**
+ * Names only a search source the rows really came from.
+ * Vendor and model names stay off the card. "web search" is dropped from the
+ * "through" clause so the sentence does not say "web results through web search".
+ */
 const SEARCH_ENGINE_NAMES: Record<string, string> = {
-  tavily: 'Tavily web search',
-  local_serp: 'the local search sidecar',
+  tavily: 'web search',
+  local_serp: 'a saved search sample',
   google: 'Google search',
   perplexity: 'Perplexity',
 };
 
 function searchSourceLabel(engines: readonly string[] | undefined): string {
   const names = [...new Set((engines || []).map((engine) => SEARCH_ENGINE_NAMES[engine]).filter(Boolean))];
-  return names.join(' and ');
+  return joinList(names.filter((name) => name !== 'web search'));
 }
 
 /**
@@ -232,8 +237,9 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     verdictMarkdown = verdict;
   } else if (input.measurementStatus === 'not_measured') {
     const reason = (input.measurementReason || '').trim();
+    const reasonSentence = /[.!?]$/.test(reason) ? reason : `${reason}.`;
     verdict = reason
-      ? `Some signals for ${domain} were not measured. ${reason}.`
+      ? tidySentence(`Some signals for ${domain} were not measured. ${reasonSentence}`)
       : `Some signals for ${domain} were not measured. Missing figures are omitted rather than guessed.`;
     verdictMarkdown = verdict;
   } else if (rawBrief) {
@@ -246,7 +252,7 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
 
   const searchSource = searchSourceLabel(input.searchEngines);
   const searchUsed = input.serpCount > 0
-    ? `Found ${input.serpCount} web result${input.serpCount === 1 ? '' : 's'}${searchSource ? ` through ${searchSource}` : ''}.`
+    ? tidySentence(`Found ${countPhrase(input.serpCount, 'web result', 'web results')}${searchSource ? ` through ${searchSource}` : ''}.`)
     : 'No web results were collected.';
   const evidenceUsed = evidenceEmpty
     ? 'No page text and no search rows were collected in this run.'

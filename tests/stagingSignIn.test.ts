@@ -750,6 +750,8 @@ describe('the deploy workflow', () => {
       'VITE_FIREBASE_PROJECT_ID',
       'VITE_FIREBASE_APP_ID',
       'VITE_TELEGRAM_MINI_APP_URL',
+      'VITE_SENTRY_DSN',
+      'VITE_FIREBASE_APPCHECK_SITE_KEY',
     ]) {
       expect(stagingJob).toContain(`${name}: \${{ vars.${name} }}`);
     }
@@ -757,14 +759,19 @@ describe('the deploy workflow', () => {
     expect(stagingJob).toContain('run: npm run build -- --mode staging');
   });
 
-  it('leaves the production build exactly as it was: no build-time overrides', () => {
-    expect(productionJob).not.toContain('VITE_FIREBASE_');
+  it('passes public Sentry and App Check values into the production build and leaves the Firebase project config committed', () => {
+    expect(productionJob).toContain('VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}');
+    expect(productionJob).toContain('VITE_FIREBASE_APPCHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APPCHECK_SITE_KEY }}');
+    expect(productionJob).not.toContain('VITE_FIREBASE_API_KEY:');
+    expect(productionJob).not.toContain('VITE_FIREBASE_AUTH_DOMAIN:');
+    expect(productionJob).not.toContain('VITE_FIREBASE_PROJECT_ID:');
+    expect(productionJob).not.toContain('VITE_FIREBASE_APP_ID:');
     expect(productionJob).not.toContain('VITE_TELEGRAM_MINI_APP_URL');
     expect(productionJob).toContain('run: npm run build');
   });
 
   it('never sets the self-hosted switch: Luminara own production build always uses the committed config', () => {
-    expect(productionJob).not.toMatch(/VITE_FIREBASE_[A-Z_]+/);
+    expect(productionJob).not.toContain('VITE_FIREBASE_SELF_HOSTED');
     expect(workflow).not.toContain('VITE_FIREBASE_SELF_HOSTED');
     expect(workflow).not.toContain('SELF_HOSTED');
   });

@@ -67,12 +67,77 @@ export class WorkloadIdentityTokenProvider implements GcpTokenProvider {
 
   async getAccessToken(now = Date.now()): Promise<string> {
     if (this.cached && now < this.cached.expiresAtMs - REFRESH_SKEW_MS) return this.cached.token;
-    const subjectToken = await signOidcJwt(this.config, Math.floor(now / 1000));
-    const federated = await stsExchange(this.fetchImpl, this.config.audience, subjectToken);
-    const impersonated = await impersonate(this.fetchImpl, this.config.serviceAccountEmail, federated);
-    this.cached = impersonated;
-    return impersonated.token;
+    const exchanged = await exchangeForAccessToken(this.config, this.fetchImpl, now);
+    if (!exchanged.ok) {
+      const failed = exchanged.steps.find((step) => !step.ok);
+      throw new Error(failed?.error ?? 'token exchange failed');
+    }
+    this.cached = { token: exchanged.token, expiresAtMs: exchanged.expiresAtMs };
+    return exchanged.token;
   }
+}
+
+export type WifChainStepName = 'sign' | 'sts' | 'impersonate';
+
+export type WifChainStep = {
+  step: WifChainStepName;
+  ok: boolean;
+  latencyMs: number;
+  error?: string;
+};
+
+export type WorkloadIdentityExchange =
+  | { ok: true; token: string; expiresAtMs: number; steps: WifChainStep[] }
+  | { ok: false; steps: WifChainStep[] };
+
+/** Fresh sign, STS exchange, and impersonation. The token stays out of `steps`. */
+export async function exchangeForAccessToken(
+  config: WorkloadIdentityConfig,
+  fetchImpl: typeof fetch,
+  now = Date.now(),
+): Promise<WorkloadIdentityExchange> {
+  const steps: WifChainStep[] = [];
+  const signStarted = Date.now();
+  let subjectToken: string;
+  try {
+    subjectToken = await signOidcJwt(config, Math.floor(now / 1000));
+  } catch {
+    steps.push(chainStep('sign', signStarted, 'sign failed'));
+    return { ok: false, steps };
+  }
+  steps.push(chainStep('sign', signStarted));
+
+  const stsStarted = Date.now();
+  let federated: string;
+  try {
+    federated = await stsExchange(fetchImpl, config.audience, subjectToken);
+  } catch (err) {
+    steps.push(chainStep('sts', stsStarted, safeChainError(err)));
+    return { ok: false, steps };
+  }
+  steps.push(chainStep('sts', stsStarted));
+
+  const iamStarted = Date.now();
+  try {
+    const impersonated = await impersonate(fetchImpl, config.serviceAccountEmail, federated);
+    steps.push(chainStep('impersonate', iamStarted));
+    return { ok: true, token: impersonated.token, expiresAtMs: impersonated.expiresAtMs, steps };
+  } catch (err) {
+    steps.push(chainStep('impersonate', iamStarted, safeChainError(err)));
+    return { ok: false, steps };
+  }
+}
+
+function chainStep(step: WifChainStepName, started: number, error?: string): WifChainStep {
+  const row: WifChainStep = { step, ok: !error, latencyMs: Math.max(0, Date.now() - started) };
+  if (error) row.error = error;
+  return row;
+}
+
+function safeChainError(err: unknown): string {
+  const message = err instanceof Error ? err.message : 'request failed';
+  if (message.length > 80 || /bearer|eyJ|private key|-----/i.test(message)) return 'request failed';
+  return message;
 }
 
 async function signOidcJwt(config: WorkloadIdentityConfig, iatSec: number): Promise<string> {

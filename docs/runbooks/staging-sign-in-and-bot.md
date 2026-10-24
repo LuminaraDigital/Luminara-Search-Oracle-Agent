@@ -24,6 +24,8 @@ Repository Settings, Environments, `staging`, Environment variables (variables, 
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | from step 1 (optional) |
 | `VITE_FIREBASE_STORAGE_BUCKET` | from step 1 (optional) |
 | `VITE_TELEGRAM_MINI_APP_URL` | the staging bot's Mini App link from step 3, for example `https://t.me/<staging bot>/app` |
+| `VITE_FIREBASE_APPCHECK_SITE_KEY` | reCAPTCHA Enterprise site key for the staging web app. Empty leaves App Check off |
+| `VITE_SENTRY_DSN` | public browser DSN, or empty. Empty leaves Sentry off |
 
 With none of the four required values set, the staging build shows sign-in as not configured. It never falls back to the production Firebase project, because the staging Worker would refuse those tokens.
 

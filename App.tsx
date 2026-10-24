@@ -1162,7 +1162,7 @@ const App: React.FC = () => {
     >
       <PremiumAtmosphere intensity="subtle" />
       {/* Universal Top Header - Responsive, guaranteed no overflow */}
-      <header className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-6 py-1 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
+      <header data-testid="app-header" className="flex flex-wrap sm:grid sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-6 py-1 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
         {/* Left: Brand Identity */}
         <button
           type="button"
@@ -1170,6 +1170,7 @@ const App: React.FC = () => {
             if (!skipMarketing) setView(AppView.LANDING);
             else setView(appAuth.authenticated ? AppView.DASHBOARD : AppView.INSTANT_AUDIT);
           }}
+          data-header-item="brand"
           className="flex items-center gap-2 sm:gap-3 shrink-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-gold rounded p-1 -m-1 transition-all"
           title={skipMarketing ? 'Home' : 'Back to luminarasuite.com'}
           aria-label={skipMarketing ? 'Luminara home' : 'Back to the Luminara Suite website'}
@@ -1181,7 +1182,7 @@ const App: React.FC = () => {
               isVoice={isVoiceActive} 
             />
           </div>
-          <div className="hidden md:block">
+          <div className="hidden xl:block">
             <h2 className="text-sm sm:text-base font-display text-gold-light leading-none tracking-tight">
               Luminara
             </h2>
@@ -1189,11 +1190,12 @@ const App: React.FC = () => {
         </button>
 
         {/* Center: Suite Switcher & Quick Navigation */}
-        <nav className="order-last flex basis-full flex-nowrap items-center gap-1 overflow-x-auto no-scrollbar overscroll-x-contain [mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)] sm:order-none sm:basis-auto sm:[mask-image:none] shrink min-w-0 px-0.5" aria-label="Primary tools">
+        <nav className="order-last flex basis-full flex-nowrap items-center gap-1 overflow-x-auto no-scrollbar overscroll-x-contain [mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)] sm:order-none sm:basis-auto sm:min-w-0 sm:overflow-visible sm:[mask-image:none] px-0.5" aria-label="Primary tools">
           <Button
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.ORACLE_AGENT)}
+            data-header-item="ask"
             aria-pressed={view === AppView.ORACLE_AGENT}
             className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.ORACLE_AGENT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
@@ -1206,8 +1208,9 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.IDEA_SCOUT)}
+            data-header-item="idea-scout"
             aria-pressed={view === AppView.IDEA_SCOUT}
-            className={`px-2.5 sm:px-3 py-2 min-h-11 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
+            className={`hidden 2xl:inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
               view === AppView.IDEA_SCOUT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1218,6 +1221,7 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.INSTANT_AUDIT)}
+            data-header-item="instant-audit"
             aria-pressed={view === AppView.INSTANT_AUDIT}
             className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
@@ -1230,8 +1234,9 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.BRAND_MEMORY)}
+            data-header-item="memory"
             aria-pressed={view === AppView.BRAND_MEMORY}
-            className={`inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`hidden 2xl:inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.BRAND_MEMORY ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
           >
@@ -1242,8 +1247,9 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.NOTEBOOK)}
+            data-header-item="studio"
             aria-pressed={view === AppView.NOTEBOOK}
-            className={`inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
+            className={`hidden 2xl:inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
               view === AppView.NOTEBOOK ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
             }`}
             title="Luminara Studio - Grounded Research Dossiers & Audio Overviews"
@@ -1256,6 +1262,7 @@ const App: React.FC = () => {
               variant="ghost"
               size="none"
               onClick={() => setShowSuiteMenu(!showSuiteMenu)}
+              data-header-item="more"
               aria-haspopup="menu"
               aria-expanded={showSuiteMenu}
               aria-pressed={[AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
@@ -1301,7 +1308,7 @@ const App: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}
-                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    className="2xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Zap className="w-3.5 h-3.5 text-gold-light" />
                     <span>Idea Scout</span>
@@ -1325,7 +1332,7 @@ const App: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { setView(AppView.BRAND_MEMORY); setShowSuiteMenu(false); }}
-                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    className="2xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
                     <span>Memory</span>
@@ -1333,7 +1340,7 @@ const App: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
-                    className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    className="2xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
                     <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
@@ -1428,6 +1435,20 @@ const App: React.FC = () => {
                     <kbd className="ml-auto hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
                   </button>
                   {!inTelegram && appAuth.authenticated && <ReplayTourButton onDone={() => setShowSuiteMenu(false)} goToAudit={() => setView(AppView.INSTANT_AUDIT)} />}
+                  <button
+                    type="button"
+                    onClick={() => { setMode(OracleMode.FLASH); setAnswerDepth('quick'); setShowSuiteMenu(false); }}
+                    className="hidden lg:flex xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    Quick answers
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMode(OracleMode.DEEP_THINK); setAnswerDepth('thorough'); setShowSuiteMenu(false); }}
+                    className="hidden lg:flex xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    Thorough answers
+                  </button>
                   {!inTelegram && appAuth.authenticated && (
                     <button
                       type="button"
@@ -1448,18 +1469,20 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsOmnibarOpen(true)}
+            data-testid="header-search"
+            data-header-item="search"
             className="inline-flex items-center gap-1.5 px-1.5 py-2 min-h-11 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
             title="Open Omnibar (Cmd+K)"
             aria-label="Jump to a tool"
           >
             <ICONS.Search className="w-3.5 h-3.5 text-gold" />
             <span className="hidden 2xl:inline truncate">Jump to a tool</span>
-            <kbd className="hidden lg:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
+            <kbd className="hidden 2xl:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
           </Button>
         </nav>
 
         {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Settings, Log out */}
-        <div className="flex flex-nowrap items-center justify-end gap-1 overflow-x-auto no-scrollbar sm:gap-2.5 shrink min-w-0">
+        <div className="flex flex-nowrap items-center justify-end gap-1 max-sm:overflow-x-auto no-scrollbar sm:gap-2.5 sm:shrink-0 sm:overflow-visible">
           {/* Native Trinity (Groq, NVIDIA NIM, Ollama) Engine Status & Priority */}
           {advancedUi && <NativeEngineHUD />}
 
@@ -1506,7 +1529,9 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setView(AppView.BUSINESS_DNA)}
-            className={`hidden xl:inline-flex gap-2 px-3 py-1 rounded-full border text-[9px] font-mono font-normal shrink-0 ${
+            data-testid="add-business-pill"
+            data-header-item="business"
+            className={`hidden lg:inline-flex gap-2 px-3 py-1 rounded-full border text-[9px] font-mono font-normal shrink-0 whitespace-nowrap ${
               dna
                 ? 'bg-success-500/10 border-success-500/30 text-success-400 hover:text-success-300 hover:bg-success-500/20'
                 : 'bg-white/5 border-white/10 hover:text-gold-light hover:bg-white/5'
@@ -1514,7 +1539,7 @@ const App: React.FC = () => {
             title="Business profile"
           >
             <span className={`w-1.5 h-1.5 rounded-full ${dna ? 'bg-success-400 shadow-[0_0_8px_theme(colors.success.500)]' : 'bg-gold'}`}></span>
-            <span className="truncate max-w-[90px]">{dna ? dna.name : 'Add my business'}</span>
+            <span className={dna ? 'truncate max-w-[10rem]' : 'whitespace-nowrap'}>{dna ? dna.name : 'Add my business'}</span>
           </Button>
 
           {/* AI Usage Quota & Paywall Badge */}
@@ -1527,6 +1552,7 @@ const App: React.FC = () => {
             variant="ghost"
             size="none"
             onClick={() => setIsKeyModalOpen(true)}
+            data-header-item="settings"
             className="p-2.5 min-h-11 min-w-10 rounded border border-[var(--color-rule)] text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-colors"
             title="Settings (AI Keys & Config)"
             aria-label="Settings and AI keys"
@@ -1534,11 +1560,12 @@ const App: React.FC = () => {
             <ICONS.Settings className="w-4 h-4" />
           </Button>
 
-          <div className="flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
+          <div className="hidden max-lg:flex xl:flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
             <Button
               variant="ghost"
               size="none"
               onClick={() => { setMode(OracleMode.FLASH); setAnswerDepth('quick'); }}
+              data-header-item="quick"
               aria-pressed={mode === OracleMode.FLASH}
               className={`min-h-11 px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.FLASH ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
@@ -1550,6 +1577,7 @@ const App: React.FC = () => {
               variant="ghost"
               size="none"
               onClick={() => { setMode(OracleMode.DEEP_THINK); setAnswerDepth('thorough'); }}
+              data-header-item="thorough"
               aria-pressed={mode === OracleMode.DEEP_THINK}
               className={`min-h-11 px-3 py-1 rounded-sm text-[11px] ${
                 mode === OracleMode.DEEP_THINK ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
@@ -1564,6 +1592,7 @@ const App: React.FC = () => {
               variant="ghost"
               size="none"
               onClick={() => void logoutToLanding()}
+              data-header-item="logout"
               className="hidden sm:inline-flex px-2.5 sm:px-3 py-1.5 min-h-11 border border-[var(--color-rule)] rounded text-[11px] text-[var(--color-ink-2)] hover:text-[var(--color-ink)] hover:bg-transparent shrink-0 whitespace-nowrap"
             >
               Log out
@@ -1573,6 +1602,7 @@ const App: React.FC = () => {
             <button
               type="button"
               onClick={() => openLoginWall('signin')}
+              data-header-item="sign-in"
               className="mkt-cta-primary !min-h-11 !py-2 !px-4 shrink-0 whitespace-nowrap"
             >
               Sign in

@@ -86,6 +86,34 @@ export const STRIPE_PLAN_CONFIG: Record<
 };
 
 export const STRIPE_CURRENCY = 'aud';
+
+/**
+ * Cloudflare sets request.cf.country. XX and T1 are not a country.
+ * The header CF-IPCountry is not read: a caller can spoof it.
+ */
+export function checkoutCountry(request: Request): string | null {
+  const cf = request.cf;
+  if (!cf || typeof cf !== 'object') return null;
+  const country = 'country' in cf ? cf.country : undefined;
+  const raw = typeof country === 'string' ? country.trim().toUpperCase() : '';
+  if (!/^[A-Z]{2}$/.test(raw) || raw === 'XX' || raw === 'T1') return null;
+  return raw;
+}
+
+export type CheckoutPresentation = {
+  currency: typeof STRIPE_CURRENCY;
+  /** Stripe Checkout has no en-AU. AU uses generic English plus a locked AUD price. */
+  locale: 'en' | 'auto';
+  /** off: keep the AUD price. on: let Stripe present a local currency. omit: location unknown. */
+  adaptivePricing: 'off' | 'on' | 'omit';
+};
+
+/** AU locks the AUD price. A known other country may be presented locally. Unknown geo is not guessed. */
+export function checkoutPresentation(country: string | null): CheckoutPresentation {
+  if (country === 'AU') return { currency: STRIPE_CURRENCY, locale: 'en', adaptivePricing: 'off' };
+  if (country) return { currency: STRIPE_CURRENCY, locale: 'auto', adaptivePricing: 'on' };
+  return { currency: STRIPE_CURRENCY, locale: 'auto', adaptivePricing: 'omit' };
+}
 const DAY_MS = 86400_000;
 /**
  * A checkout session can be paid for one hour (Stripe allows 30 minutes to 24 hours). A short
@@ -302,17 +330,23 @@ export async function createStripeCheckoutSession(
     );
   }
 
+  const country = checkoutCountry(request);
+  const presentation = checkoutPresentation(country);
   const params = new URLSearchParams();
   params.set('payment_method_types[0]', 'card');
   params.set('mode', 'payment');
-  params.set('line_items[0][price_data][currency]', STRIPE_CURRENCY);
+  params.set('line_items[0][price_data][currency]', presentation.currency);
   params.set('line_items[0][price_data][unit_amount]', String(plan.amountCents));
   params.set('line_items[0][price_data][product_data][name]', plan.name);
   params.set('line_items[0][price_data][product_data][description]', plan.description);
   params.set('line_items[0][quantity]', '1');
+  params.set('locale', presentation.locale);
+  if (presentation.adaptivePricing === 'off') params.set('adaptive_pricing[enabled]', 'false');
+  if (presentation.adaptivePricing === 'on') params.set('adaptive_pricing[enabled]', 'true');
   params.set('metadata[userId]', userId);
   params.set('metadata[accountId]', accountId);
   params.set('metadata[planId]', planId);
+  if (country) params.set('metadata[country]', country);
   params.set('success_url', `${returnOrigin}/?payment=success&plan=${planId}&session_id={CHECKOUT_SESSION_ID}`);
   params.set('cancel_url', `${returnOrigin}/pricing?payment=cancelled`);
   params.set('expires_at', String(Math.floor(Date.now() / 1000) + CHECKOUT_SESSION_TTL_SEC));

@@ -218,7 +218,7 @@ function buildAiAnswerNote(r: Readability, counts: Record<WritingIssueCategory, 
   if (errors > 0) {
     return `Clear sentence length, but ${errors} spelling/grammar slip${errors === 1 ? '' : 's'} can make AI assistants treat the page as less trustworthy to quote.`;
   }
-  return 'Clear, short sentences — easy for AI assistants to quote.';
+  return 'Clear, short sentences. Easy for AI assistants to quote.';
 }
 
 function emptyCounts(): Record<WritingIssueCategory, number> {
@@ -417,8 +417,8 @@ export class WritingQualityService {
       if (seen.has(key)) continue;
       seen.add(key);
       let line = issue.message;
-      if (issue.snippet && issue.suggestion) line = `${issue.message} — change "${issue.snippet}" to "${issue.suggestion}"`;
-      else if (issue.snippet) line = `${issue.message} — near "${issue.snippet}"`;
+      if (issue.snippet && issue.suggestion) line = `${issue.message}. Change "${issue.snippet}" to "${issue.suggestion}".`;
+      else if (issue.snippet) line = `${issue.message}. Near "${issue.snippet}".`;
       if (issue.field) line = `${issue.field}: ${line}`;
       fixes.push(line);
       if (fixes.length >= 5) break;

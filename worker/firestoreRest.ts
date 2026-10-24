@@ -8,7 +8,8 @@ import type { DataPlaneDeps } from './dataPlane';
 import type { DataPlaneEnv } from './dataPlaneDocs';
 
 const PROJECT_ID = /^[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
-const COLLECTION = /^[A-Za-z][A-Za-z0-9]*$/;
+/** Product collections are letters and digits. The staging probe collection is `_smoke`. */
+const COLLECTION = /^_?[A-Za-z][A-Za-z0-9]*$/;
 
 type FsValue =
   | { nullValue: null }

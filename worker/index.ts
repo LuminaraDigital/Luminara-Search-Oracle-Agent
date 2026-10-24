@@ -112,6 +112,7 @@ import { handleShareRoute } from './shareService';
 import { handleFindingsRoute } from './findingsService';
 import { handleAuditHistoryRoute } from './auditHistoryRoute';
 import { handleGcpOidcRoute } from './gcpOidc';
+import { handleWifSmokeRoute } from './wifSmoke';
 import { handleLlmCrawlerRoute } from './llmCrawlerRoute';
 import { handleProbeCrawlRoute } from './probeCrawlRoute';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
@@ -329,6 +330,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   const oidc = handleGcpOidcRoute(request, env, path);
   if (oidc) return withCors(oidc);
+
+  if (path === '/admin/wif-smoke' && request.method === 'POST' && (env.ENVIRONMENT ?? '').trim() === 'staging') {
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+  }
+  const wifSmoke = await handleWifSmokeRoute(request, env, path);
+  if (wifSmoke) return withCors(wifSmoke);
 
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));

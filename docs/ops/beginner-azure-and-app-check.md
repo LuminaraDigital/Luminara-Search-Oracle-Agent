@@ -1,9 +1,9 @@
 # Beginner ops: Firebase App Check + Azure (complement)
 
-Luminara’s primary backend stays **Cloudflare Workers**. Azure is optional add-on security/identity. App Check closes Firebase Auth abuse.
+Luminara's primary backend stays **Cloudflare Workers**. Azure is optional add-on security/identity. App Check closes Firebase Auth abuse.
 
 Official docs used for App Check steps:
-- https://firebase.google.com/docs/app-check/web/recaptcha-provider
+- https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider
 - https://firebase.google.com/docs/app-check/enable-enforcement
 - https://firebase.google.com/docs/app-check/custom-resource-backend
 
@@ -13,44 +13,43 @@ Official docs used for App Check steps:
 
 ### A0. What you are doing (plain English)
 
-1. Your web app proves “I am the real Luminara site” with reCAPTCHA.
+1. Your web app proves "I am the real Luminara site" with reCAPTCHA.
 2. Firebase gives the browser an **App Check token**.
 3. Firebase Auth (and optionally your Worker) reject callers that lack a valid token.
 4. Attackers with only your public web API key can no longer hammer Identity Toolkit freely.
 
-### A1. Create a reCAPTCHA v3 site key
+### A1. Use the reCAPTCHA Enterprise site key
 
-1. Open [Google reCAPTCHA admin](https://www.google.com/recaptcha/admin).
-2. Click **+** to create a key.
-3. Choose **reCAPTCHA v3**.
-4. Add domains:
-   - `luminarasuite.com`
-   - `www.luminarasuite.com`
-   - (optional for staging) `staging.luminarasuite.com`
-5. Do **not** add `localhost` as a production domain. Use debug tokens for local (A4).
-6. Copy the **site key** (public). You will paste it into Vite env.
+Firebase has deprecated the classic reCAPTCHA v3 App Check provider. Both `luminara-suite` and `luminara-suite-staging` already have reCAPTCHA Enterprise (Fraud Defense) registered for their web apps.
 
-### A2. Register App Check in Firebase Console
+1. Open [Firebase Console](https://console.firebase.google.com/) and select the project.
+2. Go to **App Check**.
+3. Open the web app. The provider is **reCAPTCHA Enterprise**.
+4. Copy the site key. It is public. It is the value of `VITE_FIREBASE_APPCHECK_SITE_KEY`.
 
-1. Open [Firebase Console](https://console.firebase.google.com/) → project **luminara-suite**.
-2. Go to **Build** or **Security** → **App Check** (sidebar).
-3. Open the **Apps** tab.
-4. Find your **Web** app → **Register** (or manage provider).
-5. Choose **reCAPTCHA v3**.
-6. Paste the same site key from A1.
-7. Save.
+Do not create a classic reCAPTCHA v3 key for this app. Do not add `localhost` as a production domain. Use a debug token for local runs (A4).
+
+### A2. Registration is already done
+
+The Enterprise provider is registered on both web apps. If you rotate the key, register the new Enterprise site key on that same web app before you change the build variable.
 
 ### A3. Put the site key in the client build
 
-Local (`.env`, never commit secrets that are not public; site key is public but keep the file gitignored patterns you already use):
+`VITE_FIREBASE_APPCHECK_SITE_KEY` is a GitHub environment variable, not a secret. Set it on the `staging` environment and on the `production` environment. Use each project's own Enterprise site key.
+
+Set `VITE_SENTRY_DSN` the same way on both environments. It is a public DSN. Do not commit it.
+
+Leave either variable empty. The build still succeeds. App Check stays off when the site key is empty. Sentry stays off when the DSN is empty.
+
+Open Repository settings, then Environments, then `staging` or `production`, then Environment variables.
+
+Local builds read the same name from `.env`:
 
 ```bash
-VITE_FIREBASE_APPCHECK_SITE_KEY=your_recaptcha_v3_site_key
+VITE_FIREBASE_APPCHECK_SITE_KEY=your_recaptcha_enterprise_site_key
 ```
 
-Rebuild / redeploy the Worker so the SPA assets include the key (`npm run deploy` or your usual ship path).
-
-The client already calls `ensureAppCheck()` before Auth (`services/auth/firebaseAppCheck.ts`).
+The client calls `ensureAppCheck()` before Auth (`services/auth/firebaseAppCheck.ts`). It uses `ReCaptchaEnterpriseProvider`. Token auto-refresh stays on. A local debug token still works when `VITE_FIREBASE_APPCHECK_DEBUG_TOKEN` is set.
 
 ### A4. Localhost debug token (required after enforcement)
 
@@ -166,7 +165,7 @@ Do **not** rewrite the Cloudflare Worker into Azure Functions. Use Azure for ide
 
 - Do not put a second public API on Azure that duplicates `/api/*` without a single auth story.
 - Do not hardcode Azure keys in the React app.
-- Do not disable Cloudflare WAF/auth because “Azure is secure now.”
+- Do not disable Cloudflare WAF/auth because "Azure is secure now."
 
 ---
 
