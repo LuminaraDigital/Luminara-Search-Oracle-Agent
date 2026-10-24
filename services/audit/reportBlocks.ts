@@ -7,7 +7,8 @@ import type { BoardFinding } from './findingBoardService';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { stripUntrustedFences } from '../../utils/untrustedContent';
 import { healthChecklist, measuredCheckLine, parseMeasuredCheckLine, siteChecksRan } from '../agentCore/auditEvidenceGate';
-import { plainCustomerReport } from './reportColumnGate';
+import { organizationJsonLd } from './fixPackCopy';
+import { plainCustomerReport, type AuditTextScope } from './reportColumnGate';
 
 export type Inline =
   | { kind: 'text'; text: string }
@@ -96,8 +97,8 @@ function cellText(cell: { text: string; tokens?: Token[] }): string {
 }
 
 /** Reads markdown the audit already wrote. Malformed input does not throw. */
-export function parseAuditReport(markdown: string): AuditReportDoc {
-  const cleaned = plainCustomerReport(markdown || '');
+export function parseAuditReport(markdown: string, scope?: AuditTextScope): AuditReportDoc {
+  const cleaned = plainCustomerReport(markdown || '', scope);
   const links: AuditReportDoc['links'] = [];
   const used = new Set<string>();
   let title = 'Audit report';
@@ -229,6 +230,138 @@ export function isDowngradedFinding(finding: { id?: string; description?: string
   return finding.description?.trim() === UNSUPPORTED_FINDING;
 }
 
+type RankedFinding = {
+  id?: string;
+  description?: string;
+  severity?: string;
+  status?: string;
+};
+
+/** The open fix the report calls "Your next fix". Critical before high, then medium, then low. */
+export function pickPrimaryFinding<T extends RankedFinding>(findings: readonly T[]): T | null {
+  const eligible = findings.filter((finding) => !isDowngradedFinding(finding));
+  if (!eligible.length) return null;
+  const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  const open = eligible.filter((finding) => finding.status === 'open' || finding.status === 'in_progress');
+  const pool = open.length ? open : eligible;
+  return [...pool].sort(
+    (a, b) => (rank[a.severity || ''] ?? 9) - (rank[b.severity || ''] ?? 9),
+  )[0] ?? null;
+}
+
+type MoveFinding = RankedFinding & {
+  title?: string;
+  domain?: string;
+};
+
+const ONE_MOVE = /one move/i;
+
+function sectionBounds(lines: string[], test: RegExp): { start: number; end: number } | null {
+  const start = lines.findIndex((line) => /^#{1,3}\s+/.test(line.trim()) && test.test(line.trim()));
+  if (start < 0) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^#{1,2}\s+/.test(lines[i].trim())) {
+      end = i;
+      break;
+    }
+  }
+  return { start, end };
+}
+
+type MoveKind = 'identity' | 'hsts' | 'csp' | 'security' | 'other';
+
+function fenceKind(code: string): MoveKind {
+  const text = code.toLowerCase();
+  if (text.includes('strict-transport-security') || /\bhsts\b/.test(text)) return 'hsts';
+  if (text.includes('content-security-policy')) return 'csp';
+  if (text.includes('security.txt')) return 'security';
+  if (text.includes('@type') || text.includes('schema.org') || text.includes('ld+json')) return 'identity';
+  return 'other';
+}
+
+function proseKind(text: string): MoveKind {
+  const line = text.toLowerCase();
+  if (line.includes('business identity tag') || line.includes('structured data') || line.includes('json-ld') || line.includes('schema.org')) return 'identity';
+  if (line.includes('(hsts)') || line.includes('strict-transport') || line.includes('secure version of your site')) return 'hsts';
+  if (line.includes('(csp)') || line.includes('content-security') || line.includes('scripts your site can load')) return 'csp';
+  if (line.includes('security.txt') || line.includes('security contact file')) return 'security';
+  return 'other';
+}
+
+function howToKnow(sentence: string): string {
+  const kind = proseKind(sentence);
+  if (kind === 'identity') return 'How to know it worked: the page source includes a business identity tag that names the organization.';
+  if (kind === 'hsts') return 'How to know it worked: a browser reload stays on the secure version of the site (HSTS).';
+  if (kind === 'csp') return 'How to know it worked: the response tells the browser which scripts the site can load (CSP).';
+  if (kind === 'security') return 'How to know it worked: the public security contact file opens in a browser (security.txt).';
+  return `How to know it worked: this item is no longer open. ${sentence}`;
+}
+
+/** Drops a one-move code block that is about a different fix than the prose. */
+function dropMismatchedSnippet(markdown: string): string {
+  const lines = markdown.split('\n');
+  const bounds = sectionBounds(lines, ONE_MOVE);
+  if (!bounds) return markdown;
+  const body = lines.slice(bounds.start + 1, bounds.end);
+  let fence = false;
+  const prose: string[] = [];
+  const kept: string[] = [];
+  let fenceBuf: string[] = [];
+  const flush = () => {
+    const code = fenceBuf.join('\n');
+    const kind = fenceKind(code);
+    const move = proseKind(prose.join('\n'));
+    if (kind === 'other' || kind === move) kept.push(...fenceBuf);
+  };
+  for (const line of body) {
+    if (line.trim().startsWith('```')) {
+      if (!fence) {
+        fence = true;
+        fenceBuf = [line];
+      } else {
+        fenceBuf.push(line);
+        flush();
+        fence = false;
+        fenceBuf = [];
+      }
+      continue;
+    }
+    if (fence) fenceBuf.push(line);
+    else {
+      prose.push(line);
+      kept.push(line);
+    }
+  }
+  if (fence) kept.push(...fenceBuf);
+  return [...lines.slice(0, bounds.start + 1), ...kept, ...lines.slice(bounds.end)].join('\n');
+}
+
+function moveBody(finding: MoveFinding, domain?: string): string {
+  const title = plainCustomerReport(finding.title || '').trim() || 'Not measured.';
+  const sentence = /[.!?]$/.test(title) ? title : `${title}.`;
+  const kind = proseKind(`${finding.id || ''} ${sentence}`);
+  const host = (domain || finding.domain || '').trim();
+  const snip = kind === 'identity'
+    ? `\n\n\`\`\`json\n${organizationJsonLd(host || 'example.com')}\n\`\`\``
+    : '';
+  return `${sentence}\n\n${howToKnow(sentence)}${snip}\n`;
+}
+
+/**
+ * One move, the how-to-know line, and the snippet come from the top finding.
+ * With no findings, model text stays and a snippet about a different fix is dropped.
+ */
+export function alignOneMove(markdown: string, findings: readonly MoveFinding[] = [], domain?: string): string {
+  const primary = pickPrimaryFinding(findings);
+  if (!primary) return dropMismatchedSnippet(markdown);
+  const lines = markdown.split('\n');
+  const bounds = sectionBounds(lines, ONE_MOVE);
+  if (!bounds) return markdown;
+  const body = moveBody(primary, domain).trimEnd();
+  return [...lines.slice(0, bounds.start + 1), '', body, '', ...lines.slice(bounds.end)].join('\n');
+}
+
 /** Phrases from unsupported finding ids, used to keep them out of the model fix list. */
 export function unsupportedClaimNeedles(findings: readonly { id?: string; description?: string }[]): string[] {
   const needles = new Set<string>();
@@ -350,7 +483,7 @@ export function withReportLead(
   measured: boolean,
   findings: ReadonlyArray<Pick<BoardFinding, 'title' | 'severity' | 'description' | 'evidence'> & { id?: string }> = [],
 ): string {
-  const source = plainCustomerReport(stripUntrustedFences(markdown));
+  const source = alignOneMove(plainCustomerReport(stripUntrustedFences(markdown)), findings);
   const doc = parseAuditReport(source);
   const score = reportScore(`${source}\n${doc.verdict}`, measured, findings);
   const verdict = doc.verdict || 'Not measured.';

@@ -1,9 +1,55 @@
 ﻿import React from 'react';
 import { ICONS } from '../../constants';
+import type { EmpiricalCitationSummary } from '../../services/audit/empiricalCitationService';
+import { parseAuditReport } from '../../services/audit/reportBlocks';
 
 interface VisibilityRadarProps {
     headers: string[];
     rows: string[][];
+    /** Per-query readings from the same search evidence as the preview label. */
+    evidence?: ReadonlyArray<{ query: string; brandCited: boolean }>;
+}
+
+function normQuery(value: string): string {
+    return value.toLowerCase().replace(/["“”']/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The preview label and the radar share this.
+ * No mention line unless the radar table has a query this evidence actually measured.
+ */
+export function citationView(
+    markdown: string,
+    summary: EmpiricalCitationSummary | undefined,
+): { label: string | null; evidence: Array<{ query: string; brandCited: boolean }> | null } {
+    if (!summary || summary.measurementStatus === 'not_measured') return { label: null, evidence: null };
+    const rows = summary.evidenceList || [];
+    if (!rows.length) return { label: null, evidence: null };
+    const doc = parseAuditReport(markdown);
+    const section = doc.sections.find((item) => /visibility radar/i.test(item.title));
+    const table = section?.blocks.find((block) => block.kind === 'table');
+    if (!table || table.kind !== 'table') return { label: null, evidence: null };
+    const queryCol = table.headers.findIndex((header) => /query/i.test(header));
+    const col = queryCol >= 0 ? queryCol : 0;
+    const queries = new Set(table.rows.map((row) => normQuery(row[col] || '')).filter(Boolean));
+    const matched = rows.filter((row) => queries.has(normQuery(row.query)));
+    if (!matched.length) return { label: null, evidence: null };
+    const webMentioned = summary.webResultsMentioned;
+    const webTotal = summary.webResultsTotal;
+    if (
+        matched.length === rows.length
+        && typeof webMentioned === 'number'
+        && typeof webTotal === 'number'
+        && Number.isInteger(webMentioned)
+        && Number.isInteger(webTotal)
+        && webTotal > 0
+        && webMentioned >= 0
+        && webMentioned <= webTotal
+    ) {
+        return { label: `mentioned in ${webMentioned} of ${webTotal} web results`, evidence: matched };
+    }
+    const mentioned = matched.filter((row) => row.brandCited).length;
+    return { label: `mentioned in ${mentioned} of ${matched.length} sampled queries`, evidence: matched };
 }
 
 /**
@@ -57,7 +103,7 @@ const STATUS_TEXT: Record<RadarStatus, string> = {
  * It shows what the table says and nothing else: no score is worked out from the
  * cells, and a cell that does not give a reading prints "Not measured".
  */
-export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows }) => {
+export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows, evidence }) => {
     const queryCol = columnIndex(headers, /query/i, 0);
     const intentCol = columnIndex(headers, /intent/i, 1);
     const citedCol = columnIndex(headers, /brand cited/i, 2);
@@ -82,9 +128,10 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                 {rows.map((row, idx) => {
                     const query = plain(row[queryCol]) || 'Query';
                     const intent = plain(row[intentCol]);
-                    const cited = readBrandCited(row[citedCol]);
+                    const hit = evidence?.find((item) => normQuery(item.query) === normQuery(query));
+                    const cited = hit ? (hit.brandCited ? 'yes' : 'no') : readBrandCited(row[citedCol]);
                     const competitors = plain(row[competitorsCol]) || 'Not measured';
-                    const status = STATUS_TEXT[readCitationStatus(row[statusCol])];
+                    const status = STATUS_TEXT[hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol])];
 
                     return (
                         <div

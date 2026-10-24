@@ -426,7 +426,7 @@ describe('generateAuditReport crew evidence', () => {
     for (const invented of ['+40% citations', 'Position 3', 'FAQ snippet', 'Active', 'Medium-High']) {
       expect(result.text).not.toContain(invented);
     }
-    expect(result.text).toContain('Add Organization schema');
+    expect(result.text).toContain('Add a business identity tag');
     expect(result.text).toContain('what is example.com');
   });
 

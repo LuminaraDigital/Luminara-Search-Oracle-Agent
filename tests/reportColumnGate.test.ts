@@ -569,5 +569,45 @@ describe('plain customer report lines', () => {
     expect(once).toContain('https://example.com Example Domain (page read)');
     expect(once).toContain('https://en.wikipedia.org/wiki/Example.com Wikipedia entry (web search)');
     expect(once).not.toContain('—');
+    expect(once).not.toContain('\u2014');
+  });
+
+  it('scrubs live model text: unicode hyphens, spacing, jargon, and a sources list', () => {
+    const raw = [
+      'The site is reachable but shows very thin content and no structured data.Security headers (HSTS, CSP) and a public security contact file are missing.These gaps lower the odds of a quote. Visit https://example.com. The version is v1.2. The rate is 35.3 today.',
+      '## 3. Fix list',
+      '| Task | Plain issue | Priority |',
+      '| --- | --- | --- |',
+      '| Implement Content\u2011Security\u2011Policy | Missing | High |',
+      '| Publish a public security contact file (security.txt) | Missing | High |',
+      '| Add a business identity tag markup | None | High |',
+      '## Competitor Reality Map',
+      '| Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) |',
+      '| --- | --- | --- | --- |',
+      '| [[IANA]] | Reference | Docs | Registry |',
+      '| [[Wikipedia]] | Encyclopedia | Article | Coverage |',
+      '## 7. Sources',
+      'https://example.com Example Domain (page read) https://en.wikipedia.org/wiki/Example.com example.com - Wikipedia (web search) https://leadiq.com/c/pge-systemy-sa PGE Systemy S.A | LeadIQ (web search)',
+    ].join('\n');
+    const once = gateReportText(raw, { domain: 'example.com', brand: 'Example' });
+    const twice = gateReportText(once, { domain: 'example.com', brand: 'Example' });
+    expect(twice).toBe(once);
+    expect(once).toContain('no business identity tag. Security headers (HSTS, CSP)');
+    expect(once).toContain('are missing. These gaps');
+    expect(once).toContain('Control which scripts your site can load (CSP)');
+    expect(once).toContain('Publish a public security contact file (security.txt)');
+    expect(once).not.toMatch(/\(security\.txt\).*\(security\.txt\)/);
+    expect(once).toContain('| Add a business identity tag | None | High |');
+    expect(once).not.toContain('markup');
+    expect(once).not.toContain('Content-Security-Policy');
+    expect(once).not.toContain('\u2011');
+    expect(once).not.toContain('\u2014');
+    expect(once).toContain('| IANA |');
+    expect(once).toContain('| Wikipedia |');
+    expect(once).not.toContain('[[');
+    expect(once).toContain('- https://example.com Example Domain (page read)');
+    expect(once).toContain('- https://en.wikipedia.org/wiki/Example.com example.com - Wikipedia (web search)');
+    expect(once).not.toContain('leadiq.com');
+    expect(once).toContain('https://example.com. The version is v1.2. The rate is 35.3 today.');
   });
 });

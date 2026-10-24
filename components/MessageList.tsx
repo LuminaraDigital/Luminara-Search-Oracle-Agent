@@ -5,7 +5,7 @@ import { renderMarkdown } from '../utils/markdown';
 import { ReportDisplay } from './audit/ReportDisplay';
 import { HybridMessageBody } from './genui/HybridMessageBody';
 import { fallbackAnswerLine } from '../services/llm/fallbackAnswer';
-import { gateReportTables, looksLikeAuditReport } from '../services/audit/reportColumnGate';
+import { gateReportText, looksLikeAuditReport } from '../services/audit/reportColumnGate';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 
 interface MessageListProps {
@@ -22,7 +22,7 @@ interface MessageListProps {
  */
 export function chatMessageText(msg: Pick<Message, 'role' | 'content'>): string {
   return msg.role === 'model' && looksLikeAuditReport(msg.content)
-    ? gateReportTables(msg.content).text
+    ? gateReportText(msg.content)
     : msg.content;
 }
 

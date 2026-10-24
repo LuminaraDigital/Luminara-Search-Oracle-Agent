@@ -5,6 +5,7 @@ import { AuditReportArticle } from '../components/audit/AuditReportArticle';
 import type { BoardFinding } from '../services/audit/findingBoardService';
 import { FINDINGS_BOARD_KEY, listLocalFindings, setFindingStatusLocal } from '../services/audit/findingBoardService';
 import {
+  alignOneMove,
   fixProgress,
   parseAuditReport,
   progressSince,
@@ -15,6 +16,7 @@ import {
   stripUnsupportedFixClaims,
   withReportLead,
 } from '../services/audit/reportBlocks';
+import { gateReportText } from '../services/audit/reportColumnGate';
 import { formatAuDate } from '../utils/formatAuDate';
 
 const SAMPLE = `# Ray White
@@ -257,6 +259,85 @@ describe('audit report page', () => {
     expect(html).toContain('https://en.wikipedia.org/wiki/Example.com example.com - Wikipedia (web search)');
     const pdf = withReportLead(markdown, false, findings);
     expect(pdf).toContain('Score: 2 of 4 checks passed, 2 failed');
+  });
+
+  it('builds the one move, the how-to-know line, and the snippet from the top finding', () => {
+    const raw = [
+      '# Example',
+      '',
+      'The site is reachable but shows very thin content and no structured data.Security headers (HSTS, CSP) and a public security contact file are missing.These gaps lower the odds of a quote.',
+      '',
+      '## 1. One move this week',
+      '',
+      'Add an HTTP Strict\u2011Transport\u2011Security (HSTS) header so browsers always load the HTTPS version. How to know it worked: verify the response includes Strict-Transport-Security: max\u2011age=31536000; includeSubDomains',
+      '',
+      '```json',
+      '{ "@context": "https://schema.org", "@type": "Organization", "name": "Example" }',
+      '```',
+      '',
+      '## 3. Fix list',
+      '',
+      '| Task | Plain issue | Priority |',
+      '| --- | --- | --- |',
+      '| Implement Content\u2011Security\u2011Policy | Missing | High |',
+      '| Publish a public security contact file (security.txt) | Missing | High |',
+      '| Add a business identity tag markup | None | High |',
+      '',
+      '## 7. Sources',
+      'https://example.com Example Domain (page read) https://en.wikipedia.org/wiki/Example.com example.com - Wikipedia (web search) https://leadiq.com/c/pge-systemy-sa PGE Systemy S.A | LeadIQ (web search)',
+    ].join('\n');
+    const findings = [
+      finding({
+        id: 'finding-schema-org',
+        title: 'Add a business identity tag',
+        description: 'Tags on the page: none.',
+        domain: 'example.com',
+        severity: 'critical',
+      }),
+    ];
+    const text = alignOneMove(gateReportText(raw), findings, 'example.com');
+    const doc = parseAuditReport(text);
+    const move = doc.sections.find((section) => /one move/i.test(section.title));
+    const prose = move?.blocks.filter((block) => block.kind === 'paragraph').map((block) => block.kind === 'paragraph' ? block.text : '').join(' ') || '';
+    const code = move?.blocks.find((block) => block.kind === 'code');
+    expect(prose).toContain('Add a business identity tag.');
+    expect(prose).toContain('How to know it worked: the page source includes a business identity tag that names the organization.');
+    expect(prose).not.toContain('Strict-Transport-Security');
+    expect(prose).not.toContain('max-age');
+    expect(code && code.kind === 'code' ? code.text : '').toContain('"@type": "Organization"');
+    const html = renderToStaticMarkup(createElement(AuditReportArticle, {
+      markdown: raw,
+      measured: false,
+      findings,
+      domain: 'example.com',
+      clientName: 'Example',
+      sources: [
+        { uri: 'https://example.com', title: 'Example Domain' },
+        { uri: 'https://leadiq.com/c/pge-systemy-sa', title: 'PGE Systemy S.A | LeadIQ' },
+        { uri: 'https://en.wikipedia.org/wiki/Example.com', title: 'example.com - Wikipedia' },
+      ],
+      showActions: false,
+    }));
+    expect(html).toContain('Your next fix');
+    expect(html).toContain('Add a business identity tag');
+    expect(html).toContain('How to know it worked: the page source includes a business identity tag');
+    expect(html).toContain('no business identity tag. Security');
+    expect(html).toContain('missing. These gaps');
+    expect(html).not.toContain('Strict-Transport-Security');
+    expect(html).not.toContain('Content-Security-Policy');
+    expect(html).not.toContain('tag markup');
+    expect(html).not.toContain('leadiq.com');
+    expect(html).not.toContain('[[');
+    expect(html).toContain('<ul');
+    expect(html).toContain('https://example.com Example Domain (page read)');
+    expect(html).toContain('https://en.wikipedia.org/wiki/Example.com example.com - Wikipedia (web search)');
+    expect(html).not.toContain('\u2014');
+    const withoutFindings = parseAuditReport(alignOneMove(gateReportText(raw), []));
+    const fallback = withoutFindings.sections.find((section) => /one move/i.test(section.title));
+    const fallbackCode = fallback?.blocks.find((block) => block.kind === 'code');
+    const fallbackProse = fallback?.blocks.filter((block) => block.kind === 'paragraph').map((block) => block.kind === 'paragraph' ? block.text : '').join(' ') || '';
+    expect(fallbackProse).toContain('Make browsers always use the secure version of your site (HSTS)');
+    expect(fallbackCode).toBeUndefined();
   });
 
   it('stores a done tick on the findings board without calling the network', () => {

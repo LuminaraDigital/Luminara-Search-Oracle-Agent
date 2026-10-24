@@ -8,6 +8,7 @@ import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGua
 import { parseMeasuredCheckLine } from '../../services/agentCore/auditEvidenceGate';
 import { customerSourceLine, plainCustomerReport, sourceReadKind } from '../../services/audit/reportColumnGate';
 import {
+  alignOneMove,
   findingFix,
   findingWhy,
   fixProgress,
@@ -100,7 +101,15 @@ function visibleSections(sections: ReportSection[], verdict: string): ReportSect
   });
 }
 
-function BlockView({ block, sectionTitle }: { block: ReportBlock; sectionTitle: string }) {
+function BlockView({
+  block,
+  sectionTitle,
+  evidence,
+}: {
+  block: ReportBlock;
+  sectionTitle: string;
+  evidence?: ReadonlyArray<{ query: string; brandCited: boolean }>;
+}) {
   if (block.kind === 'heading') {
     const Tag = block.level <= 3 ? 'h3' : 'h4';
     return <Tag id={block.id} className="mt-6 text-lg font-semibold text-white">{block.text}</Tag>;
@@ -118,7 +127,7 @@ function BlockView({ block, sectionTitle }: { block: ReportBlock; sectionTitle: 
   if (block.kind === 'code') return <CodeBlock text={block.text} />;
   if (block.kind === 'table') {
     const title = sectionTitle.toLowerCase();
-    if (title.includes('visibility radar')) return <VisibilityRadar headers={block.headers} rows={block.rows} />;
+    if (title.includes('visibility radar')) return <VisibilityRadar headers={block.headers} rows={block.rows} evidence={evidence} />;
     if (title.includes('competitor reality map')) return <CompetitorMap headers={block.headers} rows={block.rows} />;
     return (
       <div className="my-4 overflow-x-auto">
@@ -157,6 +166,7 @@ export function AuditReportArticle({
   showActions = true,
   citationRateKnown,
   checkLine,
+  citationEvidence,
   onShare,
   onFindings,
 }: {
@@ -171,6 +181,8 @@ export function AuditReportArticle({
   citationRateKnown?: boolean;
   /** Checklist sentence already shown on the page-health card. */
   checkLine?: string;
+  /** Queries the search evidence actually measured. The radar prints these, not a model guess. */
+  citationEvidence?: ReadonlyArray<{ query: string; brandCited: boolean }>;
   onShare?: () => void;
   onFindings?: (findings: BoardFinding[]) => void;
 }) {
@@ -184,7 +196,7 @@ export function AuditReportArticle({
       window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
     };
   }, []);
-  const doc = parseAuditReport(markdown);
+  const doc = parseAuditReport(alignOneMove(markdown, findings, domain), { domain, brand: clientName });
   const score = reportScore(`${markdown}\n${doc.verdict}`, measured, findings, citationRateKnown, checkLine);
   const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
   const note = unmeasuredNote(findings);
@@ -197,7 +209,7 @@ export function AuditReportArticle({
     ? SAVED_AUDIT_CHECK_COPY
     : progressSince({ ...diff, checks: parseMeasuredCheckLine(score) });
   const tally = showFixTally(score);
-  const validSources = visibleGroundingSources(sources) || [];
+  const validSources = visibleGroundingSources(sources, { domain, brand: clientName }) || [];
   const verdict = doc.verdict || 'Not measured.';
   const sections = visibleSections(doc.sections, verdict);
 
@@ -305,7 +317,9 @@ export function AuditReportArticle({
                 {section.title}
               </summary>
               <div className="mt-2">
-                {section.blocks.map((block, index) => <BlockView key={`${section.id}-${index}`} block={block} sectionTitle={section.title} />)}
+                {section.blocks.map((block, index) => (
+                  <BlockView key={`${section.id}-${index}`} block={block} sectionTitle={section.title} evidence={citationEvidence || undefined} />
+                ))}
               </div>
             </details>
           </section>
