@@ -8,7 +8,7 @@ import { formatAuDate } from '../../utils/formatAuDate';
 import { stripUntrustedFences } from '../../utils/untrustedContent';
 import { healthChecklist, measuredCheckLine, parseMeasuredCheckLine, siteChecksRan } from '../agentCore/auditEvidenceGate';
 import { organizationJsonLd } from './fixPackCopy';
-import { customerSentenceOk, mentionedCount, optionalCustomerSentence, plainCustomerReport, withoutContradictorySentences, type AuditTextScope } from './reportColumnGate';
+import { mentionedCount, plainCustomerReport, sentencesCiting, withoutContradictorySentences, type AuditTextScope } from './reportColumnGate';
 
 /** The only customer spelling of an unmeasured cell. */
 export const NOT_MEASURED = 'Not measured';
@@ -430,26 +430,23 @@ type VerdictOptions = { scope?: AuditTextScope; citationLine?: string | null };
 
 /**
  * Reachability, then the top failed checks, then one consequence.
- * A model sentence is kept only when it names this audit and passes the strict check.
- * A citation sentence is appended only when the caller built it from mentionCounts.
+ * Model sentences are not added. A citation sentence is appended only when the caller built it.
  */
 export function plainVerdictText(
   findings: readonly MoveFinding[],
-  modelText = '',
+  _modelText = '',
   options: VerdictOptions = {},
 ): string {
   const phrases = topFailed(findings).map((finding) => (finding.id ? CHECK_PHRASE[finding.id] : '')).filter(Boolean);
-  const mentioned = mentionedCount(options.citationLine);
-  const extra = optionalCustomerSentence(modelText, mentioned);
-  const keepExtra = extra && namesAudit(extra, options.scope) && customerSentenceOk(extra) ? extra : '';
   const citation = options.citationLine?.trim() || '';
-  if (!phrases.length) return keepExtra;
   const consequence = phrases.length === 1
     ? 'This gap can lower trust and citation odds.'
     : 'These gaps can lower trust and citation odds.';
-  const core = `The page is reachable. ${phrases.join('. ')}. ${consequence}`;
-  const tail = [keepExtra, citation].filter((part) => part && !core.toLowerCase().includes(part.replace(/[.!?]$/, '').toLowerCase()));
-  return tail.length ? `${core} ${tail.join(' ')}` : core;
+  const core = phrases.length
+    ? `The page is reachable. ${phrases.join('. ')}. ${consequence}`
+    : 'The page is reachable.';
+  if (!citation || core.toLowerCase().includes(citation.replace(/[.!?]$/, '').toLowerCase())) return core;
+  return `${core} ${citation}`;
 }
 
 /** Replaces the plain-verdict section when the failed checks are known. Other sections stay. */
@@ -584,6 +581,66 @@ function groundRadar(markdown: string, scope: AuditTextScope, evidence?: readonl
   return replaceSectionBody(markdown, /visibility radar/i, '## AI & Search Visibility Radar', body);
 }
 
+const MEASURED_PROSE = [/visibility radar/i, /competitor/i, /budget/i];
+
+function measuredAnchors(markdown: string, facts: GroundFacts): string[] {
+  const anchors: string[] = [];
+  for (const finding of facts.findings || []) {
+    const phrase = finding.id ? CHECK_PHRASE[finding.id] : undefined;
+    if (!finding.id || !phrase) continue;
+    anchors.push(finding.id.toLowerCase());
+    anchors.push(phrase.toLowerCase());
+  }
+  const add = (query: string) => {
+    const text = query.replace(/["“”']/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (text.length >= 8) anchors.push(text);
+  };
+  for (const row of facts.evidence || []) add(row.query);
+  const doc = parseAuditReport(markdown);
+  const section = doc.sections.find((item) => /visibility radar/i.test(item.title));
+  const table = section?.blocks.find((block) => block.kind === 'table');
+  if (table && table.kind === 'table') {
+    const queryCol = Math.max(table.headers.findIndex((header) => /query/i.test(header)), 0);
+    const statusCol = table.headers.findIndex((header) => /status/i.test(header));
+    for (const row of table.rows) {
+      const status = (row[statusCol] || '').toLowerCase();
+      if (/^cited\b/.test(status) || /^not cited\b/.test(status)) add(row[queryCol] || '');
+    }
+  }
+  return anchors;
+}
+
+function filterProseLines(lines: string[], anchors: readonly string[]): string[] {
+  let fence = false;
+  return lines.map((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      fence = !fence;
+      return line;
+    }
+    if (fence || !trimmed || trimmed.startsWith('|') || /^#{1,6}\s/.test(trimmed)) return line;
+    const kept = sentencesCiting(trimmed, anchors);
+    if (!kept) return '';
+    if (kept === trimmed) return line;
+    return `${line.match(/^\s*/)?.[0] ?? ''}${kept}`;
+  });
+}
+
+/** Radar notes, competitor prose, and budget keep a sentence only when it names a measured row or a check. */
+function keepMeasuredSectionProse(markdown: string, facts: GroundFacts): string {
+  const anchors = measuredAnchors(markdown, facts);
+  let text = markdown;
+  for (const test of MEASURED_PROSE) {
+    const lines = text.split('\n');
+    const bounds = sectionBounds(lines, test);
+    if (!bounds) continue;
+    const kept = filterProseLines(lines.slice(bounds.start + 1, bounds.end), anchors);
+    const body = kept.some((line) => line.trim()) ? kept : ['', `${NOT_MEASURED}.`];
+    text = [...lines.slice(0, bounds.start + 1), ...body, ...lines.slice(bounds.end)].join('\n');
+  }
+  return text;
+}
+
 export type GroundFacts = {
   domain?: string;
   brand?: string;
@@ -596,7 +653,7 @@ export type GroundFacts = {
 
 /**
  * Title, date, verdict, fix list, radar and sources come from the audited URL and the measured rows.
- * Model prose stays only inside the verdict, and only when it names this audit.
+ * The verdict is the template plus the citation line. Other model prose stays only when it names a measured row or a check.
  */
 export function groundCustomerReport(markdown: string, facts: GroundFacts): string {
   const host = auditHost(facts.domain || '');
@@ -624,6 +681,7 @@ export function groundCustomerReport(markdown: string, facts: GroundFacts): stri
   }
   text = groundRadar(text, scope, facts.evidence);
   text = dropSection(text, /\bsources\b/i);
+  text = keepMeasuredSectionProse(text, facts);
   const trimmed = text.replace(/\n{3,}/g, '\n\n').trim();
   return fallback ? `${trimmed}\n\n${fallback[0]}` : trimmed;
 }
