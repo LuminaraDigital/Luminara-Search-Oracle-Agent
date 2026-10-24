@@ -120,44 +120,17 @@ export const NativeEngineHUD: React.FC = () => {
   return (
     <>
       {/* Top Header Pill - Compact on desktop/laptop, extended on 2xl */}
-      <div 
+      <div
         onClick={() => { setIsModalOpen(true); probeEngines(); }}
+        data-testid="provider-status"
+        data-header-item="provider-status"
         className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-gold/30 bg-black/60 hover:bg-gold/10 hover:border-gold/60 cursor-pointer transition-all shadow-[0_0_15px_rgba(191,149,63,0.1)] group shrink-0"
-        title="Saved model providers. Open settings to choose the order."
+        title="Model providers. Open settings to choose the order."
       >
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-        <span className="text-[9px] font-mono font-bold tracking-wider text-gold-light uppercase flex items-center gap-1">
-          <span>{getProviderBadge(activeEngine).icon}</span>
-          <span>{getProviderBadge(activeEngine).label}</span>
+        <span className="text-[9px] font-mono font-bold tracking-wider text-gold-light uppercase whitespace-nowrap">
+          AI ready
         </span>
-        <span className="hidden xl:inline 2xl:hidden text-[9px] font-mono text-gray-400">
-          +{priorityOrder.length - 1} standby
-        </span>
-        <span className="2xl:hidden text-[9px] text-gold/60 group-hover:text-gold font-mono ml-0.5">⚙</span>
-
-        {/* Extended chain on ultra-wide 2xl screens */}
-        <div className="hidden 2xl:flex items-center gap-1 ml-1 border-l border-white/10 pl-2">
-          {priorityOrder.map((id, idx) => {
-            const badge = getProviderBadge(id);
-            const isCurrent = activeEngine === id;
-            return (
-              <div 
-                key={id} 
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono transition-all ${
-                  isCurrent
-                    ? 'bg-gold/25 text-gold-light border border-gold/50 font-bold'
-                    : badge.isAvail
-                    ? 'bg-white/5 text-gray-300 hover:text-white'
-                    : 'bg-danger-950/20 text-gray-500 line-through'
-                }`}
-              >
-                <span>{badge.icon}</span>
-                <span>{badge.label}</span>
-                {idx < priorityOrder.length - 1 && <span className="text-gray-600 ml-0.5 font-normal">→</span>}
-              </div>
-            );
-          })}
-        </div>
       </div>
 
       {/* Modal / Flyout for Topology, Live Search & Failover Configuration */}
