@@ -111,7 +111,7 @@ async function sha256Hex(data: ArrayBuffer): Promise<string> {
     .join('');
 }
 
-async function deriveAesGcmKey(password: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
+async function deriveAesGcmKey(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const passwordKey = await crypto.subtle.importKey(
     'raw',
