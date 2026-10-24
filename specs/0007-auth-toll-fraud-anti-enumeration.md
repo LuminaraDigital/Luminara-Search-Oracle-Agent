@@ -15,7 +15,7 @@ Twilio quota and probe registered addresses.
 ## Stack (actual)
 
 Cloudflare Workers + KV + Firebase Auth (client SDK + Identity Toolkit REST + JWKS).
-Optional Twilio SMS when `OTP_SMS_ENABLED=true`. Optional App Check (reCAPTCHA v3)
+Optional Twilio SMS when `OTP_SMS_ENABLED=true`. Optional App Check (reCAPTCHA Enterprise)
 when `VITE_FIREBASE_APPCHECK_SITE_KEY` is set.
 
 | Mandate concept | Implementation |
@@ -43,7 +43,7 @@ when `VITE_FIREBASE_APPCHECK_SITE_KEY` is set.
 
 1. Worker: `FIREBASE_WEB_API_KEY`, `FIREBASE_PROJECT_ID`, `LUMINARA_KV`
 2. Deploy Worker with these routes
-3. Optional App Check: create reCAPTCHA v3 in Firebase App Check, set
+3. Optional App Check: use the reCAPTCHA Enterprise site key in Firebase App Check, set
    `VITE_FIREBASE_APPCHECK_SITE_KEY`, enable enforcement for Authentication
 4. Optional SMS: `OTP_SMS_ENABLED=true` + Twilio secrets
 

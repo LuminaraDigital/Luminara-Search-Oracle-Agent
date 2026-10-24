@@ -39,6 +39,7 @@
     "smoke": "node scripts/smoke-check.mjs",
     "smoke:staging": "node scripts/smoke-check.mjs --staging",
     "smoke:prod": "node scripts/smoke-check.mjs --prod",
+    "smoke:wif": "node scripts/wif-smoke.mjs",
     "tg:setup": "node scripts/telegram-setup.mjs",
     "keys:generate": "node scripts/generate-license-keys.mjs",
     "keys:seed-vault": "node scripts/seed-license-vault.mjs",

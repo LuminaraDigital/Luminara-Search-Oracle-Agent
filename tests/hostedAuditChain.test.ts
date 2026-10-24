@@ -13,7 +13,7 @@ vi.mock('firebase/app', () => ({
 vi.mock('firebase/app-check', () => ({
   initializeAppCheck: vi.fn(),
   getToken: vi.fn(async () => ({ token: '' })),
-  ReCaptchaV3Provider: class ReCaptchaV3Provider {},
+  ReCaptchaEnterpriseProvider: class ReCaptchaEnterpriseProvider {},
 }));
 
 vi.mock('firebase/auth', () => ({
