@@ -5,6 +5,7 @@
  * and enterprise security observability (SOC 2, ISO 27001, HIPAA).
  */
 
+import type { D1Database } from '@cloudflare/workers-types';
 import type { UserStoreEnv } from './userStore';
 import type { AuditLogEntry } from './userTypes';
 import { sha256Hex } from './workerUtils';

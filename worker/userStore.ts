@@ -10,6 +10,7 @@ import type { DataPlaneEnv } from './dataPlaneDocs';
 import { readPlane, type DataPlaneDeps } from './dataPlane';
 import { openAuditHistoryStore } from './auditHistoryRepo';
 import { openUserLoginStore } from './userLoginRepo';
+import { findErasedLogin } from './accountMirror';
 
 export type UserStoreEnv = DataPlaneEnv & {
   LUMINARA_KV?: KVNamespace;
@@ -78,6 +79,24 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity, dep
   const now = Date.now();
   const telegramId = user.source === 'telegram' ? user.id : undefined;
   const firebaseUid = user.source === 'firebase' ? firebaseUidFromId(user.id) : undefined;
+  if (env.DB) {
+    const erased = await findErasedLogin(env.DB, user.id);
+    if (erased) {
+      return {
+        id: user.id,
+        source: user.source,
+        account_id: user.accountId || user.id,
+        email: user.email,
+        name: user.name,
+        telegram_id: telegramId,
+        firebase_uid: firebaseUid,
+        created_at: now,
+        last_seen_at: now,
+        created: false,
+        welcomePending: false,
+      };
+    }
+  }
   const plane = readPlane(env, deps?.log);
 
   if (plane === 'firestore' || env.DB) {

@@ -3,6 +3,7 @@
  * D1 stays the source of truth. Dual mode copies a link into Firestore and, after a
  * D1 erase, deletes that account's Firestore docs inside waitUntil. A failed delete
  * stays pending in firestore_erase_ledger so reconcile can finish it.
+ * pending_firebase means D1 is already wiped and the Firebase Auth user is still there.
  */
 import type { D1Database } from '@cloudflare/workers-types';
 import { scheduleWaitUntil } from './welcomeEmail';
@@ -12,6 +13,7 @@ import { AUDIT_COLLECTION, USER_COLLECTION, auditDocId, userDocId } from './data
 import { firestoreFromEnv, type FirestoreClient } from './firestoreRest';
 
 export const ERASE_MIRROR_FAILED = 'ERASE_MIRROR_FAILED';
+export const FIREBASE_DELETE_FAILED = 'FIREBASE_DELETE_FAILED';
 export const ERASE_UNCONFIGURED = 'ERASE_UNCONFIGURED';
 export const ERASE_LEDGER_MISSING = 'ERASE_LEDGER_MISSING';
 export const ERASE_LEDGER_FAILED = 'ERASE_LEDGER_FAILED';
@@ -223,8 +225,14 @@ async function noteErase(
        VALUES (?, ?, ?, ?, 0, ?, ?)
        ON CONFLICT(account_id) DO UPDATE SET
          user_ids_json = excluded.user_ids_json,
-         status = excluded.status,
-         code = excluded.code,
+         status = CASE
+           WHEN firestore_erase_ledger.status = 'pending_firebase' AND excluded.status = 'done' THEN 'pending_firebase'
+           ELSE excluded.status
+         END,
+         code = CASE
+           WHEN firestore_erase_ledger.status = 'pending_firebase' AND excluded.status = 'done' THEN firestore_erase_ledger.code
+           ELSE excluded.code
+         END,
          attempts = CASE
            WHEN excluded.status = 'pending' AND firestore_erase_ledger.status = 'pending' THEN firestore_erase_ledger.attempts + 1
            ELSE firestore_erase_ledger.attempts
@@ -251,6 +259,52 @@ async function listPending(db: D1Database): Promise<EraseTarget[]> {
     if (missingTable(err)) return [];
     throw err;
   }
+}
+
+export async function findErasedLogin(
+  db: D1Database,
+  loginId: string,
+): Promise<{ accountId: string; status: 'pending_firebase' | 'done' } | null> {
+  if (!loginId) return null;
+  try {
+    const row = await db.prepare(
+      `SELECT account_id, status FROM firestore_erase_ledger
+       WHERE status IN ('pending_firebase', 'done') AND user_ids_json LIKE ? ESCAPE '\\'
+       LIMIT 1`,
+    ).bind(`%${jsonQuotedLike(loginId)}%`).first<{ account_id: string; status: string }>();
+    if (!row || (row.status !== 'pending_firebase' && row.status !== 'done')) return null;
+    return { accountId: row.account_id, status: row.status };
+  } catch (err) {
+    if (missingTable(err)) return null;
+    throw err;
+  }
+}
+
+// shortcut: a dual-mode row still pending for Firestore loses that reconcile until Auth delete finishes, upgrade when DATA_PLANE is dual
+export async function markFirebaseErasePending(db: D1Database, accountId: string, now = Date.now()): Promise<void> {
+  try {
+    await db.prepare(
+      `UPDATE firestore_erase_ledger SET status = 'pending_firebase', code = ?, updated_at = ? WHERE account_id = ?`,
+    ).bind(FIREBASE_DELETE_FAILED, now, accountId).run();
+  } catch (err) {
+    if (missingTable(err)) return;
+    throw err;
+  }
+}
+
+export async function markFirebaseEraseDone(db: D1Database, accountId: string, now = Date.now()): Promise<void> {
+  try {
+    await db.prepare(
+      `UPDATE firestore_erase_ledger SET status = 'done', code = '', updated_at = ? WHERE account_id = ? AND status = 'pending_firebase'`,
+    ).bind(now, accountId).run();
+  } catch (err) {
+    if (missingTable(err)) return;
+    throw err;
+  }
+}
+
+function jsonQuotedLike(value: string): string {
+  return JSON.stringify(value).replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 function logErase(log: DataPlaneLog, input: { id: string; outcome: string; code: string; latencyMs: number; pages: number }): void {
