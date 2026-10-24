@@ -5,6 +5,7 @@
  */
 
 import { isUnmeasuredReviewRating, isUnmeasuredReviewUrl } from './citationIntegrityService';
+import { sourceMentionsAudit, type AuditTextScope } from './reportColumnGate';
 
 export interface MeasuredClaimFacts {
   healthScore?: number | null;
@@ -131,16 +132,19 @@ function hostLabel(uri: string): string {
   }
 }
 
-/** Drops review-site URLs. A rating title on any other page becomes the hostname. */
+/** Drops review-site URLs and search rows that name neither the brand nor the domain. */
 export function visibleGroundingSources(
   sources: ReadonlyArray<{ uri?: string; title?: string }> | null | undefined,
+  scope?: AuditTextScope,
 ): Array<{ uri: string; title: string }> {
   const out: Array<{ uri: string; title: string }> = [];
   for (const source of sources || []) {
     const uri = source?.uri || '';
     if (!/^https?:\/\//i.test(uri) || isUnmeasuredReviewUrl(uri)) continue;
     const title = source.title?.trim() || uri;
-    out.push({ uri, title: isUnmeasuredReviewRating(title) ? hostLabel(uri) : title });
+    const shown = isUnmeasuredReviewRating(title) ? hostLabel(uri) : title;
+    if (!sourceMentionsAudit(uri, shown, scope)) continue;
+    out.push({ uri, title: shown });
   }
   return out;
 }

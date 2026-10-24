@@ -17,6 +17,7 @@ import {
   applyMemorySync,
   createInitialAuditContext,
   crewOrchestrator,
+  criticCheckedMessage,
   criticStartMessage,
   deriveAuditMeasurement,
   memorySyncPlan,
@@ -556,7 +557,7 @@ describe('Instant Audit honesty on empty evidence', () => {
       null,
       noop,
     );
-    expect(measured).toContain('passed 3 of 4; 0 not measured');
+    expect(measured).toContain('3 of 4 checks passed, 1 failed');
     expect(measured).toContain('mentioned in 2 of 9 web results');
     expect(measured).not.toMatch(/\d+\s*\/\s*100/);
     expect(measured).not.toMatch(/health score/i);
@@ -633,7 +634,7 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(all).toContain('#### 4 steps for the checks that failed:');
     expect(steps(all).map((line) => line.slice(0, line.indexOf(':**')))).toEqual([
       '1. **Say plainly what you offer',
-      '2. **Add an Organization tag',
+      '2. **Add a business identity tag',
       '3. **Remove the HowTo markup',
       '4. **Write fuller answers on thin pages',
     ]);
@@ -641,7 +642,7 @@ describe('Instant Audit honesty on empty evidence', () => {
 
   it('says so and lists no step when every check passed, or when the checks did not run', async () => {
     const allPassed = await executiveTranslatorAgent.execute('https://example.com', { passed: 4, total: 4 }, { mentioned: 2, total: 9 }, [], [], null, noop);
-    expect(allPassed).toContain('passed 4 of 4; 0 not measured');
+    expect(allPassed).toContain('4 of 4 checks passed');
     expect(allPassed).toContain('All 4 checks this run made passed, so there are no steps to list.');
     const notRun = await executiveTranslatorAgent.execute('https://example.com', null, null, [], [], null, noop);
     expect(notRun).toContain('The site checks were not measured, so there are no steps to list.');
@@ -702,7 +703,7 @@ describe('Instant Audit honesty on empty evidence', () => {
 
     expect(translate.mock.calls[0]?.[1]).toEqual({ total: 4, failed: 0, unmeasured: 0, passed: 4 });
     expect(translate.mock.calls[0]?.[2]).toEqual({ mentioned: 2, total: 5 });
-    expect(result.plainEnglishBrief).toContain('passed 4 of 4; 0 not measured');
+    expect(result.plainEnglishBrief).toContain('4 of 4 checks passed');
     expect(result.plainEnglishBrief).toContain('mentioned in 2 of 5 web results');
     expect(result.plainEnglishBrief).not.toContain('81');
     expect(result.plainEnglishBrief).not.toMatch(/\d+(?:\.\d+)?\s*%/);
@@ -749,7 +750,7 @@ describe('Mission Control copy', () => {
       phase: 'done',
       message:
         role === 'serp_radar'
-          ? 'Analyzed 0 SERP results. Citation rate and share of voice were not measured.'
+          ? 'Analyzed 0 search results. Citation rate and share of voice were not measured.'
           : 'Finished without a numeric score.',
       status: 'completed' as const,
     }));
@@ -768,6 +769,24 @@ describe('Mission Control copy', () => {
     expect(html).toContain('agent progress, not evidence quality');
     expect(html).not.toContain('ground-truth');
     expect(html).not.toContain('45%');
+  });
+
+  it('waits for a page read instead of scraped evidence', () => {
+    const html = renderToStaticMarkup(createElement(AgentMissionControl, {
+      events: [],
+      isComplete: false,
+    }));
+    expect(html).toContain('Waiting for the page read…');
+    expect(html).toContain('Standing by to read the page…');
+    expect(html).toContain('Standing by for live search results…');
+    expect(html).toContain('Waiting for the search results…');
+    expect(html).toContain('Waiting to check the findings…');
+    expect(html).toContain('Waiting for the findings…');
+    expect(html).not.toContain('scraped');
+    expect(html).not.toContain('crawl target');
+    expect(html).not.toContain('search intelligence');
+    expect(html).not.toContain('cross-examine');
+    expect(html).not.toContain('technical synthesis');
   });
 
   it('badges completed unmeasured scout and auditor cards as Not measured', () => {
@@ -811,6 +830,10 @@ describe('Mission Control copy', () => {
     expect(criticStartMessage(false).toLowerCase()).not.toContain('ground-truth');
     expect(criticStartMessage(false).toLowerCase()).not.toContain('ground truth');
     expect(criticStartMessage(true).toLowerCase()).not.toContain('ground-truth');
+    expect(criticStartMessage(true)).toBe('Cross-examining candidate findings against pages read and search results…');
+    expect(criticCheckedMessage(2)).toBe('Checked 2 findings against pages read and search results.');
+    expect(criticStartMessage(true)).not.toContain('scraped');
+    expect(criticCheckedMessage(1)).not.toContain('scraped');
   });
 });
 
@@ -847,13 +870,25 @@ describe('Instant Audit degraded provider failures', () => {
       skipped.push(event.message);
     });
     expect(extract).not.toHaveBeenCalled();
-    expect(skipped.join(' ')).not.toMatch(/Synced \d+ autonomous memory/);
+    expect(skipped.join(' ')).not.toMatch(/Synced \d+ autonomous memory|MUSE|knowledge graph/);
     expect(memorySyncPlan({
       deltaCount: 0,
       measurementStatus: 'not_measured',
       hasEvidence: false,
       authBlocked: false,
-    }).message).not.toMatch(/Synced \d+ autonomous memory/);
+    }).message).not.toMatch(/Synced \d+ autonomous memory|MUSE/);
+    expect(memorySyncPlan({
+      deltaCount: 1,
+      measurementStatus: 'measured',
+      hasEvidence: true,
+      authBlocked: false,
+    }).message).toBe('Saved 1 note about your brand.');
+    expect(memorySyncPlan({
+      deltaCount: 2,
+      measurementStatus: 'measured',
+      hasEvidence: true,
+      authBlocked: false,
+    }).message).toBe('Saved 2 notes about your brand.');
 
     extract.mockRestore();
     const measured = createInitialAuditContext('https://measured.example');
@@ -873,7 +908,7 @@ describe('Instant Audit degraded provider failures', () => {
     await applyMemorySync(measured, (event) => {
       synced.push(event.message);
     });
-    expect(synced.join(' ')).toMatch(/Synced \d+ autonomous memory/);
+    expect(synced.join(' ')).toMatch(/Saved \d+ notes? about your brand/);
     mem0MemoryEngine.clear();
   });
 
@@ -1092,7 +1127,103 @@ describe('Instant Audit degraded provider failures', () => {
       dna: null,
       lenses: [],
     });
-    expect(report?.text).toBe('measured brief');
+    expect(report?.text).toContain('Luminara: Web search check for example.com');
+    expect(report?.text).toContain('measured brief');
     expect(reportSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces a fallback report about the methodology playbooks with example.com', async () => {
+    const wrong = [
+      '# Luminara: Web search check for SEO METHODOLOGY PLAYBOOKS',
+      '',
+      '*Luminara · fog clearing complete · ship the one move*',
+      '',
+      '**Date:** 24 Oct 2026 · **Mode:** Instant Audit',
+      '',
+      '## 2. Plain verdict',
+      '',
+      'SEO METHODOLOGY PLAYBOOKS appears to be a resource for SEO best practices.',
+      '',
+      '## 4. Visibility radar',
+      '',
+      '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status (Cited/Not Cited/Not Measured) |',
+      '| --- | --- | --- | --- | --- |',
+      '| SEO methodology | informational | Not measured | None | Not measured |',
+      '',
+      '## 7. Sources',
+      '',
+      'No live sources. All unmeasured signals labeled accordingly.',
+    ].join('\n');
+    vi.spyOn(geminiService, 'generateAuditReport').mockResolvedValue({
+      text: wrong,
+      sources: [
+        { uri: 'https://example.com', title: 'example.com' },
+        { uri: 'https://en.wikipedia.org/wiki/Example.com', title: 'example.com - Wikipedia' },
+        { uri: 'https://packetpushers.net/blog/example-com-valid-and-useful-site', title: 'Example.com - valid and useful site' },
+        { uri: 'https://www.plothost.com/kb/example-com-domain', title: 'What is the example.com domain?' },
+      ],
+      answeredBy: '@cf/meta/llama-3.1-8b-instruct-fast',
+      empiricalSummary: {
+        targetDomain: 'example.com',
+        brandName: 'Example Domain',
+        totalQueriesTested: 2,
+        queriesCitedCount: 2,
+        citationRatePercent: null,
+        topCitedCompetitor: null,
+        evidenceList: [
+          { id: 'a', query: 'what is example.com', intent: 'informational', targetDomain: 'example.com', brandCited: true, brandRank: 1, citedUrl: null, snippet: '', competitorsCited: [], citationConfidence: 1, timestamp: Date.parse('2026-10-24T13:24:00Z') },
+        ],
+        entityClarityScore: null,
+        lastAudited: Date.parse('2026-10-24T13:24:00Z'),
+        measurementStatus: 'measured',
+        webResultsMentioned: 8,
+        webResultsTotal: 9,
+      },
+    } as Awaited<ReturnType<typeof geminiService.generateAuditReport>>);
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'https://example.com',
+      measurementStatus: 'measured',
+      citationRatePercent: null,
+      shareOfVoiceScore: null,
+      healthScore: null,
+      scrapedPageCount: 1,
+      serpCount: 9,
+      findings: [],
+      hostedRail: 'signed_in_hosted',
+    });
+    const report = await generateAuditReportUnlessDegraded({
+      isGuest: false,
+      summary,
+      measurementStatus: 'measured',
+      formattedUrl: 'https://example.com',
+      targetFocus: 'AEO',
+      dna: null,
+      lenses: [],
+      findings: [
+        { id: 'finding-schema-org', title: 'Add a business identity tag on https://example.com', description: 'Tags on the page: none.', severity: 'critical' },
+        { id: 'finding-thin-content', title: 'This page is too short', description: '133 words.', severity: 'high' },
+      ],
+    });
+    const text = report?.text || '';
+    expect(text).toContain('Luminara: Web search check for example.com');
+    expect(text).not.toContain('SEO METHODOLOGY PLAYBOOKS');
+    expect(text).not.toContain('fog clearing');
+    expect(text).not.toContain('No live sources');
+    expect(text).not.toContain('SEO methodology');
+    expect(text).toContain('what is example.com');
+    expect(text).toContain('25 Oct 2026');
+    expect(text).toContain('The brand is mentioned in 8 of 9 web results.');
+    expect(text).toContain('A business identity tag is missing');
+    const html = renderToStaticMarkup(createElement(ReportDisplay, {
+      markdownText: text,
+      sources: report?.sources,
+      empiricalSummary: report?.empiricalSummary,
+      targetDomain: 'example.com',
+      boardFindings: [],
+    }));
+    expect(html).toContain('4 live sources attached.');
+    expect(html).toContain('https://example.com');
+    expect(html).not.toContain('No live sources');
+    expect(html).not.toContain('SEO METHODOLOGY PLAYBOOKS');
   });
 });

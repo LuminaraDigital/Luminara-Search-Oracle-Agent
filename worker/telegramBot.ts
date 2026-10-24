@@ -119,7 +119,7 @@ export const PLANS: Record<string, PlanMeta> = {
   },
   single_audit: {
     title: '24-hour pass',
-    description: '24-hour pass: premium hosted engines and hosted calls past the free daily cap, for one site. ChatGPT, Perplexity and AI Overviews stay Not measured (Agency or your DataForSEO login). Self-reported audit, not independently checked.',
+    description: '24-hour pass: premium hosted engines and hosted calls past the free daily cap, for one site. Live answers from specific AI products stay Not measured unless you are on Agency. Self-reported audit, not independently checked.',
     stars: 25,
     days: 1,
     domainLimit: 1,
@@ -132,7 +132,7 @@ export const PLANS: Record<string, PlanMeta> = {
   },
   multi_agent_crawl: {
     title: '24-hour pass',
-    description: 'Same 24-hour pass as the 25 Star option: premium hosted engines and calls past the free daily cap, for one site. ChatGPT, Perplexity and AI Overviews stay Not measured (Agency or your DataForSEO login). Self-reported audit, not independently checked.',
+    description: 'Same 24-hour pass as the 25 Star option: premium hosted engines and calls past the free daily cap, for one site. Live answers from specific AI products stay Not measured unless you are on Agency. Self-reported audit, not independently checked.',
     stars: 75,
     days: 1,
     domainLimit: 1,
@@ -244,7 +244,7 @@ const openAppKeyboard = (env: Env, startParam?: string) => ({
 });
 
 export const TELEGRAM_ORACLE_SYSTEM_PROMPT = `Role: You are Oracle Agent for Luminara Suite in Telegram.
-You help founders, marketers, and developers maximize their visibility across AI search engines (ChatGPT, Google AI Overviews, Perplexity, Gemini).
+You help founders, marketers, and developers see whether AI answers name their business.
 
 Style guidelines:
 - Direct, decisive, and grounded in plain English (8th-grade reading level).
@@ -613,7 +613,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         chat_id: chatId,
         text:
           '*Luminara Suite - How This Bot Works*\n\n' +
-          'Luminara is your AI search & visibility copilot. We diagnose how LLMs (ChatGPT, Gemini, Perplexity, Google AI Overviews) cite and recommend your brand, and give you actionable fixes.\n\n' +
+          'Luminara checks your site and live web search, then gives you one fix. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login.\n\n' +
           '*Available Commands:*\n' +
           '• /start - Launch the Luminara Suite Mini App\n' +
           '• /plan - View subscription plans & pricing (Telegram Stars)\n' +

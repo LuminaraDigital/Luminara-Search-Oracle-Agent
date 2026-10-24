@@ -9,6 +9,7 @@
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { BusinessDNA } from '../../../types';
 import { classifyMention, isNamesakeHost } from '../../audit/entityMatch';
+import { countPhrase } from '../../audit/reportSentence';
 
 const EXCLUDED_COMPETITOR_DOMAINS = [
   // Encyclopedias & medical/general reference aggregators
@@ -159,7 +160,7 @@ export class CompetitorStrategistAgent {
       agentRole: 'competitor_strategist',
       agentName: this.name,
       phase: 'analyzing_market',
-      message: 'Mapping competitive landscape and market share of voice…',
+      message: 'Comparing other sites in your market…',
       status: 'running',
     });
 
@@ -196,15 +197,15 @@ export class CompetitorStrategistAgent {
     const competitorGaps: string[] = [];
 
     if (topCompetitors.length > 0) {
-      competitorGaps.push(`Competitor Authority Moat: Leading competitors (${topCompetitors.slice(0, 2).join(', ')}) possess established third-party review coverage.`);
-      competitorGaps.push('Comparison Intent Gap: Lack of authoritative "vs" landing pages targeting high-converting evaluation queries.');
+      competitorGaps.push(`Other sites mention ${topCompetitors.slice(0, 2).join(' and ')}.`);
+      competitorGaps.push('No comparison page turned up for buyers choosing between brands.');
     } else if (serpEvidence.length > 0) {
-      competitorGaps.push('Niche Definition: Untapped brand authority opportunity with minimal direct head-to-head search competition.');
+      competitorGaps.push('Few direct competitors showed up in these search results.');
     }
 
     const message = serpEvidence.length === 0
       ? 'No search results collected. Competitor signals not measured.'
-      : `Identified ${topCompetitors.length} key competitor(s) and mapped ${competitorGaps.length} strategic keyword gaps.`;
+      : `Identified ${countPhrase(topCompetitors.length, 'key competitor')} and mapped ${countPhrase(competitorGaps.length, 'keyword gap')}.`;
 
     emit({
       id: `strat-done-${Date.now()}`,
@@ -216,7 +217,7 @@ export class CompetitorStrategistAgent {
       status: 'completed',
       evidenceSnippet: serpEvidence.length === 0
         ? 'Search returned 0 results. Competitor gaps omitted.'
-        : `Competitors tracked: ${topCompetitors.join(', ') || 'None found in initial SERP slice'}`,
+        : `Competitors tracked: ${topCompetitors.join(', ') || 'None found in the first search results'}`,
       confidenceScore: serpEvidence.length === 0 ? 0 : 0.88,
     });
 

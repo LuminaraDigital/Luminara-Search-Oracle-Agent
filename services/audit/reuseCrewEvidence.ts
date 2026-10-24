@@ -72,8 +72,7 @@ export function formatCrewPagesForReport(
 
   for (let idx = 0; idx < usable.length; idx++) {
     const page = usable[idx];
-    const source = page.source || 'crew';
-    const headerLines: string[] = [`--- PAGE ${page.url} via ${source} ---`];
+    const headerLines: string[] = [`--- PAGE ${page.url} via page read ---`];
     if (page.title) headerLines.push(`Title: ${page.title}`);
     if (page.description) headerLines.push(`Description: ${page.description}`);
     if (page.h1s?.length) headerLines.push(`H1: ${page.h1s.join(' | ')}`);
@@ -114,7 +113,7 @@ export function formatCrewSerpForReport(
   const queries = [...new Set(top.map((row) => row.query).filter(Boolean))];
   const lines: string[] = [
     '[LIVE EVIDENCE GATHERED VIA CREW SERP RADAR]',
-    'Search Intent Rationale: Reused SERP Radar rows from this audit. No second search was run.',
+    'Search Intent Rationale: Reused search results from this audit. No second search was run.',
     `Active Queries Executed: ${queries.map((query) => `"${query}"`).join(', ')}`,
     '--------------------------------------------------',
     ...top.map((row, index) => `[Source ${index + 1}] ${row.title}\nURL: ${row.url}\nExcerpt: ${row.snippet}\n`),

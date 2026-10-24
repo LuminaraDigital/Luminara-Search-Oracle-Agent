@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { completeWeeklyMission } from '../../services/referrals/referralClient';
+import { brandNameFor } from '../../services/audit/brandName';
+import { plainCustomerReport } from '../../services/audit/reportColumnGate';
 import { llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
 import { starterFixContradictsPass } from '../../services/audit/teaserFailureCodes';
 
@@ -27,10 +29,33 @@ interface ActionableFixListProps {
   domain: string;
   findings?: ActionableFixInputFinding[];
   crawlerChecks?: readonly { id: string; status: string }[];
+  /** Page title and description. Used only to fill an llms.txt draft. */
+  pageTitle?: string | null;
+  pageDescription?: string | null;
   onFixCompleted?: (fixId: string) => void;
 }
 
-export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, findings, crawlerChecks, onFixCompleted }) => {
+function commentOnly(snippet: string): boolean {
+  const lines = snippet.split('\n').map((line) => line.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every((line) => line.startsWith('//'));
+}
+
+function llmsDraft(domain: string, title?: string | null, description?: string | null): string {
+  const siteName = brandNameFor(domain, title);
+  const about = (description || '').replace(/\s+/g, ' ').trim();
+  if (!siteName && !about) return '';
+  return llmsTxtDraft(domain, { siteName, description: about || null });
+}
+
+function snippetFor(finding: ActionableFixInputFinding, domain: string, pageTitle?: string | null, pageDescription?: string | null): string {
+  const given = (finding.remediationSnippet || '').trim();
+  const blob = `${finding.id} ${finding.title} ${finding.filename || ''}`;
+  if (/llms/i.test(blob) && (!given || commentOnly(given))) return llmsDraft(domain, pageTitle, pageDescription);
+  if (given && !commentOnly(given)) return given;
+  return '';
+}
+
+export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, findings, crawlerChecks, pageTitle, pageDescription, onFixCompleted }) => {
   const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '') || 'yourdomain.com';
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -87,7 +112,7 @@ Sitemap: https://${cleanDomain}/sitemap.xml
 
   const mappedFindings: FixItem[] = (findings || []).map((f) => ({
     id: f.id,
-    title: f.title,
+    title: plainCustomerReport(f.title),
     targetEngine: f.targetEngine || 'This website',
     description: f.description || 'A check in this audit failed. The note below is the repair.',
     filename: f.filename || (
@@ -96,7 +121,7 @@ Sitemap: https://${cleanDomain}/sitemap.xml
           : /robots/i.test(`${f.id} ${f.title}`) ? '/robots.txt'
             : 'notes.txt'
     ),
-    snippet: f.remediationSnippet || `// Remediation for ${f.title}\n// Apply to ${cleanDomain}`,
+    snippet: snippetFor(f, cleanDomain, pageTitle, pageDescription),
   }));
 
   const measuredRun = Array.isArray(findings);
@@ -149,7 +174,7 @@ Sitemap: https://${cleanDomain}/sitemap.xml
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-gold animate-pulse" />
             <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-gold-light">
-              {isAuditDerived ? 'Fixes from this audit' : 'Starter checklist'} ({completedCount} of {activeFixes.length} done)
+              {isAuditDerived ? 'Fixes from this audit' : 'Starter checklist'} ({completedCount} of {activeFixes.length} fixes done)
             </h3>
           </div>
           <p className="text-xs text-gray-400 mt-1">
@@ -195,7 +220,7 @@ Sitemap: https://${cleanDomain}/sitemap.xml
                 </div>
               </div>
 
-              {/* Code Snippet Box */}
+              {fix.snippet.trim() && (
               <div className="mt-3 pl-7">
                 <div className="flex items-center justify-between bg-black/60 rounded-t-lg px-3 py-1.5 border-t border-x border-white/10 text-[10px] font-mono text-gray-400">
                   <span>{fix.filename}</span>
@@ -211,6 +236,7 @@ Sitemap: https://${cleanDomain}/sitemap.xml
                   {fix.snippet}
                 </pre>
               </div>
+              )}
             </div>
           );
         })}

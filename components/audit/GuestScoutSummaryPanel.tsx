@@ -4,6 +4,19 @@ import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
 import { renderMarkdown } from '../../utils/markdown';
 import { ActionableFixList } from '../retention/ActionableFixList';
 import { DailyStreakCard } from '../retention/DailyStreakCard';
+import { isDowngradedFinding } from '../../services/audit/reportBlocks';
+
+const SIGNAL_LABELS = ['Citation rate', 'Page health'];
+
+function signalBadges(badges: GuestScoutSummary['badges']): GuestScoutSummary['badges'] {
+  const next = [...badges];
+  for (const label of SIGNAL_LABELS) {
+    if (!next.some((badge) => badge.label === label)) {
+      next.push({ label, status: 'not_measured', value: 'Not measured' });
+    }
+  }
+  return next;
+}
 
 const badgeClass: Record<string, string> = {
   measured: 'border-gold/40 text-gold-light bg-gold/10',
@@ -21,6 +34,8 @@ interface GuestScoutSummaryPanelProps {
   sharing?: boolean;
   /** Guest degraded result: primary sign-in. Omitted for signed-in rails. */
   onSignIn?: () => void;
+  /** Findings from the full audit. When present, the fix count uses this list. */
+  auditFindings?: ReadonlyArray<{ id: string; title: string; description?: string; remediationSnippet?: string }>;
 }
 
 export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
@@ -30,7 +45,20 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
   onCopy,
   sharing = false,
   onSignIn,
+  auditFindings,
 }) => {
+  const listedFindings = auditFindings
+    ? auditFindings.filter((finding) => !isDowngradedFinding(finding)).map((finding) => ({
+      id: finding.id,
+      title: finding.title,
+      description: finding.description,
+      remediationSnippet: finding.remediationSnippet,
+    }))
+    : summary.failed.map((failText, idx) => ({
+      id: `finding-scout-${idx}`,
+      title: failText,
+      description: `Finding identified during scout: ${failText}`,
+    }));
   return (
     <section
       aria-label="Scout summary"
@@ -43,10 +71,13 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       {summary.brand && summary.brand.toLowerCase() !== summary.domain.toLowerCase() && (
         <p className="mt-1 text-sm text-gray-400 [overflow-wrap:anywhere]">{summary.domain}</p>
       )}
+      {!/what this means/i.test(`${summary.verdictMarkdown}\n${summary.verdict}`) && (
+        <h3 className="mt-4 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">What This Means</h3>
+      )}
       <div
         id="tour-audit-result"
         className="markdown-content scout-brief mt-4 max-w-2xl text-[15px] leading-relaxed text-gray-200"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(summary.verdictMarkdown || summary.verdict) }}
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(summary.verdictMarkdown || summary.verdict || 'Not measured.') }}
       />
       {summary.banner && (
         <p role="status" className="mt-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm leading-relaxed text-gray-200">
@@ -89,32 +120,32 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
 
       <h3 className="mt-8 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Signals</h3>
       <ul className="mt-3 flex flex-wrap gap-2">
-        {summary.badges.map((badge) => (
+        {signalBadges(summary.badges).map((badge) => (
           <li
             key={badge.label}
             className={`rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide ${badgeClass[badge.status] || badgeClass.not_measured}`}
           >
-            {badge.label}: {badge.status === 'not_measured' ? badge.value || 'not measured' : badge.value || badge.status}
+            {badge.label}: {badge.status === 'not_measured' ? badge.value || 'Not measured' : badge.value || badge.status}
           </li>
         ))}
       </ul>
 
-      {summary.crawlerChecks.length > 0 && (
-        <>
-          <h3 className="mt-6 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">What AI tools can read</h3>
-          <p className="mt-2 text-[11px] text-gray-500">Each row is pass, fail, or not measured. A file hint is not a score.</p>
-          <ul className="mt-3 space-y-2">
-            {summary.crawlerChecks.map((check) => (
-              <li key={check.id} className="text-sm text-gray-300">
-                <span className={`mr-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${badgeClass[check.status] || badgeClass.not_measured}`}>
-                  {check.status === 'not_measured' ? 'not measured' : check.status}
-                </span>
-                <span className="text-gray-200">{check.label}.</span>{' '}
-                <span className="text-gray-400">{check.detail}</span>
-              </li>
-            ))}
-          </ul>
-        </>
+      <h3 className="mt-6 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">What AI tools can read</h3>
+      <p className="mt-2 text-[11px] text-gray-500">Each row is pass, fail, or not measured. A file hint is not a score.</p>
+      {summary.crawlerChecks.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {summary.crawlerChecks.map((check) => (
+            <li key={check.id} className="text-sm text-gray-300">
+              <span className={`mr-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${badgeClass[check.status] || badgeClass.not_measured}`}>
+                {check.status === 'not_measured' ? 'Not measured' : check.status}
+              </span>
+              <span className="text-gray-200">{check.label}.</span>{' '}
+              <span className="text-gray-400">{check.detail}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-gray-300">Not measured.</p>
       )}
 
       {summary.failed.length > 0 && (
@@ -133,11 +164,8 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
         <ActionableFixList
           domain={summary.domain}
           crawlerChecks={summary.crawlerChecks}
-          findings={summary.failed.map((failText, idx) => ({
-            id: `finding-scout-${idx}`,
-            title: failText,
-            description: `Finding identified during scout: ${failText}`,
-          }))}
+          pageTitle={summary.brand}
+          findings={listedFindings}
         />
       )}
 

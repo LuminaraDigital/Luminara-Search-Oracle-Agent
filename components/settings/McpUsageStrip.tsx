@@ -15,7 +15,7 @@ const FALLBACK_CATALOGUE: CatalogueTool[] = [
   { name: 'save_report', description: 'Save an agent report', creditClass: 'free' },
   { name: 'research_keywords', description: 'Keyword ideas (DFS)', creditClass: 'paid' },
   { name: 'get_domain_overview', description: 'Domain overview (DFS)', creditClass: 'paid' },
-  { name: 'get_serp_results', description: 'SERP snapshot (DFS)', creditClass: 'paid' },
+  { name: 'get_serp_results', description: 'Search results snapshot', creditClass: 'paid' },
   { name: 'get_backlinks_overview', description: 'Backlinks summary (DFS)', creditClass: 'paid' },
 ];
 

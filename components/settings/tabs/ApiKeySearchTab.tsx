@@ -48,7 +48,7 @@ export const ApiKeySearchTab: React.FC<ApiKeySearchTabProps> = ({
     <div className="space-y-4 text-xs">
       <div>
         <label htmlFor="tavily-api-key" className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-          Tavily Search API Key (Live SERP Citations)
+          Tavily search API key (live search results)
         </label>
         <div className="relative">
           <input
@@ -132,7 +132,7 @@ export const ApiKeySearchTab: React.FC<ApiKeySearchTabProps> = ({
       <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
-            DataForSEO (ChatGPT + Google AI Overview mentions)
+            DataForSEO (AI answer mentions)
           </span>
           <Button
             variant="secondary"
@@ -202,7 +202,7 @@ export const ApiKeySearchTab: React.FC<ApiKeySearchTabProps> = ({
         <div className="flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold uppercase tracking-widest text-gold-light">
-              Local Google SERP Scraper
+              Local search-results scraper
             </span>
             <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-success-500/20 text-success-400 border border-success-500/30">
               Optional sidecar
@@ -214,7 +214,7 @@ export const ApiKeySearchTab: React.FC<ApiKeySearchTabProps> = ({
               type="checkbox"
               checked={localSerpEnabled}
               onChange={e => setLocalSerpEnabled(e.target.checked)}
-              aria-label="Enable Local Google SERP Scraper"
+              aria-label="Enable local search-results scraper"
               className="sr-only peer"
             />
             <div className="w-8 h-4 bg-gray-700 peer-focus-visible:ring-2 peer-focus-visible:ring-gold rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-gold"></div>

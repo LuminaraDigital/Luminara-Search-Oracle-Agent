@@ -262,27 +262,69 @@ describe('the evidence button gives the two counts, not a percentage (review 2, 
     queriesCitedCount: 2,
     citationRatePercent: 67,
     topCitedCompetitor: null,
-    evidenceList: [],
+    evidenceList: [
+      { id: 'a', query: 'what is example', intent: 'informational', targetDomain: 'example.com', brandCited: true, brandRank: 1, citedUrl: null, snippet: '', competitorsCited: [], citationConfidence: 1, timestamp: 1 },
+      { id: 'b', query: 'best example', intent: 'commercial', targetDomain: 'example.com', brandCited: true, brandRank: 2, citedUrl: null, snippet: '', competitorsCited: [], citationConfidence: 1, timestamp: 1 },
+      { id: 'c', query: 'example vs other', intent: 'comparative', targetDomain: 'example.com', brandCited: false, brandRank: null, citedUrl: null, snippet: '', competitorsCited: [], citationConfidence: 1, timestamp: 1 },
+    ],
     entityClarityScore: null,
     lastAudited: 1,
     measurementStatus: 'measured',
   } as EmpiricalCitationSummary;
 
-  it('reads "mentioned in N of M sampled queries"', () => {
-    expect(sampledMentionsLabel(summary)).toBe('mentioned in 2 of 3 sampled queries');
-    const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: '# Report', empiricalSummary: summary }));
-    expect(html).toContain('Preview evidence (mentioned in 2 of 3 sampled queries)');
+  const radar = [
+    '# Report',
+    '',
+    '## AI & Search Visibility Radar',
+    '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status (Cited/Not Cited/Not Measured) |',
+    '| --- | --- | --- | --- | --- |',
+    '| what is example | informational | Not measured |  | Not measured |',
+    '| best example | commercial | Not measured |  | Not measured |',
+    '| example vs other | comparative | Not measured |  | Not measured |',
+  ].join('\n');
+
+  it('reads "mentioned in N of M queries" from the radar rows', () => {
+    expect(sampledMentionsLabel(summary)).toBe('mentioned in 2 of 3 queries');
+    const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: radar, empiricalSummary: summary }));
+    expect(html).toContain('Preview evidence (mentioned in 2 of 3 queries)');
+    expect(html).toContain('mentioned in 2 of 3 queries');
+    expect(html).toContain('>Cited<');
+    expect(html).toContain('>Not cited<');
     expect(html).not.toContain('67%');
     expect(html).not.toMatch(/evidence \(\d+%\)/i);
+  });
+
+  it('does not claim mentions when the radar was not measured', () => {
+    const html = renderToStaticMarkup(createElement(ReportDisplay, {
+      markdownText: radar.replaceAll('what is example', 'unrelated query').replace('best example', 'another query').replace('example vs other', 'third query'),
+      empiricalSummary: summary,
+    }));
+    expect(html).toContain('Preview evidence (not measured)');
+    expect(html).toContain('Citation status:');
+    expect(html).not.toContain('mentioned in 2 of 3');
+  });
+
+  it('uses the search-row count when that is the measurement the scout prints', () => {
+    const counted = {
+      ...summary,
+      webResultsMentioned: 5,
+      webResultsTotal: 9,
+    };
+    expect(sampledMentionsLabel(counted)).toBe('mentioned in 5 of 9 web results');
+    const html = renderToStaticMarkup(createElement(ReportDisplay, { markdownText: radar, empiricalSummary: counted }));
+    expect(html).toContain('Preview evidence (mentioned in 5 of 9 web results)');
+    expect(html).toContain('cited in 2 of 3 queries');
+    expect(html).not.toContain('mentioned in 3 of 3');
+    expect(html).not.toContain('sampled queries');
   });
 
   it('says "not measured" when the summary holds no usable count', () => {
     for (const bad of [
       undefined,
       { ...summary, measurementStatus: 'not_measured' },
-      { ...summary, citationRatePercent: null },
-      { ...summary, totalQueriesTested: 0 },
-      { ...summary, queriesCitedCount: 5 },
+      { ...summary, evidenceList: [] },
+      { ...summary, evidenceList: [], totalQueriesTested: 0 },
+      { ...summary, evidenceList: [], queriesCitedCount: 5 },
     ] as Array<EmpiricalCitationSummary | undefined>) {
       expect(sampledMentionsLabel(bad)).toBeNull();
     }
@@ -413,6 +455,22 @@ describe('the competitor card fills no gap with made-up wording', () => {
     expect(html).not.toContain('Competitor 1');
     expect(html).not.toContain('Competitor 2');
     expect(html).not.toContain('Invented tone');
+  });
+
+  it('shows a rival name without wiki brackets', () => {
+    const html = renderToStaticMarkup(createElement(CompetitorMap, {
+      headers: [...REPORT_TABLES.competitorMap],
+      rows: [
+        ['Example', 'Thin', 'Homepage', 'Own site'],
+        ['[[IANA]]', 'Reference', 'Docs', 'Registry'],
+        ['[[Wikipedia]]', 'Encyclopedia', 'Article', 'Coverage'],
+      ],
+    }));
+    expect(html).toContain('IANA');
+    expect(html).toContain('Wikipedia');
+    expect(html).not.toContain('[[IANA]]');
+    expect(html).not.toContain('[[Wikipedia]]');
+    expect(html).not.toContain('[[');
   });
 });
 

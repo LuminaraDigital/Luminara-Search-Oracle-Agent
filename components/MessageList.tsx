@@ -5,7 +5,7 @@ import { renderMarkdown } from '../utils/markdown';
 import { ReportDisplay } from './audit/ReportDisplay';
 import { HybridMessageBody } from './genui/HybridMessageBody';
 import { fallbackAnswerLine } from '../services/llm/fallbackAnswer';
-import { gateReportTables, looksLikeAuditReport } from '../services/audit/reportColumnGate';
+import { gateReportText, looksLikeAuditReport } from '../services/audit/reportColumnGate';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 
 interface MessageListProps {
@@ -22,7 +22,7 @@ interface MessageListProps {
  */
 export function chatMessageText(msg: Pick<Message, 'role' | 'content'>): string {
   return msg.role === 'model' && looksLikeAuditReport(msg.content)
-    ? gateReportTables(msg.content).text
+    ? gateReportText(msg.content)
     : msg.content;
 }
 
@@ -63,7 +63,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full px-4">
             <div className="p-6 rounded-[24px] text-center border border-gold/20 bg-black/50 hover:border-gold/40 transition-all group">
               <div className="text-3xl font-semibold text-gold-light mb-2">Live</div>
-              <div className="text-[10px] text-gold font-semibold tracking-wide mb-3">SERP grounding</div>
+              <div className="text-[10px] text-gold font-semibold tracking-wide mb-3">Search results</div>
               <div className="text-[10px] text-gray-400 leading-relaxed">Every answer is grounded in real search results when a search key is configured.</div>
             </div>
             
@@ -156,7 +156,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                           <div key={i} className="rounded-2xl overflow-hidden border border-gold/20 bg-black/60 shadow-inner">
                             <div className="bg-gold/5 px-6 py-3 flex items-center justify-between border-b border-gold/10">
                               <div className="flex items-center gap-4">
-                                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-gold">Grounding SERP</span>
+                                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-gold">Search results</span>
                               </div>
                               <button 
                                 type="button"

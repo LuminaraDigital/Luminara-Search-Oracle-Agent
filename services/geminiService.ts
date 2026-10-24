@@ -79,7 +79,7 @@ import {
 } from './audit/evidencePromptLabels';
 import { gateReportText, reportTableHeader } from './audit/reportColumnGate';
 import { stripUnmeasuredAiClaims } from './audit/unmeasuredClaimGuard';
-import { stripUnsupportedFixClaims, unsupportedClaimNeedles } from './audit/reportBlocks';
+import { auditSubjectLead, stripUnsupportedFixClaims, unsupportedClaimNeedles } from './audit/reportBlocks';
 import { aeoTrustPackService, type TrustPackSummary } from './audit/aeoTrustPackService';
 import { schemaSafetyGate } from './deployment/schemaSafetyGate';
 import { shareOfVoiceService, type ShareOfVoiceSummary } from './visibility/shareOfVoiceService';
@@ -176,7 +176,7 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
   const seen = new Set<string>();
   const merged: Array<{ title: string; url: string; content: string; score?: number }> = [];
   let answers: string[] = [];
-  let sourceLabel = 'Tavily Search';
+  let sourceLabel = 'web search';
 
   if (tavilyKey) {
     const responses = await Promise.all(
@@ -206,7 +206,7 @@ async function gatherSearchEvidence(prompt: string, dna: BusinessDNA | null | un
     );
     for (const sr of serpResponses) {
       if (!sr || !sr.results || !sr.results.length) continue;
-      sourceLabel = `Google Search via Sidecar (${sr.tier || 'Fast'})`;
+      sourceLabel = 'web search';
       if (sr.featuredSnippet?.snippet) {
         answers.push(sr.featuredSnippet.snippet);
       } else if (sr.aiOverview?.text) {
@@ -879,6 +879,7 @@ Respect these consolidated business memories and historical recommendation outco
     const pastExperienceText = postAuditReflectionService.formatExperienceForPrompt(displayUrl);
     const unsupportedNeedles = unsupportedClaimNeedles(crewEvidence?.unsupportedClaims || []);
     const prompt = `
+${auditSubjectLead(displayUrl, websiteUrl, legalName)}
 ${dnaContext || '[MODE: Instant Audit - no Business DNA. Keep recommendations general. Label the report Mode: Instant Audit.]'}
 ${methodology}
 ${pastExperienceText ? `${pastExperienceText}\n` : ''}${wrapUntrustedContent('SCRAPED_PAGE', scrapedContent)}
@@ -900,6 +901,10 @@ Follow the methodology playbooks above. Respect deprecation rules (never recomme
 FAQPage earns no Google rich result; use INP, never FID). Grade only what scraped page and search
 evidence support. Anything unobserved is "not measured". Never invent composite scores (e.g. XX/100).
 When Trust Pack findings are present, reflect Critical/High items in the fix list.
+In the verdict, the fix list, and "## 1. One move this week", write "Make browsers always use the secure version of your site (HSTS)", "Control which scripts your site can load (CSP)", "a public security contact file (security.txt)", and "Add a business identity tag". Do not write HSTS header, CSP header, HTTP Strict Transport Security, Content-Security-Policy, Organization JSON-LD, security.txt on its own, or a security trust score.
+Put one space after every full stop. Do not repeat a word or a short phrase. Do not put the same term in brackets twice.
+Under "## 7. Sources", write each source as the URL, then the title, then "(page read)" for a page this run read or "(web search)" for a search result. Example: https://example.com Example Domain (page read).
+Do not name Firecrawl, Jina, Tavily, Exa, or Patchright, and do not write "untrusted enrichment block".
 
 Strict Formatting Guidelines:
 1. Title: Must begin with: "# Luminara: Web search check for ${dna?.name || displayUrl}"

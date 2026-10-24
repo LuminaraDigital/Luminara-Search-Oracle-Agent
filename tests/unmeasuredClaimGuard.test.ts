@@ -20,6 +20,18 @@ describe('unmeasured claim guard', () => {
     expect(JSON.stringify(sources)).not.toMatch(/3\.6|4\.4|Trustpilot/i);
   });
 
+  it('drops a search result that names neither the brand nor the domain', () => {
+    const sources = visibleGroundingSources([
+      { uri: 'https://example.com', title: 'Example Domain' },
+      { uri: 'https://leadiq.com/c/pge-systemy-sa', title: 'PGE Systemy S.A | LeadIQ' },
+      { uri: 'https://en.wikipedia.org/wiki/Example.com', title: 'example.com - Wikipedia' },
+    ], { domain: 'example.com', brand: 'Example' });
+    expect(sources.map((source) => source.uri)).toEqual([
+      'https://example.com',
+      'https://en.wikipedia.org/wiki/Example.com',
+    ]);
+  });
+
   it('drops a review-site rating even when the snippet quotes the score', () => {
     const text = guardUnmeasuredClaims(
       'MoVida is rated "Average" with 3.6 / 5 on Trustpilot. Add Organization schema.',

@@ -178,7 +178,7 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
                 {ev.snippet && (
                   <div className="p-2.5 rounded-lg bg-black/60 border border-white/5 text-xs text-gray-300 font-mono leading-relaxed select-text">
                     <span className="text-[9px] uppercase tracking-wider text-gold-light block mb-1 font-bold">
-                      Extracted SERP / AI Grounding Proof
+                      Search result we used
                     </span>
                     &ldquo;{ev.snippet}&rdquo;
                   </div>

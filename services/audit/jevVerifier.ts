@@ -3,7 +3,7 @@
  * audit as it was. This module does not write KV.
  */
 import type { AuditFinding, ScrapedPageEvidence } from '../agentCore/types';
-import { healthScoreFromFindings } from '../agentCore/auditEvidenceGate';
+import { HEALTH_CHECKS, healthScoreFromFindings } from '../agentCore/auditEvidenceGate';
 import type { LlmCrawlerCheck } from './llmCrawlerReadiness';
 import { brandCandidates, brandFromEvidence } from './brandName';
 import { llmsTxtDraft, organizationJsonLd } from './fixPackCopy';
@@ -327,6 +327,7 @@ export async function reviewFindingsWithJev(input: {
   findings: AuditFinding[];
   healthScore: number | null;
   searchTitles?: readonly string[];
+  fetchImpl?: FetchImpl;
 }): Promise<{ findings: AuditFinding[]; healthScore: number | null; siteType: string | null; brandSupported: boolean | null; displayName: string | null }> {
   const first = input.pages[0];
   const titles = [first?.title, ...(first?.h1s || []), ...(input.searchTitles || [])];
@@ -363,11 +364,15 @@ export async function reviewFindingsWithJev(input: {
       })),
       brandName,
       brandCandidates: pool,
+      fetchImpl: input.fetchImpl,
     });
   } catch {
     verdict = failOpen(0, 0);
   }
-  const findings = verdict.ok ? downgradeUnsupported(input.findings, verdict.downgradedIds) : input.findings;
+  // The four site checks are counted from the page and the search rows. A second opinion does not relabel a counted failure as not measured.
+  const measuredIds = new Set<string>(HEALTH_CHECKS.map((check) => check.findingId));
+  const downgradedIds = verdict.downgradedIds.filter((id) => !measuredIds.has(id));
+  const findings = verdict.ok ? downgradeUnsupported(input.findings, downgradedIds) : input.findings;
   return {
     findings,
     healthScore: reviewedHealth(input.healthScore, findings, verdict.ok),

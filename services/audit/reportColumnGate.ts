@@ -494,10 +494,378 @@ export function looksLikeAuditReport(text: string): boolean {
  * The gated report text. Logs once when a table was left as written, so a report
  * that slipped past the gate can be found.
  */
-export function gateReportText(markdown: string): string {
+const PAGE_READ_SOURCE = /\((?:firecrawl|jina|patchright|exa)(?:\s+[a-z][a-z ]{0,24})?\)/gi;
+const WEB_SEARCH_SOURCE = /\((?:tavily|groq)(?:\s+[a-z][a-z ]{0,24})?\)/gi;
+const HSTS_TITLE = 'Make browsers always use the secure version of your site (HSTS)';
+const CSP_TITLE = 'Control which scripts your site can load (CSP)';
+const SECURITY_FILE = 'a public security contact file (security.txt)';
+const IDENTITY_NOUN = 'business identity tag';
+const IDENTITY_ACTION = 'Add a business identity tag';
+
+export type SourceReadKind = 'page read' | 'web search';
+
+function hostOf(value: string): string {
+  const raw = value.trim();
+  if (!raw) return '';
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/** Page on the audited host is a page read. Every other URL is a web search result. */
+export function sourceReadKind(uri: string, domain?: string): SourceReadKind {
+  const target = hostOf(domain || '');
+  const host = hostOf(uri);
+  if (target && host === target) return 'page read';
+  return 'web search';
+}
+
+/** URL, then title, then (page read) or (web search). A title that only repeats the URL is left off. */
+export function customerSourceLine(uri: string, title: string, kind: SourceReadKind): string {
+  const cleanUri = uri.trim();
+  const cleanTitle = title
+    .replace(/\s*\((?:page read|web search|target domain)\)\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleanTitle || cleanTitle === cleanUri) return `${cleanUri} (${kind})`;
+  return `${cleanUri} ${cleanTitle} (${kind})`;
+}
+
+/** Keep the article the match already had. A bare term stays a bare noun. */
+function nounWithArticle(match: string, noun: string): string {
+  const lead = match.match(/^\s*(a|an|the)\b/i);
+  if (!lead) return noun;
+  return lead[1].toLowerCase() === 'the' ? `the ${noun}` : `a ${noun}`;
+}
+
+function collapseRepeated(line: string): string {
+  let next = line
+    .replace(/\)(?=[A-Za-z])/g, ') ')
+    .replace(/\baa\s+/gi, 'a ')
+    .replace(/\ba\s+an\b/gi, 'a')
+    .replace(/\ban\s+a\b/gi, 'a')
+    .replace(/\bthe\s+a\b/gi, 'a')
+    .replace(/\ba\s+a\b/gi, 'a');
+  const phrase = /\b([A-Za-z]+(?:\s+[A-Za-z]+){0,5})\s+\1\b/gi;
+  for (let pass = 0; pass < 4; pass += 1) {
+    const collapsed = next.replace(phrase, '$1');
+    if (collapsed === next) break;
+    next = collapsed;
+  }
+  return next.replace(/file \(security\.txt\)(?:\s+file\b)+/gi, 'file (security.txt)');
+}
+
+/** A dot that belongs to a number, a version, or a host, not the end of a sentence. */
+function keepTightDot(full: string, dot: number): boolean {
+  const before = full.slice(0, dot);
+  const after = full.slice(dot + 1);
+  if (/\d$/.test(before) && /^\d/.test(after)) return true;
+  const tail = before.match(/\S*$/)?.[0] || '';
+  if (/^www$/i.test(tail)) return true;
+  if (/https?:\/\/\S*$/i.test(tail) && !/^[A-Z][a-z]/.test(after)) return true;
+  return false;
+}
+
+/** One pair of brackets per term. A second copy of the same pair is dropped. */
+function unwrapDoubleParens(line: string): string {
+  return line
+    .replace(/\(\(([^)]+)\)\)/g, '($1)')
+    .replace(/\(([^)]+)\)\s+\(\1\)/gi, '($1)');
+}
+
+function spaceAfterStop(line: string): string {
+  return line.replace(/([.!?])(?=[A-Z])/g, (match, stop: string, offset: number, full: string) => {
+    if (stop === '.' && keepTightDot(full, offset)) return match;
+    return `${stop} `;
+  });
+}
+
+const HSTS_GLOSS = "doesn't force the secure version of the site (HSTS)";
+const CSP_GLOSS = "doesn't control which scripts can load (CSP)";
+
+/** Bare HSTS and CSP become the one allowed parenthetical. A term already inside (HSTS) or (CSP) stays. */
+function glossSecurity(line: string): string {
+  return line
+    .replace(/\bSecurity headers\s*\(\s*HSTS\s*,\s*CSP\s*\)/gi, `The site ${HSTS_GLOSS} and ${CSP_GLOSS}`)
+    .replace(/\(\s*HSTS\s*,\s*CSP\s*\)/gi, `${HSTS_GLOSS} and ${CSP_GLOSS}`)
+    .replace(/\blacks\s+HSTS\s+and\s+CSP\b/gi, `${HSTS_GLOSS} and ${CSP_GLOSS}`)
+    .replace(/(?<!\()\bHSTS\b(?!\))/gi, HSTS_GLOSS)
+    .replace(/(?<!\()\bCSP\b(?!\))/gi, CSP_GLOSS);
+}
+
+/** A dot glued to a real word, not a host, a file suffix, or a decimal. */
+function gluedWord(full: string, dot: number): boolean {
+  if (keepTightDot(full, dot)) return false;
+  const word = full.slice(dot + 1).match(/^[a-z][a-z']*/)?.[0] || '';
+  if (!word) return false;
+  if (word.includes("'")) return true;
+  if (/^(?:no|the|a|an|this|these|it|and|but)$/.test(word)) return true;
+  return word.length >= 8;
+}
+
+/**
+ * Space after a stop, then a capital. A host, a URL, and a decimal keep their dot.
+ * This capitalises in place. It does not drop the word that was there.
+ */
+function finishSentences(line: string): string {
+  const opened = line.replace(/([.!?])(?=[a-z])/g, (match, stop: string, offset: number, full: string) => {
+    if (!gluedWord(full, offset)) return match;
+    return `${stop} `;
+  });
+  const spaced = spaceAfterStop(opened);
+  return spaced.replace(/(^|[.!?]\s+)([a-z])/g, (match, lead: string, letter: string, offset: number, full: string) => {
+    if (lead.startsWith('.') && keepTightDot(full, offset)) return match;
+    const rest = full.slice(offset + lead.length);
+    if (/^https?:\/\//i.test(rest) || /^www\./i.test(rest)) return match;
+    return `${lead}${letter.toUpperCase()}`;
+  });
+}
+
+const JARGON_TERM = /\b(?:json-?ld|schema\.org|structured data|entity signals|security\.txt|schema|serp|dom)\b/i;
+
+/** One model sentence may follow the template. Anything with jargon, a bare acronym, or a broken sentence is dropped. */
+export function customerSentenceOk(sentence: string): boolean {
+  const text = sentence.trim();
+  if (!text || !/^[A-Z]/.test(text)) return false;
+  if (text.includes('\u2014') || text.includes('\u2013')) return false;
+  if (/\)[A-Za-z]/.test(text)) return false;
+  if (/\b([A-Za-z]+)\s+\1\b/i.test(text)) return false;
+  if (/[.!?]\s+[a-z]/.test(text)) return false;
+  if (JARGON_TERM.test(text)) return false;
+  if (/\badding basic business identity tag\b/i.test(text)) return false;
+  const acronyms = text.matchAll(/\b[A-Z]{2,}\b/g);
+  for (const found of acronyms) {
+    const word = found[0];
+    const at = found.index ?? 0;
+    const allowed = (word === 'HSTS' || word === 'CSP') && text[at - 1] === '(' && text[at + word.length] === ')';
+    if (!allowed) return false;
+  }
+  return true;
+}
+
+function splitSentences(text: string): string[] {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  const out: string[] = [];
+  let start = 0;
+  for (let i = 0; i < clean.length; i += 1) {
+    const stop = clean[i];
+    if (stop !== '.' && stop !== '!' && stop !== '?') continue;
+    if (clean[i + 1] && clean[i + 1] !== ' ') continue;
+    if (stop === '.' && keepTightDot(clean, i)) continue;
+    const sentence = clean.slice(start, i + 1).trim();
+    if (sentence) out.push(sentence);
+    start = i + 1;
+    while (clean[start] === ' ') start += 1;
+    i = start - 1;
+  }
+  const tail = clean.slice(start).trim();
+  if (tail) out.push(tail);
+  return out;
+}
+
+const DENIES_MENTIONS = /\blimited visibility\b|\b(?:no|zero|without|not|limited)\b[^.]{0,60}\b(?:mention|mentions|citation|citations|cited)\b/i;
+const CLAIMS_MENTIONS = /\bmentioned\b|\bcited in\b|\b(?:is|are|was|were)\s+cited\b|\bappears in\b/i;
+
+/** The measured "mentioned in N of M" count, or null when this run did not count. */
+export function mentionedCount(citationLine: string | null | undefined): number | null {
+  const match = citationLine?.match(/\b(?:mentioned|cited) in (\d+) of \d+/i);
+  if (!match) return null;
+  const count = Number(match[1]);
+  return Number.isInteger(count) ? count : null;
+}
+
+/**
+ * A model sentence has to agree with the measured mention count.
+ * Above zero, a claim of no or limited mentions is dropped. At zero, a claim of mentions is dropped.
+ */
+export function mentionSentenceOk(sentence: string, mentioned: number | null): boolean {
+  if (mentioned == null) return true;
+  if (mentioned > 0) return !DENIES_MENTIONS.test(sentence);
+  return !CLAIMS_MENTIONS.test(sentence);
+}
+
+/** Drops every model sentence that contradicts the measured mention count. Headings, tables, and code stay. */
+export function withoutContradictorySentences(markdown: string, mentioned: number | null): string {
+  if (mentioned == null || !markdown) return markdown;
+  let fence = false;
+  return markdown.split('\n').map((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      fence = !fence;
+      return line;
+    }
+    if (fence || !trimmed || /^#{1,6}\s/.test(trimmed) || trimmed.startsWith('|')) return line;
+    const sentences = splitSentences(trimmed);
+    const kept = sentences.filter((sentence) => mentionSentenceOk(sentence, mentioned));
+    if (kept.length === sentences.length) return line;
+    if (!kept.length) return '';
+    return `${line.match(/^\s*/)?.[0] ?? ''}${kept.join(' ')}`;
+  }).join('\n');
+}
+
+/** The first scrubbed model sentence that passes the strict check. A sentence that contradicts the count is skipped. */
+export function optionalCustomerSentence(modelText: string, mentioned: number | null = null): string | null {
+  const scrubbed = plainCustomerReport(modelText);
+  for (const sentence of splitSentences(scrubbed)) {
+    if (customerSentenceOk(sentence) && mentionSentenceOk(sentence, mentioned)) return sentence;
+  }
+  return null;
+}
+
+const BARE_JARGON = /\b(HSTS|CSP|JSON-?LD|SERP|DOM)\b/gi;
+
+/** Issues a customer sentence must not have. An empty list means the text can be shown. */
+export function proseIssues(text: string): string[] {
+  const issues: string[] = [];
+  if (text.includes('\u2014')) issues.push('em dash');
+  if (/\)[A-Za-z]/.test(text)) issues.push('glued paren');
+  if (/\b([A-Za-z]+)\s+\1\b/i.test(text)) issues.push('doubled word');
+  if (/\b(a|an|the)\s+\1\b/i.test(text)) issues.push('doubled article');
+  const trimmed = text.trim();
+  if (trimmed && /^[a-z]/.test(trimmed)) issues.push('lowercase start');
+  if (/[.!?]\s+[a-z]/.test(trimmed)) issues.push('lowercase sentence');
+  for (const found of trimmed.matchAll(BARE_JARGON)) {
+    const word = found[1].toUpperCase();
+    const at = found.index ?? 0;
+    const allowed = (word === 'HSTS' || word === 'CSP') && trimmed[at - 1] === '(' && trimmed[at + found[1].length] === ')';
+    if (!allowed) issues.push(`bare ${word}`);
+  }
+  return issues;
+}
+
+export type AuditTextScope = { domain?: string; brand?: string };
+
+/** True when a search result names the audited domain or brand. With no scope, the row stays. */
+export function sourceMentionsAudit(uri: string, title: string, scope?: AuditTextScope): boolean {
+  const domain = (scope?.domain || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0];
+  const brand = (scope?.brand || '').trim();
+  if (!domain && brand.length < 3) return true;
+  const hay = `${uri} ${title}`;
+  const host = hostOf(uri);
+  if (domain && (host === domain || host.endsWith(`.${domain}`) || hay.toLowerCase().includes(domain))) return true;
+  if (brand.length >= 3) {
+    const re = new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(hay)) return true;
+  }
+  return false;
+}
+
+function scrubCustomerLine(line: string): string {
+  const normalized = line
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
+    .replace(/\[\[([^[\]]+)\]\]/g, '$1');
+  const next = normalized
+    .replace(/\b(?:Implement|Add(?: an)?)\s+(?:an?\s+)?HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?(?:\s+header)?\b/gi, HSTS_TITLE)
+    .replace(/\b(?:(?:a|an|the)\s+)?(?:Add(?: an?)?\s+)?HSTS header\b/gi, HSTS_TITLE)
+    .replace(/HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?/gi, HSTS_TITLE)
+    .replace(/Add a header that forces secure HTTPS connections \(HSTS\)/gi, HSTS_TITLE)
+    .replace(/\ba header that forces secure HTTPS connections \(HSTS\)/gi, HSTS_TITLE)
+    .replace(/Missing HSTS;?\s*lowers security trust score\.?/gi, 'The site does not force secure HTTPS connections (HSTS).')
+    .replace(/\bMissing HSTS\b/gi, 'Does not force secure HTTPS connections (HSTS)')
+    .replace(/\b(?:Implement|Add|Publish)\s+(?:a\s+)?Content-Security-Policy(?:\s+header)?\b/gi, CSP_TITLE)
+    .replace(/\b(?:(?:a|an|the)\s+)?(?:Add(?: a)?\s+)?CSP header\b/gi, CSP_TITLE)
+    .replace(/Add a rule that controls which scripts the site can load \(CSP\)/gi, CSP_TITLE)
+    .replace(/\ba rule that controls which scripts the site can load \(CSP\)/gi, CSP_TITLE)
+    .replace(/Content-Security-Policy(?: header)?|Content Security Policy(?: \(CSP\))?/gi, CSP_TITLE)
+    .replace(/\b(?:Insert|Add|Implement|Publish|Ship)(?:\s+(?:a|an|the|basic))*\s+(?:Organization|organisation)\s+(?:JSON-?LD|markup|schema)(?:\s+block)?(?:\s+(?:file|header|markup|tag)\b)?/gi, IDENTITY_ACTION)
+    .replace(/\b(?:Insert|Add|Implement|Publish|Ship)(?:\s+(?:a|an|the|basic))*\s+JSON-?LD(?:\s+block)?(?:\s+(?:file|header|markup|tag)\b)?/gi, IDENTITY_ACTION)
+    .replace(/\bno\s+structured\s+data\b/gi, `no ${IDENTITY_NOUN}`)
+    .replace(/\bstructured\s+data\b/gi, IDENTITY_NOUN)
+    .replace(/\bSchema\.org\b/gi, IDENTITY_NOUN)
+    .replace(/\bShip\s+schema\s*\/\s*(?:a\s+)?business identity tag\b/gi, IDENTITY_ACTION)
+    .replace(/\bAdd or fix\s+(?:a\s+)?business identity tag\b[^.]*/gi, IDENTITY_ACTION)
+    .replace(/(?:\b(?:a|an|the)\s+)?(?:Organization|organisation)\s+(?:markup|schema)(?:\s+(?:file|header|markup|tag)\b)?/gi, (match) => nounWithArticle(match, IDENTITY_NOUN))
+    .replace(/(?:\b(?:a|an|the)\s+)?(?:Organization\s+)?JSON-?LD(?:\s+block)?(?:\s+(?:file|header|markup|tag)\b)?/gi, (match) => nounWithArticle(match, IDENTITY_NOUN))
+    .replace(/\btag\s+markup\b/gi, 'tag')
+    .replace(/[ \t]+markup\s*$/gim, '')
+    .replace(/(?:\b(?:a|an|the)\s+)?(?:a public\s+)?(?<![:\w./(-])security\.txt(?:file)?\b(?:\s+(?:file|header|markup|tag)\b)?/gi, SECURITY_FILE)
+    .replace(PAGE_READ_SOURCE, '(page read)')
+    .replace(WEB_SEARCH_SOURCE, '(web search)')
+    .replace(/\(untrusted enrichment block\)/gi, '(security and public records)')
+    .replace(/\buntrusted enrichment block\b/gi, 'security and public records');
+  return finishSentences(unwrapDoubleParens(collapseRepeated(glossSecurity(next))));
+}
+
+function modelSourceLine(line: string): string {
+  const match = line.match(/https?:\/\/[^\s<>)\]]+/i);
+  if (!match) return line;
+  const uri = match[0].replace(/[.,;]+$/, '');
+  const trimmed = line.trim();
+  const kind: SourceReadKind = /\(page read\)\s*$/i.test(trimmed) || /^([-*]\s+)?page read\b/i.test(trimmed)
+    ? 'page read'
+    : 'web search';
+  let title = line.replace(uri, ' ');
+  title = title
+    .replace(/\((?:page read|web search)\)/gi, ' ')
+    .replace(/\b(?:page read|web search)\s*:?/gi, ' ')
+    .replace(/title\s*[“"']([^”"']+)[”"']/gi, '$1')
+    .replace(/[“”"']/g, '')
+    .replace(/,?\s*\d[\d,.]*\s*words?\b/gi, ' ')
+    .replace(/[()*]/g, ' ')
+    .replace(/^[\s:,.-]+|[\s:,.-]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const lead = line.match(/^\s*(?:[-*]\s+)?/);
+  return `${lead ? lead[0] : ''}${customerSourceLine(uri, title, kind)}`;
+}
+
+function sourceList(line: string, scope?: AuditTextScope): string {
+  const urls = [...line.matchAll(/https?:\/\/[^\s<>)\]]+/gi)];
+  if (!urls.length) return scrubCustomerLine(line);
+  if (urls.length === 1) {
+    const uri = urls[0][0].replace(/[.,;]+$/, '');
+    const text = modelSourceLine(scrubCustomerLine(line)).replace(/^\s*[-*]\s+/, '').trim();
+    if (!sourceMentionsAudit(uri, text, scope)) return '';
+    return `- ${text}`;
+  }
+  const items: string[] = [];
+  let cursor = 0;
+  for (let i = 0; i < urls.length; i += 1) {
+    const uri = urls[i][0].replace(/[.,;]+$/, '');
+    const at = urls[i].index ?? 0;
+    const before = line.slice(cursor, at);
+    const afterStart = at + urls[i][0].length;
+    const afterEnd = i + 1 < urls.length ? (urls[i + 1].index ?? line.length) : line.length;
+    const chunk = `${uri} ${before} ${line.slice(afterStart, afterEnd)}`;
+    const text = modelSourceLine(scrubCustomerLine(chunk)).replace(/^\s*[-*]\s+/, '').trim();
+    cursor = afterEnd;
+    if (!sourceMentionsAudit(uri, text, scope)) continue;
+    items.push(`- ${text}`);
+  }
+  return items.join('\n');
+}
+
+/** Customer report lines. Code blocks stay as written. Vendor names and header jargon do not. */
+export function plainCustomerReport(markdown: string, scope: AuditTextScope = {}): string {
+  let fence = false;
+  let sources = false;
+  return markdown.split('\n').map((line) => {
+    if (line.trim().startsWith('```')) {
+      fence = !fence;
+      return line;
+    }
+    if (fence) return line;
+    const trimmed = line.trim();
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      sources = /\bsources\b/i.test(trimmed);
+      return scrubCustomerLine(line);
+    }
+    if (sources && !trimmed.startsWith('|') && /https?:\/\//i.test(line)) return sourceList(line, scope);
+    return scrubCustomerLine(line);
+  }).join('\n');
+}
+
+export function gateReportText(markdown: string, scope: AuditTextScope = {}): string {
   const result = gateReportTables(markdown || '');
   if (result.unparsedTables > 0) {
     console.warn(`[report gate] ${result.unparsedTables} table(s) left as written: the cells could not be lined up under the headers.`);
   }
-  return stripUntrustedFences(result.text);
+  return plainCustomerReport(stripUntrustedFences(result.text), scope);
 }

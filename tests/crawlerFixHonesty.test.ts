@@ -30,9 +30,34 @@ describe('evidence-gated starter fixes', () => {
       findings: [{ id: 'finding-schema-org', title: 'Add Organization markup' }],
       crawlerChecks: passed,
     }));
-    expect(html).toContain('Add Organization markup');
+    expect(html).toContain('Add a business identity tag');
     expect(html).not.toContain('Allow AI crawlers');
     expect(html).not.toContain('llms.txt');
+  });
+
+  it('writes a real llms.txt from the page title and drops a comment-only snippet', () => {
+    const named = renderToStaticMarkup(createElement(ActionableFixList, {
+      domain: 'example.com',
+      pageTitle: 'Example Domain',
+      pageDescription: 'This domain is for use in examples.',
+      findings: [{ id: 'llms-txt', title: 'The AI guide file (llms.txt) was missing or could not be read.' }],
+    }));
+    expect(named).toContain('# Example Domain');
+    expect(named).toContain('This domain is for use in examples.');
+    expect(named).toContain('https://example.com');
+    expect(named).not.toContain('// Remediation for');
+    expect(named).toContain('0 of 1 fixes done');
+
+    const blank = renderToStaticMarkup(createElement(ActionableFixList, {
+      domain: 'example.com',
+      findings: [{
+        id: 'llms-txt',
+        title: 'The AI guide file (llms.txt) was missing.',
+        remediationSnippet: '// Remediation for The AI guide file (llms.txt) was missing.\n// Apply to example.com',
+      }],
+    }));
+    expect(blank).not.toContain('// Remediation for');
+    expect(blank).not.toContain('<pre');
   });
 
   it('does not recommend passed crawler files on the scout summary', () => {

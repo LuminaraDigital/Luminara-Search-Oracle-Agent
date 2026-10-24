@@ -24,6 +24,8 @@ import type { HostedScoutRail } from './hostedScoutRail';
 import { guardPasteReadyCopy, siteLooksHealthRelated } from './healthClaimGuard';
 import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
 import { fallbackAnswerLine } from '../llm/fallbackAnswer';
+import { groundCustomerReport } from './reportBlocks';
+import { verdictCitationLine } from '../../components/audit/VisibilityRadar';
 import { brandFromEvidence, readableStem, rememberScrapedBrand } from './brandName';
 import { recordAudit } from './auditHistoryService';
 import { evaluateRealEstateChecks, formatRealEstateChecks } from './realEstateChecks';
@@ -85,7 +87,7 @@ export async function generateAuditReportUnlessDegraded(input: {
   brandSupported?: boolean | null;
   /** Name Jev picked, or a supported scraped name. A title-cased domain is not stored. */
   displayName?: string | null;
-  findings?: ReadonlyArray<{ id?: string; description?: string }>;
+  findings?: ReadonlyArray<{ id?: string; title?: string; description?: string; severity?: string; status?: string; domain?: string }>;
 }): Promise<GuardedAuditReport | null> {
   if (!shouldGenerateAuditReport(input.isGuest, input.summary, input.measurementStatus)) {
     return null;
@@ -125,7 +127,25 @@ export async function generateAuditReportUnlessDegraded(input: {
       ...serp.flatMap((row) => [row.title, row.snippet, row.query, row.aiOverviewText]),
     ].filter((part): part is string => Boolean(part && part.trim())).join('\n'),
   };
-  const guarded = guardUnmeasuredClaims(guardPasteReadyCopy(report.text).text, facts);
+  const citationLine = report.empiricalSummary
+    ? verdictCitationLine({
+        radarRows: (report.empiricalSummary.evidenceList || []).map((row) => ({
+          status: row.brandCited ? 'cited' : 'not_cited',
+        })),
+        webResultsMentioned: report.empiricalSummary.webResultsMentioned,
+        webResultsTotal: report.empiricalSummary.webResultsTotal,
+      })
+    : null;
+  const grounded = groundCustomerReport(report.text, {
+    domain: input.formattedUrl,
+    brand: keptName || input.dna?.name || undefined,
+    findings: input.findings,
+    evidence: report.empiricalSummary?.evidenceList,
+    citationLine,
+    auditedAt: report.empiricalSummary?.lastAudited ?? Date.now(),
+    mode: input.dna?.name ? 'Full audit' : 'Instant Audit',
+  });
+  const guarded = guardUnmeasuredClaims(guardPasteReadyCopy(grounded).text, facts);
   const modelLine = fallbackAnswerLine(
     report.answeredBy ? { model: report.answeredBy, provider: report.answeredByProvider } : undefined,
   );
@@ -201,7 +221,9 @@ export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: Hosted
     scrapedPageCount: crew.scrapedPages.length,
     serpCount: crew.serpEvidence.length,
     searchEngines: [...new Set(crew.serpEvidence.map((row) => row.engine))],
-    findings: crew.findings.map((finding) => ({ title: finding.title })),
+    findings: crew.findings
+      .filter((finding) => !finding.id.endsWith('-unmeasured'))
+      .map((finding) => ({ title: finding.title })),
     errors: crew.errors,
     plainEnglishBrief: crew.plainEnglishBrief,
     llmCrawler: crew.llmCrawlerReadiness,

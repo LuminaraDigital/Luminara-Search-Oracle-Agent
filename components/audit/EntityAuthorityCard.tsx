@@ -174,19 +174,19 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span>HSTS Header:</span>
+                <span>Forces secure HTTPS (HSTS):</span>
                 <span className={`font-mono ${security.hstsEnabled ? 'text-success-400' : 'text-warning-400'}`}>
                   {security.hstsEnabled ? 'Active' : 'Missing'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Content Security (CSP):</span>
+                <span>Controls which scripts load (CSP):</span>
                 <span className={`font-mono ${security.cspDetected ? 'text-success-400' : 'text-gray-500'}`}>
                   {security.cspDetected ? 'Detected' : 'Standard'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span>security.txt:</span>
+                <span>Security contact file (security.txt):</span>
                 <span className={`font-mono ${security.securityTxtPresent ? 'text-success-400' : 'text-gray-500'}`}>
                   {security.securityTxtPresent ? 'Present' : 'Missing'}
                 </span>
@@ -195,7 +195,7 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
           </div>
 
           <div className="mt-2.5 pt-2 border-t border-white/5 text-[10px] text-gray-500 font-mono">
-            Verified across Google & Cloudflare security standards
+            Read from the security headers we could see
           </div>
         </div>
 

@@ -5,7 +5,13 @@ import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
 import { diffSince } from '../../services/audit/auditDiffService';
 import { workspaceHistoryReady } from '../../services/sync/workspaceSyncService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
+import { parseMeasuredCheckLine } from '../../services/agentCore/auditEvidenceGate';
+import { customerSourceLine, sourceReadKind } from '../../services/audit/reportColumnGate';
+import { formatAuDate } from '../../utils/formatAuDate';
 import {
+  checkFixTitle,
+  displayMeasured,
+  groundCustomerReport,
   findingFix,
   findingWhy,
   fixProgress,
@@ -13,8 +19,8 @@ import {
   parseAuditReport,
   progressSince,
   recheckLabel,
+  reportScore,
   SAVED_AUDIT_CHECK_COPY,
-  scoreLine,
   showFixTally,
   unmeasuredNote,
   type Inline,
@@ -88,17 +94,22 @@ function CodeBlock({ text }: { text: string }) {
   );
 }
 
-function visibleSections(sections: ReportSection[], verdict: string): ReportSection[] {
+function visibleSections(sections: ReportSection[]): ReportSection[] {
   return sections.flatMap((section) => {
-    const blocks = section.blocks.filter((block) => {
-      if (block.kind !== 'paragraph' && block.kind !== 'quote') return true;
-      return block.text !== verdict;
-    });
+    const blocks = section.blocks.filter((block) => block.kind !== 'paragraph' || !/^\**\s*Date:/i.test(block.text.trim()));
     return blocks.length ? [{ ...section, blocks }] : [];
   });
 }
 
-function BlockView({ block, sectionTitle }: { block: ReportBlock; sectionTitle: string }) {
+function BlockView({
+  block,
+  sectionTitle,
+  evidence,
+}: {
+  block: ReportBlock;
+  sectionTitle: string;
+  evidence?: ReadonlyArray<{ query: string; brandCited: boolean }>;
+}) {
   if (block.kind === 'heading') {
     const Tag = block.level <= 3 ? 'h3' : 'h4';
     return <Tag id={block.id} className="mt-6 text-lg font-semibold text-white">{block.text}</Tag>;
@@ -116,8 +127,8 @@ function BlockView({ block, sectionTitle }: { block: ReportBlock; sectionTitle: 
   if (block.kind === 'code') return <CodeBlock text={block.text} />;
   if (block.kind === 'table') {
     const title = sectionTitle.toLowerCase();
-    if (title.includes('visibility radar')) return <VisibilityRadar headers={block.headers} rows={block.rows} />;
-    if (title.includes('competitor reality map')) return <CompetitorMap headers={block.headers} rows={block.rows} />;
+    if (title.includes('visibility radar')) return <VisibilityRadar headers={block.headers} rows={block.rows} evidence={evidence} />;
+    if (title.includes('competitor')) return <CompetitorMap headers={block.headers} rows={block.rows} />;
     return (
       <div className="my-4 overflow-x-auto">
         <table className="w-full border-collapse text-left text-sm text-gray-100">
@@ -132,7 +143,7 @@ function BlockView({ block, sectionTitle }: { block: ReportBlock; sectionTitle: 
             {block.rows.map((row, index) => (
               <tr key={index}>
                 {row.map((cell, cellIndex) => (
-                  <td key={cellIndex} className="border border-white/15 px-3 py-2 align-top">{cell || 'Not measured'}</td>
+                  <td key={cellIndex} className="border border-white/15 px-3 py-2 align-top">{displayMeasured(cell)}</td>
                 ))}
               </tr>
             ))}
@@ -153,6 +164,12 @@ export function AuditReportArticle({
   clientName,
   sources,
   showActions = true,
+  citationRateKnown,
+  checkLine,
+  citationEvidence,
+  citationLine,
+  auditedAt,
+  mode = 'Instant Audit',
   onShare,
   onFindings,
 }: {
@@ -163,6 +180,16 @@ export function AuditReportArticle({
   clientName?: string;
   sources?: Array<{ uri: string; title: string }>;
   showActions?: boolean;
+  /** True when this run counted search mentions. Omit when citation was not in play. */
+  citationRateKnown?: boolean;
+  /** Checklist sentence already shown on the page-health card. */
+  checkLine?: string;
+  /** Queries the search evidence actually measured. The radar prints these, not a model guess. */
+  citationEvidence?: ReadonlyArray<{ query: string; brandCited: boolean; intent?: string; competitorsCited?: string[] }>;
+  /** Sentence already built from mentionCounts. Omitted when citation was not measured. */
+  citationLine?: string | null;
+  auditedAt?: number | Date;
+  mode?: string;
   onShare?: () => void;
   onFindings?: (findings: BoardFinding[]) => void;
 }) {
@@ -176,8 +203,19 @@ export function AuditReportArticle({
       window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
     };
   }, []);
-  const doc = parseAuditReport(markdown);
-  const score = scoreLine(`${markdown}\n${doc.verdict}`, measured);
+  const shown = domain
+    ? groundCustomerReport(markdown, {
+        domain,
+        brand: clientName,
+        findings,
+        evidence: citationEvidence,
+        citationLine,
+        auditedAt,
+        mode,
+      })
+    : markdown;
+  const doc = parseAuditReport(shown, { domain, brand: clientName });
+  const score = reportScore(`${markdown}\n${doc.verdict}`, measured, findings, citationRateKnown, checkLine);
   const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
   const note = unmeasuredNote(findings);
   const progress = fixProgress(fixes);
@@ -185,11 +223,16 @@ export function AuditReportArticle({
   const diff = domain ? diffSince(domain) : { before: null, metrics: [] };
   // Re-read after a workspace pull. The number itself is only a refresh signal.
   void historyRevision;
-  const since = !workspaceHistoryReady() && !diff.before ? SAVED_AUDIT_CHECK_COPY : progressSince(diff);
+  const since = !workspaceHistoryReady() && !diff.before
+    ? SAVED_AUDIT_CHECK_COPY
+    : progressSince({ ...diff, checks: parseMeasuredCheckLine(score) });
   const tally = showFixTally(score);
-  const validSources = visibleGroundingSources(sources) || [];
-  const verdict = doc.verdict || 'Not measured.';
-  const sections = visibleSections(doc.sections, verdict);
+  const validSources = visibleGroundingSources(sources, { domain, brand: clientName }) || [];
+  const plain = doc.sections.find((section) => /plain verdict/i.test(section.title));
+  const plainBlock = plain?.blocks.find((block) => block.kind === 'paragraph');
+  const verdict = (plainBlock && plainBlock.kind === 'paragraph' ? plainBlock.text : '') || doc.verdict || 'Not measured.';
+  const dated = formatAuDate(auditedAt ?? Date.now());
+  const sections = visibleSections(doc.sections);
 
   const mark = (finding: BoardFinding, done: boolean) => {
     const nextFindings = setFindingStatusLocal(domain || finding.domain, findings, finding.id, done ? 'done' : 'open');
@@ -209,6 +252,11 @@ export function AuditReportArticle({
                 <a href={`#${section.id}`} className="block min-h-11 rounded-lg px-2 py-2 text-sm text-gray-200 hover:bg-white/5 hover:text-white">{section.title}</a>
               </li>
             ))}
+            {validSources.length > 0 && (
+              <li>
+                <a href="#audit-sources" className="block min-h-11 rounded-lg px-2 py-2 text-sm text-gray-200 hover:bg-white/5 hover:text-white">7. Sources</a>
+              </li>
+            )}
           </ul>
         </div>
       </nav>
@@ -218,6 +266,7 @@ export function AuditReportArticle({
           <p className="text-xs font-semibold tracking-wide text-gold-light">Score</p>
           <h2 className="mt-2 font-serif-editorial text-4xl leading-tight text-white">{score}</h2>
           <p className="mt-3 max-w-[70ch] text-base leading-relaxed text-gray-100">{verdict}</p>
+          {dated ? <p className="mt-4 text-sm text-gray-200">Date: {dated} · Mode: {mode}</p> : null}
           <p className="mt-4 text-sm text-gray-200">{tally ? progress.label : 'The score above is the only pass count for the site checks.'}</p>
           {tally && (
             <div
@@ -263,7 +312,7 @@ export function AuditReportArticle({
               <article key={finding.id} className={`rounded-2xl border bg-black px-4 py-4 ${isNext ? 'border-gold' : 'border-white/15'}`}>
                 {isNext && <p className="text-xs font-semibold tracking-wide text-gold-light">Your next fix</p>}
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <h3 className="text-lg font-semibold text-white">{finding.title}</h3>
+                  <h3 className="text-lg font-semibold text-white">{checkFixTitle(finding.id, finding.title)}</h3>
                   <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${chip}`}>{finding.severity}</span>
                 </div>
                 <p className="mt-3 text-xs font-semibold tracking-wide text-gray-300">Why it matters for buyers and vendors</p>
@@ -295,19 +344,21 @@ export function AuditReportArticle({
                 {section.title}
               </summary>
               <div className="mt-2">
-                {section.blocks.map((block, index) => <BlockView key={`${section.id}-${index}`} block={block} sectionTitle={section.title} />)}
+                {section.blocks.map((block, index) => (
+                  <BlockView key={`${section.id}-${index}`} block={block} sectionTitle={section.title} evidence={citationEvidence || undefined} />
+                ))}
               </div>
             </details>
           </section>
         ))}
 
         {validSources.length > 0 && (
-          <section className="mt-8 border-t border-white/10 pt-4">
-            <h2 className="text-xl font-semibold text-white">Sources</h2>
+          <section id="audit-sources" className="mt-8 border-t border-white/10 pt-4">
+            <h2 className="text-xl font-semibold text-white">7. Sources</h2>
             <ul className="mt-3 space-y-2">
               {validSources.map((source) => (
                 <li key={source.uri}>
-                  <a href={source.uri} target="_blank" rel="noopener noreferrer" className="text-base text-gold-light underline underline-offset-2 hover:text-white">{source.title || source.uri}</a>
+                  <a href={source.uri} target="_blank" rel="noopener noreferrer" className="text-base text-gold-light underline underline-offset-2 hover:text-white">{customerSourceLine(source.uri, source.title || '', sourceReadKind(source.uri, domain))}</a>
                 </li>
               ))}
             </ul>

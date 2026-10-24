@@ -7,7 +7,7 @@ import { applyPlanned, formatDryRun, main, parseBackfillArgs, planBackfill, rows
 import { readPlane } from '../worker/dataPlane';
 import { auditDocId, userDocId } from '../worker/dataPlaneDocs';
 import { handleGcpOidcRoute } from '../worker/gcpOidc';
-import { StubGcpTokenProvider, WorkloadIdentityTokenProvider } from '../worker/gcpToken';
+import { StubGcpTokenProvider, WorkloadIdentityTokenProvider, exchangeForAccessToken } from '../worker/gcpToken';
 import { decodeFields, encodeFields } from '../worker/firestoreRest';
 import { D1UserLoginStore } from '../worker/userLoginRepo';
 import { upsertAppUser } from '../worker/userStore';
@@ -309,6 +309,9 @@ describe('Firestore wire format and OIDC', () => {
     expect(calls[0].url).toBe('https://sts.googleapis.com/v1/token');
     expect(calls[0].body).not.toContain('PRIVATE KEY');
     const stsBody: unknown = JSON.parse(calls[0].body);
+    expect(isRecord(stsBody) && stsBody.scope).toBe('https://www.googleapis.com/auth/cloud-platform');
+    const iamBody: unknown = JSON.parse(calls[1].body);
+    expect(isRecord(iamBody) && Array.isArray(iamBody.scope) && iamBody.scope[0]).toBe('https://www.googleapis.com/auth/datastore');
     const subjectToken = isRecord(stsBody) && typeof stsBody.subjectToken === 'string' ? stsBody.subjectToken : '';
     const payloadPart = subjectToken.split('.')[1] ?? '';
     const payload: unknown = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8'));
@@ -318,6 +321,42 @@ describe('Firestore wire format and OIDC', () => {
     expect(calls[1].url).toContain('suite-worker%40luminara-suite-staging.iam.gserviceaccount.com:generateAccessToken');
     await provider.getAccessToken(1_800_000_000_000);
     expect(calls).toHaveLength(4);
+  });
+
+  it('puts the IAM reason code on the impersonate step', async () => {
+    const pair = await crypto.subtle.generateKey(
+      { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+      true,
+      ['sign'],
+    );
+    const pkcs8 = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
+    const bytes = new Uint8Array(pkcs8);
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    const b64 = btoa(binary).match(/.{1,64}/g)?.join('\n') ?? '';
+    const armor = (label: string) => `-----${label}-----\n`;
+    const pem = `${armor('BEGIN PRIVATE KEY')}${b64}\n${armor('END PRIVATE KEY')}`;
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('sts.googleapis.com')) {
+        return new Response(JSON.stringify({ access_token: 'federated-token' }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        error: { code: 403, message: 'Request had insufficient authentication scopes.', details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }] },
+      }), { status: 403 });
+    };
+    const exchanged = await exchangeForAccessToken({
+      audience: 'audience',
+      issuer: 'https://staging.luminarasuite.com/api/gcp-oidc',
+      subject: 'suite-worker',
+      keyId: 'k1',
+      privateKeyPem: pem,
+      serviceAccountEmail: 'suite-worker@luminara-suite-staging.iam.gserviceaccount.com',
+    }, fetchImpl);
+    expect(exchanged.ok).toBe(false);
+    if (exchanged.ok) return;
+    const impersonate = exchanged.steps.find((step) => step.step === 'impersonate');
+    expect(impersonate?.error).toBe('iam 403 ACCESS_TOKEN_SCOPE_INSUFFICIENT');
   });
 });
 

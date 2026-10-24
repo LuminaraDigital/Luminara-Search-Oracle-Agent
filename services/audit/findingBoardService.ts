@@ -7,7 +7,8 @@ import { findingStableKey } from './findingStableKey';
 import { workerFetchWithAuthRetry, apiBase } from '../apiClient';
 import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
 import { formatAuDay } from '../../utils/formatAuDate';
-import { isDowngradedFinding } from './reportBlocks';
+
+export { pickPrimaryFinding } from './reportBlocks';
 
 const LOCAL_PREFIX = 'luminara_findings_v1_';
 /** One bag for every domain. The workspace save already pushes this key. A tick does not call the findings API. */
@@ -333,13 +334,3 @@ export async function patchFindingStatus(
   return idx >= 0 ? local[idx] : null;
 }
 
-export function pickPrimaryFinding(findings: BoardFinding[]): BoardFinding | null {
-  const eligible = findings.filter((finding) => !isDowngradedFinding(finding));
-  if (!eligible.length) return null;
-  const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-  const open = eligible.filter((f) => f.status === 'open' || f.status === 'in_progress');
-  const pool = open.length ? open : eligible;
-  return [...pool].sort(
-    (a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9),
-  )[0];
-}

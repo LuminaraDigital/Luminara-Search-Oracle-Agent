@@ -512,3 +512,152 @@ describe('which chat replies count as an audit', () => {
     expect(looksLikeAuditReport('## AI & Search Visibility Radar\n')).toBe(true);
   });
 });
+
+describe('plain customer report lines', () => {
+  it('replaces vendor source labels and header jargon', () => {
+    const text = gateReportText([
+      'https://example.com (firecrawl scrape)',
+      'https://example.com (jina reader)',
+      'https://news.example (tavily search)',
+      'Trust pack & security data (untrusted enrichment block)',
+      'Implement HTTP Strict Transport Security (HSTS) header',
+      'Missing HSTS; lowers security trust score',
+      'Add a Content-Security-Policy header',
+      'Publish security.txt',
+      '```',
+      'Contact: https://example.com/.well-known/security.txt',
+      '```',
+    ].join('\n'));
+    expect(text).toContain('https://example.com (page read)');
+    expect(text).toContain('https://news.example (web search)');
+    expect(text).toContain('Trust pack & security data (security and public records)');
+    expect(text).toContain('Make browsers always use the secure version of your site (HSTS)');
+    expect(text).toContain('The site does not force secure HTTPS connections (HSTS).');
+    expect(text).toContain('Control which scripts your site can load (CSP)');
+    expect(text).toContain('Publish a public security contact file (security.txt)');
+    expect(text).toContain('https://example.com/.well-known/security.txt');
+    expect(text).not.toMatch(/firecrawl|jina|tavily|Strict Transport|untrusted enrichment/i);
+  });
+
+  it('scrubs a garbled verdict, fix titles, and source lines, and stays the same on a second pass', () => {
+    const garbled = [
+      'The homepage is very thin (133 words) and lacks any schema.Security headers (HSTS, CSP) and a public a public security contact file (security.txt) file are missing.',
+      '## 1. One move this week',
+      'Add a basic Organization JSON-LD block to the homepage.',
+      '## 3. Fix list',
+      '| Add HSTS header | Missing |',
+      '| Add CSP header | Missing |',
+      '| Insert Organization JSON-LD | None |',
+      '## 7. Sources',
+      'Page read: https://example.com (title “Example Domain”, 133 words)',
+      'Wikipedia entry: https://en.wikipedia.org/wiki/Example.com',
+    ].join('\n');
+    const once = gateReportText(garbled);
+    const twice = gateReportText(once);
+    expect(twice).toBe(once);
+    expect(once).toContain('schema. The site');
+    expect(once).toContain('a public security contact file (security.txt)');
+    expect(once).not.toContain('a public a public');
+    expect(once).not.toContain('(security.txt) file');
+    expect(once).not.toMatch(/\(security\.txt\).*\(security\.txt\)/);
+    expect(once).toContain('Make browsers always use the secure version of your site (HSTS)');
+    expect(once).toContain('Control which scripts your site can load (CSP)');
+    expect(once).toContain('Add a business identity tag to the homepage.');
+    expect(once).toContain('| Add a business identity tag | None |');
+    expect(once).not.toContain('JSON-LD');
+    expect(once).not.toContain('HSTS header');
+    expect(once).toContain('https://example.com Example Domain (page read)');
+    expect(once).toContain('https://en.wikipedia.org/wiki/Example.com Wikipedia entry (web search)');
+    expect(once).not.toContain('—');
+    expect(once).not.toContain('\u2014');
+  });
+
+  it('scrubs live model text: unicode hyphens, spacing, jargon, and a sources list', () => {
+    const raw = [
+      'The site is reachable but shows very thin content and no structured data.Security headers (HSTS, CSP) and a public security contact file are missing.These gaps lower the odds of a quote. Visit https://example.com. The version is v1.2. The rate is 35.3 today.',
+      '## 3. Fix list',
+      '| Task | Plain issue | Priority |',
+      '| --- | --- | --- |',
+      '| Implement Content\u2011Security\u2011Policy | Missing | High |',
+      '| Publish a public security contact file (security.txt) | Missing | High |',
+      '| Add a business identity tag markup | None | High |',
+      '## Competitor Reality Map',
+      '| Entity | AI Perception (Tone/Claims) | Top Cited Page Types | Content Advantage (vs You) |',
+      '| --- | --- | --- | --- |',
+      '| [[IANA]] | Reference | Docs | Registry |',
+      '| [[Wikipedia]] | Encyclopedia | Article | Coverage |',
+      '## 7. Sources',
+      'https://example.com Example Domain (page read) https://en.wikipedia.org/wiki/Example.com example.com - Wikipedia (web search) https://leadiq.com/c/pge-systemy-sa PGE Systemy S.A | LeadIQ (web search)',
+    ].join('\n');
+    const once = gateReportText(raw, { domain: 'example.com', brand: 'Example' });
+    const twice = gateReportText(once, { domain: 'example.com', brand: 'Example' });
+    expect(twice).toBe(once);
+    expect(once).toContain("no business identity tag. The site doesn't force the secure version of the site (HSTS) and doesn't control which scripts can load (CSP)");
+    expect(once).toContain('are missing. These gaps');
+    expect(once).toContain('Control which scripts your site can load (CSP)');
+    expect(once).toContain('Publish a public security contact file (security.txt)');
+    expect(once).not.toMatch(/\(security\.txt\).*\(security\.txt\)/);
+    expect(once).toContain('| Add a business identity tag | None | High |');
+    expect(once).not.toContain('markup');
+    expect(once).not.toContain('Content-Security-Policy');
+    expect(once).not.toContain('\u2011');
+    expect(once).not.toContain('\u2014');
+    expect(once).toContain('| IANA |');
+    expect(once).toContain('| Wikipedia |');
+    expect(once).not.toContain('[[');
+    expect(once).toContain('- https://example.com Example Domain (page read)');
+    expect(once).toContain('- https://en.wikipedia.org/wiki/Example.com example.com - Wikipedia (web search)');
+    expect(once).not.toContain('leadiq.com');
+    expect(once).toContain('https://example.com. The version is v1.2. The rate is 35.3 today.');
+  });
+
+  it('keeps a business identity tag a noun in a sentence and an action on a fix line', () => {
+    const expected = 'Security headers and a basic business identity tag are missing, which can lower trust and citation odds.';
+    for (const input of [
+      'Security headers and a basic Organization schema are missing, which can lower trust and citation odds.',
+      'Security headers and a basic JSON-LD are missing, which can lower trust and citation odds.',
+    ]) {
+      const once = gateReportText(input);
+      expect(once).toBe(expected);
+      expect(gateReportText(once)).toBe(once);
+      expect(once).not.toContain('Add a business identity tag are missing');
+    }
+    expect(gateReportText('| Insert Organization JSON-LD | None |')).toContain('| Add a business identity tag | None |');
+  });
+
+  it('repairs a security contact line that glued the article and the trailing file', () => {
+    const expected = 'Publish a public security contact file (security.txt)';
+    const once = gateReportText('Publish aa public security contact file (security.txt)file');
+    expect(once).toBe(expected);
+    expect(gateReportText(once)).toBe(once);
+    expect(gateReportText('| Publish a security.txt file | Missing |')).toContain(`| ${expected} | Missing |`);
+  });
+
+  it('scrubs jargon phrases without doubled articles, glued words, or a second change', () => {
+    const inputs = [
+      'a security.txt file',
+      'the security.txt',
+      'basic JSON-LD',
+      'an Organization schema markup',
+      'CSP header',
+      'HSTS header',
+      'Content\u2011Security\u2011Policy',
+      'Publish a security.txtfile',
+      'a a security.txt file',
+      'a an security.txt file',
+      'an HSTS header',
+      'the CSP header',
+      'Add a basic Organization JSON-LD block to the homepage.',
+    ];
+    for (const input of inputs) {
+      const once = gateReportText(input);
+      const twice = gateReportText(once);
+      expect(twice, input).toBe(once);
+      expect(once, input).not.toMatch(/aa /i);
+      expect(once, input).not.toMatch(/a a /i);
+      expect(once, input).not.toMatch(/\)[A-Za-z]/);
+      expect(once, input).not.toMatch(/\b([A-Za-z]+)\s+\1\b/i);
+      expect(once, input).not.toContain('\u2014');
+    }
+  });
+});

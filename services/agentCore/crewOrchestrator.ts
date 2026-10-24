@@ -40,6 +40,7 @@ import {
 import { healthChecklist, liveSearchRows, pageSupportsHealthScore, siteChecksRan } from './auditEvidenceGate';
 import { gateFixSnippet, reviewFindingsWithJev } from '../audit/jevVerifier';
 import { brandFromEvidence } from '../audit/brandName';
+import { countPhrase } from '../audit/reportSentence';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
 
@@ -61,7 +62,7 @@ export function memorySyncPlan(input: {
     return {
       skipExtract: false,
       claimSync: true,
-      message: `Synced ${input.deltaCount} autonomous memory delta(s) & MUSE experience heuristics into brand knowledge graph.`,
+      message: `Saved ${countPhrase(input.deltaCount, 'note')} about your brand.`,
     };
   }
   return { skipExtract: false, claimSync: false, message: MEMORY_SYNC_SKIPPED };
@@ -162,7 +163,11 @@ export function criticStartMessage(hasLiveEvidence: boolean): string {
   if (!hasLiveEvidence) {
     return 'No page or search evidence to verify. Findings were not measured against live data.';
   }
-  return 'Cross-examining candidate findings against scraped pages and SERP evidence…';
+  return 'Cross-examining candidate findings against pages read and search results…';
+}
+
+export function criticCheckedMessage(count: number): string {
+  return `Checked ${countPhrase(count, 'finding')} against pages read and search results.`;
 }
 
 function contextHasLiveEvidence(ctx: AuditStateGraphContext): boolean {
@@ -204,16 +209,16 @@ export const CREW_PROFILES: Record<AgentRole, AgentProfile> = {
     role: 'scout',
     name: 'Scout Agent',
     avatar: '🔍',
-    tagline: 'Deep Crawl & DOM Parser',
+    tagline: 'Reads your pages',
     goal: 'Scrape and extract raw HTML, headings, and schema entities.',
     backstory: 'Expert web crawler trained to extract structured data and assess DOM hygiene.',
     preferredModelRole: 'efficient',
   },
   serp_radar: {
     role: 'serp_radar',
-    name: 'SERP Radar',
+    name: 'Search results',
     avatar: '📡',
-    tagline: 'Live Search & Citation Radar',
+    tagline: 'Live web search',
     goal: 'Probe search engines and measure empirical citation rates.',
     backstory: 'Runs web searches through Tavily or the local search sidecar and counts the results that mention the brand.',
     preferredModelRole: 'efficient',
@@ -222,7 +227,7 @@ export const CREW_PROFILES: Record<AgentRole, AgentProfile> = {
     role: 'playbook_auditor',
     name: 'Playbook Auditor',
     avatar: '⚖️',
-    tagline: 'Compliance & Rule Enforcement',
+    tagline: 'Checks your pages against the rules',
     goal: 'Audit against claude-seo playbooks and calculate health scores.',
     backstory: 'Strict compliance auditor verifying Schema.org rules and E-E-A-T signals.',
     preferredModelRole: 'capable',
@@ -231,7 +236,7 @@ export const CREW_PROFILES: Record<AgentRole, AgentProfile> = {
     role: 'competitor_strategist',
     name: 'Competitor Strategist',
     avatar: '🎯',
-    tagline: 'Market Intelligence & Moats',
+    tagline: 'Compares other sites in your market',
     goal: 'Detect competitors and uncover high-converting search intent gaps.',
     backstory: 'Market analyst mapping search landscape share-of-voice.',
     preferredModelRole: 'capable',
@@ -249,7 +254,7 @@ export const CREW_PROFILES: Record<AgentRole, AgentProfile> = {
     role: 'remediation_architect',
     name: 'Remediation Architect',
     avatar: '🛠️',
-    tagline: 'JSON-LD & Code Engineer',
+    tagline: 'Writes the fix you can paste',
     goal: 'Formulate valid Schema.org patches and CMS deployment diffs.',
     backstory: 'Full-stack engineer crafting copy-paste ready code remediations.',
     preferredModelRole: 'capable',
@@ -380,8 +385,8 @@ export class CrewOrchestrator {
         message: !liveEvidence
           ? criticStartMessage(false)
           : rejectedCount > 0
-            ? `Adversarial check complete: Corrected ${rejectedCount} false claim(s). Remaining ${verifiedFindings.length} findings verified.`
-            : `All ${verifiedFindings.length} findings checked against scraped pages and SERP evidence.`,
+            ? `Checked the findings: corrected ${countPhrase(rejectedCount, 'false claim')}. ${countPhrase(verifiedFindings.length, 'finding')} still ${verifiedFindings.length === 1 ? 'stands' : 'stand'}.`
+            : criticCheckedMessage(verifiedFindings.length),
         status: 'completed',
         confidenceScore: liveEvidence ? criticConfidence : undefined,
       });

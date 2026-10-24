@@ -27,13 +27,19 @@ export function countPhrase(count: number, singular: string, plural?: string): s
   return `${n} ${noun}`;
 }
 
+/** A later list item is mid-sentence, so "This" is not a new sentence. */
+function continueClause(item: string): string {
+  return item.replace(/^This\b/, 'this');
+}
+
 /** "", "A", "A and B", "A, B and C". */
 export function joinList(items: readonly string[]): string {
   const clean = items.map((item) => item.trim()).filter(Boolean);
   if (clean.length === 0) return '';
   if (clean.length === 1) return clean[0];
-  if (clean.length === 2) return `${clean[0]} and ${clean[1]}`;
-  return `${clean.slice(0, -1).join(', ')} and ${clean[clean.length - 1]}`;
+  const rest = clean.slice(1).map(continueClause);
+  if (rest.length === 1) return `${clean[0]} and ${rest[0]}`;
+  return `${[clean[0], ...rest.slice(0, -1)].join(', ')} and ${rest[rest.length - 1]}`;
 }
 
 /** Collapse repeated spaces and a second punctuation mark. Does not add a new claim. */
@@ -42,6 +48,7 @@ export function tidySentence(text: string): string {
     .replace(/[ \t\f\v]+/g, ' ')
     .replace(/\s+([,.;:!?])/g, '$1')
     .replace(/([.!?])\1+/g, '$1')
+    .replace(/(\band\s+|,\s*|:\s+)This\b/g, (full) => full.replace('This', 'this'))
     .trim();
 }
 

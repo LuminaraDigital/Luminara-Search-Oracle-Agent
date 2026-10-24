@@ -81,7 +81,8 @@ export function playbookContext(playbooks: Playbook[], budgetChars = 24000): str
     blocks.push(`### Playbook: ${p.title}\n${body}`);
   }
   return [
-    '[SEO METHODOLOGY PLAYBOOKS]',
+    '[AUDIT RULES]',
+    'These rules are not the business being audited. Do not copy this heading into the report title or the verdict.',
     'Apply the criteria, thresholds and deprecation rules below. They come from a published, primary-source methodology (claude-seo, MIT). Where a check needs data you do not have (field Core Web Vitals, crawl logs, backlink indexes), write "not measured" instead of estimating a number.',
     ...blocks,
     '--------------------------------------------------',

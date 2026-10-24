@@ -25,6 +25,8 @@ import type { WritingQualityReport } from '../../services/audit/writingQualitySe
 import type { TrafficImpact } from '../../services/analytics/trafficInsightsService';
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
+import { customerSourceLine, gateReportText, sourceReadKind } from '../../services/audit/reportColumnGate';
+import { citationView, mentionCounts, mentionLabel, renderedRadarRows, verdictCitationLine } from './VisibilityRadar';
 import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
@@ -42,7 +44,6 @@ import { measuredChecks } from '../../services/share/winShare';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
 import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
-import { gateReportText } from '../../services/audit/reportColumnGate';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import type { RLMTrajectoryMetadata } from '../../services/rlm/types';
 import { RlmTrajectoryViewer } from '../rlm/RlmTrajectoryViewer';
@@ -78,15 +79,24 @@ interface ReportDisplayProps {
   hostedRail?: HostedScoutRail;
   /** True when the fetched page, domain, or saved DNA already looks health-related. */
   healthSite?: boolean;
+  /** Checklist sentence from the page-health card, used when the findings do not name a check. */
+  checkLine?: string;
 }
 
-/** "mentioned in N of M sampled queries", or null when the summary holds no such count. */
+/**
+ * Mention line from search evidence.
+ * Empty evidence is not a count: the radar cannot show a query that was not measured.
+ */
 export function sampledMentionsLabel(summary: EmpiricalCitationSummary | undefined): string | null {
-  if (!summary || summary.measurementStatus === 'not_measured' || summary.citationRatePercent == null) return null;
-  const mentioned = summary.queriesCitedCount;
-  const total = summary.totalQueriesTested;
-  if (!Number.isInteger(mentioned) || !Number.isInteger(total) || total <= 0 || mentioned < 0 || mentioned > total) return null;
-  return `mentioned in ${mentioned} of ${total} sampled queries`;
+  if (!summary || summary.measurementStatus === 'not_measured') return null;
+  const counts = mentionCounts({
+    radarRows: (summary.evidenceList || []).map((row) => ({ status: row.brandCited ? 'cited' : 'not_cited' })),
+    webResultsMentioned: summary.webResultsMentioned,
+    webResultsTotal: summary.webResultsTotal,
+  });
+  if (counts.webResults) return mentionLabel(counts.webResults, 'web results');
+  if (counts.queries) return mentionLabel(counts.queries, 'queries');
+  return null;
 }
 
 export const ReportDisplay: React.FC<ReportDisplayProps> = ({
@@ -112,6 +122,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   suppressLiveMetrics = false,
   hostedRail,
   healthSite = false,
+  checkLine,
 }) => {
   const showHealthNote = healthSite || siteLooksHealthRelated({ domain: targetDomain, title: dnaName });
   const hideLiveNumbers = suppressLiveMetrics || empiricalSummary?.measurementStatus === 'not_measured';
@@ -119,7 +130,36 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   // A stored or shared report was gated when it was made only if it was made after the gate existed.
   // No table in the report text is measured: the model writes its rows. Measured
   // traffic is drawn by ResultsTrackingCard from the analytics data, not from this text.
-  const markdownText = useMemo(() => gateReportText(rawMarkdownText || ''), [rawMarkdownText]);
+  const markdownText = useMemo(
+    () => gateReportText(rawMarkdownText || '', { domain: targetDomain, brand: dnaName }),
+    [rawMarkdownText, targetDomain, dnaName],
+  );
+  const citation = useMemo(
+    () => citationView(markdownText, hideLiveNumbers ? undefined : empiricalSummary),
+    [markdownText, empiricalSummary, hideLiveNumbers],
+  );
+  const citationLine = useMemo(() => (
+    hideLiveNumbers || !empiricalSummary
+      ? null
+      : verdictCitationLine({
+          radarRows: (empiricalSummary.evidenceList || []).map((row) => ({
+            status: row.brandCited ? 'cited' : 'not_cited',
+          })),
+          webResultsMentioned: empiricalSummary.webResultsMentioned,
+          webResultsTotal: empiricalSummary.webResultsTotal,
+        })
+  ), [hideLiveNumbers, empiricalSummary]);
+  const namedRows = useMemo(
+    () => renderedRadarRows(markdownText, {
+      domain: targetDomain,
+      brand: dnaName,
+      findings: boardFindingsProp,
+      evidence: hideLiveNumbers ? undefined : empiricalSummary?.evidenceList,
+      citationLine,
+      auditedAt: empiricalSummary?.lastAudited,
+    }),
+    [markdownText, targetDomain, dnaName, boardFindingsProp, empiricalSummary, hideLiveNumbers, citationLine],
+  );
   const pageHealthMeasured = !suppressLiveMetrics && measuredChecks(markdownText, true) != null;
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
@@ -218,14 +258,14 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     return subscribeQuota((quota) => setSharePlan(quota?.plan));
   }, []);
   const canShare = entitlementsFor(sharePlan).shareLinks;
-  const validSources = visibleGroundingSources(sources);
+  const validSources = visibleGroundingSources(sources, { domain: targetDomain, brand: dnaName });
   const sourceCount = validSources?.length || 0;
   const hasEvidence = Boolean(
     (!hideLiveNumbers && empiricalSummary && empiricalSummary.citationRatePercent != null) || sourceCount > 0,
   );
   const reportUnlocked = hideAgencyActions || Boolean(shipCommitment);
   // The two counts the search sample gave, not a percentage of them.
-  const evidenceLabel = (hideLiveNumbers ? null : sampledMentionsLabel(empiricalSummary)) || 'not measured';
+  const evidenceLabel = citation.label || 'not measured';
   const unavailableCopy = liveDataUnavailableCopy(
     hostedRail ?? (clientHasHostedIdentity() ? 'signed_in_hosted' : 'byok_or_signin'),
   );
@@ -284,7 +324,12 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         domain={targetDomain}
         clientName={dnaName}
         sources={sources}
+        citationEvidence={hideLiveNumbers ? undefined : empiricalSummary?.evidenceList}
+        citationLine={citationLine}
+        auditedAt={empiricalSummary?.lastAudited}
         showActions={!hideAgencyActions}
+        citationRateKnown={empiricalSummary ? typeof empiricalSummary.citationRatePercent === 'number' : undefined}
+        checkLine={checkLine}
         onShare={hideAgencyActions || !canShare ? undefined : () => void handleCopyShareLink()}
         onFindings={setBoardFindings}
       />
@@ -317,6 +362,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
           findings={boardFindings}
           commitment={shipCommitment}
           evidence={empiricalSummary?.evidenceList}
+          radarRows={namedRows}
           rawSources={sources}
           onFindingUpdated={(f) => {
             setBoardFindings((prev) => {
@@ -503,7 +549,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
                 rel="noopener noreferrer"
                 className="glass-morphism rounded-lg p-3 border border-white/5 hover:border-gold/40 flex items-center justify-between text-xs text-gray-300 hover:text-white transition-all group"
               >
-                <span className="truncate pr-2">{source.title || source.uri}</span>
+                <span className="truncate pr-2">{customerSourceLine(source.uri, source.title || '', sourceReadKind(source.uri, targetDomain))}</span>
                 <ICONS.ExternalLink className="w-3.5 h-3.5 text-gold shrink-0 opacity-60 group-hover:opacity-100" />
               </a>
             ))}

@@ -12,6 +12,8 @@ describe('audit progress steps', () => {
     expect(auditStepIndex('Checking web search results for "Ray White"…')).toBe(1);
     expect(auditStepIndex('Auditing 2 page(s) against official AEO/SEO scoring playbooks…')).toBe(2);
     expect(auditStepIndex('Mapping competitive landscape and market share of voice…')).toBe(1);
+    expect(auditStepIndex('Comparing other sites in your market…')).toBe(1);
+    expect(auditStepIndex('Writing your fixes for the page…')).toBe(3);
     expect(advanceAuditStep(2, 'Mapping competitive landscape and market share of voice…')).toBe(2);
     expect(auditStepIndex('Translating technical findings into an 8th-grade plain English executive summary…')).toBe(3);
     expect(auditStepIndex('Synthesizing executive report & action plan…')).toBe(3);

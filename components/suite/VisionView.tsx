@@ -51,7 +51,7 @@ export const VisionView: React.FC = () => {
           </div>
           <h2 className="text-xl font-semibold text-white">Grounded when possible</h2>
           <p className="text-gray-400 text-sm leading-relaxed">
-            When search or crawl credentials are connected, findings can cite real SERP and page evidence. When they are not, the UI says so.
+            When search or crawl credentials are connected, findings can cite real search results and page evidence. When they are not, the UI says so.
           </p>
         </article>
       </div>

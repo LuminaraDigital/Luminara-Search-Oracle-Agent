@@ -1,9 +1,154 @@
 ﻿import React from 'react';
 import { ICONS } from '../../constants';
+import type { EmpiricalCitationSummary } from '../../services/audit/empiricalCitationService';
+import { displayMeasured, groundCustomerReport, NOT_MEASURED, parseAuditReport, type GroundFacts } from '../../services/audit/reportBlocks';
 
 interface VisibilityRadarProps {
     headers: string[];
     rows: string[][];
+    /** Per-query readings from the same search evidence as the preview label. */
+    evidence?: ReadonlyArray<{ query: string; brandCited: boolean }>;
+}
+
+function normQuery(value: string): string {
+    return value.toLowerCase().replace(/["“”']/g, '').replace(/\s+/g, ' ').trim();
+}
+
+const WRAP_QUOTE = /["“”']/;
+
+/** One quote pair around the query. A matched wrap is removed first. Quotes inside the query stay. */
+export function quotedQuery(query: string): string {
+    let text = query.trim();
+    while (text.length >= 2 && WRAP_QUOTE.test(text[0]) && WRAP_QUOTE.test(text[text.length - 1])) {
+        const next = text.slice(1, -1).trim();
+        if (!next) break;
+        text = next;
+    }
+    if (/["“”]/.test(text)) return text;
+    return `"${text}"`;
+}
+
+export type RadarCitationRow = {
+    query: string;
+    competitors: string;
+    status: RadarStatus;
+};
+
+const NOT_A_RIVAL = /^(?:not measured|none|n\/a|unknown|-)$/i;
+
+/** Rival names from one radar cell. Empty, "Not measured", and "None" are not names. */
+export function rivalNames(cell: string): string[] {
+    const text = plain(cell);
+    if (!text || NOT_A_RIVAL.test(text)) return [];
+    return text.split(/,|\band\b/i).map((part) => part.trim()).filter((part) => part && !NOT_A_RIVAL.test(part));
+}
+
+/**
+ * The same query, rival, and citation rows the visibility radar draws.
+ * Evidence overrides a row only when that query was actually measured.
+ */
+export function radarCitationRows(
+    markdown: string,
+    evidence?: ReadonlyArray<{ query: string; brandCited: boolean }>,
+): RadarCitationRow[] {
+    const doc = parseAuditReport(markdown);
+    const section = doc.sections.find((item) => /visibility radar/i.test(item.title));
+    const table = section?.blocks.find((block) => block.kind === 'table');
+    if (!table || table.kind !== 'table') return [];
+    const queryCol = columnIndex(table.headers, /query/i, 0);
+    const competitorsCol = columnIndex(table.headers, /competitor/i, 3);
+    const statusCol = columnIndex(table.headers, /status/i, 4);
+    return table.rows.map((row) => {
+        const query = plain(row[queryCol]) || 'Query';
+        const hit = evidence?.find((item) => normQuery(item.query) === normQuery(query));
+        const status: RadarStatus = hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol]);
+        return { query, competitors: rivalNames(row[competitorsCol] || '').join(', '), status };
+    });
+}
+
+/** The radar rows after the report is grounded. The radar cards and Who gets named both read this. */
+export function renderedRadarRows(markdown: string, facts: GroundFacts): RadarCitationRow[] {
+    const shown = facts.domain ? groundCustomerReport(markdown, facts) : markdown;
+    const evidence = (facts.evidence || []).flatMap((row) => (
+        typeof row.brandCited === 'boolean' ? [{ query: row.query, brandCited: row.brandCited }] : []
+    ));
+    return radarCitationRows(shown, evidence.length ? evidence : undefined);
+}
+
+export type MentionTally = { mentioned: number; total: number };
+
+function wholePair(mentioned: number | undefined, total: number | undefined): MentionTally | null {
+    if (typeof mentioned !== 'number' || typeof total !== 'number') return null;
+    if (!Number.isInteger(mentioned) || !Number.isInteger(total)) return null;
+    if (total <= 0 || mentioned < 0 || mentioned > total) return null;
+    return { mentioned, total };
+}
+
+/**
+ * One count for the radar rows (queries) and one for the search rows (web results).
+ * A row that was not measured is not counted as a miss.
+ */
+export function mentionCounts(input: {
+    radarRows: ReadonlyArray<{ status: RadarStatus }>;
+    webResultsMentioned?: number;
+    webResultsTotal?: number;
+}): { queries: MentionTally | null; webResults: MentionTally | null } {
+    const measured = input.radarRows.filter((row) => row.status === 'cited' || row.status === 'not_cited');
+    const queries = measured.length
+        ? { mentioned: measured.filter((row) => row.status === 'cited').length, total: measured.length }
+        : null;
+    return { queries, webResults: wholePair(input.webResultsMentioned, input.webResultsTotal) };
+}
+
+export function mentionLabel(tally: MentionTally, unit: 'queries' | 'web results'): string {
+    return `mentioned in ${tally.mentioned} of ${tally.total} ${unit}`;
+}
+
+/** Header for the rows on screen, including rows that were not measured. */
+export function radarRowCaption(rows: ReadonlyArray<{ status: RadarStatus }>): string | null {
+    if (!rows.length) return null;
+    const cited = rows.filter((row) => row.status === 'cited').length;
+    const notMeasured = rows.filter((row) => row.status === 'not_measured').length;
+    const unit = rows.length === 1 ? 'query' : 'queries';
+    const line = `cited in ${cited} of ${rows.length} ${unit}`;
+    return notMeasured ? `${line}, ${notMeasured} not measured` : line;
+}
+
+/** One citation sentence for the verdict. Web results win. Otherwise the radar rows. */
+export function verdictCitationLine(input: {
+    radarRows: ReadonlyArray<{ status: RadarStatus }>;
+    webResultsMentioned?: number;
+    webResultsTotal?: number;
+}): string | null {
+    const counts = mentionCounts(input);
+    if (counts.webResults) return `The brand is ${mentionLabel(counts.webResults, 'web results')}.`;
+    const caption = radarRowCaption(input.radarRows);
+    return caption ? `The brand is ${caption}.` : null;
+}
+
+/**
+ * The preview label and the radar share mentionCounts.
+ * Web results label the search rows. Queries label the radar rows.
+ */
+export function citationView(
+    markdown: string,
+    summary: EmpiricalCitationSummary | undefined,
+): { label: string | null; evidence: Array<{ query: string; brandCited: boolean }> | null } {
+    if (!summary || summary.measurementStatus === 'not_measured') return { label: null, evidence: null };
+    const evidence = summary.evidenceList || [];
+    const radar = radarCitationRows(markdown, evidence);
+    const counts = mentionCounts({
+        radarRows: radar,
+        webResultsMentioned: summary.webResultsMentioned,
+        webResultsTotal: summary.webResultsTotal,
+    });
+    const label = counts.webResults
+        ? mentionLabel(counts.webResults, 'web results')
+        : counts.queries
+            ? mentionLabel(counts.queries, 'queries')
+            : null;
+    if (!label) return { label: null, evidence: null };
+    return { label, evidence: evidence.length ? evidence : null };
 }
 
 /**
@@ -49,7 +194,7 @@ export function readCitationStatus(cell: unknown): RadarStatus {
 const STATUS_TEXT: Record<RadarStatus, string> = {
     cited: 'Cited',
     not_cited: 'Not cited',
-    not_measured: 'Not measured',
+    not_measured: NOT_MEASURED,
 };
 
 /**
@@ -57,12 +202,18 @@ const STATUS_TEXT: Record<RadarStatus, string> = {
  * It shows what the table says and nothing else: no score is worked out from the
  * cells, and a cell that does not give a reading prints "Not measured".
  */
-export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows }) => {
+export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows, evidence }) => {
     const queryCol = columnIndex(headers, /query/i, 0);
     const intentCol = columnIndex(headers, /intent/i, 1);
     const citedCol = columnIndex(headers, /brand cited/i, 2);
     const competitorsCol = columnIndex(headers, /competitor/i, 3);
     const statusCol = columnIndex(headers, /status/i, 4);
+    const statuses = rows.map((row) => {
+        const query = plain(row[queryCol]) || 'Query';
+        const hit = evidence?.find((item) => normQuery(item.query) === normQuery(query));
+        return hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol]);
+    });
+    const queries = radarRowCaption(statuses.map((status) => ({ status })));
 
     return (
         <div className="my-8 rounded-2xl border border-gold/25 bg-black/60 overflow-hidden shadow-xl relative animate-in fade-in duration-700">
@@ -74,6 +225,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                     <div>
                         <h3 className="text-base font-semibold tracking-tight text-gold-light">AI and search visibility</h3>
                         <p className="text-[11px] font-mono text-gray-400">As written in the report table. Not a score.</p>
+                        {queries ? <p className="text-[11px] font-mono text-gray-400">{queries}</p> : null}
                     </div>
                 </div>
             </div>
@@ -82,9 +234,10 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                 {rows.map((row, idx) => {
                     const query = plain(row[queryCol]) || 'Query';
                     const intent = plain(row[intentCol]);
-                    const cited = readBrandCited(row[citedCol]);
-                    const competitors = plain(row[competitorsCol]) || 'Not measured';
-                    const status = STATUS_TEXT[readCitationStatus(row[statusCol])];
+                    const hit = evidence?.find((item) => normQuery(item.query) === normQuery(query));
+                    const cited = hit ? (hit.brandCited ? 'yes' : 'no') : readBrandCited(row[citedCol]);
+                    const competitors = displayMeasured(plain(row[competitorsCol]));
+                    const status = STATUS_TEXT[hit ? (hit.brandCited ? 'cited' : 'not_cited') : readCitationStatus(row[statusCol])];
 
                     return (
                         <div
@@ -98,7 +251,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                                             {intent}
                                         </span>
                                     )}
-                                    <span className="text-sm font-semibold text-white tracking-tight">"{query}"</span>
+                                    <span className="text-sm font-semibold text-white tracking-tight">{quotedQuery(query)}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-mono text-gray-500">Citation status:</span>
@@ -113,7 +266,7 @@ export const VisibilityRadar: React.FC<VisibilityRadarProps> = ({ headers, rows 
                                     <span className="block text-[9px] uppercase tracking-wider text-gray-500 mb-0.5">Brand quoted</span>
                                     <span className={`inline-flex items-center gap-1 font-bold ${cited === 'yes' ? 'text-success-400' : cited === 'no' ? 'text-warning-400' : 'text-gray-400'}`}>
                                         <span className={`w-1.5 h-1.5 rounded-full ${cited === 'yes' ? 'bg-success-400' : cited === 'no' ? 'bg-warning-400' : 'bg-gray-500'}`}></span>
-                                        {cited === 'yes' ? 'Cited (estimated)' : cited === 'no' ? 'Opportunity gap' : 'Not measured'}
+                                        {cited === 'yes' ? 'Cited (estimated)' : cited === 'no' ? 'Opportunity gap' : NOT_MEASURED}
                                     </span>
                                 </div>
                                 <div>

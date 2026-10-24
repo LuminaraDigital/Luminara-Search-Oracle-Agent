@@ -201,7 +201,7 @@ function evaluateLlmsPresence(snapshot: LlmCrawlerSnapshot): LlmCrawlerCheck {
     return check('llms_txt', 'fail', 'llms.txt was not found at the site root.');
   }
   if (snapshot.llmsTxt && snapshot.llmsTxt.trim().length > 0 && (snapshot.llmsHttpStatus === 200 || snapshot.llmsHttpStatus === null)) {
-    return check('llms_txt', 'pass', 'llms.txt is present. Google Search may ignore it. Other agents can still quote it.');
+    return check('llms_txt', 'pass', 'llms.txt is present. Some search engines may ignore it. Other agents can still quote it.');
   }
   if (snapshot.llmsHttpStatus != null) {
     return check('llms_txt', 'not_measured', `llms.txt fetch returned HTTP ${snapshot.llmsHttpStatus}. Presence was not measured.`);

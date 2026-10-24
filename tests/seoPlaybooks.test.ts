@@ -41,6 +41,7 @@ describe('playbookContext', () => {
   it('respects the character budget', () => {
     const ctx = playbookContext(selectAuditPlaybooks('SEO'), 3000);
     expect(ctx.length).toBeLessThan(3600);
-    expect(ctx).toContain('[SEO METHODOLOGY PLAYBOOKS]');
+    expect(ctx).toContain('[AUDIT RULES]');
+    expect(ctx).not.toContain('[SEO METHODOLOGY PLAYBOOKS]');
   });
 });

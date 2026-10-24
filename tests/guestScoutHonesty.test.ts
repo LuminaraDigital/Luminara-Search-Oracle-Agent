@@ -182,28 +182,38 @@ describe('guest scout summary honesty', () => {
       findings: [],
       hostedRail: 'signed_in_hosted' as const,
     };
-    const badge = (healthScore: number | null, healthChecks?: { passed: number; total: number; unmeasured?: number } | null) =>
+    const badge = (healthScore: number | null, healthChecks?: { passed: number; total: number; failed?: number; unmeasured?: number } | null) =>
       buildGuestScoutSummary({ ...base, healthScore, healthChecks }).badges.find((item) => item.label === 'Page health');
 
-    expect(badge(73, { passed: 3, total: 4 })).toEqual({ label: 'Page health', status: 'measured', value: '3 of 4 checks passed' });
-    expect(badge(null, { passed: 2, total: 4, unmeasured: 1 })).toEqual({
+    expect(badge(73, { passed: 3, total: 4, failed: 1 })).toEqual({ label: 'Page health', status: 'measured', value: '3 of 4 checks passed, 1 failed' });
+    expect(badge(73, { passed: 2, total: 4, failed: 2 })).toEqual({
+      label: 'Page health',
+      status: 'measured',
+      value: '2 of 4 checks passed, 2 failed',
+    });
+    expect(badge(null, { passed: 2, total: 4, failed: 1, unmeasured: 1 })).toEqual({
+      label: 'Page health',
+      status: 'measured',
+      value: '2 of 4 checks passed, 1 failed, 1 not measured',
+    });
+    expect(badge(null, { passed: 0, total: 4, failed: 0, unmeasured: 4 })).toEqual({
       label: 'Page health',
       status: 'not_measured',
-      value: 'passed 2 of 4; 1 not measured',
+      value: '0 of 4 checks passed, 4 not measured',
     });
     // The checklist number on its own is never printed.
     expect(badge(73)).toEqual({ label: 'Page health', status: 'not_measured' });
-    expect(badge(null, { passed: 3, total: 4 })).toEqual({ label: 'Page health', status: 'not_measured' });
     expect(badge(73, { passed: 9, total: 4 })).toEqual({ label: 'Page health', status: 'not_measured' });
 
     const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, {
-      summary: buildGuestScoutSummary({ ...base, healthScore: 73, healthChecks: { passed: 3, total: 4 } }),
+      summary: buildGuestScoutSummary({ ...base, healthScore: 73, healthChecks: { passed: 2, total: 4, failed: 2 } }),
     }));
-    expect(html).toContain('Page health: 3 of 4 checks passed');
+    expect(html).toContain('Page health: 2 of 4 checks passed, 2 failed');
     const partial = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, {
-      summary: buildGuestScoutSummary({ ...base, healthScore: null, healthChecks: { passed: 2, total: 4, unmeasured: 1 } }),
+      summary: buildGuestScoutSummary({ ...base, healthScore: null, healthChecks: { passed: 2, total: 4, failed: 1, unmeasured: 1 } }),
     }));
-    expect(partial).toContain('Page health: passed 2 of 4; 1 not measured');
+    expect(partial).toContain('Page health: 2 of 4 checks passed, 1 failed, 1 not measured');
+    expect(partial).not.toContain('2 not measured');
     expect(html).not.toMatch(/\d+\s*\/\s*100/);
     expect(html).not.toContain('73');
   });
@@ -380,7 +390,9 @@ describe('guest scout summary honesty', () => {
     expect(html).not.toContain('75/100');
     expect(html).not.toContain('56%');
     expect(html).not.toContain('**');
-    expect(html).not.toContain('What This Means');
+    expect(html).toContain('What This Means');
+    expect(html).toContain('What AI tools can read');
+    expect(html).toContain('Not measured');
     expect(html).not.toContain('third action');
   });
 

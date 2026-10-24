@@ -3,11 +3,8 @@
  * The page never carries findings, evidence, or a 0-100 health figure.
  */
 import { cleanScrapedName } from '../audit/brandName';
+import { parseMeasuredCheckLine } from '../agentCore/auditEvidenceGate';
 import { formatAuDate } from '../../utils/formatAuDate';
-
-/** A fully measured line. A positive "not measured" count is not a share. */
-const MEASURED_LINE = /\bpassed (\d+) of (\d+); (\d+) not measured\b/i;
-const LEGACY_MEASURED_LINE = /\bpassed (\d+) of (\d+) checks\b/i;
 
 /** At least 3 of 4 checks. Same ratio for a longer checklist. */
 const WIN_MIN_PASSED = 3;
@@ -41,23 +38,12 @@ export function checksQualify(passed: number, total: number): boolean {
     && passed * WIN_MIN_TOTAL >= total * WIN_MIN_PASSED;
 }
 
+/** A positive "not measured" count is not a share. Failed checks stay in the counts. */
 export function measuredChecks(reportText: string, measured: boolean): { passed: number; total: number } | null {
   if (!measured) return null;
-  const honest = reportText.match(MEASURED_LINE);
-  if (honest) {
-    if (Number(honest[3]) !== 0) return null;
-    return pair(honest[1], honest[2]);
-  }
-  const legacy = reportText.match(LEGACY_MEASURED_LINE);
-  if (!legacy) return null;
-  return pair(legacy[1], legacy[2]);
-}
-
-function pair(passedText: string, totalText: string): { passed: number; total: number } | null {
-  const passed = Number(passedText);
-  const total = Number(totalText);
-  if (!Number.isInteger(passed) || !Number.isInteger(total) || total < 1 || passed < 0 || passed > total) return null;
-  return { passed, total };
+  const counts = parseMeasuredCheckLine(reportText);
+  if (!counts || counts.unmeasured > 0) return null;
+  return { passed: counts.passed, total: counts.total };
 }
 
 function clampFixes(value: number): number {

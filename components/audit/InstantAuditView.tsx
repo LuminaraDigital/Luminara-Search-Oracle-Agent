@@ -33,7 +33,7 @@ import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services
 import { Button } from '../ui/Button';
 import { GuestScoutSummaryPanel } from './GuestScoutSummaryPanel';
 import { SuiteCitabilityChecklist } from './SuiteCitabilityChecklist';
-import { buildGuestScoutSummary, isDegradedScout, plainScoutVerdict, shouldGenerateAuditReport, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
+import { buildGuestScoutSummary, isDegradedScout, plainScoutVerdict, shouldGenerateAuditReport, unmeasuredScoutSummary, type GuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { validateAuditTargetUrl } from '../../services/audit/auditTargetUrl';
 import { guestNeedsFullAuditSignIn, hostedScoutPreRunCopy, requestGuestFullAuditSignIn, type HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import { probeLlmCrawlerReadiness } from '../../services/audit/llmCrawlerProbe';
@@ -573,17 +573,19 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     }
   };
 
+  const summaryForCard = scoutSummary ?? (report ? unmeasuredScoutSummary(url) : null);
   const guestResultFirst = Boolean(
     isGuest && hostedRail === 'byok_or_signin' && scoutSummary && !loading && scoutSummary.banner,
   );
-  const scoutPanel = scoutSummary && !loading ? (
+  const scoutPanel = summaryForCard ? (
     <GuestScoutSummaryPanel
-      summary={scoutSummary}
+      summary={summaryForCard}
       shareNote={shareNote}
       sharing={sharing}
       onShare={() => { void shareTeaser('share'); }}
       onCopy={() => { void shareTeaser('copy'); }}
       onSignIn={isGuest && hostedRail === 'byok_or_signin' ? requestGuestFullAuditSignIn : undefined}
+      auditFindings={report ? boardFindings : undefined}
     />
   ) : null;
 
@@ -980,6 +982,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             rlmTrajectory={report.rlmTrajectory}
             healthSite={report.healthSite}
             boardFindings={boardFindings}
+            checkLine={scoutSummary?.badges.find((badge) => badge.label === 'Page health')?.value}
           />
         </div>
       )}
