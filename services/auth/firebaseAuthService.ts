@@ -2,7 +2,7 @@
  * Browser Firebase Auth (email/password + Google).
  * Email/password goes through the Worker (IP-throttled Identity Toolkit) then
  * hydrates the client SDK. Google still uses the popup SDK path.
- * Optional App Check (reCAPTCHA v3) attaches when VITE_FIREBASE_APPCHECK_SITE_KEY is set.
+ * Optional App Check (reCAPTCHA Enterprise) attaches when VITE_FIREBASE_APPCHECK_SITE_KEY is set.
  */
 import { initializeApp, type FirebaseApp, getApps } from 'firebase/app';
 import * as firebaseAuthSdk from 'firebase/auth';

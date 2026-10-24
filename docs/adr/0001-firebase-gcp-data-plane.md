@@ -1,6 +1,6 @@
 # ADR 0001: Firebase / GCP data plane for Luminara Suite
 
-Status: **Accepted (Firestore)**. Tunji chose Firestore 2026-10-23. Engineering CEO SHIP on v2. Tunji approved phase 2/3 implementation on 2026-10-24. `DATA_PLANE` defaults to `d1` and is unset in wrangler. Dual-write is not enabled on staging or production.
+Status: **Accepted (Firestore)**. Tunji chose Firestore 2026-10-23. Engineering CEO SHIP on v2. Tunji approved phase 2/3 implementation on 2026-10-24. `DATA_PLANE` defaults to `d1` and is unset in wrangler. Dual-write is not enabled on staging or production. `dual` is the ceiling. D1 stays the primary source of truth. Firestore is a backup mirror only. `firestore` mode is not planned unless the operator decides otherwise.
 Date: 2026-10-23 (Australia/Sydney)
 Author: Luminara Suite assistant
 Companion inventory: `REPORT.md`, `PLAN.md` in this folder
@@ -76,7 +76,7 @@ A Cloud Run proxy that runs as `suite-worker` was the other keyless route. The p
 | Impersonation | Var `GCP_IMPERSONATE_SERVICE_ACCOUNT`. |
 | Project | Var `GCP_PROJECT_ID`. Leave unset while `DATA_PLANE` is `d1`. |
 | Token cache | Reuse the access token until five minutes before `expireTime`. |
-| Flag | `DATA_PLANE` is `d1` (default), `dual`, or `firestore`. Any other value logs a warning and behaves as `d1`. |
+| Flag | `DATA_PLANE` is `d1` (default) or `dual`. `dual` is the ceiling. D1 stays the source of truth and Firestore is a backup mirror. The code still accepts `firestore`. Do not set it unless the operator decides otherwise. Any other value logs a warning and behaves as `d1`. |
 
 `dual` reads D1 and writes D1. The Firestore write runs in `waitUntil`, times out after 4 seconds, and logs `op`, `entity`, `id`, `outcome`, and `latency_ms`. The log has no email, report text, bearer token, or signing key. A Firestore error or timeout does not change the HTTP response. `firestore` is implemented behind the flag and is not set in wrangler.
 
@@ -86,16 +86,46 @@ Rollback: `DATA_PLANE=d1`, or unsetting the var, skips Firestore clients entirel
 
 Run this list on `luminara-suite-staging` only. Do not create a service account key. Do not target `luminara-suite` in this phase.
 
-1. Confirm the existing Firestore database `(default)` in `australia-southeast2` on `luminara-suite-staging`. Do not recreate it.
+1. Confirm the existing Firestore database `(default)` on `luminara-suite-staging` in `australia-southeast1`. Production `(default)` is in `australia-southeast2`. Do not recreate either database.
 2. Create a Workload Identity Pool and an OIDC provider. Issuer URI: `https://staging.luminarasuite.com/api/gcp-oidc`. Allowed audience: the provider resource name. Attribute mapping: `google.subject=assertion.sub`. Attribute condition: `assertion.sub == "suite-worker"`.
 3. On a trusted machine, generate an RSA key pair. Store the private PKCS#8 PEM with `npx wrangler secret put GCP_OIDC_SIGNING_KEY --env staging`. Put the public JWK (`kty`, `n`, `e`, `kid`, `alg`, `use`, and no private fields) in the staging var `GCP_OIDC_PUBLIC_JWK`.
 4. Set staging vars: `GCP_OIDC_ISSUER`, `GCP_OIDC_SUBJECT` (`suite-worker`), `GCP_OIDC_KEY_ID` (the JWK `kid`), `GCP_WIF_AUDIENCE`, `GCP_IMPERSONATE_SERVICE_ACCOUNT` (`suite-worker@luminara-suite-staging.iam.gserviceaccount.com`), `GCP_PROJECT_ID` (`luminara-suite-staging`). Leave `DATA_PLANE` unset.
 5. Grant `roles/iam.workloadIdentityUser` on that service account to the pool principal. Grant `roles/datastore.user` on project `luminara-suite-staging` to the service account.
 6. Create composite indexes on collection `audits`: `accountId` ASC + `measuredAt` DESC, and `accountId` ASC + `domain` ASC + `measuredAt` DESC.
 7. Dry-run the backfill below, read the counts, then apply it to staging.
-8. Record the section 4 cost estimate. Account link and privacy erase are mirrored in the tree. After the cost estimate, set staging `DATA_PLANE=dual`. Leave production unset.
+8. Account link and privacy erase mirroring landed in #247. Both projects have an A$50/month budget. Leave `DATA_PLANE` unset until you choose to set staging to `dual`. Production stays unset. `dual` is the ceiling.
+9. Prove the Workload Identity chain with `npm run smoke:wif`. The steps are below. The command does not set `DATA_PLANE`.
 
 The Worker serves one public JWK. A rotation that needs two keys at once is a later change.
+
+### Prove the chain on staging
+
+`POST /api/admin/wif-smoke` answers only when `ENVIRONMENT` is `staging`. Production returns 404. The route does not read `DATA_PLANE` and it does not write `users` or `audits`.
+
+The Worker signs an RS256 JWT, exchanges it at STS, impersonates `suite-worker`, then writes, reads, and deletes one `_smoke` document whose id is `wif-` plus the timestamp. The response lists each step with `ok` and `latencyMs`. It does not include a token or the signing key.
+
+From a fresh terminal, paste the staging admin secret at the prompt. The shell does not echo it.
+
+```bash
+read -rs ADMIN_SECRET && export ADMIN_SECRET
+```
+
+```bash
+npm run smoke:wif
+```
+
+Each step prints `PASS` or `FAIL` and a latency in milliseconds. Unset `ADMIN_SECRET` when you are done. Set `WIF_SMOKE_URL` when staging is not `https://staging.luminarasuite.com/api/admin/wif-smoke`.
+
+Staging `APPCHECK_ENFORCE` is `log`, so this command sends no App Check token and the route still runs. If that var is later `enforce`, the route returns 401 `APP_CHECK_REQUIRED` until you exempt it or send a token.
+
+### GitHub build variables
+
+On the GitHub environments `staging` and `production`, add these as environment variables, not secrets. Use each environment's own values. If you leave a variable empty, the build still succeeds. An empty site key leaves App Check off. An empty DSN leaves Sentry off.
+
+| Variable | Value |
+|---|---|
+| `VITE_FIREBASE_APPCHECK_SITE_KEY` | reCAPTCHA Enterprise site key for that project's web app |
+| `VITE_SENTRY_DSN` | public browser DSN, or empty |
 
 ### Backfill against staging
 
@@ -120,12 +150,10 @@ The first `npm run` is the dry run (counts and sample field names, no Firestore 
 
 | Env | Firebase / GCP project | Firestore location |
 |-----|------------------------|--------------------|
-| Staging | `luminara-suite-staging` | **`australia-southeast2`** (Melbourne) |
+| Staging | `luminara-suite-staging` | **`australia-southeast1`** (Sydney) |
 | Production | `luminara-suite` | **`australia-southeast2`** (Melbourne) |
 
-Production Firestore is already in `australia-southeast2`. Location is immutable after the database exists, so staging uses the same region. Do not recreate either database in `australia-southeast1`, nam5, or another multi-region unless Tunji accepts a new database and the cost.
-
-Cloud Storage buckets for later artifact work: `australia-southeast2`.
+Production Firestore is in `australia-southeast2`. Staging Firestore is in `australia-southeast1`. Location is immutable after the database exists. Do not recreate either database.
 
 ---
 
@@ -139,9 +167,9 @@ Cloud Storage buckets for later artifact work: `australia-southeast2`.
 | Past reports list | Reads: 1 query page (e.g. 20 docs) per open of Past reports. |
 | Sign-in boot | Reads: 1 user + 1 workspace (not full audit history). |
 
-**Open question for Tunji:** If the projected **Firestore bill for Suite alone** exceeds **A$50 / month** at current staging traffic × 10, pause dual-write and revisit Cloud SQL or tighter denormalization.
+Both GCP projects have an A$50/month budget: `luminara-suite` and `luminara-suite-staging`.
 
-Record the estimate in the enablement PR description. No dual-write without that number (or an explicit “skip cost gate” from Tunji).
+The account-link and privacy-erase mirror gate is closed by #247. Those writes are in the tree. `DATA_PLANE` stays unset until the operator sets `dual` on staging. `dual` is the ceiling. Firestore stays a backup mirror. `firestore` mode is not planned unless the operator decides otherwise.
 
 ---
 
@@ -161,7 +189,7 @@ Choose **Cloud SQL (Postgres)** if most of these are true:
 4. Public `POST /audit-receipts/verify` must stay a single strong row update in SQL from day one of cutover.
 5. Team prefers SQL runbooks over document modeling.
 
-**This ADR’s recommended default is Firestore** for users + Instant Audit history first, with money/receipts **staying on D1 longer**. If Tunji picks Cloud SQL, replace sections 1-2 with Postgres schema + Hyperdrive/Cloud SQL Auth Proxy and keep the same phased flag/`DATA_PLANE` idea.
+**This ADR's recommended default is Firestore** for users + Instant Audit history first, with money/receipts **staying on D1 longer**. If Tunji picks Cloud SQL, replace sections 1-2 with Postgres schema + Hyperdrive/Cloud SQL Auth Proxy and keep the same phased flag/`DATA_PLANE` idea. `dual` remains the ceiling unless the operator decides otherwise.
 
 ---
 
@@ -172,7 +200,7 @@ Phase 2/3 does not set the flag on staging. When `DATA_PLANE` first allows Fires
 | File | Change |
 |------|--------|
 | `specs/0007-auth-toll-fraud-anti-enumeration.md` | Narrow the non-goal: Cloud Functions/Firestore remain non-goals for **auth fraud controls**; add pointer that **product data** plane is governed by this ADR (once approved and filed under `specs/` or `docs/adr/`). |
-| `worker/securityHardening.ts` | Replace “There is no Cloud Firestore” with accurate stack note: Auth via Firebase ID tokens; durable data via D1 and/or Firestore per `DATA_PLANE`; still no Admin SDK private key in client. |
+| `worker/securityHardening.ts` | Replace "There is no Cloud Firestore" with accurate stack note: Auth via Firebase ID tokens; durable data via D1 and/or Firestore per `DATA_PLANE`; still no Admin SDK private key in client. |
 | `docs/runbooks/d1-backup-dr.md` | Add companion section or new `docs/runbooks/firestore-backup-dr.md`: scheduled export, region, who runs restore; D1 Time Travel remains for domains still on D1. |
 | `AGENTS.md` / `README.md` architecture blurb | One paragraph: Workers edge; Auth Firebase; data D1 and/or Firestore per ADR. |
 | `firebase.json` / rules | Add Firestore rules file when DB is created (deny-all default; Worker SA uses Admin-equivalent REST with IAM, not client rules for server writes). |
@@ -187,7 +215,7 @@ This ADR is filed at `docs/adr/0001-firebase-gcp-data-plane.md`.
 - One erase attempt deletes at most 20 query pages. Reconcile continues the rest. The page size is 100 documents.
 - The link mirror is best-effort. A failed link mirror is repaired by the next backfill of the surviving account, except ids already in the erase ledger.
 - Audit queries still need the composite indexes in the checklist before they succeed.
-- `DATA_PLANE` stays unset until the section 4 cost estimate is recorded.
+- `DATA_PLANE` stays unset until the operator sets `dual`. `dual` is the ceiling. The link and erase mirror gate is closed by #247. Both projects have an A$50/month budget.
 
 ## Non-goals
 - Silent cutover or dual-write without Tunji yes + CEO ship on this ADR
@@ -197,12 +225,11 @@ This ADR is filed at `docs/adr/0001-firebase-gcp-data-plane.md`.
 - Moving Stripe/TON ledgers or receipt HMAC verify off D1 in phase 1-3
 
 ## Phased cutover (only after yes)
-1. **ADR approved.** Store choice and region are recorded. The cost ceiling still gates enablement.
-2. **Firestore exists** in `australia-southeast2` on `luminara-suite` and `luminara-suite-staging` (operator, before this phase): deny-all rules, PITR, delete protection, service account `suite-worker`.
-3. **Repository and flag.** The code is in the tree. `DATA_PLANE` defaults to `d1`. Wrangler does not set it.
-4. **Enable dual-write** on staging after the cost gate and the checklist in section 2. Account link and privacy erase are mirrored. D1 stays the source of truth for reads. Signed audit receipts stay on D1.
-5. **Read cutover** on staging, then production, with rollback to D1 reads.
-6. **Stop D1 writes** for the cut-over collections. Ledgers and receipts stay on D1 until a later ADR.
+1. **ADR approved.** Store choice and region are recorded. Both projects have an A$50/month budget. `dual` stays off until the operator sets it.
+2. **Firestore exists.** Production `(default)` is in `australia-southeast2`. Staging `(default)` is in `australia-southeast1`. Deny-all rules, PITR, delete protection, and service account `suite-worker` stay in place. Do not recreate either database.
+3. **Repository and flag.** The code is in the tree. `DATA_PLANE` defaults to `d1`. Wrangler does not set it. `dual` is the ceiling.
+4. **Enable dual-write** on staging when the operator sets `DATA_PLANE=dual`. Account link and privacy erase mirroring landed in #247. D1 stays the source of truth. Firestore is a backup mirror only. Signed audit receipts stay on D1.
+5. **No read cutover.** `firestore` mode is not planned unless the operator decides otherwise. Ledgers and receipts stay on D1.
 
 ## Rollback
 `DATA_PLANE=d1` restores D1 as source of truth. During dual-write, D1 stays current. Document Time Travel + R2 export before production cutover.
