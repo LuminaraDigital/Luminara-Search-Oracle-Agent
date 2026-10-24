@@ -37,7 +37,8 @@ leaked internals).
 | `POST /admin/skills/:slug/versions`, `POST /admin/skills/:slug/enable`, `GET /admin/skills/:slug` | worker/agentSkills.ts | admin | Agent skill versions/enable |
 | `POST /agent/attest` | worker/attestationService.ts | none | Agent attestation |
 | `POST /sentinel/register`, `/sentinel/status` | worker/sentinel.ts | session | Drift Sentinel targets |
-| `GET /audits/history`, `PUT /audits/history` | worker/auditHistoryRoute.ts | session | Instant Audit history, one row per account and audit id. The browser list is a cache of it: Past reports reads the API first and falls back to the browser when the call fails. PUT takes `{ entry }`, rebuilds it field by field, keeps the first `measuredAt` on a re-save, and keeps the newest 500 rows per account on every plan (`auditHistoryDepth` caps only the browser list). Exported, deleted, and moved on account link with the account. 60 calls per minute per account and per IP. Needs D1 `0038_audit_history.sql` |
+| `GET /audits/history`, `PUT /audits/history` | worker/auditHistoryRoute.ts | session | Instant Audit history, one row per account and audit id. The browser list is a cache of it: Past reports reads the API first and falls back to the browser when the call fails. PUT takes `{ entry }`, rebuilds it field by field, keeps the first `measuredAt` on a re-save, and keeps the newest 500 rows per account on every plan (`auditHistoryDepth` caps only the browser list). Exported, deleted, and moved on account link with the account. 60 calls per minute per account and per IP. Needs D1 `0038_audit_history.sql`. `DATA_PLANE=dual` also mirrors the saved row to Firestore in `waitUntil`. The flag defaults to `d1` |
+| `GET /gcp-oidc/.well-known/openid-configuration`, `GET /gcp-oidc/jwks` | worker/gcpOidc.ts | none | Public OIDC discovery for Workload Identity Federation. 404 until `GCP_OIDC_ISSUER` and `GCP_OIDC_PUBLIC_JWK` are set. A JWK with a private field is refused |
 | `GET /share/reports/:token`, `POST /share/reports` | worker/shareService.ts | session + public GET | Full branded reports. Growth+ `shareLinks` |
 | `POST /share/teasers`, `GET /share/teasers/:token` | worker/shareService.ts | session create, public GET | Redacted scout teaser. Not `shareLinks`. 5/day. Public hosts only. Credential-like text rejected. Badges stored as not_measured |
 | `GET /referrals/me`, `POST /referrals/claim`, `POST /referrals/qualify`, `POST /missions/complete` | worker/referrals.ts | session | Opaque `ref_` invites. Qualify pays two-sided credits only with a one-time scout receipt from a signed-in evidence call. Re-scout needs a second honest scout in the current ISO week. Credit consume is compare-and-swap. Needs unapplied D1 `0012_referrals_missions.sql`. Bot `/missions` is opt-in and is not on the Sentinel cron |
@@ -461,6 +462,22 @@ When D1 is unbound they fail best-effort and log to console.
 - **A queue handler that throws loses no message.** The error is logged and the batch is sent back
   for retry; the consumer's `max_retries` and dead letter queue then apply. The audit handler still
   settles its own messages one by one (ack on success, retry on failure).
+
+## Data plane (ADR 0001)
+
+`DATA_PLANE` is `d1` (default), `dual`, or `firestore`. An unknown value logs `{ event: "data_plane_config", outcome: "fallback" }` and behaves as `d1`. Wrangler does not set the var, so production and staging stay on D1.
+
+`dual` reads and writes D1. After a successful login upsert or `PUT /audits/history`, a Firestore write is scheduled with `waitUntil`. It times out after 4 seconds. The log line is `data_plane_mirror` with `op`, `entity`, `id`, `outcome`, and `latency_ms`. Firestore errors do not change the response. `firestore` is implemented and not enabled.
+
+Collections: `users/{loginId}` and `audits/{accountId length}.{accountId}.{entryId}`. `email_unsub_token` is not copied. Account link and privacy erase still write D1 only.
+
+Backfill (dry-run by default, refuses project `luminara-suite` unless `--i-understand-prod`):
+
+```
+npm run db:backfill:firestore -- --from-users users.json --from-audits audits.json --project luminara-suite-staging
+```
+
+See `docs/adr/0001-firebase-gcp-data-plane.md` for the staging export commands and the GCP checklist. No service account JSON key.
 
 ## Env vars
 

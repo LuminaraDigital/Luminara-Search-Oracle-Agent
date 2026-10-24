@@ -6,8 +6,9 @@
 import type { Env } from './env';
 import { MAX_BODY_BYTES, readBody } from './security';
 import { identify, json, billingId } from './workerUtils';
+import { DataPlaneConfigError, readPlane, type DataPlaneDeps } from './dataPlane';
+import { openAuditHistoryStore } from './auditHistoryRepo';
 
-const MAX_ROWS_PER_ACCOUNT = 500;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 const MAX_EXCERPT = 80_000;
@@ -87,36 +88,28 @@ export function sanitizeAuditEntry(raw: unknown): { ok: true; entry: StoredAudit
   };
 }
 
-function parseRow(row: { entry_json: string; measured_at: number }): StoredAuditEntry | null {
-  try {
-    const entry = JSON.parse(row.entry_json) as StoredAuditEntry;
-    return { ...entry, measuredAt: row.measured_at };
-  } catch {
-    return null;
-  }
-}
-
-export async function handleAuditHistoryRoute(request: Request, env: Env): Promise<Response> {
-  if (!env.DB) return json({ ok: false, error: 'Database unavailable' }, 503);
+export async function handleAuditHistoryRoute(request: Request, env: Env, deps?: DataPlaneDeps): Promise<Response> {
+  const plane = readPlane(env, deps?.log);
+  if (plane !== 'firestore' && !env.DB) return json({ ok: false, error: 'Database unavailable' }, 503);
   const who = await identify(request, env);
   if (who.error || !who.user) {
     return json({ ok: false, error: who.error || 'Sign in required', code: 'AUTH_REQUIRED' }, 401);
   }
   const accountId = billingId(who.user);
+  let store;
+  try {
+    store = openAuditHistoryStore(env, deps, plane);
+  } catch (err) {
+    if (err instanceof DataPlaneConfigError) return json({ ok: false, error: err.message }, 503);
+    throw err;
+  }
 
   if (request.method === 'GET') {
     const url = new URL(request.url);
     const requested = Number(url.searchParams.get('limit') || DEFAULT_LIMIT);
     const limit = Number.isFinite(requested) ? Math.min(Math.max(Math.floor(requested), 1), MAX_LIMIT) : DEFAULT_LIMIT;
     const domain = normalizeDomain(url.searchParams.get('domain') || '');
-    const res = domain
-      ? await env.DB.prepare(
-          `SELECT entry_json, measured_at FROM audit_history WHERE account_id = ? AND domain = ? ORDER BY measured_at DESC LIMIT ?`,
-        ).bind(accountId, domain, limit).all<{ entry_json: string; measured_at: number }>()
-      : await env.DB.prepare(
-          `SELECT entry_json, measured_at FROM audit_history WHERE account_id = ? ORDER BY measured_at DESC LIMIT ?`,
-        ).bind(accountId, limit).all<{ entry_json: string; measured_at: number }>();
-    const entries = (res.results || []).map(parseRow).filter((e): e is StoredAuditEntry => e !== null);
+    const entries = await store.list({ accountId, domain, limit });
     return json({ ok: true, accountId, entries });
   }
 
@@ -125,31 +118,9 @@ export async function handleAuditHistoryRoute(request: Request, env: Env): Promi
     if (!read.ok) return json({ ok: false, error: read.error }, read.status);
     const checked = sanitizeAuditEntry((read.value as { entry?: unknown } | null)?.entry);
     if (!checked.ok) return json({ ok: false, error: checked.error, code: 'INVALID_ENTRY' }, 400);
-    const entry = checked.entry;
-    const now = Date.now();
     // A re-save of the same audit keeps the time it was first measured, as the browser list does.
-    await env.DB.prepare(
-      `INSERT INTO audit_history (account_id, id, domain, measured_at, entry_json, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(account_id, id) DO UPDATE SET
-         domain = excluded.domain,
-         entry_json = excluded.entry_json,
-         updated_at = excluded.updated_at`,
-    ).bind(accountId, entry.id, entry.domain, entry.measuredAt, JSON.stringify(entry), now).run();
-    const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_history WHERE account_id = ?`)
-      .bind(accountId)
-      .first<{ n: number }>();
-    if (Number(count?.n ?? 0) > MAX_ROWS_PER_ACCOUNT) {
-      await env.DB.prepare(
-        `DELETE FROM audit_history WHERE account_id = ? AND id NOT IN (
-           SELECT id FROM audit_history WHERE account_id = ? ORDER BY measured_at DESC LIMIT ?
-         )`,
-      ).bind(accountId, accountId, MAX_ROWS_PER_ACCOUNT).run();
-    }
-    const row = await env.DB.prepare(`SELECT entry_json, measured_at FROM audit_history WHERE account_id = ? AND id = ?`)
-      .bind(accountId, entry.id)
-      .first<{ entry_json: string; measured_at: number }>();
-    return json({ ok: true, entry: row ? parseRow(row) : null });
+    const entry = await store.upsert({ accountId, entry: checked.entry, now: Date.now() });
+    return json({ ok: true, entry });
   }
 
   return json({ ok: false, error: 'Method not allowed' }, 405);

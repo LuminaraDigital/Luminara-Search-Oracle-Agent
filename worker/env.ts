@@ -2,19 +2,17 @@
  * Cloudflare Worker environment bindings for Luminara Suite.
  */
 import type {
-  D1Database,
   DurableObjectNamespace,
   Fetcher,
   KVNamespace,
   Queue,
   R2Bucket,
 } from '@cloudflare/workers-types';
+import type { DataPlaneEnv } from './dataPlaneDocs';
 
-export interface Env {
+export interface Env extends DataPlaneEnv {
   ASSETS: Fetcher;
   LUMINARA_KV?: KVNamespace;
-  /** Optional D1 users DB. When unset, profiles fall back to KV `user:{id}`. */
-  DB?: D1Database;
   /**
    * Optional R2 bucket for Windows installer mirrors (`windows/latest.exe`, `windows/manifest.json`).
    * When unset or empty, `/desktop/windows` redirects to GitHub Releases.

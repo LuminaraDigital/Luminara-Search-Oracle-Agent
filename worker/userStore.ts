@@ -2,12 +2,15 @@
  * Durable user profiles, Telegram↔Firebase account linking, and workspace blobs.
  * Prefers Cloudflare D1 when bound; falls back to KV so local tests still work.
  */
+import type { KVNamespace } from '@cloudflare/workers-types';
 import { PlanDowngradeRefusedError, wouldDowngrade } from './planRank';
 import type { HostedIdentity, EncryptedKeyBag } from './userTypes';
 import { scheduleWelcomeEmail, type WelcomeEnv } from './welcomeEmail';
+import type { DataPlaneEnv } from './dataPlaneDocs';
+import { readPlane, type DataPlaneDeps } from './dataPlane';
+import { openUserLoginStore } from './userLoginRepo';
 
-export type UserStoreEnv = {
-  DB?: D1Database;
+export type UserStoreEnv = DataPlaneEnv & {
   LUMINARA_KV?: KVNamespace;
   /**
    * Budget enforcement kill-switch: `off` | `soft` | `hard`.
@@ -70,26 +73,15 @@ async function writeKvUser(env: UserStoreEnv, row: StoredUser): Promise<void> {
 
 export type UpsertedUser = StoredUser & { created: boolean; welcomePending: boolean };
 
-export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Promise<UpsertedUser> {
+export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity, deps?: DataPlaneDeps): Promise<UpsertedUser> {
   const now = Date.now();
   const telegramId = user.source === 'telegram' ? user.id : undefined;
   const firebaseUid = user.source === 'firebase' ? firebaseUidFromId(user.id) : undefined;
+  const plane = readPlane(env, deps?.log);
 
-  if (env.DB) {
-    const existing = await env.DB.prepare(
-      `SELECT id, account_id, created_at, last_seen_at, email, display_name, welcome_sent_at, email_opt_out_at FROM users WHERE id = ?`,
-    )
-      .bind(user.id)
-      .first<{
-        id: string;
-        account_id: string | null;
-        created_at: number;
-        last_seen_at: number;
-        email: string | null;
-        display_name: string | null;
-        welcome_sent_at: number | null;
-        email_opt_out_at: number | null;
-      }>();
+  if (plane === 'firestore' || env.DB) {
+    const users = openUserLoginStore(env, deps, plane);
+    const existing = await users.find(user.id);
     const accountId = existing?.account_id || user.accountId || user.id;
     const createdAt = existing?.created_at ?? now;
     if (
@@ -113,27 +105,17 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity): Pr
       };
     }
 
-    await env.DB.prepare(
-      `INSERT INTO users (id, source, email, display_name, telegram_id, firebase_uid, created_at, last_seen_at, account_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         email = excluded.email,
-         display_name = excluded.display_name,
-         last_seen_at = excluded.last_seen_at,
-         account_id = COALESCE(users.account_id, excluded.account_id)`,
-    )
-      .bind(
-        user.id,
-        user.source,
-        user.email ?? null,
-        user.name ?? null,
-        telegramId ?? null,
-        firebaseUid ?? null,
-        createdAt,
-        now,
-        accountId,
-      )
-      .run();
+    await users.save({
+      id: user.id,
+      source: user.source,
+      email: user.email ?? null,
+      displayName: user.name ?? null,
+      telegramId: telegramId ?? null,
+      firebaseUid: firebaseUid ?? null,
+      createdAt,
+      lastSeenAt: now,
+      accountId,
+    });
 
     return {
       id: user.id,
@@ -480,6 +462,7 @@ export async function linkTelegramAndFirebase(
         console.error('[UserStore] Community feed rows were not moved to the linked account', err);
       }
       // Audit history. An id the surviving account already has is the same saved audit, so the copy goes.
+      // shortcut: this move stays on D1. Backfill repairs Firestore until link and erase go through the repository.
       try {
         await env.DB.batch([
           env.DB.prepare(`UPDATE OR IGNORE audit_history SET account_id = ? WHERE account_id = ?`).bind(accountId, from),

@@ -111,6 +111,7 @@ import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
 import { handleFindingsRoute } from './findingsService';
 import { handleAuditHistoryRoute } from './auditHistoryRoute';
+import { handleGcpOidcRoute } from './gcpOidc';
 import { handleLlmCrawlerRoute } from './llmCrawlerRoute';
 import { handleProbeCrawlRoute } from './probeCrawlRoute';
 import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
@@ -319,6 +320,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Agency API surfaces require apiAccess (Agency) after authentication
   const apiAccessGuard = await guardApiAccessRoute(request, env, path);
   if (apiAccessGuard) return withCors(apiAccessGuard);
+
+  const oidc = handleGcpOidcRoute(request, env, path);
+  if (oidc) return withCors(oidc);
 
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
