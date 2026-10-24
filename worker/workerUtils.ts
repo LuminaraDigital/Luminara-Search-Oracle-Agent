@@ -216,6 +216,18 @@ export async function identify(request: Request, env: Env): Promise<{
     }
   }
 
+  if (firebaseUser) {
+    const { settleFirebaseErase } = await import('./accountDeletion');
+    const uid = firebaseUser.id.startsWith('fb:') ? firebaseUser.id.slice(3) : firebaseUser.id;
+    const erased = await settleFirebaseErase(env, uid, jwtCandidate || null, {
+      appCheckToken: request.headers.get('X-Firebase-AppCheck')?.trim() || undefined,
+    });
+    if (erased.kind === 'reject') {
+      if (!telegramUser) return pack({ user: null, error: erased.error });
+      firebaseUser = null;
+    }
+  }
+
   if (telegramUser && firebaseUser) {
     // Do not merge. A dual-credential request must not change the other row's account_id
     // or mirror sub:* keys. The user links explicitly via POST /api/auth/link.

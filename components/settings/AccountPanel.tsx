@@ -14,6 +14,36 @@ import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 import { checksLeftLine, planDetailLine, planTitle } from '../../services/account/accountSummary';
 import { Button } from '../ui/Button';
 
+type DeleteProof = { idToken?: string; initData?: string };
+
+/** Status text for a failed settings action. The delete button throws this before any sign-out. */
+export function accountActionNote(err: unknown): string {
+  return err instanceof Error ? err.message : 'That did not work. Try again.';
+}
+
+export async function submitAccountDelete(input: {
+  base: string;
+  proof: DeleteProof;
+  request: (url: string, init: RequestInit) => Promise<Response>;
+  hasFirebaseUser: boolean;
+  deleteFirebaseUser: () => Promise<void>;
+  clearBoard: () => void;
+  signOut: () => Promise<void>;
+  goHome: () => void;
+}): Promise<void> {
+  const res = await input.request(`${input.base}/api/privacy/account`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ confirm: 'DELETE', ...input.proof }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; firebaseDeleted?: boolean };
+  if (!res.ok || !data.ok) throw new Error(data.error || 'Could not delete the account.');
+  if (data.firebaseDeleted === false && input.hasFirebaseUser) await input.deleteFirebaseUser();
+  input.clearBoard();
+  await input.signOut();
+  input.goHome();
+}
+
 function signInKind(user: { providerData?: { providerId: string }[] } | null): 'google' | 'password' | 'none' {
   const ids = user?.providerData?.map((row) => row.providerId) || [];
   if (ids.includes('google.com') && !ids.includes('password')) return 'google';
@@ -70,7 +100,7 @@ export const AccountPanel: React.FC = () => {
     try {
       await task();
     } catch (err) {
-      setNote(err instanceof Error ? err.message : 'That did not work. Try again.');
+      setNote(accountActionNote(err));
     } finally {
       setBusy(false);
     }
@@ -193,17 +223,16 @@ export const AccountPanel: React.FC = () => {
               : { idToken: await reauthenticateForDelete(kind === 'password' ? password : undefined) };
             const base = apiBase();
             if (!base) throw new Error('Sign in again, then delete the account.');
-            const res = await workerFetchWithAuthRetry(`${base}/api/privacy/account`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ confirm: 'DELETE', ...proof }),
+            await submitAccountDelete({
+              base,
+              proof,
+              request: workerFetchWithAuthRetry,
+              hasFirebaseUser: Boolean(getFirebaseUserSync()),
+              deleteFirebaseUser: deleteCurrentFirebaseUser,
+              clearBoard: () => localStorage.removeItem('luminara_findings_board_v1'),
+              signOut: signOutFirebase,
+              goHome: () => window.location.assign('/'),
             });
-            const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; firebaseDeleted?: boolean };
-            if (!res.ok || !data.ok) throw new Error(data.error || 'Could not delete the account.');
-            if (data.firebaseDeleted === false && getFirebaseUserSync()) await deleteCurrentFirebaseUser();
-            localStorage.removeItem('luminara_findings_board_v1');
-            await signOutFirebase();
-            window.location.assign('/');
           })}
         >
           Delete account

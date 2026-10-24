@@ -21,6 +21,7 @@ import {
 } from './securityHardening';
 import { padMinLatency, normalizeResetEmail, PASSWORD_RESET_MIN_LATENCY_MS } from './authTollFraud';
 import { enforceAppCheckIfRequired, extractAppCheckToken } from './appCheck';
+import { identityToolkitHeaders } from './identityToolkit';
 
 const IDENTITY_SIGN_UP = 'https://identitytoolkit.googleapis.com/v1/accounts:signUp';
 const IDENTITY_SIGN_IN = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword';
@@ -90,15 +91,7 @@ type ToolkitAuthErr = {
   providerCode?: string;
 };
 
-export function identityReferer(env: Env): string {
-  const raw = String(env.WEBAPP_URL || '').trim();
-  if (!raw) return 'https://luminarasuite.com/';
-  try {
-    return new URL(raw).href;
-  } catch {
-    return raw.endsWith('/') ? raw : `${raw}/`;
-  }
-}
+export { identityReferer } from './identityToolkit';
 
 async function callIdentityAuth(
   env: Env,
@@ -109,13 +102,7 @@ async function callIdentityAuth(
   const apiKey = String(env.FIREBASE_WEB_API_KEY || '').trim();
   if (!apiKey) return { ok: false, kind: 'misconfigured' };
 
-  const headers: Record<string, string> = {
-    'content-type': 'application/json',
-    Referer: identityReferer(env),
-  };
-  const appCheck = String(opts?.appCheckToken || '').trim();
-  if (appCheck) headers['X-Firebase-AppCheck'] = appCheck;
-
+  const headers = identityToolkitHeaders(env, opts?.appCheckToken);
   const fetchImpl = opts?.fetchImpl || fetch;
   let res: Response;
   try {
@@ -361,6 +348,15 @@ export async function handleSignIn(
   await padMinLatency(started, minLatency);
 
   if (result.ok) {
+    const { settleFirebaseErase } = await import('./accountDeletion');
+    const erased = await settleFirebaseErase(env, result.localId, result.idToken, {
+      fetchImpl: opts?.fetchImpl,
+      appCheckToken: resolvedAppCheck,
+      healDone: true,
+    });
+    if (erased.kind === 'reject') {
+      return json({ ok: false, error: erased.error, code: erased.code }, erased.status);
+    }
     await clearFailedSignIn(env, emailHash);
     return withRateLimitHeaders(
       json({
