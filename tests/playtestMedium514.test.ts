@@ -22,34 +22,38 @@ describe('sample report label', () => {
 });
 
 describe('instant audit top bar on a narrow screen', () => {
-  it('wraps the primary tools and keeps Memory, Studio, and Quick/Thorough in the bar', () => {
+  it('scrolls the phone nav and keeps Quick and Thorough on the phone and from 1280px', () => {
     const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8');
     const navAt = app.indexOf('aria-label="Primary tools"');
-    const nav = app.slice(navAt - 420, navAt);
+    const nav = app.slice(navAt - 520, navAt);
     expect(nav).toContain('flex-nowrap');
     expect(nav).toContain('overflow-x-auto');
     expect(nav).toContain('mask-image:linear-gradient');
     expect(nav).not.toContain('flex-wrap items-center');
 
     const memoryAt = app.indexOf('aria-pressed={view === AppView.BRAND_MEMORY}');
-    const memory = app.slice(memoryAt, memoryAt + 220);
-    expect(memory).toContain('inline-flex');
+    const memory = app.slice(memoryAt, memoryAt + 240);
+    expect(memory).toContain('hidden 2xl:inline-flex');
     expect(memory).toContain('min-h-11');
-    expect(memory).not.toContain('hidden sm:inline-flex');
 
     const studioAt = app.indexOf('aria-pressed={view === AppView.NOTEBOOK}');
-    const studio = app.slice(studioAt, studioAt + 220);
-    expect(studio).toContain('inline-flex');
+    const studio = app.slice(studioAt, studioAt + 240);
+    expect(studio).toContain('hidden 2xl:inline-flex');
     expect(studio).toContain('min-h-11');
-    expect(studio).not.toContain('hidden sm:inline-flex');
 
     const modeAt = app.indexOf('aria-label="Answer mode"');
-    const modeOpen = app.slice(modeAt - 240, modeAt);
-    expect(modeOpen).toContain('className="flex ');
+    const modeOpen = app.slice(modeAt - 280, modeAt);
+    expect(modeOpen).toContain('hidden max-lg:flex xl:flex');
     expect(modeOpen).not.toContain('hidden sm:flex');
     const mode = app.slice(modeAt, modeAt + 1400);
     expect(mode).toContain('min-h-11');
     expect(mode).toContain('Quick');
     expect(mode).toContain('Thorough');
+
+    const pillAt = app.indexOf('data-testid="add-business-pill"');
+    const pill = app.slice(pillAt, pillAt + 420);
+    expect(pill).toContain('hidden lg:inline-flex');
+    expect(pill).toContain('whitespace-nowrap');
+    expect(pill).not.toContain('max-w-[90px]');
   });
 });

@@ -4,11 +4,11 @@
  */
 
 export const TEASER_FAILURE_COPY = {
-  page_fetch_empty: 'Page fetch returned no usable text or schema.',
-  search_empty: 'Search sample was empty or the search provider did not respond.',
-  provider_failed: 'A provider call failed. The public teaser omits the raw error.',
-  crawler_llms_missing: 'llms.txt was missing or not reachable.',
-  crawler_bots_blocked: 'robots.txt blocks one or more named AI crawlers.',
+  page_fetch_empty: 'The page check returned no text we could read.',
+  search_empty: 'No web results came back.',
+  provider_failed: 'A check did not finish. The public summary leaves out the raw error.',
+  crawler_llms_missing: 'The AI guide file (llms.txt) was missing or could not be read.',
+  crawler_bots_blocked: 'The crawler file (robots.txt) blocks one or more AI crawlers.',
 } as const;
 
 export type TeaserFailureCode = keyof typeof TEASER_FAILURE_COPY;

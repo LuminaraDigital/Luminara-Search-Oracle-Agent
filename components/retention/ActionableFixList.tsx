@@ -18,8 +18,6 @@ interface FixItem {
   id: string;
   title: string;
   targetEngine: string;
-  timeEstimate: string;
-  difficulty: 'Easy' | 'Medium';
   description: string;
   snippet: string;
   filename: string;
@@ -49,33 +47,27 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
   const defaultFixes: FixItem[] = [
     {
       id: 'fix-llms-txt',
-      title: 'Deploy /llms.txt Machine-Readable Summary',
-      targetEngine: 'Perplexity & ChatGPT Search',
-      timeEstimate: '5 min',
-      difficulty: 'Easy',
-      description: 'AI answer engines prefer concise markdown at /llms.txt to accurately summarize your core offerings without hallucinations.',
+      title: 'Add a short page at /llms.txt',
+      targetEngine: 'A page on your site',
+      description: 'Add /llms.txt with a short summary of what you sell. The file is a hint, not a score.',
       filename: '/llms.txt',
       snippet: llmsTxtDraft(domain),
     },
     {
       id: 'fix-schema-org',
-      title: 'Inject Schema.org Organization & Service Entity Markup',
-      targetEngine: 'Google AI Overviews & Knowledge Graph',
-      timeEstimate: '7 min',
-      difficulty: 'Easy',
-      description: 'Search engines use JSON-LD entities to ground knowledge graph associations. Paste this into your website <head>.',
-      filename: '<head> JSON-LD script',
+      title: 'Add a business identity tag',
+      targetEngine: 'A tag in the page header',
+      description: 'Add a business identity tag in the page header so the page names the business. Paste the block below.',
+      filename: 'Page header script',
       snippet: `<script type="application/ld+json">\n${organizationJsonLd(domain)}\n</script>`,
     },
     {
       id: 'fix-robots-txt',
-      title: 'Allow AI crawlers in robots.txt',
-      targetEngine: 'GPTBot, PerplexityBot & ClaudeBot',
-      timeEstimate: '3 min',
-      difficulty: 'Easy',
-      description: 'Ensure your robots.txt does not inadvertently block the primary AI indexing bots from crawling public pages.',
+      title: 'Let crawlers read public pages in robots.txt',
+      targetEngine: 'Crawler rules in robots.txt',
+      description: 'If robots.txt blocks a crawler, that crawler may not read public pages. The lines below name the crawlers to allow.',
       filename: '/robots.txt',
-      snippet: `# Allow primary AI search engines to crawl public content
+      snippet: `# Allow these crawlers to read public pages
 User-agent: GPTBot
 Allow: /
 
@@ -96,12 +88,10 @@ Sitemap: https://${cleanDomain}/sitemap.xml
   const mappedFindings: FixItem[] = (findings || []).map((f) => ({
     id: f.id,
     title: f.title,
-    targetEngine: f.targetEngine || 'AI Answer Engines & Search',
-    timeEstimate: '5 min',
-    difficulty: f.severity === 'critical' ? 'Medium' : 'Easy',
-    description: f.description || 'Actionable finding identified in audit.',
+    targetEngine: f.targetEngine || 'This website',
+    description: f.description || 'A check in this audit failed. The note below is the repair.',
     filename: f.filename || (
-      /schema/i.test(`${f.id} ${f.title}`) ? 'JSON-LD <head>'
+      /schema/i.test(`${f.id} ${f.title}`) ? 'Page header script'
         : /llms/i.test(`${f.id} ${f.title}`) ? '/llms.txt'
           : /robots/i.test(`${f.id} ${f.title}`) ? '/robots.txt'
             : 'notes.txt'
@@ -159,17 +149,14 @@ Sitemap: https://${cleanDomain}/sitemap.xml
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-gold animate-pulse" />
             <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-gold-light">
-              {isAuditDerived ? 'Audit-Derived Fix List' : 'Starter Checklist'} ({completedCount}/{activeFixes.length} Shipped)
+              {isAuditDerived ? 'Fixes from this audit' : 'Starter checklist'} ({completedCount} of {activeFixes.length} done)
             </h3>
           </div>
           <p className="text-xs text-gray-400 mt-1">
             {isAuditDerived
-              ? `Prioritized findings from your latest audit for ${cleanDomain}.`
-              : `Baseline starter checklist for ${cleanDomain}. Run an audit to generate findings-backed fixes.`}
+              ? `Fixes from the latest audit of ${cleanDomain}.`
+              : `Starter checklist for ${cleanDomain}. Run an audit for fixes from a real check.`}
           </p>
-        </div>
-        <div className="text-[11px] font-mono text-gray-500">
-          Estimated total time: ~15 mins
         </div>
       </div>
 
@@ -192,7 +179,7 @@ Sitemap: https://${cleanDomain}/sitemap.xml
                     checked={isDone}
                     onChange={() => toggleComplete(fix.id)}
                     className="mt-1 h-4 w-4 rounded border-white/20 bg-black text-gold focus:ring-gold"
-                    aria-label={`Mark ${fix.title} as shipped`}
+                    aria-label={`Mark ${fix.title} done`}
                   />
                   <div>
                     <h4 className={`text-sm font-semibold ${isDone ? 'text-gold-light line-through' : 'text-white'}`}>
@@ -204,9 +191,6 @@ Sitemap: https://${cleanDomain}/sitemap.xml
                 <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto pl-7 sm:pl-0">
                   <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-mono text-gray-300">
                     {fix.targetEngine}
-                  </span>
-                  <span className="rounded-full border border-gold/20 bg-gold/5 px-2 py-0.5 text-[10px] font-mono text-gold-light">
-                    {fix.timeEstimate}
                   </span>
                 </div>
               </div>

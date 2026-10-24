@@ -27,6 +27,7 @@ import {
 } from '../auditEvidenceGate';
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 import { isOrganizationEntityType } from '../../audit/brandName';
+import { countPhrase, findingSummary, joinList, tidySentence, withArticle } from '../../audit/reportSentence';
 
 /** Names up to two pages in a finding title and counts the rest, so the reader knows where to look. */
 export function pageList(urls: readonly string[]): string {
@@ -55,7 +56,7 @@ export class PlaybookAuditorAgent {
       agentRole: 'playbook_auditor',
       agentName: this.name,
       phase: 'evaluating_playbooks',
-      message: `Auditing ${scrapedPages.length} page(s) against official AEO/SEO scoring playbooks…`,
+      message: `Checking ${countPhrase(scrapedPages.length, 'page')} against the audit playbook.`,
       status: 'running',
     });
 
@@ -89,16 +90,16 @@ export class PlaybookAuditorAgent {
     const brandMentions = liveSerp.filter((s) => s.brandMentioned).length;
     if (liveSerp.length > 0 && brandMentions === 0) {
       const queries = [...new Set(liveSerp.map((row) => row.query).filter(Boolean))].slice(0, 3);
-      const queryList = queries.length ? queries.map((query) => `"${query}"`).join(', ') : 'the queries this run sent';
+      const queryList = queries.length ? joinList(queries.map((query) => `"${query}"`)) : 'the searches in this run';
       findings.push({
         id: 'finding-zero-citations',
         category: 'citations',
         severity: 'critical',
-        title: 'Weak Generative Search Footprint in Live SERP',
-        description: `None of the ${liveSerp.length} results for ${queryList} name the brand.`,
-        evidenceSource: 'SERP Radar live search probe',
-        howWeKnowItFailed: `0 of ${liveSerp.length} snippets for ${queryList} named the brand.`,
-        leadingIndicator: 'Publishing entity-grounded comparison pages increases AI Overview citation rate.',
+        title: 'Web results do not name your business',
+        description: tidySentence(`None of the ${countPhrase(liveSerp.length, 'result')} for ${queryList} name your business.`),
+        evidenceSource: 'Web results from this run',
+        howWeKnowItFailed: tidySentence(`0 of ${liveSerp.length} results for ${queryList} named your business.`),
+        leadingIndicator: 'Not measured. This run does not say what a new page will change.',
         criticVerified: false,
         criticConfidence: 0.85,
       });
@@ -115,18 +116,18 @@ export class PlaybookAuditorAgent {
       const covered = measured.some((page) => hasOrgType(page.types));
 
       if (!covered) {
-        const urls = measured.map((page) => page.url).slice(0, 3).join(', ');
+        const urlList = joinList(measured.map((page) => page.url).slice(0, 3));
         const seen = [...schemaTypes];
-        const seenLabel = seen.length ? seen.join(', ') : 'none';
+        const seenLabel = seen.length ? joinList(seen) : 'none';
         findings.push({
           id: 'finding-schema-org',
           category: 'schema',
           severity: 'critical',
-          title: `Missing Organization markup on ${urls}`,
-          description: `Parsed HTML at ${urls} has schema types: ${seenLabel}. Organization, Corporation, LocalBusiness, and ProfessionalService are not among them.`,
-          evidenceSource: 'DOM Scrape JSON-LD inspection',
-          howWeKnowItFailed: `Parsed ${measured.length} page(s) at ${urls}. Schema types found: ${seenLabel}.`,
-          leadingIndicator: 'Direct knowledge graph attribution and entity disambiguation in AI Overviews.',
+          title: `Add a business identity tag on ${urlList}`,
+          description: tidySentence(`Tags on the page: ${seenLabel}. A business identity tag was not among them.`),
+          evidenceSource: 'Tags read from the pages in this run',
+          howWeKnowItFailed: tidySentence(`Read ${countPhrase(measured.length, 'page')} at ${urlList}. Tags on the page: ${seenLabel}.`),
+          leadingIndicator: 'Not measured. This run does not say how answer tools will use the tag.',
           criticVerified: false,
           criticConfidence: 0.9,
         });
@@ -134,18 +135,18 @@ export class PlaybookAuditorAgent {
         const missing = measured.filter((page) => !hasOrgType(page.types));
         if (missing.length > 0) {
           const quoted = missing.slice(0, 3).map((page) => {
-            const seen = page.types.length ? page.types.join(', ') : 'no schema types';
+            const seen = page.types.length ? page.types.join(', ') : 'no tags';
             return `${page.url}: ${seen}`;
           }).join('; ');
           findings.push({
             id: 'finding-schema-org-partial',
             category: 'schema',
             severity: 'low',
-            title: `Organization markup is not on ${pageList(missing.map((page) => page.url))}`,
-            description: `Other measured pages already include an organization type. These do not: ${quoted}.`,
-            evidenceSource: 'DOM Scrape JSON-LD inspection',
+            title: `A business identity tag is not on ${pageList(missing.map((page) => page.url))}`,
+            description: `Other pages we read already include a business identity tag. These do not: ${quoted}.`,
+            evidenceSource: 'Tags read from the pages in this run',
             howWeKnowItFailed: quoted,
-            leadingIndicator: 'Direct knowledge graph attribution and entity disambiguation in AI Overviews.',
+            leadingIndicator: 'Not measured. This run does not say how answer tools will use the tag.',
             criticVerified: false,
             criticConfidence: 0.7,
           });
@@ -153,20 +154,20 @@ export class PlaybookAuditorAgent {
       }
 
       if (schemaTypes.has('howto')) {
-        const howtoUrls = livePages
+        const howtoUrls = joinList(livePages
           .filter((page) => page.schemasFound.some((schema) => schema.type.toLowerCase() === 'howto'))
           .map((page) => page.url)
-          .slice(0, 3)
-          .join(', ');
+          .slice(0, 3));
+        const howtoWhere = howtoUrls || withArticle('page we read');
         findings.push({
           id: 'finding-deprecated-howto',
           category: 'schema',
           severity: 'medium',
-          title: 'Deprecated HowTo Schema Detected',
-          description: `HowTo schema is on ${howtoUrls || 'a parsed page'}. Google has deprecated HowTo rich results.`,
-          evidenceSource: 'Schema.org Playbook Rule',
-          howWeKnowItFailed: `HowTo schema was parsed on ${howtoUrls || 'the fetched page'}.`,
-          leadingIndicator: 'Deprecation cleanup prevents crawler budget waste.',
+          title: 'Remove the outdated how-to tag',
+          description: tidySentence(`A how-to tag is on ${howtoWhere}. That tag is no longer used for rich results.`),
+          evidenceSource: 'Tags read from the pages in this run',
+          howWeKnowItFailed: tidySentence(`A how-to tag was on ${howtoWhere}.`),
+          leadingIndicator: 'Not measured. This run does not say what removing the tag will change.',
           criticVerified: false,
           criticConfidence: 0.95,
         });
@@ -179,11 +180,11 @@ export class PlaybookAuditorAgent {
           id: 'finding-thin-content',
           category: 'content_quality',
           severity: 'high',
-          title: 'Thin Content Detected on Critical Landing Page(s)',
-          description: `${thin} ${lowWordCountPages.length === 1 ? 'has' : 'have'} fewer than 250 words.`,
-          evidenceSource: 'Scout DOM word count counter',
+          title: lowWordCountPages.length === 1 ? 'This page is too short' : 'These pages are too short',
+          description: tidySentence(`${thin} ${lowWordCountPages.length === 1 ? 'has' : 'have'} fewer than 250 words.`),
+          evidenceSource: 'Word count from the pages in this run',
           howWeKnowItFailed: thin,
-          leadingIndicator: 'Increasing informational density expands chunk indexing in RAG pipelines.',
+          leadingIndicator: 'Not measured. This run does not say what a longer page will change.',
           criticVerified: false,
           criticConfidence: 0.88,
         });
@@ -215,7 +216,7 @@ export class PlaybookAuditorAgent {
       agentRole: 'playbook_auditor',
       agentName: this.name,
       phase: 'audit_complete',
-      message: `Completed compliance audit. Identified ${findings.length} actionable findings. ${checklist.passed} of ${checklist.total} checks passed, ${checklist.failed} failed.`,
+      message: `Finished the check. ${findingSummary(findings.map((finding) => finding.title))} ${checklist.passed} of ${checklist.total} checks passed, ${checklist.failed} failed.`,
       status: 'completed',
       confidenceScore: 0.92,
     });
