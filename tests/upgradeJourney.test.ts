@@ -100,8 +100,9 @@ describe('upgrade journey', () => {
     expect(recheckCelebration({ measured: true, passed: true })).toBe('This check passed on the page we just fetched.');
     expect(fixProgress([{ status: 'done', doneOn: '2026-10-21' }, { status: 'done', doneOn: '2026-10-22' }, { status: 'open' }], '2026-10-22')).toEqual({
       done: 2,
+      total: 3,
       streak: 2,
-      label: '2 fixes done. 2 day streak.',
+      label: '2 of 3 fixes done. 2 day streak.',
     });
     expect(fixProgress([{ status: 'done' }], '2026-10-22').streak).toBe(0);
     expect(competitorRankLine()).toBe('Competitor rank: Not measured.');

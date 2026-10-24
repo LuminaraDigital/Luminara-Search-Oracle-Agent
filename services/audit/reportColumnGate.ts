@@ -496,28 +496,128 @@ export function looksLikeAuditReport(text: string): boolean {
  */
 const PAGE_READ_SOURCE = /\((?:firecrawl|jina|patchright|exa)(?:\s+[a-z][a-z ]{0,24})?\)/gi;
 const WEB_SEARCH_SOURCE = /\((?:tavily|groq)(?:\s+[a-z][a-z ]{0,24})?\)/gi;
+const HSTS_TITLE = 'Make browsers always use the secure version of your site (HSTS)';
+const CSP_TITLE = 'Control which scripts your site can load (CSP)';
+const SECURITY_FILE = 'a public security contact file (security.txt)';
+const ORG_TAG = 'Add a business identity tag';
+
+export type SourceReadKind = 'page read' | 'web search';
+
+function hostOf(value: string): string {
+  const raw = value.trim();
+  if (!raw) return '';
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/** Page on the audited host is a page read. Every other URL is a web search result. */
+export function sourceReadKind(uri: string, domain?: string): SourceReadKind {
+  const target = hostOf(domain || '');
+  const host = hostOf(uri);
+  if (target && host === target) return 'page read';
+  return 'web search';
+}
+
+/** URL, then title, then (page read) or (web search). A title that only repeats the URL is left off. */
+export function customerSourceLine(uri: string, title: string, kind: SourceReadKind): string {
+  const cleanUri = uri.trim();
+  const cleanTitle = title
+    .replace(/\s*\((?:page read|web search|target domain)\)\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleanTitle || cleanTitle === cleanUri) return `${cleanUri} (${kind})`;
+  return `${cleanUri} ${cleanTitle} (${kind})`;
+}
+
+function collapseRepeated(line: string): string {
+  const phrase = /\b([A-Za-z]+(?:\s+[A-Za-z]+){0,5})\s+\1\b/gi;
+  let next = line;
+  for (let pass = 0; pass < 4; pass += 1) {
+    const collapsed = next.replace(phrase, '$1');
+    if (collapsed === next) break;
+    next = collapsed;
+  }
+  return next.replace(/file \(security\.txt\)(?:\s+file\b)+/gi, 'file (security.txt)');
+}
+
+/** One pair of brackets per term. A second copy of the same pair is dropped. */
+function unwrapDoubleParens(line: string): string {
+  return line
+    .replace(/\(\(([^)]+)\)\)/g, '($1)')
+    .replace(/\(([^)]+)\)\s+\(\1\)/gi, '($1)');
+}
+
+function spaceAfterStop(line: string): string {
+  return line.replace(/([.!?])([A-Z])/g, '$1 $2');
+}
+
+function scrubCustomerLine(line: string): string {
+  const next = line
+    .replace(/Implement HTTP Strict Transport Security \(HSTS\) header/gi, HSTS_TITLE)
+    .replace(/\bAdd(?: an?)? HSTS header\b/gi, HSTS_TITLE)
+    .replace(/HTTP Strict Transport Security(?: \(HSTS\))?/gi, HSTS_TITLE)
+    .replace(/Add a header that forces secure HTTPS connections \(HSTS\)/gi, HSTS_TITLE)
+    .replace(/\ba header that forces secure HTTPS connections \(HSTS\)/gi, HSTS_TITLE)
+    .replace(/Missing HSTS;?\s*lowers security trust score\.?/gi, 'The site does not force secure HTTPS connections (HSTS).')
+    .replace(/\bMissing HSTS\b/gi, 'Does not force secure HTTPS connections (HSTS)')
+    .replace(/\bAdd(?: a)? CSP header\b/gi, CSP_TITLE)
+    .replace(/Add a Content-Security-Policy header/gi, CSP_TITLE)
+    .replace(/Add a rule that controls which scripts the site can load \(CSP\)/gi, CSP_TITLE)
+    .replace(/\ba rule that controls which scripts the site can load \(CSP\)/gi, CSP_TITLE)
+    .replace(/Content-Security-Policy(?: header)?|Content Security Policy(?: \(CSP\))?/gi, CSP_TITLE)
+    .replace(/(?:Insert|Add(?: a basic)?) Organization JSON[-\u2010-\u2015]?LD(?: block)?/gi, ORG_TAG)
+    .replace(/(?:\ba public\s+)?(?<![:\w./(-])security\.txt\b(?:\s+file)?/gi, SECURITY_FILE)
+    .replace(PAGE_READ_SOURCE, '(page read)')
+    .replace(WEB_SEARCH_SOURCE, '(web search)')
+    .replace(/\(untrusted enrichment block\)/gi, '(security and public records)')
+    .replace(/\buntrusted enrichment block\b/gi, 'security and public records');
+  return spaceAfterStop(unwrapDoubleParens(collapseRepeated(next)));
+}
+
+function modelSourceLine(line: string): string {
+  const match = line.match(/https?:\/\/[^\s<>)\]]+/i);
+  if (!match) return line;
+  const uri = match[0].replace(/[.,;]+$/, '');
+  const trimmed = line.trim();
+  const kind: SourceReadKind = /\(page read\)\s*$/i.test(trimmed) || /^([-*]\s+)?page read\b/i.test(trimmed)
+    ? 'page read'
+    : 'web search';
+  let title = line.replace(uri, ' ');
+  title = title
+    .replace(/\((?:page read|web search)\)/gi, ' ')
+    .replace(/\b(?:page read|web search)\s*:?/gi, ' ')
+    .replace(/title\s*[“"']([^”"']+)[”"']/gi, '$1')
+    .replace(/[“”"']/g, '')
+    .replace(/,?\s*\d[\d,.]*\s*words?\b/gi, ' ')
+    .replace(/[()*]/g, ' ')
+    .replace(/^[\s:,.-]+|[\s:,.-]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const lead = line.match(/^\s*(?:[-*]\s+)?/);
+  return `${lead ? lead[0] : ''}${customerSourceLine(uri, title, kind)}`;
+}
 
 /** Customer report lines. Code blocks stay as written. Vendor names and header jargon do not. */
 export function plainCustomerReport(markdown: string): string {
   let fence = false;
+  let sources = false;
   return markdown.split('\n').map((line) => {
     if (line.trim().startsWith('```')) {
       fence = !fence;
       return line;
     }
     if (fence) return line;
-    return line
-      .replace(/Implement HTTP Strict Transport Security \(HSTS\) header/gi, 'Add a header that forces secure HTTPS connections (HSTS)')
-      .replace(/HTTP Strict Transport Security(?: \(HSTS\))?/gi, 'a header that forces secure HTTPS connections (HSTS)')
-      .replace(/Missing HSTS;?\s*lowers security trust score\.?/gi, 'The site does not force secure HTTPS connections (HSTS).')
-      .replace(/\bMissing HSTS\b/gi, 'Does not force secure HTTPS connections (HSTS)')
-      .replace(/Add a Content-Security-Policy header/gi, 'Add a rule that controls which scripts the site can load (CSP)')
-      .replace(/Content-Security-Policy(?: header)?|Content Security Policy(?: \(CSP\))?/gi, 'a rule that controls which scripts the site can load (CSP)')
-      .replace(/(?<![:\w./(-])security\.txt\b/gi, 'a public security contact file (security.txt)')
-      .replace(PAGE_READ_SOURCE, '(page read)')
-      .replace(WEB_SEARCH_SOURCE, '(web search)')
-      .replace(/\(untrusted enrichment block\)/gi, '(security and public records)')
-      .replace(/\buntrusted enrichment block\b/gi, 'security and public records');
+    const trimmed = line.trim();
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      sources = /\bsources\b/i.test(trimmed);
+      return scrubCustomerLine(line);
+    }
+    const scrubbed = scrubCustomerLine(line);
+    if (sources && !trimmed.startsWith('|') && /https?:\/\//i.test(scrubbed)) return modelSourceLine(scrubbed);
+    return scrubbed;
   }).join('\n');
 }
 

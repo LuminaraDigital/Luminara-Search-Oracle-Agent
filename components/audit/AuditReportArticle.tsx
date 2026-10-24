@@ -5,6 +5,8 @@ import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
 import { diffSince } from '../../services/audit/auditDiffService';
 import { workspaceHistoryReady } from '../../services/sync/workspaceSyncService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
+import { parseMeasuredCheckLine } from '../../services/agentCore/auditEvidenceGate';
+import { customerSourceLine, plainCustomerReport, sourceReadKind } from '../../services/audit/reportColumnGate';
 import {
   findingFix,
   findingWhy,
@@ -13,8 +15,8 @@ import {
   parseAuditReport,
   progressSince,
   recheckLabel,
+  reportScore,
   SAVED_AUDIT_CHECK_COPY,
-  scoreLine,
   showFixTally,
   unmeasuredNote,
   type Inline,
@@ -153,6 +155,8 @@ export function AuditReportArticle({
   clientName,
   sources,
   showActions = true,
+  citationRateKnown,
+  checkLine,
   onShare,
   onFindings,
 }: {
@@ -163,6 +167,10 @@ export function AuditReportArticle({
   clientName?: string;
   sources?: Array<{ uri: string; title: string }>;
   showActions?: boolean;
+  /** True when this run counted search mentions. Omit when citation was not in play. */
+  citationRateKnown?: boolean;
+  /** Checklist sentence already shown on the page-health card. */
+  checkLine?: string;
   onShare?: () => void;
   onFindings?: (findings: BoardFinding[]) => void;
 }) {
@@ -177,7 +185,7 @@ export function AuditReportArticle({
     };
   }, []);
   const doc = parseAuditReport(markdown);
-  const score = scoreLine(`${markdown}\n${doc.verdict}`, measured);
+  const score = reportScore(`${markdown}\n${doc.verdict}`, measured, findings, citationRateKnown, checkLine);
   const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
   const note = unmeasuredNote(findings);
   const progress = fixProgress(fixes);
@@ -185,7 +193,9 @@ export function AuditReportArticle({
   const diff = domain ? diffSince(domain) : { before: null, metrics: [] };
   // Re-read after a workspace pull. The number itself is only a refresh signal.
   void historyRevision;
-  const since = !workspaceHistoryReady() && !diff.before ? SAVED_AUDIT_CHECK_COPY : progressSince(diff);
+  const since = !workspaceHistoryReady() && !diff.before
+    ? SAVED_AUDIT_CHECK_COPY
+    : progressSince({ ...diff, checks: parseMeasuredCheckLine(score) });
   const tally = showFixTally(score);
   const validSources = visibleGroundingSources(sources) || [];
   const verdict = doc.verdict || 'Not measured.';
@@ -263,7 +273,7 @@ export function AuditReportArticle({
               <article key={finding.id} className={`rounded-2xl border bg-black px-4 py-4 ${isNext ? 'border-gold' : 'border-white/15'}`}>
                 {isNext && <p className="text-xs font-semibold tracking-wide text-gold-light">Your next fix</p>}
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <h3 className="text-lg font-semibold text-white">{finding.title}</h3>
+                  <h3 className="text-lg font-semibold text-white">{plainCustomerReport(finding.title)}</h3>
                   <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${chip}`}>{finding.severity}</span>
                 </div>
                 <p className="mt-3 text-xs font-semibold tracking-wide text-gray-300">Why it matters for buyers and vendors</p>
@@ -307,7 +317,7 @@ export function AuditReportArticle({
             <ul className="mt-3 space-y-2">
               {validSources.map((source) => (
                 <li key={source.uri}>
-                  <a href={source.uri} target="_blank" rel="noopener noreferrer" className="text-base text-gold-light underline underline-offset-2 hover:text-white">{source.title || source.uri}</a>
+                  <a href={source.uri} target="_blank" rel="noopener noreferrer" className="text-base text-gold-light underline underline-offset-2 hover:text-white">{customerSourceLine(source.uri, source.title || '', sourceReadKind(source.uri, domain))}</a>
                 </li>
               ))}
             </ul>

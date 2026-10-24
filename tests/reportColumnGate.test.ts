@@ -531,11 +531,43 @@ describe('plain customer report lines', () => {
     expect(text).toContain('https://example.com (page read)');
     expect(text).toContain('https://news.example (web search)');
     expect(text).toContain('Trust pack & security data (security and public records)');
-    expect(text).toContain('Add a header that forces secure HTTPS connections (HSTS)');
+    expect(text).toContain('Make browsers always use the secure version of your site (HSTS)');
     expect(text).toContain('The site does not force secure HTTPS connections (HSTS).');
-    expect(text).toContain('Add a rule that controls which scripts the site can load (CSP)');
+    expect(text).toContain('Control which scripts your site can load (CSP)');
     expect(text).toContain('Publish a public security contact file (security.txt)');
     expect(text).toContain('https://example.com/.well-known/security.txt');
     expect(text).not.toMatch(/firecrawl|jina|tavily|Strict Transport|untrusted enrichment/i);
+  });
+
+  it('scrubs a garbled verdict, fix titles, and source lines, and stays the same on a second pass', () => {
+    const garbled = [
+      'The homepage is very thin (133 words) and lacks any schema.Security headers (HSTS, CSP) and a public a public security contact file (security.txt) file are missing.',
+      '## 1. One move this week',
+      'Add a basic Organization JSON-LD block to the homepage.',
+      '## 3. Fix list',
+      '| Add HSTS header | Missing |',
+      '| Add CSP header | Missing |',
+      '| Insert Organization JSON-LD | None |',
+      '## 7. Sources',
+      'Page read: https://example.com (title “Example Domain”, 133 words)',
+      'Wikipedia entry: https://en.wikipedia.org/wiki/Example.com',
+    ].join('\n');
+    const once = gateReportText(garbled);
+    const twice = gateReportText(once);
+    expect(twice).toBe(once);
+    expect(once).toContain('schema. Security');
+    expect(once).toContain('a public security contact file (security.txt)');
+    expect(once).not.toContain('a public a public');
+    expect(once).not.toContain('(security.txt) file');
+    expect(once).not.toMatch(/\(security\.txt\).*\(security\.txt\)/);
+    expect(once).toContain('Make browsers always use the secure version of your site (HSTS)');
+    expect(once).toContain('Control which scripts your site can load (CSP)');
+    expect(once).toContain('Add a business identity tag to the homepage.');
+    expect(once).toContain('| Add a business identity tag | None |');
+    expect(once).not.toContain('JSON-LD');
+    expect(once).not.toContain('HSTS header');
+    expect(once).toContain('https://example.com Example Domain (page read)');
+    expect(once).toContain('https://en.wikipedia.org/wiki/Example.com Wikipedia entry (web search)');
+    expect(once).not.toContain('—');
   });
 });

@@ -4,6 +4,7 @@ import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
 import { renderMarkdown } from '../../utils/markdown';
 import { ActionableFixList } from '../retention/ActionableFixList';
 import { DailyStreakCard } from '../retention/DailyStreakCard';
+import { isDowngradedFinding } from '../../services/audit/reportBlocks';
 
 const badgeClass: Record<string, string> = {
   measured: 'border-gold/40 text-gold-light bg-gold/10',
@@ -21,6 +22,8 @@ interface GuestScoutSummaryPanelProps {
   sharing?: boolean;
   /** Guest degraded result: primary sign-in. Omitted for signed-in rails. */
   onSignIn?: () => void;
+  /** Findings from the full audit. When present, the fix count uses this list. */
+  auditFindings?: ReadonlyArray<{ id: string; title: string; description?: string; remediationSnippet?: string }>;
 }
 
 export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
@@ -30,7 +33,20 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
   onCopy,
   sharing = false,
   onSignIn,
+  auditFindings,
 }) => {
+  const listedFindings = auditFindings
+    ? auditFindings.filter((finding) => !isDowngradedFinding(finding)).map((finding) => ({
+      id: finding.id,
+      title: finding.title,
+      description: finding.description,
+      remediationSnippet: finding.remediationSnippet,
+    }))
+    : summary.failed.map((failText, idx) => ({
+      id: `finding-scout-${idx}`,
+      title: failText,
+      description: `Finding identified during scout: ${failText}`,
+    }));
   return (
     <section
       aria-label="Scout summary"
@@ -133,11 +149,8 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
         <ActionableFixList
           domain={summary.domain}
           crawlerChecks={summary.crawlerChecks}
-          findings={summary.failed.map((failText, idx) => ({
-            id: `finding-scout-${idx}`,
-            title: failText,
-            description: `Finding identified during scout: ${failText}`,
-          }))}
+          pageTitle={summary.brand}
+          findings={listedFindings}
         />
       )}
 
