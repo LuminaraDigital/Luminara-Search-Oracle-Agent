@@ -200,5 +200,49 @@ function checkChainNetworkConfig(config, envName) {
   return { ok: true };
 }
 
+function checkSecretPlaceholders(config) {
+  const blocks = [
+    ['top-level', config?.vars || {}],
+    ['staging', config?.env?.staging?.vars || {}],
+    ['production', config?.env?.production?.vars || {}],
+  ];
+  const secretNames = ['AUDIT_RECEIPT_ACCOUNT_HMAC_KEY', 'REQUEST_SIGNING_KEYS'];
+  for (const [name, vars] of blocks) {
+    for (const secretName of secretNames) {
+      if (Object.prototype.hasOwnProperty.call(vars, secretName)) {
+        return {
+          ok: false,
+          message: `${name} vars must not set ${secretName}. Set it with wrangler secret put. It is not a var.`,
+        };
+      }
+    }
+  }
+  for (const rel of ['.env.staging.example', '.env.production.example', '.dev.vars.example']) {
+    const text = readFileSync(resolve(root, rel), 'utf8');
+    for (const secretName of secretNames) {
+      if (!new RegExp(`^# ${secretName}=\\s*$`, 'm').test(text)) {
+        return { ok: false, message: `${rel} must contain the commented placeholder: # ${secretName}=` };
+      }
+      if (new RegExp(`^${secretName}=\\S`, 'm').test(text)) {
+        return { ok: false, message: `${rel} must not assign a value to ${secretName}.` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+let wranglerConfig;
+try {
+  wranglerConfig = parseJsonc(wranglerContent);
+} catch (err) {
+  console.error(`[EnvValidation] wrangler.jsonc could not be parsed: ${err instanceof Error ? err.message : err}`);
+  process.exit(1);
+}
+const secretPlaceholders = checkSecretPlaceholders(wranglerConfig);
+if (!secretPlaceholders.ok) {
+  console.error(`[EnvValidation] ${secretPlaceholders.message}`);
+  process.exit(1);
+}
+
 console.log(`[EnvValidation] Environment checks passed for ${targetMode}. Staging-production isolation verified.`);
 process.exit(0);
