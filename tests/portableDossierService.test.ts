@@ -88,8 +88,9 @@ describe('dossier honesty (SW0a-7)', () => {
     expect(html).not.toMatch(/grade\s+[a-f]\b/i);
     expect(html).not.toMatch(/verified/i);
     expect(html).not.toContain('section-badge">');
-    // The audit text itself is still in the download.
-    expect(html).toContain('Add an Organization JSON-LD block to the homepage.');
+    // The audit text itself is still in the download, in the plain phrase.
+    expect(html).toContain('Add a business identity tag to the homepage.');
+    expect(html).not.toContain('Organization JSON-LD');
   });
 
   it('prints no score, grade or badge that a caller passes, because it takes none', () => {

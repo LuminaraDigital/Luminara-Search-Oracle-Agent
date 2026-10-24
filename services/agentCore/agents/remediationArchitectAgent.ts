@@ -31,7 +31,7 @@ export class RemediationArchitectAgent {
       agentRole: 'remediation_architect',
       agentName: this.name,
       phase: 'generating_patches',
-      message: 'Drafting structured Schema.org JSON-LD patches and deployment diffs…',
+      message: 'Writing your fixes for the page…',
       status: 'running',
     });
 

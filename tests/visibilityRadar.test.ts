@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import * as radar from '../components/audit/VisibilityRadar';
-import { VisibilityRadar, readBrandCited, readCitationStatus } from '../components/audit/VisibilityRadar';
+import { VisibilityRadar, radarCitationRows, readBrandCited, readCitationStatus } from '../components/audit/VisibilityRadar';
 
 const HEADERS = ['Query', 'Intent', 'Brand Cited (Yes/No)', 'Key Competitors', 'Citation Status (Cited/Not Cited/Not Measured)'];
 
@@ -45,6 +45,22 @@ describe('VisibilityRadar honesty', () => {
     expect(readCitationStatus('not verified')).toBe('not_measured');
     expect(readCitationStatus('Citedly')).toBe('not_measured');
     expect(readCitationStatus(undefined)).toBe('not_measured');
+  });
+
+  it('reads the same rival and citation rows the radar shows', () => {
+    const markdown = [
+      '## AI and search visibility radar',
+      '',
+      '| Query | Intent | Brand Cited (Yes/No) | Key Competitors | Citation Status |',
+      '| --- | --- | --- | --- | --- |',
+      '| what is example | informational | Yes | iana.org | Cited |',
+      '| example rfc | informational | Yes | packetpushers.net | Cited |',
+      '| example dns | informational | Yes | stackoverflow.com | Cited |',
+    ].join('\n');
+    const rows = radarCitationRows(markdown);
+    expect(rows.map((row) => row.competitors)).toEqual(['iana.org', 'packetpushers.net', 'stackoverflow.com']);
+    expect(rows.every((row) => row.status === 'cited')).toBe(true);
+    expect(radarCitationRows(markdown, [{ query: 'what is example', brandCited: false }])[0].status).toBe('not_cited');
   });
 
   it('reads only a plain yes or no as a reading', () => {

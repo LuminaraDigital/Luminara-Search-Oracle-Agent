@@ -340,6 +340,41 @@ describe('audit report page', () => {
     expect(fallbackCode).toBeUndefined();
   });
 
+  it('scrubs the live verdict and the glued security row in the article', () => {
+    const verdict = 'Security headers and a basic Organization schema are missing, which can lower trust and citation odds.';
+    const raw = [
+      '# Example',
+      '',
+      verdict,
+      '',
+      'Security headers and a basic JSON-LD are missing, which can lower trust and citation odds.',
+      '',
+      '## 3. Fix list',
+      '',
+      '| Task | Plain issue | Priority |',
+      '| --- | --- | --- |',
+      '| Publish aa public security contact file (security.txt)file | Missing | High |',
+    ].join('\n');
+    const expectedVerdict = 'Security headers and a basic business identity tag are missing, which can lower trust and citation odds.';
+    const expectedFix = 'Publish a public security contact file (security.txt)';
+    expect(gateReportText(verdict)).toBe(expectedVerdict);
+    expect(gateReportText('Publish aa public security contact file (security.txt)file')).toBe(expectedFix);
+    const html = renderToStaticMarkup(createElement(AuditReportArticle, {
+      markdown: raw,
+      measured: false,
+      findings: [],
+      domain: 'example.com',
+      clientName: 'Example',
+      showActions: false,
+    }));
+    expect(html).toContain(expectedVerdict);
+    expect(html).toContain(expectedFix);
+    expect(html).not.toContain('Add a business identity tag are missing');
+    expect(html).not.toContain('aa public');
+    expect(html).not.toContain('(security.txt)file');
+    expect(html).not.toContain('\u2014');
+  });
+
   it('stores a done tick on the findings board without calling the network', () => {
     const local = new Map<string, string>();
     const session = new Map<string, string>();

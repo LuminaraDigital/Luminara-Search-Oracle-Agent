@@ -499,7 +499,8 @@ const WEB_SEARCH_SOURCE = /\((?:tavily|groq)(?:\s+[a-z][a-z ]{0,24})?\)/gi;
 const HSTS_TITLE = 'Make browsers always use the secure version of your site (HSTS)';
 const CSP_TITLE = 'Control which scripts your site can load (CSP)';
 const SECURITY_FILE = 'a public security contact file (security.txt)';
-const ORG_TAG = 'Add a business identity tag';
+const IDENTITY_NOUN = 'business identity tag';
+const IDENTITY_ACTION = 'Add a business identity tag';
 
 export type SourceReadKind = 'page read' | 'web search';
 
@@ -532,9 +533,22 @@ export function customerSourceLine(uri: string, title: string, kind: SourceReadK
   return `${cleanUri} ${cleanTitle} (${kind})`;
 }
 
+/** Keep the article the match already had. A bare term stays a bare noun. */
+function nounWithArticle(match: string, noun: string): string {
+  const lead = match.match(/^\s*(a|an|the)\b/i);
+  if (!lead) return noun;
+  return lead[1].toLowerCase() === 'the' ? `the ${noun}` : `a ${noun}`;
+}
+
 function collapseRepeated(line: string): string {
+  let next = line
+    .replace(/\)(?=[A-Za-z])/g, ') ')
+    .replace(/\baa\s+/gi, 'a ')
+    .replace(/\ba\s+an\b/gi, 'a')
+    .replace(/\ban\s+a\b/gi, 'a')
+    .replace(/\bthe\s+a\b/gi, 'a')
+    .replace(/\ba\s+a\b/gi, 'a');
   const phrase = /\b([A-Za-z]+(?:\s+[A-Za-z]+){0,5})\s+\1\b/gi;
-  let next = line;
   for (let pass = 0; pass < 4; pass += 1) {
     const collapsed = next.replace(phrase, '$1');
     if (collapsed === next) break;
@@ -596,27 +610,29 @@ function scrubCustomerLine(line: string): string {
     .replace(/\[\[([^[\]]+)\]\]/g, '$1');
   const next = normalized
     .replace(/\b(?:Implement|Add(?: an)?)\s+(?:an?\s+)?HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?(?:\s+header)?\b/gi, HSTS_TITLE)
-    .replace(/\bAdd(?: an?)? HSTS header\b/gi, HSTS_TITLE)
+    .replace(/\b(?:(?:a|an|the)\s+)?(?:Add(?: an?)?\s+)?HSTS header\b/gi, HSTS_TITLE)
     .replace(/HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?/gi, HSTS_TITLE)
     .replace(/Add a header that forces secure HTTPS connections \(HSTS\)/gi, HSTS_TITLE)
     .replace(/\ba header that forces secure HTTPS connections \(HSTS\)/gi, HSTS_TITLE)
     .replace(/Missing HSTS;?\s*lowers security trust score\.?/gi, 'The site does not force secure HTTPS connections (HSTS).')
     .replace(/\bMissing HSTS\b/gi, 'Does not force secure HTTPS connections (HSTS)')
     .replace(/\b(?:Implement|Add|Publish)\s+(?:a\s+)?Content-Security-Policy(?:\s+header)?\b/gi, CSP_TITLE)
-    .replace(/\bAdd(?: a)? CSP header\b/gi, CSP_TITLE)
+    .replace(/\b(?:(?:a|an|the)\s+)?(?:Add(?: a)?\s+)?CSP header\b/gi, CSP_TITLE)
     .replace(/Add a rule that controls which scripts the site can load \(CSP\)/gi, CSP_TITLE)
     .replace(/\ba rule that controls which scripts the site can load \(CSP\)/gi, CSP_TITLE)
     .replace(/Content-Security-Policy(?: header)?|Content Security Policy(?: \(CSP\))?/gi, CSP_TITLE)
-    .replace(/(?:Insert|Add(?: a basic)?) Organization JSON-?LD(?: block)?/gi, ORG_TAG)
-    .replace(/\b(?:Organization|organisation)\s+(?:markup|schema)\b/gi, ORG_TAG)
-    .replace(/\bno\s+structured\s+data\b/gi, 'no business identity tag')
-    .replace(/\bstructured\s+data\b/gi, 'a business identity tag')
-    .replace(/\bShip\s+schema\s*\/\s*(?:a\s+)?business identity tag\b/gi, ORG_TAG)
-    .replace(/\bAdd or fix\s+(?:a\s+)?business identity tag\b[^.]*/gi, ORG_TAG)
-    .replace(/\bSchema\.org\b/gi, 'a business identity tag')
+    .replace(/\b(?:Insert|Add|Implement|Publish|Ship)(?:\s+(?:a|an|the|basic))*\s+(?:Organization|organisation)\s+(?:JSON-?LD|markup|schema)(?:\s+block)?(?:\s+(?:file|header|markup|tag)\b)?/gi, IDENTITY_ACTION)
+    .replace(/\b(?:Insert|Add|Implement|Publish|Ship)(?:\s+(?:a|an|the|basic))*\s+JSON-?LD(?:\s+block)?(?:\s+(?:file|header|markup|tag)\b)?/gi, IDENTITY_ACTION)
+    .replace(/\bno\s+structured\s+data\b/gi, `no ${IDENTITY_NOUN}`)
+    .replace(/\bstructured\s+data\b/gi, IDENTITY_NOUN)
+    .replace(/\bSchema\.org\b/gi, IDENTITY_NOUN)
+    .replace(/\bShip\s+schema\s*\/\s*(?:a\s+)?business identity tag\b/gi, IDENTITY_ACTION)
+    .replace(/\bAdd or fix\s+(?:a\s+)?business identity tag\b[^.]*/gi, IDENTITY_ACTION)
+    .replace(/(?:\b(?:a|an|the)\s+)?(?:Organization|organisation)\s+(?:markup|schema)(?:\s+(?:file|header|markup|tag)\b)?/gi, (match) => nounWithArticle(match, IDENTITY_NOUN))
+    .replace(/(?:\b(?:a|an|the)\s+)?(?:Organization\s+)?JSON-?LD(?:\s+block)?(?:\s+(?:file|header|markup|tag)\b)?/gi, (match) => nounWithArticle(match, IDENTITY_NOUN))
     .replace(/\btag\s+markup\b/gi, 'tag')
     .replace(/[ \t]+markup\s*$/gim, '')
-    .replace(/(?:\ba public\s+)?(?<![:\w./(-])security\.txt\b(?:\s+file)?/gi, SECURITY_FILE)
+    .replace(/(?:\b(?:a|an|the)\s+)?(?:a public\s+)?(?<![:\w./(-])security\.txt(?:file)?\b(?:\s+(?:file|header|markup|tag)\b)?/gi, SECURITY_FILE)
     .replace(PAGE_READ_SOURCE, '(page read)')
     .replace(WEB_SEARCH_SOURCE, '(web search)')
     .replace(/\(untrusted enrichment block\)/gi, '(security and public records)')

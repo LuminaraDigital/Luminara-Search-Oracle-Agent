@@ -160,7 +160,7 @@ export class CompetitorStrategistAgent {
       agentRole: 'competitor_strategist',
       agentName: this.name,
       phase: 'analyzing_market',
-      message: 'Mapping competitive landscape and market share of voice…',
+      message: 'Comparing other sites in your market…',
       status: 'running',
     });
 
