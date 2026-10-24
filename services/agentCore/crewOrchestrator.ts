@@ -163,7 +163,11 @@ export function criticStartMessage(hasLiveEvidence: boolean): string {
   if (!hasLiveEvidence) {
     return 'No page or search evidence to verify. Findings were not measured against live data.';
   }
-  return 'Cross-examining candidate findings against scraped pages and search results…';
+  return 'Cross-examining candidate findings against pages read and search results…';
+}
+
+export function criticCheckedMessage(count: number): string {
+  return `Checked ${countPhrase(count, 'finding')} against pages read and search results.`;
 }
 
 function contextHasLiveEvidence(ctx: AuditStateGraphContext): boolean {
@@ -382,7 +386,7 @@ export class CrewOrchestrator {
           ? criticStartMessage(false)
           : rejectedCount > 0
             ? `Checked the findings: corrected ${countPhrase(rejectedCount, 'false claim')}. ${countPhrase(verifiedFindings.length, 'finding')} still ${verifiedFindings.length === 1 ? 'stands' : 'stand'}.`
-            : `Checked ${countPhrase(verifiedFindings.length, 'finding')} against scraped pages and search results.`,
+            : criticCheckedMessage(verifiedFindings.length),
         status: 'completed',
         confidenceScore: liveEvidence ? criticConfidence : undefined,
       });

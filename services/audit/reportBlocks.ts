@@ -6,7 +6,7 @@ import { marked, type Token, type Tokens } from 'marked';
 import type { BoardFinding } from './findingBoardService';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { stripUntrustedFences } from '../../utils/untrustedContent';
-import { measuredCheckLine, parseMeasuredCheckLine } from '../agentCore/auditEvidenceGate';
+import { healthChecklist, measuredCheckLine, parseMeasuredCheckLine, siteChecksRan } from '../agentCore/auditEvidenceGate';
 import { plainCustomerReport } from './reportColumnGate';
 
 export type Inline =
@@ -177,6 +177,36 @@ export function parseAuditReport(markdown: string): AuditReportDoc {
   return { title, verdict, sections, links };
 }
 
+function findingIds(findings: readonly { id?: string }[]): { id: string }[] {
+  const rows: { id: string }[] = [];
+  for (const finding of findings) {
+    if (typeof finding.id === 'string' && finding.id.length > 0) rows.push({ id: finding.id });
+  }
+  return rows;
+}
+
+/**
+ * The score the page and the PDF print.
+ * When the four site checks ran, this is the same checklist sentence as the brief.
+ * A card sentence is next. The report text is the last fallback.
+ */
+export function reportScore(
+  markdown: string,
+  measured: boolean,
+  findings: readonly { id?: string }[] = [],
+  citationRateKnown?: boolean,
+  checkLine?: string,
+): string {
+  const rows = findingIds(findings);
+  if (siteChecksRan(null, rows)) {
+    const options = typeof citationRateKnown === 'boolean' ? { citationRateKnown } : undefined;
+    return measuredCheckLine(healthChecklist(rows, options));
+  }
+  const fromCard = checkLine ? parseMeasuredCheckLine(checkLine) : null;
+  if (fromCard) return measuredCheckLine(fromCard);
+  return scoreLine(markdown, measured);
+}
+
 /** The only score the page may print. A partial checklist stays visible. A clean pass needs measured=true. */
 export function scoreLine(markdown: string, measured: boolean): string {
   const counts = parseMeasuredCheckLine(markdown);
@@ -286,10 +316,15 @@ export function findingFix(finding: Pick<BoardFinding, 'title' | 'description'>,
 export function progressSince(input: {
   before: unknown;
   metrics: ReadonlyArray<{ key: string; before: number | null; after: number | null; delta: number | null }>;
+  checks?: { passed: number; failed: number; total: number } | null;
 }): string {
   if (!input.before) return 'No earlier audit of this site is saved.';
   const health = input.metrics.find((metric) => metric.key === 'healthScore');
   if (!health || health.before == null || health.after == null || health.delta == null) {
+    const checks = input.checks;
+    if (checks && checks.total > 0 && (checks.passed > 0 || checks.failed > 0)) {
+      return 'This run measured the site checks above. There is no earlier checklist to compare.';
+    }
     return 'Health was not measured on both audits, so there is no change to show.';
   }
   if (health.delta === 0) return `Health is unchanged since the last audit (${health.before}).`;
@@ -317,7 +352,7 @@ export function withReportLead(
 ): string {
   const source = plainCustomerReport(stripUntrustedFences(markdown));
   const doc = parseAuditReport(source);
-  const score = scoreLine(`${source}\n${doc.verdict}`, measured);
+  const score = reportScore(`${source}\n${doc.verdict}`, measured, findings);
   const verdict = doc.verdict || 'Not measured.';
   const lead = [`# ${doc.title}`, '', `Score: ${score}`, '', verdict, ''].join('\n');
   const fixes = findingsMarkdown(findings);

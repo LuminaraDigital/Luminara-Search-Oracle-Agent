@@ -128,9 +128,14 @@ function shiftDay(iso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function fixProgress(findings: readonly Pick<BoardFinding, 'status' | 'doneOn'>[], today = formatAuDay(new Date())): { done: number; streak: number; label: string } {
-  const done = findings.filter((finding) => finding.status === 'done').length;
-  const days = new Set(findings.map((finding) => finding.doneOn).filter((day): day is string => Boolean(day)));
+export function fixProgress(
+  findings: readonly (Pick<BoardFinding, 'status' | 'doneOn'> & { id?: string; description?: string })[],
+  today = formatAuDay(new Date()),
+): { done: number; total: number; streak: number; label: string } {
+  const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
+  const done = fixes.filter((finding) => finding.status === 'done').length;
+  const total = fixes.length;
+  const days = new Set(fixes.map((finding) => finding.doneOn).filter((day): day is string => Boolean(day)));
   let streak = 0;
   if (today && (days.has(today) || days.has(shiftDay(today, -1)))) {
     let cursor = days.has(today) ? today : shiftDay(today, -1);
@@ -139,9 +144,9 @@ export function fixProgress(findings: readonly Pick<BoardFinding, 'status' | 'do
       cursor = shiftDay(cursor, -1);
     }
   }
-  const fixes = done === 1 ? '1 fix done' : `${done} fixes done`;
-  const label = streak > 0 ? `${fixes}. ${streak} day streak.` : fixes;
-  return { done, streak, label };
+  const head = total === 0 ? 'No fixes on this audit' : `${done} of ${total} fixes done`;
+  const label = streak > 0 ? `${head}. ${streak} day streak.` : head;
+  return { done, total, streak, label };
 }
 
 type DismissStore = { getItem(key: string): string | null; setItem(key: string, value: string): void };

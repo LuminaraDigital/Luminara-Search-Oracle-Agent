@@ -17,6 +17,7 @@ import {
   applyMemorySync,
   createInitialAuditContext,
   crewOrchestrator,
+  criticCheckedMessage,
   criticStartMessage,
   deriveAuditMeasurement,
   memorySyncPlan,
@@ -811,6 +812,10 @@ describe('Mission Control copy', () => {
     expect(criticStartMessage(false).toLowerCase()).not.toContain('ground-truth');
     expect(criticStartMessage(false).toLowerCase()).not.toContain('ground truth');
     expect(criticStartMessage(true).toLowerCase()).not.toContain('ground-truth');
+    expect(criticStartMessage(true)).toBe('Cross-examining candidate findings against pages read and search results…');
+    expect(criticCheckedMessage(2)).toBe('Checked 2 findings against pages read and search results.');
+    expect(criticStartMessage(true)).not.toContain('scraped');
+    expect(criticCheckedMessage(1)).not.toContain('scraped');
   });
 });
 

@@ -584,6 +584,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       onShare={() => { void shareTeaser('share'); }}
       onCopy={() => { void shareTeaser('copy'); }}
       onSignIn={isGuest && hostedRail === 'byok_or_signin' ? requestGuestFullAuditSignIn : undefined}
+      auditFindings={report ? boardFindings : undefined}
     />
   ) : null;
 
@@ -980,6 +981,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             rlmTrajectory={report.rlmTrajectory}
             healthSite={report.healthSite}
             boardFindings={boardFindings}
+            checkLine={scoutSummary?.badges.find((badge) => badge.label === 'Page health')?.value}
           />
         </div>
       )}

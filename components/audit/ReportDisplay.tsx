@@ -25,6 +25,7 @@ import type { WritingQualityReport } from '../../services/audit/writingQualitySe
 import type { TrafficImpact } from '../../services/analytics/trafficInsightsService';
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
+import { customerSourceLine, sourceReadKind } from '../../services/audit/reportColumnGate';
 import type { TrustPackSummary } from '../../services/audit/aeoTrustPackService';
 import type { ShareOfVoiceSummary } from '../../services/visibility/shareOfVoiceService';
 import type { SourceCitationGraph } from '../../services/visibility/sourceCitationGraphService';
@@ -78,6 +79,8 @@ interface ReportDisplayProps {
   hostedRail?: HostedScoutRail;
   /** True when the fetched page, domain, or saved DNA already looks health-related. */
   healthSite?: boolean;
+  /** Checklist sentence from the page-health card, used when the findings do not name a check. */
+  checkLine?: string;
 }
 
 /** "mentioned in N of M sampled queries", or null when the summary holds no such count. */
@@ -112,6 +115,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   suppressLiveMetrics = false,
   hostedRail,
   healthSite = false,
+  checkLine,
 }) => {
   const showHealthNote = healthSite || siteLooksHealthRelated({ domain: targetDomain, title: dnaName });
   const hideLiveNumbers = suppressLiveMetrics || empiricalSummary?.measurementStatus === 'not_measured';
@@ -285,6 +289,8 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         clientName={dnaName}
         sources={sources}
         showActions={!hideAgencyActions}
+        citationRateKnown={empiricalSummary ? typeof empiricalSummary.citationRatePercent === 'number' : undefined}
+        checkLine={checkLine}
         onShare={hideAgencyActions || !canShare ? undefined : () => void handleCopyShareLink()}
         onFindings={setBoardFindings}
       />
@@ -503,7 +509,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
                 rel="noopener noreferrer"
                 className="glass-morphism rounded-lg p-3 border border-white/5 hover:border-gold/40 flex items-center justify-between text-xs text-gray-300 hover:text-white transition-all group"
               >
-                <span className="truncate pr-2">{source.title || source.uri}</span>
+                <span className="truncate pr-2">{customerSourceLine(source.uri, source.title || '', sourceReadKind(source.uri, targetDomain))}</span>
                 <ICONS.ExternalLink className="w-3.5 h-3.5 text-gold shrink-0 opacity-60 group-hover:opacity-100" />
               </a>
             ))}
