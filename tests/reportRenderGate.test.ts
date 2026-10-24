@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import MessageList, { chatMessageText } from '../components/MessageList';
 import * as markdownUtils from '../utils/markdown';
-import { CompetitorMap } from '../components/audit/CompetitorMap';
+import { AgentMissionControl } from '../components/audit/AgentMissionControl';
+import { CompetitorMap, competitorProgressFromReport, renderedCompetitorCounts } from '../components/audit/CompetitorMap';
 import { EmpiricalEvidenceDrawer } from '../components/audit/EmpiricalEvidenceDrawer';
 import { ReportDisplay, sampledMentionsLabel } from '../components/audit/ReportDisplay';
 import { VisibilityRadar, readBrandCited, readCitationStatus } from '../components/audit/VisibilityRadar';
@@ -472,6 +473,59 @@ describe('the competitor card fills no gap with made-up wording', () => {
     expect(html).not.toContain('[[IANA]]');
     expect(html).not.toContain('[[Wikipedia]]');
     expect(html).not.toContain('[[');
+  });
+
+  it('gives the strategist card the same rival and gap counts the map draws', () => {
+    const headers = [...REPORT_TABLES.competitorMap];
+    const rows = [
+      ['example.com', 'Not measured', 'Not measured', 'Not measured'],
+      ['(no verified rivals in this niche)', 'Not measured', 'Not measured', 'Not measured'],
+      ['iana.org', 'Registry', 'Docs', 'Not measured'],
+      ['Wikipedia', 'Encyclopedia', 'Article', 'Coverage'],
+    ];
+    const map = renderToStaticMarkup(createElement(CompetitorMap, { headers, rows }));
+    expect(map).toContain('iana.org');
+    expect(map).toContain('Wikipedia');
+    expect(map).not.toContain('no verified rivals');
+    expect(renderedCompetitorCounts(headers, rows)).toEqual({ rivals: 2, gaps: 1 });
+
+    const table = (body: string[][]) => [
+      '## Competitor Reality Map',
+      '',
+      `| ${headers.join(' | ')} |`,
+      `| ${headers.map(() => '---').join(' | ')} |`,
+      ...body.map((row) => `| ${row.join(' | ')} |`),
+    ].join('\n');
+    const counted = table(rows);
+    expect(competitorProgressFromReport(counted)).toBe('Identified 2 key competitors and mapped 1 keyword gap.');
+    const none = table([
+      ['example.com', 'Not measured', 'Not measured', 'Not measured'],
+      ['(no verified rivals in this niche)', 'Not measured', 'Not measured', 'Not measured'],
+    ]);
+    expect(competitorProgressFromReport(none)).toBe('No rivals found.');
+
+    const card = (markdown: string) => renderToStaticMarkup(createElement(AgentMissionControl, {
+      events: [{
+        id: 'c',
+        timestamp: 1,
+        agentRole: 'competitor_strategist',
+        agentName: 'Competitor Strategist',
+        phase: 'strategy_complete',
+        message: 'Identified 4 key competitors and mapped 2 keyword gaps.',
+        status: 'completed',
+      }],
+      isComplete: true,
+      measurementStatus: 'measured',
+      reportMarkdown: markdown,
+    }));
+    const withRivals = card(counted);
+    expect(withRivals).toContain('Identified 2 key competitors and mapped 1 keyword gap.');
+    expect(withRivals).not.toContain('4 key competitors');
+    expect(withRivals).not.toContain('2 keyword gaps');
+    const withNone = card(none);
+    expect(withNone).toContain('No rivals found.');
+    expect(withNone).not.toContain('4 key competitors');
+    expect(withNone).not.toContain('keyword gap');
   });
 });
 

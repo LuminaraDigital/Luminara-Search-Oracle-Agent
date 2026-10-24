@@ -778,6 +778,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       {crewEvents.length > 0 && !guestNeedsFullAuditSignIn(hostedRail) && (
         <AgentMissionControl
           events={crewEvents}
+          reportMarkdown={report?.text}
           isComplete={!loading && crewMeasurement != null}
           measurementStatus={crewMeasurement}
           hasAttestation={PROOF_BADGE_ENABLED && Boolean(attestation)}

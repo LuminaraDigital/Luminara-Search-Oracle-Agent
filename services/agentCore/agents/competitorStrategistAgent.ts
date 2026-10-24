@@ -9,7 +9,6 @@
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
 import { BusinessDNA } from '../../../types';
 import { classifyMention, isNamesakeHost } from '../../audit/entityMatch';
-import { countPhrase } from '../../audit/reportSentence';
 
 const EXCLUDED_COMPETITOR_DOMAINS = [
   // Encyclopedias & medical/general reference aggregators
@@ -205,7 +204,7 @@ export class CompetitorStrategistAgent {
 
     const message = serpEvidence.length === 0
       ? 'No search results collected. Competitor signals not measured.'
-      : `Identified ${countPhrase(topCompetitors.length, 'key competitor')} and mapped ${countPhrase(competitorGaps.length, 'keyword gap')}.`;
+      : 'Compared other sites in this search sample.';
 
     emit({
       id: `strat-done-${Date.now()}`,
