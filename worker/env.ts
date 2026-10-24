@@ -59,6 +59,13 @@ export interface Env {
    */
   REQUIRE_APP_CHECK?: string;
   /**
+   * API-wide App Check gate: "off" | "log" | "enforce". Unset is off.
+   * log records a bad or missing token and still serves the request.
+   * enforce returns 401. Health, robots.txt, llms.txt, and webhook routes are exempt.
+   * Production stays "off" until a log soak is clean.
+   */
+  APPCHECK_ENFORCE?: string;
+  /**
    * Firebase web API key (same public value as VITE_FIREBASE_API_KEY).
    * Used by the Worker to call Identity Toolkit for password-reset OOB codes
    * behind IP rate limits. Not a secret; still keep it out of commit diffs when rotated.
@@ -265,8 +272,10 @@ export interface Env {
   DAILY_QUOTA?: DurableObjectNamespace;
   /** Queue producer for long-running audits. */
   AUDIT_JOBS?: Queue;
-  /** Optional Sentry DSN (Worker exceptions). */
+  /** Optional Sentry DSN (wrangler secret). Unset disables the Worker SDK. */
   SENTRY_DSN?: string;
+  /** Optional Sentry release tag. Defaults to luminara-suite. */
+  SENTRY_RELEASE?: string;
   /**
    * Optional Cloudflare Vectorize index for account memory RAG.
    * Provision index then bind in wrangler; code falls back to D1 keyword search.

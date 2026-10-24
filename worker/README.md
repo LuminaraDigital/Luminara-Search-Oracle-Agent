@@ -8,6 +8,10 @@ reports, MCP, audit runs, sentinel, admin ops. All routes dispatch on
 `withSecurityHeaders` and unhandled errors are collapsed to a bare 500 (no
 leaked internals).
 
+`APPCHECK_ENFORCE` (`off`, `log`, or `enforce`, unset means `off`) runs on `/api/*` before the route. `log` records a bad or missing `X-Firebase-AppCheck` token and still serves the request. `enforce` returns 401 `APP_CHECK_REQUIRED` or `APP_CHECK_INVALID`. `/api/health`, `/robots.txt`, `/llms.txt`, and any path containing `/webhook` are exempt. Staging config is `log`. Production config stays `off`.
+
+Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) stays disabled when `SENTRY_DSN` or `VITE_SENTRY_DSN` is unset. Set the DSN with `wrangler secret put` and the client build env. Do not commit a DSN.
+
 ## Route map
 
 | Path | Handler file | Auth | Notes |

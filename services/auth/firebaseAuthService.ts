@@ -64,13 +64,22 @@ function readConfig(): FirebasePublicConfig | null {
   return resolveFirebaseWebConfig((import.meta as any).env || {});
 }
 
+/** Initializes the Firebase app and App Check. Null when VITE_FIREBASE_* is missing. */
+export function ensureFirebaseApp(): FirebaseApp | null {
+  if (app) return app;
+  const cfg = readConfig();
+  if (!cfg) return null;
+  const existing = getApps()[0];
+  app = existing ?? initializeApp(cfg);
+  ensureAppCheck(app);
+  return app;
+}
+
 function ensureAuth(): Auth {
   if (auth) return auth;
-  const cfg = readConfig();
-  if (!cfg) throw new Error('Firebase is not configured. Add VITE_FIREBASE_* to your .env.');
-  app = getApps().length ? getApps()[0]! : initializeApp(cfg);
-  ensureAppCheck(app);
-  auth = getAuth(app);
+  const ready = ensureFirebaseApp();
+  if (!ready) throw new Error('Firebase is not configured. Add VITE_FIREBASE_* to your .env.');
+  auth = getAuth(ready);
   return auth;
 }
 

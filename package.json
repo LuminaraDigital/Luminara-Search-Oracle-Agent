@@ -75,6 +75,8 @@
     "@formepdf/core": "^0.28.0",
     "@formepdf/react": "^0.28.0",
     "@google/genai": "2.30.0",
+    "@sentry/browser": "^11.9.0",
+    "@sentry/cloudflare": "^11.9.0",
     "@telegram-apps/sdk-react": "^3.3.9",
     "@ton/core": "^0.63.1",
     "@tonconnect/ui-react": "^3.0.2",

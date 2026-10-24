@@ -211,6 +211,79 @@ export async function sidecarFetch(id: SidecarId, path: string, init: RequestIni
   return workerFetchWithAuthRetry(`${apiBase()}/api/sidecars/${id}${path}`, { ...init });
 }
 
+function appCheckSiteKey(): string {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  return String(env?.VITE_FIREBASE_APPCHECK_SITE_KEY || '').trim();
+}
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+/** Health stays exempt so the boot probe does not wait on reCAPTCHA. */
+export function shouldAttachAppCheck(url: string, pageOrigin: string, apiBaseUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url, pageOrigin || 'http://localhost');
+  } catch {
+    return false;
+  }
+  const path = parsed.pathname.replace(/\/+$/, '') || '/';
+  if (!path.startsWith('/api/') || path === '/api/health') return false;
+  if (!apiBaseUrl) return parsed.origin === pageOrigin;
+  try {
+    return parsed.origin === new URL(apiBaseUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+function isOwnApi(url: string): boolean {
+  const pageOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+  return shouldAttachAppCheck(url, pageOrigin, apiBase());
+}
+
+async function readAppCheckToken(): Promise<string | undefined> {
+  try {
+    const { ensureFirebaseApp } = await import('./auth/firebaseAuthService');
+    ensureFirebaseApp();
+    const { getAppCheckTokenForBackend } = await import('./auth/firebaseAppCheck');
+    return await getAppCheckTokenForBackend();
+  } catch {
+    return undefined;
+  }
+}
+
+async function appCheckHeader(): Promise<Record<string, string>> {
+  if (!appCheckSiteKey()) return {};
+  const token = await readAppCheckToken();
+  return token ? { 'X-Firebase-AppCheck': token } : {};
+}
+
+let appCheckFetchInstalled = false;
+
+/** Attaches X-Firebase-AppCheck on same-origin /api calls when the public site key is set. */
+export function installAppCheckOnApiFetch(): void {
+  if (appCheckFetchInstalled || typeof window === 'undefined' || typeof window.fetch !== 'function') return;
+  if (!appCheckSiteKey()) return;
+  appCheckFetchInstalled = true;
+  const orig = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = requestUrl(input);
+    if (!isOwnApi(url)) return orig(input, init);
+    const headers = new Headers(input instanceof Request ? input.headers : undefined);
+    if (init?.headers) new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    if (!headers.has('X-Firebase-AppCheck')) {
+      const token = await readAppCheckToken();
+      if (token) headers.set('X-Firebase-AppCheck', token);
+    }
+    if (input instanceof Request) return orig(new Request(input, { ...init, headers }));
+    return orig(input, { ...init, headers });
+  };
+}
+
 function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const initData = getInitDataRaw();
@@ -228,6 +301,7 @@ async function authHeadersAsync(forceRefresh = false): Promise<Record<string, st
   const auth = await loadFirebaseAuth();
   const idToken = forceRefresh ? await auth.getFirebaseIdToken(true) : (readCachedFirebaseIdToken() ?? await auth.getFirebaseIdToken(false));
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+  Object.assign(headers, await appCheckHeader());
   return headers;
 }
 
