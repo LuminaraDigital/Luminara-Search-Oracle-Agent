@@ -237,7 +237,7 @@ describe('hostedProviderDecisionReason', () => {
     expect(result.citationRatePercent).toBeNull();
     expect(result.serpEvidence).toEqual([]);
     const done = events.map((event) => event.message).join(' ');
-    expect(done).toContain('Analyzed 0 SERP results');
+    expect(done).toContain('Analyzed 0 search results');
     expect(done).toContain('Citation rate and share of voice were not measured.');
     expect(done).toContain('Search did not run.');
     expect(done).not.toMatch(/Tavily|sign-in token/);

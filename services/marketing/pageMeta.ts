@@ -296,13 +296,13 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     crawlerBody: `
 <section>
   <h1>Luminara Suite vs Ahrefs Brand Monitoring</h1>
-  <p>Why traditional blue-link keyword tracking does not answer whether ChatGPT, Perplexity, or Google AI Overviews cite your brand.</p>
+  <p>Why traditional blue-link keyword tracking does not answer whether AI answers cite your brand.</p>
   <table>
     <thead>
       <tr><th>Dimension</th><th>Ahrefs</th><th>Luminara Suite</th></tr>
     </thead>
     <tbody>
-      <tr><td>Search Surface</td><td>Traditional 10 blue links on Google</td><td>Site crawl and live web search on every plan. ${LIVE_ANSWER_CHECKS}</td></tr>
+      <tr><td>Search Surface</td><td>Traditional lists of search results</td><td>Site crawl and live web search on every plan. ${LIVE_ANSWER_CHECKS}</td></tr>
       <tr><td>Measurement Target</td><td>Keyword rankings and backlink graphs</td><td>Entity citability, LLM answer targets, and crawler governance</td></tr>
       <tr><td>Action Guidance</td><td>Backlink acquisition and keyword stuffing</td><td>Structured knowledge graph and machine-readable llms.txt</td></tr>
       <tr><td>Verification</td><td>Third-party crawl estimates</td><td>Cryptographic verification receipts and crawler directives</td></tr>

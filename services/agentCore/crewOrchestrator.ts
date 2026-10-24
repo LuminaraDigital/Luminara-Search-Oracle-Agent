@@ -40,6 +40,7 @@ import {
 import { healthChecklist, liveSearchRows, pageSupportsHealthScore, siteChecksRan } from './auditEvidenceGate';
 import { gateFixSnippet, reviewFindingsWithJev } from '../audit/jevVerifier';
 import { brandFromEvidence } from '../audit/brandName';
+import { countPhrase } from '../audit/reportSentence';
 
 const MEMORY_SYNC_SKIPPED = 'Memory sync skipped: no evidence-backed facts to store. Brand memory was not measured.';
 
@@ -61,7 +62,7 @@ export function memorySyncPlan(input: {
     return {
       skipExtract: false,
       claimSync: true,
-      message: `Synced ${input.deltaCount} autonomous memory delta(s) & MUSE experience heuristics into brand knowledge graph.`,
+      message: `Saved ${countPhrase(input.deltaCount, 'note')} about your brand.`,
     };
   }
   return { skipExtract: false, claimSync: false, message: MEMORY_SYNC_SKIPPED };
@@ -162,7 +163,7 @@ export function criticStartMessage(hasLiveEvidence: boolean): string {
   if (!hasLiveEvidence) {
     return 'No page or search evidence to verify. Findings were not measured against live data.';
   }
-  return 'Cross-examining candidate findings against scraped pages and SERP evidence…';
+  return 'Cross-examining candidate findings against scraped pages and search results…';
 }
 
 function contextHasLiveEvidence(ctx: AuditStateGraphContext): boolean {
@@ -211,9 +212,9 @@ export const CREW_PROFILES: Record<AgentRole, AgentProfile> = {
   },
   serp_radar: {
     role: 'serp_radar',
-    name: 'SERP Radar',
+    name: 'Search results',
     avatar: '📡',
-    tagline: 'Live Search & Citation Radar',
+    tagline: 'Live web search',
     goal: 'Probe search engines and measure empirical citation rates.',
     backstory: 'Runs web searches through Tavily or the local search sidecar and counts the results that mention the brand.',
     preferredModelRole: 'efficient',
@@ -380,8 +381,8 @@ export class CrewOrchestrator {
         message: !liveEvidence
           ? criticStartMessage(false)
           : rejectedCount > 0
-            ? `Adversarial check complete: Corrected ${rejectedCount} false claim(s). Remaining ${verifiedFindings.length} findings verified.`
-            : `All ${verifiedFindings.length} findings checked against scraped pages and SERP evidence.`,
+            ? `Checked the findings: corrected ${countPhrase(rejectedCount, 'false claim')}. ${countPhrase(verifiedFindings.length, 'finding')} still ${verifiedFindings.length === 1 ? 'stands' : 'stand'}.`
+            : `Checked ${countPhrase(verifiedFindings.length, 'finding')} against scraped pages and search results.`,
         status: 'completed',
         confidenceScore: liveEvidence ? criticConfidence : undefined,
       });

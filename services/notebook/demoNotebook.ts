@@ -55,24 +55,22 @@ Answer Engine Optimization (AEO) focuses on securing brand mentions and citation
     },
     {
       id: 'src-3',
-      title: '[Sample Reference] Google AI Overviews & Perplexity Algorithm Shifts',
+      title: '[Sample Reference] How an answer engine picks a source',
       type: 'url',
       isDemo: true,
       url: 'https://developers.google.com/search/docs/fundamentals/ai-search',
-      content: `# Grounding & Retrieval Shifts in Generative Search Engines
+      content: `# How an answer engine picks a source
 
-Recent evaluations of Google AI Overviews and Perplexity Pro indicate:
-- Multi-Source Consensus: Queries triggering AI Overviews synthesize answers from an average of 3.4 distinct sources.
-- Consensus Bias: If your site makes an empirical claim contradicted by 3 trusted authoritative domains, AI Overviews filters your brand out.
-- Technical Prerequisites: 
-  * TTFB under 400ms for crawler responsiveness.
-  * Clean semantic HTML5 (nav, main, article, section) without DOM hydration traps.
-  * HTTPS and valid HSTS headers.`,
-      summary: 'Technical prerequisites and consensus thresholds for generative search engines.',
-      wordCount: 92,
+This note is a sample. It is not a measurement.
+- An answer can draw on more than one page.
+- A claim that other trusted pages contradict is easier to leave out.
+- Use clear HTML (nav, main, article, section).
+- Force secure HTTPS connections (HSTS).`,
+      summary: 'Sample note on how an answer engine picks a source. Not a measurement.',
+      wordCount: 50,
       addedAt: 1726000200000,
       selected: true,
-      keyEntities: ['Multi-Source Consensus', 'Consensus Bias', 'TTFB', 'Semantic HTML5'],
+      keyEntities: ['Answer engine', 'HTML', 'HTTPS', 'HSTS'],
     },
   ],
   messages: [
@@ -106,7 +104,7 @@ To capitalize on this, you should ship two moves immediately:
         },
         {
           sourceId: 'src-3',
-          sourceTitle: '[Sample Reference] Google AI Overviews & Perplexity Algorithm Shifts',
+          sourceTitle: '[Sample Reference] How an answer engine picks a source',
           citationNumber: 3,
           quote: 'Queries triggering AI Overviews synthesize answers from an average of 3.4 distinct sources.',
         },

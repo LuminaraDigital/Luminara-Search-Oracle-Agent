@@ -170,7 +170,8 @@ describe('landing story copy stays honest', () => {
   it('keeps buyer-question checks limited to the plan that measures them', () => {
     const ask = STORY_CHAPTERS.find((chapter) => chapter.step === '02');
     expect(ask?.body).toContain('Every plan checks your site and live web search');
-    expect(ask?.body).toContain('Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency');
+    expect(ask?.body).toContain('Live answers from specific AI products stay Not measured unless you are on Agency');
+    expect(ask?.body).not.toMatch(/ChatGPT|Perplexity|DataForSEO/);
     expect(ask?.body).toContain('Not measured');
   });
 
@@ -178,7 +179,7 @@ describe('landing story copy stays honest', () => {
     expect(EVIDENCE_LEGEND.map((e) => e.state)).toEqual(['Measured', 'Estimated', 'Not measured']);
     expect(EVIDENCE_LEGEND[2].meaning.toLowerCase()).toContain('never as a poor result');
     expect(GLOBE_NOTICE.toLowerCase()).toContain('illustrative');
-    expect(ENGINES).toEqual(['Google Search', 'AI Overviews', 'ChatGPT', 'Perplexity']);
+    expect(ENGINES).toEqual(['Web search', 'AI answers']);
   });
 
   it('only links places that exist', () => {

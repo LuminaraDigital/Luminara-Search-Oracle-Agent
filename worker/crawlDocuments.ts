@@ -197,13 +197,13 @@ LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt pres
 ## Answer engine targets
 
 ### What is Luminara Suite?
-Luminara Suite checks whether Google and AI answers name a real estate agency, then ranks one fix to ship next. ${LIVE_ANSWER_CHECKS} Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week. ${REAL_ESTATE_AUDIENCE}
+Luminara Suite checks whether AI answers name a real estate agency, then ranks one fix to ship next. ${LIVE_ANSWER_CHECKS} Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week. ${REAL_ESTATE_AUDIENCE}
 
 ### How does Luminara compare to traditional SEO suites?
 Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness and knowledge-graph grounding. ${LIVE_ANSWER_CHECKS} Every metric is labeled measured, estimated, or not_measured.
 
 ### What is Answer Engine Optimization (AEO)?
-Answer Engine Optimization (AEO) is the discipline of structuring web content, technical crawl assets, and entity schema so generative AI engines (Google AI Overviews, ChatGPT, Perplexity, Claude) extract, synthesize, and cite the brand as an authoritative source in direct conversational responses.
+Answer Engine Optimization (AEO) is the discipline of structuring web content, technical crawl assets, and entity schema so an answer engine can quote the brand. AEO is not a score.
 
 ## Sitemap
 

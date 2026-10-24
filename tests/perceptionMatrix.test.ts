@@ -27,10 +27,8 @@ describe('PerceptionMatrix Component', () => {
     );
 
     expect(markup).toContain('Cross-Engine Perception Matrix');
-    expect(markup).toContain('ChatGPT Search');
-    expect(markup).toContain('Perplexity AI');
-    expect(markup).toContain('Google AI Overviews');
-    expect(markup).toContain('Google Gemini');
+    expect(markup).toContain('AI answers');
+    expect(markup).not.toMatch(/ChatGPT|Perplexity|Gemini|Google AI Overviews/);
     expect(markup).toContain('Consensus Points');
     expect(markup).toContain('Divergence Points');
     expect(markup).toContain('Cited across');

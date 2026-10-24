@@ -8,6 +8,7 @@ import type { EmpiricalCitationSummary } from './empiricalCitationService';
 import type { CitationIntegrityResult } from './citationIntegrityService';
 import type { SchemaSafetyResult } from '../deployment/schemaSafetyGate';
 import { schemaSafetyScore } from '../deployment/schemaSafetyGate';
+import { countPhrase } from './reportSentence';
 
 export type YmylTier = 'none' | 'elevated' | 'high';
 export type SignalStatus = 'measured' | 'inferred' | 'not_measured';
@@ -151,8 +152,8 @@ export class AeoTrustPackService {
     } else if (input.security && !input.security.hstsEnabled) {
       findings.push({
         severity: ymylTier === 'high' ? 'critical' : 'high',
-        title: 'HSTS missing',
-        detail: 'Strict-Transport-Security was not observed. Add HSTS for durable transport trust.',
+        title: 'Secure connection header missing',
+        detail: 'The site does not force secure HTTPS connections (HSTS).',
       });
     }
 
@@ -168,7 +169,7 @@ export class AeoTrustPackService {
       findings.push({
         severity: 'high',
         title: 'Dead citation URLs',
-        detail: `${input.integrity.deadCitationCount} cited URL(s) were unreachable at audit time.`,
+        detail: `${countPhrase(input.integrity.deadCitationCount, 'cited URL')} ${input.integrity.deadCitationCount === 1 ? 'was' : 'were'} unreachable at audit time.`,
       });
     }
 
@@ -195,7 +196,7 @@ export class AeoTrustPackService {
       findings.push({
         severity: 'critical',
         title: 'YMYL transport trust gap',
-        detail: 'High YMYL vertical requires HTTPS + HSTS before cite-worthiness can be claimed.',
+        detail: 'High-stakes pages need HTTPS and a header that forces secure HTTPS connections (HSTS) before we can call them worth citing.',
       });
     }
 

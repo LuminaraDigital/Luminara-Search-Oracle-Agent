@@ -219,8 +219,8 @@ export function ingestAuditExperience(exp: PostAuditExperience): BrandMemoryEven
 
   return pushEvent({
     type: 'experience_heuristic',
-    title: `MUSE Heuristics: ${exp.domain} (${exp.focus})`,
-    summary: summaryText.slice(0, 300) || `Learned heuristics for ${exp.domain}`,
+    title: `What we learned: ${exp.domain} (${exp.focus})`,
+    summary: summaryText.slice(0, 300) || `Saved what we learned about ${exp.domain}`,
     domain: exp.domain,
     clientId,
     auditId: exp.auditId,

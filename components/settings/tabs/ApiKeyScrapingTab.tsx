@@ -168,7 +168,7 @@ export const ApiKeyScrapingTab: React.FC<ApiKeyScrapingTabProps> = ({
             </Button>
           </div>
           <p className="text-[10px] text-gray-400 mt-1">
-            Shared secret for a crawler started with <code className="text-gold-light">CRAWLER_TOKEN</code>. Sent only to the runner and SERP endpoints above as <code className="text-gold-light">x-crawler-token</code>.
+            Shared secret for a crawler started with <code className="text-gold-light">CRAWLER_TOKEN</code>. Sent only to the runner and search endpoints above as <code className="text-gold-light">x-crawler-token</code>.
           </p>
         </div>
 

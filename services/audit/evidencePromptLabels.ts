@@ -79,7 +79,7 @@ export function buildEnrichmentPromptSection(entity: EnrichedEntityIntelligence 
   const secLabel =
     sec.measurementConfidence === 'full' ? MEASURED : sec.measurementConfidence === 'failed' ? NOT_MEASURED : ESTIMATED;
   parts.push(
-    `Security Posture (${secLabel}): HTTPS ${sec.httpsEnforced ? 'Enforced' : 'Missing'}, HSTS: ${sec.hstsEnabled ? 'Active' : 'Missing'}, CSP: ${sec.cspDetected ? 'Present' : 'Missing'}, security.txt: ${sec.securityTxtPresent ? 'Present' : 'Missing'}, TrustScore: ${sec.trustScore}/100, Measurement: ${sec.measurementConfidence}`
+    `Security posture (${secLabel}): HTTPS ${sec.httpsEnforced ? 'enforced' : 'missing'}, forces secure HTTPS connections (HSTS): ${sec.hstsEnabled ? 'active' : 'missing'}, controls which scripts the site can load (CSP): ${sec.cspDetected ? 'present' : 'missing'}, security.txt: ${sec.securityTxtPresent ? 'present' : 'missing'}, TrustScore: ${sec.trustScore}/100, Measurement: ${sec.measurementConfidence}`
   );
   if (entity.sameAsUrls.length > 0) {
     parts.push(`sameAs Graph URIs: ${entity.sameAsUrls.join(', ')}`);

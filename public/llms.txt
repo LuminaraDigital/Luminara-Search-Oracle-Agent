@@ -1,6 +1,6 @@
 # Luminara Suite
 
-> Luminara Suite checks a website and live web search, then ranks one next fix. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. Web app, Windows desktop, and a Telegram Mini App.
+> Luminara Suite checks a website and live web search, then ranks one next fix. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login. Web app, Windows desktop, and a Telegram Mini App.
 
 ## Methodology
 
@@ -27,13 +27,13 @@ LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt pres
 ## Answer engine targets
 
 ### What is Luminara Suite?
-Luminara Suite checks whether Google and AI answers name a real estate agency, then ranks one fix to ship next. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week. For independent real estate agencies in Australia, Oceania and South-East Asia.
+Luminara Suite checks whether AI answers name a real estate agency, then ranks one fix to ship next. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login. Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week. For independent real estate agencies in Australia, Oceania and South-East Asia.
 
 ### How does Luminara compare to traditional SEO suites?
-Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness and knowledge-graph grounding. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured. Every metric is labeled measured, estimated, or not_measured.
+Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness and knowledge-graph grounding. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login. Every metric is labeled measured, estimated, or not_measured.
 
 ### What is Answer Engine Optimization (AEO)?
-Answer Engine Optimization (AEO) is the discipline of structuring web content, technical crawl assets, and entity schema so generative AI engines (Google AI Overviews, ChatGPT, Perplexity, Claude) extract, synthesize, and cite the brand as an authoritative source in direct conversational responses.
+Answer Engine Optimization (AEO) is the discipline of structuring web content, technical crawl assets, and entity schema so an answer engine can quote the brand. AEO is not a score.
 
 ## Sitemap
 
@@ -45,7 +45,7 @@ Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does
 
 - Starter: list price A$79, pay 2,500 Stars. 2 monitored domains. No IDE access. No public share links. Monthly re-audit reminders in Telegram.
 - Growth: list price A$229, pay 7,500 Stars. 10 monitored domains. IDE access. Public share links. Weekly re-audit reminders in Telegram.
-- Agency: list price A$549, pay 18,000 Stars. 25 monitored domains. IDE access. Public share links. Daily re-audit reminders in Telegram. API access. 10 client workspaces. Daily drift check. White-label PDF. Live ChatGPT, Perplexity and AI Overviews answers are measured on Agency, or with your own DataForSEO login. Other plans show those as Not measured.
+- Agency: list price A$549, pay 18,000 Stars. 25 monitored domains. IDE access. Public share links. Daily re-audit reminders in Telegram. API access. 10 client workspaces. Daily drift check. White-label PDF. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login.
 - Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
 
 ## MCP

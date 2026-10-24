@@ -17,7 +17,8 @@ describe('sample report label', () => {
     expect(html).toContain('Illustrative example');
     expect(html).toContain('example-agency.com.au');
     expect(html).not.toContain('Live crawl');
-    expect(html.split('Live ChatGPT, Perplexity and AI Overviews').length - 1).toBe(1);
+    expect(html.split('Live answers from specific AI products stay Not measured').length - 1).toBe(1);
+    expect(html).not.toMatch(/ChatGPT|Perplexity/);
   });
 });
 

@@ -114,7 +114,7 @@ export function formatCrewSerpForReport(
   const queries = [...new Set(top.map((row) => row.query).filter(Boolean))];
   const lines: string[] = [
     '[LIVE EVIDENCE GATHERED VIA CREW SERP RADAR]',
-    'Search Intent Rationale: Reused SERP Radar rows from this audit. No second search was run.',
+    'Search Intent Rationale: Reused search results from this audit. No second search was run.',
     `Active Queries Executed: ${queries.map((query) => `"${query}"`).join(', ')}`,
     '--------------------------------------------------',
     ...top.map((row, index) => `[Source ${index + 1}] ${row.title}\nURL: ${row.url}\nExcerpt: ${row.snippet}\n`),

@@ -33,6 +33,9 @@ describe('report sentence assembly', () => {
     expect(joinList(['A', 'B'])).toBe('A and B');
     expect(joinList(['A', 'B', 'C'])).toBe('A, B and C');
     expect(joinList(['A', 'B', 'C', 'D'])).toBe('A, B, C and D');
+    expect(joinList(['Short page', 'This tag is missing'])).toBe('Short page and this tag is missing');
+    expect(joinList(['This tag is missing'])).toBe('This tag is missing');
+    expect(joinList(['A', 'This page', 'That page'])).toBe('A, this page and That page');
   });
 
   it('drops double spaces and a dangling punctuation mark', () => {
@@ -41,12 +44,22 @@ describe('report sentence assembly', () => {
     expect(tidySentence('Wait...')).toBe('Wait.');
     expect(tidySentence('A , B and C .')).toBe('A, B and C.');
     expect(tidySentence('  ')).toBe('');
+    expect(tidySentence('Found 1 issue: This page is thin.')).toBe('Found 1 issue: this page is thin.');
+    expect(tidySentence('Short page and This tag is missing.')).toBe('Short page and this tag is missing.');
+    expect(tidySentence('A, This and That.')).toBe('A, this and That.');
+    expect(tidySentence('Not measured. This run did not measure the site.')).toBe(
+      'Not measured. This run did not measure the site.',
+    );
   });
 
   it('summarizes zero, one, two, and many findings', () => {
     expect(findingSummary([])).toBe('No issues were found.');
     expect(findingSummary(['Short page'])).toBe('Found 1 issue: Short page.');
     expect(findingSummary(['Short page', 'Missing tag'])).toBe('Found 2 issues: Short page and Missing tag.');
+    expect(findingSummary(['This page is thin'])).toBe('Found 1 issue: this page is thin.');
+    expect(findingSummary(['Short page', 'This tag is missing'])).toBe(
+      'Found 2 issues: Short page and this tag is missing.',
+    );
     expect(findingSummary(['A', 'B', 'C', 'D'])).toBe('Found 4 issues: A, B, C and D.');
     expect(findingSummary(['  ', 'A'])).toBe('Found 1 issue: A.');
   });

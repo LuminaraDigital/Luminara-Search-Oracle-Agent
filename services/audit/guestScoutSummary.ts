@@ -173,8 +173,8 @@ function checksBadge(
 const SEARCH_ENGINE_NAMES: Record<string, string> = {
   tavily: 'web search',
   local_serp: 'a saved search sample',
-  google: 'Google search',
-  perplexity: 'Perplexity',
+  google: 'web search',
+  perplexity: 'web search',
 };
 
 function searchSourceLabel(engines: readonly string[] | undefined): string {

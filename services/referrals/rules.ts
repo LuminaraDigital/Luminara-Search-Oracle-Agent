@@ -3,6 +3,8 @@
  * Pure: no D1, no fetch, no invented SEO percentages.
  */
 
+import { countPhrase } from '../audit/reportSentence';
+
 export const REFERRAL_SCOUT_CREDITS = 2;
 export const OPERATOR_STREAK_WEEKS = 4;
 export const REFERRAL_CLAIM_LIMIT_PER_HOUR = 20;
@@ -261,7 +263,7 @@ export function formatWeeklyMissionNudge(input?: { level?: VisibilityLevel; stre
     'Visibility Level moves from Explorer to Scout, Builder, then Operator after a four-week streak.',
   ];
   if (input?.level) {
-    lines.push('', `Your level: *${visibilityLevelLabel(input.level)}*. Streak: ${input.streakWeeks ?? 0} week(s).`);
+    lines.push('', `Your level: *${visibilityLevelLabel(input.level)}*. Streak: ${countPhrase(input.streakWeeks ?? 0, 'week')}.`);
   }
   lines.push('', 'Open the app when you want to work. This bot does not send a weekly blast.');
   return lines.join('\n');

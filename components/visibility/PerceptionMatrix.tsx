@@ -40,10 +40,10 @@ export const PerceptionMatrix: React.FC<PerceptionMatrixProps> = ({
 
   const perceptions: EnginePerception[] = useMemo(() => {
     const defaultEngines: Array<{ id: 'chatgpt' | 'perplexity' | 'google_aio' | 'gemini'; label: string }> = [
-      { id: 'chatgpt', label: 'ChatGPT Search' },
-      { id: 'perplexity', label: 'Perplexity AI' },
-      { id: 'google_aio', label: 'Google AI Overviews' },
-      { id: 'gemini', label: 'Google Gemini' },
+      { id: 'chatgpt', label: 'AI answers' },
+      { id: 'perplexity', label: 'AI answers' },
+      { id: 'google_aio', label: 'AI answers' },
+      { id: 'gemini', label: 'AI answers' },
     ];
 
     return defaultEngines.map(({ id, label }) => {
@@ -117,7 +117,7 @@ export const PerceptionMatrix: React.FC<PerceptionMatrixProps> = ({
             <span className="text-amber-400 text-sm font-bold">Divergence Points</span>
           </div>
           <p className="text-xs text-gray-300 leading-relaxed">
-            Perplexity leans heavily on external Reddit and GitHub consensus threads, whereas Google AI Overviews prioritizes Schema.org Organization markup and canonical sitelinks.
+            These checks do not all use the same sources. This view does not say which source each one prefers.
           </p>
         </div>
       </div>
