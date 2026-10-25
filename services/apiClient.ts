@@ -5,7 +5,7 @@
  * Proxy mode is on when the Worker serves the app, or when VITE_API_BASE points at it.
  */
 import { getInitDataRaw } from './telegram/tma';
-import { loadFirebaseAuth, readCachedFirebaseIdToken } from './auth/firebaseIdToken';
+import { loadFirebaseAuth, readCachedFirebaseIdToken, readFreshCachedFirebaseIdToken } from './auth/firebaseIdToken';
 import { takeAccountBoot } from './auth/accountBoot';
 import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, isAuditSiteMismatch, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
@@ -288,7 +288,7 @@ function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
-  const idToken = readCachedFirebaseIdToken();
+  const idToken = readFreshCachedFirebaseIdToken();
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   return headers;
 }
@@ -299,7 +299,7 @@ async function authHeadersAsync(forceRefresh = false): Promise<Record<string, st
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
   const auth = await loadFirebaseAuth();
-  const idToken = forceRefresh ? await auth.getFirebaseIdToken(true) : (readCachedFirebaseIdToken() ?? await auth.getFirebaseIdToken(false));
+  const idToken = forceRefresh ? await auth.getFirebaseIdToken(true) : (readFreshCachedFirebaseIdToken() ?? await auth.getFirebaseIdToken(false));
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   Object.assign(headers, await appCheckHeader());
   return headers;
