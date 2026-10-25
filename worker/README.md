@@ -414,10 +414,15 @@ message and the reply went to the model chat.
   history, a "Not measured" warning token follows the tokens already streamed, and
   `oracle_output_redacted` is logged. Unlike the bot, a general figure or a target stays
   ("Aim for a CTR above 3%", "A good LCP is under 2.5 seconds"): a sentence counts only
-  when it is about the user, us or a named site, claims a look at a site, or answers the
-  user's question for a metric. A number from a user sentence that states a figure (in a
-  message or in the retrieved account memory) is the user's own wherever the reply repeats
-  it, and so is every number of a tool result that did not error and is `measured`. Live.
+  when it is about the user, us, the site under discussion ("the site", "its"), a named
+  site or a "Label: 45" reading that is not a bar ("LCP: under 2.5 s"), claims a look at a
+  site, or answers the user's question for a metric (CTR, domain rating, DA, DR and PA
+  count as metrics there), and a percentage after above, below, under, at least or at most
+  is a bar to clear, not a promise. A number from a user sentence that states a figure (in
+  a message or in the retrieved account memory) is the user's own wherever the reply
+  repeats it, and so is every number of a tool result that did not error and is
+  `measured`. One general figure that says "it" ("it gets about 27% of clicks") is still
+  replaced. Live.
 - `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
   nothing, and the model has no say over prices or payments.
   - **Two kinds of message never reach the model.** `chatRoute` reads the user's
@@ -451,12 +456,12 @@ message and the reply went to the model chat.
     prices are, where billing help is, and that this chat cannot quote prices or
     take payments.
   - A sentence that states a measurement nobody made (a percentage, a rank, a score,
-    a DA or CTR, a count of citations, visits or AI answers, a results page, a claim of
-    having looked at the site) becomes one "not measured" sentence. Links, dates, phone
-    and version numbers and HTTP status codes are set aside first. A number the user
-    wrote is kept only where the sentence hands it back ("you said"). An instruction
-    keeps its count ("Add 3 FAQ questions") and loses a promised outcome; a percentage
-    after above, below, under, at least or at most is a bar to clear, not a promise.
+    a count of citations or visits, a count of AI answers or a results page with the
+    user as subject ("your brand appears in 12 AI answers", "you are on page 2"), a claim
+    of having looked at the site) becomes one "not measured" sentence. Links, dates,
+    phone and version numbers and HTTP status codes are set aside first. A number the
+    user wrote is kept only where the sentence hands it back ("you said"). An
+    instruction keeps its count ("Add 3 FAQ questions") and loses a promised outcome.
     Status comes from the claim ledger (`services/evidenceBound`).
   - Inline code is read as prose. Only JSON-LD (an object with `@context`) and head
     tags (`meta`, `link`, `title`, a JSON-LD `script`) are set aside as something

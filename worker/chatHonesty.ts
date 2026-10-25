@@ -755,7 +755,7 @@ const ORDINAL = String.raw`(?:first|second|third|fourth|fifth|sixth|seventh|eigh
 const SELECTION_NOUN = String.raw`ways|tips|steps|things|ideas|moves|tactics|actions|fixes|options|reasons|levers|wins|rules|mistakes|pages|posts|articles|keywords|queries|prompts|questions|competitors|priorities|products|features|channels|sources|sites|customers|topics|categories|pieces|formats`;
 const COUNT_NOUN = String.raw`citations?|mentions?|backlinks?|referring\s+domains|visits?|visitors?|clicks?|impressions?|sessions?|page\s?views?`;
 const METRIC_NOUN = String.raw`visibility|traffic|authority|share\s+of\s+voice|${COUNT_NOUN}|rating|reach`;
-const METRIC_WORD = String.raw`visib(?:le|ility)|(?:out)?rank(?:s|ed|ing|ings)?|positions?|cit(?:e|es|ed|ing|ation|ations)|mention(?:s|ed|ing)?|backlinks?|traffic|visits?|visitors?|clicks?|impressions?|scor(?:e|es|ed|ing)|shares?|authority|ctr|click-through\s+rates?|domain\s+ratings?`;
+const METRIC_WORD = String.raw`visib(?:le|ility)|(?:out)?rank(?:s|ed|ing|ings)?|positions?|cit(?:e|es|ed|ing|ation|ations)|mention(?:s|ed|ing)?|backlinks?|traffic|visits?|visitors?|clicks?|impressions?|scor(?:e|es|ed|ing)|shares?|authority`;
 const HEDGE = String.raw`(?:(?:about|around|roughly|approximately|only|just|nearly|almost|over|under|above|below|at|up|down|to|now|currently|worth|close\s+to)\s+){0,3}`;
 
 const PERCENT_RE = new RegExp(
@@ -818,10 +818,11 @@ const SHAPE_RES: RegExp[] = [
   // "your site has 14 pages without schema", "there are 3 pages on your site"
   /\byour\s+(?:site|website|domain|homepage|home\s+page|pages?|blog|store|sitemap|schema|markup|content)\s+(?:currently\s+|now\s+|already\s+|only\s+|still\s+)?(?:has|have|had|shows?|lists?|contains?|includes?|is\s+missing|lacks?|uses?|loads?|returns?|gets?|receives?)\b[^.;!?]*\d/i,
   /\bthere\s+(?:are|is|were|was)\s+(?:[\w-]+\s+){0,2}?\d[^.;!?]*\b(?:on|in|across)\s+your\s+(?:site|website|domain|homepage|pages?|blog|store|sitemap)\b/i,
-  // "your brand appears in 12 AI answers", "you show up in 3 of them"
-  /\b(?:appear|appears|appeared|show\s+up|shows\s+up|showed\s+up|feature|features|featured)\s+in\s+(?:about\s+|around\s+|only\s+|just\s+)?\d[\d,.]*\+?\s+(?:[\w-]+\s+){0,2}?(?:answers?|results?|responses?|queries|prompts?|searches|overviews?|engines?)\b/i,
+  // "your brand appears in 12 AI answers", "you show up in 3 of them". Not "most brands appear
+  // in 1 to 3 answers": the count is the user's only when the user is the subject.
+  /\b(?:you|we|(?:your|our|the)\s+(?:site|website|brand|domain))(?:\s+[\w'’-]+)?\s+(?:appear|appears|appeared|show\s+up|shows\s+up|showed\s+up|feature|features|featured)\s+in\s+(?:about\s+|around\s+|only\s+|just\s+)?\d[\d,.]*\+?\s+(?:[\w-]+\s+){0,2}?(?:answers?|results?|responses?|queries|prompts?|searches|overviews?|engines?)\b/i,
   // "you are on page 2 for your main keyword"
-  /\b(?:you|we|they|it|your\s+[\w-]+)\s+(?:[\w'’-]+\s+){0,2}?(?:is|are|was|were|sit|sits|land|lands|show|shows|appear|appears)\s+(?:up\s+)?on\s+page\s+(?:\d+|one|two|three)\b/i,
+  /\b(?:you|we|your\s+[\w-]+)\s+(?:[\w'’-]+\s+){0,2}?(?:is|are|was|were|sit|sits|land|lands|show|shows|appear|appears)\s+(?:up\s+)?on\s+page\s+(?:\d+|one|two|three)\b/i,
 ];
 // A claim of having looked. Nothing in this chat fetches a site, so it is replaced wherever it stands.
 const LOOKED_RES: RegExp[] = [
@@ -844,9 +845,12 @@ const BARE_ANSWER_RE = new RegExp(
   'i',
 );
 const METRIC_WORD_RE = new RegExp(String.raw`\b(?:${METRIC_WORD})\b`, 'i');
-// The capitals only: "pa" and "Dr" are ordinary words.
+// The web Oracle also reads CTR, domain rating and, in capitals only ("pa" and "Dr" are ordinary
+// words), DA, DR and PA as metrics in what the user wrote. The bot keeps its own list.
+const MORE_METRIC_WORDS_RE = /\b(?:ctr|click-through\s+rates?|domain\s+ratings?)\b/i;
 const METRIC_ABBREVIATION_RE = /\b(?:DA|DR|PA)\b/;
-const namesMetric = (text: string): boolean => METRIC_WORD_RE.test(text) || METRIC_ABBREVIATION_RE.test(text);
+const namesMetric = (text: string): boolean =>
+  METRIC_WORD_RE.test(text) || MORE_METRIC_WORDS_RE.test(text) || METRIC_ABBREVIATION_RE.test(text);
 const ASKS_FOR_ADVICE_RE = /\bshould\b|\bhow\s+(?:do|can|could|would)\s+(?:i|we)\b|\bhow\s+to\b|\bneed\s+to\b|\brecommend\b|\bsuggest\b/i;
 
 // ---------------------------------------------------------------------------------------
@@ -909,12 +913,13 @@ const PROMISED_RES: RegExp[] = [
   new RegExp(String.raw`\b(?:to|into|reach|hit)\s+(?:the\s+)?(?:#\s?\d+\b|number\s+one\b|position\s+\d+\b|first\s+place\b|top\s+\d+\b(?!\s+(?:[\w-]+\s+){0,2}?(?:${SELECTION_NOUN})\b))`, 'i'),
   new RegExp(String.raw`\bto\s+\d[\d,.]*\s?[kKmM]?\+?\s+(?:[\w-]+\s+){0,2}?(?:${COUNT_NOUN})\b`, 'i'),
 ];
-// "above 3%", "at least 3%", "below 50%": a bar to clear, not a promised change. Not "above 30%
-// more traffic", where the change follows.
+// "above 3%", "at least 3%", "below 50%": for the web Oracle a bar to clear, not a promised
+// change. Not "above 30% more traffic", where the change follows. The bot keeps its rule.
 const BAR_PERCENT_RE =
   /\b(?:above|below|under|at\s+least|at\s+most)\s+(?:about\s+|around\s+|roughly\s+)?\d[\d,.]*\s?(?:%|percent\b|per\s+cent\b)(?!\s*(?:more|fewer|higher|lower)\b)/gi;
-const promisesNumber = (rest: string): boolean =>
-  (PERCENT_RE.test(rest.replace(BAR_PERCENT_RE, ' ')) && OUTCOME_WORD_RE.test(rest)) || PROMISED_RES.some((re) => re.test(rest));
+const promisesNumber = (rest: string, barsAreTargets: boolean): boolean =>
+  (PERCENT_RE.test(barsAreTargets ? rest.replace(BAR_PERCENT_RE, ' ') : rest) && OUTCOME_WORD_RE.test(rest)) ||
+  PROMISED_RES.some((re) => re.test(rest));
 
 function isInstruction(sentence: string, rest: string): boolean {
   if (ASSERTION_RES.some((re) => re.test(rest))) return false;
@@ -924,7 +929,7 @@ function isInstruction(sentence: string, rest: string): boolean {
 }
 
 /** True when the sentence states a measurement nobody made. */
-function statesMeasurement(sentence: string, userNumbers: Set<string>, userAskedForMetric: boolean): boolean {
+function statesMeasurement(sentence: string, userNumbers: Set<string>, userAskedForMetric: boolean, barsAreTargets = false): boolean {
   // Step 1: set aside what is not a measurement, or is the user's own.
   const rest = setAside(sentence, userNumbers);
   if (LOOKED_RES.some((re) => re.test(rest))) return true;
@@ -932,7 +937,7 @@ function statesMeasurement(sentence: string, userNumbers: Set<string>, userAsked
   if (/\?["')\]]*$/.test(sentence.trim())) return false;
   // Step 3: an instruction, or a supposition, loses only a promised number.
   if (HYPOTHETICAL_RE.test(sentence.replace(LEAD_IN_RE, '')) || isInstruction(sentence, rest)) {
-    return promisesNumber(rest);
+    return promisesNumber(rest, barsAreTargets);
   }
   // Step 2: the shapes of a measurement.
   if (SHAPE_RES.some((re) => re.test(rest))) return true;
@@ -1181,7 +1186,7 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
     [PLAN_BLOCK_HEADING, ...Object.values(plans).map(planPriceLine), PLAN_BLOCK_FOOTER].flatMap(splitSentences).map((s) => s.trim()),
   );
   const noteSentences = new Set(splitSentences(MONEY_NOTE).map((s) => s.trim()));
-  const userAskedForMetric = namesMetric(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
+  const userAskedForMetric = METRIC_WORD_RE.test(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
   const userNumbers = numbersIn(userTexts);
   const userHosts = hostsIn(userTexts);
   const knownHosts = [...OWN_LINK_HOSTS, ...REFERENCE_LINK_HOSTS, ...(context.allowedHosts ?? [])].map((host) =>
@@ -1320,8 +1325,20 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
 }
 
 // A figure in the web Oracle chat is a claim only when it is about someone: the user ("your
-// CTR"), us, or a named site. "A good LCP is under 2.5 seconds" is general advice.
-const ABOUT_SOMEONE_RE = /\b(?:you|your|yours|we|our|ours|us)\b|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i;
+// CTR"), us, the site under discussion ("the site", "its"), a named site, or a "Label: 45"
+// reading. "A good LCP is under 2.5 seconds" is general advice.
+const ABOUT_SOMEONE_RE = new RegExp(
+  [
+    String.raw`\b(?:you|your|yours|we|our|ours|us)\b`,
+    // the site under discussion: "the site has a DA of 45", "its domain authority is 30"
+    String.raw`\b(?:the|this|that)\s+(?:site|website|domain(?!\s+(?:authority|rating|name))|homepage|home\s+page|brand)\b`,
+    String.raw`\b(?:it|its)\b`,
+    // a "Label: 45" reading, as in a list of a site's numbers, but not a bar ("LCP: under 2.5 s")
+    String.raw`^[^:.!?]{1,40}:\s*(?!(?:under|below|above|over|at\s+least|at\s+most|less\s+than|more\s+than|<|>|≤|≥)\b)(?:about\s+|around\s+|roughly\s+|~)?#?\d`,
+    String.raw`\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b`,
+  ].join('|'),
+  'i',
+);
 
 /**
  * The site-number step of filterChatReply alone, for the web Oracle chat, which may link and talk
@@ -1356,7 +1373,7 @@ export function withoutUnmeasuredClaims(
       const trail = piece.slice(lead.length + body.length);
       const claimsSomething =
         userAskedForMetric || ABOUT_SOMEONE_RE.test(body) || LOOKED_RES.some((re) => re.test(body));
-      if (segment.data || body === '' || !claimsSomething || !statesMeasurement(withoutUserNumbers(body, userNumbers), none, userAskedForMetric)) {
+      if (segment.data || body === '' || !claimsSomething || !statesMeasurement(withoutUserNumbers(body, userNumbers), none, userAskedForMetric, true)) {
         out.push(piece);
         previousWasUnmeasured = false;
         continue;
