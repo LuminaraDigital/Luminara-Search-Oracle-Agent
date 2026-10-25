@@ -421,6 +421,19 @@ describe('a Dreaming run on a free plan', () => {
     expect(modelCalls).toBe(1);
   });
 
+  it('gives the run back when the run fails after the unit was spent', async () => {
+    const env = freePlanEnv();
+    Object.assign(env.DB!, {
+      batch: async () => {
+        throw new Error('D1 is down');
+      },
+    });
+
+    await expect(post(env, '/dreaming/run', { domain: 'broken.example', force: true })).rejects.toThrow('D1 is down');
+    expect(modelCalls).toBe(1);
+    expect(await readFreeUsed(env, 'acct_dreamer', 1)).toBe(0);
+  });
+
   it('gives the run back when it does not wake', async () => {
     const env = freePlanEnv();
 

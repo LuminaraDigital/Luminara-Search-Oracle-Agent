@@ -588,7 +588,7 @@ export async function handleDreamingRoute(
     if (!body.domain) return json({ ok: false, error: 'domain required' }, 400);
 
     // A run that wakes calls the hosted model, so on a free plan it spends a free daily unit.
-    // The unit comes back when the run does not wake.
+    // The unit comes back when the run does not wake or fails.
     const quota = hasHostedDreamModel(env) ? await checkHostedQuota(env, user) : null;
     if (quota && !quota.ok) {
       const capacity = quota.error === QUOTA_CAPACITY_ERROR;
@@ -603,7 +603,10 @@ export async function handleDreamingRoute(
       body.domain,
       body.triggerReason || 'manual_user',
       { force: body.force ?? false },
-    );
+    ).catch(async (err: unknown) => {
+      await refundMeteredQuota(env, quota);
+      throw err;
+    });
     if (!res.ok || !res.woke) await refundMeteredQuota(env, quota);
     return json(res, res.ok ? 200 : 500);
   }
