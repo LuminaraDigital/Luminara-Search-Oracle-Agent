@@ -61,6 +61,8 @@ describe('dismissBootSplash', () => {
     expect(html).toContain('boot-splash--hold');
     expect(html).toContain('Loading…');
     expect(early).toContain('}, 300);');
+    expect(early).toContain('tgWebAppData=');
+    expect(early).toContain("classList.add('lx-skip-splash')");
     const scene = html.slice(html.indexOf('class="lx-line"'), html.indexOf('class="lx-pin"'));
     expect(scene.length).toBeGreaterThan(20);
     expect(scene.length).toBeLessThan(800);

@@ -23,7 +23,7 @@ export interface QuotaStatus {
 }
 
 const dailyLimitError = (limit: number) =>
-  `Daily free limit of ${limit} requests reached. Subscribe for unlimited use or add your own API key in Settings.`;
+  `Daily free limit of ${limit} requests reached. A paid plan lifts that daily cap, or add your own API key in Settings.`;
 
 function isSpendBody(v: unknown): v is { ok: boolean; used: number } {
   return !!v && typeof v === 'object' && 'ok' in v && typeof v.ok === 'boolean' && 'used' in v && typeof v.used === 'number';

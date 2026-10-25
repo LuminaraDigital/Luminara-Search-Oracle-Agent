@@ -74,7 +74,7 @@ export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
       } else if (result === 'failed') {
         setStatus('Payment failed. Nothing was charged.');
       } else if (result === 'pending') {
-        setStatus('Payment is processing by Telegram…');
+        setStatus('Stars checkout opened in Telegram. Your plan updates here after payment.');
       }
     } catch (e: any) {
       haptic('error');
