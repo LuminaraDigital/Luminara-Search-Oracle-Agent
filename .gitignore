@@ -116,3 +116,13 @@ artifacts/
 # Playwright local output
 /test-results/
 /playwright-report/
+
+# Android build outputs, local SDK paths, and signing keystores
+apps/android/.gradle/
+apps/android/build/
+apps/android/app/build/
+apps/android/local.properties
+*.jks
+*.keystore
+keystore.properties
+

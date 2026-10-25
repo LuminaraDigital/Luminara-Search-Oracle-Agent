@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="108dp"
+  android:height="108dp"
+  android:viewportWidth="108"
+  android:viewportHeight="108">
+  <!-- Night Foundry Orbital Horizon & Beacon -->
+  <path
+    android:fillColor="#00000000"
+    android:pathData="M54,28A26,26 0,1 1,54 80A26,26 0,1 1,54 28Z"
+    android:strokeColor="#BF953F"
+    android:strokeWidth="3.5" />
+  <path
+    android:fillColor="#FCF6BA"
+    android:pathData="M54,36L59,49L72,54L59,59L54,72L49,59L36,54L49,49Z" />
+</vector>

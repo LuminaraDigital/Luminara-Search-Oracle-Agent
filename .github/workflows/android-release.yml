@@ -1,0 +1,140 @@
+name: Android Release Build & Signing
+
+on:
+  push:
+    tags: [ 'v*.*.*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Sign & Publish Release Artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
+
+      - name: Grant Execute Permission to Gradlew
+        run: chmod +x apps/android/gradlew
+
+      - name: Derive Version From Tag
+        run: |
+          REF="${{ github.ref_name }}"
+          if ! printf '%s' "$REF" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Expected a v<major>.<minor>.<patch> tag, got '$REF'."
+            exit 1
+          fi
+          VERSION="${REF#v}"
+          MAJOR="${VERSION%%.*}"
+          REST="${VERSION#*.}"
+          MINOR="${REST%%.*}"
+          PATCH="${REST#*.}"
+          if [ "$MINOR" -ge 100 ] || [ "$PATCH" -ge 100 ]; then
+            echo "::error::minor and patch must stay below 100 (got $VERSION)."
+            exit 1
+          fi
+          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          echo "LUMINARA_VERSION_NAME=$VERSION" >> "$GITHUB_ENV"
+          echo "LUMINARA_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "Releasing $VERSION (versionCode $CODE)"
+
+      - name: Static Analysis (ktlint, detekt, Android Lint)
+        working-directory: apps/android
+        run: ./gradlew ktlintCheck detekt lintRelease --no-daemon
+
+      - name: Run Unit Tests
+        working-directory: apps/android
+        run: ./gradlew test --no-daemon
+
+      - name: Decode Release Keystore
+        env:
+          LUMINARA_KEYSTORE_BASE64: ${{ secrets.LUMINARA_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$LUMINARA_KEYSTORE_BASE64" ]; then
+            echo "::error::LUMINARA_KEYSTORE_BASE64 is not set."
+            exit 1
+          fi
+          printf '%s' "$LUMINARA_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/luminara-release.jks"
+          keytool -list -keystore "$RUNNER_TEMP/luminara-release.jks" \
+            -storepass "${{ secrets.LUMINARA_KEYSTORE_PASSWORD }}" > /dev/null
+          echo "LUMINARA_KEYSTORE_PATH=$RUNNER_TEMP/luminara-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build Release APK
+        working-directory: apps/android
+        env:
+          LUMINARA_KEYSTORE_PASSWORD: ${{ secrets.LUMINARA_KEYSTORE_PASSWORD }}
+          LUMINARA_KEY_ALIAS: ${{ secrets.LUMINARA_KEY_ALIAS }}
+          LUMINARA_KEY_PASSWORD: ${{ secrets.LUMINARA_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Build Android App Bundle (AAB for Google Play)
+        working-directory: apps/android
+        env:
+          LUMINARA_KEYSTORE_PASSWORD: ${{ secrets.LUMINARA_KEYSTORE_PASSWORD }}
+          LUMINARA_KEY_ALIAS: ${{ secrets.LUMINARA_KEY_ALIAS }}
+          LUMINARA_KEY_PASSWORD: ${{ secrets.LUMINARA_KEY_PASSWORD }}
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Verify APK Is Signed
+        working-directory: apps/android
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -r | head -n1)
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -n1)
+          case "$APK" in
+            *unsigned*)
+              echo "::error::Built an UNSIGNED release APK: $APK"
+              exit 1
+              ;;
+          esac
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+
+      - name: Verify AAB Is Signed
+        working-directory: apps/android
+        run: |
+          AAB=$(find app/build/outputs/bundle/release -name '*.aab' | head -n1)
+          if [ -z "$AAB" ]; then
+            echo "::error::No AAB was produced."
+            exit 1
+          fi
+          OUTPUT=$(jarsigner -verify -strict "$AAB" 2>&1) || true
+          echo "$OUTPUT"
+          case "$OUTPUT" in
+            *"jar verified"*)
+              ;;
+            *)
+              echo "::error::Could not confirm the bundle is signed: $AAB"
+              exit 1
+              ;;
+          esac
+
+      - name: Shred Keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/luminara-release.jks"
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: luminarasuite-release-apk
+          path: apps/android/app/build/outputs/apk/release/*.apk
+          retention-days: 14
+
+      - name: Upload Release AAB Bundle Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: luminarasuite-release-aab
+          path: apps/android/app/build/outputs/bundle/release/*.aab
+          retention-days: 30
