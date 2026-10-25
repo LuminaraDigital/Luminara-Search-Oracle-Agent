@@ -2133,12 +2133,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (who.error) return withCors(json({ error: who.error }, 401));
     const body = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!body.ok) return withCors(json({ error: body.error }, body.status));
-    let reqData: OracleGatewayRequest;
-    try {
-      reqData = JSON.parse(body.text || '{}') as OracleGatewayRequest;
-    } catch {
-      return withCors(json({ ok: false, error: 'Invalid JSON body', code: 'INVALID_JSON' }, 400));
-    }
+    const reqData = (body.value || {}) as OracleGatewayRequest;
     return withCors(await executeOracleGatewayTask(env, who.user, reqData, request.headers));
   }
 
