@@ -22,6 +22,11 @@ const DREAM_MEMORY_TYPES: readonly string[] = [
   'evidence_memory',
 ] satisfies DreamMemoryType[];
 
+/** True when a run calls a hosted model rather than the deterministic consolidator. */
+export function hasHostedDreamModel(env: Env): boolean {
+  return Boolean(env.GROQ_API_KEY || env.GEMINI_API_KEY);
+}
+
 const DREAM_AGENT_SYSTEM = `You are Luminara Dreaming, the autonomous memory consolidation engine for Luminara Suite.
 Your mission is to consolidate verified business facts, search visibility insights, and recommendation outcomes into durable workspace memory.
 
@@ -181,8 +186,7 @@ export async function runDreamAgent(
   input: ConsolidateInput,
   fetcher: typeof fetch = fetch,
 ): Promise<DreamAgentOutput> {
-  const apiKey = env.GROQ_API_KEY || env.GEMINI_API_KEY;
-  if (!apiKey) {
+  if (!hasHostedDreamModel(env)) {
     return deterministicDreamConsolidator(input);
   }
 

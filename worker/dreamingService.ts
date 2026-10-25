@@ -22,7 +22,11 @@ import {
   type EnqueueEventInput,
 } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
-import { runDreamAgent } from './dreamAgent';
+import { hasHostedDreamModel, runDreamAgent } from './dreamAgent';
+import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from './quotaMiddleware';
+
+const DREAM_RUN_LIMIT_ERROR =
+  "Run now uses one free daily run on free plans, and today's free runs are used up. Upgrade for unlimited runs, or try again after 00:00 UTC.";
 
 export async function getActiveBusinessMemories(
   env: Env,
@@ -583,6 +587,16 @@ export async function handleDreamingRoute(
     };
     if (!body.domain) return json({ ok: false, error: 'domain required' }, 400);
 
+    // A run that wakes calls the hosted model, so on a free plan it spends a free daily unit.
+    // The unit comes back when the run does not wake.
+    const quota = hasHostedDreamModel(env) ? await checkHostedQuota(env, user) : null;
+    if (quota && !quota.ok) {
+      const capacity = quota.error === QUOTA_CAPACITY_ERROR;
+      return json(
+        { ok: false, error: capacity ? QUOTA_CAPACITY_ERROR : DREAM_RUN_LIMIT_ERROR, code: capacity ? 'HOSTED_CAPACITY' : 'QUOTA_EXHAUSTED' },
+        capacity ? 503 : 429,
+      );
+    }
     const res = await executeDreamRun(
       env,
       accountId,
@@ -590,6 +604,7 @@ export async function handleDreamingRoute(
       body.triggerReason || 'manual_user',
       { force: body.force ?? false },
     );
+    if (!res.ok || !res.woke) await refundMeteredQuota(env, quota);
     return json(res, res.ok ? 200 : 500);
   }
 

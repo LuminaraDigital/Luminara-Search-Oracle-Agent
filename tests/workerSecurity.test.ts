@@ -420,6 +420,29 @@ describe('rate limiter', () => {
     expect(last!.status).toBe(429);
     expect(last!.headers.get('retry-after')).toBeTruthy();
   });
+
+  it('puts a Dreaming run, which can call a hosted model, behind the high-cost edge limiter', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const keys: string[] = [];
+    const env = makeEnv({
+      HIGH_COST_RATE_LIMITER: {
+        limit: async ({ key }: { key: string }) => {
+          keys.push(key);
+          return { success: false };
+        },
+      },
+    });
+
+    const run = await worker.fetch(req('/api/dreaming/run', { method: 'POST', body: '{}' }, '198.51.100.21'), env, ctx);
+    const status = await worker.fetch(req('/api/dreaming/status?domain=a.com', {}, '198.51.100.22'), env, ctx);
+
+    expect(run.status).toBe(429);
+    expect(((await run.json()) as { code: string }).code).toBe('EDGE_RATE_LIMITED');
+    expect(keys).toEqual(['hc:198.51.100.21:dreaming']);
+    // Reading the status calls no model, so it is not limited here and reaches the sign-in check.
+    expect(status.status).toBe(401);
+    vi.restoreAllMocks();
+  });
 });
 
 describe('body reader', () => {

@@ -13,6 +13,8 @@ import {
   handleDreamingRoute,
 } from '../worker/dreamingService';
 import type { HostedIdentity } from '../worker/userTypes';
+import { readFreeUsed } from '../worker/quotaMiddleware';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 
 describe('Luminara Dreaming Service & D1 Engine', () => {
   let db: any;
@@ -357,5 +359,85 @@ describe('Dreaming applies only what it can check in the model output', () => {
 
     expect(run).toMatchObject({ ok: true, woke: true, run: { modelId: 'deterministic' } });
     expect(db.sqlite.prepare(`SELECT model_id FROM dream_runs WHERE account_id = ?`).all(ACCOUNT)).toEqual([{ model_id: 'deterministic' }]);
+  });
+});
+
+describe('a Dreaming run on a free plan', () => {
+  const dreamer = { id: 'fb:dreamer', accountId: 'acct_dreamer', source: 'firebase' } as HostedIdentity;
+  let modelCalls = 0;
+
+  beforeEach(() => {
+    modelCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        modelCalls += 1;
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Nothing new.', proposals: [] }) } }] }), { status: 200 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function freePlanEnv(): Env {
+    const kv = new Map<string, string>();
+    return {
+      DB: createSqliteD1(),
+      GROQ_API_KEY: 'gsk_test',
+      FREE_DAILY_LIMIT: '1',
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
+      LUMINARA_KV: {
+        get: async (k: string, type?: string) => (kv.has(k) ? (type === 'json' ? JSON.parse(kv.get(k)!) : kv.get(k)) : null),
+        put: async (k: string, v: string) => {
+          kv.set(k, v);
+        },
+      },
+    } as unknown as Env;
+  }
+
+  const post = (env: Env, path: string, body: Record<string, unknown>) =>
+    handleDreamingRoute(
+      new Request(`https://luminarasuite.com/api${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+      env,
+      dreamer,
+      path,
+    );
+
+  it('spends one free daily run on Run now, and refuses the next with a readable 429 before calling the model', async () => {
+    const env = freePlanEnv();
+
+    const first = await post(env, '/dreaming/run', { domain: 'free.example', force: true });
+    const second = await post(env, '/dreaming/run', { domain: 'free.example', force: true });
+
+    expect(first?.status).toBe(200);
+    expect(second?.status).toBe(429);
+    expect(await second?.json()).toEqual({
+      ok: false,
+      error: "Run now uses one free daily run on free plans, and today's free runs are used up. Upgrade for unlimited runs, or try again after 00:00 UTC.",
+      code: 'QUOTA_EXHAUSTED',
+    });
+    expect(modelCalls).toBe(1);
+  });
+
+  it('gives the run back when it does not wake', async () => {
+    const env = freePlanEnv();
+
+    const res = await post(env, '/dreaming/run', { domain: 'quiet.example' });
+
+    expect(await res?.json()).toMatchObject({ ok: true, woke: false });
+    expect(await readFreeUsed(env, 'acct_dreamer', 1)).toBe(0);
+    expect(modelCalls).toBe(0);
+  });
+
+  it("lets a client lower an event's signal weight, never raise it above the server's", async () => {
+    const env = freePlanEnv();
+
+    await post(env, '/dreaming/events', { domain: 'w.example', eventType: 'audit_completed', payload: { n: 1 }, signalWeight: 1000 });
+    await post(env, '/dreaming/events', { domain: 'w.example', eventType: 'audit_completed', payload: { n: 2 }, signalWeight: 0.5 });
+
+    const pending = await getPendingDreamEvents(env, 'acct_dreamer', 'w.example');
+    expect(pending.map((e) => e.signalWeight)).toEqual([1, 0.5]);
   });
 });

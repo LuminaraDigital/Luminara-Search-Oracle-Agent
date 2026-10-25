@@ -66,7 +66,10 @@ export async function enqueueDreamEvent(
   }
 
   const id = `devt_${crypto.randomUUID()}`;
-  const weight = input.signalWeight ?? DEFAULT_SIGNAL_WEIGHTS[input.eventType] ?? 1.0;
+  // The weight decides when a run wakes the model, so a caller may lower it, never raise it.
+  const serverWeight = DEFAULT_SIGNAL_WEIGHTS[input.eventType] ?? 1.0;
+  const asked = Number(input.signalWeight);
+  const weight = Number.isFinite(asked) && asked > 0 ? Math.min(asked, serverWeight) : serverWeight;
 
   await env.DB.prepare(
     `INSERT INTO dream_events (

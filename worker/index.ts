@@ -310,6 +310,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     path === '/mcp' ||
     path.startsWith('/mcp/') ||
     path === '/oracle/chat' ||
+    path === '/dreaming/run' ||
     path === '/audit/run' ||
     path === '/enrichment/entity' ||
     path === '/pagespeed';
