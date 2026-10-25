@@ -73,7 +73,7 @@ jobs:
         # Staging signs in against its own Firebase project and links to its own bot. The values
         # are public web config, kept as variables of the GitHub "staging" environment. With
         # none set, the staging build shows sign-in as not configured; it never falls back to
-        # the production project.
+        # the production project. Empty VITE_TG_ANALYTICS_* leaves Apps Center analytics off.
         env:
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -84,6 +84,8 @@ jobs:
           VITE_TELEGRAM_MINI_APP_URL: ${{ vars.VITE_TELEGRAM_MINI_APP_URL }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_FIREBASE_APPCHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APPCHECK_SITE_KEY }}
+          VITE_TG_ANALYTICS_TOKEN: ${{ vars.VITE_TG_ANALYTICS_TOKEN }}
+          VITE_TG_ANALYTICS_APP_NAME: ${{ vars.VITE_TG_ANALYTICS_APP_NAME }}
         run: npm run build -- --mode staging
 
       # The restore point. If the migration below goes wrong, this log holds the bookmark to
@@ -195,11 +197,13 @@ jobs:
         run: npm test
 
       - name: Build production bundle
-        # Public client values from the GitHub "production" environment. Empty leaves Sentry and App Check off.
+        # Public client values from the GitHub "production" environment. Empty leaves Sentry, App Check, and Apps Center analytics off.
         # These do not replace the committed Firebase project config.
         env:
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_FIREBASE_APPCHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APPCHECK_SITE_KEY }}
+          VITE_TG_ANALYTICS_TOKEN: ${{ vars.VITE_TG_ANALYTICS_TOKEN }}
+          VITE_TG_ANALYTICS_APP_NAME: ${{ vars.VITE_TG_ANALYTICS_APP_NAME }}
         run: npm run build
 
       # The restore point. If the migration below goes wrong, this log holds the bookmark to
