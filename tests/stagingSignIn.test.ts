@@ -753,6 +753,8 @@ describe('the deploy workflow', () => {
       'VITE_TELEGRAM_MINI_APP_URL',
       'VITE_SENTRY_DSN',
       'VITE_FIREBASE_APPCHECK_SITE_KEY',
+      'VITE_TG_ANALYTICS_TOKEN',
+      'VITE_TG_ANALYTICS_APP_NAME',
     ]) {
       expect(stagingJob).toContain(`${name}: \${{ vars.${name} }}`);
     }
@@ -760,9 +762,11 @@ describe('the deploy workflow', () => {
     expect(stagingJob).toContain('run: npm run build -- --mode staging');
   });
 
-  it('passes public Sentry and App Check values into the production build and leaves the Firebase project config committed', () => {
+  it('passes public Sentry, App Check, and Apps Center analytics values into the production build and leaves the Firebase project config committed', () => {
     expect(productionJob).toContain('VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}');
     expect(productionJob).toContain('VITE_FIREBASE_APPCHECK_SITE_KEY: ${{ vars.VITE_FIREBASE_APPCHECK_SITE_KEY }}');
+    expect(productionJob).toContain('VITE_TG_ANALYTICS_TOKEN: ${{ vars.VITE_TG_ANALYTICS_TOKEN }}');
+    expect(productionJob).toContain('VITE_TG_ANALYTICS_APP_NAME: ${{ vars.VITE_TG_ANALYTICS_APP_NAME }}');
     expect(productionJob).not.toContain('VITE_FIREBASE_API_KEY:');
     expect(productionJob).not.toContain('VITE_FIREBASE_AUTH_DOMAIN:');
     expect(productionJob).not.toContain('VITE_FIREBASE_PROJECT_ID:');
