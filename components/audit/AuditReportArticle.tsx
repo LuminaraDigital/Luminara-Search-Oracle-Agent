@@ -8,6 +8,7 @@ import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGua
 import { parseMeasuredCheckLine } from '../../services/agentCore/auditEvidenceGate';
 import { customerSourceLine, sourceReadKind } from '../../services/audit/reportColumnGate';
 import { formatAuDate } from '../../utils/formatAuDate';
+import { isWebUrl } from '../../utils/webUrl';
 import {
   checkFixTitle,
   displayMeasured,
@@ -42,7 +43,7 @@ const SEVERITY = {
 const SAME_SITE = 'https://same-site.invalid';
 
 function safeHref(href: string): string | null {
-  if (/^https?:\/\//i.test(href) || href.startsWith('mailto:')) return href;
+  if (isWebUrl(href) || href.startsWith('mailto:')) return href;
   // A path opens in this window, so it must resolve to this site: "//host" and "/\host" do not.
   try {
     return href.startsWith('/') && new URL(href, SAME_SITE).origin === SAME_SITE ? href : null;

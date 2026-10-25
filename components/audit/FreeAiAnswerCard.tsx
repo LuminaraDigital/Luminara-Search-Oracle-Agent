@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { apiBase, workerFetchWithAuthRetry } from '../../services/apiClient';
+import { isWebUrl } from '../../utils/webUrl';
 
 interface CitedSource {
   title: string;
@@ -24,7 +25,7 @@ export function CitedSourceList({ sources }: { sources: CitedSource[] }) {
     <ul className="text-xs space-y-1">
       {sources.map((source) => (
         <li key={source.url}>
-          {/^https?:\/\//i.test(source.url) ? (
+          {isWebUrl(source.url) ? (
             <a className="text-gold-light underline" href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a>
           ) : source.title}
         </li>
