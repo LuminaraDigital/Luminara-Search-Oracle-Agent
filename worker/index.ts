@@ -929,6 +929,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const secret = request.headers.get('x-telegram-bot-api-secret-token') || '';
     if (!secretEquals(secret, env.TELEGRAM_WEBHOOK_SECRET)) return json({ error: 'bad secret' }, 401);
     const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    // Telegram sends a refused update again, and one too large to read stays too large.
+    if (!read.ok && read.status === 413) {
+      console.warn(JSON.stringify({ event: 'telegram_body_too_large' }));
+      return json({ ok: true });
+    }
     if (!read.ok) return json({ error: read.error }, read.status);
     // A payment update is handled before the webhook answers, and is never throttled. Telegram
     // does not send an update again once it has a 200, so a paid charge must be on record

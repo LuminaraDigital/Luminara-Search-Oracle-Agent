@@ -286,6 +286,21 @@ describe('Telegram endpoints', () => {
     expect(malformed.status).toBe(400);
   });
 
+  it('answers an update too large to read with 200, so Telegram does not send it again, and handles nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let handled = 0;
+    const countingCtx = { waitUntil: () => { handled++; }, passThroughOnException: () => {} } as unknown as ExecutionContext;
+    const env = makeEnv({ BOT_TOKEN: '1:a', TELEGRAM_WEBHOOK_SECRET: 's3cret' });
+    const body = JSON.stringify({ message: { chat: { id: 1 }, from: { id: 1 }, text: 'x'.repeat(70 * 1024) } });
+
+    const res = await worker.fetch(req('/api/telegram/webhook', { method: 'POST', body, headers: { 'x-telegram-bot-api-secret-token': 's3cret' } }), env, countingCtx);
+
+    expect(res.status).toBe(200);
+    expect(handled).toBe(0);
+    expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'telegram_body_too_large' }));
+    warn.mockRestore();
+  });
+
   it('soft-throttles a flooding chat but never throttles payment updates', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } })));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
