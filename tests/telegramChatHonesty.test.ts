@@ -1826,4 +1826,16 @@ describe('withoutUnmeasuredClaims: the web Oracle chat', () => {
   ])('replaces a number about the user or a named site that nobody measured: %s', (reply, userText) => {
     expect(oracle(reply, [userText])).toBe(NOT_MEASURED_SENTENCE);
   });
+
+  it('keeps a figure the user stated, in a message or in account memory, wherever the reply repeats it', () => {
+    expect(oracle('A DA of 40 is a solid base.', ['my DA is 40, how do I grow it?'])).toBe('A DA of 40 is a solid base.');
+    expect(oracle('Your CTR benchmark of 3% is ahead of most sites.', ['Our brand CTR benchmark is 3%.', 'How are we doing?'])).toBe(
+      'Your CTR benchmark of 3% is ahead of most sites.',
+    );
+  });
+
+  it('does not take a number the user wrote for something else as their figure', () => {
+    expect(oracle('Your DA is 3.', ['give me 3 tips'])).toBe(NOT_MEASURED_SENTENCE);
+    expect(oracle('You rank 5 on Perplexity.', ['I have 5 minutes, what should I fix?'])).toBe(NOT_MEASURED_SENTENCE);
+  });
 });
