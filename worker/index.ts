@@ -84,7 +84,7 @@ import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
 import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, getAuditChainEntries, verifyAuditChain } from './auditLog';
 import { isAdminAuthorized } from './adminAuth';
 
-import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
+import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
 import { getActiveSubscription, readQuotaSnapshot } from './quotaMiddleware';
 import { handleReferralRoute } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
@@ -101,7 +101,7 @@ import {
   buildSessionCookie,
   buildLogoutCookie,
   verifyWebhookSignature,
-  getSessionTokenFromCookie,
+  refuseCrossSiteSessionWrite,
   mintOpaqueSession,
   revokeOpaqueSession,
   revokeSessionsForDeletedUser,
@@ -442,6 +442,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
 
     if (request.method === 'POST') {
+      const csrf = refuseCrossSiteSessionWrite(request, env);
+      if (csrf) return withCors(csrf);
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
       const body = (read.value || {}) as { idToken?: string; initData?: string };
@@ -538,7 +540,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/auth/logout') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
-    const sessionToken = getSessionTokenFromCookie(request);
+    const csrf = refuseCrossSiteSessionWrite(request, env);
+    if (csrf) return withCors(csrf);
+    const sessionToken = getSessionCookieToken(request);
     if (sessionToken && isOpaqueSessionId(sessionToken)) {
       await revokeOpaqueSession(env, sessionToken);
     }
@@ -592,7 +596,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
     const bearer = bearerFromAuthorization(request.headers.get('authorization'));
-    const cookieTok = getSessionTokenFromCookie(request);
+    const cookieTok = getSessionCookieToken(request);
     const jwtCookie = cookieTok && !isOpaqueSessionId(cookieTok) && looksLikeJwt(cookieTok) ? cookieTok : '';
     let bodyToken = '';
     if (!bearer && !jwtCookie) {
@@ -958,6 +962,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!v.ok) return withCors(json({ error: v.reason }, 401));
 
     if (path === '/telegram/auth') {
+      const csrf = refuseCrossSiteSessionWrite(request, env);
+      if (csrf) return withCors(csrf);
       const tgIdentity: HostedIdentity = { id: String(v.user.id), source: 'telegram' };
       const sub = await getActiveSubscription(env, tgIdentity);
       const resolvedSub = sub || (env.LUMINARA_KV ? await env.LUMINARA_KV.get(`sub:${v.user.id}`, 'json') : null);

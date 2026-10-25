@@ -5,11 +5,11 @@ import {
   SESSION_COOKIE_NAME,
   buildSessionCookie,
   buildLogoutCookie,
-  parseCookies,
   verifyWebhookSignature,
   mintOpaqueSession,
   loadOpaqueSession,
 } from '../worker/authMiddleware';
+import { getSessionCookieToken } from '../worker/workerUtils';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 function mockKv(store = new Map<string, string>()): KVNamespace {
@@ -118,22 +118,37 @@ describe('HttpOnly Session Cookie Management', () => {
     expect(logoutCookie).toContain('Expires=Thu, 01 Jan 1970');
   });
 
-  it('parses cookies accurately from Cookie header', () => {
-    const request = new Request('https://luminarasuite.com', {
-      headers: { cookie: '__session=token123; other_cookie=val456' },
-    });
-    const parsed = parseCookies(request);
-    expect(parsed.__session).toBe('token123');
-    expect(parsed.other_cookie).toBe('val456');
+  it('reads the first __session cookie and returns null for a malformed one', () => {
+    const cookie = (value: string) => new Request('https://luminarasuite.com', { headers: { cookie: value } });
+    expect(getSessionCookieToken(cookie('other=val456; __session=token%2B123; __session=second'))).toBe('token+123');
+    expect(getSessionCookieToken(cookie('__session=%E0%A4%A'))).toBeNull();
   });
 
   it('clears session cookie on POST /api/auth/logout', async () => {
     const env = makeEnv();
-    const res = await worker.fetch(req('/api/auth/logout', { method: 'POST' }), env, ctx);
+    const res = await worker.fetch(req('/api/auth/logout', { method: 'POST', headers: { origin: 'https://luminarasuite.com' } }), env, ctx);
     expect(res.status).toBe(200);
     const setCookie = res.headers.get('set-cookie');
     expect(setCookie).toBeTruthy();
     expect(setCookie).toContain('Max-Age=0');
+  });
+
+  it('logout survives a malformed cookie and revokes the first __session', async () => {
+    const env = makeEnv();
+    const first = (await mintOpaqueSession(env, { uid: 'logout_a' })) as string;
+    const second = (await mintOpaqueSession(env, { uid: 'logout_b' })) as string;
+    const res = await worker.fetch(
+      req('/api/auth/logout', {
+        method: 'POST',
+        headers: { origin: 'https://luminarasuite.com', cookie: `bad=%E0%A4%A; __session=${first}; __session=${second}` },
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('set-cookie')).toContain('Max-Age=0');
+    expect(await loadOpaqueSession(env, first)).toBeNull();
+    expect((await loadOpaqueSession(env, second))?.uid).toBe('logout_b');
   });
 });
 

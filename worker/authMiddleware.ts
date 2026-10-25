@@ -3,14 +3,14 @@
  *
  * Implements:
  * 1. Public vs. Protected Route Whitelisting (defense-in-depth edge guard).
- * 2. HttpOnly, Secure, SameSite=Lax Session Cookie parsing and creation (__session).
+ * 2. HttpOnly, Secure, SameSite=Lax Session Cookie creation (__session) and its login CSRF guard.
  * 3. Standardized 401 Unauthorized JSON responses for API guarding.
  * 4. Cryptographic HMAC-SHA256 webhook signature verification.
  * 5. CSRF defense on state-changing mutating requests.
  */
 
 import type { Env } from './env';
-import { identify, json, secretEquals } from './workerUtils';
+import { crossSiteRefusal, identify, json, secretEquals } from './workerUtils';
 
 const identifiedOnRequest = new WeakMap<Request, Awaited<ReturnType<typeof identify>>>();
 
@@ -70,25 +70,24 @@ export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { method: 'GET', pattern: /^\/oauth\/mcp\/\.well-known\/oauth-authorization-server$/ },
 ];
 
-/** Parse Cookie header into a key-value dictionary */
-export function parseCookies(request: Request): Record<string, string> {
-  const header = request.headers.get('cookie') || '';
-  if (!header.trim()) return {};
-  const cookies: Record<string, string> = {};
-  header.split(';').forEach((part) => {
-    const [rawKey, ...rest] = part.trim().split('=');
-    if (rawKey) {
-      cookies[rawKey.trim()] = decodeURIComponent(rest.join('=').trim());
-    }
-  });
-  return cookies;
-}
-
-/** Extract __session cookie token from the request */
-export function getSessionTokenFromCookie(request: Request): string | null {
-  const cookies = parseCookies(request);
-  const token = cookies[SESSION_COOKIE_NAME];
-  return token && token.trim() ? token.trim() : null;
+/**
+ * Login CSRF guard for the routes that set or clear __session (POST /auth/session,
+ * POST /telegram/auth, POST /auth/logout): a foreign Origin or a cross-site fetch gets 403.
+ */
+export function refuseCrossSiteSessionWrite(request: Request, env: Env): Response | null {
+  const refusal = crossSiteRefusal(request, env);
+  if (!refusal) return null;
+  const path = new URL(request.url).pathname;
+  if (refusal === 'origin_missing') {
+    // shortcut: Telegram webviews are not proven to send Origin, so a missing one passes; refuse it once csrf_origin_missing stops showing in the logs.
+    console.warn(JSON.stringify({ event: 'csrf_origin_missing', path }));
+    return null;
+  }
+  console.warn(JSON.stringify({ event: 'csrf_rejected', path, reason: refusal }));
+  return json(
+    { ok: false, error: 'Request refused: it came from another site. Open Luminara and try again.', code: 'CSRF_REJECTED' },
+    403,
+  );
 }
 
 /** Build an HttpOnly, Secure, SameSite=Lax Set-Cookie header string */

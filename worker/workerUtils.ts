@@ -54,11 +54,14 @@ export function applyCorsHeaders(response: Response, cors: Record<string, string
   return response;
 }
 
+function isAllowedOrigin(env: Env, origin: string): boolean {
+  const allowed = (env.ALLOWED_ORIGINS || env.WEBAPP_URL || '').split(',').map(s => s.trim()).filter(Boolean);
+  return allowed.some(a => origin === a || origin === a.replace(/\/$/, ''));
+}
+
 export function corsHeaders(env: Env, request: Request): Record<string, string> {
   const origin = request.headers.get('Origin') || '';
-  const allowed = (env.ALLOWED_ORIGINS || env.WEBAPP_URL || '').split(',').map(s => s.trim()).filter(Boolean);
-  const ok = allowed.some(a => origin === a || origin === a.replace(/\/$/, ''));
-  return ok
+  return isAllowedOrigin(env, origin)
     ? {
         'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
@@ -72,12 +75,33 @@ export function corsHeaders(env: Env, request: Request): Record<string, string> 
     : {};
 }
 
-/** Extract __session token from Cookie header */
+export type CrossSiteRefusal = 'cross_site' | 'origin_missing' | 'origin_rejected';
+
+/** Why a browser request is not from an allowlisted app page, or null when it is. */
+export function crossSiteRefusal(request: Request, env: Env): CrossSiteRefusal | null {
+  if (request.headers.get('sec-fetch-site') === 'cross-site') return 'cross_site';
+  const origin = request.headers.get('Origin');
+  if (!origin) return 'origin_missing';
+  return isAllowedOrigin(env, origin) ? null : 'origin_rejected';
+}
+
+const CSRF_ERRORS: Record<CrossSiteRefusal, string> = {
+  cross_site: 'CSRF validation failed: Cross-site request rejected',
+  origin_missing: 'CSRF validation failed: Origin header required',
+  origin_rejected: 'CSRF validation failed: Origin header rejected',
+};
+
+/** The first __session token in the Cookie header; null when absent or not valid URI encoding. */
 export function getSessionCookieToken(request: Request): string | null {
   const cookie = request.headers.get('cookie') || '';
   if (!cookie) return null;
   const match = cookie.match(/(?:^|;\s*)__session=([^;]+)/);
-  return match ? decodeURIComponent(match[1].trim()) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1].trim());
+  } catch {
+    return null;
+  }
 }
 
 /** Constant-time string comparison for shared secrets (webhook token). */
@@ -101,8 +125,10 @@ export function billingId(user: HostedIdentity): string {
 
 /**
  * Identifies the caller:
- * 1) HttpOnly __session cookie token (Cookie: __session=…), or
- * 2) Firebase Auth ID token (Authorization: Bearer …), or
+ * 1) Authorization Bearer (Firebase ID token or tg_sess_ token). When one is sent the cookie is
+ *    not read: a cookie planted by a cross-site login cannot replace it, and a Bearer that fails
+ *    verification is an error, never a fallback to the cookie. Otherwise
+ * 2) HttpOnly __session cookie token (Cookie: __session=…), and
  * 3) Telegram Mini App initData (x-telegram-init-data).
  * Each side is stored on its own account_id. This function never links them.
  * Sharing a plan requires POST /api/auth/link with { confirm: true }.
@@ -119,24 +145,14 @@ export async function identify(request: Request, env: Env): Promise<{
   let authTiming: FirebaseAuthTiming | undefined;
   const pack = (body: { user: HostedIdentity | null; error?: string }) => ({ ...body, authTiming });
   const initData = request.headers.get('x-telegram-init-data');
-  const cookieToken = getSessionCookieToken(request);
+  const authBearer = bearerFromAuthorization(request.headers.get('authorization'));
+  const cookieToken = authBearer ? null : getSessionCookieToken(request);
 
   // CSRF: cookie-authenticated mutations require an allowlisted Origin (fail closed if missing).
   // Bearer and Telegram initData paths are not cookie CSRF vectors.
   if (cookieToken && !initData && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
-    const secFetchSite = request.headers.get('sec-fetch-site');
-    if (secFetchSite && secFetchSite === 'cross-site') {
-      return pack({ user: null, error: 'CSRF validation failed: Cross-site request rejected' });
-    }
-    const origin = request.headers.get('Origin');
-    if (!origin) {
-      return pack({ user: null, error: 'CSRF validation failed: Origin header required' });
-    }
-    const allowed = (env.ALLOWED_ORIGINS || env.WEBAPP_URL || '').split(',').map(s => s.trim()).filter(Boolean);
-    const isAllowed = allowed.some(a => origin === a || origin === a.replace(/\/$/, ''));
-    if (!isAllowed) {
-      return pack({ user: null, error: 'CSRF validation failed: Origin header rejected' });
-    }
+    const refusal = crossSiteRefusal(request, env);
+    if (refusal) return pack({ user: null, error: CSRF_ERRORS[refusal] });
   }
 
   let telegramUser: HostedIdentity | null = null;
@@ -172,13 +188,12 @@ export async function identify(request: Request, env: Env): Promise<{
           name: sess.name,
         };
       }
-    } else if (!initData && !bearerFromAuthorization(request.headers.get('authorization'))) {
+    } else if (!initData) {
       return pack({ user: null, error: 'Session expired or revoked' });
     }
   }
 
   // Signed Telegram session token (cookie or Authorization Bearer)
-  const authBearer = bearerFromAuthorization(request.headers.get('authorization'));
   const tgTokenCandidate =
     (cookieToken && cookieToken.startsWith('tg_sess_') ? cookieToken : null) ||
     (authBearer && authBearer.startsWith('tg_sess_') ? authBearer : null);
@@ -196,9 +211,7 @@ export async function identify(request: Request, env: Env): Promise<{
   }
 
   // Authorization Bearer, or legacy cookie that still holds a raw Firebase JWT (migration window).
-  const jwtCandidate =
-    bearerFromAuthorization(request.headers.get('authorization')) ||
-    (cookieToken && looksLikeJwt(cookieToken) ? cookieToken : null);
+  const jwtCandidate = authBearer || (cookieToken && looksLikeJwt(cookieToken) ? cookieToken : null);
 
   if (jwtCandidate && env.FIREBASE_PROJECT_ID && !firebaseUser) {
     const result = await verifyFirebaseIdToken(jwtCandidate, env.FIREBASE_PROJECT_ID);

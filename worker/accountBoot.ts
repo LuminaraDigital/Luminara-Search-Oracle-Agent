@@ -1,10 +1,9 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { bearerFromAuthorization } from './firebaseAuth';
-import { identify, json, billingId } from './workerUtils';
+import { getSessionCookieToken, identify, json, billingId } from './workerUtils';
 import {
   buildSessionCookie,
-  getSessionTokenFromCookie,
   identifiedForRequest,
   isOpaqueSessionId,
   loadOpaqueSession,
@@ -51,7 +50,7 @@ export async function handleAccountBoot(request: Request, env: Env): Promise<Res
     getWorkspace(env, accountId),
     readQuotaSnapshot(env, who.user),
     getOrCreateUserOrg(env, who.user),
-    reuseOrMint(request, env, who.user, getSessionTokenFromCookie(request)),
+    reuseOrMint(request, env, who.user, getSessionCookieToken(request)),
   ]);
   const dataMs = performance.now() - dataStarted;
   if (!quota.ok) {
