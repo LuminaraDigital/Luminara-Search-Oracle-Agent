@@ -403,8 +403,16 @@ message and the reply went to the model chat.
   missing citations / vendor names. Wired into Oracle SSE provenance events
   (v1 flags only; does not block streams).
 - `worker/oracleInteractionGuard.ts`: instructs Oracle to respond
-  `not_measured` or "not verified" when data is missing; numeric claims
-  without tool evidence are rejected. Live.
+  `not_measured` or "not verified" when data is missing. Its monitor only flags
+  numeric claims without tool evidence (a `monitor` event). Live.
+- Oracle chat (`worker/oracleChat.ts`) runs a reply without measured tool evidence
+  through `withoutUnmeasuredClaims` (`worker/chatHonesty.ts`, the bot filter's
+  site-number step). A sentence that states a measurement nobody made is replaced
+  with the "not measured" sentence in the session history, a "Not measured" warning
+  token follows the tokens already streamed, and `oracle_output_redacted` is logged.
+  A number from the user's messages or the retrieved account memory is the user's
+  own wherever the reply repeats it. A tool result counts as evidence only when it
+  did not error and its status is `measured`. Live.
 - `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
   nothing, and the model has no say over prices or payments.
   - **Two kinds of message never reach the model.** `chatRoute` reads the user's

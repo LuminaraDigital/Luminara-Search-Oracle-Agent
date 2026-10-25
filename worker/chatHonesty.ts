@@ -21,6 +21,8 @@
  *      sentence that asks for a code, password or key is removed.
  *    Only JSON-LD and head tags are set aside as something to paste. Any other JSON, markup
  *    or fenced text is read as prose.
+ * 3. withoutUnmeasuredClaims() is the site-number step alone, for the web Oracle chat
+ *    (worker/oracleChat.ts).
  *
  * Pure functions only: no I/O, no env, no model calls.
  */
@@ -706,6 +708,13 @@ const ATTRIBUTED_RE =
   /\byou\s+(?:said|say|mentioned|mention|told\s+me|tell\s+me|wrote|write|shared|noted|gave|reported|stated|quoted|typed|sent)\b|\bas\s+you\s+(?:said|wrote|mentioned|noted|say|put\s+it)\b|\byour\s+(?:own\s+)?(?:figure|number|count|estimate|guess)\s+of\b|\b(?:according\s+to|going\s+by|based\s+on)\s+(?:you|your\s+(?:message|numbers?|figures?|data))\b/i;
 const CLAUSE_END_RE = /[,;:]\s|\s(?:so|and|but|which|then|because|therefore)\s/i;
 
+/** Blanks every number in the text that the user wrote, with the same marks. */
+function withoutUserNumbers(text: string, userNumbers: Set<string>): string {
+  return text.replace(NUMBER_TOKEN_RE, (token, hash, digits, ordinal, percent) =>
+    userNumbers.has(numberKey(hash, digits, ordinal, percent)) ? ' ' : token,
+  );
+}
+
 /** Blanks the user's own numbers inside the clause that hands them back to the user. */
 function withoutAttributedNumbers(sentence: string, userNumbers: Set<string>): string {
   const said = ATTRIBUTED_RE.exec(sentence);
@@ -714,12 +723,7 @@ function withoutAttributedNumbers(sentence: string, userNumbers: Set<string>): s
   const from = said.index + said[0].length + (/^\s*[,:]\s*/.exec(sentence.slice(said.index + said[0].length))?.[0].length ?? 0);
   const stop = CLAUSE_END_RE.exec(sentence.slice(from));
   const to = stop ? from + stop.index : sentence.length;
-  const clause = sentence
-    .slice(from, to)
-    .replace(NUMBER_TOKEN_RE, (token, hash, digits, ordinal, percent) =>
-      userNumbers.has(numberKey(hash, digits, ordinal, percent)) ? ' ' : token,
-    );
-  return sentence.slice(0, from) + clause + sentence.slice(to);
+  return sentence.slice(0, from) + withoutUserNumbers(sentence.slice(from, to), userNumbers) + sentence.slice(to);
 }
 
 /** The sentence with everything that is not a measurement blanked. Inline code is read as prose. */
@@ -1302,4 +1306,38 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
   const moneyNote = moneyTalk && text.trim() !== '';
   if (moneyNote) text = `${text.trimEnd()}\n\n${MONEY_NOTE}`;
   return { text, claims: ledger.list(), planSentences, billingSentences, moneyNote, linksRemoved, secretRequests };
+}
+
+/**
+ * The site-number step of filterChatReply alone, for the web Oracle chat, which may link and talk
+ * about money: a sentence that states a measurement nobody made becomes NOT_MEASURED_SENTENCE.
+ * `userTexts` is what the user supplied (their messages and their account memory), the current
+ * message last. A number in it is the user's own wherever the reply repeats it, so a figure or a
+ * benchmark the user gave comes back whole. JSON-LD and head tags are not read.
+ */
+export function withoutUnmeasuredClaims(reply: string, userTexts: string[]): { text: string; replaced: number } {
+  const userNumbers = numbersIn(userTexts);
+  const lastUserText = userTexts[userTexts.length - 1] ?? '';
+  const userAskedForMetric = METRIC_WORD_RE.test(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
+  const out: string[] = [];
+  let replaced = 0;
+  let previousWasUnmeasured = false;
+  for (const segment of splitData(reply)) {
+    for (const piece of segment.data ? [segment.text] : splitSentences(segment.text)) {
+      const lead = LIST_MARKER_RE.exec(piece)?.[0] ?? '';
+      const body = piece.slice(lead.length).trimEnd();
+      const trail = piece.slice(lead.length + body.length);
+      if (segment.data || body === '' || !statesMeasurement(withoutUserNumbers(body, userNumbers), userNumbers, userAskedForMetric)) {
+        out.push(piece);
+        previousWasUnmeasured = false;
+        continue;
+      }
+      replaced += 1;
+      // Two in a row read as one.
+      if (previousWasUnmeasured) out[out.length - 1] = out[out.length - 1].trimEnd() + trail;
+      else out.push(lead + NOT_MEASURED_SENTENCE + trail);
+      previousWasUnmeasured = true;
+    }
+  }
+  return { text: out.join(''), replaced };
 }
