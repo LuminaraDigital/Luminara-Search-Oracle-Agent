@@ -368,6 +368,10 @@ export async function generateOracleChatResponse(
   return null;
 }
 
+/** The commands that work in a group: each says there that it is for a private chat. */
+const GROUP_COMMAND_RE = /^\/(?:paysupport|support|admin|refund|reply|close|requests)\b/i;
+const PRIVATE_CHAT_ONLY_TEXT = 'Luminara works in a private chat. Open a chat with this bot and send /start.';
+
 export async function handleTelegramUpdate(update: any, env: Env): Promise<void> {
   try {
     if (isTelegramPaymentUpdate(update)) {
@@ -381,6 +385,14 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
 
     const text: string = msg.text || '';
     const chatId = msg.chat.id;
+
+    // Everything below is for one person: a reply can name their plan or their Business DNA,
+    // and Telegram refuses a Mini App button in a group. So a group gets one plain note for a
+    // command and nothing for anything else.
+    if (!isPrivateChat(msg) && !GROUP_COMMAND_RE.test(text)) {
+      if (text.startsWith('/')) await sendPlain(env, chatId, PRIVATE_CHAT_ONLY_TEXT);
+      return;
+    }
 
     if (text.startsWith('/start')) {
       const startParam = text.split(' ')[1];

@@ -376,7 +376,7 @@ message and the reply went to the model chat.
   `handleTelegramUpdate`; a captured message is not put in a prompt and not kept in
   `tg:chat:<id>`. When the window cannot be checked (the database does not answer), the message
   is not read at all and the sender is asked to send it again.
-- **Private chats only.** In a group, `/paysupport` points to the private chat.
+- **Private chats only.** In a group, `/paysupport` points to the private chat, and nothing said there reaches a support window or the chat.
 - **If no admin can be told** (no id configured, or Telegram refuses), the request is still
   saved, the buyer is told to write to the support address as well, and `[Support] ALERT` is logged.
 - `GET /api/admin/payment-support?status=open|answered|closed` lists requests (`ADMIN_SECRET`).
@@ -470,7 +470,11 @@ message and the reply went to the model chat.
   does not reach the user (no provider answered, or Telegram refused the reply) gives
   back the free unit it spent. A message with no words (a sticker, a voice note, a photo
   with no caption, a service message) gets no answer and spends nothing; inside a payment
-  support window it is still captured. Gemini gets its key in the `x-goog-api-key` header,
+  support window it is still captured. Every feature of the bot is for a private chat. In a
+  group, the billing and admin commands (`/paysupport`, `/support`, `/admin`, `/refund`,
+  `/reply`, `/close`, `/requests`) say to use a private chat, any other command gets one
+  plain note ("Luminara works in a private chat..."), and anything else is ignored. Payment
+  updates are handled before this, wherever they come from. Gemini gets its key in the `x-goog-api-key` header,
   never in the URL. The filter is a
   backstop, pattern based and mostly English; the prompt rules and the plan-question
   rule are the main controls. Live.

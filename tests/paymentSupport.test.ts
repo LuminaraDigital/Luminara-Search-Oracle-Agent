@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
-import { handleTelegramUpdate, runPaymentSupportSweep } from '../worker/telegramBot';
+import { PLANS, handleTelegramUpdate, runPaymentSupportSweep } from '../worker/telegramBot';
 import {
   SUPPORT_MAX_FOLLOW_UPS,
   SUPPORT_MAX_OPEN_PER_PAYER,
@@ -782,6 +782,51 @@ describe('limits and places', () => {
     await handleTelegramUpdate({ message: { message_id: 2, chat: { id: group, type: 'supergroup' }, from: { id: BUYER }, text: 'hello everyone' } }, env);
     expect(rows(db)).toMatchObject([{ status: 'awaiting', message: null }]);
     expect(net.textsTo(ADMIN_A)).toEqual([]);
+  });
+
+  it('in a group, any other command gets one plain note about the private chat, and a message gets nothing', async () => {
+    const { env, kv } = makeEnv();
+    const group = -1007777;
+    const inGroup = (text: string, from: number = BUYER) =>
+      handleTelegramUpdate({ message: { message_id: 30, chat: { id: group, type: 'supergroup' }, from: { id: from }, text } }, env);
+
+    await inGroup('/plan');
+    expect(net.telegram).toEqual([
+      { method: 'sendMessage', body: { chat_id: group, text: 'Luminara works in a private chat. Open a chat with this bot and send /start.' } },
+    ]);
+
+    await inGroup('What is my AI visibility?');
+    expect(net.telegram).toHaveLength(1);
+    expect(net.model).toHaveLength(0);
+    expect(kv.store.has(`tg:chat:${group}`)).toBe(false);
+
+    // The admin commands still answer for themselves there.
+    await inGroup('/admin', ADMIN_A);
+    await inGroup('/refund 777 ch_group', ADMIN_A);
+    expect(net.textsTo(group).slice(1)).toEqual(Array(2).fill('Use this command in a private chat with the bot.'));
+  });
+
+  it('a Stars payment made in a group still credits the payer', async () => {
+    const { env, kv } = makeEnv();
+    await handleTelegramUpdate(
+      {
+        message: {
+          message_id: 31,
+          chat: { id: -1007777, type: 'supergroup' },
+          from: { id: BUYER },
+          successful_payment: {
+            currency: 'XTR',
+            total_amount: PLANS.starter.stars,
+            invoice_payload: `starter:${BUYER}`,
+            telegram_payment_charge_id: 'ch_in_group',
+            provider_payment_charge_id: 'prov_ch_in_group',
+          },
+        },
+      },
+      env,
+    );
+
+    expect(kv.json(`sub:${BUYER}`)).toMatchObject({ plan: 'starter', chargeId: 'ch_in_group' });
   });
 
   it('when no admin can be told, the request is still saved and the buyer is told to write to the address as well', async () => {
