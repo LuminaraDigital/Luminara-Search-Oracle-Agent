@@ -463,7 +463,10 @@ message and the reply went to the model chat.
     too. A sentence that asks for a code, password, seed phrase or key is removed.
   Business DNA enters the prompt only inside an untrusted-content fence whose
   markers carry a one-time code, with each field capped at 300 characters. The
-  reply is sent with no `parse_mode` and with link previews off. A turn whose answer
+  reply is sent with no `parse_mode` and with link previews off. A reply longer than one
+  Telegram message is cut at its last whole word, with the ellipsis inside 4,096 characters
+  and no emoji split in half. History keeps what was sent, and only once Telegram accepted
+  it. A turn whose answer
   does not reach the user (no provider answered, or Telegram refused the reply) gives
   back the free unit it spent. A message with no words (a sticker, a voice note, a photo
   with no caption, a service message) gets no answer and spends nothing; inside a payment

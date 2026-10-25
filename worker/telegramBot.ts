@@ -238,6 +238,23 @@ export const api = async (
   }
 };
 
+/** Telegram's limit for one message, counted in UTF-16 units like a JS string length. */
+const TELEGRAM_MESSAGE_MAX = 4096;
+
+/**
+ * A text that fits one Telegram message. A longer one is cut at its last whole word that fits,
+ * with the ellipsis inside the limit, and never between the two halves of an emoji.
+ */
+function fitTelegramMessage(text: string): string {
+  if (text.length <= TELEGRAM_MESSAGE_MAX) return text;
+  const room = TELEGRAM_MESSAGE_MAX - 1;
+  const head = text.slice(0, room);
+  const wordEnd = /\s/.test(text[room]) ? room : head.search(/\s\S*$/);
+  // A reply with no space in its last half (a long link, a run of emoji) is cut where it fills.
+  const cut = wordEnd > room / 2 ? head.slice(0, wordEnd) : head.replace(/[\uD800-\uDBFF]$/, '');
+  return `${cut.trimEnd()}…`;
+}
+
 const openAppKeyboard = (env: Env, startParam?: string) => ({
   inline_keyboard: [[
     { text: '🔍 Open Luminara Suite', web_app: { url: startParam ? `${env.WEBAPP_URL}?startapp=${encodeURIComponent(startParam)}` : env.WEBAPP_URL } },
@@ -745,28 +762,31 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
     }
 
-    // Stores a chat reply in session memory and sends it. No parse_mode: the text is not valid
-    // Markdown, and Telegram rejects the whole message when the markup does not parse. No link
-    // preview: a chat reply must not unfurl a page.
+    // Sends a chat reply, cut to one message, and keeps what was sent in session memory once
+    // Telegram took it. No parse_mode: the text is not valid Markdown, and Telegram rejects the
+    // whole message when the markup does not parse. No link preview: a chat reply must not
+    // unfurl a page.
     const deliverChatReply = async (reply: string, keyboard: unknown): Promise<boolean> => {
-      if (env.LUMINARA_KV) {
-        try {
-          const nextHist = [...history, { role: 'user' as const, content: text }, { role: 'assistant' as const, content: reply }].slice(-6);
-          await env.LUMINARA_KV.put(histKey, JSON.stringify(nextHist), { expirationTtl: 86400 });
-        } catch (err) {
-          console.error('[Telegram Bot] Failed storing chat history in KV', err);
-        }
-      }
+      const sent = fitTelegramMessage(reply);
       const sendResult = await api(env, 'sendMessage', {
         chat_id: chatId,
-        text: reply,
+        text: sent,
         link_preview_options: { is_disabled: true },
         reply_markup: keyboard,
       });
       if (!sendResult.ok) {
         console.error('[Telegram Bot] chat reply was not delivered', sendResult.description);
+        return false;
       }
-      return sendResult.ok;
+      if (env.LUMINARA_KV) {
+        try {
+          const nextHist = [...history, { role: 'user' as const, content: text }, { role: 'assistant' as const, content: sent }].slice(-6);
+          await env.LUMINARA_KV.put(histKey, JSON.stringify(nextHist), { expirationTtl: 86400 });
+        } catch (err) {
+          console.error('[Telegram Bot] Failed storing chat history in KV', err);
+        }
+      }
+      return true;
     };
 
     // 3. A payment problem, and a question about our own plans, prices or how to pay, never

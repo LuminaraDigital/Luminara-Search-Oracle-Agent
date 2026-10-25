@@ -1664,6 +1664,24 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(await readFreeUsed(chat.env, '100', 3)).toBe(1);
   });
 
+  it.each([
+    ['a long reply at its last whole word', 'Add FAQ schema to every page. '.repeat(200), `${'Add FAQ schema to every page. '.repeat(136)}Add FAQ schema…`],
+    ['an emoji reply with no space, never between the halves of an emoji', '🚀'.repeat(3000), `${'🚀'.repeat(2047)}…`],
+  ])('cuts %s, with the ellipsis inside 4,096, and stores what was sent', async (_name, reply, cut) => {
+    const { sends, history } = await chat.chatTurn('Any quick tip?', reply.trim());
+
+    expect(sends.map((s) => s.text)).toEqual([cut]);
+    expect(cut.length).toBeLessThanOrEqual(4096);
+    expect(history?.[1]).toEqual({ role: 'assistant', content: cut });
+  });
+
+  it('keeps nothing in history when Telegram refuses the reply', async () => {
+    const { sends, history } = await chat.chatTurn('Any quick tip?', 'Add FAQ schema.', false);
+
+    expect(sends.map((s) => s.text)).toEqual(['Add FAQ schema.']);
+    expect(history).toBeNull();
+  });
+
   it('gives the free unit back when Telegram refuses the reply', async () => {
     chat.env.FREE_DAILY_LIMIT = '3';
 
