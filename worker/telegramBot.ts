@@ -369,8 +369,18 @@ export async function generateOracleChatResponse(
 }
 
 /** The commands that work in a group: each says there that it is for a private chat. */
-const GROUP_COMMAND_RE = /^\/(?:paysupport|support|admin|refund|reply|close|requests)\b/i;
+const GROUP_COMMAND_RE = /^\/(?:paysupport|support|admin|reply|close|requests)\b/i;
+const REFUND_COMMAND_RE = /^\/refund\s+(\d+)\s+([\w-]+)/;
 const PRIVATE_CHAT_ONLY_TEXT = 'Luminara works in a private chat. Open a chat with this bot and send /start.';
+
+/** This bot's username in lower case, once Telegram has said it. */
+let ownUsername = '';
+
+/** Whether a command addressed with @name is for this bot. When Telegram cannot say, it is. */
+async function addressedToThisBot(env: Env, name: string): Promise<boolean> {
+  if (!ownUsername) ownUsername = String((await api(env, 'getMe', {})).result?.username ?? '').toLowerCase();
+  return !ownUsername || ownUsername === name.toLowerCase();
+}
 
 export async function handleTelegramUpdate(update: any, env: Env): Promise<void> {
   const limit = Number(env.FREE_DAILY_LIMIT || 3);
@@ -393,9 +403,14 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // Everything below is for one person: a reply can name their plan or their Business DNA,
     // and Telegram refuses a Mini App button in a group. So a group gets one plain note for a
     // command and nothing for anything else.
-    if (!isPrivateChat(msg) && !GROUP_COMMAND_RE.test(text)) {
-      if (text.startsWith('/')) await sendPlain(env, chatId, PRIVATE_CHAT_ONLY_TEXT);
-      return;
+    if (!isPrivateChat(msg)) {
+      const addressee = /^\/\w+@(\w+)/.exec(text)?.[1];
+      // A command for another bot in the group is that bot's to answer.
+      if (addressee && !(await addressedToThisBot(env, addressee))) return;
+      if (!GROUP_COMMAND_RE.test(text) && !REFUND_COMMAND_RE.test(text)) {
+        if (text.startsWith('/')) await sendPlain(env, chatId, PRIVATE_CHAT_ONLY_TEXT);
+        return;
+      }
     }
 
     if (text.startsWith('/start')) {
@@ -715,7 +730,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
-    const refundMatch = text.match(/^\/refund\s+(\d+)\s+([a-zA-Z0-9_\-]+)/);
+    const refundMatch = text.match(REFUND_COMMAND_RE);
     if (refundMatch) {
       const adminIds = (env.TELEGRAM_ADMIN_ID || '').split(',').map(s => s.trim()).filter(Boolean);
       const isSenderAdmin = adminIds.includes(String(msg.from?.id));

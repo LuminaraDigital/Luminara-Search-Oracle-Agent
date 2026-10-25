@@ -806,6 +806,27 @@ describe('limits and places', () => {
     expect(net.textsTo(group).slice(1)).toEqual(Array(2).fill('Use this command in a private chat with the bot.'));
   });
 
+  it('in a group, an admin command it cannot serve gets the plain note, and a command for another bot gets nothing', async () => {
+    const { env } = makeEnv();
+    net.replies.getMe = () => ({ ok: true, result: { username: 'LuminaraTestBot' } });
+    const group = -1007778;
+    const inGroup = (text: string) =>
+      handleTelegramUpdate({ message: { message_id: 32, chat: { id: group, type: 'supergroup' }, from: { id: BUYER }, text } }, env);
+
+    await inGroup('/refund');
+    await inGroup('/refund@LuminaraTestBot');
+    await inGroup('/plan@OtherBot');
+    await inGroup('/start@SomeoneElsesBot hello');
+    await inGroup('/plan@LuminaraTestBot');
+
+    const note = 'Luminara works in a private chat. Open a chat with this bot and send /start.';
+    expect(net.of('sendMessage').map((c) => c.body)).toEqual([
+      { chat_id: group, text: note },
+      { chat_id: group, text: note },
+      { chat_id: group, text: note },
+    ]);
+  });
+
   it('a Stars payment made in a group still credits the payer', async () => {
     const { env, kv } = makeEnv();
     await handleTelegramUpdate(

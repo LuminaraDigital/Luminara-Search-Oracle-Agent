@@ -473,9 +473,11 @@ message and the reply went to the model chat.
   back the free unit it spent. A message with no words (a sticker, a voice note, a photo
   with no caption, a service message) gets no answer and spends nothing; inside a payment
   support window it is still captured. Every feature of the bot is for a private chat. In a
-  group, the billing and admin commands (`/paysupport`, `/support`, `/admin`, `/refund`,
-  `/reply`, `/close`, `/requests`) say to use a private chat, any other command gets one
-  plain note ("Luminara works in a private chat..."), and anything else is ignored. Payment
+  group, the billing and admin commands (`/paysupport`, `/support`, `/admin`, `/refund
+  <user> <charge>`, `/reply`, `/close`, `/requests`) say to use a private chat, any other
+  command gets one plain note ("Luminara works in a private chat..."), a command addressed
+  to another bot (`/plan@OtherBot`, checked against `getMe` once per isolate) gets nothing,
+  and anything else is ignored. Payment
   updates are handled before this, wherever they come from. Gemini gets its key in the `x-goog-api-key` header,
   never in the URL. The filter is a
   backstop, pattern based and mostly English; the prompt rules and the plan-question
