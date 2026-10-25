@@ -77,11 +77,12 @@ export function startAccountBoot(token: string): Promise<AccountBoot | null> {
   return run;
 }
 
-/** In-flight boot, or the one that finished in the last two seconds. */
+/** The current token's boot: in flight, or finished in the last two seconds. */
 export function takeAccountBoot(): Promise<AccountBoot | null> {
-  if (pending) return pending;
   const token = readCachedFirebaseIdToken();
-  if (last && token && last.token === token && Date.now() - last.at < BOOT_REUSE_MS) {
+  if (!token) return Promise.resolve(null);
+  if (pending && pendingToken === token) return pending;
+  if (last && last.token === token && Date.now() - last.at < BOOT_REUSE_MS) {
     return Promise.resolve(last.body);
   }
   return Promise.resolve(null);

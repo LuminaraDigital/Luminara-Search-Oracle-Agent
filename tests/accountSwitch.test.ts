@@ -9,6 +9,7 @@ type FakeUser = { uid: string; getIdToken: () => Promise<string> };
 
 const firebase = vi.hoisted(() => ({
   onIdToken: null as null | ((user: FakeUser | null) => void),
+  currentUser: null as FakeUser | null,
 }));
 
 vi.mock('firebase/app', () => ({
@@ -23,7 +24,12 @@ vi.mock('firebase/app-check', () => ({
 }));
 
 vi.mock('firebase/auth', () => ({
-  getAuth: () => ({ currentUser: null, authStateReady: async () => {} }),
+  getAuth: () => ({
+    get currentUser() {
+      return firebase.currentUser;
+    },
+    authStateReady: async () => {},
+  }),
   onIdTokenChanged: (_auth: unknown, listener: (user: FakeUser | null) => void) => {
     firebase.onIdToken = listener;
     return () => {};
@@ -38,6 +44,12 @@ const fetchMock = vi.fn(async () => new Response('{}', { status: 404 }));
 
 function user(uid: string): FakeUser {
   return { uid, getIdToken: async () => `token-${uid}` };
+}
+
+function deferredToken(): { promise: Promise<string>; resolve: (token: string) => void } {
+  let resolve: (token: string) => void = () => {};
+  const promise = new Promise<string>((done) => { resolve = done; });
+  return { promise, resolve };
 }
 
 function flush(): Promise<void> {
@@ -62,6 +74,7 @@ async function load() {
 beforeEach(() => {
   vi.resetModules();
   firebase.onIdToken = null;
+  firebase.currentUser = null;
   fetchMock.mockClear();
   vi.stubGlobal('window', { location: { origin: 'https://luminarasuite.com' } });
   vi.stubGlobal('fetch', fetchMock);
@@ -97,5 +110,32 @@ describe('account switch', () => {
     emit({ uid: 'B', getIdToken: () => new Promise<string>(() => {}) });
 
     expect(api.getCurrentQuotaSync()).toBeNull();
+  });
+
+  it('a token that resolves after sign-out is dropped and starts no boot', async () => {
+    const { auth, users, emit } = await load();
+    const tokenA = deferredToken();
+    emit({ uid: 'A', getIdToken: () => tokenA.promise });
+    emit(null);
+    tokenA.resolve('token-A');
+    await flush();
+
+    expect(auth.getFirebaseIdTokenSync()).toBeNull();
+    expect(users.at(-1)).toBeNull();
+    expect(bootRequests()).toEqual([]);
+  });
+
+  it('getFirebaseIdToken drops a token minted for a user who has since switched', async () => {
+    const { auth, emit } = await load();
+    const tokenA = deferredToken();
+    firebase.currentUser = { uid: 'A', getIdToken: () => tokenA.promise };
+    const pending = auth.getFirebaseIdToken(true);
+    firebase.currentUser = user('B');
+    emit(firebase.currentUser);
+    await flush();
+    tokenA.resolve('token-A');
+
+    await expect(pending).resolves.toBeNull();
+    expect(auth.getFirebaseIdTokenSync()).toBe('token-B');
   });
 });

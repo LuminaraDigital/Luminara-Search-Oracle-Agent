@@ -132,13 +132,11 @@ async function refreshCachedToken(user: User | null): Promise<void> {
     return;
   }
   markPersistedAuthSession();
-  try {
-    const nextToken = await user.getIdToken();
-    writeCachedFirebaseIdToken(nextToken);
-    if (nextToken) startAccountBoot(nextToken);
-  } catch {
-    writeCachedFirebaseIdToken(null);
-  }
+  const nextToken = await user.getIdToken().catch(() => null);
+  // A sign-out or switch while the token was minted: it belongs to nobody signed in now.
+  if (cachedUser?.uid !== user.uid) return;
+  writeCachedFirebaseIdToken(nextToken);
+  if (nextToken) startAccountBoot(nextToken);
   notifyUserListeners(user);
 }
 
@@ -191,6 +189,7 @@ export async function getFirebaseIdToken(forceRefresh = false): Promise<string |
     return null;
   }
   const token = await user.getIdToken(forceRefresh);
+  if (a.currentUser?.uid !== user.uid) return null;
   writeCachedFirebaseIdToken(token);
   setCachedUser(user);
   return token;
