@@ -1,19 +1,26 @@
-import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+type ShellPolicy = {
+  isAllowedNavigation: (url: string) => boolean;
+  windowOpenAction: (url: string) => 'child' | 'external' | 'deny';
+  isPermissionGranted: (permission: string, details: { externalURL?: string }) => boolean;
+  isTrustedSender: (frameUrl: string | undefined) => boolean;
+};
+type IpcListener = (event: { senderFrame: { url: string } | null }, ...args: unknown[]) => unknown;
 
 const require = createRequire(import.meta.url);
-const { createShellPolicy } = require('../electron/security.cjs') as {
+const { createShellPolicy, createTrustedIpc } = require('../electron/security.cjs') as {
   createShellPolicy: (options: {
     webappUrl: string;
     isDev: boolean;
     firebaseAuthDomain?: string;
     shellPageUrls: string[];
-  }) => {
-    isAllowedNavigation: (url: string) => boolean;
-    windowOpenAction: (url: string) => 'child' | 'external' | 'deny';
-    isTrustedSender: (frameUrl: string | undefined) => boolean;
-  };
+  }) => ShellPolicy;
+  createTrustedIpc: (
+    ipcMain: { handle: (channel: string, listener: IpcListener) => void },
+    policy: ShellPolicy,
+  ) => (channel: string, listener: IpcListener) => void;
 };
 
 const SPLASH = 'file:///C:/Program%20Files/Luminara/resources/app.asar/electron/splash.html';
@@ -98,10 +105,32 @@ describe('desktop bridge senders', () => {
     expect(packaged.isTrustedSender(frameUrl)).toBe(trusted);
   });
 
-  it('every IPC handler in the main process goes through the sender check', () => {
-    const main = readFileSync(new URL('../electron/main.cjs', import.meta.url), 'utf8');
-    const raw = main.match(/ipcMain\.handle\(/g) ?? [];
-    expect(raw).toHaveLength(1);
-    expect(main).toMatch(/function handleTrusted\(channel, listener\) \{\n\s+ipcMain\.handle\(channel,/);
+  it('a bridge channel answers the app and refuses any other sender', () => {
+    const registered = new Map<string, IpcListener>();
+    const handleTrusted = createTrustedIpc({ handle: (channel, listener) => { registered.set(channel, listener); } }, packaged);
+    const getInfo = vi.fn((_event: unknown, flag: unknown) => ({ shellVersion: '1.0.2', flag }));
+    handleTrusted('desktop:get-info', getInfo);
+    const call = registered.get('desktop:get-info')!;
+
+    expect(call({ senderFrame: { url: 'https://luminarasuite.com/app?client=desktop' } }, 'x')).toEqual({ shellVersion: '1.0.2', flag: 'x' });
+    expect(() => call({ senderFrame: { url: 'https://evil.example/' } })).toThrow('Refused desktop:get-info from an untrusted page');
+    expect(() => call({ senderFrame: null })).toThrow('Refused desktop:get-info from an untrusted page');
+    expect(getInfo).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('desktop external app launches from frames and popups', () => {
+  it.each([
+    ['search-ms:query=x&crumb=location:\\\\evil.example\\share', false],
+    ['ms-msdt:/id PCWDiagnostic', false],
+    ['file:///C:/Windows/System32/calc.exe', false],
+    ['mailto:hello@luminara.digital', true],
+    [undefined, false],
+  ])('%s granted: %s', (externalURL, granted) => {
+    expect(packaged.isPermissionGranted('openExternal', { externalURL })).toBe(granted);
+  });
+
+  it('leaves every other permission at the Electron default', () => {
+    expect(packaged.isPermissionGranted('notifications', {})).toBe(true);
   });
 });

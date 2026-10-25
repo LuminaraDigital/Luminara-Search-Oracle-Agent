@@ -50,11 +50,29 @@ function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls
     return EXTERNAL_PROTOCOLS.has(parseUrl(rawUrl)?.protocol) ? 'external' : 'deny';
   }
 
+  /**
+   * Electron grants every permission by default. Only launching another app is narrowed: a link
+   * in a frame or popup to search-ms:, ms-msdt: or file: asks this before Windows opens it.
+   */
+  function isPermissionGranted(permission, details) {
+    return permission !== 'openExternal' || windowOpenAction(details?.externalURL) === 'external';
+  }
+
   function isTrustedSender(frameUrl) {
     return shellPageUrls.includes(frameUrl) || isAllowedNavigation(frameUrl);
   }
 
-  return { isAllowedNavigation, windowOpenAction, isTrustedSender };
+  return { isAllowedNavigation, windowOpenAction, isPermissionGranted, isTrustedSender };
 }
 
-module.exports = { createShellPolicy };
+/** ipcMain.handle for bridge channels: a sender the policy does not trust gets an error, never the listener. */
+function createTrustedIpc(ipcMain, policy) {
+  return function handleTrusted(channel, listener) {
+    ipcMain.handle(channel, (event, ...args) => {
+      if (!policy.isTrustedSender(event.senderFrame?.url)) throw new Error(`Refused ${channel} from an untrusted page`);
+      return listener(event, ...args);
+    });
+  };
+}
+
+module.exports = { createShellPolicy, createTrustedIpc };

@@ -10,7 +10,7 @@ const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, ses
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { applyWindowsHardening } = require('./windowsHardening.cjs');
-const { createShellPolicy } = require('./security.cjs');
+const { createShellPolicy, createTrustedIpc } = require('./security.cjs');
 const { setupAutoUpdater } = require('./updater.cjs');
 const { setupCrashReporting, installProcessErrorHandlers } = require('./crashReporting.cjs');
 
@@ -103,11 +103,25 @@ const shellPolicy = createShellPolicy({
   shellPageUrls: [SPLASH_URL, OFFLINE_URL],
 });
 
-/**
- * The Google sign-in popup and blank print windows: no preload, so no desktop bridge. No
- * navigation guard inside, because Workspace SSO redirects to any identity provider.
- */
+/** The Google sign-in popup and blank print windows: no preload, so no desktop bridge. */
 const POPUP_WINDOW_OPTIONS = { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } };
+
+function openWindow({ url }) {
+  const action = shellPolicy.windowOpenAction(url);
+  if (action === 'child') return { action: 'allow', overrideBrowserWindowOptions: POPUP_WINDOW_OPTIONS };
+  if (action === 'external') void shell.openExternal(url);
+  return { action: 'deny' };
+}
+
+// Every window, popups included, opens new windows through the same policy.
+app.on('web-contents-created', (_event, contents) => {
+  contents.setWindowOpenHandler(openWindow);
+  contents.on('did-create-window', (child, { url }) => {
+    // A blank print window never navigates. The sign-in popup must (Workspace SSO redirects to
+    // any identity provider), so it gets no guard.
+    if (url === 'about:blank') child.webContents.on('will-navigate', (event) => event.preventDefault());
+  });
+});
 
 applyEnterpriseNetworkConfig(app);
 applyWindowsHardening(app);
@@ -160,13 +174,6 @@ function createWindow() {
   };
   mainWindow.webContents.on('will-navigate', guardNavigation);
   mainWindow.webContents.on('will-redirect', guardNavigation);
-
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    const action = shellPolicy.windowOpenAction(url);
-    if (action === 'child') return { action: 'allow', overrideBrowserWindowOptions: POPUP_WINDOW_OPTIONS };
-    if (action === 'external') void shell.openExternal(url);
-    return { action: 'deny' };
-  });
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
@@ -304,12 +311,7 @@ function createTray() {
 }
 
 /** Bridge calls answer only the app and the shell's own splash and offline pages. */
-function handleTrusted(channel, listener) {
-  ipcMain.handle(channel, (event, ...args) => {
-    if (!shellPolicy.isTrustedSender(event.senderFrame?.url)) throw new Error(`Refused ${channel} from an untrusted page`);
-    return listener(event, ...args);
-  });
-}
+const handleTrusted = createTrustedIpc(ipcMain, shellPolicy);
 
 function registerIpc() {
   const updaterApi = setupAutoUpdater({
@@ -365,6 +367,11 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     configureLlmSessionSecurity();
+    // A link to another app from a frame or popup fires no navigation event in the main window;
+    // Electron asks this permission before Windows opens it.
+    session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+      callback(shellPolicy.isPermissionGranted(permission, details));
+    });
     registerIpc();
     buildMenu();
     createWindow();

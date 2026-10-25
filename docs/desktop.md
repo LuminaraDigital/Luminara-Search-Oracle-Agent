@@ -40,7 +40,7 @@ Output lands in `release/` (NSIS one-click setup). CI builds the same artifact o
 |-------|----------------|
 | `electron/main.cjs` | Window, tray, menu, single-instance lock; loads suite with `?client=desktop` |
 | `electron/preload.cjs` | Narrow `window.luminaraDesktop` bridge |
-| `electron/security.cjs` | Trust policy: the main window loads only the app's exact origins (`localhost:3000` only in dev); `window.open` gives the Firebase auth handler and `about:blank` a sandboxed popup with no preload, sends http(s) and mailto links to the system browser and opens nothing else; every bridge call is refused unless it comes from the app or the shell's own splash and offline pages |
+| `electron/security.cjs` | Trust policy, pure and tested. The main window's top frame loads only the app's exact origins (`localhost:3000` only in dev). `window.open` in any window gives the Firebase auth handler a sandboxed popup with no preload and no navigation guard (SSO redirects anywhere), gives `about:blank` the same popup with every navigation blocked (print), sends http(s) and mailto links to the system browser and opens nothing else. A frame or popup may launch another app only for those schemes (the `openExternal` permission); search-ms:, ms-msdt:, file: and the rest are refused. Bridge calls are refused unless they come from the app or the shell's own splash and offline pages |
 | `services/desktop/desktopShell.ts` | Detect shell; App skips marketing landing (same as Telegram) |
 | Cloudflare Worker | API, auth, TON, static web app |
 | GitHub Releases | Shell installer + `electron-updater` feed |
