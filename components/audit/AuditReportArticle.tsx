@@ -39,9 +39,16 @@ const SEVERITY = {
   low: 'border-white/15 bg-white/5 text-gray-200',
 } as const;
 
+const SAME_SITE = 'https://same-site.invalid';
+
 function safeHref(href: string): string | null {
-  if (/^https?:\/\//i.test(href) || href.startsWith('mailto:') || href.startsWith('/')) return href;
-  return null;
+  if (/^https?:\/\//i.test(href) || href.startsWith('mailto:')) return href;
+  // A path opens in this window, so it must resolve to this site: "//host" and "/\host" do not.
+  try {
+    return href.startsWith('/') && new URL(href, SAME_SITE).origin === SAME_SITE ? href : null;
+  } catch {
+    return null;
+  }
 }
 
 function InlineRun({ items }: { items: Inline[] }) {

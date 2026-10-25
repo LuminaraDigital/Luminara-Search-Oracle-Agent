@@ -18,6 +18,21 @@ interface FreeAnswer {
   fix?: string;
 }
 
+/** Source URLs come from search results: only web pages become links, opened outside the app. */
+export function CitedSourceList({ sources }: { sources: CitedSource[] }) {
+  return (
+    <ul className="text-xs space-y-1">
+      {sources.map((source) => (
+        <li key={source.url}>
+          {/^https?:\/\//i.test(source.url) ? (
+            <a className="text-gold-light underline" href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a>
+          ) : source.title}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export const FreeAiAnswerCard: React.FC<{ suburb: string; state: string; brandName: string }> = ({ suburb, state, brandName }) => {
   const [answer, setAnswer] = useState<FreeAnswer | null>(null);
   const [copied, setCopied] = useState(false);
@@ -63,15 +78,7 @@ export const FreeAiAnswerCard: React.FC<{ suburb: string; state: string; brandNa
       <p className="text-xs text-gray-300">
         {answer.userNamed ? 'Your agency is named in this answer.' : 'Your agency is not named in this answer.'}
       </p>
-      {answer.sources && answer.sources.length > 0 ? (
-        <ul className="text-xs space-y-1">
-          {answer.sources.map((source) => (
-            <li key={source.url}>
-              <a className="text-gold-light underline" href={source.url} rel="noreferrer">{source.title}</a>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {answer.sources && answer.sources.length > 0 ? <CitedSourceList sources={answer.sources} /> : null}
       {when ? <p className="text-[11px] text-gray-500">Answered {when}</p> : null}
       <div>
         <p className="text-xs font-bold text-white mb-1">Paste-ready fix</p>
