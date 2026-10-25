@@ -28,9 +28,23 @@ if (splash) {
       shift((gx * 12).toFixed(2) + 'px', (gy * 8).toFixed(2) + 'px');
     });
   }
+  if (luminaraInTelegram()) {
+    document.documentElement.classList.add('lx-skip-splash');
+    window.__dismissBootSplash();
+  }
   setTimeout(function() {
     if (!splash.classList.contains('boot-splash--exit')) splash.classList.add('boot-splash--hold');
   }, 300);
+}
+
+function luminaraInTelegram() {
+  try {
+    if ('TelegramWebviewProxy' in window || 'TelegramWebviewProxyProto' in window) return true;
+    var blob = (location.hash || '') + (location.search || '');
+    return /tgWebAppData=|tgWebAppVersion=|tgWebAppPlatform=/i.test(blob);
+  } catch (e) {
+    return false;
+  }
 }
 // Hang cap only. React dismisses on first paint; Slow 3G of the entry graph can exceed a short timer.
 setTimeout(window.__dismissBootSplash, 12000);

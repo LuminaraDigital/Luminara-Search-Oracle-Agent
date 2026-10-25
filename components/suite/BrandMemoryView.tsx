@@ -181,7 +181,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
   const tabs: Array<{ id: typeof tab; label: string }> = [
     { id: 'dreaming', label: 'Saved notes' },
     { id: 'diff', label: 'What changed' },
-    { id: 'mem0', label: '4-Tier Memory' },
+    { id: 'mem0', label: 'Saved memory' },
     { id: 'timeline', label: 'Memory timeline' },
     { id: 'query', label: 'Audit query' },
     { id: 'watch', label: 'Competitor watch' },
@@ -193,9 +193,9 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Brand Memory Vault</span>
-          <h2 className="text-2xl md:text-3xl font-bold text-white mt-1">AEO memory that compounds</h2>
+          <h2 className="text-2xl md:text-3xl font-bold text-white mt-1">What this workspace remembers</h2>
           <p className="text-sm text-gray-400 mt-2 max-w-2xl">
-            Every audit, chat insight, and competitor mention is saved to your vault and context graph.
+            Audits, chat notes, and competitor mentions stay in this workspace.
             Plan: <span className="text-gold-light font-semibold">{entitlements.title}</span>
             {' · '}
             {entitlements.domainLimit} domains · <span title="Sentinel">{entitlements.sentinelLimit} watch slots</span>

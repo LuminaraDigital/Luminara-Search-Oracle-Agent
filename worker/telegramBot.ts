@@ -532,7 +532,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           text:
             `🎉 *License Key Activated!*\n\n` +
             `Your *${PLANS[res.plan!]?.title || res.plan}* plan is now active for ${res.durationDays} days (until ${new Date(res.expiresAt!).toUTCString()}).\n\n` +
-            `Your plan now includes ${premiumEnginesPhrase(env)} and unlimited search audits.`,
+            `Hosted checks on this key are not capped at the free daily limit.`,
           parse_mode: 'Markdown',
           reply_markup: openAppKeyboard(env),
         });
@@ -813,7 +813,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
             chat_id: chatId,
             text: atCapacity
               ? QUOTA_CAPACITY_ERROR
-              : `⚠️ *Daily Free Limit Reached*\n\nYou have used your daily allocation of ${limit} free queries. Upgrade with Telegram Stars for unlimited queries, or check back tomorrow.\n\nUse /plan to view subscription options.`,
+              : `⚠️ *Daily free limit reached*\n\nYou have used today's ${limit} free queries. A paid plan lifts that daily cap. It does not renew on its own.\n\nUse /plan to see options, or check back tomorrow.`,
             parse_mode: atCapacity ? undefined : 'Markdown',
             reply_markup: atCapacity ? undefined : {
               inline_keyboard: [[
