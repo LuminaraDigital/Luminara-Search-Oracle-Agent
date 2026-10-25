@@ -803,7 +803,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
           action: 'workspace.sync',
           details: {
             hasEncryptedKeys: Boolean(payload.encryptedKeys),
-            keyCount: Object.keys(payload.keys || {}).length,
             storageItemCount: Object.keys(payload.storage || {}).length,
           },
           ip_address: clientIp(request),

@@ -856,7 +856,6 @@ import type { EncryptedKeyBag } from './crypto/envelopeEncryptionService';
 /** Product memory + optional BYOK bag stored per linked account in D1/KV. */
 export type WorkspacePayload = {
   storage?: Record<string, string>;
-  keys?: Record<string, string>;
   /** Zero-knowledge client-side encrypted key bag (AES-256-GCM + PBKDF2) */
   encryptedKeys?: EncryptedKeyBag;
 };

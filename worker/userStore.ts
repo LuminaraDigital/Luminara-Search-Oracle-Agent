@@ -40,9 +40,7 @@ const PROFILE_TOUCH_MS = 60 * 60 * 1000;
 export type WorkspacePayload = {
   /** Opaque product state keyed by localStorage-style names. */
   storage?: Record<string, string>;
-  /** Optional BYOK key bag (synced so keys follow the account). */
-  keys?: Record<string, string>;
-  /** Zero-knowledge client-side encrypted key bag (AES-256-GCM + PBKDF2) */
+  /** Zero-knowledge client-side encrypted key bag (AES-256-GCM + PBKDF2); never a plain-text map. */
   encryptedKeys?: EncryptedKeyBag;
 };
 

@@ -1,6 +1,7 @@
 /**
- * Syncs product memory (and optional BYOK keys) to the Worker/D1 workspace for the
- * signed-in account so logging back in restores DNA, audits, VFS, chat, and keys.
+ * Syncs product memory (and the encrypted BYOK key bag) to the Worker/D1 workspace for the
+ * signed-in account so logging back in restores DNA, audits, VFS and chat. The key bag only
+ * decrypts on the device that encrypted it.
  */
 import {
   accountKnownSignedIn,
@@ -145,7 +146,7 @@ async function applyPayload(payload: WorkspacePayload, accountId?: string): Prom
     }
   }
 
-  // 1. If encrypted key bag is present, decrypt client-side
+  // If an encrypted key bag is present, decrypt it client-side
   if (payload.encryptedKeys && accountId) {
     try {
       const passphrase = getOrCreateAccountEncryptionPassphrase(accountId);
@@ -159,16 +160,6 @@ async function applyPayload(payload: WorkspacePayload, accountId?: string): Prom
       }
     } catch (err) {
       console.warn('[WorkspaceSync] Client-side key decryption failed:', err);
-    }
-  }
-
-  // 2. Backward compatibility: apply legacy unencrypted keys if present
-  const keys = payload.keys || {};
-  for (const [key, value] of Object.entries(keys)) {
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      /* ignore */
     }
   }
 }

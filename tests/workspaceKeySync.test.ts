@@ -62,6 +62,21 @@ describe('workspace key sync', () => {
     expect(JSON.stringify(payload)).not.toContain(SECRET);
   });
 
+  it('a plain-text key map in a pulled workspace is never written to this device', async () => {
+    localStorage.clear();
+    fetchWorkspace.mockResolvedValue({
+      ok: true,
+      accountId: 'acct_1',
+      updatedAt: 5,
+      payload: { storage: { luminara_business_dna: '{"name":"Remote"}' }, keys: { luminara_groq_key: 'gsk_from_server' } },
+    });
+
+    await pullWorkspaceOnLogin();
+
+    expect(localStorage.getItem('luminara_business_dna')).toBe('{"name":"Remote"}');
+    expect(localStorage.getItem('luminara_groq_key')).toBeNull();
+  });
+
   it('a key added after a sign-in that had nothing to push is still synced encrypted', async () => {
     localStorage.clear();
     fetchWorkspace.mockResolvedValue({ ok: true, accountId: 'acct_1', updatedAt: 0, payload: {} });

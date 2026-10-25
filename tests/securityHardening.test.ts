@@ -40,7 +40,7 @@ describe('securityHardening', () => {
     expect(ok.ok).toBe(true);
     if (ok.ok) {
       expect(ok.payload.storage?.luminara_business_dna).toBe('{}');
-      expect(ok.payload.keys).toBeUndefined();
+      expect('keys' in ok.payload).toBe(false);
       expect(ok.payload.encryptedKeys).toEqual(encryptedKeys);
     }
     expect(sanitizeWorkspaceWrite({ keys: 'not a map' }).ok).toBe(false);
