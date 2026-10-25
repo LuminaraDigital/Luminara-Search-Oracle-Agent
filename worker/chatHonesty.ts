@@ -902,8 +902,12 @@ const PROMISED_RES: RegExp[] = [
   new RegExp(String.raw`\b(?:to|into|reach|hit)\s+(?:the\s+)?(?:#\s?\d+\b|number\s+one\b|position\s+\d+\b|first\s+place\b|top\s+\d+\b(?!\s+(?:[\w-]+\s+){0,2}?(?:${SELECTION_NOUN})\b))`, 'i'),
   new RegExp(String.raw`\bto\s+\d[\d,.]*\s?[kKmM]?\+?\s+(?:[\w-]+\s+){0,2}?(?:${COUNT_NOUN})\b`, 'i'),
 ];
+// "above 3%", "at least 3%", "below 50%": a bar to clear, not a promised change. Not "above 30%
+// more traffic", where the change follows.
+const BAR_PERCENT_RE =
+  /\b(?:above|below|under|at\s+least|at\s+most)\s+(?:about\s+|around\s+|roughly\s+)?\d[\d,.]*\s?(?:%|percent\b|per\s+cent\b)(?!\s*(?:more|fewer|higher|lower)\b)/gi;
 const promisesNumber = (rest: string): boolean =>
-  (PERCENT_RE.test(rest) && OUTCOME_WORD_RE.test(rest)) || PROMISED_RES.some((re) => re.test(rest));
+  (PERCENT_RE.test(rest.replace(BAR_PERCENT_RE, ' ')) && OUTCOME_WORD_RE.test(rest)) || PROMISED_RES.some((re) => re.test(rest));
 
 function isInstruction(sentence: string, rest: string): boolean {
   if (ASSERTION_RES.some((re) => re.test(rest))) return false;
@@ -1308,9 +1312,15 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
   return { text, claims: ledger.list(), planSentences, billingSentences, moneyNote, linksRemoved, secretRequests };
 }
 
+// A figure in the web Oracle chat is a claim only when it is about someone: the user ("your
+// CTR"), us, or a named site. "A good LCP is under 2.5 seconds" is general advice.
+const ABOUT_SOMEONE_RE = /\b(?:you|your|yours|we|our|ours|us)\b|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i;
+
 /**
  * The site-number step of filterChatReply alone, for the web Oracle chat, which may link and talk
  * about money: a sentence that states a measurement nobody made becomes NOT_MEASURED_SENTENCE.
+ * Unlike the bot, a general figure or a target stays; a sentence counts when it is about the
+ * user or a named site, claims a look at a site, or answers the user's question for a metric.
  * `userTexts` is what the user supplied (their messages and their account memory), the current
  * message last. A number in it is the user's own wherever the reply repeats it, so a figure or a
  * benchmark the user gave comes back whole. JSON-LD and head tags are not read.
@@ -1327,7 +1337,9 @@ export function withoutUnmeasuredClaims(reply: string, userTexts: string[]): { t
       const lead = LIST_MARKER_RE.exec(piece)?.[0] ?? '';
       const body = piece.slice(lead.length).trimEnd();
       const trail = piece.slice(lead.length + body.length);
-      if (segment.data || body === '' || !statesMeasurement(withoutUserNumbers(body, userNumbers), userNumbers, userAskedForMetric)) {
+      const claimsSomething =
+        userAskedForMetric || ABOUT_SOMEONE_RE.test(body) || LOOKED_RES.some((re) => re.test(body));
+      if (segment.data || body === '' || !claimsSomething || !statesMeasurement(withoutUserNumbers(body, userNumbers), userNumbers, userAskedForMetric)) {
         out.push(piece);
         previousWasUnmeasured = false;
         continue;

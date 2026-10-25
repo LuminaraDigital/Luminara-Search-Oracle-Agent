@@ -27,6 +27,7 @@ import {
   PLAN_QUESTION_WORDS,
   planPricePromptBlock,
   TELEGRAM_CHAT_HONESTY_RULES,
+  withoutUnmeasuredClaims,
 } from '../worker/chatHonesty';
 import { UNTRUSTED_CONTENT_RULE, wrapUntrustedContent } from '../utils/untrustedContent';
 import type { Env } from '../worker/index';
@@ -1788,5 +1789,33 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(sends[0].text).toContain(hostileName);
     expect(sends[0].text).toContain('john_doe*@example.com');
     expect(sends[0].text).toContain('Total Registered Users: 2');
+  });
+});
+
+describe('withoutUnmeasuredClaims: the web Oracle chat', () => {
+  const oracle = (reply: string, userTexts: string[]) => withoutUnmeasuredClaims(reply, userTexts).text;
+
+  // The user asked how to improve and gave no number: a general figure or a target is advice.
+  it.each([
+    ['Aim for a CTR above 3%.', 'How do I improve CTR?'],
+    ['Target a CTR of at least 3%.', 'How do I improve CTR?'],
+    ['Keep your bounce rate below 50%.', 'How do I improve CTR?'],
+    ['A good LCP is under 2.5 seconds.', 'How do I improve CWV?'],
+    ['Google rates an LCP of 2.5 seconds or less as good.', 'How do I improve CWV?'],
+    ['A typical organic CTR for position 1 is 25 to 30%.', 'How do I improve CTR?'],
+    ['Lighthouse scores of 90+ are considered good.', 'How do I improve CWV?'],
+  ])('keeps a benchmark the model gave: %s', (reply, userText) => {
+    expect(oracle(reply, [userText])).toBe(reply);
+  });
+
+  it.each([
+    ['Your CTR is 1.2%.', 'How do I improve CTR?'],
+    ['Raise your CTR by 20%.', 'How do I improve CTR?'],
+    ['Publish weekly to grow your traffic by 50%.', 'How do I grow?'],
+    ['You will get 50% more traffic.', 'How do I grow?'],
+    ['I checked acme.com and found 12 broken links.', 'Any tips?'],
+    ['acme.com has a domain authority of 45.', 'Any tips?'],
+  ])('replaces a number about the user or a named site that nobody measured: %s', (reply, userText) => {
+    expect(oracle(reply, [userText])).toBe(NOT_MEASURED_SENTENCE);
   });
 });
