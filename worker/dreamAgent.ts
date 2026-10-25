@@ -7,9 +7,20 @@ import type {
   BusinessMemoryItem,
   DreamAgentOutput,
   DreamEvent,
-  DreamProposalAction,
   DreamMemoryType,
 } from './dreamingTypes';
+
+const GROQ_DREAM_MODEL = 'openai/gpt-oss-120b';
+const GEMINI_DREAM_MODEL = 'gemini-2.5-flash';
+// What a model proposal may name. The store's CHECK covers memory types only.
+const DREAM_ACTIONS: readonly string[] = ['create', 'update', 'deprecate'] satisfies DreamAgentOutput['proposals'][number]['action'][];
+const DREAM_MEMORY_TYPES: readonly string[] = [
+  'business_dna',
+  'visibility_profile',
+  'action_memory',
+  'preference_memory',
+  'evidence_memory',
+] satisfies DreamMemoryType[];
 
 const DREAM_AGENT_SYSTEM = `You are Luminara Dreaming, the autonomous memory consolidation engine for Luminara Suite.
 Your mission is to consolidate verified business facts, search visibility insights, and recommendation outcomes into durable workspace memory.
@@ -33,7 +44,7 @@ Rules:
   "summary": "Brief 1-sentence run summary",
   "proposals": [
     {
-      "action": "create" | "update" | "deprecate" | "merge",
+      "action": "create" | "update" | "deprecate",
       "memoryId": "optional-existing-id",
       "memoryType": "business_dna" | "visibility_profile" | "action_memory" | "preference_memory" | "evidence_memory",
       "title": "Concise title",
@@ -161,6 +172,7 @@ export function deterministicDreamConsolidator(input: ConsolidateInput): DreamAg
   return {
     summary: `Consolidated ${pendingEvents.length} event(s) into ${proposals.length} proposal(s).`,
     proposals: proposals.slice(0, 5),
+    modelId: 'deterministic',
   };
 }
 
@@ -206,6 +218,7 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
 
   try {
     let rawJson: string | null = null;
+    const modelId = env.GROQ_API_KEY ? GROQ_DREAM_MODEL : GEMINI_DREAM_MODEL;
 
     if (env.GROQ_API_KEY) {
       const res = await fetcher('https://api.groq.com/openai/v1/chat/completions', {
@@ -215,7 +228,7 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
           Authorization: `Bearer ${env.GROQ_API_KEY}`,
         },
         body: JSON.stringify({
-          model: 'openai/gpt-oss-120b',
+          model: GROQ_DREAM_MODEL,
           messages: [
             { role: 'system', content: DREAM_AGENT_SYSTEM },
             { role: 'user', content: promptText },
@@ -232,7 +245,7 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
       }
     } else if (env.GEMINI_API_KEY) {
       const res = await fetcher(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_DREAM_MODEL}:generateContent`,
         {
           method: 'POST',
           headers: {
@@ -266,13 +279,17 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
       return deterministicDreamConsolidator(input);
     }
 
-    // Filter, validate, and cap proposals at 5
+    // The model's output is checked against what the run knows before anything is stored: an
+    // action and a memory type the store takes, a confidence the model gave, and, for an update
+    // or a deprecate, a memory that is active. A proposal that fails is dropped. At most 5.
     const validEventIds = new Set(input.pendingEvents.map((e) => e.id));
+    const activeMemoryIds = new Set(input.activeMemories.map((m) => m.id));
     const sanitizedProposals = parsed.proposals
       .filter((p) => {
-        if (!p.title || !p.content || !p.memoryType || !p.action) return false;
-        if (p.confidence < 0.5) return false; // reject low confidence
-        return true;
+        if (!p.title || !p.content) return false;
+        if (!DREAM_ACTIONS.includes(p.action) || !DREAM_MEMORY_TYPES.includes(p.memoryType)) return false;
+        if (typeof p.confidence !== 'number' || !(p.confidence >= 0.5 && p.confidence <= 1)) return false;
+        return p.action === 'create' || activeMemoryIds.has(String(p.memoryId));
       })
       .map((p) => {
         // Enforce valid source refs
@@ -287,13 +304,14 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
           p.confidence < 0.85;
 
         return {
-          action: p.action as DreamProposalAction,
-          memoryId: p.memoryId,
-          memoryType: p.memoryType as DreamMemoryType,
+          action: p.action,
+          // A create makes a new memory, so a memory id the model gave it names nothing of its own.
+          memoryId: p.action === 'create' ? undefined : p.memoryId,
+          memoryType: p.memoryType,
           title: String(p.title).slice(0, 200),
           content: String(p.content).slice(0, 4000),
           structuredData: p.structuredData || {},
-          confidence: Math.min(1.0, Math.max(0.5, p.confidence || 0.8)),
+          confidence: p.confidence,
           sourceRefs: finalRefs,
           requiresApproval,
           rationale: String(p.rationale || 'Consolidated by Dream Agent').slice(0, 500),
@@ -304,6 +322,7 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
     return {
       summary: parsed.summary || `Consolidated ${sanitizedProposals.length} memory proposals.`,
       proposals: sanitizedProposals,
+      modelId,
     };
   } catch {
     return deterministicDreamConsolidator(input);

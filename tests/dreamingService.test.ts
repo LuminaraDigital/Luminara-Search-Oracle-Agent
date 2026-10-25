@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createSqliteD1 } from './helpers/sqliteD1';
 import type { Env } from '../worker/env';
 import {
@@ -286,5 +286,76 @@ describe('Luminara Dreaming Service & D1 Engine', () => {
     const runData = await runRes?.json();
     expect(runData.ok).toBe(true);
     expect(runData.woke).toBe(true);
+  });
+});
+
+describe('Dreaming applies only what it can check in the model output', () => {
+  const ACCOUNT = 'acct_dream_model';
+  const DOMAIN = 'checked.example';
+  let db: ReturnType<typeof createSqliteD1>;
+
+  beforeEach(() => {
+    db = createSqliteD1();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A Groq model that proposes from the first event it is shown, and nothing when it is shown none. */
+  function stubGroq(proposalsFor: (eventId: string) => unknown[]) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        const prompt = String(JSON.parse(init.body).messages[1].content);
+        const eventId = /\[Event ID: (devt_[^\]]+)\]/.exec(prompt)?.[1];
+        const proposals = eventId ? proposalsFor(eventId) : [];
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Model run', proposals }) } }] }), { status: 200 });
+      }),
+    );
+  }
+
+  const queueAudit = (env: Env) =>
+    enqueueDreamEvent(env, { accountId: ACCOUNT, domain: DOMAIN, eventType: 'audit_completed', payload: { healthScore: 70 } });
+
+  const titles = (sql: string): string[] => db.sqlite.prepare(sql).all(ACCOUNT).map((r: { title: string }) => r.title);
+
+  it('applies the valid proposal alone, consolidates the events in the same write, and a second forced run adds nothing', async () => {
+    const env = { DB: db, GROQ_API_KEY: 'gsk_test' } as unknown as Env;
+    const base = { content: 'From the audit.', sourceRefs: [] as string[], requiresApproval: false, rationale: 'Model said so.' };
+    stubGroq((eventId) => {
+      const refs = { ...base, sourceRefs: [eventId] };
+      return [
+        { ...refs, action: 'create', memoryId: 'mem_unrelated', memoryType: 'evidence_memory', title: 'Valid fact', confidence: 0.9 },
+        { ...refs, action: 'create', memoryType: 'secret_memory', title: 'Unknown type', confidence: 0.9 },
+        { ...refs, action: 'merge', memoryType: 'evidence_memory', title: 'Merged', confidence: 0.9 },
+        { ...refs, action: 'create', memoryType: 'action_memory', title: 'No confidence' },
+        { ...refs, action: 'update', memoryId: 'mem_missing', memoryType: 'evidence_memory', title: 'Ghost update', confidence: 0.9 },
+      ];
+    });
+    await queueAudit(env);
+
+    const first = await executeDreamRun(env, ACCOUNT, DOMAIN, 'manual_user', { force: true });
+
+    expect(first).toMatchObject({ ok: true, woke: true, run: { modelId: 'openai/gpt-oss-120b', proposalsCount: 1, autoAppliedCount: 1 } });
+    expect(titles(`SELECT title FROM business_memories WHERE account_id = ?`)).toEqual(['Valid fact']);
+    expect(db.sqlite.prepare(`SELECT title, action, memory_id, status FROM dream_proposals WHERE account_id = ?`).all(ACCOUNT)).toEqual([
+      { title: 'Valid fact', action: 'create', memory_id: null, status: 'auto_applied' },
+    ]);
+    expect(db.sqlite.prepare(`SELECT model_id FROM dream_runs WHERE account_id = ?`).all(ACCOUNT)).toEqual([{ model_id: 'openai/gpt-oss-120b' }]);
+    expect(await getPendingDreamEvents(env, ACCOUNT, DOMAIN)).toEqual([]);
+
+    await executeDreamRun(env, ACCOUNT, DOMAIN, 'manual_user', { force: true });
+    expect(titles(`SELECT title FROM business_memories WHERE account_id = ?`)).toEqual(['Valid fact']);
+  });
+
+  it('names the deterministic consolidator as the model when no hosted key is set', async () => {
+    const env = { DB: db } as unknown as Env;
+    await queueAudit(env);
+
+    const run = await executeDreamRun(env, ACCOUNT, DOMAIN, 'manual_user', { force: true });
+
+    expect(run).toMatchObject({ ok: true, woke: true, run: { modelId: 'deterministic' } });
+    expect(db.sqlite.prepare(`SELECT model_id FROM dream_runs WHERE account_id = ?`).all(ACCOUNT)).toEqual([{ model_id: 'deterministic' }]);
   });
 });
