@@ -408,14 +408,16 @@ message and the reply went to the model chat.
 - `worker/oracleInteractionGuard.ts`: instructs Oracle to respond
   `not_measured` or "not verified" when data is missing. Its monitor only flags
   numeric claims without tool evidence (a `monitor` event). Live.
-- Oracle chat (`worker/oracleChat.ts`) runs a reply without measured tool evidence
-  through `withoutUnmeasuredClaims` (`worker/chatHonesty.ts`, the bot filter's
-  site-number step). A sentence that states a measurement nobody made is replaced
-  with the "not measured" sentence in the session history, a "Not measured" warning
-  token follows the tokens already streamed, and `oracle_output_redacted` is logged.
-  A number from the user's messages or the retrieved account memory is the user's
-  own wherever the reply repeats it. A tool result counts as evidence only when it
-  did not error and its status is `measured`. Live.
+- Oracle chat (`worker/oracleChat.ts`) runs every reply through `withoutUnmeasuredClaims`
+  (`worker/chatHonesty.ts`, the bot filter's site-number step). A sentence that states a
+  measurement nobody made is replaced with the "not measured" sentence in the session
+  history, a "Not measured" warning token follows the tokens already streamed, and
+  `oracle_output_redacted` is logged. Unlike the bot, a general figure or a target stays
+  ("Aim for a CTR above 3%", "A good LCP is under 2.5 seconds"): a sentence counts only
+  when it is about the user, us or a named site, claims a look at a site, or answers the
+  user's question for a metric. A number from a user sentence that states a figure (in a
+  message or in the retrieved account memory) is the user's own wherever the reply repeats
+  it, and so is every number of a tool result that did not error and is `measured`. Live.
 - `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
   nothing, and the model has no say over prices or payments.
   - **Two kinds of message never reach the model.** `chatRoute` reads the user's
@@ -449,12 +451,13 @@ message and the reply went to the model chat.
     prices are, where billing help is, and that this chat cannot quote prices or
     take payments.
   - A sentence that states a measurement nobody made (a percentage, a rank, a score,
-    a count of citations or visits, a claim of having looked at the site) becomes
-    one "not measured" sentence. Links, dates, phone and version numbers and HTTP
-    status codes are set aside first. A number the user wrote is kept only where the
-    sentence hands it back ("you said"). An instruction keeps its count ("Add 3 FAQ
-    questions") and loses a promised outcome. Status comes from the claim ledger
-    (`services/evidenceBound`).
+    a DA or CTR, a count of citations, visits or AI answers, a results page, a claim of
+    having looked at the site) becomes one "not measured" sentence. Links, dates, phone
+    and version numbers and HTTP status codes are set aside first. A number the user
+    wrote is kept only where the sentence hands it back ("you said"). An instruction
+    keeps its count ("Add 3 FAQ questions") and loses a promised outcome; a percentage
+    after above, below, under, at least or at most is a bar to clear, not a promise.
+    Status comes from the claim ledger (`services/evidenceBound`).
   - Inline code is read as prose. Only JSON-LD (an object with `@context`) and head
     tags (`meta`, `link`, `title`, a JSON-LD `script`) are set aside as something
     to paste, fenced or not. Any other JSON, markup or fenced text, and everything
@@ -463,25 +466,24 @@ message and the reply went to the model chat.
     luminarasuite.com, the `WEBAPP_URL` host, one the user wrote, or a reference
     host (`REFERENCE_LINK_HOSTS`). Links inside JSON-LD and head tags are checked
     too. A sentence that asks for a code, password, seed phrase or key is removed.
-  Business DNA enters the prompt only inside an untrusted-content fence whose
-  markers carry a one-time code, with each field capped at 300 characters. The
-  reply is sent with no `parse_mode` and with link previews off. A reply longer than one
-  Telegram message is cut at its last whole word, with the ellipsis inside 4,096 characters
-  and no emoji split in half. History keeps what was sent, and only once Telegram accepted
-  it. A turn whose answer
-  does not reach the user (no provider answered, or Telegram refused the reply) gives
-  back the free unit it spent. A message with no words (a sticker, a voice note, a photo
-  with no caption, a service message) gets no answer and spends nothing; inside a payment
-  support window it is still captured. Every feature of the bot is for a private chat. In a
-  group, the billing and admin commands (`/paysupport`, `/support`, `/admin`, `/refund
-  <user> <charge>`, `/reply`, `/close`, `/requests`) say to use a private chat, any other
-  command gets one plain note ("Luminara works in a private chat..."), a command addressed
-  to another bot (`/plan@OtherBot`, checked against `getMe` once per isolate) gets nothing,
-  and anything else is ignored. Payment
-  updates are handled before this, wherever they come from. Gemini gets its key in the `x-goog-api-key` header,
-  never in the URL. The filter is a
-  backstop, pattern based and mostly English; the prompt rules and the plan-question
-  rule are the main controls. Live.
+  Business DNA enters the prompt only inside an untrusted-content fence whose markers carry
+  a one-time code, with each field capped at 300 characters. The reply is sent with no
+  `parse_mode` and with link previews off. A reply longer than one Telegram message is cut
+  at its last whole word, with the ellipsis inside 4,096 characters and no emoji split in
+  half; plain support messages are cut the same way. History keeps what was sent, and only
+  once Telegram accepted it. A turn that spent a free unit and delivered no answer (no
+  provider answered, Telegram refused the reply, or the turn failed) gives the unit back,
+  once. A message with no text (a sticker, a voice note, a photo with or without a caption,
+  a service message) gets no answer and spends nothing; inside a payment support window it
+  is still captured. Every feature of the bot is for a private chat. In a group, the
+  billing and admin commands (`/paysupport`, `/support`, `/admin`, `/refund <user>
+  <charge>`, `/reply`, `/close`, `/requests`) say to use a private chat, any other command
+  gets one plain note ("Luminara works in a private chat..."), a command addressed to
+  another bot (`/plan@OtherBot`, checked against `getMe` once per isolate) gets nothing,
+  and anything else is ignored. Payment updates are handled before this, wherever they
+  come from. Gemini gets its key in the `x-goog-api-key` header, never in the URL. The
+  filter is a backstop, pattern based and mostly English; the prompt rules and the
+  plan-question rule are the main controls. Live.
 - DataForSEO / Umami sidecars: live when env-bound; the front-end traffic
   path returns `not_configured` when unreachable. See `services/competitors/README.md`.
 - Telegram webhook, license service, sentinel scan: live when bindings exist.

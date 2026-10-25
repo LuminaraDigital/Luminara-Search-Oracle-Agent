@@ -773,8 +773,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // put in a prompt and not kept in the chat history. This has to stay above the chat.
     if (await receiveSupportMessage(env, msg, text || String(msg.caption || ''))) return;
 
-    // A sticker, a voice note, a photo with no caption or a service message has no words to
-    // answer. Their capture for support, just above, still runs.
+    // A message with no text (a sticker, a voice note, a photo with or without a caption, a
+    // service message) is not answered. Its capture for support, just above, still runs.
     if (!text.trim()) return;
 
     // Interactive conversational session with Oracle Agent (Hermes-like agentic loop)
@@ -1058,7 +1058,7 @@ const SUPPORT_TOO_MANY_TEXT =
 const SUPPORT_NOT_READ_TEXT =
   'Something went wrong on our side, so this message was not read. Please send it again in a minute.';
 
-/** One notice to an admin, under Telegram's 4,096 characters and under what sendPlain sends. */
+/** One notice to an admin, inside one Telegram message, so sendPlain never has to cut it. */
 const SUPPORT_NOTICE_MAX = 3900;
 const SUPPORT_SHORTENED_NOTE = '\n> (shortened here to fit one message; the stored request has the rest)';
 
@@ -1118,7 +1118,7 @@ function ageText(ms: number): string {
 }
 
 async function sendPlain(env: Env, chatId: number | string, text: string): Promise<boolean> {
-  const sent = await api(env, 'sendMessage', { chat_id: chatId, text: text.slice(0, 4000) });
+  const sent = await api(env, 'sendMessage', { chat_id: chatId, text: fitTelegramMessage(text) });
   return sent.ok === true;
 }
 

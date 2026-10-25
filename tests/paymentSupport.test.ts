@@ -910,6 +910,21 @@ describe('what an admin can do', () => {
     expect(net.textsTo(ADMIN_A).at(-1)).toBe(`Not delivered to the buyer: Forbidden: bot was blocked by the user. Request ${id} is still open.`);
   });
 
+  it('a plain message that would run past one Telegram message is cut without splitting an emoji', async () => {
+    const { env, db } = makeEnv();
+    const id = await openRequest(env, db);
+    // Telegram's reason for refusing is put in the admin's message as it came.
+    net.replies.sendMessage = (body) =>
+      Number(body.chat_id) === BUYER ? { ok: false, description: `x${'🚫'.repeat(2100)}` } : { ok: true, result: {} };
+
+    await say(env, `/reply ${id} hello`, ADMIN_A);
+
+    const told = net.textsTo(ADMIN_A).at(-1)!;
+    expect(told.startsWith('Not delivered to the buyer: x🚫')).toBe(true);
+    expect(told.length).toBeLessThanOrEqual(4096);
+    expect(told).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+  });
+
   it('a request can be answered again, and the answer is sent as plain text', async () => {
     const { env, db } = makeEnv();
     const id = await openRequest(env, db);
