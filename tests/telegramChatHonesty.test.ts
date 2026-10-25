@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleTelegramUpdate, PLANS, plansOfferedToBuyers } from '../worker/telegramBot';
 import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
+import { readFreeUsed } from '../worker/quotaMiddleware';
 import {
   BILLING_HELP_REPLY,
   BILLING_PROBLEM_WORDS,
@@ -1354,18 +1355,27 @@ function makeChat() {
     LUMINARA_KV: kv as any, DAILY_QUOTA: memoryDailyQuotaNamespace(), FREE_DAILY_LIMIT: '50',
     GROQ_API_KEY: 'gsk_mock_key',
   };
-  /** Sends one update. Returns what reached the model and every Telegram call, by method. */
-  async function send(text: string, modelReply = 'Add FAQ schema.', fromId = 100, telegramOk = true) {
+  /**
+   * Sends one update. Returns what reached the model and every Telegram call, by method. A null
+   * model reply means every provider refuses: Groq, and Gemini when its key is set.
+   */
+  async function send(text: string, modelReply: string | null = 'Add FAQ schema.', fromId = 100, telegramOk = true) {
     let systemPrompt = '';
     let modelCalls = 0;
     const calls: Array<{ method: string; body: Sent }> = [];
+    const geminiCalls: Array<{ url: string; headers: Record<string, string> }> = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string, init: { body: string }) => {
+      vi.fn(async (url: string, init: { body: string; headers: Record<string, string> }) => {
         if (url.startsWith('https://api.groq.com/')) {
           modelCalls += 1;
           systemPrompt = JSON.parse(init.body).messages[0].content;
+          if (modelReply === null) return { ok: false, status: 503, json: async () => ({}) };
           return { ok: true, json: async () => ({ choices: [{ message: { content: modelReply } }] }) };
+        }
+        if (url.startsWith('https://generativelanguage.googleapis.com/')) {
+          geminiCalls.push({ url, headers: init.headers });
+          return { ok: false, status: 503, json: async () => ({}) };
         }
         if (!url.startsWith('https://api.telegram.org/')) throw new Error(`unexpected fetch: ${url}`);
         const method = url.slice(url.lastIndexOf('/') + 1);
@@ -1377,10 +1387,10 @@ function makeChat() {
     await handleTelegramUpdate({ message: { chat: { id: fromId }, from: { id: fromId }, text } }, env);
     const sends = calls.filter((call) => call.method === 'sendMessage').map((call) => call.body);
     const history = (await kv.get(`tg:chat:${fromId}`, 'json')) as Array<{ role: string; content: string }> | null;
-    return { systemPrompt, modelCalls, calls, sends, history };
+    return { systemPrompt, modelCalls, calls, sends, history, geminiCalls };
   }
 
-  const chatTurn = (userText: string, modelReply: string, telegramOk = true) => send(userText, modelReply, 100, telegramOk);
+  const chatTurn = (userText: string, modelReply: string | null, telegramOk = true) => send(userText, modelReply, 100, telegramOk);
   return { kv, env, send, chatTurn };
 }
 
@@ -1635,6 +1645,31 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
 
     expect(sends).toHaveLength(1);
     expect(sends[0]).not.toHaveProperty('parse_mode');
+  });
+
+  it('gives the free unit back when no provider answers, and sends the Gemini key in a header, not the URL', async () => {
+    chat.env.FREE_DAILY_LIMIT = '3';
+    chat.env.GEMINI_API_KEY = 'gemini-test-key';
+
+    const { sends, geminiCalls } = await chat.chatTurn('Any quick tip?', null);
+
+    expect(sends.map((s) => s.text)).toEqual(['Open the app to run an audit or ask Oracle Agent.']);
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(0);
+    expect(geminiCalls).toHaveLength(1);
+    expect(geminiCalls[0].url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    expect(geminiCalls[0].headers['x-goog-api-key']).toBe('gemini-test-key');
+
+    // An answer that arrives keeps its unit.
+    await chat.chatTurn('Any other tip?', 'Add FAQ schema.');
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(1);
+  });
+
+  it('gives the free unit back when Telegram refuses the reply', async () => {
+    chat.env.FREE_DAILY_LIMIT = '3';
+
+    await chat.chatTurn('Any quick tip?', 'Add FAQ schema to your pricing page.', false);
+
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(0);
   });
 
   it('puts the cite-or-silence rule and the untrusted-content rule in the system prompt', async () => {

@@ -454,7 +454,10 @@ message and the reply went to the model chat.
     too. A sentence that asks for a code, password, seed phrase or key is removed.
   Business DNA enters the prompt only inside an untrusted-content fence whose
   markers carry a one-time code, with each field capped at 300 characters. The
-  reply is sent with no `parse_mode` and with link previews off. The filter is a
+  reply is sent with no `parse_mode` and with link previews off. A turn whose answer
+  does not reach the user (no provider answered, or Telegram refused the reply) gives
+  back the free unit it spent. Gemini gets its key in the `x-goog-api-key` header,
+  never in the URL. The filter is a
   backstop, pattern based and mostly English; the prompt rules and the plan-question
   rule are the main controls. Live.
 - DataForSEO / Umami sidecars: live when env-bound; the front-end traffic

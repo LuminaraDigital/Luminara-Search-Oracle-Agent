@@ -5,6 +5,7 @@
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
 import { QUOTA_CAPACITY_ERROR, spendDailyQuota } from './quotaMiddleware';
+import { invokeDailyQuota } from './dailyQuota';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
 import { guardPasteReadyCopy } from '../services/audit/healthClaimGuard';
@@ -304,14 +305,12 @@ export async function generateOracleChatResponse(
           parts: [{ text: systemMsg.content }],
         };
       }
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        },
-      );
+      // The key goes in a header: a URL ends up in logs.
+      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+        body: JSON.stringify(body),
+      });
       if (res.ok) {
         const data = (await res.json().catch(() => ({}))) as any;
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -745,7 +744,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // Stores a chat reply in session memory and sends it. No parse_mode: the text is not valid
     // Markdown, and Telegram rejects the whole message when the markup does not parse. No link
     // preview: a chat reply must not unfurl a page.
-    const deliverChatReply = async (reply: string, keyboard: unknown): Promise<void> => {
+    const deliverChatReply = async (reply: string, keyboard: unknown): Promise<boolean> => {
       if (env.LUMINARA_KV) {
         try {
           const nextHist = [...history, { role: 'user' as const, content: text }, { role: 'assistant' as const, content: reply }].slice(-6);
@@ -763,6 +762,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       if (!sendResult.ok) {
         console.error('[Telegram Bot] chat reply was not delivered', sendResult.description);
       }
+      return sendResult.ok;
     };
 
     // 3. A payment problem, and a question about our own plans, prices or how to pay, never
@@ -784,6 +784,9 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         (await env.LUMINARA_KV.get(`sub:${loginId}`, 'json'))) as { plan: string; expiresAt: number; chargeId?: string } | null;
     }
     const hasActiveSub = Boolean(sub && sub.expiresAt > Date.now());
+    const limit = Number(env.FREE_DAILY_LIMIT || 3);
+    // Set when this turn spent a free unit, so it can go back if no answer reaches the user.
+    let meterKey = '';
 
     if (!hasActiveSub) {
       if (env.REQUIRE_SUBSCRIPTION === 'true') {
@@ -804,7 +807,6 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         return;
       }
 
-      const limit = Number(env.FREE_DAILY_LIMIT || 3);
       if (limit > 0) {
         const spent = await spendDailyQuota(env, accountId, limit);
         if (!spent.ok) {
@@ -824,6 +826,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           });
           return;
         }
+        meterKey = spent.meterKey;
       }
     }
 
@@ -892,6 +895,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         }
       : openAppKeyboard(env);
 
+    // 8. Update session memory and deliver the response
+    const delivered = aiResponse ? await deliverChatReply(aiResponse, replyKeyboard) : false;
     if (!aiResponse) {
       // Graceful fallback to app prompt if AI service is not configured or fails
       await api(env, 'sendMessage', {
@@ -899,11 +904,9 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         text: 'Open the app to run an audit or ask Oracle Agent.',
         reply_markup: replyKeyboard,
       });
-      return;
     }
-
-    // 8. Update session memory and deliver the response
-    await deliverChatReply(aiResponse, replyKeyboard);
+    // No answer reached the user, so the free unit this turn spent goes back.
+    if (!delivered && meterKey) await invokeDailyQuota(env, meterKey, 'refund', limit);
   } catch (e) {
     console.error('telegram update failed', e);
   }
