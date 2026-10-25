@@ -14,8 +14,6 @@ import { json } from './workerUtils';
 
 const MAX_STORAGE_KEYS = 200;
 const MAX_STORAGE_VALUE_CHARS = 200_000;
-const MAX_KEY_BAG_ENTRIES = 64;
-const MAX_KEY_VALUE_CHARS = 8_000;
 
 /** Privilege / billing fields that must never be client-writable via workspace blobs. */
 const FORBIDDEN_WORKSPACE_TOP_LEVEL = new Set([
@@ -117,6 +115,8 @@ function clampStringRecord(
 /**
  * Mass-assignment defense for PUT /workspace.
  * Allow-lists storage / keys / encryptedKeys only; rejects privilege fields.
+ * A plain-text `keys` bag (sent by older clients) is accepted but never stored: BYOK keys
+ * reach D1 only as the client-encrypted `encryptedKeys`.
  */
 export function sanitizeWorkspaceWrite(
   raw: unknown,
@@ -146,7 +146,6 @@ export function sanitizeWorkspaceWrite(
     if (typeof body.keys !== 'object' || body.keys === null || Array.isArray(body.keys)) {
       return { ok: false, error: 'keys must be a string map' };
     }
-    payload.keys = clampStringRecord(body.keys as Record<string, unknown>, MAX_KEY_BAG_ENTRIES, MAX_KEY_VALUE_CHARS);
   }
   if (body.encryptedKeys !== undefined) {
     if (typeof body.encryptedKeys !== 'object' || body.encryptedKeys === null || Array.isArray(body.encryptedKeys)) {

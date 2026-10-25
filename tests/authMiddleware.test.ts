@@ -7,6 +7,8 @@ import {
   buildLogoutCookie,
   parseCookies,
   verifyWebhookSignature,
+  mintOpaqueSession,
+  loadOpaqueSession,
 } from '../worker/authMiddleware';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -186,5 +188,43 @@ describe('Signed Webhook Verification (/api/webhooks/auth)', () => {
     const data = await res.json() as { ok: boolean; processed: string };
     expect(data.ok).toBe(true);
     expect(data.processed).toBe('user.created');
+  });
+
+  it('user.deleted revokes the sessions the user already holds', async () => {
+    const secret = 'test-secret-123';
+    const env = makeEnv({ AUTH_WEBHOOK_SECRET: secret });
+    const sid = (await mintOpaqueSession(env, { uid: 'gone_user_1', email: 'gone@example.com' })) as string;
+    const otherSid = (await mintOpaqueSession(env, { uid: 'kept_user_1' })) as string;
+    expect(await loadOpaqueSession(env, sid)).not.toBeNull();
+    const before = await worker.fetch(
+      req('/api/workspace', { headers: { cookie: `${SESSION_COOKIE_NAME}=${sid}` } }),
+      env,
+      ctx,
+    );
+    expect(before.status).toBe(200);
+
+    const payload = JSON.stringify({ type: 'user.deleted', data: { id: 'fb:gone_user_1' } });
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = Array.from(new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(payload))))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    const res = await worker.fetch(
+      req('/api/webhooks/auth', { method: 'POST', body: payload, headers: { 'x-auth-signature': sig } }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+
+    expect(await loadOpaqueSession(env, sid)).toBeNull();
+    expect(await loadOpaqueSession(env, otherSid)).not.toBeNull();
+    // A session minted after the deletion, from an ID token that has not expired yet, is refused too.
+    const lateSid = (await mintOpaqueSession(env, { uid: 'gone_user_1' })) as string;
+    expect(await loadOpaqueSession(env, lateSid)).toBeNull();
+    const who = await worker.fetch(
+      req('/api/workspace', { headers: { cookie: `${SESSION_COOKIE_NAME}=${sid}` } }),
+      env,
+      ctx,
+    );
+    expect(who.status).toBe(401);
   });
 });

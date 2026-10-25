@@ -104,6 +104,7 @@ import {
   getSessionTokenFromCookie,
   mintOpaqueSession,
   revokeOpaqueSession,
+  revokeSessionsForDeletedUser,
   isOpaqueSessionId,
   looksLikeJwt,
 } from './authMiddleware';
@@ -641,6 +642,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }
       if (env.LUMINARA_KV) {
         await env.LUMINARA_KV.delete(`user:${targetId}`);
+        // Without this the user's sessions stay valid and the next request re-creates the users row.
+        await revokeSessionsForDeletedUser(env, targetId.replace(/^fb:/, ''));
       }
     } else if ((event === 'user.created' || event === 'user.updated') && (data.uid || data.id)) {
       const uid = String(data.uid || data.id).replace(/^fb:/, '');

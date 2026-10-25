@@ -200,6 +200,57 @@ describe('Luminara Dreaming Service & D1 Engine', () => {
     expect(mems[0].content).toBe('Original Content');
   });
 
+  it('rollback of a create removes only the memory that run made, not later ones with the same title', async () => {
+    await enqueueDreamEvent(env, {
+      accountId: 'acct_dream_1',
+      domain: 'lawfirm.com',
+      eventType: 'client_profile_changed',
+      payload: { name: 'Apex Law', usp: 'Corporate Tax Defense' },
+    });
+    const runRes = await executeDreamRun(env, 'acct_dream_1', 'lawfirm.com', 'manual_user', { force: true });
+    expect(runRes.ok && runRes.woke).toBe(true);
+    if (!runRes.ok || !runRes.woke) return;
+    const prop = runRes.proposals.find((p) => p.status === 'pending' && p.action === 'create');
+    expect(prop).toBeDefined();
+    if (!prop) return;
+    const review = await reviewDreamProposal(env, 'acct_dream_1', prop.id, 'approve', 'user_1');
+    expect(review.ok).toBe(true);
+
+    // A later memory with the same title, from another run or a manual edit.
+    await db.prepare(
+      `INSERT INTO business_memories (
+        id, account_id, project_id, domain, memory_type, title, content,
+        structured_data_json, confidence, status, source_refs_json,
+        created_at, updated_at, last_verified_at, expires_at
+      ) VALUES ('mem_later', 'acct_dream_1', NULL, 'lawfirm.com', 'business_dna', ?, 'Later content', '{}', 1.0, 'active', '[]', ?, ?, ?, NULL)`,
+    ).bind(prop.title, Date.now() + 5000, Date.now() + 5000, Date.now() + 5000).run();
+
+    const rollbackRes = await rollbackDreamRun(env, 'acct_dream_1', runRes.run.id);
+    expect(rollbackRes.ok).toBe(true);
+
+    const mems = await getActiveBusinessMemories(env, 'acct_dream_1', 'lawfirm.com');
+    expect(mems.map((m) => m.id)).toEqual(['mem_later']);
+  });
+
+  it('rollback of an auto-applied create removes the memory it made', async () => {
+    await enqueueDreamEvent(env, {
+      accountId: 'acct_dream_1',
+      domain: 'myclinic.com.au',
+      eventType: 'audit_completed',
+      payload: { healthScore: 75, topCompetitor: 'rivalphysio.com.au' },
+    });
+    const runRes = await executeDreamRun(env, 'acct_dream_1', 'myclinic.com.au', 'manual_user', { force: true });
+    expect(runRes.ok && runRes.woke).toBe(true);
+    if (!runRes.ok || !runRes.woke) return;
+    const applied = runRes.proposals.filter((p) => p.status === 'auto_applied' && p.action === 'create');
+    expect(applied.length).toBeGreaterThan(0);
+    expect((await getActiveBusinessMemories(env, 'acct_dream_1', 'myclinic.com.au')).length).toBeGreaterThan(0);
+
+    const rollbackRes = await rollbackDreamRun(env, 'acct_dream_1', runRes.run.id);
+    expect(rollbackRes.ok).toBe(true);
+    expect(await getActiveBusinessMemories(env, 'acct_dream_1', 'myclinic.com.au')).toEqual([]);
+  });
+
   it('exposes HTTP REST API endpoints via handleDreamingRoute', async () => {
     // 1. GET /api/dreaming/status
     const statusReq = new Request('https://api.luminara.ai/dreaming/status?domain=store.com', {

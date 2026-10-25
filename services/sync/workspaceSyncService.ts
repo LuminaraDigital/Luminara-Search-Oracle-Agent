@@ -103,28 +103,23 @@ async function collectPayload(accountId?: string): Promise<WorkspacePayload> {
   }
 
   const hasKeys = Object.keys(keys).length > 0;
-  if (!hasKeys) {
+  // Keys leave the browser only encrypted. With no account to derive the passphrase from, or if
+  // encryption fails, they stay on this device instead of reaching the server in plain text.
+  if (!hasKeys || !accountId) {
     return { storage };
   }
 
-  // If we have an active account, encrypt the key bag client-side (Zero-Knowledge)
-  if (accountId) {
-    try {
-      const passphrase = getOrCreateAccountEncryptionPassphrase(accountId);
-      const encryptedKeys = await encryptKeyBag(keys, passphrase);
-      return {
-        storage,
-        encryptedKeys,
-      };
-    } catch (err) {
-      console.warn('[WorkspaceSync] Client-side key encryption failed; falling back to standard sync', err);
-    }
+  try {
+    const passphrase = getOrCreateAccountEncryptionPassphrase(accountId);
+    const encryptedKeys = await encryptKeyBag(keys, passphrase);
+    return {
+      storage,
+      encryptedKeys,
+    };
+  } catch (err) {
+    console.warn('[WorkspaceSync] Client-side key encryption failed; keys stay on this device', err);
+    return { storage };
   }
-
-  return {
-    storage,
-    keys,
-  };
 }
 
 async function applyPayload(payload: WorkspacePayload, accountId?: string): Promise<void> {
@@ -241,10 +236,11 @@ export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?:
       await applyPayload(remote.payload || {}, remote.accountId);
       writeMeta({ updatedAt: remoteUpdated, accountId: remote.accountId });
     } else {
+      // Pushes encrypt the key bag with the account in meta, so record it before any push.
+      writeMeta({ ...readMeta(), accountId: remote.accountId });
       const localPayload = await collectPayload(remote.accountId);
       const hasLocal =
         Object.keys(localPayload.storage || {}).length > 0 ||
-        Object.keys(localPayload.keys || {}).length > 0 ||
         Boolean(localPayload.encryptedKeys);
       if (hasLocal) await flushWorkspacePush(true);
     }

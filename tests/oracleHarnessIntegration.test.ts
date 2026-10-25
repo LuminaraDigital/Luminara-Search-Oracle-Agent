@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { handleOracleChatSse, handleOracleSessionControlRoute } from '../worker/oracleChat';
 import { OracleSession } from '../worker/oracleSession';
+import { runWithWaitUntil } from '../worker/welcomeEmail';
 import type { Env } from '../worker/env';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
@@ -91,6 +92,35 @@ describe('Wave 3: Oracle SSE & 3-Plane Harness Integration', () => {
     const data = (await res.json()) as { ok: boolean; code: string };
     expect(data.ok).toBe(false);
     expect(data.code).toBe('CONTROL_PLANE_VIOLATION');
+  });
+
+  it('hands the streaming turn to waitUntil so it settles after the client disconnects', async () => {
+    const env = {
+      ORACLE_SERVER_ENABLED: 'true',
+      GROQ_API_KEY: 'gsk_test',
+      DB: createSqliteD1(),
+      ORACLE_SESSION: createOracleSessionNamespace(),
+    } as unknown as Env;
+    const waited: Promise<unknown>[] = [];
+    const ctx = { waitUntil: (p: Promise<unknown>) => { waited.push(p); } };
+
+    // The Worker entry runs every API request inside runWithWaitUntil(ctx, ...).
+    const res = await runWithWaitUntil(ctx, () =>
+      handleOracleChatSse(
+        new Request('https://luminarasuite.com/api/oracle/chat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId: 'sess_wait', message: 'hello' }),
+        }),
+        env,
+        mockUser,
+      ),
+    );
+    expect(res.status).toBe(200);
+    // Drop the stream like a closed tab; the turn handed to waitUntil must still settle.
+    await res.body?.cancel();
+    expect(waited).toHaveLength(1);
+    await waited[0];
   });
 
   it('control route refuses forged events and server-internal actions, and caps body size', async () => {
