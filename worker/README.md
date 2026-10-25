@@ -335,6 +335,10 @@ Telegram does not send a paid update again once the webhook has answered 200, so
   account in the same instant can lose one of them (KV has no compare-and-set); and a record
   written before the ledger that stacked an upgrade names only its last charge, so refunding that
   charge keeps the upgraded plan name for the days the earlier charge paid for.
+- Known limit: each receipt keeps the expiry it was written with, so refunding two stacked charges
+  oldest first can take days from a later rail (A t0 to t0+30, B to t0+60, TON to t0+90; refund A
+  at t0+10, then B at t0+35: the record ends at t0+45, not t0+65); it never takes more than the old
+  full-days rule did, and the card rail's `granted_until` behaves the same.
 
 ## TON orders (pinned in `tests/tonPendingOrders.test.ts`)
 
