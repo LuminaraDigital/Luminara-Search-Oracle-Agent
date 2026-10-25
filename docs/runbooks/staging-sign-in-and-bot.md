@@ -63,7 +63,7 @@ Email sign-in and sign-up go through the Worker, and the Worker answers 503 to b
 From the same fresh terminal, with the staging values only. `EXPECT_BOT_USERNAME` is the staging bot's username, with or without the `@`. The script makes two checks before it changes anything:
 
 - It asks Telegram which bot the token belongs to, and stops if that is not the bot you named.
-- It stops unless the bot and the site belong together. The production bot goes only with `https://luminarasuite.com`. Any other bot goes only with another site. A `WEBAPP_URL` left over from the other environment stops the run.
+- It stops unless the bot and the site belong together. The production bot goes only with `https://www.luminarasuite.com`. Any other bot goes only with another site. A `WEBAPP_URL` left over from the other environment stops the run.
 
 The token and the webhook secret are read at a prompt, never typed on a command line. The shell saves command lines to a history file, and closing the window does not clear that file.
 

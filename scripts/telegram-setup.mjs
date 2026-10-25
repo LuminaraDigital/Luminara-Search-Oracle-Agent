@@ -2,7 +2,7 @@
 /**
  * One-time Telegram bot wiring. Run after `npm run deploy`:
  *
- *   ALLOW_PRODUCTION_WEBHOOK=yes EXPECT_BOT_USERNAME=LuminaraSuiteBot BOT_TOKEN=123:abc TELEGRAM_WEBHOOK_SECRET=long-random WEBAPP_URL=https://luminarasuite.com/ node scripts/telegram-setup.mjs
+ *   ALLOW_PRODUCTION_WEBHOOK=yes EXPECT_BOT_USERNAME=LuminaraSuiteBot BOT_TOKEN=123:abc TELEGRAM_WEBHOOK_SECRET=long-random WEBAPP_URL=https://www.luminarasuite.com/ node scripts/telegram-setup.mjs
  *
  * Sets the webhook (with secret token), the chat menu button that opens the Mini App,
  * the command list, and prints the direct link.
@@ -12,7 +12,7 @@
  * and dropping it would lose the payment. Set DROP_PENDING_UPDATES=true only when you know the
  * queue holds nothing you need.
  */
-const { BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, WEBAPP_URL = 'https://luminarasuite.com/' } = process.env;
+const { BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, WEBAPP_URL = 'https://www.luminarasuite.com/' } = process.env;
 if (!BOT_TOKEN) {
   console.error('BOT_TOKEN is required');
   process.exit(1);
@@ -56,11 +56,12 @@ console.log(`Matched bot: @${botUsername}`);
 // The production bot goes with the production site, and no other bot does. A WEBAPP_URL left in
 // the shell from another environment would otherwise point one environment's bot at the other's
 // Worker. The site is read with new URL(), never matched by a prefix. The production bot needs
-// the exact production origin. Any other bot is refused every spelling of a production host: a
+// the exact www origin: production 301s the apex, and Telegram rejects that redirected WebApp origin.
+// Any other bot is refused every spelling of a production host: a
 // trailing dot, another port or another case still reaches the production Worker.
 const PRODUCTION_BOT = 'luminarasuitebot';
 const PRODUCTION_HOST = 'luminarasuite.com';
-const PRODUCTION_ORIGIN = 'https://luminarasuite.com';
+const PRODUCTION_ORIGIN = 'https://www.luminarasuite.com';
 const productionBot = botUsername.toLowerCase() === PRODUCTION_BOT;
 const siteHost = new URL(WEBAPP_URL).hostname.replace(/\.+$/, '').toLowerCase();
 const productionHost = siteHost === PRODUCTION_HOST || siteHost === `www.${PRODUCTION_HOST}`;
